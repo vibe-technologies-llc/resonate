@@ -235,188 +235,76 @@ whatever the choice, so changing it never rebuilds the content below; it provide
 colours follow the chosen theme rather than the phone's. Widgets and the launcher keep following the
 system.
 
-Flutter uses Material 3 with a violet seed and system light/dark appearance. Glass navigation,
-rounded covers and semantic surface colors follow iOS's cover-led hierarchy. The native host's
-theme follows day/night.
+**The shell** (`ResonateApp`): the roots are Home, Library and Search (`rootScreens`) in a
+`NavigationSuiteScaffold`, a bottom bar on a phone and a rail on a wide window; Settings is a page,
+opened from the gear (`SettingsAction`) in each root's header. Each root has its own Navigation 3
+back stack (`Navigator`), kept across Activity recreation with the selected root: choosing the
+current root pops it to its base, and Back at the base of a root other than Home returns to Home.
+Home stays composed beside the selected root. A pushed page slides a sixth of the width and fades
+(300 ms), and the pop reverses it; each page is a `Page`, a Scaffold with a large, medium or small
+flexible top bar. Below the pages, above the bar, sit the banners and the mini-player, so they show
+on every page.
 
-**One visual system, iOS's, lives in `visuals.dart` and the theme in `main.dart`; pages take it
-rather than literals.** `AppGeometry` holds the radii (24 the expanded cover and dialogs, 20 cards,
-header covers and banners, 16 controls, menus and inputs, 10 the 56-pixel row art, carousel covers
-and gradient tiles, 8 the 48-pixel song art and the mini-player's 40) and sizes (`rowArt`,
-`songArt`, `carouselCover` 140, `artistCircle` 96, `headerCover` 220 up to 300, `barHeight` 64);
-`AppSpace` the gaps (4, 8, 12, 16, 24, 32); `AppGradients` the Library tiles' and the online
-card's pairs. Text takes the theme's roles, iOS's scale: `headlineLarge` the large titles,
-`headlineSmall` the player's and a collection's title, `titleLarge` section headers, `titleSmall`
-carousel captions, `bodyLarge` row titles, `bodyMedium` secondary lines, `bodySmall` footnotes in
-`onSurfaceVariant`; no inline font size outside painters. Buttons, chips and segmented controls are
-capsules; a list row is 24 pixels from the page edge, as the page's content is. The shared pieces
-are one per kind, as iOS's are: `LargeTitle` (a root's heading and its actions), `SectionTitle`
-(every section header, with an optional *See all*), `SheetTitle` (every sheet's heading),
-`CollectionRow` (an album, artist, playlist or online result: 56-pixel art and a chevron),
-`SongTile` (48-pixel art; the playing title in the accent), `Shelf` with `AlbumCard` and
-`ArtistCard` (the horizontal carousels Library, Search and the artist page share), `IconTile` (a
-gradient or tonal tile standing for a collection without art), `PlayShuffle` (the two capsules every
-collection header ends with) and `Pill` (the format and quality badges). Missing art is a quiet
-`surfaceContainerHighest` square with a note, as iOS's placeholder. Android 13 is
-the minimum app version, so there is no older-platform palette branch; `POST_NOTIFICATIONS` is asked only from a button in Settings.
-The native build retains NDK 28.2's API 31 symbol baseline; the APK's minimum API 33 governs
-installation, and native code currently needs no newer platform symbols.
+**Banners** are three, all `LiveRegion`s: *Reading music folder*, *Syncing with your devices* or
+*Fetching songs from your devices* (progress; a fixed label with the changing count and the bar
+cleared from the semantics, so a count is never read again at every step) and the notice, which
+says a failure or a status and stays until dismissed, whatever call succeeds after it. A liked song
+shows *Added to favourites* on the snackbar with *Add to playlist*; the song sheet (`SongSheet`)
+holds the song's actions, adding Equaliser, Audio output and Visualizer when opened from the
+player, and *Remove from queue* from a queue row.
 
-Settings use searchable groups for sound/playback, library sources and connected services.
-The online switch lives there; the equaliser and processing have separate pages, and profile
-import expands on request. Child-page Back restores its parent and settings search, including
-after Activity recreation. Library tools use a separate grouped page with compact rows in one
-surface and no duplicate toolbar inset. Folder source cards retain space between them. Processing
-choices and provider selection use rounded, themed menus with compact option rows. Popup menus
-use that surface and corner shape below their trigger. The floating mini-player
-shows cover, title, artist and previous/play/next controls in a floating pill, with no heart as on iOS,
-above navigation, with ambient tones matching the album. Its transport targets remain accessible
-touch targets, and accessibility semantics retain the song progress node.
-The expanded player links the tagged album and artist to their collection pages; route arguments
-are URI-encoded and carried in saved navigation history, so punctuation and nested Back preserve
-which collection was opened.
+**The player** is one `PlayerExpansion`, a single `Animatable` the mini-player's tap or upward drag
+and the system's predictive back all drive: `NowPlaying` is drawn while it is above zero, so the
+mini-player and the page beneath are never two routes with two exit animations. The mini-player is
+a `surfaceContainerHighest` capsule with 48 dp artwork, the title, artist, play and next and a line
+of progress that says *Song progress* with its percentage. `NowPlaying` wears an `ArtworkTheme`
+seeded from a 96-pixel sample of the cover (`rememberSeedOf`; a cover with no colour keeps the
+app's primary), shows the cover or the lyrics, and opens the queue and the sleep timer as sheets.
+Album, artist and playlist pages wear the same theme from their first cover.
 
-The navigation roots are Library, Settings and Search, as iOS's tab bar: Songs is a page (`songs`) that
-Library's *All songs* row opens, and the queue is Now Playing's Queue mode alone. Search stands apart, as
-iOS 26 sets its search tab beside the bar: Library and Settings share one capsule and Search is a round
-button of the bar's height beside it, the three keeping tab indices 0, 1 and 2 and the tab semantics role.
-Library's header has a *More* menu (Add music folder, Rescan library, Library tools) and, first under
-the category chips, one card of four gradient-tiled rows (*Favourites*, *All songs*, *Made for you*,
-*Statistics*), as iOS's library; Now Playing's options sheet adds Equaliser, Audio output and
-Visualizer to the song's own entries. A saved root beyond the three reads as Library. Search switches between the
-native library search (songs, albums and artists) and online results. The last ten queries
-(`recent-searches`, a JSON list in `library-features`) are kept by Kotlin (`keepRecentSearches`) and
-reach Dart as `recentSearches`; Dart keeps one on submit or when a result is opened and sends the
-list back (`PlayerModel.keepRecentSearch`), so they outlive the process. A library search asks
-`highlights` once for every title, artist, album and artist name it shows (the bridge's `highlights`
-call, one batch per answer, waited for with the answer so rows never light late) and `LitText`
-draws the UTF-16 ranges bold over a dimmed rest, as iOS's `lit`.
-Songs without an active search or filter use the full catalog already held by the repository,
-so clearing filters cannot leave the list empty while an unnecessary query races a refresh.
-Queue separates history, the playing row and Up next, and saves its current order through the
-existing playlist seam. A drag is sent as `queueLanding(from, to)`: Flutter's `onReorderItem` gives
-the index after the row is removed, `move_in_queue` the row it lands before counted before the move,
-so a downward drag adds one and the end of the queue is its length. Search's *Songs* chip names how
-many of the matches it lists (`search_library` answers at most 500 and says so), and the empty
-queue's *Browse songs* is the whole catalog (`kind` `all`, read from the repository's list). Available device handoffs appear as one Queue entry; opening it lists the
-devices and resumes the selected queue through its original handoff index. Library pins Favourites
-above playlists, albums and artists, with collection search and category chips. Favourites and collection counts
-read the full catalog separately from the song browser's search and filters. A completed favourite
-write updates catalog, browser, queue, snapshot and open playlist state together, then refreshes
-the active browser query. The native catalog remains the persisted source of truth. Liking a song
-presents a compact floating banner in the current app theme, keeping its "Add to playlist" button
-beside the message at phone widths. The button opens the playlist picker without obstructing
-navigation or accessibility. The banner fades out after four seconds even with its action button.
-Playlist naming fields own their text controllers through `TextFormField`, including Save queue as
-playlist: a dialog's result arrives before its exit animation removes
-the field, so disposing a caller-owned controller on that result leaves a live field using a
-disposed controller and causes widget-tree teardown assertions. Creation and rename keep the
-same native calls; cancellation never writes.
+**The queue sheet** lists the devices that handed off (one row), History, the playing row and Up
+next; a handle drags a row (`Reorder`), sent as `queueLanding(from, to)` since the engine's
+`move_in_queue` counts the landing row before the move, so a downward drag adds one and the end is
+the queue's length. *Save queue as playlist* and *Clear* sit in its header.
 
+**Library** is a pager of Songs, Albums, Artists and Playlists under a tab row (scrollable past a
+font scale of 1.3), *New playlist* a floating button on Playlists, *More* the folder, rescan and
+Library tools entries. Favourites and the counts read the repository's whole catalog, never the
+song browser's filtered page. A completed favourite write updates the catalog, the browser, the
+queue, the snapshot and the open playlist in place (`setFavourite`) before the catalog is read
+again. A playlist is a spinner until its rows arrive (`playlistLoading`; selecting one clears the
+previous rows at once).
 
-The shell's top edge and bottom navigation use mirrored progressive translucent tints, strongest
-at the system bars and fading into the scrolling content. Rounded controls use opaque surfaces
-without live backdrop filters. The library scrolls beneath the status bar. Collection backgrounds
-enclose the whole scaffold, including the transparent toolbar; the cover and rows scroll beneath
-its fading tint rather than meeting a separate opaque header. Settings details use that same
-continuous color background and fading toolbar. Their scrolling content includes the system and
-toolbar insets at the start, so controls begin below the title and pass beneath the tint as they
-scroll. Fixed search controls retain those insets outside the results viewport. Songs fades its
-cover tint through a fixed-height easing tail to the base surface by the first rows, leaving the
-rest of the list a quiet background. On a W-P311 with PowerVR GE8320, live backdrop filters made
-scrolling miss multiple display periods; the tint and
-one color gradient keep sustained Songs scrolling near the 60 Hz display period.
+**Search** switches between the library (songs, albums and artists, `search_library`, at most 500,
+the *Songs* chip saying how many it lists) and online results. The last ten queries are kept in
+`library-features` as `recent-searches` (`keepRecentSearches`, `keptSearch` puts a typed one first
+and never a link); a library search asks `highlights` once for every title, artist, album and
+artist name it shows, waited for with the answer so rows never light late, and `lit` draws the
+UTF-16 ranges emphasised over the rest.
 
-Settings use neutral surfaces with the same text roles and geometry as the library: 24-pixel
-page edges, 20-pixel card corners and 16-pixel control corners. Settings artwork uses a quarter
-of the album color strength, so bright covers cannot compete with labels. Cards have opaque
-neutral surfaces; secondary text retains its own contrasting color. Root headings align with
-their actions and omit decorative captions.
-The mini-player is a capsule with 40-pixel artwork and 48-pixel touch targets, its progress a
-two-pixel line along its foot. The navigation capsule and the Search button are 64 pixels high; each
-tab draws its pill six pixels inside it, the icon in the pill and the label beneath, the label's text
-scale clamped at 1.2 so it fits the bar. When text is enlarged (12 sp past 16 pixels) only the
-selected tab keeps its label and the others' icons centre in the full height. A fixed internal
-layout keeps these gaps equal as display scale changes; the Material bar's fixed-width pill spills
-into neighboring tabs and centers variable label heights differently.
-Scan, sync and notice banners sit above the mini-player and navigation on root pages; they do not
-push the page heading down. Each is a `LiveRegion` for TalkBack: the notice card announces its
-message as it appears or changes, and the scan and sync banners carry a fixed label (*Reading music
-folder*, *Syncing with your devices*, *Fetching songs from your devices*) with their counts
-excluded, so a changing count is never read out again at every step. A notice (a failure or a status) shows on every pushed page too: the
-bottom bar a collection or settings page carries shows the notice card alone, and a page with no bar
-(lyrics, analysis, details, the visualiser, search) is wrapped in `NoticeFooter`. A failure stays
-until dismissed, whatever call succeeds after it, as on iOS. A collection that cannot be read says
-so with *Try again* instead of spinning, and a playlist is a spinner until its rows arrive (the
-bridge sends `playlistRows` as `null` while `playlistLoading`, and `beginPlaylist` clears the
-model's copy at once, so the previous playlist's rows never flash); a *Made for you* mix is a
-collection page of its own (`kind` `mix`, read through `filtered_tracks`), never the Songs page's
-filter. Scrolling lists take their bottom inset from the scaffold rather than
-reserving a fixed 180 pixels, keeping the final row clear without leaving an empty tail.
-
-Collection pages share cover-led headers, song counts/duration and Play/Shuffle actions. Albums
-keep disc/track ordering; artist pages expose their albums and songs. Playlist covers are
-`MusicPlaylist.covers`, up to four songs with a picture, one an album, in row order, drawn as one
-cover or a 2 by 2 (`PlaylistCover`); a playlist with none shows an icon. Playlist detail adds a searchable multi-song
-picker through the existing batched add seam; rename, revision-checked moves/removal, delete and
-undo retain their existing native behavior. Row playback passes the explicit position, so repeated
-songs select the row that was tapped. Collection row semantics name that position independently
-of visible track numbers, so rows with thumbnails still identify repeated songs accessibly.
-
-The expanded player is a transparent route that keeps its parent painted. One panel animation
-owns entrance, dismissal and drag cancellation; sliding, scale, corner rounding and progressive
-edge tint share its progress. The exposed parent remains visible through a light tint, and
-the tint fades as dismissal completes, preventing a black gap or a second route exit animation.
-
-Flutter motion reads `MediaQuery.disableAnimations`; reduced motion removes transitions. Root
-tabs stay mounted in an `IndexedStack`, so scroll position, song filters, settings search and
-search text survive switching; the incoming tab fades in with a slow diagonal drift while
-the outgoing tab hides at once, keeping one heavy list alive through the switch. Pushed pages fade
-with a short trailing-edge slide over a static parent, keeping the system predictive-back gesture;
-a tab keeps one fixed layout where the pill fades, the icon glides between the pill and the tab
-center where its label is hidden, and the label swaps instantly with no opacity or transform of its
-own, so text never renders mid-animation. Artwork
-is loaded through the native cache as JPEG bytes at the size drawn: Dart asks for the bucket (96,
-192, 384, 512, 768 or 1024 px, `artworkBucket`) that holds its logical size at the display's
-density, the colour sample asks for 96, and Kotlin keeps decoded bitmaps and encoded bytes by
-*picture* and bucket (`artwork_picture`, `picture`), so the twelve songs of an album decode and
-encode one image and a picture never goes stale. Dart keys a request by song, artwork revision,
-generation, a per-song stamp and the bucket; the stamp moves for the songs `art_changed_since`
-names (the `artChanged` event), so an enrichment finding one cover refetches that song's cover
+**Artwork** is asked at the size drawn: `ArtworkSizes.edgeFor` picks the bucket (96, 192, 384, 512,
+768 or 1024 px) holding the composable's size in pixels, and `LibraryFeatures.artworkBitmap` decodes
+by *picture* and bucket into a 32 MiB `LruCache` (JPEGs for the session thumbnail in 16 MiB), so
+the twelve songs of an album decode one image and a picture never goes stale. A cover redraws when
+its song, art revision, the generation or the song's stamp moves (`ArtworkClock`): the stamp moves
+for the songs `art_changed_since` names, so an enrichment finding one cover refetches that song's
 alone, and the generation moves only where everything may have changed (a scan, an explicit
-refresh). Widgets compare their stored request key on updates; comparing two references to the
-mutable model misses a newly published generation. The colour cache is keyed without the bucket,
-since colours come from any size. The decoded Flutter cache is bounded at 64 MiB and
-encoded/in-flight requests at 48 entries.
-The expanded player samples two tones from a 16 by 16 cover decode and falls back for
-neutral/dark/transparent art. The shell and expanded player paint one static color gradient,
-stronger in the expanded player, and animate it only when the artwork changes. Continuous drift
-and full-screen blurred cover layers made playback scrolling miss the frame budget on the W-P311.
-Position-only snapshots update the progress controls without notifying the whole screen every
-250 ms; transport, metadata and queue changes still notify it. So do the streams that move many
-times a second (`samples`, `lyricFrame`, `analysisProgress`, `downloadedBytes`): they are
-`PlayerModel.hot(key)` notifiers the one widget reading each listens to, and a patch of nothing else
-never notifies the model; Kotlin computes lyric frames only while a lyrics pane is open
-(`lyricFrames`, counted) and the Activity is visible. A favourite is a `favourite` delta applied in
-place to Dart's lists (the bridge skips re-sending a catalog that differs only in favourites,
-`sameSongs`), and Dart keeps `favouriteTracks` rather than filtering the catalog in a build. Artwork, lyrics, queue and the
-sleep timer share one opaque pill; narrow widths and large text use icon-only buttons with named
-tooltips.
-Artwork color callbacks publish after the frame and refuse a stale artwork key, including cache
-hits: creating a cover while switching player modes must not rebuild its parent during build.
-The compact lyrics/queue layout keeps a bounded reading viewport and scrolls as a whole when
-short screens or large text leave too little room for its titles and transport controls.
-The lyric sheet is a lazy `ListView.builder` (cache extent 900 px), each line a `RepaintBoundary`
-whose built widget is kept and reused while its values (text, lit, blurred, seek time, wipe) are
-unchanged, so a 4 Hz frame rebuilds the lit line and the few that changed, and a blurred line is
-raster-cached; the followed line is revealed through its key, or, when it is not built, by jumping to
-its share of the scroll extent and revealing it from there.
-Lyrics fade at the viewport edges, enlarge the active line and soften distant lines. Native
-UTF-16 wipe ranges and letter blend fractions color word timing without a Dart clock. Manual
-scroll pauses following for five seconds and offers an immediate Follow lyrics button. Restorable
-routes preserve child pages and settings search on Activity recreation. Collections are grouped
-and ordered through native `albums`, `artists`, `album_tracks` and `artist_tracks` queries;
-open collection rows resolve current metadata by catalog id so favourite changes arrive at once.
+refresh). Missing art is a quiet `surfaceContainerHighest` square with a note.
+
+**Collection pages** (album, artist, playlist, mix, favourites) share cover-led headers with the song
+count and length and Play and Shuffle. Albums keep disc and track order (`album_tracks`); an artist
+page lists their albums and songs. A playlist cover is `MusicPlaylist.covers`: none shows an icon,
+one to three the first song's picture, four a 2 by 2 (`PlaylistCover`). A playlist adds songs through
+a searchable multi-song picker over the batched add seam; rename, revision-checked moves and removal,
+delete and undo are the native calls. A row plays its list from the position tapped
+(`Playback.play(tracks, index)`), so a repeated song selects the row pressed.
+
+**Lyrics** are a `LazyColumn` of `LyricLine`s following the native `LyricFrame` (`mobile.md`'s
+*Lyrics*; the frame is computed only while a lyrics pane is open, `watchLyrics`). The active line is
+full size and ink, the rest 0.94 scale at 38 % alpha with the distant ones blurred, a wipe colouring
+each line's words by their UTF-16 ranges, the edges faded. A drag pauses following for five seconds
+and offers *Follow lyrics*; tapping a timed line seeks. Blur is dropped where animations are off
+(`ANIMATOR_DURATION_SCALE` zero) or TalkBack is exploring (`rememberCalm`).
 
 The equaliser is the boundary's parametric curve (`eq.md`'s *The phones*): any number of bands up
 to 32, through core's `Profile` and the engine's `Equalisation` fallback. One curve applies to all
@@ -431,8 +319,8 @@ Editing a band or the preamp clears that preset name. An empty flat curve shows 
 the bands only on a completed edit. An AutoEq or imported profile keeps its filters, frequencies,
 Q and preamp; its gain-bearing bands get sliders without being converted to the octave layout.
 Advanced exposes the interactive graph, accessible band selectors and per-band type, frequency,
-gain and Q. *Fit the preamp* under the preamp slider sends the shown curve to the bridge's
-`fittedPreamp` (the boundary's `fitted_preamp` at the stream rate, off the main thread) and commits
+gain and Q. *Fit the preamp* under the preamp slider sends the shown curve to the boundary's
+`fitted_preamp` at the stream rate (`fittedPreamp`, off the main thread) and commits
 the answer as a preamp edit, clearing the preset name; it is off with no bands. Preamp and bands
 remain independent of the enable switch; confirmed reset removes
 every band and returns the preamp to zero without changing that switch. The drawn response is the
@@ -475,7 +363,7 @@ samples at 192 kHz (`ClipTooLong`), so a front end's own cap is not the only one
 companion does not refuse playable audio. Bitmap caches use 32 MiB and decode to at most 1024
 pixels per side after checking dimensions. Albums group by title and album artist, falling back
 to the tagged artist. Songs resolve by id through the repository's index (`findTrack`), not a scan of the catalog per
-request. A song's album page opens by `album_key` (`albumKey` through the bridge), so a song with
+request. A song's album page opens by `album_key` (`albumKey`), so a song with
 another spelling, no album artist or a shared title opens its own album, and the song sheet's
 heart reads the live favourite, not the map the row was fetched with. Folder names and grants are listed independently of the catalog, including
 unavailable grants; removing access revokes a grant after confirmation, leaving music files
@@ -490,7 +378,7 @@ grant never hides its songs. A pass that hid songs reads the catalog again, relo
 playlist and says *N songs whose files are gone were hidden*; one that fails is reported once per
 distinct text. The queue drops hidden rows through the boundary's own `left_the_queue`.
 
-A song sheet (`songActions`) holds *Share link* (the bridge's `shareLink`: `share_link(id)` on the
+The song sheet holds *Share link* (`shareLink`: `share_link(id)` on the
 IO dispatcher, then the system `ACTION_SEND` chooser with the link as text; no link is a notice) and,
 from a queue row's *More* button, *Remove from queue* by `queueId`; the swipe stays.
 
@@ -843,17 +731,9 @@ Remaining desktop capabilities are open work in `docs/FEATURES.md`.
 
 ## Checks
 
-From `android/flutter/`, run `flutter pub get`, `flutter analyze` and `flutter test`. The Flutter
-tests cover repeated rows, identities, favourite updates, feedback, restoration and large text, and
-`bridge_test.dart` reads `FlutterBridge.kt` and `lib/*.dart` alike: every action Dart sends is a
-branch of `dispatch`, every branch is named in Dart, and every argument Dart sends by name is one
-its branch reads. The equaliser graph's handle is grabbed where the finger went down
-(`DragStartBehavior.down`; by default a pan starts where it crossed the touch slop, 36 px from the
-handle and out of its reach).
-
 From the repository root, `android/gradlew -p android :app:assembleDebug :app:lintDebug` builds
 both native ABIs and checks Kotlin and the manifest, and `:app:testDebugUnitTest` runs the plain
-JVM tests (`android/app/src/test`: queue edit arithmetic, queue read pacing, the loves sentence).
+JVM tests (`android/app/src/test`: queue edit arithmetic, queue read pacing, the loves sentence, the settings search, the search words, the lyric lines, the accents).
 `python3 android/check-native.py --sdk "$ANDROID_HOME"` checks ELF/APK alignment and runs
 clippy for both native targets. With an emulator or device connected,
 `android/gradlew -p android :app:connectedDebugAndroidTest` exercises native loading, document
