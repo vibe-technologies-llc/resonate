@@ -291,7 +291,7 @@ again. A playlist is a spinner until its rows arrive (`playlistLoading`; selecti
 previous rows at once).
 
 **Search** switches between the library (songs, albums and artists, `search_library`, at most 500,
-the *Songs* chip saying how many it lists) and online results. The last ten queries are kept in
+the *Songs* chip saying how many it lists, *Show more* reading on) and online results. The last ten queries are kept in
 `library-features` as `recent-searches` (`keepRecentSearches`, `keptSearch` puts a typed one first
 and never a link); a library search asks `highlights` once for every title, artist, album and
 artist name it shows, waited for with the answer so rows never light late, and `lit` draws the
@@ -533,7 +533,7 @@ lyrics), then favourites, then play count, then folded title and id. Exports:
 `search_library(text, limit)` answers a `LibrarySearch` (ranked tracks to `limit`, at most 500, the
 full `track_count`, the albums and artists holding them with those named by the words first, the
 *Reads* chips, completions from `Spellings::completing`, and `did_you_mean` only where nothing
-matched); `highlights(query, text, column)` is `Search::lit` in UTF-16 code units, as Swift and
+matched), and `search_tracks(text, offset, limit)` the same ranking a page at a time (Search's *Show more* in the Songs scope reads the next 500 and lights them); `highlights(query, text, column)` is `Search::lit` in UTF-16 code units, as Swift and
 Kotlin index. `albums(order)`/`artists(order)` (`CollectionOrder`: alphabetical, artist, year newest
 first, recently added, plays) group in Rust: an album by folded title plus folded album artist,
 else artist (an empty album title is no album), and then, as the desktop's `grouping_keys` gather,

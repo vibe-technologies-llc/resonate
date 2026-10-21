@@ -11,9 +11,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   Swift over `plan_organise` and `documents_moved`; curves per route in Swift)
 - [M] Android cannot edit tags: `edit_tags` writes at a filesystem path, which a SAF document does
   not give
-- [M] Android lists only the first 500 matches of a search: `search_library` answers at most 500
-  ranked songs and has no offset, so a wider search needs narrowing (the *Songs* chip says how many
-  it shows)
 - [M] Android has no Listen: `recognise_heard` names a clip, but nothing records one from the
   microphone
 - [S] Android's browse tree carries no artwork: the folders and songs a car lists show a plain

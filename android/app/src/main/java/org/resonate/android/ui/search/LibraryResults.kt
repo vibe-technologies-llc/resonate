@@ -424,13 +424,16 @@ private fun LazyListScope.answered(
             songs(answer, found.tracks, found.tracks, playing, model, more)
             if (found.trackCount > found.tracks.size.toUInt()) {
                 item(key = "songs-capped") {
-                    Text(
-                        "Showing the first ${found.tracks.size} of ${found.trackCount} songs. " +
-                            "Narrow the search to see the rest.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = Sizes.gutter, vertical = 16.dp),
-                    )
+                    Column(Modifier.padding(horizontal = Sizes.gutter, vertical = 16.dp)) {
+                        Text(
+                            "Showing ${found.tracks.size} of ${found.trackCount} songs.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        TextButton(onClick = model::moreSongs, modifier = Modifier.testTag("more-songs")) {
+                            Text("Show more")
+                        }
+                    }
                 }
             }
         }

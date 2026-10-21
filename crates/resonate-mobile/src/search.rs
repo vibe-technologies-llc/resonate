@@ -154,6 +154,12 @@ impl MobilePlayer {
         self.services.searching.search(&self.catalog, &text, limit)
     }
 
+    pub fn search_tracks(&self, text: String, offset: u32, limit: u32) -> Result<Vec<Track>> {
+        self.services
+            .searching
+            .ranked_tracks(&self.catalog, &text, offset, limit)
+    }
+
     pub fn albums(&self, order: CollectionOrder) -> Result<Vec<AlbumHit>> {
         self.services.searching.albums(&self.catalog, order)
     }
@@ -265,6 +271,31 @@ impl Searching {
             did_you_mean,
             completions,
         })
+    }
+
+    pub(crate) fn ranked_tracks(
+        &self,
+        catalog: &Catalog,
+        text: &str,
+        offset: u32,
+        limit: u32,
+    ) -> Result<Vec<Track>> {
+        let search = Search::read(text);
+        if search.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let index = self.index(catalog)?;
+        let asking = Asking::of(&search, now());
+        let sung = self.sung_for(catalog, &asking)?;
+
+        Ok(index
+            .ranked(&asking, sung.as_deref())
+            .iter()
+            .skip(offset as usize)
+            .take(limit.min(LISTED_AT_MOST) as usize)
+            .map(|at| index.rows[*at].track.clone())
+            .collect())
     }
 
     pub(crate) fn filtered(
@@ -2481,6 +2512,45 @@ mod tests {
                 .map(|artist| (artist.name.as_str(), artist.songs)),
             Some(("", 2))
         );
+    }
+
+    #[test]
+    fn a_search_is_read_a_page_at_a_time_in_the_order_it_ranks() {
+        let catalog = catalog();
+        let searching = Searching::default();
+        for number in 1..=7 {
+            song(
+                &catalog,
+                Tagged {
+                    title: &format!("Echo {number}"),
+                    ..UNTAGGED
+                },
+            );
+        }
+
+        let whole = searching
+            .search(&catalog, "echo", 100)
+            .expect("a search")
+            .tracks;
+        let first = searching
+            .ranked_tracks(&catalog, "echo", 0, 3)
+            .expect("a first page");
+        let second = searching
+            .ranked_tracks(&catalog, "echo", 3, 3)
+            .expect("a second page");
+        let last = searching
+            .ranked_tracks(&catalog, "echo", 6, 3)
+            .expect("a last page");
+        let beyond = searching
+            .ranked_tracks(&catalog, "echo", 7, 3)
+            .expect("an empty page");
+        let nothing = searching
+            .ranked_tracks(&catalog, "  ", 0, 3)
+            .expect("a blank search");
+
+        assert_eq!(titles(&[first, second, last].concat()), titles(&whole));
+        assert!(beyond.is_empty());
+        assert!(nothing.is_empty());
     }
 
     #[test]

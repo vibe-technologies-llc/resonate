@@ -212,6 +212,30 @@ class SearchViewModel(private val resonate: Resonate) : ViewModel() {
         asking.value = false
     }
 
+    fun moreSongs() {
+        val current = answer.value ?: return
+        if (current.found.tracks.size.toUInt() >= current.found.trackCount) return
+        viewModelScope.launch {
+            val page =
+                resonate.read { native ->
+                    withContext(Dispatchers.IO) {
+                        native.searchTracks(
+                            current.query,
+                            current.found.tracks.size.toUInt(),
+                            LIBRARY_SONGS_AT_MOST,
+                        )
+                    }
+                }
+            page.onSuccess { tracks ->
+                val latest = answer.value
+                if (latest == null || latest.query != current.query || tracks.isEmpty()) return@onSuccess
+                val grown = latest.found.copy(tracks = latest.found.tracks + tracks)
+                val shown = withContext(Dispatchers.Default) { lighted(latest.query, grown) }
+                answer.value = latest.copy(found = grown, lit = shown)
+            }
+        }
+    }
+
     private fun lighted(text: String, result: LibrarySearch): Lit =
         try {
             lit(text, result) { query, value, column -> highlights(query, value, column) }
