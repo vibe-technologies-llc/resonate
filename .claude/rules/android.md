@@ -259,7 +259,7 @@ back stack (`Navigator`), kept across Activity recreation with the selected root
 current root pops it to its base, and Back at the base of a root other than Home returns to Home.
 Home stays composed beside the selected root. A pushed page slides a sixth of the width and fades
 (300 ms), and the pop reverses it; each page is a `Page`, a Scaffold with a large, medium or small
-flexible top bar. Below the pages, above the bar, sit the banners and the mini-player, so they show
+flexible top bar that stays `surface` when content scrolls under it (no scrolled container colour). Below the pages, above the bar, sit the banners and the mini-player, so they show
 on every page. The scaffold and the box beneath it paint `surface`, as the pages do, so the strip
 behind the banners is the page's colour. The empty library's *Welcome* scrolls, so the banners
 arriving on a first scan never squeeze its buttons.

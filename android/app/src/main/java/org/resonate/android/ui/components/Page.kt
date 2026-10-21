@@ -95,6 +95,9 @@ private fun PageBar(
     }
     val subtitleText: (@Composable () -> Unit)? =
         subtitle?.let { { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) } }
+    val surface = MaterialTheme.colorScheme.surface
+    val colors =
+        TopAppBarDefaults.topAppBarColors(containerColor = surface, scrolledContainerColor = surface)
     when (size) {
         TitleSize.LARGE ->
             LargeFlexibleTopAppBar(
@@ -103,6 +106,7 @@ private fun PageBar(
                 navigationIcon = navigation,
                 actions = actions,
                 scrollBehavior = scrollBehavior,
+                colors = colors,
             )
         TitleSize.MEDIUM ->
             MediumFlexibleTopAppBar(
@@ -111,6 +115,7 @@ private fun PageBar(
                 navigationIcon = navigation,
                 actions = actions,
                 scrollBehavior = scrollBehavior,
+                colors = colors,
             )
         TitleSize.SMALL ->
             TopAppBar(
@@ -119,6 +124,7 @@ private fun PageBar(
                 navigationIcon = navigation,
                 actions = actions,
                 scrollBehavior = scrollBehavior,
+                colors = colors,
             )
     }
 }
