@@ -16,10 +16,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   it shows)
 - [M] Android has no Listen: `recognise_heard` names a clip, but nothing records one from the
   microphone
-- [M] Android cannot be woken by a media button once its service is gone: no `MediaButtonReceiver`
-  and no `onPlaybackResumption`, so after the system reaps the idle `PlaybackService` or the task
-  is dismissed a headset, Bluetooth or lock-screen play does nothing, though `resume_saved` holds
-  the queue
 - [M] Android registers no `ACTION_VIEW` audio filter, so a file manager cannot open a song in it,
   and declares a `MediaBrowserService` whose default callback answers the library root as
   unsupported, so Android Auto and car kits browse an empty service

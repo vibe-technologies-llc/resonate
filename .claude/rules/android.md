@@ -101,6 +101,11 @@ receiver and focus request are removed. Only the service's own controllers, the 
 notification and controllers the platform trusts (`ControllerInfo.isTrusted`) may connect
 (`TrustedControllers`); a controller's add, move and remove become engine queue edits
 (`QueueEdits`: an append then moves, a range as moves of the rows it passes, a removal by queue id).
+A headset, Bluetooth or lock-screen play reaches a service that is gone through the manifest's
+`MediaButtonReceiver`, which starts it; `onPlaybackResumption` waits at most 8 s for the engine and the
+queue it resumed paused (`resume_saved`) and answers that queue at its row and position, so the key
+plays where the listener left off (checked on the emulator by force-stopping the app and pressing
+`KEYCODE_MEDIA_PLAY`).
 Audio focus loss and noisy-output events pause playback; a transient loss resumes on regaining
 focus if the engine was playing or loading, and a duck is left to the platform
 (`setWillPauseWhenDucked(false)`). The Media3 state is invalidated only when the transport, queue

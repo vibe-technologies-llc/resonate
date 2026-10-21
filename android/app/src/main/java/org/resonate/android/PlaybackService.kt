@@ -12,12 +12,26 @@ import androidx.media3.session.SessionError
 import androidx.media3.session.SessionResult
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.SettableFuture
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 
 private val closePlayback = SessionCommand("resonate.close", Bundle.EMPTY)
 
+private const val RESUMPTION_WAITS_AT_MOST_MS = 8_000L
+
 @UnstableApi
-private class TrustedControllers(private val close: () -> Unit) :
-    MediaLibraryService.MediaLibrarySession.Callback {
+private class TrustedControllers(
+    private val close: () -> Unit,
+    private val library: LibraryRepository,
+    private val scope: CoroutineScope,
+) : MediaLibraryService.MediaLibrarySession.Callback {
     override fun onConnect(
         session: MediaSession,
         controller: MediaSession.ControllerInfo,
@@ -31,6 +45,37 @@ private class TrustedControllers(private val close: () -> Unit) :
                 )
                 .build()
         else MediaSession.ConnectionResult.reject()
+
+    override fun onPlaybackResumption(
+        mediaSession: MediaSession,
+        controller: MediaSession.ControllerInfo,
+        isForPlayback: Boolean,
+    ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+        val resumed = SettableFuture.create<MediaSession.MediaItemsWithStartPosition>()
+        scope.launch {
+            try {
+                val saved =
+                    withTimeout(RESUMPTION_WAITS_AT_MOST_MS) {
+                        library.native()
+                        library.queue.first { it.isNotEmpty() }
+                    }
+                val place = library.snapshot.value
+                resumed.set(
+                    MediaSession.MediaItemsWithStartPosition(
+                        saved.map { it.mediaItem() },
+                        (place?.queueIndex?.toInt() ?: 0).coerceIn(saved.indices),
+                        place?.positionMs?.toLong() ?: 0L,
+                    )
+                )
+            } catch (cancelled: CancellationException) {
+                resumed.cancel(false)
+                throw cancelled
+            } catch (failure: Exception) {
+                resumed.setException(failure)
+            }
+        }
+        return resumed
+    }
 
     override fun onCustomCommand(
         session: MediaSession,
@@ -49,6 +94,7 @@ private class TrustedControllers(private val close: () -> Unit) :
 class PlaybackService : MediaLibraryService() {
     private var session: MediaLibrarySession? = null
     private var player: RustMediaPlayer? = null
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onCreate() {
         super.onCreate()
@@ -66,7 +112,7 @@ class PlaybackService : MediaLibraryService() {
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
         session =
-            MediaLibrarySession.Builder(this, adapter, TrustedControllers(::close))
+            MediaLibrarySession.Builder(this, adapter, TrustedControllers(::close, library, scope))
                 .setSessionActivity(openApp)
                 .setMediaButtonPreferences(
                     listOf(
@@ -98,6 +144,7 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        scope.cancel()
         session?.release()
         player?.release()
         session = null
