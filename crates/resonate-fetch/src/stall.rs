@@ -36,6 +36,7 @@ fn at_most(timeout: NextTimeout, longest: Duration) -> NextTimeout {
     NextTimeout {
         after: longest.into(),
         reason: Timeout::RecvBody,
+        ..timeout
     }
 }
 

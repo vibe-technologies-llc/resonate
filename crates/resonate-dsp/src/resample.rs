@@ -1,6 +1,6 @@
 use std::{array, f64::consts::PI, num::NonZeroU32, sync::Arc};
 
-use parking_lot::{Mutex, const_mutex};
+use parking_lot::Mutex;
 use resonate_core::{ChannelLayout, Ratio, SampleRate, StreamSpec};
 
 use crate::{
@@ -284,7 +284,7 @@ struct TableFor {
     output_rate: SampleRate,
 }
 
-static LAST_TABULATED: Mutex<Option<(TableFor, Arc<Tabulated>)>> = const_mutex(None);
+static LAST_TABULATED: Mutex<Option<(TableFor, Arc<Tabulated>)>> = Mutex::new(None);
 
 impl Tabulated {
     fn kept_for(wanted: TableFor, build: impl FnOnce() -> Self) -> Arc<Self> {

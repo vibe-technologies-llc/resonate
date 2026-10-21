@@ -1,6 +1,6 @@
 use std::{f64::consts::PI, sync::Arc};
 
-use parking_lot::{Mutex, const_mutex};
+use parking_lot::Mutex;
 use rustfft::{FftPlanner, num_complex::Complex};
 
 use crate::resample::{SincParams, WindowedSinc};
@@ -24,7 +24,7 @@ const STENCIL_REACHES_BACK: usize = STENCIL / 2 - 1;
 
 type Designed = Vec<(SincParams, FilterPhase, Arc<Prototype>)>;
 
-static DESIGNED: Mutex<Designed> = const_mutex(Vec::new());
+static DESIGNED: Mutex<Designed> = Mutex::new(Vec::new());
 
 pub(crate) struct Prototype {
     samples: Vec<f64>,
