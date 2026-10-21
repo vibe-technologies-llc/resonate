@@ -288,7 +288,7 @@ next; a handle drags a row (`Reorder`), sent as `queueLanding(from, to)` since t
 the queue's length. *Save queue as playlist* and *Clear* sit in its header.
 
 **Library** is a pager of Songs, Albums, Artists and Playlists under a tab row (scrollable past a
-font scale of 1.3), *New playlist* a floating button on Playlists, *More* the folder, rescan and
+font scale of 1.3), *New playlist* a floating button on Playlists (the heading carries no second one), Songs opening on full-width *Play* and *Shuffle* with the count at the start and sort and filters at the end of one row, as Albums and Artists put their sort, the active filters on a row beneath, *More* the folder, rescan and
 Library tools entries. Favourites and the counts read the repository's whole catalog, never the
 song browser's filtered page. A completed favourite write updates the catalog, the browser, the
 queue, the snapshot and the open playlist in place (`setFavourite`) before the catalog is read

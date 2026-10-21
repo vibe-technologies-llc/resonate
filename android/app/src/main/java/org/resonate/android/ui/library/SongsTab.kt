@@ -5,12 +5,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -20,17 +18,13 @@ import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FilterList
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.SearchOff
-import androidx.compose.material.icons.rounded.Shuffle
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -49,6 +43,7 @@ import org.resonate.android.nativecore.defaultTrackFilter
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.components.EmptyState
 import org.resonate.android.ui.components.LocalSheets
+import org.resonate.android.ui.components.PlayShuffleButtons
 import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.components.TrackRow
 import org.resonate.android.ui.counted
@@ -70,16 +65,19 @@ fun SongsTab(model: LibraryViewModel, padding: PaddingValues) {
             contentPadding = padding,
             modifier = Modifier.fillMaxSize().testTag("songs"),
         ) {
-            item("count") {
-                CountHeader(
-                    title = counted(songs.size, "song"),
-                    detail = songs.takeIf { it.isNotEmpty() }?.let { rows -> length(rows.sumOf { it.durationMs }) },
-                    onPlay = if (songs.isEmpty()) null else ({ resonate.playInOrder(songs) }),
-                    onShuffle = if (songs.isEmpty()) null else ({ resonate.playShuffled(songs) }),
-                )
+            if (songs.isNotEmpty()) {
+                item("play") {
+                    PlayShuffleButtons(
+                        onPlay = { resonate.playInOrder(songs) },
+                        onShuffle = { resonate.playShuffled(songs) },
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                }
             }
             item("chips") {
                 FilterChips(
+                    title = counted(songs.size, "song"),
+                    detail = songs.takeIf { it.isNotEmpty() }?.let { rows -> length(rows.sumOf { it.durationMs }) },
                     filter = filter,
                     onOrder = { order -> model.change { it.copy(order = order) } },
                     onDescending = { descending -> model.change { it.copy(descending = descending) } },
@@ -117,49 +115,9 @@ fun SongsTab(model: LibraryViewModel, padding: PaddingValues) {
 }
 
 @Composable
-fun CountHeader(
+private fun FilterChips(
     title: String,
     detail: String?,
-    onPlay: (() -> Unit)?,
-    onShuffle: (() -> Unit)?,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier.fillMaxWidth().padding(start = Sizes.gutter, end = Sizes.gutter, top = 12.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (detail != null) {
-                Text(
-                    detail,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        if (onPlay != null) {
-            Button(onClick = onPlay, modifier = Modifier.testTag("play-all")) {
-                Icon(Icons.Rounded.PlayArrow, null, Modifier.size(ButtonDefaults.IconSize))
-                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                Text("Play")
-            }
-        }
-        if (onShuffle != null) {
-            Spacer(Modifier.width(8.dp))
-            FilledTonalButton(onClick = onShuffle, modifier = Modifier.testTag("shuffle-all")) {
-                Icon(Icons.Rounded.Shuffle, null, Modifier.size(ButtonDefaults.IconSize))
-                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                Text("Shuffle")
-            }
-        }
-    }
-}
-
-@Composable
-private fun FilterChips(
     filter: org.resonate.android.nativecore.TrackFilter,
     onOrder: (TrackOrder) -> Unit,
     onDescending: (Boolean) -> Unit,
@@ -169,13 +127,24 @@ private fun FilterChips(
 ) {
     val parts = filter.parts()
     var sorting by remember { mutableStateOf(false) }
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = Sizes.gutter, vertical = 4.dp),
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        item("sort") {
+    Column {
+        Row(
+            Modifier.fillMaxWidth().padding(start = Sizes.gutter, end = Sizes.gutter, top = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (detail != null) {
+                    Text(
+                        detail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
             Box {
                 FilterChip(
                     selected = filter.ordered,
@@ -205,8 +174,6 @@ private fun FilterChips(
                     ),
                 )
             }
-        }
-        item("filters") {
             FilterChip(
                 selected = parts.isNotEmpty(),
                 onClick = onFilters,
@@ -217,21 +184,29 @@ private fun FilterChips(
                 modifier = Modifier.testTag("filter-songs"),
             )
         }
-        parts.forEach { part ->
-            item(part.name) {
-                InputChip(
-                    selected = true,
-                    onClick = { onRemove(part) },
-                    label = { Text(filter.label(part), maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    trailingIcon = {
-                        Icon(Icons.Rounded.Close, "Remove ${filter.label(part)}", Modifier.size(FilterChipDefaults.IconSize))
-                    },
-                )
-            }
-        }
         if (parts.isNotEmpty() || filter.ordered) {
-            item("clear") {
-                androidx.compose.material3.TextButton(onClick = onClear) { Text("Clear") }
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = Sizes.gutter, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                parts.forEach { part ->
+                    item(part.name) {
+                        InputChip(
+                            selected = true,
+                            onClick = { onRemove(part) },
+                            label = { Text(filter.label(part), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            trailingIcon = {
+                                Icon(
+                                    Icons.Rounded.Close,
+                                    "Remove ${filter.label(part)}",
+                                    Modifier.size(FilterChipDefaults.IconSize),
+                                )
+                            },
+                        )
+                    }
+                }
+                item("clear") { TextButton(onClick = onClear) { Text("Clear") } }
             }
         }
     }

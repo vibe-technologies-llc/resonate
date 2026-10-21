@@ -400,6 +400,9 @@ private fun LibraryFigures(totals: LibraryStatistics) {
     )
 }
 
+private val MAX_DAY_BAR_WIDTH = 24.dp
+private val MAX_DAY_BAR_CORNER = 6.dp
+
 @Composable
 private fun DaysChart(days: List<ListenedOnDay>) {
     val scheme = MaterialTheme.colorScheme
@@ -431,13 +434,15 @@ private fun DaysChart(days: List<ListenedOnDay>) {
             ) {
                 val slot = size.width / days.size
                 val gap = (slot * 0.25f).coerceAtMost(4.dp.toPx())
-                val width = (slot - gap).coerceAtLeast(1f)
-                val radius = CornerRadius(width / 2f, width / 2f)
+                val width = (slot - gap).coerceIn(1f, MAX_DAY_BAR_WIDTH.toPx())
+                val corner = (width / 2f).coerceAtMost(MAX_DAY_BAR_CORNER.toPx())
+                val radius = CornerRadius(corner, corner)
                 days.forEachIndexed { index, day ->
-                    val x = index * slot + gap / 2f
+                    val x = index * slot + (slot - width) / 2f
                     drawRoundRect(track, Offset(x, 0f), Size(width, size.height), radius)
                     val share = day.listenedMs.toFloat() / most.toFloat()
-                    val height = (size.height * share).coerceAtLeast(if (day.listenedMs > 0uL) width else 0f)
+                    val height =
+                        (size.height * share).coerceAtLeast(if (day.listenedMs > 0uL) corner * 2f else 0f)
                     if (height > 0f)
                         drawRoundRect(bar, Offset(x, size.height - height), Size(width, height), radius)
                 }
