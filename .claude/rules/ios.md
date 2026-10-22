@@ -173,6 +173,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   on the transport's lane, so the cover and words stalled before handing over. A steer is shown
   through `showSteered`, which moves the clock, the playing row and the lock screen with the
   snapshot.
+- **A glass control's size and hit shape live inside its `Button`'s label** (`PlayerModes`' Lyrics and Up next: `frame` and `contentShape(.circle)` on the label): with the frame outside the button only the glyph took the tap while the interactive glass answered a touch anywhere in the circle, so a press animated and did nothing.
 - **A destructive swipe action is `.tint(.red)`**: the app's accent tint reaches a swipe button and paints a `role: .destructive` one in the accent (the queue's *Remove from queue*), so each says its red.
 - **Optimistic actions settle in order.** Play, pause, shuffle and repeat show at once (`Steered`)
   and queue edits change `queue` at once; a poll that began before such a command was answered
@@ -474,7 +475,7 @@ every route change (a pair of headphones at the same rate included), not from th
 
 - **Now Playing** is a full-screen cover zoomed out of the mini player's artwork
   (`matchedTransitionSource`, `.zoom`), dismissed by dragging down. Its slider (like the volume row's) commits one seek on
-  release, clears a drag the system cancelled through a `@GestureState` flag, and holds the scrubbed value until the clock comes within 1.5 s of it or a second passes.
+  release, clears a drag the system cancelled through a `@GestureState` flag, and holds the scrubbed value, bar and times, until the clock comes within 1.5 s of it or four seconds pass (a pause and play straight after a seek keep the engine's lane busy and its snapshots late, and a shorter hold let the bar and times fall back to the old position and then jump to the new), the bar's flowed value set to it as the seek is sent and not moved by a reading that has not reached it.
   **The scrubber's bar flows between readings**: each new position read while playing animates
   the bar linearly to where the song will be one reading later (`PlayerScrubber.flow`: the reading
   plus the time since the last, held within 0.05 to 0.6 s, over that same time), so the render

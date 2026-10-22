@@ -470,7 +470,7 @@ struct CompactTitles: View {
 struct PlayerScrubber: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private static let nearEnoughMs: Double = 1500
-    private static let holdAtMost: Duration = .seconds(1)
+    private static let holdAtMost: Duration = .seconds(4)
     private static let restingHeight: CGFloat = 7
     private static let grabbedHeight: CGFloat = 14
     private static let touchHeight: CGFloat = 28
@@ -558,7 +558,7 @@ struct PlayerScrubber: View {
         }
         .onChange(of: library.transport) {
             lastReading.flow = reduceMotion ? nil : Self.settles
-            flowing = Double(library.clock.positionMs)
+            flowing = held ?? Double(library.clock.positionMs)
         }
         .task(id: held) {
             guard held != nil else { return }
@@ -590,6 +590,8 @@ struct PlayerScrubber: View {
 
     private func commit(_ target: Double) {
         held = target
+        lastReading.flow = nil
+        flowing = target
         library.seek(to: UInt64(target))
     }
 
@@ -602,7 +604,7 @@ struct PlayerScrubber: View {
         let free = dragging == nil && held == nil
         let flows = free && !first && !reduceMotion && library.transport == .playing && stepped >= 0 && stepped < Self.flowsAcrossMs
         lastReading.flow = flows ? .linear(duration: elapsed) : nil
-        flowing = flows ? now + elapsed * 1000 : now
+        flowing = held ?? (flows ? now + elapsed * 1000 : now)
     }
 }
 
@@ -1019,13 +1021,16 @@ struct PlayerModes: View {
 
     private func toggle(_ target: PlayerMode, title: String, symbol: String) -> some View {
         let active = mode == target
-        return Button(title, systemImage: symbol) {
+        return Button {
             switched += 1
             choose(active ? .artwork : target)
+        } label: {
+            Label(title, systemImage: symbol)
+                .labelStyle(.iconOnly)
+                .font(.title3)
+                .frame(width: 48, height: 48)
+                .contentShape(.circle)
         }
-        .labelStyle(.iconOnly)
-        .font(.title3)
-        .frame(width: 48, height: 48)
         .foregroundStyle(active ? Color.wornInk : Color.primary)
         .glassEffect(active ? .regular.tint(Color.worn).interactive() : .regular.interactive(), in: .circle)
         .buttonStyle(.plain)
