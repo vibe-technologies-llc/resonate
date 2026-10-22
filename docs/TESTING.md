@@ -34,9 +34,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 ## Testing
 - [M] Hole punching is proved over loopback alone; two devices behind real NATs, a phone on a
   mobile network and a Linux desktop, have not been driven against a live server
-- [L] No frame is pulled through a stream in S16, S32, packed or padded S24, 5.1 or 7.1, or with
-  `NO_CONVERT`, nor recorded from a microphone node: the desktop's sink is stereo F32 and a hosted
-  daemon links nothing (no session manager; a hosted WirePlumber would reach the real cards)
 - [M] The drop overlay never dragged onto on a real compositor from this tree: gpui's
   `ExternalPaths` is `pub(crate)`, so `driven.rs` calls `dragged_over` and `dropped` directly; the
   platform's drag events are unproved here

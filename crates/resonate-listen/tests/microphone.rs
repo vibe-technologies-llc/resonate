@@ -11,9 +11,10 @@ use resonate_listen::{Hearing, Listener, Listening};
 use resonate_pipewire::NodeName;
 
 const HOSTED_AT: &str = "RESONATE_HOSTED_PIPEWIRE";
-const THIS_TEST: &str = "a_recording_from_a_named_microphone_is_opened_on_that_microphone";
 const LISTENER: &str = "resonate-listen-microphone-test";
 const MICROPHONE: &str = "resonate-hosted-microphone";
+const TONE: &str = "resonate-hosted-tone";
+const TONE_FOR: Duration = Duration::from_secs(2);
 const SOCKET: &str = "pipewire-0";
 const PATIENCE: Duration = Duration::from_secs(10);
 const POLL_EVERY: Duration = Duration::from_millis(50);
@@ -28,6 +29,7 @@ context.properties = {
 context.spa-libs = {
     audio.convert.* = audioconvert/libspa-audioconvert
     audio.adapt = audioconvert/libspa-audioconvert
+    audiotestsrc = audiotestsrc/libspa-audiotestsrc
     support.* = support/libspa-support
 }
 context.modules = [
@@ -37,6 +39,7 @@ context.modules = [
     { name = libpipewire-module-client-node }
     { name = libpipewire-module-access }
     { name = libpipewire-module-adapter }
+    { name = libpipewire-module-link-factory }
 ]
 context.objects = [
     { factory = metadata args = { metadata.name = default } }
@@ -64,6 +67,17 @@ context.objects = [
             node.description = "A microphone this test hosts"
             media.class = Audio/Source
             audio.position = [ MONO ]
+            object.linger = true
+        }
+    }
+    { factory = adapter
+        args = {
+            factory.name = audiotestsrc
+            node.name = resonate-hosted-tone
+            node.description = "A tone this test hosts"
+            media.class = Audio/Source
+            audio.position = [ FL FR ]
+            node.pause-on-idle = false
             object.linger = true
         }
     }
@@ -142,15 +156,59 @@ fn the_capture_aims_at(folder: &Path, source: &str) -> bool {
     false
 }
 
-fn runs_under_a_hosted_daemon() -> bool {
-    let Some(folder) = env::var_os(HOSTED_AT).map(PathBuf::from) else {
+fn pw_cli_succeeds(folder: &Path, args: &[&str]) -> bool {
+    Command::new("pw-cli")
+        .args(args)
+        .env("PIPEWIRE_RUNTIME_DIR", folder)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+fn node_named(folder: &Path, name: &str) -> Option<String> {
+    let named = format!("node.name = \"{name}\"");
+    let listed = pw_cli(folder, &["ls", "Node"]);
+    let mut id = None;
+    for line in listed.lines() {
+        if let Some(rest) = line.trim().strip_prefix("id ") {
+            id = rest.split(',').next().map(str::to_owned);
+        } else if line.contains(&named) {
+            return id;
+        }
+    }
+    None
+}
+
+fn ported(folder: &Path, node: &str, direction: &str, format: &str) -> bool {
+    let config = format!(
+        "{{ direction: {direction}, mode: dsp, monitor: false, control: false, format: {{ mediaType: audio, mediaSubtype: raw, format: {format}, rate: 48000, channels: 2, position: [ FL FR ] }} }}"
+    );
+    pw_cli_succeeds(folder, &["set-param", node, "PortConfig", &config])
+}
+
+fn port_the_tone_and_the_capture(folder: &Path) -> bool {
+    let (Some(capture), Some(tone)) = (the_capture_node(folder), node_named(folder, TONE)) else {
         return false;
     };
-    let Some(_hosted) = Hosted::start(&folder) else {
-        eprintln!("skipped: no pipewire binary to host a daemon with");
-        return true;
-    };
+    ported(folder, &tone, "Output", "F32P") && ported(folder, &capture, "Input", "F32LE")
+}
 
+fn link_the_tone_to_the_capture(folder: &Path) -> bool {
+    ["FL", "FR"].into_iter().all(|channel| {
+        Command::new("pw-link")
+            .arg(format!("{TONE}:capture_{channel}"))
+            .arg(format!("{LISTENER}:input_{channel}"))
+            .env("PIPEWIRE_RUNTIME_DIR", folder)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+    })
+}
+
+fn the_microphone_is_aimed_at(folder: &Path) {
     let listener = Listener::new(LISTENER);
     let microphones = listener
         .microphones()
@@ -167,7 +225,7 @@ fn runs_under_a_hosted_daemon() -> bool {
             listener.record(&from, LISTENS_FOR, &hearing)
         })
     };
-    let aimed = the_capture_aims_at(&folder, MICROPHONE);
+    let aimed = the_capture_aims_at(folder, MICROPHONE);
     hearing.stop();
     let _ = recording.join();
 
@@ -176,15 +234,52 @@ fn runs_under_a_hosted_daemon() -> bool {
         "the hosted microphone was not listed: {microphones:?}"
     );
     assert!(aimed, "no capture was opened on the named microphone");
-    true
 }
 
-#[test]
-fn a_recording_from_a_named_microphone_is_opened_on_that_microphone() {
-    if runs_under_a_hosted_daemon() {
+fn the_tone_is_heard(folder: &Path) {
+    let listener = Listener::new(LISTENER);
+    let hearing = Hearing::new();
+    let recording = thread::spawn(move || {
+        let from = Listening::Microphone(Some(NodeName::new(TONE)));
+        listener.record(&from, TONE_FOR, &hearing)
+    });
+
+    let ported = until(|| port_the_tone_and_the_capture(folder));
+    let linked = ported && until(|| link_the_tone_to_the_capture(folder));
+    let clip = recording.join().expect("the recording thread ends");
+
+    assert!(ported, "the tone and the capture were given no ports");
+    assert!(linked, "the capture never linked to the tone");
+    let clip = clip.expect("the tone is recorded");
+    assert!(!clip.is_silent(), "the recording of the tone is silent");
+    assert!(
+        clip.length() >= TONE_FOR / 2,
+        "the recording is {:?} long",
+        clip.length()
+    );
+}
+
+fn until(mut done: impl FnMut() -> bool) -> bool {
+    let deadline = Instant::now() + PATIENCE;
+    while Instant::now() < deadline {
+        if done() {
+            return true;
+        }
+        thread::sleep(POLL_EVERY);
+    }
+    false
+}
+
+fn hosted_as(this_test: &str, tag: &str, under: fn(&Path)) {
+    if let Some(folder) = env::var_os(HOSTED_AT).map(PathBuf::from) {
+        let Some(_hosted) = Hosted::start(&folder) else {
+            eprintln!("skipped: no pipewire binary to host a daemon with");
+            return;
+        };
+        under(&folder);
         return;
     }
-    let tools = ["pipewire", "pw-cli"].into_iter().all(|tool| {
+    let tools = ["pipewire", "pw-cli", "pw-link"].into_iter().all(|tool| {
         Command::new(tool)
             .arg("--version")
             .stdout(Stdio::null())
@@ -193,15 +288,15 @@ fn a_recording_from_a_named_microphone_is_opened_on_that_microphone() {
             .is_ok()
     });
     if !tools {
-        eprintln!("skipped: no pipewire and pw-cli to host a daemon with");
+        eprintln!("skipped: no pipewire, pw-cli and pw-link to host a daemon with");
         return;
     }
 
-    let folder = env::temp_dir().join(format!("rlm-{}", std::process::id()));
+    let folder = env::temp_dir().join(format!("rlm-{}-{tag}", std::process::id()));
     fs::create_dir_all(&folder).expect("a folder for the hosted daemon");
     fs::write(folder.join("hosted.conf"), HOSTED_CONFIG).expect("the hosted daemon's config");
     let ran = Command::new(env::current_exe().expect("the test binary"))
-        .args([THIS_TEST, "--exact", "--nocapture"])
+        .args([this_test, "--exact", "--nocapture"])
         .env(HOSTED_AT, &folder)
         .env("PIPEWIRE_RUNTIME_DIR", &folder)
         .status()
@@ -209,4 +304,22 @@ fn a_recording_from_a_named_microphone_is_opened_on_that_microphone() {
     let _ = fs::remove_dir_all(&folder);
 
     assert!(ran.success(), "the run under the hosted daemon failed");
+}
+
+#[test]
+fn a_recording_from_a_named_microphone_is_opened_on_that_microphone() {
+    hosted_as(
+        "a_recording_from_a_named_microphone_is_opened_on_that_microphone",
+        "m",
+        the_microphone_is_aimed_at,
+    );
+}
+
+#[test]
+fn a_recording_from_a_microphone_hears_the_tone_that_reaches_it() {
+    hosted_as(
+        "a_recording_from_a_microphone_hears_the_tone_that_reaches_it",
+        "t",
+        the_tone_is_heard,
+    );
 }

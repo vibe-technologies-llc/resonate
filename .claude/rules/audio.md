@@ -905,8 +905,9 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   So a 5.0 or 6.1 stream reads back as itself and is not rebuilt
   (`every_layout_asked_for_reads_back_as_itself_once_the_graph_settles_on_it`,
   `a_graph_settling_on_the_five_point_oh_it_was_asked_for_leaves_the_stream_alone`); one that truly
-  differs plays silence until the rebuild (`realtime.md`). A hosted daemon cannot prove this: with
-  no session manager nothing links, so no `Format` is ever set.
+  differs plays silence until the rebuild (`realtime.md`). A hosted daemon proves the settled format
+  only for the layout and word asked for (`frames_flow_through_a_stream_in_every_word_and_channel_map_once_it_is_linked`);
+  it has no session manager to settle on another.
 - **A sink's advertised layouts are read the same way** (`format::advertised_layout` over
   `named_by`, the one matcher): `parse_enum_format` collects the `channels` offer and the `position`
   array whatever their order, and gives each offered count whose array is that long and names a
@@ -926,9 +927,14 @@ Invariants from file to sink. Callback contract: `realtime.md`.
 - **Capture and playback tests on the desktop graph skip with no daemon:** `PipeWire::start` starts a
   client before a daemon exists, so `resonate-listen`'s `tests/capture.rs` and `resonate-pipewire`'s
   `tests/stream.rs` read `Error::Disconnected` from the first sink discovery as a skip. Other
-  discovery failures fail; reconnect tests host their own daemon. A hosted daemon proves what the
-  client reads and asks, not what flows: with no session manager nothing is linked, and WirePlumber is
-  not hosted because it would reach the real cards. A hosted test playing the other client turns a
+  discovery failures fail; reconnect tests host their own daemon. With no session manager nothing links itself and
+  WirePlumber is not hosted because it would reach the real cards, so a test that needs frames to
+  flow plays the session manager: it gives the stream node a `PortConfig` (`passthrough`, in the
+  sink's own format and positions, over a sink hosted with `adapter.auto-port-config` in
+  `passthrough`, so nothing converts; `dsp` for the microphone's capture and tone) and links the ports with `pw-link`,
+  which needs `libpipewire-module-link-factory` loaded. `pw-cli` exits zero on a refused
+  `set-param`, so a test asserts what flowed, never the exit status alone. A microphone test hears
+  a hosted `audiotestsrc` node (`a_recording_from_a_microphone_hears_the_tone_that_reaches_it`). A hosted test playing the other client turns a
   stream by its node's id (`the_playback_node`, read off `pw-cli ls Node`): the application name
   is the client's as well as the node's, and `pw-cli` resolves a name to the client, which refuses
   `set-param` yet exits zero.

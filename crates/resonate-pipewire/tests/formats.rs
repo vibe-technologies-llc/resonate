@@ -2,6 +2,10 @@ use std::{
     env, fs,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -14,6 +18,7 @@ use resonate_pipewire::{
 
 const HOSTED_AT: &str = "RESONATE_HOSTED_PIPEWIRE";
 const SOCKET: &str = "pipewire-0";
+const STREAM: &str = "resonate-formats-test";
 const PATIENCE: Duration = Duration::from_secs(10);
 const ASKED_WITHIN: Duration = Duration::from_millis(500);
 const POLL_EVERY: Duration = Duration::from_millis(20);
@@ -36,6 +41,7 @@ context.modules = [
     { name = libpipewire-module-client-node }
     { name = libpipewire-module-access }
     { name = libpipewire-module-adapter }
+    { name = libpipewire-module-link-factory }
 ]
 context.objects = [
     { factory = metadata args = { metadata.name = default } }
@@ -55,6 +61,7 @@ context.objects = [
             audio.rate = 44100
             audio.position = [ FL FR FC LFE RL RR ]
             object.linger = true
+            adapter.auto-port-config = { mode = passthrough monitor = false control = false position = preserve }
         }
     }
     { factory = adapter
@@ -66,6 +73,7 @@ context.objects = [
             audio.rate = 96000
             audio.position = [ FL FR FC LFE RL RR SL SR ]
             object.linger = true
+            adapter.auto-port-config = { mode = passthrough monitor = false control = false position = preserve }
         }
     }
     { factory = adapter
@@ -77,6 +85,7 @@ context.objects = [
             audio.rate = 48000
             audio.position = [ FL FR ]
             object.linger = true
+            adapter.auto-port-config = { mode = passthrough monitor = false control = false position = preserve }
         }
     }
     { factory = adapter
@@ -88,6 +97,7 @@ context.objects = [
             audio.rate = 48000
             audio.position = [ FL FR ]
             object.linger = true
+            adapter.auto-port-config = { mode = passthrough monitor = false control = false position = preserve }
         }
     }
 ]
@@ -132,6 +142,8 @@ struct Hosting {
     sink: &'static str,
     spec: StreamSpec,
     words: Words,
+    wire: &'static str,
+    positions: &'static [&'static str],
 }
 
 const HOSTED: [Hosting; 4] = [
@@ -143,6 +155,8 @@ const HOSTED: [Hosting; 4] = [
             SampleFormat::S16,
         ),
         words: Words::Whole,
+        wire: "S16LE",
+        positions: &["FL", "FR", "FC", "LFE", "RL", "RR"],
     },
     Hosting {
         sink: "resonate-thirty-two-surround",
@@ -152,6 +166,8 @@ const HOSTED: [Hosting; 4] = [
             SampleFormat::S32,
         ),
         words: Words::Whole,
+        wire: "S32LE",
+        positions: &["FL", "FR", "FC", "LFE", "RL", "RR", "SL", "SR"],
     },
     Hosting {
         sink: "resonate-twenty-four-packed",
@@ -161,6 +177,8 @@ const HOSTED: [Hosting; 4] = [
             SampleFormat::S24,
         ),
         words: Words::Packed,
+        wire: "S24LE",
+        positions: &["FL", "FR"],
     },
     Hosting {
         sink: "resonate-twenty-four-padded",
@@ -170,6 +188,8 @@ const HOSTED: [Hosting; 4] = [
             SampleFormat::S24,
         ),
         words: Words::Padded,
+        wire: "S24_32LE",
+        positions: &["FL", "FR"],
     },
 ];
 
@@ -178,6 +198,18 @@ struct Silence;
 impl AudioSource for Silence {
     fn fill(&mut self, dst: &mut [u8]) -> usize {
         dst.fill(0);
+        dst.len()
+    }
+}
+
+struct Counting {
+    pulled: Arc<AtomicUsize>,
+}
+
+impl AudioSource for Counting {
+    fn fill(&mut self, dst: &mut [u8]) -> usize {
+        dst.fill(0);
+        self.pulled.fetch_add(dst.len(), Ordering::Relaxed);
         dst.len()
     }
 }
@@ -231,7 +263,7 @@ fn until(mut done: impl FnMut() -> bool) -> bool {
 }
 
 fn every_word_and_map_is_read_as_the_sink_names_it(_: &Path) {
-    let pipewire = PipeWire::start("resonate-formats-test").expect("the hosted daemon answers");
+    let pipewire = PipeWire::start(STREAM).expect("the hosted daemon answers");
     let sinks = the_hosted_sinks(&pipewire);
     let _ = pipewire.shutdown();
 
@@ -262,7 +294,7 @@ fn every_word_and_map_is_read_as_the_sink_names_it(_: &Path) {
 }
 
 fn every_word_and_map_is_taken_by_the_daemon_with_nothing_converting(_: &Path) {
-    let pipewire = PipeWire::start("resonate-formats-test").expect("the hosted daemon answers");
+    let pipewire = PipeWire::start(STREAM).expect("the hosted daemon answers");
     let sinks = the_hosted_sinks(&pipewire);
 
     for hosting in HOSTED {
@@ -303,8 +335,96 @@ fn every_word_and_map_is_taken_by_the_daemon_with_nothing_converting(_: &Path) {
     let _ = pipewire.shutdown();
 }
 
+fn pw_cli(folder: &Path, args: &[&str]) -> bool {
+    Command::new("pw-cli")
+        .args(args)
+        .env("PIPEWIRE_RUNTIME_DIR", folder)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+fn port_the_stream(folder: &Path, hosting: Hosting) -> bool {
+    let Some(node) = the_playback_node(folder) else {
+        return false;
+    };
+    let format = format!(
+        "{{ mediaType: audio, mediaSubtype: raw, format: {}, rate: {}, channels: {}, position: [ {} ] }}",
+        hosting.wire,
+        hosting.spec.rate.hz(),
+        hosting.positions.len(),
+        hosting.positions.join(" ")
+    );
+    let config = format!(
+        "{{ direction: Output, mode: passthrough, monitor: false, control: false, format: {format} }}"
+    );
+    pw_cli(folder, &["set-param", node.as_str(), "PortConfig", &config])
+}
+
+fn link_the_stream(folder: &Path, hosting: Hosting) -> bool {
+    Command::new("pw-link")
+        .arg(format!("{STREAM}:output_1"))
+        .arg(format!("{}:playback_1", hosting.sink))
+        .env("PIPEWIRE_RUNTIME_DIR", folder)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+fn bytes_in_a_quarter_second(hosting: Hosting) -> usize {
+    let frame = usize::from(hosting.spec.channel_count().get())
+        * usize::from(hosting.spec.format.bytes_per_sample().get());
+    hosting.spec.rate.hz() as usize / 4 * frame
+}
+
+fn frames_flow_through_every_word_and_map_once_the_stream_is_linked(folder: &Path) {
+    let pipewire = PipeWire::start(STREAM).expect("the hosted daemon answers");
+    let sinks = the_hosted_sinks(&pipewire);
+
+    for hosting in HOSTED {
+        let sink = named(&sinks, hosting.sink);
+        let pulled = Arc::new(AtomicUsize::new(0));
+        let stream = pipewire
+            .open(
+                &request(sink, hosting.spec),
+                Box::new(Counting {
+                    pulled: Arc::clone(&pulled),
+                }),
+            )
+            .unwrap_or_else(|error| panic!("{}: the stream would not open: {error}", hosting.sink));
+        stream.set_active(true).expect("the stream activates");
+
+        let ported = until(|| port_the_stream(folder, hosting));
+        let linked = ported && until(|| link_the_stream(folder, hosting));
+        let wanted = bytes_in_a_quarter_second(hosting);
+        let flowing = until(|| pulled.load(Ordering::Relaxed) >= wanted);
+        let heard: Vec<StreamEvent> = stream.events().try_iter().collect();
+        stream.close().expect("the stream closes");
+
+        assert!(ported, "{}: the stream was given no ports", hosting.sink);
+        assert!(linked, "{}: the stream never linked", hosting.sink);
+        assert!(
+            flowing,
+            "{}: {} of {wanted} bytes pulled: {heard:?}",
+            hosting.sink,
+            pulled.load(Ordering::Relaxed)
+        );
+        assert!(
+            heard.contains(&StreamEvent::FormatChanged {
+                spec: hosting.spec,
+                words: hosting.words,
+            }),
+            "{}: the settled format was never heard: {heard:?}",
+            hosting.sink
+        );
+    }
+    let _ = pipewire.shutdown();
+}
+
 fn a_sink_leaving_under_an_open_stream(folder: &Path) {
-    let pipewire = PipeWire::start("resonate-formats-test").expect("the hosted daemon answers");
+    let pipewire = PipeWire::start(STREAM).expect("the hosted daemon answers");
     let changes = pipewire.subscribe_sinks();
     let sinks = the_hosted_sinks(&pipewire);
     let hosting = HOSTED[2];
@@ -383,7 +503,7 @@ fn turn_the_stream(folder: &Path, props: &str) -> bool {
 }
 
 fn a_stream_turned_by_another_client(folder: &Path) {
-    let pipewire = PipeWire::start("resonate-formats-test").expect("the hosted daemon answers");
+    let pipewire = PipeWire::start(STREAM).expect("the hosted daemon answers");
     let sinks = the_hosted_sinks(&pipewire);
     let hosting = HOSTED[0];
     let sink = named(&sinks, hosting.sink);
@@ -450,6 +570,15 @@ fn a_stream_in_every_word_and_channel_map_is_taken_by_the_daemon_with_nothing_co
         "a_stream_in_every_word_and_channel_map_is_taken_by_the_daemon_with_nothing_converting",
         "s",
         every_word_and_map_is_taken_by_the_daemon_with_nothing_converting,
+    );
+}
+
+#[test]
+fn frames_flow_through_a_stream_in_every_word_and_channel_map_once_it_is_linked() {
+    hosted_as(
+        "frames_flow_through_a_stream_in_every_word_and_channel_map_once_it_is_linked",
+        "f",
+        frames_flow_through_every_word_and_map_once_the_stream_is_linked,
     );
 }
 
