@@ -15,12 +15,18 @@ struct StatusMessage: Equatable {
 
     enum Offer {
         case openCatalog
+        case restoreQueueRow
     }
 
     let text: String
     let kind: Kind
     let serial: Int
     var offer: Offer?
+}
+
+struct RemovedQueueRow {
+    let trackId: UInt64
+    let at: UInt32
 }
 
 @MainActor
@@ -257,6 +263,7 @@ final class Library {
     @ObservationIgnored private var steering = Settling()
     @ObservationIgnored private var steered = Steered()
     @ObservationIgnored private var queueSettling = Settling()
+    @ObservationIgnored private var removedFromQueue: RemovedQueueRow?
     @ObservationIgnored let support: URL
     @ObservationIgnored private var pollSleep: Task<Void, Never>?
     @ObservationIgnored private var wakeOwed = false
@@ -772,8 +779,20 @@ final class Library {
 
     func removeFromQueue(_ row: Track) {
         guard let queueId = row.queueId else { return }
+        if let at = queue.firstIndex(where: { $0.queueId == queueId }) {
+            removedFromQueue = RemovedQueueRow(trackId: row.id, at: UInt32(at))
+        }
         queue.removeAll { $0.queueId == queueId }
-        editQueue { try $0.removeFromQueue(queueId: queueId) }
+        editQueue { try $0.removeFromQueue(queueId: queueId) } offering: {
+            self.show("Removed from queue", as: .notice, offering: .restoreQueueRow)
+        }
+    }
+
+    private func restoreQueueRow() {
+        guard let removed = removedFromQueue else { return }
+        removedFromQueue = nil
+        dismissStatus()
+        editQueue("Back in the queue") { try $0.insertInQueue(ids: [removed.trackId], at: removed.at) }
     }
 
     func moveInQueue(from: Int, to: Int) {
@@ -802,7 +821,11 @@ final class Library {
         }
     }
 
-    private func editQueue(_ done: String? = nil, _ action: @escaping @Sendable (MobilePlayer) throws -> Void) {
+    private func editQueue(
+        _ done: String? = nil,
+        _ action: @escaping @Sendable (MobilePlayer) throws -> Void,
+        offering: (@MainActor () -> Void)? = nil
+    ) {
         queueSettling.ask()
         attempt(action) { [self] failure in
             queueSettling.answer()
@@ -811,6 +834,8 @@ final class Library {
                 Task { await rereadQueue() }
             } else if let done {
                 notice(done)
+            } else {
+                offering?()
             }
             nudgePoll()
         }
@@ -1558,6 +1583,7 @@ final class Library {
     func perform(_ offer: StatusMessage.Offer) {
         switch offer {
         case .openCatalog: openAgain()
+        case .restoreQueueRow: restoreQueueRow()
         }
     }
 

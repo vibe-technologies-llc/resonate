@@ -1368,3 +1368,12 @@ The tag editor, *Add songs* and the filter sheet apply what they hold only on th
 while they hold an edit (changed tag fields, chosen songs, a filter unlike the applied one) and their
 Close button asks *Discard your changes?* instead of dropping them; with nothing edited Close
 dismisses at once.
+
+## Removing a queue row can be undone
+
+`Library.removeFromQueue` remembers the row's song and place (`RemovedQueueRow`, the last removal
+alone, so a swipe over several offers the final one) and, once the boundary accepts the removal,
+shows the *Removed from queue* notice with an *Undo* button (`StatusMessage.Offer.restoreQueueRow`).
+Undo calls `insert_in_queue(ids, at)`, which puts the song back at `Placement::At(at)` (past the end
+it is appended) as a row of its own, so the playing row and its place are untouched
+(`a_removed_song_goes_back_to_the_row_it_left_and_past_the_end_it_is_appended`).

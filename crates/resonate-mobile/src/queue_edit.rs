@@ -17,6 +17,10 @@ impl MobilePlayer {
         self.queue_documents(ids, Placement::At)
     }
 
+    pub fn insert_in_queue(&self, ids: Vec<u64>, at: u32) -> Result<()> {
+        self.queue_documents(ids, |rows| Placement::At((at as usize).min(rows)))
+    }
+
     pub fn remove_from_queue(&self, queue_id: u64) -> Result<()> {
         self.edit_queue(|queued, _| {
             let row = queued
@@ -49,7 +53,7 @@ impl MobilePlayer {
 }
 
 impl MobilePlayer {
-    fn queue_documents(&self, ids: Vec<u64>, placed: fn(usize) -> Placement) -> Result<()> {
+    fn queue_documents(&self, ids: Vec<u64>, placed: impl Fn(usize) -> Placement) -> Result<()> {
         let items = self.queue_items(ids)?;
 
         self.edit_queue(|queued, _| {
@@ -406,6 +410,29 @@ mod tests {
             harness.player.remove_from_queue(ids[0]),
             Err(Error::UnknownQueueRow { queue_id }) if queue_id == ids[0]
         ));
+    }
+
+    #[test]
+    fn a_removed_song_goes_back_to_the_row_it_left_and_past_the_end_it_is_appended() {
+        let harness = Harness::new();
+        harness.resumed("abcd", 3, 400);
+        let ids = harness.queue_ids();
+
+        harness.player.remove_from_queue(ids[1]).expect("a removal");
+        harness
+            .player
+            .insert_in_queue(harness.ids("b"), 1)
+            .expect("a restoration");
+
+        assert_eq!(harness.queued(), "abcd");
+        assert_eq!(harness.playing(), ('d', 3, 400));
+
+        harness
+            .player
+            .insert_in_queue(harness.ids("a"), 40)
+            .expect("an append");
+
+        assert_eq!(harness.queued(), "abcda");
     }
 
     #[test]
