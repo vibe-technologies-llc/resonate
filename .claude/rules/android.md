@@ -291,7 +291,7 @@ the queue's length. *Save queue as playlist* and *Clear* sit in its header.
 
 **Library** is a pager of Songs, Albums, Artists and Playlists under a tab row (scrollable past a
 font scale of 1.3), *New playlist* a floating button on Playlists (the heading carries no second one), Songs opening on full-width *Play* and *Shuffle* with the count at the start and sort and filters at the end of one row, as Albums and Artists put their sort, the active filters on a row beneath, *More* the folder, rescan and
-Library tools entries. Favourites and the counts read the repository's whole catalog, never the
+Library tools entries. **A sort menu lists only the orders**, in compact 40 dp rows (`MenuEntry.Choice`): choosing the order already held flips its direction, which the sort chip's arrow shows (a *Descending* switch under seven rows made the popup overrun the list and the notice). Favourites and the counts read the repository's whole catalog, never the
 song browser's filtered page. A completed favourite write updates the catalog, the browser, the
 queue, the snapshot and the open playlist in place (`setFavourite`) before the catalog is read
 again. A playlist is a spinner until its rows arrive (`playlistLoading`; selecting one clears the

@@ -14,7 +14,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.SwapVert
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FilterList
@@ -151,7 +152,12 @@ private fun FilterChips(
                     onClick = { sorting = true },
                     label = { Text(filter.orderLabel(), maxLines = 1) },
                     leadingIcon = {
-                        Icon(Icons.Rounded.SwapVert, null, Modifier.size(FilterChipDefaults.IconSize))
+                        Icon(
+                            if (filter.descending) Icons.Rounded.ArrowDownward
+                            else Icons.Rounded.ArrowUpward,
+                            null,
+                            Modifier.size(FilterChipDefaults.IconSize),
+                        )
                     },
                     trailingIcon = {
                         Icon(Icons.Rounded.ArrowDropDown, null, Modifier.size(FilterChipDefaults.IconSize))
@@ -163,14 +169,11 @@ private fun FilterChips(
                     { sorting = false },
                     listOf(
                         TrackOrder.entries.map { order ->
-                            MenuEntry.Choice(order.label, order == filter.order) { onOrder(order) }
-                        },
-                        listOf(
-                            MenuEntry.Toggle("Descending", null, filter.descending) {
-                                sorting = false
-                                onDescending(it)
+                            MenuEntry.Choice(order.label, order == filter.order) {
+                                if (order == filter.order) onDescending(!filter.descending)
+                                else onOrder(order)
                             }
-                        ),
+                        }
                     ),
                 )
             }

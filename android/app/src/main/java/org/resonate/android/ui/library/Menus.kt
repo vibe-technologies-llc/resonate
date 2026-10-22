@@ -1,6 +1,7 @@
 package org.resonate.android.ui.library
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
@@ -29,6 +30,9 @@ import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Switch
+
+private val CHOICE_ROW_HEIGHT = 40.dp
+private val CHOICE_ROW_PADDING = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
 
 sealed interface MenuEntry {
     val label: String
@@ -108,7 +112,8 @@ private fun MenuRow(
                 text = { Text(entry.label) },
                 shape = shapes.shape,
                 leadingIcon = { MarkIcon(entry.selected) },
-                modifier = Modifier.semantics { selected = entry.selected },
+                contentPadding = CHOICE_ROW_PADDING,
+                modifier = Modifier.height(CHOICE_ROW_HEIGHT).semantics { selected = entry.selected },
             )
         is MenuEntry.Toggle ->
             DropdownMenuItem(
