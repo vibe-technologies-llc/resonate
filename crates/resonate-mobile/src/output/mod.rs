@@ -5,6 +5,8 @@ mod oboe_render;
 #[cfg(target_os = "ios")]
 mod remote_io;
 #[cfg(any(target_os = "ios", test))]
+mod remote_io_buffers;
+#[cfg(any(target_os = "ios", test))]
 mod remote_io_fill;
 #[cfg(target_os = "ios")]
 mod remote_io_render;

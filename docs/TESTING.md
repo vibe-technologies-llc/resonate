@@ -12,8 +12,9 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   gap of the RemoteIO reopen it causes has been heard
 
 ## iOS
-- [S] RemoteIO's `Unit` open path and `render`'s pointer handling stay iOS-only and untested on the
-  host; `Routing`, `Drain` and `fill` are proved
+- [S] RemoteIO's `Unit` open path, the render callback's panic catch and the output thread's loop
+  stay iOS-only and untested on the host; `Routing`, `Drain`, `fill` and the buffer list's pointer
+  handling are proved
 - [S · blocked: Xcode's processor] `ios/app-intents.py` is held by a fixture of `Siri.swift`'s const
   values and its own output, never by Apple's: it was compared with `appintentsmetadataprocessor`
   by hand, on another xtool app's fixtures (a plain intent, a `String` parameter, App Shortcuts),

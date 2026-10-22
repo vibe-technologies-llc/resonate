@@ -26,6 +26,7 @@ resonate-codec.workspace = true
 resonate-core.workspace = true
 resonate-engine.workspace = true
 resonate-eq.workspace = true
+objc2-core-audio-types.workspace = true
 rusqlite.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
@@ -38,7 +39,6 @@ oboe.workspace = true
 
 [target.'cfg(target_os = "ios")'.dependencies]
 objc2-audio-toolbox.workspace = true
-objc2-core-audio-types.workspace = true
 
 [lints.rust]
 unsafe_code = "allow"

@@ -3,6 +3,7 @@ paths:
   - "crates/resonate-engine/**/*.rs"
   - "crates/resonate-mobile/src/output/oboe_render.rs"
   - "crates/resonate-mobile/src/output/remote_io_render.rs"
+  - "crates/resonate-mobile/src/output/remote_io_buffers.rs"
   - "crates/resonate-mobile/src/output/remote_io_fill.rs"
   - "crates/resonate-pipewire/**/*.rs"
   - "crates/resonate-dsp/**/*.rs"
@@ -37,10 +38,12 @@ rest on this discipline alone):
 
 - `resonate-mobile/src/output/oboe_render.rs`: preallocated ring bytes to Oboe stereo float
   frames; short fills zero the rest and publish completion/failure through atomics.
-- `resonate-mobile/src/output/remote_io_render.rs` and `remote_io_fill.rs`: the RemoteIO render
-  callback hands the system's own interleaved float buffer to `Rendering::fill`, which fills it from
-  the source, zeroes a short fill and publishes emptiness through an atomic; it allocates nothing and
-  touches no lock. The fill is on the host as well, so its tests run there.
+- `resonate-mobile/src/output/remote_io_render.rs`, `remote_io_buffers.rs` and `remote_io_fill.rs`:
+  the RemoteIO render callback (`render`, which catches a panic and aborts) hands the system's own
+  interleaved float buffer (`rendered`, reading the buffer list) to `Rendering::fill`, which fills it
+  from the source, zeroes a short fill and publishes emptiness through an atomic; it allocates
+  nothing and touches no lock. The buffer handling and the fill are on the host as well, so their
+  tests run there.
 - `resonate-engine/src/ring.rs`: what the graph pulls from; fader and trim scale in place, fade
   state from atomics, each rendered level's start from a preallocated SPSC queue.
 - `resonate-pipewire/src/process.rs`: the callback: playback `Cycle`, capture `Hearing` (reads each

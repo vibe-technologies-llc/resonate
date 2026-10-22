@@ -11,15 +11,12 @@ use std::{
     panic::{self, AssertUnwindSafe},
     process,
     ptr::NonNull,
-    slice,
 };
 
 use objc2_audio_toolbox::AudioUnitRenderActionFlags;
 use objc2_core_audio_types::{AudioBufferList, AudioTimeStamp};
 
-use super::remote_io_fill::Rendering;
-
-const RENDERED: i32 = 0;
+use super::remote_io_buffers::rendered;
 
 pub(crate) unsafe extern "C-unwind" fn render(
     rendering: NonNull<c_void>,
@@ -32,18 +29,4 @@ pub(crate) unsafe extern "C-unwind" fn render(
     let rendered =
         panic::catch_unwind(AssertUnwindSafe(|| unsafe { rendered(rendering, buffers) }));
     rendered.unwrap_or_else(|_| process::abort())
-}
-
-unsafe fn rendered(rendering: NonNull<c_void>, buffers: *mut AudioBufferList) -> i32 {
-    let rendering = unsafe { rendering.cast::<Rendering>().as_mut() };
-    let Some(buffers) = (unsafe { buffers.as_mut() }) else {
-        return RENDERED;
-    };
-    let [buffer] = &mut buffers.mBuffers;
-    let Some(data) = NonNull::new(buffer.mData.cast::<u8>()) else {
-        return RENDERED;
-    };
-    let bytes = unsafe { slice::from_raw_parts_mut(data.as_ptr(), buffer.mDataByteSize as usize) };
-    rendering.fill(bytes);
-    RENDERED
 }

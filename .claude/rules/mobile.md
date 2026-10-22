@@ -23,8 +23,8 @@ two. **An owned descriptor**: the front end hands Rust a descriptor it opened (A
 negative descriptor is refused. The same transfer (`downloads::fresh_destination`) owns a newly
 created download or received-song destination, never an existing music document. **The iOS audio
 unit**: `output/remote_io.rs` creates, configures and disposes a RemoteIO unit through
-`objc2-audio-toolbox`, and `output/remote_io_render.rs` reads the buffer list the system hands its
-render callback and passes the bytes on to `Rendering::fill`. Domain, codec, DSP, engine and all other crates remain under `forbid`. New errors
+`objc2-audio-toolbox`, and `output/remote_io_render.rs` is the render callback, whose `output/remote_io_buffers.rs` reads the
+buffer list the system hands it and passes the bytes on to `Rendering::fill`. Domain, codec, DSP, engine and all other crates remain under `forbid`. New errors
 are typed and bounded as in `errors.md`.
 
 ## A panic is an error on the phones
@@ -199,9 +199,12 @@ phones* (`equaliser.rs`); `playback.rs` sends it with the other sound preference
   `output/remote_io_state.rs` holds `Routing` (the rate, latency and sink-change atomics and channels)
   and `Drain` (when a drain is over: the latency after the ring empties, never under 20 ms, restarted
   by a source that fills again), `output/remote_io_fill.rs` holds `Rendering::fill` (a short fill
-  zeroed, the `empty` flag set exactly when the source gave nothing). `remote_io.rs` and
-  `remote_io_render.rs` are `cfg(target_os = "ios")` and keep only the unit, the callback's pointers
-  and the output thread's loop (`a_short_fill_zeroes_the_rest_and_leaves_the_flag_down`,
+  zeroed, the `empty` flag set exactly when the source gave nothing). `remote_io_buffers.rs` reads the system's buffer list
+  (`objc2-core-audio-types`, plain C structs that build on the host, so the pointer handling is proved
+  there: `the_systems_buffer_is_filled_up_to_the_bytes_it_declares_and_no_further`, a null list, a
+  buffer with no memory, one declaring no bytes, the list's size and alignment). `remote_io.rs` and
+  `remote_io_render.rs` are `cfg(target_os = "ios")` and keep only the unit, the callback's panic
+  catch and the output thread's loop (`a_short_fill_zeroes_the_rest_and_leaves_the_flag_down`,
   `a_drain_waits_the_latency_after_the_ring_empties_and_then_settles_once`,
   `a_moved_rate_is_announced_once_and_an_unmoved_one_is_not`). Swift reports the rate and the output latency (`outputLatency + ioBufferDuration`)
   through `output_route_changed` (after asking the session for the playing song's rate, `ios.md`'s

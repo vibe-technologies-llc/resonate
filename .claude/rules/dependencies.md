@@ -152,8 +152,11 @@ here, add it there.
 - **`uniffi`** 0.32.2: the mobile boundary's scaffolding (Kotlin and Swift), with `cli` only in
   `resonate-bindgen`.
   **`oboe`** 0.6.1 (`shared-stdcxx`): Android-target-only; NDK libc++ ships in the APK.
-  **`objc2-audio-toolbox`** / **`objc2-core-audio-types`** 0.3.2: iOS-target-only, pure-Rust
-  framework bindings for the RemoteIO output, only the features it calls.
+  **`objc2-audio-toolbox`** 0.3.2: iOS-target-only, pure-Rust framework bindings for the RemoteIO
+  output, only the features it calls. **`objc2-core-audio-types`** 0.3.2 with `CoreAudioBaseTypes`
+  alone is plain C structs and builds on every host, so `resonate-mobile` takes it everywhere (the
+  buffer list's tests run on the host); `objc2` itself, which refuses a non-Apple target, comes in
+  only with the toolbox.
 
 ## C-backed crates kept, and duplicates third parties force
 
