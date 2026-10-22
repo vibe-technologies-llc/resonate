@@ -28,7 +28,9 @@ paths:
 ## Android
 
 The Android job builds the Compose APK against compile SDK 37, runs Android lint and the JVM tests,
-then instruments an API 36 x86_64 emulator, Compose UI tests included. The Gradle task compiles ARM64 and x86_64 Rust libraries with baseline CPU
+builds the release variant (R8, ARM64 alone) and holds it to `android/check-release.py` (16 KB zip
+and ELF alignment, no other ABI, the JNA and boundary classes R8 must keep by name), then instruments
+x86_64 emulators at API 33, the minimum, and API 36, Compose UI tests included. The Gradle task compiles ARM64 and x86_64 Rust libraries with baseline CPU
 settings, NDK 28.2 and 16 KB ELF alignment. It runs the host binding tool against Android ELF
 metadata, so no Linux sound server or GUI libraries are needed for the Android build.
 

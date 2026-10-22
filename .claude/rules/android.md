@@ -53,8 +53,8 @@ The four absent `java.awt` types referenced by JNA's desktop-only helpers have e
 suppressions; no missing Android or native-boundary type is suppressed.
 Keeping only Java references is insufficient: renaming `Pointer.peer` makes JNA's `initIDs`
 fail at startup with `UnsatisfiedLinkError`, before the Rust player opens. Debug startup cannot
-verify these rules; release validation checks the R8 configuration and DEX field names, then
-cold-starts the signed release APK through native player initialization.
+verify these rules; CI checks the release APK's DEX for the kept names (`check-release.py`), and
+release validation by hand cold-starts the signed release APK through native player initialization.
 
 The native boundary is `resonate-mobile`, shared with iOS (`mobile.md`). On Android the owned
 descriptor arrives detached from Kotlin's `ParcelFileDescriptor`. Kotlin bindings are generated
@@ -824,8 +824,8 @@ cancellation, encrypted account storage, pinned favourites and player hearts, co
 playlist picker/edit/undo and repeated-row playback, tool navigation, Activity recreation and
 background controls through Media3, notification artwork and opening, task-dismissal pause, audio
 focus lost and regained, the output becoming noisy, a controller's queue edits, the service's
-destruction giving the repository back and a failing poll tick said once. CI uses an API 36 x86_64
-emulator; the local Pixel_10_Pro AVD additionally exercises 16 KB pages. Real hardware
+destruction giving the repository back and a failing poll tick said once. CI uses API 33 (the minimum) and API 36 x86_64
+emulators; the local Pixel_10_Pro AVD additionally exercises 16 KB pages. Real hardware
 remains necessary for Bluetooth, USB DAC and device-fidelity claims. UI checks clear the
 accessibility cache before each poll: an API 36 screenshot can show current controls while the
 cached tree still reports the preceding value. All write tests use copies.

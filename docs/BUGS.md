@@ -13,8 +13,3 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   mono/stereo switch of a low-bitrate podcast; `opus-rs` 0.1.37 refuses a packet whose TOC channel
   bit differs from the decoder's (`Channel count mismatch`) and keeps no stream-channel state a
   mono packet could be decoded against, so the fix is a decoder that switches (upstream or vendored)
-
-## Android
-- [S] The release variant is never built in CI, so R8, the release packaging and 16 KB alignment
-  are unchecked, and the emulator job runs API 36 alone though the minimum is 33
-
