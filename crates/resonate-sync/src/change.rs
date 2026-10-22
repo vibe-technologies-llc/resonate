@@ -23,6 +23,17 @@ pub enum Platform {
     Other,
 }
 
+impl Platform {
+    pub fn label(self) -> &'static str {
+        match self {
+            Platform::Linux => "Linux",
+            Platform::Android => "Android",
+            Platform::Ios => "iOS",
+            Platform::Other => "Device",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeviceNote {
     pub device: DeviceId,

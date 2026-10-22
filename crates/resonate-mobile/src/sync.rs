@@ -194,6 +194,11 @@ pub fn sync_new_code() -> Result<String> {
 }
 
 #[uniffi::export]
+pub fn sync_device_called(host: String) -> String {
+    Me::called("", &host, THIS_PLATFORM, DEVICE_NAME).name
+}
+
+#[uniffi::export]
 pub fn sync_reads_as_a_code(code: String) -> bool {
     SyncKey::from_code(&code).is_ok()
 }
@@ -547,12 +552,7 @@ impl MobilePlayer {
             },
             trusted: None,
             key,
-            me: Me {
-                name: Some(config.device.trim().to_owned())
-                    .filter(|name| !name.is_empty())
-                    .unwrap_or_else(|| DEVICE_NAME.to_owned()),
-                platform: THIS_PLATFORM,
-            },
+            me: Me::called(&config.device, "", THIS_PLATFORM, DEVICE_NAME),
             follow: Follow {
                 favourites: config.favourites,
                 playlists: config.playlists,

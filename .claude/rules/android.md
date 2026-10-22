@@ -787,7 +787,7 @@ file name drops `/ \ ? : * " < > |` and control characters, so a FAT, exFAT or S
 `sync_forget_device` takes; `HandedOff.id` likewise, and `sync_continue_from` and
 `sync_fetch_missing` take the id (a name is still read where no id matches). The sync screen's
 pairing code stays hidden until *Show pairing code* is pressed; its text is absent from the
-accessibility tree while hidden. `song_uris` lists every document's URI, hidden ones included.
+accessibility tree while hidden. **A computer is paired by the system camera or any QR scanner**: the manifest's `MainActivity` filter takes `VIEW` of `resonate://pair` (`DEFAULT` and `BROWSABLE`, which a scanner needs), `opening` hands the link to `LibraryFeatures.offerPairing` (`sync_code_in_link`), and `PairingOffer` asks *Join these devices?*, naming the code, before `joinSync` (which also turns sync on; one made before the settings are read waits in `joinWaiting`) and opens the sync page, as iOS does. Resonate never touches the camera. `song_uris` lists every document's URI, hidden ones included.
 
 `ACCESS_NETWORK_STATE` lets the default-network callback report `NET_CAPABILITY_NOT_METERED`; songs
 move only on an unmetered network unless mobile data is allowed. While sync runs Kotlin holds a

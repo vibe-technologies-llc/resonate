@@ -690,3 +690,14 @@ fn a_ledger_kept_without_a_server_owes_everything_again_once_it_has_one() {
     assert!(!once_more);
     assert_eq!(desk.ledger.owed_count().expect("owed"), 0);
 }
+
+#[test]
+fn a_device_unnamed_is_called_after_its_host_and_platform_and_a_chosen_name_wins() {
+    let hosted = Me::called("", "vincent\n", Platform::Linux, "Linux");
+    let chosen = Me::called("  Desk ", "vincent", Platform::Linux, "Linux");
+    let alone = Me::called(" ", "\n", Platform::Android, "Android");
+
+    assert_eq!(hosted.name, "vincent (Linux)");
+    assert_eq!(chosen.name, "Desk");
+    assert_eq!(alone.name, "Android");
+}

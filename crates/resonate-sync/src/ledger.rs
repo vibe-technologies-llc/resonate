@@ -147,6 +147,17 @@ pub struct Me {
     pub platform: Platform,
 }
 
+impl Me {
+    pub fn called(chosen: &str, host: &str, platform: Platform, alone: &str) -> Me {
+        let name = match (chosen.trim(), host.trim()) {
+            ("", "") => alone.to_owned(),
+            ("", host) => format!("{host} ({})", platform.label()),
+            (chosen, _) => chosen.to_owned(),
+        };
+        Me { name, platform }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Follow {
     pub favourites: bool,

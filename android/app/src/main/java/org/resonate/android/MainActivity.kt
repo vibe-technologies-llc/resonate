@@ -34,6 +34,8 @@ import org.resonate.android.ui.Playback
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.ResonateApp
 
+private const val PAIRING_SCHEME = "resonate"
+
 @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
 class MainActivity : ComponentActivity(), Host {
     private var controller: MediaController? = null
@@ -97,8 +99,12 @@ class MainActivity : ComponentActivity(), Host {
     private fun opening(intent: Intent) {
         when (intent.action) {
             Intent.ACTION_VIEW -> {
-                val song = intent.data ?: return
-                waitingToPlay = { listOf(library.openedFiles.track(song)) }
+                val opened = intent.data ?: return
+                if (opened.scheme == PAIRING_SCHEME) {
+                    library.features.offerPairing(opened.toString())
+                    return
+                }
+                waitingToPlay = { listOf(library.openedFiles.track(opened)) }
             }
             MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH -> {
                 val asked = intent.getStringExtra(SearchManager.QUERY).orEmpty()

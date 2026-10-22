@@ -27,8 +27,8 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   `Debug` prints `<withheld>`; `config.rs` withholds `sync-key`. **The code travels as a link
   too**: `SyncKey::link` is `PAIRING_LINK` (`resonate://pair/`) and the code, `from_link` reads it
   back or a bare code (`a_pairing_link_reads_back_as_its_key_and_a_bare_code_reads_too`). The
-  desktop draws it as a QR code (`ui.md`); the iPhone opens it from the system camera through its
-  `resonate` URL scheme (`ios.md`), so no app of ours asks for the camera.
+  desktop draws it as a QR code (`ui.md`); the iPhone and Android open it from the system camera through
+  their `resonate` URL scheme (`ios.md`, `android.md`), so no app of ours asks for the camera.
 - **HKDF-SHA256 (salt `resonate-sync/1`) derives everything, one `info` each**: `space` (16 bytes,
   the `SpaceId` the server files records under), `token` (32 bytes, the bearer the server keeps
   the SHA-256 of), `seal` (ChaCha20-Poly1305 key), `peer` (an Ed25519 seed). The server sees a
@@ -50,6 +50,7 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   4-byte big-endian length and at most `LARGEST_FRAME` (32 MiB) on one bidirectional QUIC stream.
   `fuzz/fuzz_targets/sync.rs` decodes every frame and bundle and requires a decoded one to read back
   as itself.
+- **A device left unnamed is called `<host> (<platform>)`** (`Me::called`: a chosen name wins, else the host and `Platform::label`, else the platform's own word). The desktop's host is the kernel's hostname, Android's the user's device name (`Settings.Global.device_name`, else `Build.MODEL`) through `sync_device_called`; iOS withholds the device's name, so an iPhone stays `iPhone`.
 - **A device names its platform in one byte**: Linux 0, Android 1, iOS 2, other 255; a tag a later
   build adds reads as `Other` (`every_platform_reads_back_and_a_later_one_reads_as_other`), and the
   ledger keeps the same codes.

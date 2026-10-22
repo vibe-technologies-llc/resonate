@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.rounded.GroupAdd
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Search
@@ -68,6 +69,7 @@ import org.resonate.android.ui.player.MiniPlayer
 import org.resonate.android.ui.player.NowPlaying
 import org.resonate.android.ui.player.PlayerViewModel
 import org.resonate.android.ui.player.rememberPlayerExpansion
+import org.resonate.android.ui.settings.ConfirmDialog
 import org.resonate.android.ui.theme.ResonateTheme
 
 private class Destination(val label: String, val selected: ImageVector, val unselected: ImageVector)
@@ -179,9 +181,36 @@ fun ResonateApp(resonate: Resonate) {
                 }
                 if (expansion.shown) NowPlaying(player, expansion)
                 SheetHost()
+                PairingOffer()
             }
         }
     }
+}
+
+@Composable
+private fun PairingOffer() {
+    val resonate = LocalResonate.current
+    val navigator = LocalNavigator.current
+    val features = resonate.features
+    val code by features.pairingOffered.collectAsStateWithLifecycle()
+    val config by features.syncConfig.collectAsStateWithLifecycle()
+    val offered = code ?: return
+    val leaving = config?.key?.isNotEmpty() == true
+    ConfirmDialog(
+        title = "Join these devices?",
+        text =
+            if (leaving)
+                "A link asks this phone to leave the devices it syncs with now and sync with the devices of the code $offered. Join only if that is your code or one you were given."
+            else
+                "A link asks this phone to share its playlists, favourites and history with the devices of the code $offered. Join only if that is your code or one you were given.",
+        confirm = "Join",
+        icon = Icons.Rounded.GroupAdd,
+        onConfirm = {
+            features.joinSync(offered)
+            navigator.open(Screen.Sync)
+        },
+        onDismiss = { features.pairingOffered.value = null },
+    )
 }
 
 private const val SHORT_WINDOW_BELOW_DP = 480

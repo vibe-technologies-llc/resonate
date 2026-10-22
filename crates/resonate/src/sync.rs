@@ -36,6 +36,8 @@ use crate::{Error, Result, config, error::ConfigKey};
 #[cfg(feature = "sync")]
 const DEVICE_NAME: &str = "Linux";
 #[cfg(feature = "sync")]
+const HOST_NAME: &str = "/proc/sys/kernel/hostname";
+#[cfg(feature = "sync")]
 const HANDED_OFF_AT_MOST: usize = 500;
 #[cfg(feature = "sync")]
 const CONNECTED_WITHIN: Duration = Duration::from_secs(15);
@@ -321,13 +323,12 @@ fn started(
         server: server_of(config),
         trusted: config.sync_server_certificate.clone(),
         key,
-        me: Me {
-            name: config
-                .sync_device
-                .clone()
-                .unwrap_or_else(|| DEVICE_NAME.to_owned()),
-            platform: Platform::Linux,
-        },
+        me: Me::called(
+            config.sync_device.as_deref().unwrap_or_default(),
+            &host_name(),
+            Platform::Linux,
+            DEVICE_NAME,
+        ),
         follow,
         ledger: folder.join(LEDGER),
         staging: folder.join(STAGING),
@@ -1123,6 +1124,11 @@ impl resonate_ui::Syncing for Running {
             }
         }
     }
+}
+
+#[cfg(feature = "sync")]
+fn host_name() -> String {
+    fs::read_to_string(HOST_NAME).unwrap_or_default()
 }
 
 #[cfg(all(test, feature = "sync"))]

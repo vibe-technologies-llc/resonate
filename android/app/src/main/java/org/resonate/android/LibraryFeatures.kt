@@ -10,8 +10,10 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.net.wifi.WifiManager
+import android.os.Build
 import android.os.SystemClock
 import android.provider.DocumentsContract
+import android.provider.Settings
 import android.util.LruCache
 import java.util.concurrent.atomic.AtomicLong
 import org.json.JSONArray
@@ -68,6 +70,8 @@ import org.resonate.android.nativecore.SyncedDevice
 import org.resonate.android.nativecore.TidalAuthorization
 import org.resonate.android.nativecore.Track
 import org.resonate.android.nativecore.parseEqProfile
+import org.resonate.android.nativecore.syncCodeInLink
+import org.resonate.android.nativecore.syncDeviceCalled
 import org.resonate.android.nativecore.syncNewCode
 
 data class AudioOutput(
@@ -109,6 +113,7 @@ data class RefusedLanding(val until: Long, val tries: Int)
 private const val LANDING_PAUSE_MS = 60000L
 private const val LANDING_TRIES_AT_MOST = 3
 private const val MISSING_CHECKED_EVERY_MS = 300000L
+private const val DEVICE_NAME_SETTING = "device_name"
 private const val RECENT_SEARCHES_KEY = "recent-searches"
 private const val REMEMBER_SEARCHES_KEY = "remember-searches"
 private const val RECENT_SEARCHES_KEPT = 10
@@ -232,6 +237,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val syncHandoffs = MutableStateFlow<List<HandedOff>>(emptyList())
     val syncFolder = MutableStateFlow(settings.getString("sync-folder", null))
     val syncNotice = MutableStateFlow<String?>(null)
+    val pairingOffered = MutableStateFlow<String?>(null)
+    @Volatile private var joinWaiting: String? = null
     val playlistSync = MutableStateFlow<PlaylistSync?>(null)
     val transferring = MutableStateFlow(false)
     val transferServiceRunning = MutableStateFlow(false)
@@ -368,6 +375,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     meteredAllowed = false,
                 )
             }
+        joinWaiting?.let(::joinSync)
         watchNetwork()
         syncPolling?.cancel()
         syncPolling = scope.launch { pollSync() }
@@ -394,8 +402,24 @@ class LibraryFeatures(private val context: Context, private val library: Library
     }
 
     fun joinSync(code: String) {
-        val config = syncConfig.value ?: return
-        saveSync(config.copy(key = code.trim()))
+        val config = syncConfig.value
+        if (config == null) {
+            joinWaiting = code
+            library.notice("Joining as soon as this phone's settings are read")
+            return
+        }
+        joinWaiting = null
+        saveSync(config.copy(key = code.trim(), enabled = true))
+    }
+
+    fun offerPairing(link: String) {
+        val code = syncCodeInLink(link)
+        when {
+            code == null -> library.notice("That link holds no pairing code")
+            code == syncStatus.value?.code || code == syncConfig.value?.key ->
+                library.notice("This phone already syncs with those devices")
+            else -> pairingOffered.value = code
+        }
     }
 
     fun newSyncGroup() = work { native ->
@@ -464,6 +488,13 @@ class LibraryFeatures(private val context: Context, private val library: Library
         if (handoff.playing) withContext(Dispatchers.Main) { play() }
     }
 
+    private fun deviceCalled(): String {
+        val named =
+            Settings.Global.getString(context.contentResolver, DEVICE_NAME_SETTING)
+                ?.takeIf { it.isNotBlank() }
+        return syncDeviceCalled(named ?: Build.MODEL.orEmpty())
+    }
+
     private suspend fun applySync(native: MobilePlayer) {
         syncAccess.withLock { syncWith(native) }
     }
@@ -472,7 +503,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
         val config = syncConfig.value ?: return
         try {
             val status =
-                if (config.enabled && (online.value || config.nearbyOnly)) native.syncStart(config)
+                if (config.enabled && (online.value || config.nearbyOnly))
+                    native.syncStart(config.copy(device = config.device.ifBlank { deviceCalled() }))
                 else {
                     native.syncStop()
                     native.syncStatus()
