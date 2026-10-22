@@ -495,14 +495,14 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   still stamps as its playlist.
 - **A queue edit costs what it moves.** A row is a `Held`: its `Arc<QueueItem>`, its *place*
   (the load-order count it arrived at: a load or restore numbers its rows from 0, every arrival takes
-  the next, nothing renumbers) and its `RowStamp`. `order`, `unshuffled` and `next` are persistent
+  the next, nothing renumbers) and its `RowStamp`. `order` and `next` are persistent
   `imbl::Vector<Held>`s, never indices into a row list, so a removal takes its rows out where the
   drawn positions say (a removed or heard-next row shifts nobody's index; a heard play-next row is
-  `pop_front`); with shuffle off `unshuffled` is `order`'s clone, an O(1) share. **The publish shares
+  `pop_front`); `unshuffled` is a `Standing`, below. **The publish shares
   the queue**: `Queue::published` splits `order` at `after` and appends `next` and the rest into a
   `QueueRows` (O(log n), every node shared with the queue and earlier publishes:
   `a_row_published_twice_is_the_same_row_and_not_a_copy`), and hands the list order over as the
-  `unshuffled` and `next` vectors themselves (`Listing`), which `Queued::in_list_order` reads on the
+  `unshuffled` standing and the `next` vector themselves (`Listing`), which `Queued::in_list_order` reads on the
   reader's thread. `QueueRows::in_load_order` ranks the places for `Keeping` there too. **The stamps
   are sums**: core's `QueueStamp` is the wrapping sum of a `RowStamp` (SipHash of the row and its
   place) a row, so a row arriving adds its term and one leaving takes its own away, and `Queued::stamp`
@@ -517,15 +517,22 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   from the row before its landing (`waits_beside`: a row heard or played next before it makes it
   play next, a span holding the heard row keeps every row's own side), splices the runs back at the
   landing and derives `after` from where the heard row stands; a row that changes side adds or takes
-  away its stamp from `playing_from`, and with shuffle off `unshuffled` is `order`'s clone again.
+  away its stamp from `playing_from`, and with shuffle off there is no list order to keep.
   Under shuffle a drag inside the play order leaves `unshuffled` untouched.
   `a_drag_spliced_in_the_vectors_leaves_every_queue_the_rebuild_would` holds it to the rebuild
   (`flagged`, `split`, which `reorder` still is) for every span and landing over every seat and
-  shuffle state. What stays linear: `reorder` rebuilds the three vectors from every row, and under
-  shuffle an insert, a removal and a drag that moves rows between the play order and the rows played
-  next walk `unshuffled` for where a row stands (the list order has no key a row's position could be
-  found by: a place-to-position index needs order-maintenance labels or a counted tree, which
-  `imbl` does not carry).
+  shuffle state. What stays linear: `reorder` rebuilds the three
+  vectors from every row. **The list order a shuffle leaves is `Standing`, not a vector**: an
+  `OrdMap` of rows by *label* (a `u64` growing along the list) beside an `OrdMap` of place to label,
+  both persistent, so the publish still shares them (`Listing`) and `Queued::in_list_order` reads the
+  rows before and after the last heard one off a label range. A row's position is never asked for: an
+  insert anchors on the row before it (`Anchor`) and takes labels evenly between that row's and the
+  next one's, a removal drops a place's label, a drag between the play order and the rows played next
+  (`unshuffle_moved`) touches only the rows it moved. Where fewer than `ROOM_BETWEEN_LABELS` labels
+  lie between neighbours, `respace` spreads the nearest rows (a window doubling until it has room)
+  over the labels around them; a new `Standing` spaces its rows across the whole range. With
+  shuffle off `Queue::unshuffled` is empty (the play order is the list order) and turning shuffle
+  on builds it from `order`. Held to a list model by `rows_inserted_at_one_spot_without_end_stand_where_a_list_would_put_them`.
 - **What was queued is apart from what plays.** `order` = loaded album or playlist (only list
   shuffle, a `RepeatMode::Queue` wrap and unshuffling touch); `next` = rows somebody asked to hear,
   in asking order; drawn = `order[..after] ++ next ++ order[after..]`. `next` is exhausted before
@@ -537,8 +544,8 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   queued one, else `order`; nothing heard: all land in `order`). `play: true` goes through
   `Queue::insert_to_hear`, which jumps to the run's first row and, where the run landed in `next`,
   keeps the rest of it right behind (rows already queued play after the run), then starts it as
-  `Engine::hear` (`Command::JumpTo`) does, so they cannot disagree about starting a row. `Queue::unshuffled` keeps the play order with shuffle off: a drag,
-  sort or play-next while unshuffled edits it with `order`; not kept across runs.
+  `Engine::hear` (`Command::JumpTo`) does, so they cannot disagree about starting a row. `Queue::unshuffled` keeps the list order while shuffled; with shuffle off a drag,
+  sort or play-next edits `order` alone; not kept across runs.
 - **Coming back is a command.** `Command::Resume` carries a `Resumption` (rows as playing, where
   each was loaded, row, frame, shuffled or not); sole caller of `Engine::start(at)` with other than
   `Frames::ZERO`. A frame past the row's end opens it at its start. It opens the row and stops
