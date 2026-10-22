@@ -589,11 +589,7 @@ final class AmbientField: NSObject {
 
     func join(_ view: AmbientLayerView) {
         views.add(view)
-        if let latest, latest.size == wanted {
-            view.show(latest.image)
-        } else {
-            drawNow()
-        }
+        showWhatIsHeld(on: view)
         schedule()
     }
 
@@ -603,10 +599,18 @@ final class AmbientField: NSObject {
     }
 
     func laidOut(_ view: AmbientLayerView) {
-        if let latest, latest.size == wanted {
-            view.show(latest.image)
-        } else {
+        showWhatIsHeld(on: view)
+    }
+
+    private func showWhatIsHeld(on view: AmbientLayerView) {
+        guard let latest else {
             drawNow()
+            return
+        }
+        view.show(latest.image)
+        if latest.size != wanted {
+            owed = true
+            schedule()
         }
     }
 

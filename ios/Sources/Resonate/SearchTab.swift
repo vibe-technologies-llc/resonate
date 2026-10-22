@@ -7,6 +7,7 @@ struct SearchTab: View {
     @Environment(Navigation.self) private var navigation
     @State private var seeAll: SearchScope?
     @State private var actions = OnlineSongActions()
+    @FocusState private var typing: Bool
 
     var body: some View {
         let search = library.tabSearch
@@ -34,6 +35,9 @@ struct SearchTab: View {
         .listStyle(.plain)
         .scrollDismissesKeyboard(.immediately)
         .searchable(text: Binding(get: { search.text }, set: enter), prompt: online ? "Your library, online or a link" : "Search your library")
+        .searchFocused($typing)
+        .onChange(of: typing) { _, now in navigation.searchFocused = now }
+        .onDisappear { navigation.searchFocused = false }
         .textInputAutocapitalization(.never)
         .autocorrectionDisabled()
         .onSubmit(of: .search) { remember(search) }

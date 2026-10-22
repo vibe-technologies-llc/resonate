@@ -941,8 +941,10 @@ in; it never opens on another colour first.
   `CGImage`, rendered by the one `AmbientField` at scale 1 for the largest page in a window, so a
   pushed page, a tab switched to and a page popped back to show exactly the frame the page before
   showed, from their first frame: one picture is drawn per tick however many pages hold it, a page
-  joining a window takes the latest picture at once (rendering one synchronously only where none of
-  its size exists), and no page holds a Metal layer or display link of its own. It ticks on one
+  joining a window takes the latest picture at once (rendering one synchronously only where none
+  exists at all; a page laid out at another size, as the keyboard or the search field's morph does,
+  shows the held picture, which fills its bounds, and owes a draw at the new size on the display
+  link, since a synchronous draw waits on the GPU on the main thread), and no page holds a Metal layer or display link of its own. It ticks on one
   `CADisplayLink` at 10 fps (5 in Low Power Mode or a serious thermal state): the field drifts at
   18 % speed, under two pixels a frame, so a faster tick only made every glass surface over it
   composite again. It never reads the transport, so playing or pausing redraws no page's
@@ -954,7 +956,7 @@ in; it never opens on another colour first.
   where it stands (`AmbientMotion.frozen`), so it neither jumps to another frame when Now Playing
   opens nor when it closes; *Moving background* off, or Reduce Motion, draws the still moment.
   `ThemedPage` on each stack's root and every `DestinationView` hides the scroll content background
-  and sets that background. It stays frozen too (no display link, no render) while a page that draws its own backdrop is the top of the tab's stack (`Navigation.coversAmbient`: an album, artist, playlist, lyrics or visualizer page, as well as Now Playing). `AppearanceState` keeps three settings in the `appearance` defaults,
+  and sets that background. It stays frozen too (no display link, no render) while a page that draws its own backdrop is the top of the tab's stack (`Navigation.coversAmbient`: an album, artist, playlist, lyrics or visualizer page, as well as Now Playing and the Search tab's field while it has focus, `Navigation.searchFocused`, so the field is not redrawn under the search field's animation and the keyboard). `AppearanceState` keeps three settings in the `appearance` defaults,
   edited in Settings › Appearance › Background (`BackgroundView`, `Destination.background`, a page of
   its own beside `AppearanceView`): `themedBackground` (on), `movingBackground` (on; off draws the
   still frame), `backgroundStrength` (0.4). A plain list's rows draw their own opaque fill, so each
