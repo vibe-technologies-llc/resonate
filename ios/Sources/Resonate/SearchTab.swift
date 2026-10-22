@@ -33,7 +33,7 @@ struct SearchTab: View {
         }
         .listStyle(.plain)
         .scrollDismissesKeyboard(.immediately)
-        .searchable(text: Binding(get: { search.text }, set: enter), prompt: online ? "Your library, online or a link" : "Search your library")
+        .searchable(text: Binding(get: { search.text }, set: enter), prompt: "Search")
         .textInputAutocapitalization(.never)
         .autocorrectionDisabled()
         .onSubmit(of: .search) { remember(search) }
