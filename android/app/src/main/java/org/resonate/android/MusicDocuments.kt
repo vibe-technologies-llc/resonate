@@ -7,8 +7,13 @@ import android.net.Uri
 import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.MediaStore
+import android.util.Log
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 object MusicDocuments {
+    const val TREE_DEPTH_AT_MOST = 32
+
     val downloads: Uri = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
 
     fun prefix(folder: Uri): String =
@@ -50,6 +55,42 @@ object MusicDocuments {
                             if (cursor.isNull(3)) 0L else cursor.getLong(3) * 1000L,
                         )
                     )
+                }
+            }
+        }
+    }
+
+    suspend fun listed(context: Context, folder: Uri): List<String> {
+        if (folder == downloads) return downloadedAudio(context).map { it.uri.toString() }
+        val pending = ArrayDeque<Pair<String, Int>>()
+        pending.add(DocumentsContract.getTreeDocumentId(folder) to 0)
+        return buildList {
+            while (pending.isNotEmpty()) {
+                currentCoroutineContext().ensureActive()
+                val (parent, depth) = pending.removeFirst()
+                val children = DocumentsContract.buildChildDocumentsUriUsingTree(folder, parent)
+                val columns =
+                    arrayOf(
+                        DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                        DocumentsContract.Document.COLUMN_MIME_TYPE,
+                    )
+                try {
+                    context.contentResolver.query(children, columns, null, null, null)?.use { cursor
+                        ->
+                        while (cursor.moveToNext()) {
+                            val id = cursor.getString(0)
+                            if (cursor.getString(1) == DocumentsContract.Document.MIME_TYPE_DIR) {
+                                if (depth < TREE_DEPTH_AT_MOST) pending.add(id to depth + 1)
+                            } else {
+                                add(
+                                    DocumentsContract.buildDocumentUriUsingTree(folder, id)
+                                        .toString()
+                                )
+                            }
+                        }
+                    }
+                } catch (failure: Exception) {
+                    Log.w("Resonate", "A folder could not be listed", failure)
                 }
             }
         }

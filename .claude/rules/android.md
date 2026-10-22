@@ -387,7 +387,8 @@ MusicBrainz ids. Embedded pictures precede the folder's cover/folder/front JPEG 
 The boundary refuses past the same bound itself (`keep_sidecar_lyrics`, `keep_lyric_text`:
 `LyricsTooLarge`), as `keep_folder_cover` does past 8 MiB and `recognise_heard` past 30 s of
 samples at 192 kHz (`ClipTooLong`), so a front end's own cap is not the only one. A bad
-companion does not refuse playable audio. Bitmap caches use 32 MiB and decode to at most 1024
+companion does not refuse playable audio. A directory's cover crosses the boundary once, for every
+song the scan indexed there (`keep_folder_cover`), not once a song. Bitmap caches use 32 MiB and decode to at most 1024
 pixels per side after checking dimensions. Albums group by title and album artist, falling back
 to the tagged artist. Songs resolve by id through the repository's index (`findTrack`), not a scan of the catalog per
 request. A song's album page opens by `album_key` (`albumKey`), so a song with
@@ -399,9 +400,11 @@ untouched, and hides the songs under a tree (`hide_songs_under` its prefix, `Mus
 
 **A song whose file has gone is hidden, as on iOS** (`LibraryFeatures.forgetMissing`): when the
 Activity comes forward (at most every five minutes, and not during a scan) and after a scan that
-failed on no song, `hide_missing_songs` is given the prefixes of the readable folders (a tree whose
+failed on no song, `hide_unlisted_songs` is given the prefixes of the readable folders (a tree whose
 root answers a query, and MediaStore's Files collection while Downloads is on), so an unreadable
-grant never hides its songs. A pass that hid songs reads the catalog again, reloads the open
+grant never hides its songs, and the documents those folders list (`MusicDocuments.listed`: one
+query a directory, not one open a song): only a song the listing does not show is opened, so
+`NotFound` still decides, and a listing that fails part-way costs opens, never a wrong hiding. A pass that hid songs reads the catalog again, reloads the open
 playlist and says *N songs whose files are gone were hidden*; one that fails is reported once per
 distinct text. The queue drops hidden rows through the boundary's own `left_the_queue`.
 

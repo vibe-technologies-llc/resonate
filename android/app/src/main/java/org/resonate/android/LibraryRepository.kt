@@ -427,7 +427,8 @@ class LibraryRepository(private val context: Context) {
                             val uri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
                             val lower = name.lowercase(java.util.Locale.ROOT)
                             if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
-                                if (depth < 32) pending.add(id to depth + 1)
+                                if (depth < MusicDocuments.TREE_DEPTH_AT_MOST)
+                                    pending.add(id to depth + 1)
                             } else if (lower.substringAfterLast('.', "") in extensions)
                                 audio.add(
                                     ScannedAudio(
@@ -439,31 +440,15 @@ class LibraryRepository(private val context: Context) {
                                 )
                             else if (lower.endsWith(".lrc"))
                                 sidecars[lower.removeSuffix(".lrc")] = uri
-                            else if (
-                                lower in
-                                    listOf(
-                                        "cover.jpg",
-                                        "folder.jpg",
-                                        "front.jpg",
-                                        "cover.png",
-                                        "folder.png",
-                                        "front.png",
-                                    )
-                            )
-                                covers[lower] = uri
+                            else if (lower in FOLDER_COVER_NAMES) covers[lower] = uri
                         }
                     }
                     val cover =
-                        listOf(
-                                "cover.jpg",
-                                "cover.png",
-                                "folder.jpg",
-                                "folder.png",
-                                "front.jpg",
-                                "front.png",
-                            )
-                            .firstNotNullOfOrNull { covers[it] }
-                            ?.let { readDocumentWithin(it, 8 * 1024 * 1024) }
+                        if (audio.isEmpty()) null
+                        else
+                            FOLDER_COVER_NAMES.firstNotNullOfOrNull { covers[it] }
+                                ?.let { readDocumentWithin(it, FOLDER_COVER_AT_MOST) }
+                    val covered = ArrayList<ULong>()
                     for ((uri, name, size, modified) in audio) {
                         currentCoroutineContext().ensureActive()
                         try {
@@ -475,8 +460,8 @@ class LibraryRepository(private val context: Context) {
                                     modified,
                                 )
                             indexed++
+                            covered.add(track.id)
                             try {
-                                if (cover != null) native.setArtwork(track.id, cover)
                                 sidecars[
                                         name
                                             .substringBeforeLast('.')
@@ -498,6 +483,13 @@ class LibraryRepository(private val context: Context) {
                             failed++
                         }
                         mutableStatus.value = scanSummary(indexed, failed)
+                    }
+                    if (cover != null && covered.isNotEmpty()) {
+                        try {
+                            native.keepFolderCover(covered, cover)
+                        } catch (failure: Exception) {
+                            Log.w("Resonate", "Folder artwork could not be kept", failure)
+                        }
                     }
                 }
             }
@@ -557,6 +549,16 @@ class LibraryRepository(private val context: Context) {
     companion object {
         private const val POLL_EVERY_MS = 250L
         private const val SAVE_EVERY_TICKS = 20
+        private const val FOLDER_COVER_AT_MOST = 8 * 1024 * 1024
+        private val FOLDER_COVER_NAMES =
+            listOf(
+                "cover.jpg",
+                "cover.png",
+                "folder.jpg",
+                "folder.png",
+                "front.jpg",
+                "front.png",
+            )
         private val extensions by lazy { audioExtensions().toSet() }
     }
 }

@@ -785,14 +785,14 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     }
 
-    private fun readablePrefixes(): List<String> {
+    private fun readableFolders(): List<Uri> {
         val granted =
             context.contentResolver.persistedUriPermissions
                 .filter { it.isReadPermission }
                 .map { it.uri }
         val trees = granted.filter { treeAnswers(it) }
         val downloads = if (downloadsEnabled()) listOf(MusicDocuments.downloads) else emptyList()
-        return (trees + downloads).map { MusicDocuments.prefix(it) }
+        return trees + downloads
     }
 
     private fun treeAnswers(tree: Uri): Boolean =
@@ -823,9 +823,11 @@ class LibraryFeatures(private val context: Context, private val library: Library
         scope.launch {
             try {
                 val native = library.native()
-                val prefixes = readablePrefixes()
-                if (prefixes.isEmpty()) return@launch
-                val changed = native.hideMissingSongs(prefixes)
+                val folders = readableFolders()
+                if (folders.isEmpty()) return@launch
+                val prefixes = folders.map { MusicDocuments.prefix(it) }
+                val listed = folders.flatMap { MusicDocuments.listed(context, it) }
+                val changed = native.hideUnlistedSongs(prefixes, listed)
                 hidingFailure = null
                 afterHiding(native, changed)
             } catch (cancelled: CancellationException) {

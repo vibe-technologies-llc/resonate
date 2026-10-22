@@ -23,8 +23,3 @@ are in [ROADMAP.md](ROADMAP.md).
 ## Android
 - [M] `refresh()` and `reload()` hold the repository's `access` lock for the whole paged read, so the
   poll and every queued transport action wait behind a big library
-- [S] A folder scan reads up to 8 MB of cover per directory and hands it to `set_artwork` for every
-  song of that directory
-- [S] `hide_missing_songs` opens every document under the granted folders (one IPC each) on every
-  foreground, at most every five minutes
-

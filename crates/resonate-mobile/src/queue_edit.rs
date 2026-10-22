@@ -428,6 +428,28 @@ mod tests {
     }
 
     #[test]
+    fn a_document_the_listing_shows_is_not_opened_and_the_rest_are() {
+        let harness = Harness::new();
+        harness.resumed("abcd", 2, 400);
+        for name in ["b", "d"] {
+            fs::remove_file(harness.folder.join(format!("{name}.wav"))).expect("a deletion");
+        }
+        let listed = ['a', 'b', 'c']
+            .map(|name| harness.song(name).uri.clone())
+            .into_iter()
+            .collect();
+
+        let changed = harness
+            .player
+            .hide_unlisted_songs(vec![FOLDER.into()], listed)
+            .expect("hidden");
+
+        assert_eq!(changed.hidden, 1);
+        assert_eq!(changed.left_the_queue, 1);
+        assert_eq!(harness.queued(), "abc");
+    }
+
+    #[test]
     fn a_file_the_provider_refuses_is_not_a_file_that_is_gone() {
         use std::os::unix::fs::PermissionsExt;
 

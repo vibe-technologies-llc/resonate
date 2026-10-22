@@ -40,15 +40,28 @@ pub struct MissingSongs {
 #[uniffi::export]
 impl MobilePlayer {
     pub fn hide_missing_songs(&self, prefixes: Vec<String>) -> Result<MissingSongs> {
+        self.hide_unlisted_songs(prefixes, Vec::new())
+    }
+
+    pub fn hide_unlisted_songs(
+        &self,
+        prefixes: Vec<String>,
+        listed: Vec<String>,
+    ) -> Result<MissingSongs> {
         let documents = self.catalog.documents_under(&prefixes)?;
+        let listed = listed.iter().map(String::as_str).collect::<BTreeSet<_>>();
         let mut hide = Vec::new();
         let mut restore = Vec::new();
         for (id, uri, missing) in documents {
-            let Ok(at) = location(&uri) else { continue };
-            let gone = match self.sources.open(&at) {
-                Ok(_) => false,
-                Err(error) if is_vanished(&error) => true,
-                Err(_) => continue,
+            let gone = if listed.contains(uri.as_str()) {
+                false
+            } else {
+                let Ok(at) = location(&uri) else { continue };
+                match self.sources.open(&at) {
+                    Ok(_) => false,
+                    Err(error) if is_vanished(&error) => true,
+                    Err(_) => continue,
+                }
             };
             if gone && !missing {
                 hide.push(id);
