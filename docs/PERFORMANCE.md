@@ -19,7 +19,3 @@ are in [ROADMAP.md](ROADMAP.md).
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)
-
-## Android
-- [M] `refresh()` and `reload()` hold the repository's `access` lock for the whole paged read, so the
-  poll and every queued transport action wait behind a big library

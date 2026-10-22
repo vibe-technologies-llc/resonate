@@ -113,15 +113,22 @@ class LibraryRepository(private val context: Context) {
 
     internal suspend fun refresh() {
         val native = engine.await()
-        access.withLock {
-            val found = ArrayList<Track>()
-            do {
-                val page = native.filteredTracks(defaultTrackFilter(), found.size.toUInt(), 500u)
-                found.addAll(page)
-            } while (page.size == 500)
-            mutableAllTracks.value = found
-        }
+        mutableAllTracks.value = pagedTracks(native, defaultTrackFilter()) { true }
         reload()
+    }
+
+    private suspend fun pagedTracks(
+        native: MobilePlayer,
+        query: TrackFilter,
+        stillWanted: () -> Boolean,
+    ): List<Track> {
+        val found = ArrayList<Track>()
+        do {
+            val page =
+                access.withLock { native.filteredTracks(query, found.size.toUInt(), PAGE_ROWS) }
+            found.addAll(page)
+        } while (page.size == PAGE_ROWS.toInt() && stillWanted())
+        return found
     }
 
     internal fun notice(message: String) {
@@ -354,14 +361,8 @@ class LibraryRepository(private val context: Context) {
         }
         val query = (currentFilter ?: defaultTrackFilter()).copy(text = search)
         val native = engine.await()
-        access.withLock {
-            val found = ArrayList<Track>()
-            do {
-                val page = native.filteredTracks(query, found.size.toUInt(), 500u)
-                found.addAll(page)
-            } while (page.size == 500)
-            if (request == queryRequest.get()) mutableTracks.value = found
-        }
+        val found = pagedTracks(native, query) { request == queryRequest.get() }
+        if (request == queryRequest.get()) mutableTracks.value = found
     }
 
     fun scan(tree: Uri) {
@@ -549,6 +550,7 @@ class LibraryRepository(private val context: Context) {
     companion object {
         private const val POLL_EVERY_MS = 250L
         private const val SAVE_EVERY_TICKS = 20
+        private const val PAGE_ROWS = 500u
         private const val FOLDER_COVER_AT_MOST = 8 * 1024 * 1024
         private val FOLDER_COVER_NAMES =
             listOf(
