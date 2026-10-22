@@ -723,7 +723,7 @@ final class Library {
         steering.ask()
         nudgePoll()
         change(&steered)
-        if let shown = snapshot {
+        if let shown = snapshot.map(withLiveClock) {
             let expected = steered.applied(to: shown)
             if expected != shown { showSteered(expected) }
         }
@@ -731,6 +731,16 @@ final class Library {
             steering.answer()
             if let failure { report(failure) }
         }
+    }
+
+    private func withLiveClock(_ state: Snapshot) -> Snapshot {
+        var live = state
+        live.positionMs = clock.positionMs
+        live.durationMs = clock.durationMs
+        live.sleepRemainingMs = clock.sleepRemainingMs
+        live.outputRate = clock.outputRate
+        live.underruns = clock.underruns
+        return live
     }
 
     private func showSteered(_ expected: Snapshot) {

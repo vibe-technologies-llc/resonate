@@ -163,6 +163,11 @@ sync seals its records and talks QUIC (TLS) of its own.
   Playing's cover began its spring; only the views that show the position (Now Playing
   slider and times, sleep countdowns, the output page) read the clock, each in a view of its own (Settings' sleep row is `SleepTimerRow` inside `SleepTimerButton`, which alone reads whether a song is loaded, so the list and its search filter are rebuilt by neither a tick nor a song change).
   `snapshot.positionMs` is therefore the position when the snapshot last changed, not the live one.
+  **A steer starts from the live clock, never from `snapshot`'s stale fields**
+  (`Library.withLiveClock`): the optimistic state a pause, play, shuffle or repeat shows is written
+  into the clock too, and built from the snapshot it set the position, length, sleep time, output
+  rate and underruns back to those of the last time something else changed, so the bar and times
+  jumped to an old place (far from the live one after a seek) until the next poll.
 - **A skip shows the song it lands on at once.** Next and previous steer the song (`Steered.song`,
   `Library.neighbour`): the queue row after or before the playing one, the first row when next
   passes the end under a repeat (a skip under repeat-one repeats the queue), at position 0 with its
