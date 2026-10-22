@@ -36,31 +36,41 @@ struct LibraryView: View {
                 ContentUnavailableView.search(text: asked)
                     .listRowSeparator(.hidden)
             }
-            if !playlistsOnly {
-                Picker("Show", selection: $shelf) {
-                    ForEach(Shelf.allCases) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .listRowSeparator(.hidden)
-            }
-            if playlistsOnly || shelf == .all || shelf == .playlists, folded.isEmpty || "favourites".contains(folded) {
+            if playlistsOnly, folded.isEmpty || "favourites".contains(folded) {
                 NavigationLink(value: Destination.favourites) {
                     FavouritesCountRow()
                 }
             }
-            if !playlistsOnly, shelf == .all, folded.isEmpty {
-                NavigationLink(value: Destination.songs) {
-                    SongsCountRow()
+            if !playlistsOnly, folded.isEmpty || "favourites".contains(folded) {
+                Section {
+                    NavigationLink(value: Destination.favourites) {
+                        FavouritesCountRow()
+                    }
+                    if folded.isEmpty {
+                        NavigationLink(value: Destination.songs) {
+                            SongsCountRow()
+                        }
+                        .simultaneousGesture(TapGesture().onEnded {
+                            if library.filtering { library.setFilter(Library.everything) }
+                            navigation.songsGrouping = .songs
+                        })
+                        NavigationLink(value: Destination.suggestions) {
+                            SuggestionsRow()
+                        }
+                        NavigationLink(value: Destination.statistics) {
+                            StatisticsRow()
+                        }
+                    }
                 }
-                .simultaneousGesture(TapGesture().onEnded {
-                    if library.filtering { library.setFilter(Library.everything) }
-                    navigation.songsGrouping = .songs
-                })
-                NavigationLink(value: Destination.suggestions) {
-                    SuggestionsRow()
-                }
-                NavigationLink(value: Destination.statistics) {
-                    StatisticsRow()
+            }
+            if !playlistsOnly {
+                Section {
+                    Picker("Show", selection: $shelf) {
+                        ForEach(Shelf.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
                 }
             }
             if !playlistsOnly, shelf == .all, folded.isEmpty || !playlists.isEmpty {

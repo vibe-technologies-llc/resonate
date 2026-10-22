@@ -626,6 +626,10 @@ every route change (a pair of headphones at the same rate included), not from th
   **Its rows' icons are one kind of tile** (`ShelfTile`: a white symbol at `.title2` centred on a
   corner-to-corner gradient of two system colours, 56 pt scaled): Favourites pink and purple, All
   songs orange and red, Suggestions teal and blue, Statistics indigo and blue.
+- **The Library tab keeps its shortcuts apart from its selector**: Favourites, All songs,
+  Suggestions and Statistics are one section that shows whichever shelf is picked (all but
+  Favourites hidden while searching), and the segmented picker is a section of its own below it,
+  changing only the shelves.
 - **The Library tab's All** shows playlists, albums and artists as carousels (`PlaylistShelf`,
   `AlbumShelf`, `ArtistShelf`, twelve each) under a *See all* header that switches the picker to that shelf, where
   the full list is rows. **Creating and importing a playlist live on the Playlists shelf and page
