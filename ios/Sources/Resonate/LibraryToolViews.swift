@@ -413,6 +413,7 @@ struct FilterSheet: View {
     @State private var genres: [String] = []
     @State private var artists: [String] = []
     @State private var albums: [String] = []
+    @State private var discarding = false
 
     var body: some View {
         NavigationStack {
@@ -440,7 +441,9 @@ struct FilterSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(role: .close) { dismiss() }
+                    Button(role: .close) {
+                        if filter == library.filter { dismiss() } else { discarding = true }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Apply") {
@@ -452,6 +455,7 @@ struct FilterSheet: View {
             .onAppear { filter = library.filter }
             .task { await readNames() }
         }
+        .keepingEditsUnlessDiscarded(filter != library.filter, asking: $discarding) { dismiss() }
     }
 
     private func readNames() async {

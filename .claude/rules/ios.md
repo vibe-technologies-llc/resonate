@@ -1360,3 +1360,11 @@ removes `ios/.build`, so every file is compiled and warns, runs `xtool dev build
 else `install.py`'s kept AppImage), strips the compiler's styling and fails on any `warning:` line
 (`ios/building.py`, held by `ios/test_building.py`). With a device attached, `xtool install xtool/Resonate.app` installs it (the
 `run-ios` skill).
+
+## A sheet holding edits is not swiped away
+
+The tag editor, *Add songs* and the filter sheet apply what they hold only on their confirm button, so
+`keepingEditsUnlessDiscarded(edited, asking:discard:)` (`ToolViews.swift`) disables the swipe-down
+while they hold an edit (changed tag fields, chosen songs, a filter unlike the applied one) and their
+Close button asks *Discard your changes?* instead of dropping them; with nothing edited Close
+dismisses at once.

@@ -88,6 +88,20 @@ struct LyricWriter: View {
     }
 }
 
+extension View {
+    func keepingEditsUnlessDiscarded(
+        _ edited: Bool,
+        asking: Binding<Bool>,
+        discard: @escaping () -> Void
+    ) -> some View {
+        interactiveDismissDisabled(edited)
+            .confirmationDialog("Discard your changes?", isPresented: asking, titleVisibility: .visible) {
+                Button("Discard changes", role: .destructive, action: discard)
+                Button("Keep editing", role: .cancel) {}
+            }
+    }
+}
+
 struct SignalPlot: View {
     let values: [Float]
     var mirrored = false

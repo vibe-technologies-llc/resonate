@@ -24,6 +24,7 @@ struct TagEditorSheet: View {
     @State private var mixed: Set<TagName> = []
     @State private var loaded = false
     @State private var failure: String?
+    @State private var discarding = false
     @State private var writableTracks: [Track]?
 
     var body: some View {
@@ -72,7 +73,9 @@ struct TagEditorSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(role: .close) { dismiss() }
+                    Button(role: .close) {
+                        if changed.isEmpty { dismiss() } else { discarding = true }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save", role: .confirm) {
@@ -83,6 +86,7 @@ struct TagEditorSheet: View {
                 }
             }
         }
+        .keepingEditsUnlessDiscarded(!changed.isEmpty, asking: $discarding) { dismiss() }
         .task {
             let asked = tracks.filter(features.tagsWritable)
             writableTracks = asked

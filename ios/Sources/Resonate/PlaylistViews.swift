@@ -351,6 +351,7 @@ struct AddSongsSheet: View {
     @State private var keyed = SongKeys.empty
     @State private var listed: [Track] = []
     @State private var keying = true
+    @State private var discarding = false
 
     var body: some View {
         NavigationStack {
@@ -385,7 +386,11 @@ struct AddSongsSheet: View {
                 listed = found
             }
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(role: .close) {
+                        if chosen.ids.isEmpty { dismiss() } else { discarding = true }
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     AddChosenButton(chosen: chosen) {
                         let byId = Dictionary(keyed.tracks.map { ($0.id, $0) }, uniquingKeysWith: { kept, _ in kept })
@@ -396,6 +401,7 @@ struct AddSongsSheet: View {
                 }
             }
         }
+        .keepingEditsUnlessDiscarded(!chosen.ids.isEmpty, asking: $discarding) { dismiss() }
     }
 
     private static func folded(_ search: String) -> String {
