@@ -101,7 +101,6 @@ final class Navigation {
     var deleting: SongsToDelete?
     @ObservationIgnored private var taggingAfterPlayer: TagEditing?
     var songsGrouping = Grouping.songs
-    var searchFocused = false
 
     func path(_ root: Root) -> Binding<[Destination]> {
         Binding(get: { self.paths[root] ?? [] }, set: { self.paths[root] = $0 })
@@ -137,7 +136,7 @@ final class Navigation {
     }
 
     var coversAmbient: Bool {
-        nowPlaying || searchFocused || (paths[tab]?.last?.drawsItsOwnBackdrop ?? false)
+        nowPlaying || tab == .search || (paths[tab]?.last?.drawsItsOwnBackdrop ?? false)
     }
 
     func showSongs() {

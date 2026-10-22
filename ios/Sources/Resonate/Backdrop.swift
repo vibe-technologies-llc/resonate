@@ -295,6 +295,12 @@ struct FieldSize: Equatable, Hashable {
     var aspect: Float {
         Float(width) / Float(height)
     }
+
+    func stretches(_ held: FieldSize) -> Bool {
+        Double(width) > Double(held.width) * Self.stretchedAtMost || Double(height) > Double(held.height) * Self.stretchedAtMost
+    }
+
+    private static let stretchedAtMost = 1.25
 }
 
 enum FieldPicture {
@@ -614,7 +620,7 @@ final class AmbientField: NSObject {
             return
         }
         view.show(latest.image)
-        if latest.size != wanted {
+        if let wanted, wanted.stretches(latest.size) {
             owed = true
             schedule()
         }
