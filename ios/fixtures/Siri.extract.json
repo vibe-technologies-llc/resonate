@@ -1,0 +1,428 @@
+{
+ "actions": {
+  "PlayFavouritesIntent": {
+   "assistantDefinedSchemaTraits": [],
+   "assistantDefinedSchemas": [],
+   "authenticationPolicy": 0,
+   "availabilityAnnotations": {
+    "LNPlatformNameWildcard": {
+     "introducedVersion": "*"
+    }
+   },
+   "descriptionMetadata": {
+    "descriptionText": {
+     "alternatives": [],
+     "key": "Plays the songs you marked as favourites."
+    },
+    "searchKeywords": []
+   },
+   "effectiveBundleIdentifiers": [],
+   "fullyQualifiedTypeName": "Resonate.PlayFavouritesIntent",
+   "identifier": "PlayFavouritesIntent",
+   "isAuthPolExplicit": false,
+   "isDiscoverable": true,
+   "mangledTypeName": "8Resonate20PlayFavouritesIntentV",
+   "mangledTypeNameByBundleIdentifier": {},
+   "mangledTypeNameByBundleIdentifierV2": {},
+   "mangledTypeNameV2": "8Resonate20PlayFavouritesIntentV",
+   "openAppWhenRun": false,
+   "outputFlags": 4,
+   "parameters": [],
+   "presentationStyle": 0,
+   "requiredCapabilities": [],
+   "supportedModes": 1,
+   "systemProtocolMetadata": [
+    "com.apple.link.systemProtocol.AudioStarting",
+    {
+     "empty": {}
+    }
+   ],
+   "systemProtocolMetadataV2": [
+    "com.apple.link.systemProtocol.AudioStarting",
+    {
+     "empty": {}
+    }
+   ],
+   "systemProtocols": [
+    "com.apple.link.systemProtocol.AudioStarting"
+   ],
+   "title": {
+    "alternatives": [],
+    "key": "Play Favourites"
+   },
+   "typeSpecificMetadata": [],
+   "visibilityMetadata": {
+    "assistantOnly": false,
+    "isDiscoverable": true
+   }
+  },
+  "PlayFromLibraryIntent": {
+   "assistantDefinedSchemaTraits": [],
+   "assistantDefinedSchemas": [],
+   "authenticationPolicy": 0,
+   "availabilityAnnotations": {
+    "LNPlatformNameWildcard": {
+     "introducedVersion": "*"
+    }
+   },
+   "descriptionMetadata": {
+    "descriptionText": {
+     "alternatives": [],
+     "key": "Plays a playlist, artist, album or songs from your library that match what you ask for."
+    },
+    "searchKeywords": []
+   },
+   "effectiveBundleIdentifiers": [],
+   "fullyQualifiedTypeName": "Resonate.PlayFromLibraryIntent",
+   "identifier": "PlayFromLibraryIntent",
+   "isAuthPolExplicit": false,
+   "isDiscoverable": true,
+   "mangledTypeName": "8Resonate21PlayFromLibraryIntentV",
+   "mangledTypeNameByBundleIdentifier": {},
+   "mangledTypeNameByBundleIdentifierV2": {},
+   "mangledTypeNameV2": "8Resonate21PlayFromLibraryIntentV",
+   "openAppWhenRun": false,
+   "outputFlags": 4,
+   "parameters": [
+    {
+     "capabilities": 0,
+     "dynamicOptionsSupport": 0,
+     "inputConnectionBehavior": 0,
+     "isInput": false,
+     "isOptional": false,
+     "name": "music",
+     "resolvableInputTypes": [
+      {
+       "kindValue": 0,
+       "valueType": {
+        "array": {
+         "wrapper": {
+          "capabilities": 3,
+          "memberValueType": {
+           "primitive": {
+            "wrapper": {
+             "typeIdentifier": 2
+            }
+           }
+          }
+         }
+        }
+       }
+      },
+      {
+       "kindValue": 0,
+       "valueType": {
+        "primitive": {
+         "wrapper": {
+          "typeIdentifier": 0
+         }
+        }
+       }
+      },
+      {
+       "kindValue": 0,
+       "valueType": {
+        "primitive": {
+         "wrapper": {
+          "typeIdentifier": 2
+         }
+        }
+       }
+      }
+     ],
+     "title": {
+      "alternatives": [],
+      "key": "Music"
+     },
+     "typeSpecificMetadata": [],
+     "valueType": {
+      "primitive": {
+       "wrapper": {
+        "typeIdentifier": 0
+       }
+      }
+     }
+    }
+   ],
+   "presentationStyle": 0,
+   "requiredCapabilities": [],
+   "supportedModes": 1,
+   "systemProtocolMetadata": [
+    "com.apple.link.systemProtocol.AudioStarting",
+    {
+     "empty": {}
+    }
+   ],
+   "systemProtocolMetadataV2": [
+    "com.apple.link.systemProtocol.AudioStarting",
+    {
+     "empty": {}
+    }
+   ],
+   "systemProtocols": [
+    "com.apple.link.systemProtocol.AudioStarting"
+   ],
+   "title": {
+    "alternatives": [],
+    "key": "Play from Your Library"
+   },
+   "typeSpecificMetadata": [],
+   "visibilityMetadata": {
+    "assistantOnly": false,
+    "isDiscoverable": true
+   }
+  },
+  "ResumePlaybackIntent": {
+   "assistantDefinedSchemaTraits": [],
+   "assistantDefinedSchemas": [],
+   "authenticationPolicy": 0,
+   "availabilityAnnotations": {
+    "LNPlatformNameWildcard": {
+     "introducedVersion": "*"
+    }
+   },
+   "descriptionMetadata": {
+    "descriptionText": {
+     "alternatives": [],
+     "key": "Carries on with what was playing, or shuffles your library when nothing was."
+    },
+    "searchKeywords": []
+   },
+   "effectiveBundleIdentifiers": [],
+   "fullyQualifiedTypeName": "Resonate.ResumePlaybackIntent",
+   "identifier": "ResumePlaybackIntent",
+   "isAuthPolExplicit": false,
+   "isDiscoverable": true,
+   "mangledTypeName": "8Resonate20ResumePlaybackIntentV",
+   "mangledTypeNameByBundleIdentifier": {},
+   "mangledTypeNameByBundleIdentifierV2": {},
+   "mangledTypeNameV2": "8Resonate20ResumePlaybackIntentV",
+   "openAppWhenRun": false,
+   "outputFlags": 4,
+   "parameters": [],
+   "presentationStyle": 0,
+   "requiredCapabilities": [],
+   "supportedModes": 1,
+   "systemProtocolMetadata": [
+    "com.apple.link.systemProtocol.AudioStarting",
+    {
+     "empty": {}
+    }
+   ],
+   "systemProtocolMetadataV2": [
+    "com.apple.link.systemProtocol.AudioStarting",
+    {
+     "empty": {}
+    }
+   ],
+   "systemProtocols": [
+    "com.apple.link.systemProtocol.AudioStarting"
+   ],
+   "title": {
+    "alternatives": [],
+    "key": "Play"
+   },
+   "typeSpecificMetadata": [],
+   "visibilityMetadata": {
+    "assistantOnly": false,
+    "isDiscoverable": true
+   }
+  },
+  "ShuffleLibraryIntent": {
+   "assistantDefinedSchemaTraits": [],
+   "assistantDefinedSchemas": [],
+   "authenticationPolicy": 0,
+   "availabilityAnnotations": {
+    "LNPlatformNameWildcard": {
+     "introducedVersion": "*"
+    }
+   },
+   "descriptionMetadata": {
+    "descriptionText": {
+     "alternatives": [],
+     "key": "Shuffles every song in your library."
+    },
+    "searchKeywords": []
+   },
+   "effectiveBundleIdentifiers": [],
+   "fullyQualifiedTypeName": "Resonate.ShuffleLibraryIntent",
+   "identifier": "ShuffleLibraryIntent",
+   "isAuthPolExplicit": false,
+   "isDiscoverable": true,
+   "mangledTypeName": "8Resonate20ShuffleLibraryIntentV",
+   "mangledTypeNameByBundleIdentifier": {},
+   "mangledTypeNameByBundleIdentifierV2": {},
+   "mangledTypeNameV2": "8Resonate20ShuffleLibraryIntentV",
+   "openAppWhenRun": false,
+   "outputFlags": 4,
+   "parameters": [],
+   "presentationStyle": 0,
+   "requiredCapabilities": [],
+   "supportedModes": 1,
+   "systemProtocolMetadata": [
+    "com.apple.link.systemProtocol.AudioStarting",
+    {
+     "empty": {}
+    }
+   ],
+   "systemProtocolMetadataV2": [
+    "com.apple.link.systemProtocol.AudioStarting",
+    {
+     "empty": {}
+    }
+   ],
+   "systemProtocols": [
+    "com.apple.link.systemProtocol.AudioStarting"
+   ],
+   "title": {
+    "alternatives": [],
+    "key": "Shuffle Your Library"
+   },
+   "typeSpecificMetadata": [],
+   "visibilityMetadata": {
+    "assistantOnly": false,
+    "isDiscoverable": true
+   }
+  }
+ },
+ "assistantEntities": [],
+ "assistantIntentNegativePhrases": [],
+ "assistantIntents": [],
+ "autoShortcutProviderMangledName": "8Resonate0A9ShortcutsV",
+ "autoShortcuts": [
+  {
+   "actionIdentifier": "ResumePlaybackIntent",
+   "availabilityAnnotations": {
+    "LNPlatformNameWildcard": {
+     "introducedVersion": "*"
+    }
+   },
+   "phraseTemplates": [
+    {
+     "alternatives": [],
+     "key": "Play ${applicationName}"
+    },
+    {
+     "alternatives": [],
+     "key": "Resume ${applicationName}"
+    },
+    {
+     "alternatives": [],
+     "key": "Play music in ${applicationName}"
+    },
+    {
+     "alternatives": [],
+     "key": "Play music with ${applicationName}"
+    }
+   ],
+   "shortTitle": {
+    "alternatives": [],
+    "key": "Play"
+   },
+   "systemImageName": "play.fill"
+  },
+  {
+   "actionIdentifier": "PlayFromLibraryIntent",
+   "availabilityAnnotations": {
+    "LNPlatformNameWildcard": {
+     "introducedVersion": "*"
+    }
+   },
+   "phraseTemplates": [
+    {
+     "alternatives": [],
+     "key": "Play something in ${applicationName}"
+    },
+    {
+     "alternatives": [],
+     "key": "Play a song in ${applicationName}"
+    },
+    {
+     "alternatives": [],
+     "key": "Play an album in ${applicationName}"
+    },
+    {
+     "alternatives": [],
+     "key": "Play an artist in ${applicationName}"
+    },
+    {
+     "alternatives": [],
+     "key": "Play a playlist in ${applicationName}"
+    },
+    {
+     "alternatives": [],
+     "key": "Find music in ${applicationName}"
+    }
+   ],
+   "shortTitle": {
+    "alternatives": [],
+    "key": "Play from Library"
+   },
+   "systemImageName": "magnifyingglass"
+  },
+  {
+   "actionIdentifier": "ShuffleLibraryIntent",
+   "availabilityAnnotations": {
+    "LNPlatformNameWildcard": {
+     "introducedVersion": "*"
+    }
+   },
+   "phraseTemplates": [
+    {
+     "alternatives": [],
+     "key": "Shuffle ${applicationName}"
+    },
+    {
+     "alternatives": [],
+     "key": "Shuffle my music in ${applicationName}"
+    },
+    {
+     "alternatives": [],
+     "key": "Shuffle my library in ${applicationName}"
+    }
+   ],
+   "shortTitle": {
+    "alternatives": [],
+    "key": "Shuffle All"
+   },
+   "systemImageName": "shuffle"
+  },
+  {
+   "actionIdentifier": "PlayFavouritesIntent",
+   "availabilityAnnotations": {
+    "LNPlatformNameWildcard": {
+     "introducedVersion": "*"
+    }
+   },
+   "phraseTemplates": [
+    {
+     "alternatives": [],
+     "key": "Play my favourites in ${applicationName}"
+    },
+    {
+     "alternatives": [],
+     "key": "Play my favorites in ${applicationName}"
+    },
+    {
+     "alternatives": [],
+     "key": "Play favourites in ${applicationName}"
+    }
+   ],
+   "shortTitle": {
+    "alternatives": [],
+    "key": "Favourites"
+   },
+   "systemImageName": "heart.fill"
+  }
+ ],
+ "entities": {},
+ "enums": [],
+ "generator": {
+  "name": "xcode-tools",
+  "version": "27A266a"
+ },
+ "negativePhrases": [],
+ "queries": {},
+ "shortcutTileColor": 14,
+ "version": 1
+}

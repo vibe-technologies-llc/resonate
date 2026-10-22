@@ -73,6 +73,15 @@ ignores metadata it cannot match to the binary; a new construct is added only ag
 output for it. Without Xcode's second step (`nlu.appintents`) Siri matches the phrases as written,
 not paraphrases.
 
+The generator is `ios/intents.py` (a module with no command line, as `building.py` and `icons.py`
+are); `app-intents.py` only finds the const values, calls it and packs. `ios/test_intents.py` holds
+it on the host against `ios/fixtures/Siri.swiftconstvalues.json`, the compiler's output for
+`Siri.swift` with the checkout's path taken out, and `Siri.extract.json`, what the generator makes
+of it: the first changing without the second is a generator that moved, the reverse a fixture to
+renew (copy a debug build's `Siri-t` const values, strip the absolute path from every `file`, and
+write the second with `intents.metadata`). It proves the generator's shape and its refusals, not
+Apple's agreement: no output of Apple's processor for an `AudioPlaybackIntent` is held.
+
 ## Hardening
 
 The entitlements opt into Enhanced Security: `hardened-process`, `enhanced-security-version-string`

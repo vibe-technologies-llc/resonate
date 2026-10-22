@@ -1,0 +1,1240 @@
+[
+ {
+  "allConformances": [
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "AppIntents.AudioPlaybackIntent"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "AppIntents.SystemIntent"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "AppIntents.AppIntent"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "AppIntents.PersistentlyIdentifiable"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "AppIntents._SupportsAppDependencies"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "Swift.Sendable"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "Swift.SendableMetatype"
+   }
+  ],
+  "associatedTypeAliases": [
+   {
+    "opaqueTypeProtocolRequirements": [
+     "AppIntents.ProvidesDialog"
+    ],
+    "opaqueTypeSameTypeRequirements": [],
+    "substitutedMangledTypeName": "8Resonate20ResumePlaybackIntentV7performQryYaKFQOy_Qo_",
+    "substitutedTypeName": "some AppIntents.ProvidesDialog",
+    "typeAliasName": "PerformResult"
+   },
+   {
+    "opaqueTypeProtocolRequirements": [
+     "AppIntents.ParameterSummary"
+    ],
+    "opaqueTypeSameTypeRequirements": [],
+    "substitutedMangledTypeName": "10AppIntents0A6IntentPAAE16parameterSummaryQrvpZQOy8Resonate014ResumePlaybackC0V_Qo_",
+    "substitutedTypeName": "some AppIntents.ParameterSummary",
+    "typeAliasName": "SummaryContent"
+   }
+  ],
+  "conformances": [
+   "AppIntents.AudioPlaybackIntent",
+   "AppIntents.SystemIntent",
+   "AppIntents.AppIntent",
+   "AppIntents.PersistentlyIdentifiable",
+   "AppIntents._SupportsAppDependencies",
+   "Swift.Sendable",
+   "Swift.SendableMetatype"
+  ],
+  "file": "Sources/Resonate/Siri.swift",
+  "kind": "struct",
+  "line": 5,
+  "mangledTypeName": "8Resonate20ResumePlaybackIntentV",
+  "properties": [
+   {
+    "file": "Sources/Resonate/Siri.swift",
+    "isComputed": "false",
+    "isStatic": "false",
+    "label": "_library",
+    "line": 9,
+    "mangledTypeName": "n/a - deprecated",
+    "type": "AppIntents.AppDependency<Resonate.Library>",
+    "value": {
+     "arguments": [
+      {
+       "label": "key",
+       "type": "Swift.Optional<Swift.AnyHashable>",
+       "valueKind": "NilLiteral"
+      },
+      {
+       "label": "manager",
+       "type": "AppIntents.AppDependencyManager",
+       "valueKind": "Runtime"
+      }
+     ],
+     "type": "AppIntents.AppDependency<Resonate.Library>"
+    },
+    "valueKind": "InitCall"
+   },
+   {
+    "file": "Sources/Resonate/Siri.swift",
+    "isComputed": "false",
+    "isStatic": "true",
+    "label": "title",
+    "line": 6,
+    "mangledTypeName": "n/a - deprecated",
+    "type": "Foundation.LocalizedStringResource",
+    "value": "Play",
+    "valueKind": "RawLiteral"
+   },
+   {
+    "file": "Sources/Resonate/Siri.swift",
+    "isComputed": "false",
+    "isStatic": "true",
+    "label": "description",
+    "line": 7,
+    "mangledTypeName": "n/a - deprecated",
+    "type": "AppIntents.IntentDescription",
+    "value": "Carries on with what was playing, or shuffles your library when nothing was.",
+    "valueKind": "RawLiteral"
+   },
+   {
+    "file": "Sources/Resonate/Siri.swift",
+    "isComputed": "true",
+    "isStatic": "false",
+    "label": "library",
+    "line": 9,
+    "mangledTypeName": "n/a - deprecated",
+    "propertyWrappers": [
+     {
+      "arguments": [],
+      "file": "Sources/Resonate/Siri.swift",
+      "line": 9,
+      "type": "AppIntents.AppDependency"
+     }
+    ],
+    "type": "Resonate.Library",
+    "valueKind": "Runtime"
+   },
+   {
+    "file": "Sources/Resonate/Siri.swift",
+    "isComputed": "true",
+    "isStatic": "false",
+    "label": "$library",
+    "line": 9,
+    "mangledTypeName": "n/a - deprecated",
+    "type": "AppIntents.AppDependency<Resonate.Library>",
+    "valueKind": "Runtime"
+   }
+  ],
+  "typeName": "Resonate.ResumePlaybackIntent"
+ },
+ {
+  "allConformances": [
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "AppIntents.AudioPlaybackIntent"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "AppIntents.SystemIntent"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "AppIntents.AppIntent"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "AppIntents.PersistentlyIdentifiable"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "AppIntents._SupportsAppDependencies"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "Swift.Sendable"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "Swift.SendableMetatype"
+   }
+  ],
+  "associatedTypeAliases": [
+   {
+    "opaqueTypeProtocolRequirements": [
+     "AppIntents.ProvidesDialog"
+    ],
+    "opaqueTypeSameTypeRequirements": [],
+    "substitutedMangledTypeName": "8Resonate21PlayFromLibraryIntentV7performQryYaKFQOy_Qo_",
+    "substitutedTypeName": "some AppIntents.ProvidesDialog",
+    "typeAliasName": "PerformResult"
+   },
+   {
+    "opaqueTypeProtocolRequirements": [
+     "AppIntents.ParameterSummary"
+    ],
+    "opaqueTypeSameTypeRequirements": [],
+    "substitutedMangledTypeName": "10AppIntents0A6IntentPAAE16parameterSummaryQrvpZQOy8Resonate015PlayFromLibraryC0V_Qo_",
+    "substitutedTypeName": "some AppIntents.ParameterSummary",
+    "typeAliasName": "SummaryContent"
+   }
+  ],
+  "conformances": [
+   "AppIntents.AudioPlaybackIntent",
+   "AppIntents.SystemIntent",
+   "AppIntents.AppIntent",
+   "AppIntents.PersistentlyIdentifiable",
+   "AppIntents._SupportsAppDependencies",
+   "Swift.Sendable",
+   "Swift.SendableMetatype"
+  ],
+  "file": "Sources/Resonate/Siri.swift",
+  "kind": "struct",
+  "line": 26,
+  "mangledTypeName": "8Resonate21PlayFromLibraryIntentV",
+  "properties": [
+   {
+    "file": "Sources/Resonate/Siri.swift",
+    "isComputed": "false",
+    "isStatic": "false",
+    "label": "_music",
+    "line": 31,
+    "mangledTypeName": "n/a - deprecated",
+    "type": "AppIntents.IntentParameter<Swift.String>",
+    "value": {
+     "arguments": [
+      {
+       "label": "title",
+       "type": "Foundation.LocalizedStringResource",
+       "value": "Music",
+       "valueKind": "RawLiteral"
+      },
+      {
+       "label": "description",
+       "type": "Swift.Optional<Foundation.LocalizedStringResource>",
+       "valueKind": "NilLiteral"
+      },
+      {
+       "label": "default",
+       "type": "Swift.Optional<Swift.String>",
+       "valueKind": "NilLiteral"
+      },
+      {
+       "label": "inputOptions",
+       "type": "Swift.Optional<Swift.String.IntentInputOptions>",
+       "valueKind": "NilLiteral"
+      },
+      {
+       "label": "requestValueDialog",
+       "type": "Swift.Optional<AppIntents.IntentDialog>",
+       "value": "What would you like to play?",
+       "valueKind": "RawLiteral"
+      },
+      {
+       "label": "inputConnectionBehavior",
+       "type": "AppIntents.InputConnectionBehavior",
+       "valueKind": "Runtime"
+      }
+     ],
+     "type": "AppIntents.IntentParameter<Swift.String>"
+    },
+    "valueKind": "InitCall"
+   },
+   {
+    "file": "Sources/Resonate/Siri.swift",
+    "isComputed": "false",
+    "isStatic": "false",
+    "label": "_library",
+    "line": 33,
+    "mangledTypeName": "n/a - deprecated",
+    "type": "AppIntents.AppDependency<Resonate.Library>",
+    "value": {
+     "arguments": [
+      {
+       "label": "key",
+       "type": "Swift.Optional<Swift.AnyHashable>",
+       "valueKind": "NilLiteral"
+      },
+      {
+       "label": "manager",
+       "type": "AppIntents.AppDependencyManager",
+       "valueKind": "Runtime"
+      }
+     ],
+     "type": "AppIntents.AppDependency<Resonate.Library>"
+    },
+    "valueKind": "InitCall"
+   },
+   {
+    "file": "Sources/Resonate/Siri.swift",
+    "isComputed": "false",
+    "isStatic": "true",
+    "label": "title",
+    "line": 27,
+    "mangledTypeName": "n/a - deprecated",
+    "type": "Foundation.LocalizedStringResource",
+    "value": "Play from Your Library",
+    "valueKind": "RawLiteral"
+   },
+   {
+    "file": "Sources/Resonate/Siri.swift",
+    "isComputed": "false",
+    "isStatic": "true",
+    "label": "description",
+    "line": 28,
+    "mangledTypeName": "n/a - deprecated",
+    "type": "AppIntents.IntentDescription",
+    "value": "Plays a playlist, artist, album or songs from your library that match what you ask for.",
+    "valueKind": "RawLiteral"
+   },
+   {
+    "file": "Sources/Resonate/Siri.swift",
+    "isComputed": "true",
+    "isStatic": "false",
+    "label": "music",
+    "line": 31,
+    "mangledTypeName": "n/a - deprecated",
+    "propertyWrappers": [
+     {
+      "arguments": [
+       {
+        "label": "title",
+        "type": "Foundation.LocalizedStringResource",
+        "value": "Music",
+        "valueKind": "RawLiteral"
+       },
+       {
+        "label": "requestValueDialog",
+        "type": "Swift.Optional<AppIntents.IntentDialog>",
+        "value": "What would you like to play?",
+        "valueKind": "RawLiteral"
+       }
+      ],
+      "file": "Sources/Resonate/Siri.swift",
+      "line": 30,
+      "type": "AppIntents.IntentParameter"
+     }
+    ],
+    "type": "Swift.String",
+    "value": {
+     "arguments": [
+      {
+       "label": "title",
+       "type": "Foundation.LocalizedStringResource",
+       "value": "Music",
+       "valueKind": "RawLiteral"
+      },
+      {
+       "label": "description",
+       "type": "Swift.Optional<Foundation.LocalizedStringResource>",
+       "valueKind": "NilLiteral"
+      },
+      {
+       "label": "default",
+       "type": "Swift.Optional<Swift.String>",
+       "valueKind": "NilLiteral"
+      },
+      {
+       "label": "inputOptions",
+       "type": "Swift.Optional<Swift.String.IntentInputOptions>",
+       "valueKind": "NilLiteral"
+      },
+      {
+       "label": "requestValueDialog",
+       "type": "Swift.Optional<AppIntents.IntentDialog>",
+       "value": "What would you like to play?",
+       "valueKind": "RawLiteral"
+      },
+      {
+       "label": "inputConnectionBehavior",
+       "type": "AppIntents.InputConnectionBehavior",
+       "valueKind": "Runtime"
+      }
+     ],
+     "type": "AppIntents.IntentParameter<Swift.String>"
+    },
+    "valueKind": "InitCall"
+   },
+   {
+    "file": "Sources/Resonate/Siri.swift",
+    "isComputed": "true",
+    "isStatic": "false",
+    "label": "$music",
+    "line": 31,
+    "mangledTypeName": "n/a - deprecated",
+    "type": "AppIntents.IntentParameter<Swift.String>",
+    "valueKind": "Runtime"
+   },
+   {
+    "file": "Sources/Resonate/Siri.swift",
+    "isComputed": "true",
+    "isStatic": "false",
+    "label": "library",
+    "line": 33,
+    "mangledTypeName": "n/a - deprecated",
+    "propertyWrappers": [
+     {
+      "arguments": [],
+      "file": "Sources/Resonate/Siri.swift",
+      "line": 33,
+      "type": "AppIntents.AppDependency"
+     }
+    ],
+    "type": "Resonate.Library",
+    "valueKind": "Runtime"
+   },
+   {
+    "file": "Sources/Resonate/Siri.swift",
+    "isComputed": "true",
+    "isStatic": "false",
+    "label": "$library",
+    "line": 33,
+    "mangledTypeName": "n/a - deprecated",
+    "type": "AppIntents.AppDependency<Resonate.Library>",
+    "valueKind": "Runtime"
+   }
+  ],
+  "typeName": "Resonate.PlayFromLibraryIntent"
+ },
+ {
+  "allConformances": [
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "AppIntents.AudioPlaybackIntent"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "AppIntents.SystemIntent"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "AppIntents.AppIntent"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "AppIntents.PersistentlyIdentifiable"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "AppIntents._SupportsAppDependencies"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "Swift.Sendable"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "Swift.SendableMetatype"
+   }
+  ],
+  "associatedTypeAliases": [
+   {
+    "opaqueTypeProtocolRequirements": [
+     "AppIntents.ProvidesDialog"
+    ],
+    "opaqueTypeSameTypeRequirements": [],
+    "substitutedMangledTypeName": "8Resonate20ShuffleLibraryIntentV7performQryYaKFQOy_Qo_",
+    "substitutedTypeName": "some AppIntents.ProvidesDialog",
+    "typeAliasName": "PerformResult"
+   },
+   {
+    "opaqueTypeProtocolRequirements": [
+     "AppIntents.ParameterSummary"
+    ],
+    "opaqueTypeSameTypeRequirements": [],
+    "substitutedMangledTypeName": "10AppIntents0A6IntentPAAE16parameterSummaryQrvpZQOy8Resonate014ShuffleLibraryC0V_Qo_",
+    "substitutedTypeName": "some AppIntents.ParameterSummary",
+    "typeAliasName": "SummaryContent"
+   }
+  ],
+  "conformances": [
+   "AppIntents.AudioPlaybackIntent",
+   "AppIntents.SystemIntent",
+   "AppIntents.AppIntent",
+   "AppIntents.PersistentlyIdentifiable",
+   "AppIntents._SupportsAppDependencies",
+   "Swift.Sendable",
+   "Swift.SendableMetatype"
+  ],
+  "file": "Sources/Resonate/Siri.swift",
+  "kind": "struct",
+  "line": 51,
+  "mangledTypeName": "8Resonate20ShuffleLibraryIntentV",
+  "properties": [
+   {
+    "file": "Sources/Resonate/Siri.swift",
+    "isComputed": "false",
+    "isStatic": "false",
+    "label": "_library",
+    "line": 55,
+    "mangledTypeName": "n/a - deprecated",
+    "type": "AppIntents.AppDependency<Resonate.Library>",
+    "value": {
+     "arguments": [
+      {
+       "label": "key",
+       "type": "Swift.Optional<Swift.AnyHashable>",
+       "valueKind": "NilLiteral"
+      },
+      {
+       "label": "manager",
+       "type": "AppIntents.AppDependencyManager",
+       "valueKind": "Runtime"
+      }
+     ],
+     "type": "AppIntents.AppDependency<Resonate.Library>"
+    },
+    "valueKind": "InitCall"
+   },
+   {
+    "file": "Sources/Resonate/Siri.swift",
+    "isComputed": "false",
+    "isStatic": "true",
+    "label": "title",
+    "line": 52,
+    "mangledTypeName": "n/a - deprecated",
+    "type": "Foundation.LocalizedStringResource",
+    "value": "Shuffle Your Library",
+    "valueKind": "RawLiteral"
+   },
+   {
+    "file": "Sources/Resonate/Siri.swift",
+    "isComputed": "false",
+    "isStatic": "true",
+    "label": "description",
+    "line": 53,
+    "mangledTypeName": "n/a - deprecated",
+    "type": "AppIntents.IntentDescription",
+    "value": "Shuffles every song in your library.",
+    "valueKind": "RawLiteral"
+   },
+   {
+    "file": "Sources/Resonate/Siri.swift",
+    "isComputed": "true",
+    "isStatic": "false",
+    "label": "library",
+    "line": 55,
+    "mangledTypeName": "n/a - deprecated",
+    "propertyWrappers": [
+     {
+      "arguments": [],
+      "file": "Sources/Resonate/Siri.swift",
+      "line": 55,
+      "type": "AppIntents.AppDependency"
+     }
+    ],
+    "type": "Resonate.Library",
+    "valueKind": "Runtime"
+   },
+   {
+    "file": "Sources/Resonate/Siri.swift",
+    "isComputed": "true",
+    "isStatic": "false",
+    "label": "$library",
+    "line": 55,
+    "mangledTypeName": "n/a - deprecated",
+    "type": "AppIntents.AppDependency<Resonate.Library>",
+    "valueKind": "Runtime"
+   }
+  ],
+  "typeName": "Resonate.ShuffleLibraryIntent"
+ },
+ {
+  "allConformances": [
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "AppIntents.AudioPlaybackIntent"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "AppIntents.SystemIntent"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "AppIntents.AppIntent"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "AppIntents.PersistentlyIdentifiable"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "AppIntents._SupportsAppDependencies"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "Swift.Sendable"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "Swift.SendableMetatype"
+   }
+  ],
+  "associatedTypeAliases": [
+   {
+    "opaqueTypeProtocolRequirements": [
+     "AppIntents.ProvidesDialog"
+    ],
+    "opaqueTypeSameTypeRequirements": [],
+    "substitutedMangledTypeName": "8Resonate20PlayFavouritesIntentV7performQryYaKFQOy_Qo_",
+    "substitutedTypeName": "some AppIntents.ProvidesDialog",
+    "typeAliasName": "PerformResult"
+   },
+   {
+    "opaqueTypeProtocolRequirements": [
+     "AppIntents.ParameterSummary"
+    ],
+    "opaqueTypeSameTypeRequirements": [],
+    "substitutedMangledTypeName": "10AppIntents0A6IntentPAAE16parameterSummaryQrvpZQOy8Resonate014PlayFavouritesC0V_Qo_",
+    "substitutedTypeName": "some AppIntents.ParameterSummary",
+    "typeAliasName": "SummaryContent"
+   }
+  ],
+  "conformances": [
+   "AppIntents.AudioPlaybackIntent",
+   "AppIntents.SystemIntent",
+   "AppIntents.AppIntent",
+   "AppIntents.PersistentlyIdentifiable",
+   "AppIntents._SupportsAppDependencies",
+   "Swift.Sendable",
+   "Swift.SendableMetatype"
+  ],
+  "file": "Sources/Resonate/Siri.swift",
+  "kind": "struct",
+  "line": 66,
+  "mangledTypeName": "8Resonate20PlayFavouritesIntentV",
+  "properties": [
+   {
+    "file": "Sources/Resonate/Siri.swift",
+    "isComputed": "false",
+    "isStatic": "false",
+    "label": "_library",
+    "line": 70,
+    "mangledTypeName": "n/a - deprecated",
+    "type": "AppIntents.AppDependency<Resonate.Library>",
+    "value": {
+     "arguments": [
+      {
+       "label": "key",
+       "type": "Swift.Optional<Swift.AnyHashable>",
+       "valueKind": "NilLiteral"
+      },
+      {
+       "label": "manager",
+       "type": "AppIntents.AppDependencyManager",
+       "valueKind": "Runtime"
+      }
+     ],
+     "type": "AppIntents.AppDependency<Resonate.Library>"
+    },
+    "valueKind": "InitCall"
+   },
+   {
+    "file": "Sources/Resonate/Siri.swift",
+    "isComputed": "false",
+    "isStatic": "true",
+    "label": "title",
+    "line": 67,
+    "mangledTypeName": "n/a - deprecated",
+    "type": "Foundation.LocalizedStringResource",
+    "value": "Play Favourites",
+    "valueKind": "RawLiteral"
+   },
+   {
+    "file": "Sources/Resonate/Siri.swift",
+    "isComputed": "false",
+    "isStatic": "true",
+    "label": "description",
+    "line": 68,
+    "mangledTypeName": "n/a - deprecated",
+    "type": "AppIntents.IntentDescription",
+    "value": "Plays the songs you marked as favourites.",
+    "valueKind": "RawLiteral"
+   },
+   {
+    "file": "Sources/Resonate/Siri.swift",
+    "isComputed": "true",
+    "isStatic": "false",
+    "label": "library",
+    "line": 70,
+    "mangledTypeName": "n/a - deprecated",
+    "propertyWrappers": [
+     {
+      "arguments": [],
+      "file": "Sources/Resonate/Siri.swift",
+      "line": 70,
+      "type": "AppIntents.AppDependency"
+     }
+    ],
+    "type": "Resonate.Library",
+    "valueKind": "Runtime"
+   },
+   {
+    "file": "Sources/Resonate/Siri.swift",
+    "isComputed": "true",
+    "isStatic": "false",
+    "label": "$library",
+    "line": 70,
+    "mangledTypeName": "n/a - deprecated",
+    "type": "AppIntents.AppDependency<Resonate.Library>",
+    "valueKind": "Runtime"
+   }
+  ],
+  "typeName": "Resonate.PlayFavouritesIntent"
+ },
+ {
+  "allConformances": [
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "AppIntents.AppShortcutsProvider"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "Swift.Sendable"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "Swift.SendableMetatype"
+   },
+   {
+    "conformanceDefiningModule": "Resonate",
+    "protocolName": "Swift.BitwiseCopyable"
+   }
+  ],
+  "associatedTypeAliases": [],
+  "conformances": [
+   "AppIntents.AppShortcutsProvider",
+   "Swift.Sendable",
+   "Swift.SendableMetatype",
+   "Swift.BitwiseCopyable"
+  ],
+  "file": "Sources/Resonate/Siri.swift",
+  "kind": "struct",
+  "line": 90,
+  "mangledTypeName": "8Resonate0A9ShortcutsV",
+  "properties": [
+   {
+    "file": "Sources/Resonate/Siri.swift",
+    "isComputed": "true",
+    "isStatic": "true",
+    "label": "appShortcuts",
+    "line": 91,
+    "mangledTypeName": "n/a - deprecated",
+    "type": "Swift.Array<AppIntents.AppShortcut>",
+    "value": {
+     "members": [
+      {
+       "element": {
+        "value": {
+         "arguments": [
+          {
+           "label": "intent",
+           "type": "Resonate.ResumePlaybackIntent",
+           "value": {
+            "arguments": [],
+            "type": "Resonate.ResumePlaybackIntent"
+           },
+           "valueKind": "InitCall"
+          },
+          {
+           "label": "phrases",
+           "type": "Swift.Array<AppIntents.AppShortcutPhrase<Resonate.ResumePlaybackIntent>>",
+           "value": [
+            {
+             "value": {
+              "segments": [
+               {
+                "value": "Play ",
+                "valueKind": "RawLiteral"
+               },
+               {
+                "value": {
+                 "name": "applicationName"
+                },
+                "valueKind": "Enum"
+               },
+               {
+                "value": "",
+                "valueKind": "RawLiteral"
+               }
+              ]
+             },
+             "valueKind": "InterpolatedStringLiteral"
+            },
+            {
+             "value": {
+              "segments": [
+               {
+                "value": "Resume ",
+                "valueKind": "RawLiteral"
+               },
+               {
+                "value": {
+                 "name": "applicationName"
+                },
+                "valueKind": "Enum"
+               },
+               {
+                "value": "",
+                "valueKind": "RawLiteral"
+               }
+              ]
+             },
+             "valueKind": "InterpolatedStringLiteral"
+            },
+            {
+             "value": {
+              "segments": [
+               {
+                "value": "Play music in ",
+                "valueKind": "RawLiteral"
+               },
+               {
+                "value": {
+                 "name": "applicationName"
+                },
+                "valueKind": "Enum"
+               },
+               {
+                "value": "",
+                "valueKind": "RawLiteral"
+               }
+              ]
+             },
+             "valueKind": "InterpolatedStringLiteral"
+            },
+            {
+             "value": {
+              "segments": [
+               {
+                "value": "Play music with ",
+                "valueKind": "RawLiteral"
+               },
+               {
+                "value": {
+                 "name": "applicationName"
+                },
+                "valueKind": "Enum"
+               },
+               {
+                "value": "",
+                "valueKind": "RawLiteral"
+               }
+              ]
+             },
+             "valueKind": "InterpolatedStringLiteral"
+            }
+           ],
+           "valueKind": "Array"
+          },
+          {
+           "label": "shortTitle",
+           "type": "Foundation.LocalizedStringResource",
+           "value": "Play",
+           "valueKind": "RawLiteral"
+          },
+          {
+           "label": "systemImageName",
+           "type": "Swift.String",
+           "value": "play.fill",
+           "valueKind": "RawLiteral"
+          }
+         ],
+         "type": "AppIntents.AppShortcut"
+        },
+        "valueKind": "InitCall"
+       },
+       "kind": "buildExpression"
+      },
+      {
+       "element": {
+        "value": {
+         "arguments": [
+          {
+           "label": "intent",
+           "type": "Resonate.PlayFromLibraryIntent",
+           "value": {
+            "arguments": [],
+            "type": "Resonate.PlayFromLibraryIntent"
+           },
+           "valueKind": "InitCall"
+          },
+          {
+           "label": "phrases",
+           "type": "Swift.Array<AppIntents.AppShortcutPhrase<Resonate.PlayFromLibraryIntent>>",
+           "value": [
+            {
+             "value": {
+              "segments": [
+               {
+                "value": "Play something in ",
+                "valueKind": "RawLiteral"
+               },
+               {
+                "value": {
+                 "name": "applicationName"
+                },
+                "valueKind": "Enum"
+               },
+               {
+                "value": "",
+                "valueKind": "RawLiteral"
+               }
+              ]
+             },
+             "valueKind": "InterpolatedStringLiteral"
+            },
+            {
+             "value": {
+              "segments": [
+               {
+                "value": "Play a song in ",
+                "valueKind": "RawLiteral"
+               },
+               {
+                "value": {
+                 "name": "applicationName"
+                },
+                "valueKind": "Enum"
+               },
+               {
+                "value": "",
+                "valueKind": "RawLiteral"
+               }
+              ]
+             },
+             "valueKind": "InterpolatedStringLiteral"
+            },
+            {
+             "value": {
+              "segments": [
+               {
+                "value": "Play an album in ",
+                "valueKind": "RawLiteral"
+               },
+               {
+                "value": {
+                 "name": "applicationName"
+                },
+                "valueKind": "Enum"
+               },
+               {
+                "value": "",
+                "valueKind": "RawLiteral"
+               }
+              ]
+             },
+             "valueKind": "InterpolatedStringLiteral"
+            },
+            {
+             "value": {
+              "segments": [
+               {
+                "value": "Play an artist in ",
+                "valueKind": "RawLiteral"
+               },
+               {
+                "value": {
+                 "name": "applicationName"
+                },
+                "valueKind": "Enum"
+               },
+               {
+                "value": "",
+                "valueKind": "RawLiteral"
+               }
+              ]
+             },
+             "valueKind": "InterpolatedStringLiteral"
+            },
+            {
+             "value": {
+              "segments": [
+               {
+                "value": "Play a playlist in ",
+                "valueKind": "RawLiteral"
+               },
+               {
+                "value": {
+                 "name": "applicationName"
+                },
+                "valueKind": "Enum"
+               },
+               {
+                "value": "",
+                "valueKind": "RawLiteral"
+               }
+              ]
+             },
+             "valueKind": "InterpolatedStringLiteral"
+            },
+            {
+             "value": {
+              "segments": [
+               {
+                "value": "Find music in ",
+                "valueKind": "RawLiteral"
+               },
+               {
+                "value": {
+                 "name": "applicationName"
+                },
+                "valueKind": "Enum"
+               },
+               {
+                "value": "",
+                "valueKind": "RawLiteral"
+               }
+              ]
+             },
+             "valueKind": "InterpolatedStringLiteral"
+            }
+           ],
+           "valueKind": "Array"
+          },
+          {
+           "label": "shortTitle",
+           "type": "Foundation.LocalizedStringResource",
+           "value": "Play from Library",
+           "valueKind": "RawLiteral"
+          },
+          {
+           "label": "systemImageName",
+           "type": "Swift.String",
+           "value": "magnifyingglass",
+           "valueKind": "RawLiteral"
+          }
+         ],
+         "type": "AppIntents.AppShortcut"
+        },
+        "valueKind": "InitCall"
+       },
+       "kind": "buildExpression"
+      },
+      {
+       "element": {
+        "value": {
+         "arguments": [
+          {
+           "label": "intent",
+           "type": "Resonate.ShuffleLibraryIntent",
+           "value": {
+            "arguments": [],
+            "type": "Resonate.ShuffleLibraryIntent"
+           },
+           "valueKind": "InitCall"
+          },
+          {
+           "label": "phrases",
+           "type": "Swift.Array<AppIntents.AppShortcutPhrase<Resonate.ShuffleLibraryIntent>>",
+           "value": [
+            {
+             "value": {
+              "segments": [
+               {
+                "value": "Shuffle ",
+                "valueKind": "RawLiteral"
+               },
+               {
+                "value": {
+                 "name": "applicationName"
+                },
+                "valueKind": "Enum"
+               },
+               {
+                "value": "",
+                "valueKind": "RawLiteral"
+               }
+              ]
+             },
+             "valueKind": "InterpolatedStringLiteral"
+            },
+            {
+             "value": {
+              "segments": [
+               {
+                "value": "Shuffle my music in ",
+                "valueKind": "RawLiteral"
+               },
+               {
+                "value": {
+                 "name": "applicationName"
+                },
+                "valueKind": "Enum"
+               },
+               {
+                "value": "",
+                "valueKind": "RawLiteral"
+               }
+              ]
+             },
+             "valueKind": "InterpolatedStringLiteral"
+            },
+            {
+             "value": {
+              "segments": [
+               {
+                "value": "Shuffle my library in ",
+                "valueKind": "RawLiteral"
+               },
+               {
+                "value": {
+                 "name": "applicationName"
+                },
+                "valueKind": "Enum"
+               },
+               {
+                "value": "",
+                "valueKind": "RawLiteral"
+               }
+              ]
+             },
+             "valueKind": "InterpolatedStringLiteral"
+            }
+           ],
+           "valueKind": "Array"
+          },
+          {
+           "label": "shortTitle",
+           "type": "Foundation.LocalizedStringResource",
+           "value": "Shuffle All",
+           "valueKind": "RawLiteral"
+          },
+          {
+           "label": "systemImageName",
+           "type": "Swift.String",
+           "value": "shuffle",
+           "valueKind": "RawLiteral"
+          }
+         ],
+         "type": "AppIntents.AppShortcut"
+        },
+        "valueKind": "InitCall"
+       },
+       "kind": "buildExpression"
+      },
+      {
+       "element": {
+        "value": {
+         "arguments": [
+          {
+           "label": "intent",
+           "type": "Resonate.PlayFavouritesIntent",
+           "value": {
+            "arguments": [],
+            "type": "Resonate.PlayFavouritesIntent"
+           },
+           "valueKind": "InitCall"
+          },
+          {
+           "label": "phrases",
+           "type": "Swift.Array<AppIntents.AppShortcutPhrase<Resonate.PlayFavouritesIntent>>",
+           "value": [
+            {
+             "value": {
+              "segments": [
+               {
+                "value": "Play my favourites in ",
+                "valueKind": "RawLiteral"
+               },
+               {
+                "value": {
+                 "name": "applicationName"
+                },
+                "valueKind": "Enum"
+               },
+               {
+                "value": "",
+                "valueKind": "RawLiteral"
+               }
+              ]
+             },
+             "valueKind": "InterpolatedStringLiteral"
+            },
+            {
+             "value": {
+              "segments": [
+               {
+                "value": "Play my favorites in ",
+                "valueKind": "RawLiteral"
+               },
+               {
+                "value": {
+                 "name": "applicationName"
+                },
+                "valueKind": "Enum"
+               },
+               {
+                "value": "",
+                "valueKind": "RawLiteral"
+               }
+              ]
+             },
+             "valueKind": "InterpolatedStringLiteral"
+            },
+            {
+             "value": {
+              "segments": [
+               {
+                "value": "Play favourites in ",
+                "valueKind": "RawLiteral"
+               },
+               {
+                "value": {
+                 "name": "applicationName"
+                },
+                "valueKind": "Enum"
+               },
+               {
+                "value": "",
+                "valueKind": "RawLiteral"
+               }
+              ]
+             },
+             "valueKind": "InterpolatedStringLiteral"
+            }
+           ],
+           "valueKind": "Array"
+          },
+          {
+           "label": "shortTitle",
+           "type": "Foundation.LocalizedStringResource",
+           "value": "Favourites",
+           "valueKind": "RawLiteral"
+          },
+          {
+           "label": "systemImageName",
+           "type": "Swift.String",
+           "value": "heart.fill",
+           "valueKind": "RawLiteral"
+          }
+         ],
+         "type": "AppIntents.AppShortcut"
+        },
+        "valueKind": "InitCall"
+       },
+       "kind": "buildExpression"
+      }
+     ],
+     "type": "AppIntents.AppShortcutsBuilder"
+    },
+    "valueKind": "Builder"
+   }
+  ],
+  "typeName": "Resonate.ResonateShortcuts"
+ }
+]

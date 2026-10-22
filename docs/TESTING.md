@@ -14,9 +14,11 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 ## iOS
 - [S] RemoteIO's `Unit` open path and `render`'s pointer handling stay iOS-only and untested on the
   host; `Routing`, `Drain` and `fill` are proved
-- [S] `ios/app-intents.py` was compared with Apple's processor by hand, on another xtool app's
-  fixtures (a plain intent, a `String` parameter, App Shortcuts), and nothing compares it again;
-  `AudioPlaybackIntent` as `AudioStarting` was never set beside Apple's output for it
+- [S · blocked: Xcode's processor] `ios/app-intents.py` is held by a fixture of `Siri.swift`'s const
+  values and its own output, never by Apple's: it was compared with `appintentsmetadataprocessor`
+  by hand, on another xtool app's fixtures (a plain intent, a `String` parameter, App Shortcuts),
+  and `AudioPlaybackIntent` as `AudioStarting` was never set beside Apple's output for it. The
+  processor is an arm64 Mach-O
 
 ## Identification
 - [S · blocked: registered key] AcoustID never reached with a real key; its fixture is written from
