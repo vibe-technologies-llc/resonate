@@ -130,6 +130,13 @@ instance names are keyed by pid and each process has its own `INSTANCES` pool.
   of errand for the catalog's deletes under Flatpak: `trash_through_the_portal` opens the file and
   passes the descriptor to `org.freedesktop.portal.Trash.TrashFile` on a connection of its own
   (`Trashing`: `Unopened`, `Unreached`, `Refused`), asked by the binary, never by this crate's poll.
+  `tests/trash.rs` hosts the real `xdg-desktop-portal` binary on a bus of its own
+  (`dbus-run-session`, a bus with nothing to activate, `XDG_DATA_HOME` in the test's folder) and
+  trashes a file through it, skipping where no portal is installed. The portal trashes with GIO's own
+  code, which answers `Refused` (result 0, the only trace being its debug log) where the trash
+  folder is not mode 0700 (*Directory already exists with bad permissions*); the descriptor kind
+  (`O_PATH`, read-write, read-only) makes no difference, and a run against a desktop's own portal
+  says nothing of the code until that folder is 0700. A Flatpak-sandboxed caller is still unproved.
 - **A notification is keyed on what it *says*.** The cover lands a moment after the track starts:
   the second telling replaces the first under the server's `replaces_id`; teardown closes it and
   waits `FAREWELL` (500 ms). Body escaped only where `GetCapabilities` answers `body-markup`.

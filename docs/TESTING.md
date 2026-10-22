@@ -23,8 +23,9 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   the documentation and `tests/live.rs` has no AcoustID test
 
 ## Catalog
-- [S] Trashing through the portal (`trash_through_the_portal`) is unproved against a live portal
-  under Flatpak; the agent shell's sandbox answered *refused* for a host file
+- [S] Trashing through the portal (`trash_through_the_portal`) is proved against a hosted
+  `xdg-desktop-portal` but not from inside a Flatpak sandbox, where the portal reads the caller's
+  app id and the descriptor crosses the sandbox
 
 ## Providers and network
 - [S · blocked: network] That the hosted hifi service still answers a request carrying neither
@@ -32,8 +33,10 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   nothing here has run
 
 ## Testing
-- [M] Hole punching is proved over loopback alone; two devices behind real NATs, a phone on a
-  mobile network and a Linux desktop, have not been driven against a live server
+- [M · blocked: network namespaces] Hole punching is proved over loopback alone; two devices
+  behind real NATs, a phone on a mobile network and a Linux desktop, have not been driven against a
+  live server. NATs built from user namespaces and nftables need a `veth` pair, which the running
+  kernel here has no module for (no `/lib/modules`) and no root to load
 - [M] The drop overlay never dragged onto on a real compositor from this tree: gpui's
   `ExternalPaths` is `pub(crate)`, so `driven.rs` calls `dragged_over` and `dropped` directly; the
   platform's drag events are unproved here
