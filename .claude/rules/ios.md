@@ -451,7 +451,7 @@ sync seals its records and talks QUIC (TLS) of its own.
 The views follow Android's screens and wording (`android.md`), with three tabs: Library, Settings
 and Search (`Tab(role: .search)`, which iOS sets apart at the trailing edge and turns into the search
 field; `Root.search` has its own stack). **Songs is a page of the Library tab and the queue is
-Now Playing's Up next, neither a tab**: *All songs*, a suggestion's mix, Favourites' and the
+Now Playing's Up next, neither a tab**: *All songs*, Favourites' and the
 empty states' *Browse songs* push `Destination.songs` onto the Library stack alone
 (`Navigation.showSongs`, which closes Now Playing and sets the grouping to songs). The mini
 player sits in the tab bar's bottom accessory (`tabViewBottomAccessory(isEnabled:)` from 26.1, enabled by `Library.loaded`, stored and flipped only when something is or stops being loaded so a song change never rebuilds the root view,
@@ -626,9 +626,11 @@ every route change (a pair of headphones at the same rate included), not from th
   **Its rows' icons are one kind of tile** (`ShelfTile`: a white symbol at `.title2` centred on a
   corner-to-corner gradient of two system colours, 56 pt scaled): Favourites pink and purple, All
   songs orange and red, Suggestions teal and blue, Statistics indigo and blue.
-- **The Library tab's All** shows albums and artists as the Search tab's carousels (`AlbumShelf`,
-  `ArtistShelf`, twelve each) under a *See all* header that switches the picker to that shelf, where
-  the full list is rows. **A shelf's cover pushes its page as every album and artist entry does**,
+- **The Library tab's All** shows playlists, albums and artists as carousels (`PlaylistShelf`,
+  `AlbumShelf`, `ArtistShelf`, twelve each) under a *See all* header that switches the picker to that shelf, where
+  the full list is rows. **Creating and importing a playlist live on the Playlists shelf and page
+  alone**, in a *New playlist* menu in the toolbar (*Create playlist*, *Import playlist file*), never
+  among All's rows; with none, the shelf reads "No playlists". **A shelf's cover pushes its page as every album and artist entry does**,
   a `NavigationLink(value:)` (the search's remembering of the text rides on a simultaneous tap,
   `picked`), never a button appending to `Navigation.paths`: the album page pushed that way from
   the Library tab came in with no slide. The *Favourites* and *All songs* rows read their counts in views of their
@@ -662,7 +664,7 @@ every route change (a pair of headphones at the same rate included), not from th
 
 - **A playlist file is read, never kept**: M3U, M3U8, PLS and XSPF
   (`playlist_file_extensions()`, declared in `Info.plist` as `org.resonate.playlist`) opened in
-  Resonate or chosen from the playlists section's *Import playlist file* go to
+  Resonate or chosen from the Playlists page's *New playlist* menu's *Import playlist file* go to
   `import_playlist_file` (`android.md`'s *playlist file*), read at most one byte past the boundary's
   8 MiB so a huge pick is refused rather than loaded, a notice counts the songs found
   in the library, and `Features.playlistToShow` has the root view open the new playlist. A playlist's
@@ -764,7 +766,11 @@ every route change (a pair of headphones at the same rate included), not from th
   green/teal, High-resolution green/blue, the most listened artist's mix, `listening_detail`'s first artist, its named accents). *Most played* and *Recently played* set `TrackFilter.played`, so they hold the songs heard and never run on into unheard ones. Covers are
   `pictured_by(filter)`, read for every mix in one `Work.aside` keyed by
   `Library.collectionGeneration`: the albums the filter's first rows fall on in its own order, those
-  holding a picture alone, at most four. Pressing the art opens the filtered Songs list; the round
+  holding a picture alone, at most four. Pressing the art pushes `Destination.mix(id)`, `MixView`, a page drawn as an album's (header
+  with the mosaic, Play and Shuffle, the songs as rows over the first song's backdrop) that reads
+  the mix's filter itself and never sets the Songs page's filter; `SuggestedMix.named` rebuilds a
+  mix from its id (the most listened artist's id carries the name), so a restored page needs no
+  statistics, and a mix no longer offered reads "This mix is no longer offered". The round
   play button and the context menu (Play, Shuffle, Show songs) play every song it holds, read
   page by page (`Library.everyPage`), so *Never heard* shuffles the whole of it.
   `SuggestionsRow` wears a teal and blue sparkles `ShelfTile`.

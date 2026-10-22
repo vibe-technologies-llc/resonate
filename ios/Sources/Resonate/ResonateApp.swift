@@ -50,6 +50,7 @@ enum Destination: Hashable, Codable {
     case tools
     case folders
     case suggestions
+    case mix(String)
     case statistics
     case wanted
     case providers
@@ -216,7 +217,7 @@ struct NavigationKeeper: View {
 extension Destination {
     var drawsItsOwnBackdrop: Bool {
         switch self {
-        case .album, .artist, .playlist, .songLyrics, .visualizer: true
+        case .album, .artist, .playlist, .mix, .songLyrics, .visualizer: true
         default: false
         }
     }
@@ -445,6 +446,7 @@ struct DestinationView: View {
         case .tools: LibraryToolsView()
         case .folders: FoldersView()
         case .suggestions: SuggestionsView()
+        case .mix(let id): MixView(id: id)
         case .statistics: StatisticsView()
         case .wanted: WantedView()
         case .providers: ProviderView()

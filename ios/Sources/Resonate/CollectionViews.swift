@@ -63,7 +63,18 @@ struct LibraryView: View {
                     StatisticsRow()
                 }
             }
-            if playlistsOnly || shelf == .all || shelf == .playlists {
+            if !playlistsOnly, shelf == .all, folded.isEmpty || !playlists.isEmpty {
+                Section {
+                    if playlists.isEmpty {
+                        Text("No playlists").foregroundStyle(.secondary)
+                    } else {
+                        PlaylistShelf(playlists: Array(playlists.prefix(Self.shelved)))
+                    }
+                } header: {
+                    SeeAllHeader(title: "Playlists", more: true) { shelf = .playlists }
+                }
+            }
+            if playlistsOnly || shelf == .playlists {
                 Section("Playlists") {
                     ForEach(playlists, id: \.id) { playlist in
                         NavigationLink(value: Destination.playlist(playlist.id)) {
@@ -71,12 +82,8 @@ struct LibraryView: View {
                         }
                         .collectionActions(.playlist(playlist.id))
                     }
-                    Button("Create playlist", systemImage: "plus") { naming = true }
-                    Button("Import playlist file", systemImage: "square.and.arrow.down") { importing = true }
-                    if playlists.isEmpty, folded.isEmpty {
-                        Text("Make a playlist for a mood, a moment, or your next journey.").foregroundStyle(.secondary)
-                    } else if playlists.isEmpty {
-                        Text("No playlists match “\(asked)”").foregroundStyle(.secondary)
+                    if playlists.isEmpty {
+                        Text(folded.isEmpty ? "No playlists" : "No playlists match “\(asked)”").foregroundStyle(.secondary)
                     }
                 }
             }
@@ -151,6 +158,15 @@ struct LibraryView: View {
                         library.features.undoPlaylistEdit()
                     }
                 }
+            }
+            if playlistsOnly || shelf == .playlists {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu("New playlist", systemImage: "plus") {
+                        Button("Create playlist", systemImage: "plus") { naming = true }
+                        Button("Import playlist file", systemImage: "square.and.arrow.down") { importing = true }
+                    }
+                }
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
             }
             LibraryToolbar()
         }
@@ -286,6 +302,40 @@ struct PlaylistShelfRow: View {
             }
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+struct PlaylistShelf: View {
+    @ScaledMetric(relativeTo: .subheadline) private var edge: CGFloat = 140
+    let playlists: [MusicPlaylist]
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: 14) {
+                ForEach(playlists, id: \.id) { playlist in
+                    NavigationLink(value: Destination.playlist(playlist.id)) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            PlaylistArtwork(playlist: playlist)
+                                .frame(width: edge, height: edge)
+                            Text(playlist.name)
+                                .font(.subheadline.weight(.medium))
+                                .lineLimit(1)
+                            Text(counted(Int(playlist.songs), "song"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        .frame(width: edge, alignment: .leading)
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .collectionActions(.playlist(playlist.id))
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+        .listRowSeparator(.hidden)
     }
 }
 

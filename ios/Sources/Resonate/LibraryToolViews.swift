@@ -241,6 +241,12 @@ struct SuggestedMix: Identifiable {
         }
         return mixes
     }
+
+    static func named(_ id: String) -> SuggestedMix? {
+        let artistPrefix = "More from "
+        let topArtist = id.hasPrefix(artistPrefix) ? String(id.dropFirst(artistPrefix.count)) : nil
+        return offered(topArtist: topArtist).first { $0.id == id }
+    }
 }
 
 struct SuggestionsView: View {
@@ -272,8 +278,7 @@ struct SuggestionsView: View {
     }
 
     private func open(_ mix: SuggestedMix) {
-        library.setFilter(mix.filter)
-        navigation.showSongs()
+        navigation.open(.mix(mix.id))
     }
 
     private func loadCovers(_ mixes: [SuggestedMix]) async {
@@ -283,6 +288,66 @@ struct SuggestionsView: View {
             Dictionary(uniqueKeysWithValues: try asked.map { ($0.0, try native.picturedBy(filter: $0.1)) })
         }) else { return }
         covers = found
+    }
+}
+
+struct MixView: View {
+    private static let corner: CGFloat = 20
+
+    @Environment(Library.self) private var library
+    let id: String
+    @State private var tracks: [Track] = []
+    @State private var covers: [Track] = []
+    @State private var read = false
+    @State private var failure: String?
+
+    var body: some View {
+        if let mix = SuggestedMix.named(id) {
+            List {
+                CollectionHeader(title: mix.title, subtitle: mix.detail, tracks: tracks, outline: .rounded(Self.corner)) {
+                    MosaicArtwork(covers: covers, accents: mix.accents, mark: mix.mark, name: mix.title, corner: Self.corner)
+                }
+                if let failure {
+                    ReadFailure(text: failure) { Task { await load(mix) } }
+                } else if read, tracks.isEmpty {
+                    Text("Nothing in this mix yet.").foregroundStyle(.secondary)
+                }
+                ForEach(tracks, id: \.id) { track in
+                    TrackRow(track: track) {
+                        library.play(tracks, selected: track)
+                    }
+                    .listRowBackground(Color.clear)
+                }
+            }
+            .listStyle(.plain)
+            .background(BackdropView(track: tracks.first, moving: false))
+            .scrollContentBackground(.hidden)
+            .navigationTitle(mix.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { CollectionMenu(tracks: tracks) }
+            .task(id: "\(id):\(library.collectionGeneration):\(library.catalogEpoch)") { await load(mix) }
+        } else {
+            ContentUnavailableView("This mix is no longer offered", systemImage: "sparkles")
+        }
+    }
+
+    private func load(_ mix: SuggestedMix) async {
+        guard let native = try? await library.player() else { return }
+        let filter = mix.filter
+        do {
+            let (rows, pictured) = try await Work.aside {
+                (
+                    try Library.everyPage { try native.filteredTracks(filter: filter, offset: $0, limit: Library.page) },
+                    try native.picturedBy(filter: filter)
+                )
+            }
+            failure = nil
+            tracks = rows
+            covers = pictured.compactMap { library.artworkTrack($0) }
+            read = true
+        } catch {
+            failure = explained(error)
+        }
     }
 }
 
