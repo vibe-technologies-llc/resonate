@@ -564,7 +564,9 @@ final class AmbientField: NSObject {
     func wear(_ look: AmbientLook, gpu: BackdropGPU) {
         let now = CACurrentMediaTime()
         let toneChanged = look.tone != tone
-        var changed = toneChanged || look.motion != motion
+        let motionMoved = look.motion != motion
+        let stillOwed = look.motion == .still && motion != .still
+        var changed = toneChanged || stillOwed
 
         self.gpu = gpu
         tone = look.tone
@@ -576,7 +578,11 @@ final class AmbientField: NSObject {
             blend = FieldBlend(look.palette)
             changed = true
         }
-        guard changed else { return }
+        guard changed || motionMoved else { return }
+        guard changed else {
+            schedule()
+            return
+        }
         if latest == nil {
             drawNow()
         } else if toneChanged {
