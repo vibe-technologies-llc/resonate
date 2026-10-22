@@ -188,6 +188,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val downloadStatus: StateFlow<String?> =
         downloads.jobs.map(DownloadPlan::summary).stateIn(scope, SharingStarted.Eagerly, null)
     val online = MutableStateFlow(settings.getBoolean("online", true))
+    val hostedServices = MutableStateFlow(settings.getBoolean("hosted-services", true))
     val folders = MutableStateFlow<List<MusicFolder>>(emptyList())
     val statistics = MutableStateFlow<LibraryStatistics?>(null)
     val lyrics = MutableStateFlow<LyricSheet?>(null)
@@ -347,6 +348,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             }
         }
         native.configureOnline(online.value)
+        native.configureHostedServices(hostedServices.value)
         enrichment.initialize(online.value)
         downloads.recover()
         settings.getString("unfinished-sync-landing", null)?.let { value ->
@@ -390,6 +392,14 @@ class LibraryFeatures(private val context: Context, private val library: Library
             enrichment.onlineChanged(enabled)
             settings.edit().putBoolean("online", enabled).commit()
             applySync(native)
+        }
+    }
+
+    fun setHostedServices(enabled: Boolean) {
+        work { native ->
+            native.configureHostedServices(enabled)
+            hostedServices.value = enabled
+            settings.edit().putBoolean("hosted-services", enabled).commit()
         }
     }
 

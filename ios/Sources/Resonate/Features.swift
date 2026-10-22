@@ -64,6 +64,7 @@ final class Features {
     var scrobbleStatus: String?
     var providers = ProviderAccounts()
     var online: Bool
+    var hostedServices: Bool
     var statistics: LibraryStatistics?
     var listeningDetail: ListeningDetail?
     private(set) var listenedCovers = ListenedCovers()
@@ -159,6 +160,7 @@ final class Features {
     init(library: Library) {
         self.library = library
         online = settings.object(forKey: "online") == nil ? true : settings.bool(forKey: "online")
+        hostedServices = settings.object(forKey: "hosted-services") == nil ? true : settings.bool(forKey: "hosted-services")
         syncFolder = settings.string(forKey: "sync-folder")
     }
 
@@ -190,6 +192,7 @@ final class Features {
     func initialize(_ native: MobilePlayer) {
         room.restore(native)
         native.configureOnline(enabled: online)
+        native.configureHostedServices(enabled: hostedServices)
         Task { [weak self] in
             await self?.readSecrets()
             self?.begin(native)
@@ -313,6 +316,16 @@ final class Features {
                 }
             }
             try await self?.applySync(native)
+        }
+    }
+
+    func setHostedServices(_ enabled: Bool) {
+        work { [weak self] native in
+            native.configureHostedServices(enabled: enabled)
+            await MainActor.run {
+                self?.hostedServices = enabled
+                self?.settings.set(enabled, forKey: "hosted-services")
+            }
         }
     }
 

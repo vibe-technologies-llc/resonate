@@ -256,3 +256,12 @@ debug assertions, where the workspace's optimised debug profile still runs it). 
 iOS, `cargo clippy -p resonate-mobile --target aarch64-apple-ios` with the environment
 `ios/build-native.py` sets. The layering job refuses PipeWire, GPUI, MPRIS, Discord and Oboe in
 `resonate-mobile`'s iOS tree.
+
+## Hosted services on the phones
+
+**`configure_hosted_services(enabled)` is the desktop's `hosted-services` on a phone** (default on, kept
+by each phone beside its online switch and applied at start): `Downloads::find` drops a Monochrome or
+hifi-api account whose server is blank while it is off, so a named server is still asked and nothing
+else is, and an empty remainder is `NoProvider`
+(`declined_hosted_services_leave_a_hosted_account_unasked_and_a_named_server_asked`). The switch is
+*Ask the hosted services* on each phone's provider screen.

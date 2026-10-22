@@ -48,6 +48,7 @@ pub(crate) struct Downloads {
     authorizing: Mutex<Option<SigningIn>>,
     sign_ins: AtomicU64,
     refreshed: Arc<Mutex<Option<String>>>,
+    hosted_services_declined: AtomicBool,
 }
 
 struct SigningIn {
@@ -436,6 +437,19 @@ impl Downloads {
             .map_err(|source| failure_of(MusicProvider::Tidal, &source))
     }
 
+    pub(crate) fn hosted_services_allowed(&self, allowed: bool) {
+        self.hosted_services_declined
+            .store(!allowed, Ordering::Release);
+    }
+
+    fn is_asked(&self, account: &DownloadAccount) -> bool {
+        let hosted = matches!(
+            account.provider,
+            MusicProvider::Monochrome | MusicProvider::HifiApi
+        ) && account.server.trim().is_empty();
+        !(hosted && self.hosted_services_declined.load(Ordering::Acquire))
+    }
+
     fn provider_of(&self, account: DownloadAccount) -> Box<dyn Provider> {
         let DownloadAccount {
             provider,
@@ -484,6 +498,10 @@ impl Downloads {
         refused: &BTreeSet<String>,
         reaching: &(dyn Fn() -> bool + Sync),
     ) -> Searched {
+        let accounts: Vec<DownloadAccount> = accounts
+            .into_iter()
+            .filter(|account| self.is_asked(account))
+            .collect();
         if accounts.is_empty() {
             return Searched {
                 offer: job.settled(Err(Error::NoProvider)),
@@ -823,6 +841,10 @@ impl MobilePlayer {
         let client = Arc::clone(self.services.online.client());
         self.downloads
             .download(&job, output, &move || client.is_reaching())
+    }
+
+    pub fn configure_hosted_services(&self, enabled: bool) {
+        self.downloads.hosted_services_allowed(enabled);
     }
 
     pub fn download_progress(&self, job: u64) -> Option<DownloadProgress> {
@@ -1172,6 +1194,35 @@ mod tests {
             downloads.progress(refused).map(|progress| progress.phase),
             Some(DownloadPhase::Failed)
         );
+    }
+
+    #[test]
+    fn declined_hosted_services_leave_a_hosted_account_unasked_and_a_named_server_asked() {
+        let downloads = Downloads::default();
+        downloads.hosted_services_allowed(false);
+        let hosted = downloads.begin(echoes());
+        let named = downloads.begin(echoes());
+
+        let unasked = found(
+            &downloads,
+            hosted,
+            vec![
+                account(MusicProvider::Monochrome, ""),
+                account(MusicProvider::HifiApi, "  "),
+            ],
+        )
+        .offer
+        .expect_err("nothing asked");
+        let asked = found(
+            &downloads,
+            named,
+            vec![account(MusicProvider::Monochrome, &unreached_address())],
+        )
+        .offer
+        .expect_err("nobody there");
+
+        assert!(matches!(unasked, Error::NoProvider));
+        assert!(matches!(asked, Error::Unreachable { .. }));
     }
 
     #[test]

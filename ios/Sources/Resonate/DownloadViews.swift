@@ -312,6 +312,13 @@ struct ProviderView: View {
             } footer: {
                 Text("Every provider that is on and ready is asked, in the order below: your own server, then your TIDAL subscription, then the hosted services. An earlier provider's match is taken over a later one's when it answers within a few seconds. Songs are matched by recording codes, or by title, artist and duration. Credentials are kept in the iOS keychain on this device only.")
             }
+            Section {
+                Toggle(isOn: Binding(get: { library.features.hostedServices }, set: { library.features.setHostedServices($0) })) {
+                    Text("Ask the hosted services")
+                }
+            } footer: {
+                Text("A Monochrome or hifi-api provider with no server address is asked at the hosted service unless this is off.")
+            }
             ForEach(MusicProvider.every, id: \.self) { provider in
                 ProviderSection(saved: providers.account(provider), on: providers.isOn(provider))
             }

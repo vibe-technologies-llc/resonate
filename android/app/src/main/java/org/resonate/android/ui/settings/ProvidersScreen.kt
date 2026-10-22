@@ -60,6 +60,7 @@ class ProvidersViewModel(private val resonate: Resonate) : ViewModel() {
     val stored = features.providerAccount
     val authorization = features.tidalAuthorization
     val busy = features.tidalBusy
+    val hostedServices = features.hostedServices
     private val mutableDraft = MutableStateFlow<DownloadAccount?>(null)
     val draft = mutableDraft.asStateFlow()
     private var identity: String? = null
@@ -84,6 +85,8 @@ class ProvidersViewModel(private val resonate: Resonate) : ViewModel() {
     fun save() {
         draft.value?.let { features.saveProviderAccount(it.trimmed()) }
     }
+
+    fun setHostedServices(enabled: Boolean) = features.setHostedServices(enabled)
 
     fun signIn() {
         draft.value?.let { features.authorizeTidal(it.trimmed()) }
@@ -135,6 +138,7 @@ fun ProvidersScreen() {
     val draft by model.draft.collectAsStateWithLifecycle()
     val authorization by model.authorization.collectAsStateWithLifecycle()
     val busy by model.busy.collectAsStateWithLifecycle()
+    val hostedServices by model.hostedServices.collectAsStateWithLifecycle()
     val copy = rememberCopy()
     Page("Download sources") { padding ->
         val account = draft
@@ -147,6 +151,17 @@ fun ProvidersScreen() {
             item(key = "intro") {
                 Note(
                     "Songs you find in Search can be downloaded from the source chosen here. Downloads are matched by recording codes, or by title, artist and length, and you choose the folder for each song."
+                )
+            }
+            item(key = "hosted-services") {
+                SwitchRow(
+                    title = "Ask the hosted services",
+                    icon = Icons.Rounded.Cloud,
+                    supporting =
+                        "A Monochrome or hifi-api source with no server address is asked at the hosted service unless this is off",
+                    checked = hostedServices,
+                    onCheckedChange = model::setHostedServices,
+                    modifier = Modifier.testTag("setting-hosted-services"),
                 )
             }
             item(key = "source-header") { SectionHeader("Source") }
