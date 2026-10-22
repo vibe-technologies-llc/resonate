@@ -62,10 +62,15 @@ public enum TagDiff {
         return (common, differing)
     }
 
-    public static func changed(shown: [TagName: String], read: [TagName: String], mixed: Set<TagName>) -> [TagName] {
+    public static func changed(
+        shown: [TagName: String],
+        read: [TagName: String],
+        mixed: Set<TagName>,
+        emptied: Set<TagName> = []
+    ) -> [TagName] {
         TagName.allCases.filter { name in
             let now = shown[name] ?? ""
-            return mixed.contains(name) ? !now.isEmpty : now != (read[name] ?? "")
+            return mixed.contains(name) ? !now.isEmpty || emptied.contains(name) : now != (read[name] ?? "")
         }
     }
 

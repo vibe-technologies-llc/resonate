@@ -612,7 +612,7 @@ extension StatusMessage.Offer {
     var title: String {
         switch self {
         case .openCatalog: "Try again"
-        case .restoreQueueRow: "Undo"
+        case .restoreQueueRow, .restoreEqualiser: "Undo"
         }
     }
 }

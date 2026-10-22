@@ -1377,3 +1377,12 @@ shows the *Removed from queue* notice with an *Undo* button (`StatusMessage.Offe
 Undo calls `insert_in_queue(ids, at)`, which puts the song back at `Placement::At(at)` (past the end
 it is appended) as a row of its own, so the playing row and its place are untouched
 (`a_removed_song_goes_back_to_the_row_it_left_and_past_the_end_it_is_appended`).
+
+*Forget* on a per-output curve is undone the same way: `forgetEqualiser(for:)` keeps the curve it
+unbound (`ForgottenEqualiser`) and the *Forgot the curve for …* notice offers *Undo*
+(`.restoreEqualiser`), which binds it again and follows the route if it is the one in use.
+
+**A *Mixed* tag field is cleared by its own button**, not by blanking it (blank means unchanged):
+`TagDiff.changed(…, emptied:)` counts a mixed field in the editor's `emptied` set as changed and
+`change` writes it empty; typing into the field takes it out of the set
+(`aMixedFieldLeftBlankIsUnchangedAndAnEmptiedOneIsWrittenEmpty`).

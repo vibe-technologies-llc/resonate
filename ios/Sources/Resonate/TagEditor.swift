@@ -25,6 +25,7 @@ struct TagEditorSheet: View {
     @State private var loaded = false
     @State private var failure: String?
     @State private var discarding = false
+    @State private var emptied: Set<TagName> = []
     @State private var writableTracks: [Track]?
 
     var body: some View {
@@ -95,18 +96,34 @@ struct TagEditorSheet: View {
     }
 
     private func field(_ name: TagName) -> some View {
-        let binding = Binding(get: { shown[name] ?? "" }, set: { shown[name] = $0 })
+        let binding = Binding(
+            get: { shown[name] ?? "" },
+            set: {
+                shown[name] = $0
+                if !$0.isEmpty { emptied.remove(name) }
+            }
+        )
+        let clearing = emptied.contains(name)
         return LabeledContent(name.label) {
-            TextField(mixed.contains(name) ? "Mixed" : name.label, text: binding)
-                .multilineTextAlignment(.trailing)
-                .keyboardType(name.numbered ? .numberPad : .default)
-                .textInputAutocapitalization(name.numbered ? .never : .words)
-                .autocorrectionDisabled()
+            HStack {
+                TextField(clearing ? "Will be cleared" : mixed.contains(name) ? "Mixed" : name.label, text: binding)
+                    .multilineTextAlignment(.trailing)
+                    .keyboardType(name.numbered ? .numberPad : .default)
+                    .textInputAutocapitalization(name.numbered ? .never : .words)
+                    .autocorrectionDisabled()
+                if mixed.contains(name), (shown[name] ?? "").isEmpty {
+                    Button(clearing ? "Keep each song's" : "Clear on every song", systemImage: clearing ? "arrow.uturn.backward.circle" : "xmark.circle") {
+                        if clearing { emptied.remove(name) } else { emptied.insert(name) }
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+                }
+            }
         }
     }
 
     private var changed: [TagName] {
-        TagDiff.changed(shown: shown, read: read, mixed: mixed)
+        TagDiff.changed(shown: shown, read: read, mixed: mixed, emptied: emptied)
     }
 
     private var change: SongTags {

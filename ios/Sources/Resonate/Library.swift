@@ -16,12 +16,18 @@ struct StatusMessage: Equatable {
     enum Offer {
         case openCatalog
         case restoreQueueRow
+        case restoreEqualiser
     }
 
     let text: String
     let kind: Kind
     let serial: Int
     var offer: Offer?
+}
+
+struct ForgottenEqualiser {
+    let route: OutputRoute
+    let curve: EqualiserCurve
 }
 
 struct RemovedQueueRow {
@@ -264,6 +270,7 @@ final class Library {
     @ObservationIgnored private var steered = Steered()
     @ObservationIgnored private var queueSettling = Settling()
     @ObservationIgnored private var removedFromQueue: RemovedQueueRow?
+    @ObservationIgnored private var forgottenEqualiser: ForgottenEqualiser?
     @ObservationIgnored let support: URL
     @ObservationIgnored private var pollSleep: Task<Void, Never>?
     @ObservationIgnored private var wakeOwed = false
@@ -947,9 +954,23 @@ final class Library {
     }
 
     func forgetEqualiser(for forgotten: OutputRoute) {
+        let kept = preferencesStore.isBound(forgotten) ? preferencesStore.read(for: forgotten).equaliser : nil
         preferencesStore.unbind(forgotten)
         boundRoutes = preferencesStore.boundRoutes()
         if forgotten.id == route?.id { followRoute() }
+        guard let kept else { return }
+        forgottenEqualiser = ForgottenEqualiser(route: forgotten, curve: kept)
+        show("Forgot the curve for \(forgotten.name)", as: .notice, offering: .restoreEqualiser)
+    }
+
+    private func restoreEqualiser() {
+        guard let forgotten = forgottenEqualiser else { return }
+        forgottenEqualiser = nil
+        dismissStatus()
+        preferencesStore.bind(forgotten.route, to: forgotten.curve)
+        boundRoutes = preferencesStore.boundRoutes()
+        if forgotten.route.id == route?.id { followRoute() }
+        notice("Curve back for \(forgotten.route.name)")
     }
 
     private func followRoute() {
@@ -1584,6 +1605,7 @@ final class Library {
         switch offer {
         case .openCatalog: openAgain()
         case .restoreQueueRow: restoreQueueRow()
+        case .restoreEqualiser: restoreEqualiser()
         }
     }
 

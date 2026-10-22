@@ -17,8 +17,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [L] Neither phone has the vault: the managed archive is built on desktop paths
 - [M] iOS downloads cannot resume: any cancel, failure or background expiry deletes the partial
   file and the retry starts again, a large FLAC included
-- [S] *Forget* on an iOS per-output curve has no undo; a *Mixed* tag field cannot be cleared (blank
-  reads as unchanged)
 - [M · blocked: xtool] iOS has no widget: a WidgetKit extension xtool builds is linked empty and,
   linked whole, traps in `ExtensionFoundation` before a widget registers (xtool issue 313)
 - [M · blocked: Apple] iOS has no CarPlay: the CarPlay audio entitlement is granted by Apple to a
