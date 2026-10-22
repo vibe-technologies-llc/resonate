@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
+
 public enum ArtworkBucket: Int, CaseIterable, Sendable {
     case row = 96
     case tile = 192

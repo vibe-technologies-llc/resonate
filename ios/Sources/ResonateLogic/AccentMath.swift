@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
+
 public enum AccentMath {
     public enum Ink: Equatable, Sendable {
         case white

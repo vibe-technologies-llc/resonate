@@ -1326,6 +1326,12 @@ names the sources use and refuses one `Erasure.suites` lacks. A name the module 
 importing both (`clock(_:)` and Darwin's `clock()`), so a function used as a value is written
 `ResonateLogic.clock`.
 
+A file of the module that names `CGFloat`, `CGSize`, `CGPoint` or `CGRect` imports CoreGraphics
+beside Foundation, behind `#if canImport(CoreGraphics)` since on Linux the types live in Foundation.
+Without it `swift-frontend` segfaults in a release `xtool dev build` while the app's SIL linker
+reads an inlinable body such as `EqualiserScale.x(_:)` (a modularization error whose own
+diagnostic crashes); the host tests do not show it.
+
 ## Checks
 
 `python3 ios/build-native.py` then `cd ios && xtool dev build && python3 app-intents.py --ipa` must

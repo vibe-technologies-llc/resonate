@@ -1,6 +1,10 @@
 import Foundation
 import ResonateNative
 
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
+
 extension EqualiserFilter {
     public static let every: [EqualiserFilter] = [
         .peaking, .lowShelf, .highShelf, .lowPass, .highPass, .notch, .bandPass, .allPass,

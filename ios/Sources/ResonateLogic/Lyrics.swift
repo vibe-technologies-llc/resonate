@@ -1,6 +1,10 @@
 import Foundation
 import ResonateNative
 
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
+
 public enum LyricPace {
     public static let lineSyncedTick: TimeInterval = 0.05
     public static let drawsBeyondPanes: CGFloat = 1
