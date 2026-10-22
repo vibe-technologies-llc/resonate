@@ -626,18 +626,19 @@ every route change (a pair of headphones at the same rate included), not from th
   **Its rows' icons are one kind of tile** (`ShelfTile`: a white symbol at `.title2` centred on a
   corner-to-corner gradient of two system colours, 56 pt scaled): Favourites pink and purple, All
   songs orange and red, Suggestions teal and blue, Statistics indigo and blue.
-- **The Library tab keeps its shortcuts apart from its selector**: Favourites, All songs,
-  Suggestions and Statistics are one section that shows whichever shelf is picked (all but
-  Favourites hidden while searching), and the segmented picker is a section of its own below it,
-  changing only the shelves.
-- **The Library tab's All** shows playlists, albums and artists as carousels (`PlaylistShelf`,
-  `AlbumShelf`, `ArtistShelf`, twelve each) under a *See all* header that switches the picker to that shelf, where
-  the full list is rows. **Creating and importing a playlist live on the Playlists shelf and page
-  alone**, in a *New playlist* menu in the toolbar (*Create playlist*, *Import playlist file*), never
-  among All's rows; with none, the shelf reads "No playlists". **A shelf's cover pushes its page as every album and artist entry does**,
+- **The Library tab has no selector**: it is a home page (`LibraryView(page: .home)`) of one
+  section of shortcuts (Favourites, All songs, Suggestions, Statistics; all but Favourites hidden
+  while searching), then playlists, albums and artists as carousels (`PlaylistShelf`, `AlbumShelf`,
+  `ArtistShelf`, twelve each) under a *See all* header (`SeeAllPageHeader`) that pushes the kind's
+  own page, `Destination.playlists`, `.albums` or `.artists`, each `LibraryView(page:)` listing
+  every one as rows with its own search. **Creating and importing a playlist live on the Playlists
+  page alone**, in a *New playlist* menu in the toolbar (*Create playlist*, *Import playlist file*)
+  beside *Undo last playlist edit*, never among the home's rows; with none, the shelf and the page
+  read "No playlists". **A shelf's cover pushes its page as every album and artist entry does**,
   a `NavigationLink(value:)` (the search's remembering of the text rides on a simultaneous tap,
   `picked`), never a button appending to `Navigation.paths`: the album page pushed that way from
-  the Library tab came in with no slide. The *Favourites* and *All songs* rows read their counts in views of their
+  the Library tab came in with no slide, and *See all* is a `NavigationLink(value:)` for the same
+  reason. The *Favourites* and *All songs* rows read their counts in views of their
   own (`FavouritesCountRow`, `SongsCountRow`, from `Library.catalogCount`), so a heart or a
   catalog read never rebuilds the tab.
 - **Collections** are titled by their entity and drawn over a still backdrop, and grouped in Rust,

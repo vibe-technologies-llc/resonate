@@ -46,6 +46,8 @@ enum Destination: Hashable, Codable {
     case artist(String)
     case playlist(UInt64)
     case playlists
+    case albums
+    case artists
     case favourites
     case tools
     case folders
@@ -441,7 +443,9 @@ struct DestinationView: View {
         case .album(let key): AlbumView(key: key)
         case .artist(let name): ArtistView(name: name)
         case .playlist(let id): PlaylistView(id: id)
-        case .playlists: LibraryView(playlistsOnly: true)
+        case .playlists: LibraryView(page: .playlists)
+        case .albums: LibraryView(page: .albums)
+        case .artists: LibraryView(page: .artists)
         case .favourites: FavouritesView()
         case .tools: LibraryToolsView()
         case .folders: FoldersView()

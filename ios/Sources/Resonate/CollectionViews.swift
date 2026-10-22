@@ -2,13 +2,56 @@ import ResonateLogic
 import ResonateNative
 import SwiftUI
 
-enum Shelf: String, CaseIterable, Identifiable {
-    case all = "All"
-    case playlists = "Playlists"
-    case albums = "Albums"
-    case artists = "Artists"
+enum LibraryPage {
+    case home
+    case playlists
+    case albums
+    case artists
 
-    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .home: "Your library"
+        case .playlists: "Playlists"
+        case .albums: "Albums"
+        case .artists: "Artists"
+        }
+    }
+
+    var searchPrompt: String {
+        switch self {
+        case .home: "Search your library"
+        case .playlists: "Search playlists"
+        case .albums: "Search albums"
+        case .artists: "Search artists"
+        }
+    }
+}
+
+struct SeeAllPageHeader: View {
+    private static let reachBeyondTheLine: CGFloat = 12
+
+    let title: String
+    let more: Bool
+    let page: Destination
+
+    var body: some View {
+        HStack {
+            Text(title)
+            Spacer()
+            if more {
+                NavigationLink(value: page) {
+                    Text("See all")
+                        .font(.subheadline)
+                        .textCase(nil)
+                        .frame(minWidth: 44)
+                        .padding(.vertical, Self.reachBeyondTheLine)
+                        .contentShape(.rect)
+                        .padding(.vertical, -Self.reachBeyondTheLine)
+                }
+                .accessibilityLabel("See all \(title.lowercased())")
+            }
+        }
+    }
 }
 
 struct LibraryView: View {
@@ -16,32 +59,31 @@ struct LibraryView: View {
 
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
-    var playlistsOnly = false
-    @State private var shelf = Shelf.all
+    var page = LibraryPage.home
     @State private var playlistSearch = ""
     @State private var naming = false
     @State private var importing = false
 
     var body: some View {
         @Bindable var shelfSearch = library.shelfSearch
-        let asked = playlistsOnly ? playlistSearch.trimmingCharacters(in: .whitespacesAndNewlines) : shelfSearch.query
+        let asked = page == .playlists ? playlistSearch.trimmingCharacters(in: .whitespacesAndNewlines) : shelfSearch.query
         let folded = asked.searchFolded
         let answered = !asked.isEmpty && shelfSearch.hasAnswer
         let playlists = library.features.playlists.filter { folded.isEmpty || library.features.foldedName(of: $0).contains(folded) }
         let albumHits = asked.isEmpty ? library.albums : shelfSearch.found.albums
         let artistHits = asked.isEmpty ? library.artists : shelfSearch.found.artists
-        let matchedNothing = !playlistsOnly && answered && playlists.isEmpty && albumHits.isEmpty && artistHits.isEmpty && !"favourites".contains(folded)
+        let matchedNothing = page == .home && answered && playlists.isEmpty && albumHits.isEmpty && artistHits.isEmpty && !"favourites".contains(folded)
         ThemedList {
             if matchedNothing {
                 ContentUnavailableView.search(text: asked)
                     .listRowSeparator(.hidden)
             }
-            if playlistsOnly, folded.isEmpty || "favourites".contains(folded) {
+            if page == .playlists, folded.isEmpty || "favourites".contains(folded) {
                 NavigationLink(value: Destination.favourites) {
                     FavouritesCountRow()
                 }
             }
-            if !playlistsOnly, folded.isEmpty || "favourites".contains(folded) {
+            if page == .home, folded.isEmpty || "favourites".contains(folded) {
                 Section {
                     NavigationLink(value: Destination.favourites) {
                         FavouritesCountRow()
@@ -63,17 +105,7 @@ struct LibraryView: View {
                     }
                 }
             }
-            if !playlistsOnly {
-                Section {
-                    Picker("Show", selection: $shelf) {
-                        ForEach(Shelf.allCases) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets())
-                }
-            }
-            if !playlistsOnly, shelf == .all, folded.isEmpty || !playlists.isEmpty {
+            if page == .home, folded.isEmpty || !playlists.isEmpty {
                 Section {
                     if playlists.isEmpty {
                         Text("No playlists").foregroundStyle(.secondary)
@@ -81,10 +113,27 @@ struct LibraryView: View {
                         PlaylistShelf(playlists: Array(playlists.prefix(Self.shelved)))
                     }
                 } header: {
-                    SeeAllHeader(title: "Playlists", more: true) { shelf = .playlists }
+                    SeeAllPageHeader(title: "Playlists", more: true, page: .playlists)
                 }
             }
-            if playlistsOnly || shelf == .playlists {
+            if page == .home, !albumHits.isEmpty {
+                Section {
+                    AlbumShelf(albums: Array(albumHits.prefix(Self.shelved)), query: asked)
+                } header: {
+                    SeeAllPageHeader(title: "Albums", more: true, page: .albums)
+                }
+            }
+            if page == .home, !artistHits.isEmpty {
+                Section {
+                    ArtistShelf(artists: Array(artistHits.prefix(Self.shelved)), query: asked)
+                } header: {
+                    SeeAllPageHeader(title: "Artists", more: true, page: .artists)
+                }
+            }
+            if page == .home, albumHits.isEmpty, artistHits.isEmpty, asked.isEmpty {
+                Text("Add a music folder in Settings to see your albums and artists here.").foregroundStyle(.secondary)
+            }
+            if page == .playlists {
                 Section("Playlists") {
                     ForEach(playlists, id: \.id) { playlist in
                         NavigationLink(value: Destination.playlist(playlist.id)) {
@@ -97,25 +146,8 @@ struct LibraryView: View {
                     }
                 }
             }
-            if !playlistsOnly, shelf == .all, !albumHits.isEmpty {
+            if page == .albums {
                 Section {
-                    AlbumShelf(albums: Array(albumHits.prefix(Self.shelved)), query: asked)
-                } header: {
-                    SeeAllHeader(title: "Albums", more: albumHits.count > Self.shelved) { shelf = .albums }
-                }
-            }
-            if !playlistsOnly, shelf == .all, !artistHits.isEmpty {
-                Section {
-                    ArtistShelf(artists: Array(artistHits.prefix(Self.shelved)), query: asked)
-                } header: {
-                    SeeAllHeader(title: "Artists", more: artistHits.count > Self.shelved) { shelf = .artists }
-                }
-            }
-            if !playlistsOnly, shelf == .all, albumHits.isEmpty, artistHits.isEmpty, asked.isEmpty {
-                Text("Add a music folder in Settings to see your albums and artists here.").foregroundStyle(.secondary)
-            }
-            if !playlistsOnly, shelf == .albums {
-                Section("Albums") {
                     if albumHits.isEmpty, asked.isEmpty {
                         Text("Add a music folder in Settings to see your albums here.").foregroundStyle(.secondary)
                     } else if albumHits.isEmpty, answered {
@@ -133,8 +165,8 @@ struct LibraryView: View {
                     }
                 }
             }
-            if !playlistsOnly, shelf == .artists {
-                Section("Artists") {
+            if page == .artists {
+                Section {
                     if artistHits.isEmpty, asked.isEmpty {
                         Text("Add a music folder in Settings to see your artists here.").foregroundStyle(.secondary)
                     } else if artistHits.isEmpty, answered {
@@ -155,21 +187,21 @@ struct LibraryView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .searchable(text: playlistsOnly ? $playlistSearch : $shelfSearch.text, prompt: playlistsOnly ? "Search playlists" : "Search your library")
-        .navigationTitle(playlistsOnly ? "Playlists" : "Your library")
+        .searchable(text: page == .playlists ? $playlistSearch : $shelfSearch.text, prompt: page.searchPrompt)
+        .navigationTitle(page.title)
         .refreshable {
             library.rescan()
             library.features.loadPlaylists()
         }
         .toolbar {
-            if !library.features.playlists.isEmpty {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Undo last playlist edit", systemImage: "arrow.uturn.backward") {
-                        library.features.undoPlaylistEdit()
+            if page == .playlists {
+                if !library.features.playlists.isEmpty {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Undo last playlist edit", systemImage: "arrow.uturn.backward") {
+                            library.features.undoPlaylistEdit()
+                        }
                     }
                 }
-            }
-            if playlistsOnly || shelf == .playlists {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu("New playlist", systemImage: "plus") {
                         Button("Create playlist", systemImage: "plus") { naming = true }
