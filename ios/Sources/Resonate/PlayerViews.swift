@@ -78,6 +78,8 @@ struct MiniPlayer: View {
         .buttonStyle(.plain)
         .padding(.horizontal, expanded ? 14 : Self.inlineInset)
         .frame(maxWidth: .infinity)
+        .transaction(value: placement) { $0.animation = nil }
+        .transaction(value: fit) { $0.animation = nil }
         .onGeometryChange(for: InlineFit.self) { InlineFit(width: $0.size.width) } action: { fit = $0 }
         .contentShape(.rect)
         .onTapGesture { navigation.nowPlaying = true }
