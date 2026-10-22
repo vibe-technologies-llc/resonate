@@ -845,7 +845,8 @@ is never named.
   settings body first); a switch is pressed by its `-track` mark. Every Output and Processing choice and
   switch is pressed and read back off `Player::output_settings`; `Driven::hearing` hands the
   `Unplugged` backend sinks to list, so a device row is pressed too. gpui can't build an
-  `ExternalPaths` in a test: `dragged_over` and `dropped` are called on the `RootView`. `views/root.rs`
+  `ExternalPaths` in a test: `dragged_over` and `dropped` are called on the `RootView`; the platform's
+  own drag events are driven by the `drive-a-drag` skill on a hosted KWin, outside the test suite. `views/root.rs`
   drives keys. Pressing the equaliser curve with the equaliser off once turned it on and moved the
   curve from under the press; the note is now always there and `kit::section_header` holds a row
   control's height.

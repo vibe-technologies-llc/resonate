@@ -118,8 +118,12 @@ it, or set `workspace.activeWindow = w` from a KWin script loaded via
 
 ## What cannot be checked this way
 
-A screenshot proves layout and paint, not interaction: no synthetic input without the remote-desktop
-portal, and no `ydotool`, `wtype`, `dotool` or `xdotool`. Temporary edits reach states a click would:
+A screenshot proves layout and paint, not interaction: the live session takes no synthetic input
+without the remote-desktop portal, and there is no `ydotool`, `wtype`, `dotool` or `xdotool` (and
+never `uinput`, which reaches the live pointer). A pointer gesture can be driven on a compositor of
+its own: the `drive-a-drag` skill hosts a virtual KWin, drags a file onto the window and screenshots
+the overlay. Anything else behind a click renders only in its default state, or through temporary
+edits that reach what a click would:
 
 - a pane: mark it `#[default]` on `Pane` (`crates/resonate-ui/src/views/root.rs`);
 - a search: call `model.set_query(...)` beside the `model.reload` at the end of `LibraryModel::new`;
