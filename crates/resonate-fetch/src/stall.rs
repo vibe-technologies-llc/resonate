@@ -74,10 +74,12 @@ mod tests {
         let unbounded = NextTimeout {
             after: time::Duration::NotHappening,
             reason: Timeout::RecvBody,
+            ..NextTimeout::default()
         };
         let sooner = NextTimeout {
             after: Duration::from_secs(1).into(),
             reason: Timeout::Global,
+            ..NextTimeout::default()
         };
 
         let capped = at_most(unbounded, Duration::from_secs(30));
