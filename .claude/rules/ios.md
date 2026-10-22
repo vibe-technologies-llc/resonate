@@ -690,7 +690,7 @@ every route change (a pair of headphones at the same rate included), not from th
   and artists); a bar chart of listening (`ListeningChart`, drawn in SwiftUI: days for a week or month,
   weeks for a year, months for all time, the day cut at the midnight of the phone's zone, `TimeZone.current.identifier` with its offset as the fallback; all time reads every day
   heard, not the last year's, and a year's or all time's end labels and busiest day carry the year) that a tap or a drag
-  selects a bar of to read its time and plays; most listened songs, albums and artists, five each
+  selects a bar of to read its time and plays (to VoiceOver the chart is one adjustable element: swiping up or down steps the same selection from bar to bar and speaks that period's time and plays); most listened songs, albums and artists, five each
   and *Show more* for twenty-five (albums open `Destination.album(key)`, artists
   `Destination.artist(name)`, each a `CollectionRow` with the collection's menu and swipe, its cover
   found with the statistics on `Work.aside`, `ListenedCovers`: an album's `album(key)` artwork song,

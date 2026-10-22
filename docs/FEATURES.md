@@ -17,7 +17,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [L] Neither phone has the vault: the managed archive is built on desktop paths
 - [M] iOS downloads cannot resume: any cancel, failure or background expiry deletes the partial
   file and the retry starts again, a large FLAC included
-- [S] Statistics' listening chart is one summary element to VoiceOver, so no bar can be reached
 - [S] Destructive edits on iOS have no undo: swipe, menu and `onDelete` removal from the queue,
   *Forget* on a per-output curve, and swiping down on the tag editor, *Add songs* and the filter
   sheet drops what was typed; a *Mixed* tag field cannot be cleared (blank reads as unchanged)

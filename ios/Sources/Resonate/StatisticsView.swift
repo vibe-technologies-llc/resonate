@@ -281,7 +281,28 @@ struct ListeningChart: View {
         ListeningBars(bars: bars, span: span, tallest: max(bars.map(\.listenedMs).max() ?? 1, 1), selected: $selected)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Listening over time")
-            .accessibilityValue(summary(bars))
+            .accessibilityValue(spoken(bars))
+            .accessibilityHint("Swipe up or down to hear each period")
+            .accessibilityAdjustableAction { direction in
+                step(direction, through: bars)
+            }
+    }
+
+    private func spoken(_ bars: [ListeningBar]) -> String {
+        guard let chosen = bars.first(where: { $0.starts == selected }) else { return summary(bars) }
+        return "\(chosen.caption(span: span)), \(StatisticsView.spoken(chosen.listenedMs)), \(counted(Int(chosen.plays), "play"))"
+    }
+
+    private func step(_ direction: AccessibilityAdjustmentDirection, through bars: [ListeningBar]) {
+        guard !bars.isEmpty else { return }
+        let at = bars.firstIndex { $0.starts == selected }
+        let next: Int
+        switch direction {
+        case .increment: next = at.map { min($0 + 1, bars.count - 1) } ?? 0
+        case .decrement: next = at.map { max($0 - 1, 0) } ?? bars.count - 1
+        @unknown default: return
+        }
+        selected = bars[next].starts
     }
 
     private func summary(_ bars: [ListeningBar]) -> String {
