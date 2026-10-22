@@ -12,8 +12,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   format enumeration and DoP need capability negotiation and physical-device validation
 - [M] Android keeps one download account: the boundary races every account, but Settings stores one
   and the screens show one
-- [S] The phones apply one curve to every channel: a filter an imported profile limits to some
-  channels is passed over (and counted), where the desktop keeps it on those channels
 
 ## iOS parity
 - [L] Neither phone has the vault: the managed archive is built on desktop paths

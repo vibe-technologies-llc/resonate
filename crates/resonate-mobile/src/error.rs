@@ -217,6 +217,8 @@ pub enum Error {
     BandGain { band: u32, decibels: f32 },
     #[error("Band {}'s Q must lie between {Q_AT_LEAST} and {Q_AT_MOST}, not {q}", band + 1)]
     BandQ { band: u32, q: f32 },
+    #[error("Band {} is played on no channel", band + 1)]
+    BandChannels { band: u32 },
     #[error("The preamp may lift or lower at most {PREAMP_AT_MOST_DB} dB, not {decibels} dB")]
     PreampRange { decibels: f32 },
     #[error("buffer length {milliseconds} ms is outside 50 to 2000 ms")]

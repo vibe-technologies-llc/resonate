@@ -294,6 +294,14 @@ impl ChannelSet {
         if held == 0 { None } else { Some(Self(held)) }
     }
 
+    pub const fn from_bits(bits: u8) -> Option<Self> {
+        if bits == 0 { None } else { Some(Self(bits)) }
+    }
+
+    pub const fn bits(self) -> u8 {
+        self.0
+    }
+
     pub const fn is_every(self) -> bool {
         self.0 == u8::MAX
     }

@@ -369,10 +369,12 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   slider and keep no peak arithmetic of their own
   (`the_fitted_preamp_holds_the_loudest_band_under_full_scale_as_the_desktop_does`).
 - **An import becomes editable bands, and says what it gave up**: `parse_eq_profile` (pasted or
-  file text) and `auto_eq_profile` answer `EqualiserImport`: every `on`, every-channel filter is a
-  band (an `OFF` filter is dropped, it never sounded); a channel-limited filter is passed over and
-  counted, since a phone applies one curve to every channel; a value past the phone's bounds is held
-  to it and counted in `clamped`, beside the reader's own `passed_over`/`approximated`/`clamped`.
+  file text) and `auto_eq_profile` answer `EqualiserImport`: every `on` filter is a
+  band (an `OFF` filter is dropped, it never sounded), keeping the speaker slots it names as
+  `EqualiserBand::channels`, a `ChannelSet` bitmask (`u8`, default 255 = every channel, 0 refused as
+  `BandChannels`) that the editors carry unchanged and the kept text restores through `Channel:` lines
+  (`a_band_limited_to_some_channels_is_kept_on_them_and_played_on_them_alone`); a value past the phone's bounds is held
+  to it and counted in `clamped`, beside the reader's own `passed_over` (an unnameable channel)/`approximated`/`clamped`.
   A GraphicEQ line arrives as its 48 kHz fit and sets `converted`; editing it lets the target go, as
   `band_mut` does on the desktop, so the per-rate refit is not kept.
 - **Kept as EqualizerAPO text**: `equaliser_text` writes a valid curve and `parse_eq_profile` reads

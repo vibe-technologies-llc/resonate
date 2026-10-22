@@ -2,7 +2,9 @@ use std::f64::consts::SQRT_2;
 
 use resonate_core::{
     SampleRate,
-    eq::{Band, BandGain, BandKind, FITTED_AT, Frequency, MAX_BANDS, Preamp, Profile, Q},
+    eq::{
+        Band, BandGain, BandKind, ChannelSet, FITTED_AT, Frequency, MAX_BANDS, Preamp, Profile, Q,
+    },
 };
 
 use crate::{Error, Result};
@@ -72,6 +74,8 @@ pub struct EqualiserBand {
     pub frequency_hz: f32,
     pub gain_db: f32,
     pub q: f32,
+    #[uniffi(default = 255)]
+    pub channels: u8,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, uniffi::Record)]
@@ -212,12 +216,18 @@ impl EqualiserBand {
             });
         }
 
-        Ok(Band::new(
-            self.filter.into(),
-            Frequency::from_hertz(f64::from(self.frequency_hz))?,
-            BandGain::from_decibels(f64::from(self.gain_db))?,
-            Q::from_units(f64::from(self.q))?,
-        ))
+        let channels =
+            ChannelSet::from_bits(self.channels).ok_or(Error::BandChannels { band: place })?;
+
+        Ok(Band {
+            channels,
+            ..Band::new(
+                self.filter.into(),
+                Frequency::from_hertz(f64::from(self.frequency_hz))?,
+                BandGain::from_decibels(f64::from(self.gain_db))?,
+                Q::from_units(f64::from(self.q))?,
+            )
+        })
     }
 
     fn of(band: &Band) -> Self {
@@ -226,6 +236,7 @@ impl EqualiserBand {
             frequency_hz: band.frequency.hertz() as f32,
             gain_db: band.gain.decibels() as f32,
             q: band.q.units() as f32,
+            channels: band.channels.bits(),
         }
     }
 
@@ -235,6 +246,7 @@ impl EqualiserBand {
             frequency_hz: self.frequency_hz.clamp(LOWEST_HZ, HIGHEST_HZ),
             gain_db: self.gain_db.clamp(-GAIN_AT_MOST_DB, GAIN_AT_MOST_DB),
             q: self.q.clamp(Q_AT_LEAST, Q_AT_MOST),
+            channels: self.channels,
         };
         (held, held != self)
     }
@@ -291,6 +303,7 @@ impl EqualiserCurve {
                         GAIN_AT_MOST_DB,
                     ),
                     q: OCTAVE_Q as f32,
+                    channels: ChannelSet::EVERY.bits(),
                 })
                 .collect(),
         }
@@ -314,21 +327,16 @@ impl EqualiserCurve {
 }
 
 pub(crate) fn imported(profile: &Profile, name: String) -> EqualiserImport {
-    let mut passed_over = 0;
     let mut clamped = 0;
 
     let bands = profile
         .bands()
         .iter()
         .filter(|band| band.on)
-        .filter_map(|band| {
-            if !band.channels.is_every() {
-                passed_over += 1;
-                return None;
-            }
+        .map(|band| {
             let (held, was_held) = EqualiserBand::of(band).held_within_limits();
             clamped += u32::from(was_held);
-            Some(held)
+            held
         })
         .collect();
 
@@ -342,7 +350,7 @@ pub(crate) fn imported(profile: &Profile, name: String) -> EqualiserImport {
             preamp_db,
             bands,
         },
-        passed_over,
+        passed_over: 0,
         approximated: 0,
         clamped,
         converted: profile.target().is_some(),
@@ -445,6 +453,7 @@ mod tests {
             frequency_hz,
             gain_db,
             q,
+            channels: ChannelSet::EVERY.bits(),
         }
     }
 
@@ -587,13 +596,40 @@ mod tests {
 
         let import = parse_eq_profile(text.as_bytes().to_vec(), String::new()).expect("a profile");
 
-        assert_eq!(import.curve.bands.len(), 2);
+        assert_eq!(import.curve.bands.len(), 3);
         assert_eq!(import.curve.bands[0].frequency_hz, LOWEST_HZ);
         assert_eq!(import.curve.bands[1].gain_db, GAIN_AT_MOST_DB);
         assert_eq!(import.curve.preamp_db, -PREAMP_AT_MOST_DB);
         assert_eq!(import.clamped, 3);
-        assert_eq!(import.passed_over, 1);
+        assert_eq!(import.passed_over, 0);
+        assert_eq!(import.curve.bands[2].channels, 0b1);
         assert!(import.curve.profile().is_ok());
+    }
+
+    #[test]
+    fn a_band_limited_to_some_channels_is_kept_on_them_and_played_on_them_alone() {
+        let text = "Channel: R\nFilter 1: ON PK Fc 1000 Hz Gain 4 dB Q 1\n";
+
+        let import = parse_eq_profile(text.as_bytes().to_vec(), String::new()).expect("a profile");
+        let profile = import.curve.profile().expect("a valid curve");
+        let kept = equaliser_text(import.curve.clone()).expect("text");
+        let again = parse_eq_profile(kept.into_bytes(), String::new()).expect("a profile");
+
+        assert_eq!(import.passed_over, 0);
+        assert_eq!(import.curve.bands[0].channels, 0b10);
+        assert_eq!(profile.channels_apart(), vec![1]);
+        assert_eq!(again.curve.bands, import.curve.bands);
+    }
+
+    #[test]
+    fn a_band_played_on_no_channel_is_refused_naming_it() {
+        let mut silent = peaking(1000.0, 0.0, 1.0);
+        silent.channels = 0;
+
+        assert!(matches!(
+            curve(vec![silent]).profile(),
+            Err(Error::BandChannels { band: 0 })
+        ));
     }
 
     #[test]
@@ -744,12 +780,14 @@ mod tests {
                     frequency_hz: 9_000.5,
                     gain_db: -2.25,
                     q: 0.707,
+                    channels: ChannelSet::EVERY.bits(),
                 },
                 EqualiserBand {
                     filter: EqualiserFilter::HighPass,
                     frequency_hz: 25.0,
                     gain_db: 0.0,
                     q: 0.5,
+                    channels: ChannelSet::EVERY.bits(),
                 },
             ],
         };

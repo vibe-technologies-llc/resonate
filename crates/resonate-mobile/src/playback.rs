@@ -211,6 +211,7 @@ mod tests {
                 frequency_hz: 40.0 * (at + 1) as f32,
                 gain_db: 1.0,
                 q: 2.0,
+                channels: u8::MAX,
             })
             .collect();
 
@@ -237,6 +238,7 @@ mod tests {
             frequency_hz: f32::NAN,
             gain_db: 0.0,
             q: 1.0,
+            channels: u8::MAX,
         });
         preferences.buffer_ms = 100;
         assert!(matches!(
