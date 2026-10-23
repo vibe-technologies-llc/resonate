@@ -895,7 +895,7 @@ impl Default for Synchronised {
     fn default() -> Self {
         Self {
             enabled: true,
-            nearby_only: false,
+            nearby_only: true,
             server: String::new(),
             device: String::new(),
             songs: SyncedSongs::default(),

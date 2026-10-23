@@ -367,7 +367,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 library.report(failure)
                 SyncConfig(
                     enabled = true,
-                    nearbyOnly = false,
+                    nearbyOnly = true,
                     server = "",
                     key = "",
                     device = "",
