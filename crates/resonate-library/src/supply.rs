@@ -36,11 +36,11 @@ use crate::{
 pub const POLL_AGAIN_AFTER: Duration = Duration::from_secs(6 * 60 * 60);
 pub const REFUSALS_REMEMBERED_FOR: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 pub const RETRY_WAITS: [Duration; 5] = [
-    Duration::from_secs(60),
+    Duration::from_secs(30),
+    Duration::from_secs(90),
     Duration::from_secs(5 * 60),
-    Duration::from_secs(15 * 60),
-    Duration::from_secs(60 * 60),
-    Duration::from_secs(6 * 60 * 60),
+    Duration::from_secs(20 * 60),
+    Duration::from_secs(2 * 60 * 60),
 ];
 pub const TRIES_BEFORE_GIVING_UP: u32 = RETRY_WAITS.len() as u32 + 1;
 pub const ANSWERS_WITHIN: Duration = Duration::from_secs(30);
