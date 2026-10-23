@@ -19,6 +19,7 @@ pkgver() {
   cd "$_pkgname"
   local declared
   declared="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)"
+  declared="${declared//-/}"
   printf '%s.r%s.g%s' "$declared" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
 }
 
