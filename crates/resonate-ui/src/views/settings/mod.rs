@@ -825,6 +825,7 @@ impl RootView {
             cx,
         )
         .focus(|control| control.opacity(1.0))
+        .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
     }
 
     fn the_pane_handle_of(

@@ -1355,6 +1355,44 @@ mod tests {
     }
 
     #[gpui::test]
+    fn a_lyric_line_clicked_seeks_without_keeping_the_caret_that_would_hold_it_lit(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let files = [folder.tone("one.wav", 5)];
+        std::fs::write(
+            folder.path().join("one.lrc"),
+            "[00:00.50]first words\n[00:03.00]second words\n",
+        )
+        .expect("a sidecar beside the track");
+        let mut driven = Driven::singing(cx, catalog(), &folder);
+        driven.play(&files);
+        let root = driven.root.clone();
+        driven
+            .cx
+            .update(|_, cx| root.update(cx, |root, cx| root.set_pane(Pane::Lyrics, cx)));
+        driven.until(|root, cx| root.lyrics.read(cx).text().len() == 2);
+        driven.settle();
+        let sought = driven.read(|root, cx| root.player.read(cx).state().seeks);
+
+        driven.click("lyric-0");
+        driven.until(|root, cx| root.player.read(cx).state().seeks != sought);
+
+        let held = driven.cx.update(|window, cx| {
+            let root = root.read(cx);
+            (0..2).any(|line| {
+                root.controls
+                    .at(format!("lyric-{line}"), cx)
+                    .is_focused(window)
+            })
+        });
+        assert!(
+            !held,
+            "a clicked lyric line kept the caret and stays lit once sung"
+        );
+    }
+
+    #[gpui::test]
     fn tabbing_down_an_unsynced_sheet_keeps_the_line_reached_in_view(cx: &mut TestAppContext) {
         const LINES: usize = 40;
         const TABS: usize = 90;

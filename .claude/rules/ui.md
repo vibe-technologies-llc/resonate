@@ -1594,6 +1594,9 @@ is never named.
     `PressControl` action alone, so the line's own pointer click, guarded by `by_the_pointer`, stays the
     seek): `enter` opens the line's menu, *Copy this line*, *Copy the whole sheet* and, on a timed
     line, *Play from this line* (`tab_reaches_a_lyric_line_and_enter_opens_a_menu_to_copy_it_or_play_from_it`).
+    **A click on a line takes no caret**, as every pane ring's press does (`prevent_default` on the
+    left press): a focused line is drawn at full opacity, so a line clicked to seek stayed lit after it
+    was sung (`a_lyric_line_clicked_seeks_without_keeping_the_caret_that_would_hold_it_lit`).
     **A line reached by tab is brought into view**: each drawn line carries a canvas
     (`brings_into_view_when_reached`) asking its handle in prepaint; `LyricsModel::reached` scrolls
     the sheet just far enough (`moved_to_show`, clear of the `dissolve` edges, snapped to whole

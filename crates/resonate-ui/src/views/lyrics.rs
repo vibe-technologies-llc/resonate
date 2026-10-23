@@ -594,6 +594,7 @@ impl RootView {
         let lit = self.in_the_pane_ring_for_keys_at(
             drawn
                 .id(("lyric", line.index))
+                .debug_selector(move || format!("lyric-{}", line.index))
                 .cursor_pointer()
                 .hover(|line| line.bg(theme::tinted(theme::text(), 0x0e)))
                 .on_click(cx.listener(move |this, click: &ClickEvent, _, cx| {
