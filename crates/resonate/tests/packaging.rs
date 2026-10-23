@@ -4,8 +4,28 @@ const DESKTOP_ENTRY: &str = "resonate.desktop";
 const FLATPAK_MANIFEST: &str = "org.resonate.Resonate.yml";
 const METAINFO: &str = "org.resonate.Resonate.metainfo.xml";
 const CONFIG_MAN_PAGE: &str = "resonate-config.toml.5";
-const PACKAGE_RECIPES: [&str; 3] = ["PKGBUILD", "resonate.spec", FLATPAK_MANIFEST];
-const SERVER_RECIPES: [&str; 2] = ["server/PKGBUILD", "server/resonate-server.spec"];
+const PACKAGE_RECIPES: [&str; 5] = [
+    "PKGBUILD",
+    "resonate.spec",
+    FLATPAK_MANIFEST,
+    "release/PKGBUILD",
+    DEB_SCRIPT,
+];
+const SERVER_RECIPES: [&str; 4] = [
+    "server/PKGBUILD",
+    "server/resonate-server.spec",
+    "release/server/PKGBUILD",
+    DEB_SCRIPT,
+];
+const RELEASE_RECIPES: [&str; 5] = [
+    "resonate.spec",
+    "server/resonate-server.spec",
+    "release/PKGBUILD",
+    "release/server/PKGBUILD",
+    DEB_SCRIPT,
+];
+const RELEASE_PKGBUILDS: [&str; 2] = ["release/PKGBUILD", "release/server/PKGBUILD"];
+const DEB_SCRIPT: &str = "deb/build.sh";
 const SERVER_FILES: [&str; 2] = ["resonate-server.service", "resonate-server.env"];
 
 fn packaging(name: &str) -> String {
@@ -99,7 +119,7 @@ fn the_rpm_spec_builds_the_version_cargo_declares() {
 
     assert_eq!(
         declared,
-        env!("CARGO_PKG_VERSION"),
+        env!("CARGO_PKG_VERSION").replace('-', "~"),
         "the spec's Version is not the workspace's; a release archive would not match it"
     );
 }
@@ -116,9 +136,67 @@ fn the_server_spec_builds_the_version_cargo_declares() {
 
     assert_eq!(
         declared,
-        env!("CARGO_PKG_VERSION"),
+        env!("CARGO_PKG_VERSION").replace('-', "~"),
         "the server spec's Version is not the workspace's; a release archive would not match it"
     );
+}
+
+#[test]
+fn the_release_pkgbuilds_build_the_version_cargo_declares() {
+    for recipe in RELEASE_PKGBUILDS {
+        let text = packaging(recipe);
+
+        let declared = text
+            .lines()
+            .find_map(|line| line.strip_prefix("_version="))
+            .expect("the release PKGBUILD declares the version it fetches");
+        let pkgver = text
+            .lines()
+            .find_map(|line| line.strip_prefix("pkgver="))
+            .expect("the release PKGBUILD declares a pkgver");
+
+        assert_eq!(
+            declared,
+            env!("CARGO_PKG_VERSION"),
+            "{recipe} fetches a tag that is not the workspace's version"
+        );
+        assert_eq!(
+            pkgver, "${_version//-/}",
+            "{recipe}: pkgver must be the version with its hyphens removed"
+        );
+    }
+}
+
+#[test]
+fn the_deb_script_derives_its_version_from_cargo() {
+    let script = packaging(DEB_SCRIPT);
+
+    assert!(
+        script.contains("Cargo.toml") && script.contains("${cargo_version//-/\\~}"),
+        "the deb script must read the workspace version and map its hyphen to a tilde"
+    );
+    assert!(
+        !script
+            .lines()
+            .any(|line| line.trim_start().starts_with("version=\"0")),
+        "the deb script hard-codes a version"
+    );
+}
+
+#[test]
+fn every_release_recipe_builds_for_x86_64_v3_alone() {
+    for recipe in RELEASE_RECIPES {
+        let text = packaging(recipe);
+
+        assert!(
+            text.contains("x86-64-v3"),
+            "{recipe} does not build for x86-64-v3"
+        );
+        assert!(
+            !text.contains("target-cpu=native") && !text.contains("aarch64"),
+            "{recipe} builds for another target than x86-64-v3"
+        );
+    }
 }
 
 #[test]

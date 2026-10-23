@@ -1,0 +1,263 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to release; empty builds the selected branch and uploads artifacts only
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name) || '' }}
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      tag: ${{ steps.declared.outputs.tag }}
+      ref: ${{ steps.declared.outputs.ref }}
+      version: ${{ steps.declared.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG || github.sha }}
+      - name: Check the tag against the declared versions
+        id: declared
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+          test -n "$version"
+          tilde=${version//-/\~}
+          test "$(sed -n 's/^Version:[[:space:]]*//p' packaging/resonate.spec)" = "$tilde"
+          test "$(sed -n 's/^Version:[[:space:]]*//p' packaging/server/resonate-server.spec)" = "$tilde"
+          test "$(sed -n 's/^_version=//p' packaging/release/PKGBUILD)" = "$version"
+          test "$(sed -n 's/^_version=//p' packaging/release/server/PKGBUILD)" = "$version"
+          if [ -n "$RELEASE_TAG" ]; then
+            test "$RELEASE_TAG" = "v$version"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "ref=${RELEASE_TAG:-$GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+      - name: Create the GitHub release
+        if: env.RELEASE_TAG != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            exit 0
+          fi
+          prerelease=
+          case "$RELEASE_TAG" in
+            *-rc*|*-beta*|*-alpha*) prerelease=--prerelease ;;
+          esac
+          gh release create "$RELEASE_TAG" --verify-tag --generate-notes --title "$RELEASE_TAG" $prerelease
+
+  fedora-rpm:
+    name: Fedora 44 RPMs
+    needs: release
+    runs-on: ubuntu-latest
+    container: fedora:44
+    timeout-minutes: 120
+    env:
+      RPMBUILD_ROOT: /home/rpm-builder/rpmbuild
+    steps:
+      - name: Install the build dependencies
+        run: >-
+          dnf install -y git rpm-build cargo rust clang gcc pkgconf-pkg-config pipewire-devel
+          wayland-devel libxkbcommon-devel libxkbcommon-x11-devel fontconfig-devel
+          freetype-devel vulkan-headers vulkan-loader-devel systemd-rpm-macros shadow-utils
+          util-linux
+      - name: Create the build user
+        run: useradd --create-home rpm-builder
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.ref }}
+      - name: Create the source archive
+        run: |
+          version=$(sed -n 's/^Version:[[:space:]]*//p' packaging/resonate.spec)
+          test -n "$version"
+          mkdir -p "$RPMBUILD_ROOT/SOURCES"
+          git -c safe.directory="$GITHUB_WORKSPACE" archive --format=tar.gz --prefix="resonate-$version/" HEAD -o "$RPMBUILD_ROOT/SOURCES/resonate-$version.tar.gz"
+      - name: Build the player RPM
+        run: |
+          chown -R rpm-builder:rpm-builder "$RPMBUILD_ROOT"
+          runuser -u rpm-builder -- rpmbuild -ba packaging/resonate.spec
+      - name: Build the sync server RPM
+        run: runuser -u rpm-builder -- rpmbuild -ba packaging/server/resonate-server.spec
+      - name: Collect the RPMs
+        run: |
+          mkdir -p assets
+          for file in "$RPMBUILD_ROOT"/RPMS/x86_64/*.rpm "$RPMBUILD_ROOT"/SRPMS/*.src.rpm; do
+            cp "$file" "assets/$(basename "$file" | tr '~' '-')"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: resonate-fedora-44-rpm
+          path: assets/*.rpm
+          if-no-files-found: error
+
+  ubuntu-deb:
+    name: Ubuntu 24.04 DEBs
+    needs: release
+    runs-on: ubuntu-latest
+    container: ubuntu:24.04
+    timeout-minutes: 120
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Install the build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends build-essential ca-certificates curl git pkg-config clang libclang-dev dpkg-dev libpipewire-0.3-dev libspa-0.2-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libfontconfig-dev libfreetype-dev libvulkan-dev
+      - name: Install Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.ref }}
+      - name: Build the DEBs
+        run: |
+          packaging/deb/build.sh player "$GITHUB_WORKSPACE/assets"
+          packaging/deb/build.sh server "$GITHUB_WORKSPACE/assets"
+      - name: Name the assets for the release
+        run: |
+          cd assets
+          for file in *.deb; do
+            mv "$file" "$(printf '%s' "$file" | tr '~' '-')"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: resonate-ubuntu-24.04-deb
+          path: assets/*.deb
+          if-no-files-found: error
+
+  arch-package:
+    name: Arch packages
+    needs: release
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 120
+    steps:
+      - name: Install the build dependencies
+        run: >-
+          pacman -Syu --noconfirm --needed base-devel git rustup clang pipewire libpipewire
+          libxkbcommon libxkbcommon-x11 wayland fontconfig freetype2 vulkan-icd-loader
+          vulkan-headers
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.ref }}
+      - name: Create the source archives
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          git -c safe.directory="$GITHUB_WORKSPACE" archive --format=tar.gz --prefix="resonate-$VERSION/" HEAD -o "packaging/release/resonate-player-$VERSION.tar.gz"
+          git -c safe.directory="$GITHUB_WORKSPACE" archive --format=tar.gz --prefix="resonate-$VERSION/" HEAD -o "packaging/release/server/resonate-server-$VERSION.tar.gz"
+      - name: Build the packages
+        run: |
+          useradd --create-home builder
+          cp -r "$GITHUB_WORKSPACE" /home/builder/checkout
+          chown -R builder:builder /home/builder
+          runuser -u builder -- rustup toolchain install stable --profile minimal
+          (cd /home/builder/checkout/packaging/release && runuser -u builder -- makepkg -f --noconfirm)
+          (cd /home/builder/checkout/packaging/release/server && runuser -u builder -- makepkg -f --noconfirm)
+      - name: Name the assets for the release
+        run: |
+          mkdir -p assets
+          for file in /home/builder/checkout/packaging/release/*.pkg.tar.zst /home/builder/checkout/packaging/release/server/*.pkg.tar.zst; do
+            cp "$file" "assets/$(basename "$file" | sed 's/-x86_64\.pkg/-x86_64_v3.pkg/')"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: resonate-arch-package
+          path: assets/*.pkg.tar.zst
+          if-no-files-found: error
+
+  android-apk:
+    name: Signed Android APK
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.ref }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Install the Android toolchains
+        run: |
+          sdkmanager "platforms;android-37.0" "build-tools;36.0.0" "ndk;28.2.13676358"
+          rustup toolchain install stable --profile minimal
+          rustup target add aarch64-linux-android x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> android/.cargo-target
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build the signed release variant
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          RESONATE_SIGNING_STORE_FILE: ${{ runner.temp }}/release.jks
+          RESONATE_SIGNING_STORE_PASSWORD: ${{ secrets.RESONATE_SIGNING_STORE_PASSWORD }}
+          RESONATE_SIGNING_KEY_ALIAS: ${{ secrets.RESONATE_SIGNING_KEY_ALIAS }}
+          RESONATE_SIGNING_KEY_PASSWORD: ${{ secrets.RESONATE_SIGNING_KEY_PASSWORD }}
+        run: |
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RESONATE_SIGNING_STORE_FILE"
+          android/gradlew -p android :app:assembleRelease
+      - name: Remove the keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks"
+      - name: Verify the signature and the release shape
+        run: |
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
+          python3 android/check-release.py --sdk "$ANDROID_HOME"
+      - name: Name the asset for the release
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          mkdir -p assets
+          cp android/app/build/outputs/apk/release/app-release.apk "assets/resonate-$VERSION.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: resonate-android-apk
+          path: assets/*.apk
+          if-no-files-found: error
+
+  publish:
+    name: Checksums and assets
+    needs: [release, fedora-rpm, ubuntu-deb, arch-package, android-apk]
+    if: ${{ !cancelled() && needs.release.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: resonate-*
+          path: assets
+          merge-multiple: true
+      - name: Write the checksums
+        working-directory: assets
+        run: sha256sum -- * > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SHA256SUMS
+          path: assets/SHA256SUMS
+      - name: Attach the assets to the release
+        if: needs.release.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.release.outputs.tag }}
+        run: gh release upload "$TAG" assets/* --clobber

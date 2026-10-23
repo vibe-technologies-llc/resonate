@@ -13,7 +13,8 @@ host = {"linux": "linux-x86_64", "darwin": "darwin-x86_64", "win32": "windows-x8
 executable = ".exe" if sys.platform == "win32" else ""
 readelf = args.sdk / "ndk/28.2.13676358/toolchains/llvm/prebuilt" / host / f"bin/llvm-readelf{executable}"
 build_tools = args.sdk / "build-tools/36.0.0"
-apk = repository / "android/app/build/outputs/apk/release/app-release-unsigned.apk"
+outputs = repository / "android/app/build/outputs/apk/release"
+apk = next((candidate for candidate in (outputs / "app-release.apk", outputs / "app-release-unsigned.apk") if candidate.exists()), outputs / "app-release-unsigned.apk")
 kept_classes = {
     "Lcom/sun/jna/Pointer;": "peer",
     "Lorg/resonate/android/nativecore/MobilePlayer;": None,

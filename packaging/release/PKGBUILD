@@ -1,0 +1,64 @@
+pkgname=resonate-player
+_pkgname=resonate
+_version=0.1.0-rc1
+pkgver=${_version//-/}
+pkgrel=1
+pkgdesc='A high-fidelity music player with native PipeWire output (needs an x86-64-v3 CPU)'
+arch=('x86_64')
+url='https://github.com/vibe-technologies-llc/resonate'
+license=('AGPL-3.0-or-later')
+depends=('pipewire>=0.3.50' 'libpipewire>=0.3.50' 'libxkbcommon' 'wayland' 'fontconfig'
+         'freetype2' 'vulkan-icd-loader')
+makedepends=('rust' 'cargo' 'clang' 'pkgconf' 'vulkan-headers' 'libxkbcommon-x11')
+provides=("$_pkgname=$pkgver")
+conflicts=("$_pkgname" "$pkgname-git" 'resonate-git')
+options=('!lto')
+install="$_pkgname.install"
+source=("$pkgname-$_version.tar.gz::$url/archive/refs/tags/v$_version.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "$_pkgname-$_version"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$_pkgname-$_version"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  export RUSTFLAGS="-C target-cpu=x86-64-v3"
+  cargo build --frozen --release --workspace --bin resonate
+}
+
+check() {
+  cd "$_pkgname-$_version"
+  export RUSTUP_TOOLCHAIN=stable
+  export RUSTFLAGS="-C target-cpu=x86-64-v3"
+  cargo test --frozen --release --workspace --exclude resonate-ui --no-default-features
+}
+
+package() {
+  cd "$_pkgname-$_version"
+  local generated
+  generated="$(find target/release/build -name "$_pkgname.1" -printf '%h\n' -quit)"
+
+  install -Dm755 "target/release/$_pkgname" "$pkgdir/usr/bin/$_pkgname"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 COPYRIGHT "$pkgdir/usr/share/licenses/$pkgname/COPYRIGHT"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$_pkgname/README.md"
+
+  install -Dm644 "packaging/$_pkgname.desktop" "$pkgdir/usr/share/applications/$_pkgname.desktop"
+  install -Dm644 "packaging/$_pkgname.svg" \
+    "$pkgdir/usr/share/icons/hicolor/scalable/apps/$_pkgname.svg"
+  install -Dm644 packaging/org.resonate.Resonate.metainfo.xml \
+    "$pkgdir/usr/share/metainfo/org.resonate.Resonate.metainfo.xml"
+
+  install -Dm644 -t "$pkgdir/usr/share/man/man1" "$generated"/*.1
+  install -Dm644 -t "$pkgdir/usr/share/man/man5" packaging/resonate-config.toml.5
+  install -Dm644 "$generated/$_pkgname.bash" \
+    "$pkgdir/usr/share/bash-completion/completions/$_pkgname"
+  install -Dm644 "$generated/_$_pkgname" "$pkgdir/usr/share/zsh/site-functions/_$_pkgname"
+  install -Dm644 "$generated/$_pkgname.fish" \
+    "$pkgdir/usr/share/fish/vendor_completions.d/$_pkgname.fish"
+}

@@ -1,16 +1,12 @@
 Name:           resonate-server
-Version:        0.1.0
+Version:        0.1.0~rc1
 Release:        1%{?dist}
 Summary:        Sync server for Resonate: keeps sealed records and introduces devices
 License:        AGPL-3.0-or-later
 Source0:        resonate-%{version}.tar.gz
-ExclusiveArch:  x86_64 aarch64
+ExclusiveArch:  x86_64
 
-%ifarch x86_64
-%global rust_baseline x86-64
-%else
-%global rust_baseline generic
-%endif
+%global rust_baseline x86-64-v3
 
 BuildRequires:  cargo
 BuildRequires:  gcc
@@ -58,5 +54,5 @@ install -Dm644 packaging/server/resonate-server.env %{buildroot}%{_sysconfdir}/r
 %config(noreplace) %{_sysconfdir}/resonate-server/resonate-server.env
 
 %changelog
-* Tue Oct 20 2026 Resonate - 0.1.0-1
+* Tue Oct 20 2026 Resonate - 0.1.0~rc1-1
 - Add Fedora RPM packaging for the sync server

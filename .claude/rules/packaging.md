@@ -14,16 +14,44 @@ list; `resonate-config.toml.5`, the settings file's manual, is written by hand a
 entry and metainfo `<provides>` are held to `MIME_TYPES` by tests (`binary.md`).
 
 - **Every package sets `RUSTFLAGS` over the checkout's `target-cpu=native`** (environment
-  `RUSTFLAGS` replaces `build.rustflags`). PKGBUILD appends `native` in `build` and `check` (AUR
-  builds target the building machine); spec and Flatpak use `x86-64` (x86_64) / `generic` (aarch64),
-  since releases run on older machines.
-- **Spec: `--locked`, built from a source archive** of the release tag (version must match the
-  spec) or, on manual run, the selected branch; Fedora 44; `%check` tests the headless workspace.
-  `rpm-release.yml` keeps both RPMs as a workflow artifact and attaches them to the release on a
-  release run. `git archive` trusts `GITHUB_WORKSPACE` via `safe.directory` for that invocation only
+  `RUSTFLAGS` replaces `build.rustflags`). The release assets (spec, release PKGBUILDs, DEB script)
+  build for `x86-64-v3` and nothing else: `ExclusiveArch: x86_64`, `arch=('x86_64')`, `amd64`, the
+  requirement said in the Arch `pkgdesc` and the DEB description
+  (`every_release_recipe_builds_for_x86_64_v3_alone`). The `-git` PKGBUILDs append `native` in
+  `build` and `check` (AUR builds target the building machine) and keep `aarch64`; the Flatpak
+  keeps its own baseline (`x86-64` / `generic`) and is no release asset.
+- **Spec: `--locked`, built from a source archive** of the release tag, prefixed
+  `resonate-<Version>/`; Fedora 44; `%check` tests the headless workspace. `release.yml`'s
+  `fedora-rpm` job builds the player and the server RPM and the source RPMs in one container.
+  `git archive` trusts `GITHUB_WORKSPACE` via `safe.directory` for that invocation only
   (the container refuses the runner-owned checkout). Dependencies install as root but `rpmbuild`
   runs as `rpm-builder`: tests exercise refused writes to read-only fixtures and root bypasses them.
   Cargo fetches while building: a source RPM recipe, not an offline distribution build.
+- **A pre-release version is spelled per ecosystem**: Cargo `0.1.0-rc1`, spec and DEB `0.1.0~rc1`
+  (the tilde sorts before the final), Arch `pkgver=0.1.0rc1` (a hyphen is refused). The spec tests
+  map `-` to `~` before comparing, the release PKGBUILDs hold `_version` to Cargo's and `pkgver`
+  to `${_version//-/}`, and the DEB script derives its version from `Cargo.toml` itself
+  (`the_deb_script_derives_its_version_from_cargo`).
+- **`packaging/release/` holds the non-git Arch recipes** (`PKGBUILD` is `resonate-player`,
+  `server/PKGBUILD` is `resonate-server`): source is the GitHub archive of tag `v$_version`
+  (`sha256sums` `SKIP`, an archive's bytes being GitHub's), a local file of the same name beside
+  the recipe taking its place, which is how `release.yml` builds from the tag checkout it already
+  has. `resonate.install` there is a symlink to the player's. The installed layout is the `-git`
+  recipe's.
+- **`packaging/deb/build.sh player|server [directory]` builds the DEBs** on Ubuntu 24.04 with
+  rustup stable (the distribution's cargo predates edition 2024): `cargo build --locked --release`
+  under `-C target-cpu=x86-64-v3`, the spec's `%install` layout (man pages gzipped, the zsh
+  completion under `vendor-completions`), `Depends` from `dpkg-shlibdeps` plus `pipewire` and
+  `libvulkan1` (loaded at run time) for the player or `systemd` for the server, and `dpkg-deb
+  --root-owner-group`. The server's environment file is a `conffiles` entry and its maintainer
+  scripts only reload systemd and stop the unit on removal.
+- **`release.yml` replaces the old RPM workflow** (`build.md`): a `v*` tag push or a manual run
+  with a tag creates the GitHub release (pre-release for `-rc`, `-beta`, `-alpha`) after holding the
+  tag to Cargo's version and the recipes' to theirs; the RPM, DEB, Arch and signed APK jobs run in
+  parallel and upload workflow artifacts; `publish` writes `SHA256SUMS` and attaches everything to
+  the release, so one failing job leaves the others' assets. Asset names carry no `~` (`-` in its
+  place) and the Arch packages are renamed `-x86_64_v3.pkg.tar.zst`. A manual run with no tag builds
+  and keeps artifacts only.
 - **Flatpak builds its own checkout** (`dir` source, no release tarball: metainfo names no
   `<release>`) on Freedesktop 25.08 SDK + `rust-stable`, network shared for `cargo fetch --locked`,
   no tests.
@@ -32,8 +60,8 @@ entry and metainfo `<provides>` are held to `MIME_TYPES` by tests (`binary.md`).
   `org.freedesktop.Notifications`, system-bus `org.bluez` (headset controls, `mpris.md`),
   `discord-ipc-0`..`-9` plus Discord and Vesktop runtime directories. No `--share=ipc`, no `x11` or
   `fallback-x11`: gpui is built with `wayland` alone (`the_flatpak_grants_no_x11_to_a_wayland_only_build`).
-- **The spec's `Version` is the workspace's** (`the_rpm_spec_builds_the_version_cargo_declares`);
-  the PKGBUILD's `pkgver()` reads `Cargo.toml` itself.
+- **The spec's `Version` is the workspace's with `-` as `~`** (`the_rpm_spec_builds_the_version_cargo_declares`);
+  the `-git` PKGBUILD's `pkgver()` reads `Cargo.toml` itself.
 
 **Every package installs one `resonate.desktop` and `resonate.svg`; the Flatpak renames them
 while building.** flatpak-builder exports only app-id-named files, so the manifest has
@@ -46,17 +74,17 @@ Bus `DesktopEntry` and the notification `desktop-entry` hint follow: `mpris.rs` 
 
 **`packaging/server/` deploys the sync server, not the player** (`server.md`): a hardened systemd
 unit, its environment file and the two recipes that install them with the `resonate-server` binary:
-`PKGBUILD` (`resonate-server-git`) and `resonate-server.spec` (`resonate-server`). Both build only
+`PKGBUILD` (`resonate-server-git`) and `resonate-server.spec` (`resonate-server`), beside
+`release/server/PKGBUILD` and the DEB script's `server`. All build only
 `--package resonate-server` (it reaches no PipeWire, GPUI or Vulkan, so the recipes name no such
 dependency), set `RUSTFLAGS` as the player's recipes do, install the unit under systemd's unit
 directory and the environment file as `/etc/resonate-server/resonate-server.env`, kept across an
 upgrade (`backup=` / `%config(noreplace)`), and leave the certificate and key to the listener. The
 spec reads the player's source archive (`resonate-<version>.tar.gz`) and is held to the workspace's
 version like the player's (`the_server_spec_builds_the_version_cargo_declares`);
-`every_server_package_installs_the_unit_and_its_environment` holds both recipes to the two files.
+`every_server_package_installs_the_unit_and_its_environment` holds every recipe to the two files.
 CI builds the PKGBUILD (`server-package`: `makepkg` as a build user, `source` pointed at the runner's
-checkout, `check()` included); `rpm-release.yml`'s own job, `fedora-server-rpm`, builds the spec on a
-release or manual run apart from the player's, so one failing leaves the other's RPM.
+checkout, `check()` included); the release recipes build only in `release.yml`.
 
 **`packaging/.SRCINFO` = `makepkg --printsrcinfo` of the player's PKGBUILD beside it**, committed
 because the AUR reads it. Regenerate it when publishing to the AUR; no test holds it, since the VCS

@@ -22,13 +22,24 @@ paths:
   (`cargo tree -i`; `online`, `mcp`, `discord`); `resonate-mpris`'s direct normal edges are checked
   for `resonate-codec`. `RUSTFLAGS` is emptied over `target-cpu=native`. The formatter is local
   only: a hosted runner cannot install `rust-formatter`.
-- **`rpm-release.yml`** builds the Fedora RPMs (`fedora:44`) on a published release or manual run,
-  kept as a workflow artifact and attached to a release.
+- **`release.yml` builds the release assets and runs on a `v*` tag push or a manual run** (input
+  `tag`, empty builds artifacts only; `contents: write`). The `release` job holds the tag to
+  `v` plus Cargo's version and the recipes' versions, and creates the GitHub release (pre-release
+  when the tag has `-rc`, `-beta` or `-alpha`). Parallel jobs follow: `fedora-rpm` (`fedora:44`,
+  player and server RPMs and SRPMs), `ubuntu-deb` (`ubuntu:24.04`, rustup stable,
+  `packaging/deb/build.sh`), `arch-package` (`archlinux:latest`, `makepkg` as a build user from a
+  `git archive` of the tag, the `packaging/release/` recipes) and `android-apk`; `publish` collects
+  every artifact, writes `SHA256SUMS` and uploads all to the release. All of it is x86-64-v3
+  (`packaging.md`). Secrets, set once in the repository: `ANDROID_KEYSTORE_BASE64` (the release
+  keystore, base64), `RESONATE_SIGNING_STORE_PASSWORD`, `RESONATE_SIGNING_KEY_ALIAS`,
+  `RESONATE_SIGNING_KEY_PASSWORD`. The APK job decodes the keystore to `$RUNNER_TEMP/release.jks`
+  for the one build step, which exports the `RESONATE_SIGNING_*` variables Gradle reads, runs
+  `apksigner verify` and `android/check-release.py`, and removes the keystore whatever happens.
 
 ## Android
 
 The Android job builds the Compose APK against compile SDK 37, runs Android lint and the JVM tests,
-builds the release variant (R8, ARM64 alone) and holds it to `android/check-release.py` (16 KB zip
+builds the release variant (R8, ARM64 alone, unsigned there) and holds it to `android/check-release.py`, which takes the signed `app-release.apk` where it exists and the unsigned one otherwise (16 KB zip
 and ELF alignment, no other ABI, the JNA and boundary classes R8 must keep by name), then instruments
 x86_64 emulators at API 33, the minimum, and API 36, Compose UI tests included. The Gradle task compiles ARM64 and x86_64 Rust libraries with baseline CPU
 settings, NDK 28.2 and 16 KB ELF alignment. It runs the host binding tool against Android ELF
@@ -40,9 +51,9 @@ metadata, so no Linux sound server or GUI libraries are needed for the Android b
   `[profile.dev]` is `opt-level = 1`, the DSP, codec, analysis and vault crates and their heavy
   dependencies at 3; debug assertions and debuginfo stay on.
 - **`--profile profiling`** is release with symbols for `perf` and `cargo flamegraph`.
-- **`.cargo/config.toml` sets `target-cpu=native`** so the resampler vectorises. The Arch package
-  keeps it; the Fedora RPM, Flatpak and CI build for the baseline, and anything producing a binary
-  for another machine sets `RUSTFLAGS` back over it (`packaging.md`).
+- **`.cargo/config.toml` sets `target-cpu=native`** so the resampler vectorises. The `-git` Arch packages
+  keep it; the release assets build for `x86-64-v3`, the Flatpak and CI for the baseline, and
+  anything producing a binary for another machine sets `RUSTFLAGS` back over it (`packaging.md`).
 
 ## Fuzzing
 
