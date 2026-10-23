@@ -1,564 +1,14 @@
-use std::{
-    ffi::OsStr,
-    fs::{self, File},
-    io,
-    path::{Path, PathBuf},
-};
-
-use resonate_core::{naming::named_within, writer::Held};
 use rusqlite::{Connection, Transaction, TransactionBehavior, functions::FunctionFlags};
 
 use crate::{Error, Result, SchemaFingerprint, StoreOp, store};
 
-const KEPT_BEFORE: &str = ".before-";
-const STAGED: &str = ".part";
-const UNDAMAGED: &str = "ok";
+const UNSTAMPED: u32 = 0;
 
-pub const SCHEMA_FINGERPRINT: SchemaFingerprint = fingerprint_after(V1, MIGRATIONS);
-
-const MIGRATIONS: &[&str] = &[
-    "ALTER TABLE albums ADD COLUMN cover_asked INTEGER;",
-    "ALTER TABLE tracks ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;",
-    "CREATE TABLE track_credits (
-         track_id  INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
-         artist_id INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
-         PRIMARY KEY (track_id, artist_id)
-     ) STRICT;
-     CREATE INDEX track_credits_by_artist ON track_credits(artist_id, track_id);",
-    "CREATE TABLE staged_writes (
-         path TEXT PRIMARY KEY,
-         pid  INTEGER NOT NULL
-     ) STRICT;",
-    "CREATE TABLE likenesses (
-         picture  TEXT PRIMARY KEY,
-         likeness BLOB
-     ) STRICT, WITHOUT ROWID;",
-    "CREATE TABLE submissions (
-         service TEXT PRIMARY KEY,
-         through INTEGER NOT NULL
-     ) STRICT, WITHOUT ROWID;",
-    "ALTER TABLE resume ADD COLUMN next_first INTEGER;
-     ALTER TABLE resume ADD COLUMN next_last INTEGER;",
-    "CREATE TABLE refused_releases (
-         album_id INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
-         mbid     TEXT NOT NULL,
-         PRIMARY KEY (album_id, mbid)
-     ) STRICT, WITHOUT ROWID;",
-    "CREATE TABLE passes (
-         at    INTEGER NOT NULL,
-         heard INTEGER NOT NULL
-     ) STRICT;
-     CREATE INDEX passes_by_time ON passes(at);",
-    "ALTER TABLE lyrics_kept ADD COLUMN lyricsfile TEXT;",
-    "ALTER TABLE tracks ADD COLUMN probe_again INTEGER NOT NULL DEFAULT 0;
-     UPDATE tracks SET probe_again = 1 WHERE codec = 11;",
-    "CREATE TABLE unheld_listens (
-         path       TEXT NOT NULL,
-         span_start INTEGER NOT NULL,
-         at         INTEGER NOT NULL
-     ) STRICT;
-     CREATE INDEX unheld_listens_by_path ON unheld_listens(path, span_start);",
-    "ALTER TABLE tracks ADD COLUMN named_by_its_stem INTEGER NOT NULL DEFAULT 0;",
-    "ALTER TABLE artist_releases ADD COLUMN song TEXT;
-     ALTER TABLE artists ADD COLUMN releases_unread INTEGER NOT NULL DEFAULT 0;",
-    "CREATE TABLE playlist_plays (
-         playlist_id INTEGER NOT NULL,
-         at          INTEGER NOT NULL
-     ) STRICT;
-     CREATE INDEX playlist_plays_by_playlist ON playlist_plays(playlist_id, at);
-     INSERT INTO playlist_plays (playlist_id, at)
-          SELECT id, played FROM playlists WHERE played IS NOT NULL;",
-    "ALTER TABLE listens ADD COLUMN began INTEGER;
-     ALTER TABLE unheld_listens ADD COLUMN began INTEGER;",
-    "CREATE TABLE organised (
-         position  INTEGER PRIMARY KEY,
-         unit      INTEGER NOT NULL,
-         part      INTEGER NOT NULL,
-         rows      INTEGER NOT NULL,
-         moved_from TEXT NOT NULL,
-         moved_to   TEXT NOT NULL
-     ) STRICT;",
-    "ALTER TABLE unheld_listens ADD COLUMN heard INTEGER NOT NULL DEFAULT 0;
-     CREATE INDEX unheld_listens_by_time ON unheld_listens(at);",
-    "ALTER TABLE tracks ADD COLUMN packets INTEGER;",
-    "ALTER TABLE artists ADD COLUMN releases_read_to INTEGER NOT NULL DEFAULT 0;
-     UPDATE artists SET releases_read_to = 1000 WHERE releases_unread > 0;",
-    "CREATE TABLE retagged (
-         path     TEXT PRIMARY KEY,
-         pictured INTEGER NOT NULL,
-         rated    INTEGER
-     ) STRICT, WITHOUT ROWID;
-     CREATE TABLE retagged_fields (
-         path  TEXT NOT NULL,
-         field TEXT NOT NULL,
-         was   TEXT,
-         PRIMARY KEY (path, field)
-     ) STRICT, WITHOUT ROWID;",
-    "ALTER TABLE retagged ADD COLUMN picture BLOB;",
-    "UPDATE tracks SET probe_again = 1
-      WHERE packets IS NULL AND span_frames IS NULL AND root_id IS NOT NULL;",
-    "ALTER TABLE playlist_queries ADD COLUMN reading INTEGER NOT NULL DEFAULT 0;
-     UPDATE playlist_queries SET reading = 1, sort = sort - 16 WHERE sort >= 16;",
-    "CREATE TABLE volumes (
-         path TEXT PRIMARY KEY
-     ) STRICT, WITHOUT ROWID;",
-    "UPDATE tracks SET probe_again = 1 WHERE codec = 0;",
-    "CREATE TABLE retagged_pictures (
-         id      INTEGER PRIMARY KEY,
-         picture BLOB NOT NULL
-     ) STRICT;
-     ALTER TABLE retagged ADD COLUMN picture_id INTEGER;
-     INSERT INTO retagged_pictures (picture)
-          SELECT DISTINCT picture FROM retagged WHERE picture IS NOT NULL;
-     UPDATE retagged
-        SET picture_id = (SELECT p.id FROM retagged_pictures p WHERE p.picture = retagged.picture),
-            picture = NULL
-      WHERE picture IS NOT NULL;",
-    "CREATE TABLE unstudied (
-         track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
-         under    INTEGER NOT NULL
-     ) STRICT;
-     CREATE TRIGGER unstudied_forget_a_changed_file
-     AFTER UPDATE OF file_size, modified, span_frames ON tracks
-     WHEN old.file_size IS NOT new.file_size
-       OR old.modified IS NOT new.modified
-       OR old.span_frames IS NOT new.span_frames
-     BEGIN
-         DELETE FROM unstudied WHERE track_id = new.id;
-     END;",
-    "ALTER TABLE albums ADD COLUMN front_cover INTEGER;
-     ALTER TABLE artists ADD COLUMN portrait_asked INTEGER;
-     CREATE TABLE lyrics_refused (
-         path       TEXT NOT NULL,
-         span_start INTEGER NOT NULL,
-         refused    INTEGER NOT NULL,
-         refusals   INTEGER NOT NULL,
-         PRIMARY KEY (path, span_start)
-     ) STRICT, WITHOUT ROWID;",
-    "CREATE TABLE vault_refused (
-         track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
-         under    INTEGER NOT NULL
-     ) STRICT;
-     CREATE TRIGGER vault_refused_forget_a_changed_file
-     AFTER UPDATE OF file_size, modified, span_frames ON tracks
-     WHEN old.file_size IS NOT new.file_size
-       OR old.modified IS NOT new.modified
-       OR old.span_frames IS NOT new.span_frames
-     BEGIN
-         DELETE FROM vault_refused WHERE track_id = new.id;
-     END;",
-    "CREATE TABLE dismissed_missing (
-         album_id INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
-         disc     INTEGER NOT NULL,
-         folded   TEXT NOT NULL,
-         PRIMARY KEY (album_id, disc, folded)
-     ) STRICT, WITHOUT ROWID;
-     CREATE TABLE dismissed_releases (
-         artist_id INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
-         mbid      TEXT NOT NULL,
-         PRIMARY KEY (artist_id, mbid)
-     ) STRICT, WITHOUT ROWID;",
-    "CREATE TABLE loves_told (
-         service   TEXT NOT NULL,
-         recording TEXT NOT NULL,
-         PRIMARY KEY (service, recording)
-     ) STRICT, WITHOUT ROWID;",
-    "CREATE INDEX vault_objects_by_sound ON vault_objects(frames, sample_rate, channels);",
-    "CREATE TABLE index_refold_wanted (since INTEGER) STRICT;",
-    "CREATE INDEX tracks_by_recording ON tracks(mbid);
-     CREATE INDEX release_tracks_by_recording ON release_tracks(recording_mbid);",
-    "CREATE TABLE discography_songs (
-         release_group  TEXT NOT NULL,
-         recording_mbid TEXT NOT NULL,
-         release_mbid   TEXT NOT NULL,
-         release_title  TEXT NOT NULL,
-         released       TEXT,
-         kind           TEXT,
-         disc           INTEGER NOT NULL,
-         position       INTEGER NOT NULL,
-         title          TEXT NOT NULL,
-         artist         TEXT NOT NULL,
-         length_ms      INTEGER,
-         words          TEXT NOT NULL,
-         folded         TEXT NOT NULL,
-         PRIMARY KEY (release_group, recording_mbid)
-     ) STRICT, WITHOUT ROWID;
-     CREATE INDEX discography_songs_by_recording ON discography_songs(recording_mbid);
-     CREATE TABLE discography_songs_read (
-         release_group TEXT PRIMARY KEY,
-         read          INTEGER NOT NULL,
-         refusals      INTEGER NOT NULL
-     ) STRICT, WITHOUT ROWID;",
-    "ALTER TABLE wants ADD COLUMN misses INTEGER NOT NULL DEFAULT 0;",
-    "CREATE TABLE unheld_covers (
-         release_group TEXT PRIMARY KEY,
-         cover         BLOB,
-         asked         INTEGER NOT NULL
-     ) STRICT, WITHOUT ROWID;",
-    "CREATE TABLE forgotten_deliveries (
-         want_id    INTEGER NOT NULL REFERENCES wants(id) ON DELETE CASCADE,
-         taken_from TEXT NOT NULL,
-         forgotten  INTEGER NOT NULL,
-         PRIMARY KEY (want_id, taken_from)
-     ) STRICT, WITHOUT ROWID;",
-    "CREATE TABLE dismissed_missing_at (
-         album_id INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
-         disc     INTEGER NOT NULL,
-         position INTEGER NOT NULL,
-         folded   TEXT NOT NULL,
-         PRIMARY KEY (album_id, disc, position, folded)
-     ) STRICT, WITHOUT ROWID;
-     INSERT OR IGNORE INTO dismissed_missing_at (album_id, disc, position, folded)
-          SELECT d.album_id, d.disc, rt.position, d.folded
-            FROM dismissed_missing d
-            JOIN release_tracks rt
-              ON rt.album_id = d.album_id AND rt.disc = d.disc AND rt.folded = d.folded;
-     DROP TABLE dismissed_missing;
-     ALTER TABLE dismissed_missing_at RENAME TO dismissed_missing;",
-    "CREATE TABLE listens_never_reused (
-         id       INTEGER PRIMARY KEY AUTOINCREMENT,
-         track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
-         at       INTEGER NOT NULL,
-         heard    INTEGER NOT NULL DEFAULT 0,
-         began    INTEGER
-     ) STRICT;
-     INSERT INTO listens_never_reused (id, track_id, at, heard, began)
-          SELECT id, track_id, at, heard, began FROM listens;
-     DROP TABLE listens;
-     ALTER TABLE listens_never_reused RENAME TO listens;
-     CREATE INDEX listens_by_track ON listens(track_id, at);
-     CREATE INDEX listens_by_time ON listens(at);
-     INSERT OR IGNORE INTO sqlite_sequence (name, seq) VALUES ('listens', 0);
-     UPDATE sqlite_sequence
-        SET seq = max(seq, coalesce((SELECT max(through) FROM submissions), 0))
-      WHERE name = 'listens';",
-    "CREATE TRIGGER lyrics_forget_a_changed_file
-     AFTER UPDATE OF file_size, modified, span_frames ON tracks
-     WHEN old.file_size IS NOT new.file_size
-       OR old.modified IS NOT new.modified
-       OR old.span_frames IS NOT new.span_frames
-     BEGIN
-         DELETE FROM lyrics_kept
-          WHERE path = old.path AND span_start = old.span_start;
-         DELETE FROM lyrics_refused
-          WHERE path = old.path AND span_start = old.span_start;
-     END;",
-    "CREATE TEMP TABLE tracks_fts_held AS
-          SELECT rowid AS id, title, artist, album, genre, lyrics FROM tracks_fts;
-     DROP TABLE tracks_fts;
-     CREATE VIRTUAL TABLE tracks_fts USING fts5(
-         title,
-         artist,
-         album,
-         genre,
-         lyrics,
-         tokenize = 'unicode61 remove_diacritics 2',
-         prefix = '1 2'
-     );
-     INSERT INTO tracks_fts (rowid, title, artist, album, genre, lyrics)
-          SELECT id, title, artist, album, genre, lyrics FROM tracks_fts_held;
-     DROP TABLE tracks_fts_held;",
-    "CREATE INDEX tracks_by_credit ON tracks(artist);",
-    "CREATE INDEX playlist_entries_by_path ON playlist_entries(path);
-     CREATE INDEX resume_rows_by_uri ON resume_rows(uri);",
-    "CREATE TABLE settle_owed (
-         id   INTEGER PRIMARY KEY CHECK (id = 1),
-         owed INTEGER NOT NULL
-     ) STRICT;
-     INSERT INTO settle_owed (id, owed) VALUES (1, 1);
-     CREATE TRIGGER tracks_owe_a_settle_when_added AFTER INSERT ON tracks
-     BEGIN UPDATE settle_owed SET owed = 1; END;
-     CREATE TRIGGER tracks_owe_a_settle_when_named AFTER UPDATE OF artist, artist_id, album_id ON tracks
-     BEGIN UPDATE settle_owed SET owed = 1; END;
-     CREATE TRIGGER tracks_owe_a_settle_when_gone AFTER DELETE ON tracks
-     BEGIN UPDATE settle_owed SET owed = 1; END;
-     CREATE TRIGGER artists_owe_a_settle_when_added AFTER INSERT ON artists
-     BEGIN UPDATE settle_owed SET owed = 1; END;
-     CREATE TRIGGER artists_owe_a_settle_when_named AFTER UPDATE OF name, key ON artists
-     BEGIN UPDATE settle_owed SET owed = 1; END;
-     CREATE TRIGGER artists_owe_a_settle_when_gone AFTER DELETE ON artists
-     BEGIN UPDATE settle_owed SET owed = 1; END;
-     CREATE TRIGGER albums_owe_a_settle_when_gone AFTER DELETE ON albums
-     BEGIN UPDATE settle_owed SET owed = 1; END;",
-    "UPDATE settle_owed SET owed = 1;",
-    "UPDATE tracks SET probe_again = 1 WHERE codec IN (2, 6, 7) AND root_id IS NOT NULL;",
-    "ALTER TABLE artists ADD COLUMN tagged_sort TEXT;
-     UPDATE tracks SET probe_again = 1 WHERE root_id IS NOT NULL;",
-    "ALTER TABLE albums ADD COLUMN tagged_sort TEXT;
-     UPDATE tracks SET probe_again = 1 WHERE root_id IS NOT NULL AND album_id IS NOT NULL;",
-    "ALTER TABLE artists ADD COLUMN found_elsewhere INTEGER;",
-    "ALTER TABLE tracks ADD COLUMN title_sort TEXT;
-     ALTER TABLE tracks ADD COLUMN artist_sort TEXT;
-     ALTER TABLE tracks ADD COLUMN title_filed TEXT GENERATED ALWAYS AS (
-         CASE WHEN title_sort IS NOT NULL AND title IS tagged_title THEN title_sort ELSE title END
-     ) VIRTUAL;
-     ALTER TABLE tracks ADD COLUMN artist_filed TEXT GENERATED ALWAYS AS (
-         CASE WHEN artist_sort IS NOT NULL AND artist IS tagged_artist THEN artist_sort ELSE artist END
-     ) VIRTUAL;
-     DROP INDEX tracks_by_album;
-     DROP INDEX tracks_by_artist_name;
-     DROP INDEX tracks_by_plays;
-     DROP INDEX tracks_by_played;
-     DROP INDEX tracks_by_favourite;
-     DROP INDEX tracks_by_title;
-     CREATE INDEX tracks_by_album ON tracks(album_id, disc_number, track_number,
-                                            title_filed COLLATE NOCASE);
-     CREATE INDEX tracks_by_artist_name ON tracks(artist_filed COLLATE NOCASE, album_id,
-                                                  disc_number, track_number);
-     CREATE INDEX tracks_by_plays ON tracks(plays DESC, title_filed COLLATE NOCASE);
-     CREATE INDEX tracks_by_played ON tracks(played DESC, title_filed COLLATE NOCASE);
-     CREATE INDEX tracks_by_favourite ON tracks(favourite DESC, title_filed COLLATE NOCASE);
-     CREATE INDEX tracks_by_title ON tracks(title_filed COLLATE NOCASE);
-     UPDATE tracks SET probe_again = 1 WHERE root_id IS NOT NULL;",
-    "CREATE TABLE regroup_owed (
-         id   INTEGER PRIMARY KEY CHECK (id = 1),
-         owed INTEGER NOT NULL
-     ) STRICT;
-     INSERT INTO regroup_owed (id, owed) VALUES (1, 1);
-     CREATE TRIGGER tracks_owe_a_regroup_when_added AFTER INSERT ON tracks
-     BEGIN UPDATE regroup_owed SET owed = 1 WHERE owed = 0; END;
-     CREATE TRIGGER tracks_owe_a_regroup_when_gone AFTER DELETE ON tracks
-     BEGIN UPDATE regroup_owed SET owed = 1 WHERE owed = 0; END;
-     CREATE TRIGGER tracks_owe_a_regroup_when_moved AFTER UPDATE OF
-         album_id, artist, disc_number, track_number, title, duration, sample_rate,
-         sample_format, codec, file_size, span_frames ON tracks
-     BEGIN UPDATE regroup_owed SET owed = 1 WHERE owed = 0; END;
-     CREATE TRIGGER albums_owe_a_regroup_when_named AFTER UPDATE OF
-         title, release_title, artist_id ON albums
-     BEGIN UPDATE regroup_owed SET owed = 1 WHERE owed = 0; END;
-     CREATE TRIGGER artists_owe_a_regroup_when_named AFTER UPDATE OF name ON artists
-     BEGIN UPDATE regroup_owed SET owed = 1 WHERE owed = 0; END;",
-    "CREATE TABLE refused_offers (
-         want_id    INTEGER NOT NULL REFERENCES wants(id) ON DELETE CASCADE,
-         taken_from TEXT NOT NULL,
-         refused    INTEGER NOT NULL,
-         PRIMARY KEY (want_id, taken_from)
-     ) STRICT, WITHOUT ROWID;",
-    "DROP INDEX tracks_by_artist_name;
-     ALTER TABLE tracks DROP COLUMN artist_filed;
-     ALTER TABLE tracks ADD COLUMN artist_filed TEXT;
-     UPDATE tracks SET artist_filed = CASE
-         WHEN artist_sort IS NOT NULL AND artist IS tagged_artist THEN artist_sort
-         ELSE coalesce((SELECT coalesce(a.tagged_sort, a.sort_name) FROM artists a
-                        WHERE a.id = tracks.artist_id AND a.name = tracks.artist COLLATE NOCASE),
-                       artist)
-     END;
-     CREATE INDEX tracks_by_artist_name ON tracks(artist_filed COLLATE NOCASE, album_id,
-                                                  disc_number, track_number);
-     CREATE TRIGGER tracks_file_their_artist_when_added AFTER INSERT ON tracks
-     BEGIN
-         UPDATE tracks SET artist_filed = CASE
-             WHEN new.artist_sort IS NOT NULL AND new.artist IS new.tagged_artist
-                 THEN new.artist_sort
-             ELSE coalesce((SELECT coalesce(a.tagged_sort, a.sort_name) FROM artists a
-                            WHERE a.id = new.artist_id AND a.name = new.artist COLLATE NOCASE),
-                           new.artist)
-         END
-         WHERE id = new.id;
-     END;
-     CREATE TRIGGER tracks_file_their_artist_when_named AFTER UPDATE OF
-         artist, artist_id, artist_sort, tagged_artist ON tracks
-     BEGIN
-         UPDATE tracks SET artist_filed = CASE
-             WHEN new.artist_sort IS NOT NULL AND new.artist IS new.tagged_artist
-                 THEN new.artist_sort
-             ELSE coalesce((SELECT coalesce(a.tagged_sort, a.sort_name) FROM artists a
-                            WHERE a.id = new.artist_id AND a.name = new.artist COLLATE NOCASE),
-                           new.artist)
-         END
-         WHERE id = new.id;
-     END;
-     CREATE TRIGGER artists_file_their_tracks_when_sorted AFTER UPDATE OF
-         name, tagged_sort, sort_name ON artists
-     WHEN old.name IS NOT new.name
-       OR old.tagged_sort IS NOT new.tagged_sort
-       OR old.sort_name IS NOT new.sort_name
-     BEGIN
-         UPDATE tracks SET artist_filed = CASE
-             WHEN artist_sort IS NOT NULL AND artist IS tagged_artist THEN artist_sort
-             WHEN artist = new.name COLLATE NOCASE
-                 THEN coalesce(new.tagged_sort, new.sort_name, artist)
-             ELSE artist
-         END
-         WHERE artist_id = new.id;
-     END;",
-    "ALTER TABLE albums ADD COLUMN cover_print TEXT;
-     UPDATE albums SET cover_print = length(cover_art) || ':' || hex(substr(cover_art, 1, 256))
-      WHERE cover_art IS NOT NULL;
-     CREATE TRIGGER albums_print_their_cover_when_added AFTER INSERT ON albums
-     WHEN new.cover_art IS NOT NULL
-     BEGIN
-         UPDATE albums
-            SET cover_print = length(new.cover_art) || ':' || hex(substr(new.cover_art, 1, 256))
-          WHERE id = new.id;
-     END;
-     CREATE TRIGGER albums_print_their_cover_when_changed AFTER UPDATE OF cover_art ON albums
-     BEGIN
-         UPDATE albums
-            SET cover_print = length(new.cover_art) || ':' || hex(substr(new.cover_art, 1, 256))
-          WHERE id = new.id;
-     END;",
-    "CREATE TABLE earlier_submissions (
-         service TEXT PRIMARY KEY,
-         through INTEGER NOT NULL,
-         until   INTEGER NOT NULL
-     ) STRICT;
-     ALTER TABLE submissions ADD COLUMN began INTEGER;",
-    "CREATE TABLE lyrics_ahead (
-         path       TEXT NOT NULL,
-         span_start INTEGER NOT NULL,
-         ahead_ms   INTEGER NOT NULL,
-         PRIMARY KEY (path, span_start)
-     ) STRICT, WITHOUT ROWID;",
-    "ALTER TABLE tracks ADD COLUMN title_words TEXT;
-     CREATE INDEX tracks_by_artist_and_words ON tracks(artist_id, title_words);
-     CREATE TABLE title_words_wanted (id INTEGER PRIMARY KEY) STRICT;",
-    "CREATE TABLE regroup_owed_tracks (track_id INTEGER PRIMARY KEY) STRICT;
-     CREATE INDEX tracks_by_title_words ON tracks(title_words);
-     DROP TRIGGER tracks_owe_a_regroup_when_added;
-     DROP TRIGGER tracks_owe_a_regroup_when_gone;
-     DROP TRIGGER tracks_owe_a_regroup_when_moved;
-     DROP TRIGGER albums_owe_a_regroup_when_named;
-     DROP TRIGGER artists_owe_a_regroup_when_named;
-     CREATE TRIGGER tracks_owe_a_regroup_when_added AFTER INSERT ON tracks
-     BEGIN
-         INSERT INTO regroup_owed_tracks (track_id)
-         SELECT NEW.id WHERE NOT EXISTS (SELECT 1 FROM regroup_owed_tracks WHERE track_id = NEW.id);
-     END;
-     CREATE TRIGGER tracks_owe_a_regroup_when_gone BEFORE DELETE ON tracks
-     BEGIN
-         INSERT INTO regroup_owed_tracks (track_id)
-         SELECT id FROM tracks
-          WHERE alternative_of = OLD.id
-            AND id NOT IN (SELECT track_id FROM regroup_owed_tracks);
-     END;
-     CREATE TRIGGER tracks_owe_a_regroup_when_moved AFTER UPDATE OF
-         album_id, artist, disc_number, track_number, title, duration, sample_rate,
-         sample_format, codec, file_size, span_frames ON tracks
-     BEGIN
-         INSERT INTO regroup_owed_tracks (track_id)
-         SELECT id FROM tracks
-          WHERE (id = NEW.id OR id = NEW.alternative_of OR alternative_of = NEW.id
-                 OR alternative_of = NEW.alternative_of)
-            AND id NOT IN (SELECT track_id FROM regroup_owed_tracks);
-     END;
-     CREATE TRIGGER albums_owe_a_regroup_when_named AFTER UPDATE OF
-         title, release_title, artist_id ON albums
-     BEGIN
-         INSERT INTO regroup_owed_tracks (track_id)
-         SELECT id FROM tracks
-          WHERE album_id = NEW.id AND id NOT IN (SELECT track_id FROM regroup_owed_tracks);
-     END;
-     CREATE TRIGGER artists_owe_a_regroup_when_named AFTER UPDATE OF name ON artists
-     BEGIN
-         INSERT INTO regroup_owed_tracks (track_id)
-         SELECT t.id FROM tracks t JOIN albums a ON a.id = t.album_id
-          WHERE a.artist_id = NEW.id AND t.id NOT IN (SELECT track_id FROM regroup_owed_tracks);
-     END;",
-    "CREATE TABLE object_deliveries (
-         key        TEXT NOT NULL REFERENCES vault_objects(key) ON DELETE CASCADE,
-         taken_from TEXT NOT NULL,
-         took       INTEGER NOT NULL,
-         PRIMARY KEY (key, taken_from)
-     ) STRICT, WITHOUT ROWID;",
-    "CREATE TABLE kept_tags (
-         track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
-         field    TEXT NOT NULL,
-         value    TEXT NOT NULL,
-         PRIMARY KEY (track_id, field)
-     ) STRICT, WITHOUT ROWID;",
-    "ALTER TABLE tracks ADD COLUMN vault_bits INTEGER;",
-    "DELETE FROM loves_told WHERE service = 'lastfm';",
-    "CREATE TABLE album_keys_composed_wanted (since INTEGER) STRICT;",
-    "ALTER TABLE tracks ADD COLUMN numbered_by_its_stem INTEGER NOT NULL DEFAULT 0;",
-    "ALTER TABLE retagged_fields ADD COLUMN wrote TEXT;
-     ALTER TABLE retagged_fields ADD COLUMN wrote_known INTEGER NOT NULL DEFAULT 0;",
-    "CREATE INDEX tracks_by_isrc ON tracks(isrc);
-     CREATE INDEX albums_by_release ON albums(mbid);
-     CREATE INDEX artists_by_mbid ON artists(mbid);",
-    "CREATE TABLE release_track_isrcs (
-         release_track_id INTEGER NOT NULL REFERENCES release_tracks(id) ON DELETE CASCADE,
-         isrc             TEXT NOT NULL,
-         PRIMARY KEY (release_track_id, isrc)
-     ) STRICT, WITHOUT ROWID;
-     INSERT INTO release_track_isrcs (release_track_id, isrc)
-     SELECT id, isrc FROM release_tracks WHERE isrc IS NOT NULL;",
-    "ALTER TABLE listens ADD COLUMN elsewhere INTEGER NOT NULL DEFAULT 0;",
-    "ALTER TABLE tracks ADD COLUMN file_name TEXT GENERATED ALWAYS AS (
-         replace(path, rtrim(path, replace(path, '/', '')), '')
-     ) VIRTUAL;
-     CREATE INDEX tracks_by_file_name ON tracks(file_name COLLATE NOCASE);",
-    "ALTER TABLE tracks ADD COLUMN track_total INTEGER;
-     UPDATE tracks SET probe_again = 1 WHERE root_id IS NOT NULL AND album_id IS NOT NULL;",
-    "ALTER TABLE albums ADD COLUMN pressing_fit INTEGER;",
-    "CREATE VIRTUAL TABLE artist_releases_fts USING fts5(
-         folded, content = 'artist_releases', content_rowid = 'rowid', tokenize = 'trigram'
-     );
-     CREATE VIRTUAL TABLE artists_key_fts USING fts5(
-         key, content = 'artists', content_rowid = 'id', tokenize = 'trigram'
-     );
-     CREATE VIRTUAL TABLE release_tracks_fts USING fts5(
-         folded, content = 'release_tracks', content_rowid = 'id', tokenize = 'trigram'
-     );
-     INSERT INTO artist_releases_fts (artist_releases_fts) VALUES ('rebuild');
-     INSERT INTO artists_key_fts (artists_key_fts) VALUES ('rebuild');
-     INSERT INTO release_tracks_fts (release_tracks_fts) VALUES ('rebuild');
-     CREATE TRIGGER artist_releases_fts_added AFTER INSERT ON artist_releases BEGIN
-         INSERT INTO artist_releases_fts (rowid, folded) VALUES (new.rowid, new.folded);
-     END;
-     CREATE TRIGGER artist_releases_fts_gone AFTER DELETE ON artist_releases BEGIN
-         INSERT INTO artist_releases_fts (artist_releases_fts, rowid, folded)
-         VALUES ('delete', old.rowid, old.folded);
-     END;
-     CREATE TRIGGER artist_releases_fts_refolded AFTER UPDATE OF folded ON artist_releases BEGIN
-         INSERT INTO artist_releases_fts (artist_releases_fts, rowid, folded)
-         VALUES ('delete', old.rowid, old.folded);
-         INSERT INTO artist_releases_fts (rowid, folded) VALUES (new.rowid, new.folded);
-     END;
-     CREATE TRIGGER artists_key_fts_added AFTER INSERT ON artists BEGIN
-         INSERT INTO artists_key_fts (rowid, key) VALUES (new.id, new.key);
-     END;
-     CREATE TRIGGER artists_key_fts_gone AFTER DELETE ON artists BEGIN
-         INSERT INTO artists_key_fts (artists_key_fts, rowid, key)
-         VALUES ('delete', old.id, old.key);
-     END;
-     CREATE TRIGGER artists_key_fts_rekeyed AFTER UPDATE OF key ON artists BEGIN
-         INSERT INTO artists_key_fts (artists_key_fts, rowid, key)
-         VALUES ('delete', old.id, old.key);
-         INSERT INTO artists_key_fts (rowid, key) VALUES (new.id, new.key);
-     END;
-     CREATE TRIGGER release_tracks_fts_added AFTER INSERT ON release_tracks BEGIN
-         INSERT INTO release_tracks_fts (rowid, folded) VALUES (new.id, new.folded);
-     END;
-     CREATE TRIGGER release_tracks_fts_gone AFTER DELETE ON release_tracks BEGIN
-         INSERT INTO release_tracks_fts (release_tracks_fts, rowid, folded)
-         VALUES ('delete', old.id, old.folded);
-     END;
-     CREATE TRIGGER release_tracks_fts_refolded AFTER UPDATE OF folded ON release_tracks BEGIN
-         INSERT INTO release_tracks_fts (release_tracks_fts, rowid, folded)
-         VALUES ('delete', old.id, old.folded);
-         INSERT INTO release_tracks_fts (rowid, folded) VALUES (new.id, new.folded);
-     END;",
-    "DELETE FROM kept_tags WHERE track_id IN (
-         SELECT t.id FROM tracks t JOIN vault_objects o ON o.key = t.vault_key
-          WHERE t.root_id IS NOT NULL AND o.form IN (0, 1)
-            AND (o.sample_rate != t.sample_rate OR o.channels != t.channels));
-     UPDATE tracks SET vault_key = NULL, vault_path = NULL, vault_bits = NULL
-      WHERE root_id IS NOT NULL AND id IN (
-         SELECT t.id FROM tracks t JOIN vault_objects o ON o.key = t.vault_key
-          WHERE o.form IN (0, 1)
-            AND (o.sample_rate != t.sample_rate OR o.channels != t.channels));",
-    "ALTER TABLE tracks ADD COLUMN walked TEXT;
-     UPDATE tracks SET probe_again = 1
-      WHERE root_id IS NOT NULL
-        AND (path LIKE '%.mp3' OR path LIKE '%.mkv' OR path LIKE '%.mka' OR path LIKE '%.webm');",
-];
+pub const SCHEMA_FINGERPRINT: SchemaFingerprint = fingerprint_of(V1);
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
 
 const FNV_PRIME: u32 = 0x0100_0193;
-
-const UNSTAMPED: u32 = 0;
 
 const V1: &str = "
 CREATE TABLE roots (
@@ -567,103 +17,131 @@ CREATE TABLE roots (
 ) STRICT;
 
 CREATE TABLE artists (
+    id               INTEGER PRIMARY KEY,
+    key              TEXT NOT NULL UNIQUE,
+    name             TEXT NOT NULL,
+    mbid             TEXT,
+    sort_name        TEXT,
+    kind             TEXT,
+    gender           TEXT,
+    country          TEXT,
+    area             TEXT,
+    began_in         TEXT,
+    began            TEXT,
+    ended            TEXT,
+    has_ended        INTEGER NOT NULL DEFAULT 0,
+    disambiguation   TEXT,
+    portrait         BLOB,
+    portrait_format  INTEGER,
+    asked            INTEGER,
+    asks             INTEGER NOT NULL DEFAULT 0,
+    refusals         INTEGER NOT NULL DEFAULT 0,
+    answered         INTEGER,
+    favourite        INTEGER,
+    releases_unread  INTEGER NOT NULL DEFAULT 0,
+    releases_read_to INTEGER NOT NULL DEFAULT 0,
+    portrait_asked   INTEGER,
+    tagged_sort      TEXT,
+    found_elsewhere  INTEGER
+) STRICT;
+
+CREATE TABLE albums (
     id              INTEGER PRIMARY KEY,
-    key             TEXT NOT NULL UNIQUE,
-    name            TEXT NOT NULL,
+    title           TEXT NOT NULL,
+    release_title   TEXT,
+    artist_id       INTEGER REFERENCES artists(id) ON DELETE SET NULL,
+    year            INTEGER,
+    tagged_tracks   INTEGER,
+    cover_art       BLOB,
+    cover_format    INTEGER,
+    cover_source    INTEGER NOT NULL DEFAULT 0,
+    cover_key       TEXT,
+    cover_path      TEXT,
     mbid            TEXT,
-    sort_name       TEXT,
-    kind            TEXT,
-    gender          TEXT,
+    release_group   TEXT,
+    date            TEXT,
     country         TEXT,
-    area            TEXT,
-    began_in        TEXT,
-    began           TEXT,
-    ended           TEXT,
-    has_ended       INTEGER NOT NULL DEFAULT 0,
+    label           TEXT,
+    catalog_number  TEXT,
+    barcode         TEXT,
+    kind            TEXT,
     disambiguation  TEXT,
-    portrait        BLOB,
-    portrait_format INTEGER,
     asked           INTEGER,
     asks            INTEGER NOT NULL DEFAULT 0,
     refusals        INTEGER NOT NULL DEFAULT 0,
     answered        INTEGER,
-    favourite       INTEGER
-) STRICT;
-
-CREATE TABLE albums (
-    id             INTEGER PRIMARY KEY,
-    title          TEXT NOT NULL,
-    release_title  TEXT,
-    artist_id      INTEGER REFERENCES artists(id) ON DELETE SET NULL,
-    year           INTEGER,
-    tagged_tracks  INTEGER,
-    cover_art      BLOB,
-    cover_format   INTEGER,
-    cover_source   INTEGER NOT NULL DEFAULT 0,
-    cover_key      TEXT,
-    cover_path     TEXT,
-    mbid           TEXT,
-    release_group  TEXT,
-    date           TEXT,
-    country        TEXT,
-    label          TEXT,
-    catalog_number TEXT,
-    barcode        TEXT,
-    kind           TEXT,
-    disambiguation TEXT,
-    asked          INTEGER,
-    asks           INTEGER NOT NULL DEFAULT 0,
-    refusals       INTEGER NOT NULL DEFAULT 0,
-    answered       INTEGER,
-    favourite      INTEGER,
-    found_elsewhere INTEGER
+    favourite       INTEGER,
+    found_elsewhere INTEGER,
+    cover_asked     INTEGER,
+    front_cover     INTEGER,
+    tagged_sort     TEXT,
+    cover_print     TEXT,
+    pressing_fit    INTEGER
 ) STRICT;
 
 CREATE TABLE tracks (
-    id                 INTEGER PRIMARY KEY,
-    root_id            INTEGER REFERENCES roots(id) ON DELETE CASCADE,
-    path               TEXT NOT NULL,
-    span_start         INTEGER NOT NULL DEFAULT 0,
-    span_frames        INTEGER,
-    title              TEXT NOT NULL,
-    artist             TEXT,
-    artist_id          INTEGER REFERENCES artists(id) ON DELETE SET NULL,
-    album_id           INTEGER REFERENCES albums(id) ON DELETE SET NULL,
-    track_number       INTEGER,
-    disc_number        INTEGER,
-    duration           INTEGER,
-    sample_rate        INTEGER NOT NULL,
-    channels           INTEGER NOT NULL,
-    sample_format      INTEGER NOT NULL,
-    codec              INTEGER NOT NULL,
-    rg_track_gain      REAL,
-    rg_track_peak      REAL,
-    rg_album_gain      REAL,
-    rg_album_peak      REAL,
-    file_size          INTEGER NOT NULL,
-    modified           INTEGER NOT NULL,
-    sheet_modified     INTEGER,
-    added              INTEGER NOT NULL,
-    seen               INTEGER NOT NULL,
-    plays              INTEGER NOT NULL DEFAULT 0,
-    played             INTEGER,
-    mbid               TEXT,
-    artist_mbid        TEXT,
-    release_track_mbid TEXT,
-    isrc               TEXT,
-    tagged_title       TEXT,
-    tagged_artist      TEXT,
-    release_title      TEXT,
-    genre              TEXT,
-    lyrics             TEXT,
-    alternative_of     INTEGER REFERENCES tracks(id) ON DELETE SET NULL,
-    vault_key          TEXT,
-    vault_path         TEXT,
-    favourite          INTEGER,
-    asked              INTEGER,
-    asks               INTEGER NOT NULL DEFAULT 0,
-    refusals           INTEGER NOT NULL DEFAULT 0,
-    answered           INTEGER,
+    id                   INTEGER PRIMARY KEY,
+    root_id              INTEGER REFERENCES roots(id) ON DELETE CASCADE,
+    path                 TEXT NOT NULL,
+    span_start           INTEGER NOT NULL DEFAULT 0,
+    span_frames          INTEGER,
+    title                TEXT NOT NULL,
+    artist               TEXT,
+    artist_id            INTEGER REFERENCES artists(id) ON DELETE SET NULL,
+    album_id             INTEGER REFERENCES albums(id) ON DELETE SET NULL,
+    track_number         INTEGER,
+    disc_number          INTEGER,
+    duration             INTEGER,
+    sample_rate          INTEGER NOT NULL,
+    channels             INTEGER NOT NULL,
+    sample_format        INTEGER NOT NULL,
+    codec                INTEGER NOT NULL,
+    rg_track_gain        REAL,
+    rg_track_peak        REAL,
+    rg_album_gain        REAL,
+    rg_album_peak        REAL,
+    file_size            INTEGER NOT NULL,
+    modified             INTEGER NOT NULL,
+    sheet_modified       INTEGER,
+    added                INTEGER NOT NULL,
+    seen                 INTEGER NOT NULL,
+    plays                INTEGER NOT NULL DEFAULT 0,
+    played               INTEGER,
+    mbid                 TEXT,
+    artist_mbid          TEXT,
+    release_track_mbid   TEXT,
+    isrc                 TEXT,
+    tagged_title         TEXT,
+    tagged_artist        TEXT,
+    release_title        TEXT,
+    genre                TEXT,
+    lyrics               TEXT,
+    alternative_of       INTEGER REFERENCES tracks(id) ON DELETE SET NULL,
+    vault_key            TEXT,
+    vault_path           TEXT,
+    favourite            INTEGER,
+    asked                INTEGER,
+    asks                 INTEGER NOT NULL DEFAULT 0,
+    refusals             INTEGER NOT NULL DEFAULT 0,
+    answered             INTEGER,
+    hidden               INTEGER NOT NULL DEFAULT 0,
+    probe_again          INTEGER NOT NULL DEFAULT 0,
+    named_by_its_stem    INTEGER NOT NULL DEFAULT 0,
+    packets              INTEGER,
+    title_sort           TEXT,
+    artist_sort          TEXT,
+    title_filed          TEXT GENERATED ALWAYS AS (
+         CASE WHEN title_sort IS NOT NULL AND title IS tagged_title THEN title_sort ELSE title END
+     ) VIRTUAL,
+    artist_filed         TEXT,
+    title_words          TEXT,
+    vault_bits           INTEGER,
+    numbered_by_its_stem INTEGER NOT NULL DEFAULT 0,
+    file_name            TEXT GENERATED ALWAYS AS (
+         replace(path, rtrim(path, replace(path, '/', '')), '')
+     ) VIRTUAL,
+    track_total          INTEGER,
+    walked               TEXT,
     UNIQUE (path, span_start)
 ) STRICT;
 
@@ -671,39 +149,6 @@ CREATE TABLE album_keys (
     key      TEXT PRIMARY KEY,
     album_id INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE
 ) STRICT;
-
-CREATE INDEX album_keys_by_album ON album_keys(album_id);
-
-CREATE INDEX tracks_by_album ON tracks(album_id, disc_number, track_number,
-                                       title COLLATE NOCASE);
-CREATE INDEX tracks_by_artist_name ON tracks(artist COLLATE NOCASE, album_id, disc_number,
-                                             track_number);
-CREATE INDEX tracks_by_plays ON tracks(plays DESC, title COLLATE NOCASE);
-CREATE INDEX tracks_by_played ON tracks(played DESC, title COLLATE NOCASE);
-CREATE INDEX tracks_by_favourite ON tracks(favourite DESC, title COLLATE NOCASE);
-CREATE INDEX tracks_by_title ON tracks(title COLLATE NOCASE);
-CREATE INDEX tracks_by_added ON tracks(added DESC);
-CREATE INDEX tracks_by_duration ON tracks(duration);
-CREATE INDEX tracks_by_artist ON tracks(artist_id);
-CREATE INDEX tracks_by_alternative ON tracks(alternative_of);
-CREATE INDEX tracks_by_root ON tracks(root_id, seen);
-CREATE INDEX tracks_by_asking ON tracks(answered, asked);
-CREATE INDEX albums_by_artist ON albums(artist_id);
-CREATE INDEX albums_by_asking ON albums(answered, asked);
-CREATE INDEX artists_by_asking ON artists(answered, asked);
-
-CREATE VIRTUAL TABLE tracks_fts USING fts5(
-    title,
-    artist,
-    album,
-    genre,
-    lyrics,
-    tokenize = 'unicode61 remove_diacritics 2'
-);
-
-CREATE TRIGGER tracks_fts_gone AFTER DELETE ON tracks BEGIN
-    DELETE FROM tracks_fts WHERE rowid = old.id;
-END;
 
 CREATE TABLE track_studies (
     track_id       INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
@@ -734,28 +179,6 @@ CREATE TABLE track_studies (
     agreement      TEXT
 ) STRICT;
 
-CREATE INDEX track_studies_by_verdict ON track_studies(verdict);
-CREATE INDEX track_studies_by_agreement ON track_studies(agreement);
-
-CREATE TRIGGER track_studies_forget_a_changed_file
-AFTER UPDATE OF file_size, modified, span_frames ON tracks
-WHEN old.file_size IS NOT new.file_size
-  OR old.modified IS NOT new.modified
-  OR old.span_frames IS NOT new.span_frames
-BEGIN
-    DELETE FROM track_studies WHERE track_id = new.id;
-END;
-
-CREATE TABLE listens (
-    id       INTEGER PRIMARY KEY,
-    track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
-    at       INTEGER NOT NULL,
-    heard    INTEGER NOT NULL DEFAULT 0
-) STRICT;
-
-CREATE INDEX listens_by_track ON listens(track_id, at);
-CREATE INDEX listens_by_time ON listens(at);
-
 CREATE TABLE playlists (
     id           INTEGER PRIMARY KEY,
     name         TEXT NOT NULL,
@@ -782,7 +205,8 @@ CREATE TABLE playlist_queries (
     playlist_id INTEGER PRIMARY KEY REFERENCES playlists(id) ON DELETE CASCADE,
     text        TEXT,
     sort        INTEGER NOT NULL,
-    max_rows    INTEGER
+    max_rows    INTEGER,
+    reading     INTEGER NOT NULL DEFAULT 0
 ) STRICT;
 
 CREATE TABLE release_tracks (
@@ -800,10 +224,6 @@ CREATE TABLE release_tracks (
     folded         TEXT NOT NULL,
     track_id       INTEGER REFERENCES tracks(id) ON DELETE SET NULL
 ) STRICT;
-
-CREATE INDEX release_tracks_by_album ON release_tracks(album_id, track_id);
-CREATE INDEX release_tracks_in_order ON release_tracks(album_id, disc, position);
-CREATE INDEX release_tracks_by_track ON release_tracks(track_id);
 
 CREATE TABLE release_media (
     album_id INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
@@ -835,11 +255,9 @@ CREATE TABLE artist_releases (
     kind           TEXT,
     first_released TEXT,
     folded         TEXT NOT NULL,
+    song           TEXT,
     PRIMARY KEY (artist_id, mbid)
 ) STRICT;
-
-CREATE INDEX artist_releases_by_group ON artist_releases(mbid);
-CREATE INDEX albums_by_release_group ON albums(release_group);
 
 CREATE TABLE album_links (
     album_id INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
@@ -862,7 +280,8 @@ CREATE TABLE wants (
     release_track_id INTEGER NOT NULL UNIQUE REFERENCES release_tracks(id) ON DELETE CASCADE,
     wanted           INTEGER NOT NULL,
     tried            INTEGER,
-    offered          TEXT
+    offered          TEXT,
+    misses           INTEGER NOT NULL DEFAULT 0
 ) STRICT;
 
 CREATE TABLE vault_objects (
@@ -881,9 +300,6 @@ CREATE TABLE vault_objects (
     encoding      INTEGER NOT NULL,
     validated     INTEGER NOT NULL DEFAULT 0
 ) STRICT;
-
-CREATE INDEX vault_objects_by_path ON vault_objects(path);
-CREATE INDEX tracks_by_vault ON tracks(vault_key);
 
 CREATE TABLE enrichment (
     id      INTEGER PRIMARY KEY CHECK (id = 1),
@@ -909,15 +325,18 @@ CREATE TABLE lyrics_kept (
     text       TEXT,
     synced     INTEGER NOT NULL DEFAULT 0,
     taken      INTEGER NOT NULL,
+    lyricsfile TEXT,
     PRIMARY KEY (path, span_start)
 ) STRICT;
 
 CREATE TABLE resume (
-    id      INTEGER PRIMARY KEY CHECK (id = 1),
-    row     INTEGER NOT NULL,
-    at      INTEGER NOT NULL,
-    shuffle INTEGER NOT NULL DEFAULT 0,
-    taken   INTEGER NOT NULL
+    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    row        INTEGER NOT NULL,
+    at         INTEGER NOT NULL,
+    shuffle    INTEGER NOT NULL DEFAULT 0,
+    taken      INTEGER NOT NULL,
+    next_first INTEGER,
+    next_last  INTEGER
 ) STRICT;
 
 CREATE TABLE resume_rows (
@@ -931,6 +350,559 @@ CREATE TABLE resume_order (
     position  INTEGER PRIMARY KEY,
     loaded_at INTEGER NOT NULL
 ) STRICT;
+
+CREATE TABLE track_credits (
+    track_id  INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+    artist_id INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+    PRIMARY KEY (track_id, artist_id)
+) STRICT;
+
+CREATE TABLE staged_writes (
+    path TEXT PRIMARY KEY,
+    pid  INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE likenesses (
+    picture  TEXT PRIMARY KEY,
+    likeness BLOB
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE submissions (
+    service TEXT PRIMARY KEY,
+    through INTEGER NOT NULL,
+    began   INTEGER
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE refused_releases (
+    album_id INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+    mbid     TEXT NOT NULL,
+    PRIMARY KEY (album_id, mbid)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE passes (
+    at    INTEGER NOT NULL,
+    heard INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE unheld_listens (
+    path       TEXT NOT NULL,
+    span_start INTEGER NOT NULL,
+    at         INTEGER NOT NULL,
+    began      INTEGER,
+    heard      INTEGER NOT NULL DEFAULT 0
+) STRICT;
+
+CREATE TABLE playlist_plays (
+    playlist_id INTEGER NOT NULL,
+    at          INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE organised (
+    position   INTEGER PRIMARY KEY,
+    unit       INTEGER NOT NULL,
+    part       INTEGER NOT NULL,
+    rows       INTEGER NOT NULL,
+    moved_from TEXT NOT NULL,
+    moved_to   TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE retagged (
+    path       TEXT PRIMARY KEY,
+    pictured   INTEGER NOT NULL,
+    rated      INTEGER,
+    picture    BLOB,
+    picture_id INTEGER
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE retagged_fields (
+    path        TEXT NOT NULL,
+    field       TEXT NOT NULL,
+    was         TEXT,
+    wrote       TEXT,
+    wrote_known INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (path, field)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE volumes (
+    path TEXT PRIMARY KEY
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE retagged_pictures (
+    id      INTEGER PRIMARY KEY,
+    picture BLOB NOT NULL
+) STRICT;
+
+CREATE TABLE unstudied (
+    track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+    under    INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE lyrics_refused (
+    path       TEXT NOT NULL,
+    span_start INTEGER NOT NULL,
+    refused    INTEGER NOT NULL,
+    refusals   INTEGER NOT NULL,
+    PRIMARY KEY (path, span_start)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE vault_refused (
+    track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+    under    INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE dismissed_releases (
+    artist_id INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+    mbid      TEXT NOT NULL,
+    PRIMARY KEY (artist_id, mbid)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE loves_told (
+    service   TEXT NOT NULL,
+    recording TEXT NOT NULL,
+    PRIMARY KEY (service, recording)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE index_refold_wanted (
+    since INTEGER
+) STRICT;
+
+CREATE TABLE discography_songs (
+    release_group  TEXT NOT NULL,
+    recording_mbid TEXT NOT NULL,
+    release_mbid   TEXT NOT NULL,
+    release_title  TEXT NOT NULL,
+    released       TEXT,
+    kind           TEXT,
+    disc           INTEGER NOT NULL,
+    position       INTEGER NOT NULL,
+    title          TEXT NOT NULL,
+    artist         TEXT NOT NULL,
+    length_ms      INTEGER,
+    words          TEXT NOT NULL,
+    folded         TEXT NOT NULL,
+    PRIMARY KEY (release_group, recording_mbid)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE discography_songs_read (
+    release_group TEXT PRIMARY KEY,
+    read          INTEGER NOT NULL,
+    refusals      INTEGER NOT NULL
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE unheld_covers (
+    release_group TEXT PRIMARY KEY,
+    cover         BLOB,
+    asked         INTEGER NOT NULL
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE forgotten_deliveries (
+    want_id    INTEGER NOT NULL REFERENCES wants(id) ON DELETE CASCADE,
+    taken_from TEXT NOT NULL,
+    forgotten  INTEGER NOT NULL,
+    PRIMARY KEY (want_id, taken_from)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE dismissed_missing (
+    album_id INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+    disc     INTEGER NOT NULL,
+    position INTEGER NOT NULL,
+    folded   TEXT NOT NULL,
+    PRIMARY KEY (album_id, disc, position, folded)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE listens (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    track_id  INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+    at        INTEGER NOT NULL,
+    heard     INTEGER NOT NULL DEFAULT 0,
+    began     INTEGER,
+    elsewhere INTEGER NOT NULL DEFAULT 0
+) STRICT;
+
+CREATE VIRTUAL TABLE tracks_fts USING fts5(
+         title,
+         artist,
+         album,
+         genre,
+         lyrics,
+         tokenize = 'unicode61 remove_diacritics 2',
+         prefix = '1 2'
+     );
+
+CREATE TABLE settle_owed (
+    id   INTEGER PRIMARY KEY CHECK (id = 1),
+    owed INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE regroup_owed (
+    id   INTEGER PRIMARY KEY CHECK (id = 1),
+    owed INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE refused_offers (
+    want_id    INTEGER NOT NULL REFERENCES wants(id) ON DELETE CASCADE,
+    taken_from TEXT NOT NULL,
+    refused    INTEGER NOT NULL,
+    PRIMARY KEY (want_id, taken_from)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE earlier_submissions (
+    service TEXT PRIMARY KEY,
+    through INTEGER NOT NULL,
+    until   INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE lyrics_ahead (
+    path       TEXT NOT NULL,
+    span_start INTEGER NOT NULL,
+    ahead_ms   INTEGER NOT NULL,
+    PRIMARY KEY (path, span_start)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE title_words_wanted (
+    id INTEGER PRIMARY KEY
+) STRICT;
+
+CREATE TABLE regroup_owed_tracks (
+    track_id INTEGER PRIMARY KEY
+) STRICT;
+
+CREATE TABLE object_deliveries (
+    key        TEXT NOT NULL REFERENCES vault_objects(key) ON DELETE CASCADE,
+    taken_from TEXT NOT NULL,
+    took       INTEGER NOT NULL,
+    PRIMARY KEY (key, taken_from)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE kept_tags (
+    track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+    field    TEXT NOT NULL,
+    value    TEXT NOT NULL,
+    PRIMARY KEY (track_id, field)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE album_keys_composed_wanted (
+    since INTEGER
+) STRICT;
+
+CREATE TABLE release_track_isrcs (
+    release_track_id INTEGER NOT NULL REFERENCES release_tracks(id) ON DELETE CASCADE,
+    isrc             TEXT NOT NULL,
+    PRIMARY KEY (release_track_id, isrc)
+) STRICT, WITHOUT ROWID;
+
+CREATE VIRTUAL TABLE artist_releases_fts USING fts5(
+         folded, content = 'artist_releases', content_rowid = 'rowid', tokenize = 'trigram'
+     );
+
+CREATE VIRTUAL TABLE artists_key_fts USING fts5(
+         key, content = 'artists', content_rowid = 'id', tokenize = 'trigram'
+     );
+
+CREATE VIRTUAL TABLE release_tracks_fts USING fts5(
+         folded, content = 'release_tracks', content_rowid = 'id', tokenize = 'trigram'
+     );
+
+CREATE INDEX album_keys_by_album ON album_keys(album_id);
+
+CREATE INDEX tracks_by_added ON tracks(added DESC);
+
+CREATE INDEX tracks_by_duration ON tracks(duration);
+
+CREATE INDEX tracks_by_artist ON tracks(artist_id);
+
+CREATE INDEX tracks_by_alternative ON tracks(alternative_of);
+
+CREATE INDEX tracks_by_root ON tracks(root_id, seen);
+
+CREATE INDEX tracks_by_asking ON tracks(answered, asked);
+
+CREATE INDEX albums_by_artist ON albums(artist_id);
+
+CREATE INDEX albums_by_asking ON albums(answered, asked);
+
+CREATE INDEX artists_by_asking ON artists(answered, asked);
+
+CREATE INDEX track_studies_by_verdict ON track_studies(verdict);
+
+CREATE INDEX track_studies_by_agreement ON track_studies(agreement);
+
+CREATE INDEX release_tracks_by_album ON release_tracks(album_id, track_id);
+
+CREATE INDEX release_tracks_in_order ON release_tracks(album_id, disc, position);
+
+CREATE INDEX release_tracks_by_track ON release_tracks(track_id);
+
+CREATE INDEX artist_releases_by_group ON artist_releases(mbid);
+
+CREATE INDEX albums_by_release_group ON albums(release_group);
+
+CREATE INDEX vault_objects_by_path ON vault_objects(path);
+
+CREATE INDEX tracks_by_vault ON tracks(vault_key);
+
+CREATE INDEX track_credits_by_artist ON track_credits(artist_id, track_id);
+
+CREATE INDEX passes_by_time ON passes(at);
+
+CREATE INDEX unheld_listens_by_path ON unheld_listens(path, span_start);
+
+CREATE INDEX playlist_plays_by_playlist ON playlist_plays(playlist_id, at);
+
+CREATE INDEX unheld_listens_by_time ON unheld_listens(at);
+
+CREATE INDEX vault_objects_by_sound ON vault_objects(frames, sample_rate, channels);
+
+CREATE INDEX tracks_by_recording ON tracks(mbid);
+
+CREATE INDEX release_tracks_by_recording ON release_tracks(recording_mbid);
+
+CREATE INDEX discography_songs_by_recording ON discography_songs(recording_mbid);
+
+CREATE INDEX listens_by_track ON listens(track_id, at);
+
+CREATE INDEX listens_by_time ON listens(at);
+
+CREATE INDEX tracks_by_credit ON tracks(artist);
+
+CREATE INDEX playlist_entries_by_path ON playlist_entries(path);
+
+CREATE INDEX resume_rows_by_uri ON resume_rows(uri);
+
+CREATE INDEX tracks_by_album ON tracks(album_id, disc_number, track_number,
+                                            title_filed COLLATE NOCASE);
+
+CREATE INDEX tracks_by_plays ON tracks(plays DESC, title_filed COLLATE NOCASE);
+
+CREATE INDEX tracks_by_played ON tracks(played DESC, title_filed COLLATE NOCASE);
+
+CREATE INDEX tracks_by_favourite ON tracks(favourite DESC, title_filed COLLATE NOCASE);
+
+CREATE INDEX tracks_by_title ON tracks(title_filed COLLATE NOCASE);
+
+CREATE INDEX tracks_by_artist_name ON tracks(artist_filed COLLATE NOCASE, album_id,
+                                                  disc_number, track_number);
+
+CREATE INDEX tracks_by_artist_and_words ON tracks(artist_id, title_words);
+
+CREATE INDEX tracks_by_title_words ON tracks(title_words);
+
+CREATE INDEX tracks_by_isrc ON tracks(isrc);
+
+CREATE INDEX albums_by_release ON albums(mbid);
+
+CREATE INDEX artists_by_mbid ON artists(mbid);
+
+CREATE INDEX tracks_by_file_name ON tracks(file_name COLLATE NOCASE);
+
+CREATE TRIGGER tracks_fts_gone AFTER DELETE ON tracks BEGIN
+    DELETE FROM tracks_fts WHERE rowid = old.id;
+END;
+
+CREATE TRIGGER track_studies_forget_a_changed_file
+AFTER UPDATE OF file_size, modified, span_frames ON tracks
+WHEN old.file_size IS NOT new.file_size
+  OR old.modified IS NOT new.modified
+  OR old.span_frames IS NOT new.span_frames
+BEGIN
+    DELETE FROM track_studies WHERE track_id = new.id;
+END;
+
+CREATE TRIGGER unstudied_forget_a_changed_file
+     AFTER UPDATE OF file_size, modified, span_frames ON tracks
+     WHEN old.file_size IS NOT new.file_size
+       OR old.modified IS NOT new.modified
+       OR old.span_frames IS NOT new.span_frames
+     BEGIN
+         DELETE FROM unstudied WHERE track_id = new.id;
+     END;
+
+CREATE TRIGGER vault_refused_forget_a_changed_file
+     AFTER UPDATE OF file_size, modified, span_frames ON tracks
+     WHEN old.file_size IS NOT new.file_size
+       OR old.modified IS NOT new.modified
+       OR old.span_frames IS NOT new.span_frames
+     BEGIN
+         DELETE FROM vault_refused WHERE track_id = new.id;
+     END;
+
+CREATE TRIGGER lyrics_forget_a_changed_file
+     AFTER UPDATE OF file_size, modified, span_frames ON tracks
+     WHEN old.file_size IS NOT new.file_size
+       OR old.modified IS NOT new.modified
+       OR old.span_frames IS NOT new.span_frames
+     BEGIN
+         DELETE FROM lyrics_kept
+          WHERE path = old.path AND span_start = old.span_start;
+         DELETE FROM lyrics_refused
+          WHERE path = old.path AND span_start = old.span_start;
+     END;
+
+CREATE TRIGGER tracks_owe_a_settle_when_added AFTER INSERT ON tracks
+     BEGIN UPDATE settle_owed SET owed = 1; END;
+
+CREATE TRIGGER tracks_owe_a_settle_when_named AFTER UPDATE OF artist, artist_id, album_id ON tracks
+     BEGIN UPDATE settle_owed SET owed = 1; END;
+
+CREATE TRIGGER tracks_owe_a_settle_when_gone AFTER DELETE ON tracks
+     BEGIN UPDATE settle_owed SET owed = 1; END;
+
+CREATE TRIGGER artists_owe_a_settle_when_added AFTER INSERT ON artists
+     BEGIN UPDATE settle_owed SET owed = 1; END;
+
+CREATE TRIGGER artists_owe_a_settle_when_named AFTER UPDATE OF name, key ON artists
+     BEGIN UPDATE settle_owed SET owed = 1; END;
+
+CREATE TRIGGER artists_owe_a_settle_when_gone AFTER DELETE ON artists
+     BEGIN UPDATE settle_owed SET owed = 1; END;
+
+CREATE TRIGGER albums_owe_a_settle_when_gone AFTER DELETE ON albums
+     BEGIN UPDATE settle_owed SET owed = 1; END;
+
+CREATE TRIGGER tracks_file_their_artist_when_added AFTER INSERT ON tracks
+     BEGIN
+         UPDATE tracks SET artist_filed = CASE
+             WHEN new.artist_sort IS NOT NULL AND new.artist IS new.tagged_artist
+                 THEN new.artist_sort
+             ELSE coalesce((SELECT coalesce(a.tagged_sort, a.sort_name) FROM artists a
+                            WHERE a.id = new.artist_id AND a.name = new.artist COLLATE NOCASE),
+                           new.artist)
+         END
+         WHERE id = new.id;
+     END;
+
+CREATE TRIGGER tracks_file_their_artist_when_named AFTER UPDATE OF
+         artist, artist_id, artist_sort, tagged_artist ON tracks
+     BEGIN
+         UPDATE tracks SET artist_filed = CASE
+             WHEN new.artist_sort IS NOT NULL AND new.artist IS new.tagged_artist
+                 THEN new.artist_sort
+             ELSE coalesce((SELECT coalesce(a.tagged_sort, a.sort_name) FROM artists a
+                            WHERE a.id = new.artist_id AND a.name = new.artist COLLATE NOCASE),
+                           new.artist)
+         END
+         WHERE id = new.id;
+     END;
+
+CREATE TRIGGER artists_file_their_tracks_when_sorted AFTER UPDATE OF
+         name, tagged_sort, sort_name ON artists
+     WHEN old.name IS NOT new.name
+       OR old.tagged_sort IS NOT new.tagged_sort
+       OR old.sort_name IS NOT new.sort_name
+     BEGIN
+         UPDATE tracks SET artist_filed = CASE
+             WHEN artist_sort IS NOT NULL AND artist IS tagged_artist THEN artist_sort
+             WHEN artist = new.name COLLATE NOCASE
+                 THEN coalesce(new.tagged_sort, new.sort_name, artist)
+             ELSE artist
+         END
+         WHERE artist_id = new.id;
+     END;
+
+CREATE TRIGGER albums_print_their_cover_when_added AFTER INSERT ON albums
+     WHEN new.cover_art IS NOT NULL
+     BEGIN
+         UPDATE albums
+            SET cover_print = length(new.cover_art) || ':' || hex(substr(new.cover_art, 1, 256))
+          WHERE id = new.id;
+     END;
+
+CREATE TRIGGER albums_print_their_cover_when_changed AFTER UPDATE OF cover_art ON albums
+     BEGIN
+         UPDATE albums
+            SET cover_print = length(new.cover_art) || ':' || hex(substr(new.cover_art, 1, 256))
+          WHERE id = new.id;
+     END;
+
+CREATE TRIGGER tracks_owe_a_regroup_when_added AFTER INSERT ON tracks
+     BEGIN
+         INSERT INTO regroup_owed_tracks (track_id)
+         SELECT NEW.id WHERE NOT EXISTS (SELECT 1 FROM regroup_owed_tracks WHERE track_id = NEW.id);
+     END;
+
+CREATE TRIGGER tracks_owe_a_regroup_when_gone BEFORE DELETE ON tracks
+     BEGIN
+         INSERT INTO regroup_owed_tracks (track_id)
+         SELECT id FROM tracks
+          WHERE alternative_of = OLD.id
+            AND id NOT IN (SELECT track_id FROM regroup_owed_tracks);
+     END;
+
+CREATE TRIGGER tracks_owe_a_regroup_when_moved AFTER UPDATE OF
+         album_id, artist, disc_number, track_number, title, duration, sample_rate,
+         sample_format, codec, file_size, span_frames ON tracks
+     BEGIN
+         INSERT INTO regroup_owed_tracks (track_id)
+         SELECT id FROM tracks
+          WHERE (id = NEW.id OR id = NEW.alternative_of OR alternative_of = NEW.id
+                 OR alternative_of = NEW.alternative_of)
+            AND id NOT IN (SELECT track_id FROM regroup_owed_tracks);
+     END;
+
+CREATE TRIGGER albums_owe_a_regroup_when_named AFTER UPDATE OF
+         title, release_title, artist_id ON albums
+     BEGIN
+         INSERT INTO regroup_owed_tracks (track_id)
+         SELECT id FROM tracks
+          WHERE album_id = NEW.id AND id NOT IN (SELECT track_id FROM regroup_owed_tracks);
+     END;
+
+CREATE TRIGGER artists_owe_a_regroup_when_named AFTER UPDATE OF name ON artists
+     BEGIN
+         INSERT INTO regroup_owed_tracks (track_id)
+         SELECT t.id FROM tracks t JOIN albums a ON a.id = t.album_id
+          WHERE a.artist_id = NEW.id AND t.id NOT IN (SELECT track_id FROM regroup_owed_tracks);
+     END;
+
+CREATE TRIGGER artist_releases_fts_added AFTER INSERT ON artist_releases BEGIN
+         INSERT INTO artist_releases_fts (rowid, folded) VALUES (new.rowid, new.folded);
+     END;
+
+CREATE TRIGGER artist_releases_fts_gone AFTER DELETE ON artist_releases BEGIN
+         INSERT INTO artist_releases_fts (artist_releases_fts, rowid, folded)
+         VALUES ('delete', old.rowid, old.folded);
+     END;
+
+CREATE TRIGGER artist_releases_fts_refolded AFTER UPDATE OF folded ON artist_releases BEGIN
+         INSERT INTO artist_releases_fts (artist_releases_fts, rowid, folded)
+         VALUES ('delete', old.rowid, old.folded);
+         INSERT INTO artist_releases_fts (rowid, folded) VALUES (new.rowid, new.folded);
+     END;
+
+CREATE TRIGGER artists_key_fts_added AFTER INSERT ON artists BEGIN
+         INSERT INTO artists_key_fts (rowid, key) VALUES (new.id, new.key);
+     END;
+
+CREATE TRIGGER artists_key_fts_gone AFTER DELETE ON artists BEGIN
+         INSERT INTO artists_key_fts (artists_key_fts, rowid, key)
+         VALUES ('delete', old.id, old.key);
+     END;
+
+CREATE TRIGGER artists_key_fts_rekeyed AFTER UPDATE OF key ON artists BEGIN
+         INSERT INTO artists_key_fts (artists_key_fts, rowid, key)
+         VALUES ('delete', old.id, old.key);
+         INSERT INTO artists_key_fts (rowid, key) VALUES (new.id, new.key);
+     END;
+
+CREATE TRIGGER release_tracks_fts_added AFTER INSERT ON release_tracks BEGIN
+         INSERT INTO release_tracks_fts (rowid, folded) VALUES (new.id, new.folded);
+     END;
+
+CREATE TRIGGER release_tracks_fts_gone AFTER DELETE ON release_tracks BEGIN
+         INSERT INTO release_tracks_fts (release_tracks_fts, rowid, folded)
+         VALUES ('delete', old.id, old.folded);
+     END;
+
+CREATE TRIGGER release_tracks_fts_refolded AFTER UPDATE OF folded ON release_tracks BEGIN
+         INSERT INTO release_tracks_fts (release_tracks_fts, rowid, folded)
+         VALUES ('delete', old.id, old.folded);
+         INSERT INTO release_tracks_fts (rowid, folded) VALUES (new.id, new.folded);
+     END;
+
+INSERT INTO settle_owed (id, owed) VALUES (1, 1);
+
+INSERT INTO regroup_owed (id, owed) VALUES (1, 1);
+
 ";
 
 const WRITER_PAGE_CACHE_KIB: u32 = 8_192;
@@ -1016,123 +988,30 @@ pub fn lay_out(connection: &Connection) -> Result<()> {
     if stamped(connection)? == Some(SCHEMA_FINGERPRINT) {
         return Ok(());
     }
-    migrated(connection, V1, MIGRATIONS)
-}
 
-fn migrated(connection: &Connection, first: &str, steps: &[&str]) -> Result<()> {
-    let found = stamped(connection)?;
-    if found == Some(fingerprint_after(first, steps)) {
-        return Ok(());
-    }
-    if let Some(found) = found.filter(|found| steps_taken(first, steps, *found).is_some()) {
-        keep_before_migrating(connection, found)?;
-    }
-    lay_out_through(connection, first, steps)
-}
-
-pub fn kept_before(catalog: &Path, found: SchemaFingerprint) -> PathBuf {
-    let name = catalog.file_name().unwrap_or(OsStr::new(""));
-    catalog.with_file_name(named_within("", name, format!("{KEPT_BEFORE}{found}")))
-}
-
-fn damage_found(connection: &Connection) -> Result<Vec<String>> {
-    let mut checking = connection
-        .prepare("PRAGMA quick_check")
-        .map_err(|source| Error::store(StoreOp::Check, source))?;
-    let said = checking
-        .query_map([], |row| row.get::<_, String>(0))
-        .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
-        .map_err(|source| Error::store(StoreOp::Check, source))?;
-    Ok(said.into_iter().filter(|said| said != UNDAMAGED).collect())
-}
-
-fn keep_before_migrating(connection: &Connection, found: SchemaFingerprint) -> Result<()> {
-    let Some(catalog) = connection
-        .path()
-        .filter(|path| !path.is_empty())
-        .map(PathBuf::from)
-    else {
-        return Ok(());
-    };
-    let damage = damage_found(connection)?;
-    if !damage.is_empty() {
-        tracing::error!(?damage, catalog = %catalog.display(), "the catalog is damaged; it is not migrated");
-        return Err(Error::CatalogDamaged { path: catalog });
-    }
-
-    let kept = kept_before(&catalog, found);
-    if kept.exists() {
-        return Ok(());
-    }
-    let name = kept.file_name().unwrap_or(OsStr::new(""));
-    let staged = kept.with_file_name(named_within("", name, STAGED));
-    let held = match Held::taken_over(&staged) {
-        Ok(held) => held,
-        Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Ok(()),
-        Err(source) => {
-            return Err(Error::Io {
-                path: staged,
-                source,
-            });
-        }
-    };
-    let Some(written_to) = staged.to_str() else {
-        return Err(Error::NonUtf8Path { path: staged });
-    };
-    connection
-        .execute("VACUUM INTO ?1", [written_to])
-        .map_err(|source| Error::store(StoreOp::KeepBeforeMigrating, source))?;
-    let landed = File::open(&staged)
-        .and_then(|copy| copy.sync_all())
-        .and_then(|()| fs::rename(&staged, &kept))
-        .and_then(|()| match kept.parent() {
-            Some(folder) => File::open(folder).and_then(|folder| folder.sync_all()),
-            None => Ok(()),
-        });
-    drop(held);
-    landed.map_err(|source| Error::Io {
-        path: kept.clone(),
-        source,
-    })?;
-    tracing::info!(kept = %kept.display(), "the catalog as it stood is kept before it is migrated");
-    Ok(())
-}
-
-fn lay_out_through(connection: &Connection, first: &str, steps: &[&str]) -> Result<()> {
-    let expected = fingerprint_after(first, steps);
     let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)
         .map_err(|source| Error::store(StoreOp::Transaction, source))?;
-    let found = stamped(&transaction)?;
-    if found == Some(expected) {
-        return Ok(());
-    }
-    let taken = match found {
-        None => None,
-        Some(found) => Some(
-            steps_taken(first, steps, found).ok_or(Error::SchemaMismatch { found, expected })?,
-        ),
-    };
 
-    if taken.is_none() {
-        transaction
-            .execute_batch(first)
-            .map_err(|source| Error::store(StoreOp::LayOut, source))?;
+    match stamped(&transaction)? {
+        Some(found) if found == SCHEMA_FINGERPRINT => return Ok(()),
+        Some(found) => {
+            return Err(Error::SchemaMismatch {
+                found,
+                expected: SCHEMA_FINGERPRINT,
+            });
+        }
+        None => {}
     }
-    for step in &steps[taken.unwrap_or(0)..] {
-        transaction
-            .execute_batch(step)
-            .map_err(|source| Error::store(StoreOp::Migrate, source))?;
-    }
+
     transaction
-        .pragma_update(None, "user_version", as_signed(expected.0))
+        .execute_batch(V1)
+        .map_err(|source| Error::store(StoreOp::LayOut, source))?;
+    transaction
+        .pragma_update(None, "user_version", as_signed(SCHEMA_FINGERPRINT.0))
         .map_err(|source| Error::store(StoreOp::LayOut, source))?;
     transaction
         .commit()
         .map_err(|source| Error::store(StoreOp::Transaction, source))
-}
-
-fn steps_taken(first: &str, steps: &[&str], found: SchemaFingerprint) -> Option<usize> {
-    (0..=steps.len()).find(|taken| fingerprint_after(first, &steps[..*taken]) == found)
 }
 
 fn stamped(connection: &Connection) -> Result<Option<SchemaFingerprint>> {
@@ -1147,16 +1026,8 @@ const fn as_signed(stamp: u32) -> i32 {
     stamp.cast_signed()
 }
 
-const fn fingerprint_after(first: &str, steps: &[&str]) -> SchemaFingerprint {
-    let mut hashed = hashed_on(FNV_OFFSET_BASIS, first);
-    let mut step = 0;
-
-    while step < steps.len() {
-        hashed = hashed_on(hashed, steps[step]);
-        step += 1;
-    }
-
-    SchemaFingerprint(never_unstamped(hashed))
+const fn fingerprint_of(schema: &str) -> SchemaFingerprint {
+    SchemaFingerprint(never_unstamped(hashed_on(FNV_OFFSET_BASIS, schema)))
 }
 
 const fn hashed_on(from: u32, text: &str) -> u32 {
@@ -1182,8 +1053,6 @@ const fn never_unstamped(hashed: u32) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use std::{env, fs, process, thread, time::Duration};
-
     use super::*;
 
     fn opened() -> Connection {
@@ -1283,368 +1152,6 @@ mod tests {
         );
     }
 
-    const FIRST: &str = "CREATE TABLE held (id INTEGER PRIMARY KEY) STRICT;";
-
-    const NAMED: &str = "ALTER TABLE held ADD COLUMN name TEXT;";
-
-    const COUNTED: &str = "ALTER TABLE held ADD COLUMN plays INTEGER NOT NULL DEFAULT 0;";
-
-    const REFUSED: &str = "ALTER TABLE nowhere ADD COLUMN name TEXT;";
-
-    const V1_AS_FIRST_STAMPED: SchemaFingerprint = SchemaFingerprint(0x0ca1_e683);
-
-    fn columns_of_held(connection: &Connection) -> Vec<String> {
-        connection
-            .prepare("SELECT name FROM pragma_table_info('held') ORDER BY cid")
-            .and_then(|mut statement| {
-                statement
-                    .query_map([], |row| row.get::<_, String>(0))?
-                    .collect::<rusqlite::Result<Vec<_>>>()
-            })
-            .expect("the table's columns read back")
-    }
-
-    #[test]
-    fn a_catalog_another_process_is_migrating_is_read_once_it_has_and_not_migrated_twice() {
-        let folder =
-            env::temp_dir().join(format!("resonate-schema-{}-migrated-once", process::id()));
-        let _ = fs::remove_dir_all(&folder);
-        fs::create_dir_all(&folder).expect("a writable temporary directory");
-        let catalog = folder.join("library.db");
-        let on_disc = || {
-            let connection = Connection::open(&catalog).expect("a catalog on disc");
-            configure(&connection, Role::Writing).expect("the pragmas apply");
-            connection
-        };
-
-        let first = on_disc();
-        lay_out_through(&first, FIRST, &[]).expect("the first schema applies");
-        first
-            .execute_batch("BEGIN IMMEDIATE;")
-            .expect("the first process takes the write");
-        first.execute_batch(NAMED).expect("the step applies");
-        first
-            .pragma_update(
-                None,
-                "user_version",
-                as_signed(fingerprint_after(FIRST, &[NAMED]).0),
-            )
-            .expect("the stamp is written");
-
-        let second = on_disc();
-        let opening =
-            thread::spawn(move || lay_out_through(&second, FIRST, &[NAMED]).map(|()| second));
-        thread::sleep(Duration::from_millis(200));
-        first.execute_batch("COMMIT;").expect("the migration lands");
-
-        let second = opening
-            .join()
-            .expect("the second process did not panic")
-            .expect("the second process opened what the first migrated");
-        assert_eq!(columns_of_held(&second), vec!["id", "name"]);
-        drop((first, second));
-        let _ = fs::remove_dir_all(&folder);
-    }
-
-    fn scratch(named: &str) -> PathBuf {
-        let folder = env::temp_dir().join(format!("resonate-schema-{}-{named}", process::id()));
-        let _ = fs::remove_dir_all(&folder);
-        fs::create_dir_all(&folder).expect("a writable temporary directory");
-        folder
-    }
-
-    fn on_disc(catalog: &Path) -> Connection {
-        let connection = Connection::open(catalog).expect("a catalog on disc");
-        configure(&connection, Role::Writing).expect("the pragmas apply");
-        connection
-    }
-
-    #[test]
-    fn a_catalog_on_disc_is_kept_as_it_stood_before_it_is_migrated() {
-        let folder = scratch("kept-before");
-        let catalog = folder.join("library.db");
-        let before = fingerprint_after(FIRST, &[]);
-        let first = on_disc(&catalog);
-        lay_out_through(&first, FIRST, &[]).expect("the first schema applies");
-        first
-            .execute_batch("INSERT INTO held (id) VALUES (7);")
-            .expect("a row is held");
-        drop(first);
-
-        let opened = on_disc(&catalog);
-        migrated(&opened, FIRST, &[NAMED]).expect("the catalog migrates");
-        let kept = Connection::open(kept_before(&catalog, before)).expect("the copy opens");
-
-        assert_eq!(columns_of_held(&opened), vec!["id", "name"]);
-        assert_eq!(columns_of_held(&kept), vec!["id"]);
-        assert_eq!(stamped(&kept).expect("the copy's stamp"), Some(before));
-        assert_eq!(
-            kept.query_row("SELECT id FROM held", [], |row| row.get::<_, i64>(0))
-                .expect("the row was kept"),
-            7
-        );
-        assert!(
-            fs::read_dir(&folder)
-                .expect("the folder lists")
-                .flatten()
-                .all(|entry| !entry.file_name().to_string_lossy().ends_with(STAGED)),
-            "the staged copy was left behind"
-        );
-        drop((opened, kept));
-        let _ = fs::remove_dir_all(&folder);
-    }
-
-    #[test]
-    fn a_damaged_catalog_is_refused_and_left_unmigrated() {
-        const PAGE: usize = 4096;
-        let folder = scratch("damaged");
-        let catalog = folder.join("library.db");
-        let first = on_disc(&catalog);
-        lay_out_through(&first, FIRST, &[]).expect("the first schema applies");
-        first
-            .execute_batch(
-                "CREATE INDEX held_backwards ON held (id DESC);
-                 WITH RECURSIVE counted(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM counted
-                                               WHERE n < 4000)
-                 INSERT INTO held (id) SELECT n FROM counted;
-                 PRAGMA wal_checkpoint(TRUNCATE);",
-            )
-            .expect("rows are held");
-        drop(first);
-        let mut bytes = fs::read(&catalog).expect("the catalog reads");
-        let last_page = bytes.len() / PAGE - 1;
-        bytes[last_page * PAGE..].fill(0xA5);
-        fs::write(&catalog, &bytes).expect("the catalog is damaged");
-
-        let opened = on_disc(&catalog);
-        let refused = migrated(&opened, FIRST, &[NAMED]);
-
-        assert!(
-            matches!(&refused, Err(Error::CatalogDamaged { path }) if *path == catalog),
-            "{refused:?}"
-        );
-        assert_eq!(
-            stamped(&opened).expect("the stamp reads"),
-            Some(fingerprint_after(FIRST, &[]))
-        );
-        drop(opened);
-        let _ = fs::remove_dir_all(&folder);
-    }
-
-    #[test]
-    fn the_first_schema_is_never_edited_where_it_stands() {
-        assert_eq!(
-            fingerprint_after(V1, &[]),
-            V1_AS_FIRST_STAMPED,
-            "V1 was edited in place, which strands every catalog it wrote: put the change in a \
-             step of MIGRATIONS instead"
-        );
-    }
-
-    #[test]
-    fn a_catalog_stamped_before_the_steps_is_carried_through_every_one_it_missed() {
-        let connection = opened();
-        lay_out_through(&connection, FIRST, &[]).expect("the first schema applies");
-        connection
-            .execute("INSERT INTO held (id) VALUES (7)", [])
-            .expect("a row is written");
-
-        lay_out_through(&connection, FIRST, &[NAMED, COUNTED]).expect("the steps apply");
-
-        assert_eq!(columns_of_held(&connection), ["id", "name", "plays"]);
-        assert_eq!(
-            stamped(&connection).expect("the stamp reads back"),
-            Some(fingerprint_after(FIRST, &[NAMED, COUNTED]))
-        );
-        assert_eq!(
-            connection
-                .query_row("SELECT id FROM held", [], |row| row.get::<_, i64>(0))
-                .expect("the row survived"),
-            7
-        );
-    }
-
-    #[test]
-    fn a_catalog_part_of_the_way_through_takes_only_the_steps_after_it() {
-        let connection = opened();
-        lay_out_through(&connection, FIRST, &[NAMED]).expect("the first step applies");
-
-        lay_out_through(&connection, FIRST, &[NAMED, COUNTED]).expect("the second applies");
-
-        assert_eq!(columns_of_held(&connection), ["id", "name", "plays"]);
-    }
-
-    #[test]
-    fn an_existing_catalog_gains_visible_tracks_without_losing_rows() {
-        let connection = opened();
-        lay_out_through(&connection, V1, &MIGRATIONS[..1]).expect("the previous schema applies");
-        connection
-            .execute(
-                "INSERT INTO tracks (path, title, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
-                 VALUES ('song.wav', 'Song', 44100, 2, 1, 1, 10, 1, 1, 1)",
-                [],
-            )
-            .expect("a track is stored");
-
-        lay_out(&connection).expect("the catalog migrates");
-        assert_eq!(
-            connection
-                .query_row(
-                    "SELECT hidden FROM tracks WHERE path = 'song.wav'",
-                    [],
-                    |row| row.get::<_, i64>(0)
-                )
-                .expect("the track remains visible"),
-            0
-        );
-        lay_out(&connection).expect("opening again is idempotent");
-    }
-
-    #[test]
-    fn a_release_rows_code_is_carried_into_the_codes_it_now_keeps() {
-        let connection = opened();
-        let coding = MIGRATIONS
-            .iter()
-            .position(|step| step.contains("CREATE TABLE release_track_isrcs"))
-            .expect("the step that keeps every code");
-        lay_out_through(&connection, V1, &MIGRATIONS[..coding])
-            .expect("the previous schema applies");
-        connection
-            .execute_batch(
-                "INSERT INTO albums (id, title) VALUES (1, 'Meddle');
-                 INSERT INTO release_tracks (id, album_id, disc, position, number, title, isrc, folded)
-                 VALUES (1, 1, 1, 1, '1', 'Echoes', 'GBN9Y1100065', 'echoes'),
-                        (2, 1, 1, 2, '2', 'Seamus', NULL, 'seamus');",
-            )
-            .expect("a release is stored");
-
-        lay_out(&connection).expect("the catalog migrates");
-
-        let kept: Vec<(i64, String)> = connection
-            .prepare("SELECT release_track_id, isrc FROM release_track_isrcs")
-            .and_then(|mut statement| {
-                statement
-                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-                    .collect()
-            })
-            .expect("the codes are read");
-        assert_eq!(kept, [(1, "GBN9Y1100065".to_owned())]);
-    }
-
-    #[test]
-    fn a_catalog_carried_forward_keeps_its_index_and_gains_the_short_prefixes() {
-        let connection = opened();
-        let rebuilding = MIGRATIONS
-            .iter()
-            .position(|step| step.contains("prefix = '1 2'"))
-            .expect("the step that indexes the short prefixes");
-        lay_out_through(&connection, V1, &MIGRATIONS[..rebuilding])
-            .expect("the previous schema applies");
-        connection
-            .execute(
-                "INSERT INTO tracks_fts (rowid, title, artist, album, genre, lyrics)
-                 VALUES (7, 'echoes', 'pink floyd', 'meddle', 'rock', 'overhead the albatross')",
-                [],
-            )
-            .expect("a row is indexed");
-
-        lay_out(&connection).expect("the catalog migrates");
-
-        let found = |query: &str| -> Vec<i64> {
-            connection
-                .prepare("SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH ?1")
-                .and_then(|mut statement| statement.query_map([query], |row| row.get(0))?.collect())
-                .expect("the index is read")
-        };
-        assert_eq!(found("e*"), vec![7]);
-        assert_eq!(found("pi*"), vec![7]);
-        assert_eq!(found("albatross"), vec![7]);
-        let declared: String = connection
-            .query_row(
-                "SELECT sql FROM sqlite_master WHERE name = 'tracks_fts'",
-                [],
-                |row| row.get(0),
-            )
-            .expect("the index is declared");
-        assert!(declared.contains("prefix = '1 2'"));
-        lay_out(&connection).expect("opening again is idempotent");
-    }
-
-    #[test]
-    fn a_row_vaulted_under_an_object_of_another_rate_or_count_leaves_the_vault_as_carried_forward()
-    {
-        let connection = opened();
-        let keying = MIGRATIONS
-            .iter()
-            .position(|step| step.contains("o.sample_rate != t.sample_rate"))
-            .expect("the step that parts rows keyed by their samples alone");
-        lay_out_through(&connection, V1, &MIGRATIONS[..keying])
-            .expect("the previous schema applies");
-        connection
-            .execute_batch(
-                "INSERT INTO roots (id, path) VALUES (1, '/music');
-                 INSERT INTO vault_objects (key, form, path, bytes, sample_rate, channels, sample_format, frames, taken_from, took, was_bytes, was_codec, encoding)
-                 VALUES ('00112233445566778899aabbccddeeff', 0, 'audio/00/silence.flac', 10, 44100, 2, 1, 100, '/music/stereo.wav', 1, 20, 1, 7);
-                 INSERT INTO tracks (id, root_id, path, title, sample_rate, channels, sample_format, codec, file_size, modified, added, seen, vault_key, vault_path)
-                 VALUES (1, 1, '/music/stereo.wav', 'Stereo', 44100, 2, 1, 1, 10, 1, 1, 1, '00112233445566778899aabbccddeeff', 'audio/00/silence.flac'),
-                        (2, 1, '/music/mono.wav', 'Mono', 44100, 1, 1, 1, 10, 1, 1, 1, '00112233445566778899aabbccddeeff', 'audio/00/silence.flac'),
-                        (3, 1, '/music/faster.wav', 'Faster', 88200, 2, 1, 1, 10, 1, 1, 1, '00112233445566778899aabbccddeeff', 'audio/00/silence.flac'),
-                        (4, NULL, '/vault/audio/00/silence.flac', 'Delivered', 48000, 2, 1, 1, 10, 1, 1, 1, '00112233445566778899aabbccddeeff', 'audio/00/silence.flac');
-                 INSERT INTO kept_tags (track_id, field, value) VALUES (1, 'label', 'Kept'), (2, 'label', 'Parted');",
-            )
-            .expect("the rows are stored");
-
-        lay_out(&connection).expect("the catalog migrates");
-
-        let vaulted: Vec<(i64, bool)> = connection
-            .prepare("SELECT id, vault_key IS NOT NULL FROM tracks ORDER BY id")
-            .and_then(|mut statement| {
-                statement
-                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-                    .collect()
-            })
-            .expect("the tracks read back");
-        let kept: Vec<i64> = connection
-            .prepare("SELECT track_id FROM kept_tags ORDER BY track_id")
-            .and_then(|mut statement| statement.query_map([], |row| row.get(0))?.collect())
-            .expect("the kept tags read back");
-        assert_eq!(vaulted, [(1, true), (2, false), (3, false), (4, true)]);
-        assert_eq!(kept, [1]);
-    }
-
-    #[test]
-    fn a_catalog_carried_forward_probes_its_wavpack_rows_again_and_nothing_else() {
-        let connection = opened();
-        let marking = MIGRATIONS
-            .iter()
-            .position(|step| step.contains("probe_again"))
-            .expect("the step that marks rows to probe again");
-        lay_out_through(&connection, V1, &MIGRATIONS[..marking])
-            .expect("the previous schema applies");
-        connection
-            .execute_batch(
-                "INSERT INTO tracks (path, title, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
-                 VALUES ('packed.wv', 'Packed', 44100, 2, 1, 11, 10, 1, 1, 1),
-                        ('song.flac', 'Song', 44100, 2, 1, 1, 10, 1, 1, 1);",
-            )
-            .expect("the tracks are stored");
-
-        lay_out(&connection).expect("the catalog migrates");
-
-        let marked: Vec<(String, i64)> = connection
-            .prepare("SELECT path, probe_again FROM tracks ORDER BY path")
-            .and_then(|mut statement| {
-                statement
-                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-                    .collect()
-            })
-            .expect("the tracks read back");
-        assert_eq!(
-            marked,
-            [("packed.wv".to_owned(), 1), ("song.flac".to_owned(), 0)]
-        );
-    }
-
     fn trigram_hits(connection: &Connection, index: &str, column: &str, piece: &str) -> Vec<i64> {
         connection
             .prepare(&format!(
@@ -1675,43 +1182,6 @@ mod tests {
         })
         .map(str::to_owned)
         .collect()
-    }
-
-    #[test]
-    fn a_catalog_carried_forward_indexes_the_discography_it_already_holds() {
-        let connection = opened();
-        let indexing = MIGRATIONS
-            .iter()
-            .position(|step| step.contains("artist_releases_fts"))
-            .expect("the step that indexes the discography");
-        lay_out_through(&connection, V1, &MIGRATIONS[..indexing])
-            .expect("the previous schema applies");
-        connection
-            .execute_batch(
-                "INSERT INTO artists (id, key, name) VALUES (1, 'sigur ros', 'Sigur Ros');
-                 INSERT INTO artist_releases (artist_id, mbid, title, folded)
-                 VALUES (1, 'a', 'Agaetis Byrjun', 'agaetis byrjun');
-                 INSERT INTO albums (id, title, artist_id) VALUES (1, 'Takk', 1);
-                 INSERT INTO release_tracks (id, album_id, disc, position, title, folded)
-                 VALUES (4, 1, 1, 1, 'Glosoli', 'glosoli');",
-            )
-            .expect("the rows are stored");
-
-        lay_out(&connection).expect("the catalog migrates");
-
-        assert_eq!(
-            trigram_hits(&connection, "artist_releases_fts", "folded", "byrj"),
-            [1]
-        );
-        assert_eq!(
-            trigram_hits(&connection, "artists_key_fts", "key", "ros"),
-            [1]
-        );
-        assert_eq!(
-            trigram_hits(&connection, "release_tracks_fts", "folded", "oso"),
-            [4]
-        );
-        assert!(unfinished_indexes(&connection).is_empty());
     }
 
     #[test]
@@ -1763,127 +1233,9 @@ mod tests {
     }
 
     #[test]
-    fn a_catalog_carried_forward_reads_every_scanned_file_again_for_the_names_it_sorts_by() {
-        let connection = opened();
-        let sorting = MIGRATIONS
-            .iter()
-            .position(|step| step.contains("tagged_sort TEXT"))
-            .expect("the step that keeps a file's sort name");
-        lay_out_through(&connection, V1, &MIGRATIONS[..sorting])
-            .expect("the previous schema applies");
-        connection
-            .execute_batch(
-                "INSERT INTO roots (id, path) VALUES (1, '/music');
-                 INSERT INTO artists (id, key, name) VALUES (1, 'the beatles', 'The Beatles');
-                 INSERT INTO tracks (root_id, path, span_frames, title, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
-                 VALUES (1, 'scanned.flac', NULL, 'Scanned', 44100, 2, 1, 1, 10, 1, 1, 1),
-                        (NULL, 'delivered.flac', NULL, 'Delivered', 44100, 2, 1, 1, 10, 1, 1, 1);",
-            )
-            .expect("the rows are stored");
-
-        lay_out_through(&connection, V1, &MIGRATIONS[..=sorting]).expect("the catalog migrates");
-
-        let marked: Vec<(String, i64)> = connection
-            .prepare("SELECT path, probe_again FROM tracks ORDER BY path")
-            .and_then(|mut statement| {
-                statement
-                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-                    .collect()
-            })
-            .expect("the tracks read back");
-        let sorted: Option<String> = connection
-            .query_row("SELECT tagged_sort FROM artists WHERE id = 1", [], |row| {
-                row.get(0)
-            })
-            .expect("the artist reads back");
-        assert_eq!(
-            marked,
-            [
-                ("delivered.flac".to_owned(), 0),
-                ("scanned.flac".to_owned(), 1)
-            ]
-        );
-        assert_eq!(sorted, None);
-    }
-
-    #[test]
-    fn a_catalog_carried_forward_reads_every_scanned_file_with_an_album_again_for_the_title_it_sorts_by()
-     {
-        let connection = opened();
-        let sorting = MIGRATIONS
-            .iter()
-            .position(|step| step.contains("albums ADD COLUMN tagged_sort"))
-            .expect("the step that keeps a file's album sort name");
-        lay_out_through(&connection, V1, &MIGRATIONS[..sorting])
-            .expect("the previous schema applies");
-        connection
-            .execute_batch(
-                "INSERT INTO roots (id, path) VALUES (1, '/music');
-                 INSERT INTO albums (id, title) VALUES (1, 'Album');
-                 INSERT INTO tracks (root_id, path, span_frames, title, album_id, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
-                 VALUES (1, 'albumed.flac', NULL, 'Albumed', 1, 44100, 2, 1, 1, 10, 1, 1, 1),
-                        (1, 'loose.flac', NULL, 'Loose', NULL, 44100, 2, 1, 1, 10, 1, 1, 1);",
-            )
-            .expect("the rows are stored");
-
-        lay_out_through(&connection, V1, &MIGRATIONS[..=sorting]).expect("the catalog migrates");
-
-        let marked: Vec<(String, i64)> = connection
-            .prepare("SELECT path, probe_again FROM tracks ORDER BY path")
-            .and_then(|mut statement| {
-                statement
-                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-                    .collect()
-            })
-            .expect("the tracks read back");
-        assert_eq!(
-            marked,
-            [("albumed.flac".to_owned(), 1), ("loose.flac".to_owned(), 0)]
-        );
-    }
-
-    #[test]
-    fn a_catalog_carried_forward_reads_every_scanned_file_again_for_the_title_and_artist_it_sorts_by()
-     {
-        let connection = opened();
-        let sorting = MIGRATIONS
-            .iter()
-            .position(|step| step.contains("tracks ADD COLUMN title_sort"))
-            .expect("the step that keeps a track's sort names");
-        lay_out_through(&connection, V1, &MIGRATIONS[..sorting])
-            .expect("the previous schema applies");
-        connection
-            .execute_batch(
-                "INSERT INTO roots (id, path) VALUES (1, '/music');
-                 INSERT INTO tracks (root_id, path, span_frames, title, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
-                 VALUES (1, 'scanned.flac', NULL, 'Scanned', 44100, 2, 1, 1, 10, 1, 1, 1),
-                        (NULL, 'delivered.flac', NULL, 'Delivered', 44100, 2, 1, 1, 10, 1, 1, 1);",
-            )
-            .expect("the rows are stored");
-
-        lay_out_through(&connection, V1, &MIGRATIONS[..=sorting]).expect("the catalog migrates");
-
-        let marked: Vec<(String, i64)> = connection
-            .prepare("SELECT path, probe_again FROM tracks ORDER BY path")
-            .and_then(|mut statement| {
-                statement
-                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-                    .collect()
-            })
-            .expect("the tracks read back");
-        assert_eq!(
-            marked,
-            [
-                ("delivered.flac".to_owned(), 0),
-                ("scanned.flac".to_owned(), 1)
-            ]
-        );
-    }
-
-    #[test]
     fn only_a_write_to_what_the_grouping_reads_owes_a_regroup_and_of_the_copies_it_touches() {
         let connection = opened();
-        lay_out_through(&connection, V1, MIGRATIONS).expect("the schema applies");
+        lay_out(&connection).expect("the schema applies");
         connection
             .execute_batch(
                 "INSERT INTO albums (id, title) VALUES (1, 'Meddle'), (2, 'Animals');
@@ -1971,7 +1323,7 @@ mod tests {
     #[test]
     fn a_track_is_filed_by_its_sort_names_only_while_it_is_billed_as_its_file_names_it() {
         let connection = opened();
-        lay_out_through(&connection, V1, MIGRATIONS).expect("the schema applies");
+        lay_out(&connection).expect("the schema applies");
         connection
             .execute_batch(
                 "INSERT INTO tracks (path, title, artist, tagged_title, tagged_artist, title_sort, artist_sort, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
@@ -2015,7 +1367,6 @@ mod tests {
     #[test]
     fn an_album_cover_is_printed_once_as_it_is_written_and_reads_as_it_always_did() {
         let connection = opened();
-        let carried = &MIGRATIONS[..MIGRATIONS.len() - 1];
         let cover: Vec<u8> = (0..1_000_u32).map(|at| (at % 251) as u8).collect();
         let printed_as_before = |id: i64| -> (Option<String>, Option<String>) {
             connection
@@ -2028,14 +1379,13 @@ mod tests {
                 .expect("the album reads back")
         };
 
-        lay_out_through(&connection, V1, carried).expect("the earlier steps apply");
+        lay_out(&connection).expect("the schema applies");
         connection
             .execute(
                 "INSERT INTO albums (id, title, cover_art, cover_format) VALUES (1, 'Kept', ?1, 1)",
                 [&cover],
             )
-            .expect("an album held before the step");
-        lay_out_through(&connection, V1, MIGRATIONS).expect("the newest step applies");
+            .expect("an album held");
 
         let (carried_print, carried_before) = printed_as_before(1);
         assert!(carried_print.is_some());
@@ -2067,7 +1417,7 @@ mod tests {
     #[test]
     fn a_track_its_file_does_not_sort_is_filed_under_its_artists_sort_name() {
         let connection = opened();
-        lay_out_through(&connection, V1, MIGRATIONS).expect("the schema applies");
+        lay_out(&connection).expect("the schema applies");
         let filed = |path: &str| -> Option<String> {
             connection
                 .query_row(
@@ -2117,204 +1467,10 @@ mod tests {
     }
 
     #[test]
-    fn a_catalog_carried_forward_reads_again_every_whole_file_it_holds_no_packets_for() {
-        let connection = opened();
-        let marking = MIGRATIONS
-            .iter()
-            .position(|step| step.contains("packets IS NULL"))
-            .expect("the step that marks undigested rows");
-        lay_out_through(&connection, V1, &MIGRATIONS[..marking])
-            .expect("the previous schema applies");
-        connection
-            .execute_batch(
-                "INSERT INTO roots (id, path) VALUES (1, '/music');
-                 INSERT INTO tracks (root_id, path, span_frames, title, sample_rate, channels, sample_format, codec, file_size, modified, added, seen, packets)
-                 VALUES (1, 'digested.flac', NULL, 'Digested', 44100, 2, 1, 1, 10, 1, 1, 1, 7),
-                        (1, 'undigested.flac', NULL, 'Undigested', 44100, 2, 1, 1, 10, 1, 1, 1, NULL),
-                        (1, 'cut.flac', 441, 'Cut', 44100, 2, 1, 1, 10, 1, 1, 1, NULL),
-                        (NULL, 'delivered.flac', NULL, 'Delivered', 44100, 2, 1, 1, 10, 1, 1, 1, NULL);",
-            )
-            .expect("the tracks are stored");
-
-        lay_out_through(&connection, V1, &MIGRATIONS[..=marking]).expect("the catalog migrates");
-
-        let marked: Vec<(String, i64)> = connection
-            .prepare("SELECT path, probe_again FROM tracks ORDER BY path")
-            .and_then(|mut statement| {
-                statement
-                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-                    .collect()
-            })
-            .expect("the tracks read back");
-        assert_eq!(
-            marked,
-            [
-                ("cut.flac".to_owned(), 0),
-                ("delivered.flac".to_owned(), 0),
-                ("digested.flac".to_owned(), 0),
-                ("undigested.flac".to_owned(), 1),
-            ]
-        );
-    }
-
-    #[test]
-    fn a_catalog_carried_forward_reads_again_the_files_whose_frames_a_walk_counts() {
-        let connection = opened();
-        let walking = MIGRATIONS
-            .iter()
-            .position(|step| step.contains("ADD COLUMN walked"))
-            .expect("the step that adds what a walk found");
-        lay_out_through(&connection, V1, &MIGRATIONS[..walking])
-            .expect("the previous schema applies");
-        connection
-            .execute_batch(
-                "INSERT INTO roots (id, path) VALUES (1, '/music');
-                 INSERT INTO tracks (root_id, path, title, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
-                 VALUES (1, 'a.mp3', 'A', 44100, 2, 1, 1, 10, 1, 1, 1),
-                        (1, 'b.MKV', 'B', 44100, 2, 1, 1, 10, 1, 1, 1),
-                        (1, 'c.flac', 'C', 44100, 2, 1, 1, 10, 1, 1, 1),
-                        (NULL, 'd.mp3', 'D', 44100, 2, 1, 1, 10, 1, 1, 1);",
-            )
-            .expect("the tracks are stored");
-
-        lay_out_through(&connection, V1, &MIGRATIONS[..=walking]).expect("the catalog migrates");
-
-        let marked: Vec<(String, i64, Option<String>)> = connection
-            .prepare("SELECT path, probe_again, walked FROM tracks ORDER BY path")
-            .and_then(|mut statement| {
-                statement
-                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
-                    .collect()
-            })
-            .expect("the tracks read back");
-        assert_eq!(
-            marked,
-            [
-                ("a.mp3".to_owned(), 1, None),
-                ("b.MKV".to_owned(), 1, None),
-                ("c.flac".to_owned(), 0, None),
-                ("d.mp3".to_owned(), 0, None),
-            ]
-        );
-    }
-
-    #[test]
-    fn a_saved_querys_direction_is_carried_out_of_its_sort_code_into_a_column_of_its_own() {
-        let connection = opened();
-        let parting = MIGRATIONS
-            .iter()
-            .position(|step| step.contains("playlist_queries ADD COLUMN reading"))
-            .expect("the step that parts the direction from the order");
-        lay_out_through(&connection, V1, &MIGRATIONS[..parting])
-            .expect("the previous schema applies");
-        connection
-            .execute_batch(
-                "INSERT INTO playlists (id, name, folded, created, modified) VALUES
-                     (1, 'Forwards', 'forwards', 1, 1), (2, 'Backwards', 'backwards', 1, 1);
-                 INSERT INTO playlist_queries (playlist_id, text, sort) VALUES
-                     (1, 'genre:rock', 6), (2, 'genre:jazz', 22);",
-            )
-            .expect("the queries are stored");
-
-        lay_out(&connection).expect("the catalog migrates");
-
-        let parted: Vec<(i64, i64, i64)> = connection
-            .prepare("SELECT playlist_id, sort, reading FROM playlist_queries ORDER BY playlist_id")
-            .and_then(|mut statement| {
-                statement
-                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
-                    .collect()
-            })
-            .expect("the queries read back");
-        assert_eq!(parted, [(1, 6, 0), (2, 6, 1)]);
-    }
-
-    type KeptNote = (String, Option<Vec<u8>>, Option<Vec<u8>>);
-
-    #[test]
-    fn a_picture_the_last_tag_run_kept_per_file_is_kept_once() {
-        let connection = opened();
-        let keeping = MIGRATIONS
-            .iter()
-            .position(|step| step.contains("CREATE TABLE retagged_pictures"))
-            .expect("the step that keeps a picture once");
-        lay_out_through(&connection, V1, &MIGRATIONS[..keeping])
-            .expect("the previous schema applies");
-        connection
-            .execute_batch(
-                "INSERT INTO retagged (path, pictured, rated, picture) VALUES
-                     ('1.flac', 1, NULL, x'0102'),
-                     ('2.flac', 1, NULL, x'0102'),
-                     ('3.flac', 1, NULL, x'0304'),
-                     ('4.flac', 0, NULL, NULL);",
-            )
-            .expect("the notes are stored");
-
-        lay_out(&connection).expect("the catalog migrates");
-
-        let kept: Vec<KeptNote> = connection
-            .prepare(
-                "SELECT r.path, r.picture, p.picture
-                   FROM retagged r LEFT JOIN retagged_pictures p ON p.id = r.picture_id
-                  ORDER BY r.path",
-            )
-            .and_then(|mut statement| {
-                statement
-                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
-                    .collect()
-            })
-            .expect("the notes read back");
-        let pictures: i64 = connection
-            .query_row("SELECT count(*) FROM retagged_pictures", [], |row| {
-                row.get(0)
-            })
-            .expect("the pictures count");
-
-        assert_eq!(
-            kept,
-            [
-                ("1.flac".to_owned(), None, Some(vec![1, 2])),
-                ("2.flac".to_owned(), None, Some(vec![1, 2])),
-                ("3.flac".to_owned(), None, Some(vec![3, 4])),
-                ("4.flac".to_owned(), None, None),
-            ]
-        );
-        assert_eq!(pictures, 2);
-    }
-
-    #[test]
-    fn a_fresh_catalog_is_laid_out_and_taken_through_every_step() {
-        let connection = opened();
-
-        lay_out_through(&connection, FIRST, &[NAMED, COUNTED]).expect("the schema applies");
-
-        assert_eq!(columns_of_held(&connection), ["id", "name", "plays"]);
-    }
-
-    #[test]
-    fn a_step_that_fails_leaves_the_catalog_as_it_was() {
-        let connection = opened();
-        lay_out_through(&connection, FIRST, &[]).expect("the first schema applies");
-
-        assert!(matches!(
-            lay_out_through(&connection, FIRST, &[NAMED, REFUSED]),
-            Err(Error::Store {
-                op: StoreOp::Migrate,
-                ..
-            })
-        ));
-        assert_eq!(columns_of_held(&connection), ["id"]);
-        assert_eq!(
-            stamped(&connection).expect("the stamp reads back"),
-            Some(fingerprint_after(FIRST, &[]))
-        );
-    }
-
-    #[test]
     fn a_schema_that_has_changed_is_a_fingerprint_that_has_changed() {
         assert_ne!(
-            fingerprint_after(V1, &[]),
-            fingerprint_after(&V1.replace("cover_source", "cover_origin"), &[]),
+            fingerprint_of(V1),
+            fingerprint_of(&V1.replace("cover_source", "cover_origin")),
             "two schemas differing by a column name fingerprint the same"
         );
         assert_ne!(

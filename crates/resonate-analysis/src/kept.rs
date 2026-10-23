@@ -22,7 +22,7 @@ use crate::{
 
 const MAGIC: &[u8; 4] = b"RSAN";
 
-const WRITTEN_AS: u8 = 2;
+const WRITTEN_AS: u8 = 1;
 
 const KEPT_AS: &str = "analysis";
 

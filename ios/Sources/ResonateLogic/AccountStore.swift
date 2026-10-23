@@ -82,9 +82,6 @@ public struct AccountStore: Sendable {
 
     private static let providerAccountsKey = "download-accounts"
     private static let switchedOffKey = "download-providers-off"
-    private static let singleAccountProviderKey = "provider"
-    private static let singleAccountServerKey = "server"
-    private static let singleAccountSecrets = ["user", "password", "client-id", "client-secret", "refresh-token"]
 
     private let secrets: any Secrets
     private let plainSuite: String
@@ -105,7 +102,7 @@ public struct AccountStore: Sendable {
 
     public func readProviders() throws -> ProviderAccounts {
         let kept = try secrets.read(Self.providerAccountsKey)
-        let accounts = kept.isEmpty ? try migratedSingleAccount().map { [$0] } ?? [] : decoded(kept)
+        let accounts = kept.isEmpty ? [] : decoded(kept)
         let switchedOff = (choices.stringArray(forKey: Self.switchedOffKey) ?? []).compactMap(MusicProvider.named)
         return ProviderAccounts(kept: accounts, switchedOff: Set(switchedOff))
     }
@@ -122,27 +119,6 @@ public struct AccountStore: Sendable {
     private func decoded(_ kept: String) -> [DownloadAccount] {
         let accounts = try? JSONDecoder().decode([KeptProviderAccount].self, from: Data(kept.utf8))
         return accounts?.compactMap(\.account) ?? []
-    }
-
-    private func migratedSingleAccount() throws -> DownloadAccount? {
-        let plain = plain
-        guard let provider = MusicProvider.named(plain.string(forKey: Self.singleAccountProviderKey)) else { return nil }
-
-        let account = DownloadAccount(
-            provider: provider,
-            server: plain.string(forKey: Self.singleAccountServerKey) ?? "",
-            user: try secrets.read("user"),
-            password: try secrets.read("password"),
-            clientId: try secrets.read("client-id"),
-            clientSecret: try secrets.read("client-secret"),
-            refreshToken: try secrets.read("refresh-token")
-        )
-        guard (try? writeProviderAccounts([account])) != nil else { return account }
-
-        for name in Self.singleAccountSecrets { try? secrets.write(name, "") }
-        plain.removeObject(forKey: Self.singleAccountProviderKey)
-        plain.removeObject(forKey: Self.singleAccountServerKey)
-        return account
     }
 
     public func readScrobbling() throws -> ScrobbleAccount {
@@ -177,7 +153,7 @@ public struct AccountStore: Sendable {
         }
         return SyncConfig(
             enabled: flag("sync-enabled", true),
-            nearbyOnly: flag("sync-nearby-only", false),
+            nearbyOnly: flag("sync-nearby-only", true),
             server: plain.string(forKey: "sync-server") ?? "",
             key: key,
             device: plain.string(forKey: "sync-device") ?? "",

@@ -2,7 +2,6 @@ import Foundation
 
 enum Backup {
     private static let derivedFolders = ["sync-received", "sync-staging"]
-    private static let keptCopyMarker = ".before-v"
 
     static func leaveOutDerived(in support: URL) {
         let files = FileManager.default
@@ -11,10 +10,6 @@ enum Backup {
             let folder = support.appendingPathComponent(name, isDirectory: true)
             try? files.createDirectory(at: folder, withIntermediateDirectories: true)
             leaveOut(folder)
-        }
-        let names = (try? files.contentsOfDirectory(atPath: support.path)) ?? []
-        for name in names where name.contains(keptCopyMarker) {
-            leaveOut(support.appendingPathComponent(name))
         }
     }
 

@@ -13,9 +13,7 @@ use resonate_core::{
     writer::{self, Held, Writer},
 };
 
-const FIRST_MAGIC: &[u8; 8] = b"RSUNDO01";
-const SECOND_MAGIC: &[u8; 8] = b"RSUNDO02";
-const MAGIC: &[u8; 8] = b"RSUNDO03";
+const MAGIC: &[u8; 8] = b"RSUNDO01";
 const JOURNAL_SUFFIX: &str = ".resonate-undo";
 const WHOLE_SUFFIX: &str = ".resonate-whole";
 const TORN_SUFFIX: &str = ".resonate-torn";
@@ -655,36 +653,24 @@ pub(crate) fn decoded(folder: &Path, bytes: &[u8]) -> Option<Kept> {
     }
 
     let mut reader = Reader { bytes: body };
-    let version = match reader.taken(MAGIC.len())? {
-        magic if magic == MAGIC => Version::Shifting,
-        magic if magic == SECOND_MAGIC => Version::Landing,
-        magic if magic == FIRST_MAGIC => Version::First,
-        _ => return None,
-    };
-    let first = version == Version::First;
+    if reader.taken(MAGIC.len())? != MAGIC {
+        return None;
+    }
     let length = reader.counted()?;
     let name = OsStr::from_bytes(reader.taken(length)?);
     if Path::new(name).file_name() != Some(name) {
         return None;
     }
     let stood = reader.number()?;
-    let lands = if first { stood } else { reader.number()? };
-    let shifted = if version == Version::Shifting {
-        reader.number()?
-    } else {
-        0
-    };
+    let lands = reader.number()?;
+    let shifted = reader.number()?;
     let count = reader.counted()?;
 
     let mut changes = Vec::new();
     for _ in 0..count {
         let start = reader.number()?;
         let before_length = reader.counted()?;
-        let after_length = if first {
-            before_length
-        } else {
-            reader.counted()?
-        };
+        let after_length = reader.counted()?;
         let before = reader.taken(before_length)?.to_vec();
         let after = reader.taken(after_length)?.to_vec();
         changes.push((start, before, after));
@@ -696,13 +682,6 @@ pub(crate) fn decoded(folder: &Path, bytes: &[u8]) -> Option<Kept> {
         shifted,
         changes,
     })
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Version {
-    First,
-    Landing,
-    Shifting,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1373,76 +1352,6 @@ mod tests {
             mend_a_cut_short_write(&journal).expect("a mend"),
             Mended::Finished
         );
-    }
-
-    #[test]
-    fn a_journal_the_first_build_kept_is_still_read() {
-        let folder = Folder::new("first");
-        let track = folder.0.join("Us and Them.flac");
-        let name = track.file_name().expect("a named track");
-        let was = vec![1_u8; 16];
-        fs::write(&track, &was).expect("a track");
-
-        let mut bytes = FIRST_MAGIC.to_vec();
-        bytes.extend_from_slice(&(name.len() as u64).to_le_bytes());
-        bytes.extend_from_slice(name.as_bytes());
-        bytes.extend_from_slice(&16_u64.to_le_bytes());
-        bytes.extend_from_slice(&1_u64.to_le_bytes());
-        bytes.extend_from_slice(&4_u64.to_le_bytes());
-        bytes.extend_from_slice(&4_u64.to_le_bytes());
-        bytes.extend_from_slice(&[1; 4]);
-        bytes.extend_from_slice(&[2; 4]);
-        let check = hashed(&bytes);
-        bytes.extend_from_slice(&check.to_le_bytes());
-        let journal = track.with_file_name(format!(
-            ".Us and Them.flac.{NEVER_A_PROCESS}-0{JOURNAL_SUFFIX}"
-        ));
-        fs::write(&journal, bytes).expect("a journal");
-
-        let mut finished = was.clone();
-        finished[4..8].fill(2);
-        fs::write(&track, &finished).expect("a file");
-        assert_eq!(
-            mend_a_cut_short_write(&journal).expect("a mend"),
-            Mended::Finished
-        );
-    }
-
-    #[test]
-    fn a_journal_the_second_build_kept_is_still_read_and_a_grown_tail_cut_back() {
-        let folder = Folder::new("second");
-        let track = folder.0.join("Time.flac");
-        let name = track.file_name().expect("a named track");
-        let was = vec![1_u8; 16];
-        fs::write(&track, &was).expect("a track");
-
-        let mut bytes = SECOND_MAGIC.to_vec();
-        bytes.extend_from_slice(&(name.len() as u64).to_le_bytes());
-        bytes.extend_from_slice(name.as_bytes());
-        bytes.extend_from_slice(&16_u64.to_le_bytes());
-        bytes.extend_from_slice(&20_u64.to_le_bytes());
-        bytes.extend_from_slice(&1_u64.to_le_bytes());
-        bytes.extend_from_slice(&12_u64.to_le_bytes());
-        bytes.extend_from_slice(&4_u64.to_le_bytes());
-        bytes.extend_from_slice(&8_u64.to_le_bytes());
-        bytes.extend_from_slice(&[1; 4]);
-        bytes.extend_from_slice(&[2; 8]);
-        let check = hashed(&bytes);
-        bytes.extend_from_slice(&check.to_le_bytes());
-        let journal =
-            track.with_file_name(format!(".Time.flac.{NEVER_A_PROCESS}-0{JOURNAL_SUFFIX}"));
-        fs::write(&journal, bytes).expect("a journal");
-
-        let mut torn = was.clone();
-        torn.resize(20, 0);
-        torn[12..14].fill(2);
-        torn[16..20].fill(2);
-        fs::write(&track, &torn).expect("a write cut short");
-        assert_eq!(
-            mend_a_cut_short_write(&journal).expect("a mend"),
-            Mended::RolledBack
-        );
-        assert_eq!(fs::read(&track).expect("the track"), was);
     }
 
     #[test]

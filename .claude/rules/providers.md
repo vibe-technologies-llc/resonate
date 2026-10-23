@@ -131,7 +131,7 @@ away**: `StillArriving` counts `refused`, the want stays unstamped and due.
   `unkept`, the object left to `--prune`, a filed landing removed. `landed` answers a `Landed`:
   `Kept`; `Unkept` (vault or folder failed, stream stalled, row held meanwhile); `NotTheSong` (wrong
   length, vault `Keeping::Refused`, filing too large or undecodable); `Unopened`. **On `NotTheSong`
-  the offer goes to `refused_offers`** (`MIGRATIONS` step: want, `taken_from`, when) and the next
+  the offer goes to `refused_offers`** (want, `taken_from`, when) and the next
   held-back offer is taken; once spent, the want is asked again in the same claim with every heard
   provider in `Asking::passing`, so the provider registered after the wrong-song one is asked at
   once (`a_delivery_refused_from_one_provider_is_asked_of_the_next`). Rounds end at a keep, an
@@ -170,8 +170,8 @@ away**: `StillArriving` counts `refused`, the want stays unstamped and due.
   (`resonate forget`, the window's *Forget this delivery*), nothing a scan filed; the object is left
   to `--prune`. **What was forgotten is remembered; the want is due at once**: the same transaction
   resets its offer, `tried`, `misses` and adds a `forgotten_deliveries` row for **every delivery the
-  object came from**: `vault_objects.taken_from` and each `object_deliveries` row (a `MIGRATIONS`
-  step, written by `note_delivered` for every delivery noted, cascading with the object), so a
+  object came from**: `vault_objects.taken_from` and each `object_deliveries` row (written by
+  `note_delivered` for every delivery noted, cascading with the object), so a
   provider that brought the same audio later is not fetched from again
   (`a_delivery_forgotten_once_a_second_provider_brought_the_same_audio_is_declined_from_both`). The
   poll hands them to `Providers::first` as `Asking::declined`, which passes a matching delivery over

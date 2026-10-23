@@ -33,7 +33,8 @@ CREATE TABLE state (
     bytes_since INTEGER NOT NULL DEFAULT 0,
     listens_mark INTEGER NOT NULL DEFAULT 0,
     clock INTEGER NOT NULL DEFAULT 0,
-    resumed BLOB
+    resumed BLOB,
+    serverless INTEGER NOT NULL DEFAULT 0
 ) STRICT;
 CREATE TABLE devices (
     device BLOB PRIMARY KEY,
@@ -41,7 +42,8 @@ CREATE TABLE devices (
     platform INTEGER NOT NULL,
     nanos INTEGER NOT NULL,
     stamped_by BLOB NOT NULL,
-    owed INTEGER NOT NULL DEFAULT 0
+    owed INTEGER NOT NULL DEFAULT 0,
+    gone INTEGER NOT NULL DEFAULT 0
 ) STRICT;
 CREATE TABLE playlists (
     key BLOB PRIMARY KEY,
@@ -90,17 +92,6 @@ CREATE TABLE handoffs (
     stamped_by BLOB NOT NULL,
     owed INTEGER NOT NULL DEFAULT 0
 ) STRICT;
-";
-
-const V2: &str = "
-ALTER TABLE devices ADD COLUMN gone INTEGER NOT NULL DEFAULT 0;
-";
-
-const V3: &str = "
-ALTER TABLE state ADD COLUMN serverless INTEGER NOT NULL DEFAULT 0;
-";
-
-const V4: &str = "
 CREATE TABLE queries (
     key BLOB PRIMARY KEY,
     local_id INTEGER,
@@ -120,7 +111,7 @@ CREATE TABLE queries (
 CREATE UNIQUE INDEX queries_by_local ON queries(local_id, local_created) WHERE local_id IS NOT NULL;
 ";
 
-const MIGRATIONS: &[&str] = &[V1, V2, V3, V4];
+const MIGRATIONS: &[&str] = &[V1];
 
 const OWE_EVERYTHING: &str = "
 UPDATE devices SET owed = 1;

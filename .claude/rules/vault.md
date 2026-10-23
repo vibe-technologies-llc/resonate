@@ -179,11 +179,7 @@ carried forward, not broken.** The stamp moving makes every such row weighed aga
 under the sound's key even at the same weight (`Replacing::keyed_by_the_pcm_alone`, read off the
 standing object's stamp) (`a_renewal_off_a_key_of_the_samples_alone_lands_under_the_sound_at_the_same_weight`).
 A row that cannot be renewed (its file gone) keeps its object: `Vault::verify` and `reframe` take a
-name that is the sound's key or the PCM's alone (`Heard::answers_to`). The catalog step bringing the
-stamp in releases every listener's row vaulted under a FLAC or WAVE object of another rate or channel
-count (the objects such rows wrongly shared), kept tags with them; a delivered row, whose path is its
-object, is left alone
-(`a_row_vaulted_under_an_object_of_another_rate_or_count_leaves_the_vault_as_carried_forward`).
+name that is the sound's key or the PCM's alone (`Heard::answers_to`).
 
 **A refusal is stamped against the encoder too.** Each `Keeping::Refused` writes `vault_refused
 (track_id, under)` with `OF_THIS_BUILD`; `TRACKS_TO_VAULT` skips rows stamped at or past this
@@ -226,8 +222,7 @@ cover was being pruned.
 ## What the catalog holds
 
 `tracks.vault_key`, `tracks.vault_path`, `albums.cover_key`, `albums.cover_path`, `cover_source`
-gaining `Vault`, the `vault_objects` and `kept_tags` tables; changes are `MIGRATIONS` steps
-(`library.md`).
+gaining `Vault`, the `vault_objects` and `kept_tags` tables; their schema is in `V1` (`library.md`).
 
 - **A vaulted row is still named by its own file; the vault stands in only when bytes are wanted.**
   `tracks.path` + `span_start` are its identity everywhere (location, playlist `Cut`, plays, share,

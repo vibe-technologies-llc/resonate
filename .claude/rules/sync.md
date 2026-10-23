@@ -76,7 +76,8 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
 ## The ledger
 
 `ledger.rs` keeps `sync.sqlite` (the data folder on Linux, app-private storage on Android),
-migrated like the catalogs (`MIGRATIONS`, never edited). All merging lives here, once for both
+one `V1` in a `MIGRATIONS` list that holds it alone: until 0.1.0 `V1` may be edited, after it
+a change appends a step and never edits `V1`; a stamp past the list is `Error::LedgerVersion`. All merging lives here, once for both
 platforms; the catalog seam stays thin.
 
 - **Stamps are last-writer-wins on a hybrid clock**: `Stamp { nanos, device }` ordered by both;
@@ -94,7 +95,7 @@ platforms; the catalog seam stays thin.
   edit kept (or where it stood, or at the head). A song arriving later is written in place by
   `settle`.
 - **A saved query travels as its text, evaluated by each device against its own catalog.** Its own
-  `queries` table (V4) beside `playlists`, same key type, stamp, alias and tombstone rules, looked at
+  `queries` table beside `playlists`, same key type, stamp, alias and tombstone rules, looked at
   the same way: a digest of the body (`merge::query_digest`) moved means an edit, stamped and owed; a
   mapped query gone locally is a tombstone. A query has no entries, so there is no `here` and nothing
   to splice or fetch. Two queries of one folded name meeting for the first time become one with the
@@ -125,7 +126,7 @@ platforms; the catalog seam stays thin.
   snapshot, and a `Compacted` from any device resets every device's count.
 - **Owed is cleared by the server's `Appended`, or by a look where there is no server.** With no
   server (`Server::Nowhere`), what a look told its neighbours is marked sent, since a device met
-  later is told the whole snapshot; V3's `state.serverless` remembers it, and the first start with a
+  later is told the whole snapshot; `state.serverless` remembers it, and the first start with a
   server again owes everything (`Ledger::through_a_server`), so the server is given the whole state.
   A `Welcome` whose head is below this device's cursor (a space swept and made anew) resets the
   cursor and owes everything (`space_made_anew`, `Error::SpaceMadeAnew`), and the link is made again.
@@ -133,7 +134,7 @@ platforms; the catalog seam stays thin.
   A new pairing code is therefore all *regenerate* is: each front end mints or clears the key and
   starts again; the old space ages out on the server.
 - **A device is forgotten by a tombstone, last writer wins like any note.** `Ledger::forget_device`
-  (`Sync::forget`, refused for this device and for one already gone) sets V2's `devices.gone`,
+  (`Sync::forget`, refused for this device and for one already gone) sets `devices.gone`,
   restamps the row, owes it and drops the device's handoff; it travels as `Change::Forgotten` (wire
   tag 5, which a build without it skips), and a snapshot carries every tombstone, so neither an old
   note nor another device's snapshot brings the device back. `devices()` and `handoffs()` leave the
@@ -222,7 +223,8 @@ will not open is left out of the holdings.
   failed dropped first.
 - **Server**: `Settings::server` is a `Server`: `Hosted` (`HOSTED_SERVER`, `resonate.tecnio.dev`,
   port 443), `At` another (`sync-server`; blank is the hosted one), or `Nowhere`, the listener's
-  *Only this network*: nothing is dialled, the standing is `Standing::Nearby` from the start, and
+  *Only this network*, **the default on every front end until the hosted server is live** (`sync-nearby-only`
+  on; a listener switches it off to use `Hosted` or `At`): nothing is dialled, the standing is `Standing::Nearby` from the start, and
   devices meet only as *Nearby* says. `sync-server-certificate` adds a PEM to the system and built-in
   roots (a private CA, the tests' self-signed server).
 

@@ -264,8 +264,8 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   global, the model and a search standing are changed together, then the file;
   `a_preferred_measurer_is_chosen_from_the_equaliser_pane_and_worn_at_once`)
   (`the_pane_suggests_from_the_measurer_the_settings_prefer_before_the_fixed_ranking`).
-- **Cached in catalog and process**: `corrections_index`, `corrections_kept` are `V1` tables (first
-  `CHECK (id = 1)`); a change is a `MIGRATIONS` step (`library.md`). Ages are `resonate-online`
+- **Cached in catalog and process**: `corrections_index`, `corrections_kept` are tables of `V1` (first
+  `CHECK (id = 1)`; `library.md`). Ages are `resonate-online`
   constants (index 30 days, device 90); a device with nothing is kept as a miss. `Remembered` is
   `Fresh` or `Stale`, stale read where asking fails, so a no-network session still searches. No
   catalog: the parsed index is held for the run.
@@ -390,12 +390,9 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   A phone keeps only each preset's icon, keyed by name. A curve is shown as a preset where its name
   is the preset's, or as Flat where it has no gain anywhere; editing a band or the preamp clears the
   name.
-- **Ten octave bands are a migration and a layout, not the model**: `ten_band_curve(preamp, gains)`
-  is ten peaking bands at `EQUALISER_CENTRES` (31.25 Hz to 16 kHz) with Q √2, a non-finite level
-  flat, the rest held to the bounds; `ten_band_gains` answers the gains only for a curve of exactly
-  that layout. Older builds kept `equaliser-preamp`, `equaliser-gain-0` to `-9` and, for an active
-  profile, its text and name in `equaliser-profile-text`/`-name`. With no `equaliser-curve` the
-  store reads those (the profile text first, since it was what played; else the ten slots where any
-  is stored; else the flat default) and the next write removes them
-  (`ten_stored_gains_become_ten_octave_peaking_bands_that_sound_as_they_did`). The default curve
-  holds no bands, transparent.
+- **Ten octave bands are a layout, not the model**: `ten_band_curve(preamp, gains)` is ten peaking
+  bands at `EQUALISER_CENTRES` (31.25 Hz to 16 kHz) with Q √2, a non-finite level flat, the rest
+  held to the bounds; `ten_band_gains` answers the gains only for a curve of exactly that layout.
+  The presets and the phones' "ten flat bands" start use it
+  (`ten_octave_gains_make_ten_peaking_bands_at_the_octave_centres`). With no `equaliser-curve` a
+  store reads the flat default, which holds no bands, transparent.

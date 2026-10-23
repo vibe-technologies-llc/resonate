@@ -491,7 +491,7 @@ fn relevance_falls_back_to_album_order_when_there_is_no_text_to_rank() -> Result
 }
 
 #[test]
-fn an_empty_library_migrates_and_reads_back_as_empty() -> Result<()> {
+fn an_empty_library_opens_and_reads_back_as_empty() -> Result<()> {
     let library = Library::open_in_memory()?;
 
     assert!(all(&library)?.is_empty());

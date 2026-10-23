@@ -136,7 +136,7 @@ leak into the generated C header, which then fails to compile (hence `Documents:
 
 A document is a URI the front end resolves to a descriptor through the `Documents` callback.
 `GRANTED_SCHEMES` lists the schemes a `GrantedFiles` provider is registered for, one `SourceId` each:
-`content` (Android's SAF URIs, unchanged since V1, so saved locations still resolve) and
+`content` (Android's SAF URIs, kept as they are so saved locations still resolve) and
 `resonate-folder` (iOS: `resonate-folder://<root>/<percent-encoded relative path>`, the root a
 security-scoped bookmark the app keeps, or `local` for its own Documents folder). The key is the URI
 after `scheme:` with its escaping kept exactly. Anything else, a bare path or a `file:` URI
@@ -232,9 +232,10 @@ would wait on (`a_sign_in_cancelled_and_asked_again_waits_for_the_new_code_alone
 
 ## Reading document rows
 
-`catalog::read` takes a document row by position, the V1 and V2 columns in order; a migration only
-appends columns, so `SELECT *`/`d.*` stays readable. A query adding its own columns after `d.*`
-reads them by name (`position`, `listen_id`), never by index, since the next migration moves them.
+`catalog::read` takes a document row by position, the first columns of `documents` in `V1`'s
+order; a later step only appends columns, so `SELECT *`/`d.*` stays readable. A query adding its own
+columns after `d.*` reads them by name (`position`, `listen_id`), never by index, since a later
+step moves them.
 
 ## Checks
 
@@ -246,8 +247,8 @@ analysis, snapshot and listening tests. A listen counted for a song the catalog 
 stores nothing and settles nothing: `store_counting` keeps no visit unless the insert changed a row
 (`a_listen_counted_for_a_song_the_catalog_lost_does_not_settle_over_another_listen`). The enrichment tests drive the pass over a fake `Reference` through `Asking`
 (the reference and the client whose switch it reads): one cover per album, a miss left alone until
-its wait is over, a prompt stop, the mark kept on closing, the album key and the artwork fallback;
-a V6 catalog migrates keeping ids, favourites and resumption. Its documents tests cover both
+its wait is over, a prompt stop, the mark kept on closing, the album key and the artwork fallback.
+Its documents tests cover both
 schemes and
 `the_ios_document_types_admit_what_a_scan_admits` holds `ios/Resonate/Info.plist`'s declared
 extensions to `AUDIO_EXTENSIONS`. `a_two_word_search_over_twenty_thousand_songs_answers_within_its_budget`

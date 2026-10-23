@@ -178,28 +178,38 @@ with its writable folder passed explicitly through `Sources::spooling_under`, ne
 the process environment.
 
 The document source has its own SQLite catalog, `documents.sqlite` in app-private storage;
-it does not put invented paths in the Linux catalog. Its first schema is `V1`, version 1.
-Further schema changes append migrations and preserve document ids, favourites and resumption.
-An upgrade checks the existing catalog and keeps a synced `VACUUM INTO` backup
-(`<catalog>.before-v<N>`, written as `.part` and renamed) before one immediate transaction applies
-the remaining steps. The writer holds a `.lock` beside the copy, never the copy itself: SQLite opens
-and locks the `VACUUM INTO` target, and on Darwin `flock` and SQLite's `fcntl` locks share one
-table, so a held target refused the copy and every iOS upgrade failed. A `.part` a failed attempt
-left is removed first (`a_copy_left_half_made_by_a_failed_migration_does_not_stop_the_next`). V2 adds metadata, cached
-artwork/lyrics, listening history and study summaries; V3 adds document playlists; V4 stores
-independent successful-submission positions for ListenBrainz and Last.fm. V5 adds saved wanted
-recordings, separate from playable documents. V6 adds `listens.elsewhere` (another device's listen),
-`playlists.created` (0 for playlists made before it, a nanosecond stamp after; undo restores it) and
-`received`, the songs another device sent that wait for a document. V7 adds the lookup's columns:
-`documents.asked`/`answered` (nanosecond stamps), `asks`, `refusals`, `release_group`, `isrc` (kept
-from tags on index), `album_key` and `art_changed`; `album_art` (one release, group and cover per
-album key, with its own clocks and `cover_asked`), `artists` (a kept profile and portrait per
-artist id, with its clocks and `portrait_asked`), the one-row `enrichment` mark, and `wanted.tried`,
-`misses`, `offered_at`. V8 adds `refused_offers` (identity, `taken_from`, `refused` stamp); V10 adds `loves_told`, the loves told per listening service; V11 adds `wanted.release`, `release_group`, `artist_id`, `disc` and `position`, so a want downloaded from the Wanted list is asked with the release, disc and position of the result it was saved from. V12 adds `pictures` (id, a crc, the bytes), each picture kept once however many songs and albums show it: `artwork` and `album_art` hold a `picture` id, not bytes (`kept_picture` finds a picture by crc and then bytes, so a crc collision costs a comparison and never a wrong picture; `unreferenced_picture_dropped` removes one nothing shows), and the migration folds equal blobs into one row; `picture_crc` is registered on the connection beside `folded`. `artwork_picture(id)` answers the picture the song shows, its own or its album's, whichever `betters` says (the pair of ids decided once and remembered, `Catalog::better_of`), `picture(id)` its bytes, and `keep_folder_cover(ids, bytes)` keeps one folder cover for every song of a folder in one transaction. V13 adds `documents.size`, `modified` and `indexed_by` (the stamp a scan saw the file by and the `INDEXING_REVISION` that read it) and the indexes the scans and imports look songs up by: a partial one on the hidden rows, and on `folded(name)`, `folded(title)` and `recording`. The connection runs WAL with `synchronous = NORMAL`, as `resonate-library` does: a scan's autocommits no longer sync the WAL to flash each, and a power loss costs the last transactions, never the file. The album key is `folded(album) || char(31) || folded(album artist, else
+it does not put invented paths in the Linux catalog. Its schema is one `V1`, `user_version` 1, laid out
+in one immediate transaction on a fresh file: until 0.1.0 `V1` may be edited, and from 0.1.0 on a change
+appends a step (with the chain, a synced `VACUUM INTO` copy and tests that carry document ids,
+favourites and resumption across it) and never edits `V1`. Any other version is
+`Error::CatalogVersion`. `V1` holds `documents` (the metadata, the lookup's clocks `asked`/`answered`
+as nanosecond stamps with `asks` and `refusals`, `release_group`, `isrc` kept from tags on index,
+`album_key`, `art_changed`, `missing`, and `size`, `modified` and `indexed_by`, the stamp a scan saw
+the file by and the `INDEXING_REVISION` that read it), `resume`, `queue`, `lyrics`, `listens`
+(`elsewhere` marks another device's listen), `studies` (summaries), `playlists` (`created` is 0 for
+none, else a nanosecond stamp that undo restores) and `playlist_rows`, `submissions` (independent
+successful-submission positions for ListenBrainz and Last.fm), `wanted` (saved recordings, separate
+from playable documents, with `tried`, `misses`, `offered_at` and the `release`, `release_group`,
+`artist_id`, `disc` and `position` a want downloaded from the Wanted list is asked with),
+`received` (the songs another device sent that wait for a document), `album_art` (one release,
+group, `picture` and cover per album key, with its own clocks and `cover_asked`), `artists` (a kept
+profile and portrait per artist id, with its clocks and `portrait_asked`), the one-row `enrichment`
+mark, `refused_offers` (identity, `taken_from`, `refused` stamp), `loves_told` (the loves told per
+listening service) and `pictures` (id, a crc, the bytes), each picture kept once however many songs
+and albums show it: `artwork` and `album_art` hold a `picture` id, not bytes (`kept_picture` finds
+a picture by crc and then bytes, so a crc collision costs a comparison and never a wrong picture;
+`unreferenced_picture_dropped` removes one nothing shows). `artwork_picture(id)` answers the picture
+the song shows, its own or its album's, whichever `betters` says (the pair of ids decided once and
+remembered, `Catalog::better_of`), `picture(id)` its bytes, and `keep_folder_cover(ids, bytes)` keeps
+one folder cover for every song of a folder in one transaction. The indexes are those the scans and
+imports look songs up by: a partial one on the hidden rows, and on `folded(name)`, `folded(title)`
+and `recording`. The connection runs WAL with `synchronous = NORMAL`, as `resonate-library` does: a
+scan's autocommits no longer sync the WAL to flash each, and a power loss costs the last
+transactions, never the file. The album key is `folded(album) || char(31) || folded(album artist, else
 artist)`, empty for a song without an album: the apps' grouping, folded. Triggers keep it on every
 insert and on any write of `album`, `artist` or `album_artist`, and stamp `art_changed` with the
 next catalog-wide number whenever `art_revision` moves; both call the connection's `folded`, which
-`Catalog::open` registers before migrating, so a write from a connection without it fails.
+`Catalog::open` registers before the schema runs, so a write from a connection without it fails.
 Rescanning upserts by the full URI; it never deletes rows on an unavailable or revoked grant. A scan
 asks `scan_document(uri, name, size, modified_ms)` (both phones, with what the folder listing already
 holds: iOS's resource values, SAF's `COLUMN_SIZE` and `COLUMN_LAST_MODIFIED`, MediaStore's `SIZE`
@@ -207,7 +217,7 @@ and `DATE_MODIFIED` in seconds made milliseconds), which answers the
 stored row untouched where its stamp and `INDEXING_REVISION` match and it is not hidden, so an
 unchanged library is neither opened, probed nor written (the catalog revision stays, and the search
 index with it) and an unknown size and time (both 0) always indexes; the folder's cover and sidecar
-lyrics are still offered for the known row. A file changed from outside, a hidden row, a row from before V13
+lyrics are still offered for the known row. A file changed from outside, a hidden row, a row with no stamp
 and a bump of `INDEXING_REVISION` all index again, and `index_document` (no stamp) clears the stamp.
 `take_the_place_of_missing` reads the hidden rows only where one exists (`any_missing`, a covering
 partial index), so a scan is no longer quadratic in the library.
@@ -358,8 +368,7 @@ prevention, resampling quality/phase and experimental lossy restoration use exis
 commands, never a platform equaliser running beside the Rust chain.
 
 Sound settings live in app-private `playback` SharedPreferences with named enum values, separate
-from the unchanged document schema; the curve is EqualizerAPO text under `equaliser-curve`, the
-older fixed band slots read once to migrate. Unknown enum values fall back to the native defaults;
+from the document schema; the curve is EqualizerAPO text under `equaliser-curve`. Unknown enum values fall back to the native defaults;
 an unreadable curve reads flat. The ordered repository worker restores these preferences before
 allowing playback actions, sends edits and commits each completed gesture off the main thread.
 Sliders keep an in-progress value locally and commit on release, avoiding a file write or stream
@@ -671,7 +680,7 @@ asked; Last.fm password sign-in saves the returned session, never that password.
 are told by `tell_loves(account)` (`loves.rs`), which both phones' 30 s scrobbling loop calls after
 the listens (the Scrobbling page says so; there is no send button, and a favourite taken back is
 unloved on each saved account). It is the desktop's `Library::tell_loves` over the document
-catalog: V10's `loves_told` (service, recording) is weighed against the favourites with a recording,
+catalog: `loves_told` (service, recording) is weighed against the favourites with a recording,
 at most `LOVES_TOLD_AT_ONCE` loves or take-backs per service and call; a love refused with a 4xx
 other than 401, 403, 408 or 429 (`resonate_library::refused_for_good`) is noted told, any other
 failure stops that service until the next call; one service failing tells the other.
@@ -714,7 +723,7 @@ behind unanswered), `ProviderRefused` with the status, `AccountRefused` with the
 `ProviderUntrusted`, `ProviderMisaddressed`, `ProviderUnreadable`, `WrongSong`,
 `DownloadCancelled`); with nothing found, the first provider failure is told before `NotFound`. A
 delivery `index_download` refuses as `WrongSong` is declined by every later find of that song for
-`REFUSALS_REMEMBERED_FOR` (30 days, the desktop's), across restarts: V8's `refused_offers` keeps it
+`REFUSALS_REMEMBERED_FOR` (30 days, the desktop's), across restarts: `refused_offers` keeps it
 by the song's wanted identity and the place it was taken from, and each refusal written sweeps the
 rows past that age.
 
@@ -750,7 +759,7 @@ the release whose title holds the typed words the title and credit do not, else 
 `local_match`; a text or song-link search keeps one of the takes sharing a folded title and artist
 within `A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY`, the one naming most identity, in first place; release
 and playlist listings keep their repeats. A find for a wanted song notes the try on its row as the
-desktop does (V7 `tried`, `misses`): an offer zeroes the misses, nothing heard from every provider
+desktop does (`tried`, `misses`): an offer zeroes the misses, nothing heard from every provider
 counts one, a refusal or cancel neither; `poll_wanted_due` answers the unheld wants due by the
 desktop's `Want::due_at` (`RETRY_WAITS`, `POLL_AGAIN_AFTER`, given up at `TRIES_BEFORE_GIVING_UP`),
 and `next_wanted_due` the earliest of those times among them (unix seconds), for a front end's timer.

@@ -314,8 +314,7 @@ before a source joined is asked again by `look_again_for_portraits`.
   by its names**: `Library::tell_loves` hands each `Scrobbler::love` a `Loved`: the recording and the
   `LovedNames` (title, artist) of the catalog track carrying it (`THE_NAMES_OF_A_RECORDING`).
   Last.fm signs `track.love`/`track.unlove` with `artist` and `track`; a recording no track names any
-  more is told nothing and marked told. ListenBrainz reads the recording alone. A migration step
-  forgets every `loves_told` row of `lastfm` (loves once answered done unsent).
+  more is told nothing and marked told. ListenBrainz reads the recording alone.
 - **A session is asked once, by name and password, and the password is not kept.**
   `resonate_online::signed_in` asks `auth.getMobileSession`; `resonate lastfm --user` reads the
   password from standard input (echo off on a terminal, `input::a_line_unechoed`) and stores only

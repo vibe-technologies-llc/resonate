@@ -6,11 +6,6 @@ public struct PlaybackPreferencesStore: Sendable {
     private static let bufferRange: ClosedRange<Int> = 50...2000
     private static let curveKey = "equaliser-curve"
     private static let curveNameKey = "equaliser-curve-name"
-    private static let tenBandPreampKey = "equaliser-preamp"
-    private static let tenBandProfileNameKey = "equaliser-profile-name"
-    private static let tenBandProfileTextKey = "equaliser-profile-text"
-    private static let tenBands = 10
-    private static let tenBandGainKeys = (0..<tenBands).map { "equaliser-gain-\($0)" }
 
     private static let routeCurvesKey = "equaliser-curve-for"
     private static let routeCurveNamesKey = "equaliser-curve-name-for"
@@ -114,9 +109,6 @@ public struct PlaybackPreferencesStore: Sendable {
             let name = storage.string(forKey: Self.curveNameKey) ?? ""
             preferences.equaliser = (try? parseEqProfile(bytes: Data(kept.utf8), name: name).curve)
                 ?? preferences.equaliser
-        } else if let migrated = tenBandCurve(storage) {
-            preferences.equaliser = migrated
-            keepCurve(migrated, in: storage)
         }
         return preferences
     }
@@ -142,28 +134,5 @@ public struct PlaybackPreferencesStore: Sendable {
         guard let text = try? equaliserText(curve: curve) else { return }
         storage.set(text, forKey: Self.curveKey)
         storage.set(curve.name, forKey: Self.curveNameKey)
-        for key in [Self.tenBandPreampKey, Self.tenBandProfileNameKey, Self.tenBandProfileTextKey] + Self.tenBandGainKeys {
-            storage.removeObject(forKey: key)
-        }
-    }
-
-    private func tenBandCurve(_ storage: UserDefaults) -> EqualiserCurve? {
-        let profileName = storage.string(forKey: Self.tenBandProfileNameKey) ?? ""
-        if let profile = storage.string(forKey: Self.tenBandProfileTextKey), !profile.isEmpty,
-            let imported = try? parseEqProfile(bytes: Data(profile.utf8), name: profileName)
-        {
-            return imported.curve
-        }
-        let stored = ([Self.tenBandPreampKey] + Self.tenBandGainKeys).contains { storage.object(forKey: $0) != nil }
-        guard stored else { return nil }
-        return ResonateNative.tenBandCurve(
-            preampDb: level(Self.tenBandPreampKey, in: storage),
-            gainsDb: Self.tenBandGainKeys.map { level($0, in: storage) }
-        )
-    }
-
-    private func level(_ key: String, in storage: UserDefaults) -> Float {
-        guard storage.object(forKey: key) != nil else { return 0 }
-        return storage.float(forKey: key)
     }
 }

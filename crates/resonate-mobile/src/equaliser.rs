@@ -680,10 +680,10 @@ mod tests {
     }
 
     #[test]
-    fn ten_stored_gains_become_ten_octave_peaking_bands_that_sound_as_they_did() {
+    fn ten_octave_gains_make_ten_peaking_bands_at_the_octave_centres() {
         let gains = vec![1.0, -2.0, 3.5, 0.0, 0.0, 6.0, -12.0, 0.5, 0.0, 12.0];
 
-        let migrated = ten_band_curve(-6.0, gains.clone());
+        let octaves = ten_band_curve(-6.0, gains.clone());
         let before = Profile::new(
             Preamp::from_decibels(-6.0).expect("in range"),
             EQUALISER_CENTRES
@@ -700,21 +700,21 @@ mod tests {
         )
         .expect("ten bands");
 
-        assert_eq!(migrated.bands.len(), 10);
-        assert_eq!(migrated.profile().expect("a valid curve"), before);
-        assert_eq!(ten_band_gains(migrated.clone()), Some(gains));
+        assert_eq!(octaves.bands.len(), 10);
+        assert_eq!(octaves.profile().expect("a valid curve"), before);
+        assert_eq!(ten_band_gains(octaves.clone()), Some(gains));
         assert_eq!(ten_band_gains(curve(vec![peaking(1000.0, 1.0, 1.0)])), None);
     }
 
     #[test]
-    fn a_ten_band_migration_holds_what_no_band_can_hold() {
-        let migrated = ten_band_curve(f32::NAN, vec![f32::INFINITY, 99.0]);
+    fn a_ten_band_curve_holds_what_no_band_can_hold() {
+        let octaves = ten_band_curve(f32::NAN, vec![f32::INFINITY, 99.0]);
 
-        assert_eq!(migrated.preamp_db, 0.0);
-        assert_eq!(migrated.bands[0].gain_db, 0.0);
-        assert_eq!(migrated.bands[1].gain_db, GAIN_AT_MOST_DB);
-        assert_eq!(migrated.bands[9].gain_db, 0.0);
-        assert!(migrated.profile().is_ok());
+        assert_eq!(octaves.preamp_db, 0.0);
+        assert_eq!(octaves.bands[0].gain_db, 0.0);
+        assert_eq!(octaves.bands[1].gain_db, GAIN_AT_MOST_DB);
+        assert_eq!(octaves.bands[9].gain_db, 0.0);
+        assert!(octaves.profile().is_ok());
     }
 
     #[test]

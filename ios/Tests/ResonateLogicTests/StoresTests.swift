@@ -258,25 +258,6 @@ let interactionNotAllowed: Int32 = -25308
         #expect(defaults.first.string(forKey: "equaliser-curve") != nil)
     }
 
-    @Test func theOlderTenBandKeysAreReadOnceAndMigratedToTheCurve() {
-        defaults.first.set(-2.5, forKey: "equaliser-preamp")
-        defaults.first.set(4.0, forKey: "equaliser-gain-3")
-
-        let read = store.read(for: nil).equaliser
-
-        #expect(read.preampDb == -2.5)
-        #expect(read.bands.contains { $0.gainDb == 4 })
-        #expect(defaults.first.string(forKey: "equaliser-curve") != nil)
-        #expect(defaults.first.object(forKey: "equaliser-gain-3") == nil)
-        #expect(defaults.first.object(forKey: "equaliser-preamp") == nil)
-
-        let again = store.read(for: nil).equaliser
-        #expect(again.preampDb == read.preampDb)
-        #expect(again.bands.map(\.gainDb) == read.bands.map(\.gainDb))
-        #expect(again.bands.map(\.frequencyHz) == read.bands.map(\.frequencyHz))
-        #expect(zip(again.bands, read.bands).allSatisfy { abs($0.q - $1.q) < 0.001 })
-    }
-
     @Test func aCurveBoundToAnOutputIsPlayedOnThatOutputAndTheSharedOneElsewhere() {
         let route = OutputRoute(id: "uid-1", name: "AirPods")
         let curve = EqualiserCurve(
@@ -406,39 +387,6 @@ let interactionNotAllowed: Int32 = -25308
         #expect(try store.readProviders().asked.map(\.provider) == [.hifiApi])
     }
 
-    @Test func theOlderSingleAccountIsMigratedToTheListAndItsSecretsAreCleared() throws {
-        let plain = UserDefaults(suiteName: defaults.names[0])!
-        plain.set("subsonic", forKey: "provider")
-        plain.set("https://music.example", forKey: "server")
-        for (name, value) in [("user", "me"), ("password", "pw"), ("client-id", ""), ("client-secret", ""), ("refresh-token", "")] {
-            items.hold(name, value)
-        }
-
-        let read = try store.readProviders()
-
-        #expect(read.account(.subsonic).server == "https://music.example")
-        #expect(read.account(.subsonic).user == "me")
-        #expect(items.has("download-accounts"))
-        for name in ["user", "password", "client-id", "client-secret", "refresh-token"] { #expect(!items.has(name)) }
-        #expect(plain.object(forKey: "provider") == nil)
-        #expect(plain.object(forKey: "server") == nil)
-        #expect(try store.readProviders().account(.subsonic).user == "me")
-    }
-
-    @Test func aMigrationTheKeychainCannotKeepLeavesTheOldSecretsInPlace() throws {
-        let plain = UserDefaults(suiteName: defaults.names[0])!
-        plain.set("subsonic", forKey: "provider")
-        items.hold("user", "me")
-        items.hold("password", "pw")
-        items.script("add", interactionNotAllowed)
-
-        let read = try store.readProviders()
-
-        #expect(read.account(.subsonic).user == "me")
-        #expect(items.value("user") == "me")
-        #expect(plain.string(forKey: "provider") == "subsonic")
-    }
-
     @Test func aKeychainThatCannotBeReadFailsTheReadInsteadOfReadingEmptyAccounts() {
         items.script("copy", interactionNotAllowed)
 
@@ -446,11 +394,11 @@ let interactionNotAllowed: Int32 = -25308
         #expect(throws: KeychainFailure.self) { try store.readSync() }
     }
 
-    @Test func syncStartsOnAndNearbyOffWithNothingKept() throws {
+    @Test func syncStartsOnAndNearbyOnWithNothingKept() throws {
         let read = try store.readSync()
 
         #expect(read.enabled)
-        #expect(!read.nearbyOnly)
+        #expect(read.nearbyOnly)
         #expect(read.key == "")
         #expect(read.server == "")
         #expect(!read.favourites && !read.playlists && !read.everything && !read.meteredAllowed)

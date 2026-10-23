@@ -1,4 +1,4 @@
-use std::{fmt, io, path::PathBuf, result};
+use std::{fmt, io, result};
 
 use resonate_core::eq::MAX_BANDS;
 use thiserror::Error;
@@ -12,7 +12,7 @@ use crate::{
 pub enum StoreOp {
     CreateFolder,
     Open,
-    Migrate,
+    LayOut,
     Read,
     Write,
 }
@@ -22,7 +22,7 @@ impl fmt::Display for StoreOp {
         f.write_str(match self {
             Self::CreateFolder => "created",
             Self::Open => "opened",
-            Self::Migrate => "migrated",
+            Self::LayOut => "laid out",
             Self::Read => "read",
             Self::Write => "written",
         })
@@ -195,16 +195,6 @@ pub enum Error {
     InvalidPicture,
     #[error("the document URI is not supported")]
     InvalidUri,
-    #[error("the document catalog is damaged and has not been migrated")]
-    CatalogDamaged,
-    #[error("the catalog backup path is not UTF-8")]
-    InvalidCatalogPath,
-    #[error("the catalog backup could not be kept at {path}")]
-    CatalogFile {
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
     #[error("document catalog version {found} is newer than this build supports")]
     CatalogVersion { found: u32 },
     #[error("the requested track is not in the library")]

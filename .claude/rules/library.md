@@ -14,38 +14,28 @@ rows read via `Player::media` like any unscanned row.
 
 ## Schema and grouping
 
-- **A catalog on disc is checked and kept before it is migrated.** Where `lay_out` finds a stamp a
-  prefix names but not this build's, it runs `PRAGMA quick_check` (anything but `ok`:
-  `Error::CatalogDamaged`, left unmigrated), then `VACUUM INTO` `<catalog>.before-<stamp>`
-  (`schema::kept_before`), staged as `….part` under `writer::Held` and renamed once synced; an
-  existing copy is kept. Migrations are irreversible (one deletes `loves_told` rows), so that copy
-  is an older build's way back. In-memory catalogs keep nothing.
-  (`a_catalog_on_disc_is_kept_as_it_stood_before_it_is_migrated`)
-- **Schema = `V1` + `MIGRATIONS`; catalogs migrate, not break.** A change is a new SQL step
-  appended; never edit `V1` or a written step (strands stamped catalogs). `PRAGMA user_version` =
-  `fingerprint_after`, a compile-time FNV-1a over `V1` then each step; `SCHEMA_FINGERPRINT` is the
-  last. `lay_out`: `UNSTAMPED` writes `V1` + all steps; this build's stamp opens; else finds the
-  step prefix the stamp names and applies the rest in one `IMMEDIATE` transaction, reading the stamp
-  inside it (a second process waits, then reads the stamp left); a failing step is
-  `StoreOp::Migrate`, stamp unchanged. Only a stamp no prefix names is `Error::SchemaMismatch`: the
-  one case where the catalog is deleted and rescanned. The stamp stays a hash (a counted version
-  cannot tell same-count builds apart). **Migrate wherever rows can be carried**; break only for an
-  index whose meaning changed beyond SQL recomputation, signalled by the step's absence. History
-  begins `0ca1e683` (`V1_AS_FIRST_STAMPED`). (`the_first_schema_is_never_edited_where_it_stands`)
-- **A changed probe is carried forward by marking rows.** A migration step sets `tracks.probe_again`
-  on rows the new probe bills differently (first: every WavPack, `codec = 11`). An incremental scan
-  treats a marked row as changed despite unmoved size/mtime; upsert clears the mark; vault links and
-  lookup results stay. Never a whole-catalog rescan.
+- **Schema = one `V1`, the baseline of 0.1.0.** `V1` is the whole schema as one SQL batch; until
+  the first release it may be edited. From 0.1.0 on a change appends a step to a `MIGRATIONS` list
+  (re-adding the chain, its transaction and its tests) and never edits `V1`, since a stamped catalog
+  of a release would be stranded. `PRAGMA user_version` = `fingerprint_of(V1)`, a compile-time
+  FNV-1a over the schema text; `SCHEMA_FINGERPRINT` is it. `lay_out`: `UNSTAMPED` writes `V1` and
+  the stamp in one `IMMEDIATE` transaction, reading the stamp inside it (a second process waits,
+  then reads the stamp left); this build's stamp opens; any other stamp is `Error::SchemaMismatch`,
+  the one case where the catalog is deleted and rescanned. The stamp stays a hash (a counted version
+  cannot tell same-count builds apart). Editing `V1` therefore costs every earlier dev catalog one
+  rescan. (`a_catalog_another_schema_wrote_is_refused_rather_than_read`,
+  `a_schema_that_has_changed_is_a_fingerprint_that_has_changed`)
+- **A changed probe is carried forward by marking rows.** Once a release exists, a migration step
+  sets `tracks.probe_again` on rows the new probe bills differently. An incremental scan treats a
+  marked row as changed despite unmoved size/mtime; upsert clears the mark; vault links and lookup
+  results stay. Never a whole-catalog rescan.
 - **A scan keeps what its open had to walk, so playback need not.** `tracks.walked` is the text of
   `resonate_codec::Walked` (the VBR MP3 frame count, the Matroska cluster tally), written by every
   upsert from `MediaInfo::walked` (each cut of a file carries its file's); `Hinted::walked` answers
   it by path with the row's `file_size`, which the codec weighs against the source's own length
   before believing it (`audio.md`), so a tag write that moves the size and the row's `file_size`
-  together keeps the count and a file rewritten behind the catalog's back is walked again. The step
-  adding the column marks every MP3 and Matroska row (`.mp3`, `.mkv`, `.mka`, `.webm`) `probe_again`,
-  so the next scan walks each once more and keeps the result
-  (`a_scan_keeps_the_frames_it_walked_and_the_catalog_hands_them_to_playback`,
-  `a_catalog_carried_forward_reads_again_the_files_whose_frames_a_walk_counts`).
+  together keeps the count and a file rewritten behind the catalog's back is walked again
+  (`a_scan_keeps_the_frames_it_walked_and_the_catalog_hands_them_to_playback`).
 - **Transport state = three tables, each moving at its own rate.** `resume`: singleton (queue's row,
   frame, shuffled, taken, `next_first`/`next_last`). `resume_rows`: one row per *loaded*-order
   position. `resume_order`: one per *playing*-order position. `Keeping` (`resonate-engine`
@@ -189,13 +179,11 @@ rows read via `Player::media` like any unscanned row.
   the file's `artist_sort` while billed as the file names it, else the artist's
   `coalesce(tagged_sort, sort_name)` where `artist_id` names an artist whose name is the whole
   credit, else the credit. Pure SQL, so any SQLite keeps it; every track order and order index is
-  declared on the two filed columns. The steps adding the sort columns mark scanned rows
-  `probe_again`.
+  declared on the two filed columns.
 - **A saved query's direction is its own column.** `playlist_queries.sort` = order alone
   (`store::sort_code`/`sort_of`); `playlist_queries.reading` = direction (`direction_code`/
   `direction_of`; `OrderedColumn::Reading` names it in a refusal). It once rode in `sort` as order +
-  `READ_BACKWARDS`, which an older build misread; the step adding the column carries every such code
-  out of the sum.
+  `READ_BACKWARDS`, which an older build misread.
 - **The planner is told, and connections are sized to their job.** `schema::restate_the_statistics`
   (`PRAGMA analysis_limit` + `PRAGMA optimize` on the writer after a scan that changed anything, a
   vault import that kept a row, a poll that kept a delivery, a playlist import): with no
@@ -283,8 +271,6 @@ rows read via `Player::media` like any unscanned row.
   cue sheet text is UTF-8 and cannot name such a file, so one is scanned whole. A playlist file
   writes such a path as a `file://` URI of its raw bytes (`sheet::escaped` takes a `Path`;
   `sheet::unescaped` answers a `PathBuf`), the only form a text sheet can hold.
-  `Error::NonUtf8Path` remains for the one path SQLite is handed as a filename, the catalog's own
-  kept copy (`VACUUM INTO`).
   (`a_file_with_a_name_that_is_not_text_is_catalogued_and_opens_under_the_name_it_has`)
 - **Hidden is not music.** `scan::is_passed_over` drops every dot-name (`.Trash-1000`,
   `.stversions`, AppleDouble `._`, a tag write's staged copy) and `$RECYCLE.BIN`, `System Volume
@@ -389,9 +375,9 @@ rows read via `Player::media` like any unscanned row.
   credits via `store::take_over_artist` (`UPDATE OR IGNORE` except tracks and albums;
   `dismissed_releases` among them, else a dismissal cascades away; the survivor also takes the
   favourite, portrait and tagged sort name it lacks) and are deleted; the survivor is rekeyed,
-  renamed to the most marked spelling, and its tracks indexed again. An invariant kept, not a
-  migration (a second run is a no-op).
-  - **A change to the fold is a schema step asking for the index to be folded again**: it creates
+  renamed to the most marked spelling, and its tracks indexed again. An invariant kept (a second
+  run is a no-op).
+  - **A change to the fold asks for the index to be folded again** (a step once released, `V1` before): it creates
     `index_refold_wanted`; `store::refold_the_index` (in `Library::build` after the reconcile)
     rewrites every `tracks_fts` row whose title, artist or album no longer reads as its fold, then
     drops the table. A release's `folded` haystack, a kept release's and a dismissal are rewritten
@@ -572,7 +558,7 @@ rows read via `Player::media` like any unscanned row.
   not `albums.tagged_tracks` (the first file's, kept as the fallback for a row not yet reprobed): a
   taggers' `TRACKTOTAL` is a disc's count on a set, so the per-disc maxima add up (12 + 10 = 22),
   unless a later disc's numbers do not restart at 1 (numbered straight on: the largest declared is
-  the whole). The step adding the column marks scanned rows `probe_again`.
+  the whole).
   (`a_set_declaring_its_track_count_a_disc_at_a_time_is_asked_after_as_the_whole_it_adds_up_to`)
   (`a_rescan_leaves_every_enrichment_column_where_it_stood`)
 - **`tagged_title`, `tagged_artist` are what the *file* was read as: how a rescan tells retagging
@@ -837,8 +823,7 @@ rows read via `Player::media` like any unscanned row.
   joins multi-valued artist tags with `LISTED_APART_BY` (`; `), so such a credit splits whatever the
   catalog holds. `each_value_named` makes a row per value; `Billing::of` bills a listed name to its
   first value, dropping the tag's mbid. `hand_each_list_to_its_lead` runs first in every settle,
-  merging an artist row whose name holds `; ` into its lead; a migration step marks a settle owed so
-  old catalogs mend on open.
+  merging an artist row whose name holds `; ` into its lead.
 - **A credit names an artist the catalog may hold: identified, not asked.** `Pass::credits` walks
   the `Credit`s of a landed release or group; with an mbid and `Library::artist_named` finding the
   folded name, `write_artist_mbid` fills an empty `artists.mbid`, so the next artist ask goes by id.
@@ -1097,8 +1082,7 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   error. **A page landed in place can be taken back:** before the first page `Undo::kept_beside`
   writes and syncs a journal (`.<name>.<pid>-<n>.resonate-undo`: the length before and after, how
   far the audio was shifted, each changed page's bytes before and after, which may differ in
-  length at a tail, FNV-1a check; `RSUNDO03`, `RSUNDO02` (no shift) and `RSUNDO01` (no landing
-  length) are read), removed once pages sync; a failure rolls back at once (`set_len` back, then the
+  length at a tail, FNV-1a check; `RSUNDO01`), removed once pages sync; a failure rolls back at once (`set_len` back, then the
   old bytes). A dead writer's journal is mended by the next write to that track and by the scan,
   which looks in each folder before reading a file there: a length between the two and every byte
   the journal's before or after (a byte past the file's end is not counted) → rolled back, unless
@@ -1470,8 +1454,8 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   genres (lyrics apart); `db::indexed` folds every piece of a typed word likewise. Why: `unicode61
   remove_diacritics 2` folds `Ç` to `c`, `İ` to `i`, not dotless `ı`; `remove_diacritics` stays.
   `prefix = '1 2'` answers a one- or two-letter word from a prefix index. No `tracks_fts` column is
-  read back. A schema break without a migration: an index from before the fold holds spellings no
-  folded query matches, so such a catalog is deleted and rescanned.
+  read back. An index from before the fold holds spellings no folded query matches, so
+  a catalog stamped otherwise is deleted and rescanned.
 - **Lighting reads the name, not the index.** `Search::lit` answers the byte runs of a display
   string a search matched, for one `Column`. FTS5 `highlight`/`snippet` answer the stored (folded)
   column, so the name is split on `char::is_alphanumeric`, each token folded whole keeping its
@@ -1486,7 +1470,7 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   artist album genre} : "…"*` (`Column::NAMES`), so *love* does not return every song singing it;
   `lyrics:` says the words are meant. `Search::as_sung` turns a search of plain words alone into one
   phrase `lyrics:"…"`, counted by `Library::sung` so the window can offer it. `spelling.rs` has no
-  vocabulary for the column. Also a schema break without a migration.
+  vocabulary for the column. Also a rescan for a catalog stamped otherwise.
 - **A search reaches what the catalog lacks.** `release_tracks.folded` = title, artist, release
   title, through `folded_letters` by `land_release`. `Library::unheld_matching` asks it one `Infix`
   (the trigram index above) per piece of every word asked by name (`elsewhere::words_asked`: lone

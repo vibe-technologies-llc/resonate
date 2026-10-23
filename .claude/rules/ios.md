@@ -445,8 +445,8 @@ sync seals its records and talks QUIC (TLS) of its own.
   `SharedPreferences` files, with the same keys.
 
 - **What can be rebuilt stays out of backups** (`Backup.leaveOutDerived`, at launch and again once the
-  player is open): `sync-received` and `sync-staging` (songs other devices send, fetched again) and
-  the catalog copy kept before a migration (`.before-v<N>`) are `isExcludedFromBackup`; the catalog
+  player is open): `sync-received` and `sync-staging` (songs other devices send, fetched again) are
+  `isExcludedFromBackup`; the catalog
   itself (favourites, playlists, listens) travels with the device's backup. A song landed from
   another device into the app's own Documents (root `local`) is left out as it is created
   (`Backup.leaveOutLanded`, beside `Folders.fresh` in `landReceived`), since a restore fetches it
@@ -1149,10 +1149,7 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   `tidalRequest`, so whatever the cancelled attempt answers later is dropped.
 - **Accounts are one keychain item**: `download-accounts`, a JSON list of every provider's account
   (provider name, server, user, password, client ID, secret, refresh token); the switched-off
-  providers are `download-providers-off` in `library-features`. The single account older builds
-  kept (`provider` and `server` in the `provider-accounts` suite, `user`, `password`, `client-id`,
-  `client-secret`, `refresh-token` in the keychain) is read once by `AccountStore.readProviders`
-  while `download-accounts` is absent, written as the list, and only then deleted.
+  providers are `download-providers-off` in `library-features`.
 - **Progress is polled every 250 ms while a job runs** (`download_progress`): a percentage where the
   provider gave a length, else the bytes received. A job is assigned only when the poll changed it (`update`), so a job finding, validating or stalled redraws nothing. Cancel calls `cancel_download` for that job
   alone; a failed or cancelled job deletes only the document it created and shows the boundary's
@@ -1283,8 +1280,7 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   64 KiB and one byte, so the boundary's `TooLarge` speaks for a larger one). The notice after a
   load counts the bands and says what was fitted, passed over or held to the limits.
 - **Stored as text**: `PlaybackPreferencesStore` keeps the curve as `equaliser_text` output under
-  `equaliser-curve` (`eq.md`'s *The phones*), migrating the older keys once and writing the result
-  back at once.
+  `equaliser-curve` (`eq.md`'s *The phones*).
 - **A curve may be kept for one output** (`OutputRoute`: the session route's first output, by port
   `uid`, named by `portName`). *Only for <output>* on the equaliser page binds the curve playing to
   that output (`Library.bindEqualiser`): `equaliser-curve-for` and `equaliser-curve-name-for` map a

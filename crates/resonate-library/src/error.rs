@@ -115,9 +115,6 @@ pub enum TrashOp {
 pub enum StoreOp {
     Open,
     LayOut,
-    Migrate,
-    Check,
-    KeepBeforeMigrating,
     Analyse,
     Prepare,
     Insert,
@@ -166,9 +163,6 @@ pub enum Error {
         inside = inside.display()
     )]
     RootInsideRoot { path: PathBuf, inside: PathBuf },
-
-    #[error("{path} is not valid UTF-8 and cannot be persisted", path = path.display())]
-    NonUtf8Path { path: PathBuf },
 
     #[error("{op:?} failed on {path}", path = path.display())]
     Move {
@@ -371,12 +365,6 @@ pub enum Error {
         #[source]
         source: Box<rusqlite::Error>,
     },
-
-    #[error(
-        "catalog {path} failed its integrity check and is left as it stands, unmigrated",
-        path = path.display()
-    )]
-    CatalogDamaged { path: PathBuf },
 
     #[error("catalog was written to schema {found}, this build writes {expected}")]
     SchemaMismatch {

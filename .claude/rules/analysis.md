@@ -73,8 +73,9 @@ record + decode. Headless commands keep nothing.
 
 `verdict.rs` is pure: `Weighed` (codec, rate, declared depth, float flag, spectrum, levels) →
 `Judgement`: `Verdict` (`Genuine`, `Suspect`, `Fake`, `Lossy`, `NotJudged`) + typed `Finding`s.
-`JUDGED_UNDER` names the heuristic; bump by hand when its answer or a stored measure could change
-(stored studies and kept analyses are weighed against it).
+`JUDGED_UNDER` names the heuristic and starts at 1 with 0.1.0 (as the kept analysis's `WRITTEN_AS`
+and the library's baseline do); once released, bump it by hand when its answer or a stored measure
+could change (stored studies and kept analyses are weighed against it).
 
 - **Wall = steep drop to a floor that stays.** 100 Hz bands up to `TOP_GUARD`. An edge is a wall
   where the mean of the bands 1 kHz..200 Hz below is `WALL_DB` over the mean from 200 Hz above to

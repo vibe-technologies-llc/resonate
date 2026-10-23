@@ -101,14 +101,9 @@ class PlaybackPreferencesTest {
                 .edit()
                 .putString("quality", "unknown-future-quality")
                 .remove("equaliser-curve")
-                .putFloat("equaliser-preamp", Float.NaN)
-                .putFloat("equaliser-gain-5", 6f)
                 .commit()
             assertEquals(ResamplingQuality.HIGH, store.read().quality)
-            assertEquals(
-                tenBandCurve(0f, List(10) { if (it == 5) 6f else 0f }),
-                store.read().equaliser,
-            )
+            assertEquals(defaultPlaybackPreferences().equaliser, store.read().equaliser)
             assertTrue(store.read().equaliserEnabled)
         } finally {
             player.shutdown()
