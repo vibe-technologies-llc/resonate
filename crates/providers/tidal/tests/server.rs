@@ -1321,3 +1321,63 @@ fn a_hosted_service_turning_the_token_away_is_unwelcome_and_one_with_no_such_tra
         Ok(Obtained::Nothing)
     ));
 }
+
+#[test]
+fn a_keyed_hifi_api_has_the_server_download_the_track_and_sends_its_secret_to_it_alone() {
+    let fake = hifi_server(|asked, _, _| match asked.path.as_str() {
+        "/file/" => Canned::media(b"fLaC-sent-by-the-server"),
+        _ => Canned::refused(404, "{}"),
+    });
+
+    let keyed = fake.hifi().with_secret(" hush-secret ");
+    let (key, extension, bytes) =
+        streamed(keyed.find(&by_isrc()).expect("an answer")).expect("a delivery");
+
+    assert_eq!(key, format!("track/{TRACK}"));
+    assert_eq!(extension, "flac");
+    assert_eq!(bytes, b"fLaC-sent-by-the-server");
+
+    let heard = fake.heard();
+    let paths: Vec<_> = heard.iter().map(|asked| asked.path.as_str()).collect();
+    assert_eq!(paths, ["/search/", "/file/"]);
+    assert_eq!(heard[1].query, format!("id={TRACK}"));
+    assert!(
+        heard
+            .iter()
+            .all(|asked| asked.authorization.as_deref() == Some("Bearer hush-secret"))
+    );
+}
+
+fn opening_of(obtained: Obtained) -> Result<Opened, Error> {
+    match obtained {
+        Obtained::Found(Delivery::Stream { opening, .. }) => opening.open(),
+        _ => panic!("a stream was offered"),
+    }
+}
+
+#[test]
+fn a_keyed_hifi_api_whose_server_lacks_the_track_or_turns_the_key_away_says_so() {
+    let lacking = hifi_server(|_, _, _| Canned::refused(404, "{}"));
+    let turned_away = hifi_server(|asked, _, _| match asked.path.as_str() {
+        "/file/" => Canned::refused(401, "{}"),
+        _ => Canned::refused(404, "{}"),
+    });
+
+    let missing = opening_of(
+        lacking
+            .hifi()
+            .with_secret("key")
+            .find(&by_isrc())
+            .expect("an answer"),
+    );
+    let refused = opening_of(
+        turned_away
+            .hifi()
+            .with_secret("key")
+            .find(&by_isrc())
+            .expect("an answer"),
+    );
+
+    assert!(matches!(missing, Ok(Opened::Gone)));
+    assert!(matches!(refused, Err(Error::Unwelcome { .. })));
+}

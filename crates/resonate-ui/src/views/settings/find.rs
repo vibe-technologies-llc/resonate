@@ -619,6 +619,7 @@ impl Group {
                 SettingKey::TidalClientSecret,
                 SettingKey::TidalRefreshToken,
                 SettingKey::HifiApi,
+                SettingKey::HifiSecret,
                 SettingKey::Monochrome,
                 SettingKey::HostedServices,
             ],

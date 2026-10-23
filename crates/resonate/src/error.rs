@@ -84,6 +84,7 @@ pub enum ConfigKey {
     TidalClientSecret,
     TidalRefreshToken,
     HifiApi,
+    HifiSecret,
     Monochrome,
     HostedServices,
     AcoustidKey,
@@ -162,7 +163,7 @@ impl fmt::Display for Named {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 98] = [
+    pub const ALL: [Self; 99] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -237,6 +238,7 @@ impl ConfigKey {
         Self::TidalClientSecret,
         Self::TidalRefreshToken,
         Self::HifiApi,
+        Self::HifiSecret,
         Self::Monochrome,
         Self::HostedServices,
         Self::AcoustidKey,
@@ -339,6 +341,7 @@ impl ConfigKey {
             Self::TidalClientSecret => "tidal-client-secret",
             Self::TidalRefreshToken => "tidal-refresh-token",
             Self::HifiApi => "hifi-api",
+            Self::HifiSecret => "hifi-secret",
             Self::Monochrome => "monochrome",
             Self::HostedServices => "hosted-services",
             Self::AcoustidKey => "acoustid-key",

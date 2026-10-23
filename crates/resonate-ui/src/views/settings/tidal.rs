@@ -99,15 +99,17 @@ pub(crate) enum TidalAccount {
     ClientSecret,
     RefreshToken,
     HifiApi,
+    HifiSecret,
     Monochrome,
 }
 
 impl TidalAccount {
-    pub(crate) const ALL: [Self; 5] = [
+    pub(crate) const ALL: [Self; 6] = [
         Self::ClientId,
         Self::ClientSecret,
         Self::RefreshToken,
         Self::HifiApi,
+        Self::HifiSecret,
         Self::Monochrome,
     ];
 
@@ -117,6 +119,7 @@ impl TidalAccount {
             Self::ClientSecret => "Its client secret, if it has one, then press enter",
             Self::RefreshToken => "A refresh token for your account, then press enter",
             Self::HifiApi => "Custom hifi-api server address; blank uses the hosted service",
+            Self::HifiSecret => "A key your own hifi-api server lists, then press enter",
             Self::Monochrome => "Custom Monochrome server address; blank uses tracks.monochrome.st",
         }
     }
@@ -127,6 +130,7 @@ impl TidalAccount {
             Self::ClientSecret => "Client secret",
             Self::RefreshToken => "Refresh token",
             Self::HifiApi => "hifi-api server",
+            Self::HifiSecret => "hifi-api key",
             Self::Monochrome => "Monochrome server",
         }
     }
@@ -137,6 +141,7 @@ impl TidalAccount {
             Self::ClientSecret => "tidal-client-secret",
             Self::RefreshToken => "tidal-refresh-token",
             Self::HifiApi => "hifi-api",
+            Self::HifiSecret => "hifi-secret",
             Self::Monochrome => "monochrome",
         }
     }
@@ -147,7 +152,8 @@ impl TidalAccount {
             Self::ClientSecret => 1,
             Self::RefreshToken => 2,
             Self::HifiApi => 3,
-            Self::Monochrome => 4,
+            Self::HifiSecret => 4,
+            Self::Monochrome => 5,
         }
     }
 
@@ -157,6 +163,7 @@ impl TidalAccount {
             Self::ClientSecret => online.tidal_client_secret.clone(),
             Self::RefreshToken => online.tidal_refresh_token.clone(),
             Self::HifiApi => online.hifi_api.clone(),
+            Self::HifiSecret => online.hifi_secret.clone(),
             Self::Monochrome => online.monochrome.clone(),
         }
     }
@@ -167,6 +174,7 @@ impl TidalAccount {
             Self::ClientSecret => online.tidal_client_secret = given,
             Self::RefreshToken => online.tidal_refresh_token = given,
             Self::HifiApi => online.hifi_api = given,
+            Self::HifiSecret => online.hifi_secret = given,
             Self::Monochrome => online.monochrome = given,
         }
     }
@@ -177,6 +185,7 @@ impl TidalAccount {
             Self::ClientSecret => Setting::TidalClientSecret(given),
             Self::RefreshToken => Setting::TidalRefreshToken(given),
             Self::HifiApi => Setting::HifiApi(given),
+            Self::HifiSecret => Setting::HifiSecret(given),
             Self::Monochrome => Setting::Monochrome(given),
         }
     }
@@ -185,12 +194,12 @@ impl TidalAccount {
         online: &Online,
         window: &mut Window,
         cx: &mut Context<RootView>,
-    ) -> [Entity<Field>; 5] {
+    ) -> [Entity<Field>; 6] {
         Self::ALL.map(|account| {
             let field = cx.new(|cx| {
                 let field = Field::new(account.placeholder(), window, cx);
                 let mut field = match account {
-                    Self::ClientSecret | Self::RefreshToken => field.masked(),
+                    Self::ClientSecret | Self::RefreshToken | Self::HifiSecret => field.masked(),
                     Self::ClientId | Self::HifiApi | Self::Monochrome => field,
                 };
                 field.hold(account.held(online), cx);
@@ -227,6 +236,8 @@ impl RootView {
         let said = match (account, given.is_empty()) {
             (TidalAccount::HifiApi, true) => "The hosted hifi-api service is asked from now on",
             (TidalAccount::HifiApi, false) => "The custom hifi-api server is asked from now on",
+            (TidalAccount::HifiSecret, true) => "The hifi-api is asked without a key from now on",
+            (TidalAccount::HifiSecret, false) => "Your own hifi-api server is asked with the key",
             (TidalAccount::Monochrome, true) => {
                 "The hosted Monochrome service is asked from now on"
             }

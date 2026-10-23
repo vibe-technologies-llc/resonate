@@ -319,6 +319,7 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
         Setting::TidalClientSecret(given) => given_or_cleared(ConfigKey::TidalClientSecret, given),
         Setting::TidalRefreshToken(given) => given_or_cleared(ConfigKey::TidalRefreshToken, given),
         Setting::HifiApi(given) => given_or_cleared(ConfigKey::HifiApi, given),
+        Setting::HifiSecret(given) => given_or_cleared(ConfigKey::HifiSecret, given),
         Setting::Monochrome(given) => given_or_cleared(ConfigKey::Monochrome, given),
         Setting::HostedServices(allowed) => (ConfigKey::HostedServices, Some((*allowed).into())),
     };
@@ -447,6 +448,7 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::TidalClientSecret => ConfigKey::TidalClientSecret,
         SettingKey::TidalRefreshToken => ConfigKey::TidalRefreshToken,
         SettingKey::HifiApi => ConfigKey::HifiApi,
+        SettingKey::HifiSecret => ConfigKey::HifiSecret,
         SettingKey::Monochrome => ConfigKey::Monochrome,
         SettingKey::HostedServices => ConfigKey::HostedServices,
         SettingKey::Discord => ConfigKey::Discord,

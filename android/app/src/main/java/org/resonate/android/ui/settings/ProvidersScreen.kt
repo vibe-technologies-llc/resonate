@@ -113,7 +113,8 @@ private fun fieldLabel(field: ProviderField, provider: MusicProvider): String =
         ProviderField.SERVER ->
             if (provider == MusicProvider.SUBSONIC) "Server address" else "Server address (optional)"
         ProviderField.USER -> "Username"
-        ProviderField.PASSWORD -> "Password"
+        ProviderField.PASSWORD ->
+            if (provider == MusicProvider.HIFI_API) "Key for your own server (optional)" else "Password"
         ProviderField.CLIENT_ID -> "TIDAL client ID"
         ProviderField.CLIENT_SECRET -> "Client secret (if required)"
         ProviderField.REFRESH_TOKEN -> "Refresh token"

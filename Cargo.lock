@@ -5955,16 +5955,22 @@ version = "0.1.0-rc1"
 dependencies = [
  "base64 0.23.1",
  "clap",
+ "httparse",
  "parking_lot 0.13.0",
  "quinn",
  "rcgen",
  "resonate-core",
+ "resonate-providers",
  "resonate-sync",
+ "resonate-tidal",
+ "ring",
  "rusqlite",
  "rustls",
  "rustls-pki-types",
  "thiserror 2.0.21",
  "tokio",
+ "tokio-rustls",
+ "toml_edit 0.25.17+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
 ]
@@ -7454,6 +7460,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.9",
+]
+
+[[package]]
+name = "tokio-rustls"
+version = "0.26.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9cc2678c2cdd569ef8215e2afd7954ada2ae20b4fdd2c5fe6139a3b02d105db"
+dependencies = [
+ "rustls",
+ "tokio",
 ]
 
 [[package]]

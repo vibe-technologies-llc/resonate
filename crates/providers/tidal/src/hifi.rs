@@ -5,9 +5,12 @@ use std::{
 
 use parking_lot::Mutex;
 use resonate_core::{Isrc, SourceId};
-use resonate_fetch::{escaped, retry_after_of};
+use resonate_fetch::{
+    Patience, Trusted, configured, downloading_agent, escaped, retry_after_of, unreached,
+};
 use resonate_providers::{
-    Choosing, Delivery, Error, Identity, Listed as Weighed, Obtained, Provider, ProviderOp, Result,
+    Choosing, Delivery, Error, Extension, Identity, Listed as Weighed, Obtained, Opened, Opening,
+    Provider, ProviderOp, Result,
 };
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
@@ -19,6 +22,9 @@ use crate::{
     played::{self, Finds, Playback, Player, TrackId, named_by},
 };
 
+pub const OWN_SERVER: &str = "https://resonate.tecnio.dev";
+const RELAYED_ANSWERED_WITHIN: Duration = Duration::from_secs(60);
+const RELAYED_AS: &str = "flac";
 const HIFI_API: &str = "hifi-api";
 const HOSTED_SERVER: &str = "https://hifi.odskyler.com";
 const HIFI_TOKEN: &str = "https://hifi.odskyler.com/token";
@@ -252,7 +258,44 @@ pub struct HifiApi {
     media: Agent,
     patience: Duration,
     hosted: Option<Hosting>,
+    secret: Option<Keyed>,
     tokens: Mutex<Tokens>,
+}
+
+struct Keyed {
+    secret: String,
+    relay: Agent,
+}
+
+impl Keyed {
+    fn bearer(&self) -> String {
+        format!("Bearer {}", self.secret)
+    }
+}
+
+fn relay_agent() -> Agent {
+    downloading_agent(
+        configured(RELAYED_ANSWERED_WITHIN, Trusted::SystemStoreToo)
+            .max_redirects(0)
+            .build(),
+        Patience::default().broken_off_after,
+    )
+}
+
+fn carries_secret(server: &str) -> bool {
+    if server.starts_with("https://") {
+        return true;
+    }
+    let Some(authority) = server.strip_prefix("http://") else {
+        return false;
+    };
+    let host = authority.split(['/', '?']).next().unwrap_or_default();
+    ["localhost", "127.0.0.1", "[::1]"].iter().any(|loopback| {
+        host == *loopback
+            || host
+                .strip_prefix(loopback)
+                .is_some_and(|port| port.starts_with(':'))
+    })
 }
 
 fn source() -> SourceId {
@@ -262,6 +305,14 @@ fn source() -> SourceId {
 impl HifiApi {
     pub fn at(server: &str) -> Self {
         Self::building(server, MediaHosts::tidal(), None)
+    }
+
+    pub fn with_secret(self, secret: &str) -> Self {
+        let secret = carries_secret(&self.server).then(|| Keyed {
+            secret: secret.trim().to_owned(),
+            relay: relay_agent(),
+        });
+        Self { secret, ..self }
     }
 
     pub fn hosted() -> Self {
@@ -290,6 +341,7 @@ impl HifiApi {
             media: media_agent(),
             patience: QUEUED_FOR_AT_MOST,
             hosted,
+            secret: None,
             tokens: Mutex::new(Tokens::default()),
         }
     }
@@ -480,7 +532,15 @@ impl HifiApi {
     }
 
     fn asked(&self, op: ProviderOp, url: &str) -> Result<Answered> {
-        let sent = self.asker.sent(op, || self.asker.agent.get(url).call())?;
+        let sent = self.asker.sent(op, || {
+            let request = self.asker.agent.get(url);
+            match &self.secret {
+                Some(secret) => request
+                    .header(AUTHORIZATION, secret.bearer().as_str())
+                    .call(),
+                None => request.call(),
+            }
+        })?;
         match sent {
             Sent::Answered(response) if response.status().as_u16() == ACCEPTED => {
                 let wait = retry_after_of(&response)
@@ -507,7 +567,14 @@ impl HifiApi {
 
     fn given_up(&self, op: ProviderOp, request: &RequestId) -> Error {
         let url = self.queued_at(request);
-        if let Err(error) = self.asker.agent.delete(&url).call() {
+        let request = self.asker.agent.delete(&url);
+        let withdrawn = match &self.secret {
+            Some(secret) => request
+                .header(AUTHORIZATION, secret.bearer().as_str())
+                .call(),
+            None => request.call(),
+        };
+        if let Err(error) = withdrawn {
             tracing::debug!(%error, "a queued hifi-api request could not be withdrawn");
         }
         Error::StillQueued {
@@ -559,6 +626,9 @@ impl Finds for HifiApi {
         if let Some(hosting) = &self.hosted {
             return self.hosted_delivery(hosting, track);
         }
+        if let Some(keyed) = &self.secret {
+            return self.relayed(keyed, track).map(Some);
+        }
         let op = ProviderOp::Playback;
         let url = format!(
             "{}/track/?id={}&quality={ASKED_QUALITY}",
@@ -579,6 +649,47 @@ impl Finds for HifiApi {
 }
 
 impl HifiApi {
+    pub fn track(&self, id: u64) -> Result<Option<Delivery>> {
+        self.delivered(TrackId(id))
+    }
+
+    fn relayed(&self, keyed: &Keyed, track: TrackId) -> Result<Delivery> {
+        let provider = self.asker.source.clone();
+        let agent = keyed.relay.clone();
+        let bearer = keyed.bearer();
+        let url = format!("{}/file/?id={}", self.server, track.0);
+        Ok(Delivery::Stream {
+            key: format!("track/{}", track.0).into_boxed_str(),
+            extension: Extension::new(RELAYED_AS)?,
+            opening: Opening::new(move || {
+                let op = ProviderOp::Download;
+                let response = agent
+                    .get(&url)
+                    .header(AUTHORIZATION, bearer.as_str())
+                    .call()
+                    .map_err(|error| unreached(provider.clone(), op, error))?;
+                let status = response.status().as_u16();
+                match status {
+                    200 => Ok(Opened::Reading {
+                        length: response.body().content_length(),
+                        reader: Box::new(response.into_body().into_reader()),
+                    }),
+                    FORBIDDEN | NOT_FOUND | GONE => Ok(Opened::Gone),
+                    UNAUTHORISED => Err(Error::Unwelcome {
+                        provider: provider.clone(),
+                        op,
+                        code: status,
+                    }),
+                    _ => Err(Error::Refused {
+                        provider: provider.clone(),
+                        op,
+                        status,
+                    }),
+                }
+            }),
+        })
+    }
+
     fn tracks_coded(&self, isrc: &Isrc) -> Result<Vec<TrackId>> {
         let op = ProviderOp::Search;
         let url = format!(
@@ -646,6 +757,17 @@ mod tests {
         assert_eq!(read(""), None);
         assert_eq!(read("../../admin"), None);
         assert_eq!(read("f1b5?x=1"), None);
+    }
+
+    #[test]
+    fn a_secret_travels_only_over_https_or_to_the_machine_itself() {
+        assert!(carries_secret("https://resonate.example"));
+        assert!(carries_secret("http://localhost:8000"));
+        assert!(carries_secret("http://127.0.0.1"));
+        assert!(carries_secret("http://[::1]:8000"));
+        assert!(!carries_secret("http://hifi.home.arpa"));
+        assert!(!carries_secret("http://localhost.evil.example"));
+        assert!(!carries_secret("ftp://localhost"));
     }
 
     #[test]

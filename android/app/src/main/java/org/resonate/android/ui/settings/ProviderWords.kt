@@ -33,8 +33,8 @@ fun providerDetail(provider: MusicProvider): String =
 
 fun providerFields(provider: MusicProvider): List<ProviderField> =
     when (provider) {
-        MusicProvider.MONOCHROME,
-        MusicProvider.HIFI_API -> listOf(ProviderField.SERVER)
+        MusicProvider.MONOCHROME -> listOf(ProviderField.SERVER)
+        MusicProvider.HIFI_API -> listOf(ProviderField.SERVER, ProviderField.PASSWORD)
         MusicProvider.SUBSONIC ->
             listOf(ProviderField.SERVER, ProviderField.USER, ProviderField.PASSWORD)
         MusicProvider.TIDAL ->

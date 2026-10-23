@@ -233,6 +233,7 @@ pub enum SettingKey {
     TidalClientSecret,
     TidalRefreshToken,
     HifiApi,
+    HifiSecret,
     Monochrome,
     HostedServices,
     Discord,
@@ -251,7 +252,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 96] = [
+    pub const ALL: [Self; 97] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -333,6 +334,7 @@ impl SettingKey {
         Self::TidalClientSecret,
         Self::TidalRefreshToken,
         Self::HifiApi,
+        Self::HifiSecret,
         Self::Monochrome,
         Self::HostedServices,
         Self::Discord,
@@ -437,6 +439,7 @@ pub enum Setting {
     TidalClientSecret(String),
     TidalRefreshToken(String),
     HifiApi(String),
+    HifiSecret(String),
     Monochrome(String),
     HostedServices(bool),
     Discord(bool),
@@ -538,6 +541,7 @@ impl Setting {
             Self::TidalClientSecret(_) => SettingKey::TidalClientSecret,
             Self::TidalRefreshToken(_) => SettingKey::TidalRefreshToken,
             Self::HifiApi(_) => SettingKey::HifiApi,
+            Self::HifiSecret(_) => SettingKey::HifiSecret,
             Self::Monochrome(_) => SettingKey::Monochrome,
             Self::HostedServices(_) => SettingKey::HostedServices,
             Self::Discord(_) => SettingKey::Discord,
@@ -577,6 +581,7 @@ pub struct Online {
     pub tidal_client_secret: String,
     pub tidal_refresh_token: String,
     pub hifi_api: String,
+    pub hifi_secret: String,
     pub monochrome: String,
     pub hosted_services: bool,
 }
@@ -637,6 +642,7 @@ impl fmt::Debug for Online {
             tidal_client_secret,
             tidal_refresh_token,
             hifi_api,
+            hifi_secret,
             monochrome,
             hosted_services,
         } = self;
@@ -660,6 +666,7 @@ impl fmt::Debug for Online {
             .field("tidal_client_secret", &withheld(tidal_client_secret))
             .field("tidal_refresh_token", &withheld(tidal_refresh_token))
             .field("hifi_api", hifi_api)
+            .field("hifi_secret", &withheld(hifi_secret))
             .field("monochrome", monochrome)
             .field("hosted_services", hosted_services)
             .finish()

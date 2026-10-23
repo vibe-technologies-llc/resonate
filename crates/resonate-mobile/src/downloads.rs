@@ -446,7 +446,8 @@ impl Downloads {
         let hosted = matches!(
             account.provider,
             MusicProvider::Monochrome | MusicProvider::HifiApi
-        ) && account.server.trim().is_empty();
+        ) && account.server.trim().is_empty()
+            && !(account.provider == MusicProvider::HifiApi && !account.password.trim().is_empty());
         !(hosted && self.hosted_services_declined.load(Ordering::Acquire))
     }
 
@@ -486,6 +487,14 @@ impl Downloads {
                     }),
                 )
             }
+            MusicProvider::HifiApi if !password.trim().is_empty() => Box::new(
+                resonate_tidal::HifiApi::at(if custom {
+                    &server
+                } else {
+                    resonate_tidal::OWN_SERVER
+                })
+                .with_secret(&password),
+            ),
             MusicProvider::HifiApi if custom => Box::new(resonate_tidal::HifiApi::at(&server)),
             MusicProvider::HifiApi => Box::new(resonate_tidal::HifiApi::hosted()),
         }
@@ -1197,6 +1206,20 @@ mod tests {
     }
 
     #[test]
+    fn a_hifi_api_account_with_a_key_is_asked_though_hosted_services_are_declined() {
+        let downloads = Downloads::default();
+        downloads.hosted_services_allowed(false);
+        let keyed = DownloadAccount {
+            password: "key".to_owned(),
+            ..account(MusicProvider::HifiApi, "")
+        };
+        let monochrome = account(MusicProvider::Monochrome, "");
+
+        assert!(downloads.is_asked(&keyed));
+        assert!(!downloads.is_asked(&monochrome));
+    }
+
+    #[test]
     fn declined_hosted_services_leave_a_hosted_account_unasked_and_a_named_server_asked() {
         let downloads = Downloads::default();
         downloads.hosted_services_allowed(false);
@@ -1208,7 +1231,10 @@ mod tests {
             hosted,
             vec![
                 account(MusicProvider::Monochrome, ""),
-                account(MusicProvider::HifiApi, "  "),
+                DownloadAccount {
+                    password: String::new(),
+                    ..account(MusicProvider::HifiApi, "  ")
+                },
             ],
         )
         .offer

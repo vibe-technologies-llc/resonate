@@ -66,6 +66,14 @@ impl Default for Limits {
 }
 
 pub fn tls(certificate: &Path, key: &Path) -> Result<ServerConfig> {
+    let (chain, key) = pem(certificate, key)?;
+    serving(chain, key)
+}
+
+pub fn pem(
+    certificate: &Path,
+    key: &Path,
+) -> Result<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>)> {
     let chain = CertificateDer::pem_file_iter(certificate)
         .and_then(Iterator::collect::<std::result::Result<Vec<_>, _>>)
         .map_err(|source| Error::Pem {
@@ -83,7 +91,7 @@ pub fn tls(certificate: &Path, key: &Path) -> Result<ServerConfig> {
         path: key.to_path_buf(),
         source,
     })?;
-    serving(chain, key)
+    Ok((chain, key))
 }
 
 pub fn serving(

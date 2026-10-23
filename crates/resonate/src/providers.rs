@@ -78,7 +78,7 @@ fn sourced_over(made: Arc<Made>) -> (resonate_ui::Registering, resonate_ui::Unke
 struct Accounts {
     subsonic: Option<Server>,
     tidal: Option<Account>,
-    hifi: Option<Hosting>,
+    hifi: Option<HifiHosting>,
     monochrome: Option<Hosting>,
 }
 
@@ -103,7 +103,11 @@ impl Accounts {
                 config.tidal_client_secret.as_deref(),
                 config.tidal_refresh_token.as_deref(),
             ),
-            hifi: hosting(config.hifi_api.as_deref(), config.hosted_services_allowed()),
+            hifi: hifi_hosting(
+                config.hifi_api.as_deref(),
+                config.hifi_secret.as_deref(),
+                config.hosted_services_allowed(),
+            ),
             monochrome: hosting(
                 config.monochrome.as_deref(),
                 config.hosted_services_allowed(),
@@ -127,7 +131,11 @@ impl Accounts {
                 Some(&online.tidal_client_secret),
                 Some(&online.tidal_refresh_token),
             ),
-            hifi: hosting(Some(&online.hifi_api), online.hosted_services),
+            hifi: hifi_hosting(
+                Some(&online.hifi_api),
+                Some(&online.hifi_secret),
+                online.hosted_services,
+            ),
             monochrome: hosting(Some(&online.monochrome), online.hosted_services),
         }
     }
@@ -183,6 +191,47 @@ enum Hosting {
 }
 
 #[cfg(feature = "online")]
+#[derive(Clone, PartialEq, Eq)]
+enum HifiHosting {
+    Hosted,
+    Custom(String),
+    Keyed { server: String, secret: String },
+}
+
+#[cfg(feature = "online")]
+impl std::fmt::Debug for HifiHosting {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Hosted => f.write_str("Hosted"),
+            Self::Custom(server) => f.debug_tuple("Custom").field(server).finish(),
+            Self::Keyed { server, .. } => f
+                .debug_struct("Keyed")
+                .field("server", server)
+                .field("secret", &"<withheld>")
+                .finish(),
+        }
+    }
+}
+
+#[cfg(feature = "online")]
+fn hifi_hosting(
+    server: Option<&str>,
+    secret: Option<&str>,
+    hosted_allowed: bool,
+) -> Option<HifiHosting> {
+    match given(secret) {
+        Some(secret) => Some(HifiHosting::Keyed {
+            server: given(server).unwrap_or_else(|| resonate_tidal::OWN_SERVER.to_owned()),
+            secret,
+        }),
+        None => hosting(server, hosted_allowed).map(|hosting| match hosting {
+            Hosting::Hosted => HifiHosting::Hosted,
+            Hosting::Custom(server) => HifiHosting::Custom(server),
+        }),
+    }
+}
+
+#[cfg(feature = "online")]
 fn hosting(server: Option<&str>, hosted_allowed: bool) -> Option<Hosting> {
     match given(server) {
         Some(server) => Some(Hosting::Custom(server)),
@@ -194,7 +243,7 @@ fn hosting(server: Option<&str>, hosted_allowed: bool) -> Option<Hosting> {
 struct Made {
     subsonic: Kept<Server, Subsonic>,
     tidal: Kept<Account, Tidal>,
-    hifi: Kept<Hosting, HifiApi>,
+    hifi: Kept<HifiHosting, HifiApi>,
     monochrome: Kept<Hosting, Monochrome>,
     renewed: Arc<Renewed>,
 }
@@ -336,8 +385,9 @@ fn registry(inbox: Option<&Path>, accounts: &Accounts, made: &Made) -> Providers
     }
     if let Some(hifi) = &accounts.hifi {
         providers = providers.and(made.hifi.made_for(hifi, |hifi| match hifi {
-            Hosting::Hosted => HifiApi::hosted(),
-            Hosting::Custom(server) => HifiApi::at(server),
+            HifiHosting::Hosted => HifiApi::hosted(),
+            HifiHosting::Custom(server) => HifiApi::at(server),
+            HifiHosting::Keyed { server, secret } => HifiApi::at(server).with_secret(secret),
         }));
     }
     if let Some(monochrome) = &accounts.monochrome {
@@ -536,6 +586,57 @@ mod tests {
 
     #[cfg(feature = "online")]
     #[test]
+    fn a_secret_makes_the_own_server_the_hifi_api_whatever_hosted_services_says() {
+        let keyed = |server: Option<&str>, hosted: bool| {
+            Accounts::of(&Config {
+                hifi_api: server.map(str::to_owned),
+                hifi_secret: Some(" key ".to_owned()),
+                hosted_services: Some(hosted),
+                ..Config::default()
+            })
+            .hifi
+        };
+
+        assert_eq!(
+            keyed(None, false),
+            Some(HifiHosting::Keyed {
+                server: resonate_tidal::OWN_SERVER.to_owned(),
+                secret: "key".to_owned()
+            })
+        );
+        assert_eq!(
+            keyed(Some("https://hifi.home.arpa"), true),
+            Some(HifiHosting::Keyed {
+                server: "https://hifi.home.arpa".to_owned(),
+                secret: "key".to_owned()
+            })
+        );
+        assert_eq!(
+            Accounts::of(&Config {
+                hifi_secret: Some("  ".to_owned()),
+                hosted_services: Some(false),
+                ..Config::default()
+            })
+            .hifi,
+            None
+        );
+    }
+
+    #[cfg(feature = "online")]
+    #[test]
+    fn a_keyed_hifi_api_is_registered_and_never_prints_its_secret() {
+        let config = Config {
+            hifi_secret: Some("hush-secret".to_owned()),
+            hosted_services: Some(false),
+            ..Config::default()
+        };
+
+        assert!(named(&config).contains(&"hifi-api".to_owned()));
+        assert!(!format!("{:?}", Accounts::of(&config)).contains("hush-secret"));
+    }
+
+    #[cfg(feature = "online")]
+    #[test]
     fn the_hosted_hifi_api_is_registered_only_when_the_listener_allowed_hosted_services() {
         let unasked = Config {
             hosted_services: Some(false),
@@ -571,7 +672,7 @@ mod tests {
         assert!(named(&whole).contains(&"hifi-api".to_owned()));
         assert!(matches!(
             Accounts::of(&whole).hifi,
-            Some(Hosting::Custom(_))
+            Some(HifiHosting::Custom(_))
         ));
 
         let offline = Config {

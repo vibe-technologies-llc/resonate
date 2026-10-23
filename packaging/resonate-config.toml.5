@@ -239,6 +239,12 @@ String, secret. Written by resonate\-tidal, and rewritten when TIDAL rotates it.
 .B hifi-api
 String. The address of a TIDAL-compatible server of the listener's. Default: none.
 .TP
+.B hifi-secret
+String, secret. A key the listener's own hifi-api server lists. While set, the hifi-api provider asks
+the server named by hifi-api, else https://resonate.tecnio.dev, with the key as a bearer token, in
+place of the hosted service, whatever hosted-services says. The key travels only over https or to
+the machine itself. Default: none.
+.TP
 .B monochrome
 String. The address of a Monochrome server of the listener's. Default: none.
 .SH DEVICES

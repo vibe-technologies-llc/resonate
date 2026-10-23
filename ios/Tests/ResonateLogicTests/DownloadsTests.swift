@@ -145,6 +145,9 @@ let folder = MusicFolder(id: "local", name: "On this iPhone", path: "/music", re
         #expect(!account(.monochrome).usesItsOwnServer)
         #expect(!account(.monochrome, server: "  ").usesItsOwnServer)
         #expect(account(.monochrome, server: "https://m.example").usesItsOwnServer)
+        #expect(!account(.hifiApi).usesItsOwnServer)
+        #expect(account(.hifiApi, password: "key").usesItsOwnServer)
+        #expect(!account(.monochrome, password: "key").usesItsOwnServer)
     }
 }
 

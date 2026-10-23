@@ -29,7 +29,7 @@ pub fn read_a_manifest(bytes: &[u8]) {
 
 pub use crate::{
     account::{Account, Endpoints, MediaHosts},
-    hifi::{HifiApi, Hosting},
+    hifi::{HifiApi, Hosting, OWN_SERVER},
     sign_in::TidalSignIn,
 };
 use crate::{

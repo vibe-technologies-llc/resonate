@@ -590,7 +590,7 @@ pub struct RootView {
     pub(crate) audd: Entity<Field>,
     pub(crate) listenbrainz: Entity<Field>,
     pub(crate) subsonic: [Entity<Field>; 3],
-    pub(crate) tidal: [Entity<Field>; 5],
+    pub(crate) tidal: [Entity<Field>; 6],
     pub(crate) lastfm: [Entity<Field>; 4],
     pub(crate) discord_app: Entity<Field>,
     pub(crate) discord_icon: Entity<Field>,

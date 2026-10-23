@@ -1,9 +1,14 @@
 use std::{net::SocketAddr, path::PathBuf, process::ExitCode, time::Duration};
 
-use clap::Parser;
-use resonate_server::{Error, Limits, Server, Store, listening, tls};
+use clap::{CommandFactory, Parser, error::ErrorKind};
+use resonate_server::{
+    Error, Gateway, Hifi, Limits, Minted, Server, Store, gateway_tls, listening, pem, serving,
+};
 use resonate_sync::wire::LARGEST_RECORD;
-use tokio::signal::unix::{SignalKind, signal};
+use tokio::{
+    net::TcpListener,
+    signal::unix::{SignalKind, signal},
+};
 use tracing_subscriber::EnvFilter;
 
 const SECONDS_PER_DAY: u64 = 24 * 60 * 60;
@@ -17,6 +22,12 @@ const SECONDS_PER_DAY: u64 = 24 * 60 * 60;
 struct Args {
     #[arg(
         long,
+        help = "Mint a hifi-api key: print the secret to hand out and the digest to list in the config, then exit"
+    )]
+    hifi_key: bool,
+
+    #[arg(
+        long,
         default_value = "[::]:443",
         help = "The UDP address QUIC listens on"
     )]
@@ -25,19 +36,26 @@ struct Args {
     #[arg(
         long,
         value_name = "PEM",
+        required_unless_present = "hifi_key",
         help = "The certificate chain the server presents"
     )]
-    certificate: PathBuf,
+    certificate: Option<PathBuf>,
 
-    #[arg(long, value_name = "PEM", help = "The private key of that certificate")]
-    key: PathBuf,
+    #[arg(
+        long,
+        value_name = "PEM",
+        required_unless_present = "hifi_key",
+        help = "The private key of that certificate"
+    )]
+    key: Option<PathBuf>,
 
     #[arg(
         long,
         value_name = "FILE",
+        required_unless_present = "hifi_key",
         help = "The SQLite file the records are kept in"
     )]
-    store: PathBuf,
+    store: Option<PathBuf>,
 
     #[arg(long, default_value_t = LARGEST_RECORD, help = "The largest one record may be, in bytes")]
     record_bytes: usize,
@@ -65,6 +83,13 @@ struct Args {
         help = "Days a space may go untouched before it is swept"
     )]
     idle_days: u64,
+
+    #[arg(
+        long,
+        value_name = "TOML",
+        help = "The config file; its [hifi] table opens the keyed hifi-api gateway"
+    )]
+    config: Option<PathBuf>,
 }
 
 fn main() -> ExitCode {
@@ -73,7 +98,9 @@ fn main() -> ExitCode {
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )
         .init();
-    match run(Args::parse()) {
+    let args = Args::parse();
+    let outcome = if args.hifi_key { mint() } else { run(args) };
+    match outcome {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             tracing::error!(%error, "the server stopped");
@@ -82,9 +109,41 @@ fn main() -> ExitCode {
     }
 }
 
+fn mint() -> Result<(), Error> {
+    let minted = Minted::new()?;
+    println!("secret: {}", minted.secret);
+    println!("digest: {}", minted.digest.hex());
+    Ok(())
+}
+
+fn required(value: Option<PathBuf>, flag: &str) -> PathBuf {
+    value.unwrap_or_else(|| {
+        Args::command()
+            .error(
+                ErrorKind::MissingRequiredArgument,
+                format!("--{flag} is required"),
+            )
+            .exit()
+    })
+}
+
 fn run(args: Args) -> Result<(), Error> {
-    let config = tls(&args.certificate, &args.key)?;
-    let store = Store::open(&args.store)?;
+    let (chain, key) = pem(
+        &required(args.certificate, "certificate"),
+        &required(args.key, "key"),
+    )?;
+    let hifi = args
+        .config
+        .as_deref()
+        .map(Hifi::read)
+        .transpose()?
+        .flatten();
+    let gateway_acceptor = hifi
+        .as_ref()
+        .map(|_| gateway_tls(chain.clone(), key.clone_key()))
+        .transpose()?;
+    let config = serving(chain, key)?;
+    let store = Store::open(&required(args.store, "store"))?;
     let limits = Limits {
         record_bytes: args.record_bytes,
         space_bytes: args.space_bytes,
@@ -100,9 +159,24 @@ fn run(args: Args) -> Result<(), Error> {
         let endpoint = listening(config, args.listen)?;
         tracing::info!(listen = %args.listen, "serving sync");
         let server = Server::new(store, limits);
+        let gateway = match (hifi, gateway_acceptor) {
+            (Some(hifi), Some(acceptor)) => {
+                let listener = TcpListener::bind(hifi.listen).await.map_err(Error::Listen)?;
+                tracing::info!(listen = %hifi.listen, upstream = %hifi.upstream, keys = hifi.keys.len(), "serving hifi-api");
+                Some(Gateway::new(hifi.keys, hifi.upstream).serve(listener, acceptor))
+            }
+            _ => None,
+        };
+        let serving_hifi = async {
+            match gateway {
+                Some(serving) => serving.await,
+                None => std::future::pending().await,
+            }
+        };
         let mut terminated = signal(SignalKind::terminate()).map_err(Error::Signals)?;
         tokio::select! {
             () = server.serve(endpoint.clone()) => {}
+            () = serving_hifi => {}
             _ = tokio::signal::ctrl_c() => tracing::info!("asked to stop"),
             _ = terminated.recv() => tracing::info!("asked to stop"),
         }

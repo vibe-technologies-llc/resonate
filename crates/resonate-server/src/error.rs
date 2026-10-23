@@ -16,6 +16,14 @@ pub enum PemOp {
     Key,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ConfigField {
+    Hifi,
+    Listen,
+    Upstream,
+    Keys,
+}
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("{op:?} failed on the server's store")]
@@ -38,6 +46,29 @@ pub enum Error {
 
     #[error("{} holds no certificate", path.display())]
     NoCertificate { path: PathBuf },
+
+    #[error("{} could not be read", path.display())]
+    ConfigRead {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+
+    #[error("{} is not valid TOML", path.display())]
+    ConfigSyntax {
+        path: PathBuf,
+        #[source]
+        source: Box<toml_edit::TomlError>,
+    },
+
+    #[error("the config's {field:?} is missing")]
+    ConfigMissing { field: ConfigField },
+
+    #[error("the config's {field:?} does not read")]
+    ConfigInvalid { field: ConfigField },
+
+    #[error("the system could not supply random bytes")]
+    Random,
 
     #[error("the TLS configuration was refused")]
     Tls(#[source] Box<rustls::Error>),

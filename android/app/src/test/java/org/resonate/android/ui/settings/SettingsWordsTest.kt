@@ -164,6 +164,10 @@ class SettingsWordsTest {
             listOf(ProviderField.SERVER, ProviderField.USER, ProviderField.PASSWORD),
             providerFields(MusicProvider.SUBSONIC),
         )
+        assertEquals(
+            listOf(ProviderField.SERVER, ProviderField.PASSWORD),
+            providerFields(MusicProvider.HIFI_API),
+        )
         assertFalse(ProviderField.SERVER in providerFields(MusicProvider.TIDAL))
         assertEquals("hifi-api", providerName(MusicProvider.HIFI_API))
     }

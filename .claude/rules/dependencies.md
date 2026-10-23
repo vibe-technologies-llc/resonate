@@ -55,7 +55,8 @@ here, add it there.
 - A provider crate reaches core, the seam and (a network one) `resonate-fetch` alone.
 - `resonate-sync`: core alone among workspace crates; no library, engine, gpui, `ureq`, serde.
   Reached by the binary (behind `sync`), `resonate-mobile` and `resonate-server` alone; `resonate-server`
-  reaches core and `resonate-sync` alone. `resonate-library` takes neither `quinn` nor `tokio`, and
+  reaches core, `resonate-sync` and, for its hifi-api gateway, `resonate-tidal` with the seam and
+  `resonate-fetch` it already reaches (so `ureq` and serde, which the sync server otherwise lacks). `resonate-library` takes neither `quinn` nor `tokio`, and
   `cargo tree -p resonate --no-default-features` links neither.
 - `resonate-codec` is a *dev*-dependency of `resonate-mpris` alone (`tests/bus.rs` implements a
   `MediaProvider`).

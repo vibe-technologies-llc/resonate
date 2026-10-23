@@ -187,8 +187,8 @@ jobs:
           done
           refuse resonate-sync gpui resonate-library resonate-engine ureq serde serde_json
           only resonate-sync resonate-core
-          refuse resonate-server gpui resonate-library resonate-engine ureq serde serde_json
-          only resonate-server resonate-core resonate-sync
+          refuse resonate-server gpui resonate-library resonate-engine
+          only resonate-server resonate-core resonate-sync resonate-providers resonate-fetch resonate-tidal
           for by in $(held_by --workspace -i resonate-sync | grep '^resonate' | grep -vx resonate-sync || true); do
             case "$by" in
               resonate|resonate-mobile|resonate-server) ;;

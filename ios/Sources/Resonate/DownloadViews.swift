@@ -390,8 +390,11 @@ struct ProviderFields: View {
     var body: some View {
         let features = library.features
         switch account.provider {
-        case .monochrome, .hifiApi:
+        case .monochrome:
             serverField("Server URL (blank uses the hosted service)")
+        case .hifiApi:
+            serverField("Server URL (blank uses the hosted service)")
+            SecureField("Key for your own server (optional)", text: $account.password)
         case .subsonic:
             serverField("Server URL")
             TextField("Username", text: $account.user)

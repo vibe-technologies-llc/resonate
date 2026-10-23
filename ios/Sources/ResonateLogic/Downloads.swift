@@ -80,7 +80,9 @@ extension DownloadAccount {
         }
     }
 
-    public var usesItsOwnServer: Bool { !Self.isBlank(server) }
+    public var usesItsOwnServer: Bool {
+        !Self.isBlank(server) || (provider == .hifiApi && !Self.isBlank(password))
+    }
 
     private static func isBlank(_ value: String) -> Bool {
         value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

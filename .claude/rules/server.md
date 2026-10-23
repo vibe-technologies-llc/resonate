@@ -46,11 +46,42 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
 `--frames-per-minute` (240 a connection, `TooFast` and the session ends). Errors are typed
 (`errors.md`); a session's failure is a debug line, never the server's.
 
+## The hifi-api gateway (`keys.rs`, `gateway.rs`)
+
+`--config <TOML>` with a `[hifi]` table (`listen`, `upstream` as socket addresses, `keys` as SHA-256
+hex digests) opens an HTTPS gateway on TCP, beside QUIC on UDP (same certificate, ALPN `http/1.1`),
+in front of a hifi-api the operator runs on `upstream` (plain HTTP, expected on loopback). No table
+leaves it off; a table with no key, or a key that is not a digest, is a startup error
+(`ConfigMissing`/`ConfigInvalid`). `resonate-server --hifi-key` mints a secret (32 random bytes,
+hex) and prints it with the digest to list: the file never holds a secret.
+
+- **Everyone without a listed key is turned away alike**: no `Authorization: Bearer`, another scheme
+  or an unlisted secret is 401 before method or route is looked at, so a stranger learns nothing of
+  the routes (`a_request_without_a_secret_or_with_one_not_listed_is_turned_away_and_never_forwarded`).
+- **A listed key reaches three routes**: `GET /search/`, `GET`/`DELETE
+  /playback/requests/<letters, digits, dashes>` (forwarded to the hifi-api) and `GET /file/?id=<digits>`;
+  else 404, another method 405. `/track/` is not one: the manifest names TIDAL's CDN, which a client
+  never reaches itself (`a_listed_secret_reaches_only_the_hifi_routes_and_methods`).
+- **The secret stops at the gateway**: a forwarded request goes upstream as HTTP/1.0 with the target
+  and a `Host`, no `Authorization`, no client header; the answer's status, `Content-Type`, digit-only
+  `Retry-After` and body (at most 1 MiB, so no chunking to read) go back. An upstream that is down,
+  silent for 30 s or unreadable is 502. At most 64 connections are served at once, each one request
+  (`Connection: close`).
+- **The server downloads, the client is only sent the file.** `/file/` runs `HifiApi::track` against
+  the upstream (manifest, DASH segments and remux are `resonate-tidal`'s, `providers.md`), then sends
+  the FLAC with `Content-Length` where known, else chunked, 64 KiB at a time over a channel of four
+  so a slow client holds the download back. Two downloads at once (`DOWNLOADS_AT_ONCE`), at most 1 GiB
+  a track, 60 s for any one write. A failure after the head is sent drops the connection, so a short
+  body is never taken for a whole file; a track the hifi-api lacks is 404, an upstream failure 502. The
+  key check comes first: nothing is asked of the hifi-api for a request without a listed key
+  (`a_track_is_never_downloaded_for_a_request_without_a_listed_key`,
+  `a_track_is_downloaded_by_the_server_through_the_hifi_api_and_sent_to_a_listed_key`).
+
 ## Deployment
 
 `packaging/server/resonate-server.service`: `DynamicUser`, `StateDirectory=resonate-server` (the
 store), `CAP_NET_BIND_SERVICE` for UDP 443 and the usual hardening; the certificate chain and key
 are handed in as systemd credentials from `/etc/resonate-server/fullchain.pem` and `privkey.pem`
-(a root-owned Let's Encrypt key a dynamic user could not read); `resonate-server.env` sets `LISTEN`
-and `RUST_LOG`. SIGINT and SIGTERM close the endpoint and wait for it to go idle. The same directory holds the Arch and Fedora recipes that install the binary, the unit and
+(a root-owned Let's Encrypt key a dynamic user could not read); `resonate-server.env` sets `LISTEN`,
+`RUST_LOG` and `SERVER_ARGS` (empty; `--config /etc/resonate-server/config.toml` turns the gateway on). SIGINT and SIGTERM close the endpoint and wait for it to go idle. The same directory holds the Arch and Fedora recipes that install the binary, the unit and
 `resonate-server.env` (`packaging.md`).
