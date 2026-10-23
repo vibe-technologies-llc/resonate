@@ -634,6 +634,23 @@ mod tests {
     }
 
     #[gpui::test]
+    fn the_signal_path_is_as_wide_as_what_it_says_rather_than_the_panel(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let mut driven = Driven::open(cx, catalog());
+        driven.play(&[folder.tone("tone.wav", 2)]);
+
+        let path = driven.bounds_of("signal-path");
+        let room = driven.read(|root, _| root.playing_room.get());
+
+        assert!(path.size.width > px(0.0));
+        assert!(
+            path.size.width < room / 2.0,
+            "the signal path took {:?} of {room:?}",
+            path.size.width
+        );
+    }
+
+    #[gpui::test]
     fn a_press_on_the_scope_segment_turns_the_visualiser_to_the_scope(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let mut driven = Driven::open(cx, catalog());
