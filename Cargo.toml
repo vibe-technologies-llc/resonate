@@ -161,8 +161,8 @@ roxmltree = { version = "0.21.1", default-features = false, features = ["std"] }
 ureq = { version = "3.5.0", default-features = false, features = ["rustls", "gzip"] }
 rustls = { version = "0.23.46", default-features = false, features = ["std"] }
 rustls-native-certs = { version = "0.8.5", default-features = false }
-webpki-root-certs = { version = "1.0.10", default-features = false }
-uuid = { version = "1.28.0", default-features = false, features = ["std", "v4"] }
+webpki-root-certs = { version = "1.0.11", default-features = false }
+uuid = { version = "1.29.0", default-features = false, features = ["std", "v4"] }
 if-addrs = { version = "0.15.0", default-features = false }
 mdns-sd = { version = "0.21.6", default-features = false, features = ["async"] }
 quinn = {
@@ -180,7 +180,7 @@ serde_json = { version = "1.0.154", default-features = false, features = ["std"]
 serde-saphyr = { version = "2.0.0", default-features = false, features = ["deserialize"] }
 
 zbus = {
-    version = "6.0.0",
+    version = "6.1.0",
     default-features = false,
     features = ["default-rt", "proxy", "service"]
 }
