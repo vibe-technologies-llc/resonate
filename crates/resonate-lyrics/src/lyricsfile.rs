@@ -14,7 +14,7 @@ const VERSION: &str = "1.0";
 
 pub const LARGEST_LYRICSFILE: usize = 4 * 1024 * 1024;
 
-const MOST_WORDS: usize = 200_000;
+pub(crate) const MOST_WORDS: usize = 200_000;
 
 const MOST_NODES: usize = 1_000_000;
 
@@ -76,6 +76,12 @@ pub struct Lyricsfile {
     pub lyrics: Option<Lyrics>,
     pub says_more_than_its_lines: bool,
     pub(crate) declared: Declared,
+}
+
+impl Lyricsfile {
+    pub fn declares_another_length_than(&self, wanted: Option<Duration>) -> bool {
+        self.declared.lasts_another_length_than(wanted)
+    }
 }
 
 pub fn read_lyricsfile(source: SourceId, text: &str) -> Result<Lyricsfile, Unread> {

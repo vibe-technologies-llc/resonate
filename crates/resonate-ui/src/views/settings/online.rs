@@ -18,8 +18,8 @@ use crate::{
 };
 
 const LOOKUPS_NOTE: &str = "MusicBrainz for what a release and an artist are, the Cover Art \
-                            Archive for a cover, Wikimedia Commons for a portrait and LRCLIB for \
-                            lyrics. Nothing sent identifies you unless a contact is given below.";
+                            Archive for a cover, Wikimedia Commons for a portrait, LRCLIB and \
+                            Better Lyrics for lyrics. Nothing sent identifies you unless a contact is given below.";
 
 const NEXT_START_NOTE: &str = "Turned on for the next start; nothing is reached until then.";
 

@@ -495,14 +495,17 @@ impl Group {
                 "restart replay beginning start over back previous button spotify apple first \
                  seconds opening"
             }
-            Self::Lookups => "musicbrainz network internet covers lyrics lrclib offline",
+            Self::Lookups => {
+                "musicbrainz network internet covers lyrics lrclib better lyrics betterlyrics offline"
+            }
             Self::AfterScan => "enrich automatic handover",
             Self::Studies => {
                 "analyse analysis decode fake lossless transcode verdict loudness true peak \
                  fingerprint cpu cores shazam sound identify unnamed untagged"
             }
             Self::Lyrics => {
-                "lyrics lrclib lyricsfile synced karaoke words voices cache upgrade language locale"
+                "lyrics lrclib better lyrics betterlyrics ttml lyricsfile synced karaoke words voices \
+                 singers duet cache upgrade language locale"
             }
             Self::Contact => "user-agent email identity request",
             Self::Recognition => {
@@ -1013,7 +1016,7 @@ pub(crate) const RESUMING_HINT: &str = "Whether the queue, the row it is on and 
 pub(crate) const ONLINE_HINT: &str = "Whether Resonate reaches the network at all. On, a scan ends by asking MusicBrainz about \
      every album and artist it has not yet been answered about, takes a cover from the Cover Art \
      Archive and a portrait from Wikimedia Commons where one is offered, and the lyrics pane asks \
-     LRCLIB for a sheet the file does not carry. Off, nothing leaves the machine.";
+     LRCLIB and Better Lyrics for a sheet the file does not carry, keeping the more finely timed. Off, nothing leaves the machine.";
 
 pub(crate) const AFTER_SCAN_HINT: &str = "Whether a scan that finishes hands over to the reference \
                                           on its own. On, every scan ends by asking about what it \
@@ -1028,12 +1031,14 @@ pub(crate) const STUDIES_HINT: &str = "Whether a lookup also decodes every track
                                        is studied only when the Analysis pane plays it or when \
                                        its print is wanted to name it.";
 
-pub(crate) const LYRICS_HINT: &str = "Whether a lookup also asks LRCLIB for the words of every \
-                                      track and keeps what it answers, so the Lyrics pane opens on \
-                                      them without asking and a search reaches them. Plain words \
-                                      and line-synced sets are asked about again after a month in \
-                                      case a better set has been written since, and a set timed \
-                                      word by word is kept for good. Off, words are asked for \
+pub(crate) const LYRICS_HINT: &str = "Whether a lookup also asks LRCLIB and Better Lyrics for \
+                                      the words of every track and keeps the more finely timed \
+                                      answer, two singers word by word scoring highest, so the \
+                                      Lyrics pane opens on them without asking and a search \
+                                      reaches them. Plain words and line-synced sets are asked \
+                                      about again after a month in case a better set has been \
+                                      written since, and a set timed word by word is kept for \
+                                      good. Off, words are asked for \
                                       only when a track is played. Choosing by the system's \
                                       language hands a track whose sheets beside it are named for \
                                       several languages the one LANGUAGE or LANG names; off, as \

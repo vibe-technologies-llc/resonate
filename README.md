@@ -15,9 +15,9 @@ playback as the guiding constraint.
   player controls reach the transport — the player itself reads no key. A second `resonate`
   reaches a running one over the same interface.
 - **A catalog that knows what it holds.** A scan reads tags, cue sheets and embedded pictures into
-  SQLite; an optional lookup against MusicBrainz, the Cover Art Archive and LRCLIB fills in
-  releases, covers, artist portraits and lyrics, lists the tracks of a release you are missing, and
-  writes only what matched strictly.
+  SQLite; an optional lookup against MusicBrainz, the Cover Art Archive, LRCLIB and Better Lyrics
+  fills in releases, covers, artist portraits and lyrics (two singers word by word where a service
+  has them), lists the tracks of a release you are missing, and writes only what matched strictly.
 - **Every track studied once.** A whole decode yields a waveform, a spectrum, BS.1770 loudness, a
   DR reading and a Chromaprint, and a verdict on whether a "lossless" file is really an upsampled
   or transcoded lossy one.
@@ -251,7 +251,7 @@ where `contact` holds one.
 
 `online` is on by default, and so is looking the library up after a scan. While online is on,
 that lookup can reach MusicBrainz, the Cover Art Archive, Wikimedia Commons, Wikidata, LRCLIB,
-AutoEq, Deezer, Apple Music, Spotify and SoundCloud. `online = false` stops every one of those.
+Better Lyrics, AutoEq, Deezer, Apple Music, Spotify and SoundCloud. `online = false` stops every one of those.
 
 Listen, while online is on, sends Shazam a signature of what was heard and asks for no key of
 yours. AudD is sent the clip only where `audd-token` is set.

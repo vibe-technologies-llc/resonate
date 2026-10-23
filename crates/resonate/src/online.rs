@@ -18,7 +18,7 @@ use resonate_listen::Recognisers;
 #[cfg(feature = "ui")]
 use resonate_lyrics::Lyricists;
 #[cfg(all(feature = "online", feature = "ui"))]
-use resonate_online::Lrclib;
+use resonate_online::OnlineLyrics;
 #[cfg(feature = "online")]
 use resonate_online::{
     AcoustId, Application, Audd, AutoEq, ByEar, Client, Identity, Introduction, LastFm,
@@ -305,7 +305,7 @@ pub fn lyricists(
     if !config.online_enabled() {
         return local;
     }
-    local.and(Arc::new(Lrclib::new(client(config), library)))
+    local.and(Arc::new(OnlineLyrics::new(client(config), library)))
 }
 
 #[cfg(not(feature = "online"))]

@@ -3,9 +3,12 @@ use std::{sync::Arc, time::Duration};
 use parking_lot::Mutex;
 use resonate_core::SourceId;
 use resonate_library::{LookupOp, LyricsAsked, Reference};
-use resonate_lyrics::{Detail, LyricLine, Lyrics, Timing, Voice, read_lyrics, read_lyricsfile};
+use resonate_lyrics::{Detail, LyricLine, Lyrics, Timing, Voice, read_document, read_lyrics};
 
-use crate::{Error, MobilePlayer, Result, documents::location, features::milliseconds};
+use crate::{
+    Error, MobilePlayer, Result, documents::location, enrichment::FETCHED_LYRICS,
+    features::milliseconds,
+};
 
 const SHEETS_KEPT: usize = 16;
 const LYRICS_AT_MOST: usize = 1024 * 1024;
@@ -184,7 +187,7 @@ impl MobilePlayer {
             match answer {
                 Ok(Some(answer)) => {
                     let parsed =
-                        parse_lyrics(&answer.text, answer.lyricsfile.as_deref(), "lrclib")?;
+                        parse_lyrics(&answer.text, answer.lyricsfile.as_deref(), FETCHED_LYRICS)?;
                     if let Some(parsed) = parsed
                         && cached
                             .as_ref()
@@ -194,13 +197,13 @@ impl MobilePlayer {
                             id,
                             Some(&answer.text),
                             answer.lyricsfile.as_deref(),
-                            "lrclib",
+                            FETCHED_LYRICS,
                         )?;
                         self.remember_lyrics(id, Some(parsed));
                     }
                 }
                 Ok(None) if cached.is_none() => {
-                    self.catalog.keep_lyrics(id, None, None, "lrclib")?
+                    self.catalog.keep_lyrics(id, None, None, FETCHED_LYRICS)?
                 }
                 Ok(None) => {}
                 Err(error) if cached.is_none() => return Err(error),
@@ -278,9 +281,13 @@ fn refuse_oversized_lyrics(bytes: usize) -> Result<()> {
 }
 
 fn parse_lyrics(text: &str, document: Option<&str>, origin: &str) -> Result<Option<Lyrics>> {
-    let source = SourceId::new(origin)?;
+    let source = if origin == FETCHED_LYRICS {
+        resonate_online::lyric_source_of(document)
+    } else {
+        SourceId::new(origin)?
+    };
     if let Some(document) = document
-        && let Ok(read) = read_lyricsfile(source.clone(), document)
+        && let Ok(read) = read_document(source.clone(), document)
         && read.lyrics.is_some()
     {
         return Ok(read.lyrics);

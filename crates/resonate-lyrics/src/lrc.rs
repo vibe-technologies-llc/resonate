@@ -80,6 +80,10 @@ impl Declared {
             || disagree(self.artist.as_deref(), wanted.artist.as_deref())
             || runs_for_another_length(self.length, wanted.duration)
     }
+
+    pub(crate) fn lasts_another_length_than(&self, wanted: Option<Duration>) -> bool {
+        runs_for_another_length(self.length, wanted)
+    }
 }
 
 fn disagree(declared: Option<&str>, wanted: Option<&str>) -> bool {

@@ -108,6 +108,7 @@ const ACOUSTID_INTERVAL: Duration = Duration::from_millis(334);
 const SHAZAM_INTERVAL: Duration = Duration::from_secs(3);
 const AUDD_INTERVAL: Duration = Duration::from_secs(1);
 const LISTENBRAINZ_INTERVAL: Duration = Duration::from_secs(1);
+const BETTER_LYRICS_INTERVAL: Duration = Duration::from_secs(4);
 const RETRY_AFTER_AT_MOST: Duration = Duration::from_secs(10);
 const RETRY_AFTER_BY_DEFAULT: Duration = Duration::from_secs(2);
 const BUSY_RETRIES: u32 = 3;
@@ -162,6 +163,7 @@ impl Host {
             | Self::Commons
             | Self::Wikidata => true,
             Self::Lrclib
+            | Self::BetterLyrics
             | Self::AutoEq
             | Self::AcoustId
             | Self::Shazam
@@ -271,6 +273,7 @@ impl Host {
             Self::Shazam => SHAZAM_INTERVAL,
             Self::ListenBrainz | Self::LastFm => LISTENBRAINZ_INTERVAL,
             Self::Audd => AUDD_INTERVAL,
+            Self::BetterLyrics => BETTER_LYRICS_INTERVAL,
             Self::CoverArtArchive => COVER_ARCHIVE_INTERVAL,
             Self::AppleArtwork
             | Self::AppleMusic

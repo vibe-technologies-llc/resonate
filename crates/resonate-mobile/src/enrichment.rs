@@ -39,7 +39,7 @@ const PERFORMERS_WEIGHED_AT_MOST: usize = 32;
 
 const LISTED_APART: char = '\n';
 
-const FETCHED_LYRICS: &str = "lrclib";
+pub(crate) const FETCHED_LYRICS: &str = "lrclib";
 
 const ARCHIVED_COVER: &str = "coverartarchive";
 

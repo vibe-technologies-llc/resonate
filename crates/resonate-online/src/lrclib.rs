@@ -1,11 +1,11 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use resonate_core::SourceId;
-use resonate_library::{KeptLyrics, Library, LookupOp, LyricText, LyricsAsked};
-use resonate_lyrics::{LyricOp, LyricProvider, Lyrics, Wanted, read_lyrics, read_lyricsfile};
+use resonate_library::{LookupOp, LyricText, LyricsAsked};
+use resonate_lyrics::{LyricOp, read_lyricsfile};
 use serde::Deserialize;
 
-use crate::{Client, Error, Host, query::Params};
+use crate::{Client, Host, lyrics::Failed, query::Params};
 
 const LENGTH_MAY_DIFFER_BY: Duration = Duration::from_secs(30);
 const LRCLIB: &str = "lrclib";
@@ -118,7 +118,7 @@ impl Answer {
     }
 }
 
-fn source() -> SourceId {
+pub(crate) fn source() -> SourceId {
     SourceId::new(LRCLIB).unwrap_or_else(|_| SourceId::local())
 }
 
@@ -154,23 +154,6 @@ fn pick(found: Vec<Answer>, asked: &LyricsAsked) -> Option<Answer> {
         .min_by_key(|answer| (answer.worded(), answer.misses_by(asked.length)))
 }
 
-pub(crate) struct Failed {
-    op: LyricOp,
-    error: Error,
-}
-
-impl Failed {
-    fn into_lyric_error(self) -> resonate_lyrics::Error {
-        self.error.into_lyric_error(source(), self.op)
-    }
-}
-
-impl From<Failed> for resonate_library::Error {
-    fn from(failed: Failed) -> Self {
-        failed.error.into()
-    }
-}
-
 fn ask(client: &Client, asked: &LyricsAsked) -> Result<Option<Answer>, Failed> {
     let seconds = asked.length.map(|length| length.as_secs().to_string());
     let get = Params::new()
@@ -181,10 +164,7 @@ fn ask(client: &Client, asked: &LyricsAsked) -> Result<Option<Answer>, Failed> {
         .finish();
     let got: Option<Answer> = client
         .json(Host::Lrclib, LookupOp::Lyrics, &format!("/get{get}"))
-        .map_err(|error| Failed {
-            op: LyricOp::Fetch,
-            error,
-        })?;
+        .map_err(|error| Failed::new(source(), LyricOp::Fetch, error))?;
     if let Some(answer) = got {
         return Ok(Some(answer));
     }
@@ -195,10 +175,7 @@ fn ask(client: &Client, asked: &LyricsAsked) -> Result<Option<Answer>, Failed> {
         .finish();
     let found: Vec<Answer> = client
         .json(Host::Lrclib, LookupOp::Lyrics, &format!("/search{search}"))
-        .map_err(|error| Failed {
-            op: LyricOp::Search,
-            error,
-        })?
+        .map_err(|error| Failed::new(source(), LyricOp::Search, error))?
         .unwrap_or_default();
 
     Ok(pick(found, asked))
@@ -220,116 +197,12 @@ pub(crate) fn told(client: &Client, asked: &LyricsAsked) -> Result<Option<LyricT
     Ok(told)
 }
 
-fn set_of(told: &LyricText) -> resonate_lyrics::Result<Option<Lyrics>> {
-    if let Some(document) = &told.lyricsfile {
-        match read_lyricsfile(source(), document) {
-            Ok(read) if read.lyrics.is_some() => return Ok(read.lyrics),
-            Ok(_) => {}
-            Err(unread) => {
-                tracing::debug!(
-                    ?unread,
-                    "a kept lyricsfile could not be read, and its lines are read instead"
-                );
-            }
-        }
-    }
-    if told.synced {
-        return read_lyrics(source(), &told.text);
-    }
-
-    Ok(Some(Lyrics::plain(
-        source(),
-        told.text.lines().map(str::to_owned),
-    )))
-}
-
-fn asked_of(wanted: &Wanted) -> Option<LyricsAsked> {
-    Some(LyricsAsked {
-        title: wanted.title.clone()?,
-        artist: wanted.artist.clone()?,
-        album: wanted.album.clone(),
-        length: wanted.duration,
-    })
-}
-
-pub struct Lrclib {
-    client: Arc<Client>,
-    library: Option<Arc<Library>>,
-    source: SourceId,
-}
-
-impl Lrclib {
-    pub fn new(client: Arc<Client>, library: Option<Arc<Library>>) -> Self {
-        Self {
-            client,
-            library,
-            source: source(),
-        }
-    }
-
-    fn remembered(&self, wanted: &Wanted) -> Option<KeptLyrics> {
-        let library = self.library.as_ref()?;
-        match library.kept_lyrics(&wanted.location, wanted.span) {
-            Ok(kept) => kept,
-            Err(error) => {
-                tracing::debug!(%error, location = %wanted.location, "the catalog could not say what it kept");
-                None
-            }
-        }
-    }
-
-    fn keep(&self, wanted: &Wanted, told: Option<&LyricText>) {
-        let Some(library) = self.library.as_ref() else {
-            return;
-        };
-        if let Err(error) = library.keep_lyrics(&wanted.location, wanted.span, told) {
-            tracing::debug!(%error, location = %wanted.location, "the catalog could not keep what was told");
-        }
-    }
-}
-
-impl LyricProvider for Lrclib {
-    fn source(&self) -> &SourceId {
-        &self.source
-    }
-
-    fn lyrics(&self, wanted: &Wanted) -> resonate_lyrics::Result<Option<Lyrics>> {
-        let Some(asked) = asked_of(wanted) else {
-            return Ok(None);
-        };
-
-        let kept = self.remembered(wanted);
-        if let Some(kept) = &kept
-            && (!kept.is_due(std::time::SystemTime::now()) || !self.client.is_reaching())
-        {
-            return kept.sung.as_ref().map_or(Ok(None), set_of);
-        }
-
-        if !self.client.is_reaching() {
-            return Ok(None);
-        }
-        match told(&self.client, &asked) {
-            Ok(told) => {
-                self.keep(wanted, told.as_ref());
-                let best = match kept {
-                    Some(kept) => kept.richer_of(told),
-                    None => told,
-                };
-                best.as_ref().map_or(Ok(None), set_of)
-            }
-            Err(failed) => match kept.and_then(|kept| kept.sung) {
-                Some(held) => set_of(&held),
-                None => Err(failed.into_lyric_error()),
-            },
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use resonate_lyrics::{Detail, Timing};
 
     use super::*;
+    use crate::lyrics::set_of;
 
     const GET: &str = include_str!("../tests/fixtures/lrclib_get.json");
     const SEARCH: &str = include_str!("../tests/fixtures/lrclib_search.json");
@@ -531,17 +404,5 @@ mod tests {
         )
         .expect("both are acceptable");
         assert_eq!(taken.id, Some(1));
-    }
-
-    #[test]
-    fn the_provider_is_named_lrclib_and_refuses_a_track_nothing_has_named() {
-        let provider = Lrclib::new(
-            Arc::new(Client::new(crate::Identity::of_this_build())),
-            None,
-        );
-        assert_eq!(provider.source().as_str(), LRCLIB);
-
-        let bare = Wanted::for_media(resonate_core::MediaLocation::local("/music/Echoes.flac"));
-        assert!(provider.lyrics(&bare).expect("nothing was asked").is_none());
     }
 }

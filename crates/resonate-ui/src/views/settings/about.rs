@@ -49,7 +49,7 @@ impl RootView {
             .child(reading(
                 "Reference",
                 if reference {
-                    "MusicBrainz, the Cover Art Archive, Commons, Apple Music, Deezer and LRCLIB"
+                    "MusicBrainz, the Cover Art Archive, Commons, Apple Music, Deezer, LRCLIB and Better Lyrics"
                 } else {
                     "none this run — the feature is out of this build, or it started offline"
                 },

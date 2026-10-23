@@ -2,6 +2,7 @@ mod acoustid;
 mod apple;
 mod audd;
 mod autoeq;
+mod betterlyrics;
 mod by_ear;
 mod client;
 mod commons;
@@ -12,6 +13,7 @@ mod lastfm;
 mod linked;
 mod listenbrainz;
 mod lrclib;
+mod lyrics;
 mod musicbrainz;
 mod query;
 mod reference;
@@ -41,7 +43,7 @@ pub use crate::{
     error::{Error, Host, Result},
     lastfm::{Application, LastFm, Session, signed_in},
     listenbrainz::ListenBrainz,
-    lrclib::Lrclib,
+    lyrics::{OnlineLyrics, source_of as lyric_source_of},
     reference::Online,
     shazam::Shazam,
 };

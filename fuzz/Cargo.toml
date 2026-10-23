@@ -70,6 +70,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "ttml"
+path = "fuzz_targets/ttml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "search"
 path = "fuzz_targets/search.rs"
 test = false

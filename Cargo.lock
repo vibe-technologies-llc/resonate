@@ -5815,6 +5815,7 @@ version = "0.1.0"
 dependencies = [
  "parking_lot 0.13.0",
  "resonate-core",
+ "roxmltree 0.21.1",
  "serde",
  "serde-saphyr",
  "thiserror 2.0.21",

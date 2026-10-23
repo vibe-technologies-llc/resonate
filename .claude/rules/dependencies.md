@@ -102,7 +102,8 @@ here, add it there.
   there via `zbus`.
 - **`serde-saphyr`**: `resonate-lyrics`' (`deserialize` only), reads a Lyricsfile, so a build
   without `online` still reads a sidecar `.lyricsfile.yaml`. Its node, depth and document budgets
-  make a network document parseable at all.
+  make a network document parseable at all. **`roxmltree`** (`std`) is `resonate-lyrics`' for TTML
+  (`read_ttml`), with no DTD and a node limit, for the same reason.
 - **`rusqlite`**: `bundled`, `cache`, `hooks`, `functions`. `hooks` feeds `db::watch_the_names`
   (derived from SQLite's `update_hook`, so no later write path leaves a stale spelling suggestion);
   `functions` lets `schema::configure` register the `words_of` fold.

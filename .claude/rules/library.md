@@ -938,8 +938,8 @@ rows read via `Player::media` like any unscanned row.
   `lyrics_forget_a_changed_file` trigger when `file_size`, `modified` or `span_frames` moves). A tag
   run touches no audio, so `files_retagged` holds a written file's kept words across the trigger
   (`KeptAcross`); a remembered miss and a refusal are held only where it wrote no title or artist. A
-  kept row is a `KeptLyrics` holding `Option<LyricText>`: text, `synced`, `lyricsfile` (kept only
-  where it says more than its lines). `LyricDetail`: `Plain` < `Lines` < `Lyricsfile`; `sung::keep`
+  kept row is a `KeptLyrics` holding `Option<LyricText>`: text, `synced`, `lyricsfile` (a
+  Lyricsfile or Better Lyrics' TTML, kept only where it says more than its lines). `LyricDetail`: `Plain` < `Lines` < `Lyricsfile`; `sung::keep`
   never trades a richer set for a plainer one or a miss, stamps `taken` either way, answers whether
   it improved. `KeptLyrics::is_due`: a miss after `MISSED_AGAIN_AFTER` (a week), a set short of a
   Lyricsfile after `BETTERED_AFTER` (a month), a Lyricsfile never.
@@ -949,8 +949,8 @@ rows read via `Player::media` like any unscanned row.
 - **The lookup asks for every track's words beside the pass.** `Reference::lyrics` takes
   `LyricsAsked` (read off the row when asked) and answers `Option<LyricText>`.
   `Library::lyrics_to_ask`: every row with no kept row or a due one (all under `refresh`), cut to
-  `at_most`; `EnrichOptions::lyrics` (`fetch-lyrics`) turns it off. `Verses` is one thread (LRCLIB
-  is paced apart from MusicBrainz). A refusal is counted and the row left unkept, not asked on the
+  `at_most`; `EnrichOptions::lyrics` (`fetch-lyrics`) turns it off. `Verses` is one thread (the lyric
+  services are paced apart from MusicBrainz). A refusal is counted and the row left unkept, not asked on the
   next pass: `lyrics_refused` holds last-refused time and count (`sung::note_refused`, removed by
   `sung::keep`); `lyrics_to_ask` skips a row refused within `REFUSED_AGAIN_AFTER` doubled per
   refusal; its own table because a `lyrics_kept` row's `NULL` text already means a miss the window

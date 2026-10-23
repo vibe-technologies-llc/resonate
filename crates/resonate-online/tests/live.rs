@@ -12,8 +12,8 @@ use resonate_library::{
     TokenHeld, Wording, songs_asked, weighed_for,
 };
 use resonate_listen::{Clip, Recogniser};
-use resonate_lyrics::{LyricProvider, Timing, Wanted};
-use resonate_online::{AutoEq, Client, Identity, ListenBrainz, Lrclib, Online, Shazam};
+use resonate_lyrics::{Detail, LyricProvider, Timing, Voice, Wanted};
+use resonate_online::{AutoEq, Client, Identity, ListenBrainz, Online, OnlineLyrics, Shazam};
 
 const GATE: &str = "RESONATE_ONLINE_TESTS";
 const MEDDLE: &str = "aadf62d6-d475-42e0-b622-e6da7a59fdf7";
@@ -514,7 +514,7 @@ fn lrclib_answers_echoes_with_a_synced_set() {
     let Some(client) = reached() else {
         return;
     };
-    let provider = Lrclib::new(client, None);
+    let provider = OnlineLyrics::new(client, None);
 
     let wanted = Wanted {
         title: Some("Echoes".to_owned()),
@@ -655,4 +655,27 @@ fn listenbrainz_says_a_token_it_never_issued_is_held_by_nobody() {
         listenbrainz.token_held().expect("the service answered"),
         TokenHeld::Unknown
     );
+}
+
+#[test]
+fn better_lyrics_answers_a_duet_word_by_word_with_both_singers() {
+    let Some(client) = reached() else {
+        return;
+    };
+    let provider = OnlineLyrics::new(client, None);
+
+    let wanted = Wanted {
+        title: Some("Die With A Smile".to_owned()),
+        artist: Some("Lady Gaga, Bruno Mars".to_owned()),
+        duration: Some(Duration::from_secs(252)),
+        ..Wanted::for_media(MediaLocation::local("/music/Die With A Smile.flac"))
+    };
+    let lyrics = provider
+        .lyrics(&wanted)
+        .expect("the services answered")
+        .expect("a service holds the duet");
+
+    assert_eq!(lyrics.detail(), Detail::Words);
+    assert!(lyrics.lines().iter().any(|line| line.voice == Voice::Two));
+    assert_eq!(lyrics.source().as_str(), "betterlyrics");
 }

@@ -8,6 +8,7 @@ license.workspace = true
 resonate-core.workspace = true
 parking_lot.workspace = true
 serde.workspace = true
+roxmltree.workspace = true
 serde-saphyr.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

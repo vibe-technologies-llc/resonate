@@ -5,6 +5,8 @@ paths:
   - "crates/resonate-ui/src/views/lyrics.rs"
   - "crates/resonate-codec/src/sylt.rs"
   - "crates/resonate-online/src/lrclib.rs"
+  - "crates/resonate-online/src/betterlyrics.rs"
+  - "crates/resonate-online/src/lyrics.rs"
   - "crates/resonate-library/src/sung.rs"
   - "crates/resonate-mobile/src/lyrics.rs"
 ---
@@ -71,12 +73,15 @@ dependency (tested without a window).
   `MOST_SYLLABLES` bounds the read;
   of several language frames the first stands. The sidecar wins ties over the file's own (the
   deliberate one). `read_lyrics(source, text)` is the reader's one public door (`Embedded`,
-  `Lrclib`), so tag and service text share the bounds.
-- **Network providers live in `resonate-online`, keeping results in the library.** `Lrclib` is a
-  `LyricProvider` the binary appends via `Lyricists::and` where `online` is on (`online.md`). A cue
+  `OnlineLyrics`), so tag and service text share the bounds.
+- **Network providers live in `resonate-online`, keeping results in the library.** `OnlineLyrics`
+  (LRCLIB and Better Lyrics, scored per song) is a `LyricProvider` the binary appends via
+  `Lyricists::and` where `online` is on (`online.md`). A cue
   row is a span: `Wanted::span` keys the catalog's `lyrics_kept` by `(path, span_start)`, as `tracks`
   is. A kept row is read before any request; a miss is remembered (`MISSED_AGAIN_AFTER`, `sung.rs`).
   `read_lyricsfile` is this crate's, so a build without `online` still reads the sidecar.
+  **A kept document is a Lyricsfile or a TTML**: `read_document` reads one starting with `<` as
+  TTML, else as a Lyricsfile, so the catalog's one document column holds either.
 - **`Lyricists` walks the providers; a refusal is not an answer.** `Lyricists::local` registers the
   two behind `Unsourced`, the one source `has_a_source` discounts (neither: "no source configured",
   not "track has no words"). A refusing provider is logged and the walk goes on; a refusal is
@@ -167,3 +172,22 @@ dependency (tested without a window).
   one.
 - **Voices: `[v1: words]` / `[v2: words]` after a timed line's timestamp.** The marker is removed
   from the text; none = voice one; an unrecognised bracket stays text.
+
+## The TTML reader
+
+- **Apple's lyric TTML, as Better Lyrics serves it** (`read_ttml`): each `<p>` is a line timed by
+  `begin`/`end`, each `<span>` with a `begin` a word (its `end` the word's), text between spans
+  joined to the word before; a word sung in syllables (`good`, `bye`) is two timed parts with no
+  space between. Whitespace runs
+  read as one space. Clock values: seconds, `m:ss.fff`, `h:mm:ss.fff`, an `s` suffix
+  (`a_ttml_clock_is_read_in_seconds_minutes_or_hours`). A `<body dur>` is the declared length,
+  weighed by `Lyricsfile::declares_another_length_than`.
+- **Singers are the declared agents, in declaration order**: the first `ttm:agent type="person"`
+  in the head is voice one, any other person voice two; a group (`v1000`, all together) is voice
+  one. A line names its agent on itself or an ancestor. Order of declaration, not of singing: a
+  duet whose second-billed singer opens still reads them right
+  (`the_second_singer_declared_is_the_second_voice_whoever_sings_first`).
+- **What is beside the words is left out**: a span with any `ttm:role` (`x-bg` backing vocals,
+  `x-translation`, `x-roman`) is not read (`background_and_translated_words_are_left_beside_the_line`).
+- **A line with no `begin` makes the whole set unsynced**; one with no word spans is line-timed.
+  Bounded as the Lyricsfile: `LARGEST_LYRICSFILE`, `MOST_LINES`, `MOST_WORDS`, a node limit, no DTD.

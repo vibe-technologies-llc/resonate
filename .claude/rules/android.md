@@ -458,7 +458,8 @@ library's `written_sheet`, each path relative to its folder (the root's id left 
 a bookmark, not a place). `playlist_file_extensions()` is what `ios/Resonate/Info.plist` declares
 as `org.resonate.playlist` (held by a test).
 
-Lyrics prefer saved embedded/sidecar text, fetch LRCLIB only when online, and retain a richer saved
+Lyrics prefer saved embedded/sidecar text, fetch from LRCLIB and Better Lyrics (scored per song,
+`online.md`) only when online, and retain a richer saved
 sheet over a poorer answer or failed refresh. The native `LyricFrame` (`mobile.md`'s *Lyrics*;
 the lyric pane reads its `read_at`, `active` and `wipes`) drives line/word highlights, scrolling, scale, opacity
 and blur; tapping a timed line seeks the player.
@@ -593,9 +594,10 @@ per album key, the group's cover where the release has none, asked only where th
 picture or one under `A_THUMBNAIL_BELOW`), then songs (ISRC, recording id, then a strict search;
 `learned` fills only empty identities and never moves the album key), then artists (profile and
 portrait into `artists`); `resonate-enrich-pictures` fetches pictures beside the pass and
-`resonate-enrich-lyrics` asks LRCLIB for songs with no sheet, a miss older than
+`resonate-enrich-lyrics` asks LRCLIB and Better Lyrics for songs with no sheet, a miss older than
 `MISSED_AGAIN_AFTER` or a fetched sheet without a Lyricsfile older than `BETTERED_AFTER`, keeping
-the richer through `KeptLyrics::richer_of`. Every row backs off by the library's own `due_again`
+the richer through `KeptLyrics::richer_of`. A fetched row's origin stays `FETCHED_LYRICS`; the
+sheet's shown origin is `resonate_online::lyric_source_of` its document. Every row backs off by the library's own `due_again`
 clause and `WAITS`; refusals end the pass at `REFUSALS_THAT_END_A_PASS` in a row; it checks between
 requests for `stop_enrichment`, offline and the network. `enrichment_status` counts what was due,
 asked, matched, covers, portraits, lyrics and refusals and names how it stopped (`EnrichmentStop`).

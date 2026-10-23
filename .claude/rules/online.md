@@ -327,15 +327,24 @@ before a source joined is asked again by `look_again_for_portraits`.
   `an_application_and_a_session_print_neither_secret_nor_session_key`,
   `the_online_settings_print_no_secret_and_no_contact`).
 
-## LRCLIB
+## Lyrics: LRCLIB and Better Lyrics, scored per song
 
-- **`Lrclib` reads what the catalog kept before asking, and keeps what it is told.** It refuses a
+- **Each song is asked of both services and the best answer kept** (`lyrics::told`). LRCLIB is
+  asked first (`Service::ASKED_IN_TURN`), Better Lyrics after unless the first already scores
+  `Score::BEST`. `Score` orders what a set gives, read off the set itself: `Detail` (unsynced,
+  lines, words), then two singers over one, then sheet-given ends; a tie keeps the earlier service
+  (`two_singers_word_by_word_outscore_one_and_words_outscore_lines`). A service that fails is
+  logged and the next asked; the failure is returned only where nobody answered.
+- **`OnlineLyrics` reads what the catalog kept before asking, and keeps what it is told.** It refuses a
   `Wanted` with no title or artist. `Library::kept_lyrics` is read first, keyed by the `Wanted`'s
   location and `Wanted::span`: a kept row not `KeptLyrics::is_due` answers without a request (its
-  words, or nothing for a kept miss); a due one is asked again, the richer of kept and answer going
-  to the pane, a failed request falling back to the kept. No library: keeps nothing.
-- **Window and lookup ask one way**: `lrclib::told` is the whole question, mapped by `Lrclib` into a
-  lyric error and by `Reference::lyrics` into the library's.
+  words, or nothing for a kept miss); a due one is asked again, the higher `Score` of kept and
+  answer going to the pane (`richer`), a failed request falling back to the kept. No library: keeps
+  nothing.
+- **Window and lookup ask one way**: `lyrics::told` is the whole question, mapped by `OnlineLyrics`
+  into a lyric error and by `Reference::lyrics` into the library's. **The kept document names its
+  service** (`lyrics::source_of`, `resonate_online::lyric_source_of`): one starting with `<` is
+  Better Lyrics' TTML, anything else LRCLIB's.
 - **`/get` is exact, `/search` weighed.** 404 on `/get` falls through to `/search`; `pick` takes
   answers that `names` the track and `lasts_about` as long within `LENGTH_MAY_DIFFER_BY`, best by
   `Worded` (synced, plain, wordless, instrumental), then nearest length. An `instrumental` or
@@ -344,8 +353,18 @@ before a source joined is asked again by `look_again_for_portraits`.
   more than its lines** (one written from an LRC times no word and is the LRC again at four times
   the size).
 - **A Lyricsfile is read by `resonate-lyrics`** (`lyrics.md`); LRCLIB's answer goes through the same
-  `read_lyricsfile`, a kept document is read back through it, one no longer reading falls back to
-  the kept LRC text.
+  `read_lyricsfile`, a kept document is read back through `read_document`, one no longer reading
+  falls back to the kept LRC text.
+- **Better Lyrics is asked `/getLyrics` by song, artist, album and whole seconds**
+  (`betterlyrics::told`); it answers Apple's TTML, word-timed with singers more often than LRCLIB.
+  Keyless, it answers only what it has cached: a `401` (uncached, a key wanted) reads as nothing
+  known, like a 404, and is kept as a miss. No key is sent or offered. Paced at
+  `BETTER_LYRICS_INTERVAL` (4 s; the service allows 15 a window per address, then `429` with
+  `Retry-After`). An answer is passed over where its `score` (present on a fresh match only) is
+  under `MATCHED_AT_LEAST`, or its `<body dur>` is another length than the track's
+  (`LENGTH_MAY_DIFFER_BY`, the reader's). Kept as `LyricText`: the lines as LRC (`lrc_of`, a second
+  singer's lines under `[v2: …]`) for search and fallback, and the TTML beside them where it says
+  more than its lines.
 
 ## Recognising a clip
 
@@ -386,7 +405,7 @@ cut down; the AudD ones were written from the service's documentation. `tests/li
 
 ## Mobile composition
 
-Android and iOS compose the same `Online`, LRCLIB, AutoEq, ListenBrainz, Last.fm, Shazam, AudD and
+Android and iOS compose the same `Online`, LRCLIB and Better Lyrics, AutoEq, ListenBrainz, Last.fm, Shazam, AudD and
 network-provider implementations through `resonate-mobile`, over its document catalog. It shares one paced client
 for metadata services and follows that client's online gate. It never invents local paths for granted
 document URIs or imports the PipeWire capture implementation. Android orchestration, account storage and
@@ -397,7 +416,7 @@ cache rules are in `android.md`.
 **`crates/resonate/src/online.rs` is the only file naming `resonate_online`'s types, and has a twin
 for the build without it.** Under the feature: `reference` answers an `Online` only where
 `Config::online_enabled`; `corrections` = `Corrected::uncorrected()` + an `AutoEq` under the same
-condition; `lyricists` = `Lyricists::local_choosing_by_the_locale` + an `Lrclib` (the last two get
+condition; `lyricists` = `Lyricists::local_choosing_by_the_locale` + an `OnlineLyrics` (the last two get
 the library where there is one); `fingerprinters` and `recognisers` register the printers and
 recognisers above. `reference_asked_for` and `corrections_asked_for` = the same two or
 `Error::OnlineOff` (the second asks `Corrected::has_a_source`). **An AutoEq answer is kept only once

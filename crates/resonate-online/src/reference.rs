@@ -12,7 +12,7 @@ use resonate_library::{
 
 use crate::{
     Client, Error, Identity, Result, apple, client::passed_over_when_refused, commons, coverart,
-    deezer, linked, listenbrainz, lrclib, musicbrainz, soundcloud, spotify, wikidata, wikipedia,
+    deezer, linked, listenbrainz, lyrics, musicbrainz, soundcloud, spotify, wikidata, wikipedia,
     youtube,
 };
 
@@ -132,7 +132,7 @@ impl Reference for Online {
     }
 
     fn lyrics(&self, asked: &LyricsAsked) -> resonate_library::Result<Option<LyricText>> {
-        Ok(lrclib::told(&self.client, asked)?)
+        Ok(lyrics::told(&self.client, asked)?)
     }
 
     fn song_linked(&self, link: &SongLink) -> resonate_library::Result<Option<LinkNames>> {
