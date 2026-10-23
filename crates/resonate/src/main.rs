@@ -3238,7 +3238,7 @@ mod tests {
         assert_eq!(standing_of(&wanted_at(None, 0), now), "due");
         assert_eq!(
             standing_of(&wanted_at(tried, 2), now),
-            "no match 2 of 6, again in 4m"
+            "no match 2 of 6, again in 1m"
         );
         assert_eq!(
             standing_of(&wanted_at(tried, 1), now),
