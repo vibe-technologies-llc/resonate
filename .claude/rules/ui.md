@@ -43,11 +43,11 @@ is never named.
     `icons::lit_on_hover`, all `theme::WINDOW_MARK` less overlap across.
 - **Closing removes the window; quitting follows, never the reverse.** Close control, `ctrl-q` and
   the bus's `Quit` call `Window::remove_window`; `app.rs` quits once the last window closed
-  (`App::quit` under a live window logged *window not found* twice every exit).
+  (`App::quit` under a live window logs *window not found*).
 - **The sidebar scrolls its middle and keeps its foot.** `RootView::sidebar` holds the tabs in an
   `overflow_y_scroll` region tracked by `sidebar_scroll`, with a `Scrollbars` bar over its edge; the
   download and enrichment status and *Settings* stand below it, never scrolled, so a window squeezed
-  vertically (or pinned playlists piling up) scrolls the tabs and leaves the foot above the playback bar.
+  vertically scrolls the tabs and leaves the foot above the playback bar.
 - **A menu's *Play* does what a click or `enter` on its cell does.** A track row's menu plays the
   listing from it (`RootView::play_the_row`, shared with the click); an album or artist cell's
   menu queues the album or artist whole (`whole_of`: album then track order, no search text, as a drag
@@ -254,9 +254,8 @@ is never named.
   - Release is taken from three places (inside the window, `on_mouse_up_out`, a move reporting no
     button held). The equaliser's handles ride the same surface: a `HeldBand` beside the `Grab`
     (`eq.md`).
-- **`PlayerModel::state` returns a borrow of the model, not a copy.** Read the model once and clone
-  before anything taking `&mut Context`: `let model = self.player.read(cx); let state =
-  model.state().clone();`.
+- **`PlayerModel::state` returns a borrow of the model, not a copy.** Clone it before anything taking
+  `&mut Context`: `let model = self.player.read(cx); let state = model.state().clone();`.
 
 ## The design system
 
@@ -656,7 +655,7 @@ is never named.
   - `PlayerModel::refresh` reports a poll as `Moved`: `Clock` if only position and sink latency changed
     (`held_still`, `Grain::shows`), else `More`. `More` notifies the root; `Clock` →
     `Parts::the_clock_moved` (bar, plus pane where `Pane::follows_the_clock`: inspector latency,
-    analysis playhead). A playing tracks pane went 4.2 % → 2.4 % of a core.
+    analysis playhead).
   - **`Grain`** (`EveryPoll`|`Stepped`) = how often the clock moves, told by the render to the model.
     Every poll: visualiser, held seek thumb. Else a quarter device pixel of the seek rail
     (`STEPS_PER_PIXEL`), never coarser than `CLOCK_STEP` (1 s), so `Listening`/`Keeping` never see a
@@ -849,9 +848,8 @@ is never named.
   `Unplugged` backend sinks to list, so a device row is pressed too. gpui can't build an
   `ExternalPaths` in a test: `dragged_over` and `dropped` are called on the `RootView`; the platform's
   own drag events are driven by the `drive-a-drag` skill on a hosted KWin, outside the test suite. `views/root.rs`
-  drives keys. Pressing the equaliser curve with the equaliser off once turned it on and moved the
-  curve from under the press; the note is now always there and `kit::section_header` holds a row
-  control's height.
+  drives keys. The equaliser's note is always drawn and `kit::section_header` holds a row control's
+  height, so pressing the curve with the equaliser off moves nothing under the press.
 
 ## Panes
 
@@ -1402,7 +1400,7 @@ is never named.
     *Online* or *Away*; one that is away has *Remove* (`Syncing::forget` by `SyncedDevice::id`).
   - *Connection*: a `kit::segmented` of *Resonate's server*, *Your own server* (shows the server
     field; `own_server_asked` holds the choice until an address is given) and *This network only*
-    (`sync-nearby-only`), the chosen one's meaning under it, then the device name.
+    (`sync-nearby-only`, the default until the hosted server is live), the chosen one's meaning under it, then the device name.
   - *Songs between devices*: the three `sync-songs` switches.
   Each writes `ResonateApp::synchronised` and the file, which the binary's sync watcher reads again
   within seconds (`sync.md`); a reset never forgets the code. `SyncStanding::Waiting` is the

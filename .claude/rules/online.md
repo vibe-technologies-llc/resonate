@@ -118,17 +118,14 @@ pin each byte.
 - **The listener's words** (`find_songs`, the window's search for a song the catalog lacks) are
   asked `SONGS_FOUND_AT_MOST` (100) at a time, since the library ranks what comes back by the
   releases each recording is on and a title many artists recorded leads with covers in any smaller
-  slice (*creep* and *bohemian rapsody* answered 25 at a time left Radiohead and Queen out; a hundred
-  holds them, their takes summing to 191 and 460 releases). A hundred recordings with their release
+  slice (*creep* answered 25 at a time left Radiohead out). A hundred recordings with their release
   lists run to a megabyte or more, so `songs_found` reads under `LARGEST_SONG_SEARCH` (16 MiB), not
   `LARGEST_DOCUMENT`. **A query names no field of a release**: `status:`, `primarytype:`, `date:` and
-  the like narrow the `releases` listed on each recording to the releases matching them (adding
-  `status:official primarytype:album` cut Radiohead's *Creep* from 191 releases to 7), which is the
-  signal the ranking reads. **A hundred of hundreds of equal scores is a different hundred each
-  time** (*creep* matches 719 recordings naming an ISRC; the same query answered without Radiohead's
-  and with it), so the plain-words coded search adds an optional `tag:*`, a field of the recording:
-  the recordings people have tagged are the ones they know, and with it Radiohead's *Creep* is in
-  the answer each time, followed by Nirvana's and TLC's (`a_title_many_artists_recorded_and_a_typo_of_one_find_the_original_first`,
+  the like narrow the `releases` listed on each recording to the matching ones (`status:official
+  primarytype:album` cut *Creep* from 191 releases to 7), which is the signal the ranking reads.
+  **A hundred of hundreds of equal scores is a different hundred each time**, so the plain-words
+  coded search adds an optional `tag:*`, a field of the recording: the recordings people have
+  tagged are the ones they know (`a_title_many_artists_recorded_and_a_typo_of_one_find_the_original_first`,
   live). `find_songs` is `found_for` over an `ask` closure, tested offline over
   canned answers. Words are split by `resonate_core::words_of_a_name`, so *don't* is sent as
   *dont*. The order of asking:

@@ -12,13 +12,14 @@ paths:
 ## CI
 
 - **`.github/workflows/ci.yml` runs what `CLAUDE.md`'s command list runs, and nothing it does not**
-  (push to `master`, pull requests, `workflow_dispatch`; `archlinux` containers): clippy (the default
-  features, the workspace headless, and the binary without `ui` and with each feature alone, so code
-  dead without a feature is warned), headless and whole-workspace builds and tests (the headless job runs the MPRIS bus tests again under
-  `dbus-run-session`, which a plain `cargo test` skips for want of a session bus), the DSP bench under its ceilings, the layering refusals, the
-  fuzz build, the sync server's package (`server-package`). A command added to `CLAUDE.md` goes into the workflow; a crate added to the layering
-  refusals gets a line. The layering job has four shapes: `refuse`, `refuse_headless` (no default
-  features), `only` (the workspace crates a crate may reach), `reached_by_the_binary_alone`
+  (push to `master`, pull requests, `workflow_dispatch`; `archlinux` containers): clippy (default
+  features, the workspace headless, the binary without `ui` and with each feature alone, so code
+  dead without a feature is warned), headless and whole-workspace builds and tests (the headless job
+  reruns the MPRIS bus tests under `dbus-run-session`, which a plain `cargo test` skips), the DSP
+  bench under its ceilings, the layering refusals, the fuzz build, the sync server's package
+  (`server-package`). A command added to `CLAUDE.md` goes into the workflow; a crate added to the
+  layering refusals gets a line. The layering job has four shapes: `refuse`, `refuse_headless` (no
+  default features), `only` (the workspace crates a crate may reach), `reached_by_the_binary_alone`
   (`cargo tree -i`; `online`, `mcp`, `discord`); `resonate-mpris`'s direct normal edges are checked
   for `resonate-codec`. `RUSTFLAGS` is emptied over `target-cpu=native`. The formatter is local
   only: a hosted runner cannot install `rust-formatter`.
@@ -39,17 +40,20 @@ paths:
 ## Android
 
 The Android job builds the Compose APK against compile SDK 37, runs Android lint and the JVM tests,
-builds the release variant (R8, ARM64 alone, unsigned there) and holds it to `android/check-release.py`, which takes the signed `app-release.apk` where it exists and the unsigned one otherwise (16 KB zip
-and ELF alignment, no other ABI, the JNA and boundary classes R8 must keep by name), then instruments
-x86_64 emulators at API 33, the minimum, and API 36, Compose UI tests included. The Gradle task compiles ARM64 and x86_64 Rust libraries with baseline CPU
-settings, NDK 28.2 and 16 KB ELF alignment. It runs the host binding tool against Android ELF
-metadata, so no Linux sound server or GUI libraries are needed for the Android build.
+builds the release variant (R8, ARM64 alone, unsigned there) and holds it to
+`android/check-release.py`, which takes the signed `app-release.apk` where it exists and the unsigned
+one otherwise (16 KB zip and ELF alignment, no other ABI, the JNA and boundary classes R8 must keep
+by name), then instruments x86_64 emulators at API 33, the minimum, and API 36, Compose UI tests
+included. The Gradle task compiles ARM64 and x86_64 Rust libraries with baseline CPU settings, NDK
+28.2 and 16 KB ELF alignment, running the host binding tool against Android ELF metadata, so no
+Linux sound server or GUI libraries are needed.
 
 ## Profiles and target
 
 - **A debug build is optimised**, since an unoptimised resampler cannot keep up with the music:
   `[profile.dev]` is `opt-level = 1`, the DSP, codec, analysis and vault crates and their heavy
-  dependencies at 3; debug assertions and debuginfo stay on.
+  dependencies (`rustfft`, `realfft`, `flacenc`, `zstd-sys`...) at 3; debug assertions and debuginfo
+  stay on.
 - **`--profile profiling`** is release with symbols for `perf` and `cargo flamegraph`.
 - **`.cargo/config.toml` sets `target-cpu=native`** so the resampler vectorises. The `-git` Arch packages
   keep it; the release assets build for `x86-64-v3`, the Flatpak and CI for the baseline, and

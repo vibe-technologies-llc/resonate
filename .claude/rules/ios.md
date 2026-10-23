@@ -275,7 +275,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   transfers, and *Options*: *Songs* (`SyncSongsPage`: the three follow switches, mobile data, the
   folder picker and the landing notice) and *Connection* (`SyncConnectionPage`: *Sync through*
   Resonate's server, your own server with its address, or *This network only*, which is
-  `SyncConfig.nearby_only`; and the device name). `PairingSheet` shows the code with Copy (on the pasteboard `localOnly` and expiring after two minutes, so Universal Clipboard never hands it on) and Share,
+  `SyncConfig.nearby_only` and defaults on (`sync-nearby-only`) until the hosted server is live; and the device name). `PairingSheet` shows the code with Copy (on the pasteboard `localOnly` and expiring after two minutes, so Universal Clipboard never hands it on) and Share,
   joins another device's code (confirmed where a code is held), and *Make a new code…* (confirmed)
   is `Features.newSyncGroup`. The code is blurred and `privacySensitive` under *Tap to show* until
   tapped, covered again whenever the sheet opens or the scene leaves `.active` (so the App Switcher
@@ -934,7 +934,7 @@ in; it never opens on another colour first.
   rest of Now Playing cheap: the Metal layer is opaque (the shader writes alpha 1, so the compositor
   blends nothing beneath it), the lyrics are layers set per frame rather than views rebuilt
   (*Lyrics*), and the field rests while the cover moves. Before those, 120 fps dropped frames and
-  30 fps was kept, which read as plainly low beside everything else at the display's rate.
+  30 fps read as plainly low beside everything else.
 - **The app background is one field for the whole app** (`AppBackdrop`, the
   `containerBackground(for: .navigation)` of every page; a clear one is drawn as the system's own, so
   a single view behind the `TabView` never shows). Every page's `AmbientLayerView` shows the same

@@ -88,7 +88,7 @@ them no type). Decoders: `audio.md`.
   watched by `quit_when_told` and `cancel_when_told`; a hang-up also tells `said` nobody reads where
   stdout is a terminal (`tests/signals.rs`).
 - **A headless pass's watch is `signals::cancelling_on`**, which takes the signals and what to do
-  on a second one, so `cancel_when_told` is that over `ASKING_TO_LEAVE` and `leave`, and the tests
+  on a second one: `cancel_when_told` is that over `ASKING_TO_LEAVE` and `leave`, and the tests
   drive it with `SIGUSR1`, a stand-in `leaving` and `exit_code_after` (128 + the signal number); a
   dropped `Interrupting` closes the watch whether or not a signal came
   (`the_first_signal_cancels_the_pass_and_a_second_leaves_with_its_number`,
@@ -96,9 +96,8 @@ them no type). Decoders: `audio.md`.
 - **One signal silences the graph though the front end never answers.** `signals.rs` asks the front
   end to quit, leaves anyway after `DRAINS_WITHIN`; the farewell thread sends `Command::Stop` after
   `SILENCED_AFTER`, so a wedged window is not *heard* for the whole drain. `relay` takes a
-  `Farewell` (what silences the graph, what leaves, and the two delays), so the tests drive the
-  first signal's quit request, a second signal's 128 + n, the silence and the leave after the delays
-  and a closed front end's immediate leave with stand-ins and short delays
+  `Farewell` (what silences the graph, what leaves, the two delays), so the tests drive every path
+  with stand-ins and short delays
   (`the_first_signal_asks_to_quit_and_a_second_leaves_with_its_number`,
   `a_front_end_that_never_answers_is_silenced_and_then_left`,
   `a_signal_with_no_front_end_listening_leaves_at_once`).
@@ -226,15 +225,20 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   a path inside the vault (`unusable_as_the_music_folder`), adds it to the roots unless one already
   reaches it.
 - **`sync` (on) and the six `sync-*` keys** (`sync.md`): `sync-nearby-only` (on until the hosted
-  server is live) uses no server at all (`Server::Nowhere`): devices sync only on the same
-  network, and sync then runs with `online` off too; off, `sync-server` or the hosted one is dialled; `sync-server` blank = the hosted `resonate.tecnio.dev`; `sync-server-certificate` a PEM trusted beside the roots; `sync-key` the
-  pairing code, minted and written back on the first start that syncs, withheld by `Debug`, joined
-  by `resonate sync --join` or the pane, cleared by `--leave` or the pane's *Regenerate pairing code*
-  (two presses; a new code is minted at once by the sync watcher); `resonate sync --forget <device>` takes a
-  device that is away off every list (`Error::SyncDeviceOnline` for one online); `sync-device` the name other devices
-  see (default `<hostname> (Linux)`, from `/proc/sys/kernel/hostname`, else `Linux`); `sync-songs` an array of `favourites`, `playlists`, `everything` (empty =
-  only on request). Off whenever `online` is, unless `sync-nearby-only` (`Config::syncs`). The pane writes them and the running service follows the file (`sync.md`). **One process syncs a catalog**: `sync.lock` in the data folder is `try_lock`ed; a window
-  holding it leaves `resonate play` and `resonate sync` unsynced (`Error::SyncBusy` for the latter).
+  server is live) uses no server at all (`Server::Nowhere`): devices sync only on the same network,
+  and sync then runs with `online` off too; off, `sync-server` or the hosted one is dialled.
+  `sync-server` blank = the hosted `resonate.tecnio.dev`; `sync-server-certificate` a PEM trusted
+  beside the roots; `sync-key` the pairing code, minted and written back on the first start that
+  syncs, withheld by `Debug`, joined by `resonate sync --join` or the pane, cleared by `--leave` or
+  the pane's *Regenerate pairing code* (two presses; the sync watcher mints a new one at once);
+  `resonate sync --forget <device>` takes a device that is away off every list
+  (`Error::SyncDeviceOnline` for one online); `sync-device` the name other devices see (default
+  `<hostname> (Linux)`, from `/proc/sys/kernel/hostname`, else `Linux`); `sync-songs` an array of
+  `favourites`, `playlists`, `everything` (empty = only on request). Off whenever `online` is, unless
+  `sync-nearby-only` (`Config::syncs`). The pane writes them and the running service follows the file
+  (`sync.md`). **One process syncs a catalog**: `sync.lock` in the data folder is `try_lock`ed; a
+  window holding it leaves `resonate play` and `resonate sync` unsynced (`Error::SyncBusy` for the
+  latter).
 - `hifi-api`, `monochrome`: optional custom TIDAL and Monochrome servers, asked while `online` is
   on. `hosted-services` (default true) lets blank/absent fall back to the hosted services
   (`tracks.monochrome.st`); with it off nothing hosted is registered (`providers.md`).
@@ -286,12 +290,11 @@ the write of `resonate eq`, `tidal`, `lastfm` and `sync`: it compares the settin
 after and, when it moved, lists the players on the bus (`Running::listed`) and calls `Reload` on each
 with the group the command changed (`Reloadable`) and the file's path. A player that took it is
 said to take it up; one that refused, or is too old to know `Reload`, is said to keep the settings it
-started with and to hear the change only if it reads the file written, once started again; with none running, or no bus, nothing is
-said. `Desktop::reload` (`mpris.rs`) answers only for the file it reads (`same_file`, so a
-`--config` elsewhere is a refusal, **by design**: a player on another settings file lives in
-another world, its catalog and accounts included, and one file's equaliser, account or sync key
-applied to it would mix two, so the run says it keeps what it started with and hears the change
-only if it reads the file written): `Equaliser` reads the file again and sends
+started with and to hear the change only if it reads the file written once started again; with none
+running, or no bus, nothing is said. `Desktop::reload` (`mpris.rs`) answers only for the file it
+reads (`same_file`, so a `--config` elsewhere is a refusal, **by design**: a player on another
+settings file lives in another world, its catalog and accounts included, and one file's equaliser,
+account or sync key applied to it would mix two): `Equaliser` reads the file again and sends
 `Command::SetEqualisation` from `equaliser::resolved` and, for a window, sends the window the bindings
 read again (`resonate_ui::Followed::Bindings`); `Submission` and `Sync` are `Applied` where
 the player has a catalog, since `submitting`'s token and the sync watcher (`sync.md`) follow the file

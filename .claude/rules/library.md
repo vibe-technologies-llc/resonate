@@ -262,7 +262,7 @@ rows read via `Player::media` like any unscanned row.
 - **A path is stored as text through `resonate_core::path_text`, so a name that is not UTF-8 is
   catalogued and comes back byte for byte.** `store::path_text(&Path)` is the one way a path becomes
   a bound text (`Cow`, borrowed for every UTF-8 path, so existing rows and the sort order are as
-  they were; no migration) and `store::path_of(&str)` the one way a column becomes a `PathBuf`; a
+  they were) and `store::path_of(&str)` the one way a column becomes a `PathBuf`; a
   read that builds a `PathBuf` or `MediaLocation::local` from a `String` column without it is the
   defect. Each invalid byte is written `U+FDD0` (a noncharacter) and two hex digits, a genuine
   `U+FDD0` doubled, so two paths never share a text and a folder's text is still a prefix of what
@@ -377,7 +377,7 @@ rows read via `Player::media` like any unscanned row.
   favourite, portrait and tagged sort name it lacks) and are deleted; the survivor is rekeyed,
   renamed to the most marked spelling, and its tracks indexed again. An invariant kept (a second
   run is a no-op).
-  - **A change to the fold asks for the index to be folded again** (a step once released, `V1` before): it creates
+  - **A change to the fold asks for the index to be folded again** (in the `V1` batch before release, a migration step after): it creates
     `index_refold_wanted`; `store::refold_the_index` (in `Library::build` after the reconcile)
     rewrites every `tracks_fts` row whose title, artist or album no longer reads as its fold, then
     drops the table. A release's `folded` haystack, a kept release's and a dismissal are rewritten
@@ -451,8 +451,8 @@ rows read via `Player::media` like any unscanned row.
   as `Second Disc` is keyed by that folder until rescanned.
 
 - **`album_keys.key` format**: changing it means a rescan; `ORPHANS` removes albums nothing points
-  at. Every key is NFC-composed (`store::composed`) after lowercasing; the step bringing that in
-  leaves `album_keys_composed_wanted` and `store::compose_the_album_keys` (in `Library::build`)
+  at. Every key is NFC-composed (`store::composed`) after lowercasing; a change to the composition
+  creates `album_keys_composed_wanted` and `store::compose_the_album_keys` (in `Library::build`)
   rewrites every stored key once.
 - **Albums proving to share a release are gathered; both keys name the survivor.** A release id the
   *pass* finds arrives after grouping, so a rip split over two folders can hold one release in two
@@ -1389,12 +1389,6 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   `COMPARED_AT_ONCE` (256 KiB) pieces, synced, `hard_link`ed to the name (refuses an existing name
   atomically), `rename` where no links; the staged file is always removed. Not reading back:
   `Unverified`, not kept.
-- **A copy is whole, read back, then named.** Bytes go to hidden `.<name>.<pid>.resonate-part`, held
-  under `writer::Held` while written; a run sweeps every folder it lands in once, taking
-  `.resonate-part` files whose writer `writer::writer_of` reads as gone. Compared in
-  `COMPARED_AT_ONCE` (256 KiB) pieces, synced, `hard_link`ed to the name (refuses an existing name
-  atomically), `rename` where no links; the staged file is always removed. Not reading back:
-  `Unverified`, not kept.
 - **What travels with a track follows its landed name.** `Renames` notes each audio whose name moved
   (`name (2).ext`, or held byte for byte under one: `Stood::Held`) by source folder. Sheets and
   companions from that folder follow: one named after the track takes the new stem
@@ -1673,7 +1667,7 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   `spelling::worth_asking` refuses before the read where no word is long enough to correct.
   `Inner::vocabulary` stamps the `Spellings` with a counter and returns an `Arc` until the counter
   moves. **SQLite itself moves the counter.** `watch_the_names` lays `NAMES_MOVED_TRIGGERS` on the
-  writer: `TEMP` triggers (that connection alone; never the schema, a migration or another program)
+  writer: `TEMP` triggers (that connection alone; never the schema or another program)
   step a row of a `TEMP` table wherever a row of `tracks`, `albums`, `artists` or `artist_genres` is
   inserted or deleted, or a column the vocabulary reads takes another value; an `update_hook` on the
   writer sees that row move and steps the counter. Invalidation is per *column*: a counted play, a

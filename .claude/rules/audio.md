@@ -319,7 +319,7 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `Entering::FadedIn`; at a track's start it opens whole, so a bit-perfect first frame is untouched.
   Only a stream the graph is pulling fades (`Output::is_sounding`).
 - **A volume or ReplayGain change is heard at once, on what the ring holds.** The consumer trims each
-  frame by level-to-be-heard / level-rendered-at. `RingProducer::hear_at` stores the amplitude to be
+  frame by level-to-be-heard over level-rendered-at. `RingProducer::hear_at` stores the amplitude to be
   heard; `render_at(amplitude, ahead)` announces the frame from which the chain renders at a new
   amplitude, `ahead` = rendered but not yet in the ring, so the boundary lands on the exact frame.
   The heard level walks to the wanted one over `FADED_OVER`; a frame rendered at the heard level is

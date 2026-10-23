@@ -32,7 +32,7 @@ In the RT modules and everything they call:
   off-thread via an SPSC queue whose atomic overflow counter surfaces as `RtFault::Dropped`. Only
   `Underrun` and `Dropped` exist (what the ring raises), so `collect_faults` matches exhaustively.
 
-Five RT modules, each headed `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic,
+Seven RT modules, each headed `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic,
 clippy::unreachable, clippy::indexing_slicing)]` (allocation, locks, `assert!`, unguarded division
 rest on this discipline alone):
 
@@ -52,10 +52,8 @@ rest on this discipline alone):
   f32 bits + atomic count, `Relaxed` stores, one `Release` publish, `Acquire` reads.
 
 Scope the lint list to the module, not the crate; callback work goes in `process.rs`, not the
-closure `client.rs` registers (else the lints miss it). They cannot reach libspa.
-
-The callback sets `chunk.size` to exactly what the source filled: bytes past a short read never
-reach the graph, nothing needs zeroing.
+closure `client.rs` registers (else the lints miss it). They cannot reach libspa. The callback sets
+`chunk.size` to exactly what the source filled, so bytes past a short read never reach the graph.
 
 **A ring laid out for one format never reaches buffers of another.** `param_changed` stores what the
 graph settled on against what was asked (`Negotiated::taken_against`) in one `AtomicU32`

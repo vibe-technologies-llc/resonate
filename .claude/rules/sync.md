@@ -21,12 +21,12 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
 ## The pairing key and what it derives
 
 - **One random key is the account.** `SyncKey` = 20 bytes from `ring`'s `SystemRandom`; its
-  `PairingCode` is Crockford base32 (32 symbols) plus 3 check symbols (low five bits of the first
+  code (`SyncKey::code`) is Crockford base32 (32 symbols) plus 3 check symbols (low five bits of the first
   three SHA-256 bytes), written in groups of five. Parsing drops dashes and spaces, ignores case and
   reads `I`/`L` as `1`, `O` as `0`; a wrong length, symbol or check is a typed `CodeRefused`.
   `Debug` prints `<withheld>`; `config.rs` withholds `sync-key`. **The code travels as a link
-  too**: `SyncKey::link` is `PAIRING_LINK` (`resonate://pair/`) and the code, `from_link` reads it
-  back or a bare code (`a_pairing_link_reads_back_as_its_key_and_a_bare_code_reads_too`). The
+  too**: `SyncKey::link` is `PAIRING_LINK` (`resonate://pair/`) plus the code; `from_link` reads it
+  or a bare code (`a_pairing_link_reads_back_as_its_key_and_a_bare_code_reads_too`). The
   desktop draws it as a QR code (`ui.md`); the iPhone and Android open it from the system camera through
   their `resonate` URL scheme (`ios.md`, `android.md`), so no app of ours asks for the camera.
 - **HKDF-SHA256 (salt `resonate-sync/1`) derives everything, one `info` each**: `space` (16 bytes,
@@ -76,7 +76,7 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
 ## The ledger
 
 `ledger.rs` keeps `sync.sqlite` (the data folder on Linux, app-private storage on Android),
-one `V1` in a `MIGRATIONS` list that holds it alone: until 0.1.0 `V1` may be edited, after it
+one `V1` in a `MIGRATIONS` list that holds it alone: until the 0.1.0 release `V1` may be edited, after it
 a change appends a step and never edits `V1`; a stamp past the list is `Error::LedgerVersion`. All merging lives here, once for both
 platforms; the catalog seam stays thin.
 
@@ -130,9 +130,8 @@ platforms; the catalog seam stays thin.
   server again owes everything (`Ledger::through_a_server`), so the server is given the whole state.
   A `Welcome` whose head is below this device's cursor (a space swept and made anew) resets the
   cursor and owes everything (`space_made_anew`, `Error::SpaceMadeAnew`), and the link is made again.
-- **Entering another space forgets the last one** (`enter_space`), so everything local is owed again.
-  A new pairing code is therefore all *regenerate* is: each front end mints or clears the key and
-  starts again; the old space ages out on the server.
+- **Entering another space forgets the last one** (`enter_space`), so everything local is owed again;
+  *regenerate* is just a new pairing code: each front end mints or clears the key and starts again.
 - **A device is forgotten by a tombstone, last writer wins like any note.** `Ledger::forget_device`
   (`Sync::forget`, refused for this device and for one already gone) sets `devices.gone`,
   restamps the row, owes it and drops the device's handoff; it travels as `Change::Forgotten` (wire
@@ -223,7 +222,7 @@ will not open is left out of the holdings.
   failed dropped first.
 - **Server**: `Settings::server` is a `Server`: `Hosted` (`HOSTED_SERVER`, `resonate.tecnio.dev`,
   port 443), `At` another (`sync-server`; blank is the hosted one), or `Nowhere`, the listener's
-  *Only this network*, **the default on every front end until the hosted server is live** (`sync-nearby-only`
+  *This network only*, **the default on every front end until the hosted server is live** (`sync-nearby-only`
   on; a listener switches it off to use `Hosted` or `At`): nothing is dialled, the standing is `Standing::Nearby` from the start, and
   devices meet only as *Nearby* says. `sync-server-certificate` adds a PEM to the system and built-in
   roots (a private CA, the tests' self-signed server).

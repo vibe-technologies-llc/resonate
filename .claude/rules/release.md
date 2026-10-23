@@ -29,9 +29,8 @@ paths:
   first candidate is tagged. A fix to a released line lands on `master` and is cherry-picked to
   that branch; a patch release is tagged on it.
 - **Every release is a tag `vMAJOR.MINOR.PATCH[-rcN]` and a GitHub release.** Pushing the tag runs
-  `release.yml`, which checks the tag equals the manifest's version, creates the release (a
-  pre-release when the tag has a suffix) and attaches the assets. The roadmap's targets
-  (`docs/ROADMAP.md`) name what each release is meant to hold.
+  `release.yml` (`build.md`), which checks the tag against the manifest's version and attaches the
+  assets. The roadmap's targets (`docs/ROADMAP.md`) name what each release is meant to hold.
 
 ## Assets
 
@@ -39,8 +38,7 @@ paths:
   `.pkg.tar.zst` (Arch), for the player and the sync server, built with
   `RUSTFLAGS=-C target-cpu=x86-64-v3` over the checkout's `native`. A machine older than v3 builds
   from source.
-- **The APK is a signed release build.** `release.yml` decodes the keystore from the secret
-  `ANDROID_KEYSTORE_BASE64` and passes `RESONATE_SIGNING_STORE_PASSWORD`, `_KEY_ALIAS` and
-  `_KEY_PASSWORD` to Gradle's `assembleRelease`, then runs `apksigner verify`. The keystore is
-  removed at the end of the job and its secrets are never echoed.
+- **The APK is a signed release build**: `assembleRelease` under the repository's signing secrets,
+  then `apksigner verify` (`build.md` has the job). The keystore is removed at the end of the job
+  and its secrets are never echoed.
 - `SHA256SUMS` lists every asset.

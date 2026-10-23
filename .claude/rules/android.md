@@ -9,15 +9,16 @@ paths:
 
 The Android front end is Jetpack Compose with Material 3 (`material3` 1.5, expressive components),
 in the Gradle project under `android/`. Android Studio opens `android/` and runs the shared
-`Resonate Android` configuration in `.run/` (or the generated `app` Android configuration).
-The shared configuration targets `Resonate.app` and runs Gradle before deploying the default
-Activity, preserving app storage. Gradle builds Rust and the generated Kotlin bindings before
-Kotlin. Android 13 (API 33) is the minimum. ARM64 phones and x86_64 emulators share the debug APK;
-compile SDK 37 (the current Compose, Navigation 3 and MaterialKolor releases require it), target
-SDK 36, AGP 9.4, Gradle 9.8, Kotlin 2.4 (built-in Kotlin, with the Compose and serialization
-compiler plugins at the same version) and NDK 28.2.13676358 are pinned. Python 3, Cargo and both
-Rust Android targets are build prerequisites. Host binding generation reads ELF metadata and needs
-no PipeWire.
+`Resonate Android` configuration in `android/.run/` (or the generated `app` configuration), which
+runs Gradle before deploying the default Activity, preserving app storage. Gradle builds Rust and
+the generated Kotlin bindings before Kotlin. Android 13 (API 33) is the minimum. ARM64 phones and
+x86_64 emulators share the debug APK; compile SDK 37 (the current Compose, Navigation 3 and
+MaterialKolor releases require it), target SDK 36, AGP 9.4, Gradle 9.8, Kotlin 2.4 (built-in
+Kotlin, with the Compose and serialization compiler plugins at the same version) and NDK
+28.2.13676358 are pinned. Python 3, Cargo and both Rust Android targets are build prerequisites.
+Host binding generation reads ELF metadata and needs no PipeWire. `versionName` is the root
+`Cargo.toml`'s `version` read by Gradle, and `versionCode` is derived from it (a pre-release's
+candidate digit, 9 for a final), so a release is versioned in one place.
 
 `MainActivity` is a `ComponentActivity` that draws edge to edge and sets `ResonateApp`; it keeps
 the `MediaController` connection and implements `ui.Host` (folder and room-response pickers,
@@ -46,7 +47,8 @@ key or password stored in the repository: the `release` signing config exists on
 properties `resonate.signing.storeFile`, `.storePassword`, `.keyAlias` and `.keyPassword` (or the
 environment variables `RESONATE_SIGNING_STORE_FILE`, `_STORE_PASSWORD`, `_KEY_ALIAS` and
 `_KEY_PASSWORD`) name a keystore, and without them `assembleRelease` leaves the APK unsigned, never
-signed with the debug key. Release enables R8 and resource shrinking with
+signed with the debug key. `.github/workflows/release.yml` builds and verifies the signed release
+APK from a version tag, the keystore and passwords coming from repository secrets. Release enables R8 and resource shrinking with
 `proguard-android-optimize.txt` and `app/proguard-rules.pro`. Those rules preserve JNA and the generated `nativecore` boundary,
 including names, fields, constructors and native entry points used through JNI and reflection.
 The four absent `java.awt` types referenced by JNA's desktop-only helpers have explicit warning
@@ -179,9 +181,8 @@ the process environment.
 
 The document source has its own SQLite catalog, `documents.sqlite` in app-private storage;
 it does not put invented paths in the Linux catalog. Its schema is one `V1`, `user_version` 1, laid out
-in one immediate transaction on a fresh file: until 0.1.0 `V1` may be edited, and from 0.1.0 on a change
-appends a step (with the chain, a synced `VACUUM INTO` copy and tests that carry document ids,
-favourites and resumption across it) and never edits `V1`. Any other version is
+in one immediate transaction on a fresh file; there is no migration chain and no copy kept before
+one. A later change appends a step and never edits `V1`. Any other version is
 `Error::CatalogVersion`. `V1` holds `documents` (the metadata, the lookup's clocks `asked`/`answered`
 as nanosecond stamps with `asks` and `refusals`, `release_group`, `isrc` kept from tags on index,
 `album_key`, `art_changed`, `missing`, and `size`, `modified` and `indexed_by`, the stamp a scan saw
@@ -220,7 +221,7 @@ index with it) and an unknown size and time (both 0) always indexes; the folder'
 lyrics are still offered for the known row. A file changed from outside, a hidden row, a row with no stamp
 and a bump of `INDEXING_REVISION` all index again, and `index_document` (no stamp) clears the stamp.
 `take_the_place_of_missing` reads the hidden rows only where one exists (`any_missing`, a covering
-partial index), so a scan is no longer quadratic in the library.
+partial index), so a scan is not quadratic in the library.
 Queries page at most 500 rows at a time. Folder traversal stops at depth 32 and admits the same
 extensions as core. The queue resumes paused through the engine's `Resumption` command, so the
 saved position is applied during opening rather than racing a subsequent seek. A newly prepared
@@ -397,8 +398,7 @@ The boundary refuses past the same bound itself (`keep_sidecar_lyrics`, `keep_ly
 `LyricsTooLarge`), as `keep_folder_cover` does past 8 MiB and `recognise_heard` past 30 s of
 samples at 192 kHz (`ClipTooLong`), so a front end's own cap is not the only one. A bad
 companion does not refuse playable audio. A directory's cover crosses the boundary once, for every
-song the scan indexed there (`keep_folder_cover`), not once a song. Bitmap caches use 32 MiB and decode to at most 1024
-pixels per side after checking dimensions. Albums group by title and album artist, falling back
+song the scan indexed there (`keep_folder_cover`), not once a song. Albums group by title and album artist, falling back
 to the tagged artist. Songs resolve by id through the repository's index (`findTrack`), not a scan of the catalog per
 request. `refresh()` and `reload()` take the repository's `access` lock one 500-row page at a time
 (`pagedTracks`), so the poll and queued transport actions run between the pages of a big library's
@@ -468,10 +468,8 @@ a bookmark, not a place). `playlist_file_extensions()` is what `ios/Resonate/Inf
 as `org.resonate.playlist` (held by a test).
 
 Lyrics prefer saved embedded/sidecar text, fetch from LRCLIB and Better Lyrics (scored per song,
-`online.md`) only when online, and retain a richer saved
-sheet over a poorer answer or failed refresh. The native `LyricFrame` (`mobile.md`'s *Lyrics*;
-the lyric pane reads its `read_at`, `active` and `wipes`) drives line/word highlights, scrolling, scale, opacity
-and blur; tapping a timed line seeks the player.
+`online.md`) only when online, and retain a richer saved sheet over a poorer answer or failed
+refresh; the pane reads the native `LyricFrame`'s `read_at`, `active` and `wipes`.
 Analysis uses the shared whole-track pass for waveform, spectrum, lossless assessment, LUFS, DR,
 true peak, clipping and bit use. Eight full results are cached in memory, invalidated on rescan;
 summary studies are persisted. A `Watch` cancels decoding. The live visualizer subscribes to the
@@ -697,7 +695,7 @@ Keystore. TIDAL device sign-in displays the code and authorization page, and ren
 tokens are saved. The user chooses a write-granted music folder per download. A data-sync
 foreground service retains the engine and offers cancellation; a download waits at most ten seconds for
 that service to start and then fails with a notice, so one that never starts cannot hold the
-download slot (`DOWNLOAD_SERVICE_STARTS_WITHIN_MS`). Choosing Downloads writes its preference on the IO
+download slot (`DownloadQueue.SERVICE_STARTS_WITHIN_MS`). Choosing Downloads writes its preference on the IO
 dispatcher, never the main thread. Background tasks of `LibraryFeatures` share a
 `CoroutineExceptionHandler` that logs and says the failure, and `Resonate.attempt` catches every
 native failure, a `LinkageError` included, so a screen never waits for ever.
@@ -774,7 +772,7 @@ A blank key mints one; `SyncStatus.code` hands it back and Kotlin stores it encr
 provider accounts, with the other choices (enabled, server, device name, the three follow switches,
 mobile data, `sync-nearby-only`) in plain preferences. Sync is on unless switched off and runs
 only while online is, unless `nearby_only` (*Only this network*: `Server::Nowhere`, no server
-dialled, which runs with online off). A setting change restarts it; `sync_start` with a blank key
+dialled, which runs with online off); `sync-nearby-only` defaults on until the hosted server is live. A setting change restarts it; `sync_start` with a blank key
 reuses the code of the sync it replaces, so two starts in a row never mint two codes.
 
 A song is found by recording id, else by folded artist, title words, album when named and a length
@@ -826,16 +824,13 @@ JVM tests (`android/app/src/test`: queue edit arithmetic, queue read pacing, the
 `python3 android/check-native.py --sdk "$ANDROID_HOME"` checks ELF/APK alignment and runs
 clippy for both native targets. With an emulator or device connected,
 `android/gradlew -p android :app:connectedDebugAndroidTest` exercises native loading, document
-identity, decode, rate conversion, playback, pause, seeking, resumption, sound-setting restoration,
-sleep timers, metadata/artwork/sidecar lyrics, analysis, filtering, duplicate playlist/queue rows,
-listening thresholds, saved artwork preferences and offline enrichment, saved wants and local
-playlist import, a loopback provider download, MediaStore Downloads publication and stable rescan
-identity, music access to another app's audio in Downloads, and
-cancellation, encrypted account storage, pinned favourites and player hearts, collection links,
-playlist picker/edit/undo and repeated-row playback, tool navigation, Activity recreation and
-background controls through Media3, notification artwork and opening, task-dismissal pause, audio
-focus lost and regained, the output becoming noisy, a controller's queue edits, the service's
-destruction giving the repository back and a failing poll tick said once. CI uses API 33 (the minimum) and API 36 x86_64
+identity, decode, playback, seeking, resumption, sound-setting restoration, sleep timers,
+metadata/artwork/sidecar lyrics, analysis, filtering, duplicate playlist/queue rows, listening
+thresholds, offline enrichment, wants and playlist import, a loopback provider download,
+MediaStore Downloads publication and stable rescan identity, encrypted account storage,
+favourites, playlist edit/undo, navigation, Activity recreation, Media3 background controls and
+notification, task-dismissal pause, audio focus and noisy-output events, a controller's queue
+edits, the service's destruction giving the repository back and a failing poll tick said once. CI uses API 33 (the minimum) and API 36 x86_64
 emulators; the local Pixel_10_Pro AVD additionally exercises 16 KB pages. Real hardware
 remains necessary for Bluetooth, USB DAC and device-fidelity claims. UI checks clear the
 accessibility cache before each poll: an API 36 screenshot can show current controls while the

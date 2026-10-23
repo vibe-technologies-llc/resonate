@@ -27,11 +27,9 @@ entry and metainfo `<provides>` are held to `MIME_TYPES` by tests (`binary.md`).
   (the container refuses the runner-owned checkout). Dependencies install as root but `rpmbuild`
   runs as `rpm-builder`: tests exercise refused writes to read-only fixtures and root bypasses them.
   Cargo fetches while building: a source RPM recipe, not an offline distribution build.
-- **A pre-release version is spelled per ecosystem**: Cargo `0.1.0-rc1`, spec and DEB `0.1.0~rc1`
-  (the tilde sorts before the final), Arch `pkgver=0.1.0rc1` (a hyphen is refused). The spec tests
-  map `-` to `~` before comparing, the release PKGBUILDs hold `_version` to Cargo's and `pkgver`
-  to `${_version//-/}`, and the DEB script derives its version from `Cargo.toml` itself
-  (`the_deb_script_derives_its_version_from_cargo`).
+- **Pre-release spellings are in `release.md`.** The spec tests map `-` to `~` before comparing, the
+  release PKGBUILDs hold `_version` to Cargo's and `pkgver` to `${_version//-/}`, and the DEB script
+  derives its version from `Cargo.toml` itself (`the_deb_script_derives_its_version_from_cargo`).
 - **`packaging/release/` holds the non-git Arch recipes** (`PKGBUILD` is `resonate-player`,
   `server/PKGBUILD` is `resonate-server`): source is the GitHub archive of tag `v$_version`
   (`sha256sums` `SKIP`, an archive's bytes being GitHub's), a local file of the same name beside
@@ -45,13 +43,9 @@ entry and metainfo `<provides>` are held to `MIME_TYPES` by tests (`binary.md`).
   `libvulkan1` (loaded at run time) for the player or `systemd` for the server, and `dpkg-deb
   --root-owner-group`. The server's environment file is a `conffiles` entry and its maintainer
   scripts only reload systemd and stop the unit on removal.
-- **`release.yml` replaces the old RPM workflow** (`build.md`): a `v*` tag push or a manual run
-  with a tag creates the GitHub release (pre-release for `-rc`, `-beta`, `-alpha`) after holding the
-  tag to Cargo's version and the recipes' to theirs; the RPM, DEB, Arch and signed APK jobs run in
-  parallel and upload workflow artifacts; `publish` writes `SHA256SUMS` and attaches everything to
-  the release, so one failing job leaves the others' assets. Asset names carry no `~` (`-` in its
-  place) and the Arch packages are renamed `-x86_64_v3.pkg.tar.zst`. A manual run with no tag builds
-  and keeps artifacts only.
+- **`release.yml` (`build.md`) builds these recipes in parallel jobs and `publish` attaches
+  everything**, so one failing job leaves the others' assets. Asset names carry no `~` (`-` in its
+  place) and the Arch packages are renamed `-x86_64_v3.pkg.tar.zst`.
 - **Flatpak builds its own checkout** (`dir` source, no release tarball: metainfo names no
   `<release>`) on Freedesktop 25.08 SDK + `rust-stable`, network shared for `cargo fetch --locked`,
   no tests.

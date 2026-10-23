@@ -41,9 +41,9 @@ there, and "simplifying" one away reintroduces the bug it was there for.
 - **The crate layering is enforced.** `cargo tree -p <crate>` is the authority; the `layering` job
   in `.github/workflows/ci.yml` refuses the forbidden edges.
 - **A stored format is migrated, not broken.** Every store has one `V1`, the baseline of 0.1.0,
-  which may be edited until that release ships; from then a SQLite schema change is a step
-  appended to `MIGRATIONS`, and `V1` and existing steps are never edited. Delete-and-rescan only for
-  data that truly cannot be carried forward. The same default holds for profiles and the config file.
+  editable until that release ships; from then a SQLite schema change is a step appended to
+  `MIGRATIONS`, and `V1` and existing steps are never edited. Delete-and-rescan only for data that
+  cannot be carried forward. The same holds for profiles and the config file.
 - **Never run a write pass against a real music library.** `organise --apply`, `tag --apply` and
   `vault --import --apply` work on a copy, never on the listener's own files.
 
@@ -97,14 +97,9 @@ updates it **in the same commit**:
 - A new crate, subcommand or invariant goes into `CLAUDE.md`, moving its crate count; a config key
   into `ConfigKey::ALL`, with any decision behind it in `binary.md`. A new crate with rules of its
   own gets a `.claude/rules/<name>.md` with a `paths:` list and a row in `CLAUDE.md`'s table.
-- `docs/ROADMAP.md` holds **open work only** and points to `BUGS.md`, `FEATURES.md`,
-  `PERFORMANCE.md` and `TESTING.md`: `## Category` headings of `- [S · 0.2.0] Item` bullets by
-  importance, the prefix giving complexity (`S`, `M`, `L`), the release targeted (patches take
-  fixes, minor and major releases features; none for blocked and `Later:` entries) and
-  `· blocked: <blocker>` for anything waiting outside this tree, which sits last in its category;
-  nice-to-haves under `Later:` headings at the bottom. Drop an item as it lands, add what the work
-  uncovers, write what a landed item became into the rules. Versions, branches and releases are in
-  `.claude/rules/release.md`.
+- `docs/ROADMAP.md` holds **open work only**, its format in `CLAUDE.md` (bullets such as
+  `- [S · 0.2.0] Item`). Drop an item as it lands, add what the work uncovers, write what a landed
+  item became into the rules. Versions, branches and releases are in `.claude/rules/release.md`.
 - A new command worth running before a commit goes into `CLAUDE.md`'s commands, this file's checks
   and `.github/workflows/ci.yml` together.
 - This file names the rules and says how to read them; it does not restate the design. Where it and

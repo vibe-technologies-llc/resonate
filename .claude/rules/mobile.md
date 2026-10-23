@@ -10,9 +10,9 @@ paths:
 
 `resonate-mobile` is the one native boundary both phone front ends sit on: UniFFI proc-macros
 export `MobilePlayer` and its records, and `resonate-bindgen` writes Kotlin (`android.md`) and Swift
-(`ios.md`) from the same library metadata. Behaviour that is the boundary's (the document catalog,
-playlists, sync bridge, downloads, online orchestration, the enrichment pass) is described once in `android.md`'s
-sections and holds for iOS unchanged; this file holds what is the crate's alone.
+(`ios.md`) from the same library metadata. Behaviour that is the boundary's (document catalog, playlists, sync bridge, downloads, online
+orchestration, enrichment) is described once in `android.md` and holds for iOS unchanged; this file
+holds what is the crate's alone.
 
 ## Unsafe
 
@@ -235,7 +235,7 @@ would wait on (`a_sign_in_cancelled_and_asked_again_waits_for_the_new_code_alone
 `catalog::read` takes a document row by position, the first columns of `documents` in `V1`'s
 order; a later step only appends columns, so `SELECT *`/`d.*` stays readable. A query adding its own
 columns after `d.*` reads them by name (`position`, `listen_id`), never by index, since a later
-step moves them.
+step would move them.
 
 ## Checks
 

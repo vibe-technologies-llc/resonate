@@ -12,7 +12,7 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
 
 ## What it keeps
 
-- **SQLite, three tables** (`store.rs`, one `V1` in `MIGRATIONS`: editable until 0.1.0, a step appended after it): `spaces` (id, the SHA-256 of
+- **SQLite, three tables** (`store.rs`, one `V1` in `MIGRATIONS`: editable until the 0.1.0 release, a step appended after it): `spaces` (id, the SHA-256 of
   the token, created, touched, bytes, head, snapshot through), `records` (space, seq, device,
   blob), `snapshots` (space, part, blob). Every store call runs on `spawn_blocking` behind one lock.
 - **The first token claims a space; any other is refused** (`Claim::Refused` → `Refusal::Token`).
