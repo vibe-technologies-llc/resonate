@@ -388,7 +388,13 @@ manifest URL must be HTTPS on `manifest.tidal.com` or a subdomain.
 - **Asked by link, then by the seam's choice**, via `played::found`: the linked track first; else the
   hosted flow searches TIDAL's web API by each of `Identity::wordings` through a `Choosing`, up to
   `TRACKS_TRIED_AT_MOST` ranked tracks. A custom server keeps the hifi-api routes, asked by each code
-  (`/search/?i=`, up to `CODES_ASKED_AT_MOST`) with `data.items` checked by ISRC.
+  (`/search/?i=`, up to `CODES_ASKED_AT_MOST`) with `data.items` checked by ISRC. **A want with no
+  code at all is searched by its words** (`/search/?s=`, each of `Identity::wordings` until one holds a
+  taken listing, only where `may_be_listed`) through a `Choosing`
+  (`a_want_with_no_code_is_searched_by_its_name_and_a_listing_with_a_code_is_asked_for_first`,
+  `a_want_with_no_artist_and_no_code_is_not_searched_at_all`). **A listing with no code of its own is
+  ranked below any that carries one** however near its length (`Choosing` sorts the named by
+  `(uncoded, apart)`; `a_listing_with_no_code_at_all_is_ranked_below_one_that_carries_a_code_however_near_its_length`).
 - **A request the server queues is waited for, withdrawn past the provider's patience.** A `202` with
   a `requestId`: the provider asks `/playback/requests/<id>` again after `Retry-After` (between
   `QUEUE_LOOKED_AT_LEAST_EVERY` and `QUEUE_LOOKED_AT_MOST_EVERY`) for at most `QUEUED_FOR_AT_MOST`,

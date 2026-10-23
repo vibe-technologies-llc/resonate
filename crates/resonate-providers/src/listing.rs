@@ -54,7 +54,7 @@ impl Listed<'_> {
 #[derive(Debug)]
 pub struct Choosing<T> {
     coded: Vec<(Duration, T)>,
-    named: Vec<(Duration, T)>,
+    named: Vec<(bool, Duration, T)>,
     seen: usize,
 }
 
@@ -84,12 +84,20 @@ impl<T: PartialEq> Choosing<T> {
             return;
         }
         if identity.named_alike(listed) {
-            self.named.push((apart.unwrap_or_default(), item));
+            let uncoded = !listed
+                .isrcs
+                .iter()
+                .any(|code| Isrc::new(code.trim()).is_ok());
+            self.named.push((uncoded, apart.unwrap_or_default(), item));
         }
     }
 
     pub const fn holds_a_coded_listing(&self) -> bool {
         !self.coded.is_empty()
+    }
+
+    pub const fn holds_a_taken_listing(&self) -> bool {
+        !self.coded.is_empty() || !self.named.is_empty()
     }
 
     pub const fn seen(&self) -> usize {
@@ -98,15 +106,22 @@ impl<T: PartialEq> Choosing<T> {
 
     pub fn ranked(self) -> Vec<(T, Taken)> {
         let mut ranked: Vec<(T, Taken)> = Vec::new();
-        for (listed, taken) in [
-            (self.coded, Taken::ByItsCode),
-            (self.named, Taken::NamedAlike),
-        ] {
+        let named = self
+            .named
+            .into_iter()
+            .map(|(uncoded, apart, item)| ((uncoded, apart), item))
+            .collect::<Vec<_>>();
+        let coded = self
+            .coded
+            .into_iter()
+            .map(|(apart, item)| ((false, apart), item))
+            .collect::<Vec<_>>();
+        for (listed, taken) in [(coded, Taken::ByItsCode), (named, Taken::NamedAlike)] {
             if taken == Taken::NamedAlike && !ranked.is_empty() {
                 break;
             }
             let mut listed = listed;
-            listed.sort_by_key(|(apart, _)| *apart);
+            listed.sort_by_key(|(key, _)| *key);
             for (_, item) in listed {
                 if !ranked.iter().any(|(kept, _)| *kept == item) {
                     ranked.push((item, taken));
@@ -310,6 +325,38 @@ mod tests {
             2,
         );
         assert_eq!(coded.chosen(), Some((2, Taken::ByItsCode)));
+    }
+
+    #[test]
+    fn a_listing_with_no_code_at_all_is_ranked_below_one_that_carries_a_code_however_near_its_length()
+     {
+        let identity = wanted();
+        let mut choosing = Choosing::default();
+        let uncoded = Listed {
+            isrcs: Vec::new(),
+            ..listed("", "Bohemian Rhapsody", "Queen", 355)
+        };
+
+        choosing.weigh(&identity, &uncoded, 1);
+        choosing.weigh(
+            &identity,
+            &listed("USHR10421348", "Bohemian Rhapsody", "Queen", 357),
+            2,
+        );
+        choosing.weigh(
+            &identity,
+            &listed("USHR10421348", "Bohemian Rhapsody", "Queen", 356),
+            3,
+        );
+
+        assert_eq!(
+            choosing.ranked(),
+            [
+                (3, Taken::NamedAlike),
+                (2, Taken::NamedAlike),
+                (1, Taken::NamedAlike)
+            ]
+        );
     }
 
     #[test]

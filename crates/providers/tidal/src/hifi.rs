@@ -610,6 +610,9 @@ impl Finds for HifiApi {
         if let Some(hosting) = &self.hosted {
             return self.hosted_tracks_for(hosting, identity);
         }
+        if identity.isrcs.is_empty() {
+            return self.tracks_named(identity);
+        }
         let mut tracks: Vec<TrackId> = Vec::new();
         for isrc in identity.isrcs.iter().take(CODES_ASKED_AT_MOST) {
             for track in self.tracks_coded(isrc)? {
@@ -649,6 +652,57 @@ impl Finds for HifiApi {
 }
 
 impl HifiApi {
+    fn tracks_named(&self, identity: &Identity) -> Result<Vec<TrackId>> {
+        if !identity.may_be_listed() {
+            return Ok(Vec::new());
+        }
+        let mut choosing = Choosing::default();
+        for words in identity.wordings() {
+            for listing in self.listed_by_words(&words)? {
+                choosing.weigh(identity, &listing.weighed(), TrackId(listing.id));
+            }
+            if choosing.holds_a_taken_listing() {
+                break;
+            }
+        }
+        let seen = choosing.seen();
+        let ranked: Vec<TrackId> = choosing
+            .ranked()
+            .into_iter()
+            .map(|(track, taken)| {
+                tracing::debug!(
+                    track = track.0,
+                    ?taken,
+                    "the server lists the song by its name"
+                );
+                track
+            })
+            .take(TRACKS_TRIED_AT_MOST)
+            .collect();
+        if ranked.is_empty() {
+            tracing::debug!(
+                title = identity.title,
+                seen,
+                "the server lists nothing named as the song"
+            );
+        }
+        Ok(ranked)
+    }
+
+    fn listed_by_words(&self, words: &str) -> Result<Vec<WebListing>> {
+        let op = ProviderOp::Search;
+        let url = format!(
+            "{}/search/?s={}&limit={LISTED_AT_MOST}",
+            self.server,
+            escaped(words)
+        );
+        let Answered::Ready(bytes) = self.asked(op, &url)? else {
+            return Ok(Vec::new());
+        };
+        let listed: Wrapped<WebListed> = self.asker.parsed(op, &bytes)?;
+        Ok(listed.data.items)
+    }
+
     pub fn track(&self, id: u64) -> Result<Option<Delivery>> {
         self.delivered(TrackId(id))
     }

@@ -1381,3 +1381,58 @@ fn a_keyed_hifi_api_whose_server_lacks_the_track_or_turns_the_key_away_says_so()
     assert!(matches!(missing, Ok(Opened::Gone)));
     assert!(matches!(refused, Err(Error::Unwelcome { .. })));
 }
+
+fn named_listing() -> Canned {
+    Canned::json(&format!(
+        r#"{{"version":"2.10","data":{{"limit":25,"offset":0,"totalNumberOfItems":2,"items":[
+            {{"id":1,"title":"Echoes","duration":1400,"artists":[{{"name":"Pink Floyd"}}]}},
+            {{"id":{TRACK},"title":"Echoes","isrc":"{ECHOES_ISRC}","duration":1396,"artists":[{{"name":"Pink Floyd"}}]}}]}}}}"#
+    ))
+}
+
+fn without_a_code() -> Identity {
+    Identity {
+        artist: Some("Pink Floyd".to_owned()),
+        length: Some(Duration::from_secs(1396)),
+        ..Identity::named("Echoes")
+    }
+}
+
+#[test]
+fn a_want_with_no_code_is_searched_by_its_name_and_a_listing_with_a_code_is_asked_for_first() {
+    let fake =
+        Fake::serving(
+            |asked, _, own| match (asked.path.as_str(), asked.query.contains("s=")) {
+                ("/search/", true) => named_listing(),
+                ("/file/", _) => Canned::media(b"fLaC-by-name"),
+                _ => {
+                    let _ = own;
+                    Canned::refused(404, "{}")
+                }
+            },
+        );
+
+    let keyed = fake.hifi().with_secret("key");
+    let (key, _, bytes) =
+        streamed(keyed.find(&without_a_code()).expect("an answer")).expect("a delivery");
+
+    assert_eq!(key, format!("track/{TRACK}"));
+    assert_eq!(bytes, b"fLaC-by-name");
+    let heard = fake.heard();
+    assert_eq!(heard[0].path, "/search/");
+    assert!(heard[0].query.starts_with("s=Echoes"), "{}", heard[0].query);
+    assert_eq!(heard[1].query, format!("id={TRACK}"));
+}
+
+#[test]
+fn a_want_with_no_artist_and_no_code_is_not_searched_at_all() {
+    let fake = Fake::serving(|_, _, _| Canned::refused(404, "{}"));
+
+    let found = fake
+        .hifi()
+        .find(&Identity::named("Echoes"))
+        .expect("an answer");
+
+    assert!(matches!(found, Obtained::Nothing));
+    assert!(fake.heard().is_empty());
+}
