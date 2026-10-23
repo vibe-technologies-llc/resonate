@@ -195,6 +195,7 @@ pub struct Config {
     pub sync_nearby_only: Option<bool>,
     pub sync_server: Option<String>,
     pub sync_server_certificate: Option<PathBuf>,
+    pub sync_stun: Option<String>,
     pub sync_key: Option<String>,
     pub sync_device: Option<String>,
     pub sync_songs: Option<SyncedSongs>,
@@ -311,6 +312,7 @@ impl fmt::Debug for Config {
             sync_nearby_only,
             sync_server,
             sync_server_certificate,
+            sync_stun,
             sync_key,
             sync_device,
             sync_songs,
@@ -419,6 +421,7 @@ impl fmt::Debug for Config {
             .field("sync_nearby_only", sync_nearby_only)
             .field("sync_server", sync_server)
             .field("sync_server_certificate", sync_server_certificate)
+            .field("sync_stun", sync_stun)
             .field("sync_key", &withheld(sync_key.as_ref()))
             .field("sync_device", sync_device)
             .field("sync_songs", sync_songs)
@@ -1015,6 +1018,7 @@ impl Config {
             ConfigKey::SyncServerCertificate => {
                 config.sync_server_certificate = a_path(at.string(value)?);
             }
+            ConfigKey::SyncStun => config.sync_stun = given(at.string(value)?),
             ConfigKey::SyncKey => config.sync_key = given(at.string(value)?),
             ConfigKey::SyncDevice => config.sync_device = given(at.string(value)?),
             ConfigKey::SyncSongs => {

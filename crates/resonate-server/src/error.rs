@@ -19,6 +19,8 @@ pub enum PemOp {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ConfigField {
     Hifi,
+    Web,
+    ForwardedBy,
     Listen,
     Upstream,
     Keys,

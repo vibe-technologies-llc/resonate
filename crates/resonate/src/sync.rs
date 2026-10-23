@@ -76,6 +76,7 @@ struct Arrangement {
     key: Option<String>,
     server: Server,
     certificate: Option<PathBuf>,
+    stun: Option<String>,
     device: Option<String>,
     follow: Follow,
 }
@@ -95,6 +96,7 @@ impl Arrangement {
                 .map(|key| key.code()),
             server: server_of(config),
             certificate: config.sync_server_certificate.clone(),
+            stun: config.sync_stun.clone(),
             device: config.sync_device.clone(),
             follow: follow_of(config.sync_songs),
         }
@@ -106,6 +108,7 @@ impl Arrangement {
             key: None,
             server: Server::default(),
             certificate: None,
+            stun: None,
             device: None,
             follow: Follow::default(),
         }
@@ -322,6 +325,7 @@ fn started(
     let settings = Settings {
         server: server_of(config),
         trusted: config.sync_server_certificate.clone(),
+        stun: config.sync_stun.clone(),
         key,
         me: Me::called(
             config.sync_device.as_deref().unwrap_or_default(),
@@ -1176,6 +1180,9 @@ mod tests {
             config.sync_server = Some("example.org".to_owned());
         }));
         assert!(moved(|config| config.sync_device = Some("Study".to_owned())));
+        assert!(moved(
+            |config| config.sync_stun = Some("stun.example.org".to_owned())
+        ));
         assert!(moved(
             |config| config.sync_server_certificate = Some(PathBuf::from("a.pem"))
         ));

@@ -20,7 +20,9 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
 - **A compaction replaces what it covers and only moves forward**: `through` must be past the
   snapshot held and within the head (`Compacted::Stale` otherwise); records at or below it and the
   old snapshot go in one transaction.
-- **A space untouched for `--idle-days` (365) is swept** daily (sooner for shorter limits).
+- **A space untouched for `--idle-days` (365) is swept** (checked hourly, or every thirtieth of the
+  limit if shorter). **A space never written to is swept after a day** (`Store::sweep_unused`:
+  `head` and `snapshot_through` both 0), so claims made by a script and abandoned do not pile up.
 
 ## Sessions
 
@@ -38,13 +40,32 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
   leaving `Left`; a device connecting again replaces its old session; at most `--devices` (16) at
   once.
 - **A punch goes only to a device online in the same space**, carrying the asker's observed address
-  and its sealed candidates.
+  and its sealed candidates. A device on a web socket has no observed UDP address: the server
+  files it as `0.0.0.0:0`, the asked device skips an unspecified address, and the candidates (its
+  interfaces and the address STUN gave it) are all it dials (`sync.md`).
 
 ## Limits
 
 `--record-bytes` (`LARGEST_RECORD`, 256 KiB a blob, `TooLarge`; devices send nothing larger), `--space-bytes` (64 MiB a space, `SpaceFull`),
 `--frames-per-minute` (240 a connection, `TooFast` and the session ends). Errors are typed
 (`errors.md`); a session's failure is a debug line, never the server's.
+
+There is no account or e-mail to tie a space to, so anyone can claim spaces; the limits are what
+keeps a script from filling the store (`guard.rs`, `Store::limited`):
+
+- **Per address** (an IPv6 `/64` counts as one, an IPv4-mapped IPv6 address as its IPv4):
+  `--connections-per-address` (64 open at once), `--attempts-per-minute` (30 connections a minute,
+  however briefly each lasts) and `--spaces-per-address-per-day` (5 new spaces, refused `TooFast`;
+  a connection to a space that exists is never counted). A connection over either is dropped
+  before a byte is read.
+- **Everyone together**: `--connections` (2048 open), `--spaces` (10 000, refused `Busy`) and
+  `--total-bytes` (16 GiB over all spaces, an append past it `SpaceFull`). The per-space limits
+  above still hold under them.
+- **QUIC proves the address first**: an `Incoming` whose address is not validated is sent a retry,
+  so a spoofed source cannot spend an address's allowance or the server's connections.
+- **A web socket's address is the proxy's header where one is trusted** (below), else the peer's.
+  The address table holds at most 100 000 addresses and forgets a quiet one after a day; the
+  counters live in memory, so a restart forgets them.
 
 ## The hifi-api gateway (`keys.rs`, `gateway.rs`)
 
@@ -76,6 +97,24 @@ hex) and prints it with the digest to list: the file never holds a secret.
   key check comes first: nothing is asked of the hifi-api for a request without a listed key
   (`a_track_is_never_downloaded_for_a_request_without_a_listed_key`,
   `a_track_is_downloaded_by_the_server_through_the_hifi_api_and_sent_to_a_listed_key`).
+
+## The web socket listener (`web.rs`, `serve_web`)
+
+QUIC cannot cross a proxy that carries only HTTP, so `--config` with a `[web]` table (`listen`, and
+optionally `forwarded_by`, a header name) also accepts the same frames over WebSocket on TCP, one
+binary message a frame (`resonate-sync`'s `Outgoing`/`Incoming`, which hide which of the two a
+session runs on). The sessions, limits, store and hub are the same code for both. No table leaves
+it off.
+
+- **Plain TCP, no TLS of its own**: it sits behind Cloudflare Tunnel (`cloudflared` connects out
+  to it, so no inbound port opens and the origin address is never in DNS) or another proxy that
+  terminates TLS. Bind it to loopback. Devices use `sync-server = "wss://sync.example.org/"`.
+- **`forwarded_by = "CF-Connecting-IP"`** makes the address the allowance counts the first one in
+  that header, and a connection without a parseable one is dropped, so only the proxy's path works.
+  Left out, the peer address is counted, which behind a proxy is the proxy itself: set it.
+- At most 256 upgrades are in flight at once and the upgrade and `Hello` share the 10 s allowance.
+  The server pings every 30 s and a reader silent for 90 s ends the session.
+  `a_listener_behind_a_proxy_turns_away_a_connection_the_proxy_did_not_forward`.
 
 ## Deployment
 

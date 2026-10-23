@@ -127,6 +127,15 @@ pub enum Error {
         source: io::Error,
     },
 
+    #[error("{server} is not a name a certificate can be checked against")]
+    ServerName { server: Box<str> },
+
+    #[error("the web socket failed")]
+    Web(#[source] Box<tokio_tungstenite::tungstenite::Error>),
+
+    #[error("the STUN server did not say what address it saw")]
+    StunSilent,
+
     #[error("{server} resolves to no address")]
     Unresolved { server: Box<str> },
 
@@ -206,6 +215,10 @@ impl Error {
             op,
             source: Box::new(source),
         }
+    }
+
+    pub(crate) fn web(source: tokio_tungstenite::tungstenite::Error) -> Self {
+        Self::Web(Box::new(source))
     }
 
     pub(crate) fn tls(op: TlsOp, source: rustls::Error) -> Self {

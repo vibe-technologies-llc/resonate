@@ -121,7 +121,7 @@ impl Minted {
     }
 }
 
-fn address_of(table: &Table, name: &str, field: ConfigField) -> Result<SocketAddr> {
+pub(crate) fn address_of(table: &Table, name: &str, field: ConfigField) -> Result<SocketAddr> {
     table
         .get(name)
         .ok_or(Error::ConfigMissing { field })?

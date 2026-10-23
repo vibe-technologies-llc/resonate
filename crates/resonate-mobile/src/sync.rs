@@ -551,6 +551,7 @@ impl MobilePlayer {
                 Server::At(config.server.clone())
             },
             trusted: None,
+            stun: None,
             key,
             me: Me::called(&config.device, "", THIS_PLATFORM, DEVICE_NAME),
             follow: Follow {

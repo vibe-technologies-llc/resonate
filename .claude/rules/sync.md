@@ -62,6 +62,12 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   stored and so never renumbered. One cost of that tolerance: a build without tag 6 that compacts the
   server's log writes a snapshot lacking the queries, so a device joining from the server alone
   misses them until a device holding them edits them or tells it on the network.
+- **A server address of `ws://` or `wss://` runs the same frames over a WebSocket** (`web.rs`: TCP,
+  TLS through `tokio-rustls` for `wss`, one binary message a frame, at most `LARGEST_FRAME`),
+  for a server behind a proxy that carries no UDP (`server.md`). Any other address is QUIC. The
+  link holds a `Carrier` (a QUIC connection, or a numbered web link) in place of a connection; the
+  device pings every 25 s and a link silent for 90 s drops. A web link has no observed UDP address,
+  so the server's `Welcome` and `Punched` carry `0.0.0.0:0`, which a device skips as a candidate.
 - **To the server**: `Hello` (version, space, token, device, cursor), `Append` (sealed blobs),
   `Compact` (through, snapshot parts), `Punch` (to a device, sealed candidates), `Bye`. **From
   it**: `Welcome` (devices online, the address it saw, head), `Snapshot`, `Records` (a device's
@@ -221,7 +227,8 @@ will not open is left out of the holdings.
 - **`Shown.transfers` keeps at most `TRANSFERS_SHOWN_AT_MOST` (200)**, the oldest landed or
   failed dropped first.
 - **Server**: `Settings::server` is a `Server`: `Hosted` (`HOSTED_SERVER`, `resonate.tecnio.dev`,
-  port 443), `At` another (`sync-server`; blank is the hosted one), or `Nowhere`, the listener's
+  port 443), `At` another (`sync-server`; blank is the hosted one; `ws://`/`wss://` for a web
+  socket), or `Nowhere`, the listener's
   *This network only*, **the default on every front end until the hosted server is live** (`sync-nearby-only`
   on; a listener switches it off to use `Hosted` or `At`): nothing is dialled, the standing is `Standing::Nearby` from the start, and
   devices meet only as *Nearby* says. `sync-server-certificate` adds a PEM to the system and built-in
@@ -260,6 +267,15 @@ will not open is left out of the holdings.
 
 ## Peers
 
+- **`sync-stun` names a STUN server** (`host` or `host:port`, 3478; blank asks none, the default,
+  since a request names this build and nothing else). The peer endpoint's socket is wrapped
+  (`stun::Reflector`, an `AsyncUdpSocket` over the runtime's) so a binding request goes out of the
+  very port peers are dialled on and its answer is taken off the stream before QUIC sees it (a
+  datagram whose top two bits are 00 and carries the cookie is STUN; QUIC's fixed bit makes its
+  first byte at least `0x40`). The address it names joins the candidates of every punch, so a
+  device reached through a server it cannot see UDP from (a web link) still offers its public
+  address; on a QUIC link it is added beside what the server saw. A web link's local candidates are
+  the interfaces' IPv4 addresses (`addresses_here`) at the peer port.
 - **The server introduces, the devices connect.** `Punch` carries the asker's LAN candidates sealed;
   the server hands the asked device the asker's observed address and those candidates; the asked
   device dials them and punches back with its own; both dial every candidate at once and the first

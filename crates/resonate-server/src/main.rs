@@ -1,8 +1,9 @@
-use std::{net::SocketAddr, path::PathBuf, process::ExitCode, time::Duration};
+use std::{net::SocketAddr, path::PathBuf, process::ExitCode, sync::Arc, time::Duration};
 
 use clap::{CommandFactory, Parser, error::ErrorKind};
 use resonate_server::{
-    Error, Gateway, Hifi, Limits, Minted, Server, Store, gateway_tls, listening, pem, serving,
+    Allowance, Capacity, Error, Gateway, Hifi, Limits, Minted, Server, Store, Web, gateway_tls,
+    listening, pem, serving,
 };
 use resonate_sync::wire::LARGEST_RECORD;
 use tokio::{
@@ -86,8 +87,50 @@ struct Args {
 
     #[arg(
         long,
+        default_value_t = 10_000,
+        help = "The most spaces the server keeps"
+    )]
+    spaces: u64,
+
+    #[arg(
+        long,
+        default_value_t = 16 * 1024 * 1024 * 1024,
+        help = "The most bytes all spaces may hold together"
+    )]
+    total_bytes: u64,
+
+    #[arg(
+        long,
+        default_value_t = 2048,
+        help = "The most connections open at once, from everyone"
+    )]
+    connections: usize,
+
+    #[arg(
+        long,
+        default_value_t = 64,
+        help = "The most connections open at once from one address (an IPv6 /64 counts as one)"
+    )]
+    connections_per_address: usize,
+
+    #[arg(
+        long,
+        default_value_t = 30,
+        help = "The most connections one address may open a minute"
+    )]
+    attempts_per_minute: u32,
+
+    #[arg(
+        long,
+        default_value_t = 5,
+        help = "The most new spaces one address may make a day"
+    )]
+    spaces_per_address_per_day: u32,
+
+    #[arg(
+        long,
         value_name = "TOML",
-        help = "The config file; its [hifi] table opens the keyed hifi-api gateway"
+        help = "The config file; its [hifi] table opens the keyed hifi-api gateway and its [web] table the WebSocket listener"
     )]
     config: Option<PathBuf>,
 }
@@ -138,18 +181,28 @@ fn run(args: Args) -> Result<(), Error> {
         .map(Hifi::read)
         .transpose()?
         .flatten();
+    let web = args.config.as_deref().map(Web::read).transpose()?.flatten();
     let gateway_acceptor = hifi
         .as_ref()
         .map(|_| gateway_tls(chain.clone(), key.clone_key()))
         .transpose()?;
     let config = serving(chain, key)?;
-    let store = Store::open(&required(args.store, "store"))?;
+    let store = Store::open(&required(args.store, "store"))?.limited(Capacity {
+        spaces: args.spaces,
+        bytes: args.total_bytes,
+    });
     let limits = Limits {
         record_bytes: args.record_bytes,
         space_bytes: args.space_bytes,
         devices: args.devices,
         frames_per_minute: args.frames_per_minute,
         idle_for: Duration::from_secs(args.idle_days.saturating_mul(SECONDS_PER_DAY)),
+        allowance: Allowance {
+            connections: args.connections,
+            connections_per_address: args.connections_per_address,
+            attempts_per_minute: args.attempts_per_minute,
+            spaces_per_address_per_day: args.spaces_per_address_per_day,
+        },
     };
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -167,6 +220,18 @@ fn run(args: Args) -> Result<(), Error> {
             }
             _ => None,
         };
+        let web_server = Arc::clone(&server);
+        let serving_web = async {
+            match web {
+                Some(web) => {
+                    let listener = TcpListener::bind(web.listen).await.map_err(Error::Listen)?;
+                    tracing::info!(listen = %web.listen, forwarded_by = ?web.forwarded_by, "serving sync over web sockets");
+                    web_server.serve_web(listener, web.forwarded_by).await;
+                    Ok::<(), Error>(())
+                }
+                None => std::future::pending().await,
+            }
+        };
         let serving_hifi = async {
             match gateway {
                 Some(serving) => serving.await,
@@ -177,6 +242,7 @@ fn run(args: Args) -> Result<(), Error> {
         tokio::select! {
             () = server.serve(endpoint.clone()) => {}
             () = serving_hifi => {}
+            bound = serving_web => bound?,
             _ = tokio::signal::ctrl_c() => tracing::info!("asked to stop"),
             _ = terminated.recv() => tracing::info!("asked to stop"),
         }

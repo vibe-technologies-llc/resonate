@@ -9,6 +9,8 @@ mod peer;
 mod quic;
 mod seal;
 mod service;
+mod stun;
+mod web;
 pub mod wire;
 
 pub use crate::{
@@ -29,5 +31,10 @@ pub use crate::{
     service::{
         HOSTED_SERVER, SERVER_PORT, Server, Settings, Shown, Standing, Sync, SyncDevice, Transfer,
         TransferState,
+    },
+    stun::{Reflector, STUN_PORT},
+    web::{
+        Accepted, Duplex, Incoming, Outgoing, WEB_SERVER_PORT, WebAddress, accepted, connect,
+        to_the_web, web_address,
     },
 };

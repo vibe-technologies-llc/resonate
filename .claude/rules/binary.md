@@ -224,11 +224,13 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   `file-dropped` is on; never the vault. Choosing stores the canonical path, refuses a non-folder or
   a path inside the vault (`unusable_as_the_music_folder`), adds it to the roots unless one already
   reaches it.
-- **`sync` (on) and the six `sync-*` keys** (`sync.md`): `sync-nearby-only` (on until the hosted
+- **`sync` (on) and the seven `sync-*` keys** (`sync.md`): `sync-nearby-only` (on until the hosted
   server is live) uses no server at all (`Server::Nowhere`): devices sync only on the same network,
   and sync then runs with `online` off too; off, `sync-server` or the hosted one is dialled.
   `sync-server` blank = the hosted `resonate.tecnio.dev`; `sync-server-certificate` a PEM trusted
-  beside the roots; `sync-key` the pairing code, minted and written back on the first start that
+  beside the roots; `sync-stun` a STUN server that tells the device its public address for
+  punching, blank (none) by default, needed to reach other devices through a `ws://`/`wss://`
+  `sync-server`; `sync-key` the pairing code, minted and written back on the first start that
   syncs, withheld by `Debug`, joined by `resonate sync --join` or the pane, cleared by `--leave` or
   the pane's *Regenerate pairing code* (two presses; the sync watcher mints a new one at once);
   `resonate sync --forget <device>` takes a device that is away off every list

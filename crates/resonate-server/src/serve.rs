@@ -1,25 +1,30 @@
 use std::{
-    net::SocketAddr,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     path::Path,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use parking_lot::Mutex;
-use quinn::{Connection, Endpoint, Incoming, RecvStream, SendStream, ServerConfig};
+use quinn::{Endpoint, Incoming, ServerConfig};
 use resonate_sync::{
-    DeviceId, SpaceId, read_frame, send_frame, transport,
+    DeviceId, Duplex, Incoming as Reader, Outgoing as Writer, SpaceId, accepted, transport,
     wire::{FromServer, LARGEST_RECORD, PROTOCOL_VERSION, Record, Refusal, SERVER_ALPN, ToServer},
 };
 use rustls::{crypto::ring::default_provider, version::TLS13};
 use rustls_pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
 use tokio::{
-    sync::mpsc::{UnboundedSender, unbounded_channel},
-    time::{Instant, timeout},
+    net::TcpListener,
+    sync::{
+        Semaphore,
+        mpsc::{UnboundedSender, unbounded_channel},
+    },
+    time::{Instant, interval, timeout},
 };
 
 use crate::{
     Error, PemOp, Result,
+    guard::{Admitted, Allowance, Guard},
     hub::{Hub, Joined, Notice},
     store::{Appended, CaughtUp, Claim, Compacted, Store},
 };
@@ -30,7 +35,9 @@ const SILENT_FOR: Duration = Duration::from_secs(90);
 const RECORDS_PER_FRAME: usize = 256;
 const RECORD_BYTES_PER_FRAME: usize = 4 * 1024 * 1024;
 const RATE_WINDOW: Duration = Duration::from_secs(60);
-const LONGEST_SWEEP_WAIT: Duration = Duration::from_secs(24 * 60 * 60);
+const LONGEST_SWEEP_WAIT: Duration = Duration::from_secs(60 * 60);
+const UNUSED_SPACE_KEPT_FOR: i64 = 24 * 60 * 60;
+const WEB_HANDSHAKES_AT_ONCE: usize = 256;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Limits {
@@ -39,18 +46,21 @@ pub struct Limits {
     pub devices: usize,
     pub frames_per_minute: u32,
     pub idle_for: Duration,
+    pub allowance: Allowance,
 }
 
 struct Seat {
     space: SpaceId,
     device: DeviceId,
     after: u64,
+    seen: SocketAddr,
 }
 
 pub struct Server {
     store: Arc<Mutex<Store>>,
     hub: Hub,
     limits: Limits,
+    guard: Arc<Guard>,
 }
 
 impl Default for Limits {
@@ -61,6 +71,7 @@ impl Default for Limits {
             devices: 16,
             frames_per_minute: 240,
             idle_for: Duration::from_secs(365 * 24 * 60 * 60),
+            allowance: Allowance::default(),
         }
     }
 }
@@ -121,6 +132,7 @@ impl Server {
         Arc::new(Self {
             store: Arc::new(Mutex::new(store)),
             hub: Hub::default(),
+            guard: Guard::new(limits.allowance),
             limits,
         })
     }
@@ -128,14 +140,53 @@ impl Server {
     pub async fn serve(self: Arc<Self>, endpoint: Endpoint) {
         let sweeping = tokio::spawn(Arc::clone(&self).sweep());
         while let Some(incoming) = endpoint.accept().await {
+            if !incoming.remote_address_validated() && incoming.may_retry() {
+                let _ = incoming.retry();
+                continue;
+            }
+            let Some(admitted) = self.guard.admit(incoming.remote_address().ip()) else {
+                incoming.refuse();
+                continue;
+            };
             let server = Arc::clone(&self);
             tokio::spawn(async move {
-                if let Err(error) = server.welcome(incoming).await {
+                if let Err(error) = server.welcome(incoming, admitted).await {
                     tracing::debug!(%error, "a device's session ended");
                 }
             });
         }
         sweeping.abort();
+    }
+
+    pub async fn serve_web(self: Arc<Self>, listener: TcpListener, forwarded_by: Option<String>) {
+        let handshaking = Arc::new(Semaphore::new(WEB_HANDSHAKES_AT_ONCE));
+        let forwarded_by: Option<Arc<str>> = forwarded_by.map(Into::into);
+        loop {
+            let Ok((stream, peer)) = listener.accept().await else {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                continue;
+            };
+            let admitted = match forwarded_by {
+                Some(_) => None,
+                None => match self.guard.admit(peer.ip()) {
+                    Some(admitted) => Some(admitted),
+                    None => continue,
+                },
+            };
+            let Ok(permit) = Arc::clone(&handshaking).try_acquire_owned() else {
+                continue;
+            };
+            let server = Arc::clone(&self);
+            let forwarded_by = forwarded_by.clone();
+            tokio::spawn(async move {
+                let served = server
+                    .welcome_web(stream, forwarded_by, admitted, permit)
+                    .await;
+                if let Err(error) = served {
+                    tracing::debug!(%error, "a device's web session ended");
+                }
+            });
+        }
     }
 
     async fn sweep(self: Arc<Self>) {
@@ -144,6 +195,14 @@ impl Server {
             tokio::time::sleep(wait).await;
             let idle = i64::try_from(self.limits.idle_for.as_secs()).unwrap_or(i64::MAX);
             let store = Arc::clone(&self.store);
+            let unused = Arc::clone(&self.store);
+            let _ = in_the_store(move || {
+                unused
+                    .lock()
+                    .sweep_unused(now().saturating_sub(UNUSED_SPACE_KEPT_FOR))
+            })
+            .await;
+            self.guard.forget_quiet_addresses();
             let swept = in_the_store(move || store.lock().sweep(now().saturating_sub(idle))).await;
             match swept {
                 Ok(0) => {}
@@ -153,16 +212,53 @@ impl Server {
         }
     }
 
-    async fn welcome(self: Arc<Self>, incoming: Incoming) -> Result<()> {
+    async fn welcome(self: Arc<Self>, incoming: Incoming, admitted: Arc<Admitted>) -> Result<()> {
         let connection = incoming
             .await
             .map_err(|source| resonate_sync::Error::Connection(Box::new(source)))?;
         let address = connection.remote_address();
         let streams = timeout(HELLO_WITHIN, connection.accept_bi()).await;
-        let Ok(Ok((mut send, mut recv))) = streams else {
+        let Ok(Ok((send, recv))) = streams else {
             return Ok(());
         };
-        let hello = timeout(HELLO_WITHIN, read_frame(&mut recv)).await;
+        self.hello(Writer::Quic(send), Reader::Quic(recv), address, admitted)
+            .await
+    }
+
+    async fn welcome_web(
+        self: Arc<Self>,
+        stream: impl Duplex + 'static,
+        forwarded_by: Option<Arc<str>>,
+        admitted: Option<Arc<Admitted>>,
+        handshake: tokio::sync::OwnedSemaphorePermit,
+    ) -> Result<()> {
+        let upgraded = timeout(HELLO_WITHIN, accepted(stream, forwarded_by.as_deref())).await;
+        let Ok(upgraded) = upgraded else {
+            return Ok(());
+        };
+        let upgraded = upgraded?;
+        drop(handshake);
+        let admitted = match (admitted, upgraded.forwarded_for) {
+            (Some(admitted), _) => admitted,
+            (None, Some(client)) => match self.guard.admit(client) {
+                Some(admitted) => admitted,
+                None => return Ok(()),
+            },
+            (None, None) => return Ok(()),
+        };
+        let unobserved = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0);
+        self.hello(upgraded.outgoing, upgraded.incoming, unobserved, admitted)
+            .await
+    }
+
+    async fn hello(
+        &self,
+        mut send: Writer,
+        mut recv: Reader,
+        address: SocketAddr,
+        admitted: Arc<Admitted>,
+    ) -> Result<()> {
+        let hello = timeout(HELLO_WITHIN, recv.read()).await;
         let Ok(Ok(Some(hello))) = hello else {
             return Ok(());
         };
@@ -181,12 +277,19 @@ impl Server {
         }
         let store = Arc::clone(&self.store);
         let digest = token.digest();
-        let claim = in_the_store(move || store.lock().claim(space, &digest, now())).await?;
-        if claim == Claim::Refused {
-            return refuse(&mut send, Refusal::Token).await;
-        }
-        if claim == Claim::Made {
-            tracing::info!("a space was made");
+        let making = Arc::clone(&admitted);
+        let claim = in_the_store(move || {
+            store
+                .lock()
+                .claim(space, &digest, now(), || making.may_make_a_space())
+        })
+        .await?;
+        match claim {
+            Claim::Refused => return refuse(&mut send, Refusal::Token).await,
+            Claim::Throttled => return refuse(&mut send, Refusal::TooFast).await,
+            Claim::Full => return refuse(&mut send, Refusal::Busy).await,
+            Claim::Made => tracing::info!("a space was made"),
+            Claim::Held => {}
         }
         let Some(joined) = self.hub.join(space, device, address, self.limits.devices) else {
             return refuse(&mut send, Refusal::Busy).await;
@@ -196,17 +299,17 @@ impl Server {
             space,
             device,
             after,
+            seen: address,
         };
-        let served = self.session(&connection, send, recv, seat, joined).await;
+        let served = self.session(send, recv, seat, joined).await;
         self.hub.leave(space, device, session);
         served
     }
 
     async fn session(
         &self,
-        connection: &Connection,
-        mut send: SendStream,
-        recv: RecvStream,
+        mut send: Writer,
+        recv: Reader,
         seat: Seat,
         joined: Joined,
     ) -> Result<()> {
@@ -214,6 +317,7 @@ impl Server {
             space,
             device,
             after,
+            seen,
         } = seat;
         let Joined {
             mut notices,
@@ -224,10 +328,10 @@ impl Server {
         let (head, _) = in_the_store(move || store.lock().head(space)).await?;
         let welcome = FromServer::Welcome {
             online: others,
-            seen_at: connection.remote_address(),
+            seen_at: seen,
             head,
         };
-        send_frame(&mut send, &welcome.encoded()).await?;
+        send.send(&welcome.encoded()).await?;
 
         let mut sent_through = after;
         self.send_records(&mut send, space, device, &mut sent_through)
@@ -237,6 +341,7 @@ impl Server {
         let reading = tokio::spawn(read_frames(recv, frames_in));
         let mut window = Instant::now();
         let mut counted = 0_u32;
+        let mut keeping = interval(KEEP_EVERY);
         let ended = loop {
             tokio::select! {
                 frame = frames.recv() => {
@@ -266,30 +371,31 @@ impl Server {
                         }
                     }
                 }
+                _ = keeping.tick(), if send.is_web() => send.keep_alive().await?,
                 notice = notices.recv() => match notice {
                     None | Some(Notice::Replaced) => break Ok(()),
                     Some(Notice::Appended) => self.send_records(&mut send, space, device, &mut sent_through).await?,
-                    Some(Notice::Arrived(other)) => send_frame(&mut send, &FromServer::Arrived { device: other }.encoded()).await?,
-                    Some(Notice::Left(other)) => send_frame(&mut send, &FromServer::Left { device: other }.encoded()).await?,
+                    Some(Notice::Arrived(other)) => send.send(&FromServer::Arrived { device: other }.encoded()).await?,
+                    Some(Notice::Left(other)) => send.send(&FromServer::Left { device: other }.encoded()).await?,
                     Some(Notice::Punched { device: from, address, sealed }) => {
                         let frame = FromServer::Punched { device: from, address, sealed };
-                        send_frame(&mut send, &frame.encoded()).await?;
+                        send.send(&frame.encoded()).await?;
                     }
                     Some(Notice::Compacted(through)) => {
                         self.send_records(&mut send, space, device, &mut sent_through).await?;
-                        send_frame(&mut send, &FromServer::Compacted { through }.encoded()).await?;
+                        send.send(&FromServer::Compacted { through }.encoded()).await?;
                     }
                 },
             }
         };
         reading.abort();
-        let _ = send.finish();
+        send.finish().await;
         ended
     }
 
     async fn append(
         &self,
-        send: &mut SendStream,
+        send: &mut Writer,
         space: SpaceId,
         device: DeviceId,
         blobs: Vec<Vec<u8>>,
@@ -308,7 +414,7 @@ impl Server {
         match appended {
             Appended::Full => refuse(send, Refusal::SpaceFull).await,
             Appended::Through(_) => {
-                send_frame(send, &FromServer::Appended { count }.encoded()).await?;
+                send.send(&FromServer::Appended { count }.encoded()).await?;
                 self.hub.tell_all(space, &Notice::Appended);
                 Ok(())
             }
@@ -317,7 +423,7 @@ impl Server {
 
     async fn compact(
         &self,
-        send: &mut SendStream,
+        send: &mut Writer,
         space: SpaceId,
         through: u64,
         parts: Vec<Vec<u8>>,
@@ -338,7 +444,7 @@ impl Server {
 
     async fn send_records(
         &self,
-        send: &mut SendStream,
+        send: &mut Writer,
         space: SpaceId,
         device: DeviceId,
         sent_through: &mut u64,
@@ -359,7 +465,7 @@ impl Server {
                         through,
                         parts: snapshot.parts,
                     };
-                    send_frame(send, &frame.encoded()).await?;
+                    send.send(&frame.encoded()).await?;
                     *sent_through = through;
                 }
                 CaughtUp::Records(stored) => {
@@ -373,7 +479,8 @@ impl Server {
                             blob: (record.device != device).then_some(record.blob),
                         })
                         .collect();
-                    send_frame(send, &FromServer::Records { entries }.encoded()).await?;
+                    send.send(&FromServer::Records { entries }.encoded())
+                        .await?;
                     *sent_through = last;
                 }
             }
@@ -381,14 +488,14 @@ impl Server {
     }
 }
 
-async fn refuse(send: &mut SendStream, refusal: Refusal) -> Result<()> {
-    send_frame(send, &FromServer::Refused(refusal).encoded()).await?;
+async fn refuse(send: &mut Writer, refusal: Refusal) -> Result<()> {
+    send.send(&FromServer::Refused(refusal).encoded()).await?;
     Ok(())
 }
 
-async fn read_frames(mut recv: RecvStream, frames: UnboundedSender<Result<ToServer>>) {
+async fn read_frames(mut recv: Reader, frames: UnboundedSender<Result<ToServer>>) {
     loop {
-        let frame = match read_frame(&mut recv).await {
+        let frame = match recv.read().await {
             Ok(Some(bytes)) => ToServer::decoded(&bytes).map_err(Error::from),
             Ok(None) => return,
             Err(error) => Err(Error::from(error)),

@@ -138,6 +138,9 @@ here, add it there.
   server connection and peer transfers are QUIC. The client confines tokio to one current-thread
   runtime on its own thread (`rt`, `net`, `time`, `sync`, `macros`, `fs`, `io-util`); the server
   takes `rt-multi-thread` and `signal`. quinn's `platform-verifier`, `log` and `bloom` stay off.
+  **`tokio-tungstenite`** (`handshake` only, pure Rust) and **`futures-util`** (`std`, `sink`) carry
+  the same frames over a WebSocket for a server behind a proxy with no UDP (`server.md`); TLS for
+  it is `tokio-rustls` on `ring`, and neither pulls serde into `resonate-sync`.
 - **`ring`** (direct): sealing (ChaCha20-Poly1305), HKDF, SHA-256, randomness and the peer
   signature check in `resonate-sync`; the crate rustls already links. **`rcgen`** (`ring`): the
   space's peer certificate, and the server tests' self-signed one. **`rustls-pki-types`** (`std`):

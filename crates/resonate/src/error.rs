@@ -106,6 +106,7 @@ pub enum ConfigKey {
     SyncNearbyOnly,
     SyncServer,
     SyncServerCertificate,
+    SyncStun,
     SyncKey,
     SyncDevice,
     SyncSongs,
@@ -163,7 +164,7 @@ impl fmt::Display for Named {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 99] = [
+    pub const ALL: [Self; 100] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -260,6 +261,7 @@ impl ConfigKey {
         Self::SyncNearbyOnly,
         Self::SyncServer,
         Self::SyncServerCertificate,
+        Self::SyncStun,
         Self::SyncKey,
         Self::SyncDevice,
         Self::SyncSongs,
@@ -363,6 +365,7 @@ impl ConfigKey {
             Self::SyncNearbyOnly => "sync-nearby-only",
             Self::SyncServer => "sync-server",
             Self::SyncServerCertificate => "sync-server-certificate",
+            Self::SyncStun => "sync-stun",
             Self::SyncKey => "sync-key",
             Self::SyncDevice => "sync-device",
             Self::SyncSongs => "sync-songs",

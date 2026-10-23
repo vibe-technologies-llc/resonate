@@ -257,11 +257,17 @@ Default: true.
 Boolean. Use no server: devices sync only on the same network. Default: true.
 .TP
 .B sync-server
-String. The sync server's address. Blank is the hosted server. Default: blank.
+String. The sync server's address. Blank is the hosted server. A \fBws://\fR or \fBwss://\fR address
+reaches the server over a WebSocket, which a proxy such as Cloudflare carries. Default: blank.
 .TP
 .B sync-server-certificate
 Path. A PEM certificate trusted beside the system roots, for a server of the listener's. Default:
 none.
+.TP
+.B sync-stun
+String. A STUN server (\fBhost\fR or \fBhost:port\fR, port 3478 by default) that tells this device
+its public address, which it hands to other devices to connect directly. Needed to reach devices
+through a server that is only reachable over a WebSocket. Blank asks none. Default: blank.
 .TP
 .B sync-key
 String, secret. The pairing code, minted and written on the first start that syncs. Default: none.

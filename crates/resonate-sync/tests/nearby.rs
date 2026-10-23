@@ -120,6 +120,7 @@ fn started_through(
     let settings = Settings {
         server,
         trusted: None,
+        stun: None,
         key: key.clone(),
         me: Me {
             name: name.into(),

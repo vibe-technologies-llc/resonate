@@ -103,6 +103,7 @@ fn device(
     let settings = Settings {
         server: resonate_sync::Server::At(format!("localhost:{}", hosted.address.port())),
         trusted: Some(hosted.trusted.clone()),
+        stun: None,
         key: key.clone(),
         me: Me {
             name: name.into(),

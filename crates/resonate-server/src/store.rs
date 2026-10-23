@@ -34,6 +34,20 @@ const MIGRATIONS: &[&str] = &[V1];
 
 pub struct Store {
     connection: Connection,
+    capacity: Capacity,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Capacity {
+    pub spaces: u64,
+    pub bytes: u64,
+}
+
+impl Capacity {
+    pub const UNLIMITED: Self = Self {
+        spaces: u64::MAX,
+        bytes: u64::MAX,
+    };
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,6 +55,8 @@ pub enum Claim {
     Made,
     Held,
     Refused,
+    Throttled,
+    Full,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -120,10 +136,24 @@ impl Store {
         transaction
             .commit()
             .map_err(|source| Error::store(StoreOp::Migrate, source))?;
-        Ok(Self { connection })
+        Ok(Self {
+            connection,
+            capacity: Capacity::UNLIMITED,
+        })
     }
 
-    pub fn claim(&mut self, space: SpaceId, token: &[u8; 32], now: i64) -> Result<Claim> {
+    pub fn limited(mut self, capacity: Capacity) -> Self {
+        self.capacity = capacity;
+        self
+    }
+
+    pub fn claim(
+        &mut self,
+        space: SpaceId,
+        token: &[u8; 32],
+        now: i64,
+        may_make: impl FnOnce() -> bool,
+    ) -> Result<Claim> {
         let held: Option<Vec<u8>> = self
             .connection
             .query_row(
@@ -145,6 +175,13 @@ impl Store {
             }
             Some(_) => Ok(Claim::Refused),
             None => {
+                let (spaces, bytes) = self.totals()?;
+                if spaces >= self.capacity.spaces || bytes >= self.capacity.bytes {
+                    return Ok(Claim::Full);
+                }
+                if !may_make() {
+                    return Ok(Claim::Throttled);
+                }
                 self.connection
                     .execute(
                         "INSERT INTO spaces (id, token, created, touched) VALUES (?1, ?2, ?3, ?3)",
@@ -154,6 +191,10 @@ impl Store {
                 Ok(Claim::Made)
             }
         }
+    }
+
+    fn totals(&self) -> Result<(u64, u64)> {
+        totals_in(&self.connection)
     }
 
     pub fn head(&self, space: SpaceId) -> Result<(u64, u64)> {
@@ -194,6 +235,10 @@ impl Store {
         let adding = blobs.iter().map(Vec::len).sum::<usize>();
         let adding = i64::try_from(adding).unwrap_or(i64::MAX);
         if bytes.saturating_add(adding).cast_unsigned() > space_bytes {
+            return Ok(Appended::Full);
+        }
+        let (_, stored) = totals_in(&transaction)?;
+        if stored.saturating_add(adding.cast_unsigned()) > self.capacity.bytes {
             return Ok(Appended::Full);
         }
         let mut seq = head;
@@ -367,6 +412,15 @@ impl Store {
         Ok(Compacted::Through(through.cast_unsigned()))
     }
 
+    pub fn sweep_unused(&mut self, made_before: i64) -> Result<usize> {
+        self.connection
+            .execute(
+                "DELETE FROM spaces WHERE head = 0 AND snapshot_through = 0 AND created < ?1",
+                params![made_before],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))
+    }
+
     pub fn sweep(&mut self, untouched_since: i64) -> Result<usize> {
         self.connection
             .execute(
@@ -375,6 +429,21 @@ impl Store {
             )
             .map_err(|source| Error::store(StoreOp::Write, source))
     }
+}
+
+fn totals_in(connection: &rusqlite::Connection) -> Result<(u64, u64)> {
+    connection
+        .query_row(
+            "SELECT COUNT(*), COALESCE(SUM(bytes), 0) FROM spaces",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?.cast_unsigned(),
+                    row.get::<_, i64>(1)?.cast_unsigned(),
+                ))
+            },
+        )
+        .map_err(|source| Error::store(StoreOp::Read, source))
 }
 
 fn device_from(bytes: &[u8]) -> DeviceId {
@@ -394,7 +463,7 @@ mod tests {
     fn claimed() -> Store {
         let mut store = Store::in_memory().expect("a store");
         assert_eq!(
-            store.claim(SPACE, &[3; 32], 1).expect("claimed"),
+            store.claim(SPACE, &[3; 32], 1, || true).expect("claimed"),
             Claim::Made
         );
         store
@@ -404,9 +473,12 @@ mod tests {
     fn a_space_is_claimed_by_its_first_token_and_refuses_any_other() {
         let mut store = claimed();
 
-        assert_eq!(store.claim(SPACE, &[3; 32], 2).expect("held"), Claim::Held);
         assert_eq!(
-            store.claim(SPACE, &[4; 32], 3).expect("refused"),
+            store.claim(SPACE, &[3; 32], 2, || true).expect("held"),
+            Claim::Held
+        );
+        assert_eq!(
+            store.claim(SPACE, &[4; 32], 3, || true).expect("refused"),
             Claim::Refused
         );
     }
@@ -529,8 +601,94 @@ mod tests {
 
         assert_eq!(store.sweep(2).expect("swept"), 1);
         assert_eq!(
-            store.claim(SPACE, &[4; 32], 3).expect("claimed anew"),
+            store
+                .claim(SPACE, &[4; 32], 3, || true)
+                .expect("claimed anew"),
             Claim::Made
         );
+    }
+
+    #[test]
+    fn a_store_at_its_space_cap_makes_no_more_but_still_serves_the_ones_it_has() {
+        let mut store = Store::in_memory().expect("a store").limited(Capacity {
+            spaces: 1,
+            bytes: u64::MAX,
+        });
+
+        assert_eq!(
+            store.claim(SPACE, &[3; 32], 1, || true).expect("made"),
+            Claim::Made
+        );
+        assert_eq!(
+            store
+                .claim(SpaceId([9; 16]), &[3; 32], 2, || true)
+                .expect("full"),
+            Claim::Full
+        );
+        assert_eq!(
+            store.claim(SPACE, &[3; 32], 3, || true).expect("held"),
+            Claim::Held
+        );
+    }
+
+    #[test]
+    fn a_throttled_claim_makes_no_space_and_a_held_one_is_never_throttled() {
+        let mut store = Store::in_memory().expect("a store");
+
+        assert_eq!(
+            store
+                .claim(SPACE, &[3; 32], 1, || false)
+                .expect("throttled"),
+            Claim::Throttled
+        );
+        assert_eq!(
+            store.claim(SPACE, &[3; 32], 2, || true).expect("made"),
+            Claim::Made
+        );
+        assert_eq!(
+            store.claim(SPACE, &[3; 32], 3, || false).expect("held"),
+            Claim::Held
+        );
+    }
+
+    #[test]
+    fn all_the_spaces_together_hold_no_more_than_the_total_cap() {
+        let mut store = Store::in_memory().expect("a store").limited(Capacity {
+            spaces: u64::MAX,
+            bytes: 15,
+        });
+        store.claim(SPACE, &[3; 32], 1, || true).expect("made");
+        store
+            .claim(SpaceId([9; 16]), &[3; 32], 1, || true)
+            .expect("made");
+
+        assert_eq!(
+            store
+                .append(SPACE, DESK, &[vec![0; 10]], 1 << 20)
+                .expect("appended"),
+            Appended::Through(1)
+        );
+        assert_eq!(
+            store
+                .append(SpaceId([9; 16]), DESK, &[vec![0; 10]], 1 << 20)
+                .expect("refused"),
+            Appended::Full
+        );
+    }
+
+    #[test]
+    fn a_space_never_written_to_is_swept_once_old_enough_and_a_used_one_stays() {
+        let mut store = claimed();
+        store
+            .claim(SpaceId([9; 16]), &[3; 32], 1, || true)
+            .expect("made");
+        store
+            .append(SpaceId([9; 16]), DESK, &[vec![1]], 1 << 20)
+            .expect("appended");
+
+        assert_eq!(store.sweep_unused(0).expect("nothing yet"), 0);
+        assert_eq!(store.sweep_unused(10).expect("swept"), 1);
+        assert_eq!(store.head(SpaceId([9; 16])).expect("head"), (1, 0));
+        assert_eq!(store.head(SPACE).expect("gone"), (0, 0));
     }
 }

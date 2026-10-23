@@ -6,7 +6,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     thread,
     time::Duration,
@@ -14,9 +14,12 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use parking_lot::{Mutex, RwLock};
-use quinn::{ClientConfig, Connection, Endpoint, EndpointConfig, SendStream, TokioRuntime};
+use quinn::{
+    AsyncUdpSocket, ClientConfig, Connection, Endpoint, EndpointConfig, Runtime as _, TokioRuntime,
+};
 use resonate_core::{Recording, RecordingKey};
 use ring::digest::{SHA256, SHA256_OUTPUT_LEN, digest};
+use rustls::ClientConfig as WebConfig;
 use tokio::{
     runtime::Runtime,
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
@@ -33,8 +36,10 @@ use crate::{
         beacon_of, beacon_recorded, bound, record_of,
     },
     peer::{Answering, Heard, blocking, dialled, fetch, holdings_of, meet, serve, tell},
-    quic::{PeerIdentity, read_frame, send_frame, to_the_server, trusted_roots},
+    quic::{KEEP_THE_SERVER_EVERY, PeerIdentity, to_the_server, trusted_roots},
     seal::{opened, sealed},
+    stun::{Reflector, STUN_PORT},
+    web::{Incoming, Outgoing, connect, to_the_web, web_address},
     wire::{
         Beacon, FromServer, LARGEST_FRAME, LARGEST_RECORD, PROTOCOL_VERSION, Refusal, ToServer,
         decoded_bundle, decoded_candidates, encoded_bundle, encoded_candidates, encoded_change,
@@ -86,6 +91,7 @@ impl Server {
 
 pub struct Settings {
     pub server: Server,
+    pub stun: Option<String>,
     pub trusted: Option<PathBuf>,
     pub key: SyncKey,
     pub me: Me,
@@ -175,9 +181,12 @@ struct Running {
     me: Me,
     follow: Follow,
     server: Option<String>,
+    stun: Option<String>,
     staging: PathBuf,
     endpoint: Endpoint,
+    reflector: Arc<Reflector>,
     to_server: ClientConfig,
+    to_web: Arc<WebConfig>,
     to_peers: ClientConfig,
     transfers_allowed: Arc<AtomicBool>,
     nearby: bool,
@@ -212,13 +221,39 @@ struct Pushed {
     bytes: usize,
 }
 
+enum Carrier {
+    Quic(Connection),
+    Web(usize),
+}
+
+static WEB_LINKS: AtomicUsize = AtomicUsize::new(0);
+
+impl Carrier {
+    fn web() -> Self {
+        Self::Web(usize::MAX - WEB_LINKS.fetch_add(1, Ordering::Relaxed))
+    }
+
+    fn id(&self) -> usize {
+        match self {
+            Self::Quic(connection) => connection.stable_id(),
+            Self::Web(id) => *id,
+        }
+    }
+
+    fn close(&self) {
+        if let Self::Quic(connection) = self {
+            connection.close(0_u32.into(), b"leaving");
+        }
+    }
+}
+
 struct Link {
-    connection: Connection,
+    carrier: Carrier,
     outgoing: UnboundedSender<Vec<u8>>,
     writing: JoinHandle<()>,
     frames: UnboundedReceiver<Result<FromServer>>,
     reading: JoinHandle<()>,
-    address: SocketAddr,
+    address: Option<SocketAddr>,
     online: Vec<DeviceId>,
     head: u64,
     caught_up: bool,
@@ -240,7 +275,7 @@ impl Link {
     fn hang_up(self) {
         self.reading.abort();
         self.writing.abort();
-        self.connection.close(0_u32.into(), b"leaving");
+        self.carrier.close();
     }
 }
 
@@ -286,6 +321,7 @@ impl Sync {
         let derived = settings.key.derived()?;
         let identity = PeerIdentity::of(&derived)?;
         let roots = trusted_roots(settings.trusted.as_deref())?;
+        let to_web = to_the_web(roots.clone())?;
         let to_server = to_the_server(roots)?;
         let to_peers = identity.dialling()?;
         let serving = identity.serving()?;
@@ -312,12 +348,14 @@ impl Sync {
             .as_ref()
             .and_then(|socket| socket.local_addr().ok())
             .map(|local| local.port());
-        let (endpoint, beacons) = {
+        let (endpoint, reflector, beacons) = {
             let _entered = runtime.enter();
-            let endpoint = Endpoint::new(
+            let reflector =
+                Reflector::over(TokioRuntime.wrap_udp_socket(socket).map_err(Error::Bind)?);
+            let endpoint = Endpoint::new_with_abstract_socket(
                 EndpointConfig::default(),
                 Some(serving),
-                socket,
+                Arc::clone(&reflector) as Arc<dyn AsyncUdpSocket>,
                 Arc::new(TokioRuntime),
             )
             .map_err(Error::Bind)?;
@@ -325,7 +363,7 @@ impl Sync {
                 .map(tokio::net::UdpSocket::from_std)
                 .transpose()
                 .map_err(Error::BeaconBind)?;
-            (endpoint, beacons)
+            (endpoint, reflector, beacons)
         };
 
         let (events, events_received) = mpsc::unbounded_channel();
@@ -355,9 +393,15 @@ impl Sync {
             me: settings.me,
             follow: settings.follow,
             server,
+            stun: settings
+                .stun
+                .map(|stun| stun.trim().to_owned())
+                .filter(|stun| !stun.is_empty()),
             staging: settings.staging,
             endpoint,
+            reflector,
             to_server,
+            to_web,
             to_peers,
             transfers_allowed,
             nearby: settings.nearby.is_some(),
@@ -775,6 +819,48 @@ fn told_digest(change: &Change) -> ToldDigest {
     told
 }
 
+fn routed_candidates(server_address: SocketAddr, port: u16) -> Vec<SocketAddr> {
+    let mut candidates = Vec::new();
+    if server_address.ip().is_loopback() {
+        candidates.push(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port));
+    }
+    let routed =
+        UdpSocket::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0)).and_then(|probe| {
+            probe.connect(server_address)?;
+            probe.local_addr()
+        });
+    if let Ok(routed) = routed
+        && !routed.ip().is_unspecified()
+        && !routed.ip().is_loopback()
+    {
+        candidates.push(SocketAddr::new(routed.ip(), port));
+    }
+    candidates
+}
+
+async fn resolve_stun(stun: &str) -> Result<SocketAddr> {
+    let (host, port) = match stun.rsplit_once(':') {
+        Some((host, port)) if !host.contains(':') => match port.parse() {
+            Ok(port) => (host, port),
+            Err(_) => (stun, STUN_PORT),
+        },
+        _ => (stun, STUN_PORT),
+    };
+    let addresses = tokio::net::lookup_host((host, port))
+        .await
+        .map_err(|source| Error::Resolve {
+            server: stun.into(),
+            source,
+        })?
+        .collect::<Vec<_>>();
+    addresses
+        .into_iter()
+        .find(SocketAddr::is_ipv4)
+        .ok_or_else(|| Error::Unresolved {
+            server: stun.into(),
+        })
+}
+
 async fn resolve(server: &str) -> Result<(SocketAddr, String)> {
     let (host, port) = host_and_port(server.trim());
     let addresses = tokio::net::lookup_host((host.as_str(), port))
@@ -814,8 +900,15 @@ async fn within<T>(waiting: impl Future<Output = Result<T>>) -> Result<T> {
         .unwrap_or(Err(Error::ServerSilent))
 }
 
-async fn linked(running: Arc<Running>, server: String) -> Result<Link> {
-    let (address, host) = within(resolve(&server)).await?;
+async fn reached(
+    running: &Running,
+    server: &str,
+) -> Result<(Carrier, Outgoing, Incoming, Option<SocketAddr>)> {
+    if let Some(web) = web_address(server) {
+        let (send, recv) = within(connect(&web, &running.to_web)).await?;
+        return Ok((Carrier::web(), send, recv, None));
+    }
+    let (address, host) = within(resolve(server)).await?;
     let connecting = running
         .endpoint
         .connect_with(running.to_server.clone(), address, &host)
@@ -826,13 +919,23 @@ async fn linked(running: Arc<Running>, server: String) -> Result<Link> {
             .map_err(|source| Error::Connection(Box::new(source)))
     })
     .await?;
-    let (mut send, recv) = within(async {
+    let (send, recv) = within(async {
         connection
             .open_bi()
             .await
             .map_err(|source| Error::Connection(Box::new(source)))
     })
     .await?;
+    Ok((
+        Carrier::Quic(connection),
+        Outgoing::Quic(send),
+        Incoming::Quic(recv),
+        Some(address),
+    ))
+}
+
+async fn linked(running: Arc<Running>, server: String) -> Result<Link> {
+    let (carrier, mut send, recv, address) = reached(&running, &server).await?;
 
     let (frames_in, mut frames) = mpsc::unbounded_channel();
     let reading = tokio::spawn(read_frames(recv, frames_in));
@@ -841,13 +944,13 @@ async fn linked(running: Arc<Running>, server: String) -> Result<Link> {
         Ok(welcomed) => welcomed,
         Err(error) => {
             reading.abort();
-            connection.close(0_u32.into(), b"leaving");
+            carrier.close();
             return Err(error);
         }
     };
     if head < cursor {
         reading.abort();
-        connection.close(0_u32.into(), b"leaving");
+        carrier.close();
         let ledger = Arc::clone(&running.ledger);
         blocking(move || ledger.lock().space_made_anew()).await?;
         return Err(Error::SpaceMadeAnew);
@@ -858,10 +961,10 @@ async fn linked(running: Arc<Running>, server: String) -> Result<Link> {
         send,
         queued,
         running.events.clone(),
-        connection.stable_id(),
+        carrier.id(),
     ));
     Ok(Link {
-        connection,
+        carrier,
         outgoing,
         writing,
         frames,
@@ -877,7 +980,7 @@ async fn linked(running: Arc<Running>, server: String) -> Result<Link> {
 
 async fn welcomed(
     running: &Running,
-    send: &mut SendStream,
+    send: &mut Outgoing,
     frames: &mut UnboundedReceiver<Result<FromServer>>,
 ) -> Result<(Vec<DeviceId>, u64, u64)> {
     let cursor = running.ledger.lock().cursor()?;
@@ -888,7 +991,7 @@ async fn welcomed(
         device: running.device,
         after: cursor,
     };
-    send_frame(send, &hello.encoded()).await?;
+    send.send(&hello.encoded()).await?;
     match frames.recv().await {
         Some(Ok(FromServer::Welcome { online, head, .. })) => Ok((online, head, cursor)),
         Some(Ok(FromServer::Refused(refusal))) => Err(Error::Refused(refusal)),
@@ -898,23 +1001,32 @@ async fn welcomed(
 }
 
 async fn write_frames(
-    mut send: SendStream,
+    mut send: Outgoing,
     mut queued: UnboundedReceiver<Vec<u8>>,
     events: UnboundedSender<Event>,
     connection: usize,
 ) {
-    while let Some(payload) = queued.recv().await {
-        if let Err(error) = send_frame(&mut send, &payload).await {
+    let mut keeping = interval(KEEP_THE_SERVER_EVERY);
+    keeping.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    loop {
+        let written = tokio::select! {
+            payload = queued.recv() => match payload {
+                Some(payload) => send.send(&payload).await,
+                None => break,
+            },
+            _ = keeping.tick() => send.keep_alive().await,
+        };
+        if let Err(error) = written {
             let _ = events.send(Event::Dropped(connection, error));
             return;
         }
     }
-    let _ = send.finish();
+    send.finish().await;
 }
 
-async fn read_frames(mut recv: quinn::RecvStream, frames: UnboundedSender<Result<FromServer>>) {
+async fn read_frames(mut recv: Incoming, frames: UnboundedSender<Result<FromServer>>) {
     loop {
-        let frame = match read_frame(&mut recv).await {
+        let frame = match recv.read().await {
             Ok(Some(bytes)) => FromServer::decoded(&bytes),
             Ok(None) => return,
             Err(error) => Err(error),
@@ -1024,13 +1136,13 @@ impl Syncing {
                 outgoing,
                 writing,
                 reading,
-                connection,
+                carrier,
                 ..
             } = link;
             drop(outgoing);
             let _ = timeout(LEAVE_WITHIN, writing).await;
             reading.abort();
-            connection.close(0_u32.into(), b"leaving");
+            carrier.close();
         }
     }
 
@@ -1074,7 +1186,7 @@ impl Syncing {
                 if self
                     .server
                     .as_ref()
-                    .is_some_and(|link| link.connection.stable_id() == id)
+                    .is_some_and(|link| link.carrier.id() == id)
                 {
                     self.unlinked(Some(error));
                 }
@@ -1596,7 +1708,7 @@ impl Syncing {
     }
 
     async fn punch(&mut self, device: DeviceId) -> Result<()> {
-        let candidates = self.candidates();
+        let candidates = self.candidates().await;
         let Some(link) = self.server.as_ref() else {
             return Ok(());
         };
@@ -1608,29 +1720,37 @@ impl Syncing {
         link.say(&ToServer::Punch { to: device, sealed })
     }
 
-    fn candidates(&self) -> Vec<SocketAddr> {
-        let Some(server_address) = self.server.as_ref().map(|link| link.address) else {
-            return Vec::new();
-        };
+    async fn candidates(&self) -> Vec<SocketAddr> {
         let Ok(port) = self.running.endpoint.local_addr().map(|local| local.port()) else {
             return Vec::new();
         };
-        let mut candidates = Vec::new();
-        if server_address.ip().is_loopback() {
-            candidates.push(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port));
-        }
-        let routed = UdpSocket::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0))
-            .and_then(|probe| {
-                probe.connect(server_address)?;
-                probe.local_addr()
-            });
-        if let Ok(routed) = routed
-            && !routed.ip().is_unspecified()
-            && !routed.ip().is_loopback()
-        {
-            candidates.push(SocketAddr::new(routed.ip(), port));
+        let mut candidates = match self.server.as_ref().map(|link| link.address) {
+            None => return Vec::new(),
+            Some(Some(server_address)) => routed_candidates(server_address, port),
+            Some(None) => addresses_here()
+                .into_iter()
+                .map(|ip| SocketAddr::new(ip, port))
+                .collect(),
+        };
+        if let Some(public) = self.public_address().await {
+            candidates.push(public);
         }
         candidates
+    }
+
+    async fn public_address(&self) -> Option<SocketAddr> {
+        let stun = self.running.stun.as_deref()?;
+        let asked = async {
+            let server = resolve_stun(stun).await?;
+            self.running.reflector.ask(server).await
+        };
+        match asked.await {
+            Ok(public) => Some(public),
+            Err(error) => {
+                tracing::debug!(%error, stun, "the public address could not be learned");
+                None
+            }
+        }
     }
 
     async fn punched(
@@ -1660,7 +1780,10 @@ impl Syncing {
             self.punched_back.insert(device, Instant::now());
             self.punch(device).await?;
         }
-        let mut candidates = vec![address];
+        let mut candidates = Vec::new();
+        if !address.ip().is_unspecified() {
+            candidates.push(address);
+        }
         match opened(
             &self.running.derived.sealer,
             self.running.derived.space,
