@@ -3096,9 +3096,9 @@ checksum = "b8c0a043c9540bae7c578c88f91dda8bd82e59ae27c21baca69c8b191aaf5a6e"
 
 [[package]]
 name = "uuid"
-version = "1.28.0"
+version = "1.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7cc1186384beb7dd8eedea376413fd654937285ea6c9cfbb928dc3043ea4b606"
+checksum = "4a0e2d11620c50695fe12bbbfde96b3477fe606e7284c22d505c12ce51214514"
 dependencies = [
  "getrandom 0.4.3",
  "js-sys",
@@ -3206,9 +3206,9 @@ dependencies = [
 
 [[package]]
 name = "webpki-root-certs"
-version = "1.0.10"
+version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58ec80e73fd8baf57bf0d9615554c75348bda990d6d5bbeab964dd068319fecb"
+checksum = "e49d0e65abc00c142e8f9428da991da9f1a250c39be97459901eb12b9b49f62a"
 dependencies = [
  "rustls-pki-types",
 ]
@@ -3454,9 +3454,9 @@ dependencies = [
 
 [[package]]
 name = "zbus"
-version = "6.0.0"
+version = "6.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "266223222c9d81e5966455a9da0783e35d56a7ccab79a03c2366b2d98f8fc8a9"
+checksum = "fcff5faa63a63d5b81051740f7382017f10b3440b3f401d97f0cf0b3b39c62d9"
 dependencies = [
  "async-trait",
  "bitflags 2.13.2",
@@ -3481,9 +3481,9 @@ dependencies = [
 
 [[package]]
 name = "zbus_macros"
-version = "6.0.0"
+version = "6.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69191782481ef4e0ac88ca487347c52e08bb85cceb2a163b79f7281fe5be0a3c"
+checksum = "5bba6e2bfe19571dc81b3e0be9f8daec6e5422db3e2eea2e766a859553e7bd37"
 dependencies = [
  "proc-macro2",
  "quote",
