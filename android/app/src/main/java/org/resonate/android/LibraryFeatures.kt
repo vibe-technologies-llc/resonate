@@ -128,6 +128,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     if (failure is Exception) library.report(failure)
                 }
         )
+    private val derivedScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val accounts = ProviderAccountStore(context)
     private val settings = context.getSharedPreferences("library-features", Context.MODE_PRIVATE)
     val appearance = AppearanceStore(context.getSharedPreferences("appearance", Context.MODE_PRIVATE))
@@ -180,13 +181,15 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val downloading: StateFlow<Boolean> =
         downloads.jobs
             .map { jobs -> jobs.any { !it.state.settled } }
-            .stateIn(scope, SharingStarted.Eagerly, false)
+            .stateIn(derivedScope, SharingStarted.Eagerly, false)
     val downloadedBytes: StateFlow<ULong> =
         downloads.jobs
             .map(DownloadPlan::received)
-            .stateIn(scope, SharingStarted.Eagerly, 0uL)
+            .stateIn(derivedScope, SharingStarted.Eagerly, 0uL)
     val downloadStatus: StateFlow<String?> =
-        downloads.jobs.map(DownloadPlan::summary).stateIn(scope, SharingStarted.Eagerly, null)
+        downloads.jobs
+            .map(DownloadPlan::summary)
+            .stateIn(derivedScope, SharingStarted.Eagerly, null)
     val online = MutableStateFlow(settings.getBoolean("online", true))
     val hostedServices = MutableStateFlow(settings.getBoolean("hosted-services", true))
     val folders = MutableStateFlow<List<MusicFolder>>(emptyList())

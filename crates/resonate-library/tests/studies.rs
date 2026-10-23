@@ -1083,6 +1083,9 @@ fn a_track_whose_file_was_out_of_reach_is_studied_once_it_is_back() -> Result<()
     };
 
     mode(0o000);
+    if fs::File::open(&path).is_ok() {
+        return Ok(());
+    }
     let away = enriched(&library, Silent::new(), Fingerprinters::none())?;
     mode(0o644);
     assert_eq!(away.stats.studied, 0);
