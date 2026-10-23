@@ -24,6 +24,7 @@ mod fallocating {
     const FROM_THE_START: u64 = 0;
 
     impl Shifting for Fallocate {
+        #[allow(clippy::useless_conversion)]
         fn block_of(&self, file: &File) -> Option<u64> {
             let kind = u64::try_from(fstatfs(file).ok()?.f_type).ok()?;
             if ![EXT_MAGIC, XFS_MAGIC, F2FS_MAGIC].contains(&kind) {
