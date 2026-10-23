@@ -4,7 +4,7 @@ Cost: work done more often, in more memory or on a thread it should not be on. F
 are in [ROADMAP.md](ROADMAP.md).
 
 ## Tagging
-- [M] A tag write that moves the audio still copies the whole file where the filesystem can neither
+- [M · 0.1.1] A tag write that moves the audio still copies the whole file where the filesystem can neither
   clone nor insert a range (FAT, exFAT, NTFS, network shares) and a head tag outgrows its room; so
   does an Ogg comment that needs another page (the audio's sequence numbers and CRCs change) and an
   Ogg head another muxer laid out unlike lofty, once each (the copy leaves padding). Each writes

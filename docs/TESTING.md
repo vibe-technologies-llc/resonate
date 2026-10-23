@@ -12,7 +12,7 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   gap of the RemoteIO reopen it causes has been heard
 
 ## iOS
-- [S] RemoteIO's `Unit` open path, the render callback's panic catch and the output thread's loop
+- [S · 0.1.1] RemoteIO's `Unit` open path, the render callback's panic catch and the output thread's loop
   stay iOS-only and untested on the host; `Routing`, `Drain`, `fill` and the buffer list's pointer
   handling are proved
 - [S · blocked: Xcode's processor] `ios/app-intents.py` is held by a fixture of `Siri.swift`'s const
@@ -26,7 +26,7 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   the documentation and `tests/live.rs` has no AcoustID test
 
 ## Catalog
-- [S] Trashing through the portal (`trash_through_the_portal`) is proved against a hosted
+- [S · 0.1.1] Trashing through the portal (`trash_through_the_portal`) is proved against a hosted
   `xdg-desktop-portal` but not from inside a Flatpak sandbox, where the portal reads the caller's
   app id and the descriptor crosses the sandbox
 
@@ -36,7 +36,7 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   nothing here has run
 
 ## Testing
-- [S] The drop overlay is driven by a real drag only by hand, on a hosted KWin (the `drive-a-drag`
+- [S · 0.1.1] The drop overlay is driven by a real drag only by hand, on a hosted KWin (the `drive-a-drag`
   skill, which proves the overlay and the copy there): gpui's `ExternalPaths` is `pub(crate)`, so
   `driven.rs` still calls `dragged_over` and `dropped` directly and no test or CI step feeds the
   platform's events; no other compositor has been tried

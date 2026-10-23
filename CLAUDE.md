@@ -6,7 +6,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 |---|---|---|
 | `rust-style.md` | always | formatting, imports, the no-comment rule, collections, sync primitives, text read from files, names built around a file's, a file another run may sweep |
 | `errors.md` | always | the `thiserror` architecture and its structural enforcement |
-| `build.md` | `.github`, `.cargo`, `fuzz`, the root manifest, benches | CI, the profiles and `target-cpu`, the fuzz targets |
+| `build.md` | `.github`, `.cargo`, `fuzz`, the root manifest, benches | CI, `release.yml` (tag-driven RPM, DEB, Arch and signed APK assets and their secrets), the profiles and `target-cpu`, the fuzz targets |
 | `android.md` | Android Gradle project, the mobile boundary and binding tool | Compose, native build, documents, service lifecycle, emulator checks, and the boundary behaviour both phones share |
 | `mobile.md` | resonate-mobile, resonate-bindgen, both `build-native.py` | the unsafe exception, one surface on every target, granted-document schemes, the output per target |
 | `ios.md` | `ios/**`, the RemoteIO output | the xtool toolchain, the native library and bindings, the App Intents metadata, hardening, the shape of the SwiftUI app, Siri |
@@ -28,7 +28,8 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `sync.md` | resonate-sync, the binary's `sync.rs`, `synced.rs`, the sync panes | the pairing key and what it derives, the wire, the ledger, the seam, peers and transfers, devices meeting on one network |
 | `server.md` | resonate-server, `packaging/server/**` | what the server keeps, sessions, presence, punching, limits, deployment |
 | `discord.md` | resonate-discord, `core::presence`, the binary's `discord.rs`, the Desktop groups | the gate, the seam, the frame, what an activity says and how often |
-| `packaging.md` | `packaging/**` | the Arch, Fedora and Flatpak payloads and their build baseline |
+| `release.md` | `.github/workflows/release.yml`, `packaging/**`, the root manifest, `docs/ROADMAP.md` | versions and their spelling per ecosystem, branches, tags, the release assets, the signing secrets |
+| `packaging.md` | `packaging/**` | the Arch, Fedora, DEB and Flatpak payloads, the x86-64-v3 release baseline and the pre-release spellings |
 
 ## Project
 
@@ -46,11 +47,13 @@ playback is the guiding constraint.
 
 `docs/ROADMAP.md` is the roadmap, **open work only** (defects, gaps, what is not built): it points
 to `BUGS.md`, `FEATURES.md`, `PERFORMANCE.md` and `TESTING.md` beside it, each of `## Category`
-headings of `- [S] Item` bullets, most to least important. The bracket prefix is the complexity
-(`S`, `M`, `L`) and, where the entry waits on something outside this tree, `· blocked: <blocker>`;
-blocked entries sit last in their category. `Next` (work chosen to come next) is first, in
-`ROADMAP.md`; categories no listener waits on are headed `Later:` below the rest. Drop an item as it
-lands, add what the work uncovers; what a landed item became goes into `.claude/rules/`.
+headings of `- [S · 0.2.0] Item` bullets, most to least important. The bracket prefix is the
+complexity (`S`, `M`, `L`), the release the entry is targeted at (patch releases take fixes, minor
+and major releases take features; blocked and `Later:` entries carry none) and, where the entry
+waits on something outside this tree, `· blocked: <blocker>`; blocked entries sit last in their
+category. `Next` (work chosen for the coming release) is first, in `ROADMAP.md`; categories no
+listener waits on are headed `Later:` below the rest. Drop an item as it lands, add what the work
+uncovers; what a landed item became goes into `.claude/rules/`.
 
 `AGENTS.md` is this guidance for agents that do not load `.claude/rules/`. It points here rather
 than restating the design, so it changes only, in the same commit, when a rules file or check is
@@ -127,8 +130,9 @@ Invariants the layering protects (the rules files have the rest):
   default; `online = false` stops every request (`online.md`).
 - **A guess is never written**: enrichment takes strict matches only; the grouping key never follows
   one.
-- **Stored formats are migrated, not broken**: a schema change appends a step to `MIGRATIONS`; `V1`
-  and existing steps are never edited.
+- **Every stored format starts at one `V1`, the baseline of 0.1.0**: until 0.1.0 ships `V1` may be
+  edited; from then a schema change appends a step to `MIGRATIONS` and `V1` and existing steps are
+  never edited, so stored data is migrated, not broken.
 - **What identifies a recording is core vocabulary** (`Mbid`, `Isrc`, `Link`, `Relation`, `Service`)
   since a provider crate may not see the library; *provider* means only a plugin that obtains media.
 - **A run of rows is one `resonate-core::Span`**, never empty; `Span::landing` is the one arithmetic
@@ -190,7 +194,7 @@ Invariants the layering protects (the rules files have the rest):
 - `cd fuzz && cargo +nightly fuzz build`, then `cargo +nightly fuzz run <target> corpus/<target>
   seeds/<target> -- -max_total_time=180 -timeout=15` (`build.md`).
 
-CI runs exactly this list, iOS aside; the debug profile is optimised and `target-cpu=native` is set
+CI runs exactly this list, iOS aside (`release.yml` runs on tags only); the debug profile is optimised and `target-cpu=native` is set
 (`build.md`).
 
 `cargo run -- <subcommand> --help` is the grammar (`binary.md`); the binary doubles as the audio

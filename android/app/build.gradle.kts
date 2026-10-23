@@ -8,6 +8,17 @@ fun signingValue(property: String, environment: String): String? =
     (findProperty(property) as String?)?.takeIf { it.isNotBlank() }
         ?: System.getenv(environment)?.takeIf { it.isNotBlank() }
 
+val releaseVersion: String =
+    Regex("""^version = "([^"]+)"""", RegexOption.MULTILINE)
+        .find(rootDir.resolve("../Cargo.toml").readText())!!.groupValues[1]
+
+fun versionCodeOf(version: String): Int {
+    val (core, preRelease) = version.substringBefore('+').split('-', limit = 2).let { it[0] to it.getOrNull(1) }
+    val (major, minor, patch) = core.split('.').map { it.toInt() }
+    val candidate = preRelease?.filter { it.isDigit() }?.toIntOrNull()?.coerceIn(0, 8) ?: 9
+    return ((major * 100 + minor) * 100 + patch) * 10 + candidate
+}
+
 val releaseKeystore = signingValue("resonate.signing.storeFile", "RESONATE_SIGNING_STORE_FILE")
 
 android {
@@ -18,8 +29,8 @@ android {
         applicationId = "org.resonate.android"
         minSdk = 33
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = versionCodeOf(releaseVersion)
+        versionName = releaseVersion
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

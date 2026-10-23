@@ -12,8 +12,10 @@ of `- Item` bullets.
 
 ## Reading an entry
 
-`- [S] text` or `- [M · blocked: gpui] text`: the bracket is the prefix, complexity first, blocker
-after it when there is one.
+`- [S · 0.2.0] text` or `- [M · blocked: gpui] text`: the bracket is the prefix, complexity first,
+then the release the entry is targeted at, then the blocker when there is one. An entry with no
+target is not scheduled: blocked entries and `Later:` categories carry none, and gain one when they
+move.
 
 | Complexity | Meaning |
 |---|---|
@@ -24,13 +26,29 @@ after it when there is one.
 A blocker names the outside thing the entry waits on (hardware, an upstream crate, a service, a
 format). Complexity is what the work costs once it moves.
 
+## Releases
+
+Versions are `MAJOR.MINOR.PATCH` with `-rcN` for candidates. A patch release carries fixes only; a
+minor or major release carries features. Each `MAJOR.MINOR` line has a `release/MAJOR.MINOR` branch
+cut from `master`, and each release is a `vMAJOR.MINOR.PATCH[-rcN]` tag with a GitHub release
+(`.claude/rules/release.md`).
+
+| Target | Kind | Draws from |
+|---|---|---|
+| `0.1.0-rc1` | release candidate | the first cut of `release/0.1` |
+| `0.1.1` | patch | [BUGS.md](BUGS.md), [PERFORMANCE.md](PERFORMANCE.md), [TESTING.md](TESTING.md) |
+| `0.2.0` | minor | [FEATURES.md](FEATURES.md) |
+
+A fix found on a released line lands on `master` and is cherry-picked to its `release/` branch. A
+target moves when the work does; the table grows a row when a release is planned.
+
 ## Ordering
 
 - Categories run most to least important; entries likewise (prerequisite before dependent, easier
   first among equals). Blocked entries sit last in their category and are not worked until the
   blocker moves.
-- `## Next` (work chosen to come next) is first when it exists; it lives here, in this file, in the
-  same entry format. `## Later: Category` headings, which no listener waits on, come below the rest
+- `## Next` (work chosen for the coming release) is first when it exists; it lives here, in this
+  file, in the same entry format, every entry carrying a target. `## Later: Category` headings, which no listener waits on, come below the rest
   of their file.
 - An entry lives in exactly one file. A category may appear in several files.
 

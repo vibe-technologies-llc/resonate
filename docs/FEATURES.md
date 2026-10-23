@@ -4,18 +4,18 @@ Gaps: what is not built, a limit by design, an unsupported format or a behaviour
 reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Android parity
-- [M] Android does not organise its folders or bind a curve to an output; iOS does both (moves in
+- [M · 0.2.0] Android does not organise its folders or bind a curve to an output; iOS does both (moves in
   Swift over `plan_organise` and `documents_moved`; curves per route in Swift)
-- [M] Android cannot edit tags: `edit_tags` writes at a filesystem path, which a SAF document does
+- [M · 0.2.0] Android cannot edit tags: `edit_tags` writes at a filesystem path, which a SAF document does
   not give
-- [L] Android output is shared stereo float at 48 kHz; exclusive/bit-perfect output, per-route
+- [L · 0.2.0] Android output is shared stereo float at 48 kHz; exclusive/bit-perfect output, per-route
   format enumeration and DoP need capability negotiation and physical-device validation
-- [M] Android keeps one download account: the boundary races every account, but Settings stores one
+- [M · 0.2.0] Android keeps one download account: the boundary races every account, but Settings stores one
   and the screens show one
 
 ## iOS parity
-- [L] Neither phone has the vault: the managed archive is built on desktop paths
-- [M] iOS downloads cannot resume: any cancel, failure or background expiry deletes the partial
+- [L · 0.2.0] Neither phone has the vault: the managed archive is built on desktop paths
+- [M · 0.2.0] iOS downloads cannot resume: any cancel, failure or background expiry deletes the partial
   file and the retry starts again, a large FLAC included
 - [M · blocked: xtool] iOS has no widget: a WidgetKit extension xtool builds is linked empty and,
   linked whole, traps in `ExtensionFoundation` before a widget registers (xtool issue 313)
@@ -26,15 +26,15 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   `build-std`
 
 ## Playback and output
-- [M] Changing the graph rate mid-track reopens the stream, costing the gap a sink switch does; so
+- [M · 0.2.0] Changing the graph rate mid-track reopens the stream, costing the gap a sink switch does; so
   do the rate policy, buffer or DoP wherever the change moves the stream's format or the ring's
   depth
-- [L] Changing the equaliser is heard up to the buffer's depth later (half a second by default): the
+- [L · 0.2.0] Changing the equaliser is heard up to the buffer's depth later (half a second by default): the
   filters run ahead of a ring kept full; only a level can be trimmed where the graph pulls
-- [L] One playback stream and one capture stream only; concurrent playback streams unsupported
+- [L · 0.2.0] One playback stream and one capture stream only; concurrent playback streams unsupported
 
 ## Formats
-- [L] A mid-stream change of rate or channel count (chained Ogg Vorbis, an MP3 going mono to stereo)
+- [L · 0.2.0] A mid-stream change of rate or channel count (chained Ogg Vorbis, an MP3 going mono to stereo)
   fails the track with `ResetRequired`; nothing reopens the stream at the change
 - [M · blocked: ape-decoder] A 32-bit stereo Monkey's Audio, integer or float, is refused:
   `ape-decoder` 0.3.2 narrows the side channel to 32 bits before undoing it
@@ -45,57 +45,57 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   families 2 and 3 would also need projection decoding
 
 ## Tagging
-- [M] A cue-cut row is never written; an album landed as a release group gets no totals
+- [M · 0.2.0] A cue-cut row is never written; an album landed as a release group gets no totals
 - [M · blocked: lofty] `.caf`, `.mka` and the DSD containers have no writer (lofty 0.25.4 has no
   such file type); `.oga` alone could be mapped to Vorbis by hand
 
 ## Providers and network
-- [M] A TIDAL account is asked by link and code alone: its OpenAPI filter has no text search here,
+- [M · 0.2.0] A TIDAL account is asked by link and code alone: its OpenAPI filter has no text search here,
   so a song TIDAL holds under a code MusicBrainz never lists is found by hifi-api and Monochrome
   only
 
 ## Device sync
-- [L] The phones carry saved-query playlists on to other devices but hold none themselves: their
+- [L · 0.2.0] The phones carry saved-query playlists on to other devices but hold none themselves: their
   catalog has no saved queries and no search grammar to read one with
-- [S] A build without the saved-query record that compacts the server's log drops the saved queries
+- [S · 0.2.0] A build without the saved-query record that compacts the server's log drops the saved queries
   from it; a device joining from the server alone misses them until one holding them edits them
-- [S] A song a vaulted device passes on has lost its tags to the vault, so the third device groups
+- [S · 0.2.0] A song a vaulted device passes on has lost its tags to the vault, so the third device groups
   it by title and track artist alone unless the sender's file declared more; the wire's
   `Recording` carries no album artist, year or totals
-- [M] Devices punch over IPv4 alone, so two devices reachable only over IPv6 never meet
-- [L] Two devices both behind symmetric NATs cannot reach each other; nothing relays songs between
+- [M · 0.2.0] Devices punch over IPv4 alone, so two devices reachable only over IPv6 never meet
+- [L · 0.2.0] Two devices both behind symmetric NATs cannot reach each other; nothing relays songs between
   them
-- [M] Devices on one network meet over IPv4 alone; a network handing out only IPv6 leaves them
+- [M · 0.2.0] Devices on one network meet over IPv4 alone; a network handing out only IPv6 leaves them
   apart
-- [M · blocked: resonate.tecnio.dev] The hosted sync server is not live; until it is, devices on
-  different networks meet only through a self-hosted `resonate-server`
+- [M · blocked: resonate.tecnio.dev] The hosted sync server is not live; until it is, sync defaults to *Only this network* (`sync-nearby-only` on) and
+  devices on different networks meet only through a self-hosted `resonate-server`, with that switch off
 
 ## Equaliser and DSP
-- [S] The preferred measurer (`equaliser-measurer`) is one for every device: none can be preferred
+- [S · 0.2.0] The preferred measurer (`equaliser-measurer`) is one for every device: none can be preferred
   for a single device
-- [S] The clamped-sample count is in the desktop inspector alone: the phones' `PlaybackState` does
+- [S · 0.2.0] The clamped-sample count is in the desktop inspector alone: the phones' `PlaybackState` does
   not carry it
 
 ## Search
-- [S] A phone's search holds nothing for `added:` (a document row keeps no time it was added) nor
+- [S · 0.2.0] A phone's search holds nothing for `added:` (a document row keeps no time it was added) nor
   for `is:fake`, `is:suspect` and `is:misnamed` (studies stay outside the index and its revision)
-- [M] A pasted TIDAL playlist link is taken as words; a Spotify playlist is read off its embed page
+- [M · 0.2.0] A pasted TIDAL playlist link is taken as words; a Spotify playlist is read off its embed page
   and a YouTube one off its public page, each listing at most its first hundred songs, and an Apple
   Music one off its public page, none naming an ISRC
 - [L · blocked: service] A lyric reaches only a row the catalog holds; no keyless service indexes
   lyric text (LRCLIB's text search finds none)
 
 ## Identification
-- [L] An encode with no lowpass a wall can find reads as lossless: ffmpeg's AAC at 256 and 320 kbps
+- [L · 0.2.0] An encode with no lowpass a wall can find reads as lossless: ffmpeg's AAC at 256 and 320 kbps
   measured the same as its source by every spectral feature `analysis.md` lists; no FhG encode
   weighed
 
 ## Keyboard and accessibility
-- [M] An icon-only control shows no name on focus (tooltips need a pointer) and the confirming toast
+- [M · 0.2.0] An icon-only control shows no name on focus (tooltips need a pointer) and the confirming toast
   leaves after 6 s; `TextSize::Large` is 1.15× the normal; no reduced-motion setting
-- [M] A selection is a contiguous run reached by Shift; Tracks and Albums act on its first row
+- [M · 0.2.0] A selection is a contiguous run reached by Shift; Tracks and Albums act on its first row
   alone; nothing adds a row with Control
-- [L] Nothing is exposed to a screen reader: gpui now carries AccessKit, which the views
+- [L · 0.2.0] Nothing is exposed to a screen reader: gpui now carries AccessKit, which the views
   do not yet use
 
 ## Later: Sources and providers
