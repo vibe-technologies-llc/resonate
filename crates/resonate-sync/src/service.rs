@@ -46,7 +46,7 @@ use crate::{
     },
 };
 
-pub const HOSTED_SERVER: &str = "resonate.tecnio.dev";
+pub const HOSTED_SERVER: &str = "wss://sync.tecnio.dev/";
 pub const SERVER_PORT: u16 = 443;
 const TRANSFERS_SHOWN_AT_MOST: usize = 200;
 const FIRST_RETRY: Duration = Duration::from_secs(5);

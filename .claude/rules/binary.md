@@ -227,7 +227,7 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
 - **`sync` (on) and the seven `sync-*` keys** (`sync.md`): `sync-nearby-only` (on until the hosted
   server is live) uses no server at all (`Server::Nowhere`): devices sync only on the same network,
   and sync then runs with `online` off too; off, `sync-server` or the hosted one is dialled.
-  `sync-server` blank = the hosted `resonate.tecnio.dev`; `sync-server-certificate` a PEM trusted
+  `sync-server` blank = the hosted `wss://sync.tecnio.dev/`; `sync-server-certificate` a PEM trusted
   beside the roots; `sync-stun` a STUN server that tells the device its public address for
   punching, blank (none) by default, needed to reach other devices through a `ws://`/`wss://`
   `sync-server`; `sync-key` the pairing code, minted and written back on the first start that

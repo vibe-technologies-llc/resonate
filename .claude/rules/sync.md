@@ -226,8 +226,8 @@ will not open is left out of the holdings.
   (`a_song_deleted_by_hand_is_wanted_again_while_its_playlist_and_favourite_stay`).
 - **`Shown.transfers` keeps at most `TRANSFERS_SHOWN_AT_MOST` (200)**, the oldest landed or
   failed dropped first.
-- **Server**: `Settings::server` is a `Server`: `Hosted` (`HOSTED_SERVER`, `resonate.tecnio.dev`,
-  port 443), `At` another (`sync-server`; blank is the hosted one; `ws://`/`wss://` for a web
+- **Server**: `Settings::server` is a `Server`: `Hosted` (`HOSTED_SERVER`, `wss://sync.tecnio.dev/`, a web socket through Cloudflare Tunnel),
+  `At` another (`sync-server`; blank is the hosted one; `ws://`/`wss://` for a web
   socket), or `Nowhere`, the listener's
   *This network only*, **the default on every front end until the hosted server is live** (`sync-nearby-only`
   on; a listener switches it off to use `Hosted` or `At`): nothing is dialled, the standing is `Standing::Nearby` from the start, and
