@@ -967,35 +967,30 @@ impl Catalog for DocumentCatalog {
             )
             .map_err(unavailable)?;
         let held = usize::try_from(held).unwrap_or_default();
-        let playing = usize::try_from(row_at).unwrap_or_default();
+        let (playing, position_ms) =
+            catalog::place_among_rows(&connection, row_at, position_ms.max(0) as u64)
+                .map_err(unavailable)?;
         let window = Resumed::window_around(playing, held);
-        let queued = connection
+        let rows = connection
             .prepare(&format!(
-                "SELECT q.position, {RECORDING_COLUMNS} FROM queue q JOIN documents d ON d.id = q.track ORDER BY q.position LIMIT ?1 OFFSET ?2"
+                "SELECT {RECORDING_COLUMNS} FROM queue q JOIN documents d ON d.id = q.track ORDER BY q.position LIMIT ?1 OFFSET ?2"
             ))
             .and_then(|mut query| {
                 query
                     .query_map([window.len() as i64, window.start as i64], |row| {
-                        Ok((row.get::<_, i64>(0)?, recording_at(row, 1)?))
+                        recording_at(row, 0)
                     })?
                     .collect::<rusqlite::Result<Vec<_>>>()
             })
             .map_err(unavailable)?;
-        if queued.is_empty() {
+        if rows.is_empty() {
             return Ok(None);
         }
-        let mut rows = Vec::with_capacity(queued.len());
-        let mut at = 0;
-        for (position, recording) in queued {
-            if position <= row_at {
-                at = rows.len();
-            }
-            rows.push(recording);
-        }
+        let at = playing.saturating_sub(window.start).min(rows.len() - 1);
         Ok(Some(Resumed {
             rows,
             at: u32::try_from(at).unwrap_or(u32::MAX),
-            position: Duration::from_millis(position_ms.max(0) as u64),
+            position: Duration::from_millis(position_ms),
             playing: false,
         }))
     }

@@ -511,7 +511,35 @@ impl Catalog {
             .optional()
             .map_err(|source| Error::store(StoreOp::Read, source))?
             .unwrap_or((0, 0));
-        Ok((ids, at, position))
+        let (at, position) = place_among_rows(&connection, at, position)
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        Ok((ids, at as u32, position))
+    }
+}
+
+pub(crate) fn place_among_rows(
+    connection: &rusqlite::Connection,
+    row_at: i64,
+    position_ms: u64,
+) -> rusqlite::Result<(usize, u64)> {
+    let (before, standing, rows) = connection.query_row(
+        "SELECT (SELECT count(*) FROM queue WHERE position < ?1), EXISTS(SELECT 1 FROM queue WHERE position = ?1), (SELECT count(*) FROM queue)",
+        [row_at],
+        |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, bool>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        },
+    )?;
+    let before = usize::try_from(before).unwrap_or_default();
+    let last = usize::try_from(rows).unwrap_or_default().saturating_sub(1);
+
+    if standing {
+        Ok((before, position_ms))
+    } else {
+        Ok((before.min(last), 0))
     }
 }
 

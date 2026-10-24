@@ -321,3 +321,68 @@ fn forgotten_in(
     }
     transaction.execute("DELETE FROM documents WHERE id = ?1", [id])
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+
+    fn queued(titles: &[&str], row: u32, position_ms: u64) -> (Catalog, Vec<Track>) {
+        let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+        let tracks: Vec<Track> = titles
+            .iter()
+            .map(|title| {
+                catalog
+                    .upsert(Track {
+                        uri: format!("content://test/{title}.flac"),
+                        name: format!("{title}.flac"),
+                        title: (*title).into(),
+                        ..Track::default()
+                    })
+                    .expect("an indexed song")
+            })
+            .collect();
+        let ids: Vec<u64> = tracks.iter().map(|track| track.id).collect();
+        catalog
+            .save_queue(&ids, row, position_ms)
+            .expect("a saved queue");
+        (catalog, tracks)
+    }
+
+    #[test]
+    fn deleting_a_song_before_the_one_heard_resumes_the_same_song_at_its_place() {
+        let (catalog, songs) = queued(&["A", "B", "C"], 1, 90_000);
+
+        catalog.forget(&[songs[0].id]).expect("forgotten");
+        let (ids, at, position) = catalog.resume().expect("resumed");
+
+        assert_eq!(ids, vec![songs[1].id, songs[2].id]);
+        assert_eq!(at, 0);
+        assert_eq!(position, 90_000);
+    }
+
+    #[test]
+    fn deleting_the_song_heard_resumes_the_next_one_from_its_start() {
+        let (catalog, songs) = queued(&["A", "B", "C"], 1, 90_000);
+
+        catalog.forget(&[songs[1].id]).expect("forgotten");
+        let (ids, at, position) = catalog.resume().expect("resumed");
+
+        assert_eq!(ids, vec![songs[0].id, songs[2].id]);
+        assert_eq!(at, 1);
+        assert_eq!(position, 0);
+    }
+
+    #[test]
+    fn deleting_the_last_song_when_it_was_heard_resumes_the_new_last_from_its_start() {
+        let (catalog, songs) = queued(&["A", "B", "C"], 2, 90_000);
+
+        catalog.forget(&[songs[2].id]).expect("forgotten");
+        let (ids, at, position) = catalog.resume().expect("resumed");
+
+        assert_eq!(ids, vec![songs[0].id, songs[1].id]);
+        assert_eq!(at, 1);
+        assert_eq!(position, 0);
+    }
+}

@@ -497,7 +497,12 @@ The front end removes the file (Rust holds only a descriptor), then `forget_dele
 the queue rows naming each (the playing one moving on), steps the revision of every playlist holding
 it and deletes its row with every row referring to it (playlist rows, listens, lyrics, artwork,
 studies; a picture nothing else shows goes too), answering `SongsForgotten` (rows forgotten, queue
-rows left); its listens leave the totals, as a hidden song's already do. `identical_songs()` answers
+rows left); its listens leave the totals, as a hidden song's already do. The queue rows it deletes leave
+holes in `queue.position`, so the saved place is read by position, not by index (`place_among_rows`, for
+resume and the sync handoff alike): a position still standing is its row at its time, one that is gone
+is the next remaining row from its start
+(`deleting_a_song_before_the_one_heard_resumes_the_same_song_at_its_place`,
+`deleting_the_song_heard_resumes_the_next_one_from_its_start`). `identical_songs()` answers
 `IdenticalSongs` (the copy kept and the copies) for files holding exactly the same bytes: held
 songs grouped by size (the stamp a scan kept, else measured through the document provider, since a
 download, a landing or an opened file is indexed with none), then by a CRC-32 of the whole file,
