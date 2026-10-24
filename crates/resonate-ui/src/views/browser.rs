@@ -45,6 +45,17 @@ use crate::{
 
 const COVERS_AHEAD: usize = 48;
 const ADD_A_FOLDER: &str = "Add a music folder from Settings to scan one in.";
+
+const ADD_SONGS: &str = "Add songs to start your library.";
+
+const ADD_SONGS_MORE: &str = "Choose the primary music folder: songs you drag onto the window are \
+                              copied into it, and what is already there is scanned.";
+
+const CHOOSE_PRIMARY_HINT: &str = "Open the folder dialogue and make the folder chosen the \
+                                   primary music folder";
+
+const DROP_SONGS_MORE: &str = "Drag songs onto the window, or put them in the primary music \
+                               folder, to fill the library.";
 const LIBRARY_UNREADABLE: &str = "The library couldn't be read.";
 const SEVERAL: &str = "Various artists";
 const FORGET_THE_MATCH: &str = "Not this record";
@@ -541,6 +552,25 @@ impl RootView {
         )
     }
 
+    fn add_songs(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        kit::empty_offering(
+            Icon::Tracks,
+            ADD_SONGS,
+            Some(ADD_SONGS_MORE),
+            self.in_the_pane_ring(
+                kit::button(
+                    "choose-the-primary-folder",
+                    Some(Icon::Folder),
+                    "Set primary folder…",
+                    CHOOSE_PRIMARY_HINT,
+                    Tone::Primary,
+                ),
+                |this, _, cx| this.choose_the_primary_folder(cx),
+                cx,
+            ),
+        )
+    }
+
     pub(crate) fn nothing_matched(
         &mut self,
         icon: Icon,
@@ -771,8 +801,10 @@ impl RootView {
         if tracks.is_empty() && !narrowed && !scoped {
             return if self.library.read(cx).unreadable() {
                 empty(Icon::Tracks, LIBRARY_UNREADABLE, None)
+            } else if cx.global::<ResonateApp>().music_folder.is_none() {
+                self.add_songs(cx)
             } else {
-                empty(Icon::Tracks, "No tracks yet.", Some(ADD_A_FOLDER))
+                empty(Icon::Tracks, "No tracks yet.", Some(DROP_SONGS_MORE))
             };
         }
         let playing = self.playing_now(cx).track;

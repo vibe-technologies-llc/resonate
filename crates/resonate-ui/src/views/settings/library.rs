@@ -1654,6 +1654,10 @@ impl RootView {
         cx.notify();
     }
 
+    pub(crate) fn choose_the_primary_folder(&self, cx: &mut Context<Self>) {
+        self.pick_a_folder(cx, Self::set_the_music_folder);
+    }
+
     fn pick_a_folder(
         &self,
         cx: &mut Context<Self>,

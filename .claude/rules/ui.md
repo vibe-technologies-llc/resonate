@@ -1370,6 +1370,9 @@ is never named.
   added) is drawn as a card of its own with a mark that clears it. Forgetting a root holding the
   primary clears the primary. *Add folder…* and the typed field add roots; the *File dropped songs
   by the layout* switch ends the box, and the group's mark puts back no primary and the switch on.
+  **With no primary folder the Tracks pane offers to set one**: its empty state says *Add songs to
+  start your library* and a *Set primary folder…* button opens the folder dialogue
+  (`choose_the_primary_folder`).
 - **The Resonate server key is a group of its own** (`Group::ResonateKey`, Library category), one
   masked `Field` that is `TidalAccount::HifiSecret` in the same array as the TIDAL fields (so focus,
   leaving and putting back are the TIDAL fields' one path) and drawn apart from them; the TIDAL
