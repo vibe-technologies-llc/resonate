@@ -353,10 +353,11 @@ class LibraryFeatures(private val context: Context, private val library: Library
         native.configureOnline(online.value)
         native.configureHostedServices(hostedServices.value)
         enrichment.initialize(online.value)
-        downloads.recover()
+        downloads.recover(native)
         settings.getString("unfinished-sync-landing", null)?.let { value ->
             try {
-                MusicDocuments.delete(context, Uri.parse(value))
+                val stranded = DownloadPlan.stranded(listOf(value), native.songUris().toSet())
+                MusicDocuments.settleLeftover(context, Uri.parse(value), value in stranded)
                 settings.edit().remove("unfinished-sync-landing").commit()
             } catch (failure: Exception) {
                 library.report(failure)
@@ -656,8 +657,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 val descriptor =
                     requireNotNull(context.contentResolver.openFileDescriptor(uri, "w")).detachFd()
                 native.syncReceive(received.id, descriptor, uri.toString())
-                MusicDocuments.publish(context, uri)
                 created = null
+                MusicDocuments.publish(context, uri)
                 settings.edit().remove("unfinished-sync-landing").commit()
                 landingRefused.remove(received.id)
                 landed++

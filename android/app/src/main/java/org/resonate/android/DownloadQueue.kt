@@ -171,8 +171,8 @@ class DownloadQueue(
             val count = native.downloadOffer(id, descriptor)
             change(key) { it.copy(state = DownloadState.VALIDATING, received = count) }
             native.indexDownload(id, uri.toString(), offer.name)
-            MusicDocuments.publish(context, uri)
             created = null
+            MusicDocuments.publish(context, uri)
             forgetJournal(uri)
             change(key) { it.copy(state = DownloadState.DONE, received = count) }
             seams.landed()
@@ -212,33 +212,46 @@ class DownloadQueue(
         }
     }
 
-    private fun forgetJournal(uri: Uri) {
+    private fun forgetJournal(uri: Uri): Boolean {
         val left = settings.getStringSet(JOURNAL_KEY, emptySet()).orEmpty() - uri.toString()
-        settings.edit().putStringSet(JOURNAL_KEY, left).commit()
+        return settings.edit().putStringSet(JOURNAL_KEY, left).commit()
     }
 
     private fun discard(uri: Uri) {
         try {
             MusicDocuments.delete(context, uri)
-            forgetJournal(uri)
+            check(forgetJournal(uri)) { JOURNAL_NOT_CLEARED }
         } catch (failure: Exception) {
             library.report(failure)
         }
     }
 
-    fun recover() {
+    fun recover(native: MobilePlayer) {
         if (active) return
+        val indexed =
+            try {
+                native.songUris().toSet()
+            } catch (failure: Exception) {
+                library.report(failure)
+                return
+            }
         val legacy = settings.getString(LEGACY_JOURNAL_KEY, null)
         val left = settings.getStringSet(JOURNAL_KEY, emptySet()).orEmpty() + listOfNotNull(legacy)
+        val stranded = DownloadPlan.stranded(left, indexed)
         left.forEach { value ->
             try {
-                MusicDocuments.delete(context, Uri.parse(value))
-                forgetJournal(Uri.parse(value))
+                val uri = Uri.parse(value)
+                MusicDocuments.settleLeftover(context, uri, value in stranded)
+                if (value == legacy) {
+                    check(settings.edit().remove(LEGACY_JOURNAL_KEY).commit()) {
+                        JOURNAL_NOT_CLEARED
+                    }
+                }
+                check(forgetJournal(uri)) { JOURNAL_NOT_CLEARED }
             } catch (failure: Exception) {
                 library.report(failure)
             }
         }
-        if (legacy != null) settings.edit().remove(LEGACY_JOURNAL_KEY).commit()
     }
 
     private companion object {
@@ -247,6 +260,7 @@ class DownloadQueue(
         const val JOURNAL_KEY = "unfinished-downloads"
         const val LEGACY_JOURNAL_KEY = "unfinished-download"
         const val SERVICE_STARTS_WITHIN_MS = 10_000L
+        const val JOURNAL_NOT_CLEARED = "The download journal could not be cleared"
     }
 }
 

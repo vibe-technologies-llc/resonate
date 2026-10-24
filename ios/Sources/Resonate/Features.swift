@@ -205,7 +205,10 @@ final class Features {
         if let left = landingJournal.left {
             let folders = library.folders
             Task { [weak self] in
-                _ = try? await Work.aside { folders.delete(left) }
+                guard let indexed = try? await Work.aside({ Set(try native.songUris()) }) else { return }
+                if !indexed.contains(left) {
+                    _ = try? await Work.aside { folders.delete(left) }
+                }
                 self?.landingJournal.finish(ifStill: left)
             }
         }

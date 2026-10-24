@@ -301,7 +301,7 @@ sync seals its records and talks QUIC (TLS) of its own.
 - **`Features`** mirrors Android's `LibraryFeatures`: request generations refuse stale results, the
   same 30 s scrobbling loop (which also asks `tell_loves`, so a favourite is loved on each saved
   account and taken back there when removed; the Scrobbling page says so instead of a send button), 2 s / 30 s sync polling, the sync-landing journal
-  (`unfinished-sync-landing`, deleted on the next start). It owns `Enrichment` and `DownloadQueue`
+  (`unfinished-sync-landing`, its document deleted on the next start unless the catalog already indexes it, as a download's journal is, and left alone if `song_uris` cannot be read). It owns `Enrichment` and `DownloadQueue`
   (below), each `@MainActor @Observable` and created lazily. Every busy flag
   is cleared in `work`'s `finally`, which runs on every path, a failed `library.player()` included;
   it clears only while its own generation is current. The Inspector's artist lookup

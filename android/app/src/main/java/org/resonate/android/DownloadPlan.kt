@@ -44,6 +44,9 @@ object DownloadPlan {
     fun held(jobs: List<DownloadJob>): Set<String> =
         jobs.filter { !it.state.settled }.map { it.song.heldKey() }.toSet()
 
+    fun stranded(journalled: Collection<String>, indexed: Set<String>): Set<String> =
+        journalled.filter { it !in indexed }.toSet()
+
     fun received(jobs: List<DownloadJob>): ULong =
         jobs.filter { it.state.inFlight }.fold(0uL) { sum, job -> sum + job.received }
 

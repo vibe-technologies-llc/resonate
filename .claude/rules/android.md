@@ -738,7 +738,10 @@ for it (10 s). A cancel stops one job, Cancel on the card all. The card, notific
 read the jobs: one says *Finding*, *Downloading* or *Downloaded name · KiB*, a batch *Downloading 2 of 3 ·
 …* and then *Downloaded 3 of 3 songs*, naming the first failure. Each created document is journalled in
 `unfinished-downloads` (a set; the old single `unfinished-download` is still recovered) until its job
-is done, so a crash deletes each half-made one. *Remember this folder* in the chooser keeps a folder
+is done, so a crash deletes each half-made one; `recover` reads `song_uris` first (and touches nothing if that fails) and deletes only a journalled
+document the catalog does not hold, publishing one it does, since an indexed song is a finished one: the job drops its
+"created" handle the moment `index_download` returns, so a failed publish cannot delete it, and the sync landing's
+`unfinished-sync-landing` is settled the same way (`DownloadPlanTest`). *Remember this folder* in the chooser keeps a folder
 (`download-folder`), after which a download goes straight there; **Saved for later** offers *Download N missing
 songs* and *Download saved songs automatically* (on unless switched off, `download-wants-automatically`).
 Automatic asking runs only while the Activity is visible, online is on and the network unmetered,

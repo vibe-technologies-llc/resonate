@@ -132,6 +132,10 @@ object MusicDocuments {
         }
     }
 
+    fun settleLeftover(context: Context, uri: Uri, stranded: Boolean) {
+        if (stranded) delete(context, uri) else publish(context, uri)
+    }
+
     fun delete(context: Context, uri: Uri) {
         if (uri.authority == MediaStore.AUTHORITY) {
             val removed = context.contentResolver.delete(uri, null, null)

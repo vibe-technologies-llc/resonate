@@ -110,4 +110,15 @@ class DownloadPlanTest {
         assertTrue(DownloadPlan.nextBatch(finished).isEmpty())
         assertEquals(open, DownloadPlan.nextBatch(open))
     }
+
+    @Test
+    fun onlyAJournalledDocumentTheCatalogDoesNotHoldIsStranded() {
+        val journalled = listOf("content://a", "content://b", "content://c")
+
+        val stranded = DownloadPlan.stranded(journalled, setOf("content://b", "content://other"))
+
+        assertEquals(setOf("content://a", "content://c"), stranded)
+        assertTrue(DownloadPlan.stranded(journalled, journalled.toSet()).isEmpty())
+        assertTrue(DownloadPlan.stranded(emptyList(), setOf("content://b")).isEmpty())
+    }
 }
