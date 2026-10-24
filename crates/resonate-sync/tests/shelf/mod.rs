@@ -29,6 +29,8 @@ pub struct Inside {
     pub favourites: Vec<Recording>,
     pub listens: Vec<LocalListen>,
     pub credited: Vec<RemoteListen>,
+    pub dies_after_crediting: bool,
+    pub refuses_to_credit: bool,
     pub resumed: Option<Resumed>,
     pub deleted_by_hand: Vec<String>,
     next_id: i64,
@@ -359,8 +361,18 @@ impl Catalog for Shelf {
         if !Self::holds_song(&inside, &listen.recording) {
             return Ok(false);
         }
+        if inside.refuses_to_credit {
+            return Err(Refused::Unavailable);
+        }
         inside.credited.push(listen.clone());
+        if inside.dies_after_crediting {
+            return Err(Refused::Unavailable);
+        }
         Ok(true)
+    }
+
+    fn credited(&self, listen: &RemoteListen) -> Result<bool, Refused> {
+        Ok(self.inside.lock().credited.contains(listen))
     }
 
     fn resumption(&self) -> Result<Option<Resumed>, Refused> {

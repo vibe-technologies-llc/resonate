@@ -946,6 +946,28 @@ impl Catalog for DocumentCatalog {
         Ok(true)
     }
 
+    fn credited(&self, listen: &RemoteListen) -> Answered<bool> {
+        let connection = self.catalog.0.lock();
+        let Some(id) = self
+            .indexed(&connection)
+            .map_err(unavailable)?
+            .resolved(&listen.recording)
+        else {
+            return Ok(false);
+        };
+        connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM listens WHERE track = ?1 AND began = ?2 AND heard_ms = ?3 AND counted = 1 AND elsewhere = 1)",
+                params![
+                    id as i64,
+                    listen.at.div_euclid(NANOS_A_SECOND),
+                    i64::try_from(listen.heard.as_millis()).unwrap_or(i64::MAX)
+                ],
+                |row| row.get(0),
+            )
+            .map_err(unavailable)
+    }
+
     fn resumption(&self) -> Answered<Option<Resumed>> {
         let connection = self.catalog.0.lock();
         let Some((row_at, position_ms)) = connection
@@ -1530,6 +1552,18 @@ mod tests {
             )
             .expect("the listens a scrobbler reads");
 
+        let again = RemoteListen {
+            recording: named("Joga", "Bjork", 305),
+            at: an_hour_ago * NANOS_A_SECOND,
+            heard: Duration::from_secs(300),
+        };
+        let later = RemoteListen {
+            at: (an_hour_ago + 1) * NANOS_A_SECOND,
+            ..again.clone()
+        };
+
+        assert!(documents.credited(&again).expect("a credited listen"));
+        assert!(!documents.credited(&later).expect("another moment"));
         assert!(credited);
         assert!(!unheld);
         assert_eq!(sent.len(), 1);

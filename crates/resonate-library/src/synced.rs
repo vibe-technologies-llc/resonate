@@ -701,6 +701,21 @@ pub(crate) fn listens_after(inner: &Inner, mark: u64, most: usize) -> Result<Vec
     })
 }
 
+fn credited_track(connection: &Connection, recording: &Recording) -> Result<Option<i64>> {
+    let Some(cut) = resolved(connection, recording)? else {
+        return Ok(None);
+    };
+    let row = Row::of(&cut)?;
+    connection
+        .query_row(
+            "SELECT id FROM tracks WHERE path = ?1 AND span_start = ?2",
+            params![row.path, row.start()],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
 pub(crate) fn credit(
     inner: &Inner,
     recording: &Recording,
@@ -708,19 +723,7 @@ pub(crate) fn credit(
     heard: Duration,
 ) -> Result<bool> {
     let credited = inner.write(|transaction| {
-        let Some(cut) = resolved(transaction, recording)? else {
-            return Ok(false);
-        };
-        let row = Row::of(&cut)?;
-        let track: Option<i64> = transaction
-            .query_row(
-                "SELECT id FROM tracks WHERE path = ?1 AND span_start = ?2",
-                params![row.path, row.start()],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(|source| Error::store(StoreOp::Query, source))?;
-        let Some(track) = track else {
+        let Some(track) = credited_track(transaction, recording)? else {
             return Ok(false);
         };
         let heard = i64::try_from(heard.as_nanos()).unwrap_or(i64::MAX);
@@ -742,6 +745,27 @@ pub(crate) fn credit(
         inner.arrived();
     }
     Ok(credited)
+}
+
+pub(crate) fn credited(
+    inner: &Inner,
+    recording: &Recording,
+    at: i64,
+    heard: Duration,
+) -> Result<bool> {
+    inner.read(|connection| {
+        let Some(track) = credited_track(connection, recording)? else {
+            return Ok(false);
+        };
+        let heard = i64::try_from(heard.as_nanos()).unwrap_or(i64::MAX);
+        connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM listens WHERE track_id = ?1 AND at = ?2 AND heard = ?3 AND elsewhere = 1)",
+                params![track, at, heard],
+                |row| row.get(0),
+            )
+            .map_err(|source| Error::store(StoreOp::Query, source))
+    })
 }
 
 pub(crate) fn holdings(inner: &Inner) -> Result<Vec<HeldSong>> {

@@ -438,6 +438,21 @@ fn favourites_and_listens_travel_as_recordings_and_one_from_elsewhere_is_never_s
         Duration::from_secs(60)
     )?);
     assert!(library.synced_revision() > before);
+    assert!(library.listen_elsewhere_credited(
+        &song("Echoes", "Pink Floyd", "Meddle"),
+        1_000,
+        Duration::from_secs(60)
+    )?);
+    assert!(!library.listen_elsewhere_credited(
+        &song("Echoes", "Pink Floyd", "Meddle"),
+        2_000,
+        Duration::from_secs(60)
+    )?);
+    assert!(!library.listen_elsewhere_credited(
+        &song("Gone", "Nobody", "Nothing"),
+        1_000,
+        Duration::from_secs(60)
+    )?);
     assert_eq!(library.listens_to_sync(listens[0].id, 10)?, []);
     assert_eq!(library.track_at(&echoes, None)?.expect("held").plays, 2);
     Ok(())

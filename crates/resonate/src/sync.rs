@@ -544,6 +544,12 @@ impl Catalog for Catalogued {
             .map_err(|error| refused(&error))
     }
 
+    fn credited(&self, listen: &RemoteListen) -> Answered<bool> {
+        self.library
+            .listen_elsewhere_credited(&listen.recording, listen.at, listen.heard)
+            .map_err(|error| refused(&error))
+    }
+
     fn resumption(&self) -> Answered<Option<Resumed>> {
         let Some(resumption) = self.library.resumption().map_err(|error| refused(&error))? else {
             return Ok(None);

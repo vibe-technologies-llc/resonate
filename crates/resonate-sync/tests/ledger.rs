@@ -519,6 +519,46 @@ fn listens_of_another_device_are_credited_once_their_song_is_here() {
 }
 
 #[test]
+fn a_listen_credited_before_the_ledger_could_say_so_is_not_credited_again() {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut phone = Device::new("Phone", &["A"]);
+    desk.shelf.listen_here("A", days_ago(2));
+    phone.shelf.inside.lock().dies_after_crediting = true;
+
+    let changes = desk.send();
+    let interrupted = phone.ledger.arrived(&phone.shelf, &changes);
+
+    assert!(interrupted.is_err());
+    assert_eq!(phone.shelf.inside.lock().credited.len(), 1);
+
+    phone.shelf.inside.lock().dies_after_crediting = false;
+    phone.ledger.settle(&phone.shelf).expect("settled");
+    phone.ledger.settle(&phone.shelf).expect("settled again");
+
+    assert_eq!(phone.shelf.inside.lock().credited.len(), 1);
+}
+
+#[test]
+fn a_listen_whose_credit_never_landed_is_credited_once_when_the_ledger_tries_again() {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut phone = Device::new("Phone", &["A"]);
+    desk.shelf.listen_here("A", days_ago(2));
+    phone.shelf.inside.lock().refuses_to_credit = true;
+
+    let changes = desk.send();
+    let interrupted = phone.ledger.arrived(&phone.shelf, &changes);
+
+    assert!(interrupted.is_err());
+    assert!(phone.shelf.inside.lock().credited.is_empty());
+
+    phone.shelf.inside.lock().refuses_to_credit = false;
+    phone.ledger.settle(&phone.shelf).expect("settled");
+    phone.ledger.settle(&phone.shelf).expect("settled again");
+
+    assert_eq!(phone.shelf.inside.lock().credited.len(), 1);
+}
+
+#[test]
 fn a_snapshot_brings_a_new_device_to_the_same_state() {
     let mut desk = Device::new("Desk", &["A", "B"]);
     let mut phone = Device::new("Phone", &["A", "B"]);

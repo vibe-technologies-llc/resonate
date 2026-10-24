@@ -123,6 +123,8 @@ pub trait Catalog: Send + Sync + 'static {
 
     fn credit(&self, listen: &RemoteListen) -> Result<bool, Refused>;
 
+    fn credited(&self, listen: &RemoteListen) -> Result<bool, Refused>;
+
     fn resumption(&self) -> Result<Option<Resumed>, Refused>;
 
     fn holds(&self, recording: &Recording) -> Result<bool, Refused>;
