@@ -35,7 +35,7 @@ cut from `master`, and each release is a `vMAJOR.MINOR.PATCH[-rcN]` tag with a G
 
 | Target | Kind | Draws from |
 |---|---|---|
-| `0.1.0-rc1` | release candidate | the first cut of `release/0.1` |
+| `0.1.0` | first release | the first cut of `release/0.1` |
 | `0.1.1` | patch | [BUGS.md](BUGS.md), [PERFORMANCE.md](PERFORMANCE.md), [TESTING.md](TESTING.md) |
 | `0.2.0` | minor | [FEATURES.md](FEATURES.md) |
 

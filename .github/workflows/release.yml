@@ -57,7 +57,7 @@ jobs:
           case "$RELEASE_TAG" in
             *-rc*|*-beta*|*-alpha*) prerelease=--prerelease ;;
           esac
-          gh release create "$RELEASE_TAG" --verify-tag --generate-notes --title "$RELEASE_TAG" $prerelease
+          gh release create "$RELEASE_TAG" --draft --verify-tag --generate-notes --title "$RELEASE_TAG" $prerelease
 
   fedora-rpm:
     name: Fedora 44 RPMs
@@ -260,4 +260,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.release.outputs.tag }}
-        run: gh release upload "$TAG" assets/* --clobber
+        run: |
+          gh release upload "$TAG" assets/* --clobber
+          gh release edit "$TAG" --draft=false

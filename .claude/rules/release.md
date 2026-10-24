@@ -11,13 +11,13 @@ paths:
 ## Versions
 
 - **Semantic versioning.** A patch release (`0.1.1`) carries fixes only; a minor or major release
-  (`0.2.0`, `1.0.0`) carries features. `-rcN` marks a candidate. The first version is `0.1.0-rc1`.
+  (`0.2.0`, `1.0.0`) carries features. `-rcN` marks a candidate. The first version is `0.1.0`, released without a candidate.
 - **The workspace manifest's `[workspace.package] version` is the one source.** Every crate
   inherits it, the internal path dependencies in `[workspace.dependencies]` repeat it, and Gradle
   reads it for `versionName` (`versionCode` is derived from it: `((major * 100 + minor) * 100 +
   patch) * 10 + candidate`, with `9` for a final release, so a candidate sorts below its release).
   Raising it also refreshes `Cargo.lock` (`cargo update -w`).
-- **Each ecosystem spells a pre-release its own way**: Cargo and the tag `0.1.0-rc1`; RPM and Debian
+- **Each ecosystem spells a pre-release its own way**: Cargo and the tag, as `0.1.0-rc1`; RPM and Debian
   `0.1.0~rc1`, which sorts below `0.1.0`; Arch `0.1.0rc1`, since `pkgver` may not hold a hyphen;
   AppStream `0.1.0~rc1`. iOS's `CFBundleShortVersionString` allows digits only, so it stays
   `0.1.0` and `CFBundleVersion` counts builds. `crates/resonate/tests/packaging.rs` holds each
@@ -31,6 +31,11 @@ paths:
 - **Every release is a tag `vMAJOR.MINOR.PATCH[-rcN]` and a GitHub release.** Pushing the tag runs
   `release.yml` (`build.md`), which checks the tag against the manifest's version and attaches the
   assets. The roadmap's targets (`docs/ROADMAP.md`) name what each release is meant to hold.
+
+- **Releases are immutable**: the workflow creates the release as a draft, attaches the assets and
+  only then publishes it, since a published release accepts no new asset. A tag name that a
+  published release has used can never be used again, even after the release is deleted, so a
+  release is deleted only with its version abandoned.
 
 ## Assets
 

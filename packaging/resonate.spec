@@ -1,5 +1,5 @@
 Name:           resonate
-Version:        0.1.0~rc1
+Version:        0.1.0
 Release:        1%{?dist}
 Summary:        High-fidelity music player with native PipeWire output
 License:        AGPL-3.0-or-later
@@ -65,5 +65,5 @@ install -Dm644 "$generated/resonate.fish" %{buildroot}%{_datadir}/fish/vendor_co
 %{_datadir}/fish/vendor_completions.d/resonate.fish
 
 %changelog
-* Thu Sep 24 2026 Resonate - 0.1.0~rc1-1
+* Thu Sep 24 2026 Resonate - 0.1.0-1
 - Add Fedora 44 RPM packaging
