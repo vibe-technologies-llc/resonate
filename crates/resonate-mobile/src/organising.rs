@@ -498,6 +498,8 @@ mod tests {
                 );
                 std::thread::sleep(crate::harness::LOOKED_AGAIN_AFTER);
             }
+            harness.settled(|snapshot| snapshot.position_ms == before.2);
+
             assert_eq!(harness.queued(), "abcd");
             assert_eq!(harness.playing(), before);
         }
