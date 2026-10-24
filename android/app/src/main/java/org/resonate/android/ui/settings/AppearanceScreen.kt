@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BrightnessAuto
 import androidx.compose.material.icons.rounded.Check
@@ -30,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
@@ -78,6 +80,7 @@ private val ThemeMode.icon
 
 private val SWATCH = 48.dp
 private val SWATCH_COLUMN = 72.dp
+private val SWATCH_HIGHLIGHT_CORNER = 16.dp
 
 @Composable
 fun AppearanceScreen() {
@@ -156,9 +159,8 @@ private fun Swatches(appearance: Appearance, onChoose: (Accent?) -> Unit) {
     val dark = LocalDarkTheme.current
     val wallpaper = remember(context, dark) { schemeOf(wallpaperSeed(context), dark).primary }
     FlowRow(
-        Modifier.padding(horizontal = Sizes.gutter, vertical = 8.dp),
+        Modifier.padding(horizontal = Sizes.gutter),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Swatch(
             name = Appearance.WALLPAPER,
@@ -193,7 +195,9 @@ private fun Swatch(
     Column(
         modifier
             .width(SWATCH_COLUMN)
-            .selectable(selected = chosen, onClick = onChoose, role = Role.RadioButton),
+            .clip(RoundedCornerShape(SWATCH_HIGHLIGHT_CORNER))
+            .selectable(selected = chosen, onClick = onChoose, role = Role.RadioButton)
+            .padding(vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
