@@ -145,11 +145,15 @@ class BackgroundPlaybackTest {
                         device.wait(Until.hasObject(By.descContains("Song progress")), 10000),
                     )
                     for (paused in listOf(false, true)) {
+                        assertTrue(device.openNotification())
                         if (paused) {
+                            eventually {
+                                instrumentation.uiAutomation.clearCache()
+                                device.hasObject(By.desc("Close"))
+                            }
                             instrumentation.runOnMainSync { controller.pause() }
                             eventually { library.snapshot.value?.transport == Transport.PAUSED }
                         }
-                        assertTrue(device.openNotification())
                         clickNotificationControl(device, By.desc("Close"))
                         eventually { library.snapshot.value?.transport == Transport.STOPPED }
                         eventually {
