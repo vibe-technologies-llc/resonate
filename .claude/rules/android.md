@@ -772,7 +772,7 @@ A blank key mints one; `SyncStatus.code` hands it back and Kotlin stores it encr
 provider accounts, with the other choices (enabled, server, device name, the three follow switches,
 mobile data, `sync-nearby-only`) in plain preferences. Sync is on unless switched off and runs
 only while online is, unless `nearby_only` (*Only this network*: `Server::Nowhere`, no server
-dialled, which runs with online off); `sync-nearby-only` defaults on until the hosted server is live. A setting change restarts it; `sync_start` with a blank key
+dialled, which runs with online off); `sync-nearby-only` defaults off, so the hosted server is dialled. A setting change restarts it; `sync_start` with a blank key
 reuses the code of the sync it replaces, so two starts in a row never mint two codes.
 
 A song is found by recording id, else by folded artist, title words, album when named and a length

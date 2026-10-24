@@ -22,7 +22,7 @@ use crate::{
     played::{self, Finds, Playback, Player, TrackId, named_by},
 };
 
-pub const OWN_SERVER: &str = "https://resonate.tecnio.dev";
+pub const OWN_SERVER: &str = resonate_core::RESONATE_WEB_ADDRESS;
 const RELAYED_ANSWERED_WITHIN: Duration = Duration::from_secs(60);
 const RELAYED_AS: &str = "flac";
 const HIFI_API: &str = "hifi-api";

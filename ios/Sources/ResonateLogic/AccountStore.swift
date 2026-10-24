@@ -153,7 +153,7 @@ public struct AccountStore: Sendable {
         }
         return SyncConfig(
             enabled: flag("sync-enabled", true),
-            nearbyOnly: flag("sync-nearby-only", true),
+            nearbyOnly: flag("sync-nearby-only", false),
             server: plain.string(forKey: "sync-server") ?? "",
             key: key,
             device: plain.string(forKey: "sync-device") ?? "",

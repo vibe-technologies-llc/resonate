@@ -275,7 +275,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   transfers, and *Options*: *Songs* (`SyncSongsPage`: the three follow switches, mobile data, the
   folder picker and the landing notice) and *Connection* (`SyncConnectionPage`: *Sync through*
   Resonate's server, your own server with its address, or *This network only*, which is
-  `SyncConfig.nearby_only` and defaults on (`sync-nearby-only`) until the hosted server is live; and the device name). `PairingSheet` shows the code with Copy (on the pasteboard `localOnly` and expiring after two minutes, so Universal Clipboard never hands it on) and Share,
+  `SyncConfig.nearby_only` and defaults off (`sync-nearby-only`); and the device name). `PairingSheet` shows the code with Copy (on the pasteboard `localOnly` and expiring after two minutes, so Universal Clipboard never hands it on) and Share,
   joins another device's code (confirmed where a code is held), and *Make a new code…* (confirmed)
   is `Features.newSyncGroup`. The code is blurred and `privacySensitive` under *Tap to show* until
   tapped, covered again whenever the sheet opens or the scene leaves `.active` (so the App Switcher

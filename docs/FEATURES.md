@@ -67,8 +67,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   them
 - [M · 0.2.0] Devices on one network meet over IPv4 alone; a network handing out only IPv6 leaves them
   apart
-- [M · blocked: resonate.tecnio.dev] The hosted sync server is not live; until it is, sync defaults to *Only this network* (`sync-nearby-only` on) and
-  devices on different networks meet only through a self-hosted `resonate-server`, with that switch off
 
 ## Equaliser and DSP
 - [S · 0.2.0] The preferred measurer (`equaliser-measurer`) is one for every device: none can be preferred

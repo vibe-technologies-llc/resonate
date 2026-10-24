@@ -394,11 +394,11 @@ let interactionNotAllowed: Int32 = -25308
         #expect(throws: KeychainFailure.self) { try store.readSync() }
     }
 
-    @Test func syncStartsOnAndNearbyOnWithNothingKept() throws {
+    @Test func syncStartsOnAndThroughTheHostedServerWithNothingKept() throws {
         let read = try store.readSync()
 
         #expect(read.enabled)
-        #expect(read.nearbyOnly)
+        #expect(!read.nearbyOnly)
         #expect(read.key == "")
         #expect(read.server == "")
         #expect(!read.favourites && !read.playlists && !read.everything && !read.meteredAllowed)

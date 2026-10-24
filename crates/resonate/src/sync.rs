@@ -1174,7 +1174,7 @@ mod tests {
             Arrangement::of(&config) != Arrangement::of(&base)
         };
 
-        assert!(moved(|config| config.sync_nearby_only = Some(false)));
+        assert!(moved(|config| config.sync_nearby_only = Some(true)));
         assert!(moved(|config| {
             config.sync_nearby_only = Some(false);
             config.sync_server = Some("example.org".to_owned());

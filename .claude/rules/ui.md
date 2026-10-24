@@ -1400,7 +1400,7 @@ is never named.
     *Online* or *Away*; one that is away has *Remove* (`Syncing::forget` by `SyncedDevice::id`).
   - *Connection*: a `kit::segmented` of *Resonate's server*, *Your own server* (shows the server
     field; `own_server_asked` holds the choice until an address is given) and *This network only*
-    (`sync-nearby-only`, the default until the hosted server is live), the chosen one's meaning under it, then the device name.
+    (`sync-nearby-only`, off by default), the chosen one's meaning under it, then the device name.
   - *Songs between devices*: the three `sync-songs` switches.
   Each writes `ResonateApp::synchronised` and the file, which the binary's sync watcher reads again
   within seconds (`sync.md`); a reset never forgets the code. `SyncStanding::Waiting` is the

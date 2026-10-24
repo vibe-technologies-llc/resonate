@@ -8,6 +8,7 @@ mod error;
 mod fold;
 mod format;
 mod hints;
+mod hosted;
 mod id;
 mod identity;
 mod link;
@@ -42,6 +43,7 @@ pub use crate::{
     fold::{folded_letters, is_lettered, words_of_a_name},
     format::{BitDepth, RateFamily, Ratio, SampleFormat, SampleRate, StreamSpec},
     hints::{MeasuredGain, TrackHints},
+    hosted::{RESONATE_HOST, RESONATE_SOCKET_ADDRESS, RESONATE_WEB_ADDRESS},
     id::{AlbumId, ArtistId, ListenId, PlaylistId, ReleaseTrackId, TrackId, WantId},
     identity::{Isrc, Mbid},
     link::{Link, Relation, Service},

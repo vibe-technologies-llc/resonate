@@ -46,7 +46,7 @@ use crate::{
     },
 };
 
-pub const HOSTED_SERVER: &str = "wss://sync.tecnio.dev/";
+pub const HOSTED_SERVER: &str = resonate_core::RESONATE_SOCKET_ADDRESS;
 pub const SERVER_PORT: u16 = 443;
 const TRANSFERS_SHOWN_AT_MOST: usize = 200;
 const FIRST_RETRY: Duration = Duration::from_secs(5);
@@ -2242,8 +2242,8 @@ mod tests {
     #[test]
     fn a_server_names_its_port_or_takes_the_hosted_one() {
         assert_eq!(
-            host_and_port("resonate.tecnio.dev"),
-            ("resonate.tecnio.dev".into(), SERVER_PORT)
+            host_and_port(resonate_core::RESONATE_HOST),
+            (resonate_core::RESONATE_HOST.into(), SERVER_PORT)
         );
         assert_eq!(
             host_and_port("sync.example:7443"),

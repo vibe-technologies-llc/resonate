@@ -491,7 +491,7 @@ impl Config {
 
     #[cfg(any(feature = "sync", feature = "ui", test))]
     pub fn syncs_nearby_only(&self) -> bool {
-        self.sync_nearby_only.unwrap_or(true)
+        self.sync_nearby_only.unwrap_or(false)
     }
 
     #[cfg(feature = "online")]
@@ -1718,10 +1718,12 @@ mod tests {
                 .syncs()
         );
         assert!(!read("sync = false\n").expect("read").syncs());
-        assert!(config.syncs_nearby_only());
+        assert!(!config.syncs_nearby_only());
         let hosted = read("online = false\nsync-nearby-only = false\n").expect("read");
         assert!(!hosted.syncs() && !hosted.syncs_nearby_only());
-        let nearby = read("online = false\n").expect("read");
+        let defaulted = read("online = false\n").expect("read");
+        assert!(!defaulted.syncs() && !defaulted.syncs_nearby_only());
+        let nearby = read("online = false\nsync-nearby-only = true\n").expect("read");
         assert!(nearby.syncs() && nearby.syncs_nearby_only());
         assert!(
             !read("sync = false\nsync-nearby-only = true\n")

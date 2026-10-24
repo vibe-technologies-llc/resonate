@@ -118,6 +118,13 @@ it off.
 
 ## Deployment
 
+**The hosted server is one hostname behind one tunnel** (`resonate.tecnio.dev`, `resonate_core::RESONATE_HOST`).
+`cloudflared` ingress sends `^/(search|playback|file)/` to the gateway's TLS listener
+(`https://127.0.0.1:443`, `originServerName` the host, so the Let's Encrypt chain is verified) and
+every other path to the web socket listener on loopback, so sync and the hifi gateway share an
+address and no inbound port is open. The old `sync.tecnio.dev` name is not served.
+
+
 `packaging/server/resonate-server.service`: `DynamicUser`, `StateDirectory=resonate-server` (the
 store), `CAP_NET_BIND_SERVICE` for UDP 443 and the usual hardening; the certificate chain and key
 are handed in as systemd credentials from `/etc/resonate-server/fullchain.pem` and `privkey.pem`
