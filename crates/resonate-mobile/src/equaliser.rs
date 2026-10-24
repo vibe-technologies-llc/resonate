@@ -101,7 +101,7 @@ struct Preset {
     octaves: Option<OctaveGains>,
 }
 
-const PRESETS: [Preset; 9] = [
+const PRESETS: [Preset; 10] = [
     Preset {
         name: "Flat",
         detail: "An uncoloured starting point.",
@@ -143,6 +143,12 @@ const PRESETS: [Preset; 9] = [
         detail: "A little more sparkle and detail.",
         preamp_db: -5.0,
         octaves: Some([-1.0, -1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 2.0]),
+    },
+    Preset {
+        name: "Treble cut",
+        detail: "Softer highs for harsh recordings, with the rest left clear.",
+        preamp_db: 0.0,
+        octaves: Some([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, -3.0, -4.0, -5.0]),
     },
     Preset {
         name: "Rock",
@@ -739,6 +745,7 @@ mod tests {
                 "Vocals",
                 "Warm",
                 "Bright",
+                "Treble cut",
                 "Rock",
                 "Electronic"
             ]
@@ -766,6 +773,11 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn the_presets_come_in_pairs_so_a_two_column_grid_leaves_no_gap() {
+        assert_eq!(equaliser_presets().len() % 2, 0);
     }
 
     #[test]

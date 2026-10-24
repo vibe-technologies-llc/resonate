@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.ExpandMore
@@ -94,6 +95,7 @@ private val presetIcons: Map<String, ImageVector> =
         "Vocals" to Icons.Rounded.MicNone,
         "Warm" to Icons.Rounded.WbSunny,
         "Bright" to Icons.Rounded.AutoAwesome,
+        "Treble cut" to Icons.Rounded.Cloud,
         "Rock" to Icons.Rounded.MusicNote,
         "Electronic" to Icons.Rounded.GraphicEq,
     )

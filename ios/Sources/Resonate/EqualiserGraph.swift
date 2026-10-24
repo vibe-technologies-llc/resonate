@@ -14,6 +14,7 @@ extension EqualiserPreset {
         case "Vocals": "music.mic"
         case "Warm": "sun.max"
         case "Bright": "sparkles"
+        case "Treble cut": "cloud"
         case "Rock": "guitars"
         case "Electronic": "waveform"
         default: "slider.horizontal.3"

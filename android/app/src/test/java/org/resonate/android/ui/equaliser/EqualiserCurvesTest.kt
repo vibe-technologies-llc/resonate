@@ -40,6 +40,7 @@ class EqualiserCurvesTest {
             preset("Vocals", "Voices forward.", -5f, listOf(-2f, -1f, 0f, 1f, 2f, 3f, 3f, 1f, 0f, -1f)),
             preset("Warm", "Fuller lows.", -5f, listOf(2f, 3f, 2f, 1f, 0f, 0f, -1f, -2f, -2f, -2f)),
             preset("Bright", "More sparkle.", -5f, listOf(-1f, -1f, 0f, 0f, 0f, 1f, 2f, 3f, 3f, 2f)),
+            preset("Treble cut", "Softer highs.", 0f, listOf(0f, 0f, 0f, 0f, 0f, 0f, -1f, -3f, -4f, -5f)),
             preset("Rock", "Punchy lows.", -5f, listOf(3f, 2f, 0f, -1f, -2f, 0f, 2f, 3f, 3f, 2f)),
             preset("Electronic", "Deep bass.", -6f, listOf(4f, 3f, 1f, 0f, -2f, -1f, 1f, 2f, 3f, 3f)),
         )
