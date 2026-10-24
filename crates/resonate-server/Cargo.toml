@@ -10,6 +10,7 @@ futures-util.workspace = true
 httparse.workspace = true
 parking_lot.workspace = true
 quinn.workspace = true
+resonate-core.workspace = true
 resonate-providers.workspace = true
 resonate-sync.workspace = true
 resonate-tidal.workspace = true
@@ -31,7 +32,6 @@ tracing-subscriber.workspace = true
 [dev-dependencies]
 base64.workspace = true
 rcgen.workspace = true
-resonate-core.workspace = true
 
 [lints]
 workspace = true

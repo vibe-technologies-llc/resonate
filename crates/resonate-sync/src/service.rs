@@ -2,7 +2,7 @@ use std::{
     cmp::Reverse,
     collections::{BTreeMap, BTreeSet, VecDeque},
     future::{Future, pending},
-    net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket},
     path::PathBuf,
     sync::{
         Arc,
@@ -20,6 +20,7 @@ use quinn::{
 use resonate_core::{Recording, RecordingKey};
 use ring::digest::{SHA256, SHA256_OUTPUT_LEN, digest};
 use rustls::ClientConfig as WebConfig;
+use socket2::{Domain, Protocol, Socket, Type};
 use tokio::{
     runtime::Runtime,
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
@@ -33,9 +34,11 @@ use crate::{
     ledger::{Follow, Me},
     nearby::{
         BEACON_EVERY, Bonjour, Found, LARGEST_BEACON, Nearby, addresses_here, beacon_bytes,
-        beacon_of, beacon_recorded, bound, record_of,
+        beacon_of, beacon_recorded, bound, global_addresses_here, record_of,
     },
-    peer::{Answering, Heard, blocking, dialled, fetch, holdings_of, meet, serve, tell},
+    peer::{
+        Answering, Heard, blocking, dialled, dialled_within, fetch, holdings_of, meet, serve, tell,
+    },
     quic::{KEEP_THE_SERVER_EVERY, PeerIdentity, to_the_server, trusted_roots},
     seal::{opened, sealed},
     stun::{Reflector, STUN_PORT},
@@ -70,6 +73,8 @@ const DIAL_BACK_AFTER: Duration = Duration::from_millis(500);
 const HEARD_FOR: Duration = Duration::from_secs(60);
 const SERVER_ANSWERS_WITHIN: Duration = Duration::from_secs(15);
 const PUNCH_ANSWERED_AT_MOST_EVERY: Duration = Duration::from_secs(10);
+const RELAY_DIAL_WITHIN: Duration = Duration::from_secs(20);
+const RELAYED_DATAGRAMS_QUEUED_AT_MOST: usize = 256;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum Server {
@@ -100,6 +105,7 @@ pub struct Settings {
     pub staging: PathBuf,
     pub transfers_allowed: bool,
     pub nearby: Option<Nearby>,
+    pub relay_only: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -191,6 +197,7 @@ struct Running {
     transfers_allowed: Arc<AtomicBool>,
     nearby: bool,
     bonjour: bool,
+    relay_only: bool,
     beacons: Option<tokio::net::UdpSocket>,
     told: Vec<SocketAddr>,
     record: Mutex<Option<(Beacon, String)>>,
@@ -208,6 +215,7 @@ enum Work {
 enum Event {
     Linked(Result<Link>),
     Punched(DeviceId, Option<Connection>),
+    Relayed(DeviceId, Option<Connection>),
     Met(DeviceId, Connection),
     Unmet(DeviceId),
     Redial(DeviceId),
@@ -249,6 +257,8 @@ impl Carrier {
 
 struct Link {
     carrier: Carrier,
+    reflector: Arc<Reflector>,
+    relay_out: mpsc::Sender<Vec<u8>>,
     outgoing: UnboundedSender<Vec<u8>>,
     writing: JoinHandle<()>,
     frames: UnboundedReceiver<Result<FromServer>>,
@@ -273,6 +283,7 @@ impl Link {
     }
 
     fn hang_up(self) {
+        self.reflector.relay().detach();
         self.reading.abort();
         self.writing.abort();
         self.carrier.close();
@@ -337,8 +348,7 @@ impl Sync {
             .enable_all()
             .build()
             .map_err(Error::Runtime)?;
-        let socket = UdpSocket::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0))
-            .map_err(Error::Bind)?;
+        let socket = peer_socket()?;
         let broadcast = settings
             .nearby
             .as_ref()
@@ -405,6 +415,7 @@ impl Sync {
             to_peers,
             transfers_allowed,
             nearby: settings.nearby.is_some(),
+            relay_only: settings.relay_only,
             bonjour: settings
                 .nearby
                 .as_ref()
@@ -572,6 +583,12 @@ impl Running {
 
     fn transfers_allowed(&self) -> bool {
         self.transfers_allowed.load(Ordering::Relaxed)
+    }
+
+    fn endpoint_takes_ipv6(&self) -> bool {
+        self.endpoint
+            .local_addr()
+            .is_ok_and(|local| local.is_ipv6())
     }
 
     fn beacon(&self, answering: bool) -> Option<Beacon> {
@@ -819,16 +836,36 @@ fn told_digest(change: &Change) -> ToldDigest {
     told
 }
 
+pub(crate) fn peer_socket() -> Result<UdpSocket> {
+    let dual_stack =
+        Socket::new(Domain::IPV6, Type::DGRAM, Some(Protocol::UDP)).and_then(|socket| {
+            socket.set_only_v6(false)?;
+            socket.bind(&SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0).into())?;
+            Ok(socket)
+        });
+    match dual_stack {
+        Ok(socket) => Ok(socket.into()),
+        Err(error) => {
+            tracing::debug!(%error, "no dual stack socket for peers; IPv4 alone");
+            UdpSocket::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0))
+                .map_err(Error::Bind)
+        }
+    }
+}
+
 fn routed_candidates(server_address: SocketAddr, port: u16) -> Vec<SocketAddr> {
     let mut candidates = Vec::new();
     if server_address.ip().is_loopback() {
         candidates.push(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port));
     }
-    let routed =
-        UdpSocket::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0)).and_then(|probe| {
-            probe.connect(server_address)?;
-            probe.local_addr()
-        });
+    let unspecified = match server_address.ip().to_canonical() {
+        IpAddr::V4(_) => IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+        IpAddr::V6(_) => IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+    };
+    let routed = UdpSocket::bind(SocketAddr::new(unspecified, 0)).and_then(|probe| {
+        probe.connect(server_address)?;
+        probe.local_addr()
+    });
     if let Ok(routed) = routed
         && !routed.ip().is_unspecified()
         && !routed.ip().is_loopback()
@@ -938,7 +975,7 @@ async fn linked(running: Arc<Running>, server: String) -> Result<Link> {
     let (carrier, mut send, recv, address) = reached(&running, &server).await?;
 
     let (frames_in, mut frames) = mpsc::unbounded_channel();
-    let reading = tokio::spawn(read_frames(recv, frames_in));
+    let reading = tokio::spawn(read_frames(recv, frames_in, Arc::clone(&running.reflector)));
     let welcomed = within(welcomed(&running, &mut send, &mut frames)).await;
     let (online, head, cursor) = match welcomed {
         Ok(welcomed) => welcomed,
@@ -957,14 +994,18 @@ async fn linked(running: Arc<Running>, server: String) -> Result<Link> {
     }
     tracing::info!(%server, "syncing with the server");
     let (outgoing, queued) = mpsc::unbounded_channel();
+    let (relay_out, relayed) = mpsc::channel(RELAYED_DATAGRAMS_QUEUED_AT_MOST);
     let writing = tokio::spawn(write_frames(
         send,
         queued,
+        relayed,
         running.events.clone(),
         carrier.id(),
     ));
     Ok(Link {
         carrier,
+        reflector: Arc::clone(&running.reflector),
+        relay_out,
         outgoing,
         writing,
         frames,
@@ -1003,16 +1044,26 @@ async fn welcomed(
 async fn write_frames(
     mut send: Outgoing,
     mut queued: UnboundedReceiver<Vec<u8>>,
+    mut relayed: mpsc::Receiver<Vec<u8>>,
     events: UnboundedSender<Event>,
     connection: usize,
 ) {
     let mut keeping = interval(KEEP_THE_SERVER_EVERY);
     keeping.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    let mut relaying = true;
     loop {
         let written = tokio::select! {
+            biased;
             payload = queued.recv() => match payload {
                 Some(payload) => send.send(&payload).await,
                 None => break,
+            },
+            datagram = relayed.recv(), if relaying => match datagram {
+                Some(datagram) => send.send(&datagram).await,
+                None => {
+                    relaying = false;
+                    Ok(())
+                }
             },
             _ = keeping.tick() => send.keep_alive().await,
         };
@@ -1024,13 +1075,21 @@ async fn write_frames(
     send.finish().await;
 }
 
-async fn read_frames(mut recv: Incoming, frames: UnboundedSender<Result<FromServer>>) {
+async fn read_frames(
+    mut recv: Incoming,
+    frames: UnboundedSender<Result<FromServer>>,
+    reflector: Arc<Reflector>,
+) {
     loop {
         let frame = match recv.read().await {
             Ok(Some(bytes)) => FromServer::decoded(&bytes),
             Ok(None) => return,
             Err(error) => Err(error),
         };
+        if let Ok(FromServer::Relayed { from, datagram }) = frame {
+            reflector.relay().arrived(from, datagram);
+            continue;
+        }
         let failed = frame.is_err();
         if frames.send(frame).is_err() || failed {
             return;
@@ -1086,6 +1145,11 @@ impl Syncing {
         if link.caught_up {
             self.caught_up_once = true;
         }
+        self.running
+            .reflector
+            .relay()
+            .attach(link.relay_out.clone());
+        let _ = link.say(&ToServer::Relaying);
         self.server = Some(link);
         self.wait = FIRST_RETRY;
         self.look_at = Some(Instant::now());
@@ -1137,9 +1201,11 @@ impl Syncing {
                 writing,
                 reading,
                 carrier,
+                reflector,
                 ..
             } = link;
             drop(outgoing);
+            reflector.relay().detach();
             let _ = timeout(LEAVE_WITHIN, writing).await;
             reading.abort();
             carrier.close();
@@ -1160,14 +1226,15 @@ impl Syncing {
         match event {
             Event::Linked(Ok(link)) => self.link(link).await?,
             Event::Linked(Err(error)) => self.unlinked(Some(error)),
-            Event::Punched(device, Some(connection)) => {
+            Event::Punched(device, Some(connection)) | Event::Relayed(device, Some(connection)) => {
                 self.watch_closing(device, &connection);
                 for work in self.waiting.remove(&device).unwrap_or_default() {
                     spawn_work(Arc::clone(&self.running), device, connection.clone(), work);
                 }
                 self.peers.insert(device, connection);
             }
-            Event::Punched(device, None) => self.unreached(device),
+            Event::Punched(device, None) => self.relayed_or_unreached(device),
+            Event::Relayed(device, None) => self.unreached(device),
             Event::CutShort(device) => {
                 self.followed.remove(&device);
             }
@@ -1318,7 +1385,7 @@ impl Syncing {
                 self.push().await?;
             }
             FromServer::Refused(refusal) => return Err(Error::Refused(refusal)),
-            FromServer::Welcome { .. } => {}
+            FromServer::Welcome { .. } | FromServer::Relayed { .. } => {}
         }
         Ok(())
     }
@@ -1692,6 +1759,34 @@ impl Syncing {
         }
     }
 
+    fn relayed_or_unreached(&mut self, device: DeviceId) {
+        let wanted = self.waiting.contains_key(&device) && !self.peers.contains_key(&device);
+        if !wanted || self.server.is_none() || !self.running.reflector.relay().is_attached() {
+            self.unreached(device);
+            return;
+        }
+        let running = Arc::clone(&self.running);
+        tokio::spawn(async move {
+            let address = running.reflector.relay().address_of(device);
+            let connection = match dialled_within(
+                &running.endpoint,
+                &running.to_peers,
+                &[address],
+                device,
+                RELAY_DIAL_WITHIN,
+            )
+            .await
+            {
+                Ok(connection) => Some(connection),
+                Err(error) => {
+                    tracing::debug!(%error, "a device could not be reached through the server either");
+                    None
+                }
+            };
+            let _ = running.events.send(Event::Relayed(device, connection));
+        });
+    }
+
     fn unreached(&mut self, device: DeviceId) {
         if self.peers.contains_key(&device) {
             return;
@@ -1732,6 +1827,13 @@ impl Syncing {
                 .map(|ip| SocketAddr::new(ip, port))
                 .collect(),
         };
+        if self.running.endpoint_takes_ipv6() {
+            candidates.extend(
+                global_addresses_here()
+                    .into_iter()
+                    .map(|ip| SocketAddr::new(ip, port)),
+            );
+        }
         if let Some(public) = self.public_address().await {
             candidates.push(public);
         }
@@ -1795,6 +1897,9 @@ impl Syncing {
             Err(error) => tracing::debug!(%error, "a peer's candidates could not be read"),
         }
         candidates.dedup();
+        if self.running.relay_only {
+            candidates.clear();
+        }
         let running = Arc::clone(&self.running);
         tokio::spawn(async move {
             let connection =

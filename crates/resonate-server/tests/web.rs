@@ -67,6 +67,7 @@ fn device(hosted: &Hosted, folder: &Path, key: &SyncKey, name: &str, shelf: Arc<
         ledger: folder.join(format!("{name}.sqlite")),
         staging: folder.join(format!("{name}-staging")),
         transfers_allowed: true,
+        relay_only: false,
         nearby: None,
     };
     Sync::start(settings, shelf).expect("started")

@@ -19,6 +19,7 @@ pub const RECORD_KEY: &str = "b";
 pub const BEACON_EVERY: Duration = Duration::from_secs(15);
 pub const LARGEST_BEACON: usize = 512;
 pub const ADDRESSES_BEACONED_AT_MOST: usize = 6;
+pub const GLOBAL_ADDRESSES_OFFERED_AT_MOST: usize = 4;
 const BEACON_MAGIC: &[u8; 4] = b"RSN1";
 const ONE_HOP: u32 = 1;
 const INSTANCE_BYTES: usize = 8;
@@ -105,6 +106,36 @@ pub fn addresses_here() -> Vec<IpAddr> {
     addresses.dedup();
     addresses.truncate(ADDRESSES_BEACONED_AT_MOST);
     addresses
+}
+
+pub fn global_addresses_here() -> Vec<IpAddr> {
+    let interfaces = match if_addrs::get_if_addrs() {
+        Ok(interfaces) => interfaces,
+        Err(error) => {
+            tracing::debug!(%error, "this device's addresses could not be read");
+            return Vec::new();
+        }
+    };
+    let mut addresses = interfaces
+        .into_iter()
+        .filter(|interface| {
+            interface.is_oper_up() && !interface.is_loopback() && !interface.is_p2p()
+        })
+        .map(|interface| interface.ip())
+        .filter(is_reachable_over_ipv6)
+        .collect::<Vec<_>>();
+    addresses.sort();
+    addresses.dedup();
+    addresses.truncate(GLOBAL_ADDRESSES_OFFERED_AT_MOST);
+    addresses
+}
+
+pub fn is_reachable_over_ipv6(address: &IpAddr) -> bool {
+    let IpAddr::V6(address) = address else {
+        return false;
+    };
+    let link_local = address.segments()[0] & 0xffc0 == 0xfe80;
+    !(address.is_unspecified() || address.is_loopback() || address.is_multicast() || link_local)
 }
 
 pub fn beacon_bytes(derived: &Derived, beacon: &Beacon) -> Result<Vec<u8>> {
@@ -295,5 +326,18 @@ mod tests {
         assert_eq!(beacon_recorded(&here, &record), Some(fullest));
         assert_eq!(beacon_recorded(&here, &record[1..]), None);
         assert_eq!(beacon_recorded(&here, "zz"), None);
+    }
+
+    #[test]
+    fn only_an_address_other_devices_could_dial_over_ipv6_is_offered() {
+        let reachable = |text: &str| is_reachable_over_ipv6(&text.parse().expect("an address"));
+
+        assert!(reachable("2001:db8::7"));
+        assert!(reachable("fd12:3456::1"));
+        assert!(!reachable("fe80::1"));
+        assert!(!reachable("::1"));
+        assert!(!reachable("::"));
+        assert!(!reachable("ff02::1"));
+        assert!(!reachable("192.168.1.4"));
     }
 }

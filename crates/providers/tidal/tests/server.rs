@@ -1348,6 +1348,53 @@ fn a_keyed_hifi_api_has_the_server_download_the_track_and_sends_its_secret_to_it
     );
 }
 
+#[test]
+fn a_keyed_download_cut_off_part_way_is_asked_of_the_server_again_from_where_it_stopped() {
+    let song = b"fLaC-a-song-the-connection-drops-half-way-through".to_vec();
+    let served = song.clone();
+    let fake = hifi_server(
+        move |asked, _, _| match (asked.path.as_str(), &asked.range) {
+            ("/file/", None) => Canned {
+                cut_after: Some(12),
+                ..Canned::media(&served)
+            },
+            ("/file/", Some(range)) => {
+                let from: usize = range
+                    .trim_start_matches("bytes=")
+                    .trim_end_matches('-')
+                    .parse()
+                    .expect("a range start");
+                Canned {
+                    status: 206,
+                    headers: vec![(
+                        "Content-Range",
+                        format!("bytes {from}-{}/{}", served.len() - 1, served.len()),
+                    )],
+                    ..Canned::media(&served[from..])
+                }
+            }
+            _ => Canned::refused(404, "{}"),
+        },
+    );
+
+    let keyed = fake.hifi().with_secret("hush-secret");
+    let (_, _, bytes) = streamed(keyed.find(&by_isrc()).expect("an answer")).expect("a delivery");
+
+    assert_eq!(bytes, song);
+    let heard = fake.heard();
+    let files: Vec<_> = heard
+        .iter()
+        .filter(|asked| asked.path == "/file/")
+        .collect();
+    assert_eq!(files.len(), 2);
+    assert_eq!(files[1].range.as_deref(), Some("bytes=12-"));
+    assert!(
+        files
+            .iter()
+            .all(|asked| asked.authorization.as_deref() == Some("Bearer hush-secret"))
+    );
+}
+
 fn opening_of(obtained: Obtained) -> Result<Opened, Error> {
     match obtained {
         Obtained::Found(Delivery::Stream { opening, .. }) => opening.open(),

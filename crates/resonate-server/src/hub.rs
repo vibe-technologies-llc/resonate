@@ -1,4 +1,11 @@
-use std::{collections::BTreeMap, net::SocketAddr};
+use std::{
+    collections::BTreeMap,
+    net::SocketAddr,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+};
 
 use parking_lot::Mutex;
 use resonate_sync::{DeviceId, SpaceId};
@@ -16,12 +23,20 @@ pub enum Notice {
     },
     Compacted(u64),
     Replaced,
+    Relayed {
+        from: DeviceId,
+        datagram: Vec<u8>,
+    },
 }
+
+pub const RELAY_BACKLOG_BYTES_AT_MOST: usize = 256 * 1024;
 
 struct Present {
     notices: UnboundedSender<Notice>,
     address: SocketAddr,
     session: u64,
+    relaying: bool,
+    backlog: Arc<AtomicUsize>,
 }
 
 #[derive(Default)]
@@ -34,6 +49,7 @@ pub struct Joined {
     pub notices: UnboundedReceiver<Notice>,
     pub session: u64,
     pub others: Vec<DeviceId>,
+    pub backlog: Arc<AtomicUsize>,
 }
 
 impl Hub {
@@ -55,12 +71,15 @@ impl Hub {
             return None;
         }
         let (notices, received) = unbounded_channel();
+        let backlog = Arc::new(AtomicUsize::new(0));
         if let Some(replaced) = present.insert(
             device,
             Present {
                 notices,
                 address,
                 session,
+                relaying: false,
+                backlog: Arc::clone(&backlog),
             },
         ) {
             let _ = replaced.notices.send(Notice::Replaced);
@@ -79,6 +98,7 @@ impl Hub {
             notices: received,
             session,
             others,
+            backlog,
         })
     }
 
@@ -126,6 +146,41 @@ impl Hub {
                 sealed,
             })
             .is_ok()
+    }
+}
+
+impl Hub {
+    pub fn relaying(&self, space: SpaceId, device: DeviceId, session: u64) {
+        if let Some(present) = self
+            .spaces
+            .lock()
+            .get_mut(&space)
+            .and_then(|present| present.get_mut(&device))
+            .filter(|present| present.session == session)
+        {
+            present.relaying = true;
+        }
+    }
+
+    pub fn relay(&self, space: SpaceId, from: DeviceId, to: DeviceId, datagram: Vec<u8>) -> bool {
+        let spaces = self.spaces.lock();
+        let Some(asked) = spaces.get(&space).and_then(|present| present.get(&to)) else {
+            return false;
+        };
+        let held = asked.backlog.load(Ordering::Relaxed);
+        if !asked.relaying || held + datagram.len() > RELAY_BACKLOG_BYTES_AT_MOST {
+            return false;
+        }
+        asked.backlog.fetch_add(datagram.len(), Ordering::Relaxed);
+        let length = datagram.len();
+        let sent = asked
+            .notices
+            .send(Notice::Relayed { from, datagram })
+            .is_ok();
+        if !sent {
+            asked.backlog.fetch_sub(length, Ordering::Relaxed);
+        }
+        sent
     }
 }
 
@@ -185,5 +240,61 @@ mod tests {
             })
         );
         assert!(!hub.punch(SPACE, DESK, DeviceId([9; 16]), vec![]));
+    }
+
+    #[test]
+    fn a_datagram_is_relayed_only_to_a_device_that_said_it_relays() {
+        let hub = Hub::default();
+        let desk = hub.join(SPACE, DESK, address(1), 4).expect("joined");
+        let mut phone = hub.join(SPACE, PHONE, address(2), 4).expect("joined");
+
+        let before = hub.relay(SPACE, DESK, PHONE, vec![1, 2]);
+        hub.relaying(SPACE, PHONE, phone.session);
+        let after = hub.relay(SPACE, DESK, PHONE, vec![1, 2]);
+        let nowhere = hub.relay(SPACE, DESK, DeviceId([9; 16]), vec![1]);
+
+        assert!(!before);
+        assert!(after);
+        assert!(!nowhere);
+        assert_eq!(
+            phone.notices.try_recv(),
+            Ok(Notice::Relayed {
+                from: DESK,
+                datagram: vec![1, 2]
+            })
+        );
+        assert_eq!(desk.backlog.load(Ordering::Relaxed), 0);
+        assert_eq!(phone.backlog.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn a_device_that_has_not_read_what_was_relayed_is_sent_no_more_than_a_backlog() {
+        let hub = Hub::default();
+        let _desk = hub.join(SPACE, DESK, address(1), 4).expect("joined");
+        let phone = hub.join(SPACE, PHONE, address(2), 4).expect("joined");
+        hub.relaying(SPACE, PHONE, phone.session);
+
+        let whole = hub.relay(SPACE, DESK, PHONE, vec![0; RELAY_BACKLOG_BYTES_AT_MOST]);
+        let over = hub.relay(SPACE, DESK, PHONE, vec![0; 1]);
+        phone
+            .backlog
+            .fetch_sub(RELAY_BACKLOG_BYTES_AT_MOST, Ordering::Relaxed);
+        let after_reading = hub.relay(SPACE, DESK, PHONE, vec![0; 1]);
+
+        assert!(whole);
+        assert!(!over);
+        assert!(after_reading);
+    }
+
+    #[test]
+    fn a_relay_declared_by_a_session_that_was_replaced_does_not_count() {
+        let hub = Hub::default();
+        let _desk = hub.join(SPACE, DESK, address(1), 4).expect("joined");
+        let old = hub.join(SPACE, PHONE, address(2), 4).expect("joined");
+        let _new = hub.join(SPACE, PHONE, address(3), 4).expect("joined");
+
+        hub.relaying(SPACE, PHONE, old.session);
+
+        assert!(!hub.relay(SPACE, DESK, PHONE, vec![1]));
     }
 }

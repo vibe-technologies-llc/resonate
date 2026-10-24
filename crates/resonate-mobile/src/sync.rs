@@ -564,6 +564,7 @@ impl MobilePlayer {
             transfers_allowed: config.metered_allowed
                 || self.syncing.unmetered.load(Ordering::Acquire),
             nearby: Some(nearby()),
+            relay_only: false,
         };
         let sync =
             Sync::start(settings, catalog).map_err(|source| Error::sync(SyncOp::Start, source))?;

@@ -19,6 +19,7 @@ rusqlite.workspace = true
 rustls = { workspace = true, features = ["ring"] }
 rustls-native-certs.workspace = true
 rustls-pki-types = { workspace = true, features = ["std"] }
+socket2.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt", "sync", "time"] }
 tokio-rustls.workspace = true

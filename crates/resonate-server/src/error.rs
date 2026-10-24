@@ -11,6 +11,13 @@ pub enum StoreOp {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum CacheOp {
+    Create,
+    List,
+    Inspect,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PemOp {
     Certificate,
     Key,
@@ -37,6 +44,14 @@ pub enum Error {
 
     #[error("the store is stamped {found}, newer than this server reads")]
     StoreVersion { found: u32 },
+
+    #[error("{op:?} failed on the cache at {}", path.display())]
+    Cache {
+        op: CacheOp,
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
 
     #[error("{} does not read as a PEM {op:?}", path.display())]
     Pem {

@@ -1,5 +1,5 @@
 use std::{
-    io::{self, Read},
+    io::{self, Read, Seek, SeekFrom},
     net::SocketAddr,
     sync::Arc,
     time::Duration,
@@ -12,13 +12,16 @@ use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    sync::{Semaphore, mpsc},
+    sync::{OwnedSemaphorePermit, Semaphore, mpsc},
     task::spawn_blocking,
     time::{sleep, timeout},
 };
 use tokio_rustls::TlsAcceptor;
 
-use crate::{Error, Keys, Result};
+use crate::{
+    Cache, Error, Fill, Hit, Keys, Result, Searches,
+    ranges::{Span, Unsatisfiable, Wanted, windowed},
+};
 
 const HTTP_ALPN: &[u8] = b"http/1.1";
 const HEAD_BYTES_AT_MOST: usize = 8 * 1024;
@@ -35,6 +38,8 @@ const FILE_BYTES_AT_MOST: u64 = 1024 * 1024 * 1024;
 const CHUNK_WRITTEN_WITHIN: Duration = Duration::from_secs(60);
 const FILE_ROUTE: &str = "/file/";
 const FILE_TYPE: &str = "audio/flac";
+const FLAC_MARKER: &[u8] = b"fLaC";
+const SEARCH_BYTES_AT_MOST: usize = 8 * 1024 * 1024;
 const BEARER: &str = "Bearer ";
 const SEARCH_ROUTE: &str = "/search/";
 const REQUESTS_ROUTE: &str = "/playback/requests/";
@@ -47,7 +52,7 @@ enum Verb {
 
 enum Admitted {
     Forward(Verb, String),
-    File(u64),
+    File { id: u64, wanted: Option<Wanted> },
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -64,6 +69,20 @@ enum Unreached {
     TooLarge,
 }
 
+#[derive(Default)]
+pub struct Keeping {
+    pub tracks: Option<Cache>,
+    pub searches_for: Duration,
+}
+
+struct Source {
+    reader: Box<dyn Read + Send>,
+    length: Option<u64>,
+    begins_at: u64,
+    fill: Option<Fill>,
+    _turn: Option<OwnedSemaphorePermit>,
+}
+
 struct Answer {
     status: u16,
     content_type: Option<String>,
@@ -76,7 +95,9 @@ pub struct Gateway {
     upstream: SocketAddr,
     hifi: Arc<HifiApi>,
     seats: Arc<Semaphore>,
-    downloads: Semaphore,
+    downloads: Arc<Semaphore>,
+    tracks: Option<Cache>,
+    searches: Searches,
 }
 
 pub fn gateway_tls(
@@ -99,12 +120,28 @@ impl Gateway {
     }
 
     pub fn through(keys: Keys, upstream: SocketAddr, hifi: HifiApi) -> Arc<Self> {
+        Self::through_keeping(keys, upstream, hifi, Keeping::default())
+    }
+
+    pub fn keeping(keys: Keys, upstream: SocketAddr, keeping: Keeping) -> Arc<Self> {
+        let hifi = HifiApi::at(&format!("http://{upstream}"));
+        Self::through_keeping(keys, upstream, hifi, keeping)
+    }
+
+    pub fn through_keeping(
+        keys: Keys,
+        upstream: SocketAddr,
+        hifi: HifiApi,
+        keeping: Keeping,
+    ) -> Arc<Self> {
         Arc::new(Self {
             keys,
             upstream,
             hifi: Arc::new(hifi),
             seats: Arc::new(Semaphore::new(CONNECTIONS_AT_MOST)),
-            downloads: Semaphore::new(DOWNLOADS_AT_ONCE),
+            downloads: Arc::new(Semaphore::new(DOWNLOADS_AT_ONCE)),
+            tracks: keeping.tracks,
+            searches: Searches::new(keeping.searches_for, SEARCH_BYTES_AT_MOST),
         })
     }
 
@@ -164,7 +201,7 @@ impl Gateway {
                 .await
             }
             Err(Refused::Route) => reply(&mut stream, 404, &[], b"").await,
-            Ok(Admitted::File(id)) => self.filed(&mut stream, id).await,
+            Ok(Admitted::File { id, wanted }) => self.filed(&mut stream, id, wanted).await,
             Ok(Admitted::Forward(verb, target)) => match self.relayed(verb, &target).await {
                 Ok(answer) => {
                     let mut headers = Vec::new();
@@ -197,23 +234,50 @@ impl Gateway {
         if verb == Verb::Get
             && let Some(id) = file_of(&head.target)
         {
-            return Ok(Admitted::File(id));
+            let wanted = head.range.as_deref().and_then(Wanted::parse);
+            return Ok(Admitted::File { id, wanted });
         }
         routed(verb, &head.target)
             .map(|target| Admitted::Forward(verb, target))
             .ok_or(Refused::Route)
     }
 
-    async fn filed<S: AsyncWrite + Unpin>(&self, stream: &mut S, id: u64) -> io::Result<()> {
-        let Ok(_turn) = self.downloads.acquire().await else {
+    async fn filed<S: AsyncWrite + Unpin>(
+        &self,
+        stream: &mut S,
+        id: u64,
+        wanted: Option<Wanted>,
+    ) -> io::Result<()> {
+        if let Some(hit) = self.kept(id) {
+            return from_the_cache(stream, id, hit, wanted).await;
+        }
+        let Ok(turn) = Arc::clone(&self.downloads).acquire_owned().await else {
             return reply(stream, 503, &[], b"").await;
         };
+        if let Some(hit) = self.kept(id) {
+            drop(turn);
+            return from_the_cache(stream, id, hit, wanted).await;
+        }
         let hifi = Arc::clone(&self.hifi);
         let opened = spawn_blocking(move || opened_track(&hifi, id)).await;
         match opened {
             Ok(Ok(Some((reader, length)))) => {
-                tracing::info!(track = id, "a track is being sent");
-                send_file(stream, reader, length).await
+                let fill = self
+                    .tracks
+                    .as_ref()
+                    .and_then(|tracks| tracks.fill(id, length));
+                tracing::info!(track = id, cached = fill.is_some(), "a track is being sent");
+                let source = Source {
+                    reader,
+                    length,
+                    begins_at: 0,
+                    fill,
+                    _turn: Some(turn),
+                };
+                match windowed(wanted, length) {
+                    Ok(span) => send_file(stream, source, span).await,
+                    Err(Unsatisfiable) => unsatisfiable(stream, length.unwrap_or_default()).await,
+                }
             }
             Ok(Ok(None)) => reply(stream, 404, &[], b"").await,
             Ok(Err(error)) => {
@@ -224,7 +288,29 @@ impl Gateway {
         }
     }
 
+    fn kept(&self, id: u64) -> Option<Hit> {
+        self.tracks.as_ref()?.hit(id)
+    }
+
     async fn relayed(&self, verb: Verb, target: &str) -> std::result::Result<Answer, Unreached> {
+        let searching = verb == Verb::Get && is_search(target);
+        if searching && let Some(recalled) = self.searches.recalled(target) {
+            return Ok(Answer {
+                status: 200,
+                content_type: recalled.content_type,
+                retry_after: None,
+                body: recalled.body,
+            });
+        }
+        let answer = self.forwarded(verb, target).await?;
+        if searching && answer.status == 200 {
+            self.searches
+                .remember(target, answer.content_type.as_deref(), &answer.body);
+        }
+        Ok(answer)
+    }
+
+    async fn forwarded(&self, verb: Verb, target: &str) -> std::result::Result<Answer, Unreached> {
         let asked = timeout(UPSTREAM_WITHIN, async {
             let mut stream = TcpStream::connect(self.upstream)
                 .await
@@ -259,6 +345,7 @@ struct Head {
     method: String,
     target: String,
     bearer: Option<String>,
+    range: Option<String>,
 }
 
 async fn read_head<S: AsyncRead + Unpin>(stream: &mut S) -> std::io::Result<Option<Head>> {
@@ -268,21 +355,25 @@ async fn read_head<S: AsyncRead + Unpin>(stream: &mut S) -> std::io::Result<Opti
         let mut request = httparse::Request::new(&mut headers);
         match request.parse(&buffer) {
             Ok(httparse::Status::Complete(_)) => {
-                let bearer = request
-                    .headers
-                    .iter()
-                    .find(|header| header.name.eq_ignore_ascii_case("authorization"))
-                    .and_then(|header| std::str::from_utf8(header.value).ok())
-                    .and_then(|value| {
-                        let scheme = value.get(..BEARER.len())?;
-                        scheme
-                            .eq_ignore_ascii_case(BEARER)
-                            .then(|| value[BEARER.len()..].trim().to_owned())
-                    });
+                let named = |name: &str| {
+                    request
+                        .headers
+                        .iter()
+                        .find(|header| header.name.eq_ignore_ascii_case(name))
+                        .and_then(|header| std::str::from_utf8(header.value).ok())
+                };
+                let bearer = named("authorization").and_then(|value| {
+                    let scheme = value.get(..BEARER.len())?;
+                    scheme
+                        .eq_ignore_ascii_case(BEARER)
+                        .then(|| value[BEARER.len()..].trim().to_owned())
+                });
+                let range = named("range").map(str::to_owned);
                 return Ok(Some(Head {
                     method: request.method.unwrap_or_default().to_owned(),
                     target: request.path.unwrap_or_default().to_owned(),
                     bearer,
+                    range,
                 }));
             }
             Ok(httparse::Status::Partial) if buffer.len() < HEAD_BYTES_AT_MOST => {}
@@ -295,6 +386,10 @@ async fn read_head<S: AsyncRead + Unpin>(stream: &mut S) -> std::io::Result<Opti
         }
         buffer.extend_from_slice(&chunk[..read]);
     }
+}
+
+fn is_search(target: &str) -> bool {
+    target.split_once('?').map_or(target, |(path, _)| path) == SEARCH_ROUTE
 }
 
 fn routed(verb: Verb, target: &str) -> Option<String> {
@@ -357,12 +452,14 @@ fn reason(status: u16) -> &'static str {
     match status {
         200 => "OK",
         202 => "Accepted",
+        206 => "Partial Content",
         400 => "Bad Request",
         401 => "Unauthorized",
         403 => "Forbidden",
         404 => "Not Found",
         405 => "Method Not Allowed",
         410 => "Gone",
+        416 => "Range Not Satisfiable",
         429 => "Too Many Requests",
         502 => "Bad Gateway",
         503 => "Service Unavailable",
@@ -414,59 +511,163 @@ fn file_of(target: &str) -> Option<u64> {
         .and_then(|id| id.parse().ok())
 }
 
-async fn send_file<S: AsyncWrite + Unpin>(
+async fn from_the_cache<S: AsyncWrite + Unpin>(
     stream: &mut S,
-    mut reader: Box<dyn Read + Send>,
-    length: Option<u64>,
+    id: u64,
+    hit: Hit,
+    wanted: Option<Wanted>,
 ) -> io::Result<()> {
-    let (sender, mut receiver) = mpsc::channel::<io::Result<Vec<u8>>>(FILE_CHUNKS_AHEAD);
-    spawn_blocking(move || {
-        let mut sent = 0_u64;
-        loop {
-            let mut chunk = vec![0; FILE_CHUNK_BYTES];
-            let outcome = match reader.read(&mut chunk) {
-                Ok(0) => break,
-                Ok(read) => {
-                    chunk.truncate(read);
-                    sent += read as u64;
-                    if sent > FILE_BYTES_AT_MOST {
-                        Err(io::Error::from(io::ErrorKind::FileTooLarge))
-                    } else {
-                        Ok(chunk)
+    let Hit { mut file, bytes } = hit;
+    let span = match windowed(wanted, Some(bytes)) {
+        Ok(span) => span,
+        Err(Unsatisfiable) => return unsatisfiable(stream, bytes).await,
+    };
+    let begins_at = span.map_or(0, |span| span.first);
+    file.seek(SeekFrom::Start(begins_at))?;
+    tracing::info!(track = id, "a track is being sent from the cache");
+    let source = Source {
+        reader: Box::new(file),
+        length: Some(bytes),
+        begins_at,
+        fill: None,
+        _turn: None,
+    };
+    send_file(stream, source, span).await
+}
+
+async fn unsatisfiable<S: AsyncWrite + Unpin>(stream: &mut S, total: u64) -> io::Result<()> {
+    reply(
+        stream,
+        416,
+        &[("Content-Range", format!("bytes */{total}"))],
+        b"",
+    )
+    .await
+}
+
+fn pump(mut source: Source, window: Span, sender: mpsc::Sender<io::Result<Vec<u8>>>) {
+    let mut at = source.begins_at;
+    let mut attached = true;
+    loop {
+        let nothing_more_to_send = !attached || at > window.last;
+        if nothing_more_to_send && source.fill.is_none() {
+            break;
+        }
+        let mut chunk = vec![0; FILE_CHUNK_BYTES];
+        match source.reader.read(&mut chunk) {
+            Ok(0) => {
+                if let Some(fill) = source.fill.take() {
+                    kept_if_whole(fill, source.length, at);
+                }
+                break;
+            }
+            Ok(read) => {
+                chunk.truncate(read);
+                let end = at + read as u64;
+                if end > FILE_BYTES_AT_MOST {
+                    if attached {
+                        let _ =
+                            sender.blocking_send(Err(io::Error::from(io::ErrorKind::FileTooLarge)));
+                    }
+                    break;
+                }
+                if at == 0 && !chunk.starts_with(FLAC_MARKER) {
+                    source.fill = None;
+                }
+                if let Some(fill) = source.fill.as_mut()
+                    && let Err(error) = fill.write(&chunk)
+                {
+                    tracing::debug!(%error, "a track is no longer being cached");
+                    source.fill = None;
+                }
+                if attached {
+                    let from = window.first.saturating_sub(at).min(read as u64) as usize;
+                    let to = window
+                        .last
+                        .saturating_add(1)
+                        .saturating_sub(at)
+                        .min(read as u64) as usize;
+                    if from < to {
+                        chunk.truncate(to);
+                        chunk.drain(..from);
+                        attached = sender.blocking_send(Ok(chunk)).is_ok();
                     }
                 }
-                Err(error) => Err(error),
-            };
-            let failed = outcome.is_err();
-            if sender.blocking_send(outcome).is_err() || failed {
+                at = end;
+            }
+            Err(error) => {
+                if attached {
+                    let _ = sender.blocking_send(Err(error));
+                }
                 break;
             }
         }
+    }
+}
+
+fn kept_if_whole(fill: Fill, promised: Option<u64>, read: u64) {
+    if promised.is_some_and(|promised| promised != read) {
+        return;
+    }
+    if let Err(error) = fill.commit() {
+        tracing::warn!(%error, "a downloaded track could not be put in the cache");
+    }
+}
+
+async fn send_file<S: AsyncWrite + Unpin>(
+    stream: &mut S,
+    source: Source,
+    span: Option<Span>,
+) -> io::Result<()> {
+    let length = source.length;
+    let window = span.unwrap_or(Span {
+        first: 0,
+        last: u64::MAX,
     });
-    let framing = match length {
-        Some(length) => format!("Content-Length: {length}"),
+    let promised = match span {
+        Some(span) => Some(span.bytes()),
+        None => length,
+    };
+    let (sender, mut receiver) = mpsc::channel::<io::Result<Vec<u8>>>(FILE_CHUNKS_AHEAD);
+    spawn_blocking(move || pump(source, window, sender));
+
+    let status = match span {
+        Some(_) => "206 Partial Content",
+        None => "200 OK",
+    };
+    let framing = match promised {
+        Some(promised) => format!("Content-Length: {promised}"),
         None => "Transfer-Encoding: chunked".to_owned(),
     };
+    let ranges = match (length, span) {
+        (Some(total), Some(span)) => format!(
+            "Accept-Ranges: bytes\r\nContent-Range: bytes {}-{}/{total}\r\n",
+            span.first, span.last
+        ),
+        (Some(_), None) => "Accept-Ranges: bytes\r\n".to_owned(),
+        (None, _) => String::new(),
+    };
     let head = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: {FILE_TYPE}\r\n{framing}\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n"
+        "HTTP/1.1 {status}\r\nContent-Type: {FILE_TYPE}\r\n{framing}\r\n{ranges}Connection: close\r\nCache-Control: no-store\r\n\r\n"
     );
     written(stream, head.as_bytes()).await?;
+
     let mut total = 0_u64;
     while let Some(chunk) = receiver.recv().await {
         let chunk = chunk?;
         total += chunk.len() as u64;
-        if length.is_none() {
+        if promised.is_none() {
             written(stream, format!("{:x}\r\n", chunk.len()).as_bytes()).await?;
         }
         written(stream, &chunk).await?;
-        if length.is_none() {
+        if promised.is_none() {
             written(stream, b"\r\n").await?;
         }
     }
-    if length.is_some_and(|promised| promised != total) {
+    if promised.is_some_and(|promised| promised != total) {
         return Err(io::Error::from(io::ErrorKind::UnexpectedEof));
     }
-    if length.is_none() {
+    if promised.is_none() {
         written(stream, b"0\r\n\r\n").await?;
     }
     stream.shutdown().await

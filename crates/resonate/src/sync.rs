@@ -337,6 +337,7 @@ fn started(
         ledger: folder.join(LEDGER),
         staging: folder.join(STAGING),
         transfers_allowed: true,
+        relay_only: false,
         nearby: Some(Nearby::on_the_network()),
     };
     let catalog = Arc::new(Catalogued {

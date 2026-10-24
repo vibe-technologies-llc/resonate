@@ -13,7 +13,7 @@ paths:
 
 `resonate-sync` keeps a listener's devices in step: playlists and saved-query playlists, track favourites, listening history
 and what each device was playing travel through a server that cannot read them, or straight between
-devices on one network when the server is away; songs travel from one device to another directly.
+devices on one network when the server is away; songs travel from one device to another directly, or through the server's relay where no direct path opens.
 It reaches `resonate-core` alone among workspace crates (the layering job refuses the library,
 engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) and
 `resonate-server` reach it.
@@ -69,10 +69,11 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   device pings every 25 s and a link silent for 90 s drops. A web link has no observed UDP address,
   so the server's `Welcome` and `Punched` carry `0.0.0.0:0`, which a device skips as a candidate.
 - **To the server**: `Hello` (version, space, token, device, cursor), `Append` (sealed blobs),
-  `Compact` (through, snapshot parts), `Punch` (to a device, sealed candidates), `Bye`. **From
+  `Compact` (through, snapshot parts), `Punch` (to a device, sealed candidates), `Relaying`,
+  `Relay` (to a device, one datagram of at most `LARGEST_DATAGRAM`, 2048 bytes), `Bye`. **From
   it**: `Welcome` (devices online, the address it saw, head), `Snapshot`, `Records` (a device's
   own records come back as a seq with no blob, so its cursor moves without the bytes), `Appended`,
-  `Arrived`/`Left`, `Punched`, `Compacted`, `Refused`. ALPN `resonate-sync/1` to the server,
+  `Arrived`/`Left`, `Punched`, `Compacted`, `Refused`, `Relayed` (from a device, one datagram). ALPN `resonate-sync/1` to the server,
   `resonate-peer/1` between devices.
 - **Between devices**, one request per stream: `Holdings` (answered `Held`… `HeldEnd`), `Fetch`
   (`Sending` then the bytes, or `Missing`), `Meet` (device, whether records travel; answered `Met`
@@ -288,6 +289,34 @@ will not open is left out of the holdings.
   from the `peer` seed (rcgen, `ring`); `SpaceVerifier` accepts any presented certificate but checks
   the TLS 1.3 signature with the space's public key, both ways (mutual TLS). A device without the
   code cannot complete a handshake.
+- **Peers are dialled over IPv4 and IPv6 alike.** The peer endpoint's socket is dual stack
+  (`service::peer_socket`: `[::]` with `IPV6_V6ONLY` off, falling back to IPv4 alone where the host
+  has no IPv6), so one port serves both and quinn maps an IPv4 address to its IPv6 form. A punch
+  offers, beside the IPv4 candidates, up to `GLOBAL_ADDRESSES_OFFERED_AT_MOST` (4) IPv6 addresses
+  the interfaces hold (`nearby::global_addresses_here`: up, not loopback, not point to point, not
+  link local, not multicast; a unique local address counts, like a private IPv4), at the peer port,
+  and only where the endpoint took IPv6. `routed_candidates` probes the route to the server in the
+  server's own family, and a server seen over IPv6 offers the address it saw. Nearby beacons stay
+  IPv4 (`addresses_here`). The STUN reflector converts an IPv4 server to its mapped form before it
+  sends from a dual stack socket (`a_dual_stack_endpoint_is_dialled_over_ipv6_and_over_ipv4_alike`).
+- **A device a direct dial cannot reach is reached through the server's relay, as QUIC.** The peer
+  protocol is untouched: `Reflector` (the endpoint's socket wrapper) owns a `Relay` that gives each
+  device a synthetic IPv4 address in `240.82.0.0/16` (reserved, never routed) and, in `try_send`,
+  turns a datagram to such an address into `ToServer::Relay` instead of a UDP send; a
+  `FromServer::Relayed` is queued by `read_frames` and handed to quinn by `poll_recv` as received
+  from that address. So the handshake, mutual TLS against the space's key, fetch, resume and the
+  rest run over the server's link exactly as over UDP, **end to end: the server relays ciphertext it
+  holds no key to and cannot impersonate a device** (`SpaceVerifier`). `Event::Punched(device, None)`
+  (every direct candidate failed) dials the relay address within `RELAY_DIAL_WITHIN` (20 s) only
+  where a song is waiting on the device and a server link stands (`Event::Relayed` then lands as a
+  punch does); each side dials for its own fetches, as it does directly. Datagrams leave through a
+  bounded queue (`RELAYED_DATAGRAMS_QUEUED_AT_MOST`, 256) beside the link's writer, which serves the
+  ordinary queue first (`biased`), and a full queue drops: QUIC reads that as loss and slows. A
+  device sends `Relaying` after every `Welcome`; the server relays only to a device that did, so an
+  older build is never sent a frame it cannot read. `Settings::relay_only` clears every direct
+  candidate (the tests' way to take the relay; false in the front ends)
+  (`a_song_reaches_a_device_the_other_can_only_reach_through_the_servers_relay`,
+  `two_endpoints_reach_each_other_over_relayed_datagrams_alone_and_pass_a_song_between_them`).
 - **Songs move only when asked or as chosen**: `fetch` (a playlist's missing songs from one device,
   from the CLI, the playlist menu or a phone), or `sync-songs` (`favourites`, `playlists` the
   listener marked *Keep its songs here*, `everything`) when a device arrives, at most every 30

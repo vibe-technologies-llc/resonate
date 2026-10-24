@@ -23,6 +23,7 @@ pub const LARGEST_FRAME: usize = 32 * 1024 * 1024;
 pub const LONGEST_TEXT: usize = 4096;
 pub const LARGEST_BLOB: usize = LARGEST_FRAME;
 pub const LARGEST_RECORD: usize = 256 * 1024;
+pub const LARGEST_DATAGRAM: usize = 2048;
 const RECORD_AT_LEAST: usize = 2;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -46,6 +47,11 @@ pub enum ToServer {
         sealed: Vec<u8>,
     },
     Bye,
+    Relaying,
+    Relay {
+        to: DeviceId,
+        datagram: Vec<u8>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -98,6 +104,10 @@ pub enum FromServer {
         through: u64,
     },
     Refused(Refusal),
+    Relayed {
+        from: DeviceId,
+        datagram: Vec<u8>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -441,6 +451,12 @@ impl ToServer {
                 writer.bytes(sealed);
             }
             Self::Bye => writer.byte(4),
+            Self::Relaying => writer.byte(5),
+            Self::Relay { to, datagram } => {
+                writer.byte(6);
+                writer.device(*to);
+                writer.bytes(datagram);
+            }
         }
         writer.finish()
     }
@@ -468,6 +484,11 @@ impl ToServer {
                 sealed: reader.bytes(LONGEST_TEXT)?.to_vec(),
             },
             4 => Self::Bye,
+            5 => Self::Relaying,
+            6 => Self::Relay {
+                to: reader.device()?,
+                datagram: reader.bytes(LARGEST_DATAGRAM)?.to_vec(),
+            },
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
         reader.done()?;
@@ -569,6 +590,11 @@ impl FromServer {
                 writer.byte(8);
                 writer.byte(refusal.tag());
             }
+            Self::Relayed { from, datagram } => {
+                writer.byte(9);
+                writer.device(*from);
+                writer.bytes(datagram);
+            }
         }
         writer.finish()
     }
@@ -624,6 +650,10 @@ impl FromServer {
                 through: reader.number()?,
             },
             8 => Self::Refused(Refusal::from_tag(reader.byte()?)),
+            9 => Self::Relayed {
+                from: reader.device()?,
+                datagram: reader.bytes(LARGEST_DATAGRAM)?.to_vec(),
+            },
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
         reader.done()?;
@@ -1089,9 +1119,29 @@ mod tests {
                 sealed: vec![5; 40],
             },
             ToServer::Bye,
+            ToServer::Relaying,
+            ToServer::Relay {
+                to: DeviceId([6; DEVICE_BYTES]),
+                datagram: vec![7; 1452],
+            },
         ] {
             assert_eq!(ToServer::decoded(&frame.encoded()).expect("decoded"), frame);
         }
+    }
+
+    #[test]
+    fn a_datagram_past_what_a_relay_carries_is_refused() {
+        let past = ToServer::Relay {
+            to: DeviceId([6; DEVICE_BYTES]),
+            datagram: vec![7; LARGEST_DATAGRAM + 1],
+        };
+        let fits = ToServer::Relay {
+            to: DeviceId([6; DEVICE_BYTES]),
+            datagram: vec![7; LARGEST_DATAGRAM],
+        };
+
+        assert!(ToServer::decoded(&past.encoded()).is_err());
+        assert_eq!(ToServer::decoded(&fits.encoded()).expect("decoded"), fits);
     }
 
     #[test]
@@ -1149,6 +1199,10 @@ mod tests {
             },
             FromServer::Compacted { through: 7 },
             FromServer::Refused(Refusal::SpaceFull),
+            FromServer::Relayed {
+                from: DeviceId([5; DEVICE_BYTES]),
+                datagram: vec![9; 1452],
+            },
         ] {
             assert_eq!(
                 FromServer::decoded(&frame.encoded()).expect("decoded"),

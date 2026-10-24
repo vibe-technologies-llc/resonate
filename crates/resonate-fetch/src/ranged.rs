@@ -8,7 +8,7 @@ use ureq::{
     Agent, Body, BodyReader,
     http::{
         Response,
-        header::{CONTENT_RANGE, RANGE},
+        header::{AUTHORIZATION, CONTENT_RANGE, RANGE},
     },
 };
 
@@ -73,8 +73,11 @@ fn starts_at(range: &str) -> Option<u64> {
         .ok()
 }
 
-fn asked(agent: &Agent, url: &str, from: u64) -> Result<Answered, Unfetched> {
+fn asked(agent: &Agent, url: &str, from: u64, bearer: Option<&str>) -> Result<Answered, Unfetched> {
     let mut request = agent.get(url);
+    if let Some(bearer) = bearer {
+        request = request.header(AUTHORIZATION, bearer);
+    }
     if from > 0 {
         request = request.header(RANGE, format!("bytes={from}-"));
     }
@@ -119,6 +122,7 @@ struct Answered {
 pub struct Ranged {
     agent: Agent,
     url: String,
+    bearer: Option<String>,
     reader: BodyReader<'static>,
     length: Option<u64>,
     read: u64,
@@ -136,6 +140,7 @@ impl Ranged {
         Self {
             agent,
             url,
+            bearer: None,
             length: response.body().content_length(),
             reader: response.into_body().into_reader(),
             read: 0,
@@ -147,7 +152,7 @@ impl Ranged {
     pub fn opened(agent: Agent, url: String, resumed_after: Duration) -> Result<Self, Unfetched> {
         let mut tried = 0;
         let answered = loop {
-            match asked(&agent, &url, 0) {
+            match asked(&agent, &url, 0, None) {
                 Ok(answered) => break answered,
                 Err(Unfetched::AskedLater { asked_for, .. }) if tried < RESUMES_AT_MOST => {
                     tried += 1;
@@ -166,12 +171,20 @@ impl Ranged {
         Ok(Self {
             agent,
             url,
+            bearer: None,
             reader: answered.reader,
             length: answered.length,
             read: 0,
             broken: 0,
             resumed_after,
         })
+    }
+
+    pub fn bearing(self, bearer: String) -> Self {
+        Self {
+            bearer: Some(bearer),
+            ..self
+        }
     }
 
     pub fn read_so_far(&self) -> u64 {
@@ -193,7 +206,7 @@ impl Ranged {
             self.broken += 1;
             tracing::debug!(error = %last, read = self.read, ?wait, "a download broke off and is asked for again from where it stopped");
             thread::sleep(wait);
-            match asked(&self.agent, &self.url, self.read) {
+            match asked(&self.agent, &self.url, self.read, self.bearer.as_deref()) {
                 Ok(answered) => {
                     self.reader = answered.reader;
                     return Ok(());

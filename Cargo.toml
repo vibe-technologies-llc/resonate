@@ -168,6 +168,7 @@ rustls-native-certs = { version = "0.8.5", default-features = false }
 webpki-root-certs = { version = "1.0.11", default-features = false }
 uuid = { version = "1.29.0", default-features = false, features = ["std", "v4"] }
 if-addrs = { version = "0.15.0", default-features = false }
+socket2 = { version = "0.6.5", default-features = false }
 mdns-sd = { version = "0.21.6", default-features = false, features = ["async"] }
 quinn = {
     version = "0.11.12",

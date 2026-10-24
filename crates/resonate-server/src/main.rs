@@ -2,8 +2,8 @@ use std::{net::SocketAddr, path::PathBuf, process::ExitCode, sync::Arc, time::Du
 
 use clap::{CommandFactory, Parser, error::ErrorKind};
 use resonate_server::{
-    Allowance, Capacity, Error, Gateway, Hifi, Limits, Minted, Server, Store, Web, gateway_tls,
-    listening, pem, serving,
+    Allowance, Cache, Capacity, Error, Gateway, Hifi, Keeping, Limits, Minted, Server, Store, Web,
+    gateway_tls, listening, pem, serving,
 };
 use resonate_sync::wire::LARGEST_RECORD;
 use tokio::{
@@ -13,6 +13,7 @@ use tokio::{
 use tracing_subscriber::EnvFilter;
 
 const SECONDS_PER_DAY: u64 = 24 * 60 * 60;
+const SECONDS_PER_MINUTE: u64 = 60;
 
 #[derive(Parser)]
 #[command(
@@ -80,6 +81,13 @@ struct Args {
 
     #[arg(
         long,
+        default_value_t = 2 * 1024 * 1024,
+        help = "The most bytes a second one device may have relayed to its others, for devices that cannot reach each other; 0 relays nothing"
+    )]
+    relay_bytes_per_second: u64,
+
+    #[arg(
+        long,
         default_value_t = 365,
         help = "Days a space may go untouched before it is swept"
     )]
@@ -126,6 +134,27 @@ struct Args {
         help = "The most new spaces one address may make a day"
     )]
     spaces_per_address_per_day: u32,
+
+    #[arg(
+        long,
+        value_name = "DIR",
+        help = "Where the gateway keeps the tracks it has downloaded, so a track asked for again is not downloaded again"
+    )]
+    cache: Option<PathBuf>,
+
+    #[arg(
+        long,
+        default_value_t = 2 * 1024 * 1024 * 1024,
+        help = "The most bytes the track cache may hold; 0 keeps no tracks"
+    )]
+    cache_bytes: u64,
+
+    #[arg(
+        long,
+        default_value_t = 10,
+        help = "Minutes the gateway remembers an answer to a search; 0 remembers none"
+    )]
+    search_minutes: u64,
 
     #[arg(
         long,
@@ -182,6 +211,16 @@ fn run(args: Args) -> Result<(), Error> {
         .transpose()?
         .flatten();
     let web = args.config.as_deref().map(Web::read).transpose()?.flatten();
+    let tracks = match (&hifi, &args.cache) {
+        (Some(_), Some(directory)) if args.cache_bytes > 0 => {
+            Some(Cache::open(directory, args.cache_bytes)?)
+        }
+        _ => None,
+    };
+    let keeping = Keeping {
+        tracks,
+        searches_for: Duration::from_secs(args.search_minutes.saturating_mul(SECONDS_PER_MINUTE)),
+    };
     let gateway_acceptor = hifi
         .as_ref()
         .map(|_| gateway_tls(chain.clone(), key.clone_key()))
@@ -196,6 +235,7 @@ fn run(args: Args) -> Result<(), Error> {
         space_bytes: args.space_bytes,
         devices: args.devices,
         frames_per_minute: args.frames_per_minute,
+        relay_bytes_per_second: args.relay_bytes_per_second,
         idle_for: Duration::from_secs(args.idle_days.saturating_mul(SECONDS_PER_DAY)),
         allowance: Allowance {
             connections: args.connections,
@@ -216,7 +256,7 @@ fn run(args: Args) -> Result<(), Error> {
             (Some(hifi), Some(acceptor)) => {
                 let listener = TcpListener::bind(hifi.listen).await.map_err(Error::Listen)?;
                 tracing::info!(listen = %hifi.listen, upstream = %hifi.upstream, keys = hifi.keys.len(), "serving hifi-api");
-                Some(Gateway::new(hifi.keys, hifi.upstream).serve(listener, acceptor))
+                Some(Gateway::keeping(hifi.keys, hifi.upstream, keeping).serve(listener, acceptor))
             }
             _ => None,
         };

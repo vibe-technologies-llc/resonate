@@ -98,6 +98,49 @@ hex) and prints it with the digest to list: the file never holds a secret.
   (`a_track_is_never_downloaded_for_a_request_without_a_listed_key`,
   `a_track_is_downloaded_by_the_server_through_the_hifi_api_and_sent_to_a_listed_key`).
 
+## The relay (`hub.rs`, `relay.rs`)
+
+A device that sent `Relaying` can be handed `Relayed` frames: `Hub::relay` passes a `Relay`'s datagram
+(at most `LARGEST_DATAGRAM`) from one device of a space to another of the same space, nothing else,
+and keeps nothing: the datagram is QUIC between two devices, sealed by their handshake
+(`sync.md`). It is not a record, so it does not count toward `--frames-per-minute`; instead:
+
+- **A device may have `--relay-bytes-per-second` (2 MiB) relayed**, a token bucket of one second's
+  worth (`relay::Bucket`); what exceeds it is dropped, not refused, so the session lives and QUIC
+  slows itself. `0` relays nothing and ignores `Relaying`.
+- **A target holds at most `RELAY_BACKLOG_BYTES_AT_MOST` (256 KiB) unread**; the rest is dropped, so
+  a slow reader costs the server a bounded queue. A `Relaying` from a session since replaced does not
+  count (`a_relay_declared_by_a_session_that_was_replaced_does_not_count`).
+
+## What the gateway keeps (`cache.rs`, `searches.rs`, `ranges.rs`)
+
+Two things are kept so a repeated ask costs the hifi-api and TIDAL nothing. Neither changes who is
+admitted: the key check comes first, so a stranger reads nothing from either.
+
+- **Tracks, on disk, under a byte limit** (`--cache <DIR>` with the hifi table, `--cache-bytes`,
+  2 GiB; 0 or no `--cache` keeps none; the unit passes its `CacheDirectory`). A `/file/` is looked
+  up before it takes a download turn and again after (a download that finished meanwhile is
+  served, not repeated). A miss is **teed into a staging file while it is sent**: `<id>.<pid>.part`
+  held under `writer::Held`, renamed to `<id>.flac` only after a clean end of the stream (a known
+  `Content-Length` must match, and the first bytes must be `fLaC`), so a short or foreign body is
+  never kept. Eviction is least recently used (a hit bumps the file's mtime, which orders a
+  restart); a restart sweeps stale stagings through `writer_of`, leaves foreign files alone and
+  trims a lowered limit. **The directory never exceeds the limit**: each chunk reserves its bytes
+  before it is written, evicting as needed, and a track may take at most half the limit (a known
+  length over that is not staged at all). One id is staged by one download at a time. The download
+  turn travels with the staging into the blocking task, so **a client that leaves does not stop a
+  fill** (its resume then finds the file) and `DOWNLOADS_AT_ONCE` still bounds the work
+  (`a_track_asked_for_twice_is_downloaded_once_and_the_second_answer_comes_from_the_cache`,
+  `a_track_over_the_limit_is_sent_and_never_kept`).
+- **`Range` on `/file/`**: one `bytes=N-`, `N-M` or `-S` is answered `206` with `Content-Range` and
+  `Accept-Ranges: bytes`, from the cache by a seek, from a download by reading past what comes
+  before (the whole track is still staged). A range past the end is `416` with `bytes */total`;
+  several ranges, a malformed one, or any range of a track whose length the upstream did not give is
+  answered whole, which `resonate_fetch::Ranged` reads on (`ranges.rs` holds the grammar).
+- **Searches, in memory** (`--search-minutes`, 10; 0 keeps none): a `200` to a `GET /search/` is
+  remembered by its target, at most 8 MiB in all, the oldest first out. Only searches: a
+  `/playback/requests/` answer is a queue's state and is never kept, nor is a non-200.
+
 ## The web socket listener (`web.rs`, `serve_web`)
 
 QUIC cannot cross a proxy that carries only HTTP, so `--config` with a `[web]` table (`listen`, and

@@ -15,7 +15,7 @@ use quinn::{
 };
 use tokio::{sync::oneshot, time::timeout};
 
-use crate::{Error, Result, key::random_bytes};
+use crate::{Error, Result, key::random_bytes, relay::Relay};
 
 pub const STUN_PORT: u16 = 3478;
 const MAGIC_COOKIE: [u8; 4] = [0x21, 0x12, 0xA4, 0x42];
@@ -37,6 +37,7 @@ type Transaction = [u8; TRANSACTION_BYTES];
 pub struct Reflector {
     inner: Arc<dyn AsyncUdpSocket>,
     asked: Mutex<Vec<(Transaction, oneshot::Sender<SocketAddr>)>>,
+    relay: Relay,
 }
 
 impl fmt::Debug for Reflector {
@@ -53,7 +54,25 @@ impl Reflector {
         Arc::new(Self {
             inner,
             asked: Mutex::new(Vec::new()),
+            relay: Relay::default(),
         })
+    }
+
+    pub fn relay(&self) -> &Relay {
+        &self.relay
+    }
+
+    fn local_is_ipv6(&self) -> bool {
+        self.inner.local_addr().is_ok_and(|local| local.is_ipv6())
+    }
+
+    fn reachable(&self, address: SocketAddr) -> SocketAddr {
+        match address.ip() {
+            IpAddr::V4(ip) if self.local_is_ipv6() => {
+                SocketAddr::new(IpAddr::V6(ip.to_ipv6_mapped()), address.port())
+            }
+            _ => address,
+        }
     }
 
     pub async fn ask(&self, server: SocketAddr) -> Result<SocketAddr> {
@@ -63,7 +82,7 @@ impl Reflector {
         let request = binding_request(&transaction);
         for _ in 0..ATTEMPTS {
             let sent = self.inner.try_send(&Transmit {
-                destination: server,
+                destination: self.reachable(server),
                 ecn: None,
                 contents: &request,
                 segment_size: None,
@@ -101,6 +120,10 @@ impl AsyncUdpSocket for Reflector {
     }
 
     fn try_send(&self, transmit: &Transmit) -> io::Result<()> {
+        if let Some(device) = self.relay.device_at(transmit.destination) {
+            self.relay.carry(device, transmit);
+            return Ok(());
+        }
         self.inner.try_send(transmit)
     }
 
@@ -111,6 +134,10 @@ impl AsyncUdpSocket for Reflector {
         meta: &mut [RecvMeta],
     ) -> Poll<io::Result<usize>> {
         loop {
+            let relayed = self.relay.drain(cx, bufs, meta, self.local_is_ipv6());
+            if relayed > 0 {
+                return Poll::Ready(Ok(relayed));
+            }
             let received = ready!(self.inner.poll_recv(cx, bufs, meta))?;
             let mut kept = 0;
             for index in 0..received {

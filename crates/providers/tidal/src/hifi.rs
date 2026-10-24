@@ -6,7 +6,7 @@ use std::{
 use parking_lot::Mutex;
 use resonate_core::{Isrc, SourceId};
 use resonate_fetch::{
-    Patience, Trusted, configured, downloading_agent, escaped, retry_after_of, unreached,
+    Patience, Ranged, Trusted, configured, downloading_agent, escaped, retry_after_of, unreached,
 };
 use resonate_providers::{
     Choosing, Delivery, Error, Extension, Identity, Listed as Weighed, Obtained, Opened, Opening,
@@ -736,10 +736,19 @@ impl HifiApi {
                     .map_err(|error| unreached(provider.clone(), op, error))?;
                 let status = response.status().as_u16();
                 match status {
-                    200 => Ok(Opened::Reading {
-                        length: response.body().content_length(),
-                        reader: Box::new(response.into_body().into_reader()),
-                    }),
+                    200 => {
+                        let ranged = Ranged::continuing(
+                            agent.clone(),
+                            url.clone(),
+                            response,
+                            Patience::default().resumed_after,
+                        )
+                        .bearing(bearer.clone());
+                        Ok(Opened::Reading {
+                            length: ranged.length(),
+                            reader: Box::new(ranged),
+                        })
+                    }
                     FORBIDDEN | NOT_FOUND | GONE => Ok(Opened::Gone),
                     UNAUTHORISED => Err(Error::Unwelcome {
                         provider: provider.clone(),

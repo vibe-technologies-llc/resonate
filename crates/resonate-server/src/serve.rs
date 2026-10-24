@@ -1,7 +1,7 @@
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::Path,
-    sync::Arc,
+    sync::{Arc, atomic::Ordering},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -26,6 +26,7 @@ use crate::{
     Error, PemOp, Result,
     guard::{Admitted, Allowance, Guard},
     hub::{Hub, Joined, Notice},
+    relay::Bucket,
     store::{Appended, CaughtUp, Claim, Compacted, Store},
 };
 
@@ -45,6 +46,7 @@ pub struct Limits {
     pub space_bytes: u64,
     pub devices: usize,
     pub frames_per_minute: u32,
+    pub relay_bytes_per_second: u64,
     pub idle_for: Duration,
     pub allowance: Allowance,
 }
@@ -70,6 +72,7 @@ impl Default for Limits {
             space_bytes: 64 * 1024 * 1024,
             devices: 16,
             frames_per_minute: 240,
+            relay_bytes_per_second: 2 * 1024 * 1024,
             idle_for: Duration::from_secs(365 * 24 * 60 * 60),
             allowance: Allowance::default(),
         }
@@ -322,7 +325,8 @@ impl Server {
         let Joined {
             mut notices,
             others,
-            ..
+            session,
+            backlog,
         } = joined;
         let store = Arc::clone(&self.store);
         let (head, _) = in_the_store(move || store.lock().head(space)).await?;
@@ -341,6 +345,7 @@ impl Server {
         let reading = tokio::spawn(read_frames(recv, frames_in));
         let mut window = Instant::now();
         let mut counted = 0_u32;
+        let mut allowance = Bucket::new(self.limits.relay_bytes_per_second);
         let mut keeping = interval(KEEP_EVERY);
         let ended = loop {
             tokio::select! {
@@ -350,6 +355,21 @@ impl Server {
                     };
                     let Ok(frame) = frame else {
                         break Ok(());
+                    };
+                    let frame = match frame {
+                        ToServer::Relaying => {
+                            if self.limits.relay_bytes_per_second > 0 {
+                                self.hub.relaying(space, device, session);
+                            }
+                            continue;
+                        }
+                        ToServer::Relay { to, datagram } => {
+                            if allowance.spend(datagram.len()) {
+                                self.hub.relay(space, device, to, datagram);
+                            }
+                            continue;
+                        }
+                        frame => frame,
                     };
                     if window.elapsed() >= RATE_WINDOW {
                         window = Instant::now();
@@ -361,7 +381,7 @@ impl Server {
                     }
                     match frame {
                         ToServer::Bye => break Ok(()),
-                        ToServer::Hello { .. } => {}
+                        ToServer::Hello { .. } | ToServer::Relaying | ToServer::Relay { .. } => {}
                         ToServer::Append { blobs } => self.append(&mut send, space, device, blobs).await?,
                         ToServer::Compact { through, parts } => self.compact(&mut send, space, through, parts).await?,
                         ToServer::Punch { to, sealed } => {
@@ -377,6 +397,10 @@ impl Server {
                     Some(Notice::Appended) => self.send_records(&mut send, space, device, &mut sent_through).await?,
                     Some(Notice::Arrived(other)) => send.send(&FromServer::Arrived { device: other }.encoded()).await?,
                     Some(Notice::Left(other)) => send.send(&FromServer::Left { device: other }.encoded()).await?,
+                    Some(Notice::Relayed { from, datagram }) => {
+                        backlog.fetch_sub(datagram.len(), Ordering::Relaxed);
+                        send.send(&FromServer::Relayed { from, datagram }.encoded()).await?;
+                    }
                     Some(Notice::Punched { device: from, address, sealed }) => {
                         let frame = FromServer::Punched { device: from, address, sealed };
                         send.send(&frame.encoded()).await?;

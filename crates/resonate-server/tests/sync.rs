@@ -100,6 +100,18 @@ fn device(
     shelf: Arc<Shelf>,
     follow: Follow,
 ) -> Sync {
+    device_reaching(hosted, folder, key, name, shelf, follow, false)
+}
+
+fn device_reaching(
+    hosted: &Hosted,
+    folder: &Path,
+    key: &SyncKey,
+    name: &str,
+    shelf: Arc<Shelf>,
+    follow: Follow,
+    relay_only: bool,
+) -> Sync {
     let settings = Settings {
         server: resonate_sync::Server::At(format!("localhost:{}", hosted.address.port())),
         trusted: Some(hosted.trusted.clone()),
@@ -113,6 +125,7 @@ fn device(
         ledger: folder.join(format!("{name}.sqlite")),
         staging: folder.join(format!("{name}-staging")),
         transfers_allowed: true,
+        relay_only,
         nearby: None,
     };
     Sync::start(settings, shelf).expect("started")
@@ -369,6 +382,95 @@ fn a_device_of_another_key_sees_nothing_of_the_first() {
     );
 
     drop(stranger);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_song_reaches_a_device_the_other_can_only_reach_through_the_servers_relay() {
+    let folder = scratch("relayed");
+    let hosted = hosted(&folder);
+    let key = SyncKey::minted().expect("a key");
+    let desk_shelf = Arc::new(Shelf::holding(&["A", "B"]));
+    let phone_shelf = Arc::new(Shelf::holding(&[]));
+    desk_shelf.favour_here("A", true);
+    let follow = Follow {
+        favourites: true,
+        ..Follow::default()
+    };
+
+    let desk = device_reaching(
+        &hosted,
+        &folder,
+        &key,
+        "Desk",
+        Arc::clone(&desk_shelf),
+        Follow::default(),
+        true,
+    );
+    eventually("the desk connecting", || {
+        desk.shown().standing == Standing::Connected
+    });
+    thread::sleep(Duration::from_secs(5));
+    let phone = device_reaching(
+        &hosted,
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        follow,
+        true,
+    );
+
+    eventually("the favourite song arriving through the relay", || {
+        phone_shelf.holds_title("A")
+    });
+    assert_eq!(phone_shelf.bytes_of("A"), desk_shelf.bytes_of("A"));
+    assert!(!phone_shelf.holds_title("B"));
+
+    drop(phone);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_device_dialling_directly_still_reaches_one_that_dials_only_through_the_relay() {
+    let folder = scratch("not-relayed");
+    let hosted = hosted(&folder);
+    let key = SyncKey::minted().expect("a key");
+    let desk_shelf = Arc::new(Shelf::holding(&["A"]));
+    let phone_shelf = Arc::new(Shelf::holding(&[]));
+    desk_shelf.favour_here("A", true);
+
+    let desk = device_reaching(
+        &hosted,
+        &folder,
+        &key,
+        "Desk",
+        Arc::clone(&desk_shelf),
+        Follow::default(),
+        true,
+    );
+    eventually("the desk connecting", || {
+        desk.shown().standing == Standing::Connected
+    });
+    let phone = device(
+        &hosted,
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        Follow {
+            favourites: true,
+            ..Follow::default()
+        },
+    );
+
+    eventually("the song arriving by a direct path", || {
+        phone_shelf.holds_title("A")
+    });
+
+    drop(phone);
     drop(desk);
     let _ = fs::remove_dir_all(&folder);
 }

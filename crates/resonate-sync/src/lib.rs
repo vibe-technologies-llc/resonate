@@ -7,6 +7,7 @@ mod merge;
 mod nearby;
 mod peer;
 mod quic;
+mod relay;
 mod seal;
 mod service;
 mod stun;
@@ -27,6 +28,7 @@ pub use crate::{
     ledger::{Applied, Follow, Ledger, Looked, Me},
     nearby::{BONJOUR_SERVICE, Broadcast, NEARBY_GROUP, NEARBY_PORT, Nearby, RECORD_KEY},
     quic::{read_frame, send_frame, transport},
+    relay::{RELAYED_PORT, Relay},
     seal::{opened, sealed},
     service::{
         HOSTED_SERVER, SERVER_PORT, Server, Settings, Shown, Standing, Sync, SyncDevice, Transfer,

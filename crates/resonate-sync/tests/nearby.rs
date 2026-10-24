@@ -130,6 +130,7 @@ fn started_through(
         ledger: folder.join(format!("{name}.sqlite")),
         staging: folder.join(format!("{name}-staging")),
         transfers_allowed: true,
+        relay_only: false,
         nearby: Some(nearby),
     };
     Sync::start(settings, shelf).expect("started")

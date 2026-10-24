@@ -39,6 +39,16 @@ pub async fn dialled(
     candidates: &[SocketAddr],
     device: DeviceId,
 ) -> Result<Connection> {
+    dialled_within(endpoint, config, candidates, device, DIAL_WITHIN).await
+}
+
+pub async fn dialled_within(
+    endpoint: &Endpoint,
+    config: &ClientConfig,
+    candidates: &[SocketAddr],
+    device: DeviceId,
+    within: Duration,
+) -> Result<Connection> {
     let mut attempts = JoinSet::new();
     for candidate in candidates {
         let connecting = endpoint
@@ -46,7 +56,7 @@ pub async fn dialled(
             .map_err(|source| Error::Connect(Box::new(source)));
         match connecting {
             Ok(connecting) => {
-                attempts.spawn(async move { timeout(DIAL_WITHIN, connecting).await });
+                attempts.spawn(async move { timeout(within, connecting).await });
             }
             Err(error) => {
                 tracing::debug!(%error, %candidate, "a peer candidate could not be dialled")
