@@ -250,6 +250,12 @@ will not open is left out of the holdings.
   send `Command::Seek(at)`, which the engine keeps as the place to open at; a seek that fails
   is logged and the song plays from its start. The phones do the same through `Command::Resume`
   (`resonate-mobile`'s `continue_from`).
+- **A handoff is cut from the play order, in a window holding the row heard.** Both devices
+  hand off the rows as they play (the desktop's load order mapped through `Resumption::in_play_order`,
+  the phones' queue as saved), at most `HANDED_OFF_AT_MOST` (500) of them, chosen by
+  `Resumed::window_around` so the playhead is inside however far down the queue it is
+  (`a_shuffled_queue_is_handed_off_in_the_order_it_plays_at_the_song_heard`,
+  `a_queue_longer_than_a_handoff_hands_off_the_songs_around_the_playhead`).
 
 ## The desktop follows its settings
 

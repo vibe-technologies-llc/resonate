@@ -47,7 +47,6 @@ const DEVICE_NAME: &str = "iPhone";
 const THIS_PLATFORM: Platform = Platform::Android;
 #[cfg(target_os = "ios")]
 const THIS_PLATFORM: Platform = Platform::Ios;
-const HANDED_OFF_AT_MOST: usize = 500;
 const LISTEN_SETTLES_AFTER: Duration = Duration::from_secs(15 * 60);
 const THE_SAME_LENGTH_WITHIN: Duration = Duration::from_secs(2);
 const PLAYLIST_NAME_BYTES_AT_MOST: usize = 255;
@@ -960,13 +959,23 @@ impl Catalog for DocumentCatalog {
         else {
             return Ok(None);
         };
+        let held: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM queue q JOIN documents d ON d.id = q.track",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(unavailable)?;
+        let held = usize::try_from(held).unwrap_or_default();
+        let playing = usize::try_from(row_at).unwrap_or_default();
+        let window = Resumed::window_around(playing, held);
         let queued = connection
             .prepare(&format!(
-                "SELECT q.position, {RECORDING_COLUMNS} FROM queue q JOIN documents d ON d.id = q.track ORDER BY q.position LIMIT ?1"
+                "SELECT q.position, {RECORDING_COLUMNS} FROM queue q JOIN documents d ON d.id = q.track ORDER BY q.position LIMIT ?1 OFFSET ?2"
             ))
             .and_then(|mut query| {
                 query
-                    .query_map([HANDED_OFF_AT_MOST as i64], |row| {
+                    .query_map([window.len() as i64, window.start as i64], |row| {
                         Ok((row.get::<_, i64>(0)?, recording_at(row, 1)?))
                     })?
                     .collect::<rusqlite::Result<Vec<_>>>()
@@ -1593,5 +1602,37 @@ mod tests {
 
         assert!(sync_reads_as_a_code(code));
         assert!(!sync_reads_as_a_code("not a code".into()));
+    }
+
+    #[test]
+    fn a_queue_longer_than_a_handoff_hands_off_the_songs_around_the_playhead() {
+        let folder = folder("long-queue");
+        let player = player(&folder);
+        let songs: Vec<u64> = (0..700)
+            .map(|number| {
+                song(
+                    &player,
+                    &format!("content://test/{number}.flac"),
+                    &format!("Song {number}"),
+                    None,
+                )
+                .id
+            })
+            .collect();
+        player
+            .catalog
+            .save_queue(&songs, 600, 90_000)
+            .expect("a saved queue");
+        let documents = documents_of(&player, &folder);
+
+        let resumed = documents
+            .resumption()
+            .expect("answered")
+            .expect("a resumption");
+
+        let _ = fs::remove_dir_all(folder);
+        assert_eq!(resumed.rows[resumed.at as usize].title, "Song 600");
+        assert_eq!(resumed.position, Duration::from_secs(90));
+        assert!(resumed.rows.len() <= 500);
     }
 }

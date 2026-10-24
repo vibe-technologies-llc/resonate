@@ -38,8 +38,6 @@ const DEVICE_NAME: &str = "Linux";
 #[cfg(feature = "sync")]
 const HOST_NAME: &str = "/proc/sys/kernel/hostname";
 #[cfg(feature = "sync")]
-const HANDED_OFF_AT_MOST: usize = 500;
-#[cfg(feature = "sync")]
 const CONNECTED_WITHIN: Duration = Duration::from_secs(15);
 #[cfg(feature = "sync")]
 const TRANSFERS_LOOKED_AT_EVERY: Duration = Duration::from_millis(250);
@@ -551,26 +549,35 @@ impl Catalog for Catalogued {
             return Ok(None);
         };
         let playing = resumption.landing();
+        let order = resumption.in_play_order();
+        let window = Resumed::window_around(playing, order.len());
         let mut rows = Vec::new();
         let mut at = 0;
-        for (row, resumable) in resumption.rows.iter().enumerate().take(HANDED_OFF_AT_MOST) {
+        for place in window {
+            let Some(resumable) = order
+                .get(place)
+                .and_then(|loaded| resumption.rows.get(*loaded))
+            else {
+                continue;
+            };
             let recording = self
                 .library
                 .recording_at(&resumable.location, resumable.span)
                 .map_err(|error| refused(&error))?;
             if let Some(recording) = recording {
-                if row <= playing {
+                if place <= playing {
                     at = rows.len();
                 }
                 rows.push(recording);
             }
         }
-        let position = resumption
-            .rows
+        let heard = order
             .get(playing)
+            .and_then(|loaded| resumption.rows.get(*loaded));
+        let position = heard
             .and_then(|resumable| resumable.location.as_path().map(Path::to_path_buf))
             .and_then(|path| {
-                let span = resumption.rows.get(playing).and_then(|row| row.span);
+                let span = heard.and_then(|row| row.span);
                 self.library.track_at(&path, span).ok().flatten()
             })
             .map(|track| resumption.at.to_duration(track.spec.rate))
@@ -1339,5 +1346,64 @@ mod tests {
         let _ = fs::remove_dir_all(&folder);
         assert!(nothing.0.is_empty());
         assert_eq!(nothing.1, Frames(0));
+    }
+
+    fn kept_songs(titles: &[&str]) -> (PathBuf, Library, Vec<resonate_core::MediaLocation>) {
+        use crate::fixtures::{ALBUM, ARTIST, TITLE, scanned, scratch, tagged_wave};
+
+        let folder = scratch("sync-handoff-order");
+        for title in titles {
+            fs::write(
+                folder.join(format!("{title}.wav")),
+                tagged_wave(&[(TITLE, title), (ARTIST, "Artist"), (ALBUM, "Album")]),
+            )
+            .expect("a song");
+        }
+        let library = scanned(&folder);
+        let locations = titles
+            .iter()
+            .map(|title| resonate_core::MediaLocation::local(folder.join(format!("{title}.wav"))))
+            .collect();
+        (folder, library, locations)
+    }
+
+    fn handed_titles(resumed: &Resumed) -> Vec<&str> {
+        resumed.rows.iter().map(|row| row.title.as_str()).collect()
+    }
+
+    #[test]
+    fn a_shuffled_queue_is_handed_off_in_the_order_it_plays_at_the_song_heard() {
+        let (folder, library, locations) = kept_songs(&["A", "B", "C"]);
+        let rows = locations
+            .into_iter()
+            .map(|location| resonate_core::Resumable {
+                location,
+                span: None,
+                held: None,
+            })
+            .collect();
+        library
+            .keep_resumption(&resonate_core::Resumption {
+                rows,
+                order: vec![2, 0, 1],
+                row: 1,
+                at: Frames(3 * 44_100),
+                shuffle: true,
+                next: None,
+            })
+            .expect("a resumption kept");
+        let catalogued = Catalogued {
+            library: Arc::new(library),
+        };
+
+        let resumed = catalogued
+            .resumption()
+            .expect("answered")
+            .expect("a resumption");
+
+        let _ = fs::remove_dir_all(&folder);
+        assert_eq!(handed_titles(&resumed), ["C", "A", "B"]);
+        assert_eq!(resumed.at, 1);
+        assert_eq!(resumed.position, Duration::from_secs(3));
     }
 }

@@ -1,5 +1,6 @@
 use std::{
     io::{Read, Seek},
+    ops::Range,
     path::Path,
     time::Duration,
 };
@@ -48,6 +49,17 @@ pub struct Resumed {
     pub at: u32,
     pub position: Duration,
     pub playing: bool,
+}
+
+const HANDED_OFF_AT_MOST: usize = 500;
+
+impl Resumed {
+    pub fn window_around(playing: usize, rows: usize) -> Range<usize> {
+        let playing = playing.min(rows.saturating_sub(1));
+        let first = playing.saturating_sub(HANDED_OFF_AT_MOST / 2);
+
+        first..rows.min(first + HANDED_OFF_AT_MOST)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -122,4 +134,42 @@ pub trait Catalog: Send + Sync + 'static {
     fn land(&self, recording: &Recording, extension: &str, staged: &Path) -> Result<bool, Refused>;
 
     fn revision(&self) -> u64;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_short_queue_is_handed_off_whole() {
+        assert_eq!(Resumed::window_around(3, 10), 0..10);
+        assert_eq!(Resumed::window_around(0, 0), 0..0);
+    }
+
+    #[test]
+    fn a_playhead_in_the_first_half_page_keeps_the_first_page() {
+        assert_eq!(Resumed::window_around(200, 2_000), 0..HANDED_OFF_AT_MOST);
+    }
+
+    #[test]
+    fn a_playhead_past_the_first_page_is_inside_the_window() {
+        let window = Resumed::window_around(900, 2_000);
+
+        assert!(window.contains(&900));
+        assert_eq!(window.len(), HANDED_OFF_AT_MOST);
+    }
+
+    #[test]
+    fn a_playhead_near_the_end_keeps_a_full_window_ending_with_the_queue() {
+        let window = Resumed::window_around(1_999, 2_000);
+
+        assert!(window.contains(&1_999));
+        assert_eq!(window.end, 2_000);
+        assert!(window.len() <= HANDED_OFF_AT_MOST);
+    }
+
+    #[test]
+    fn a_playhead_past_the_end_is_clamped_to_the_last_row() {
+        assert!(Resumed::window_around(5_000, 10).contains(&9));
+    }
 }
