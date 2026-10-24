@@ -4,11 +4,21 @@ use crate::{Error, Result, SchemaFingerprint, StoreOp, store};
 
 const UNSTAMPED: u32 = 0;
 
-pub const SCHEMA_FINGERPRINT: SchemaFingerprint = fingerprint_of(V1);
+const MIGRATIONS: &[&str] = &[LISTENS_NAME_THEIR_ORIGIN];
+
+const STAMPS: [SchemaFingerprint; MIGRATIONS.len() + 1] = stamps();
+
+pub const SCHEMA_FINGERPRINT: SchemaFingerprint = STAMPS[MIGRATIONS.len()];
 
 const FNV_OFFSET_BASIS: u32 = 0x811c_9dc5;
 
 const FNV_PRIME: u32 = 0x0100_0193;
+
+const LISTENS_NAME_THEIR_ORIGIN: &str = "
+ALTER TABLE listens ADD COLUMN origin_device BLOB;
+ALTER TABLE listens ADD COLUMN origin_id INTEGER;
+CREATE UNIQUE INDEX listens_by_origin ON listens(origin_device, origin_id) WHERE origin_device IS NOT NULL;
+";
 
 const V1: &str = "
 CREATE TABLE roots (
@@ -992,20 +1002,30 @@ pub fn lay_out(connection: &Connection) -> Result<()> {
     let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)
         .map_err(|source| Error::store(StoreOp::Transaction, source))?;
 
-    match stamped(&transaction)? {
+    let laid = match stamped(&transaction)? {
         Some(found) if found == SCHEMA_FINGERPRINT => return Ok(()),
         Some(found) => {
-            return Err(Error::SchemaMismatch {
-                found,
-                expected: SCHEMA_FINGERPRINT,
-            });
+            STAMPS
+                .iter()
+                .position(|stamp| *stamp == found)
+                .ok_or(Error::SchemaMismatch {
+                    found,
+                    expected: SCHEMA_FINGERPRINT,
+                })?
         }
-        None => {}
-    }
+        None => {
+            transaction
+                .execute_batch(V1)
+                .map_err(|source| Error::store(StoreOp::LayOut, source))?;
+            0
+        }
+    };
 
-    transaction
-        .execute_batch(V1)
-        .map_err(|source| Error::store(StoreOp::LayOut, source))?;
+    for step in &MIGRATIONS[laid..] {
+        transaction
+            .execute_batch(step)
+            .map_err(|source| Error::store(StoreOp::LayOut, source))?;
+    }
     transaction
         .pragma_update(None, "user_version", as_signed(SCHEMA_FINGERPRINT.0))
         .map_err(|source| Error::store(StoreOp::LayOut, source))?;
@@ -1028,6 +1048,19 @@ const fn as_signed(stamp: u32) -> i32 {
 
 const fn fingerprint_of(schema: &str) -> SchemaFingerprint {
     SchemaFingerprint(never_unstamped(hashed_on(FNV_OFFSET_BASIS, schema)))
+}
+
+const fn stamps() -> [SchemaFingerprint; MIGRATIONS.len() + 1] {
+    let mut stamps = [fingerprint_of(V1); MIGRATIONS.len() + 1];
+    let mut step = 0;
+
+    while step < MIGRATIONS.len() {
+        stamps[step + 1] =
+            SchemaFingerprint(never_unstamped(hashed_on(stamps[step].0, MIGRATIONS[step])));
+        step += 1;
+    }
+
+    stamps
 }
 
 const fn hashed_on(from: u32, text: &str) -> u32 {
@@ -1116,6 +1149,43 @@ mod tests {
             lay_out(&connection).is_ok(),
             "a catalog this build wrote was not opened again"
         );
+    }
+
+    #[test]
+    fn a_catalog_laid_out_at_the_first_release_is_carried_forward_not_refused() {
+        let connection = opened();
+        connection
+            .execute_batch(V1)
+            .expect("the first release's schema");
+        connection
+            .pragma_update(None, "user_version", as_signed(fingerprint_of(V1).0))
+            .expect("the first release's stamp");
+
+        lay_out(&connection).expect("the catalog is carried forward");
+
+        let columns: Vec<String> = connection
+            .prepare("SELECT name FROM pragma_table_info('listens')")
+            .and_then(|mut query| {
+                query
+                    .query_map([], |row| row.get::<_, String>(0))
+                    .and_then(Iterator::collect)
+            })
+            .expect("the columns");
+        assert!(columns.contains(&"origin_device".to_owned()));
+        assert!(columns.contains(&"origin_id".to_owned()));
+        assert_eq!(
+            stamped(&connection).expect("the stamp reads back"),
+            Some(SCHEMA_FINGERPRINT)
+        );
+        assert!(lay_out(&connection).is_ok());
+    }
+
+    #[test]
+    fn every_step_of_the_chain_stamps_a_catalog_differently() {
+        assert_eq!(STAMPS[0], fingerprint_of(V1));
+        for pair in STAMPS.windows(2) {
+            assert_ne!(pair[0], pair[1]);
+        }
     }
 
     #[test]

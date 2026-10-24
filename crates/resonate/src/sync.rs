@@ -540,13 +540,13 @@ impl Catalog for Catalogued {
 
     fn credit(&self, listen: &RemoteListen) -> Answered<bool> {
         self.library
-            .credit_listen_elsewhere(&listen.recording, listen.at, listen.heard)
-            .map_err(|error| refused(&error))
-    }
-
-    fn credited(&self, listen: &RemoteListen) -> Answered<bool> {
-        self.library
-            .listen_elsewhere_credited(&listen.recording, listen.at, listen.heard)
+            .credit_listen_elsewhere(
+                &listen.recording,
+                listen.from.0.as_slice(),
+                listen.id,
+                listen.at,
+                listen.heard,
+            )
             .map_err(|error| refused(&error))
     }
 

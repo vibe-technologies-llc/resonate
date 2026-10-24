@@ -2486,19 +2486,12 @@ impl Library {
     pub fn credit_listen_elsewhere(
         &self,
         recording: &resonate_core::Recording,
+        origin: &[u8],
+        listen: u64,
         at: i64,
         heard: Duration,
     ) -> Result<bool> {
-        synced::credit(&self.inner, recording, at, heard)
-    }
-
-    pub fn listen_elsewhere_credited(
-        &self,
-        recording: &resonate_core::Recording,
-        at: i64,
-        heard: Duration,
-    ) -> Result<bool> {
-        synced::credited(&self.inner, recording, at, heard)
+        synced::credit(&self.inner, recording, origin, listen, at, heard)
     }
 
     pub fn resolve_recording(&self, recording: &resonate_core::Recording) -> Result<Option<Cut>> {

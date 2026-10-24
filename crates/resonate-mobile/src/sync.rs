@@ -932,40 +932,22 @@ impl Catalog for DocumentCatalog {
         else {
             return Ok(false);
         };
-        connection
+        let inserted = connection
             .execute(
-                "INSERT INTO listens(track, began, heard_ms, counted, elsewhere) VALUES (?1, ?2, ?3, 1, 1)",
+                "INSERT OR IGNORE INTO listens(track, began, heard_ms, counted, elsewhere, origin_device, origin_id) VALUES (?1, ?2, ?3, 1, 1, ?4, ?5)",
                 params![
                     id as i64,
                     listen.at.div_euclid(NANOS_A_SECOND),
-                    i64::try_from(listen.heard.as_millis()).unwrap_or(i64::MAX)
+                    i64::try_from(listen.heard.as_millis()).unwrap_or(i64::MAX),
+                    listen.from.0.as_slice(),
+                    listen.id.cast_signed()
                 ],
             )
             .map_err(unavailable)?;
-        self.arrived();
+        if inserted > 0 {
+            self.arrived();
+        }
         Ok(true)
-    }
-
-    fn credited(&self, listen: &RemoteListen) -> Answered<bool> {
-        let connection = self.catalog.0.lock();
-        let Some(id) = self
-            .indexed(&connection)
-            .map_err(unavailable)?
-            .resolved(&listen.recording)
-        else {
-            return Ok(false);
-        };
-        connection
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM listens WHERE track = ?1 AND began = ?2 AND heard_ms = ?3 AND counted = 1 AND elsewhere = 1)",
-                params![
-                    id as i64,
-                    listen.at.div_euclid(NANOS_A_SECOND),
-                    i64::try_from(listen.heard.as_millis()).unwrap_or(i64::MAX)
-                ],
-                |row| row.get(0),
-            )
-            .map_err(unavailable)
     }
 
     fn resumption(&self) -> Answered<Option<Resumed>> {
@@ -1371,6 +1353,8 @@ fn read_error(source: rusqlite::Error) -> Error {
 mod tests {
     use std::{env, path::Path};
 
+    use resonate_sync::DeviceId;
+
     use super::*;
     use crate::{PlaybackPreferences, features::Services};
 
@@ -1526,6 +1510,8 @@ mod tests {
             .expect("two of this device's listens");
         let credited = documents
             .credit(&RemoteListen {
+                from: DeviceId([1; 16]),
+                id: 7,
                 recording: named("Joga", "Bjork", 305),
                 at: an_hour_ago * NANOS_A_SECOND,
                 heard: Duration::from_secs(300),
@@ -1533,6 +1519,8 @@ mod tests {
             .expect("a credited listen");
         let unheld = documents
             .credit(&RemoteListen {
+                from: DeviceId([1; 16]),
+                id: 8,
                 recording: named("Hunter", "Björk", 255),
                 at: an_hour_ago * NANOS_A_SECOND,
                 heard: Duration::from_secs(250),
@@ -1552,18 +1540,6 @@ mod tests {
             )
             .expect("the listens a scrobbler reads");
 
-        let again = RemoteListen {
-            recording: named("Joga", "Bjork", 305),
-            at: an_hour_ago * NANOS_A_SECOND,
-            heard: Duration::from_secs(300),
-        };
-        let later = RemoteListen {
-            at: (an_hour_ago + 1) * NANOS_A_SECOND,
-            ..again.clone()
-        };
-
-        assert!(documents.credited(&again).expect("a credited listen"));
-        assert!(!documents.credited(&later).expect("another moment"));
         assert!(credited);
         assert!(!unheld);
         assert_eq!(sent.len(), 1);
@@ -1571,6 +1547,68 @@ mod tests {
         assert_eq!(sent[0].heard, Duration::from_secs(300));
         assert_eq!(scrobbled, 2);
         assert_eq!(player.statistics(0).expect("statistics").plays, 3);
+        let _ = fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn a_listen_credited_twice_counts_once_and_two_devices_at_one_moment_count_twice() {
+        let folder = folder("credited-twice");
+        let player = player(&folder);
+        song(&player, "content://test/joga.flac", "Jóga", Some(RECORDING));
+        let documents = documents_of(&player, &folder);
+        let at = unix_seconds(SystemTime::now()) * NANOS_A_SECOND;
+        let from = |device: u8, id: u64| RemoteListen {
+            from: DeviceId([device; 16]),
+            id,
+            recording: named("Joga", "Bjork", 305),
+            at,
+            heard: Duration::from_secs(300),
+        };
+
+        let first = documents.credit(&from(1, 7)).expect("credited");
+        let again = documents.credit(&from(1, 7)).expect("credited again");
+        let another_device = documents.credit(&from(2, 7)).expect("another device");
+        let another_listen = documents.credit(&from(1, 8)).expect("another listen");
+
+        assert!(first && again && another_device && another_listen);
+        assert_eq!(player.statistics(0).expect("statistics").plays, 3);
+        let _ = fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn a_catalog_laid_out_at_its_first_version_is_carried_forward() {
+        let folder = folder("migrated");
+        let path = folder.join("documents.sqlite");
+        let connection = rusqlite::Connection::open(&path).expect("a database");
+        connection
+            .create_scalar_function(
+                "folded",
+                1,
+                rusqlite::functions::FunctionFlags::SQLITE_UTF8
+                    | rusqlite::functions::FunctionFlags::SQLITE_DETERMINISTIC,
+                |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
+            )
+            .expect("the fold");
+        connection
+            .execute_batch(catalog::FIRST_VERSION)
+            .expect("the first version");
+        connection
+            .pragma_update(None, "user_version", 1)
+            .expect("its stamp");
+        drop(connection);
+
+        let opened = catalog::Catalog::open(&path).expect("carried forward");
+
+        let columns: i64 = opened
+            .0
+            .lock()
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('listens') WHERE name IN ('origin_device', 'origin_id')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("the columns");
+        assert_eq!(columns, 2);
         let _ = fs::remove_dir_all(folder);
     }
 

@@ -180,10 +180,11 @@ with its writable folder passed explicitly through `Sources::spooling_under`, ne
 the process environment.
 
 The document source has its own SQLite catalog, `documents.sqlite` in app-private storage;
-it does not put invented paths in the Linux catalog. Its schema is one `V1`, `user_version` 1, laid out
-in one immediate transaction on a fresh file; there is no migration chain and no copy kept before
-one. A later change appends a step and never edits `V1`. Any other version is
-`Error::CatalogVersion`. `V1` holds `documents` (the metadata, the lookup's clocks `asked`/`answered`
+it does not put invented paths in the Linux catalog. Its schema is `V1` and a `MIGRATIONS` chain after it,
+`user_version` the number of steps laid, all run in one immediate transaction (a fresh file lays them
+all, a 0.1.0 file the steps after `V1`); there is no copy kept before one. A later change appends a
+step and never edits `V1`; step 2 gave `listens` the `origin_device` and `origin_id` a remote listen
+is credited by, unique together. A version past the chain is `Error::CatalogVersion`. `V1` holds `documents` (the metadata, the lookup's clocks `asked`/`answered`
 as nanosecond stamps with `asks` and `refusals`, `release_group`, `isrc` kept from tags on index,
 `album_key`, `art_changed`, `missing`, and `size`, `modified` and `indexed_by`, the stamp a scan saw
 the file by and the `INDEXING_REVISION` that read it), `resume`, `queue`, `lyrics`, `listens`

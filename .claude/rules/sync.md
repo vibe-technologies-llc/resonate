@@ -128,13 +128,11 @@ platforms; the catalog seam stays thin.
   credited when it arrives; they are never sent on to a scrobbling service (the library's
   `listens.elsewhere`, Android's likewise). The ledger ages listens past `LISTENS_KEPT_FOR`, and a
   listen older than that arriving again (an old snapshot) is passed over, never credited twice.
-  **A credit and the ledger's mark are two databases, so the mark goes first**: a listen is `credited`
-  0 (not yet), 2 (a credit is being made) or 1 (done); `credit_once` writes 2 before `Catalog::credit` and
-  1 after, 0 when the song is not held. A listen found at 2 (the process died, or the mark failed, between
-  the two) asks `Catalog::credited` (an elsewhere listen of that song at that moment for that time
-  heard) before it credits again, so a crash costs no double count; the ledger's own step 2 widened
-  `listens_uncredited` to `credited <> 1`
-  (`a_listen_credited_before_the_ledger_could_say_so_is_not_credited_again`).
+  **A credit is idempotent by the listen's origin**: `RemoteListen` carries the sending device and the
+  listen's id, and each catalog keeps them with the row it writes under a unique index
+  (`origin_device`, `origin_id`), so `Catalog::credit` of a listen already credited changes nothing and
+  answers true; the ledger's `credited` mark may therefore lag the catalog (a crash between the two) and
+  `settle` only repeats a no-op (`a_listen_credited_before_the_ledger_could_say_so_is_credited_once`).
 - **A snapshot is the merged state**, cut into bundles of at most `BUNDLE_BYTES`; a device compacts
   the server's log past `COMPACT_PAST_RECORDS` (512) or `COMPACT_PAST_BYTES` (4 MiB) since the last
   snapshot, and a `Compacted` from any device resets every device's count.

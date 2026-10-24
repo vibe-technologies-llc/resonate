@@ -16,7 +16,16 @@ use rusqlite::{
 
 use crate::{Error, Result, StoreOp, Track};
 
-const SCHEMA_VERSION: u32 = 1;
+const LISTENS_NAME_THEIR_ORIGIN: &str = "
+ALTER TABLE listens ADD COLUMN origin_device BLOB;
+ALTER TABLE listens ADD COLUMN origin_id INTEGER;
+CREATE UNIQUE INDEX listens_by_origin ON listens(origin_device, origin_id) WHERE origin_device IS NOT NULL;
+";
+
+const MIGRATIONS: &[&str] = &[V1, LISTENS_NAME_THEIR_ORIGIN];
+
+#[cfg(test)]
+pub(crate) const FIRST_VERSION: &str = V1;
 
 const V1: &str = "CREATE TABLE documents (
     id            INTEGER PRIMARY KEY,
@@ -268,18 +277,22 @@ impl Catalog {
         let version: u32 = transaction
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .map_err(|source| Error::store(StoreOp::Read, source))?;
-        match version {
-            0 => {
-                transaction
-                    .execute_batch(V1)
-                    .map_err(|source| Error::store(StoreOp::LayOut, source))?;
-                transaction
-                    .pragma_update(None, "user_version", SCHEMA_VERSION)
-                    .map_err(|source| Error::store(StoreOp::LayOut, source))?;
-            }
-            SCHEMA_VERSION => {}
-            found => return Err(Error::CatalogVersion { found }),
+        let laid = usize::try_from(version).unwrap_or(usize::MAX);
+        if laid > MIGRATIONS.len() {
+            return Err(Error::CatalogVersion { found: version });
         }
+        for step in &MIGRATIONS[laid..] {
+            transaction
+                .execute_batch(step)
+                .map_err(|source| Error::store(StoreOp::LayOut, source))?;
+        }
+        transaction
+            .pragma_update(
+                None,
+                "user_version",
+                u32::try_from(MIGRATIONS.len()).unwrap_or(u32::MAX),
+            )
+            .map_err(|source| Error::store(StoreOp::LayOut, source))?;
         transaction
             .commit()
             .map_err(|source| Error::store(StoreOp::LayOut, source))?;

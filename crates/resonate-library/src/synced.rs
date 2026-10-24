@@ -701,71 +701,59 @@ pub(crate) fn listens_after(inner: &Inner, mark: u64, most: usize) -> Result<Vec
     })
 }
 
-fn credited_track(connection: &Connection, recording: &Recording) -> Result<Option<i64>> {
-    let Some(cut) = resolved(connection, recording)? else {
-        return Ok(None);
-    };
-    let row = Row::of(&cut)?;
-    connection
-        .query_row(
-            "SELECT id FROM tracks WHERE path = ?1 AND span_start = ?2",
-            params![row.path, row.start()],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|source| Error::store(StoreOp::Query, source))
-}
-
 pub(crate) fn credit(
     inner: &Inner,
     recording: &Recording,
+    origin: &[u8],
+    listen: u64,
     at: i64,
     heard: Duration,
 ) -> Result<bool> {
     let credited = inner.write(|transaction| {
-        let Some(track) = credited_track(transaction, recording)? else {
-            return Ok(false);
+        let Some(cut) = resolved(transaction, recording)? else {
+            return Ok(Credited::NotHere);
+        };
+        let row = Row::of(&cut)?;
+        let track: Option<i64> = transaction
+            .query_row(
+                "SELECT id FROM tracks WHERE path = ?1 AND span_start = ?2",
+                params![row.path, row.start()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+        let Some(track) = track else {
+            return Ok(Credited::NotHere);
         };
         let heard = i64::try_from(heard.as_nanos()).unwrap_or(i64::MAX);
-        transaction
+        let inserted = transaction
             .execute(
-                "INSERT INTO listens (track_id, at, began, heard, elsewhere) VALUES (?1, ?2, ?2, ?3, 1)",
-                params![track, at, heard],
+                "INSERT OR IGNORE INTO listens (track_id, at, began, heard, elsewhere, origin_device, origin_id) VALUES (?1, ?2, ?2, ?3, 1, ?4, ?5)",
+                params![track, at, heard, origin, listen.cast_signed()],
             )
             .map_err(|source| Error::store(StoreOp::Insert, source))?;
+        if inserted == 0 {
+            return Ok(Credited::Already);
+        }
         transaction
             .execute(
                 "UPDATE tracks SET plays = plays + 1, played = max(coalesce(played, 0), ?2) WHERE id = ?1",
                 params![track, at],
             )
             .map_err(|source| Error::store(StoreOp::Update, source))?;
-        Ok(true)
+        Ok(Credited::Newly)
     })?;
-    if credited {
+    if credited == Credited::Newly {
         inner.arrived();
     }
-    Ok(credited)
+    Ok(credited != Credited::NotHere)
 }
 
-pub(crate) fn credited(
-    inner: &Inner,
-    recording: &Recording,
-    at: i64,
-    heard: Duration,
-) -> Result<bool> {
-    inner.read(|connection| {
-        let Some(track) = credited_track(connection, recording)? else {
-            return Ok(false);
-        };
-        let heard = i64::try_from(heard.as_nanos()).unwrap_or(i64::MAX);
-        connection
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM listens WHERE track_id = ?1 AND at = ?2 AND heard = ?3 AND elsewhere = 1)",
-                params![track, at, heard],
-                |row| row.get(0),
-            )
-            .map_err(|source| Error::store(StoreOp::Query, source))
-    })
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Credited {
+    Newly,
+    Already,
+    NotHere,
 }
 
 pub(crate) fn holdings(inner: &Inner) -> Result<Vec<HeldSong>> {

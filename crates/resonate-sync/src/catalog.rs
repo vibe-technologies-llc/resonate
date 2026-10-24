@@ -7,7 +7,7 @@ use std::{
 
 use resonate_core::Recording;
 
-use crate::change::QueryBody;
+use crate::{change::QueryBody, key::DeviceId};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct LocalPlaylistId {
@@ -38,6 +38,8 @@ pub struct LocalListen {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RemoteListen {
+    pub from: DeviceId,
+    pub id: u64,
     pub recording: Recording,
     pub at: i64,
     pub heard: Duration,
@@ -122,8 +124,6 @@ pub trait Catalog: Send + Sync + 'static {
     fn listens_after(&self, mark: u64, most: usize) -> Result<Vec<LocalListen>, Refused>;
 
     fn credit(&self, listen: &RemoteListen) -> Result<bool, Refused>;
-
-    fn credited(&self, listen: &RemoteListen) -> Result<bool, Refused>;
 
     fn resumption(&self) -> Result<Option<Resumed>, Refused>;
 

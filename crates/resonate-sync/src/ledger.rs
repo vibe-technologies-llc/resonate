@@ -111,16 +111,7 @@ CREATE TABLE queries (
 CREATE UNIQUE INDEX queries_by_local ON queries(local_id, local_created) WHERE local_id IS NOT NULL;
 ";
 
-const V2: &str = "
-DROP INDEX listens_uncredited;
-CREATE INDEX listens_uncredited ON listens(credited) WHERE credited <> 1;
-";
-
-const MIGRATIONS: &[&str] = &[V1, V2];
-
-const NOT_CREDITED: i64 = 0;
-const CREDITED: i64 = 1;
-const CREDITING: i64 = 2;
+const MIGRATIONS: &[&str] = &[V1];
 
 const OWE_EVERYTHING: &str = "
 UPDATE devices SET owed = 1;
@@ -1511,55 +1502,24 @@ impl Ledger {
         if inserted == 0 {
             return Ok(false);
         }
-        self.credit_once(
-            catalog,
-            listen.device.0.as_slice(),
-            listen.id.cast_signed(),
-            &RemoteListen {
+        let credited = catalog
+            .credit(&RemoteListen {
+                from: listen.device,
+                id: listen.id,
                 recording: listen.recording.clone(),
                 at: listen.at,
-                heard: Duration::from_millis(millis(listen.heard).cast_unsigned()),
-            },
-        )
-    }
-
-    fn credit_once(
-        &self,
-        catalog: &dyn Catalog,
-        device: &[u8],
-        id: i64,
-        listen: &RemoteListen,
-    ) -> Result<bool> {
-        let before: i64 = self
-            .connection
-            .query_row(
-                "SELECT credited FROM listens WHERE device = ?1 AND id = ?2",
-                params![device, id],
-                |row| row.get(0),
-            )
-            .map_err(|source| Error::store(StoreOp::Read, source))?;
-        if before == CREDITED {
-            return Ok(true);
+                heard: listen.heard,
+            })
+            .map_err(Error::Catalog)?;
+        if credited {
+            self.connection
+                .execute(
+                    "UPDATE listens SET credited = 1 WHERE device = ?1 AND id = ?2",
+                    params![listen.device.0.as_slice(), listen.id.cast_signed()],
+                )
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
         }
-        if before == CREDITING && catalog.credited(listen).map_err(Error::Catalog)? {
-            self.mark_credited(device, id, CREDITED)?;
-            return Ok(true);
-        }
-
-        self.mark_credited(device, id, CREDITING)?;
-        let credited = catalog.credit(listen).map_err(Error::Catalog)?;
-        self.mark_credited(device, id, if credited { CREDITED } else { NOT_CREDITED })?;
         Ok(credited)
-    }
-
-    fn mark_credited(&self, device: &[u8], id: i64, state: i64) -> Result<()> {
-        self.connection
-            .execute(
-                "UPDATE listens SET credited = ?3 WHERE device = ?1 AND id = ?2",
-                params![device, id, state],
-            )
-            .map_err(|source| Error::store(StoreOp::Write, source))?;
-        Ok(())
     }
 
     pub fn settle(&mut self, catalog: &dyn Catalog) -> Result<usize> {
@@ -1617,7 +1577,13 @@ impl Ledger {
         }
 
         for (device, id, listen) in self.uncredited_listens()? {
-            if self.credit_once(catalog, &device, id, &listen)? {
+            if catalog.credit(&listen).map_err(Error::Catalog)? {
+                self.connection
+                    .execute(
+                        "UPDATE listens SET credited = 1 WHERE device = ?1 AND id = ?2",
+                        params![device, id],
+                    )
+                    .map_err(|source| Error::store(StoreOp::Write, source))?;
                 settled += 1;
             }
         }
@@ -1659,7 +1625,7 @@ impl Ledger {
     fn uncredited_listens(&self) -> Result<Vec<(Vec<u8>, i64, RemoteListen)>> {
         let mut statement = self
             .connection
-            .prepare("SELECT device, id, recording, at, heard FROM listens WHERE credited <> 1")
+            .prepare("SELECT device, id, recording, at, heard FROM listens WHERE credited = 0")
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let rows = statement
             .query_map([], |row| {
@@ -1676,10 +1642,13 @@ impl Ledger {
         for row in rows {
             let (device, id, recording, at, heard) =
                 row.map_err(|source| Error::store(StoreOp::Read, source))?;
+            let from = device_from(&device);
             listens.push((
                 device,
                 id,
                 RemoteListen {
+                    from,
+                    id: id.cast_unsigned(),
                     recording: decoded_recording(&recording)?,
                     at,
                     heard: Duration::from_millis(heard.cast_unsigned()),
@@ -2179,31 +2148,5 @@ const fn platform_of(tag: i64) -> Platform {
         1 => Platform::Android,
         2 => Platform::Ios,
         _ => Platform::Other,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_ledger_laid_out_at_its_first_step_gains_the_index_for_listens_still_being_credited() {
-        let connection = Connection::open_in_memory().expect("a connection");
-        connection.execute_batch(V1).expect("the first step");
-        connection
-            .pragma_update(None, "user_version", 1)
-            .expect("a stamp");
-
-        let ledger = Ledger::over(connection).expect("a ledger");
-
-        let index: String = ledger
-            .connection
-            .query_row(
-                "SELECT sql FROM sqlite_master WHERE name = 'listens_uncredited'",
-                [],
-                |row| row.get(0),
-            )
-            .expect("an index");
-        assert!(index.ends_with("WHERE credited <> 1"));
     }
 }

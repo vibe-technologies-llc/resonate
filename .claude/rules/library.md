@@ -14,16 +14,20 @@ rows read via `Player::media` like any unscanned row.
 
 ## Schema and grouping
 
-- **Schema = one `V1`, the baseline of 0.1.0.** `V1` is the whole schema as one SQL batch; until
-  the first release it may be edited. From 0.1.0 on a change appends a step to a `MIGRATIONS` list
-  (re-adding the chain, its transaction and its tests) and never edits `V1`, since a stamped catalog
-  of a release would be stranded. `PRAGMA user_version` = `fingerprint_of(V1)`, a compile-time
-  FNV-1a over the schema text; `SCHEMA_FINGERPRINT` is it. `lay_out`: `UNSTAMPED` writes `V1` and
-  the stamp in one `IMMEDIATE` transaction, reading the stamp inside it (a second process waits,
-  then reads the stamp left); this build's stamp opens; any other stamp is `Error::SchemaMismatch`,
-  the one case where the catalog is deleted and rescanned. The stamp stays a hash (a counted version
-  cannot tell same-count builds apart). Editing `V1` therefore costs every earlier dev catalog one
-  rescan. (`a_catalog_another_schema_wrote_is_refused_rather_than_read`,
+- **Schema = one `V1`, the baseline of 0.1.0, and a `MIGRATIONS` chain after it.** `V1` is the first
+  release's schema as one SQL batch and is never edited, since a stamped catalog of a release would be
+  stranded; a change appends a step to `MIGRATIONS` (`listens` naming the device and listen a remote
+  listen came from is the first). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
+  `fingerprint_of(V1)` (the stamp 0.1.0 wrote) and `STAMPS[n + 1]` hashes `STAMPS[n]` over step `n`'s
+  text, in a `const fn`; `SCHEMA_FINGERPRINT` is the last. `lay_out`: `UNSTAMPED` writes `V1` and
+  every step; this build's stamp opens; a stamp that is an earlier `STAMPS` entry runs the steps after
+  it; any other stamp (a later build's, an edited schema's) is `Error::SchemaMismatch`, the one case
+  where the catalog is deleted and rescanned. All of it in one `IMMEDIATE` transaction, the stamp read
+  inside it (a second process waits, then reads the stamp left). The stamp stays a hash (a counted
+  version cannot tell same-count builds apart).
+  (`a_catalog_laid_out_at_the_first_release_is_carried_forward_not_refused`,
+  `every_step_of_the_chain_stamps_a_catalog_differently`,
+  `a_catalog_another_schema_wrote_is_refused_rather_than_read`,
   `a_schema_that_has_changed_is_a_fingerprint_that_has_changed`)
 - **A changed probe is carried forward by marking rows.** Once a release exists, a migration step
   sets `tracks.probe_again` on rows the new probe bills differently. An incremental scan treats a
@@ -528,7 +532,8 @@ rows read via `Player::media` like any unscanned row.
   (`undo::overtaken`, also for steps whose name the arrival now holds), a taken name given the first
   free `NAME (N)`; favourites and recordings resolved by MBID, else folded artist key, `title_words`
   and folded album with lengths within 2 s, the first best copy; a remote listen is a `listens` row
-  with `elsewhere = 1` (counted in plays and statistics, passed over by `THE_LISTENS_AFTER` and by
+  with `elsewhere = 1` and the `origin_device` and `origin_id` it came from, unique together, so
+  crediting one twice changes nothing and counts nothing (counted in plays and statistics, passed over by `THE_LISTENS_AFTER` and by
   `listens_to_sync`, which also stops at a listen not yet settled). **A saved query is read and
   written as its text, order and reading codes and row cap** (`synced_queries`, `write_synced_query`:
   a taken name aliased like a list's, a query written over a list made anew, an unknown code
