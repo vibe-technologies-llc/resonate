@@ -25,12 +25,13 @@ paths:
   only: a hosted runner cannot install `rust-formatter`.
 - **`release.yml` builds the release assets and runs on a `v*` tag push or a manual run** (input
   `tag`, empty builds artifacts only; `contents: write`). The `release` job holds the tag to
-  `v` plus Cargo's version and the recipes' versions, and creates the GitHub release (pre-release
-  when the tag has `-rc`, `-beta` or `-alpha`). Parallel jobs follow: `fedora-rpm` (`fedora:44`,
+  `v` plus Cargo's version and the recipes' versions, and creates the GitHub release as a draft
+  (pre-release when the tag has `-rc`, `-beta` or `-alpha`). Parallel jobs follow: `fedora-rpm` (`fedora:44`,
   player and server RPMs and SRPMs), `ubuntu-deb` (`ubuntu:24.04`, rustup stable,
   `packaging/deb/build.sh`), `arch-package` (`archlinux:latest`, `makepkg` as a build user from a
   `git archive` of the tag, the `packaging/release/` recipes) and `android-apk`; `publish` collects
-  every artifact, writes `SHA256SUMS` and uploads all to the release. All of it is x86-64-v3
+  every artifact, writes `SHA256SUMS`, uploads all to the release and publishes it, since a published
+  release is immutable. All of it is x86-64-v3
   (`packaging.md`). Secrets, set once in the repository: `ANDROID_KEYSTORE_BASE64` (the release
   keystore, base64), `RESONATE_SIGNING_STORE_PASSWORD`, `RESONATE_SIGNING_KEY_ALIAS`,
   `RESONATE_SIGNING_KEY_PASSWORD`. The APK job decodes the keystore to `$RUNNER_TEMP/release.jks`

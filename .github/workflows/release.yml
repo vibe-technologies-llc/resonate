@@ -131,7 +131,8 @@ jobs:
         run: |
           cd assets
           for file in *.deb; do
-            mv "$file" "$(printf '%s' "$file" | tr '~' '-')"
+            named=$(printf '%s' "$file" | tr '~' '-')
+            test "$file" = "$named" || mv "$file" "$named"
           done
       - uses: actions/upload-artifact@v4
         with:
