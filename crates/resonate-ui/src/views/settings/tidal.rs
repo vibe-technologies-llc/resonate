@@ -4,9 +4,10 @@ use std::sync::{
 };
 
 use gpui::{
-    AppContext as _, BorrowAppContext as _, Context, Div, Entity, ParentElement as _, Stateful,
-    Styled as _, Task, Window, div,
+    AppContext as _, BorrowAppContext as _, Context, Div, Entity, ParentElement as _, SharedString,
+    Stateful, Styled as _, Task, Window, div,
 };
+use resonate_core::RESONATE_HOST;
 use resonate_providers::{Authorizing, Client, Error, RefreshToken};
 
 use crate::{
@@ -113,13 +114,17 @@ impl TidalAccount {
         Self::Monochrome,
     ];
 
+    pub(crate) const fn is_tidals(self) -> bool {
+        !matches!(self, Self::HifiSecret)
+    }
+
     const fn placeholder(self) -> &'static str {
         match self {
             Self::ClientId => "The client id the token was issued to, then press enter",
             Self::ClientSecret => "Its client secret, if it has one, then press enter",
             Self::RefreshToken => "A refresh token for your account, then press enter",
             Self::HifiApi => "Custom hifi-api server address; blank uses the hosted service",
-            Self::HifiSecret => "A key your own hifi-api server lists, then press enter",
+            Self::HifiSecret => "A key your Resonate server lists, then press enter",
             Self::Monochrome => "Custom Monochrome server address; blank uses tracks.monochrome.st",
         }
     }
@@ -130,7 +135,7 @@ impl TidalAccount {
             Self::ClientSecret => "Client secret",
             Self::RefreshToken => "Refresh token",
             Self::HifiApi => "hifi-api server",
-            Self::HifiSecret => "hifi-api key",
+            Self::HifiSecret => "Key",
             Self::Monochrome => "Monochrome server",
         }
     }
@@ -146,7 +151,7 @@ impl TidalAccount {
         }
     }
 
-    const fn nth(self) -> usize {
+    pub(crate) const fn nth(self) -> usize {
         match self {
             Self::ClientId => 0,
             Self::ClientSecret => 1,
@@ -236,8 +241,8 @@ impl RootView {
         let said = match (account, given.is_empty()) {
             (TidalAccount::HifiApi, true) => "The hosted hifi-api service is asked from now on",
             (TidalAccount::HifiApi, false) => "The custom hifi-api server is asked from now on",
-            (TidalAccount::HifiSecret, true) => "The hifi-api is asked without a key from now on",
-            (TidalAccount::HifiSecret, false) => "Your own hifi-api server is asked with the key",
+            (TidalAccount::HifiSecret, true) => "The Resonate server is no longer asked",
+            (TidalAccount::HifiSecret, false) => "The Resonate server is asked with the key",
             (TidalAccount::Monochrome, true) => {
                 "The hosted Monochrome service is asked from now on"
             }
@@ -309,8 +314,23 @@ impl RootView {
         }
     }
 
+    pub(crate) fn forget_the_resonate_key(&mut self, cx: &mut Context<Self>) {
+        let account = TidalAccount::HifiSecret;
+        self.tidal_field(account)
+            .clone()
+            .update(cx, |field, cx| field.hold(String::new(), cx));
+        cx.update_global::<ResonateApp, _>(|global, _| {
+            account.hold(&mut global.online, String::new());
+        });
+        self.store(&account.setting(String::new()), cx);
+        self.the_sources_moved(cx);
+    }
+
     pub(crate) fn forget_the_tidal_account(&mut self, cx: &mut Context<Self>) {
-        for account in TidalAccount::ALL {
+        for account in TidalAccount::ALL
+            .into_iter()
+            .filter(|account| account.is_tidals())
+        {
             self.tidal_field(account)
                 .clone()
                 .update(cx, |field, cx| field.hold(String::new(), cx));
@@ -507,7 +527,10 @@ impl RootView {
 
     pub(super) fn tidal_group(&mut self, cx: &mut Context<Self>) -> Div {
         let mut body = kit::section_body();
-        for account in TidalAccount::ALL {
+        for account in TidalAccount::ALL
+            .into_iter()
+            .filter(|account| account.is_tidals())
+        {
             body = body.child(kit::field(
                 account.label(),
                 self.key_field(
@@ -532,6 +555,25 @@ impl RootView {
         ))
         .child(self.signing_in_to_tidal(cx))
         .child(note(TIDAL_NOTE))
+    }
+
+    pub(super) fn resonate_key_group(&mut self, cx: &mut Context<Self>) -> Div {
+        let account = TidalAccount::HifiSecret;
+        kit::section_body()
+            .child(kit::field(
+                account.label(),
+                self.key_field(
+                    account.id(),
+                    self.tidal_field(account),
+                    |this, window, cx| this.leave_the_account(window, cx),
+                    cx,
+                ),
+            ))
+            .child(note(SharedString::from(format!(
+                "Wanted songs are asked of {RESONATE_HOST} with this key, as a bearer token over \
+                 https, and nowhere else. Asked as soon as it is given, and only while Online \
+                 is on."
+            ))))
     }
 
     fn set_hosted_services(&mut self, allowed: bool, cx: &mut Context<Self>) {

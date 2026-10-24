@@ -488,12 +488,9 @@ impl Downloads {
                 )
             }
             MusicProvider::HifiApi if !password.trim().is_empty() => Box::new(
-                resonate_tidal::HifiApi::at(if custom {
-                    &server
-                } else {
-                    resonate_tidal::OWN_SERVER
-                })
-                .with_secret(&password),
+                resonate_tidal::HifiApi::at(resonate_tidal::OWN_SERVER)
+                    .with_secret(&password)
+                    .known_as_resonate(),
             ),
             MusicProvider::HifiApi if custom => Box::new(resonate_tidal::HifiApi::at(&server)),
             MusicProvider::HifiApi => Box::new(resonate_tidal::HifiApi::hosted()),

@@ -224,6 +224,9 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   `file-dropped` is on; never the vault. Choosing stores the canonical path, refuses a non-folder or
   a path inside the vault (`unusable_as_the_music_folder`), adds it to the roots unless one already
   reaches it.
+- `hifi-secret`: the key the Resonate server (`resonate_core::RESONATE_WEB_ADDRESS`) lists. It
+  registers the `resonate` provider on its own, beside `hifi-api` and whatever `hifi-api` and
+  `hosted-services` say; it is never sent to a server `hifi-api` names (`providers.md`).
 - **`sync` (on) and the seven `sync-*` keys** (`sync.md`): `sync-nearby-only` (off by default) uses no server at all (`Server::Nowhere`): devices sync only on the same network,
   and sync then runs with `online` off too; off, `sync-server` or the hosted one is dialled.
   `sync-server` blank = the hosted `wss://resonate.tecnio.dev/`; `sync-server-certificate` a PEM trusted

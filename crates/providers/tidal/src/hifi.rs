@@ -26,6 +26,7 @@ pub const OWN_SERVER: &str = resonate_core::RESONATE_WEB_ADDRESS;
 const RELAYED_ANSWERED_WITHIN: Duration = Duration::from_secs(60);
 const RELAYED_AS: &str = "flac";
 const HIFI_API: &str = "hifi-api";
+const RESONATE: &str = "resonate";
 const HOSTED_SERVER: &str = "https://hifi.odskyler.com";
 const HIFI_TOKEN: &str = "https://hifi.odskyler.com/token";
 const TIDAL_TOKEN: &str = "https://auth.odskyler.workers.dev/token";
@@ -302,7 +303,18 @@ fn source() -> SourceId {
     SourceId::new(HIFI_API).unwrap_or_else(|_| SourceId::local())
 }
 
+fn resonate_source() -> SourceId {
+    SourceId::new(RESONATE).unwrap_or_else(|_| SourceId::local())
+}
+
 impl HifiApi {
+    pub fn known_as_resonate(self) -> Self {
+        Self {
+            asker: Asker::of_the_listeners_server(resonate_source()),
+            ..self
+        }
+    }
+
     pub fn at(server: &str) -> Self {
         Self::building(server, MediaHosts::tidal(), None)
     }

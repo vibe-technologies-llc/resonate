@@ -80,6 +80,7 @@ pub(crate) struct Standing {
     pub(crate) file_dropped: bool,
     pub(crate) subsonic_given: bool,
     pub(crate) tidal_given: bool,
+    pub(crate) resonate_key_given: bool,
     pub(crate) convolving: bool,
 }
 
@@ -125,6 +126,7 @@ impl Standing {
             file_dropped: FILE_DROPPED,
             subsonic_given: false,
             tidal_given: false,
+            resonate_key_given: false,
             convolving: false,
         }
     }
@@ -200,6 +202,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::Organising => standing.template_given,
         Group::Inbox => standing.inbox_given,
         Group::MusicFolder => standing.music_folder_given || standing.file_dropped != FILE_DROPPED,
+        Group::ResonateKey => standing.resonate_key_given,
         Group::RoomCorrection => standing.convolving,
         Group::Subsonic => standing.subsonic_given,
         Group::Tidal => standing.tidal_given,
@@ -292,6 +295,7 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         | Group::MusicExtensions
         | Group::MinimumLength
         | Group::MusicFolder
+        | Group::ResonateKey
         | Group::Subsonic
         | Group::Tidal
         | Group::RoomCorrection

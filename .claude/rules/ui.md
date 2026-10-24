@@ -1362,6 +1362,10 @@ is never named.
   all*/*Clear selection* greyed where they would change nothing. Minimum: seconds field, 0 to 600,
   applied on Enter or leaving (a positive minimum excludes tracks of unknown length); a refused number
   stays in the field and toasts; Escape restores the held value.
+- **The Resonate server key is a group of its own** (`Group::ResonateKey`, Library category), one
+  masked `Field` that is `TidalAccount::HifiSecret` in the same array as the TIDAL fields (so focus,
+  leaving and putting back are the TIDAL fields' one path) and drawn apart from them; the TIDAL
+  group's reset and `tidal_given` leave it out (`providers.md`).
 - **Files dragged in from outside are weighed while over the window and copied when dropped.**
   `views/dropping.rs`. gpui makes a file drag an `ExternalPaths` drag, but only the drop target hears it
   end, so the root's `on_drag_move::<ExternalPaths>` sets `RootView::incoming` (paths, and

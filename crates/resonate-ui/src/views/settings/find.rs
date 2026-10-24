@@ -108,6 +108,7 @@ pub(crate) enum Group {
     Organising,
     Vault,
     Inbox,
+    ResonateKey,
     Subsonic,
     Tidal,
     Resuming,
@@ -146,7 +147,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 61] = [
+    pub(crate) const ALL: [Self; 62] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -173,6 +174,7 @@ impl Group {
         Self::Organising,
         Self::Vault,
         Self::Inbox,
+        Self::ResonateKey,
         Self::Subsonic,
         Self::Tidal,
         Self::Resuming,
@@ -237,6 +239,7 @@ impl Group {
             | Self::Organising
             | Self::Vault
             | Self::Inbox
+            | Self::ResonateKey
             | Self::Subsonic
             | Self::Tidal
             | Self::Resuming
@@ -298,6 +301,7 @@ impl Group {
             Self::Vault => "The vault",
             Self::Inbox => "The inbox",
             Self::Subsonic => "A Subsonic server",
+            Self::ResonateKey => "Resonate server key",
             Self::Tidal => "A TIDAL account",
             Self::Resuming => "Resuming",
             Self::History => "Listening history",
@@ -368,6 +372,7 @@ impl Group {
             Self::Vault => VAULT_HINT,
             Self::Inbox => INBOX_HINT,
             Self::Subsonic => SUBSONIC_HINT,
+            Self::ResonateKey => RESONATE_KEY_HINT,
             Self::Tidal => TIDAL_HINT,
             Self::Resuming => RESUMING_HINT,
             Self::History => HISTORY_HINT,
@@ -480,6 +485,10 @@ impl Group {
             Self::Subsonic => {
                 "navidrome airsonic gonic server provider download wants missing stream fill \
                  obtain account password"
+            }
+            Self::ResonateKey => {
+                "resonate server key secret hifi-api hifi token password download wants missing \
+                 fill obtain account bearer tecnio gateway"
             }
             Self::Tidal => {
                 "tidal streaming service subscription provider download wants missing fill \
@@ -614,12 +623,12 @@ impl Group {
                 SettingKey::SubsonicUser,
                 SettingKey::SubsonicPassword,
             ],
+            Self::ResonateKey => &[SettingKey::HifiSecret],
             Self::Tidal => &[
                 SettingKey::TidalClientId,
                 SettingKey::TidalClientSecret,
                 SettingKey::TidalRefreshToken,
                 SettingKey::HifiApi,
-                SettingKey::HifiSecret,
                 SettingKey::Monochrome,
                 SettingKey::HostedServices,
             ],
@@ -959,6 +968,13 @@ pub(crate) const VAULT_HINT: &str = "A managed archive this build writes itself.
 pub(crate) const SUBSONIC_HINT: &str = "A server of your own the tracks marked wanted are \
                                         also filled from, matched by the recording's \
                                         MusicBrainz id or its ISRC.";
+
+pub(crate) const RESONATE_KEY_HINT: &str = "The key your Resonate server lists. With it the \
+                                            tracks marked wanted are also asked of that server, \
+                                            which downloads them through its hifi-api and sends \
+                                            the lossless FLAC. The key goes to that server \
+                                            alone, never to a hifi-api or Monochrome server \
+                                            named under TIDAL.";
 
 pub(crate) const TIDAL_HINT: &str = "A TIDAL subscription of your own, signed in to here or \
                                      reached through a hifi-api server you run, the tracks \

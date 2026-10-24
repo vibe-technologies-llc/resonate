@@ -430,6 +430,7 @@ impl RootView {
             Group::Vault => self.vault_group(cx),
             Group::Inbox => self.inbox_group(cx),
             Group::Subsonic => self.subsonic_group(cx),
+            Group::ResonateKey => self.resonate_key_group(cx),
             Group::Tidal => self.tidal_group(cx),
             Group::Resuming => self.resuming_group(cx),
             Group::History => self.history_group(cx),
@@ -593,6 +594,7 @@ impl RootView {
                 self.file_what_is_dropped(defaults::FILE_DROPPED, cx);
             }
             Group::Subsonic => self.forget_the_account(cx),
+            Group::ResonateKey => self.forget_the_resonate_key(cx),
             Group::Tidal => self.forget_the_tidal_account(cx),
             Group::RoomCorrection => self.correct_the_room(None, cx),
             Group::Organising => self.set_organise_as(DEFAULT_LAYOUT.to_owned(), cx),
@@ -668,11 +670,16 @@ impl RootView {
             .subsonic
             .iter()
             .any(|field| !field.read(cx).text().trim().is_empty());
-        let tidal_given = self
-            .tidal
-            .iter()
-            .any(|field| !field.read(cx).text().trim().is_empty())
+        let tidal_given = TidalAccount::ALL
+            .into_iter()
+            .filter(|account| account.is_tidals())
+            .any(|account| !self.tidal[account.nth()].read(cx).text().trim().is_empty())
             || cx.global::<ResonateApp>().online.hosted_services;
+        let resonate_key_given = !self.tidal[TidalAccount::HifiSecret.nth()]
+            .read(cx)
+            .text()
+            .trim()
+            .is_empty();
 
         Standing {
             output: self.player.read(cx).output_settings().clone(),
@@ -714,6 +721,7 @@ impl RootView {
             file_dropped,
             subsonic_given,
             tidal_given,
+            resonate_key_given,
             convolving,
         }
     }
