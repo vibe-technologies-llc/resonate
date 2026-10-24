@@ -1256,7 +1256,7 @@ struct Counters {
     renamed: Arc<Mutex<Renamed>>,
 }
 
-fn watch_the_names(connection: &Connection, counters: Counters) -> Result<()> {
+fn watch_the_names(connection: &mut Connection, counters: Counters) -> Result<()> {
     for triggers in [
         NAMES_MOVED_TRIGGERS,
         &plans_moved_triggers(),
@@ -1509,7 +1509,7 @@ impl Library {
         let planned = Arc::new(AtomicU64::new(0));
         let renamed = Arc::new(Mutex::new(Renamed::default()));
         watch_the_names(
-            &writer,
+            &mut writer,
             Counters {
                 named: Arc::clone(&named),
                 written: Arc::clone(&written),
