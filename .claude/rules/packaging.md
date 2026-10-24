@@ -21,11 +21,15 @@ entry and metainfo `<provides>` are held to `MIME_TYPES` by tests (`binary.md`).
   `build` and `check` (AUR builds target the building machine) and keep `aarch64`; the Flatpak
   keeps its own baseline (`x86-64` / `generic`) and is no release asset.
 - **Spec: `--locked`, built from a source archive** of the release tag, prefixed
-  `resonate-<Version>/`; Fedora 44; `%check` tests the headless workspace. `release.yml`'s
-  `fedora-rpm` job builds the player and the server RPM and the source RPMs in one container.
+  `resonate-<Version>/`; Fedora 44; the spec runs no tests, which CI and the maintainer's checks hold,
+  since a release build that also tested compiled the workspace twice. `release.yml`'s
+  `fedora-rpm` job builds the player and the server RPM and the source RPMs in one container, both
+  into one `CARGO_TARGET_DIR` so the crates they share compile once; the specs and the release
+  PKGBUILDs install from `${CARGO_TARGET_DIR:-target}`, and the `arch-package` job shares one the
+  same way. The DEB script already shares the checkout's `target/`.
   `git archive` trusts `GITHUB_WORKSPACE` via `safe.directory` for that invocation only
   (the container refuses the runner-owned checkout). Dependencies install as root but `rpmbuild`
-  runs as `rpm-builder`: tests exercise refused writes to read-only fixtures and root bypasses them.
+  runs as `rpm-builder`.
   Cargo fetches while building: a source RPM recipe, not an offline distribution build.
 - **Pre-release spellings are in `release.md`.** The spec tests map `-` to `~` before comparing, the
   release PKGBUILDs hold `_version` to Cargo's and `pkgver` to `${_version//-/}`, and the DEB script

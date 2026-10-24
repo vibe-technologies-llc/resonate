@@ -67,6 +67,7 @@ jobs:
     timeout-minutes: 120
     env:
       RPMBUILD_ROOT: /home/rpm-builder/rpmbuild
+      CARGO_TARGET_DIR: /home/rpm-builder/target
     steps:
       - name: Install the build dependencies
         run: >-
@@ -88,9 +89,9 @@ jobs:
       - name: Build the player RPM
         run: |
           chown -R rpm-builder:rpm-builder "$RPMBUILD_ROOT"
-          runuser -u rpm-builder -- rpmbuild -ba packaging/resonate.spec
+          runuser -u rpm-builder -- env CARGO_TARGET_DIR="$CARGO_TARGET_DIR" rpmbuild -ba packaging/resonate.spec
       - name: Build the sync server RPM
-        run: runuser -u rpm-builder -- rpmbuild -ba packaging/server/resonate-server.spec
+        run: runuser -u rpm-builder -- env CARGO_TARGET_DIR="$CARGO_TARGET_DIR" rpmbuild -ba packaging/server/resonate-server.spec
       - name: Collect the RPMs
         run: |
           mkdir -p assets
@@ -146,6 +147,8 @@ jobs:
     runs-on: ubuntu-latest
     container: archlinux:latest
     timeout-minutes: 120
+    env:
+      CARGO_TARGET_DIR: /home/builder/target
     steps:
       - name: Install the build dependencies
         run: >-
@@ -167,8 +170,8 @@ jobs:
           cp -r "$GITHUB_WORKSPACE" /home/builder/checkout
           chown -R builder:builder /home/builder
           runuser -u builder -- rustup toolchain install stable --profile minimal
-          (cd /home/builder/checkout/packaging/release && runuser -u builder -- makepkg -f --noconfirm)
-          (cd /home/builder/checkout/packaging/release/server && runuser -u builder -- makepkg -f --noconfirm)
+          (cd /home/builder/checkout/packaging/release && runuser -u builder -- env CARGO_TARGET_DIR="$CARGO_TARGET_DIR" makepkg -f --noconfirm)
+          (cd /home/builder/checkout/packaging/release/server && runuser -u builder -- env CARGO_TARGET_DIR="$CARGO_TARGET_DIR" makepkg -f --noconfirm)
       - name: Name the assets for the release
         run: |
           mkdir -p assets

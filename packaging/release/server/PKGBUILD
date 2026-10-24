@@ -24,22 +24,15 @@ prepare() {
 build() {
   cd "$_pkgname-$_version"
   export RUSTUP_TOOLCHAIN=stable
-  export CARGO_TARGET_DIR=target
+  export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}"
   export RUSTFLAGS="-C target-cpu=x86-64-v3"
   cargo build --frozen --release --package resonate-server
-}
-
-check() {
-  cd "$_pkgname-$_version"
-  export RUSTUP_TOOLCHAIN=stable
-  export RUSTFLAGS="-C target-cpu=x86-64-v3"
-  cargo test --frozen --release --package resonate-server
 }
 
 package() {
   cd "$_pkgname-$_version"
 
-  install -Dm755 target/release/resonate-server "$pkgdir/usr/bin/resonate-server"
+  install -Dm755 "${CARGO_TARGET_DIR:-target}/release/resonate-server" "$pkgdir/usr/bin/resonate-server"
   install -Dm644 packaging/server/resonate-server.service \
     "$pkgdir/usr/lib/systemd/system/resonate-server.service"
   install -Dm644 packaging/server/resonate-server.env \

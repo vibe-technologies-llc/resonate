@@ -27,12 +27,8 @@ hardened systemd service with a dynamic user.
 export RUSTFLAGS="${RUSTFLAGS:-} -C target-cpu=%{rust_baseline}"
 cargo build --locked --release --package resonate-server
 
-%check
-export RUSTFLAGS="${RUSTFLAGS:-} -C target-cpu=%{rust_baseline}"
-cargo test --locked --release --package resonate-server
-
 %install
-install -Dm755 target/release/resonate-server %{buildroot}%{_bindir}/resonate-server
+install -Dm755 "${CARGO_TARGET_DIR:-target}/release/resonate-server" %{buildroot}%{_bindir}/resonate-server
 install -Dm644 packaging/server/resonate-server.service %{buildroot}%{_unitdir}/resonate-server.service
 install -Dm644 packaging/server/resonate-server.env %{buildroot}%{_sysconfdir}/resonate-server/resonate-server.env
 

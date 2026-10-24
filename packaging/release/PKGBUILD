@@ -26,24 +26,17 @@ prepare() {
 build() {
   cd "$_pkgname-$_version"
   export RUSTUP_TOOLCHAIN=stable
-  export CARGO_TARGET_DIR=target
+  export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}"
   export RUSTFLAGS="-C target-cpu=x86-64-v3"
   cargo build --frozen --release --workspace --bin resonate
 }
 
-check() {
-  cd "$_pkgname-$_version"
-  export RUSTUP_TOOLCHAIN=stable
-  export RUSTFLAGS="-C target-cpu=x86-64-v3"
-  cargo test --frozen --release --workspace --exclude resonate-ui --no-default-features
-}
-
 package() {
   cd "$_pkgname-$_version"
-  local generated
-  generated="$(find target/release/build -name "$_pkgname.1" -printf '%h\n' -quit)"
+  local built="${CARGO_TARGET_DIR:-target}/release" generated
+  generated="$(find "$built/build" -name "$_pkgname.1" -printf '%h\n' -quit)"
 
-  install -Dm755 "target/release/$_pkgname" "$pkgdir/usr/bin/$_pkgname"
+  install -Dm755 "$built/$_pkgname" "$pkgdir/usr/bin/$_pkgname"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 COPYRIGHT "$pkgdir/usr/share/licenses/$pkgname/COPYRIGHT"
   install -Dm644 README.md "$pkgdir/usr/share/doc/$_pkgname/README.md"

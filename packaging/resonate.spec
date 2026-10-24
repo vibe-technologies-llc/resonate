@@ -34,14 +34,11 @@ Resonate plays music through PipeWire with a native Wayland interface.
 export RUSTFLAGS="${RUSTFLAGS:-} -C target-cpu=%{rust_baseline}"
 cargo build --locked --release --workspace --bin resonate
 
-%check
-export RUSTFLAGS="${RUSTFLAGS:-} -C target-cpu=%{rust_baseline}"
-cargo test --locked --release --workspace --exclude resonate-ui --no-default-features
-
 %install
-generated=$(find target/release/build -name resonate.1 -printf '%h\n' -quit)
+built=${CARGO_TARGET_DIR:-target}/release
+generated=$(find "$built/build" -name resonate.1 -printf '%h\n' -quit)
 test -n "$generated"
-install -Dm755 target/release/resonate %{buildroot}%{_bindir}/resonate
+install -Dm755 "$built/resonate" %{buildroot}%{_bindir}/resonate
 install -Dm644 packaging/resonate.desktop %{buildroot}%{_datadir}/applications/resonate.desktop
 install -Dm644 packaging/resonate.svg %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/resonate.svg
 install -Dm644 packaging/org.resonate.Resonate.metainfo.xml %{buildroot}%{_datadir}/metainfo/org.resonate.Resonate.metainfo.xml
