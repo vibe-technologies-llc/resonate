@@ -122,8 +122,8 @@ admitted: the key check comes first, so a stranger reads nothing from either.
   up before it takes a download turn and again after (a download that finished meanwhile is
   served, not repeated). A miss is **teed into a staging file while it is sent**: `<id>.<pid>.part`
   held under `writer::Held`, renamed to `<id>.flac` only after a clean end of the stream (a known
-  `Content-Length` must match, and the first bytes must be `fLaC`), so a short or foreign body is
-  never kept. Eviction is least recently used (a hit bumps the file's mtime, which orders a
+  `Content-Length` must match, and the first bytes must be `fLaC`, so an empty body is never kept
+  either), so a short or foreign body is never kept (`an_empty_answer_for_a_track_is_never_kept`). Eviction is least recently used (a hit bumps the file's mtime, which orders a
   restart); a restart sweeps stale stagings through `writer_of`, leaves foreign files alone and
   trims a lowered limit. **The directory never exceeds the limit**: each chunk reserves its bytes
   before it is written, evicting as needed, and a track may take at most half the limit (a known

@@ -606,7 +606,7 @@ fn pump(mut source: Source, window: Span, sender: mpsc::Sender<io::Result<Vec<u8
 }
 
 fn kept_if_whole(fill: Fill, promised: Option<u64>, read: u64) {
-    if promised.is_some_and(|promised| promised != read) {
+    if read < FLAC_MARKER.len() as u64 || promised.is_some_and(|promised| promised != read) {
         return;
     }
     if let Err(error) = fill.commit() {

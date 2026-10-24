@@ -291,6 +291,13 @@ async fn hifi_with_a_track() -> (Gatewayed, Arc<Mutex<Vec<String>>>) {
 }
 
 async fn hifi_with_a_track_kept(keeping: Keeping) -> (Gatewayed, Arc<Mutex<Vec<String>>>) {
+    hifi_serving(AUDIO, keeping).await
+}
+
+async fn hifi_serving(
+    audio: &'static [u8],
+    keeping: Keeping,
+) -> (Gatewayed, Arc<Mutex<Vec<String>>>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("a port");
     let address = listener.local_addr().expect("an address");
     let asked = Arc::new(Mutex::new(Vec::new()));
@@ -318,7 +325,7 @@ async fn hifi_with_a_track_kept(keeping: Keeping) -> (Gatewayed, Arc<Mutex<Vec<S
                     if target.starts_with(&format!("/track/?id={TRACK}")) {
                         ("200 OK", playback.into_bytes())
                     } else if target == format!("/media/{TRACK}.flac") {
-                        ("200 OK", AUDIO.to_vec())
+                        ("200 OK", audio.to_vec())
                     } else {
                         ("404 Not Found", b"{}".to_vec())
                     };
@@ -535,6 +542,20 @@ async fn a_track_over_the_limit_is_sent_and_never_kept() {
 
     assert_eq!(first.body.as_bytes(), AUDIO);
     assert_eq!(second.body.as_bytes(), AUDIO);
+    assert_eq!(downloads_asked(&asked), 2);
+    assert_eq!(fs::read_dir(&scratch.0).expect("a listing").count(), 0);
+}
+
+#[tokio::test]
+async fn an_empty_answer_for_a_track_is_never_kept() {
+    let scratch = Scratch::new("empty");
+    let (gateway, asked) = hifi_serving(b"", cached(&scratch)).await;
+
+    let first = gateway.bearing("GET", &format!("/file/?id={TRACK}")).await;
+    let second = gateway.bearing("GET", &format!("/file/?id={TRACK}")).await;
+
+    assert_eq!(first.status, 200);
+    assert_eq!(second.status, 200);
     assert_eq!(downloads_asked(&asked), 2);
     assert_eq!(fs::read_dir(&scratch.0).expect("a listing").count(), 0);
 }
