@@ -46,7 +46,7 @@ started can hold it open after the script ends.
 ## The parts
 
 - `fakein/`: a small Wayland client over `wayland-protocols-plasma`, reading `move X Y`, `down`,
-  `up`, `sleep S`, `drag X0 Y0 X1 Y1 STEPS` and `quit` from its stdin and answering `fakein: done
+  `up`, `rdown`, `rup`, `sleep S`, `drag X0 Y0 X1 Y1 STEPS` and `quit` from its stdin and answering `fakein: done
   <line>` for each, which `drag.sh` waits on: commands sent ahead of the pointer take their
   screenshot before the drag has moved. It binds version 5 of the global, the newest the crate knows
   (KWin offers 6). It is its own Cargo project (`[workspace]` in its manifest), built into

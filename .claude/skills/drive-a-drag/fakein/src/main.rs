@@ -12,6 +12,7 @@ use wayland_client::{
 use wayland_protocols_plasma::fake_input::client::org_kde_kwin_fake_input::OrgKdeKwinFakeInput;
 
 const LEFT_BUTTON: u32 = 0x110;
+const RIGHT_BUTTON: u32 = 0x111;
 const FAKE_INPUT_VERSIONS: std::ops::RangeInclusive<u32> = 1..=5;
 const STEP_EVERY: Duration = Duration::from_millis(20);
 
@@ -63,6 +64,8 @@ fn main() {
             ["move", x, y] => fake.pointer_motion_absolute(number(x), number(y)),
             ["down"] => fake.button(LEFT_BUTTON, 1),
             ["up"] => fake.button(LEFT_BUTTON, 0),
+            ["rdown"] => fake.button(RIGHT_BUTTON, 1),
+            ["rup"] => fake.button(RIGHT_BUTTON, 0),
             ["sleep", seconds] => thread::sleep(Duration::from_secs_f64(number(seconds))),
             ["drag", x0, y0, x1, y1, steps] => {
                 let (from, to) = ((number(x0), number(y0)), (number(x1), number(y1)));

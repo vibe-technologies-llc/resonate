@@ -233,9 +233,6 @@ impl RootView {
             .flex_none()
             .items_center()
             .gap_0p5()
-            .opacity(0.0)
-            .group_hover(ROW_GROUP, |controls| controls.opacity(1.0))
-            .in_focus(|controls| controls.opacity(1.0))
     }
 
     pub(crate) fn favour_mark_under(
@@ -1087,7 +1084,6 @@ impl RootView {
                     )
                     .child(
                         self.row_controls(("track-controls", index), cx)
-                            .when(menued_row, |controls| controls.opacity(1.0))
                             .when_some(adding_to, |controls, target| {
                                 let cut = Cut::of(track);
                                 controls.child(self.in_the_pane_ring(

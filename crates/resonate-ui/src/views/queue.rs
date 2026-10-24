@@ -690,8 +690,6 @@ impl RootView {
                                     let artist = drawn.artist.clone();
                                     let menued = Arc::clone(&holding);
                                     let queued_as = item.id.get();
-                                    let menued_row =
-                                        menu::lit_by_its_menu(("queued", queued_as), cx);
                                     let fitted = this.columns_fit.shown();
                                     let listed = row(current)
                                         .id(("queued", queued_as))
@@ -742,7 +740,6 @@ impl RootView {
                                         .child(listing::length_cell(drawn.length))
                                         .child(
                                             this.row_controls(("queue-controls", index), cx)
-                                                .when(menued_row, |controls| controls.opacity(1.0))
                                                 .child(this.mover(
                                                     "raise",
                                                     Step::Above,

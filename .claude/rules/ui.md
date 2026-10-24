@@ -384,7 +384,11 @@ is never named.
   shrink, only the title growing). A track with other copies carries `+N` inside the title cell
   (`tagged_title_cell`); text cells end in an ellipsis. The playing row draws `listing::playing_mark`
   in the number cell and its title in the accent. Row controls sit in `browser::row_controls`,
-  invisible until hovered.
+  **always drawn**: they were once hidden until hovered or focused, but gpui's `in_focus` styles an
+  element *inside* the focused one, so they showed on every row while the window itself held the
+  caret and vanished the moment a field did (the search box, the playlist picker's name field), which
+  read as a bug (found on a hosted KWin, the `drive-a-drag` skill's compositor). The star
+  (`favour_mark_under`) alone still waits for the hover.
   - **A listing narrower than its columns gives up HEARD, then FORMAT, before the names.**
     `listing::Shown::within` weighs the width the header measured into `RootView::columns_fit` (a
     `listing::Fitting`) against the fixed cells, `NAMES_AT_LEAST` and the controls; `columns`
@@ -1523,11 +1527,10 @@ is never named.
   (`what_plays_menu`); the inspector's title copies whole on right click (`copied_on_a_right_click`).
   A sidebar row, settings control and missing row deliberately carry none.
   **The row whose menu is open stays lit.** The menu's scrim occludes the pane, so the row loses its
-  hover and its right-hand controls (the star, *Play next*, *Add to queue*) would vanish while the
-  listener chooses an entry. `Menu::opened_on` records the pressed element's id
+  hover and its star would vanish while the listener chooses an entry. `Menu::opened_on` records the pressed element's id
   (`opens_a_menu`), `RootView::render` publishes it as the `menu::Opened` global, and a row asks
-  `menu::lit_by_its_menu(id, cx)` to draw its wash and force its controls to full opacity; tracks,
-  queue and playlist-entry rows do
+  `menu::lit_by_its_menu(id, cx)` to draw its wash (every menu-opening row, by `opens_a_menu`) and a
+  track row to hold its star at full opacity
   (`the_row_whose_menu_is_open_stays_lit_so_its_controls_do_not_vanish_under_the_scrim`).
 - **The reached row's menu opens from the keyboard** (`menu`, `shift-f10`: `OpenTheMenu`). A row
   drawing its menu through `menu::opens_a_reachable_menu` with an `AtTheReach` lays a canvas whose
@@ -1607,8 +1610,8 @@ is never named.
     before drew, so a control a `uniform_list` row draws keeps its caret. Settings lays its own through
     `in_the_ring`; every other pane through `RootView::in_the_pane_ring`, which names the handle by the
     control's own element id, presses it through the one closure a click and `space`/`enter` share, and
-    takes no caret on a click. A row's hidden controls are `RootView::row_controls` (a handle that is no
-    tab stop, `Controls::holding`), shown by `in_focus` while one holds the caret
+    takes no caret on a click. A row's controls are `RootView::row_controls` (a handle that is no
+    tab stop, `Controls::holding`), drawn always
     (`tab_reaches_a_headings_play_and_a_rows_star_and_enter_presses_them`). A mark opening a card or menu
     where pressed goes through `in_the_pane_ring_at` (a canvas keeps its bottom-left corner;
     `a_mark_opening_a_menu_where_pressed_opens_it_from_the_keyboard_too`); the ring wrappers `_at`
