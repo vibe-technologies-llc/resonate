@@ -155,6 +155,23 @@ pub struct Shown {
     pub settled: bool,
 }
 
+impl Shown {
+    pub fn downloading(&self) -> usize {
+        self.in_state(TransferState::Moving)
+    }
+
+    pub fn waiting(&self) -> usize {
+        self.in_state(TransferState::Waiting)
+    }
+
+    fn in_state(&self, state: TransferState) -> usize {
+        self.transfers
+            .iter()
+            .filter(|transfer| transfer.state == state)
+            .count()
+    }
+}
+
 enum Command {
     Fetch {
         recordings: Vec<Recording>,
@@ -637,6 +654,19 @@ impl Running {
             !(transfer.from == from
                 && transfer.recording == *recording
                 && transfer.state == TransferState::Waiting)
+        });
+    }
+
+    fn queued(&self, recording: &Recording, from: DeviceId) {
+        self.transfer(recording, from, |transfer| {
+            if matches!(
+                transfer.state,
+                TransferState::Landed | TransferState::Failed
+            ) {
+                transfer.state = TransferState::Waiting;
+                transfer.received = 0;
+                transfer.size = 0;
+            }
         });
     }
 
@@ -2165,7 +2195,13 @@ fn spawn_work(running: Arc<Running>, device: DeviceId, connection: Connection, w
                 recordings
             }
             Work::Follow => match followed_songs(&running, &connection).await {
-                Ok(recordings) => running.not_failed_lately(recordings),
+                Ok(recordings) => {
+                    let recordings = running.not_failed_lately(recordings);
+                    for recording in &recordings {
+                        running.queued(recording, device);
+                    }
+                    recordings
+                }
                 Err(error) => {
                     tracing::debug!(%error, "a device's songs could not be listed");
                     return;
@@ -2343,6 +2379,39 @@ async fn accept_peers(running: Arc<Running>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn transfer_in(state: TransferState, title: &str) -> Transfer {
+        Transfer {
+            recording: Recording {
+                mbid: None,
+                title: title.into(),
+                artist: String::new(),
+                album: String::new(),
+                length: None,
+            },
+            from: DeviceId([1; 16]),
+            received: 0,
+            size: 0,
+            state,
+        }
+    }
+
+    #[test]
+    fn what_is_downloading_and_what_waits_are_counted_apart_and_a_finished_song_is_neither() {
+        let shown = Shown {
+            transfers: vec![
+                transfer_in(TransferState::Moving, "a"),
+                transfer_in(TransferState::Waiting, "b"),
+                transfer_in(TransferState::Waiting, "c"),
+                transfer_in(TransferState::Landed, "d"),
+                transfer_in(TransferState::Failed, "e"),
+            ],
+            ..Shown::default()
+        };
+
+        assert_eq!(shown.downloading(), 1);
+        assert_eq!(shown.waiting(), 2);
+    }
 
     #[test]
     fn a_server_names_its_port_or_takes_the_hosted_one() {

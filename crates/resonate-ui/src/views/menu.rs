@@ -1,7 +1,7 @@
 use std::{path::Path, rc::Rc, sync::Arc};
 
 use gpui::{
-    AnyElement, App, Bounds, BoxShadow, ClickEvent, Context, Div, Global, MouseButton,
+    AnyElement, App, Bounds, BoxShadow, ClickEvent, Context, Div, ElementId, Global, MouseButton,
     MouseDownEvent, Pixels, Point, SharedString, Stateful, Window, anchored, canvas, deferred, div,
     hsla, point, prelude::*, px, rgb,
 };
@@ -42,11 +42,23 @@ struct ReachedMenu {
 
 impl Global for ReachedMenu {}
 
+#[derive(Default, PartialEq, Eq)]
+pub(crate) struct Opened(pub(crate) Option<ElementId>);
+
+impl Global for Opened {}
+
+pub(crate) fn lit_by_its_menu(row: impl Into<ElementId>, cx: &App) -> bool {
+    let row = row.into();
+    cx.try_global::<Opened>()
+        .is_some_and(|opened| opened.0.as_ref() == Some(&row))
+}
+
 #[derive(Clone)]
 pub(crate) struct Menu {
     at: Point<Pixels>,
     entries: Vec<Entry>,
     reached: Option<usize>,
+    owner: Option<ElementId>,
 }
 
 #[derive(Clone)]
@@ -63,7 +75,17 @@ impl Menu {
             at,
             entries: Vec::new(),
             reached: None,
+            owner: None,
         }
+    }
+
+    pub(crate) fn opened_on(mut self, owner: Option<ElementId>) -> Self {
+        self.owner = owner;
+        self
+    }
+
+    pub(crate) fn owner(&self) -> Option<&ElementId> {
+        self.owner.as_ref()
     }
 
     pub(crate) fn does(
@@ -387,18 +409,24 @@ pub(crate) fn offered_at_the_reach(
 }
 
 pub(crate) fn opens_a_menu(
-    element: Stateful<Div>,
+    mut element: Stateful<Div>,
     offers: impl Fn(&mut RootView, Point<Pixels>, &mut Context<RootView>) -> Menu + 'static,
     cx: &mut Context<RootView>,
 ) -> Stateful<Div> {
-    element.on_mouse_down(
-        MouseButton::Right,
-        cx.listener(move |this, event: &MouseDownEvent, _, cx| {
-            cx.stop_propagation();
-            let menu = offers(this, event.position, cx);
-            this.open_a_menu(menu, cx);
-        }),
-    )
+    let owner = element.interactivity().element_id.clone();
+    let lit = owner
+        .as_ref()
+        .is_some_and(|owner| lit_by_its_menu(owner.clone(), cx));
+    element
+        .when(lit, |element| element.bg(rgb(theme::hover())))
+        .on_mouse_down(
+            MouseButton::Right,
+            cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                cx.stop_propagation();
+                let menu = offers(this, event.position, cx).opened_on(owner.clone());
+                this.open_a_menu(menu, cx);
+            }),
+        )
 }
 
 pub(crate) const PLAY: &str = "Play";

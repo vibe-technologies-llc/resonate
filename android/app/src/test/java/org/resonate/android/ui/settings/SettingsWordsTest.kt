@@ -202,7 +202,15 @@ class SettingsWordsTest {
     ) = SyncedDevice(name, name, DevicePlatform.LINUX, online, nearby, here)
 
     private fun status(standing: SyncStanding, vararg devices: SyncedDevice, owed: UInt = 0u) =
-        SyncStatus(standing, "code", devices.toList(), 0u, owed, 0uL, true, emptyList())
+        SyncStatus(standing, "code", devices.toList(), 0u, 0u, 0u, owed, 0uL, true, emptyList())
+
+    @Test
+    fun theTransfersHeaderSaysHowManyAreDownloadingAndHowManyWait() {
+        assertEquals("Transfers", transfersHeader(0u, 0u))
+        assertEquals("Transfers · 2 downloading · 340 waiting", transfersHeader(2u, 340u))
+        assertEquals("Transfers · 3 waiting", transfersHeader(0u, 3u))
+        assertEquals("Transfers · 1 downloading", transfersHeader(1u, 0u))
+    }
 
     @Test
     fun syncWordsFollowTheStandingAndTheDevicesReached() {

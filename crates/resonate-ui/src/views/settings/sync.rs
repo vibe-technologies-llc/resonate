@@ -164,6 +164,24 @@ fn counted(count: usize, noun: &str) -> String {
     }
 }
 
+fn on_their_way(downloading: usize, waiting: usize) -> Option<String> {
+    let total = downloading + waiting;
+    if total == 0 {
+        return None;
+    }
+    let mut parts = vec![format!(
+        "{} on their way from another device",
+        counted(total, "song")
+    )];
+    if downloading > 0 {
+        parts.push(format!("{downloading} downloading"));
+    }
+    if waiting > 0 {
+        parts.push(format!("{waiting} waiting"));
+    }
+    Some(parts.join(" · "))
+}
+
 fn standing_said(synchronised: &Synchronised, shown: Option<&SyncShown>) -> Said {
     let Some(shown) = shown.filter(|_| synchronised.enabled) else {
         return if synchronised.enabled {
@@ -416,15 +434,11 @@ impl RootView {
                 cx,
             ))
             .child(standing);
-        if let Some(moving) = shown
+        if let Some(on_their_way) = shown
             .as_ref()
-            .map(|shown| shown.moving)
-            .filter(|moving| *moving > 0)
+            .and_then(|shown| on_their_way(shown.downloading, shown.waiting))
         {
-            body = body.child(note(format!(
-                "{} on their way from another device",
-                counted(moving, "song")
-            )));
+            body = body.child(note(on_their_way));
         }
         body.child(note(SYNCING_NOTE))
     }
@@ -1007,5 +1021,27 @@ impl RootView {
             cx,
         );
         self.store(&Setting::SyncDevice(String::new()), cx);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_songs_on_their_way_say_how_many_are_downloading_and_how_many_wait() {
+        assert_eq!(on_their_way(0, 0), None);
+        assert_eq!(
+            on_their_way(2, 340).as_deref(),
+            Some("342 songs on their way from another device · 2 downloading · 340 waiting")
+        );
+        assert_eq!(
+            on_their_way(1, 0).as_deref(),
+            Some("1 song on their way from another device · 1 downloading")
+        );
+        assert_eq!(
+            on_their_way(0, 3).as_deref(),
+            Some("3 songs on their way from another device · 3 waiting")
+        );
     }
 }

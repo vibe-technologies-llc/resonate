@@ -87,6 +87,14 @@ fun transferLine(transfer: SyncTransfer): String =
         )
         .joinToString(" · ")
 
+fun transfersHeader(downloading: UInt, waiting: UInt): String =
+    listOfNotNull(
+            "Transfers",
+            "$downloading downloading".takeIf { downloading > 0u },
+            "$waiting waiting".takeIf { waiting > 0u },
+        )
+        .joinToString(" · ")
+
 fun transferProgress(transfer: SyncTransfer): Float? =
     if (transfer.size == 0uL) null
     else (minOf(transfer.received, transfer.size).toDouble() / transfer.size.toDouble()).toFloat()

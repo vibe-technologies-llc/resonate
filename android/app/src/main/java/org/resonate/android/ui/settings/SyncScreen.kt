@@ -214,7 +214,9 @@ fun SyncScreen() {
                 }
             }
             if (transfers.isNotEmpty()) {
-                item(key = "transfers-header") { SectionHeader("Transfers") }
+                item(key = "transfers-header") {
+                    SectionHeader(transfersHeader(status?.downloading ?: 0u, status?.waiting ?: 0u))
+                }
                 transfers.forEachIndexed { index, transfer ->
                     item(key = "transfer-$index") {
                         val progress = transferProgress(transfer)

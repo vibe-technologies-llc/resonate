@@ -226,7 +226,11 @@ will not open is left out of the holdings.
   favoured song, never trusting `here`, which only says the catalog listed the song at the last look
   (`a_song_deleted_by_hand_is_wanted_again_while_its_playlist_and_favourite_stay`).
 - **`Shown.transfers` keeps at most `TRANSFERS_SHOWN_AT_MOST` (200)**, the oldest landed or
-  failed dropped first.
+  failed dropped first. **A follow lists every song it will fetch as `Waiting` at once**
+  (`Running::queued`, a finished or failed row of the same song becoming `Waiting` again), not as
+  each one is reached, so `Shown::waiting` is how many are queued and `Shown::downloading` how many
+  move; the apps say both (`SyncStatus::downloading`, `waiting`). A connection that closes turns the
+  rest to `Failed`, as before.
 - **Server**: `Settings::server` is a `Server`: `Hosted` (`HOSTED_SERVER`, `wss://resonate.tecnio.dev/`, a web socket through Cloudflare Tunnel,
   **the default on every front end**; the one host `resonate_core::RESONATE_HOST` names serves the hifi gateway too, `server.md`),
   `At` another (`sync-server`; blank is the hosted one; `ws://`/`wss://` for a web

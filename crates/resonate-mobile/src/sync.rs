@@ -154,6 +154,8 @@ pub struct SyncStatus {
     pub code: String,
     pub devices: Vec<SyncedDevice>,
     pub moving: u32,
+    pub downloading: u32,
+    pub waiting: u32,
     pub owed: u32,
     pub arrivals: u64,
     pub settled: bool,
@@ -244,6 +246,8 @@ impl MobilePlayer {
                 code: String::new(),
                 devices: Vec::new(),
                 moving: 0,
+                downloading: 0,
+                waiting: 0,
                 owed: 0,
                 arrivals,
                 settled: true,
@@ -251,6 +255,8 @@ impl MobilePlayer {
             };
         };
         let shown = running.sync.shown();
+        let downloading = counted(shown.downloading());
+        let waiting = counted(shown.waiting());
         let transfers = shown
             .transfers
             .iter()
@@ -311,6 +317,8 @@ impl MobilePlayer {
                     })
                     .count(),
             ),
+            downloading,
+            waiting,
             owed: counted(shown.owed),
             arrivals,
             settled: shown.settled,

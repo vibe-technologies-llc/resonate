@@ -946,6 +946,8 @@ pub struct SyncShown {
     pub link: String,
     pub devices: Vec<SyncedDevice>,
     pub moving: usize,
+    pub downloading: usize,
+    pub waiting: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

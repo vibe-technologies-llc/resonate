@@ -5173,6 +5173,10 @@ impl Render for RootView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let moved = self.moved_under_a_still_pointer(window, cx);
         hint::asking(self.hints_are_wanted(cx) && !moved);
+        let opened = menu::Opened(self.menu.as_ref().and_then(|menu| menu.owner().cloned()));
+        if cx.try_global::<menu::Opened>() != Some(&opened) {
+            cx.set_global(opened);
+        }
         self.drawn_at = SystemTime::now();
         self.follow_the_scale(window, cx);
         let mouse_navigation = cx.global::<ResonateApp>().mouse_navigation;

@@ -993,6 +993,7 @@ impl RootView {
         let pressed = Arc::clone(tracks);
         let adding_to = self.adding_songs_to;
         let id = track.id;
+        let menued_row = menu::lit_by_its_menu(("track", id.get()), cx);
         let favourite = self
             .library
             .read(cx)
@@ -1074,15 +1075,19 @@ impl RootView {
             )))
             .child(
                 trailing_controls()
-                    .child(self.favour_mark_under(
-                        ("track-favourite", index),
-                        Favoured::Track(id),
-                        favourite,
-                        ROW_GROUP,
-                        cx,
-                    ))
+                    .child(
+                        self.favour_mark_under(
+                            ("track-favourite", index),
+                            Favoured::Track(id),
+                            favourite,
+                            ROW_GROUP,
+                            cx,
+                        )
+                        .when(menued_row, |mark| mark.opacity(1.0)),
+                    )
                     .child(
                         self.row_controls(("track-controls", index), cx)
+                            .when(menued_row, |controls| controls.opacity(1.0))
                             .when_some(adding_to, |controls, target| {
                                 let cut = Cut::of(track);
                                 controls.child(self.in_the_pane_ring(

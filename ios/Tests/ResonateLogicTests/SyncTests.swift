@@ -43,6 +43,8 @@ func status(
         code: "",
         devices: devices,
         moving: moving,
+        downloading: 0,
+        waiting: 0,
         owed: 0,
         arrivals: 0,
         settled: settled,
@@ -62,6 +64,15 @@ func config(enabled: Bool = true, nearbyOnly: Bool = false, server: String = "")
         everything: false,
         meteredAllowed: false
     )
+}
+
+@Suite struct FetchingHeadingTests {
+    @Test func theHeadingSaysHowManyAreDownloadingAndHowManyWait() {
+        #expect(fetchingHeading(downloading: 0, waiting: 0) == "Fetching")
+        #expect(fetchingHeading(downloading: 2, waiting: 340) == "Fetching · 2 downloading · 340 waiting")
+        #expect(fetchingHeading(downloading: 0, waiting: 3) == "Fetching · 3 waiting")
+        #expect(fetchingHeading(downloading: 1, waiting: 0) == "Fetching · 1 downloading")
+    }
 }
 
 @Suite struct SyncStandingTests {

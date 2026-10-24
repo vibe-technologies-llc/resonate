@@ -1007,6 +1007,8 @@ impl resonate_ui::Syncing for Running {
 
     fn shown(&self) -> resonate_ui::SyncShown {
         let shown = self.sync.shown();
+        let downloading = shown.downloading();
+        let waiting = shown.waiting();
         resonate_ui::SyncShown {
             standing: match shown.standing {
                 Standing::Starting | Standing::Connecting => resonate_ui::SyncStanding::Connecting,
@@ -1044,6 +1046,8 @@ impl resonate_ui::Syncing for Running {
                     )
                 })
                 .count(),
+            downloading,
+            waiting,
         }
     }
 

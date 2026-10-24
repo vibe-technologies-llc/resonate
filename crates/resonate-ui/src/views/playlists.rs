@@ -1243,8 +1243,10 @@ impl RootView {
         let title = drawn.title.clone();
         let artist = drawn.artist.clone();
         let fitted = self.columns_fit.shown();
+        let entry_id = listing::keyed_by("entry", &(&entry.cut, index));
+        let menued_row = menu::lit_by_its_menu(entry_id.clone(), cx);
         let listed = row(current)
-            .id(listing::keyed_by("entry", &(&entry.cut, index)))
+            .id(entry_id)
             .group(ROW_GROUP)
             .cursor_pointer()
             .hover(|entry| entry.bg(rgb(theme::hover())))
@@ -1275,6 +1277,7 @@ impl RootView {
             .child(listing::length_cell(drawn.length))
             .child(
                 self.row_controls(("entry-controls", index), cx)
+                    .when(menued_row, |controls| controls.opacity(1.0))
                     .child(self.queue_control(
                         ("entry-next", index),
                         Placement::Next,

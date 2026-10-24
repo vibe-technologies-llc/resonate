@@ -19,6 +19,14 @@ public enum SyncActivity: Equatable {
     }
 }
 
+public func fetchingHeading(downloading: UInt32, waiting: UInt32) -> String {
+    let counts = [
+        downloading > 0 ? "\(downloading) downloading" : nil,
+        waiting > 0 ? "\(waiting) waiting" : nil,
+    ].compactMap { $0 }
+    return (["Fetching"] + counts).joined(separator: " · ")
+}
+
 public struct ContinuedProgress: Equatable {
     public var done: Int64 = 0
     public var total: Int64 = 0

@@ -1400,7 +1400,9 @@ is never named.
   `sync.md`), five groups:
   - *Device sync*: the switch and a standing card (a tinted mark, `done`, accent, `failure` or
     muted by `Mood`, a headline and a line under it read off `SyncShown`; *Sync now* while syncing),
-    and how many songs are on their way.
+    and the songs on their way, said as both numbers: *342 songs on their way from another device
+    · 2 downloading · 340 waiting* (`on_their_way`); the phones head their transfers the same way
+    (`transfersHeader`, `fetchingHeading`).
   - *Pairing* (keyless): a `pairing_tile()` square that stays a cover (*Click to show*) until the
     listener shows it, then the QR code of `SyncShown::link` (`resonate://pair/<code>`, the `qrcode`
     crate, level M, painted as quads in runs of dark modules on `scanned_paper` with `scanned_ink`,
@@ -1520,6 +1522,13 @@ is never named.
   (portal `OpenURI.OpenDirectory`). **The playback bar's cover, title, artist and album open one menu**
   (`what_plays_menu`); the inspector's title copies whole on right click (`copied_on_a_right_click`).
   A sidebar row, settings control and missing row deliberately carry none.
+  **The row whose menu is open stays lit.** The menu's scrim occludes the pane, so the row loses its
+  hover and its right-hand controls (the star, *Play next*, *Add to queue*) would vanish while the
+  listener chooses an entry. `Menu::opened_on` records the pressed element's id
+  (`opens_a_menu`), `RootView::render` publishes it as the `menu::Opened` global, and a row asks
+  `menu::lit_by_its_menu(id, cx)` to draw its wash and force its controls to full opacity; tracks,
+  queue and playlist-entry rows do
+  (`the_row_whose_menu_is_open_stays_lit_so_its_controls_do_not_vanish_under_the_scrim`).
 - **The reached row's menu opens from the keyboard** (`menu`, `shift-f10`: `OpenTheMenu`). A row
   drawing its menu through `menu::opens_a_reachable_menu` with an `AtTheReach` lays a canvas whose
   prepaint keeps its bounds and builder as the `ReachedMenu` global; `open_the_reached_menu` builds it

@@ -906,6 +906,34 @@ mod tests {
     }
 
     #[gpui::test]
+    fn the_row_whose_menu_is_open_stays_lit_so_its_controls_do_not_vanish_under_the_scrim(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes", "Time"]);
+        let tracks = library
+            .tracks(&resonate_library::TrackQuery::default())
+            .expect("the scanned tracks");
+        let (first, second) = (tracks[0].id, tracks[1].id);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-tracks");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 2);
+        let lit = |driven: &mut Driven, id: resonate_core::TrackId| {
+            driven.read(|_, cx| crate::views::menu::lit_by_its_menu(("track", id.get()), cx))
+        };
+
+        let before = lit(&mut driven, first);
+        driven.right_click(named("track", first.get()));
+        let while_open = (lit(&mut driven, first), lit(&mut driven, second));
+        driven.click("menu-entry-2");
+        let after = lit(&mut driven, first);
+
+        assert!(!before);
+        assert_eq!(while_open, (true, false));
+        assert!(!after);
+    }
+
+    #[gpui::test]
     fn the_play_in_a_tracks_menu_plays_the_listing_from_it_as_enter_does(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes", "Time"]);

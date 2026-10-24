@@ -14,7 +14,7 @@ class SyncActivityTest {
         moving: UInt = 0u,
         settled: Boolean = true,
         transfers: List<SyncTransfer> = emptyList(),
-    ) = SyncStatus(standing, "", emptyList(), moving, 0u, 0uL, settled, transfers)
+    ) = SyncStatus(standing, "", emptyList(), moving, 0u, 0u, 0u, 0uL, settled, transfers)
 
     private fun transfer(state: SyncTransferState, received: ULong, size: ULong) =
         SyncTransfer("Song", "Artist", "Phone", received, size, state)

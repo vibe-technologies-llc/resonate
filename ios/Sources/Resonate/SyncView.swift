@@ -33,7 +33,11 @@ struct SyncView: View {
                         }
                     }
                     if let status = features.syncStatus, !status.transfers.isEmpty {
-                        SyncTransfers(transfers: status.transfers)
+                        SyncTransfers(
+                            transfers: status.transfers,
+                            downloading: status.downloading,
+                            waiting: status.waiting
+                        )
                     }
                     Section("Options") {
                         NavigationLink {
@@ -606,6 +610,8 @@ struct SyncConnectionPage: View {
 
 struct SyncTransfers: View {
     let transfers: [SyncTransfer]
+    let downloading: UInt32
+    let waiting: UInt32
     private static let finishedShown = 10
 
     var body: some View {
@@ -619,7 +625,7 @@ struct SyncTransfers: View {
                 SyncTransferRow(transfer: keyed.transfer)
             }
         } header: {
-            Text(active.isEmpty ? "Recently fetched" : "Fetching")
+            Text(active.isEmpty ? "Recently fetched" : fetchingHeading(downloading: downloading, waiting: waiting))
         }
     }
 }
