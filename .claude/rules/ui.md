@@ -1362,6 +1362,14 @@ is never named.
   all*/*Clear selection* greyed where they would change nothing. Minimum: seconds field, 0 to 600,
   applied on Enter or leaving (a positive minimum excludes tracks of unknown length); a refused number
   stays in the field and toasts; Escape restores the held value.
+- **The library's folders are one box, and the primary one is chosen in it.** `Group::Folders`
+  (*Music folders*, Library category) lists every root as a card: a radio, the folder, a
+  `PRIMARY` badge on the chosen one and the forget mark. Pressing a card's radio or name makes that
+  root `music-folder` (checked off the window's thread, then `set_the_music_folder`); pressing the
+  primary again chooses none. A `music-folder` that is no root itself (inside one, or waiting to be
+  added) is drawn as a card of its own with a mark that clears it. Forgetting a root holding the
+  primary clears the primary. *Add folder…* and the typed field add roots; the *File dropped songs
+  by the layout* switch ends the box, and the group's mark puts back no primary and the switch on.
 - **The Resonate server key is a group of its own** (`Group::ResonateKey`, Library category), one
   masked `Field` that is `TidalAccount::HifiSecret` in the same array as the TIDAL fields (so focus,
   leaving and putting back are the TIDAL fields' one path) and drawn apart from them; the TIDAL

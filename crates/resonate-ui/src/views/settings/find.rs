@@ -100,7 +100,6 @@ pub(crate) enum Group {
     Bands,
     Measured,
     RoomCorrection,
-    MusicFolder,
     MusicExtensions,
     MinimumLength,
     Folders,
@@ -147,7 +146,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 62] = [
+    pub(crate) const ALL: [Self; 61] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -166,7 +165,6 @@ impl Group {
         Self::Bands,
         Self::Measured,
         Self::RoomCorrection,
-        Self::MusicFolder,
         Self::MusicExtensions,
         Self::MinimumLength,
         Self::Folders,
@@ -233,8 +231,7 @@ impl Group {
             | Self::Measured
             | Self::RoomCorrection => Category::Equaliser,
             Self::MusicExtensions | Self::MinimumLength => Category::Filters,
-            Self::MusicFolder
-            | Self::Folders
+            Self::Folders
             | Self::Updating
             | Self::Organising
             | Self::Vault
@@ -294,7 +291,6 @@ impl Group {
             Self::RoomCorrection => "Room correction",
             Self::MusicExtensions => "File extensions",
             Self::MinimumLength => "Minimum length",
-            Self::MusicFolder => "Primary music folder",
             Self::Folders => "Music folders",
             Self::Updating => "Rescan, refresh and retag",
             Self::Organising => "Organising",
@@ -365,7 +361,6 @@ impl Group {
             Self::MinimumLength => {
                 "Only show tracks at least this long. The minimum can be between 0 seconds and 10 minutes. Zero keeps the current behavior, including tracks whose length is unknown."
             }
-            Self::MusicFolder => MUSIC_FOLDER_HINT,
             Self::Folders => FOLDERS_HINT,
             Self::Updating => UPDATING_HINT,
             Self::Organising => ORGANISING_HINT,
@@ -463,11 +458,11 @@ impl Group {
             Self::MinimumLength => {
                 "music filters duration seconds minutes short songs minimum length"
             }
-            Self::MusicFolder => {
-                "primary main default home directory destination import add copy drop drag \
-                 songs files library outside vault file organise layout covers lyrics"
+            Self::Folders => {
+                "roots directories add scan music path primary main default home destination \
+                 import copy drop drag songs files library outside vault file organise layout \
+                 covers lyrics"
             }
-            Self::Folders => "roots directories add scan music path",
             Self::Updating => {
                 "rescan scan stop enrich look up refresh all force musicbrainz covers portraits \
                  missing reindex re-read reread rebuild length duration timestamps modified cue \
@@ -616,7 +611,6 @@ impl Group {
             Self::Inbox => &[SettingKey::Inbox],
             Self::MusicExtensions => &[SettingKey::MusicExtensions],
             Self::MinimumLength => &[SettingKey::MinimumLength],
-            Self::MusicFolder => &[SettingKey::MusicFolder, SettingKey::FileDropped],
             Self::RoomCorrection => &[SettingKey::Convolution],
             Self::Subsonic => &[
                 SettingKey::Subsonic,
@@ -688,12 +682,8 @@ impl Group {
                 SettingKey::RememberWindowSize,
                 SettingKey::RememberSettingsCategory,
             ],
-            Self::Bands
-            | Self::Folders
-            | Self::Updating
-            | Self::Build
-            | Self::Places
-            | Self::Everything => &[],
+            Self::Folders => &[SettingKey::MusicFolder, SettingKey::FileDropped],
+            Self::Bands | Self::Updating | Self::Build | Self::Places | Self::Everything => &[],
         }
     }
 
@@ -936,17 +926,13 @@ pub(crate) const REPLAY_GAIN_HINT: &str = "Plays every track at the loudness its
                                            and a track neither tagged nor studied is played at the \
                                            gain chosen for it instead.";
 
-pub(crate) const MUSIC_FOLDER_HINT: &str = "The one folder new songs are kept in: what is dragged \
-                                            onto the window is copied here with its covers and \
-                                            lyrics, then filed by the layout under Organising \
-                                            unless that is turned off. It is an ordinary folder \
-                                            outside the vault, scanned like any other. Choosing \
-                                            it adds it to the music folders below if they do not \
-                                            already reach it.";
-
-pub(crate) const FOLDERS_HINT: &str = "The folders a scan walks. Adding one scans it straight \
-                                       away; dropping one forgets every track that came from it, \
-                                       and leaves the files alone.";
+pub(crate) const FOLDERS_HINT: &str = "The folders a scan walks, and among them the primary \
+                                       one: the folder new songs are kept in. What is dragged \
+                                       onto the window is copied into the primary folder with \
+                                       its covers and lyrics, then filed by the layout under \
+                                       Organising unless that is turned off. Adding a folder \
+                                       scans it straight away; dropping one forgets every track \
+                                       that came from it, and leaves the files alone.";
 
 pub(crate) const UPDATING_HINT: &str = "Brings the library up to date, in three steps that never \
      overlap. Files: Rescan reads what was added or changed since the last scan; Read every file \

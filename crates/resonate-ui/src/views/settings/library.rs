@@ -19,7 +19,8 @@ use crate::{
     theme, toast,
     views::{
         focus::by_the_pointer,
-        kit::{self, EndsInAnEllipsis as _, Press},
+        hint::Names as _,
+        kit::{self, EndsInAnEllipsis as _, Found as _, Press},
         listing,
         root::RootView,
         settings::{Choice, action, hugging, named, note, progress, rows, switch_row},
@@ -30,13 +31,20 @@ const FOLDER_GROUP: &str = "folder";
 
 const VAULT_NOT_MADE: &str = "That folder could not be made a vault";
 
-const NO_MUSIC_FOLDER: &str = "No primary music folder is chosen. Choose the folder new songs should \
-                               be kept in.";
+const NO_MUSIC_FOLDER: &str = "No primary folder is chosen. Press the circle beside a folder to \
+                               make it the one new songs are kept in.";
 
-const MUSIC_FOLDER_NOTE: &str = "Drag songs or folders onto the window and they are copied here \
-                                 with their covers and lyrics, each checked against its original. \
-                                 The folder is scanned like the ones below, so what lands in it \
-                                 joins the library.";
+const PRIMARY_NOTE: &str = "The primary folder is where songs dragged onto the window are copied, \
+                            with their covers and lyrics, each checked against its original. It \
+                            is scanned like the others, so what lands in it joins the library.";
+
+const MAKE_PRIMARY_HINT: &str = "Make this the primary folder: the one new songs are kept in";
+
+const PRIMARY_HINT: &str = "The primary folder, where new songs are kept. Press to choose none.";
+
+const PRIMARY_BADGE: &str = "PRIMARY";
+
+const CLEAR_PRIMARY_HINT: &str = "Choose no primary folder. The folder is left alone.";
 
 const FILE_DROPPED_ID: &str = "file-dropped";
 
@@ -58,7 +66,8 @@ const FORGET_ASKED: &str = "Press again to forget this folder, its tracks, and t
 
 const FORGET_ASKED_LABEL: &str = "Press again to forget";
 
-const NO_FOLDERS: &str = "No folders yet. Add one and Resonate will scan it.";
+const NO_FOLDERS: &str = "No folders yet. Add one and Resonate will scan it; press its circle to \
+                          make it the primary folder.";
 
 const FOLDERS_NOTE: &str = "Everything under these folders is read into the library and followed \
                             while the window is open. The files are only read: nothing in them \
@@ -173,21 +182,49 @@ impl RootView {
         let library = self.library.read(cx);
         let roots = library.roots().to_vec();
         let waiting = library.roots_waiting().to_vec();
+        let primary = cx.global::<ResonateApp>().music_folder.clone();
+        let filed = cx.global::<ResonateApp>().file_dropped;
+        let gone = self.music_folder_is_there(cx) == Some(false);
+
+        let apart = primary.clone().filter(|primary| !roots.contains(primary));
+        let nothing_listed = roots.is_empty() && apart.is_none();
 
         let mut listed = rows();
         for root in &roots {
-            listed = listed.child(self.folder(root, cx));
+            listed = listed.child(self.folder(root, primary.as_deref(), cx));
+        }
+        if let Some(apart) = &apart {
+            listed = listed.child(self.primary_apart(apart, cx));
         }
 
         kit::section_body()
-            .when(roots.is_empty(), |body| body.child(note(NO_FOLDERS)))
-            .when(!roots.is_empty(), |body| body.child(listed))
+            .when(nothing_listed, |body| body.child(note(NO_FOLDERS)))
+            .when(!nothing_listed, |body| body.child(listed))
             .child(hugging(self.add_folder(cx)))
             .child(self.typed_root_field(cx))
             .when(!waiting.is_empty(), |body| {
                 body.child(note(SharedString::from(waiting_line(&waiting))))
             })
-            .when(!roots.is_empty(), |body| body.child(note(FOLDERS_NOTE)))
+            .when(primary.is_none() && !roots.is_empty(), |body| {
+                body.child(note(NO_MUSIC_FOLDER))
+            })
+            .when(gone, |body| body.child(note(MUSIC_FOLDER_GONE)))
+            .child(self.in_the_ring(
+                FILE_DROPPED_ID,
+                switch_row(
+                    "File dropped songs by the layout",
+                    "Off, they keep the names and folders they came with",
+                    filed,
+                    FILE_DROPPED_ID,
+                ),
+                move |this, _, cx| {
+                    this.file_what_is_dropped(!filed, cx);
+                    this.store(&Setting::FileDropped(!filed), cx);
+                },
+                cx,
+            ))
+            .when(!nothing_listed, |body| body.child(note(FOLDERS_NOTE)))
+            .child(note(PRIMARY_NOTE))
     }
 
     fn typed_root_field(&self, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -248,37 +285,101 @@ impl RootView {
         });
     }
 
-    fn folder(&self, root: &Path, cx: &mut Context<Self>) -> Stateful<Div> {
+    fn folder(&self, root: &Path, primary: Option<&Path>, cx: &mut Context<Self>) -> Stateful<Div> {
         let path = root.to_path_buf();
-        let shown = SharedString::from(root.display().to_string());
+        let chosen = primary == Some(root);
+        let choosing = path.clone();
 
-        div()
-            .id(shown.clone())
-            .group(FOLDER_GROUP)
-            .flex()
-            .items_center()
-            .gap_3()
-            .px_3()
-            .py_2()
-            .rounded_lg()
-            .bg(rgb(theme::raised()))
-            .border_1()
-            .border_color(rgb(theme::border()))
-            .child(icons::icon(
-                Icon::Folder,
-                theme::root_icon(),
-                theme::muted(),
-            ))
+        let id: ElementId = (ElementId::Path(Arc::from(root)), "primary").into();
+        let named = format!("primary {}", root.display());
+        let choice = self.in_the_ring_at(
+            named,
+            self.folder_choice(&path, chosen, id),
+            move |this, _, cx| this.choose_as_primary(choosing.clone(), cx),
+            cx,
+        );
+
+        folder_card(root, chosen)
+            .child(choice)
+            .child(self.forget_root(path, cx))
+    }
+
+    fn primary_apart(&self, folder: &Path, cx: &mut Context<Self>) -> Stateful<Div> {
+        let id = (ElementId::Path(Arc::from(folder)), "clear-primary");
+        let clear = kit::mark_when(
+            Press::Takes,
+            id,
+            Icon::Close,
+            CLEAR_PRIMARY_HINT,
+            FOLDER_GROUP,
+        );
+
+        folder_card(folder, true)
             .child(
                 div()
+                    .flex()
                     .flex_1()
                     .min_w(px(0.0))
-                    .truncate()
-                    .ends_in_an_ellipsis()
-                    .text_size(px(theme::text_sm()))
-                    .child(shown),
+                    .items_center()
+                    .gap_3()
+                    .child(kit::level_with_the_choice(kit::radio(true)))
+                    .child(folder_name(folder))
+                    .child(kit::badge(PRIMARY_BADGE, theme::accent())),
             )
-            .child(self.forget_root(path, cx))
+            .child(self.in_the_ring_at(
+                format!("clear primary {}", folder.display()),
+                clear,
+                |this, _, cx| this.forget_the_music_folder(cx),
+                cx,
+            ))
+    }
+
+    fn folder_choice(&self, folder: &Path, chosen: bool, id: ElementId) -> Stateful<Div> {
+        div()
+            .id(id.clone())
+            .found_as(&id)
+            .flex()
+            .flex_1()
+            .min_w(px(0.0))
+            .items_center()
+            .gap_3()
+            .rounded_md()
+            .cursor_pointer()
+            .names(if chosen {
+                PRIMARY_HINT
+            } else {
+                MAKE_PRIMARY_HINT
+            })
+            .child(kit::level_with_the_choice(kit::radio(chosen)))
+            .child(folder_name(folder))
+            .when(chosen, |row| {
+                row.child(kit::badge(PRIMARY_BADGE, theme::accent()))
+            })
+    }
+
+    fn choose_as_primary(&mut self, root: PathBuf, cx: &mut Context<Self>) {
+        let held = cx.global::<ResonateApp>().music_folder.clone();
+        if held.as_deref() == Some(root.as_path()) {
+            self.forget_the_music_folder(cx);
+            return;
+        }
+
+        cx.spawn(async move |this, cx| {
+            let looked = root.clone();
+            let there = cx
+                .background_executor()
+                .spawn(async move { looked.is_dir() })
+                .await;
+
+            let _ = this.update(cx, |this, cx| {
+                if there {
+                    this.set_the_music_folder(root, cx);
+                } else {
+                    this.report(Notice::Trouble(NOT_A_FOLDER.to_owned()), cx);
+                }
+            });
+        })
+        .detach();
     }
 
     fn forget_root(&self, root: PathBuf, cx: &mut Context<Self>) -> Div {
@@ -316,6 +417,10 @@ impl RootView {
     pub(crate) fn ask_to_forget_the_folder(&mut self, root: PathBuf, cx: &mut Context<Self>) {
         if self.forgetting_the_folder.as_ref() == Some(&root) {
             self.forgetting_the_folder = None;
+            let held = cx.global::<ResonateApp>().music_folder.clone();
+            if held.is_some_and(|primary| primary.starts_with(&root)) {
+                self.forget_the_music_folder(cx);
+            }
             self.library
                 .update(cx, |library, cx| library.forget_root(root, cx));
         } else {
@@ -1544,67 +1649,9 @@ const INBOX_NOTE: &str = "A file directly inside it named by the recording's Mus
                           never written to.";
 
 impl RootView {
-    pub(super) fn music_folder_group(&mut self, cx: &mut Context<Self>) -> Div {
-        let folder = cx.global::<ResonateApp>().music_folder.clone();
-        let filed = cx.global::<ResonateApp>().file_dropped;
-        let gone = self.music_folder_is_there(cx) == Some(false);
-
-        kit::section_body()
-            .child(match &folder {
-                Some(folder) => div().child(folder_row(folder)),
-                None => div().child(note(NO_MUSIC_FOLDER)),
-            })
-            .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap_2()
-                    .child(action(
-                        "choose-music-folder",
-                        "Choose folder…",
-                        Icon::Folder,
-                        false,
-                        |this, _, cx| this.choose_the_music_folder(cx),
-                        self,
-                        cx,
-                    ))
-                    .when(folder.is_some(), |row| {
-                        row.child(action(
-                            "clear-music-folder",
-                            "Clear",
-                            Icon::Close,
-                            false,
-                            |this, _, cx| this.forget_the_music_folder(cx),
-                            self,
-                            cx,
-                        ))
-                    }),
-            )
-            .when(gone, |body| body.child(note(MUSIC_FOLDER_GONE)))
-            .child(self.in_the_ring(
-                FILE_DROPPED_ID,
-                switch_row(
-                    "File dropped songs by the layout",
-                    "Off, they keep the names and folders they came with",
-                    filed,
-                    FILE_DROPPED_ID,
-                ),
-                move |this, _, cx| {
-                    this.file_what_is_dropped(!filed, cx);
-                    this.store(&Setting::FileDropped(!filed), cx);
-                },
-                cx,
-            ))
-            .child(note(MUSIC_FOLDER_NOTE))
-    }
-
     pub(crate) fn file_what_is_dropped(&self, filed: bool, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.file_dropped = filed);
         cx.notify();
-    }
-
-    fn choose_the_music_folder(&self, cx: &mut Context<Self>) {
-        self.pick_a_folder(cx, Self::set_the_music_folder);
     }
 
     fn pick_a_folder(
@@ -1672,7 +1719,7 @@ impl RootView {
         cx.notify();
     }
 
-    fn forget_the_music_folder(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn forget_the_music_folder(&mut self, cx: &mut Context<Self>) {
         self.clear_the_music_folder(cx);
         self.forget(SettingKey::MusicFolder, cx);
     }
@@ -1758,6 +1805,53 @@ impl RootView {
         self.library
             .update(cx, |library, cx| library.set_inbox(Some(folder), cx));
     }
+}
+
+fn folder_card(folder: &Path, chosen: bool) -> Stateful<Div> {
+    div()
+        .id(SharedString::from(folder.display().to_string()))
+        .group(FOLDER_GROUP)
+        .flex()
+        .items_center()
+        .gap_3()
+        .px_3()
+        .py_2()
+        .rounded_lg()
+        .border_1()
+        .when_else(
+            chosen,
+            |card| {
+                card.bg(theme::tinted(theme::accent(), 0x14))
+                    .border_color(rgb(theme::accent()))
+            },
+            |card| {
+                card.bg(rgb(theme::raised()))
+                    .border_color(rgb(theme::border()))
+            },
+        )
+}
+
+fn folder_name(folder: &Path) -> Div {
+    div()
+        .flex()
+        .flex_1()
+        .min_w(px(0.0))
+        .items_center()
+        .gap_2()
+        .child(icons::icon(
+            Icon::Folder,
+            theme::root_icon(),
+            theme::muted(),
+        ))
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.0))
+                .truncate()
+                .ends_in_an_ellipsis()
+                .text_size(px(theme::text_sm()))
+                .child(SharedString::from(folder.display().to_string())),
+        )
 }
 
 fn folder_row(folder: &Path) -> Div {

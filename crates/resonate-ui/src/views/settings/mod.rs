@@ -423,7 +423,6 @@ impl RootView {
             Group::RoomCorrection => self.room_group(cx),
             Group::MusicExtensions => self.music_extensions_group(cx),
             Group::MinimumLength => self.minimum_length_group(cx),
-            Group::MusicFolder => self.music_folder_group(cx),
             Group::Folders => self.folders_group(cx),
             Group::Updating => self.updating_group(cx),
             Group::Organising => self.organising_group(cx),
@@ -589,7 +588,7 @@ impl RootView {
             Group::Inbox => self
                 .library
                 .update(cx, |library, cx| library.set_inbox(None, cx)),
-            Group::MusicFolder => {
+            Group::Folders => {
                 self.clear_the_music_folder(cx);
                 self.file_what_is_dropped(defaults::FILE_DROPPED, cx);
             }

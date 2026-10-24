@@ -201,7 +201,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         }
         Group::Organising => standing.template_given,
         Group::Inbox => standing.inbox_given,
-        Group::MusicFolder => standing.music_folder_given || standing.file_dropped != FILE_DROPPED,
+        Group::Folders => standing.music_folder_given || standing.file_dropped != FILE_DROPPED,
         Group::ResonateKey => standing.resonate_key_given,
         Group::RoomCorrection => standing.convolving,
         Group::Subsonic => standing.subsonic_given,
@@ -225,7 +225,6 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::Bands
         | Group::Pairing
         | Group::SyncDevices
-        | Group::Folders
         | Group::Updating
         | Group::Vault
         | Group::Build
@@ -294,7 +293,6 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         | Group::Inbox
         | Group::MusicExtensions
         | Group::MinimumLength
-        | Group::MusicFolder
         | Group::ResonateKey
         | Group::Subsonic
         | Group::Tidal

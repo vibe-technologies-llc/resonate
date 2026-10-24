@@ -223,7 +223,8 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   a provider's delivery with no vault open: `providers.md`), filed by `organise-as` when
   `file-dropped` is on; never the vault. Choosing stores the canonical path, refuses a non-folder or
   a path inside the vault (`unusable_as_the_music_folder`), adds it to the roots unless one already
-  reaches it.
+  reaches it. The pane chooses it from the *Music folders* box, where it is the root whose circle is
+  filled (`ui.md`).
 - `hifi-secret`: the key the Resonate server (`resonate_core::RESONATE_WEB_ADDRESS`) lists. It
   registers the `resonate` provider on its own, beside `hifi-api` and whatever `hifi-api` and
   `hosted-services` say; it is never sent to a server `hifi-api` names (`providers.md`).
