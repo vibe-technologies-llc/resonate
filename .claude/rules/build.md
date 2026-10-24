@@ -45,7 +45,7 @@ builds the release variant (R8, ARM64 alone, unsigned there) and holds it to
 `android/check-release.py`, which takes the signed `app-release.apk` where it exists and the unsigned
 one otherwise (16 KB zip and ELF alignment, no other ABI, the JNA and boundary classes R8 must keep
 by name), then instruments x86_64 emulators at API 33, the minimum, and API 36, Compose UI tests
-included. The Gradle task compiles ARM64 and x86_64 Rust libraries with baseline CPU settings, NDK
+included, each run's report and result XML uploaded as `resonate-android-tests-api-<level>` whether or not it passed, since the log names no failing test. The Gradle task compiles ARM64 and x86_64 Rust libraries with baseline CPU settings, NDK
 28.2 and 16 KB ELF alignment, running the host binding tool against Android ELF metadata, so no
 Linux sound server or GUI libraries are needed.
 

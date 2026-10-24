@@ -288,6 +288,14 @@ jobs:
           target: google_apis
           disable-animations: true
           script: android/gradlew -p android :app:connectedDebugAndroidTest
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: resonate-android-tests-api-33
+          path: |
+            android/app/build/reports/androidTests
+            android/app/build/outputs/androidTest-results
+          if-no-files-found: ignore
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 36
@@ -295,6 +303,14 @@ jobs:
           target: google_apis
           disable-animations: true
           script: android/gradlew -p android :app:connectedDebugAndroidTest
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: resonate-android-tests-api-36
+          path: |
+            android/app/build/reports/androidTests
+            android/app/build/outputs/androidTest-results
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: resonate-android-debug
