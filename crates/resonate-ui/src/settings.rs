@@ -255,7 +255,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 98] = [
+    pub const ALL: [Self; 99] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
