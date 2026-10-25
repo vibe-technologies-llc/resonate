@@ -50,6 +50,7 @@ pub(crate) struct Leveling {
     on_sixteen: bool,
     on_twenty_four: bool,
     sounded: bool,
+    turned: bool,
     format: SampleFormat,
     pairing: Option<Pairing>,
 }
@@ -66,6 +67,7 @@ impl Leveling {
             on_sixteen: true,
             on_twenty_four: true,
             sounded: false,
+            turned: false,
             format,
             pairing: (channels == 2).then_some(Pairing {
                 identical: true,
@@ -76,8 +78,11 @@ impl Leveling {
         }
     }
 
-    pub(crate) fn note(&mut self, native: &SampleData, normalised: &[f32]) {
-        self.note_the_bits(native);
+    pub(crate) fn note(&mut self, native: Option<&SampleData>, normalised: &[f32]) {
+        match native {
+            Some(native) => self.note_the_bits(native),
+            None => self.turned = true,
+        }
         self.note_the_levels(normalised);
     }
 
@@ -158,6 +163,9 @@ impl Leveling {
     }
 
     fn bits_in_use(&self) -> Option<u8> {
+        if self.turned {
+            return None;
+        }
         if self.format.is_float() {
             if !self.sounded {
                 return None;
@@ -204,7 +212,7 @@ impl Leveling {
             clipped: self.clipped,
             clipped_runs: self.clipped_runs,
             bits_in_use: self.bits_in_use(),
-            stereo: self.pairing.map(|pairing| Stereo {
+            stereo: self.pairing.filter(|_| !self.turned).map(|pairing| Stereo {
                 identical: pairing.identical && frames > 0,
                 correlation: {
                     let energy = (pairing.left_left * pairing.right_right).sqrt();
@@ -238,7 +246,7 @@ mod tests {
     fn leveled(channels: usize, data: SampleData) -> Levels {
         let mut leveling = Leveling::new(channels, data.format());
         let normalised = normalised(&data);
-        leveling.note(&data, &normalised);
+        leveling.note(Some(&data), &normalised);
         leveling.finished()
     }
 

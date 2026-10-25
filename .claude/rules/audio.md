@@ -89,9 +89,10 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   zero-frame `DecodeStatus::Reformatted(spec)` before the first frame of the new shape (`announced`
   against the pending packet's `sounding`, `change_ahead`), and `Decoder::sounding` names what it
   now decodes. Without `Decoder::follow_format_changes` a turn is `Error::FormatChanged { from, to }`
-  instead: analysis, true-peak measuring, the vault and every other single-shape reader refuse
-  rather than read on in the wrong shape. The engine, a delivery's length check and the fuzz target
-  follow. **Positions stay on the clock of the rate the track opened at** (`MediaInfo::spec.rate`):
+  instead, so a reader built for one shape (the vault's FLAC and WAVE encoders) refuses rather than
+  reads on in the wrong shape. The engine, a delivery's length check, the fuzz target, true-peak
+  measuring (`measure::loudest` reads each shape through a `TruePeakMeter::at` of its own and keeps
+  the largest), analysis (`analysis.md`) and the vault's `pcm_of` (`vault.md`) follow. **Positions stay on the clock of the rate the track opened at** (`MediaInfo::spec.rate`):
   `Decoder::position`, `seek`, `duration` and `playable` count opening-rate frames, a block at
   another rate advances the clock by its length rescaled (`on_the_clock`, carrying the remainder),
   and `Frames::rescaled` is the one conversion. `TrackState::source` stays the opening spec, so

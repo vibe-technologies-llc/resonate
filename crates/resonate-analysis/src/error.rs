@@ -1,5 +1,6 @@
 use std::result;
 
+use resonate_core::StreamSpec;
 use thiserror::Error;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -17,6 +18,16 @@ pub enum Error {
         source: Box<resonate_codec::Error>,
     },
 
+    #[error(
+        "a stream turning from {from:?} to {to:?} could not be brought back to the shape it opened in"
+    )]
+    Conformity {
+        from: StreamSpec,
+        to: StreamSpec,
+        #[source]
+        source: Box<resonate_dsp::Error>,
+    },
+
     #[error("the analysis was stopped before it reached the end of the stream")]
     Stopped,
 }
@@ -25,7 +36,7 @@ impl Error {
     pub fn is_out_of_reach(&self) -> bool {
         match self {
             Self::Codec { source, .. } => source.is_out_of_reach(),
-            Self::Stopped => false,
+            Self::Conformity { .. } | Self::Stopped => false,
         }
     }
 

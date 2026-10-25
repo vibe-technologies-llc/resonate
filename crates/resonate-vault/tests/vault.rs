@@ -2046,3 +2046,95 @@ fn dedup_hits_and_renewals_racing_a_sweep_never_lose_the_object_or_trip_the_swee
     assert_eq!(stagings(&vault), 0);
     assert!(vault.verify(&standing.path, Form::Flac).expect("verified"));
 }
+
+const MONO_AT_CD_RATE: (u32, &str) = (44_100, "anull");
+const STEREO_AT_DAT_RATE: (u32, &str) = (48_000, "pan=stereo|c0=c0|c1=c0");
+
+fn turning_ogg(tree: &Tree, name: &str, codec: &[&str]) -> Option<PathBuf> {
+    let mut whole = Vec::new();
+    for (index, (rate, filter)) in [MONO_AT_CD_RATE, STEREO_AT_DAT_RATE].iter().enumerate() {
+        let part = tree.root.join(format!("{index}-{name}"));
+        let tone = format!("sine=frequency=997:sample_rate={rate}:duration=1");
+        let made = Command::new("ffmpeg")
+            .args(["-y", "-v", "error", "-f", "lavfi", "-i", &tone])
+            .args(["-af", filter])
+            .args(codec)
+            .arg(&part)
+            .status()
+            .is_ok_and(|status| status.success());
+        if !made {
+            eprintln!("skipped: no ffmpeg to write a link of {name}");
+            return None;
+        }
+        whole.extend_from_slice(&fs::read(&part).expect("a written link"));
+    }
+    Some(tree.write(name, &whole))
+}
+
+fn heard_across_turns(path: &Path) -> Vec<(u32, u8, Vec<i32>)> {
+    let (mut decoder, info) =
+        Decoder::open(&Sources::local(), &MediaLocation::local(path)).expect("a readable stream");
+    decoder.follow_format_changes();
+    decoder.set_output_format(SampleFormat::S16);
+
+    let mut block = AudioBuffer::empty(StreamSpec::new(
+        info.spec.rate,
+        info.spec.channels,
+        SampleFormat::S16,
+    ));
+    let mut runs = vec![(
+        info.spec.rate.hz(),
+        info.spec.channel_count().get(),
+        Vec::new(),
+    )];
+    loop {
+        match decoder.next_block(&mut block).expect("a decoded block") {
+            DecodeStatus::EndOfStream => return runs,
+            DecodeStatus::Reformatted(spec) => {
+                runs.push((spec.rate.hz(), spec.channel_count().get(), Vec::new()));
+            }
+            DecodeStatus::Decoded => {
+                if let (SampleData::S16(samples), Some((_, _, held))) =
+                    (block.data(), runs.last_mut())
+                {
+                    held.extend(samples.iter().map(|sample| i32::from(*sample)));
+                }
+            }
+        }
+    }
+}
+
+fn a_turning_stream_is_kept_as_it_came(codec: &[&str], named: &str) {
+    let tree = Tree::new();
+    let Some(path) = turning_ogg(&tree, named, codec) else {
+        return;
+    };
+    let vault = tree.vault();
+
+    let held = kept(&vault, &Sources::local(), &MediaLocation::local(&path));
+
+    let object = heard_across_turns(&held.path);
+    assert_eq!(held.form, Form::Kept);
+    assert_eq!(
+        object
+            .iter()
+            .map(|(rate, channels, _)| (*rate, *channels))
+            .collect::<Vec<_>>(),
+        vec![(44_100, 1), (48_000, 2)]
+    );
+    assert_eq!(object, heard_across_turns(&path));
+    assert!(vault.verify(&held.path, Form::Kept).expect("verified"));
+}
+
+#[test]
+fn a_chained_ogg_vorbis_is_kept_with_every_link_it_decodes_to() {
+    a_turning_stream_is_kept_as_it_came(
+        &["-c:a", "libvorbis", "-q:a", "8", "-f", "ogg"],
+        "turning.ogg",
+    );
+}
+
+#[test]
+fn a_lossless_stream_that_turns_is_kept_as_it_came_where_one_flac_cannot_hold_it() {
+    a_turning_stream_is_kept_as_it_came(&["-c:a", "flac", "-f", "ogg"], "turning-flac.ogg");
+}

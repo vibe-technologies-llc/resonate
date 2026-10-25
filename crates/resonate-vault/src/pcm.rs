@@ -1,9 +1,11 @@
-use resonate_core::{AudioBuffer, SampleData};
+use resonate_core::{AudioBuffer, SampleData, StreamSpec};
 use symphonia::core::{checksum::Md5, io::Monitor};
 
 use crate::key::VaultKey;
 
 pub(crate) const BLOCK_FRAMES: usize = 4096;
+
+const TURN_MARK: &[u8] = b"resonate:turn";
 
 #[derive(Default)]
 pub(crate) struct Digest(Md5);
@@ -11,6 +13,12 @@ pub(crate) struct Digest(Md5);
 impl Digest {
     pub(crate) fn note(&mut self, bytes: &[u8]) {
         self.0.process_buf_bytes(bytes);
+    }
+
+    pub(crate) fn turned(&mut self, to: StreamSpec) {
+        self.note(TURN_MARK);
+        self.note(&to.rate.hz().to_le_bytes());
+        self.note(&[to.channels.count().get()]);
     }
 
     pub(crate) fn settled(&self) -> VaultKey {

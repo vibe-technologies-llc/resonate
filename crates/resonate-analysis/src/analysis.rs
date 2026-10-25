@@ -1,14 +1,14 @@
 use std::time::Duration;
 
-use resonate_codec::{Codec, DecodeStatus, Decoder, MediaInfo, Sources};
+use resonate_codec::{Codec, Decoder, MediaInfo, Sources};
 use resonate_core::{
-    AudioBuffer, Chromaprint, FrameSpan, Frames, MediaLocation, SampleData, SampleFormat,
-    SampleRate, StreamSpec,
+    Chromaprint, FrameSpan, Frames, MediaLocation, SampleData, SampleFormat, SampleRate, StreamSpec,
 };
 
 use crate::{
     AnalysisOp, Envelope, Error, Judgement, Levels, Loudness, Result, Spectrogram, Spectrum,
     Watching,
+    conform::Walking,
     envelope::Enveloping,
     levels::Leveling,
     loudness::Metering,
@@ -86,28 +86,25 @@ pub fn print(
     let codec = Codec::from_id(info.codec);
     let format = native_format(&info, codec);
     decoder.set_output_format(format);
+    decoder.follow_format_changes();
 
     let rate = info.spec.rate;
-    let mut printing = Printing::new(rate.hz(), usize::from(info.spec.channels.count().get()));
-    let mut block = AudioBuffer::empty(StreamSpec::new(rate, info.spec.channels, format));
-    let mut normalised = Vec::new();
+    let channels = usize::from(info.spec.channels.count().get());
+    let mut printing = Printing::new(rate.hz(), channels);
+    let mut walking = Walking::new(StreamSpec::new(rate, info.spec.channels, format));
     let mut frames = 0_u64;
     let length_is_declared = info.duration.is_some();
     while !(printing.is_full() && length_is_declared) {
         if watch.stopped() {
             return Err(Error::Stopped);
         }
-        let status = decoder
-            .next_block(&mut block)
-            .map_err(|source| Error::codec(AnalysisOp::Decode, source))?;
-        if status == DecodeStatus::EndOfStream {
+        let Some(heard) = walking.step(&mut decoder)? else {
             break;
-        }
+        };
         if !printing.is_full() {
-            normalise(block.data(), &mut normalised);
-            printing.note(&normalised);
+            printing.note(heard.samples);
         }
-        frames += block.frames() as u64;
+        frames += (heard.samples.len() / channels) as u64;
     }
 
     let length = info.duration.unwrap_or(Frames(frames)).to_duration(rate);
@@ -132,10 +129,11 @@ pub fn excerpt(
     let codec = Codec::from_id(info.codec);
     let format = native_format(&info, codec);
     decoder.set_output_format(format);
+    decoder.follow_format_changes();
 
     let rate = info.spec.rate;
     let channels = usize::from(info.spec.channels.count().get());
-    let heard = heard_channels(&info.speakers.placements(info.spec.channels.count().get()));
+    let placed = heard_channels(&info.speakers.placements(info.spec.channels.count().get()));
     let start = Frames::from_duration(from, rate);
     if info.is_seekable
         && start != Frames::ZERO
@@ -146,22 +144,17 @@ pub fn excerpt(
     }
 
     let wanted = usize::try_from(Frames::from_duration(lasting, rate).get()).unwrap_or(usize::MAX);
-    let mut block = AudioBuffer::empty(StreamSpec::new(rate, info.spec.channels, format));
-    let mut normalised = Vec::new();
+    let mut walking = Walking::new(StreamSpec::new(rate, info.spec.channels, format));
     let mut mixed = Vec::new();
     let mut mono = Vec::with_capacity(wanted.min(1 << 22));
     while mono.len() < wanted {
         if watch.stopped() {
             return Err(Error::Stopped);
         }
-        let status = decoder
-            .next_block(&mut block)
-            .map_err(|source| Error::codec(AnalysisOp::Decode, source))?;
-        if status == DecodeStatus::EndOfStream {
+        let Some(heard) = walking.step(&mut decoder)? else {
             break;
-        }
-        normalise(block.data(), &mut normalised);
-        mix_down(&normalised, channels, &heard, &mut mixed);
+        };
+        mix_down(heard.samples, channels, &placed, &mut mixed);
         let room = wanted - mono.len();
         mono.extend_from_slice(&mixed[..mixed.len().min(room)]);
     }
@@ -237,6 +230,7 @@ fn walked<D: Drawing>(
     let codec = Codec::from_id(info.codec);
     let format = native_format(&info, codec);
     decoder.set_output_format(format);
+    decoder.follow_format_changes();
 
     let rate = info.spec.rate;
     let channels = usize::from(info.spec.channels.count().get());
@@ -256,28 +250,23 @@ fn walked<D: Drawing>(
     let mut metering = Metering::new(&placements, rate);
     let mut printing = Printing::new(rate.hz(), channels);
 
-    let mut block = AudioBuffer::empty(StreamSpec::new(rate, info.spec.channels, format));
-    let mut normalised = Vec::new();
+    let mut walking = Walking::new(StreamSpec::new(rate, info.spec.channels, format));
     let mut frames = 0_u64;
     loop {
         if watch.stopped() {
             return Err(Error::Stopped);
         }
-        let status = decoder
-            .next_block(&mut block)
-            .map_err(|source| Error::codec(AnalysisOp::Decode, source))?;
-        if status == DecodeStatus::EndOfStream {
+        let Some(heard) = walking.step(&mut decoder)? else {
             break;
-        }
+        };
 
-        normalise(block.data(), &mut normalised);
-        leveling.note(block.data(), &normalised);
-        metering.note(&normalised);
-        printing.note(&normalised);
-        drawn.note_block(&normalised);
-        transforming.note(&normalised, |powers| drawn.note_transform(powers));
+        leveling.note(heard.native, heard.samples);
+        metering.note(heard.samples);
+        printing.note(heard.samples);
+        drawn.note_block(heard.samples);
+        transforming.note(heard.samples, |powers| drawn.note_transform(powers));
 
-        frames += block.frames() as u64;
+        frames += (heard.samples.len() / channels) as u64;
         watch.reached(Frames(frames), info.duration);
     }
 
@@ -306,7 +295,7 @@ fn walked<D: Drawing>(
     ))
 }
 
-fn normalise(native: &SampleData, into: &mut Vec<f32>) {
+pub(crate) fn normalise(native: &SampleData, into: &mut Vec<f32>) {
     into.clear();
     let scale = native.format().full_scale();
     match native {
