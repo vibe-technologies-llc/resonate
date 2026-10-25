@@ -15,6 +15,7 @@ const SOURCE_SEPARATOR: char = ':';
 const KEY_SEPARATOR: char = '/';
 const EXTENSION_SEPARATOR: char = '.';
 const FILE_SCHEME: &str = "file://";
+const FILE_SCHEME_WITHOUT_AUTHORITY: &str = "file:";
 const FILE_LOCALHOST: &str = "localhost";
 const PERCENT: u8 = b'%';
 const NO_PATH_HOLDS: u8 = 0;
@@ -218,7 +219,11 @@ impl MediaLocation {
     }
 
     pub fn from_uri(uri: &str) -> Option<Self> {
-        if let Some(encoded) = without_prefix_in_any_case(uri, FILE_SCHEME) {
+        let local = without_prefix_in_any_case(uri, FILE_SCHEME).or_else(|| {
+            without_prefix_in_any_case(uri, FILE_SCHEME_WITHOUT_AUTHORITY)
+                .filter(|rest| rest.starts_with(KEY_SEPARATOR))
+        });
+        if let Some(encoded) = local {
             let encoded = encoded
                 .split_once(PATH_ENDS)
                 .map_or(encoded, |(path, _)| path);
@@ -500,6 +505,30 @@ mod tests {
             Some(MediaLocation::local("/music/Échoes.flac"))
         );
         assert_eq!(MediaLocation::from_uri("fil"), None);
+    }
+
+    #[test]
+    fn a_file_uri_with_one_slash_and_no_authority_is_the_local_path_it_names() {
+        assert_eq!(
+            MediaLocation::from_uri("file:/music/a%20b.flac"),
+            Some(MediaLocation::local("/music/a b.flac"))
+        );
+        assert_eq!(
+            MediaLocation::from_uri("FILE:/music/a.flac"),
+            Some(MediaLocation::local("/music/a.flac"))
+        );
+        assert_eq!(
+            MediaLocation::from_uri("file:/music/a.flac#t=1"),
+            Some(MediaLocation::local("/music/a.flac"))
+        );
+        assert_eq!(MediaLocation::from_uri("file:/music/a%00.flac"), None);
+    }
+
+    #[test]
+    fn a_file_uri_with_a_name_after_the_scheme_and_no_slash_is_not_a_local_path() {
+        let location = MediaLocation::from_uri("file:a.flac").expect("a key on a source");
+
+        assert_eq!(location.as_path(), None);
     }
 
     #[test]

@@ -25,11 +25,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   mono packet could be decoded against, so the fix is a decoder that switches (upstream or vendored)
 
 ## Binary and desktop
-- [S · 0.1.1] `file:/music/a.flac` (the single-slash form of RFC 8089, which Java's `File.toURI`
-  writes) is not a local file: `MediaLocation::from_uri` takes only the `file://` prefix, so the
-  URI falls to the source branch as a key on a source named `file`, and `resonate play`, `queue`
-  and `OpenUri` fall back to the literal relative path and fail as a missing file. Run on
-  `from_uri`
 - [S · 0.1.1] MPRIS `xesam:contentCreated` can carry a date that does not exist: `iso_8601` checks
   the day against 1 to 31 for every month, so a `DATE` of `2021-02-30` is sent as
   `2021-02-30T00:00:00Z` where `mpris.md` says an out-of-range day falls to the first, and a strict
