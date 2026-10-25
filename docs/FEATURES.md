@@ -66,8 +66,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   apart
 
 ## Equaliser and DSP
-- [S · 0.2.0] The clamped-sample count is in the desktop inspector alone: the phones' `PlaybackState` does
-  not carry it
 
 ## Search
 - [S · 0.2.0] A phone's search holds nothing for `added:` (a document row keeps no time it was added) nor

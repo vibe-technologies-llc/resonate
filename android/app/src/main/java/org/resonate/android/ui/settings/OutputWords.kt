@@ -35,6 +35,11 @@ fun outputRates(output: AudioOutput): String? {
     else "${shown.first()}–${shown.last()} kHz"
 }
 
+const val CLAMPED_SAMPLES_NOTE =
+    "Samples past full scale, held at it since this stream opened"
+
+fun clampedSamplesWords(count: ULong): String? = count.takeIf { it > 0uL }?.toString()
+
 fun withSystemDefault(outputs: List<AudioOutput>): List<AudioOutput> =
     listOf(systemDefaultOutput) + outputs.filter { it.id != SYSTEM_DEFAULT_OUTPUT }
 

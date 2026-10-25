@@ -64,6 +64,7 @@ func snapshot(
         repeat: repeatMode,
         outputRate: 0,
         underruns: 0,
+        overs: 0,
         failure: nil,
         sleep: nil,
         sleepRemainingMs: sleepRemainingMs,

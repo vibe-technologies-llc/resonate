@@ -130,6 +130,13 @@ class SettingsWordsTest {
     }
 
     @Test
+    fun clampedSamplesAreToldOnlyOnceSomeWereHeldAtFullScale() {
+        assertNull(clampedSamplesWords(0uL))
+        assertEquals("1", clampedSamplesWords(1uL))
+        assertEquals("18446744073709551615", clampedSamplesWords(ULong.MAX_VALUE))
+    }
+
+    @Test
     fun theSystemDefaultLeadsTheOutputsAndUnknownIdsAreSaidPlainly() {
         val dac = AudioOutput(7, "FiiO K5", "USB audio", emptyList(), emptyList(), emptyList())
 
