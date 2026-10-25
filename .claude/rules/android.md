@@ -810,7 +810,8 @@ succeeded, telling the sync service of a failure (`Sync::refused`) so the song i
 once. **A failed landing holds back that song alone**: it deletes only the new document and waits a
 minute before that song is tried again, the rest landing meanwhile; a song refused
 `LANDING_TRIES_AT_MOST` (3) times in a row is dropped with `sync_refuse_received`. A received song's
-file name drops `/ \ ? : * " < > |` and control characters, so a FAT, exFAT or SMB folder takes it.
+file name drops `/ \ ? : * " < > |` and control characters, so a FAT, exFAT or SMB folder takes it. A
+download's file name does too (`downloads::file_stem_of`, the one stem both use).
 `SyncedDevice.id` names a device (the hex `DeviceId`; names repeat after a reinstall), which
 `sync_forget_device` takes; `HandedOff.id` likewise, and `sync_continue_from` and
 `sync_fetch_missing` take the id (a name is still read where no id matches). The sync screen's

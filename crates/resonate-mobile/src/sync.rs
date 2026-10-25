@@ -29,7 +29,7 @@ use unicode_normalization::UnicodeNormalization;
 use crate::{
     Error, MobilePlayer, Result, StoreOp, Track, catalog,
     documents::location,
-    downloads::fresh_destination,
+    downloads::{file_stem_of, fresh_destination},
     error::{ReceivedOp, SyncOp},
     features::SearchSong,
     playlists,
@@ -38,7 +38,6 @@ use crate::{
 const LEDGER: &str = "sync.sqlite";
 const STAGING: &str = "sync-staging";
 const RECEIVED: &str = "sync-received";
-const UNFILEABLE: [char; 9] = ['/', '\\', '?', ':', '*', '"', '<', '>', '|'];
 #[cfg(not(target_os = "ios"))]
 const DEVICE_NAME: &str = "Android";
 #[cfg(target_os = "ios")]
@@ -1270,17 +1269,7 @@ fn extension_of(name: &str) -> String {
 }
 
 fn file_name_for(song: &SearchSong, extension: &str) -> String {
-    let stem = format!("{} - {}", song.artist, song.title)
-        .chars()
-        .map(|letter| {
-            if letter.is_control() || UNFILEABLE.contains(&letter) {
-                '_'
-            } else {
-                letter
-            }
-        })
-        .collect::<String>();
-    named_within("", OsStr::new(&stem), format!(".{extension}"))
+    named_within("", OsStr::new(&file_stem_of(song)), format!(".{extension}"))
         .to_string_lossy()
         .into_owned()
 }

@@ -328,11 +328,13 @@ pub(crate) fn identity_of(song: &SearchSong) -> Identity {
     }
 }
 
-fn file_stem_of(song: &SearchSong) -> String {
+const UNFILEABLE: [char; 9] = ['/', '\\', '?', ':', '*', '"', '<', '>', '|'];
+
+pub(crate) fn file_stem_of(song: &SearchSong) -> String {
     format!("{} - {}", song.artist, song.title)
         .chars()
         .map(|letter| {
-            if letter.is_control() || matches!(letter, '/' | '\\') {
+            if letter.is_control() || UNFILEABLE.contains(&letter) {
                 '_'
             } else {
                 letter
@@ -921,6 +923,17 @@ pub(crate) fn fresh_destination(descriptor: i32) -> Result<File> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_title_holding_what_a_shared_or_fat_folder_refuses_is_a_name_it_takes() {
+        let song = SearchSong {
+            title: "Why? Who: \"This\" <or> That*|".into(),
+            artist: "AC/DC".into(),
+            ..SearchSong::default()
+        };
+
+        assert_eq!(file_stem_of(&song), "AC_DC - Why_ Who_ _This_ _or_ That__");
+    }
     use std::{
         io::{BufRead, BufReader},
         net::{TcpListener, TcpStream},
