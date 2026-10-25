@@ -502,6 +502,31 @@ fn a_song_from_another_device_is_filed_in_the_music_folder_and_catalogued() -> R
 }
 
 #[test]
+fn a_song_from_another_device_whose_extension_climbs_out_of_the_folder_is_refused() -> Result<()> {
+    let tree = Tree::new();
+    let folder = tree.root.join("music");
+    fs::create_dir_all(&folder).expect("a folder");
+    let library = Library::open_in_memory()?;
+    library.deliver_into(Some(DeliveryFolder {
+        path: folder,
+        layout: Layout::default(),
+    }));
+    let arriving = song("San Tropez", "Pink Floyd", "Meddle");
+    let bytes = tagged_wav("San Tropez", "Pink Floyd", "Meddle");
+
+    let filed = library.file_song_from_elsewhere(
+        &arriving,
+        "wav/../../escaped.wav",
+        &mut Cursor::new(bytes),
+    )?;
+
+    assert_eq!(filed, SongFiled::Refused);
+    assert!(!tree.root.join("escaped.wav").exists());
+    assert_eq!(fs::read_dir(&tree.root).expect("a folder").count(), 1);
+    Ok(())
+}
+
+#[test]
 fn a_song_from_another_device_that_does_not_decode_is_refused_and_not_left_behind() -> Result<()> {
     let tree = Tree::new();
     let library = Library::open_in_memory()?;

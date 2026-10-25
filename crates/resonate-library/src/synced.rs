@@ -8,6 +8,7 @@ use std::{
 };
 
 use resonate_core::{FrameSpan, Mbid, MediaLocation, PlaylistId, Recording, folded_letters};
+use resonate_providers::Extension;
 use resonate_vault::{Keeping, Offered};
 use rusqlite::{Connection, OptionalExtension as _, Row as SqlRow, Transaction, params};
 
@@ -813,6 +814,10 @@ pub(crate) fn file_song(
     let Some(into) = library.delivering_into() else {
         return Ok(SongFiled::Nowhere);
     };
+    let Ok(extension) = Extension::new(extension) else {
+        tracing::warn!("a song from another device named an extension that is not letters");
+        return Ok(SongFiled::Refused);
+    };
     let Some(folder) = into
         .path
         .canonicalize()
@@ -833,7 +838,7 @@ pub(crate) fn file_song(
         disc: None,
         discs: 1,
         track: None,
-        extension: Some(extension),
+        extension: Some(extension.as_str()),
     };
     let Some(relative) = into.layout.render(&named, Naming::of(&folder)) else {
         return Ok(SongFiled::Refused);

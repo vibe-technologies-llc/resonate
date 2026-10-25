@@ -4,14 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Device sync
-- [S · 0.1.1] A song fetched from a paired device is filed under a path the device chooses: the
-  `extension` of `FromPeer::Sending` (up to 4096 bytes, read in `resonate-sync`'s `peer.rs`) reaches
-  `Layout::render` through `Library::file_song_from_elsewhere` and is appended with `push_str`
-  where only the stem passes `as_one_component`, so `x/../../../tmp/y.flac` joins as extra
-  components and `landed_beside` creates the directories and files any audio-probing payload there.
-  Only a desktop with a music folder and no vault open files this way; the vault and the phones
-  already reduce the extension to letters, and a provider delivery has passed `Extension::new`. The
-  default layout names no `{ext}`, so every desktop takes the path. Reproduced on `render` alone
 - [S · 0.1.1] One tag text over 4096 bytes wedges a device's sync ledger for good: `Writer::text`
   has no limit and `Reader::text` refuses more than `LONGEST_TEXT`, and the ledger stores
   playlist entries, favourites and listens as encoded recordings, so after the first `look`
