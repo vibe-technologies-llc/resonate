@@ -86,8 +86,8 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   weighed
 
 ## Keyboard and accessibility
-- [M · 0.2.0] A selection is a contiguous run reached by Shift; Tracks and Albums act on its first row
-  alone; nothing adds a row with Control
+- [M · 0.2.0] Only Tracks and Albums choose rows apart (Control); Favourites, Artists, a suggestion and search
+  results take Shift alone, and a choice of several offers no Hide, Delete, Share or file entry in its menu
 - [L · 0.2.0] Nothing is exposed to a screen reader: gpui now carries AccessKit, which the views
   do not yet use
 

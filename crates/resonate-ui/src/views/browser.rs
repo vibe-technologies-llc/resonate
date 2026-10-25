@@ -6,9 +6,9 @@ use std::{
 };
 
 use gpui::{
-    AnyElement, App, BoxShadow, Context, Div, ElementId, FontWeight, MouseButton, MouseDownEvent,
-    ObjectFit, Pixels, Point, SharedString, Stateful, Window, anchored, deferred, div, hsla, img,
-    point, prelude::*, px, rgb, uniform_list,
+    AnyElement, App, BoxShadow, ClickEvent, Context, Div, ElementId, FontWeight, MouseButton,
+    MouseDownEvent, ObjectFit, Pixels, Point, SharedString, Stateful, Window, anchored, deferred,
+    div, hsla, img, point, prelude::*, px, rgb, uniform_list,
 };
 use resonate_core::{AlbumId, ArtistId, ArtistsDrawn, ReleaseTrackId, Span, TrackId};
 use resonate_engine::Placement;
@@ -35,7 +35,7 @@ use crate::{
         missing::MissingShows,
         playlists::{ADD_SONG_HINT, FINISH_ADDING_HINT, Held, Naming, ROW_GROUP, SAVE_SEARCH_HINT},
         pointed::{self, LitUnderThePointer},
-        reorder::{self, Lifted, Listed, Shift},
+        reorder::{self, Chosen, Lifted, Listed, Shift},
         root::{Deleting, Magnified, Pane, RootView, empty, framed_cover, listed, row, tall_row},
         scrollbar::{SHELF_INSET, Scrollbars},
         sorting,
@@ -170,6 +170,7 @@ pub(crate) struct Rowed {
     pub(crate) playing: bool,
     pub(crate) plays: Plays,
     pub(crate) reach: Option<AtTheReach>,
+    pub(crate) listed_at: Option<usize>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -179,6 +180,21 @@ pub(crate) enum Plays {
 }
 
 impl RootView {
+    fn queue_track_control(
+        &self,
+        id: (&'static str, usize),
+        at: Placement,
+        tracks: &Arc<[Track]>,
+        index: usize,
+        listed_at: Option<usize>,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        match listed_at {
+            Some(row) => self.queue_chosen_control(id, at, Shift::Listing(Listed::Tracks), row, cx),
+            None => self.queue_control(id, at, queueing(tracks, index), cx),
+        }
+    }
+
     fn play_the_row(
         &mut self,
         plays: Plays,
@@ -408,6 +424,8 @@ impl RootView {
         let id = album.id;
         let reached = listed_at.is_some_and(|at| self.reaches(Shift::Listing(Listed::Albums), at));
         let reach = listed_at.and_then(|at| self.at_the_reach(Shift::Listing(Listed::Albums), at));
+        let cursor_only =
+            listed_at.is_some_and(|at| self.stands_unchosen_on(Shift::Listing(Listed::Albums), at));
         let (lit_title, lit_artist) = {
             let search = self.library.read(cx).search();
             (
@@ -497,6 +515,7 @@ impl RootView {
                     })
                     .child(cover)
                     .when(reached, |frame| frame.child(reached_ring()))
+                    .when(cursor_only, |frame| frame.child(cursor_ring()))
                     .child(
                         self.favour_mark_under(
                             ("album-favourite", id.get() as usize),
@@ -535,16 +554,46 @@ impl RootView {
                     )
                     .child(under),
             )
-            .on_click(cx.listener(move |this, _, _, cx| {
+            .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
+                if let Some(at) = listed_at
+                    && this.reach_by_click(
+                        Shift::Listing(Listed::Albums),
+                        at,
+                        event.modifiers(),
+                        cx,
+                    )
+                {
+                    return;
+                }
                 this.opened(Selection::Album(id), cx);
             }));
 
-        let cell = reorder::liftable(cell, Lifted::album(id, &album.title));
+        let lifted = match listed_at {
+            Some(at) => {
+                let chosen = self.acting_on_chosen(Shift::Listing(Listed::Albums), at);
+                if chosen.count() > 1 {
+                    Lifted::albums(&self.library.read(cx).albums(), chosen)
+                } else {
+                    Lifted::album(id, &album.title)
+                }
+            }
+            None => Lifted::album(id, &album.title),
+        };
+        let cell = reorder::liftable(cell, lifted);
 
         menu::opens_a_reachable_menu(
             cell,
             reach,
-            move |_, at, _| album_menu(at, id, owner).favours(Favoured::Album(id), favourite),
+            move |this, at, cx| {
+                if let Some(row) = listed_at {
+                    let chosen = this.acting_on_chosen(Shift::Listing(Listed::Albums), row);
+                    if chosen.count() > 1 {
+                        let albums = this.library.read(cx).albums_at(chosen.rows());
+                        return chosen_albums_menu(at, albums, this, cx);
+                    }
+                }
+                album_menu(at, id, owner).favours(Favoured::Album(id), favourite)
+            },
             cx,
         )
     }
@@ -893,25 +942,33 @@ impl RootView {
                                             };
                                             let reached =
                                                 this.reaches(Shift::Listing(Listed::Tracks), index);
+                                            let cursor_only = this.stands_unchosen_on(
+                                                Shift::Listing(Listed::Tracks),
+                                                index,
+                                            );
                                             drawn.push(
-                                                reorder::marked(
-                                                    this.track_row(
-                                                        &tracks,
-                                                        held,
-                                                        track,
-                                                        Rowed {
-                                                            playing: playing == Some(track.id),
-                                                            plays: Plays::AsTheListingIsDrawn {
-                                                                in_an_album,
+                                                reorder::cursor_marked(
+                                                    reorder::marked(
+                                                        this.track_row(
+                                                            &tracks,
+                                                            held,
+                                                            track,
+                                                            Rowed {
+                                                                playing: playing == Some(track.id),
+                                                                plays: Plays::AsTheListingIsDrawn {
+                                                                    in_an_album,
+                                                                },
+                                                                reach: this.at_the_reach(
+                                                                    Shift::Listing(Listed::Tracks),
+                                                                    index,
+                                                                ),
+                                                                listed_at: Some(index),
                                                             },
-                                                            reach: this.at_the_reach(
-                                                                Shift::Listing(Listed::Tracks),
-                                                                index,
-                                                            ),
-                                                        },
-                                                        cx,
+                                                            cx,
+                                                        ),
+                                                        reached,
                                                     ),
-                                                    reached,
+                                                    cursor_only,
                                                 )
                                                 .into_any_element(),
                                             );
@@ -983,6 +1040,7 @@ impl RootView {
             playing,
             plays,
             reach,
+            listed_at,
         } = rowed;
         let in_an_album = plays == Plays::AsTheListingIsDrawn { in_an_album: true };
         let played = Arc::clone(tracks);
@@ -1103,32 +1161,47 @@ impl RootView {
                             })
                             .when(adding_to.is_none(), |controls| {
                                 controls
-                                    .child(self.queue_control(
+                                    .child(self.queue_track_control(
                                         ("track-next", index),
                                         Placement::Next,
-                                        queueing(tracks, index),
+                                        tracks,
+                                        index,
+                                        listed_at,
                                         cx,
                                     ))
-                                    .child(self.queue_control(
+                                    .child(self.queue_track_control(
                                         ("track-last", index),
                                         Placement::Queued,
-                                        queueing(tracks, index),
+                                        tracks,
+                                        index,
+                                        listed_at,
                                         cx,
                                     ))
                             }),
                     ),
             )
-            .on_click(cx.listener(move |this, _, window, cx| {
+            .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
+                if let Some(row) = listed_at
+                    && this.reach_by_click(
+                        Shift::Listing(Listed::Tracks),
+                        row,
+                        event.modifiers(),
+                        cx,
+                    )
+                {
+                    return;
+                }
                 this.play_the_row(plays, &played, index, window, cx);
             }));
         let lifted = match plays {
-            Plays::AsTheListingIsDrawn { in_an_album: false } => {
-                let rows = self.acting_on(Shift::Listing(Listed::Tracks), index);
-                let held = tracks.get(rows.range()).is_some();
-                Lifted::tracks(tracks, if held { rows } else { Span::one(index) })
+            Plays::AsTheListingIsDrawn { in_an_album: false } if listed_at == Some(index) => {
+                Lifted::tracks(
+                    tracks,
+                    self.acting_on_chosen(Shift::Listing(Listed::Tracks), index),
+                )
             }
-            Plays::AsTheListingIsDrawn { in_an_album: true } | Plays::TheseRows => {
-                Lifted::tracks(tracks, Span::one(index))
+            Plays::AsTheListingIsDrawn { .. } | Plays::TheseRows => {
+                Lifted::tracks(tracks, Chosen::of(Span::one(index)))
             }
         };
         let row = reorder::liftable(row, lifted);
@@ -1137,6 +1210,13 @@ impl RootView {
             row,
             reach,
             move |this, at, cx| {
+                if let Some(row) = listed_at {
+                    let chosen = this.acting_on_chosen(Shift::Listing(Listed::Tracks), row);
+                    if chosen.count() > 1 {
+                        let tracks = this.library.read(cx).tracks_at(chosen.rows());
+                        return chosen_tracks_menu(at, tracks, this, cx);
+                    }
+                }
                 let Some(track) = menued.get(index) else {
                     return Menu::at(at);
                 };
@@ -3703,6 +3783,92 @@ fn summary(listed: Measured, year: Option<i32>) -> String {
     parts.join(" · ")
 }
 
+fn chosen_tracks_menu(at: Point<Pixels>, tracks: Vec<Track>, this: &RootView, cx: &App) -> Menu {
+    let queued = listed(&tracks);
+    let cuts: Arc<[Cut]> = tracks.iter().map(Cut::of).collect();
+    let ids: Vec<TrackId> = tracks.iter().map(|track| track.id).collect();
+    let favoured = tracks.iter().all(|track| {
+        this.library
+            .read(cx)
+            .favours(Favoured::Track(track.id), track.favourite.is_some())
+    });
+    let played = Arc::<[Track]>::from(tracks);
+
+    Menu::at(at)
+        .queues(
+            move || Arc::clone(&queued),
+            move |this, _, cx| this.play(&played, 0, cx),
+        )
+        .holds(move || Held::of(Arc::clone(&cuts)))
+        .apart()
+        .does(
+            if favoured {
+                Icon::Favourited
+            } else {
+                Icon::Favourite
+            },
+            if favoured {
+                menu::UNFAVOUR
+            } else {
+                menu::FAVOUR
+            },
+            move |this, _, cx| {
+                this.library.update(cx, |library, cx| {
+                    for id in &ids {
+                        library.favour(Favoured::Track(*id), !favoured, cx);
+                    }
+                });
+            },
+        )
+}
+
+fn chosen_albums_menu(at: Point<Pixels>, albums: Vec<AlbumId>, this: &RootView, cx: &App) -> Menu {
+    let favoured = albums.iter().all(|album| {
+        this.library.read(cx).album_of(*album).is_some_and(|held| {
+            this.library
+                .read(cx)
+                .favours(Favoured::Album(*album), held.favourite.is_some())
+        })
+    });
+    let scopes: Vec<Selection> = albums.iter().copied().map(Selection::Album).collect();
+    let (play, next, last) = (scopes.clone(), scopes.clone(), scopes);
+
+    Menu::at(at)
+        .does(Icon::Play, menu::PLAY, move |this, window, cx| {
+            this.plays_everything_in_each(play.clone(), Placement::Queued, true, window, cx);
+        })
+        .does(Icon::QueueNext, menu::PLAY_NEXT, move |this, window, cx| {
+            this.plays_everything_in_each(next.clone(), Placement::Next, false, window, cx);
+        })
+        .does(
+            Icon::QueueLast,
+            menu::ADD_TO_QUEUE,
+            move |this, window, cx| {
+                this.plays_everything_in_each(last.clone(), Placement::Queued, false, window, cx);
+            },
+        )
+        .apart()
+        .does(
+            if favoured {
+                Icon::Favourited
+            } else {
+                Icon::Favourite
+            },
+            if favoured {
+                menu::UNFAVOUR
+            } else {
+                menu::FAVOUR
+            },
+            move |this, _, cx| {
+                this.library.update(cx, |library, cx| {
+                    for album in &albums {
+                        library.favour(Favoured::Album(*album), !favoured, cx);
+                    }
+                });
+            },
+        )
+}
+
 fn queueing(tracks: &Arc<[Track]>, index: usize) -> impl Fn() -> Arc<[PlaylistEntry]> + 'static {
     let tracks = Arc::clone(tracks);
     move || {
@@ -3764,6 +3930,10 @@ pub(crate) fn reached_ring() -> Div {
         .rounded(px(REACHED_ROUNDING))
         .border(px(REACHED_RING))
         .border_color(rgb(theme::accent()))
+}
+
+fn cursor_ring() -> Div {
+    reached_ring().border_color(theme::tinted(theme::accent(), reorder::CURSOR_ALPHA))
 }
 
 const REACHED_ROUNDING: f32 = 10.0;

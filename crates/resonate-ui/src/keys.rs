@@ -80,6 +80,15 @@ macro_rules! key {
     (reach_everything) => {
         "ctrl-a"
     };
+    (choose_reached) => {
+        "ctrl-space"
+    };
+    (hop_above) => {
+        "ctrl-shift-up"
+    };
+    (hop_below) => {
+        "ctrl-shift-down"
+    };
     (raise_row) => {
         "alt-up"
     };

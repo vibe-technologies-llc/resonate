@@ -325,6 +325,7 @@ impl RootView {
                                                 Shift::Listing(Listed::Suggested),
                                                 index,
                                             ),
+                                            listed_at: None,
                                         },
                                         cx,
                                     ),

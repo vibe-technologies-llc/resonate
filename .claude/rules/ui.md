@@ -1331,7 +1331,7 @@ is never named.
   up/down and `Step::landing` are the one arithmetic behind arrows, drop and keys. A row is drag source
   and drop target; dropping a span on row `to` = the arrows' `Command::Move` (never a swap). Payload
   `Carried`; `Ghost` = first row's title plus how many more ride. `RootView::reach` is a `Reach`
-  (`Shift`, anchor, the row moved to; lives for the run, and a non-queue reach is let go of when the
+  (`Shift`, anchor, the row moved to, and for Tracks and Albums the rows chosen apart; lives for the run, and a non-queue reach is let go of when the
   rows under it are arranged another way: `Arrangement` = selection, sorting, playlist order and
   reading, opened playlist's order, search sort, compared by `let_go_of_a_reach_the_rows_left` on
   every library change and sort setter; `opening_an_album_lets_go_of_the_row_reached_in_the_listing_before`). `up`/`down` move and collapse it (queue opens
@@ -1344,10 +1344,28 @@ is never named.
   row is inside it, else that row alone. Drawn as a 2-unit accent edge plus faint wash; every
   reorderable row reserves the edge in `theme::UNMARKED`; saved queries draw none. A drop does not ask
   `acting_on`: `reorder::movable` takes the row it stands for beside the `Carried` it would hand over.
+- **Tracks and Albums choose rows apart.** Only `Shift::chooses_apart` (the Tracks and Albums
+  listings) takes `ctrl`-click (add the row, or let it go if chosen) and `shift`-click (widen from the
+  anchor, keeping what was chosen apart); a plain click still plays or opens, a modified click only
+  chooses (`RootView::reach_by_click`). `ctrl-space` chooses or lets go of the row the cursor is on
+  (`ChooseReached`), `ctrl-shift-up`/`down` hop the cursor a row without touching the choice
+  (`HopAbove`/`HopBelow`; `ctrl-up`/`down` are the volume). A `Reach` is the run `anchor..row` plus
+  `apart: Chosen` (sorted, merged `Span`s) and `chosen`, whether the run is itself chosen: a cursor on
+  an unchosen row is `chosen: false`, drawn as a faint left edge (`reorder::cursor_marked`) or a faint
+  ring (`cursor_ring`). `Reach::selected` is the whole choice, `toggled` and `hopped_to` the two moves;
+  every other gesture builds `Reach::at`/`spanning` and so drops the rows apart
+  (`an_arrow_gives_up_the_rows_chosen_apart`). **Every action on a row in the choice acts on all of
+  it** (`RootView::acting_on_chosen`: the choice if it holds the row, else the row): `enter` plays the
+  chosen tracks in order (`LibraryModel::tracks_at`) or queues the chosen albums' tracks
+  (`plays_everything_in_each`, one background read in album order), the row menu becomes
+  `chosen_tracks_menu`/`chosen_albums_menu` (Play, Play next, Add to queue, Add to playlist where
+  tracks, Favourite or Unfavourite all), a track's two queue buttons queue the choice
+  (`queue_chosen_control`), and a drag lifts it. What takes one row still: a menu's Hide, Delete,
+  Share, file and navigation entries, which a choice of several does not offer.
 - **A track or album is dragged out of a listing into the queue or a playlist.** Track rows and album
-  cells carry a `reorder::Lifted` (`Lift::Tracks`/`Lift::Album`) through `reorder::liftable`; a row
-  standing in the reach carries every loaded row of the reach as a `reorder::Run`: the page's own
-  `Arc<[Track]>` and a `Span`, never a copy, so a 2 000-row selection costs a row an `Arc` clone per
+  cells carry a `reorder::Lifted` (`Lift::Tracks`/`Lift::Album`/`Lift::Albums`) through
+  `reorder::liftable`; a row standing in the choice carries every loaded row of it as a
+  `reorder::Run` (or `AlbumRun`): the page's own `Arc<[Track]>` and a `Chosen`, never a copy, so a 2 000-row selection costs a row an `Arc` clone per
   frame, and the ghost's title is worked out only when a drag begins
   (`a_lifted_run_shares_the_page_it_was_lifted_from_and_is_named_by_its_first_song`). `reorder::takes_a_lift` makes targets of
   a queue row (`Placement::At`), an opened playlist's row (`LiftedTo::PlaylistAt`:

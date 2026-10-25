@@ -2865,6 +2865,27 @@ impl LibraryModel {
         }
     }
 
+    pub fn tracks_at(&self, rows: impl IntoIterator<Item = usize>) -> Vec<Track> {
+        let listing = self.listing();
+
+        rows.into_iter()
+            .filter_map(|row| {
+                let held = if self.rows.is_empty() {
+                    row
+                } else {
+                    held_at(&self.rows, row)?
+                };
+                listing.get(held).cloned()
+            })
+            .collect()
+    }
+
+    pub fn albums_at(&self, rows: impl IntoIterator<Item = usize>) -> Vec<AlbumId> {
+        rows.into_iter()
+            .filter_map(|row| self.albums.get(row).map(|album| album.id))
+            .collect()
+    }
+
     pub(crate) fn albums_listed(&self) -> usize {
         self.albums.len().max(self.albums_counted as usize)
     }

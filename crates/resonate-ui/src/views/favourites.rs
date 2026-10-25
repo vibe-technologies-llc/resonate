@@ -130,6 +130,7 @@ impl RootView {
                                                 Shift::Listing(Listed::Favourites),
                                                 index,
                                             ),
+                                            listed_at: None,
                                         },
                                         cx,
                                     ),
