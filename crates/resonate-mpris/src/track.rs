@@ -356,6 +356,15 @@ fn listed(names: &str) -> Vec<String> {
         .collect()
 }
 
+fn exists(year: u32, month: u32, day: u32) -> bool {
+    let date = CivilDate {
+        year: i64::from(year),
+        month: i64::from(month),
+        day: i64::from(day),
+    };
+    CivilDate::of_day(date.day_since_the_epoch()) == date
+}
+
 pub(crate) fn iso_8601(date: &str) -> Option<String> {
     let date = date.trim();
     let digits = |from: usize, to: usize| -> Option<u32> {
@@ -371,8 +380,9 @@ pub(crate) fn iso_8601(date: &str) -> Option<String> {
     let at = |field: usize| if parted { 5 + 3 * field } else { 4 + 2 * field };
     let month = digits(at(0), at(0) + 2).filter(|month| (LEAST_MONTH..=MOST_MONTH).contains(month));
     let day = month
-        .and_then(|_| digits(at(1), at(1) + 2))
-        .filter(|day| (LEAST_DAY..=MOST_DAY).contains(day));
+        .and_then(|month| Some((month, digits(at(1), at(1) + 2)?)))
+        .filter(|(month, day)| (LEAST_DAY..=MOST_DAY).contains(day) && exists(year, *month, *day))
+        .map(|(_, day)| day);
     Some(format!(
         "{year:04}-{:02}-{:02}T00:00:00Z",
         month.unwrap_or(LEAST_MONTH),
@@ -483,6 +493,34 @@ mod tests {
             Some("1971-01-01T00:00:00Z")
         );
         assert_eq!(iso_8601("Oct 1971"), None);
+    }
+
+    #[test]
+    fn a_day_the_month_does_not_have_falls_to_the_first_and_a_leap_day_stands() {
+        assert_eq!(
+            iso_8601("2021-02-30").as_deref(),
+            Some("2021-02-01T00:00:00Z")
+        );
+        assert_eq!(
+            iso_8601("2021-04-31").as_deref(),
+            Some("2021-04-01T00:00:00Z")
+        );
+        assert_eq!(
+            iso_8601("2021-02-29").as_deref(),
+            Some("2021-02-01T00:00:00Z")
+        );
+        assert_eq!(
+            iso_8601("2020-02-29").as_deref(),
+            Some("2020-02-29T00:00:00Z")
+        );
+        assert_eq!(
+            iso_8601("1900-02-29").as_deref(),
+            Some("1900-02-01T00:00:00Z")
+        );
+        assert_eq!(
+            iso_8601("2000-02-29").as_deref(),
+            Some("2000-02-29T00:00:00Z")
+        );
         assert_eq!(iso_8601(""), None);
     }
 

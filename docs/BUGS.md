@@ -25,10 +25,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   mono packet could be decoded against, so the fix is a decoder that switches (upstream or vendored)
 
 ## Binary and desktop
-- [S · 0.1.1] MPRIS `xesam:contentCreated` can carry a date that does not exist: `iso_8601` checks
-  the day against 1 to 31 for every month, so a `DATE` of `2021-02-30` is sent as
-  `2021-02-30T00:00:00Z` where `mpris.md` says an out-of-range day falls to the first, and a strict
-  client drops the date
 
 ## Providers and network
 - [S · 0.1.1] A `Retry-After` in the asctime form with a huge or negative year panics on integer

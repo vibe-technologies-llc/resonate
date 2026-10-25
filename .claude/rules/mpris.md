@@ -81,7 +81,7 @@ demand and never announced. Ids:
 ## What the metadata carries
 
 - **Fields are the spec's shapes, not the tags' text.** `xesam:contentCreated` is ISO 8601
-  (`track::iso_8601`: `YYYY-MM-DDT00:00:00Z`; out-of-range month or day falls to the first; no
+  (`track::iso_8601`: `YYYY-MM-DDT00:00:00Z`; out-of-range month or day (one the month lacks, `2021-02-30`, included) falls to the first; no
   leading year, no field). Artist, album artist, genre, composer and lyricist are lists split on
   `LISTED_APART_BY`. `xesam:userRating` is 1 for a catalog favourite, 0 for another catalog row
   (`Heard::favourite`), absent with no row; `xesam:asText` the tag's words.
