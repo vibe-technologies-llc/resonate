@@ -45,7 +45,7 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   numbers; every length is weighed against what is left before anything is allocated, a count
   against the least each item takes (`Reader::count_of`), so a frame read before the token is checked
   cannot make the server hold many times its size; a sealed blob shorter than nonce and tag
-  (`SEALED_AT_LEAST`, 28) is `Malformed::Short`; text is at most `LONGEST_TEXT`; a frame ends exactly
+  (`SEALED_AT_LEAST`, 28) is `Malformed::Short`; text is at most `LONGEST_TEXT` (`Writer::text` cuts a longer one on a letter, so what a device writes it can read back); a frame ends exactly
   where it says (`Malformed::Trailing`). Frames are a
   4-byte big-endian length and at most `LARGEST_FRAME` (32 MiB) on one bidirectional QUIC stream.
   `fuzz/fuzz_targets/sync.rs` decodes every frame and bundle and requires a decoded one to read back

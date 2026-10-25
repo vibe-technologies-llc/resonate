@@ -140,6 +140,21 @@ fn titles(device: &Device, name: &str) -> Vec<String> {
 }
 
 #[test]
+fn a_title_past_the_longest_text_is_cut_and_never_wedges_the_ledger() {
+    let overlong = "é".repeat(3000);
+    let mut desk = Device::new("Desk", &[overlong.as_str(), "B"]);
+    let mut phone = Device::new("Phone", &["B"]);
+    desk.shelf.make_playlist("Long", &[overlong.as_str(), "B"]);
+
+    sync(&mut desk, &mut phone);
+    desk.shelf.make_playlist("Short", &["B"]);
+    sync(&mut desk, &mut phone);
+
+    assert_eq!(titles(&phone, "Long"), ["B"]);
+    assert_eq!(titles(&phone, "Short"), ["B"]);
+}
+
+#[test]
 fn a_playlist_made_on_one_device_arrives_on_the_other_and_is_not_sent_back() {
     let mut desk = Device::new("Desk", &["A", "B", "C"]);
     let mut phone = Device::new("Phone", &["A", "B", "C"]);

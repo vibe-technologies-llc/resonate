@@ -186,7 +186,7 @@ impl Writer {
     }
 
     pub fn text(&mut self, text: &str) {
-        self.bytes(text.as_bytes());
+        self.bytes(within_the_longest_text(text).as_bytes());
     }
 
     pub fn fixed(&mut self, bytes: &[u8]) {
@@ -250,6 +250,11 @@ impl Writer {
             self.bytes(blob);
         }
     }
+}
+
+fn within_the_longest_text(text: &str) -> &str {
+    let end = text.floor_char_boundary(LONGEST_TEXT);
+    &text[..end]
 }
 
 impl<'a> Reader<'a> {

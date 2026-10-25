@@ -4,14 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Device sync
-- [S · 0.1.1] One tag text over 4096 bytes wedges a device's sync ledger for good: `Writer::text`
-  has no limit and `Reader::text` refuses more than `LONGEST_TEXT`, and the ledger stores
-  playlist entries, favourites and listens as encoded recordings, so after the first `look`
-  writes a 5000-byte title every later `look`, `owed` and `snapshot` fails with
-  `Malformed(Overlong)` on reading the row back, nothing more is pushed, and a bundle carrying it
-  is refused whole by the other devices, unrelated changes included; removing the song does not
-  rewrite the stored blob, so only leaving the space or deleting `sync.sqlite` recovers. Reproduced
-  with `Device::new` and two `look`s in `tests/ledger.rs`
 - [S · 0.1.1] `resonate sync --fetch` never returns when a playlist lacks more than 200 songs:
   `want` lists every song as `Waiting`, but `Running::transfer` drops the oldest `Landed` or
   `Failed` row in the same lock hold that finishes it whenever the list passes
