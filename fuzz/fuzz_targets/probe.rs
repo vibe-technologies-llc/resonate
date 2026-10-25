@@ -90,6 +90,7 @@ fuzz_target!(|bytes: &[u8]| {
     );
 
     if let Ok((mut decoder, info)) = Decoder::open(&sources, &location) {
+        decoder.follow_format_changes();
         decoder.deliver(asked.delivery(&info));
         let mut out = AudioBuffer::empty(info.spec);
         decode(&mut decoder, &mut out, BLOCKS);

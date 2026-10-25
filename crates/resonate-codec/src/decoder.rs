@@ -1,17 +1,23 @@
 use std::{
     fmt,
     io::{self, Read, Seek},
+    mem,
     sync::Arc,
 };
 
 use resonate_core::{
-    AudioBuffer, FrameSpan, Frames, MediaLocation, SampleData, SampleFormat, StreamSpec,
+    AudioBuffer, FrameSpan, Frames, MediaLocation, SampleData, SampleFormat, SampleRate, StreamSpec,
 };
 use symphonia::core::{
-    audio::GenericAudioSlice,
-    codecs::audio::{AudioDecoder, AudioDecoderOptions},
+    audio::{AudioSpec, GenericAudioSlice},
+    codecs::audio::{AudioCodecParameters, AudioDecoder, AudioDecoderOptions},
     errors::{self, SeekErrorKind},
-    formats::{FormatReader, SeekMode, SeekTo, SeekedTo},
+    formats::{
+        FORMAT_ID_NULL, FormatInfo, FormatReader, MediaInfo as ReaderInfo, SeekMode, SeekTo,
+        SeekedTo, Track,
+    },
+    io::{MediaSourceStream, MediaSourceStreamOptions},
+    meta::{Metadata, MetadataLog},
     packet::Packet,
     units::{Duration as Ticks, Timestamp},
 };
@@ -22,6 +28,7 @@ use crate::{
     container::{self, Opened},
     cue,
     dsd::{self, DSD_BLOCK_FRAMES, Packing},
+    mpa::{self, Shape},
     source::{FormatHint, Media, Reading as SourceReading, Sources},
     splices::{Edit, Place, Splices},
     spool::Spool,
@@ -38,6 +45,7 @@ const SILENCE_HANDED_OUT_AT_ONCE: usize = 8_192;
 pub enum DecodeStatus {
     Decoded,
     EndOfStream,
+    Reformatted(StreamSpec),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -357,10 +365,88 @@ enum Undecodable {
     Refused,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Changes {
+    #[default]
+    Refused,
+    Followed,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Linked {
+    index: usize,
+    timeline: Timeline,
+    rate: SampleRate,
+}
+
+impl Linked {
+    fn span_of(&self, packet: &Packet, origin: Frames, clock: SampleRate) -> PacketSpan {
+        let span = PacketSpan::of(packet, &self.timeline);
+        PacketSpan {
+            at: origin.saturating_add(span.at.rescaled(self.rate, clock)),
+            frames: span.frames.rescaled(self.rate, clock),
+            ..span
+        }
+    }
+}
+
+static SPENT: FormatInfo = FormatInfo {
+    format: FORMAT_ID_NULL,
+    short_name: "spent",
+    long_name: "a reader given up while another was opened",
+};
+
+#[derive(Default)]
+struct Spent {
+    log: MetadataLog,
+    info: ReaderInfo,
+}
+
+impl FormatReader for Spent {
+    fn format_info(&self) -> &FormatInfo {
+        &SPENT
+    }
+
+    fn media_info(&self) -> &ReaderInfo {
+        &self.info
+    }
+
+    fn metadata(&mut self) -> Metadata<'_> {
+        self.log.metadata()
+    }
+
+    fn seek(&mut self, _: SeekMode, _: SeekTo) -> errors::Result<SeekedTo> {
+        Err(errors::Error::SeekError(SeekErrorKind::Unseekable))
+    }
+
+    fn tracks(&self) -> &[Track] {
+        &[]
+    }
+
+    fn next_packet(&mut self) -> errors::Result<Option<Packet>> {
+        Ok(None)
+    }
+
+    fn into_inner<'s>(self: Box<Self>) -> MediaSourceStream<'s>
+    where
+        Self: 's,
+    {
+        MediaSourceStream::new(
+            Box::new(io::Cursor::new(Vec::<u8>::new())),
+            MediaSourceStreamOptions::default(),
+        )
+    }
+}
+
 struct Coded {
     reader: Box<dyn FormatReader>,
     decoder: Box<dyn AudioDecoder>,
+    successor: Option<Box<dyn AudioDecoder>>,
+    params: AudioCodecParameters,
     track: StreamTrackId,
+    sounding: StreamSpec,
+    framing: Option<Shape>,
+    linked: Option<Linked>,
     pending: usize,
     consumed: usize,
     silent: bool,
@@ -392,11 +478,74 @@ impl Coded {
                     tracing::debug!("stream ends mid-packet; treating it as the end of the track");
                     return Ok(None);
                 }
+                Err(errors::Error::ResetRequired) => self.relink(location)?,
                 Err(source) => {
                     return Err(Error::from_symphonia(source, CodecOp::ReadPacket, location));
                 }
             }
         }
+    }
+
+    fn relink(&mut self, location: &MediaLocation) -> Result<()> {
+        let (track, params) = container::audio_track(self.reader.as_ref(), location)?;
+        let id = StreamTrackId(track.id);
+        let spec = container::stream_spec(params, location, id)?;
+
+        self.successor = Some(decoder_for(params, id, location)?);
+        self.params = params.clone();
+        self.track = id;
+        self.framing = None;
+        self.linked = Some(Linked {
+            index: self.link().saturating_add(1),
+            timeline: Timeline::new(track.time_base, Timestamp::ZERO, spec.rate),
+            rate: spec.rate,
+        });
+        tracing::debug!(%location, %spec, "a stream chained on to another; its decoder is made afresh");
+        Ok(())
+    }
+
+    fn link(&self) -> usize {
+        self.linked.map_or(0, |linked| linked.index)
+    }
+
+    fn rewind_to_the_head(&mut self, location: &MediaLocation) -> Result<()> {
+        let spent = mem::replace(&mut self.reader, Box::new(Spent::default()));
+        self.reader = container::reopened(spent, location)?;
+        let (track, params) = container::audio_track(self.reader.as_ref(), location)?;
+        let id = StreamTrackId(track.id);
+
+        self.decoder = decoder_for(params, id, location)?;
+        self.successor = None;
+        self.params = params.clone();
+        self.track = id;
+        self.framing = None;
+        self.linked = None;
+        self.ahead = None;
+        Ok(())
+    }
+
+    fn walk_to_link(&mut self, index: usize, location: &MediaLocation) -> Result<()> {
+        while self.link() < index {
+            if self.next_packet(location)?.is_none() {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    fn take_on(&mut self, packet: &Packet, location: &MediaLocation) -> Result<()> {
+        if let Some(successor) = self.successor.take() {
+            self.decoder = successor;
+        }
+        let Some(shape) = mpa::shape_of(self.params.codec, &packet.data) else {
+            return Ok(());
+        };
+        if self.framing.is_some_and(|seen| seen != shape) {
+            tracing::debug!(%location, "an MPEG audio frame changes its rate or channels; its decoder is made afresh");
+            self.decoder = decoder_for(&self.params, self.track, location)?;
+        }
+        self.framing = Some(shape);
+        Ok(())
     }
 
     fn is_last(&mut self, location: &MediaLocation) -> bool {
@@ -457,6 +606,10 @@ pub struct Decoder {
     spool: Option<Arc<Spool>>,
     layout: Option<BoxLayout>,
     splicing: Option<Splicing>,
+    changes: Changes,
+    announced: StreamSpec,
+    carried: u64,
+    origins: Vec<Frames>,
 }
 
 impl Decoder {
@@ -558,6 +711,11 @@ impl Decoder {
         let info = opened.media_info(location)?;
         let spool = opened.spool();
         let layout = opened.layout();
+        let origins = opened
+            .chain()
+            .as_ref()
+            .map(|chain| chain.origins_at(info.spec.rate))
+            .unwrap_or_default();
 
         let (reading, timeline) = match opened {
             Opened::Dsd(held) => {
@@ -569,24 +727,20 @@ impl Decoder {
             Opened::Coded(coded) => {
                 let (track, params) = container::audio_track(coded.reader.as_ref(), location)?;
                 let id = StreamTrackId(track.id);
-
-                let decoder = crate::registry::codecs()
-                    .make_audio_decoder(params, &untrimmed())
-                    .map_err(|source| match source {
-                        errors::Error::Unsupported(_) => Error::NoDecoder {
-                            location: location.clone(),
-                            track: id,
-                            codec: params.codec,
-                        },
-                        source => Error::from_symphonia(source, CodecOp::Decode, location),
-                    })?;
+                let decoder = decoder_for(params, id, location)?;
+                let params = params.clone();
 
                 let timeline = container::timeline(track, &info);
                 (
                     Held::Coded(Box::new(Coded {
                         reader: coded.reader,
                         decoder,
+                        successor: None,
+                        params,
                         track: id,
+                        sounding: info.spec,
+                        framing: None,
+                        linked: None,
                         pending: 0,
                         consumed: 0,
                         silent: false,
@@ -619,6 +773,10 @@ impl Decoder {
             spool,
             layout,
             splicing: None,
+            changes: Changes::default(),
+            announced: info.spec,
+            carried: 0,
+            origins,
         };
         decoder.open_on_the_music()?;
 
@@ -674,6 +832,9 @@ impl Decoder {
         let (mut settled, whole) =
             Self::build(container::open(media, &self.location)?, &self.location)?;
         settled.deliver(self.delivery);
+        settled.changes = self.changes;
+        settled.announced = self.announced;
+        settled.carried = self.carried;
 
         let open_ended = self.limit.is_none() && self.origin == Frames::ZERO;
         let mut info = self.info.clone();
@@ -724,6 +885,14 @@ impl Decoder {
         self.delivery
     }
 
+    pub fn follow_format_changes(&mut self) {
+        self.changes = Changes::Followed;
+    }
+
+    pub const fn sounding(&self) -> StreamSpec {
+        self.announced
+    }
+
     pub fn set_output_format(&mut self, format: SampleFormat) {
         self.deliver(Delivery::samples(format));
     }
@@ -763,12 +932,19 @@ impl Decoder {
     }
 
     pub fn next_block(&mut self, out: &mut AudioBuffer) -> Result<DecodeStatus> {
-        out.set_spec(self.output_spec());
-
         if self.remaining() == Some(0) {
+            out.set_spec(self.output_spec());
             out.set_frames(0);
             return Ok(DecodeStatus::EndOfStream);
         }
+        if let Some(sounding) = self.change_ahead()? {
+            self.announced = sounding;
+            self.carried = 0;
+            out.set_spec(self.output_spec());
+            out.set_frames(0);
+            return Ok(DecodeStatus::Reformatted(sounding));
+        }
+        out.set_spec(self.output_spec());
 
         let wanted = self.remaining();
         let frames = match &self.reading {
@@ -781,14 +957,67 @@ impl Decoder {
             out.set_frames(0);
             return Ok(DecodeStatus::EndOfStream);
         }
-        self.position = self.position.saturating_add(Frames(frames as u64));
+        let kept = self.on_the_clock(frames);
+        self.position = self.position.saturating_add(kept);
         Ok(DecodeStatus::Decoded)
+    }
+
+    fn change_ahead(&mut self) -> Result<Option<StreamSpec>> {
+        if !matches!(self.reading, Held::Coded(_)) {
+            return Ok(None);
+        }
+        if self.pending() == 0 && self.fill()? == DecodeStatus::EndOfStream {
+            return Ok(None);
+        }
+        let Held::Coded(coded) = &self.reading else {
+            return Ok(None);
+        };
+        let sounding = coded.sounding;
+        if sounding.rate == self.announced.rate && sounding.channels == self.announced.channels {
+            return Ok(None);
+        }
+        match self.changes {
+            Changes::Refused => Err(Error::FormatChanged {
+                location: self.location.clone(),
+                from: self.announced,
+                to: sounding,
+            }),
+            Changes::Followed => Ok(Some(StreamSpec {
+                format: self.announced.format,
+                ..sounding
+            })),
+        }
+    }
+
+    fn clock(&self) -> SampleRate {
+        self.info.spec.rate
+    }
+
+    fn on_the_clock(&mut self, frames: usize) -> Frames {
+        let heard = self.announced.rate;
+        let clock = self.clock();
+        if heard == clock {
+            return Frames(frames as u64);
+        }
+        let whole = u128::from(frames as u64) * u128::from(clock.hz()) + u128::from(self.carried);
+        let per = u128::from(heard.hz());
+        self.carried = u64::try_from(whole % per).unwrap_or(0);
+        Frames(u64::try_from(whole / per).unwrap_or(u64::MAX))
+    }
+
+    fn heard_within(&self, wanted: Option<u64>) -> Option<u64> {
+        let left = wanted?;
+        let heard = Frames(left)
+            .rescaled(self.clock(), self.announced.rate)
+            .get();
+        Some(if left > 0 { heard.max(1) } else { 0 })
     }
 
     fn coded_block(&mut self, out: &mut AudioBuffer, wanted: Option<u64>) -> Result<usize> {
         if self.pending() == 0 && self.fill()? == DecodeStatus::EndOfStream {
             return Ok(0);
         }
+        let wanted = self.heard_within(wanted);
 
         let Held::Coded(coded) = &mut self.reading else {
             return Ok(0);
@@ -984,6 +1213,9 @@ impl Decoder {
     pub fn reset(&mut self) {
         match &mut self.reading {
             Held::Coded(coded) => {
+                if let Some(successor) = coded.successor.take() {
+                    coded.decoder = successor;
+                }
                 coded.decoder.reset();
                 coded.pending = 0;
                 coded.consumed = 0;
@@ -1004,8 +1236,8 @@ impl Decoder {
 
     fn output_spec(&self) -> StreamSpec {
         StreamSpec::new(
-            self.info.spec.rate,
-            self.info.spec.channels,
+            self.announced.rate,
+            self.announced.channels,
             self.delivery.format,
         )
     }
@@ -1017,10 +1249,10 @@ impl Decoder {
             info,
             timeline,
             last_packet,
+            origins,
             ..
         } = self;
-        let rate = info.spec.rate;
-        let channels = usize::from(info.spec.channel_count().get());
+        let clock = info.spec.rate;
         let timeline = *timeline;
 
         let Held::Coded(coded) = reading else {
@@ -1031,19 +1263,29 @@ impl Decoder {
             let Some(packet) = coded.next_packet(location)? else {
                 return Ok(DecodeStatus::EndOfStream);
             };
-            let span = PacketSpan::of(&packet, &timeline);
+            let span = match coded.linked {
+                Some(linked) => {
+                    let origin = origins.get(linked.index).copied().unwrap_or(Frames::ZERO);
+                    linked.span_of(&packet, origin, clock)
+                }
+                None => PacketSpan::of(&packet, &timeline),
+            };
+            let trims = match coded.linked {
+                Some(_) => Trims::of(&packet),
+                None if origins.len() > 1 => Trims::of(&packet).tail_alone(),
+                None => Trims::NONE,
+            };
+            coded.take_on(&packet, location)?;
 
             let (mut frames, silent) = match coded.decoder.decode(&packet) {
                 Ok(decoded) => {
                     if decoded.frames() == 0 {
                         continue;
                     }
-                    if decoded.spec().rate() != rate.hz()
-                        || decoded.spec().channels().count() != channels
+                    if let Some(sounding) =
+                        sounding_of(decoded.spec(), coded.sounding, location, coded.track)?
                     {
-                        return Err(Error::ResetRequired {
-                            location: location.clone(),
-                        });
+                        coded.sounding = sounding;
                     }
                     coded.sounded = true;
                     coded.last_lasted = Frames(decoded.frames() as u64);
@@ -1081,6 +1323,8 @@ impl Decoder {
                     return Err(Error::from_symphonia(source, CodecOp::Decode, location));
                 }
             };
+            let lead = trims.lead.min(frames);
+            frames = frames.saturating_sub(lead).saturating_sub(trims.tail);
             if frames == 0 {
                 continue;
             }
@@ -1092,7 +1336,7 @@ impl Decoder {
             }
 
             coded.pending = frames;
-            coded.consumed = 0;
+            coded.consumed = lead;
             coded.silent = silent;
             *last_packet = Some(span);
             return Ok(DecodeStatus::Decoded);
@@ -1115,13 +1359,19 @@ impl Decoder {
                     if self.pending() == 0 && self.fill()? == DecodeStatus::EndOfStream {
                         break;
                     }
+                    let clock = self.clock();
                     let Held::Coded(coded) = &mut self.reading else {
                         break;
                     };
-                    let taking = left.min(coded.pending as u64) as usize;
+                    let heard = coded.sounding.rate;
+                    let wanted = Frames(left).rescaled(clock, heard).get().max(1);
+                    let taking = wanted.min(coded.pending as u64) as usize;
                     coded.consumed += taking;
                     coded.pending -= taking;
-                    taking as u64
+                    Frames(taking as u64)
+                        .rescaled(heard, clock)
+                        .get()
+                        .clamp(1, left)
                 }
             };
 
@@ -1135,6 +1385,65 @@ impl Decoder {
     }
 
     fn seek_reader(&mut self, to: Frames) -> Result<Landing> {
+        if self.origins.len() > 1 {
+            return self.seek_along_the_chain(to);
+        }
+        self.seek_the_first_link(to)
+    }
+
+    fn seek_along_the_chain(&mut self, to: Frames) -> Result<Landing> {
+        let clock = self.clock();
+        let index = self
+            .origins
+            .iter()
+            .rposition(|origin| *origin <= to)
+            .unwrap_or(0);
+        let origin = self.origins.get(index).copied().unwrap_or(Frames::ZERO);
+        let Self {
+            location, reading, ..
+        } = self;
+        let Held::Coded(coded) = reading else {
+            return self.seek_the_first_link(to);
+        };
+
+        if index < coded.link() {
+            coded.rewind_to_the_head(location)?;
+        }
+        coded.walk_to_link(index, location)?;
+        let Some(linked) = coded.linked.filter(|linked| linked.index == index) else {
+            return self.seek_the_first_link(to);
+        };
+
+        let into = to.saturating_sub(origin).rescaled(clock, linked.rate);
+        let ts = Timestamp::ZERO
+            .checked_add(Ticks::new(into.get()))
+            .unwrap_or(Timestamp::ZERO);
+        let landed = coded
+            .reader
+            .seek(
+                SeekMode::Accurate,
+                SeekTo::Timestamp {
+                    ts,
+                    track_id: coded.track.0,
+                },
+            )
+            .map_err(|source| Error::from_symphonia(source, CodecOp::Seek, location))?;
+        let short =
+            u64::try_from(Timestamp::ZERO.saturating_delta(landed.actual_ts).get()).unwrap_or(0);
+        let at =
+            u64::try_from(landed.actual_ts.saturating_delta(Timestamp::ZERO).get()).unwrap_or(0);
+        Ok(Landing {
+            at: origin.saturating_add(Frames(at).rescaled(linked.rate, clock)),
+            short_of_the_music: Frames(short).rescaled(linked.rate, clock),
+        })
+    }
+
+    fn seek_the_first_link(&mut self, to: Frames) -> Result<Landing> {
+        if let Held::Coded(coded) = &mut self.reading
+            && coded.link() > 0
+        {
+            coded.rewind_to_the_head(&self.location)?;
+        }
         let Self {
             location,
             reading,
@@ -1237,6 +1546,65 @@ fn padding_past_an_open_window(info: &MediaInfo) -> usize {
         Some(window) if window.frames().is_none() => info.encoder_padding as usize,
         Some(_) | None => 0,
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Trims {
+    lead: usize,
+    tail: usize,
+}
+
+impl Trims {
+    const NONE: Self = Self { lead: 0, tail: 0 };
+
+    const fn tail_alone(self) -> Self {
+        Self { lead: 0, ..self }
+    }
+
+    fn of(packet: &Packet) -> Self {
+        Self {
+            lead: usize::try_from(packet.trim_start.get()).unwrap_or(usize::MAX),
+            tail: usize::try_from(packet.trim_end.get()).unwrap_or(usize::MAX),
+        }
+    }
+}
+
+fn sounding_of(
+    spec: &AudioSpec,
+    sounding: StreamSpec,
+    location: &MediaLocation,
+    track: StreamTrackId,
+) -> Result<Option<StreamSpec>> {
+    let channels = spec.channels();
+    if spec.rate() == sounding.rate.hz()
+        && channels.count() == usize::from(sounding.channel_count().get())
+    {
+        return Ok(None);
+    }
+    let rate = SampleRate::new(spec.rate()).map_err(|_| Error::RateNotRepresentable {
+        location: location.clone(),
+        track,
+        rate: spec.rate(),
+    })?;
+    let layout = container::laid_out(channels, location, track)?;
+    Ok(Some(StreamSpec::new(rate, layout, sounding.format)))
+}
+
+fn decoder_for(
+    params: &AudioCodecParameters,
+    track: StreamTrackId,
+    location: &MediaLocation,
+) -> Result<Box<dyn AudioDecoder>> {
+    crate::registry::codecs()
+        .make_audio_decoder(params, &untrimmed())
+        .map_err(|source| match source {
+            errors::Error::Unsupported(_) => Error::NoDecoder {
+                location: location.clone(),
+                track,
+                codec: params.codec,
+            },
+            source => Error::from_symphonia(source, CodecOp::Decode, location),
+        })
 }
 
 fn untrimmed() -> AudioDecoderOptions {

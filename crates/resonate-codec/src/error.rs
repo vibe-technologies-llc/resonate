@@ -1,7 +1,7 @@
 use std::{fmt, io, result};
 
 use lofty::error::{FileEncodingError, FileParseError};
-use resonate_core::{ChannelCount, Frames, MediaLocation};
+use resonate_core::{ChannelCount, Frames, MediaLocation, StreamSpec};
 use symphonia::core::{
     codecs::audio::AudioCodecId,
     errors::{self, SeekErrorKind},
@@ -180,6 +180,13 @@ pub enum Error {
     #[error("the decoder for {location} must be reset before decoding continues")]
     ResetRequired { location: MediaLocation },
 
+    #[error("{location} turns from {from} to {to} partway through")]
+    FormatChanged {
+        location: MediaLocation,
+        from: StreamSpec,
+        to: StreamSpec,
+    },
+
     #[error("{op:?} failed for {location}")]
     Symphonia {
         op: CodecOp,
@@ -281,6 +288,7 @@ impl Error {
             | Self::SeekBackwardUnsupported { location }
             | Self::SeekInvalidTrack { location }
             | Self::ResetRequired { location }
+            | Self::FormatChanged { location, .. }
             | Self::Symphonia { location, .. }
             | Self::DsdChunkMissing { location, .. }
             | Self::DsdFieldNotUsable { location, .. }

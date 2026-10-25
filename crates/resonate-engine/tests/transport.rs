@@ -159,6 +159,7 @@ struct Graph {
     closes: usize,
     active: bool,
     played: Vec<u8>,
+    opened_after: Vec<usize>,
     sinks: Vec<SinkInfo>,
     enumerations: usize,
     announce: Option<Sender<SinkChange>>,
@@ -280,6 +281,8 @@ impl Opener for FakeSink {
                 return Err(SinkError::OpenUnanswered);
             }
             graph.opens += 1;
+            let played = graph.played.len();
+            graph.opened_after.push(played);
             graph.requests.push(request.clone());
             graph.source = (!self.lets_go).then_some(source);
             graph.events = Some(announce);
@@ -8639,5 +8642,260 @@ fn handing_the_volume_back_to_the_stream_puts_the_gain_stage_back() -> Result<()
         "the stream to take the volume back",
     );
     assert!(heard_near(&player, 0.5));
+    Ok(())
+}
+
+const LINK_SECONDS: u32 = 1;
+const F32_STEREO_FRAME: usize = 8;
+
+#[derive(Clone, Copy)]
+struct Link {
+    rate: SampleRate,
+    channels: u16,
+    hertz: u32,
+}
+
+impl Link {
+    const fn frames(self) -> usize {
+        self.rate.hz() as usize * LINK_SECONDS as usize
+    }
+}
+
+const MONO_AT_CD_RATE: Link = Link {
+    rate: SampleRate::HZ_44100,
+    channels: 1,
+    hertz: 440,
+};
+
+const STEREO_AT_DAT_RATE: Link = Link {
+    rate: SampleRate::HZ_48000,
+    channels: 2,
+    hertz: 660,
+};
+
+const STEREO_AT_CD_RATE: Link = Link {
+    rate: SampleRate::HZ_44100,
+    channels: 2,
+    hertz: 660,
+};
+
+const VORBIS_IN_OGG: [&str; 4] = ["-c:a", "libvorbis", "-f", "ogg"];
+const BARE_MP3: [&str; 10] = [
+    "-c:a",
+    "libmp3lame",
+    "-b:a",
+    "128k",
+    "-write_xing",
+    "0",
+    "-id3v2_version",
+    "0",
+    "-f",
+    "mp3",
+];
+
+fn joined(tree: &Tree, name: &str, links: &[Link], codec: &[&str]) -> Option<PathBuf> {
+    let mut whole = Vec::new();
+    for (index, link) in links.iter().enumerate() {
+        let part = tree.root.join(format!("{index}-{name}"));
+        let tone = format!(
+            "sine=frequency={}:sample_rate={}:duration={LINK_SECONDS}",
+            link.hertz,
+            link.rate.hz()
+        );
+        let made = process::Command::new("ffmpeg")
+            .args(["-y", "-v", "error", "-f", "lavfi", "-i", &tone, "-ac"])
+            .arg(link.channels.to_string())
+            .args(codec)
+            .arg(&part)
+            .stdout(process::Stdio::null())
+            .stderr(process::Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success());
+        let Some(bytes) = made.then(|| fs::read(&part).ok()).flatten() else {
+            eprintln!("skipped: no ffmpeg to encode a link of {name}");
+            return None;
+        };
+        whole.extend_from_slice(&bytes);
+    }
+    Some(tree.write(name, &whole))
+}
+
+fn sounds(bytes: &[u8]) -> bool {
+    bytes
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .any(|sample| f32::from_le_bytes(*sample).abs() > 0.05)
+}
+
+#[test]
+fn a_stream_turning_to_another_rate_reopens_the_output_at_the_turn_and_plays_on_in_the_same_row()
+-> Result<()> {
+    let tree = Tree::new();
+    let links = [MONO_AT_CD_RATE, STEREO_AT_DAT_RATE];
+    let Some(path) = joined(&tree, "chained.ogg", &links, &VORBIS_IN_OGG) else {
+        return Ok(());
+    };
+    let (player, graph) = player(vec![sink(
+        &[SampleRate::HZ_44100, SampleRate::HZ_48000],
+        &[SampleFormat::F32],
+    )])?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+
+    let whole = (links[0].frames() + links[1].frames()) * F32_STEREO_FRAME;
+    let mut held_the_row = true;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * F32_STEREO_FRAME,
+        |player, graph| {
+            if graph.opens == 2 {
+                held_the_row &= plays(player, 1);
+            }
+            graph.played.len() >= whole
+        },
+        "both links to reach the graph",
+    );
+
+    let graph = graph.lock();
+    let turned_at = graph.opened_after.get(1).copied();
+    assert_eq!(
+        graph
+            .requests
+            .iter()
+            .map(|request| (request.spec.rate, request.spec.channels))
+            .collect::<Vec<_>>(),
+        [
+            (SampleRate::HZ_44100, ChannelLayout::Stereo),
+            (SampleRate::HZ_48000, ChannelLayout::Stereo)
+        ]
+    );
+    assert_eq!(turned_at, Some(links[0].frames() * F32_STEREO_FRAME));
+    assert_eq!(graph.played.len(), whole);
+    assert!(held_the_row, "the turn was taken for another row");
+    assert!(sounds(
+        &graph.played[..links[0].frames() * F32_STEREO_FRAME]
+    ));
+    assert!(sounds(
+        &graph.played[links[0].frames() * F32_STEREO_FRAME..]
+    ));
+    assert!(
+        !player
+            .events()
+            .try_iter()
+            .any(|event| matches!(event, Event::Failed { .. })),
+        "the turn failed the row"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_stream_turning_from_mono_to_stereo_on_a_stream_that_carries_both_keeps_it_and_loses_no_frame()
+-> Result<()> {
+    let tree = Tree::new();
+    let links = [MONO_AT_CD_RATE, STEREO_AT_CD_RATE];
+    let Some(path) = joined(&tree, "turning.mp3", &links, &BARE_MP3) else {
+        return Ok(());
+    };
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::F32])])?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+
+    let mut finished = false;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * F32_STEREO_FRAME,
+        |player, graph| {
+            finished |= !graph.played.is_empty() && !plays(player, 1);
+            finished
+        },
+        "the whole row to play",
+    );
+
+    let graph = graph.lock();
+    let decoded = resonate_codec::probe(&Sources::local(), &MediaLocation::local(&path))
+        .ok()
+        .and_then(|info| info.duration)
+        .map_or(0, |frames| frames.get() as usize);
+    let halfway = decoded / 2 * F32_STEREO_FRAME;
+    assert_eq!(graph.opens, 1, "the turn reopened the stream");
+    assert_eq!(graph.played.len(), decoded * F32_STEREO_FRAME);
+    assert!(sounds(&graph.played[..halfway]));
+    assert!(sounds(&graph.played[halfway..]));
+    assert!(
+        !player
+            .events()
+            .try_iter()
+            .any(|event| matches!(event, Event::Failed { .. })),
+        "the turn failed the row"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_seek_back_across_a_turn_reopens_the_output_for_the_format_it_lands_in() -> Result<()> {
+    let tree = Tree::new();
+    let links = [MONO_AT_CD_RATE, STEREO_AT_DAT_RATE];
+    let Some(path) = joined(&tree, "chained.ogg", &links, &VORBIS_IN_OGG) else {
+        return Ok(());
+    };
+    let (player, graph) = player(vec![sink(
+        &[SampleRate::HZ_44100, SampleRate::HZ_48000],
+        &[SampleFormat::F32],
+    )])?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * F32_STEREO_FRAME,
+        |_, graph| graph.opens == 2,
+        "the turn to reopen the output",
+    );
+
+    player
+        .request(Command::Seek(Frames(links[0].frames() as u64 / 4)))?
+        .wait_for(PATIENCE)?;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * F32_STEREO_FRAME,
+        |_, graph| graph.opens == 3,
+        "the seek back to reopen the output for the first link",
+    );
+
+    let rates: Vec<_> = graph
+        .lock()
+        .requests
+        .iter()
+        .map(|request| request.spec.rate)
+        .collect();
+    assert_eq!(
+        rates,
+        [
+            SampleRate::HZ_44100,
+            SampleRate::HZ_48000,
+            SampleRate::HZ_44100
+        ]
+    );
+    assert!(plays(&player, 1));
+    assert!(
+        !player
+            .events()
+            .try_iter()
+            .any(|event| matches!(event, Event::Failed { .. })),
+        "the seek across the turn failed the row"
+    );
     Ok(())
 }

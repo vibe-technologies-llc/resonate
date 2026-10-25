@@ -79,6 +79,34 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   **`playable` = the first decoded frame heard and how many are heard, possibly open-ended;**
   `duration` = playable count (seek bar, `mpris:length`, `heard.rs`). `Priming` holds the count as
   `Option`: a reader can name a delay without a length and the priming must still go.
+- **A stream may turn to another rate or channel count partway; a caller says whether it follows.**
+  Three turns are caught: symphonia's Ogg reader answering `ResetRequired` at a chained link
+  (`Coded::relink` takes the new link's audio track and makes its decoder afresh, swapped in before
+  its first packet so a packet read ahead still drains through the old one), an MPEG audio frame
+  header naming another rate or mono/stereo (`mpa::shape_of`, checked before decoding: symphonia's
+  MPA decoder refuses a frame of another shape as undecodable, which played as silence), and any
+  decoder handing back a buffer of another rate or count (`sounding_of`). The decoder hands out a
+  zero-frame `DecodeStatus::Reformatted(spec)` before the first frame of the new shape (`announced`
+  against the pending packet's `sounding`, `change_ahead`), and `Decoder::sounding` names what it
+  now decodes. Without `Decoder::follow_format_changes` a turn is `Error::FormatChanged { from, to }`
+  instead: analysis, true-peak measuring, the vault and every other single-shape reader refuse
+  rather than read on in the wrong shape. The engine, a delivery's length check and the fuzz target
+  follow. **Positions stay on the clock of the rate the track opened at** (`MediaInfo::spec.rate`):
+  `Decoder::position`, `seek`, `duration` and `playable` count opening-rate frames, a block at
+  another rate advances the clock by its length rescaled (`on_the_clock`, carrying the remainder),
+  and `Frames::rescaled` is the one conversion. `TrackState::source` stays the opening spec, so
+  every reader of a position (MPRIS, the phones, Discord, `heard.rs`) converts by its rate.
+- **A chained Ogg is walked at open and seeks across its links.** `ogg::chain` reads the last page in
+  the file (8 KiB of tail, else 64 KiB) and walks the pages only where its serial is not the
+  first's: each run of beginning-of-stream pages starts a link, whose Vorbis or Opus identification
+  names its rate and whose last granule (less Opus's pre-skip) its length (`Prescan::chain`). The
+  chain's length on the opening clock replaces the first link's as `duration` and as the end of
+  `playable`, so the decoder no longer stops at the first link. Links after the first trim their own
+  priming and padding from symphonia's packet trims (`Trims`); the first keeps its window's start
+  and trims its tail. A seek lands by link (`seek_along_the_chain`): into a link behind the reader
+  it reopens the reader at the head (`container::reopened`, re-probing the stream symphonia hands
+  back; the reader is held by a `Spent` placeholder meanwhile), walks packets without decoding to
+  the link, then seeks inside it by the link's own timestamps.
 - **An edit list plays in the order it lists its edits.** `elst` entries continuing one another in
   media time (within a tick) join; zero-length entries and leading or trailing empty edits are
   dropped. One stretch left is the gapless window as ever (`MediaInfo::splices` `None`). More are
@@ -302,6 +330,22 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `StreamEvent::Drained` (`SinkStream::latency` on the wall clock is the fallback). A stream takes
   every instruction through one `StreamCommand`, keeping that handshake, `set_active` and `close` on
   one ordered channel to the loop thread.
+- **A turn of rate or channels partway through a track is a boundary inside the row.** On
+  `Block::Reformatted` the engine sets `Track::sounding` (what the chain and plan are built for;
+  `Track::clock` stays the opening rate for positions) and weighs the plan `plan_output` would open
+  for the new shape against the open one (`keeps_its_stream_for`, as `keeps_its_stream`). The same
+  stream, packing and ring depth: the chain is swapped in place (`swap_chain`; a new source never
+  carries the front), the old chain's held frames handed on first, so nothing is lost and no gap
+  opens (a mono MP3 turning stereo on a stereo stream). Otherwise bit-perfect wins as it does
+  between tracks: the old chain is flushed, the ring drains and the graph is asked to drain
+  (`Output::ends_at_a_change`), then `settle` rebinds where the decoder stands, with no seek,
+  opening the new stream `Entering::Whole` (`Track::at_a_change`). Converting the new shape into
+  the old stream was not chosen: the new section would lose bit-perfection for the rest of the
+  track. A turn before anything was heard rebinds at once. A seek landing in a section of
+  another shape turns the same way on its first block
+  (`a_stream_turning_to_another_rate_reopens_the_output_at_the_turn_and_plays_on_in_the_same_row`,
+  `a_stream_turning_from_mono_to_stereo_on_a_stream_that_carries_both_keeps_it_and_loses_no_frame`,
+  `a_seek_back_across_a_turn_reopens_the_output_for_the_format_it_lands_in`).
 - **Bluetooth headphones can be kept from cutting the start; off unless asked** (they power the radio
   down when nothing is sent). `BluetoothWake` touches only a sink `SinkInfo::is_bluetooth` names: a
   pause fades the ring out instead of standing the stream down (real silence, marked word for DoP,
