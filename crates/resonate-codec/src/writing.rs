@@ -1410,19 +1410,22 @@ fn staged_in(folder: &Path, path: &Path) -> PathBuf {
 }
 
 fn staged_by(path: &Path, staged: &OsStr) -> Option<u32> {
-    let stem = path.file_stem()?.to_str()?;
-    let extension = path.extension().and_then(OsStr::to_str).unwrap_or_default();
-    let (kept, stamp) = staged
-        .to_str()?
-        .strip_prefix('.')?
+    let stem = path.file_stem()?.as_bytes();
+    let extension = path.extension().map(OsStr::as_bytes).unwrap_or_default();
+    let unsuffixed = staged
+        .as_bytes()
+        .strip_prefix(b".")?
         .strip_suffix(extension)?
-        .strip_suffix('.')?
-        .rsplit_once('.')?;
+        .strip_suffix(b".")?;
+    let dot = unsuffixed.iter().rposition(|byte| *byte == b'.')?;
+    let (kept, stamp) = (&unsuffixed[..dot], &unsuffixed[dot + 1..]);
     let cut = staged.len() + LONGEST_LETTER_BYTES > naming::NAME_BYTES_AT_MOST;
     if kept != stem && !(cut && !kept.is_empty() && stem.starts_with(kept)) {
         return None;
     }
-    let (writer, counted) = stamp.split_once(STAGED_BY_AND_COUNTED)?;
+    let (writer, counted) = str::from_utf8(stamp)
+        .ok()?
+        .split_once(STAGED_BY_AND_COUNTED)?;
     counted.parse::<u64>().ok()?;
     writer.parse().ok()
 }
@@ -1708,6 +1711,29 @@ mod tests {
         for kept in [&track, &ours, &another, &hidden] {
             assert!(kept.exists(), "{} was swept", kept.display());
         }
+    }
+
+    #[test]
+    fn a_copy_a_dead_writer_staged_beside_a_track_whose_name_is_not_text_is_swept() {
+        const NEVER_A_PROCESS: u32 = 999_999_999;
+
+        let folder = Folder::new();
+        let track = folder.root.join(OsStr::from_bytes(b"Br\xe9the.flac"));
+        let left = folder.root.join(OsStr::from_bytes(
+            &[
+                b".Br\xe9the.".as_slice(),
+                format!("{NEVER_A_PROCESS}-3.flac").as_bytes(),
+            ]
+            .concat(),
+        ));
+        for path in [&track, &left] {
+            fs::write(path, b"fLaC").expect("a writable temporary file");
+        }
+
+        sweep_what_a_dead_writer_staged(&track);
+
+        assert!(!left.exists(), "a dead writer's copy was left");
+        assert!(track.exists(), "the track was swept");
     }
 
     fn aiff() -> Vec<u8> {

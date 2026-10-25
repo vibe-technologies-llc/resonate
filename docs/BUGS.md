@@ -10,12 +10,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Catalog
 
 ## Tagging
-- [S · 0.1.1] A crashed tag write to a file whose name is not UTF-8 is never mended or swept:
-  `stamped_with` (`journal.rs`) and `staged_by` (`writing.rs`) start with `to_str()?`, so
-  `kept_by`, `names_a_cut_short_write` and `sweep_what_a_dead_writer_staged` ignore the journal,
-  whole copy or torn copy of such a track, which stays half written and its staged copies pile
-  up, though `KeptBy::names` and `named_within` already compare bytes. Shown on
-  `names_a_cut_short_write`
 
 ## Playback and output
 - [S · 0.1.1] With `dsd-like-pcm` on, a volume, ReplayGain or levelling change on a decimated DSD

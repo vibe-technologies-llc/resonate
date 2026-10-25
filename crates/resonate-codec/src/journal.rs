@@ -157,7 +157,7 @@ impl Left {
 }
 
 struct KeptBy<'n> {
-    track: &'n str,
+    track: &'n [u8],
     cut: bool,
     writer: u32,
     left: Left,
@@ -166,7 +166,7 @@ struct KeptBy<'n> {
 impl KeptBy<'_> {
     fn names(&self, track: &OsStr) -> bool {
         let named = track.as_bytes();
-        let kept = self.track.as_bytes();
+        let kept = self.track;
         named == kept || (self.cut && !kept.is_empty() && named.starts_with(kept))
     }
 }
@@ -177,10 +177,16 @@ fn was_cut(kept: &OsStr) -> bool {
     kept.len() + LONGEST_LETTER_BYTES > naming::NAME_BYTES_AT_MOST
 }
 
-fn stamped_with<'n>(kept: &'n OsStr, suffix: &str) -> Option<(&'n str, u32)> {
-    let unsuffixed = kept.to_str()?.strip_prefix('.')?.strip_suffix(suffix)?;
-    let (track, stamp) = unsuffixed.rsplit_once('.')?;
-    let (writer, counted) = stamp.split_once(KEPT_BY_AND_COUNTED)?;
+fn stamped_with<'n>(kept: &'n OsStr, suffix: &str) -> Option<(&'n [u8], u32)> {
+    let unsuffixed = kept
+        .as_bytes()
+        .strip_prefix(b".")?
+        .strip_suffix(suffix.as_bytes())?;
+    let dot = unsuffixed.iter().rposition(|byte| *byte == b'.')?;
+    let (track, stamp) = (&unsuffixed[..dot], &unsuffixed[dot + 1..]);
+    let (writer, counted) = str::from_utf8(stamp)
+        .ok()?
+        .split_once(KEPT_BY_AND_COUNTED)?;
     counted.parse::<u64>().ok()?;
     Some((track, writer.parse().ok()?))
 }
@@ -720,7 +726,7 @@ pub fn mend_a_cut_short_write(journal: &Path) -> io::Result<Mended> {
 
 fn track_named_by(folder: &Path, kept: &KeptBy<'_>) -> io::Result<Option<PathBuf>> {
     if !kept.cut {
-        return Ok(Some(folder.join(kept.track)));
+        return Ok(Some(folder.join(OsStr::from_bytes(kept.track))));
     }
     let mut named = fs::read_dir(folder)?
         .flatten()
@@ -997,6 +1003,29 @@ mod tests {
         ));
         fs::write(&journal, encoded(name, stood, lands, 0, changes)).expect("a journal");
         journal
+    }
+
+    #[test]
+    fn a_whole_copy_beside_a_track_whose_name_is_not_text_is_named_cut_short_and_written_back() {
+        let folder = Folder::new("written-back-bytes");
+        let name = OsStr::from_bytes(b"Br\xe9the.flac");
+        let track = folder.0.join(name);
+        let whole = folder.0.join(OsStr::from_bytes(
+            &[
+                b".Br\xe9the.flac.".as_slice(),
+                format!("{NEVER_A_PROCESS}-0{WHOLE_SUFFIX}").as_bytes(),
+            ]
+            .concat(),
+        ));
+        fs::write(&track, [9_u8; 40]).expect("a torn track");
+        fs::write(&whole, [4_u8; 24]).expect("the whole copy");
+
+        assert!(names_a_cut_short_write(&whole));
+        assert_eq!(
+            mend_a_cut_short_write(&whole).expect("a mend"),
+            Mended::WrittenBack
+        );
+        assert_eq!(fs::read(&track).expect("the track"), [4_u8; 24]);
     }
 
     #[test]
