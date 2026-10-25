@@ -48,6 +48,7 @@ use crate::{
     deleted::{self, Deleted, Removal, Trashes},
     elsewhere, enrich, enriched,
     filed::{AlbumToFile, DeliveryFolder},
+    foresight::Foresight,
     hinted::Hinted,
     history, import, learning, likeness,
     linked::{
@@ -692,6 +693,7 @@ pub(crate) struct Inner {
     trash_home: Mutex<Option<PathBuf>>,
     trashes: Mutex<Option<Arc<dyn Trashes>>>,
     music_filters: Mutex<MusicFilters>,
+    foresight: Foresight,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1545,6 +1547,7 @@ impl Library {
                 trash_home: Mutex::new(None),
                 trashes: Mutex::new(None),
                 music_filters: Mutex::new(MusicFilters::default()),
+                foresight: Foresight::default(),
             }),
         })
     }
@@ -1552,6 +1555,10 @@ impl Library {
     #[cfg(test)]
     pub(crate) fn inner(&self) -> &Inner {
         &self.inner
+    }
+
+    pub(crate) fn foresight(&self) -> &Foresight {
+        &self.inner.foresight
     }
 
     pub(crate) fn shared(&self) -> Self {

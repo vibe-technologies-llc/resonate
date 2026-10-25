@@ -20,8 +20,8 @@ use parking_lot::Mutex;
 use resonate_codec::Sources;
 use resonate_core::{Frames, MediaLocation, SampleRate, SourceId, WantId};
 use resonate_providers::{
-    Asking, Away, Delivered, Delivery, Identity, Opened, Opening, Providers, TURNED_TO_APART,
-    WAITED_ON_AFTER_AN_OFFER,
+    Answer, Asking, Away, Delivered, Delivery, Identity, Opened, Opening, Providers,
+    TURNED_TO_APART, WAITED_ON_AFTER_AN_OFFER,
 };
 use resonate_vault::{Halt, Keeping, Taking};
 
@@ -1003,6 +1003,35 @@ impl<'a> Lanes<'a> {
         }
     }
 
+    fn foreseen_answer(
+        &self,
+        want: &Want,
+        declined: &(dyn Fn(&Delivered) -> bool + Sync),
+        gone: &[MediaLocation],
+    ) -> Option<Answer> {
+        if self.providers.is_narrowed() {
+            return None;
+        }
+        let foreseen = self.library.foresight().take(want.recording.as_ref()?)?;
+        let registered = self.providers.names();
+        let mut offers = foreseen.offers.into_iter().filter(|offer| {
+            registered.contains(&offer.provider)
+                && !gone.contains(&offer.taken_from())
+                && !declined(offer)
+        });
+        let delivered = offers.next()?;
+        Some(Answer {
+            delivered: Some(delivered),
+            held_back: offers.collect(),
+            heard: foreseen
+                .heard
+                .into_iter()
+                .filter(|heard| registered.contains(heard))
+                .collect(),
+            ..Answer::default()
+        })
+    }
+
     fn asked(&self, claimed: &Claimed<'_, 'a>, rounds: &mut Rounds) -> Result<Asked> {
         let progress = self.progress;
         let want = &claimed.want;
@@ -1022,19 +1051,22 @@ impl<'a> Lanes<'a> {
             gone: rounds.gone.clone(),
             ..want.identity()
         };
-        let answer = self.providers.first(
-            &identity,
-            &Asking {
-                within: self.options.answers_within,
-                cancelled: &cancelled,
-                turning_to: &turning_to,
-                declined: &declined,
-                passing: &rounds.passing,
-                apart: TURNED_TO_APART,
-                grace: WAITED_ON_AFTER_AN_OFFER,
-            },
-            &mut away,
-        );
+        let foreseen = self.foreseen_answer(want, &declined, &rounds.gone);
+        let answer = foreseen.unwrap_or_else(|| {
+            self.providers.first(
+                &identity,
+                &Asking {
+                    within: self.options.answers_within,
+                    cancelled: &cancelled,
+                    turning_to: &turning_to,
+                    declined: &declined,
+                    passing: &rounds.passing,
+                    apart: TURNED_TO_APART,
+                    grace: WAITED_ON_AFTER_AN_OFFER,
+                },
+                &mut away,
+            )
+        });
         self.away.lock().join(&away);
         self.first_answered.store(true, Ordering::Release);
         progress

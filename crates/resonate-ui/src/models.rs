@@ -1718,11 +1718,21 @@ impl LibraryModel {
         cx.notify();
         let library = Arc::clone(&self.library);
         let recording = found.recording.clone();
+        let providers = Some(self.providers(cx))
+            .filter(Providers::has_a_source)
+            .map(Arc::new);
 
         let wanting = cx.spawn(async move |this, cx| {
             let asked = found.clone();
             let covered_by = Arc::clone(&library);
             let covering_with = Arc::clone(&reference);
+            let foreseen_by = Arc::clone(&library);
+            let foreseeing = providers.map(|providers| {
+                let foreseen = found.clone();
+                cx.background_executor()
+                    .spawn(async move { foreseen_by.foresee(&providers, &foreseen) })
+            });
+            let awaiting_the_providers = foreseeing.is_some();
             let wanted = cx
                 .background_executor()
                 .spawn(async move { library.want_found_uncovered(reference.as_ref(), &asked) })
@@ -1731,6 +1741,7 @@ impl LibraryModel {
                 .as_ref()
                 .ok()
                 .and_then(|wanted| wanted.covering.clone());
+            let was_wanted = wanted.is_ok();
 
             let landed = this.update(cx, |this, cx| {
                 if let Some(finished) = this.wanting.remove(&found.recording) {
@@ -1740,7 +1751,7 @@ impl LibraryModel {
                     Ok(want) => {
                         let fetched_by = this.fetched_by(cx);
                         this.downloads.wanted(&found.recording, want, fetched_by);
-                        if fetched_by == Fetcher::AProvider {
+                        if fetched_by == Fetcher::AProvider && !awaiting_the_providers {
                             this.fetch_what_was_wanted(PollOptions::default(), cx);
                         }
                     }
@@ -1753,6 +1764,21 @@ impl LibraryModel {
             });
             if landed.is_err() {
                 return;
+            }
+            if let Some(foreseeing) = foreseeing {
+                foreseeing.await;
+                if was_wanted {
+                    let polled = this.update(cx, |this, cx| {
+                        if this.fetched_by(cx) == Fetcher::AProvider {
+                            this.fetch_what_was_wanted(PollOptions::default(), cx);
+                        }
+                    });
+                    if polled.is_err() {
+                        return;
+                    }
+                } else {
+                    covered_by.forget_foresight(&found.recording);
+                }
             }
             if let Some(covering) = covering {
                 cover_what_was_wanted(&this, cx, covered_by, covering_with, covering).await;
