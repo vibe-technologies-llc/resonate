@@ -1132,7 +1132,7 @@ fn landed(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -> Result<
         return Ok(());
     }
 
-    match copied_beside(path, folder_of(path)) {
+    match copied_beside(path, folder_of(path), saving) {
         Ok(staged) => landed_through(&staged.path, path, location, saving),
         Err(source) if source.kind() == io::ErrorKind::PermissionDenied => {
             landed_from_elsewhere(path, location, saving)
@@ -1144,7 +1144,8 @@ fn landed(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -> Result<
 fn landed_from_elsewhere(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -> Result<()> {
     let mut refused = io::Error::from(io::ErrorKind::PermissionDenied);
     for folder in crate::spool::spooled_under() {
-        match Staged::elsewhere(&folder, path).and_then(|staged| copied_into(path, staged)) {
+        match Staged::elsewhere(&folder, path).and_then(|staged| copied_into(path, staged, saving))
+        {
             Ok(staged) => {
                 return landed_by(
                     &staged.path,
@@ -1180,15 +1181,50 @@ fn cloned_beside(_: &Path) -> io::Result<Option<Staged>> {
     Ok(None)
 }
 
-fn copied_beside(path: &Path, folder: &Path) -> io::Result<Staged> {
-    copied_into(path, Staged::within(folder, path)?)
+fn copied_beside(path: &Path, folder: &Path, saving: &Saving<'_>) -> io::Result<Staged> {
+    copied_into(path, Staged::within(folder, path)?, saving)
 }
 
-fn copied_into(path: &Path, staged: Staged) -> io::Result<Staged> {
+fn outgrown_head(path: &Path, saving: &Saving<'_>) -> Option<(Head, Rebuilt)> {
+    let mut file = File::open(path).ok()?;
+    let head = Head::of(saving.kind, &mut file)?;
+    let written = saving.head_written(head, &mut file).ok()??;
+    if head.rebuilt(&written, Room::Held).is_some() {
+        return None;
+    }
+    let rebuilt = head.rebuilt(&written, Room::Generous)?;
+    Some((head, rebuilt))
+}
+
+fn copied_with_head(
+    from: &mut File,
+    into: &mut &File,
+    head: Head,
+    rebuilt: &Rebuilt,
+) -> io::Result<()> {
+    from.seek(SeekFrom::Start(head.length))?;
+    if let Some(first) = rebuilt.renumbered_from {
+        let mut tail = Vec::new();
+        from.read_to_end(&mut tail)?;
+        ogg::renumbered(&mut tail, first);
+        into.write_all(&rebuilt.head)?;
+        return into.write_all(&tail);
+    }
+    into.write_all(&rebuilt.head)?;
+    io::copy(from, into).map(drop)
+}
+
+fn copied_into(path: &Path, staged: Staged, saving: &Saving<'_>) -> io::Result<Staged> {
+    let outgrown = outgrown_head(path, saving);
     let copied = File::open(path).and_then(|mut from| {
         let permissions = from.metadata()?.permissions();
         let mut into = staged.held.file();
-        io::copy(&mut from, &mut into)?;
+        match &outgrown {
+            Some((head, rebuilt)) => copied_with_head(&mut from, &mut into, *head, rebuilt)?,
+            None => {
+                io::copy(&mut from, &mut into)?;
+            }
+        }
         into.set_permissions(permissions)
     });
     match copied {
@@ -2380,6 +2416,62 @@ mod tests {
             1,
             "a refused lengthening left a journal beside the file"
         );
+    }
+
+    #[test]
+    fn a_copy_of_a_head_that_outgrew_its_room_is_made_with_the_grown_head_and_the_audio_whole() {
+        for (name, bytes, kind) in [
+            ("echoes.flac", flac(), FileType::Flac),
+            ("echoes.mp3", mp3(), FileType::Mpeg),
+            ("echoes.opus", opus(), FileType::Opus),
+        ] {
+            let folder = Folder::new();
+            let location = folder.holding(name, &bytes);
+            let path = location.as_path().expect("a local file").to_path_buf();
+            let standing = fs::read(&path).expect("the file");
+            let old_head = head_length(kind, &path);
+            let mut tagged = opened(&path, &location).expect("a tagged file");
+            if tagged.primary_tag().is_none() {
+                tagged.insert_tag(Tag::new(tagged.primary_tag_type()));
+            }
+            let tag = tagged.primary_tag_mut().expect("a primary tag");
+            tag.insert_text(ItemKey::TrackTitle, "Echoes ".repeat(4096));
+            let saving = Saving {
+                kind,
+                tag,
+                counting: None,
+                unkeyed: &[],
+                others: &[],
+                taken: Taken::of(&path).expect("a writable file"),
+                options: WriteOptions::default(),
+            };
+
+            let staged = copied_beside(&path, &folder.root, &saving).expect("a copy");
+
+            let copy = fs::read(&staged.path).expect("the copy");
+            let head = head_length(kind, &staged.path);
+            assert!(head > old_head, "{name} was copied with the head it had");
+            match kind {
+                FileType::Opus => {
+                    assert!(ogg::pages_are_whole(&copy), "{name}'s pages were torn");
+                    assert_eq!(copy[head..].len(), standing[old_head..].len());
+                }
+                _ => assert!(
+                    copy[head..] == standing[old_head..],
+                    "{name} lost audio in the copy"
+                ),
+            }
+            let mut file = File::open(&staged.path).expect("the copy");
+            let grown = Head::of(kind, &mut file).expect("a head");
+            let written = saving
+                .head_written(grown, &mut file)
+                .expect("a head written")
+                .expect("a head with a tail");
+            assert!(
+                grown.rebuilt(&written, Room::Held).is_some(),
+                "{name}'s copy still has to move its audio"
+            );
+        }
     }
 
     #[test]
