@@ -492,7 +492,7 @@ fn local_match(connection: &Connection, song: &SearchSong) -> Result<Option<u64>
         .and_then(|&(id, coded)| (coded || matches.len() == 1).then_some(id)))
 }
 
-fn wanted_key(song: &SearchSong) -> String {
+pub(crate) fn wanted_key(song: &SearchSong) -> String {
     if let Ok(recording) = Mbid::new(&song.recording) {
         return format!("recording:{recording}");
     }

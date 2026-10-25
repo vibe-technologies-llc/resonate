@@ -38,6 +38,15 @@ impl Held {
         Ok(Self(file))
     }
 
+    pub fn resumed(path: &Path) -> io::Result<Self> {
+        let file = OpenOptions::new().read(true).write(true).open(path)?;
+        match file.try_lock() {
+            Ok(()) | Err(TryLockError::Error(_)) => {}
+            Err(TryLockError::WouldBlock) => return Err(io::ErrorKind::WouldBlock.into()),
+        }
+        Ok(Self(file))
+    }
+
     pub fn over(file: File) -> Self {
         let _ = file.lock();
         Self(file)
@@ -169,5 +178,37 @@ mod tests {
             Err(io::ErrorKind::WouldBlock)
         );
         drop(taken);
+    }
+
+    #[test]
+    fn a_file_resumed_keeps_what_it_held_unless_a_living_writer_holds_it() {
+        let scratch = Scratch::new("resumed");
+
+        fs::write(&scratch.0, b"what a dead run left").expect("a file");
+        let resumed = Held::resumed(&scratch.0).expect("resumed");
+        let refused = Held::resumed(&scratch.0).map(drop);
+
+        assert_eq!(
+            fs::read(&scratch.0).expect("the file"),
+            b"what a dead run left"
+        );
+        assert_eq!(
+            refused.map_err(|error| error.kind()),
+            Err(io::ErrorKind::WouldBlock)
+        );
+        drop(resumed);
+        assert!(Held::resumed(&scratch.0).is_ok());
+    }
+
+    #[test]
+    fn a_file_that_is_not_there_cannot_be_resumed() {
+        let scratch = Scratch::new("absent");
+
+        let refused = Held::resumed(&scratch.0).map(drop);
+
+        assert_eq!(
+            refused.map_err(|error| error.kind()),
+            Err(io::ErrorKind::NotFound)
+        );
     }
 }

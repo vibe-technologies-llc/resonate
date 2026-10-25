@@ -12,12 +12,12 @@ use md5::{Digest, Md5};
 use resonate_core::{Mbid, SourceId};
 pub use resonate_fetch::Patience;
 use resonate_fetch::{
-    Ranged, Trusted, asking_agent, configured, downloading_agent, escaped, is_a_document,
-    retry_after_of, unreached,
+    Ranged, Trusted, asking_agent, asking_to_resume, configured, downloading_agent, escaped,
+    is_a_document, retry_after_of, unreached,
 };
 use resonate_providers::{
-    Choosing, Delivery, Error, Extension, Identity, Listed, Obtained, Opened, Opening, Pacing,
-    Provider, ProviderOp, Result, is_a_page,
+    Choosing, Delivery, Error, Extension, Held, Identity, Listed, Obtained, Opening, Pacing,
+    Provider, ProviderOp, Reopened, Result, is_a_page,
 };
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
@@ -34,6 +34,7 @@ const FIRST_RETRY_AFTER: Duration = Duration::from_secs(1);
 const LONGEST_RETRY_AFTER: Duration = Duration::from_secs(8);
 const TOO_MANY_REQUESTS: u16 = 429;
 const UNAVAILABLE: u16 = 503;
+const NOT_AS_HELD: [u16; 2] = [412, 416];
 const LARGEST_ANSWER: u64 = 4 * 1024 * 1024;
 const OK: &str = "ok";
 const REST: &str = "rest";
@@ -247,21 +248,18 @@ impl Subsonic {
         }
     }
 
-    fn called(&self, agent: &Agent, op: ProviderOp, url: &str) -> Result<http::Response<Body>> {
-        self.called_within(agent, op, url, None)
-    }
-
     fn called_within(
         &self,
         agent: &Agent,
         op: ProviderOp,
         url: &str,
         deadline: Option<Instant>,
+        held: Option<&Held>,
     ) -> Result<http::Response<Body>> {
         let mut retried = 0;
         loop {
             self.pacing.paced();
-            let mut request = agent.get(url);
+            let mut request = asking_to_resume(agent.get(url), held);
             if let Some(deadline) = deadline {
                 request = request
                     .config()
@@ -377,7 +375,7 @@ impl Subsonic {
                 ("albumCount", "0"),
             ],
         );
-        let response = self.called_within(&self.asking, op, &url, Some(deadline))?;
+        let response = self.called_within(&self.asking, op, &url, Some(deadline), None)?;
         let bytes = self.read_whole(op, response)?;
         self.read(&bytes, op)
     }
@@ -447,23 +445,34 @@ impl Subsonic {
         }
     }
 
-    fn downloaded(&self, url: &str) -> Result<Opened> {
+    fn downloaded(&self, url: &str, held: Option<Held>) -> Result<Reopened> {
         let op = ProviderOp::Download;
-        let response = self.called(&self.downloading, op, url)?;
+        let held = held.filter(Held::can_be_checked);
+        let response = match self.called_within(&self.downloading, op, url, None, held.as_ref()) {
+            Err(Error::Refused { status, .. })
+                if held.is_some() && NOT_AS_HELD.contains(&status) =>
+            {
+                return self.downloaded(url, None);
+            }
+            called => called?,
+        };
         if is_a_document(response.body().mime_type()) {
             let bytes = self.read_whole(op, response)?;
             return Err(self.refusal_in(&bytes, op));
         }
-        let ranged = Ranged::continuing(
-            self.downloading.clone(),
-            url.to_owned(),
-            response,
-            self.patience.resumed_after,
-        );
-        Ok(Opened::Reading {
-            length: ranged.length(),
-            reader: Box::new(ranged),
-        })
+        let agent = self.downloading.clone();
+        let resumed_after = self.patience.resumed_after;
+        let ranged = match &held {
+            Some(held) => {
+                match Ranged::continuing_held(agent, url.to_owned(), response, held, resumed_after)
+                {
+                    Some(ranged) => ranged,
+                    None => return self.downloaded(url, None),
+                }
+            }
+            None => Ranged::continuing(agent, url.to_owned(), response, resumed_after),
+        };
+        Ok(Reopened::Reading(ranged.into_resumed()))
     }
 }
 
@@ -491,7 +500,7 @@ impl Provider for Subsonic {
         Ok(Obtained::Found(Delivery::Stream {
             key: song.id.into_boxed_str(),
             extension,
-            opening: Opening::new(move || downloading.downloaded(&url)),
+            opening: Opening::resumable(move |held| downloading.downloaded(&url, held)),
         }))
     }
 }

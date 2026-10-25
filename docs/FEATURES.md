@@ -12,8 +12,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   format enumeration and DoP need capability negotiation and physical-device validation
 
 ## iOS parity
-- [M · 0.2.0] iOS downloads cannot resume: any cancel, failure or background expiry deletes the partial
-  file and the retry starts again, a large FLAC included
 - [M · blocked: xtool] iOS has no widget: a WidgetKit extension xtool builds is linked empty and,
   linked whole, traps in `ExtensionFoundation` before a widget registers (xtool issue 313)
 - [M · blocked: Apple] iOS has no CarPlay: the CarPlay audio entitlement is granted by Apple to a

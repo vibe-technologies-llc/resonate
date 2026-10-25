@@ -259,6 +259,14 @@ an attempt cancelled while its code was still being asked never stores the code 
 would wait on (`a_sign_in_cancelled_and_asked_again_waits_for_the_new_code_alone`,
 `a_cancel_ends_a_sign_in_waiting_for_its_code`).
 
+## Downloads keep what they received
+
+`downloads.rs` writes a resumable offer into `partials.rs`' folder (`download-partials/` under the
+player's folder) before copying it to the descriptor, and a later job for the same want resumes it
+with `Range`; `android.md`'s *A download that breaks off resumes* has the whole design. The sweep at
+`MobilePlayer::new` is `Downloads::under`, and `Downloads::default()` (no folder) keeps nothing.
+`Held::resumed` (core) is the lock on an existing partial that does not empty it.
+
 ## Reading document rows
 
 `catalog::read` takes a document row by position, the first columns of `documents` in `V1`'s

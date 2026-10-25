@@ -1,7 +1,7 @@
 import Foundation
 
 enum Backup {
-    private static let derivedFolders = ["sync-received", "sync-staging"]
+    private static let derivedFolders = ["sync-received", "sync-staging", "download-partials"]
 
     static func leaveOutDerived(in support: URL) {
         let files = FileManager.default

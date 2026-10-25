@@ -805,6 +805,31 @@ a provider is set up and the remembered folder is readable and writable: it wait
 `next_wanted_due` (30 s at least, 30 min at most), asks `poll_wanted_due`, and enqueues what is not already
 held, not asking one song again for 30 minutes (`DownloadPlanTest`, `DownloadQueueTest`).
 
+**A download that breaks off resumes from the bytes it kept, on both phones** (`partials.rs`, `Downloads::under`).
+A stream offer whose `Opening` is resumable (Subsonic, Monochrome and a keyed hifi-api, whose servers answer
+`Range`; TIDAL's segments and a remux cannot, and stream straight into the document as before) is written
+to `download-partials/` beside `documents.sqlite` as it arrives, and only copied into the destination
+document once whole, then removed, so a cancel, a failure, a lost network or a killed app costs the
+document and nothing else (and a destination that refuses the copy keeps the bytes for the retry). The
+partial is `<file stem>.<crc32 of wanted_key>.resonate-part` (`naming::named_within`) with a
+`.resonate-note` beside it (same length of suffix, so both cut alike) holding the wanted key, the offer's
+`taken_from`, the whole's length and its validator (ETag, else Last-Modified); a note that does not read
+means no partial. **`find_download` claims the partial under `Held::resumed` for the whole job** (a second job for the
+same want finds it held and streams straight, the sweep finds it living), and opens the offer with
+`Opening::open_resuming(Held { bytes, total, validator })`: a partial is asked for only if it is of the same
+offer (`taken_from`) and can be checked, by a strong validator (sent as `If-Range`) or a known length
+(a `206` must start at the byte held and name that total). A `200` (a server ignoring `Range`, or a validator
+that no longer matches), a mismatched `Content-Range` or a `412`/`416` begins again from byte 0 and empties the
+partial; `DownloadOffer.total` is always the whole's length and `DownloadProgress.received` starts at the
+bytes kept. The offer found `Gone` and a download over the eight GiB limit delete the partial; a stream
+ending short of the known length is a failed read, not a finished file. A partial untouched for
+`STALE_AFTER` (7 days) with no living writer is swept when the player opens
+(`a_download_cut_off_part_way_resumes_with_a_range_and_yields_the_same_bytes`,
+`a_server_ignoring_range_restarts_cleanly_from_the_start`,
+`an_offer_that_changed_discards_the_partial_and_starts_over`,
+`a_partial_of_another_offer_is_never_ranged_into`). Android has no front-end change: its document is still
+created, journalled and deleted as before, and a retry (a new job) finds the partial.
+
 Only a fresh SAF document or pending Downloads row is opened for writing; its URI is journalled
 before streaming, bytes are bounded at 8 GiB, and codec probe/duration validation (within
 `LENGTHS_AGREE_WITHIN`) precedes

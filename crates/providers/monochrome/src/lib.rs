@@ -3,12 +3,12 @@ use std::{sync::Arc, time::Duration};
 use resonate_core::SourceId;
 pub use resonate_fetch::Patience;
 use resonate_fetch::{
-    ASKED_LATER, Ranged, Trusted, asking_agent, configured, downloading_agent, escaped,
-    is_a_document, retry_after_of, unreached,
+    ASKED_LATER, Ranged, Trusted, asking_agent, asking_to_resume, configured, downloading_agent,
+    escaped, is_a_document, retry_after_of, unreached,
 };
 use resonate_providers::{
-    Choosing, Delivery, Error, Extension, Identity, Listed, Obtained, Opened, Opening, Pacing,
-    Provider, ProviderOp, Result, is_a_page,
+    Choosing, Delivery, Error, Extension, Held, Identity, Listed, Obtained, Opening, Pacing,
+    Provider, ProviderOp, Reopened, Result, is_a_page,
 };
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
@@ -23,6 +23,7 @@ const RETRIES_AT_MOST: u32 = 3;
 const FIRST_RETRY_AFTER: Duration = Duration::from_secs(1);
 const LONGEST_RETRY_AFTER: Duration = Duration::from_secs(8);
 const GONE_FROM_THE_SERVER: [u16; 2] = [404, 410];
+const NOT_AS_HELD: [u16; 2] = [412, 416];
 const LARGEST_ANSWER: u64 = 4 * 1024 * 1024;
 
 fn downloading(patience: Patience, trusted: Trusted) -> Agent {
@@ -164,11 +165,20 @@ impl Monochrome {
     }
 
     fn called(&self, agent: &Agent, op: ProviderOp, url: &str) -> Result<http::Response<Body>> {
+        self.called_holding(agent, op, url, None)
+    }
+
+    fn called_holding(
+        &self,
+        agent: &Agent,
+        op: ProviderOp,
+        url: &str,
+        held: Option<&Held>,
+    ) -> Result<http::Response<Body>> {
         let mut retried = 0;
         loop {
             self.pacing.paced();
-            let response = agent
-                .get(url)
+            let response = asking_to_resume(agent.get(url), held)
                 .call()
                 .map_err(|error| self.unreachable(op, error))?;
             if response.status().is_success() {
@@ -278,28 +288,36 @@ impl Monochrome {
         }
     }
 
-    fn downloaded(&self, track: &TrackId) -> Result<Opened> {
+    fn downloaded(&self, track: &TrackId, held: Option<Held>) -> Result<Reopened> {
         let op = ProviderOp::Download;
         let url = self.track_url(track);
-        let response = match self.called(&self.downloading, op, &url) {
+        let held = held.filter(Held::can_be_checked);
+        let response = match self.called_holding(&self.downloading, op, &url, held.as_ref()) {
             Err(Error::Refused { status, .. }) if GONE_FROM_THE_SERVER.contains(&status) => {
-                return Ok(Opened::Gone);
+                return Ok(Reopened::Gone);
+            }
+            Err(Error::Refused { status, .. })
+                if held.is_some() && NOT_AS_HELD.contains(&status) =>
+            {
+                return self.downloaded(track, None);
             }
             called => called?,
         };
         if is_a_document(response.body().mime_type()) {
             return Err(self.unreadable(op));
         }
-        let ranged = Ranged::continuing(
-            self.downloading.clone(),
-            url,
-            response,
-            self.patience.resumed_after,
-        );
-        Ok(Opened::Reading {
-            length: ranged.length(),
-            reader: Box::new(ranged),
-        })
+        let agent = self.downloading.clone();
+        let resumed_after = self.patience.resumed_after;
+        let ranged = match &held {
+            Some(held) => {
+                match Ranged::continuing_held(agent, url, response, held, resumed_after) {
+                    Some(ranged) => ranged,
+                    None => return self.downloaded(track, None),
+                }
+            }
+            None => Ranged::continuing(agent, url, response, resumed_after),
+        };
+        Ok(Reopened::Reading(ranged.into_resumed()))
     }
 }
 
@@ -319,7 +337,7 @@ impl Provider for Monochrome {
         Ok(Obtained::Found(Delivery::Stream {
             key: format!("track/{}", track.0).into_boxed_str(),
             extension: Extension::new(DELIVERED_AS)?,
-            opening: Opening::new(move || downloading.downloaded(&track)),
+            opening: Opening::resumable(move |held| downloading.downloaded(&track, held)),
         }))
     }
 }

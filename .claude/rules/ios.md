@@ -447,7 +447,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   `SharedPreferences` files, with the same keys.
 
 - **What can be rebuilt stays out of backups** (`Backup.leaveOutDerived`, at launch and again once the
-  player is open): `sync-received` and `sync-staging` (songs other devices send, fetched again) are
+  player is open): `sync-received`, `sync-staging` (songs other devices send, fetched again) and `download-partials` (bytes a download kept) are
   `isExcludedFromBackup`; the catalog
   itself (favourites, playlists, listens) travels with the device's backup. A song landed from
   another device into the app's own Documents (root `local`) is left out as it is created
@@ -1157,6 +1157,16 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   alone; a failed or cancelled job deletes only the document it created and shows the boundary's
   sentence (`explained`) on its row, never in the banner, with "Try again"; a finished one offers
   Play and Go to album.
+- **A download that breaks off resumes, whatever ended it** (`mobile.md`/`android.md`'s partial downloads): a
+  cancel, a failure, the continued-processing task's expiry or a kill leaves the document to be
+  deleted and its journal entry to go as before, but the bytes already received are kept by Rust in
+  `download-partials/` (left out of backups, `Backup.leaveOutDerived`), so "Try again", the wants loop
+  or the next launch's retry is a new job that finds them, asks the server for the rest with `Range`
+  and shows the progress from where it was. The Swift side keeps no partial of its own and is not
+  told: `begin_download`, `find_download`, `Folders.fresh`, `download_offer` are called as ever. The
+  document `Folders.fresh` makes is created only after the find, so a retry of a resumed song
+  creates its document and the copy of the kept bytes into it is quick; a provider that cannot
+  range (TIDAL's DASH) starts again as before.
 - **Saved for later queues into the same jobs**: "Download all missing" enqueues every want not
   held, each row leads with a placeholder tile, keeps title and artist · album to a line each and
   ends in a Download icon (Remove is its swipe), a held row reads "In your library", and pulling to

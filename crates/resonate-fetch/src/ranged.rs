@@ -4,12 +4,14 @@ use std::{
     time::Duration,
 };
 
+use resonate_providers::{Held, Resumed, Validator};
 use ureq::{
-    Agent, Body, BodyReader,
+    Agent, Body, BodyReader, RequestBuilder,
     http::{
         Response,
-        header::{AUTHORIZATION, CONTENT_RANGE, RANGE},
+        header::{AUTHORIZATION, CONTENT_RANGE, ETAG, IF_RANGE, LAST_MODIFIED, RANGE},
     },
+    typestate::WithoutBody,
 };
 
 use crate::{failed::as_io, waited::retry_after_of};
@@ -73,6 +75,38 @@ fn starts_at(range: &str) -> Option<u64> {
         .ok()
 }
 
+fn total_of(range: &str) -> Option<u64> {
+    range.rsplit('/').next()?.trim().parse().ok()
+}
+
+pub fn validator_of(response: &Response<Body>) -> Option<Validator> {
+    [ETAG, LAST_MODIFIED].iter().find_map(|name| {
+        response
+            .headers()
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .and_then(Validator::new)
+    })
+}
+
+pub fn asking_to_resume(
+    request: RequestBuilder<WithoutBody>,
+    held: Option<&Held>,
+) -> RequestBuilder<WithoutBody> {
+    let Some(held) = held.filter(|held| held.can_be_checked()) else {
+        return request;
+    };
+    let request = request.header(RANGE, format!("bytes={}-", held.bytes));
+    match held
+        .validator
+        .as_ref()
+        .filter(|validator| !validator.is_weak())
+    {
+        Some(validator) => request.header(IF_RANGE, validator.as_str()),
+        None => request,
+    }
+}
+
 fn asked(agent: &Agent, url: &str, from: u64, bearer: Option<&str>) -> Result<Answered, Unfetched> {
     let mut request = agent.get(url);
     if let Some(bearer) = bearer {
@@ -126,6 +160,8 @@ pub struct Ranged {
     reader: BodyReader<'static>,
     length: Option<u64>,
     read: u64,
+    from: u64,
+    validator: Option<Validator>,
     broken: u32,
     resumed_after: Duration,
 }
@@ -142,10 +178,46 @@ impl Ranged {
             url,
             bearer: None,
             length: response.body().content_length(),
+            validator: validator_of(&response),
             reader: response.into_body().into_reader(),
             read: 0,
+            from: 0,
             broken: 0,
             resumed_after,
+        }
+    }
+
+    pub fn continuing_held(
+        agent: Agent,
+        url: String,
+        response: Response<Body>,
+        held: &Held,
+        resumed_after: Duration,
+    ) -> Option<Self> {
+        match response.status().as_u16() {
+            WHOLE => Some(Self::continuing(agent, url, response, resumed_after)),
+            PARTIAL => {
+                let range = response
+                    .headers()
+                    .get(CONTENT_RANGE)
+                    .and_then(|range| range.to_str().ok())?;
+                let total = total_of(range);
+                let unchanged = starts_at(range) == Some(held.bytes)
+                    && (held.total.is_none() || total == held.total);
+                unchanged.then(|| Self {
+                    agent,
+                    url,
+                    bearer: None,
+                    length: total.or(held.total),
+                    validator: validator_of(&response).or_else(|| held.validator.clone()),
+                    reader: response.into_body().into_reader(),
+                    read: held.bytes,
+                    from: held.bytes,
+                    broken: 0,
+                    resumed_after,
+                })
+            }
+            _ => None,
         }
     }
 
@@ -174,7 +246,9 @@ impl Ranged {
             bearer: None,
             reader: answered.reader,
             length: answered.length,
+            validator: None,
             read: 0,
+            from: 0,
             broken: 0,
             resumed_after,
         })
@@ -184,6 +258,23 @@ impl Ranged {
         Self {
             bearer: Some(bearer),
             ..self
+        }
+    }
+
+    pub fn from(&self) -> u64 {
+        self.from
+    }
+
+    pub fn validator(&self) -> Option<&Validator> {
+        self.validator.as_ref()
+    }
+
+    pub fn into_resumed(self) -> Resumed {
+        Resumed {
+            from: self.from,
+            length: self.length,
+            validator: self.validator.clone(),
+            reader: Box::new(self),
         }
     }
 
@@ -251,6 +342,13 @@ impl Read for Ranged {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_range_says_how_long_the_whole_is() {
+        assert_eq!(total_of("bytes 100-999/1000"), Some(1000));
+        assert_eq!(total_of("bytes 0-0/*"), None);
+        assert_eq!(total_of("bytes */1000"), Some(1000));
+    }
 
     #[test]
     fn a_resumed_range_says_where_it_starts() {

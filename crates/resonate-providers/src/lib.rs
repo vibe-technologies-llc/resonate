@@ -7,7 +7,10 @@ mod provider;
 mod sign_in;
 
 pub use crate::{
-    delivery::{Delivered, Delivery, Extension, Obtained, Opened, Opening},
+    delivery::{
+        Delivered, Delivery, Extension, Held, Obtained, Opened, Opening, Reopened, Resumed,
+        Validator,
+    },
     error::{Error, ProviderOp, Result, is_a_page},
     identity::Identity,
     listing::{A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY, Choosing, LENGTHS_AGREE_WITHIN, Listed, Taken},

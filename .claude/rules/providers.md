@@ -65,6 +65,13 @@ away**: `StillArriving` counts `refused`, the want stays unstamped and due.
   sent none or ureq decompresses), so Subsonic and Monochrome carry it, TIDAL only for a one-URL
   FLAC (segments and a remux say none); the phones show it as the download's total
   (`an_opened_download_says_how_long_the_server_said_it_is`).
+  **An `Opening` is whole or resumable.** `Opening::new` opens from the start; `Opening::resumable`
+  takes the `Held` a caller already has (`bytes`, the whole's `total`, a `Validator`: ETag, else
+  Last-Modified) and answers `Reopened::Reading(Resumed { reader, length, from, validator })` or
+  `Reopened::Gone`, `from` being where the reader begins (0 for a server that started over). `open` of a
+  resumable opening is `open_resuming(None)`; `open_resuming` of a whole one reads from 0 with no
+  validator, so a caller asks `is_resumable()` first. Subsonic, Monochrome and a keyed hifi-api are
+  resumable; TIDAL and the hosted hifi-api, which rebuild a FLAC from segments, are whole.
 
 ## What the infrastructure owns
 
@@ -248,6 +255,14 @@ plumbing, so a `ureq` bump is made once:
   held, another refusal ends it. The first resume is at once, each later one waits `waited_before`
   (`resumed_after` doubling, at most 8 s), or a 429/502/503/504's `Retry-After`. `Ranged::opened`
   asks a first request answered 429/502/503/504 again the same way.
+- **A `Held` that can be checked is asked with `Range` and `If-Range`** (`asking_to_resume`; a partial
+  is checkable by a strong validator or a known total, never by neither and never empty). The answer
+  is read by `Ranged::continuing_held`: a `200` begins again from 0; a `206` is taken only if its
+  `Content-Range` starts at `bytes` and, where a total was held, names it; anything else is `None`
+  and the provider asks again with no `Range`, as it does for a `412` or `416`. The `Ranged` it makes
+  counts from `from`, so a break-off later resumes at the absolute offset (`Ranged::into_resumed`)
+  (`a_keyed_download_opened_with_what_is_held_is_asked_from_there_and_read_on`,
+  `a_keyed_download_whose_length_is_not_what_is_held_is_read_again_from_the_start`).
 - `escaped` (every byte but the unreserved percent-encoded), `is_a_document` (`text/`, JSON or XML:
   an error document, never a song).
 - **One odd listing never fails the answer**: each provider reads its list through a `*_readable`

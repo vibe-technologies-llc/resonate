@@ -4,6 +4,7 @@ use std::{
     fs::File,
     io::{self, Read, Write},
     os::fd::FromRawFd,
+    path::Path,
     sync::{
         Arc, Weak,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -17,11 +18,16 @@ use parking_lot::Mutex;
 use resonate_core::{Isrc, Mbid, SourceId};
 use resonate_library::ANSWERS_WITHIN;
 use resonate_providers::{
-    Asking, Authorizing, Away, Client, Delivered, Delivery, Identity, Obtained, Opened, Provider,
-    Providers, SignsIn, TURNED_TO_APART, WAITED_ON_AFTER_AN_OFFER,
+    Asking, Authorizing, Away, Client, Delivered, Delivery, Identity, Obtained, Provider,
+    Providers, Reopened, SignsIn, TURNED_TO_APART, WAITED_ON_AFTER_AN_OFFER,
 };
 
-use crate::{Error, MobilePlayer, Result, error::DownloadOp, features::SearchSong};
+use crate::{
+    Error, MobilePlayer, Result,
+    error::DownloadOp,
+    features::SearchSong,
+    partials::{Partial, Partials},
+};
 
 const JOBS_SETTLED_KEPT: usize = 16;
 const CHUNK_BYTES: usize = 64 * 1024;
@@ -41,6 +47,7 @@ impl Default for OfferHeldFor {
 
 #[derive(Default)]
 pub(crate) struct Downloads {
+    partials: Option<Partials>,
     jobs: Mutex<BTreeMap<u64, Arc<Job>>>,
     next: AtomicU64,
     parkings: AtomicU64,
@@ -144,6 +151,7 @@ struct Standing {
 
 struct Parked {
     reader: Box<dyn Read + Send>,
+    partial: Option<Partial>,
     parking: u64,
     _watched: mpsc::Sender<()>,
 }
@@ -345,6 +353,7 @@ pub(crate) fn file_stem_of(song: &SearchSong) -> String {
 
 struct Taken {
     reader: Box<dyn Read + Send>,
+    partial: Option<Partial>,
     length: Option<u64>,
     extension: String,
     provider: MusicProvider,
@@ -357,6 +366,15 @@ enum Unopened {
 }
 
 impl Downloads {
+    pub(crate) fn under(folder: &Path) -> Self {
+        let partials = Partials::under(folder);
+        partials.sweep(SystemTime::now());
+        Self {
+            partials: Some(partials),
+            ..Self::default()
+        }
+    }
+
     pub(crate) fn begin(&self, song: SearchSong) -> u64 {
         let id = self.next.fetch_add(1, Ordering::Relaxed);
         let mut jobs = self.jobs.lock();
@@ -595,7 +613,7 @@ impl Downloads {
             let Some(provider) = kind_of(&offered.provider) else {
                 continue;
             };
-            match opened(job, offered, provider, reaching)? {
+            match opened(job, self.partials.as_ref(), offered, provider, reaching)? {
                 Ok(taken) => return Ok(self.held_for_a_destination(job, taken)),
                 Err(Unopened::Gone) => {}
                 Err(Unopened::Failed(error)) => {
@@ -618,7 +636,7 @@ impl Downloads {
         standing.total = taken.length;
         standing.provider = Some(taken.provider);
         standing.taken_from = Some(taken.taken_from);
-        standing.opened = Some(self.parked(job, taken.reader));
+        standing.opened = Some(self.parked(job, taken.reader, taken.partial));
         DownloadOffer {
             job: job.id,
             extension: taken.extension,
@@ -628,7 +646,12 @@ impl Downloads {
         }
     }
 
-    fn parked(&self, job: &Arc<Job>, reader: Box<dyn Read + Send>) -> Parked {
+    fn parked(
+        &self,
+        job: &Arc<Job>,
+        reader: Box<dyn Read + Send>,
+        partial: Option<Partial>,
+    ) -> Parked {
         let parking = self.parkings.fetch_add(1, Ordering::Relaxed);
         let (watched, released) = mpsc::channel::<()>();
         let held_for = self.offer_held_for.0;
@@ -641,6 +664,7 @@ impl Downloads {
         }
         Parked {
             reader,
+            partial,
             parking,
             _watched: watched,
         }
@@ -652,16 +676,17 @@ impl Downloads {
         mut output: File,
         reaching: &dyn Fn() -> bool,
     ) -> Result<u64> {
-        let mut reader = job
-            .standing
-            .lock()
-            .opened
-            .take()
-            .ok_or(Error::DownloadExpired)?
-            .reader;
+        let parked = job.standing.lock().opened.take();
+        let Parked {
+            mut reader,
+            partial,
+            ..
+        } = parked.ok_or(Error::DownloadExpired)?;
         job.moved_to(DownloadPhase::Downloading)?;
-        job.received.store(0, Ordering::Release);
-        let mut bytes = 0_u64;
+        let from = partial.as_ref().map_or(0, Partial::from);
+        job.received.store(from, Ordering::Release);
+        let total = partial.as_ref().and_then(|_| job.standing.lock().total);
+        let mut bytes = from;
         let mut buffer = vec![0_u8; CHUNK_BYTES];
         let copied = loop {
             if job.is_cancelled() {
@@ -671,6 +696,12 @@ impl Downloads {
                 break Err(Error::OnlineOff);
             }
             let count = match reader.read(&mut buffer) {
+                Ok(0) if total.is_some_and(|total| bytes < total) => {
+                    break Err(Error::DownloadIo {
+                        op: DownloadOp::Read,
+                        source: io::ErrorKind::UnexpectedEof.into(),
+                    });
+                }
                 Ok(0) => break Ok(bytes),
                 Ok(count) => count,
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
@@ -685,7 +716,11 @@ impl Downloads {
             if bytes > LARGEST_DOWNLOAD {
                 break Err(Error::DownloadTooLarge);
             }
-            if let Err(source) = output.write_all(&buffer[..count]) {
+            let written = match &partial {
+                Some(partial) => partial.append(&buffer[..count]),
+                None => output.write_all(&buffer[..count]),
+            };
+            if let Err(source) = written {
                 break Err(Error::DownloadIo {
                     op: DownloadOp::Write,
                     source,
@@ -693,7 +728,11 @@ impl Downloads {
             }
             job.received.store(bytes, Ordering::Release);
         };
-        let finished = copied.and_then(|bytes| {
+        let delivered = match partial {
+            None => copied,
+            Some(partial) => handed_over(job, partial, copied, &mut output),
+        };
+        let finished = delivered.and_then(|bytes| {
             output
                 .flush()
                 .and_then(|()| output.sync_all())
@@ -705,6 +744,42 @@ impl Downloads {
         });
         job.settled(finished)
     }
+}
+
+fn handed_over(
+    job: &Job,
+    partial: Partial,
+    streamed: Result<u64>,
+    output: &mut File,
+) -> Result<u64> {
+    let bytes = match streamed {
+        Ok(bytes) => bytes,
+        Err(Error::DownloadTooLarge) => {
+            partial.finished();
+            return Err(Error::DownloadTooLarge);
+        }
+        Err(error) => {
+            if let Err(error) = partial.kept() {
+                tracing::warn!(%error, "a partial download could not be kept");
+            }
+            return Err(error);
+        }
+    };
+    partial.kept().map_err(|source| Error::DownloadIo {
+        op: DownloadOp::Finish,
+        source,
+    })?;
+    partial.replay(&mut |chunk| {
+        if job.is_cancelled() {
+            return Err(Error::DownloadCancelled);
+        }
+        output.write_all(chunk).map_err(|source| Error::DownloadIo {
+            op: DownloadOp::Write,
+            source,
+        })
+    })?;
+    partial.finished();
+    Ok(bytes)
 }
 
 fn expire_unless_taken(
@@ -746,6 +821,7 @@ fn nothing_found(
 
 fn opened(
     job: &Job,
+    partials: Option<&Partials>,
     offered: Delivered,
     provider: MusicProvider,
     reaching: &(dyn Fn() -> bool + Sync),
@@ -765,6 +841,7 @@ fn opened(
             let length = file.metadata().ok().map(|metadata| metadata.len());
             Ok(Ok(Taken {
                 reader: Box::new(file),
+                partial: None,
                 length,
                 extension,
                 provider,
@@ -773,20 +850,58 @@ fn opened(
         }
         Delivery::Stream {
             extension, opening, ..
-        } => Ok(match heeding(job, reaching, move || opening.open())? {
-            Ok(Opened::Reading { reader, length }) => Ok(Taken {
-                reader,
-                length,
-                extension: extension.as_str().to_owned(),
-                provider,
-                taken_from,
-            }),
-            Ok(Opened::Gone) => Err(Unopened::Gone),
-            Err(error) => {
-                tracing::warn!(%error, %provider, "an offered download could not be opened");
-                Err(Unopened::Failed(failure_of(provider, &error)))
-            }
-        }),
+        } => {
+            let claimed = partials
+                .filter(|_| opening.is_resumable())
+                .and_then(|partials| partials.claim(&job.song, &taken_from));
+            let held = claimed.as_ref().and_then(Partial::held);
+            let reopened = heeding(job, reaching, move || opening.open_resuming(held))?;
+            Ok(match reopened {
+                Ok(Reopened::Reading(resumed)) => {
+                    let begun = claimed.map(|claimed| {
+                        claimed.begun(
+                            &job.song,
+                            &taken_from,
+                            resumed.from,
+                            resumed.length,
+                            resumed.validator,
+                        )
+                    });
+                    let partial = match begun {
+                        Some(Ok(partial)) => Some(partial),
+                        Some(Err(source)) if resumed.from > 0 => {
+                            return Ok(Err(Unopened::Failed(Error::DownloadIo {
+                                op: DownloadOp::Write,
+                                source,
+                            })));
+                        }
+                        Some(Err(error)) => {
+                            tracing::warn!(%error, "a download is not kept as it arrives");
+                            None
+                        }
+                        None => None,
+                    };
+                    Ok(Taken {
+                        reader: resumed.reader,
+                        partial,
+                        length: resumed.length,
+                        extension: extension.as_str().to_owned(),
+                        provider,
+                        taken_from,
+                    })
+                }
+                Ok(Reopened::Gone) => {
+                    if let Some(claimed) = claimed {
+                        claimed.finished();
+                    }
+                    Err(Unopened::Gone)
+                }
+                Err(error) => {
+                    tracing::warn!(%error, %provider, "an offered download could not be opened");
+                    Err(Unopened::Failed(failure_of(provider, &error)))
+                }
+            })
+        }
     }
 }
 

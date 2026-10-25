@@ -19,10 +19,13 @@ mod mixes;
 mod online_tools;
 mod organising;
 mod output;
+mod partials;
 mod playback;
 mod playlist_files;
 mod playlists;
 mod queue_edit;
+#[cfg(test)]
+mod resuming_tests;
 mod room;
 mod search;
 mod sharing;
@@ -227,7 +230,7 @@ impl MobilePlayer {
             preferences: Mutex::new(PlaybackPreferences::default()),
             services: features::Services::default(),
             playlist_undo: Mutex::new(Vec::new()),
-            downloads: downloads::Downloads::default(),
+            downloads: downloads::Downloads::under(Path::new(&folder)),
             syncing: sync::Syncing::under(PathBuf::from(&folder)),
             routing,
             enriching: enrichment::Enriching::default(),

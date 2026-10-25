@@ -7,12 +7,12 @@ use std::{
 use parking_lot::Mutex;
 use resonate_core::{Isrc, SourceId};
 use resonate_fetch::{
-    Patience, RESUMES_AT_MOST, Ranged, Trusted, configured, downloading_agent, escaped,
-    retry_after_of, unreached,
+    Patience, RESUMES_AT_MOST, Ranged, Trusted, asking_to_resume, configured, downloading_agent,
+    escaped, retry_after_of, unreached,
 };
 use resonate_providers::{
-    Choosing, Delivery, Error, Extension, Identity, Listed as Weighed, Obtained, Opened, Opening,
-    Provider, ProviderOp, Result,
+    Choosing, Delivery, Error, Extension, Held, Identity, Listed as Weighed, Obtained, Opening,
+    Provider, ProviderOp, Reopened, Result,
 };
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
@@ -50,6 +50,7 @@ const FORBIDDEN: u16 = 403;
 const NOT_FOUND: u16 = 404;
 const GONE: u16 = 410;
 const SERVICE_UNAVAILABLE: u16 = 503;
+const NOT_AS_HELD: [u16; 2] = [412, 416];
 const BUSY_ASKED_AGAIN_AFTER_UNSAID: Duration = Duration::from_secs(5);
 const BUSY_ASKED_AGAIN_AFTER_AT_MOST: Duration = Duration::from_secs(10);
 const ONE_DOWNLOAD_AT_ONCE: NonZeroUsize = NonZeroUsize::MIN;
@@ -277,6 +278,84 @@ struct Keyed {
 impl Keyed {
     fn bearer(&self) -> String {
         format!("Bearer {}", self.secret)
+    }
+}
+
+fn relayed_download(
+    provider: &SourceId,
+    agent: &Agent,
+    url: &str,
+    bearer: &str,
+    held: Option<Held>,
+) -> Result<Reopened> {
+    let op = ProviderOp::Download;
+    let held = held.filter(Held::can_be_checked);
+    let mut asked_again = 0;
+    let response = loop {
+        let response = asking_to_resume(agent.get(url), held.as_ref())
+            .header(AUTHORIZATION, bearer)
+            .call()
+            .map_err(|error| unreached(provider.clone(), op, error))?;
+        if response.status().as_u16() != SERVICE_UNAVAILABLE {
+            break response;
+        }
+        if asked_again == RESUMES_AT_MOST {
+            return Err(Error::Busy {
+                provider: provider.clone(),
+                op,
+            });
+        }
+        asked_again += 1;
+        let wait = retry_after_of(&response)
+            .unwrap_or(BUSY_ASKED_AGAIN_AFTER_UNSAID)
+            .min(BUSY_ASKED_AGAIN_AFTER_AT_MOST);
+        tracing::debug!(
+            ?wait,
+            "the server is busy with another download and is asked again"
+        );
+        thread::sleep(wait);
+    };
+    let status = response.status().as_u16();
+    match status {
+        200 | 206 => {
+            let resumed_after = Patience::default().resumed_after;
+            let ranged = match &held {
+                Some(held) => Ranged::continuing_held(
+                    agent.clone(),
+                    url.to_owned(),
+                    response,
+                    held,
+                    resumed_after,
+                ),
+                None if status == 200 => Some(Ranged::continuing(
+                    agent.clone(),
+                    url.to_owned(),
+                    response,
+                    resumed_after,
+                )),
+                None => None,
+            };
+            match ranged {
+                Some(ranged) => Ok(Reopened::Reading(
+                    ranged.bearing(bearer.to_owned()).into_resumed(),
+                )),
+                None => relayed_download(provider, agent, url, bearer, None),
+            }
+        }
+        status if held.is_some() && NOT_AS_HELD.contains(&status) => {
+            relayed_download(provider, agent, url, bearer, None)
+        }
+        FORBIDDEN | NOT_FOUND | GONE => Ok(Reopened::Gone),
+        UNAUTHORISED => Err(Error::Unwelcome {
+            provider: provider.clone(),
+            op,
+            code: status,
+        }),
+        _ => Err(Error::Refused {
+            provider: provider.clone(),
+            op,
+            status,
+        }),
     }
 }
 
@@ -740,61 +819,8 @@ impl HifiApi {
         Ok(Delivery::Stream {
             key: track.key(),
             extension: Extension::new(RELAYED_AS)?,
-            opening: Opening::new(move || {
-                let op = ProviderOp::Download;
-                let mut asked_again = 0;
-                let response = loop {
-                    let response = agent
-                        .get(&url)
-                        .header(AUTHORIZATION, bearer.as_str())
-                        .call()
-                        .map_err(|error| unreached(provider.clone(), op, error))?;
-                    if response.status().as_u16() != SERVICE_UNAVAILABLE {
-                        break response;
-                    }
-                    if asked_again == RESUMES_AT_MOST {
-                        return Err(Error::Busy {
-                            provider: provider.clone(),
-                            op,
-                        });
-                    }
-                    asked_again += 1;
-                    let wait = retry_after_of(&response)
-                        .unwrap_or(BUSY_ASKED_AGAIN_AFTER_UNSAID)
-                        .min(BUSY_ASKED_AGAIN_AFTER_AT_MOST);
-                    tracing::debug!(
-                        ?wait,
-                        "the server is busy with another download and is asked again"
-                    );
-                    thread::sleep(wait);
-                };
-                let status = response.status().as_u16();
-                match status {
-                    200 => {
-                        let ranged = Ranged::continuing(
-                            agent.clone(),
-                            url.clone(),
-                            response,
-                            Patience::default().resumed_after,
-                        )
-                        .bearing(bearer.clone());
-                        Ok(Opened::Reading {
-                            length: ranged.length(),
-                            reader: Box::new(ranged),
-                        })
-                    }
-                    FORBIDDEN | NOT_FOUND | GONE => Ok(Opened::Gone),
-                    UNAUTHORISED => Err(Error::Unwelcome {
-                        provider: provider.clone(),
-                        op,
-                        code: status,
-                    }),
-                    _ => Err(Error::Refused {
-                        provider: provider.clone(),
-                        op,
-                        status,
-                    }),
-                }
+            opening: Opening::resumable(move |held| {
+                relayed_download(&provider, &agent, &url, &bearer, held)
             }),
         })
     }

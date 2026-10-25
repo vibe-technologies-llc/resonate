@@ -16,8 +16,8 @@ use parking_lot::Mutex;
 use resonate_core::{Isrc, Link, MediaLocation};
 use resonate_fetch::RESUMES_AT_MOST;
 use resonate_providers::{
-    Authorizing, Client, Delivery, Error, Identity, Obtained, Opened, Opening, Provider,
-    ProviderOp, SignsIn,
+    Authorizing, Client, Delivery, Error, Held, Identity, Obtained, Opened, Opening, Provider,
+    ProviderOp, Reopened, SignsIn,
 };
 use resonate_tidal::{Account, Endpoints, HifiApi, Hosting, MediaHosts, Tidal, TidalSignIn};
 
@@ -1402,6 +1402,110 @@ fn a_keyed_download_cut_off_part_way_is_asked_of_the_server_again_from_where_it_
             .iter()
             .all(|asked| asked.authorization.as_deref() == Some("Bearer hush-secret"))
     );
+}
+
+fn keyed_opening(fake: &Fake) -> Opening {
+    let keyed = fake.hifi().with_secret("hush-secret");
+    match keyed.find(&by_isrc()).expect("an answer") {
+        Obtained::Found(Delivery::Stream { opening, .. }) => opening,
+        Obtained::Found(Delivery::File(_)) | Obtained::Nothing => panic!("a stream was offered"),
+    }
+}
+
+#[test]
+fn a_keyed_download_opened_with_what_is_held_is_asked_from_there_and_read_on() {
+    let song = b"fLaC-a-song-already-half-on-the-disk-and-half-to-come".to_vec();
+    let served = song.clone();
+    let fake = hifi_server(
+        move |asked, _, _| match (asked.path.as_str(), &asked.range) {
+            ("/file/", Some(range)) => {
+                let from: usize = range
+                    .trim_start_matches("bytes=")
+                    .trim_end_matches('-')
+                    .parse()
+                    .expect("a range start");
+                Canned {
+                    status: 206,
+                    headers: vec![(
+                        "Content-Range",
+                        format!("bytes {from}-{}/{}", served.len() - 1, served.len()),
+                    )],
+                    ..Canned::media(&served[from..])
+                }
+            }
+            ("/file/", None) => Canned::media(&served),
+            _ => Canned::refused(404, "{}"),
+        },
+    );
+    let held = Held {
+        bytes: 20,
+        total: Some(song.len() as u64),
+        validator: None,
+    };
+
+    let Ok(Reopened::Reading(mut resumed)) = keyed_opening(&fake).open_resuming(Some(held)) else {
+        panic!("the download opens");
+    };
+    let mut rest = Vec::new();
+    resumed
+        .reader
+        .read_to_end(&mut rest)
+        .expect("the rest reads");
+
+    assert_eq!(resumed.from, 20);
+    assert_eq!(resumed.length, Some(song.len() as u64));
+    assert_eq!(rest, &song[20..]);
+    let heard = fake.heard();
+    let files: Vec<_> = heard
+        .iter()
+        .filter(|asked| asked.path == "/file/")
+        .collect();
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].range.as_deref(), Some("bytes=20-"));
+}
+
+#[test]
+fn a_keyed_download_whose_length_is_not_what_is_held_is_read_again_from_the_start() {
+    let song = b"fLaC-a-song-that-grew-since-the-part-on-the-disk-was-written".to_vec();
+    let served = song.clone();
+    let fake = hifi_server(
+        move |asked, _, _| match (asked.path.as_str(), &asked.range) {
+            ("/file/", Some(_)) => Canned {
+                status: 206,
+                headers: vec![(
+                    "Content-Range",
+                    format!("bytes 20-{}/{}", served.len() - 1, served.len()),
+                )],
+                ..Canned::media(&served[20..])
+            },
+            ("/file/", None) => Canned::media(&served),
+            _ => Canned::refused(404, "{}"),
+        },
+    );
+    let held = Held {
+        bytes: 20,
+        total: Some(song.len() as u64 - 7),
+        validator: None,
+    };
+
+    let Ok(Reopened::Reading(mut resumed)) = keyed_opening(&fake).open_resuming(Some(held)) else {
+        panic!("the download opens");
+    };
+    let mut bytes = Vec::new();
+    resumed
+        .reader
+        .read_to_end(&mut bytes)
+        .expect("the whole reads");
+
+    assert_eq!(resumed.from, 0);
+    assert_eq!(bytes, song);
+    let heard = fake.heard();
+    let ranges: Vec<_> = heard
+        .iter()
+        .filter(|asked| asked.path == "/file/")
+        .map(|asked| asked.range.clone())
+        .collect();
+    assert_eq!(ranges, [Some("bytes=20-".to_owned()), None]);
 }
 
 #[test]

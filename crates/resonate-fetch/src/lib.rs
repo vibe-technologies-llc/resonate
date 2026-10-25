@@ -12,7 +12,10 @@ pub use crate::{
         downloading_agent,
     },
     failed::{as_io, unreached},
-    ranged::{ASKED_LATER, RESUMES_AT_MOST, Ranged, Unfetched, waited_before},
+    ranged::{
+        ASKED_LATER, RESUMES_AT_MOST, Ranged, Unfetched, asking_to_resume, validator_of,
+        waited_before,
+    },
     stall::BrokenOffAfter,
     trust::{certificate_refused, system_and_built_in},
     waited::{retry_after, retry_after_of},
