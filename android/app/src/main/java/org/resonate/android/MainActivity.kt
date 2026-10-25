@@ -1,6 +1,7 @@
 package org.resonate.android
 
 import android.Manifest
+import android.app.PendingIntent
 import android.app.SearchManager
 import android.content.ComponentName
 import android.content.Intent
@@ -57,10 +58,10 @@ class MainActivity : ComponentActivity(), Host {
             if (granted) library.features.useDownloadsAndScan()
             else library.notice("Allow music access to read existing songs in Downloads")
         }
-    private var deleteAnswer: CompletableDeferred<Boolean>? = null
-    private val deleteConsent =
+    private var consentAnswer: CompletableDeferred<Boolean>? = null
+    private val mediaConsent =
         registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
-            deleteAnswer?.complete(result.resultCode == RESULT_OK)
+            consentAnswer?.complete(result.resultCode == RESULT_OK)
         }
     private var microphoneAnswer: CompletableDeferred<Boolean>? = null
     private val microphonePermission =
@@ -187,15 +188,17 @@ class MainActivity : ComponentActivity(), Host {
         }
     }
 
-    override suspend fun confirmDelete(uris: List<Uri>): Boolean {
+    override suspend fun confirmDelete(uris: List<Uri>): Boolean =
+        consented(MediaStore.createDeleteRequest(contentResolver, uris))
+
+    override suspend fun confirmWrite(uris: List<Uri>): Boolean =
+        consented(MediaStore.createWriteRequest(contentResolver, uris))
+
+    private suspend fun consented(request: PendingIntent): Boolean {
         val answer = CompletableDeferred<Boolean>()
-        deleteAnswer = answer
-        val request =
-            IntentSenderRequest.Builder(
-                    MediaStore.createDeleteRequest(contentResolver, uris).intentSender
-                )
-                .build()
-        withContext(Dispatchers.Main) { deleteConsent.launch(request) }
+        consentAnswer = answer
+        val asked = IntentSenderRequest.Builder(request.intentSender).build()
+        withContext(Dispatchers.Main) { mediaConsent.launch(asked) }
         return answer.await()
     }
 

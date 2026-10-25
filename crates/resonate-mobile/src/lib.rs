@@ -26,6 +26,7 @@ mod playlists;
 mod queue_edit;
 #[cfg(test)]
 mod resuming_tests;
+mod rewriting;
 mod room;
 mod search;
 mod sharing;
@@ -69,6 +70,7 @@ pub use crate::{
         GainMode, LossyRestoration, PlaybackPreferences, ResamplingPhase, ResamplingQuality,
         SleepTimer, default_playback_preferences,
     },
+    rewriting::DocumentRewriting,
     watching::PlayerWatch,
 };
 
@@ -196,7 +198,7 @@ pub struct MobilePlayer {
     routing: Arc<output::Routing>,
     enriching: enrichment::Enriching,
     room: room::Room,
-    tag_undo: tagging::TagUndo,
+    tagging: tagging::Tagging,
 }
 
 #[uniffi::export]
@@ -235,7 +237,7 @@ impl MobilePlayer {
             routing,
             enriching: enrichment::Enriching::default(),
             room: room::Room::under(PathBuf::from(&folder)),
-            tag_undo: tagging::TagUndo::default(),
+            tagging: tagging::Tagging::under(PathBuf::from(&folder)),
         });
         this.resume_saved()?;
         watching::keep(&this);

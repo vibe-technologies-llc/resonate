@@ -174,6 +174,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     val downloads = DownloadQueue(context, library, scope, settings, downloadSeams)
     val listening = Listening(library, scope, { online.value }, { auddToken.value })
+    val tags = TagEditing(context, library, scope) { songDeletable(it) }
     val downloading: StateFlow<Boolean> =
         downloads.jobs
             .map { jobs -> jobs.any { !it.state.settled } }
@@ -275,6 +276,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     fun initialize(native: MobilePlayer) {
         room.restore(native)
         routes.start()
+        tags.initialize(native)
         providerAccounts.value =
             try {
                 accounts.readAccounts()

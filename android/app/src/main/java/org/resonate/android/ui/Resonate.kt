@@ -37,6 +37,8 @@ interface Host {
 
     suspend fun confirmDelete(uris: List<Uri>): Boolean
 
+    suspend fun confirmWrite(uris: List<Uri>): Boolean
+
     suspend fun allowMicrophone(): Boolean
 
     fun openAppSettings()
@@ -117,6 +119,11 @@ class Resonate(val library: LibraryRepository, val playback: Playback, val host:
     fun keepListening(keeps: Boolean) = features.listening.keepListening(keeps, host::allowMicrophone)
 
     fun deleteSongs(tracks: List<Track>) = features.deleteSongs(tracks, host::confirmDelete)
+
+    fun editTags(tracks: List<Track>, change: org.resonate.android.nativecore.SongTags) =
+        features.tags.edit(tracks, change, host::confirmWrite)
+
+    fun undoTags() = features.tags.undo(host::confirmWrite)
 
     suspend fun deleteCopies(sets: List<org.resonate.android.nativecore.IdenticalSongs>) =
         features.deleteCopies(sets, host::confirmDelete)

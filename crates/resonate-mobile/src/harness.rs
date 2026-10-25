@@ -257,7 +257,7 @@ impl Harness {
             routing: Arc::new(Routing::new()),
             enriching: crate::enrichment::Enriching::default(),
             room: crate::room::Room::under(std::env::temp_dir()),
-            tag_undo: crate::tagging::TagUndo::default(),
+            tagging: crate::tagging::Tagging::under(std::env::temp_dir()),
         };
 
         let songs = SONGS

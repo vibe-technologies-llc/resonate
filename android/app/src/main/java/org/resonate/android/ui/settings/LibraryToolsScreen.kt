@@ -53,7 +53,7 @@ import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.resonateViewModel
 
-class LibraryToolsViewModel(resonate: Resonate) : ViewModel() {
+class LibraryToolsViewModel(private val resonate: Resonate) : ViewModel() {
     private val features = resonate.features
     private val enrichment = features.enrichment
     private val library = resonate.library
@@ -66,6 +66,7 @@ class LibraryToolsViewModel(resonate: Resonate) : ViewModel() {
     val recognitionKey = features.recognitionKey
     val auddToken = features.auddToken
     val rememberSearches = features.rememberSearches
+    val tagsUndoable = features.tags.undoable
     val scanning = library.scanning
     val songs = library.allTracks
     val organiseUndo = features.organising.undo
@@ -98,6 +99,8 @@ class LibraryToolsViewModel(resonate: Resonate) : ViewModel() {
     fun rescan() = library.rescan()
 
     fun putFilesBack() = features.organising.putBack()
+
+    fun undoTags() = resonate.undoTags()
 
     fun saveRecognitionKey(value: String) = features.saveRecognitionKey(value.trim())
 
@@ -132,6 +135,7 @@ fun LibraryToolsScreen() {
     val songs by model.songs.collectAsStateWithLifecycle()
     val organiseUndo by model.organiseUndo.collectAsStateWithLifecycle()
     val organising by model.organising.collectAsStateWithLifecycle()
+    val tagsUndoable by model.tagsUndoable.collectAsStateWithLifecycle()
     var confirmRefresh by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) { model.read() }
     val running = status?.running == true
@@ -248,6 +252,17 @@ fun LibraryToolsScreen() {
                     onClick = { navigator.open(Screen.IdenticalSongs) },
                     modifier = Modifier.testTag("identical-songs"),
                 )
+            }
+            if (tagsUndoable) {
+                item(key = "undo-tags") {
+                    SettingRow(
+                        title = "Undo tag edit",
+                        icon = Icons.AutoMirrored.Rounded.Undo,
+                        supporting = "Put back the tags you last saved",
+                        onClick = model::undoTags,
+                        modifier = Modifier.testTag("undo-tags"),
+                    )
+                }
             }
             item(key = "listen") {
                 SettingRow(

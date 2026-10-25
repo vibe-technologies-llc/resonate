@@ -1,4 +1,9 @@
-use std::path::PathBuf;
+use std::{
+    fs::{self, File},
+    io,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use parking_lot::Mutex;
 use resonate_codec::{
@@ -7,7 +12,13 @@ use resonate_codec::{
 use resonate_core::MediaLocation;
 use rusqlite::params;
 
-use crate::{Error, MobilePlayer, Result, StoreOp, Track, catalog::Catalog, documents::location};
+use crate::{
+    Error, MobilePlayer, Result, StoreOp, Track,
+    catalog::Catalog,
+    documents::location,
+    error::RewriteOp,
+    rewriting::{DocumentRewriting, Stage, crc_of_file, put_back},
+};
 
 const UNDO_STEPS_KEPT: usize = 16;
 const EDITABLE: [TagField; 11] = [
@@ -125,12 +136,21 @@ struct Undone {
     before: SongTags,
 }
 
-#[derive(Default)]
-pub(crate) struct TagUndo {
+pub(crate) struct Tagging {
+    folder: PathBuf,
     steps: Mutex<Vec<Vec<Undone>>>,
+    rewriting: Mutex<Option<Arc<dyn DocumentRewriting>>>,
 }
 
-impl TagUndo {
+impl Tagging {
+    pub(crate) fn under(folder: PathBuf) -> Self {
+        Self {
+            folder,
+            steps: Mutex::new(Vec::new()),
+            rewriting: Mutex::new(None),
+        }
+    }
+
     fn keep(&self, step: Vec<Undone>) {
         if step.is_empty() {
             return;
@@ -143,12 +163,21 @@ impl TagUndo {
     }
 }
 
+struct Retagged {
+    before: SongTags,
+    written: TagSet,
+}
+
 #[uniffi::export]
 impl MobilePlayer {
     pub fn song_tags(&self, id: u64) -> Result<SongTags> {
         let track = self.catalog.track(id)?;
         let tags = probe(&self.sources, &location(&track.uri)?)?.tags;
         Ok(SongTags::read(&tags))
+    }
+
+    pub fn rewrite_documents_with(&self, rewriting: Box<dyn DocumentRewriting>) {
+        *self.tagging.rewriting.lock() = Some(Arc::from(rewriting));
     }
 
     pub fn tags_writable(&self, name: String) -> bool {
@@ -174,12 +203,12 @@ impl MobilePlayer {
                 }
             }
         }
-        self.tag_undo.keep(step);
+        self.tagging.keep(step);
         Ok(told)
     }
 
     pub fn tags_to_undo(&self) -> Vec<String> {
-        self.tag_undo
+        self.tagging
             .steps
             .lock()
             .last()
@@ -188,7 +217,7 @@ impl MobilePlayer {
     }
 
     pub fn undo_tags(&self, songs: Vec<SongFile>) -> Result<TagsWritten> {
-        let Some(step) = self.tag_undo.steps.lock().pop() else {
+        let Some(step) = self.tagging.steps.lock().pop() else {
             return Ok(TagsWritten::default());
         };
         let mut told = TagsWritten::default();
@@ -213,35 +242,138 @@ impl MobilePlayer {
 impl MobilePlayer {
     fn retag(&self, song: &SongFile, change: &SongTags) -> Result<Option<SongTags>> {
         let track = self.catalog.track_uri(&song.uri)?;
-        let local = MediaLocation::local(PathBuf::from(&song.path));
+        let retagged = match song.path.as_str() {
+            "" => self.retag_document(&track, song, change)?,
+            path => retag_at(&MediaLocation::local(PathBuf::from(path)), change)?,
+        };
+        let Some(Retagged { before, written }) = retagged else {
+            return Ok(None);
+        };
+
+        self.catalog.retagged(&track, &written)?;
+        self.services.analyses.lock().remove(&track.id);
+        Ok(Some(before))
+    }
+
+    fn retag_document(
+        &self,
+        track: &Track,
+        song: &SongFile,
+        change: &SongTags,
+    ) -> Result<Option<Retagged>> {
+        let rewriting = self
+            .tagging
+            .rewriting
+            .lock()
+            .clone()
+            .ok_or(Error::TagsUnwritable)?;
+        let at = location(&song.uri)?;
         let tags = FileTags::default();
-        if !tags.writes(&local) {
+        let stage = Stage::made(&self.tagging.folder, &track.name)?;
+        let working = MediaLocation::local(stage.working());
+        if !tags.writes(&working) {
             return Err(Error::TagsUnwritable);
         }
 
-        let held = tags.read(&local, Picturing::Whether)?.tags;
+        self.copy_document(&at, &stage.working())?;
+        let held = tags.read(&working, Picturing::Whether)?.tags;
         let Some(planned) = planned(&held, change)? else {
             return Ok(None);
         };
-        tags.write(
-            &local,
-            Writing {
-                edits: &planned.edits,
-                taken: &planned.taken,
-                picture: None,
-                unpictured: false,
-                popularity: None,
-            },
-        )?;
 
-        let written = tags.read(&local, Picturing::Whether)?.tags;
-        if !landed(&written, &planned) {
-            return Err(Error::TagsUnconfirmed);
-        }
-        self.catalog.retagged(&track, &written)?;
-        self.services.analyses.lock().remove(&track.id);
-        Ok(Some(planned.before))
+        fs::copy(stage.working(), stage.original()).map_err(|source| Error::TagsDocument {
+            op: RewriteOp::CopiedAside,
+            source,
+        })?;
+        let original = crc_of_file(&stage.original())?;
+        let written = write_planned(&tags, &working, &planned)?;
+        let edited = crc_of_file(&stage.working())?;
+
+        self.replace_document(&*rewriting, &song.uri, &stage, edited, original)?;
+        Ok(Some(Retagged {
+            before: planned.before,
+            written,
+        }))
     }
+
+    fn copy_document(&self, at: &MediaLocation, into: &Path) -> Result<()> {
+        let copied = |source| Error::TagsDocument {
+            op: RewriteOp::CopiedAside,
+            source,
+        };
+        let mut media = self.sources.open(at)?;
+        let mut file = File::create_new(into).map_err(copied)?;
+        io::copy(&mut media.stream, &mut file).map_err(copied)?;
+        Ok(())
+    }
+
+    fn replace_document(
+        &self,
+        rewriting: &dyn DocumentRewriting,
+        uri: &str,
+        stage: &Stage,
+        edited: u32,
+        original: u32,
+    ) -> Result<()> {
+        let failure = match put_back(rewriting, uri, &stage.working()) {
+            Err(
+                error @ Error::TagsDocument {
+                    op: RewriteOp::Opened,
+                    ..
+                },
+            ) => return Err(error),
+            Err(error) => error,
+            Ok(()) if self.whole_crc(uri) == Some(edited) => return Ok(()),
+            Ok(()) => Error::TagsUnconfirmed,
+        };
+
+        let restored = put_back(rewriting, uri, &stage.original()).is_ok()
+            && self.whole_crc(uri) == Some(original);
+        if restored {
+            return Err(failure);
+        }
+
+        let kept = stage.keep_original(&self.tagging.folder)?;
+        tracing::error!(path = %kept.display(), "a song could not be put back after a failed tag write");
+        Err(Error::TagsUnrestored { kept })
+    }
+}
+
+fn retag_at(local: &MediaLocation, change: &SongTags) -> Result<Option<Retagged>> {
+    let tags = FileTags::default();
+    if !tags.writes(local) {
+        return Err(Error::TagsUnwritable);
+    }
+
+    let held = tags.read(local, Picturing::Whether)?.tags;
+    let Some(planned) = planned(&held, change)? else {
+        return Ok(None);
+    };
+
+    let written = write_planned(&tags, local, &planned)?;
+    Ok(Some(Retagged {
+        before: planned.before,
+        written,
+    }))
+}
+
+fn write_planned(tags: &FileTags, local: &MediaLocation, planned: &Planned) -> Result<TagSet> {
+    tags.write(
+        local,
+        Writing {
+            edits: &planned.edits,
+            taken: &planned.taken,
+            picture: None,
+            unpictured: false,
+            popularity: None,
+        },
+    )?;
+
+    let written = tags.read(local, Picturing::Whether)?.tags;
+    if !landed(&written, planned) {
+        return Err(Error::TagsUnconfirmed);
+    }
+    Ok(written)
 }
 
 fn planned(held: &TagSet, change: &SongTags) -> Result<Option<Planned>> {
@@ -324,12 +456,21 @@ impl Catalog {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::Path, sync::Arc};
+    use std::{
+        collections::VecDeque,
+        fs::OpenOptions,
+        os::fd::IntoRawFd,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
 
     use resonate_codec::Sources;
 
     use super::*;
-    use crate::{PlaybackPreferences, features::Services};
+    use crate::{
+        Documents, PlaybackPreferences,
+        documents::{DOCUMENT_REFUSED, GrantedFiles},
+        features::Services,
+    };
 
     const URI: &str = "content://test/song.wav";
 
@@ -349,7 +490,7 @@ mod tests {
             routing: Arc::new(crate::output::Routing::new()),
             enriching: crate::enrichment::Enriching::default(),
             room: crate::room::Room::under(std::env::temp_dir()),
-            tag_undo: TagUndo::default(),
+            tagging: Tagging::under(std::env::temp_dir()),
         }
     }
 
@@ -464,5 +605,299 @@ mod tests {
         );
         assert_eq!(fs::read(&path).expect("the wave"), before);
         assert!(player.tags_to_undo().is_empty());
+    }
+
+    #[derive(Clone, Copy)]
+    enum Reply {
+        Real,
+        TruncatedThenFull,
+        TruncatedThenNowhere,
+        Refused,
+    }
+
+    struct Directory {
+        folder: PathBuf,
+        script: Mutex<VecDeque<Reply>>,
+        asked: AtomicUsize,
+    }
+
+    impl Directory {
+        fn answering(folder: &Path, script: &[Reply]) -> Arc<Self> {
+            Arc::new(Self {
+                folder: folder.to_path_buf(),
+                script: Mutex::new(script.iter().copied().collect()),
+                asked: AtomicUsize::new(0),
+            })
+        }
+
+        fn path_of(&self, uri: &str) -> PathBuf {
+            self.folder
+                .join(uri.strip_prefix("content://test/").expect("a test uri"))
+        }
+
+        fn truncated(&self, uri: &str) {
+            OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .open(self.path_of(uri))
+                .expect("a document to truncate");
+        }
+
+        fn device(path: &str) -> i32 {
+            OpenOptions::new()
+                .write(true)
+                .open(path)
+                .expect("a device")
+                .into_raw_fd()
+        }
+    }
+
+    impl Documents for Directory {
+        fn open_document(&self, uri: String) -> i32 {
+            fs::File::open(self.path_of(&uri)).map_or(DOCUMENT_REFUSED, IntoRawFd::into_raw_fd)
+        }
+    }
+
+    struct Rewrites(Arc<Directory>);
+
+    impl DocumentRewriting for Rewrites {
+        fn rewrite_document(&self, uri: String) -> i32 {
+            self.0.asked.fetch_add(1, Ordering::Relaxed);
+            let reply = self.0.script.lock().pop_front().unwrap_or(Reply::Real);
+            match reply {
+                Reply::Real => OpenOptions::new()
+                    .write(true)
+                    .truncate(true)
+                    .open(self.0.path_of(&uri))
+                    .map_or(DOCUMENT_REFUSED, IntoRawFd::into_raw_fd),
+                Reply::TruncatedThenFull => {
+                    self.0.truncated(&uri);
+                    Directory::device("/dev/full")
+                }
+                Reply::TruncatedThenNowhere => {
+                    self.0.truncated(&uri);
+                    Directory::device("/dev/null")
+                }
+                Reply::Refused => DOCUMENT_REFUSED,
+            }
+        }
+    }
+
+    struct Edited {
+        player: MobilePlayer,
+        directory: Arc<Directory>,
+        song: PathBuf,
+        data: PathBuf,
+        track: Track,
+    }
+
+    impl Edited {
+        fn under(name: &str, script: &[Reply]) -> Self {
+            let song = wave(name);
+            let folder = song.parent().expect("a folder").to_path_buf();
+            let data = folder.join("data");
+            let directory = Directory::answering(&folder, script);
+            let mut player = player();
+            player.sources = Arc::new(Sources::local().and(Arc::new(
+                GrantedFiles::new(directory.clone(), "content").expect("a provider"),
+            )));
+            player.tagging = Tagging::under(data.clone());
+            player.rewrite_documents_with(Box::new(Rewrites(directory.clone())));
+            let track = held(&player);
+            Self {
+                player,
+                directory,
+                song,
+                data,
+                track,
+            }
+        }
+
+        fn file(&self) -> SongFile {
+            SongFile {
+                uri: URI.into(),
+                path: String::new(),
+            }
+        }
+
+        fn tags(&self) -> TagSet {
+            FileTags::default()
+                .read(&MediaLocation::local(self.song.clone()), Picturing::Whether)
+                .expect("the document's tags")
+                .tags
+        }
+
+        fn title(&self) -> String {
+            self.player
+                .catalog
+                .track(self.track.id)
+                .expect("the song")
+                .title
+        }
+
+        fn change() -> SongTags {
+            SongTags {
+                title: Some("Echoes".into()),
+                artist: Some("Pink Floyd".into()),
+                ..SongTags::default()
+            }
+        }
+
+        fn staged(&self) -> Vec<PathBuf> {
+            fs::read_dir(self.data.join("tag-staging"))
+                .map(|entries| entries.flatten().map(|entry| entry.path()).collect())
+                .unwrap_or_default()
+        }
+    }
+
+    #[test]
+    fn tags_written_to_a_document_reach_it_through_a_staged_copy_and_one_undo_puts_them_back() {
+        let edited = Edited::under("document", &[]);
+
+        let written = edited
+            .player
+            .edit_tags(vec![edited.file()], Edited::change())
+            .expect("an edit");
+        let retagged = edited
+            .player
+            .catalog
+            .track(edited.track.id)
+            .expect("the song");
+        let again = edited
+            .player
+            .edit_tags(vec![edited.file()], Edited::change())
+            .expect("the same edit");
+
+        assert_eq!(written.written, 1);
+        assert_eq!(edited.tags().title.as_deref(), Some("Echoes"));
+        assert_eq!(edited.tags().artist.as_deref(), Some("Pink Floyd"));
+        assert_eq!(retagged.title, "Echoes");
+        assert_eq!(retagged.artist, "Pink Floyd");
+        assert_eq!(again.unchanged, 1);
+        assert_eq!(edited.directory.asked.load(Ordering::Relaxed), 1);
+        assert_eq!(edited.staged(), Vec::<PathBuf>::new());
+        assert_eq!(edited.player.tags_to_undo(), vec![URI.to_owned()]);
+
+        let undone = edited
+            .player
+            .undo_tags(vec![edited.file()])
+            .expect("an undo");
+        let restored = edited
+            .player
+            .catalog
+            .track(edited.track.id)
+            .expect("the song");
+
+        assert_eq!(undone.written, 1);
+        assert_eq!(edited.tags().title, None);
+        assert_eq!(restored.title, "song.wav");
+        assert!(restored.artist.is_empty());
+    }
+
+    #[test]
+    fn a_write_back_cut_short_puts_the_original_bytes_back_and_the_row_keeps_its_tags() {
+        let edited = Edited::under("cut-short", &[Reply::TruncatedThenFull]);
+        let before = fs::read(&edited.song).expect("the wave");
+
+        let told = edited
+            .player
+            .edit_tags(vec![edited.file()], Edited::change())
+            .expect("an answer");
+
+        assert_eq!(told.failed, 1);
+        assert_eq!(
+            told.failure.as_deref(),
+            Some("The song's file could not be written")
+        );
+        assert_eq!(fs::read(&edited.song).expect("the wave"), before);
+        assert_eq!(edited.title(), "song.wav");
+        assert!(edited.player.tags_to_undo().is_empty());
+        assert_eq!(edited.staged(), Vec::<PathBuf>::new());
+    }
+
+    #[test]
+    fn a_document_that_does_not_hold_what_was_written_is_put_back_as_it_was() {
+        let edited = Edited::under("lost", &[Reply::TruncatedThenNowhere]);
+        let before = fs::read(&edited.song).expect("the wave");
+
+        let told = edited
+            .player
+            .edit_tags(vec![edited.file()], Edited::change())
+            .expect("an answer");
+
+        assert_eq!(told.failed, 1);
+        assert_eq!(
+            told.failure.as_deref(),
+            Some("The file did not read back with the tags written")
+        );
+        assert_eq!(fs::read(&edited.song).expect("the wave"), before);
+        assert_eq!(edited.title(), "song.wav");
+    }
+
+    #[test]
+    fn an_original_that_cannot_be_put_back_is_kept_whole() {
+        let edited = Edited::under("unrestored", &[Reply::TruncatedThenFull, Reply::Refused]);
+        let before = fs::read(&edited.song).expect("the wave");
+
+        let told = edited
+            .player
+            .edit_tags(vec![edited.file()], Edited::change())
+            .expect("an answer");
+        let kept: Vec<PathBuf> = fs::read_dir(edited.data.join("tag-unrestored"))
+            .expect("the kept folder")
+            .flatten()
+            .map(|entry| entry.path())
+            .collect();
+
+        assert_eq!(told.failed, 1);
+        assert!(
+            told.failure
+                .as_deref()
+                .is_some_and(|failure| failure.starts_with("The song's file was left damaged"))
+        );
+        assert_eq!(kept.len(), 1);
+        assert_eq!(fs::read(&kept[0]).expect("the original"), before);
+        assert_eq!(edited.staged(), Vec::<PathBuf>::new());
+    }
+
+    #[test]
+    fn a_document_refused_for_writing_is_left_untouched() {
+        let edited = Edited::under("refused-write", &[Reply::Refused]);
+        let before = fs::read(&edited.song).expect("the wave");
+
+        let told = edited
+            .player
+            .edit_tags(vec![edited.file()], Edited::change())
+            .expect("an answer");
+
+        assert_eq!(told.failed, 1);
+        assert_eq!(
+            told.failure.as_deref(),
+            Some("The song's file could not be opened for writing")
+        );
+        assert_eq!(fs::read(&edited.song).expect("the wave"), before);
+        assert_eq!(edited.directory.asked.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn a_document_is_not_written_where_the_front_end_gave_no_way_to() {
+        let player = player();
+        held(&player);
+
+        let told = player
+            .edit_tags(
+                vec![SongFile {
+                    uri: URI.into(),
+                    path: String::new(),
+                }],
+                Edited::change(),
+            )
+            .expect("an answer");
+
+        assert_eq!(told.failed, 1);
+        assert_eq!(
+            told.failure.as_deref(),
+            Some("Tags of this kind of file cannot be written")
+        );
     }
 }

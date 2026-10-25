@@ -23,7 +23,7 @@ listener's own file.
 for the native boundary. UniFFI generates the FFI scaffolding; the handwritten unsafe operations are
 two. **An owned descriptor**: the front end hands Rust a descriptor it opened (Android detaches
 `ParcelFileDescriptor`, iOS calls `open(2)`), transferred once and closed by Rust's `File`; a
-negative descriptor is refused. The same transfer (`downloads::fresh_destination`) owns a newly
+negative descriptor is refused (`documents::owned`, for a document read through `Documents` and one replaced through `DocumentRewriting` alike). The same transfer (`downloads::fresh_destination`) owns a newly
 created download or received-song destination, never an existing music document. **The iOS audio
 unit**: `output/remote_io.rs` holds the AudioToolbox calls that create, configure and dispose a RemoteIO unit
 (`objc2-audio-toolbox`), sequenced by `output/remote_io_unit.rs`, and `output/remote_io_render.rs` is the render callback, whose `output/remote_io_buffers.rs` reads the

@@ -503,21 +503,77 @@ summary studies are persisted. A `Watch` cancels decoding. The live visualizer s
 engine tap only while visible and samples on a worker; it never involves Kotlin in the callback.
 The inspector probes the original document and displays both technical and tagged metadata.
 
-**Tags are written through the desktop's writer, at a path the front end opens** (`tagging.rs`).
+**Tags are written through the desktop's writer, on a copy of the document, then the document is replaced** (`tagging.rs`, `rewriting.rs`).
 `FileTags` writes by path alone (staged copy, journal, read back: `library.md`'s *Writing the catalog
-back into the files*), so `edit_tags(songs, change)` takes each document as a `SongFile` (its URI and
-the path the front end resolved and holds open: iOS's security-scoped folder; Android's SAF gives no
-path, so Android offers none). `SongTags` is eleven text fields (`EDITABLE`: title, artist, album,
+back into the files*), so `edit_tags(songs, change)` takes each song as a `SongFile` (its URI and
+a path): iOS passes the path its security-scoped folder resolved, and Android passes one only for a
+copy in `files/opened` (`TagFiles.songFile`), which the writer then edits in place like any file. A
+SAF or MediaStore document has no path, so Android passes an empty one and the boundary does the
+staging. **The document is replaced only by bytes that were read back whole.** `Stage` is a folder of
+its own under `tag-staging` beside `documents.sqlite`, named `<pid>-<n>` and holding a `held` file
+under `writer::Held` (a sweeper, run by the next stage made, asks `writer::writer_of` and removes
+a folder whose writer is gone, so a killed run leaves nothing for ever), an `original/` and a
+`working/` folder, each holding the song under its own name cut by `naming::named_within`. The steps, each
+undone by the next if it fails: the document is copied through the `content` provider into `working/`
+(`CopiedAside`), so every failure up to here has touched nothing; the tags are read and planned there
+(`planned`), and an edit that changes no field ends as *unchanged* having read the document once and
+written nothing; the working copy is copied to `original/` and its CRC-32 taken; `FileTags` writes the
+working copy, with its own staged copy and journal beside it, and reads it back (`TagsUnconfirmed`
+as on a path), so a write the desktop's writer or its read-back refuses never reaches the document;
+then `DocumentRewriting::rewrite_document(uri)` hands back a descriptor opened `"wt"`, which truncates
+the document at once, and `put_back` copies the working file into it and flushes. The document is
+then read again through the provider and its CRC-32 compared with the working copy's: only a document
+that holds the very bytes verified is accepted, and only then is the catalog row set to what the
+working copy reads, the analysis dropped and an undo step kept, so **the row never claims tags the
+file does not hold**. A descriptor refused (`TagsDocument { Opened }`: a revoked grant, a MediaStore
+row the app does not own) has truncated nothing and ends the song as failed. Any later failure (a write
+cut short, a provider keeping nothing, a CRC that differs) has already emptied the document, so the
+original is written back the same way and its CRC checked; a restored document is a failed song with
+its first error, nothing changed. **An original that cannot be written back is never deleted**:
+`keep_original` moves it to `tag-unrestored/` (never swept) and `TagsUnrestored { kept }` says so,
+since the stage's folder is otherwise removed whatever happened. A song costs up to three copies of
+its file on the app's storage at once (`original/`, `working/` and the writer's own staged copy) and
+one read of the document to verify, one song at a time; a full disk is `CopiedAside` before the
+document is touched. **A MediaStore row the app does not own is written only after the listener
+allows it**: `TagEditing` probes each Files URI with a read-write descriptor (never `"w"`, which
+truncates) and, for the ones that throw, asks `Host.confirmWrite` once for the batch
+(`MediaStore.createWriteRequest`, as `confirmDelete` asks `createDeleteRequest`); a request over a
+Files URI is refused as not a media item, so the probe, the request and the `"wt"` descriptor all
+use the same row's audio URI (`TagFiles.writeUri`); songs the listener
+refuses are not sent to the boundary and are told as *Writing to N songs was not allowed*, and a
+SAF tree's documents need no such step. The rewriting callback is not part of `Documents`, so iOS's implementation of that
+interface is untouched: `rewrite_documents_with(rewriting)` is a separate exported method Android
+calls once after the player opens (`DocumentRewrites`: `openFileDescriptor(uri, "wt")`, detached;
+`document_not_found()` for a `FileNotFoundException`, else `document_refused()`), and iOS, which always
+passes a path, never calls it, so the surface is the same on every target; without it a pathless
+song is `TagsUnwritable`. The one `unsafe` descriptor transfer is `documents::owned`, for reading and
+writing alike. A file changed by another program between the copy and the replacement is overwritten
+by the edited copy; a scan that opens the document during the replacement can fail on that song for one
+pass. `SongTags` is eleven text fields (`EDITABLE`: title, artist, album,
 album artist, genre, date, track and disc number and total, composer), each `None` to leave, blank to
 clear, else the value; a number must be a whole number above zero (`TagNumber`). Only the fields
-differing from what the file holds are written (`planned`); the file is read back and every field
-weighed (`TagsUnconfirmed`), then the row's names and numbers are set to what it now reads, the
-title falling back to the file name. Formats `FileTags::writes` refuses are `TagsUnwritable`
-(`tags_writable(name)` asks first). Each call is one undo step of what every written field held
-before, the last `UNDO_STEPS_KEPT` (16) kept for the session; `tags_to_undo` names its URIs and
-`undo_tags(songs)` writes them back (`tags_written_reach_the_file_and_the_catalog_and_one_undo_puts_them_back`).
-`song_tags(id)` reads a song's fields through the document provider. `TagsWritten` counts written,
-unchanged and failed songs with the first failure's sentence.
+differing from what the file holds are written (`planned`). Formats `FileTags::writes` refuses are
+`TagsUnwritable` (`tags_writable(name)` asks first). Each call is one undo step of what every written
+field held before, the last `UNDO_STEPS_KEPT` (16) kept for the session; `tags_to_undo` names its URIs
+and `undo_tags(songs)` writes them back through the same route. `song_tags(id)` reads a song's fields
+through the document provider. `TagsWritten` counts written, unchanged and failed songs with the
+first failure's sentence
+(`tags_written_to_a_document_reach_it_through_a_staged_copy_and_one_undo_puts_them_back`,
+`a_write_back_cut_short_puts_the_original_bytes_back_and_the_row_keeps_its_tags`,
+`a_document_that_does_not_hold_what_was_written_is_put_back_as_it_was`,
+`an_original_that_cannot_be_put_back_is_kept_whole`,
+`a_document_refused_for_writing_is_left_untouched`,
+`a_stage_a_dead_writer_left_is_swept_and_a_living_one_is_not`).
+
+**The sheet is iOS's** (`TagEditor.kt`, `Sheets.editingTags`, `TagEditing`): *Edit tags* in the song
+sheet where `TagEditing.writable` says its kind is writable (`audioExtensions()` asked once of
+`tags_writable` at start) and its folder is (`songDeletable`), *Edit album tags* in an album page's menu.
+One song shows all eleven fields; several hide title and track number, show a field the songs share
+with its value and one they differ in as *Mixed* (changed only once typed into, or cleared on every
+song by the field's button), read at most 500 songs, and say how many cannot be written. *Save* sends
+only the fields that moved (`TagDiff`, the Swift `TagDiff`'s arithmetic held by `TagEditingTest`), a
+sheet with unsaved edits asks before it closes, and the notice counts saved, unchanged and failed songs
+(`TagSentences`). Library tools offers *Undo tag edit* while `tags_to_undo` names a step.
 
 **A song is deleted by the front end, then forgotten; identical files fold into one** (`deleting.rs`).
 The front end removes the file (Rust holds only a descriptor), then `forget_deleted_songs(ids)` drops

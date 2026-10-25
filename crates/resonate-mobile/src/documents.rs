@@ -53,14 +53,17 @@ impl MediaProvider for GrantedFiles {
                 source: kind.into(),
             });
         }
-        let file = unsafe { File::from_raw_fd(descriptor) };
         Ok(Media {
-            stream: Box::new(Reading::new(file)),
+            stream: Box::new(Reading::new(owned(descriptor))),
             hint: location
                 .extension()
                 .map(|extension| FormatHint::Extension(extension.into())),
         })
     }
+}
+
+pub(crate) fn owned(descriptor: i32) -> File {
+    unsafe { File::from_raw_fd(descriptor) }
 }
 
 pub(crate) fn location(uri: &str) -> Result<MediaLocation> {

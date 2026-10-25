@@ -1,4 +1,4 @@
-use std::{fmt, io, result};
+use std::{fmt, io, path::PathBuf, result};
 
 use resonate_core::eq::MAX_BANDS;
 use thiserror::Error;
@@ -44,6 +44,27 @@ impl fmt::Display for DownloadOp {
             Self::Read => "read",
             Self::Write => "written",
             Self::Finish => "finished",
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum RewriteOp {
+    CopiedAside,
+    Opened,
+    Written,
+    ReadBack,
+    PutBack,
+}
+
+impl fmt::Display for RewriteOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::CopiedAside => "copied aside to edit",
+            Self::Opened => "opened for writing",
+            Self::Written => "written",
+            Self::ReadBack => "read back",
+            Self::PutBack => "put back",
         })
     }
 }
@@ -248,6 +269,14 @@ pub enum Error {
     TagsUnwritable,
     #[error("The file did not read back with the tags written")]
     TagsUnconfirmed,
+    #[error("The song's file could not be {op}")]
+    TagsDocument {
+        op: RewriteOp,
+        #[source]
+        source: io::Error,
+    },
+    #[error("The song's file was left damaged by a failed write and could not be put back; its original is kept at {}", .kept.display())]
+    TagsUnrestored { kept: PathBuf },
     #[error("A track or disc number must be a whole number above zero")]
     TagNumber,
     #[error("A room correction file must be an audio file")]

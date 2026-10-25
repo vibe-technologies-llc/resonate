@@ -3,6 +3,7 @@ package org.resonate.android.ui.library
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material3.MaterialTheme
@@ -83,6 +84,12 @@ fun AlbumScreen(screen: Screen.Album) {
                             MenuEntry.Action("Play next", Icons.AutoMirrored.Rounded.PlaylistPlay) { resonate.playNext(tracks) },
                             MenuEntry.Action("Add to queue", Icons.AutoMirrored.Rounded.QueueMusic) { resonate.addToQueue(tracks) },
                             MenuEntry.Action("Add to playlist", Icons.AutoMirrored.Rounded.PlaylistAdd) { sheets.addToPlaylist(tracks) },
+                        ),
+                        if (tracks.none(resonate.features.tags::writable)) emptyList()
+                        else listOf(
+                            MenuEntry.Action("Edit album tags", Icons.Rounded.Edit) {
+                                sheets.editTags(tracks)
+                            }
                         ),
                         if (various || owner.isBlank()) emptyList()
                         else listOf(

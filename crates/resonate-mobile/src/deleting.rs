@@ -7,6 +7,7 @@ use crate::{
     catalog::{Catalog, read},
     catalog_extras::unreferenced_picture_dropped,
     documents::{document_uri, location},
+    rewriting::crc_of,
     vanished::{handed_over, referring_tables},
 };
 
@@ -144,19 +145,13 @@ impl MobilePlayer {
             .and_then(|row| document_uri(&row.location).ok())
     }
 
-    fn whole_crc(&self, uri: &str) -> Option<u32> {
+    pub(crate) fn whole_crc(&self, uri: &str) -> Option<u32> {
         let mut stream = self.opened(uri)?;
-        let mut crc = crc32fast::Hasher::new();
-        let mut chunk = vec![0; READ_IN_CHUNKS_OF];
-        loop {
-            match stream.read(&mut chunk) {
-                Ok(0) => return Some(crc.finalize()),
-                Ok(read) => crc.update(&chunk[..read]),
-                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
-                Err(error) => {
-                    tracing::debug!(%error, uri, "a song could not be read to compare");
-                    return None;
-                }
+        match crc_of(&mut stream) {
+            Ok(crc) => Some(crc),
+            Err(error) => {
+                tracing::debug!(%error, uri, "a song could not be read to compare");
+                None
             }
         }
     }

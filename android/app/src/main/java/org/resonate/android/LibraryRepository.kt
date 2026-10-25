@@ -205,6 +205,7 @@ class LibraryRepository(private val context: Context) {
                     )
                 opened = native
                 val store = preferencesStore()
+                native.rewriteDocumentsWith(DocumentRewrites(context))
                 mutableRoute.value = features.routeInUse()
                 mutableBoundRoutes.value = store.boundRoutes()
                 val preferences = store.read(mutableRoute.value)

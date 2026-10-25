@@ -17,6 +17,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
@@ -92,6 +93,7 @@ class Sheets(val snackbar: SnackbarHostState) {
     var picker by mutableStateOf<List<Track>?>(null)
     var naming by mutableStateOf<NamingRequest?>(null)
     var deleting by mutableStateOf<List<Track>?>(null)
+    var editingTags by mutableStateOf<List<Track>?>(null)
     var listening by mutableStateOf(false)
     var sleeping by mutableStateOf(false)
 
@@ -105,6 +107,10 @@ class Sheets(val snackbar: SnackbarHostState) {
 
     fun addToPlaylist(tracks: List<Track>) {
         picker = tracks
+    }
+
+    fun editTags(tracks: List<Track>) {
+        editingTags = tracks
     }
 
     fun name(title: String, initial: String = "", save: (String) -> Unit) {
@@ -157,6 +163,7 @@ fun SheetHost() {
     sheets.picker?.let { tracks -> PlaylistPicker(tracks) { sheets.picker = null } }
     sheets.naming?.let { request -> NamePlaylistDialog(request) { sheets.naming = null } }
     sheets.deleting?.let { tracks -> DeleteSongsDialog(tracks) { sheets.deleting = null } }
+    sheets.editingTags?.let { tracks -> TagEditorSheet(tracks) { sheets.editingTags = null } }
     if (sheets.listening) ListenSheet { sheets.listening = false }
 }
 
@@ -229,6 +236,9 @@ private fun SongSheet(request: SongSheetRequest, dismiss: () -> Unit) {
             navigator.open(Screen.Details(track.id))
         })
         add(SheetAction(Icons.Rounded.Share, "Share link") { resonate.shareLink(track, scope) })
+        if (resonate.features.tags.writable(track)) {
+            add(SheetAction(Icons.Rounded.Edit, "Edit tags") { sheets.editTags(listOf(track)) })
+        }
         if (resonate.features.songDeletable(track)) {
             add(SheetAction(Icons.Rounded.DeleteOutline, "Delete song", destructive = true) {
                 sheets.deleting = listOf(track)
