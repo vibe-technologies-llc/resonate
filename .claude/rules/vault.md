@@ -36,6 +36,16 @@ engine, library, `ureq` (CI `refuse`).
   the staged copy of the same bytes. One that does not hold it is no dedup hit: the import encodes,
   validates and lands over it (warned)
   (`an_object_under_the_key_that_holds_something_else_is_not_taken_for_it`).
+- **A stream that turns rate or channel count is kept as it came.** FLAC's STREAMINFO and a WAVE's
+  `fmt ` name one shape, so `flac::encode` and `wave::tally` read without following format changes
+  and a turn is `codec::Error::FormatChanged`; `Vault::keep` answers it by taking the source again
+  as `Form::Kept` (`keep_as` forced), whatever `Form::of` chose, so a chained Ogg FLAC or Vorbis lands
+  with its tags shed. A cut row is then `Refusal::CutFromAnother`, as any kept form. `pcm_of`, which
+  weighs source and stripped copy alike, follows turns and folds a mark of each new shape into the
+  digest (`Digest::turned`; a stream that never turns hashes as before, so stored keys hold), so
+  the copy must turn where the source does
+  (`a_chained_ogg_vorbis_is_kept_with_every_link_it_decodes_to`,
+  `a_lossless_stream_that_turns_is_kept_as_it_came_where_one_flac_cannot_hold_it`).
 - **A kept object is weighed like an encoded one**: `kept_whole` decodes source and staged copy
   through the same `pcm_of`, refuses differing digests; a failing stripped copy is recopied whole.
   `bare` rewrites a FLAC's metadata only if its walk reached the last block, else copies as is.

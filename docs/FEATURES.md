@@ -25,8 +25,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [L · 0.2.0] One playback stream and one capture stream only; concurrent playback streams unsupported
 
 ## Formats
-- [M · 0.2.0] Analysis, true-peak measuring and the vault refuse a stream whose rate or channel count turns
-  partway (`codec::Error::FormatChanged`): each is built for one shape, where playback follows the turn
 - [M · blocked: ape-decoder] A 32-bit stereo Monkey's Audio, integer or float, is refused:
   `ape-decoder` 0.3.2 narrows the side channel to 32 bits before undoing it
 - [M · blocked: symphonia-codec-wavpack] A `.wvc` correction file beside a hybrid WavPack is never

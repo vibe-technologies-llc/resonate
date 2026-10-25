@@ -24,6 +24,20 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
   width the vault's `pcm_of` picks. The `Drawing` trait is `Unseen` (`study`) or `Drawn` (envelope,
   spectrogram; `analyse`), so library-wide studies build nothing only a screen wants. DSD → F32 via
   its decimator, not DoP.
+- **A stream that turns is brought back to the shape it opened in.** `study`, `analyse`, `print` and
+  `excerpt` follow format changes (`Decoder::follow_format_changes`) through `conform::Walking`: on
+  each `Reformatted` the previous segment's resampler is flushed, and the new shape gets a `Remix`
+  to the opening layout and a `Resampler` (`Quality::Balanced`, linear phase) to the opening rate
+  from `resonate-dsp`, so every builder, the frame count and `Examined` keep one rate and one
+  channel count and the length is on the opening clock, as `Decoder::position` is. A shape equal to
+  the opening one passes through untouched. A ratio the resampler refuses is `Error::Conformity`.
+  The native-sample readings do not survive a conversion: once a stream has turned, `Leveling`
+  reports no `bits_in_use` and no `stereo` (padding and identical channels are claims about one
+  shape's own samples), while peak, RMS, DC, clipping, loudness, spectrum and print read the
+  conformed signal. The study's true peak is the opening shape's meter over that signal; playback's
+  guard and the engine's `measure::Measuring` meter each shape as it sounds
+  (`a_stream_that_turns_is_as_loud_as_the_same_tone_that_never_does`,
+  `a_study_of_a_stream_that_turns_covers_every_link_in_the_shape_it_opened_in`).
 - **Non-number samples are silence**: `normalised` maps float NaN/infinity to 0 before any builder
   (one would ride the K-weighting history to track end). Bit reading keeps native samples.
 - **`Watching` stops a pass.** `Watch` is the window's; `EnrichProgress` implements it, so cancelling

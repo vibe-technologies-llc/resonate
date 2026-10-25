@@ -480,6 +480,17 @@ impl Vault {
     }
 
     pub fn keep(&self, taking: &Taking<'_>) -> Result<Keeping> {
+        match self.keep_as(taking, None) {
+            Err(Error::Codec { source, .. })
+                if matches!(*source, resonate_codec::Error::FormatChanged { .. }) =>
+            {
+                self.keep_as(taking, Some(Form::Kept))
+            }
+            kept => kept,
+        }
+    }
+
+    fn keep_as(&self, taking: &Taking<'_>, forced: Option<Form>) -> Result<Keeping> {
         let opened = match taking.span {
             Some(span) => Decoder::open_span(taking.sources, taking.location, span),
             None => Decoder::open(taking.sources, taking.location),
@@ -499,7 +510,9 @@ impl Vault {
         };
 
         let speakers = info.speakers;
-        let form = Form::of(codec, info.spec, bits).placing(speakers, info.spec.channel_count());
+        let form = forced.unwrap_or_else(|| {
+            Form::of(codec, info.spec, bits).placing(speakers, info.spec.channel_count())
+        });
         let weighing = Weighing {
             renewing: taking.renewing,
             smaller_than: held,
@@ -1639,6 +1652,7 @@ fn pcm_of(
     });
     decoder.set_output_format(format);
     decoder.refuse_holes();
+    decoder.follow_format_changes();
 
     let spec = StreamSpec::new(info.spec.rate, info.spec.channels, format);
     let mut block = AudioBuffer::empty(spec);
@@ -1651,12 +1665,15 @@ fn pcm_of(
         let status = decoder
             .next_block(&mut block)
             .map_err(|source| Error::codec(VaultOp::Verify, source))?;
-        if status == DecodeStatus::EndOfStream {
-            break;
+        match status {
+            DecodeStatus::EndOfStream => break,
+            DecodeStatus::Reformatted(sounding) => digest.turned(sounding),
+            DecodeStatus::Decoded => {
+                pcm::little_endian(&block, &mut bytes);
+                digest.note(&bytes);
+                frames += block.frames() as u64;
+            }
         }
-        pcm::little_endian(&block, &mut bytes);
-        digest.note(&bytes);
-        frames += block.frames() as u64;
     }
 
     Ok(Heard {
