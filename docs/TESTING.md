@@ -46,6 +46,9 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   behind real NATs, a phone on a mobile network and a Linux desktop, have not been driven against a
   live server. NATs built from user namespaces and nftables need a `veth` pair, which the running
   kernel here has no module for (no `/lib/modules`) and no root to load
+- [S · blocked: network namespaces] Nearby meeting over IPv6 is proved over the loopback and the
+  datagram path alone; the link local multicast group and a peer dialled by a link local address with
+  its scope have not crossed a real interface (nor an IPv6-only network)
 - [M · blocked: hardware] A microphone recording not proved against real sound reaching a microphone
 
 ## Later: Packaging

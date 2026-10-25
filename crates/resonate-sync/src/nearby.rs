@@ -1,9 +1,10 @@
 use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6, UdpSocket},
     time::Duration,
 };
 
-use mdns_sd::{Receiver, ServiceDaemon, ServiceEvent, ServiceInfo};
+use mdns_sd::{Receiver, ScopedIp, ServiceDaemon, ServiceEvent, ServiceInfo};
+use socket2::{Domain, Protocol, Socket, Type};
 
 use crate::{
     Error, Result,
@@ -14,12 +15,14 @@ use crate::{
 
 pub const NEARBY_PORT: u16 = 41_734;
 pub const NEARBY_GROUP: Ipv4Addr = Ipv4Addr::new(239, 255, 41, 73);
+pub const NEARBY_GROUP_V6: Ipv6Addr = Ipv6Addr::new(0xff02, 0, 0, 0, 0, 0, 0x7273, 0xa306);
 pub const BONJOUR_SERVICE: &str = "_resonate-sync._udp.local.";
 pub const RECORD_KEY: &str = "b";
 pub const BEACON_EVERY: Duration = Duration::from_secs(15);
 pub const LARGEST_BEACON: usize = 512;
 pub const ADDRESSES_BEACONED_AT_MOST: usize = 6;
 pub const GLOBAL_ADDRESSES_OFFERED_AT_MOST: usize = 4;
+pub const IPV6_ADDRESSES_BEACONED_AT_MOST: usize = 2;
 const BEACON_MAGIC: &[u8; 4] = b"RSN1";
 const ONE_HOP: u32 = 1;
 const INSTANCE_BYTES: usize = 8;
@@ -44,6 +47,7 @@ impl Nearby {
                 told: vec![
                     SocketAddr::new(IpAddr::V4(NEARBY_GROUP), NEARBY_PORT),
                     SocketAddr::new(IpAddr::V4(Ipv4Addr::BROADCAST), NEARBY_PORT),
+                    SocketAddr::new(IpAddr::V6(NEARBY_GROUP_V6), NEARBY_PORT),
                 ],
             }),
             bonjour: true,
@@ -84,6 +88,86 @@ pub fn bound(broadcast: &Broadcast) -> Result<UdpSocket> {
         }
     }
     Ok(socket)
+}
+
+pub fn bound_v6(broadcast: &Broadcast, shared_port: u16) -> Option<UdpSocket> {
+    let anywhere = |port| SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port);
+    let bound_on = |port| {
+        let socket = Socket::new(Domain::IPV6, Type::DGRAM, Some(Protocol::UDP))?;
+        socket.set_only_v6(true)?;
+        socket.bind(&anywhere(port).into())?;
+        socket.set_nonblocking(true)?;
+        Ok::<_, std::io::Error>(UdpSocket::from(socket))
+    };
+    let socket = bound_on(shared_port)
+        .or_else(|error| {
+            tracing::debug!(%error, port = shared_port, "the beacon port is taken over IPv6; answers alone will find this device");
+            bound_on(0)
+        })
+        .inspect_err(|error| tracing::debug!(%error, "beacons cannot be heard over IPv6"))
+        .ok()?;
+    let interfaces = ipv6_interfaces_here();
+    for told in &broadcast.told {
+        let IpAddr::V6(group) = told.ip() else {
+            continue;
+        };
+        if !group.is_multicast() {
+            continue;
+        }
+        for interface in &interfaces {
+            if let Err(error) = socket.join_multicast_v6(&group, *interface) {
+                tracing::debug!(%error, %group, interface, "the beacon group could not be joined over IPv6");
+            }
+        }
+    }
+    Some(socket)
+}
+
+pub fn ipv6_interfaces_here() -> Vec<u32> {
+    let Ok(interfaces) = if_addrs::get_if_addrs() else {
+        return Vec::new();
+    };
+    let mut indexes = interfaces
+        .into_iter()
+        .filter(|interface| {
+            interface.is_oper_up() && !interface.is_loopback() && !interface.is_p2p()
+        })
+        .filter(|interface| interface.ip().is_ipv6())
+        .filter_map(|interface| interface.index)
+        .collect::<Vec<_>>();
+    indexes.sort_unstable();
+    indexes.dedup();
+    indexes
+}
+
+pub fn told_over_ipv6(told: SocketAddr) -> Vec<SocketAddr> {
+    let SocketAddr::V6(address) = told else {
+        return Vec::new();
+    };
+    if !address.ip().is_multicast() {
+        return vec![told];
+    }
+    ipv6_interfaces_here()
+        .into_iter()
+        .map(|interface| {
+            SocketAddr::V6(SocketAddrV6::new(
+                *address.ip(),
+                address.port(),
+                0,
+                interface,
+            ))
+        })
+        .collect()
+}
+
+pub fn beacon_addresses_here() -> Vec<IpAddr> {
+    let mut addresses = addresses_here();
+    addresses.extend(
+        global_addresses_here()
+            .into_iter()
+            .take(IPV6_ADDRESSES_BEACONED_AT_MOST),
+    );
+    addresses
 }
 
 pub fn addresses_here() -> Vec<IpAddr> {
@@ -183,7 +267,7 @@ pub struct Bonjour {
 }
 
 pub enum Found {
-    Record { record: String, at: Vec<IpAddr> },
+    Record { record: String, at: Vec<SocketAddr> },
     Nothing,
     Ended,
 }
@@ -244,11 +328,7 @@ impl Bonjour {
                 match resolved.get_property_val_str(RECORD_KEY) {
                     Some(record) => Found::Record {
                         record: record.to_owned(),
-                        at: resolved
-                            .get_addresses_v4()
-                            .into_iter()
-                            .map(IpAddr::V4)
-                            .collect(),
+                        at: resolved.get_addresses().iter().map(seen_at).collect(),
                     },
                     None => Found::Nothing,
                 }
@@ -262,6 +342,22 @@ impl Bonjour {
         if let Err(error) = self.daemon.shutdown() {
             tracing::debug!(%error, "Bonjour did not stop cleanly");
         }
+    }
+}
+
+fn seen_at(resolved: &ScopedIp) -> SocketAddr {
+    match resolved {
+        ScopedIp::V6(address) => SocketAddr::V6(SocketAddrV6::new(
+            *address.addr(),
+            0,
+            0,
+            if address.addr().is_unicast_link_local() {
+                address.scope_id().index
+            } else {
+                0
+            },
+        )),
+        other => SocketAddr::new(other.to_ip_addr(), 0),
     }
 }
 
@@ -326,6 +422,107 @@ mod tests {
         assert_eq!(beacon_recorded(&here, &record), Some(fullest));
         assert_eq!(beacon_recorded(&here, &record[1..]), None);
         assert_eq!(beacon_recorded(&here, "zz"), None);
+    }
+
+    #[test]
+    fn the_fullest_record_of_distinct_addresses_still_fits_one_bonjour_text_string() {
+        let here = SyncKey::minted()
+            .expect("a key")
+            .derived()
+            .expect("derived");
+        let mut addresses = [
+            [10, 91, 200, 3],
+            [47, 90, 189, 32],
+            [84, 89, 178, 61],
+            [121, 94, 167, 90],
+            [158, 93, 156, 119],
+            [195, 100, 145, 148],
+        ]
+        .map(|octets| IpAddr::V4(Ipv4Addr::from(octets)))
+        .to_vec();
+        addresses.extend([
+            IpAddr::V6(Ipv6Addr::new(
+                0x2a02, 0x8f1c, 0x5e71, 0x93aa, 0x1f0d, 0xc4e2, 0x7b19, 0xd05e,
+            )),
+            IpAddr::V6(Ipv6Addr::new(
+                0x2a02, 0x9d27, 0x6ab8, 0x93ab, 0x4a84, 0xc4d3, 0x7b1a, 0xd54f,
+            )),
+        ]);
+        let fullest = Beacon {
+            addresses,
+            ..beacon(0)
+        };
+
+        let record = record_of(&here, &fullest).expect("recorded");
+
+        assert!(
+            RECORD_KEY.len() + 1 + record.len() <= usize::from(u8::MAX),
+            "{} bytes",
+            record.len()
+        );
+        assert_eq!(beacon_recorded(&here, &record), Some(fullest));
+    }
+
+    #[test]
+    fn a_beacon_sent_to_the_ipv6_loopback_is_heard_and_opens_under_its_code() {
+        let broadcast = Broadcast {
+            port: 0,
+            told: Vec::new(),
+        };
+        let (Some(sender), Some(listener)) = (bound_v6(&broadcast, 0), bound_v6(&broadcast, 0))
+        else {
+            return;
+        };
+        let here = SyncKey::minted()
+            .expect("a key")
+            .derived()
+            .expect("derived");
+        let beacon = beacon(1);
+        let bytes = beacon_bytes(&here, &beacon).expect("sealed");
+        let to = SocketAddr::new(
+            IpAddr::V6(Ipv6Addr::LOCALHOST),
+            listener.local_addr().expect("an address").port(),
+        );
+
+        sender.send_to(&bytes, to).expect("sent");
+        let mut heard = vec![0; LARGEST_BEACON];
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let (length, from) = loop {
+            match listener.recv_from(&mut heard) {
+                Ok(received) => break received,
+                Err(_) if std::time::Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => panic!("nothing was heard over IPv6: {error}"),
+            }
+        };
+
+        assert!(from.is_ipv6());
+        assert_eq!(beacon_of(&here, &heard[..length]), Some(beacon));
+    }
+
+    #[test]
+    fn a_unicast_ipv6_address_is_told_as_it_stands_and_an_ipv4_one_is_not_told_over_ipv6() {
+        let unicast: SocketAddr = "[::1]:41734".parse().expect("an address");
+        let v4: SocketAddr = "127.0.0.1:41734".parse().expect("an address");
+
+        assert_eq!(told_over_ipv6(unicast), vec![unicast]);
+        assert!(told_over_ipv6(v4).is_empty());
+    }
+
+    #[test]
+    fn a_multicast_group_is_told_once_on_each_interface_that_holds_an_ipv6_address() {
+        let group = SocketAddr::new(IpAddr::V6(NEARBY_GROUP_V6), NEARBY_PORT);
+
+        let told = told_over_ipv6(group);
+
+        assert_eq!(told.len(), ipv6_interfaces_here().len());
+        assert!(told.iter().all(|told| matches!(
+            told,
+            SocketAddr::V6(address) if address.ip() == &NEARBY_GROUP_V6
+                && address.port() == NEARBY_PORT
+                && address.scope_id() != 0
+        )));
     }
 
     #[test]

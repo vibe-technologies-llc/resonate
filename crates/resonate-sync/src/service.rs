@@ -34,8 +34,9 @@ use crate::{
     key::{Derived, PAIRING_LINK, hex, random_bytes},
     ledger::{Follow, Me},
     nearby::{
-        BEACON_EVERY, Bonjour, Found, LARGEST_BEACON, Nearby, addresses_here, beacon_bytes,
-        beacon_of, beacon_recorded, bound, global_addresses_here, record_of,
+        BEACON_EVERY, Bonjour, Found, LARGEST_BEACON, Nearby, addresses_here,
+        beacon_addresses_here, beacon_bytes, beacon_of, beacon_recorded, bound, bound_v6,
+        global_addresses_here, record_of, told_over_ipv6,
     },
     peer::{
         Answering, Heard, blocking, dialled, dialled_within, fetch, holdings_of, meet, serve, tell,
@@ -217,6 +218,7 @@ struct Running {
     bonjour: bool,
     relay_only: bool,
     beacons: Option<tokio::net::UdpSocket>,
+    beacons_v6: Option<tokio::net::UdpSocket>,
     told: Vec<SocketAddr>,
     record: Mutex<Option<(Beacon, String)>>,
     events: UnboundedSender<Event>,
@@ -376,7 +378,10 @@ impl Sync {
             .as_ref()
             .and_then(|socket| socket.local_addr().ok())
             .map(|local| local.port());
-        let (endpoint, reflector, beacons) = {
+        let beacon_socket_v6 = broadcast
+            .zip(nearby_port)
+            .and_then(|(broadcast, port)| bound_v6(broadcast, port));
+        let (endpoint, reflector, beacons, beacons_v6) = {
             let _entered = runtime.enter();
             let reflector =
                 Reflector::over(TokioRuntime.wrap_udp_socket(socket).map_err(Error::Bind)?);
@@ -391,7 +396,11 @@ impl Sync {
                 .map(tokio::net::UdpSocket::from_std)
                 .transpose()
                 .map_err(Error::BeaconBind)?;
-            (endpoint, reflector, beacons)
+            let beacons_v6 = beacon_socket_v6
+                .map(tokio::net::UdpSocket::from_std)
+                .transpose()
+                .map_err(Error::BeaconBind)?;
+            (endpoint, reflector, beacons, beacons_v6)
         };
 
         let (events, events_received) = mpsc::unbounded_channel();
@@ -439,6 +448,7 @@ impl Sync {
                 .as_ref()
                 .is_some_and(|nearby| nearby.bonjour),
             beacons,
+            beacons_v6,
             told: broadcast
                 .map(|broadcast| broadcast.told.clone())
                 .unwrap_or_default(),
@@ -615,8 +625,16 @@ impl Running {
             device: self.device,
             port,
             answering,
-            addresses: addresses_here(),
+            addresses: beacon_addresses_here(),
         })
+    }
+
+    fn beacon_socket_for(&self, address: &SocketAddr) -> Option<&tokio::net::UdpSocket> {
+        if address.is_ipv6() {
+            self.beacons_v6.as_ref()
+        } else {
+            self.beacons.as_ref()
+        }
     }
 
     fn record(&self) -> Option<String> {
@@ -720,6 +738,7 @@ async fn run(running: Arc<Running>, mut inbound: Inbound) {
     watch.set_missed_tick_behavior(MissedTickBehavior::Delay);
     let mut beacon_at = Instant::now();
     let mut beacon = vec![0; LARGEST_BEACON];
+    let mut beacon_v6 = vec![0; LARGEST_BEACON];
     loop {
         let due = syncing.next_due();
         let outcome = tokio::select! {
@@ -767,6 +786,10 @@ async fn run(running: Arc<Running>, mut inbound: Inbound) {
             Some(heard) = inbound.heard.recv() => syncing.heard_from_peer(heard).await,
             Some((length, from)) = beacon_heard(running.beacons.as_ref(), &mut beacon) => {
                 syncing.beacon_heard(&beacon[..length], from).await;
+                Ok(())
+            }
+            Some((length, from)) = beacon_heard(running.beacons_v6.as_ref(), &mut beacon_v6) => {
+                syncing.beacon_heard(&beacon_v6[..length], from).await;
                 Ok(())
             }
             found = found_nearby(bonjour.as_ref()) => {
@@ -1959,9 +1982,6 @@ impl Syncing {
     }
 
     async fn beacon(&mut self) {
-        let Some(socket) = self.running.beacons.as_ref() else {
-            return;
-        };
         if !self.running.transfers_allowed() || self.running.told.is_empty() {
             return;
         }
@@ -1969,8 +1989,18 @@ impl Syncing {
             return;
         };
         for told in &self.running.told {
-            if let Err(error) = socket.send_to(&bytes, told).await {
-                tracing::debug!(%error, %told, "a beacon could not be sent");
+            let Some(socket) = self.running.beacon_socket_for(told) else {
+                continue;
+            };
+            let sent_to = if told.is_ipv6() {
+                told_over_ipv6(*told)
+            } else {
+                vec![*told]
+            };
+            for told in sent_to {
+                if let Err(error) = socket.send_to(&bytes, told).await {
+                    tracing::debug!(%error, %told, "a beacon could not be sent");
+                }
             }
         }
     }
@@ -1997,23 +2027,32 @@ impl Syncing {
 
     async fn beacon_heard(&mut self, bytes: &[u8], from: SocketAddr) {
         if let Some(beacon) = beacon_of(&self.running.derived, bytes) {
-            self.heard_nearby(beacon, &[from.ip()], Some(from)).await;
+            self.heard_nearby(beacon, &[from], Some(from)).await;
         }
     }
 
     async fn heard_nearby(
         &mut self,
         beacon: Beacon,
-        seen_at: &[IpAddr],
+        seen_at: &[SocketAddr],
         answer_to: Option<SocketAddr>,
     ) {
         if !self.running.transfers_allowed() || beacon.device == self.running.device {
             return;
         }
+        let named = beacon
+            .addresses
+            .iter()
+            .map(|ip| SocketAddr::new(*ip, beacon.port));
+        let seen = seen_at.iter().map(|seen| {
+            let mut candidate = *seen;
+            candidate.set_port(beacon.port);
+            candidate
+        });
         let mut candidates = Vec::new();
-        for ip in seen_at.iter().chain(&beacon.addresses) {
-            let candidate = SocketAddr::new(*ip, beacon.port);
-            if !candidates.contains(&candidate) {
+        for candidate in seen.chain(named) {
+            let dialled_here = candidate.is_ipv4() || self.running.endpoint_takes_ipv6();
+            if dialled_here && !candidates.contains(&candidate) {
                 candidates.push(candidate);
             }
         }
@@ -2024,7 +2063,7 @@ impl Syncing {
         }
         if !beacon.answering
             && let Some(from) = answer_to
-            && let Some(socket) = self.running.beacons.as_ref()
+            && let Some(socket) = self.running.beacon_socket_for(&from)
             && let Some(answer) = self.beacon_bytes(true)
             && let Err(error) = socket.send_to(&answer, from).await
         {

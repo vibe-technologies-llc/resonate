@@ -332,8 +332,7 @@ will not open is left out of the holdings.
   the interfaces hold (`nearby::global_addresses_here`: up, not loopback, not point to point, not
   link local, not multicast; a unique local address counts, like a private IPv4), at the peer port,
   and only where the endpoint took IPv6. `routed_candidates` probes the route to the server in the
-  server's own family, and a server seen over IPv6 offers the address it saw. Nearby beacons stay
-  IPv4 (`addresses_here`). The STUN reflector converts an IPv4 server to its mapped form before it
+  server's own family, and a server seen over IPv6 offers the address it saw. Nearby beacons run over IPv6 too (`Nearby`). The STUN reflector converts an IPv4 server to its mapped form before it
   sends from a dual stack socket (`a_dual_stack_endpoint_is_dialled_over_ipv6_and_over_ipv4_alike`).
 - **A device a direct dial cannot reach is reached through the server's relay, as QUIC.** The peer
   protocol is untouched: `Reflector` (the endpoint's socket wrapper) owns a `Relay` that gives each
@@ -394,17 +393,31 @@ announce a device, both carrying the same sealed beacon, and either finds the ot
 
 - **A beacon is sealed like a record.** `RSN1` then `seal::sealed` of a `Beacon` under the space's
   key: only a device of the code opens it, and a fresh nonce each time leaves an onlooker nothing to
-  follow. It names the QUIC port and at most `ADDRESSES_BEACONED_AT_MOST` (6) IPv4 addresses
-  `addresses_here` reads off the interfaces that are up, not loopback, not point to point.
+  follow. It names the QUIC port and the addresses `beacon_addresses_here` reads off the interfaces that
+  are up, not loopback, not point to point: at most `ADDRESSES_BEACONED_AT_MOST` (6) IPv4 and
+  `IPV6_ADDRESSES_BEACONED_AT_MOST` (2) of the global or unique local IPv6 ones, which together still
+  fit one Bonjour text string even when distinct
+  (`the_fullest_record_of_distinct_addresses_still_fits_one_bonjour_text_string`). A link local
+  address is never named: it means nothing without the interface, which the datagram it came in
+  (or the Bonjour answer) carries.
 - **Broadcast** (`Broadcast`): sent at start and every `BEACON_EVERY` (15 s, jittered) to
-  `NEARBY_GROUP` (239.255.41.73, one hop) and the broadcast address, port `NEARBY_PORT` (41734).
-  Where the port is taken the socket binds anywhere: it still sends, and hears answers. **An unmet
+  `NEARBY_GROUP` (239.255.41.73, one hop), the broadcast address and, over IPv6, `NEARBY_GROUP_V6`
+  (`ff02::7273:a306`, link local scope), port `NEARBY_PORT` (41734). **IPv6 has a socket of its
+  own** (`bound_v6`: `IPV6_V6ONLY`, the IPv4 socket's port where free, joined to the group on every
+  interface holding an IPv6 address; none where the host has no IPv6, and IPv4 carries on alone), and
+  a group is told once per such interface with its index as the scope (`told_over_ipv6`), so a network
+  handing out IPv6 alone is found. A beacon heard over IPv6 is dialled where it came from with its
+  scope kept, which is how a link local peer is reached, and an IPv6 candidate is dropped where the
+  peer endpoint took IPv4 alone. Where the port is taken the socket binds anywhere: it still sends,
+  and hears answers; an answer goes out of the socket of the family it was heard on
+  (`two_devices_told_of_each_other_over_ipv6_alone_meet_and_sync`). **An unmet
   device answers by unicast**, so one that cannot hear multicast (a taken port, an Android without
   its lock) is still found.
 - **Bonjour** (`Bonjour`, `mdns-sd`): the device advertises `_resonate-sync._udp` under a random
   instance name for the run, the hex of the sealed beacon as TXT key `b` (`RECORD_KEY`; the fullest
   record fits one TXT string, `the_fullest_record_fits_one_bonjour_text_string_and_reads_back`), and
-  browses the same type. The record is resealed only where the beacon it carries moved
+  browses the same type, taking every address an answer resolves (IPv4 and IPv6, a link local one
+  with its interface index as scope). The record is resealed only where the beacon it carries moved
   (`Running::record`), checked at every beacon tick; withdrawn while transfers are not allowed.
 - **An iPhone announces through Apple's Bonjour, not ours.** Multicast and broadcast from an app's
   own sockets need Apple's `com.apple.developer.networking.multicast` entitlement; Bonjour through

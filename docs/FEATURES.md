@@ -57,8 +57,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Device sync
 - [L · 0.2.0] The phones carry saved-query playlists on to other devices but hold none themselves: their
   catalog has no saved queries and no search grammar to read one with
-- [M · 0.2.0] Devices on one network meet over IPv4 alone; a network handing out only IPv6 leaves them
-  apart
 
 ## Equaliser and DSP
 - [S · 0.2.0] The preferred measurer (`equaliser-measurer`) is one for every device: none can be preferred

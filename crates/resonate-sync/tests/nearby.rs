@@ -2,7 +2,7 @@ mod shelf;
 
 use std::{
     env, fs,
-    net::{Ipv4Addr, SocketAddr},
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket},
     path::{Path, PathBuf},
     sync::Arc,
     thread,
@@ -83,6 +83,34 @@ fn device_through(
         follow,
         server,
     )
+}
+
+fn device_over_ipv6(
+    folder: &Path,
+    key: &SyncKey,
+    name: &str,
+    shelf: Arc<Shelf>,
+    told: Option<&Sync>,
+) -> Sync {
+    let told = told
+        .and_then(Sync::nearby_port)
+        .map(|port| SocketAddr::from((Ipv6Addr::LOCALHOST, port)))
+        .into_iter()
+        .collect();
+    started(
+        folder,
+        key,
+        name,
+        shelf,
+        Nearby {
+            broadcast: Some(Broadcast { port: 0, told }),
+            bonjour: false,
+        },
+    )
+}
+
+fn ipv6_loopback_here() -> bool {
+    UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).is_ok()
 }
 
 fn started(folder: &Path, key: &SyncKey, name: &str, shelf: Arc<Shelf>, nearby: Nearby) -> Sync {
@@ -485,6 +513,43 @@ fn two_devices_advertising_over_bonjour_find_each_other() {
     });
     eventually("the desk seeing the phone nearby", || {
         nearby_of(&desk, "Phone")
+    });
+
+    drop(phone);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn two_devices_told_of_each_other_over_ipv6_alone_meet_and_sync() {
+    if !ipv6_loopback_here() {
+        return;
+    }
+    let folder = scratch("ipv6");
+    let key = SyncKey::minted().expect("a key");
+    let desk_shelf = Arc::new(Shelf::holding(&["A", "B"]));
+    let phone_shelf = Arc::new(Shelf::holding(&["A"]));
+    desk_shelf.make_playlist("Summer", &["A", "B"]);
+
+    let desk = device_over_ipv6(&folder, &key, "Desk", Arc::clone(&desk_shelf), None);
+    let phone = device_over_ipv6(
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        Some(&desk),
+    );
+
+    eventually("the desk's playlist reaching the phone over IPv6", || {
+        phone_shelf.playlist_named("Summer").is_some()
+    });
+    eventually("the desk seeing the phone nearby", || {
+        nearby_of(&desk, "Phone")
+    });
+
+    phone.fetch(vec![song("B")], desk.device());
+    eventually("the song arriving over IPv6", || {
+        holds_title(&phone_shelf, "B")
     });
 
     drop(phone);
