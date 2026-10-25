@@ -298,7 +298,7 @@ pub(crate) fn failure_of(provider: MusicProvider, error: &resonate_providers::Er
         Refusal::Unaddressable { .. } | Refusal::NotTheService { .. } => {
             Error::ProviderMisaddressed { provider }
         }
-        Refusal::StillQueued { .. } | Refusal::StillArriving { .. } => {
+        Refusal::StillQueued { .. } | Refusal::StillArriving { .. } | Refusal::Busy { .. } => {
             Error::ProviderAway { provider }
         }
         Refusal::Unreadable { .. } | Refusal::OffItsHosts { .. } | Refusal::NotAnExtension => {

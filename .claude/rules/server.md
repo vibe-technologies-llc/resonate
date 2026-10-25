@@ -91,7 +91,11 @@ hex) and prints it with the digest to list: the file never holds a secret.
 - **The server downloads, the client is only sent the file.** `/file/` runs `HifiApi::track` against
   the upstream (manifest, DASH segments and remux are `resonate-tidal`'s, `providers.md`), then sends
   the FLAC with `Content-Length` where known, else chunked, 64 KiB at a time over a channel of four
-  so a slow client holds the download back. Two downloads at once (`DOWNLOADS_AT_ONCE`), at most 1 GiB
+  so a slow client holds the download back. **One download at a time** (`DOWNLOADS_AT_ONCE`): a
+  request finding the turn taken is answered `503` with `Retry-After` (`BUSY_RETRY_AFTER_SECONDS`) at
+  once, never held, and the turn travels into the blocking open and then the pump, so it is kept until
+  the last upstream read ends even if the client has left
+  (`a_second_download_asked_for_while_one_runs_is_told_to_come_back_and_is_never_started`). At most 1 GiB
   a track, 60 s for any one write. A failure after the head is sent drops the connection, so a short
   body is never taken for a whole file; a track the hifi-api lacks is 404, an upstream failure 502. The
   key check comes first: nothing is asked of the hifi-api for a request without a listed key
@@ -119,7 +123,7 @@ admitted: the key check comes first, so a stranger reads nothing from either.
 
 - **Tracks, on disk, under a byte limit** (`--cache <DIR>` with the hifi table, `--cache-bytes`,
   2 GiB; 0 or no `--cache` keeps none; the unit passes its `CacheDirectory`). A `/file/` is looked
-  up before it takes a download turn and again after (a download that finished meanwhile is
+  up before it takes a download turn and again once it holds it (a download that finished meanwhile is
   served, not repeated). A miss is **teed into a staging file while it is sent**: `<id>.<pid>.part`
   held under `writer::Held`, renamed to `<id>.flac` only after a clean end of the stream (a known
   `Content-Length` must match, and the first bytes must be `fLaC`, so an empty body is never kept

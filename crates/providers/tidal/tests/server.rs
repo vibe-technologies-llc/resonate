@@ -2,14 +2,19 @@ use std::{
     env,
     io::{BufRead, BufReader, Read, Write},
     net::{TcpListener, TcpStream},
-    sync::Arc,
+    num::NonZeroUsize,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
     thread,
     time::{Duration, Instant},
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use parking_lot::Mutex;
-use resonate_core::{Isrc, Link};
+use resonate_core::{Isrc, Link, MediaLocation};
+use resonate_fetch::RESUMES_AT_MOST;
 use resonate_providers::{
     Authorizing, Client, Delivery, Error, Identity, Obtained, Opened, Opening, Provider,
     ProviderOp, SignsIn,
@@ -1397,6 +1402,92 @@ fn a_keyed_download_cut_off_part_way_is_asked_of_the_server_again_from_where_it_
             .iter()
             .all(|asked| asked.authorization.as_deref() == Some("Bearer hush-secret"))
     );
+}
+
+#[test]
+fn a_keyed_server_busy_with_another_download_is_asked_again_when_it_says_to() {
+    let files = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&files);
+    let fake = hifi_server(move |asked, _, _| match asked.path.as_str() {
+        "/file/" if counted.fetch_add(1, Ordering::SeqCst) < 2 => Canned {
+            headers: vec![("Retry-After", "0".to_owned())],
+            ..Canned::refused(503, "")
+        },
+        "/file/" => Canned::media(b"fLaC-sent-when-the-server-was-free"),
+        _ => Canned::refused(404, "{}"),
+    });
+
+    let keyed = fake.hifi().with_secret("hush-secret");
+    let (_, _, bytes) = streamed(keyed.find(&by_isrc()).expect("an answer")).expect("a delivery");
+
+    assert_eq!(bytes, b"fLaC-sent-when-the-server-was-free");
+    assert_eq!(files.load(Ordering::SeqCst), 3);
+}
+
+#[test]
+fn a_keyed_server_that_stays_busy_is_the_wants_to_wait_on_and_never_the_provider_being_away() {
+    let fake = hifi_server(|asked, _, _| match asked.path.as_str() {
+        "/file/" => Canned {
+            headers: vec![("Retry-After", "0".to_owned())],
+            ..Canned::refused(503, "")
+        },
+        _ => Canned::refused(404, "{}"),
+    });
+
+    let keyed = fake.hifi().with_secret("hush-secret");
+    let busy = opening_of(keyed.find(&by_isrc()).expect("an answer"));
+
+    let Err(error) = busy else {
+        panic!("the server never freed");
+    };
+    assert!(matches!(error, Error::Busy { .. }), "{error:?}");
+    assert!(!error.is_the_provider_away());
+    let asked = fake
+        .heard()
+        .iter()
+        .filter(|asked| asked.path == "/file/")
+        .count();
+    assert_eq!(asked, 1 + RESUMES_AT_MOST as usize);
+}
+
+#[test]
+fn a_keyed_hifi_api_is_asked_about_one_download_at_once_and_an_open_one_about_as_many_as_ever() {
+    let fake = hifi_server(|_, _, _| Canned::refused(404, "{}"));
+
+    assert_eq!(fake.hifi().with_secret("key").downloads_at_once().get(), 1);
+    assert_eq!(fake.hifi().downloads_at_once(), NonZeroUsize::MAX);
+}
+
+#[test]
+fn a_linked_track_found_gone_is_not_offered_again_and_the_codes_are_asked_instead() {
+    let fake = hifi_server(|asked, _, _| match asked.path.as_str() {
+        "/search/" => Canned::json(&format!(
+            r#"{{"data":{{"items":[{{"id":{TRACK},"isrc":"{ECHOES_ISRC}"}}]}}}}"#
+        )),
+        _ => Canned::refused(404, "{}"),
+    });
+    let keyed = fake.hifi().with_secret("hush-secret");
+    let linked = Identity {
+        links: vec![Link::new(
+            "streaming",
+            "https://tidal.com/track/999".to_owned(),
+        )],
+        ..by_isrc()
+    };
+    let told = Identity {
+        gone: vec![MediaLocation::new(keyed.source().clone(), "track/999")],
+        ..linked.clone()
+    };
+    let key_of = |obtained: Obtained| match obtained {
+        Obtained::Found(Delivery::Stream { key, .. }) => key.to_string(),
+        _ => panic!("a stream was offered"),
+    };
+
+    let first = key_of(keyed.find(&linked).expect("an answer"));
+    let again = key_of(keyed.find(&told).expect("an answer"));
+
+    assert_eq!(first, "track/999");
+    assert_eq!(again, format!("track/{TRACK}"));
 }
 
 fn opening_of(obtained: Obtained) -> Result<Opened, Error> {

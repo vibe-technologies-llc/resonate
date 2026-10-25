@@ -31,7 +31,8 @@ const CONNECTIONS_AT_MOST: usize = 64;
 const REQUEST_WITHIN: Duration = Duration::from_secs(10);
 const UPSTREAM_WITHIN: Duration = Duration::from_secs(30);
 const ACCEPT_RETRY_AFTER: Duration = Duration::from_millis(100);
-const DOWNLOADS_AT_ONCE: usize = 2;
+const DOWNLOADS_AT_ONCE: usize = 1;
+const BUSY_RETRY_AFTER_SECONDS: u64 = 5;
 const FILE_CHUNK_BYTES: usize = 64 * 1024;
 const FILE_CHUNKS_AHEAD: usize = 4;
 const FILE_BYTES_AT_MOST: u64 = 1024 * 1024 * 1024;
@@ -251,17 +252,17 @@ impl Gateway {
         if let Some(hit) = self.kept(id) {
             return from_the_cache(stream, id, hit, wanted).await;
         }
-        let Ok(turn) = Arc::clone(&self.downloads).acquire_owned().await else {
-            return reply(stream, 503, &[], b"").await;
+        let Ok(turn) = Arc::clone(&self.downloads).try_acquire_owned() else {
+            return busy(stream).await;
         };
         if let Some(hit) = self.kept(id) {
             drop(turn);
             return from_the_cache(stream, id, hit, wanted).await;
         }
         let hifi = Arc::clone(&self.hifi);
-        let opened = spawn_blocking(move || opened_track(&hifi, id)).await;
+        let opened = spawn_blocking(move || (opened_track(&hifi, id), turn)).await;
         match opened {
-            Ok(Ok(Some((reader, length)))) => {
+            Ok((Ok(Some((reader, length))), turn)) => {
                 let fill = self
                     .tracks
                     .as_ref()
@@ -279,8 +280,8 @@ impl Gateway {
                     Err(Unsatisfiable) => unsatisfiable(stream, length.unwrap_or_default()).await,
                 }
             }
-            Ok(Ok(None)) => reply(stream, 404, &[], b"").await,
-            Ok(Err(error)) => {
+            Ok((Ok(None), _)) => reply(stream, 404, &[], b"").await,
+            Ok((Err(error), _)) => {
                 tracing::warn!(track = id, %error, "the hifi-api could not supply the track");
                 reply(stream, 502, &[], b"").await
             }
@@ -612,6 +613,16 @@ fn kept_if_whole(fill: Fill, promised: Option<u64>, read: u64) {
     if let Err(error) = fill.commit() {
         tracing::warn!(%error, "a downloaded track could not be put in the cache");
     }
+}
+
+async fn busy<S: AsyncWrite + Unpin>(stream: &mut S) -> io::Result<()> {
+    reply(
+        stream,
+        503,
+        &[("Retry-After", BUSY_RETRY_AFTER_SECONDS.to_string())],
+        b"",
+    )
+    .await
 }
 
 async fn send_file<S: AsyncWrite + Unpin>(

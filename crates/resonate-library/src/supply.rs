@@ -65,6 +65,7 @@ impl Want {
             position: Some(self.position),
             links: self.links.clone(),
             release_links: self.release_links.clone(),
+            gone: Vec::new(),
         }
     }
 
@@ -813,6 +814,7 @@ impl Drop for Claimed<'_, '_> {
 
 struct Rounds {
     passing: Vec<SourceId>,
+    gone: Vec<MediaLocation>,
     every_provider_heard: bool,
 }
 
@@ -820,6 +822,7 @@ impl Rounds {
     const fn first() -> Self {
         Self {
             passing: Vec::new(),
+            gone: Vec::new(),
             every_provider_heard: true,
         }
     }
@@ -1015,8 +1018,12 @@ impl<'a> Lanes<'a> {
                 .any(|forgotten| forgotten.declines(delivered))
         };
         let mut away = self.away.lock().clone();
+        let identity = Identity {
+            gone: rounds.gone.clone(),
+            ..want.identity()
+        };
         let answer = self.providers.first(
-            &want.identity(),
+            &identity,
             &Asking {
                 within: self.options.answers_within,
                 cancelled: &cancelled,
@@ -1075,6 +1082,13 @@ impl<'a> Lanes<'a> {
                 match self.offer_landed(&claimed.want, delivered)? {
                     Offer::Settled(flow) => return Ok(flow),
                     Offer::FellThrough { heard } => rounds.every_provider_heard &= heard,
+                    Offer::Gone {
+                        provider,
+                        taken_from,
+                    } => {
+                        rounds.passing.retain(|passed| *passed != provider);
+                        rounds.gone.push(taken_from);
+                    }
                 }
             }
             match self.asked(&claimed, &mut rounds)? {
@@ -1129,7 +1143,10 @@ impl<'a> Lanes<'a> {
             }
             Landed::Unopened(Unopened::Gone) => {
                 tracing::info!(want = %want.id, %taken_from, "an offer was gone by the time it was opened, and the next is taken");
-                Ok(Offer::FellThrough { heard: true })
+                Ok(Offer::Gone {
+                    provider,
+                    taken_from,
+                })
             }
             Landed::Unopened(Unopened::Refused(error)) => {
                 tracing::warn!(%error, cause = ?error.cause(), want = %want.id, %taken_from, "an offer could not be opened, and the next is taken");
@@ -1145,7 +1162,13 @@ impl<'a> Lanes<'a> {
 
 enum Offer {
     Settled(Flow),
-    FellThrough { heard: bool },
+    FellThrough {
+        heard: bool,
+    },
+    Gone {
+        provider: SourceId,
+        taken_from: MediaLocation,
+    },
 }
 
 fn run(
@@ -1175,7 +1198,7 @@ fn run(
     };
 
     thread::scope(|scope| {
-        let started: Vec<_> = (1..options.lanes.get())
+        let started: Vec<_> = (1..options.lanes.min(providers.downloads_at_once()).get())
             .filter_map(|nth| {
                 thread::Builder::new()
                     .name(format!("resonate-poll-{nth}"))

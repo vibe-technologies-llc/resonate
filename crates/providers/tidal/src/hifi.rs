@@ -1,4 +1,5 @@
 use std::{
+    num::NonZeroUsize,
     thread,
     time::{Duration, Instant},
 };
@@ -6,7 +7,8 @@ use std::{
 use parking_lot::Mutex;
 use resonate_core::{Isrc, SourceId};
 use resonate_fetch::{
-    Patience, Ranged, Trusted, configured, downloading_agent, escaped, retry_after_of, unreached,
+    Patience, RESUMES_AT_MOST, Ranged, Trusted, configured, downloading_agent, escaped,
+    retry_after_of, unreached,
 };
 use resonate_providers::{
     Choosing, Delivery, Error, Extension, Identity, Listed as Weighed, Obtained, Opened, Opening,
@@ -47,6 +49,10 @@ const UNAUTHORISED: u16 = 401;
 const FORBIDDEN: u16 = 403;
 const NOT_FOUND: u16 = 404;
 const GONE: u16 = 410;
+const SERVICE_UNAVAILABLE: u16 = 503;
+const BUSY_ASKED_AGAIN_AFTER_UNSAID: Duration = Duration::from_secs(5);
+const BUSY_ASKED_AGAIN_AFTER_AT_MOST: Duration = Duration::from_secs(10);
+const ONE_DOWNLOAD_AT_ONCE: NonZeroUsize = NonZeroUsize::MIN;
 
 #[derive(Deserialize)]
 struct Wrapped<T> {
@@ -618,6 +624,10 @@ impl HifiApi {
 }
 
 impl Finds for HifiApi {
+    fn provider(&self) -> &SourceId {
+        &self.asker.source
+    }
+
     fn tracks_for(&self, identity: &Identity) -> Result<Vec<TrackId>> {
         if let Some(hosting) = &self.hosted {
             return self.hosted_tracks_for(hosting, identity);
@@ -728,15 +738,36 @@ impl HifiApi {
         let bearer = keyed.bearer();
         let url = format!("{}/file/?id={}", self.server, track.0);
         Ok(Delivery::Stream {
-            key: format!("track/{}", track.0).into_boxed_str(),
+            key: track.key(),
             extension: Extension::new(RELAYED_AS)?,
             opening: Opening::new(move || {
                 let op = ProviderOp::Download;
-                let response = agent
-                    .get(&url)
-                    .header(AUTHORIZATION, bearer.as_str())
-                    .call()
-                    .map_err(|error| unreached(provider.clone(), op, error))?;
+                let mut asked_again = 0;
+                let response = loop {
+                    let response = agent
+                        .get(&url)
+                        .header(AUTHORIZATION, bearer.as_str())
+                        .call()
+                        .map_err(|error| unreached(provider.clone(), op, error))?;
+                    if response.status().as_u16() != SERVICE_UNAVAILABLE {
+                        break response;
+                    }
+                    if asked_again == RESUMES_AT_MOST {
+                        return Err(Error::Busy {
+                            provider: provider.clone(),
+                            op,
+                        });
+                    }
+                    asked_again += 1;
+                    let wait = retry_after_of(&response)
+                        .unwrap_or(BUSY_ASKED_AGAIN_AFTER_UNSAID)
+                        .min(BUSY_ASKED_AGAIN_AFTER_AT_MOST);
+                    tracing::debug!(
+                        ?wait,
+                        "the server is busy with another download and is asked again"
+                    );
+                    thread::sleep(wait);
+                };
                 let status = response.status().as_u16();
                 match status {
                     200 => {
@@ -797,6 +828,14 @@ impl Provider for HifiApi {
 
     fn find(&self, identity: &Identity) -> Result<Obtained> {
         played::found(self, identity)
+    }
+
+    fn downloads_at_once(&self) -> NonZeroUsize {
+        if self.secret.is_some() {
+            ONE_DOWNLOAD_AT_ONCE
+        } else {
+            NonZeroUsize::MAX
+        }
     }
 }
 

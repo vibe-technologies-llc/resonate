@@ -14,6 +14,9 @@ export `MobilePlayer` and its records, and `resonate-bindgen` writes Kotlin (`an
 orchestration, enrichment) is described once in `android.md` and holds for iOS unchanged; this file
 holds what is the crate's alone.
 
+The phones have no vault and none is planned: the boundary never opens one, and a song stays the
+listener's own file.
+
 ## Unsafe
 
 `resonate-mobile` is the sole exception to the workspace's unsafe prohibition, explicitly approved

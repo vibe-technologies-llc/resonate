@@ -14,7 +14,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   and the screens show one
 
 ## iOS parity
-- [L · 0.2.0] Neither phone has the vault: the managed archive is built on desktop paths
 - [M · 0.2.0] iOS downloads cannot resume: any cancel, failure or background expiry deletes the partial
   file and the retry starts again, a large FLAC included
 - [M · blocked: xtool] iOS has no widget: a WidgetKit extension xtool builds is linked empty and,

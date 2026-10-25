@@ -309,6 +309,10 @@ impl Tidal {
 }
 
 impl Finds for Tidal {
+    fn provider(&self) -> &SourceId {
+        &self.asker.source
+    }
+
     fn tracks_for(&self, identity: &Identity) -> Result<Vec<TrackId>> {
         let mut tracks: Vec<TrackId> = Vec::new();
         for isrc in identity.isrcs.iter().take(CODES_ASKED_AT_MOST) {

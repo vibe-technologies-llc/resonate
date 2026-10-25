@@ -298,6 +298,14 @@ async fn hifi_serving(
     audio: &'static [u8],
     keeping: Keeping,
 ) -> (Gatewayed, Arc<Mutex<Vec<String>>>) {
+    hifi_serving_after(audio, keeping, Duration::ZERO).await
+}
+
+async fn hifi_serving_after(
+    audio: &'static [u8],
+    keeping: Keeping,
+    media_after: Duration,
+) -> (Gatewayed, Arc<Mutex<Vec<String>>>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("a port");
     let address = listener.local_addr().expect("an address");
     let asked = Arc::new(Mutex::new(Vec::new()));
@@ -325,6 +333,7 @@ async fn hifi_serving(
                     if target.starts_with(&format!("/track/?id={TRACK}")) {
                         ("200 OK", playback.into_bytes())
                     } else if target == format!("/media/{TRACK}.flac") {
+                        tokio::time::sleep(media_after).await;
                         ("200 OK", audio.to_vec())
                     } else {
                         ("404 Not Found", b"{}".to_vec())
@@ -368,6 +377,34 @@ async fn a_track_is_downloaded_by_the_server_through_the_hifi_api_and_sent_to_a_
     let asked = asked.lock();
     assert!(asked[0].starts_with(&format!("GET /track/?id={TRACK}&quality=HI_RES_LOSSLESS")));
     assert!(asked.iter().all(|request| !request.contains(SECRET)));
+}
+
+#[tokio::test]
+async fn a_second_download_asked_for_while_one_runs_is_told_to_come_back_and_is_never_started() {
+    let (gateway, asked) =
+        hifi_serving_after(AUDIO, Keeping::default(), Duration::from_millis(600)).await;
+    let gateway = Arc::new(gateway);
+    let target = format!("/file/?id={TRACK}");
+
+    let running = tokio::spawn({
+        let gateway = Arc::clone(&gateway);
+        let target = target.clone();
+        async move { gateway.bearing("GET", &target).await }
+    });
+    while downloads_asked(&asked) == 0 {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let turned_back = gateway.bearing("GET", &target).await;
+    let first = running.await.expect("the first download");
+    let after = gateway.bearing("GET", &target).await;
+
+    assert_eq!(turned_back.status, 503);
+    assert_eq!(header_of(&turned_back, "retry-after").as_deref(), Some("5"));
+    assert!(turned_back.body.is_empty());
+    assert_eq!(first.status, 200);
+    assert_eq!(first.body.as_bytes(), AUDIO);
+    assert_eq!(after.status, 200);
+    assert_eq!(downloads_asked(&asked), 2);
 }
 
 #[tokio::test]

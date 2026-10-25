@@ -67,6 +67,11 @@ pub enum Error {
     #[error("{op:?} was answered with a page rather than the {provider} provider's own answer")]
     NotTheService { provider: SourceId, op: ProviderOp },
 
+    #[error(
+        "{op:?} found the {provider} provider's server busy with another download when it was given up"
+    )]
+    Busy { provider: SourceId, op: ProviderOp },
+
     #[error("{file:?} is still arriving in the {provider} provider and is asked for again later")]
     StillArriving { provider: SourceId, file: PathBuf },
 
@@ -107,6 +112,7 @@ impl Error {
             | Self::TurnedAway { .. }
             | Self::OffItsHosts { .. }
             | Self::StillArriving { .. }
+            | Self::Busy { .. }
             | Self::AuthorizationLapsed { .. }
             | Self::AuthorizationDenied { .. }
             | Self::NotAnExtension => false,
@@ -193,6 +199,16 @@ mod tests {
         };
 
         assert!(!arriving.is_the_provider_away());
+    }
+
+    #[test]
+    fn a_server_busy_with_another_download_is_about_the_want_and_never_the_provider_being_away() {
+        let busy = Error::Busy {
+            provider: SourceId::new("resonate").expect("a nameable source"),
+            op: ProviderOp::Download,
+        };
+
+        assert!(!busy.is_the_provider_away());
     }
 
     #[test]

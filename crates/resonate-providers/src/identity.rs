@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use resonate_core::{Isrc, Link, Mbid, Service};
+use resonate_core::{Isrc, Link, Mbid, MediaLocation, Service};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Identity {
@@ -16,6 +16,7 @@ pub struct Identity {
     pub position: Option<u32>,
     pub links: Vec<Link>,
     pub release_links: Vec<Link>,
+    pub gone: Vec<MediaLocation>,
 }
 
 impl Identity {
@@ -32,6 +33,10 @@ impl Identity {
 
     pub fn release_on(&self, service: Service) -> Option<&str> {
         on(&self.release_links, service)
+    }
+
+    pub fn finds_gone(&self, taken_from: &MediaLocation) -> bool {
+        self.gone.contains(taken_from)
     }
 }
 

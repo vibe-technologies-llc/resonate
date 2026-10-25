@@ -10870,6 +10870,9 @@ enum Delivering {
     Stalling,
     Unopenable,
     GoneWhenOpened,
+    GoneUntilTold {
+        bytes: Vec<u8>,
+    },
 }
 
 struct Trickle;
@@ -10997,6 +11000,22 @@ impl Provider for Offering {
                 extension: Extension::new("wav")?,
                 opening: self.counted(Opening::new(|| Ok(Opened::Gone))),
             }),
+            Delivering::GoneUntilTold { bytes } => {
+                let linked = MediaLocation::new(self.source.clone(), "track/linked");
+                if identity.finds_gone(&linked) {
+                    Obtained::Found(Delivery::Stream {
+                        key: "track/listed".into(),
+                        extension: Extension::new("wav")?,
+                        opening: self.counted(Opening::ready(std::io::Cursor::new(bytes))),
+                    })
+                } else {
+                    Obtained::Found(Delivery::Stream {
+                        key: "track/linked".into(),
+                        extension: Extension::new("wav")?,
+                        opening: self.counted(Opening::new(|| Ok(Opened::Gone))),
+                    })
+                }
+            }
         })
     }
 }
@@ -22558,6 +22577,38 @@ fn an_offer_that_cannot_be_opened_falls_through_to_the_next_provider() -> Result
         (3, 1, 1)
     );
     assert_eq!((broken.opened(), gone.opened(), right.opened()), (1, 1, 1));
+    assert!(library.wants()?[0].held.is_some());
+    Ok(())
+}
+
+#[test]
+fn an_offer_found_gone_is_told_to_its_provider_which_is_asked_again_without_it() -> Result<()> {
+    let held = Tree::new();
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&orbits))?;
+    wanted_lasting(&library, Some(Duration::from_secs(10)))?;
+    let only = Arc::new(Offering::new(
+        "only",
+        Delivering::GoneUntilTold {
+            bytes: Wav::new().text(TITLE, "San Tropez").frames(441_000).build(),
+        },
+    ));
+    let linked = MediaLocation::new(
+        SourceId::new("only").expect("a nameable source"),
+        "track/linked",
+    );
+
+    let summary = library
+        .poll(asking_in_turn(&[&only]), PollOptions::default())?
+        .join()?;
+
+    let asked = only.asked();
+    assert_eq!(asked.len(), 2);
+    assert!(asked[0].gone.is_empty());
+    assert_eq!(asked[1].gone, [linked]);
+    assert_eq!((summary.stats.offered, summary.stats.kept), (2, 1));
+    assert_eq!(summary.stats.nothing, 0);
     assert!(library.wants()?[0].held.is_some());
     Ok(())
 }

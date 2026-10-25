@@ -1,4 +1,4 @@
-use resonate_core::{Isrc, Service, SourceId};
+use resonate_core::{Isrc, MediaLocation, Service, SourceId};
 use resonate_providers::{
     Delivery, Error, Extension, Identity, Obtained, Opened, Opening, ProviderOp, Result,
 };
@@ -27,18 +27,33 @@ impl TrackId {
     }
 }
 
+impl TrackId {
+    pub(crate) fn taken_from(self, provider: &SourceId) -> MediaLocation {
+        MediaLocation::new(provider.clone(), self.key())
+    }
+
+    pub(crate) fn key(self) -> Box<str> {
+        format!("track/{}", self.0).into_boxed_str()
+    }
+}
+
 pub(crate) fn named_by(isrc: &Isrc, held: Option<&str>) -> bool {
     held.is_some_and(|held| Isrc::new(held.trim()).is_ok_and(|held| held == *isrc))
 }
 
 pub(crate) trait Finds {
+    fn provider(&self) -> &SourceId;
+
     fn tracks_for(&self, identity: &Identity) -> Result<Vec<TrackId>>;
 
     fn delivered(&self, track: TrackId) -> Result<Option<Delivery>>;
 }
 
 pub(crate) fn found(finds: &impl Finds, identity: &Identity) -> Result<Obtained> {
-    let linked = identity.track_on(Service::Tidal).and_then(TrackId::linked);
+    let linked = identity
+        .track_on(Service::Tidal)
+        .and_then(TrackId::linked)
+        .filter(|track| !identity.finds_gone(&track.taken_from(finds.provider())));
     if linked.is_none() && !identity.may_be_listed() {
         return Ok(Obtained::Nothing);
     }
@@ -54,6 +69,7 @@ pub(crate) fn found(finds: &impl Finds, identity: &Identity) -> Result<Obtained>
         .tracks_for(identity)?
         .into_iter()
         .filter(|track| Some(*track) != linked)
+        .filter(|track| !identity.finds_gone(&track.taken_from(finds.provider())))
     {
         if let Some(delivery) = finds.delivered(track)? {
             return Ok(Obtained::Found(delivery));
@@ -160,7 +176,7 @@ impl Player<'_> {
         let provider = self.source.clone();
         let agent = self.media.clone();
         Ok(Delivery::Stream {
-            key: format!("track/{}", track.0).into_boxed_str(),
+            key: track.key(),
             extension: Extension::new(DELIVERED_AS)?,
             opening: Opening::new(move || downloaded(&provider, agent, media)),
         })

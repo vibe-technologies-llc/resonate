@@ -1,4 +1,5 @@
 use std::{
+    num::NonZeroUsize,
     sync::{Arc, mpsc},
     thread,
     time::{Duration, Instant},
@@ -19,6 +20,10 @@ pub trait Provider: Send + Sync {
     fn source(&self) -> &SourceId;
 
     fn find(&self, identity: &Identity) -> Result<Obtained>;
+
+    fn downloads_at_once(&self) -> NonZeroUsize {
+        NonZeroUsize::MAX
+    }
 }
 
 pub struct Unprovided {
@@ -158,6 +163,15 @@ impl Providers {
             .collect()
     }
 
+    pub fn downloads_at_once(&self) -> NonZeroUsize {
+        self.providers
+            .iter()
+            .filter(|provider| is_a_source(provider))
+            .map(|provider| provider.downloads_at_once())
+            .min()
+            .unwrap_or(NonZeroUsize::MAX)
+    }
+
     pub fn has_a_source(&self) -> bool {
         self.providers.iter().any(is_a_source)
     }
@@ -255,6 +269,10 @@ impl Providers {
                         provider: provider.source().clone(),
                         delivery,
                     };
+                    if identity.finds_gone(&delivered.taken_from()) {
+                        tracing::debug!(provider = %provider.source(), taken_from = %delivered.taken_from(), title = %identity.title, "an offer already found gone was offered again and passed over");
+                        continue;
+                    }
                     if (asking.declined)(&delivered) {
                         tracing::info!(provider = %provider.source(), taken_from = %delivered.taken_from(), title = %identity.title, "a delivery the poll declines was passed over");
                         answer.declined += 1;
@@ -871,6 +889,46 @@ mod tests {
         let delivered = answer.delivered.expect("the next provider's delivery");
         assert_eq!(delivered.provider.as_str(), "shop");
         assert_eq!(delivered.taken_from().to_uri(), "file:///shop/b.flac");
+    }
+
+    struct Narrow {
+        source: SourceId,
+        at_once: NonZeroUsize,
+    }
+
+    impl Provider for Narrow {
+        fn source(&self) -> &SourceId {
+            &self.source
+        }
+
+        fn find(&self, _identity: &Identity) -> Result<Obtained> {
+            Ok(Obtained::Nothing)
+        }
+
+        fn downloads_at_once(&self) -> NonZeroUsize {
+            self.at_once
+        }
+    }
+
+    #[test]
+    fn a_registry_downloads_as_many_at_once_as_its_narrowest_provider_allows() {
+        let narrow = |name: &str, at_once: usize| -> Arc<dyn Provider> {
+            Arc::new(Narrow {
+                source: SourceId::new(name).expect("a nameable source"),
+                at_once: NonZeroUsize::new(at_once).expect("a number"),
+            })
+        };
+        let open = Providers::none().and(Fixed::registered("open", || Ok(Obtained::Nothing)));
+
+        assert_eq!(open.downloads_at_once(), NonZeroUsize::MAX);
+        assert_eq!(Providers::none().downloads_at_once(), NonZeroUsize::MAX);
+        assert_eq!(
+            open.and(narrow("keyed", 1))
+                .and(narrow("other", 2))
+                .downloads_at_once()
+                .get(),
+            1
+        );
     }
 
     #[test]

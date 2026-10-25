@@ -52,7 +52,8 @@ costs nothing more (`a_search_is_answered_without_the_download_being_asked_for`,
 `an_offer_the_race_did_not_take_is_never_opened`). `Error::is_the_provider_away` marks provider
 errors: `Io`, `Unwelcome`, `StillQueued`, `Untrusted`, `NotTheService` (a page where the API's
 document was asked: `resonate_providers::is_a_page`), `Refused` 401, 403, 429 (exhausted retry) and
-500+; `TurnedAway` and 404 are the want's. **A file still arriving is neither miss nor provider
+500+; `TurnedAway`, 404 and `Busy` (a server still busy with another download after its `Retry-After`
+waits) are the want's, the want left unstamped. **A file still arriving is neither miss nor provider
 away**: `StillArriving` counts `refused`, the want stays unstamped and due.
 
 - **`Delivery::File(PathBuf)`**: audio on disk, copied by the vault, left in place.
@@ -67,7 +68,9 @@ away**: `StillArriving` counts `refused`, the want stays unstamped and due.
 
 ## What the infrastructure owns
 
-- **Wants are asked `PollOptions::lanes` (`WANTS_ASKED_AT_ONCE`, three) at a time.** The first want
+- **Wants are asked `PollOptions::lanes` (`WANTS_ASKED_AT_ONCE`, three) at a time, fewer where a
+  registered provider says `Provider::downloads_at_once`** (`Providers::downloads_at_once`, the
+  narrowest; the keyed `resonate` provider says one, since the server downloads one song at a time). The first want
   is asked alone, so an away provider or refused login is met once and noted in the shared `Away`.
   **A lane hands offers to its own `resonate-keeper` thread** via a `Keep` over a channel of none;
   the keeper opens, downloads, keeps or files while its lane searches the next; a lane offered a
@@ -121,6 +124,13 @@ away**: `StillArriving` counts `refused`, the want stays unstamped and due.
   (`an_offer_that_cannot_be_opened_falls_through_to_the_next_provider`). Held-back offers are tried
   before any provider is asked again
   (`an_offer_held_back_by_the_race_is_opened_when_the_one_taken_cannot_be`).
+- **An offer found `Gone` is told to its provider, which is asked again without it.** The poll notes
+  the offer's `taken_from` in `Rounds::gone`, hands it to the next ask as `Identity::gone` and drops the
+  provider from `Asking::passing`, so a dead TIDAL link MusicBrainz holds no longer ends that
+  provider's turn: `played::found` skips a track whose location is gone and goes on to the codes and
+  the words, and `Providers::first` passes over any offer already found gone
+  (`an_offer_found_gone_is_told_to_its_provider_which_is_asked_again_without_it`,
+  `a_linked_track_found_gone_is_not_offered_again_and_the_codes_are_asked_instead`).
 - **Stream reading.** `Pumped` reads `CHUNK_BYTES` at a time, at most `CHUNKS_AHEAD` ahead. A cancel
   discards the staging, want untried. **A server is given longer for its first bytes than between
   them**: `Silence` waits `first_bytes_within` (`FIRST_BYTES_WITHIN`, 90 s, past the keyed server's
@@ -410,7 +420,7 @@ manifest URL must be HTTPS on `manifest.tidal.com` or a subdomain.
   used only as letters, digits, dashes; the path is the provider's own, never the server's
   `statusUrl`.
 - **401 is the server's account turned away** (`Unwelcome`, away); 403/404 that track unavailable
-  (`Nothing`); else `Refused`. A custom server gets no `Authorization` header **unless `hifi-secret` is set**: `HifiApi::with_secret` sends it as `Bearer` on every request to the server, only over `https://` or to loopback (`a_secret_travels_only_over_https_or_to_the_machine_itself`). **A keyed server is the listener's own `resonate-server` gateway** (`server.md`): the client still searches by code through `/search/`, but a delivery is `GET /file/?id=<track>` on that server, which downloads through its hifi-api and sends the FLAC, so the client never asks TIDAL's CDN, and a delivery that breaks off is resumed through `Ranged` with the key, the server answering `206` (`a_keyed_download_cut_off_part_way_is_asked_of_the_server_again_from_where_it_stopped`) (`a_keyed_hifi_api_has_the_server_download_the_track_and_sends_its_secret_to_it_alone`; 404/403/410 `Opened::Gone`, 401 `Unwelcome`). `HifiApi::track` is the same download as a call, which the server uses. **The key is a provider of its own, apart from `hifi-api`**: a secret registers `resonate` (`HifiApi::at(resonate_tidal::OWN_SERVER).with_secret(..).known_as_resonate()`, `OWN_SERVER` being `resonate_core::RESONATE_WEB_ADDRESS`, `https://resonate.tecnio.dev`) after TIDAL and before `hifi-api`, so the listener's server outranks the hosted services, and `hifi-api` and `monochrome` are registered by their own settings as if there were no key (`a_key_registers_the_resonate_server_beside_whatever_hifi_api_is_named`); the key is never sent to a server `hifi-api` names, and `hosted-services` does not touch it. The key is a masked field in the settings pane's *Resonate server key* group in the Library category (`Group::ResonateKey`, `Setting::HifiSecret`; resetting the TIDAL group leaves it) and withheld from every `Debug`. The phones carry it in `DownloadAccount.password` of the hifi-api account (no record change): a non-blank one makes that account the `resonate` provider on `OWN_SERVER`, whatever its server field says, and exempts it from the declined hosted services (`a_hifi_api_account_with_a_key_is_asked_though_hosted_services_are_declined`).
+  (`Nothing`); else `Refused`. A custom server gets no `Authorization` header **unless `hifi-secret` is set**: `HifiApi::with_secret` sends it as `Bearer` on every request to the server, only over `https://` or to loopback (`a_secret_travels_only_over_https_or_to_the_machine_itself`). **A keyed server is the listener's own `resonate-server` gateway** (`server.md`): the client still searches by code through `/search/`, but a delivery is `GET /file/?id=<track>` on that server, which downloads through its hifi-api and sends the FLAC, so the client never asks TIDAL's CDN, and a delivery that breaks off is resumed through `Ranged` with the key, the server answering `206` (`a_keyed_download_cut_off_part_way_is_asked_of_the_server_again_from_where_it_stopped`) (`a_keyed_hifi_api_has_the_server_download_the_track_and_sends_its_secret_to_it_alone`; 404/403/410 `Opened::Gone`, 401 `Unwelcome`; a 503 is the server busy with another download and is asked again after its `Retry-After` up to `RESUMES_AT_MOST` times, then `Error::Busy`: `a_keyed_server_busy_with_another_download_is_asked_again_when_it_says_to`). `HifiApi::track` is the same download as a call, which the server uses. **The key is a provider of its own, apart from `hifi-api`**: a secret registers `resonate` (`HifiApi::at(resonate_tidal::OWN_SERVER).with_secret(..).known_as_resonate()`, `OWN_SERVER` being `resonate_core::RESONATE_WEB_ADDRESS`, `https://resonate.tecnio.dev`) after TIDAL and before `hifi-api`, so the listener's server outranks the hosted services, and `hifi-api` and `monochrome` are registered by their own settings as if there were no key (`a_key_registers_the_resonate_server_beside_whatever_hifi_api_is_named`); the key is never sent to a server `hifi-api` names, and `hosted-services` does not touch it. The key is a masked field in the settings pane's *Resonate server key* group in the Library category (`Group::ResonateKey`, `Setting::HifiSecret`; resetting the TIDAL group leaves it) and withheld from every `Debug`. The phones carry it in `DownloadAccount.password` of the hifi-api account (no record change): a non-blank one makes that account the `resonate` provider on `OWN_SERVER`, whatever its server field says, and exempts it from the declined hosted services (`a_hifi_api_account_with_a_key_is_asked_though_hosted_services_are_declined`).
 - **Custom server trusted as Subsonic's is**: `HifiApi::at` uses `Asker::of_the_listeners_server`
   (`Trusted::SystemStoreToo`); hosted service, TIDAL's API and CDN keep built-in roots alone. A
   refused certificate is `Error::Untrusted` via `asker::unreached`.
