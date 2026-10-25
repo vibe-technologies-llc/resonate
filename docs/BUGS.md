@@ -8,12 +8,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Android
 
 ## Catalog
-- [S · 0.1.1] A scan that did not walk a root forgets its files when a folder is readable but not
-  searchable: `tidy_the_roots_beside` and `forget_at_or_under` test `Path::exists()`, which is
-  false on `EACCES` as on `NotFound`, and `sizes_of_files_not_catalogued` lists the folder fine,
-  so every catalogued file in it counts as gone and `forget_paths` deletes the rows with their
-  plays, favourites and playlist links; the walked-root path keeps what it cannot read. Checked
-  with `test -e` on a `chmod 400` folder, not through a scan
 
 ## Tagging
 - [S · 0.1.1] An in-room ID3 rewrite can cut the last frame short: `id3_content` trims every

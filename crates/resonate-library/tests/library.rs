@@ -2877,6 +2877,40 @@ fn a_folder_the_scan_cannot_read_keeps_every_row_under_it() -> Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
+#[test]
+fn a_folder_readable_but_not_searchable_keeps_its_rows_when_another_root_is_scanned() -> Result<()>
+{
+    use os::unix::fs::PermissionsExt as _;
+
+    let here = Tree::new();
+    let there = Tree::new();
+    here.write("here.wav", &Wav::new().text(TITLE, "Here").build());
+    there.write("shut/one.wav", &Wav::new().text(TITLE, "One").build());
+    there.write("open.wav", &Wav::new().text(TITLE, "Open").build());
+
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&here))?;
+    scan(&library, &options(&there))?;
+
+    let shut = there.path().join("shut");
+    fs::set_permissions(&shut, fs::Permissions::from_mode(0o444))
+        .expect("the fixture folder takes a mode");
+    if fs::metadata(shut.join("one.wav")).is_ok() {
+        fs::set_permissions(&shut, fs::Permissions::from_mode(0o755))
+            .expect("the fixture folder takes a mode");
+        eprintln!("skipping: this user searches a folder whatever its mode");
+        return Ok(());
+    }
+    let stats = scan(&library, &options(&here));
+    fs::set_permissions(&shut, fs::Permissions::from_mode(0o755))
+        .expect("the fixture folder takes a mode");
+
+    assert_eq!(stats?.removed, 0);
+    assert_eq!(titles(&all(&library)?), vec!["Here", "One", "Open"]);
+    Ok(())
+}
+
 #[test]
 fn a_volume_not_mounted_keeps_every_row_on_it_whether_its_mount_point_is_empty_or_gone()
 -> Result<()> {

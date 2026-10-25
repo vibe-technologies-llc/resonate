@@ -331,7 +331,9 @@ rows read via `Player::media` like any unscanned row.
   under the walker, and the scan returns the `Walk` guard.
 - **A scan tidies every root, prunes only walked ones, and touches a root not there not at all.**
   `tidy_the_roots_beside` handles registered roots not walked: reads their distinct paths and
-  sizes (`store::sized_files_under`), keeps those still there, hands the rest to
+  sizes (`store::sized_files_under`), keeps those still there (a file is gone only where its stat says
+  `NotFound` or `NotADirectory`, `scan::is_gone`: a folder readable but not searchable answers `EACCES`,
+  which is no verdict), hands the rest to
   `store::forget_paths`, **except a path whose size an audio file nothing catalogues has**: that
   may be a hand move no walk has paired yet, and forgetting it would cost its history, so it stays
   for the root's own walk (`moves`, then the prune) to pair or forget. The look is a `read_dir`

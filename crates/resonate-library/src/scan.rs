@@ -453,6 +453,13 @@ pub(crate) fn retire(inner: &Arc<Inner>, folder: &Path) -> Result<u64> {
     })
 }
 
+fn is_gone(path: &Path) -> bool {
+    matches!(
+        fs::metadata(path),
+        Err(error) if matches!(error.kind(), io::ErrorKind::NotFound | io::ErrorKind::NotADirectory)
+    )
+}
+
 fn forget_at_or_under(
     transaction: &rusqlite::Transaction<'_>,
     named: &[PathBuf],
@@ -467,7 +474,7 @@ fn forget_at_or_under(
         let text = store::path_text(path);
         let (from, past) = walked_from(&text);
         for (root, held) in store::rooted_paths_at(transaction, &text, &from, &past)? {
-            if !held.exists() && !volumes::is_on_an_absent_one(&held, &absent) {
+            if is_gone(&held) && !volumes::is_on_an_absent_one(&held, &absent) {
                 gone.entry(root).or_default().push(held);
             }
         }
@@ -769,7 +776,7 @@ fn tidy_the_roots_beside(
         let held = inner.read(|connection| store::sized_files_under(connection, root.id))?;
         let gone: Vec<(PathBuf, i64)> = held
             .iter()
-            .filter(|(path, _)| !path.exists() && !volumes::is_on_an_absent_one(path, &absent))
+            .filter(|(path, _)| is_gone(path) && !volumes::is_on_an_absent_one(path, &absent))
             .cloned()
             .collect();
         if gone.is_empty() {
