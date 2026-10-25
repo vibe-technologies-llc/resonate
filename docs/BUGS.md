@@ -3,6 +3,18 @@
 Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims. Format and
 ordering are in [ROADMAP.md](ROADMAP.md).
 
+## Providers and network
+- [M · 0.1.1] The listener's server downloads two songs at once while a poll asks it for three, so
+  the third waits on a whole transfer before its first byte: the server should download one song at
+  a time (`DOWNLOADS_AT_ONCE` in `resonate-server`'s `gateway.rs` at one, answering 503 with
+  `Retry-After` while busy rather than holding the request) and a poll ask the keyed `resonate`
+  provider for one want at a time
+- [M · 0.1.1] A TIDAL link MusicBrainz holds that the listener's server finds gone or region-locked
+  ends that provider's turn: `played::found` offers the linked track without asking its codes, the
+  offer opens `Gone`, the next round passes the provider as heard and the want counts a miss though
+  another listing under the song's codes may play; the provider should be told which offers failed
+  and asked again without them
+
 ## Formats
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
   symphonia 0.6.1 reads it into its own buffer before `probe_cover_art` can weigh it; its
