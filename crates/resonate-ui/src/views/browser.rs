@@ -129,8 +129,6 @@ const NOT_HELD_HEADING: &str = "Not in your library";
 
 const FETCH_FOUND_AGAIN_HINT: &str = "Ask the providers for this song again";
 
-const DELETE_FROM_DISK: &str = "Delete from disk…";
-
 const RELEASES_OFFERED: usize = 10;
 const PLACE_ON: &str = "Place on a release…";
 const READ_THE_REST: &str = "Read the rest";
@@ -173,7 +171,22 @@ pub(crate) struct Rowed {
     pub(crate) playing: bool,
     pub(crate) plays: Plays,
     pub(crate) reach: Option<AtTheReach>,
-    pub(crate) listed_at: Option<usize>,
+    pub(crate) chooses: Option<Chooses>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Chooses {
+    pub(crate) shift: Shift,
+    pub(crate) row: usize,
+}
+
+impl Chooses {
+    pub(crate) const fn among(listed: Listed, row: usize) -> Self {
+        Self {
+            shift: Shift::Listing(listed),
+            row,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -189,11 +202,11 @@ impl RootView {
         at: Placement,
         tracks: &Arc<[Track]>,
         index: usize,
-        listed_at: Option<usize>,
+        chooses: Option<Chooses>,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
-        match listed_at {
-            Some(row) => self.queue_chosen_control(id, at, Shift::Listing(Listed::Tracks), row, cx),
+        match chooses {
+            Some(Chooses { shift, row }) => self.queue_chosen_control(id, at, shift, row, cx),
             None => self.queue_control(id, at, queueing(tracks, index), cx),
         }
     }
@@ -767,12 +780,14 @@ impl RootView {
                                         .library
                                         .read(cx)
                                         .favours(Favoured::Artist(id), artist.favourite.is_some());
-                                    let reached =
-                                        this.reaches(Shift::Listing(Listed::Artists), index);
+                                    let shift = Shift::Listing(Listed::Artists);
 
-                                    let listed = reorder::marked(
+                                    let listed = this.marked_where_reached(
+                                        shift,
+                                        index,
                                         tall_row(chosen)
                                             .id(("artist", id.get()))
+                                            .debug_selector(move || format!("artist-{}", id.get()))
                                             .group(ROW_GROUP)
                                             .cursor_pointer()
                                             .hover(|entry| entry.bg(rgb(theme::hover())))
@@ -813,19 +828,26 @@ impl RootView {
                                                 ROW_GROUP,
                                                 cx,
                                             ))
-                                            .on_click(cx.listener(move |this, _, _, cx| {
-                                                this.opened(Selection::Artist(id), cx);
-                                            })),
-                                        reached,
+                                            .on_click(cx.listener(
+                                                move |this, event: &ClickEvent, _, cx| {
+                                                    if this.reach_by_click(
+                                                        shift,
+                                                        index,
+                                                        event.modifiers(),
+                                                        cx,
+                                                    ) {
+                                                        return;
+                                                    }
+                                                    this.opened(Selection::Artist(id), cx);
+                                                },
+                                            )),
                                     );
-                                    let reach =
-                                        this.at_the_reach(Shift::Listing(Listed::Artists), index);
+                                    let reach = this.at_the_reach(shift, index);
                                     rows.push(menu::opens_a_reachable_menu(
                                         listed,
                                         reach,
-                                        move |_, at, _| {
-                                            artist_menu(at, id)
-                                                .favours(Favoured::Artist(id), favourite)
+                                        move |this, at, cx| {
+                                            artist_menu_among(at, id, favourite, index, this, cx)
                                         },
                                         cx,
                                     ));
@@ -943,37 +965,27 @@ impl RootView {
                                                 drawn.push(row(false).into_any_element());
                                                 continue;
                                             };
-                                            let reached =
-                                                this.reaches(Shift::Listing(Listed::Tracks), index);
-                                            let cursor_only = this.stands_unchosen_on(
-                                                Shift::Listing(Listed::Tracks),
-                                                index,
+                                            let shift = Shift::Listing(Listed::Tracks);
+                                            let row = this.track_row(
+                                                &tracks,
+                                                held,
+                                                track,
+                                                Rowed {
+                                                    playing: playing == Some(track.id),
+                                                    plays: Plays::AsTheListingIsDrawn {
+                                                        in_an_album,
+                                                    },
+                                                    reach: this.at_the_reach(shift, index),
+                                                    chooses: Some(Chooses::among(
+                                                        Listed::Tracks,
+                                                        index,
+                                                    )),
+                                                },
+                                                cx,
                                             );
                                             drawn.push(
-                                                reorder::cursor_marked(
-                                                    reorder::marked(
-                                                        this.track_row(
-                                                            &tracks,
-                                                            held,
-                                                            track,
-                                                            Rowed {
-                                                                playing: playing == Some(track.id),
-                                                                plays: Plays::AsTheListingIsDrawn {
-                                                                    in_an_album,
-                                                                },
-                                                                reach: this.at_the_reach(
-                                                                    Shift::Listing(Listed::Tracks),
-                                                                    index,
-                                                                ),
-                                                                listed_at: Some(index),
-                                                            },
-                                                            cx,
-                                                        ),
-                                                        reached,
-                                                    ),
-                                                    cursor_only,
-                                                )
-                                                .into_any_element(),
+                                                this.marked_where_reached(shift, index, row)
+                                                    .into_any_element(),
                                             );
                                         }
                                         Some(ListedRow::Missing(missing)) => {
@@ -1043,7 +1055,7 @@ impl RootView {
             playing,
             plays,
             reach,
-            listed_at,
+            chooses,
         } = rowed;
         let in_an_album = plays == Plays::AsTheListingIsDrawn { in_an_album: true };
         let played = Arc::clone(tracks);
@@ -1169,7 +1181,7 @@ impl RootView {
                                         Placement::Next,
                                         tracks,
                                         index,
-                                        listed_at,
+                                        chooses,
                                         cx,
                                     ))
                                     .child(self.queue_track_control(
@@ -1177,35 +1189,25 @@ impl RootView {
                                         Placement::Queued,
                                         tracks,
                                         index,
-                                        listed_at,
+                                        chooses,
                                         cx,
                                     ))
                             }),
                     ),
             )
             .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
-                if let Some(row) = listed_at
-                    && this.reach_by_click(
-                        Shift::Listing(Listed::Tracks),
-                        row,
-                        event.modifiers(),
-                        cx,
-                    )
+                if let Some(Chooses { shift, row }) = chooses
+                    && this.reach_by_click(shift, row, event.modifiers(), cx)
                 {
                     return;
                 }
                 this.play_the_row(plays, &played, index, window, cx);
             }));
-        let lifted = match plays {
-            Plays::AsTheListingIsDrawn { in_an_album: false } if listed_at == Some(index) => {
-                Lifted::tracks(
-                    tracks,
-                    self.acting_on_chosen(Shift::Listing(Listed::Tracks), index),
-                )
+        let lifted = match chooses.filter(|chooses| chooses.row == index && !in_an_album) {
+            Some(Chooses { shift, row }) => {
+                Lifted::tracks(tracks, self.acting_on_chosen(shift, row))
             }
-            Plays::AsTheListingIsDrawn { .. } | Plays::TheseRows => {
-                Lifted::tracks(tracks, Chosen::of(Span::one(index)))
-            }
+            None => Lifted::tracks(tracks, Chosen::of(Span::one(index))),
         };
         let row = reorder::liftable(row, lifted);
 
@@ -1213,10 +1215,10 @@ impl RootView {
             row,
             reach,
             move |this, at, cx| {
-                if let Some(row) = listed_at {
-                    let chosen = this.acting_on_chosen(Shift::Listing(Listed::Tracks), row);
+                if let Some(Chooses { shift, row }) = chooses {
+                    let chosen = this.acting_on_chosen(shift, row);
                     if chosen.count() > 1 {
-                        let tracks = this.library.read(cx).tracks_at(chosen.rows());
+                        let tracks = this.tracks_chosen(shift, &chosen, cx);
                         return chosen_tracks_menu(at, tracks, this, cx);
                     }
                 }
@@ -1293,7 +1295,7 @@ impl RootView {
                             });
                         })
                     })
-                    .does(Icon::Delete, DELETE_FROM_DISK, move |this, _, cx| {
+                    .does(Icon::Delete, menu::DELETE_FROM_DISK, move |this, _, cx| {
                         this.ask_to_delete(deleting.clone(), cx);
                     })
             },
@@ -1696,7 +1698,9 @@ impl RootView {
     ) -> AnyElement {
         let id = artist.id;
         let side = theme::grid_cover();
-        let reached = self.reaches(Shift::Listing(Listed::Artists), at);
+        let shift = Shift::Listing(Listed::Artists);
+        let reached = self.reaches(shift, at);
+        let cursor_only = self.stands_unchosen_on(shift, at);
         let favourite = self
             .library
             .read(cx)
@@ -1725,6 +1729,7 @@ impl RootView {
 
         let cell = div()
             .id(cell_id.clone())
+            .debug_selector(move || format!("artist-{}", id.get()))
             .follows_the_pointer(cell_id)
             .group(CELL_GROUP)
             .flex()
@@ -1742,6 +1747,9 @@ impl RootView {
                     .child(pictured)
                     .when(reached, |frame| {
                         frame.child(reached_ring().rounded(px(side / 2.0 + REACHED_RING + 1.0)))
+                    })
+                    .when(cursor_only, |frame| {
+                        frame.child(cursor_ring().rounded(px(side / 2.0 + REACHED_RING + 1.0)))
                     })
                     .child(
                         self.favour_mark_under(
@@ -1791,15 +1799,18 @@ impl RootView {
                             )),
                     ),
             )
-            .on_click(cx.listener(move |this, _, _, cx| {
+            .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
+                if this.reach_by_click(shift, at, event.modifiers(), cx) {
+                    return;
+                }
                 this.opened(Selection::Artist(id), cx);
             }));
 
-        let reach = self.at_the_reach(Shift::Listing(Listed::Artists), at);
+        let reach = self.at_the_reach(shift, at);
         menu::opens_a_reachable_menu(
             cell,
             reach,
-            move |_, at, _| artist_menu(at, id).favours(Favoured::Artist(id), favourite),
+            move |this, menu_at, cx| artist_menu_among(menu_at, id, favourite, at, this, cx),
             cx,
         )
         .into_any_element()
@@ -3037,6 +3048,24 @@ fn album_menu(at: Point<Pixels>, album: AlbumId, owner: Option<ArtistId>) -> Men
         })
 }
 
+fn artist_menu_among(
+    at: Point<Pixels>,
+    artist: ArtistId,
+    favourite: bool,
+    row: usize,
+    this: &RootView,
+    cx: &App,
+) -> Menu {
+    let shift = Shift::Listing(Listed::Artists);
+    let chosen = this.acting_on_chosen(shift, row);
+    if chosen.count() > 1 {
+        let artists = this.library.read(cx).artists_at(chosen.rows());
+        return chosen_artists_menu(at, artists, this, cx);
+    }
+
+    artist_menu(at, artist).favours(Favoured::Artist(artist), favourite)
+}
+
 fn artist_menu(at: Point<Pixels>, artist: ArtistId) -> Menu {
     Menu::at(at)
         .does(Icon::Play, menu::PLAY, move |this, window, cx| {
@@ -3830,6 +3859,14 @@ fn chosen_tracks_menu(at: Point<Pixels>, tracks: Vec<Track>, this: &RootView, cx
     let queued = listed(&tracks);
     let cuts: Arc<[Cut]> = tracks.iter().map(Cut::of).collect();
     let ids: Vec<TrackId> = tracks.iter().map(|track| track.id).collect();
+    let hidden = tracks.iter().all(|track| track.hidden);
+    let hiding = ids.clone();
+    let deleting = Deleting::each(&tracks);
+    let paths: Vec<String> = tracks
+        .iter()
+        .filter_map(|track| track.location.locator().as_path())
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect();
     let favoured = tracks.iter().all(|track| {
         this.library
             .read(cx)
@@ -3859,6 +3896,78 @@ fn chosen_tracks_menu(at: Point<Pixels>, tracks: Vec<Track>, this: &RootView, cx
                 this.library.update(cx, |library, cx| {
                     for id in &ids {
                         library.favour(Favoured::Track(*id), !favoured, cx);
+                    }
+                });
+            },
+        )
+        .offers_the_files(paths)
+        .apart()
+        .does(
+            if hidden { Icon::Undo } else { Icon::Discard },
+            if hidden {
+                menu::SHOW_EACH
+            } else {
+                menu::HIDE_EACH
+            },
+            move |this, _, cx| {
+                this.library.update(cx, |library, cx| {
+                    library.hide_tracks(hiding.clone(), !hidden, cx);
+                });
+            },
+        )
+        .does(Icon::Delete, menu::DELETE_FROM_DISK, move |this, _, cx| {
+            this.ask_to_delete(deleting.clone(), cx);
+        })
+}
+
+fn chosen_artists_menu(
+    at: Point<Pixels>,
+    artists: Vec<ArtistId>,
+    this: &RootView,
+    cx: &App,
+) -> Menu {
+    let favoured = artists.iter().all(|artist| {
+        this.library.read(cx).artists().iter().any(|held| {
+            held.id == *artist
+                && this
+                    .library
+                    .read(cx)
+                    .favours(Favoured::Artist(*artist), held.favourite.is_some())
+        })
+    });
+    let scopes: Vec<Selection> = artists.iter().copied().map(Selection::Artist).collect();
+    let (play, next, last) = (scopes.clone(), scopes.clone(), scopes);
+
+    Menu::at(at)
+        .does(Icon::Play, menu::PLAY, move |this, window, cx| {
+            this.plays_everything_in_each(play.clone(), Placement::Queued, true, window, cx);
+        })
+        .does(Icon::QueueNext, menu::PLAY_NEXT, move |this, window, cx| {
+            this.plays_everything_in_each(next.clone(), Placement::Next, false, window, cx);
+        })
+        .does(
+            Icon::QueueLast,
+            menu::ADD_TO_QUEUE,
+            move |this, window, cx| {
+                this.plays_everything_in_each(last.clone(), Placement::Queued, false, window, cx);
+            },
+        )
+        .apart()
+        .does(
+            if favoured {
+                Icon::Favourited
+            } else {
+                Icon::Favourite
+            },
+            if favoured {
+                menu::UNFAVOUR
+            } else {
+                menu::FAVOUR
+            },
+            move |this, _, cx| {
+                this.library.update(cx, |library, cx| {
+                    for artist in &artists {
+                        library.favour(Favoured::Artist(*artist), !favoured, cx);
                     }
                 });
             },

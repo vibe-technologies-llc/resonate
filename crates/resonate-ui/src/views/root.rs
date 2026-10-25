@@ -543,7 +543,7 @@ pub struct RootView {
     pub(crate) listening_open: bool,
     downloads_open: bool,
     downloads_pressed_off: Option<Instant>,
-    deleting: Option<Deleting>,
+    pub(crate) deleting: Option<Deleting>,
     pub(crate) incoming: Option<Incoming>,
     pub(crate) taking_in: Option<TakingIn>,
     pub(crate) watching_the_drag: Task<()>,
@@ -2296,6 +2296,37 @@ impl RootView {
         }
     }
 
+    pub(crate) fn tracks_chosen(&self, shift: Shift, chosen: &Chosen, cx: &App) -> Vec<Track> {
+        let library = self.library.read(cx);
+        let picked = |tracks: &[Track]| -> Vec<Track> {
+            chosen
+                .rows()
+                .filter_map(|row| tracks.get(row).cloned())
+                .collect()
+        };
+
+        match shift {
+            Shift::Listing(Listed::Tracks) => library.tracks_at(chosen.rows()),
+            Shift::Listing(Listed::Favourites) => picked(&library.favourite_tracks()),
+            Shift::Listing(Listed::Suggested) => library
+                .opened_suggestion()
+                .map_or_else(Vec::new, |opened| picked(&opened.tracks)),
+            _ => Vec::new(),
+        }
+    }
+
+    pub(crate) fn marked_where_reached<E: Styled + FluentBuilder>(
+        &self,
+        shift: Shift,
+        row: usize,
+        listed: E,
+    ) -> E {
+        reorder::cursor_marked(
+            reorder::marked(listed, self.reaches(shift, row)),
+            self.stands_unchosen_on(shift, row),
+        )
+    }
+
     pub(crate) fn reach_by_click(
         &mut self,
         shift: Shift,
@@ -2618,6 +2649,11 @@ impl RootView {
             reach.rows().first()
         };
 
+        if shift.chooses_apart() && chosen.count() > 1 {
+            self.play_the_chosen(shift, &chosen, window, cx);
+            return;
+        }
+
         match shift {
             Shift::Queue => self.send_by_position(Command::JumpTo(row), cx),
             Shift::Playlist(playlist) => {
@@ -2625,11 +2661,6 @@ impl RootView {
                 self.play_playlist(playlist, &entries, row, true, cx);
             }
             Shift::Listing(Listed::Tracks) => {
-                if chosen.count() > 1 {
-                    let tracks = self.library.read(cx).tracks_at(chosen.rows());
-                    self.play(&tracks, 0, cx);
-                    return;
-                }
                 if let Some(found) = self.library.read(cx).found_at(row) {
                     self.library
                         .update(cx, |library, cx| library.fetch_and_play(found, cx));
@@ -2641,17 +2672,6 @@ impl RootView {
                 self.play_the_listing_from(&played, start, window, cx);
             }
             Shift::Listing(Listed::Albums) => {
-                if chosen.count() > 1 {
-                    let albums = self.library.read(cx).albums_at(chosen.rows());
-                    self.plays_everything_in_each(
-                        albums.into_iter().map(Selection::Album).collect(),
-                        Placement::Queued,
-                        true,
-                        window,
-                        cx,
-                    );
-                    return;
-                }
                 let Some(album) = self.library.read(cx).albums().get(row).map(|held| held.id)
                 else {
                     return;
@@ -2701,6 +2721,41 @@ impl RootView {
                 self.open_offered(query, cx);
             }
             Shift::Listing(Listed::Heard) => self.open_what_was_heard_at(row, cx),
+        }
+    }
+
+    fn play_the_chosen(
+        &mut self,
+        shift: Shift,
+        chosen: &Chosen,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match shift {
+            Shift::Listing(Listed::Albums) => {
+                let albums = self.library.read(cx).albums_at(chosen.rows());
+                self.plays_everything_in_each(
+                    albums.into_iter().map(Selection::Album).collect(),
+                    Placement::Queued,
+                    true,
+                    window,
+                    cx,
+                );
+            }
+            Shift::Listing(Listed::Artists) => {
+                let artists = self.library.read(cx).artists_at(chosen.rows());
+                self.plays_everything_in_each(
+                    artists.into_iter().map(Selection::Artist).collect(),
+                    Placement::Queued,
+                    true,
+                    window,
+                    cx,
+                );
+            }
+            _ => {
+                let tracks = self.tracks_chosen(shift, chosen, cx);
+                self.play(&tracks, 0, cx);
+            }
         }
     }
 
@@ -4917,11 +4972,11 @@ impl RootView {
     }
 
     fn delete_the_track(&mut self, cx: &mut Context<Self>) {
-        let Some(Deleting { track, title, .. }) = self.deleting.take() else {
+        let Some(Deleting { tracks, title, .. }) = self.deleting.take() else {
             return;
         };
         self.library
-            .update(cx, |library, cx| library.delete_track(track, title, cx));
+            .update(cx, |library, cx| library.delete_tracks(tracks, title, cx));
         cx.notify();
     }
 
@@ -4956,7 +5011,7 @@ impl RootView {
                             .text_size(px(theme::text_lg()))
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(rgb(theme::text()))
-                            .child("Delete this song?"),
+                            .child(deleting.asking()),
                     ),
             )
             .child(
@@ -5543,7 +5598,7 @@ impl Render for RootView {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Deleting {
-    pub(crate) track: TrackId,
+    pub(crate) tracks: Vec<TrackId>,
     pub(crate) title: String,
     pub(crate) artist: Option<String>,
     pub(crate) a_cut: bool,
@@ -5552,14 +5607,41 @@ pub(crate) struct Deleting {
 impl Deleting {
     pub(crate) fn of(track: &Track) -> Self {
         Self {
-            track: track.id,
+            tracks: vec![track.id],
             title: track.title.clone(),
             artist: track.artist.clone().filter(|artist| !artist.is_empty()),
             a_cut: track.span.is_some(),
         }
     }
 
+    pub(crate) fn each(tracks: &[Track]) -> Self {
+        match tracks {
+            [only] => Self::of(only),
+            _ => Self {
+                tracks: tracks.iter().map(|track| track.id).collect(),
+                title: tracks
+                    .first()
+                    .map_or_else(String::new, |track| track.title.clone()),
+                artist: None,
+                a_cut: tracks.iter().any(|track| track.span.is_some()),
+            },
+        }
+    }
+
+    fn asking(&self) -> &'static str {
+        match self.tracks.len() {
+            1 => "Delete this song?",
+            _ => "Delete these songs?",
+        }
+    }
+
     fn saying(&self) -> String {
+        if self.tracks.len() > 1 {
+            return format!(
+                "{} are moved to the trash and taken out of the library.",
+                format::counted(self.tracks.len(), "song", "songs")
+            );
+        }
         match &self.artist {
             Some(artist) => format!(
                 "“{}” by {artist} is moved to the trash and taken out of the library.",
@@ -6224,7 +6306,7 @@ mod tests {
             driven.cx.update(|window, cx| {
                 root.update(cx, |root, cx| {
                     root.deleting = Some(Deleting {
-                        track,
+                        tracks: vec![track],
                         title: "one".to_owned(),
                         artist: None,
                         a_cut: false,

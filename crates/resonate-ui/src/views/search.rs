@@ -891,7 +891,7 @@ impl RootView {
                                 playing: playing == Some(track.id),
                                 plays: Plays::AsTheListingIsDrawn { in_an_album: false },
                                 reach: self.at_the_reach(Shift::Listing(Listed::Top), row),
-                                listed_at: None,
+                                chooses: None,
                             },
                             cx,
                         ),

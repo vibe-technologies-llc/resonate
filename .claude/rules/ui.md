@@ -1357,7 +1357,7 @@ is never named.
   up/down and `Step::landing` are the one arithmetic behind arrows, drop and keys. A row is drag source
   and drop target; dropping a span on row `to` = the arrows' `Command::Move` (never a swap). Payload
   `Carried`; `Ghost` = first row's title plus how many more ride. `RootView::reach` is a `Reach`
-  (`Shift`, anchor, the row moved to, and for Tracks and Albums the rows chosen apart; lives for the run, and a non-queue reach is let go of when the
+  (`Shift`, anchor, the row moved to, and for the catalog listings the rows chosen apart; lives for the run, and a non-queue reach is let go of when the
   rows under it are arranged another way: `Arrangement` = selection, sorting, playlist order and
   reading, opened playlist's order, search sort, compared by `let_go_of_a_reach_the_rows_left` on
   every library change and sort setter; `opening_an_album_lets_go_of_the_row_reached_in_the_listing_before`). `up`/`down` move and collapse it (queue opens
@@ -1370,8 +1370,9 @@ is never named.
   row is inside it, else that row alone. Drawn as a 2-unit accent edge plus faint wash; every
   reorderable row reserves the edge in `theme::UNMARKED`; saved queries draw none. A drop does not ask
   `acting_on`: `reorder::movable` takes the row it stands for beside the `Carried` it would hand over.
-- **Tracks and Albums choose rows apart.** Only `Shift::chooses_apart` (the Tracks and Albums
-  listings) takes `ctrl`-click (add the row, or let it go if chosen) and `shift`-click (widen from the
+- **The catalog listings choose rows apart.** Only `Shift::chooses_apart` (Tracks, Albums, Artists,
+  Favourites and an opened suggestion; not the queue, playlists, Missing, Top results or the
+  Suggestions and Statistics shelves, whose runs mix kinds of row) takes `ctrl`-click (add the row, or let it go if chosen) and `shift`-click (widen from the
   anchor, keeping what was chosen apart); a plain click still plays or opens, a modified click only
   chooses (`RootView::reach_by_click`). `ctrl-space` chooses or lets go of the row the cursor is on
   (`ChooseReached`), `ctrl-shift-up`/`down` hop the cursor a row without touching the choice
@@ -1382,12 +1383,22 @@ is never named.
   every other gesture builds `Reach::at`/`spanning` and so drops the rows apart
   (`an_arrow_gives_up_the_rows_chosen_apart`). **Every action on a row in the choice acts on all of
   it** (`RootView::acting_on_chosen`: the choice if it holds the row, else the row): `enter` plays the
-  chosen tracks in order (`LibraryModel::tracks_at`) or queues the chosen albums' tracks
-  (`plays_everything_in_each`, one background read in album order), the row menu becomes
-  `chosen_tracks_menu`/`chosen_albums_menu` (Play, Play next, Add to queue, Add to playlist where
-  tracks, Favourite or Unfavourite all), a track's two queue buttons queue the choice
-  (`queue_chosen_control`), and a drag lifts it. What takes one row still: a menu's Hide, Delete,
-  Share, file and navigation entries, which a choice of several does not offer.
+  chosen tracks in order or queues the chosen albums' or artists' tracks
+  (`RootView::play_the_chosen`; `plays_everything_in_each`, one background read in order), the row menu
+  becomes `chosen_tracks_menu`/`chosen_albums_menu`/`chosen_artists_menu` (Play, Play next, Add to
+  queue, Add to playlist where tracks, Favourite or Unfavourite all), a track's two queue buttons queue
+  the choice (`queue_chosen_control`), and a drag lifts it. **One row of code serves every track
+  listing**: a track row carries a `Rowed::chooses` (`browser::Chooses`: the `Shift` and the listed
+  row; none where the rows are not a choosable listing), and `RootView::tracks_chosen` turns a `Chosen`
+  into tracks for Tracks (`tracks_at`), Favourites and a suggestion (the page's own rows);
+  `RootView::marked_where_reached` draws the reach edge and the cursor's faint edge for every one. A
+  choice of several tracks also offers *Hide from library* (or *Show in library* when all are
+  hidden: `LibraryModel::hide_tracks`, one edit), *Delete from disk…* (one `Deleting::each` sheet and
+  one `delete_tracks` for the lot, a toast counting them) and *Copy the file paths* (one per line,
+  local files only). What takes one row still: Share (a link names one recording), Show in the file
+  manager (one file), *Go to* entries and the other copies; album and artist menus never had Hide,
+  Delete or file entries. Top results is one run of songs, found songs and strips of artists and
+  albums, so it keeps Shift alone.
 - **A track or album is dragged out of a listing into the queue or a playlist.** Track rows and album
   cells carry a `reorder::Lifted` (`Lift::Tracks`/`Lift::Album`/`Lift::Albums`) through
   `reorder::liftable`; a row standing in the choice carries every loaded row of it as a

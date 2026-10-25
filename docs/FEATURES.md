@@ -66,8 +66,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   weighed
 
 ## Keyboard and accessibility
-- [M · 0.2.0] Only Tracks and Albums choose rows apart (Control); Favourites, Artists, a suggestion and search
-  results take Shift alone, and a choice of several offers no Hide, Delete, Share or file entry in its menu
+- [S · 0.2.0] *Top results* (songs, artists and albums in one run), the Favourites shelves and the
+  playlist panes take Shift alone, and a choice of several tracks offers no Share or Show in the file
+  manager (a share link names one recording, the portal reveals one file)
 - [L · 0.2.0] Nothing is exposed to a screen reader: gpui now carries AccessKit, which the views
   do not yet use
 

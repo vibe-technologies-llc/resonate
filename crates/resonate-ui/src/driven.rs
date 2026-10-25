@@ -621,6 +621,7 @@ mod tests {
         Pane, Selection,
         equaliser::{Cell as BandCell, Editing},
         views::{
+            menu::{self, Menu},
             reorder::{Listed, Shift},
             settings::curve::Plot,
             visualiser::Showing,
@@ -2645,6 +2646,328 @@ mod tests {
             [of_album(albums[0].id), of_album(albums[2].id)]
         );
         assert_eq!(driven.read(|root, _| root.pane), Pane::Albums);
+    }
+
+    fn favourite_everything(library: &Library) {
+        for track in library
+            .tracks(&resonate_library::TrackQuery::default())
+            .expect("the scanned tracks")
+        {
+            library
+                .favour(resonate_library::Favoured::Track(track.id), true)
+                .expect("a favourite kept");
+        }
+    }
+
+    fn favourites_listed(driven: &mut Driven) -> Vec<TrackId> {
+        driven.read(|root, cx| {
+            root.library
+                .read(cx)
+                .favourite_tracks()
+                .iter()
+                .map(|track| track.id)
+                .collect()
+        })
+    }
+
+    fn menu_labels(driven: &mut Driven) -> Vec<String> {
+        driven.read(|root, _| root.menu.as_ref().map(Menu::labels).unwrap_or_default())
+    }
+
+    fn pressed_in_the_menu(driven: &mut Driven, label: &str) {
+        let at = menu_labels(driven)
+            .iter()
+            .position(|held| held == label)
+            .unwrap_or_else(|| panic!("the menu offers no {label}"));
+        driven.click(named("menu-entry", at));
+    }
+
+    fn deleting_asked_about(driven: &mut Driven) -> Option<Vec<TrackId>> {
+        driven.read(|root, _| {
+            root.deleting
+                .as_ref()
+                .map(|deleting| deleting.tracks.clone())
+        })
+    }
+
+    fn favourites_open_with_two_chosen(
+        cx: &mut TestAppContext,
+        folder: &Folder,
+    ) -> (Driven, Arc<Library>, Vec<TrackId>) {
+        let library = scanned_catalog(folder, &["Echoes", "Money", "Time", "Us"]);
+        favourite_everything(&library);
+        let mut driven = Driven::opened_in(cx, Arc::clone(&library), folder);
+        driven.click("tab-favourites");
+        driven.until(|root, cx| root.library.read(cx).favourite_tracks().len() == 4);
+        let ids = favourites_listed(&mut driven);
+
+        driven.click_with(named("track", ids[3].get()), CONTROL);
+        driven.click_with(named("track", ids[1].get()), CONTROL);
+
+        (driven, library, ids)
+    }
+
+    #[gpui::test]
+    fn a_control_click_chooses_favourites_apart_and_enter_plays_every_one_chosen(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, _library, ids) = favourites_open_with_two_chosen(cx, &folder);
+
+        assert_eq!(chosen_rows(&mut driven), [1, 3]);
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Favourites);
+        assert_eq!(
+            driven.read(|root, cx| root.player.read(cx).queue().len()),
+            0
+        );
+
+        driven.cx.simulate_keystrokes("enter");
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
+
+        assert_eq!(driven.queue(), [ids[1], ids[3]]);
+    }
+
+    #[gpui::test]
+    fn the_keys_hop_over_favourites_and_choose_them(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time"]);
+        favourite_everything(&library);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-favourites");
+        driven.until(|root, cx| root.library.read(cx).favourite_tracks().len() == 3);
+
+        driven
+            .cx
+            .simulate_keystrokes("down ctrl-shift-down ctrl-shift-down ctrl-space");
+
+        assert_eq!(chosen_rows(&mut driven), [0, 2]);
+    }
+
+    #[gpui::test]
+    fn the_menu_of_favourites_chosen_apart_offers_to_hide_delete_and_copy_them_and_no_share(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, _library, ids) = favourites_open_with_two_chosen(cx, &folder);
+
+        driven.right_click(named("track", ids[1].get()));
+        let labels = menu_labels(&mut driven);
+
+        for offered in [
+            menu::HIDE_EACH,
+            menu::DELETE_FROM_DISK,
+            menu::COPY_PATHS,
+            menu::PLAY,
+            menu::UNFAVOUR,
+        ] {
+            assert!(labels.iter().any(|label| label == offered), "{offered}");
+        }
+        for withheld in [menu::SHARE, menu::GO_TO_ALBUM, menu::SHOW_IN_FOLDER] {
+            assert!(!labels.iter().any(|label| label == withheld), "{withheld}");
+        }
+    }
+
+    #[gpui::test]
+    fn hiding_the_rows_chosen_apart_hides_each_of_them_and_no_other(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let (mut driven, library, ids) = favourites_open_with_two_chosen(cx, &folder);
+
+        driven.right_click(named("track", ids[1].get()));
+        pressed_in_the_menu(&mut driven, menu::HIDE_EACH);
+        driven.until(|root, cx| root.library.read(cx).favourite_tracks().len() == 2);
+
+        let left: Vec<TrackId> = library
+            .tracks(&resonate_library::TrackQuery::default())
+            .expect("the tracks still shown")
+            .into_iter()
+            .map(|track| track.id)
+            .collect();
+        assert_eq!(left.len(), 2);
+        assert!(left.contains(&ids[0]) && left.contains(&ids[2]));
+    }
+
+    #[gpui::test]
+    fn deleting_the_rows_chosen_apart_asks_once_for_all_of_them(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let (mut driven, _library, ids) = favourites_open_with_two_chosen(cx, &folder);
+
+        driven.right_click(named("track", ids[1].get()));
+        pressed_in_the_menu(&mut driven, menu::DELETE_FROM_DISK);
+
+        assert_eq!(
+            deleting_asked_about(&mut driven),
+            Some(vec![ids[1], ids[3]])
+        );
+    }
+
+    #[gpui::test]
+    fn the_menu_of_tracks_chosen_apart_offers_to_hide_and_delete_them(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-tracks");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 4);
+        let ids = listed_ids(&mut driven);
+
+        driven.click_with(named("track", ids[0].get()), CONTROL);
+        driven.click_with(named("track", ids[2].get()), CONTROL);
+        driven.right_click(named("track", ids[0].get()));
+        let labels = menu_labels(&mut driven);
+
+        for offered in [menu::HIDE_EACH, menu::DELETE_FROM_DISK, menu::COPY_PATHS] {
+            assert!(labels.iter().any(|label| label == offered), "{offered}");
+        }
+
+        pressed_in_the_menu(&mut driven, menu::DELETE_FROM_DISK);
+
+        assert_eq!(
+            deleting_asked_about(&mut driven),
+            Some(vec![ids[0], ids[2]])
+        );
+    }
+
+    #[gpui::test]
+    fn a_control_click_chooses_a_suggestions_rows_apart_and_enter_plays_them(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let titles: Vec<String> = (1..=12).map(|nth| format!("Track {nth}")).collect();
+        let named_titles: Vec<&str> = titles.iter().map(String::as_str).collect();
+        let library = scanned_catalog(&folder, &named_titles);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.until(|root, cx| !root.library.read(cx).suggestions().is_empty());
+        driven.click("tab-suggestions");
+        driven.click("suggestion-open-0");
+        driven.until(|root, cx| {
+            root.library
+                .read(cx)
+                .opened_suggestion()
+                .is_some_and(|opened| opened.tracks.len() > 3)
+        });
+        let ids: Vec<TrackId> = driven.read(|root, cx| {
+            root.library
+                .read(cx)
+                .opened_suggestion()
+                .map(|opened| opened.tracks.iter().map(|track| track.id).collect())
+                .unwrap_or_default()
+        });
+
+        driven.click_with(named("track", ids[2].get()), CONTROL);
+        driven.click_with(named("track", ids[0].get()), CONTROL);
+
+        assert_eq!(chosen_rows(&mut driven), [0, 2]);
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Suggestions);
+
+        driven.cx.simulate_keystrokes("enter");
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
+
+        assert_eq!(driven.queue(), [ids[0], ids[2]]);
+    }
+
+    fn three_artists(folder: &Folder) -> Arc<Library> {
+        for (file, title, artist) in [
+            ("one.wav", "One", "Air"),
+            ("two.wav", "Two", "Beck"),
+            ("three.wav", "Three", "Cake"),
+        ] {
+            folder.tagged(file, 1, &[(b"INAM", title), (b"IART", artist)]);
+        }
+        let library = catalog();
+        Driven::scanned(&library, folder);
+        library
+    }
+
+    #[gpui::test]
+    fn a_control_click_chooses_artists_apart_and_enter_queues_every_one_chosen(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let library = three_artists(&folder);
+        let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+        driven.click("tab-artists");
+        driven.until(|root, cx| root.library.read(cx).artists_listed() == 3);
+        let artists = driven.read(|root, cx| root.library.read(cx).artists());
+
+        driven.click_with(named("artist", artists[0].id.get()), CONTROL);
+        driven.click_with(named("artist", artists[2].id.get()), CONTROL);
+
+        assert_eq!(chosen_rows(&mut driven), [0, 2]);
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Artists);
+        assert_eq!(
+            driven.read(|root, cx| root.player.read(cx).queue().len()),
+            0
+        );
+
+        driven.cx.simulate_keystrokes("enter");
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
+
+        let of_artist = |artist: resonate_core::ArtistId| -> TrackId {
+            library
+                .tracks(&resonate_library::TrackQuery {
+                    artist: Some(artist),
+                    ..resonate_library::TrackQuery::default()
+                })
+                .expect("the artist's tracks")[0]
+                .id
+        };
+        assert_eq!(
+            driven.queue(),
+            [of_artist(artists[0].id), of_artist(artists[2].id)]
+        );
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Artists);
+    }
+
+    #[gpui::test]
+    fn a_plain_click_on_an_artist_still_opens_it_and_chooses_nothing(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let library = three_artists(&folder);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-artists");
+        driven.until(|root, cx| root.library.read(cx).artists_listed() == 3);
+        let artists = driven.read(|root, cx| root.library.read(cx).artists());
+
+        driven.click(named("artist", artists[1].id.get()));
+
+        assert_eq!(
+            driven.read(|root, cx| root.library.read(cx).selection()),
+            Selection::Artist(artists[1].id)
+        );
+        assert!(chosen_rows(&mut driven).is_empty());
+    }
+
+    #[gpui::test]
+    fn the_menu_of_artists_chosen_apart_plays_queues_and_favourites_them_all(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let library = three_artists(&folder);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-artists");
+        driven.until(|root, cx| root.library.read(cx).artists_listed() == 3);
+        let artists = driven.read(|root, cx| root.library.read(cx).artists());
+
+        driven.click_with(named("artist", artists[0].id.get()), CONTROL);
+        driven.click_with(named("artist", artists[1].id.get()), CONTROL);
+        driven.right_click(named("artist", artists[0].id.get()));
+
+        assert_eq!(
+            menu_labels(&mut driven),
+            [
+                menu::PLAY,
+                menu::PLAY_NEXT,
+                menu::ADD_TO_QUEUE,
+                "",
+                menu::FAVOUR
+            ]
+        );
+
+        pressed_in_the_menu(&mut driven, menu::FAVOUR);
+        driven.until(|root, cx| {
+            let library = root.library.read(cx);
+            library.favoured_artist(artists[0].id) && library.favoured_artist(artists[1].id)
+        });
+
+        assert!(!driven.read(|root, cx| root.library.read(cx).favoured_artist(artists[2].id)));
     }
 
     #[gpui::test]
