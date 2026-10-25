@@ -42,6 +42,8 @@ const CONNECTED_WITHIN: Duration = Duration::from_secs(15);
 #[cfg(feature = "sync")]
 const TRANSFERS_LOOKED_AT_EVERY: Duration = Duration::from_millis(250);
 #[cfg(feature = "sync")]
+const FETCHED_AT_A_TIME: usize = 100;
+#[cfg(feature = "sync")]
 const LEDGER: &str = "sync.sqlite";
 #[cfg(feature = "sync")]
 const STAGING: &str = "sync-staging";
@@ -764,8 +766,11 @@ pub(crate) fn asked(
                 said!("{playlist} lacks nothing {from} could send");
                 return Ok(None);
             }
-            sync.fetch(missing.clone(), device.id);
-            let landed = transferred(sync, &missing);
+            let landed = fetched_in_batches(
+                &missing,
+                |batch| sync.fetch(batch, device.id),
+                |batch| transferred(sync, batch),
+            );
             said!("{landed} of {} songs came from {from}", missing.len());
             Ok(None)
         }
@@ -832,6 +837,21 @@ fn device_named(sync: &Sync, name: &str) -> Result<SyncDevice> {
         }
         thread::sleep(TRANSFERS_LOOKED_AT_EVERY);
     }
+}
+
+#[cfg(feature = "sync")]
+fn fetched_in_batches(
+    missing: &[Recording],
+    mut fetch: impl FnMut(Vec<Recording>),
+    mut wait: impl FnMut(&[Recording]) -> usize,
+) -> usize {
+    missing
+        .chunks(FETCHED_AT_A_TIME)
+        .map(|batch| {
+            fetch(batch.to_vec());
+            wait(batch)
+        })
+        .sum()
 }
 
 #[cfg(feature = "sync")]
@@ -1158,6 +1178,31 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
+
+    fn recording(title: usize) -> Recording {
+        Recording {
+            mbid: None,
+            title: title.to_string(),
+            artist: "Artist".into(),
+            album: "Album".into(),
+            length: None,
+        }
+    }
+
+    #[test]
+    fn a_fetch_asks_for_no_more_songs_at_once_than_the_transfer_list_keeps() {
+        let missing = (0..250).map(recording).collect::<Vec<_>>();
+        let asked = std::cell::RefCell::new(Vec::new());
+
+        let landed = fetched_in_batches(
+            &missing,
+            |batch| asked.borrow_mut().push(batch.len()),
+            |batch| batch.len(),
+        );
+
+        assert_eq!(landed, 250);
+        assert_eq!(*asked.borrow(), [100, 100, 50]);
+    }
 
     fn key() -> SyncKey {
         SyncKey::minted().expect("a key is minted")

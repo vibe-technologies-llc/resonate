@@ -4,12 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Device sync
-- [S · 0.1.1] `resonate sync --fetch` never returns when a playlist lacks more than 200 songs:
-  `want` lists every song as `Waiting`, but `Running::transfer` drops the oldest `Landed` or
-  `Failed` row in the same lock hold that finishes it whenever the list passes
-  `TRANSFERS_SHOWN_AT_MOST` (200), so the first `N - 200` songs finish unseen by `transferred`'s
-  poll in the binary's `sync.rs`, which has no deadline and waits on them forever; an unreachable
-  device marks the batch `Failed` the same way. 200 or fewer works
 - [M · 0.1.1] An edit made before a device's first catch-up is overwritten by an older note: the
   service applies arrivals while `may_look` is false, and `playlist_arrived` and `favourite_arrived`
   compare a note with the stored stamp alone, not with a catalog that moved since the last look, so
