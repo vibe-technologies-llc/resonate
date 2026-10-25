@@ -7944,6 +7944,11 @@ fn a_cue_track_whose_index_moves_keeps_its_row_and_what_was_heard_of_it() -> Res
         entries[0].track.is_some(),
         "the playlist row lost the cut it named"
     );
+    assert_eq!(
+        entries[0].cut,
+        Cut::of(&moved),
+        "the playlist row kept the length the cut had when it was added"
+    );
     Ok(())
 }
 

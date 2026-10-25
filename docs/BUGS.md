@@ -8,13 +8,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Android
 
 ## Catalog
-- [S · 0.1.1] A playlist entry keeps the length a cue track had when it was added:
-  `follow_a_cut_that_moved` and `CUT_FOLLOWERS` rewrite `playlist_entries.span_start` when a sheet
-  moves a track but nothing rewrites `span_frames`, the read-back joins `tracks` on path and
-  `span_start` alone (`ON_THE_SAME_CUT`) and hands the row's own cut to the queue, so after the
-  sheet is edited the pane shows the catalog's length while playback loads the old span, and the
-  stale row no longer equals `Cut::of` the fresh track in folding and import. Reproduced in
-  `tests/library.rs` (catalog 17640 frames against the playlist's 11760)
 - [M · 0.1.1] The phones' next listen can be lost after the newest one was deleted: the mobile
   catalog's `listens` has `id INTEGER PRIMARY KEY` without `AUTOINCREMENT` (the desktop's does),
   `forgotten_in` deletes a deleted song's listens, SQLite hands the next insert `max(rowid) + 1`,

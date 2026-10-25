@@ -511,7 +511,7 @@ rows read via `Player::media` like any unscanned row.
   its new names (`a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_packets_its_scan_digested`);
   `settle_the_album` gathers into the old album via `enriched::gather` when the new folder's album
   holds nothing else and every moved row came from one album. **A cue track whose `INDEX 01` moved
-  is the row it was** (`store::follow_a_cut_that_moved`, carrying its dependents, `CUT_FOLLOWERS`);
+  is the row it was** (`store::follow_a_cut_that_moved`, carrying its dependents, `CUT_FOLLOWERS`; a playlist entry's `span_frames` follows the track's on every upsert, `entries_follow_the_length`);
   **a file a sheet cuts is followed whole** (`cuts_moved`: same size, codec and cuts, every row
   refreshed and reindexed, so a sheet edited as the file moved gives its new titles;
   `a_file_a_sheet_cuts_moved_as_its_sheet_was_edited_takes_the_titles_the_edited_sheet_gives`). `ScanStats::moved` counts rows followed;

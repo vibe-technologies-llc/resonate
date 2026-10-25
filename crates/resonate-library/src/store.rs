@@ -1041,7 +1041,20 @@ pub fn apply(
     follow_a_cut_that_moved(tx, record)?;
     let stored = track(tx, record, performer_id, album_id, generation)?;
     index(tx, &stored, record)?;
+    entries_follow_the_length(tx, record)?;
     Ok(true)
+}
+
+fn entries_follow_the_length(tx: &Transaction<'_>, record: &TrackRecord) -> Result<()> {
+    let (span_start, span_frames) = span_columns(record.span);
+    cached(
+        tx,
+        "UPDATE playlist_entries SET span_frames = ?3
+          WHERE path = ?1 AND span_start = ?2 AND span_frames IS NOT ?3",
+        params![path_text(&record.path), span_start, span_frames],
+    )
+    .map_err(|source| Error::store(StoreOp::Update, source))?;
+    Ok(())
 }
 
 fn follow_a_cut_that_moved(tx: &Transaction<'_>, record: &TrackRecord) -> Result<()> {
