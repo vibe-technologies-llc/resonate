@@ -46,7 +46,7 @@ paths:
 ## Reading a file argument
 
 One reader for URIs: `resonate-core::MediaLocation::{from_uri, to_uri}` (in core because bus and
-command line both need it) maps `file://` to the local source, any other scheme to a `SourceId` of
+command line both need it) maps `file://` (and the single-slash `file:/path` that Java's `File.toURI` writes) to the local source, any other scheme to a `SourceId` of
 that name. Every file argument goes through it.
 
 - **Path = the file it names *from here***: canonical where it exists, absolute where not (a missing
