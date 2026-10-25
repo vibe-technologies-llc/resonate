@@ -7,7 +7,7 @@ use resonate_core::{Mbid, Recording};
 
 use crate::{
     DeviceId, Error, Malformed, Result, SpaceId, Token,
-    catalog::Held,
+    catalog::{Held, SongTags},
     change::{
         Change, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, Listen, Platform,
         PlaylistBody, PlaylistKey, PlaylistNote, QueryBody, QueryNote, Stamp,
@@ -116,6 +116,7 @@ pub enum ToPeer {
     Fetch { recording: Recording, offset: u64 },
     Meet { device: DeviceId, records: bool },
     Changes { whole: bool, changes: Vec<Change> },
+    Tags { recording: Recording },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -126,6 +127,7 @@ pub enum FromPeer {
     Missing,
     Met { device: DeviceId },
     Taken,
+    Tagged { tags: SongTags },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -242,6 +244,36 @@ impl Writer {
             }
             None => self.flag(false),
         }
+    }
+
+    fn optional_text(&mut self, text: Option<&str>) {
+        match text {
+            Some(text) => {
+                self.flag(true);
+                self.text(text);
+            }
+            None => self.flag(false),
+        }
+    }
+
+    fn optional_number(&mut self, number: Option<u32>) {
+        match number {
+            Some(number) => {
+                self.flag(true);
+                self.number(u64::from(number));
+            }
+            None => self.flag(false),
+        }
+    }
+
+    pub fn tags(&mut self, tags: &SongTags) {
+        self.optional_text(tags.album_artist.as_deref());
+        self.optional_text(tags.date.as_deref());
+        self.optional_number(tags.track_number);
+        self.optional_number(tags.track_total);
+        self.optional_number(tags.disc_number);
+        self.optional_number(tags.disc_total);
+        self.flag(tags.compilation);
     }
 
     pub fn blobs(&mut self, blobs: &[Vec<u8>]) {
@@ -410,6 +442,34 @@ impl<'a> Reader<'a> {
             artist,
             album,
             length,
+        })
+    }
+
+    fn optional_text(&mut self) -> Result<Option<String>> {
+        if self.flag()? {
+            self.text().map(Some)
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn optional_number(&mut self) -> Result<Option<u32>> {
+        if self.flag()? {
+            self.small().map(Some)
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn tags(&mut self) -> Result<SongTags> {
+        Ok(SongTags {
+            album_artist: self.optional_text()?,
+            date: self.optional_text()?,
+            track_number: self.optional_number()?,
+            track_total: self.optional_number()?,
+            disc_number: self.optional_number()?,
+            disc_total: self.optional_number()?,
+            compilation: self.flag()?,
         })
     }
 
@@ -686,6 +746,10 @@ impl ToPeer {
                 writer.flag(*whole);
                 writer.bytes(&encoded_bundle(changes));
             }
+            Self::Tags { recording } => {
+                writer.byte(4);
+                writer.recording(recording);
+            }
         }
         writer.finish()
     }
@@ -705,6 +769,9 @@ impl ToPeer {
             3 => Self::Changes {
                 whole: reader.flag()?,
                 changes: decoded_bundle(reader.bytes(LARGEST_FRAME)?)?,
+            },
+            4 => Self::Tags {
+                recording: reader.recording()?,
             },
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
@@ -738,6 +805,10 @@ impl FromPeer {
                 writer.device(*device);
             }
             Self::Taken => writer.byte(5),
+            Self::Tagged { tags } => {
+                writer.byte(6);
+                writer.tags(tags);
+            }
         }
         writer.finish()
     }
@@ -767,6 +838,9 @@ impl FromPeer {
                 device: reader.device()?,
             },
             5 => Self::Taken,
+            6 => Self::Tagged {
+                tags: reader.tags()?,
+            },
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
         reader.done()?;
@@ -1245,6 +1319,20 @@ mod tests {
         let met = FromPeer::Met {
             device: DeviceId([4; DEVICE_BYTES]),
         };
+        let asked = ToPeer::Tags {
+            recording: song("Echoes"),
+        };
+        let tagged = FromPeer::Tagged {
+            tags: SongTags {
+                album_artist: Some("Pink Floyd".into()),
+                date: Some("1971-10-30".into()),
+                track_number: Some(6),
+                track_total: Some(6),
+                disc_number: Some(1),
+                disc_total: Some(2),
+                compilation: true,
+            },
+        };
 
         assert_eq!(ToPeer::decoded(&fetch.encoded()).expect("decoded"), fetch);
         assert_eq!(ToPeer::decoded(&meet.encoded()).expect("decoded"), meet);
@@ -1257,11 +1345,56 @@ mod tests {
             FromPeer::decoded(&FromPeer::Taken.encoded()).expect("decoded"),
             FromPeer::Taken
         );
+        assert_eq!(ToPeer::decoded(&asked.encoded()).expect("decoded"), asked);
+        assert_eq!(
+            FromPeer::decoded(&tagged.encoded()).expect("decoded"),
+            tagged
+        );
+        assert_eq!(
+            FromPeer::decoded(
+                &FromPeer::Tagged {
+                    tags: SongTags::default()
+                }
+                .encoded()
+            )
+            .expect("decoded"),
+            FromPeer::Tagged {
+                tags: SongTags::default()
+            }
+        );
         assert_eq!(FromPeer::decoded(&held.encoded()).expect("decoded"), held);
         assert_eq!(
             FromPeer::decoded(&FromPeer::Missing.encoded()).expect("decoded"),
             FromPeer::Missing
         );
+    }
+
+    #[test]
+    fn the_tags_of_a_song_travel_in_frames_an_earlier_build_refuses_whole_and_the_fetch_is_unchanged()
+     {
+        let asked = ToPeer::Tags {
+            recording: song("Echoes"),
+        }
+        .encoded();
+        let tagged = FromPeer::Tagged {
+            tags: SongTags::default(),
+        }
+        .encoded();
+        let fetch = ToPeer::Fetch {
+            recording: song("Echoes"),
+            offset: 0,
+        }
+        .encoded();
+        let sending = FromPeer::Sending {
+            size: 9,
+            extension: "flac".into(),
+        }
+        .encoded();
+
+        assert_eq!(asked[0], 4);
+        assert_eq!(tagged[0], 6);
+        assert_eq!(fetch[0], 1);
+        assert_eq!(sending, [2, 9, 4, b'f', b'l', b'a', b'c']);
     }
 
     #[test]

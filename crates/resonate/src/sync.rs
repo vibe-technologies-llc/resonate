@@ -19,14 +19,14 @@ use resonate_engine::{QueueItem, Unclaimed};
 use resonate_library::Library;
 #[cfg(feature = "sync")]
 use resonate_library::{
-    Cut, Error as LibraryError, PlaylistName, SongFiled, SyncedPlaylist, SyncedQuery,
+    Cut, Error as LibraryError, HeldTags, PlaylistName, SongFiled, SyncedPlaylist, SyncedQuery,
     SyncedQueryBody,
 };
 #[cfg(feature = "sync")]
 use resonate_sync::{
     Catalog, Follow, Handoff, Held, LocalListen, LocalPlaylist, LocalPlaylistId, LocalQuery, Me,
     Nearby, Opened, Platform, QueryBody, Refused, RemoteListen, Resumed, Server, Settings,
-    Standing, Sync, SyncDevice, SyncKey, TransferState,
+    SongTags, Standing, Sync, SyncDevice, SyncKey, TransferState,
 };
 
 use crate::config::Config;
@@ -646,11 +646,52 @@ impl Catalog for Catalogued {
         }))
     }
 
-    fn land(&self, recording: &Recording, extension: &str, staged: &Path) -> Answered<bool> {
+    fn tags(&self, recording: &Recording) -> Answered<SongTags> {
+        let Some(path) = self
+            .library
+            .resolve_recording(recording)
+            .map_err(|error| refused(&error))?
+            .filter(|cut| cut.span.is_none())
+            .and_then(|cut| cut.location.as_path().map(Path::to_path_buf))
+        else {
+            return Ok(SongTags::default());
+        };
+        let held = self
+            .library
+            .song_tags(&path)
+            .map_err(|error| refused(&error))?;
+
+        Ok(SongTags {
+            album_artist: held.album_artist,
+            date: held.date,
+            track_number: held.track_number,
+            track_total: held.track_total,
+            disc_number: held.disc_number,
+            disc_total: held.disc_total,
+            compilation: held.compilation,
+        })
+    }
+
+    fn land(
+        &self,
+        recording: &Recording,
+        tags: &SongTags,
+        extension: &str,
+        staged: &Path,
+    ) -> Answered<bool> {
         let mut file = File::open(staged).map_err(|_| Refused::Unwritable)?;
+        let passed_on = HeldTags {
+            album_artist: tags.album_artist.clone(),
+            date: tags.date.clone(),
+            track_number: tags.track_number,
+            track_total: tags.track_total,
+            disc_number: tags.disc_number,
+            disc_total: tags.disc_total,
+            compilation: tags.compilation,
+        };
         match self
             .library
-            .file_song_from_elsewhere(recording, extension, &mut file)
+            .file_song_from_elsewhere(recording, &passed_on, extension, &mut file)
         {
             Ok(SongFiled::Filed(_) | SongFiled::Vaulted(_)) => Ok(true),
             Ok(SongFiled::Refused) => Ok(false),

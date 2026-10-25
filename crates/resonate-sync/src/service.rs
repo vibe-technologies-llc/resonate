@@ -2349,7 +2349,7 @@ async fn fetch_claimed(
             let staged = fetched.staged.clone();
             let landed = blocking(move || {
                 catalog
-                    .land(&landing, &fetched.extension, &fetched.staged)
+                    .land(&landing, &fetched.tags, &fetched.extension, &fetched.staged)
                     .map_err(Error::Catalog)
             })
             .await;

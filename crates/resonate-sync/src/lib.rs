@@ -17,7 +17,7 @@ pub mod wire;
 pub use crate::{
     catalog::{
         Catalog, Held, LocalListen, LocalPlaylist, LocalPlaylistId, LocalQuery, Opened, ReadSeek,
-        Refused, RemoteListen, Resumed,
+        Refused, RemoteListen, Resumed, SongTags,
     },
     change::{
         Change, Clock, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, Listen, Platform,

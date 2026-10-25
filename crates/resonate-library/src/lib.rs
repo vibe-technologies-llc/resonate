@@ -168,7 +168,8 @@ pub use crate::{
         REFUSALS_REMEMBERED_FOR, RETRY_WAITS, TRIES_BEFORE_GIVING_UP,
     },
     synced::{
-        HeldSong, OpenedSong, SongFiled, SyncedListen, SyncedPlaylist, SyncedQuery, SyncedQueryBody,
+        HeldSong, HeldTags, OpenedSong, SongFiled, SyncedListen, SyncedPlaylist, SyncedQuery,
+        SyncedQueryBody,
     },
     take_in::{
         Dropped, Landed, Looks, Passed as TakenPassed, Passing as TakenPassing, TakeInOptions,

@@ -11,7 +11,7 @@ use parking_lot::Mutex;
 use resonate_core::Recording;
 use resonate_sync::{
     Catalog, Held, LocalListen, LocalPlaylist, LocalPlaylistId, LocalQuery, Opened, QueryBody,
-    Refused, RemoteListen, Resumed,
+    Refused, RemoteListen, Resumed, SongTags,
 };
 
 #[derive(Default)]
@@ -23,6 +23,8 @@ pub struct Shelf {
 #[derive(Default)]
 pub struct Inside {
     pub songs: Vec<(Recording, Vec<u8>)>,
+    pub declared: Vec<(Recording, SongTags)>,
+    pub landed_with: Vec<(Recording, SongTags)>,
     pub playlists: BTreeMap<i64, (i64, String, Vec<Recording>)>,
     pub queries: BTreeMap<i64, (i64, QueryBody)>,
     pub without_queries: bool,
@@ -79,6 +81,19 @@ impl Shelf {
 
 #[allow(dead_code)]
 impl Shelf {
+    pub fn declare(&self, title: &str, tags: SongTags) {
+        self.inside.lock().declared.push((song(title), tags));
+    }
+
+    pub fn landed_with(&self, title: &str) -> Option<SongTags> {
+        self.inside
+            .lock()
+            .landed_with
+            .iter()
+            .find(|(recording, _)| recording.title == title)
+            .map(|(_, tags)| tags.clone())
+    }
+
     pub fn make_query(&self, name: &str, text: &str) -> i64 {
         let mut inside = self.inside.lock();
         inside.next_id += 1;
@@ -410,13 +425,29 @@ impl Catalog for Shelf {
             }))
     }
 
+    fn tags(&self, recording: &Recording) -> Result<SongTags, Refused> {
+        Ok(self
+            .inside
+            .lock()
+            .declared
+            .iter()
+            .find(|(declared, _)| declared.names_the_same_song_as(recording))
+            .map(|(_, tags)| tags.clone())
+            .unwrap_or_default())
+    }
+
     fn land(
         &self,
         recording: &Recording,
+        tags: &SongTags,
         _extension: &str,
         staged: &Path,
     ) -> Result<bool, Refused> {
         let bytes = fs::read(staged).map_err(|_| Refused::Unwritable)?;
+        self.inside
+            .lock()
+            .landed_with
+            .push((recording.clone(), tags.clone()));
         self.add_song(recording.clone(), bytes);
         Ok(true)
     }

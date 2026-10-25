@@ -71,6 +71,17 @@ pub struct Held {
     pub extension: String,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SongTags {
+    pub album_artist: Option<String>,
+    pub date: Option<String>,
+    pub track_number: Option<u32>,
+    pub track_total: Option<u32>,
+    pub disc_number: Option<u32>,
+    pub disc_total: Option<u32>,
+    pub compilation: bool,
+}
+
 pub trait ReadSeek: Read + Seek + Send {}
 
 impl<T: Read + Seek + Send> ReadSeek for T {}
@@ -133,7 +144,18 @@ pub trait Catalog: Send + Sync + 'static {
 
     fn open(&self, recording: &Recording) -> Result<Option<Opened>, Refused>;
 
-    fn land(&self, recording: &Recording, extension: &str, staged: &Path) -> Result<bool, Refused>;
+    fn tags(&self, recording: &Recording) -> Result<SongTags, Refused> {
+        let _ = recording;
+        Ok(SongTags::default())
+    }
+
+    fn land(
+        &self,
+        recording: &Recording,
+        tags: &SongTags,
+        extension: &str,
+        staged: &Path,
+    ) -> Result<bool, Refused>;
 
     fn revision(&self) -> u64;
 }

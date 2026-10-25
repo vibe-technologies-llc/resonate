@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{path::Path, sync::Arc};
 
 use resonate_codec::{StandIn, StoodIn, TagField, TagSet};
 use resonate_core::{FrameSpan, MediaLocation};
@@ -135,6 +135,22 @@ fn fill_what_was_kept(connection: &Connection, track: i64, tags: &mut TagSet) ->
         }
     }
     Ok(())
+}
+
+pub(crate) fn declared_by(inner: &Inner, path: &Path) -> crate::Result<Option<TagSet>> {
+    let text = path_text(path).into_owned();
+    let (start, frames) = store::span_columns(None);
+    inner.read(|connection| {
+        let Some(mut standing) = connection
+            .query_row(STOOD_IN, params![text, start, frames], stood_in)
+            .optional()
+            .map_err(|source| Error::store(StoreOp::Query, source))?
+        else {
+            return Ok(None);
+        };
+        fill_what_was_kept(connection, standing.id, &mut standing.tags)?;
+        Ok(Some(standing.tags))
+    })
 }
 
 struct Standing {

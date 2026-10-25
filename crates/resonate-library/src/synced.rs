@@ -7,6 +7,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+use resonate_codec::TagSet;
 use resonate_core::{FrameSpan, Mbid, MediaLocation, PlaylistId, Recording, folded_letters};
 use resonate_providers::Extension;
 use resonate_vault::{Keeping, Offered};
@@ -18,7 +19,7 @@ use crate::{
     filed::{self, Unfiled},
     organise::{Named, Naming},
     playlist::{self, Row},
-    store, undo,
+    store, undo, vaulted,
 };
 
 const RECORDING_COLUMNS: &str = "t.title, coalesce(t.artist, r.name, ''), coalesce(a.title, ''), t.mbid, t.duration, t.sample_rate";
@@ -64,6 +65,47 @@ pub struct SyncedListen {
     pub recording: Recording,
     pub at: i64,
     pub heard: Duration,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct HeldTags {
+    pub album_artist: Option<String>,
+    pub date: Option<String>,
+    pub track_number: Option<u32>,
+    pub track_total: Option<u32>,
+    pub disc_number: Option<u32>,
+    pub disc_total: Option<u32>,
+    pub compilation: bool,
+}
+
+impl HeldTags {
+    fn of(tags: TagSet) -> Self {
+        Self {
+            album_artist: tags.album_artist,
+            date: tags.date,
+            track_number: tags.track_number,
+            track_total: tags.track_total,
+            disc_number: tags.disc_number,
+            disc_total: tags.disc_total,
+            compilation: tags.compilation,
+        }
+    }
+
+    fn fill(&self, declared: &mut TagSet) {
+        fill_gap(&mut declared.album_artist, &self.album_artist);
+        fill_gap(&mut declared.date, &self.date);
+        fill_gap(&mut declared.track_number, &self.track_number);
+        fill_gap(&mut declared.track_total, &self.track_total);
+        fill_gap(&mut declared.disc_number, &self.disc_number);
+        fill_gap(&mut declared.disc_total, &self.disc_total);
+        declared.compilation |= self.compilation;
+    }
+}
+
+fn fill_gap<T: Clone>(declared: &mut Option<T>, passed_on: &Option<T>) {
+    if declared.is_none() {
+        declared.clone_from(passed_on);
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -167,6 +209,10 @@ pub(crate) fn open_song(library: &Library, path: &Path) -> Result<Option<OpenedS
         extension: extension_of(path),
         stream: Streaming::Plain(file),
     }))
+}
+
+pub(crate) fn tags_of(inner: &Inner, path: &Path) -> Result<HeldTags> {
+    Ok(vaulted::declared_by(inner, path)?.map_or_else(HeldTags::default, HeldTags::of))
 }
 
 pub(crate) fn playlists(inner: &Inner) -> Result<Vec<SyncedPlaylist>> {
@@ -805,11 +851,12 @@ pub enum SongFiled {
 pub(crate) fn file_song(
     library: &Library,
     recording: &Recording,
+    tags: &HeldTags,
     extension: &str,
     reader: &mut dyn Read,
 ) -> Result<SongFiled> {
     if library.vault().is_some() {
-        return vaulted(library, recording, extension, reader);
+        return vaulted(library, recording, tags, extension, reader);
     }
     let Some(into) = library.delivering_into() else {
         return Ok(SongFiled::Nowhere);
@@ -862,13 +909,14 @@ pub(crate) fn file_song(
 fn vaulted(
     library: &Library,
     recording: &Recording,
+    tags: &HeldTags,
     extension: &str,
     reader: &mut dyn Read,
 ) -> Result<SongFiled> {
     let Some(vault) = library.vault() else {
         return Ok(SongFiled::Nowhere);
     };
-    let kept = match vault.keep_delivered(reader, extension) {
+    let mut kept = match vault.keep_delivered(reader, extension) {
         Ok(Keeping::Kept(kept)) => kept,
         Ok(Keeping::Refused(refusal)) => {
             tracing::warn!(
@@ -888,6 +936,7 @@ fn vaulted(
             return Ok(SongFiled::Refused);
         }
     };
+    tags.fill(&mut kept.declared);
     let taken_from = format!("{DEVICES}:{}", recording.key());
     if library
         .note_received(recording, &kept, &taken_from)?

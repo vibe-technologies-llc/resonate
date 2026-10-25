@@ -13,8 +13,8 @@ use std::{
 
 use resonate_core::{MediaLocation, Recording};
 use resonate_library::{
-    AlbumQuery, Cut, DeliveryFolder, Direction, Layout, Library, Result, SavedQuery, ScanOptions,
-    ScanStats, SongFiled, SortOrder, SyncedQueryBody, TrackQuery, Vault,
+    AlbumQuery, Cut, DeliveryFolder, Direction, HeldTags, Layout, Library, Result, SavedQuery,
+    ScanOptions, ScanStats, SongFiled, SortOrder, SyncedQueryBody, TrackQuery, Vault,
 };
 
 const RATE: u32 = 44_100;
@@ -484,8 +484,12 @@ fn a_song_from_another_device_is_filed_in_the_music_folder_and_catalogued() -> R
     }));
     let arriving = song("San Tropez", "Pink Floyd", "Meddle");
     let bytes = tagged_wav("San Tropez", "Pink Floyd", "Meddle");
-    let SongFiled::Filed(filed) =
-        library.file_song_from_elsewhere(&arriving, "wav", &mut Cursor::new(bytes))?
+    let SongFiled::Filed(filed) = library.file_song_from_elsewhere(
+        &arriving,
+        &HeldTags::default(),
+        "wav",
+        &mut Cursor::new(bytes),
+    )?
     else {
         panic!("filed");
     };
@@ -516,6 +520,7 @@ fn a_song_from_another_device_whose_extension_climbs_out_of_the_folder_is_refuse
 
     let filed = library.file_song_from_elsewhere(
         &arriving,
+        &HeldTags::default(),
         "wav/../../escaped.wav",
         &mut Cursor::new(bytes),
     )?;
@@ -538,6 +543,7 @@ fn a_song_from_another_device_that_does_not_decode_is_refused_and_not_left_behin
 
     let filed = library.file_song_from_elsewhere(
         &arriving,
+        &HeldTags::default(),
         "wav",
         &mut Cursor::new(b"RIFF this is no wave at all".to_vec()),
     )?;
@@ -555,8 +561,12 @@ fn a_song_from_another_device_with_no_music_folder_lands_in_the_open_vault() -> 
     let arriving = song("San Tropez", "Pink Floyd", "Meddle");
     let bytes = tagged_wav("San Tropez", "Pink Floyd", "Meddle");
 
-    let SongFiled::Vaulted(kept) =
-        library.file_song_from_elsewhere(&arriving, "wav", &mut Cursor::new(bytes))?
+    let SongFiled::Vaulted(kept) = library.file_song_from_elsewhere(
+        &arriving,
+        &HeldTags::default(),
+        "wav",
+        &mut Cursor::new(bytes),
+    )?
     else {
         panic!("vaulted");
     };
@@ -582,7 +592,12 @@ fn a_song_from_another_device_comes_back_nowhere_with_neither_folder_nor_vault()
     let arriving = song("San Tropez", "Pink Floyd", "Meddle");
     let bytes = tagged_wav("San Tropez", "Pink Floyd", "Meddle");
 
-    let filed = library.file_song_from_elsewhere(&arriving, "wav", &mut Cursor::new(bytes))?;
+    let filed = library.file_song_from_elsewhere(
+        &arriving,
+        &HeldTags::default(),
+        "wav",
+        &mut Cursor::new(bytes),
+    )?;
 
     assert_eq!(filed, SongFiled::Nowhere);
     Ok(())
@@ -599,7 +614,12 @@ fn two_songs_of_one_album_from_another_device_land_in_the_vault_under_one_album(
         if title == "Seamus" {
             *bytes.last_mut().expect("a sample") = 1;
         }
-        library.file_song_from_elsewhere(&arriving, "wav", &mut Cursor::new(bytes))?;
+        library.file_song_from_elsewhere(
+            &arriving,
+            &HeldTags::default(),
+            "wav",
+            &mut Cursor::new(bytes),
+        )?;
     }
 
     let rows = library.tracks(&TrackQuery::default())?;
@@ -617,9 +637,19 @@ fn a_song_whose_audio_the_vault_already_holds_under_another_recording_is_refused
     let first = song("San Tropez", "Pink Floyd", "Meddle");
     let again = song("San Tropez (Edit)", "Pink Floyd", "Meddle");
     let bytes = tagged_wav("San Tropez", "Pink Floyd", "Meddle");
-    library.file_song_from_elsewhere(&first, "wav", &mut Cursor::new(bytes.clone()))?;
+    library.file_song_from_elsewhere(
+        &first,
+        &HeldTags::default(),
+        "wav",
+        &mut Cursor::new(bytes.clone()),
+    )?;
 
-    let filed = library.file_song_from_elsewhere(&again, "wav", &mut Cursor::new(bytes))?;
+    let filed = library.file_song_from_elsewhere(
+        &again,
+        &HeldTags::default(),
+        "wav",
+        &mut Cursor::new(bytes),
+    )?;
 
     assert_eq!(filed, SongFiled::Refused);
     assert_eq!(library.tracks(&TrackQuery::default())?.len(), 1);
@@ -641,7 +671,12 @@ fn a_song_from_another_device_goes_to_the_vault_when_both_a_vault_and_a_music_fo
     let arriving = song("San Tropez", "Pink Floyd", "Meddle");
     let bytes = tagged_wav("San Tropez", "Pink Floyd", "Meddle");
 
-    let filed = library.file_song_from_elsewhere(&arriving, "wav", &mut Cursor::new(bytes))?;
+    let filed = library.file_song_from_elsewhere(
+        &arriving,
+        &HeldTags::default(),
+        "wav",
+        &mut Cursor::new(bytes),
+    )?;
 
     let SongFiled::Vaulted(kept) = filed else {
         panic!("vaulted");
@@ -663,7 +698,12 @@ fn a_song_from_another_device_with_a_folder_and_no_vault_is_still_filed_in_the_f
     let arriving = song("San Tropez", "Pink Floyd", "Meddle");
     let bytes = tagged_wav("San Tropez", "Pink Floyd", "Meddle");
 
-    let filed = library.file_song_from_elsewhere(&arriving, "wav", &mut Cursor::new(bytes))?;
+    let filed = library.file_song_from_elsewhere(
+        &arriving,
+        &HeldTags::default(),
+        "wav",
+        &mut Cursor::new(bytes),
+    )?;
 
     assert!(matches!(filed, SongFiled::Filed(_)));
     Ok(())
@@ -679,7 +719,12 @@ fn a_vaulted_song_is_passed_on_to_a_third_device_as_the_bytes_it_decodes_to() ->
         Vault::make(tree.root.join("second")).expect("a writable vault"),
     ))?;
     let arriving = song("San Tropez", "Pink Floyd", "Meddle");
-    first.file_song_from_elsewhere(&arriving, "wav", &mut Cursor::new(float_wav(1)))?;
+    first.file_song_from_elsewhere(
+        &arriving,
+        &HeldTags::default(),
+        "wav",
+        &mut Cursor::new(float_wav(1)),
+    )?;
 
     let offered = first.held_songs()?;
     assert_eq!(offered.len(), 1);
@@ -692,7 +737,12 @@ fn a_vaulted_song_is_passed_on_to_a_third_device_as_the_bytes_it_decodes_to() ->
     assert_eq!(bytes.len() as u64, offered[0].size);
     assert_eq!(bytes, float_wav(1));
 
-    let filed = second.file_song_from_elsewhere(&arriving, "wav", &mut Cursor::new(bytes))?;
+    let filed = second.file_song_from_elsewhere(
+        &arriving,
+        &HeldTags::default(),
+        "wav",
+        &mut Cursor::new(bytes),
+    )?;
 
     assert!(matches!(filed, SongFiled::Vaulted(_)));
     assert_eq!(second.held_songs()?.len(), 1);
@@ -745,8 +795,18 @@ fn songs_from_another_device_group_by_the_album_artist_and_year_their_files_decl
         ],
         1,
     );
-    library.file_song_from_elsewhere(&waters, "wav", &mut Cursor::new(first))?;
-    library.file_song_from_elsewhere(&gilmour, "wav", &mut Cursor::new(second))?;
+    library.file_song_from_elsewhere(
+        &waters,
+        &HeldTags::default(),
+        "wav",
+        &mut Cursor::new(first),
+    )?;
+    library.file_song_from_elsewhere(
+        &gilmour,
+        &HeldTags::default(),
+        "wav",
+        &mut Cursor::new(second),
+    )?;
 
     let rows = library.tracks(&TrackQuery::default())?;
     let albums = library.albums(&AlbumQuery::default())?;
@@ -758,5 +818,91 @@ fn songs_from_another_device_group_by_the_album_artist_and_year_their_files_decl
     assert_eq!(albums[0].artist.as_deref(), Some("Pink Floyd"));
     assert_eq!(albums[0].year, Some(1971));
     assert_eq!(albums[0].artist_count, 2);
+    Ok(())
+}
+
+#[test]
+fn songs_passed_on_by_a_vaulted_device_keep_the_album_artist_year_and_totals_the_vault_dropped()
+-> Result<()> {
+    let tree = Tree::new();
+    let first = Library::open_in_memory_with_vault(Arc::new(
+        Vault::make(tree.root.join("first")).expect("a writable vault"),
+    ))?;
+    let without = Library::open_in_memory_with_vault(Arc::new(
+        Vault::make(tree.root.join("without")).expect("a writable vault"),
+    ))?;
+    let with = Library::open_in_memory_with_vault(Arc::new(
+        Vault::make(tree.root.join("with")).expect("a writable vault"),
+    ))?;
+    let waters = song("San Tropez", "Roger Waters", "Meddle");
+    let gilmour = song("Seamus", "David Gilmour", "Meddle");
+    let declared_by = |title, artist, sample| {
+        declared_wav(
+            &[
+                (b"TIT2", title),
+                (b"TPE1", artist),
+                (b"TPE2", "Pink Floyd"),
+                (b"TALB", "Meddle"),
+                (b"TDRC", "1971"),
+                (b"TRCK", "3/6"),
+                (b"TPOS", "1/2"),
+            ],
+            sample,
+        )
+    };
+    first.file_song_from_elsewhere(
+        &waters,
+        &HeldTags::default(),
+        "wav",
+        &mut Cursor::new(declared_by("San Tropez", "Roger Waters", 0)),
+    )?;
+    first.file_song_from_elsewhere(
+        &gilmour,
+        &HeldTags::default(),
+        "wav",
+        &mut Cursor::new(declared_by("Seamus", "David Gilmour", 1)),
+    )?;
+
+    for held in first.held_songs()? {
+        let tags = first.song_tags(&held.path)?;
+        let mut bytes = Vec::new();
+        first
+            .open_song(&held.path)?
+            .expect("opens")
+            .read_to_end(&mut bytes)
+            .expect("read");
+
+        assert_eq!(tags.album_artist.as_deref(), Some("Pink Floyd"));
+        assert_eq!(tags.date.as_deref(), Some("1971"));
+        assert_eq!(tags.track_total, Some(6));
+        assert_eq!(tags.disc_total, Some(2));
+
+        without.file_song_from_elsewhere(
+            &held.recording,
+            &HeldTags::default(),
+            "wav",
+            &mut Cursor::new(bytes.clone()),
+        )?;
+        with.file_song_from_elsewhere(&held.recording, &tags, "wav", &mut Cursor::new(bytes))?;
+    }
+
+    let ungrouped = without.albums(&AlbumQuery::default())?;
+    let grouped = with.albums(&AlbumQuery::default())?;
+
+    assert_eq!(ungrouped.len(), 2);
+    assert_eq!(grouped.len(), 1);
+    assert_eq!(grouped[0].artist.as_deref(), Some("Pink Floyd"));
+    assert_eq!(grouped[0].year, Some(1971));
+    assert_eq!(grouped[0].artist_count, 2);
+    Ok(())
+}
+
+#[test]
+fn a_song_filed_in_a_music_folder_reports_no_tags_to_pass_on() -> Result<()> {
+    let tree = Tree::new();
+    let library = Library::open_in_memory()?;
+    let path = tree.song("a.wav", "San Tropez", "Pink Floyd", "Meddle");
+
+    assert_eq!(library.song_tags(&path)?, HeldTags::default());
     Ok(())
 }

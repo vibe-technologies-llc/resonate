@@ -79,7 +79,15 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   `resonate-peer/1` between devices.
 - **Between devices**, one request per stream: `Holdings` (answered `Held`… `HeldEnd`), `Fetch`
   (`Sending` then the bytes, or `Missing`), `Meet` (device, whether records travel; answered `Met`
-  with the other's device) and `Changes` (whether whole, a bundle; answered `Taken`). A `Beacon` is
+  with the other's device), `Changes` (whether whole, a bundle; answered `Taken`) and `Tags` (a
+  recording; answered `Tagged`, a `SongTags`). **What a song's file no longer carries travels beside
+  it, not in it**: a `Recording` is never extended (every earlier build reads each frame to its end
+  and refuses a trailing byte), so the album artist, date, track and disc numbers and totals and
+  the compilation flag go in a request of their own, asked after a fetch lands (`peer::tags_from`)
+  and handed to `Catalog::land`. A build that does not know the request (`ToPeer` tag 4) drops the
+  stream, which reads as `Missing` and so as no tags, and a build asking an older sender fetches as
+  it always did (`the_tags_of_a_song_travel_in_frames_an_earlier_build_refuses_whole_and_the_fetch_is_unchanged`,
+  `a_song_fetched_from_a_device_arrives_with_the_tags_that_device_declares_for_it`). A `Beacon` is
   a device, its QUIC port, whether it answers another and the addresses it may be dialled at.
 
 ## The ledger
@@ -185,9 +193,14 @@ scan would group the declared tags** (`store::album_received_in`, over the `grou
 uses): an `ALBUMARTIST` the file declares (unless a compilation) owns the album and keys it, else
 the recording's artist; year, barcode, catalogue number, label and `TRACKTOTAL` fill the album as
 a scan fills one, a differing owner disowns it
-(`songs_from_another_device_group_by_the_album_artist_and_year_their_files_declare`). Tags the
-vault drops are gone for a song passed on again, so such a song groups by title and track artist
-alone. Audio the vault holds already under another recording is `Refused`. With no vault, a song is
+(`songs_from_another_device_group_by_the_album_artist_and_year_their_files_declare`). **A vaulted
+sender says what its vault dropped**: `Library::song_tags` reads the row as the stand-in does
+(`vaulted::declared_by`: the catalog's album artist, date and numbers, the `kept_tags` totals and
+compilation flag), `Catalog::tags` hands it over the wire, and the receiver's `HeldTags::fill`
+lays it under what the delivered file declares itself (a declared tag wins), so a third device
+groups the song as the first did
+(`songs_passed_on_by_a_vaulted_device_keep_the_album_artist_year_and_totals_the_vault_dropped`).
+An unvaulted sender says nothing, its file carrying the tags. Audio the vault holds already under another recording is `Refused`. With no vault, a song is
 filed in the music folder under `organise-as` like a delivery (`filed::landed_beside`) and its
 root scanned. With neither it is refused (`SongFiled::Nowhere`), and one that does not probe (or the
 vault refuses) is deleted and answered `false` (`SongFiled::Refused`), so a damaged file is never

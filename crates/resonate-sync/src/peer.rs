@@ -21,7 +21,7 @@ use tokio::{
 };
 
 use crate::{
-    Catalog, Change, DeviceId, Error, FileOp, Held, Ledger, Result, StreamOp,
+    Catalog, Change, DeviceId, Error, FileOp, Held, Ledger, Result, SongTags, StreamOp,
     quic::{PEER_NAME, read_frame, send_frame},
     wire::{FromPeer, ToPeer},
 };
@@ -163,6 +163,20 @@ async fn answer(mut send: SendStream, mut recv: RecvStream, asked: Asked) -> Res
             }
             send_frame(&mut send, &FromPeer::HeldEnd.encoded()).await?;
         }
+        ToPeer::Tags { recording } => {
+            let answer = if asked.answering.transfers_allowed.load(Ordering::Relaxed) {
+                match blocking(move || catalog.tags(&recording).map_err(Error::Catalog)).await {
+                    Ok(tags) => FromPeer::Tagged { tags },
+                    Err(error) => {
+                        tracing::debug!(%error, "the tags of a song could not be read to send");
+                        FromPeer::Missing
+                    }
+                }
+            } else {
+                FromPeer::Missing
+            };
+            send_frame(&mut send, &answer.encoded()).await?;
+        }
         ToPeer::Fetch { recording, offset } => {
             if asked.answering.transfers_allowed.load(Ordering::Relaxed) {
                 send_song(&mut send, catalog, recording, offset).await?;
@@ -239,7 +253,8 @@ pub async fn holdings_of(connection: &Connection) -> Result<Vec<Held>> {
             FromPeer::Sending { .. }
             | FromPeer::Missing
             | FromPeer::Met { .. }
-            | FromPeer::Taken => {}
+            | FromPeer::Taken
+            | FromPeer::Tagged { .. } => {}
         }
     }
     Ok(holdings)
@@ -261,7 +276,8 @@ pub async fn meet(connection: &Connection, device: DeviceId, records: bool) -> R
         | FromPeer::HeldEnd
         | FromPeer::Sending { .. }
         | FromPeer::Missing
-        | FromPeer::Taken => Err(Error::Unmet),
+        | FromPeer::Taken
+        | FromPeer::Tagged { .. } => Err(Error::Unmet),
     }
 }
 
@@ -286,6 +302,7 @@ pub async fn tell(
 pub struct Fetched {
     pub staged: PathBuf,
     pub extension: String,
+    pub tags: SongTags,
 }
 
 pub async fn fetch(
@@ -297,16 +314,51 @@ pub async fn fetch(
 ) -> Result<Fetched> {
     let noted = staged.with_extension(NOTED_EXTENSION);
     let offset = resumable(staged, &noted, device).await;
-    if let Some(fetched) = fetched_from(
+    let fetched = match fetched_from(
         connection, device, recording, staged, &noted, offset, &received,
     )
     .await?
     {
-        return Ok(fetched);
+        Some(fetched) => fetched,
+        None => fetched_from(connection, device, recording, staged, &noted, 0, &received)
+            .await?
+            .ok_or(Error::Missing(device))?,
+    };
+    Ok(Fetched {
+        tags: tags_from(connection, recording).await,
+        ..fetched
+    })
+}
+
+async fn tags_from(connection: &Connection, recording: &Recording) -> SongTags {
+    match asked_for_tags(connection, recording).await {
+        Ok(tags) => tags,
+        Err(error) => {
+            tracing::debug!(%error, "a device did not say what tags a song carried");
+            SongTags::default()
+        }
     }
-    fetched_from(connection, device, recording, staged, &noted, 0, &received)
-        .await?
-        .ok_or(Error::Missing(device))
+}
+
+async fn asked_for_tags(connection: &Connection, recording: &Recording) -> Result<SongTags> {
+    let (mut send, mut recv) = quietly_short(async {
+        connection
+            .open_bi()
+            .await
+            .map_err(|source| Error::Connection(Box::new(source)))
+    })
+    .await?;
+    let request = ToPeer::Tags {
+        recording: recording.clone(),
+    };
+    send_frame(&mut send, &request.encoded()).await?;
+    send.finish().map_err(|_| Error::StreamClosed)?;
+
+    let answer = quietly_short(read_frame(&mut recv)).await?;
+    match answer.as_deref().map(FromPeer::decoded).transpose()? {
+        Some(FromPeer::Tagged { tags }) => Ok(tags),
+        Some(_) | None => Ok(SongTags::default()),
+    }
 }
 
 async fn resumable(staged: &Path, noted: &Path, device: DeviceId) -> u64 {
@@ -373,7 +425,8 @@ async fn fetched_from(
         | FromPeer::Held { .. }
         | FromPeer::HeldEnd
         | FromPeer::Met { .. }
-        | FromPeer::Taken => {
+        | FromPeer::Taken
+        | FromPeer::Tagged { .. } => {
             return Err(Error::Missing(device));
         }
     };
@@ -428,6 +481,7 @@ async fn fetched_from(
     Ok(Some(Fetched {
         staged: staged.to_path_buf(),
         extension,
+        tags: SongTags::default(),
     }))
 }
 

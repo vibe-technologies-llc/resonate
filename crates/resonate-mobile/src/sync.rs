@@ -20,8 +20,8 @@ use resonate_core::{
 use resonate_engine::Command;
 use resonate_sync::{
     Catalog, Follow, Handoff, Held, LocalListen, LocalPlaylist, LocalPlaylistId, Me, Nearby,
-    Opened, Platform, Refused, RemoteListen, Resumed, Server, Settings, Standing, Sync, SyncDevice,
-    SyncKey, TransferState,
+    Opened, Platform, Refused, RemoteListen, Resumed, Server, Settings, SongTags, Standing, Sync,
+    SyncDevice, SyncKey, TransferState,
 };
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use unicode_normalization::UnicodeNormalization;
@@ -1080,7 +1080,13 @@ impl Catalog for DocumentCatalog {
         }))
     }
 
-    fn land(&self, recording: &Recording, extension: &str, staged: &Path) -> Answered<bool> {
+    fn land(
+        &self,
+        recording: &Recording,
+        _tags: &SongTags,
+        extension: &str,
+        staged: &Path,
+    ) -> Answered<bool> {
         let extension = extension.to_ascii_lowercase();
         if !AUDIO_EXTENSIONS.contains(&extension.as_str()) {
             return Err(Refused::Unwritable);
@@ -1615,10 +1621,14 @@ mod tests {
 
         assert!(!documents.holds(&hunter).expect("an unheld song"));
         assert!(matches!(
-            documents.land(&hunter, "exe", &staged),
+            documents.land(&hunter, &SongTags::default(), "exe", &staged),
             Err(Refused::Unwritable)
         ));
-        assert!(documents.land(&hunter, "FLAC", &staged).expect("a landing"));
+        assert!(
+            documents
+                .land(&hunter, &SongTags::default(), "FLAC", &staged)
+                .expect("a landing")
+        );
 
         let waiting = player.sync_received().expect("the waiting songs");
 
@@ -1643,7 +1653,7 @@ mod tests {
         fs::write(&staged, b"fLaC").expect("the same song again");
         assert!(
             documents
-                .land(&hunter, "flac", &staged)
+                .land(&hunter, &SongTags::default(), "flac", &staged)
                 .expect("a second landing")
         );
 

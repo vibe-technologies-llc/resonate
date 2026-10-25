@@ -2514,13 +2514,18 @@ impl Library {
         synced::open_song(self, path)
     }
 
+    pub fn song_tags(&self, path: &Path) -> Result<synced::HeldTags> {
+        synced::tags_of(&self.inner, path)
+    }
+
     pub fn file_song_from_elsewhere(
         &self,
         recording: &resonate_core::Recording,
+        tags: &synced::HeldTags,
         extension: &str,
         reader: &mut dyn std::io::Read,
     ) -> Result<synced::SongFiled> {
-        synced::file_song(self, recording, extension, reader)
+        synced::file_song(self, recording, tags, extension, reader)
     }
 
     pub fn synced_revision(&self) -> u64 {

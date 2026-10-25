@@ -12,7 +12,7 @@ use std::{
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use resonate_server::{Limits, Server, Store, listening, serving};
-use resonate_sync::{Follow, Me, Platform, Settings, Standing, Sync, SyncKey};
+use resonate_sync::{Follow, Me, Platform, Settings, SongTags, Standing, Sync, SyncKey};
 use rustls_pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
 
 use crate::shelf::{Shelf, song};
@@ -199,6 +199,61 @@ fn two_devices_of_one_key_share_playlists_and_songs_through_the_server_and_each_
     eventually("the rename reaching the desk", || {
         desk_shelf.playlist_named("Summer days").is_some()
     });
+
+    drop(phone);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_song_fetched_from_a_device_arrives_with_the_tags_that_device_declares_for_it() {
+    let folder = scratch("tags");
+    let hosted = hosted(&folder);
+    let key = SyncKey::minted().expect("a key");
+    let desk_shelf = Arc::new(Shelf::holding(&["A", "B"]));
+    let phone_shelf = Arc::new(Shelf::holding(&[]));
+    let declared = SongTags {
+        album_artist: Some("Various".into()),
+        date: Some("1971".into()),
+        track_number: Some(2),
+        track_total: Some(9),
+        disc_number: Some(1),
+        disc_total: Some(2),
+        compilation: true,
+    };
+    desk_shelf.declare("A", declared.clone());
+
+    let desk = device(
+        &hosted,
+        &folder,
+        &key,
+        "Desk",
+        Arc::clone(&desk_shelf),
+        Follow::default(),
+    );
+    let phone = device(
+        &hosted,
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        Follow::default(),
+    );
+    eventually("both devices seeing each other online", || {
+        phone
+            .shown()
+            .devices
+            .iter()
+            .any(|seen| seen.name == "Desk" && seen.online)
+    });
+
+    phone.fetch(vec![song("A"), song("B")], desk.device());
+    eventually("both songs arriving", || {
+        phone_shelf.holds_title("A") && phone_shelf.holds_title("B")
+    });
+
+    assert_eq!(phone_shelf.landed_with("A"), Some(declared));
+    assert_eq!(phone_shelf.landed_with("B"), Some(SongTags::default()));
 
     drop(phone);
     drop(desk);
