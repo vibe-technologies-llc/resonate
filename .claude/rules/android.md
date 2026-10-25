@@ -566,6 +566,38 @@ still holds (the front end refuses a file that exists, so that row's file is gon
 batch: where it names the same song as the moved one its history is handed over and it is deleted
 (`take_the_place_of_missing`'s merge), else it stays hidden under a `resonate-displaced:<id>` URI no
 scan can reach, keeping its favourite and playlist rows for a song fetched back under another name.
+A `content:` folder is planned beneath `<folder>%2F` (`within_of`), not `<folder>/`: SAF encodes the
+slash between the components of a document id, so a song's place below the root is its id read
+back through the same unescaping (`a_granted_tree_holds_its_songs_beneath_the_encoded_id_of_their_folder`).
+
+**Android organises a writable tree from its row in Music folders** (`OrganiseScreen`, `FolderOrganising`,
+`FolderFiling`; iOS's `OrganiseView.swift`, `ios.md`): the row's *Organise* button (shown where the
+grant is writable, never for Downloads) opens a page with a layout field (`organise-layout` in
+`library-features`, `default_organise_layout` until changed, `organise_layout_problem` under the field
+and *Organise* off while it speaks), a preview 300 ms after the last keystroke (`plan_organise` on the IO
+dispatcher given `MusicDocuments.rootDocument`, the root's document URI as the scan spells it: the
+counts and the first fifty moves; a plan stands only for the layout it was made for, so *Organise*
+never runs, or counts, the previous layout's) and *Organise*, confirmed. `FolderOrganising.file` holds
+`LibraryRepository.afterScans`, the scans' own mutex, for the whole run, so it waits for a scan running or
+queued before it and holds the scans asked after, and the new URIs are never indexed beside the old rows
+(*Filing songs once the scan ends* where one runs; the missing-song pass is skipped while it runs);
+`FolderFiling` moves over `DocumentTree` (`SafTree`: `DocumentsContract` children, `createDocument`,
+`moveDocument`, `renameDocument`, `deleteDocument`), so the logic is held on the JVM against a
+fake tree (`FolderFilingTest`). A document id is read as a path under the tree's root id, as the plan
+reads it; a source that is not beneath the root or of another tree, one that is not there, a name that
+is not a plain component and a destination that exists (case ignored) count as failed, and a folder
+that cannot be listed fails the song instead of looking empty. Folders are found case-insensitively
+before one is made, a different directory moves and then renames (renaming first where the destination
+already holds the old name), a rename refused after the move puts the file back, a same-stem `.lrc`
+(any case) moves along where its place is free, and the folders the moves left empty, and those made
+for a failed move, are removed from the deepest up to the root, never above it and never one whose
+listing is empty only because it failed. The new URI is built from the id the provider answers
+(`buildDocumentUriUsingTree`), the scan's own spelling, so a rescan finds the same rows; one
+`documents_moved` on the repository's ordered lane (`LibraryRepository.inOrder`) reports them, the
+catalog, playlists and queue are read again and a notice counts what was *Filed* and what could not be
+moved. A provider without `moveDocument` fails every move. The moves back are kept for the session
+(`FolderOrganising.undo`): Library tools' *Put files back* files them the other way through the same
+code, with the old places as the destinations.
 
 ## Searching the documents
 
@@ -910,7 +942,7 @@ Remaining desktop capabilities are open work in `docs/FEATURES.md`.
 
 From the repository root, `android/gradlew -p android :app:assembleDebug :app:lintDebug` builds
 both native ABIs and checks Kotlin and the manifest, and `:app:testDebugUnitTest` runs the plain
-JVM tests (`android/app/src/test`: queue edit arithmetic, queue read pacing, the loves sentence, the settings search, the search words, the lyric lines, the accents).
+JVM tests (`android/app/src/test`: queue edit arithmetic, queue read pacing, the loves sentence, the settings search, the search words, the lyric lines, the accents, the organising of a tree against a fake one).
 `python3 android/check-native.py --sdk "$ANDROID_HOME"` checks ELF/APK alignment and runs
 clippy for both native targets. With an emulator or device connected,
 `android/gradlew -p android :app:connectedDebugAndroidTest` exercises native loading, document

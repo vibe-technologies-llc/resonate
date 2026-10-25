@@ -16,6 +16,8 @@ use crate::{
 };
 
 const FOLDER_ENDS: char = '/';
+const CONTENT_SCHEME: &str = "content:";
+const ENCODED_FOLDER_END: &str = "%2F";
 const EXTENSION_STARTS: char = '.';
 const YEAR_DIGITS: usize = 4;
 
@@ -56,7 +58,7 @@ impl MobilePlayer {
         let layout = Layout::read(&layout).map_err(|source| Error::LayoutUnreadable {
             source: Box::new(source),
         })?;
-        let within = format!("{folder}{FOLDER_ENDS}");
+        let within = within_of(&folder);
         let held = self.songs_within(&within)?;
         Ok(planned(&layout, &within, &held))
     }
@@ -160,6 +162,14 @@ impl crate::catalog::Catalog {
             .commit()
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         Ok(handed_over)
+    }
+}
+
+fn within_of(folder: &str) -> String {
+    if folder.starts_with(CONTENT_SCHEME) {
+        format!("{folder}{ENCODED_FOLDER_END}")
+    } else {
+        format!("{folder}{FOLDER_ENDS}")
     }
 }
 
@@ -366,6 +376,44 @@ mod tests {
         assert_eq!(plan.moves[0].id, 1);
         assert_eq!(plan.taken, 2);
         assert_eq!(plan.unchanged, 1);
+    }
+
+    #[test]
+    fn a_granted_tree_holds_its_songs_beneath_the_encoded_id_of_their_folder() {
+        const TREE: &str = "content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic";
+        let within = within_of(TREE);
+        let layout = Layout::default();
+        let held = [
+            Track {
+                uri: format!("{within}in%20the%20flesh.flac"),
+                ..song(1, "in the flesh.flac", "In the Flesh?", 1, None)
+            },
+            Track {
+                uri: format!("{within}Pink%20Floyd%2FThe%20Wall%2F06%20Goodbye.flac"),
+                ..song(2, "06 Goodbye.flac", "Goodbye", 6, None)
+            },
+        ];
+
+        let plan = planned(&layout, &within, &held);
+
+        assert_eq!(within, format!("{TREE}%2F"));
+        assert_eq!(plan.unchanged, 1);
+        assert_eq!(
+            plan.moves,
+            vec![FiledSong {
+                id: 1,
+                from: held[0].uri.clone(),
+                to: vec![
+                    "Pink Floyd".into(),
+                    "The Wall".into(),
+                    "01 In the Flesh?.flac".into()
+                ],
+            }]
+        );
+        assert_eq!(
+            within_of("resonate-folder://local"),
+            "resonate-folder://local/"
+        );
     }
 
     #[test]

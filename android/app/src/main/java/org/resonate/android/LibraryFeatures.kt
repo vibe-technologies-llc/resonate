@@ -189,6 +189,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val online = MutableStateFlow(settings.getBoolean("online", true))
     val hostedServices = MutableStateFlow(settings.getBoolean("hosted-services", true))
     val folders = MutableStateFlow<List<MusicFolder>>(emptyList())
+    val organising = FolderOrganising(context, library, settings, scope, ::rereadSongs)
     val statistics = MutableStateFlow<LibraryStatistics?>(null)
     val lyrics = MutableStateFlow<LyricSheet?>(null)
     val lyricFrame = MutableStateFlow<LyricFrame?>(null)
@@ -823,7 +824,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     fun forgetMissing(afterScan: Boolean) {
         val now = SystemClock.elapsedRealtime()
         if (!afterScan && now - missingChecked < MISSING_CHECKED_EVERY_MS) return
-        if (!afterScan && library.scanning.value) return
+        if (!afterScan && (library.scanning.value || organising.busy.value)) return
         missingChecked = now
         scope.launch {
             try {
@@ -1010,7 +1011,9 @@ class LibraryFeatures(private val context: Context, private val library: Library
         track.uri.startsWith(OpenedNames.LOCAL_PREFIX) ||
             folders.value.any { it.writable && track.uri.startsWith(MusicDocuments.prefix(it.uri)) }
 
-    fun songsLeft() = work { native ->
+    fun songsLeft() = work { native -> rereadSongs(native) }
+
+    private suspend fun rereadSongs(native: MobilePlayer) {
         library.refresh()
         playlists.value = native.playlists()
         openPlaylist.value?.let { id ->

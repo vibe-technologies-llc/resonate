@@ -15,6 +15,7 @@ import org.resonate.android.ui.search.WantedScreen
 import org.resonate.android.ui.settings.AppearanceScreen
 import org.resonate.android.ui.settings.FoldersScreen
 import org.resonate.android.ui.settings.LibraryToolsScreen
+import org.resonate.android.ui.settings.OrganiseScreen
 import org.resonate.android.ui.settings.OutputScreen
 import org.resonate.android.ui.settings.ProcessingScreen
 import org.resonate.android.ui.settings.ProviderAccountScreen
@@ -51,6 +52,7 @@ fun ScreenContent(screen: Screen) {
         Screen.Processing -> ProcessingScreen()
         Screen.Output -> OutputScreen()
         Screen.Folders -> FoldersScreen()
+        is Screen.Organise -> OrganiseScreen(screen.folder)
         Screen.LibraryTools -> LibraryToolsScreen()
         Screen.Statistics -> StatisticsScreen()
         Screen.Suggestions -> SuggestionsScreen()

@@ -410,6 +410,20 @@ class LibraryRepository(private val context: Context) {
         if (request == queryRequest.get()) mutableTracks.value = found
     }
 
+    suspend fun <T> afterScans(action: suspend () -> T): T = scanAccess.withLock { action() }
+
+    suspend fun <T> inOrder(action: (MobilePlayer) -> T): T {
+        val answer = CompletableDeferred<T>()
+        request { native ->
+            try {
+                answer.complete(action(native))
+            } catch (failure: Exception) {
+                answer.completeExceptionally(failure)
+            }
+        }
+        return answer.await()
+    }
+
     fun scan(tree: Uri) {
         val workers = documentScope ?: return
         features.refreshFolders()

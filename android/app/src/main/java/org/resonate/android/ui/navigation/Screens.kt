@@ -47,6 +47,8 @@ sealed interface Screen : NavKey {
 
     @Serializable data object Folders : Screen
 
+    @Serializable data class Organise(val folder: String) : Screen
+
     @Serializable data object LibraryTools : Screen
 
     @Serializable data object Statistics : Screen

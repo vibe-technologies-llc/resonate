@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.BookmarkBorder
@@ -67,6 +68,8 @@ class LibraryToolsViewModel(resonate: Resonate) : ViewModel() {
     val rememberSearches = features.rememberSearches
     val scanning = library.scanning
     val songs = library.allTracks
+    val organiseUndo = features.organising.undo
+    val organising = features.organising.busy
 
     fun read() = enrichment.read()
 
@@ -93,6 +96,8 @@ class LibraryToolsViewModel(resonate: Resonate) : ViewModel() {
     }
 
     fun rescan() = library.rescan()
+
+    fun putFilesBack() = features.organising.putBack()
 
     fun saveRecognitionKey(value: String) = features.saveRecognitionKey(value.trim())
 
@@ -125,6 +130,8 @@ fun LibraryToolsScreen() {
     val rememberSearches by model.rememberSearches.collectAsStateWithLifecycle()
     val scanning by model.scanning.collectAsStateWithLifecycle()
     val songs by model.songs.collectAsStateWithLifecycle()
+    val organiseUndo by model.organiseUndo.collectAsStateWithLifecycle()
+    val organising by model.organising.collectAsStateWithLifecycle()
     var confirmRefresh by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) { model.read() }
     val running = status?.running == true
@@ -204,6 +211,18 @@ fun LibraryToolsScreen() {
                     supporting = "Add, remove or check folder access",
                     onClick = { navigator.open(Screen.Folders) },
                 )
+            }
+            if (organiseUndo != null) {
+                item(key = "put-back") {
+                    SettingRow(
+                        title = "Put files back",
+                        icon = Icons.AutoMirrored.Rounded.Undo,
+                        supporting = "Return the songs you last organised to where they were",
+                        enabled = !organising,
+                        onClick = model::putFilesBack,
+                        modifier = Modifier.testTag("put-files-back"),
+                    )
+                }
             }
             item(key = "statistics") {
                 SettingRow(

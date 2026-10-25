@@ -1,5 +1,6 @@
 package org.resonate.android.ui.settings
 
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.items
@@ -7,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.DriveFileRenameOutline
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.LinkOff
@@ -35,6 +37,8 @@ import org.resonate.android.ui.components.EmptyState
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.SectionHeader
 import org.resonate.android.ui.components.Sizes
+import org.resonate.android.ui.navigation.LocalNavigator
+import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.resonateViewModel
 
 class FoldersViewModel(private val resonate: Resonate) : ViewModel() {
@@ -78,6 +82,7 @@ fun removalText(name: String, downloads: Boolean): String =
 @Composable
 fun FoldersScreen() {
     val model = resonateViewModel { FoldersViewModel(it) }
+    val navigator = LocalNavigator.current
     val folders by model.folders.collectAsStateWithLifecycle()
     val scanning by model.scanning.collectAsStateWithLifecycle()
     var removing by rememberSaveable { mutableStateOf<String?>(null) }
@@ -137,11 +142,26 @@ fun FoldersScreen() {
                             else null,
                         onClick = if (downloads) model::useDownloads else null,
                         trailing = {
-                            IconButton(onClick = { removing = folder.uri.toString() }) {
-                                Icon(
-                                    Icons.Rounded.LinkOff,
-                                    contentDescription = "Remove access to ${folder.name}",
-                                )
+                            Row {
+                                if (folder.writable && !downloads) {
+                                    IconButton(
+                                        onClick = {
+                                            navigator.open(Screen.Organise(folder.uri.toString()))
+                                        },
+                                        modifier = Modifier.testTag("organise-folder"),
+                                    ) {
+                                        Icon(
+                                            Icons.Rounded.DriveFileRenameOutline,
+                                            contentDescription = "Organise ${folder.name}",
+                                        )
+                                    }
+                                }
+                                IconButton(onClick = { removing = folder.uri.toString() }) {
+                                    Icon(
+                                        Icons.Rounded.LinkOff,
+                                        contentDescription = "Remove access to ${folder.name}",
+                                    )
+                                }
                             }
                         },
                         modifier = Modifier.testTag("folder"),

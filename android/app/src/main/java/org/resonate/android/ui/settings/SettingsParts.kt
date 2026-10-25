@@ -395,6 +395,7 @@ fun Field(
     secret: Boolean = false,
     enabled: Boolean = true,
     keyboardType: KeyboardType = KeyboardType.Text,
+    error: Boolean = false,
 ) {
     var revealed by rememberSaveable { mutableStateOf(false) }
     OutlinedTextField(
@@ -404,6 +405,7 @@ fun Field(
         supportingText = supporting?.let { { Text(it) } },
         singleLine = true,
         enabled = enabled,
+        isError = error,
         visualTransformation =
             if (secret && !revealed) PasswordVisualTransformation() else VisualTransformation.None,
         keyboardOptions =

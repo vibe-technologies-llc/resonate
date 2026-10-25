@@ -23,6 +23,13 @@ object MusicDocuments {
             "$folder/document/"
         }
 
+    fun rootDocument(folder: Uri): String =
+        DocumentsContract.buildDocumentUriUsingTree(
+                folder,
+                DocumentsContract.getTreeDocumentId(folder),
+            )
+            .toString()
+
     fun downloadedAudio(context: Context): List<ScannedAudio> {
         val collection = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
         val columns =

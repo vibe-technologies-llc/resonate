@@ -30,7 +30,7 @@ object OpenedNames {
             }
         }
 
-    private fun unescaped(text: String): String {
+    fun unescaped(text: String): String {
         val bytes = java.io.ByteArrayOutputStream()
         var at = 0
         while (at < text.length) {
