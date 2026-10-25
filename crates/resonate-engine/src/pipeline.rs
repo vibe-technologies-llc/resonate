@@ -475,11 +475,7 @@ pub fn plan_for(
     attenuator: Attenuator,
 ) -> OutputPlan {
     let decimates = matches!(source.packing, Packing::DopMarked(_));
-    let replay_gain = if decimates && config.dsd_like_pcm {
-        raised_like_pcm(replay_gain)
-    } else {
-        replay_gain
-    };
+    let replay_gain = replay_gain_as_planned(source.packing, config, replay_gain);
     let restoration = source
         .tuning
         .filter(|_| config.restoration != Restoration::Off)
@@ -548,6 +544,19 @@ pub fn plan_for(
 }
 
 pub const DSD_MODULATION_DB: f32 = 6.02;
+
+pub fn replay_gain_as_planned(
+    packing: Packing,
+    config: &EngineConfig,
+    replay_gain: AppliedGain,
+) -> AppliedGain {
+    let decimates = matches!(packing, Packing::DopMarked(_));
+    if decimates && config.dsd_like_pcm {
+        raised_like_pcm(replay_gain)
+    } else {
+        replay_gain
+    }
+}
 
 fn raised_like_pcm(gain: AppliedGain) -> AppliedGain {
     let raised = gain.gain.map_or(0.0, Decibels::get) + DSD_MODULATION_DB;
@@ -1741,6 +1750,24 @@ mod tests {
             AppliedGain::default(),
         );
         assert!(matches!(marked.packing, Packing::DopMarked(_)));
+    }
+
+    #[test]
+    fn the_gain_a_chain_is_retuned_to_is_the_one_its_plan_was_made_with() {
+        let raised = EngineConfig {
+            dsd_like_pcm: true,
+            ..EngineConfig::default()
+        };
+        let packing = Packing::DopMarked(dsd64());
+
+        let decimated = replay_gain_as_planned(packing, &raised, AppliedGain::default());
+        let plain =
+            replay_gain_as_planned(packing, &EngineConfig::default(), AppliedGain::default());
+        let pcm = replay_gain_as_planned(Packing::Samples, &raised, AppliedGain::default());
+
+        assert!((decimated.requested().to_decibels().get() - DSD_MODULATION_DB).abs() < 1e-3);
+        assert!(plain.requested().is_unity());
+        assert!(pcm.requested().is_unity());
     }
 
     #[test]

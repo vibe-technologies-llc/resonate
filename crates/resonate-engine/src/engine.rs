@@ -26,7 +26,10 @@ use crate::{
     StreamDigest, Surveyor, Tapped, Tapping, TrackState, TransportState,
     lending::{Block, Decoding, Lost, Returned},
     measure::{Measured, Measuring},
-    pipeline::{Attenuator, Decoded, packs_again, plan_for, plan_output, resolve_replay_gain},
+    pipeline::{
+        Attenuator, Decoded, packs_again, plan_for, plan_output, replay_gain_as_planned,
+        resolve_replay_gain,
+    },
     queue::{self, Queue, QueueItem, Removal},
     ring::{Entering, FADED_OVER, Level, RingConsumer, RingMonitor, RingProducer, ring},
     streaming::{Asked, Streamed, Streaming, close_unwanted},
@@ -2222,6 +2225,7 @@ impl Engine {
         };
         output.settles_into = None;
         let replay_gain = track.replay_gain;
+        let decoded_packing = track.decoded().packing;
         let packs = self
             .published
             .sinks
@@ -2253,9 +2257,10 @@ impl Engine {
             .hear_at(heard_amplitude(&wanted, self.muted));
 
         if wanted.same_shape_as(&output.plan) {
-            output
-                .chain
-                .set_gain(output.attenuator.leaves(self.config.volume), replay_gain);
+            output.chain.set_gain(
+                output.attenuator.leaves(self.config.volume),
+                replay_gain_as_planned(decoded_packing, &self.config, replay_gain),
+            );
             output.note_the_rendered_level();
             if let Some(profile) = wanted.equalisation.as_ref() {
                 output.chain.set_equalisation(profile);

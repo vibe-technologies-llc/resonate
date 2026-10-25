@@ -230,7 +230,8 @@ Invariants from file to sink. Callback contract: `realtime.md`.
 - **Decimation is at the modulator's level unless PCM's is asked for.** DSD full scale = 50 %
   modulation, so a master decimates ~6 dB quieter than the same PCM music. `EngineConfig::dsd_like_pcm`
   (off): `plan_for` adds `DSD_MODULATION_DB` to gain wherever it decimates, capped at a known peak,
-  ridden by the true-peak guard where none known. A DoP plan is never raised.
+  ridden by the true-peak guard where none known. A DoP plan is never raised. `retune` sets the chain's gain through
+  the same `replay_gain_as_planned`, so a volume or ReplayGain change keeps the raise.
 - **Decimation is a conversion; DoP returns once nothing blocks it.** `plan_for` reads the source's
   `Packing`, not its spec: `DopMarked` delivered as samples = `OutputMode::Converted`, no
   `NO_CONVERT`. `retune` asks `packs_again` and rebinds into the marked plan where `dop_survives`.

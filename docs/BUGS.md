@@ -12,13 +12,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Tagging
 
 ## Playback and output
-- [S · 0.1.1] With `dsd-like-pcm` on, a volume, ReplayGain or levelling change on a decimated DSD
-  track loses the +6 dB raise from the gain stage: `plan_for` raises the plan's gain
-  (`raised_like_pcm`) and the chain is built from it, but `retune`'s same-shape arm calls
-  `chain.set_gain` with the track's unraised `replay_gain`, so the ring's trim after the
-  true-peak guard and dither supplies the missing factor of two (the heard level is right, a
-  peak the guard would have ridden can clip, and the ring stays on its per-frame path). Reproduced
-  on the chain against a fresh plan (0.216 against 0.432); not driven through the engine
 - [S · 0.1.1] An insert asked past the end lands before the queued rows while a play-next row is
   playing: `Placement::At(row)` clamps to `InOrder(order.len())` and `land_in_order` reads
   `at <= after` on the `Next` seat as inside the passed rows, so `[A]` with `Q1 Q2` queued and `Q1`
