@@ -1,6 +1,6 @@
 pkgname=resonate-server
 _pkgname=resonate
-_version=0.1.0
+_version=0.1.1
 pkgver=${_version//-/}
 pkgrel=1
 pkgdesc='The Resonate sync server: keeps sealed records and introduces devices (needs an x86-64-v3 CPU)'
