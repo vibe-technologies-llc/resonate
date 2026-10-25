@@ -14,12 +14,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Playback and output
 
 ## Formats
-- [S · 0.1.1] A UTF-8 BOM followed by any non-UTF-8 byte keeps the BOM in the text: `detected`
-  strips it to test validity and returns `Legacy`, `decoded_as`'s `Legacy` arm decodes the whole
-  slice without stripping it, and the first line reads `ï»¿FILE ...`, so a cue sheet with one
-  Latin-1 letter loses every track (`read_cue` finds 0 files, 1 without the BOM). Every
-  `text::decoded` reader has the first line wrong the same way (LRC, playlist sheets,
-  EqualizerAPO). Reproduced on `read_cue`
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
   symphonia 0.6.1 reads it into its own buffer before `probe_cover_art` can weigh it; its
   `limit_visual_bytes` is honoured by no reader

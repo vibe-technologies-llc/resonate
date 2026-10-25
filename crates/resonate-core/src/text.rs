@@ -108,7 +108,11 @@ pub fn decoded_as(bytes: &[u8], encoding: TextEncoding) -> String {
         TextEncoding::Utf8 => {
             String::from_utf8_lossy(bytes.strip_prefix(&UTF8_BOM).unwrap_or(bytes)).into_owned()
         }
-        TextEncoding::Legacy(legacy) => legacy.0.decode_without_bom_handling(bytes).0.into_owned(),
+        TextEncoding::Legacy(legacy) => legacy
+            .0
+            .decode_without_bom_handling(bytes.strip_prefix(&UTF8_BOM).unwrap_or(bytes))
+            .0
+            .into_owned(),
     }
 }
 
@@ -195,6 +199,17 @@ mod tests {
         let mut marked = UTF8_BOM.to_vec();
         marked.extend_from_slice("Écoute".as_bytes());
         assert_eq!(decoded(&marked), ("Écoute".to_owned(), TextEncoding::Utf8));
+    }
+
+    #[test]
+    fn a_utf8_mark_ahead_of_text_that_is_not_utf8_is_dropped_with_the_code_page_read() {
+        let mut marked = UTF8_BOM.to_vec();
+        marked.extend_from_slice(b"FILE \"Caf\xe9.flac\" WAVE\n");
+
+        let (text, encoding) = decoded(&marked);
+
+        assert_eq!(text, "FILE \"Café.flac\" WAVE\n");
+        assert_eq!(encoding, TextEncoding::WINDOWS_1252);
     }
 
     #[test]
