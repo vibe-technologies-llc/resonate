@@ -573,6 +573,16 @@ is never named.
   `MouseExitEvent`, `MouseMoveEvent` and `MouseDownEvent` window listeners from its *paint* (the only
   phase `Window::on_mouse_event` may be called in); its flag also closes the lyrics pane's hover.
   Every control carries a tooltip; a toggle names its state and the key changing it.
+- **A control in the ring is named on keyboard focus as it is named on hover.** gpui raises no
+  tooltip while the last input was the keyboard, so `Names::names` also remembers the wording under
+  the element's id (`hint::wording_of`, a thread-local bounded by `NAMED_AT_MOST`, cleared when it
+  fills), and each ring wrapper (`in_the_ring`, `in_the_ring_at`, `option_in_the_ring`, the pane and
+  standing rings) hands the control to `Controls::captioned_by_its_name`, which keeps the wording
+  under the handle's name beside the handle (pruned with it in `opening`). `RootView::render` asks
+  `focused_control_named` (keyboard modality, a handle of `controls` or `standing_controls` focused)
+  and draws `hint::caption`: the hint's plate, bottom left above the playback bar, clear of the
+  centred toast. A control built without a name (a field, a row with no hint) shows nothing
+  (`tabbing_onto_an_icon_only_control_names_it_where_a_pointer_would_have_shown_a_hint`).
 - **A playlist row no scan has seen draws as a queued one does.** `views/listing.rs` owns the `Row`
   the queue and playlists panes build: the scanned `Track` where the library has one, `Player::media`
   where not, the file stem only where the file cannot be read. The play count rides on the same `Row`
@@ -619,8 +629,11 @@ is never named.
 - **Every notice is a toast: a pill that rises over the playback bar, lingers and goes.** `toast.rs` is
   the whole of it. `Toaster` is a gpui global, so engine failures, library passes, the equaliser and
   every gesture tell it alike (`toast::tell(notice, cx)`). One pill at a time, `type_ahead_lift` above
-  the bar; rises `RISE` (10 px), fades in over `ARRIVAL` (220 ms), lingers `LINGER` (6 s;
-  `LINGER_IN_A_BURST` 2 s where more wait; at most `WAITING_AT_MOST` (4) waiting, never the same words
+  the bar; rises `RISE` (10 px), fades in over `ARRIVAL` (220 ms), lingers `LINGER_AT_LEAST` (6 s;
+  `LINGER_IN_A_BURST_AT_LEAST` 2 s where more wait; a notice is read for `READING_A_WORD` (500 ms) a
+  word where that is longer than its floor (`reading_time`, `lingers`); **a `Trouble` with nothing
+  waiting stays until a click or escape takes it**, since a failure unread is lost
+  (`a_trouble_stays_until_it_is_dismissed_unless_others_are_waiting`); at most `WAITING_AT_MOST` (4) waiting, never the same words
   twice (a `Trouble` told again while the same one shows or waits is counted on it, *… (×3)*, and a
   repeat of any other tone is dropped); a full line gives up its oldest non-`Trouble` for a newer notice, turns a plain one away where
   only troubles wait, and keeps every `Trouble`, so troubles alone may pass four), fades out over `WITHDRAWAL`; a click or escape takes it early. A `Notice` is `Trouble`,
@@ -1318,7 +1331,7 @@ is never named.
   up/down and `Step::landing` are the one arithmetic behind arrows, drop and keys. A row is drag source
   and drop target; dropping a span on row `to` = the arrows' `Command::Move` (never a swap). Payload
   `Carried`; `Ghost` = first row's title plus how many more ride. `RootView::reach` is a `Reach`
-  (`Shift`, anchor, the row moved to; lives for the run, and a non-queue reach is let go of when the
+  (`Shift`, anchor, the row moved to, and for Tracks and Albums the rows chosen apart; lives for the run, and a non-queue reach is let go of when the
   rows under it are arranged another way: `Arrangement` = selection, sorting, playlist order and
   reading, opened playlist's order, search sort, compared by `let_go_of_a_reach_the_rows_left` on
   every library change and sort setter; `opening_an_album_lets_go_of_the_row_reached_in_the_listing_before`). `up`/`down` move and collapse it (queue opens
@@ -1331,10 +1344,28 @@ is never named.
   row is inside it, else that row alone. Drawn as a 2-unit accent edge plus faint wash; every
   reorderable row reserves the edge in `theme::UNMARKED`; saved queries draw none. A drop does not ask
   `acting_on`: `reorder::movable` takes the row it stands for beside the `Carried` it would hand over.
+- **Tracks and Albums choose rows apart.** Only `Shift::chooses_apart` (the Tracks and Albums
+  listings) takes `ctrl`-click (add the row, or let it go if chosen) and `shift`-click (widen from the
+  anchor, keeping what was chosen apart); a plain click still plays or opens, a modified click only
+  chooses (`RootView::reach_by_click`). `ctrl-space` chooses or lets go of the row the cursor is on
+  (`ChooseReached`), `ctrl-shift-up`/`down` hop the cursor a row without touching the choice
+  (`HopAbove`/`HopBelow`; `ctrl-up`/`down` are the volume). A `Reach` is the run `anchor..row` plus
+  `apart: Chosen` (sorted, merged `Span`s) and `chosen`, whether the run is itself chosen: a cursor on
+  an unchosen row is `chosen: false`, drawn as a faint left edge (`reorder::cursor_marked`) or a faint
+  ring (`cursor_ring`). `Reach::selected` is the whole choice, `toggled` and `hopped_to` the two moves;
+  every other gesture builds `Reach::at`/`spanning` and so drops the rows apart
+  (`an_arrow_gives_up_the_rows_chosen_apart`). **Every action on a row in the choice acts on all of
+  it** (`RootView::acting_on_chosen`: the choice if it holds the row, else the row): `enter` plays the
+  chosen tracks in order (`LibraryModel::tracks_at`) or queues the chosen albums' tracks
+  (`plays_everything_in_each`, one background read in album order), the row menu becomes
+  `chosen_tracks_menu`/`chosen_albums_menu` (Play, Play next, Add to queue, Add to playlist where
+  tracks, Favourite or Unfavourite all), a track's two queue buttons queue the choice
+  (`queue_chosen_control`), and a drag lifts it. What takes one row still: a menu's Hide, Delete,
+  Share, file and navigation entries, which a choice of several does not offer.
 - **A track or album is dragged out of a listing into the queue or a playlist.** Track rows and album
-  cells carry a `reorder::Lifted` (`Lift::Tracks`/`Lift::Album`) through `reorder::liftable`; a row
-  standing in the reach carries every loaded row of the reach as a `reorder::Run`: the page's own
-  `Arc<[Track]>` and a `Span`, never a copy, so a 2 000-row selection costs a row an `Arc` clone per
+  cells carry a `reorder::Lifted` (`Lift::Tracks`/`Lift::Album`/`Lift::Albums`) through
+  `reorder::liftable`; a row standing in the choice carries every loaded row of it as a
+  `reorder::Run` (or `AlbumRun`): the page's own `Arc<[Track]>` and a `Chosen`, never a copy, so a 2 000-row selection costs a row an `Arc` clone per
   frame, and the ghost's title is worked out only when a drag begins
   (`a_lifted_run_shares_the_page_it_was_lifted_from_and_is_named_by_its_first_song`). `reorder::takes_a_lift` makes targets of
   a queue row (`Placement::At`), an opened playlist's row (`LiftedTo::PlaylistAt`:
@@ -1465,7 +1496,9 @@ is never named.
   border when worn. An accent is a round `kit::dot_swatch` with a check in `theme::ink_over`'s ink.
   Appearance is the one category with nothing behind it but the window: a choice is worn via
   `theme::wear`, saved through the `Settings` seam, redrawn by `cx.refresh_windows()`; no `Command`.
-  Groups in order: *Colour*; *Layout* (text size); *Window buttons* (worn via
+  Groups in order: *Colour*; *Layout* (text size: Small, Medium, Large and Larger, roots of 12, 13.5, 15.5
+  and 19 against the 13.5 middling one, so Larger reads at 141 per cent); *Motion* (`reduced-motion`,
+  `ResonateApp::reduced_motion`, `RootView::reduce_motion`; `motion.md`); *Window buttons* (worn via
   `RootView::show_window_buttons` onto the global, not `theme`); *The volume wheel*
   (`ResonateApp::scroll_volume`, `scroll-volume`); *Mouse navigation* (`mouse-navigation`);
   *Scrollbars*: Always / While scrolling (`ScrollbarMode::AutoHidden`, default) / Never

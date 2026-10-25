@@ -24,7 +24,7 @@ use crate::{
         mosaic::{self, Framed, Mosaic},
         pointed::{self, LitUnderThePointer as _},
         reorder::{self, Carried, LiftedTo, Listed, MOVING_HINT, Shift, Step},
-        root::{Pane, RootView, empty, row, somewhere_in, tall_row},
+        root::{Pane, RootView, empty, listed, row, somewhere_in, tall_row},
         scrollbar::Scrollbars,
         sorting,
     },
@@ -1590,10 +1590,7 @@ impl RootView {
         holding: impl Fn() -> Arc<[PlaylistEntry]> + 'static,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
-        let (icon, saying) = match at {
-            Placement::Next => (Icon::QueueNext, NEXT_HINT),
-            Placement::Queued | Placement::At(_) => (Icon::QueueLast, QUEUE_HINT),
-        };
+        let (icon, saying) = queueing_look(at);
 
         let holding = Rc::new(holding);
         self.in_the_pane_ring(
@@ -1601,6 +1598,28 @@ impl RootView {
             move |this, _, cx| {
                 cx.stop_propagation();
                 this.queue(&holding(), at, cx);
+            },
+            cx,
+        )
+    }
+
+    pub(crate) fn queue_chosen_control(
+        &self,
+        id: impl Into<ElementId>,
+        at: Placement,
+        shift: Shift,
+        row: usize,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let (icon, saying) = queueing_look(at);
+
+        self.in_the_pane_ring(
+            kit::icon_button(id, icon, saying),
+            move |this, _, cx| {
+                cx.stop_propagation();
+                let chosen = this.acting_on_chosen(shift, row);
+                let tracks = this.library.read(cx).tracks_at(chosen.rows());
+                this.queue(&listed(&tracks), at, cx);
             },
             cx,
         )
@@ -1622,6 +1641,13 @@ impl RootView {
             },
             cx,
         )
+    }
+}
+
+const fn queueing_look(at: Placement) -> (Icon, &'static str) {
+    match at {
+        Placement::Next => (Icon::QueueNext, NEXT_HINT),
+        Placement::Queued | Placement::At(_) => (Icon::QueueLast, QUEUE_HINT),
     }
 }
 

@@ -76,6 +76,24 @@ bumped per change for animation keys; drops the leaving once `HANDS_OVER` is out
 last moved. Paint asks for frames only while the thumb is part way; the scroll's one timer wakes the
 window as the fade-out begins.
 
+## Reduced motion
+
+`reduced-motion` (Appearance, *Motion*; default off) is `ResonateApp::reduced_motion` and gpui's own
+`App::reduce_motion`, set at start and by `RootView::reduce_motion`. gpui renders every
+`with_animation` (the lift, rise and fade helpers, the hint, the toast, the song handover) at its end
+state and asks for no frames, so a surface arrives at once. What does not go through
+`with_animation` asks itself:
+
+- `Flip` reads `cx.reduce_motion()` and `Flipping::moves_to` lands at once
+  (`a_flip_under_reduced_motion_lands_at_once_and_asks_for_no_frames`): switches, segments, popped
+  glyphs, the star.
+- The scrollbar thumb is whole while the scroll lingers and gone when it would have begun to fade
+  (`Scrolled::presence`).
+- The lyrics pane keeps still (`LyricsModel::keep_still`, set each frame): `glide_to` sets the offset,
+  lines do not rise on arrival (`rise`, `is_arriving`). The colour turns of a lit line and the
+  sung-word spread stay, being timing information and not movement.
+- The live spectrum and the visualiser are data, not decoration, and keep moving.
+
 ## Frames
 
 An animation asks for the next frame of its own view; the window is four cached `Part`s, so a

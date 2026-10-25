@@ -2764,6 +2764,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             window_buttons: config.window_buttons(),
             scroll_volume: config.scrolls_the_volume(),
             mouse_navigation: config.navigates_with_mouse_buttons(),
+            reduced_motion: config.reduces_motion(),
             scrollbars: config.scrollbars(),
             spectral: config.spectral(),
             tabs: config.tabs(),

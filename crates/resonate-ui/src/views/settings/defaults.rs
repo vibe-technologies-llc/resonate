@@ -25,6 +25,7 @@ pub(crate) const NOTIFY: bool = true;
 pub(crate) const WINDOW_BUTTONS: WindowButtons = WindowButtons::SHOWN;
 pub(crate) const SCROLL_VOLUME: bool = true;
 pub(crate) const MOUSE_NAVIGATION: bool = true;
+pub(crate) const REDUCED_MOTION: bool = false;
 
 pub(crate) const FILE_DROPPED: bool = true;
 pub(crate) const SCROLLBARS: ScrollbarMode = ScrollbarMode::AutoHidden;
@@ -66,6 +67,7 @@ pub(crate) struct Standing {
     pub(crate) window_buttons: WindowButtons,
     pub(crate) scroll_volume: bool,
     pub(crate) mouse_navigation: bool,
+    pub(crate) reduced_motion: bool,
     pub(crate) scrollbars: ScrollbarMode,
     pub(crate) spectral: Spectral,
     pub(crate) tabs: Tabs,
@@ -112,6 +114,7 @@ impl Standing {
             window_buttons: WINDOW_BUTTONS,
             scroll_volume: SCROLL_VOLUME,
             mouse_navigation: MOUSE_NAVIGATION,
+            reduced_motion: REDUCED_MOTION,
             scrollbars: SCROLLBARS,
             spectral: SPECTRAL,
             tabs: TABS,
@@ -214,6 +217,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::WindowButtons => standing.window_buttons != WINDOW_BUTTONS,
         Group::VolumeWheel => standing.scroll_volume != SCROLL_VOLUME,
         Group::MouseNavigation => standing.mouse_navigation != MOUSE_NAVIGATION,
+        Group::Motion => standing.reduced_motion != REDUCED_MOTION,
         Group::Scrollbars => standing.scrollbars != SCROLLBARS,
         Group::LiveSpectrum => standing.spectral != SPECTRAL,
         Group::Tabs => standing.tabs != TABS,
@@ -279,6 +283,7 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         | Group::Lastfm
         | Group::Colour
         | Group::Layout
+        | Group::Motion
         | Group::WindowButtons
         | Group::VolumeWheel
         | Group::MouseNavigation

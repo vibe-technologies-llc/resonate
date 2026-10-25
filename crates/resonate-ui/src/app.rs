@@ -113,6 +113,9 @@ actions!(
         ReachPageAbove,
         ReachPageBelow,
         ReachEverything,
+        ChooseReached,
+        HopAbove,
+        HopBelow,
         DropReached,
         WidenAbove,
         WidenBelow,
@@ -190,6 +193,7 @@ pub struct ResonateApp {
     pub window_buttons: WindowButtons,
     pub scroll_volume: bool,
     pub mouse_navigation: bool,
+    pub reduced_motion: bool,
     pub caret: CaretBlink,
     pub scrollbars: ScrollbarMode,
     pub spectral: Spectral,
@@ -857,6 +861,9 @@ fn answering_away_from_a_field(typed: Option<&str>) -> Vec<KeyBinding> {
         KeyBinding::new(key!(reach_page_above), ReachPageAbove, typed),
         KeyBinding::new(key!(reach_page_below), ReachPageBelow, typed),
         KeyBinding::new(key!(reach_everything), ReachEverything, typed),
+        KeyBinding::new(key!(choose_reached), ChooseReached, typed),
+        KeyBinding::new(key!(hop_above), HopAbove, typed),
+        KeyBinding::new(key!(hop_below), HopBelow, typed),
         KeyBinding::new(key!(drop_reached), DropReached, typed),
         KeyBinding::new(key!(raise_row), RaiseRow, typed),
         KeyBinding::new(key!(lower_row), LowerRow, typed),
@@ -1058,6 +1065,7 @@ pub fn run(
             window_buttons: stored.window_buttons,
             scroll_volume: stored.scroll_volume,
             mouse_navigation: stored.mouse_navigation,
+            reduced_motion: stored.reduced_motion,
             caret: stored.caret.clone(),
             scrollbars: stored.scrollbars,
             spectral: stored.spectral,
@@ -1080,6 +1088,7 @@ pub fn run(
             first_read,
             copying,
         });
+        cx.set_reduce_motion(stored.reduced_motion);
         cx.bind_keys(bindings());
         cx.activate(true);
         close_when_asked(bus.quit, cx);

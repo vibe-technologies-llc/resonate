@@ -270,7 +270,20 @@ impl Scrolled {
             .is_some_and(|at| now.saturating_duration_since(at) < SCROLLED_LINGERS)
     }
 
-    fn presence(self, now: Instant) -> f32 {
+    fn shown_until_it_would_leave(self, now: Instant) -> bool {
+        self.at.is_some_and(|at| {
+            now.saturating_duration_since(at) < SCROLLED_LINGERS - THUMB_LEAVES_OVER
+        })
+    }
+
+    fn presence(self, now: Instant, reduced: bool) -> f32 {
+        if reduced {
+            return if self.shown_until_it_would_leave(now) {
+                1.0
+            } else {
+                0.0
+            };
+        }
         let (Some(at), Some(since)) = (self.at, self.since) else {
             return 0.0;
         };
@@ -293,13 +306,16 @@ fn scrolled_presence(target: &Target, window: &mut Window, cx: &App) -> f32 {
         window.with_element_state(global, |held: Option<Scrolled>, _| {
             let scrolled = Scrolled::seen(held, offset, now);
             let fresh = scrolled.at == Some(now);
-            ((scrolled.presence(now), fresh), scrolled)
+            (
+                (scrolled.presence(now, cx.reduce_motion()), fresh),
+                scrolled,
+            )
         })
     });
     if fresh {
         hide_once_it_settles(window, cx);
     }
-    if presence > 0.0 && presence < 1.0 {
+    if presence > 0.0 && presence < 1.0 && !cx.reduce_motion() {
         window.request_animation_frame();
     }
 
@@ -434,15 +450,31 @@ mod tests {
         let still = Scrolled::seen(None, point(px(0.0), px(0.0)), start);
         let moved = Scrolled::seen(Some(still), point(px(0.0), px(-40.0)), start);
 
-        assert!(still.presence(start).abs() < 1e-6);
-        assert!(moved.presence(start).abs() < 1e-6);
-        assert!((moved.presence(start + THUMB_ARRIVES_OVER) - 1.0).abs() < 1e-6);
-        assert!((moved.presence(start + SCROLLED_LINGERS - THUMB_LEAVES_OVER) - 1.0).abs() < 1e-6);
+        assert!(still.presence(start, false).abs() < 1e-6);
+        assert!(moved.presence(start, false).abs() < 1e-6);
+        assert!((moved.presence(start + THUMB_ARRIVES_OVER, false) - 1.0).abs() < 1e-6);
+        assert!(
+            (moved.presence(start + SCROLLED_LINGERS - THUMB_LEAVES_OVER, false) - 1.0).abs()
+                < 1e-6
+        );
 
-        let leaving = moved.presence(start + SCROLLED_LINGERS - THUMB_LEAVES_OVER / 2);
+        let leaving = moved.presence(start + SCROLLED_LINGERS - THUMB_LEAVES_OVER / 2, false);
 
         assert!(leaving > 0.0 && leaving < 1.0);
-        assert!(moved.presence(start + SCROLLED_LINGERS).abs() < 1e-6);
+        assert!(moved.presence(start + SCROLLED_LINGERS, false).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_scrolled_thumb_under_reduced_motion_is_whole_at_once_and_gone_when_it_would_leave() {
+        let start = Instant::now();
+        let still = Scrolled::seen(None, point(px(0.0), px(0.0)), start);
+        let moved = Scrolled::seen(Some(still), point(px(0.0), px(-40.0)), start);
+        let leaves_at = start + SCROLLED_LINGERS - THUMB_LEAVES_OVER;
+
+        assert!(still.presence(start, true).abs() < 1e-6);
+        assert!((moved.presence(start, true) - 1.0).abs() < 1e-6);
+        assert!((moved.presence(leaves_at - Duration::from_millis(1), true) - 1.0).abs() < 1e-6);
+        assert!(moved.presence(leaves_at, true).abs() < 1e-6);
     }
 
     #[test]
@@ -453,6 +485,6 @@ mod tests {
         let moved = Scrolled::seen(Some(still), point(px(0.0), px(-40.0)), start);
         let moved_on = Scrolled::seen(Some(moved), point(px(0.0), px(-80.0)), later);
 
-        assert!((moved_on.presence(later) - 1.0).abs() < 1e-6);
+        assert!((moved_on.presence(later, false) - 1.0).abs() < 1e-6);
     }
 }

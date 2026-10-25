@@ -397,6 +397,7 @@ impl Driven {
                 window_buttons: WindowButtons::SHOWN,
                 scroll_volume: true,
                 mouse_navigation: true,
+                reduced_motion: false,
                 caret: crate::CaretBlink::as_built(),
                 scrollbars: resonate_core::ScrollbarMode::default(),
                 spectral: resonate_core::Spectral::default(),
@@ -511,6 +512,13 @@ impl Driven {
     pub(crate) fn click(&mut self, selector: &'static str) {
         let at = self.centre_of(selector);
         self.click_at(at);
+    }
+
+    pub(crate) fn click_with(&mut self, selector: &'static str, modifiers: Modifiers) {
+        let at = self.centre_of(selector);
+        self.hover(at);
+        self.cx.simulate_click(at, modifiers);
+        self.settle();
     }
 
     pub(crate) fn click_at(&mut self, at: Point<Pixels>) {
@@ -2410,6 +2418,235 @@ mod tests {
         driven.read(|root, _| root.reaching(Shift::Listing(Listed::Tracks)))
     }
 
+    const CONTROL: Modifiers = Modifiers {
+        control: true,
+        alt: false,
+        shift: false,
+        platform: false,
+        function: false,
+    };
+
+    fn chosen_rows(driven: &mut Driven) -> Vec<usize> {
+        driven.read(|root, _| {
+            root.reached()
+                .map(|reach| reach.selected().rows().collect())
+                .unwrap_or_default()
+        })
+    }
+
+    fn listed_ids(driven: &mut Driven) -> Vec<TrackId> {
+        driven.read(|root, cx| {
+            root.library
+                .read(cx)
+                .listing()
+                .iter()
+                .map(|track| track.id)
+                .collect()
+        })
+    }
+
+    #[gpui::test]
+    fn a_control_click_chooses_a_track_apart_from_the_others_and_plays_nothing(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-tracks");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 4);
+        let ids = listed_ids(&mut driven);
+
+        driven.click_with(named("track", ids[0].get()), CONTROL);
+        driven.click_with(named("track", ids[2].get()), CONTROL);
+
+        assert_eq!(chosen_rows(&mut driven), [0, 2]);
+        assert_eq!(
+            driven.read(|root, cx| root.player.read(cx).queue().len()),
+            0
+        );
+
+        driven.click_with(named("track", ids[0].get()), CONTROL);
+
+        assert_eq!(chosen_rows(&mut driven), [2]);
+        assert_eq!(
+            driven.read(|root, _| root.reached().map(|reach| reach.row)),
+            Some(0)
+        );
+    }
+
+    #[gpui::test]
+    fn a_shift_click_chooses_every_track_between_and_plays_nothing(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-tracks");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 4);
+        let ids = listed_ids(&mut driven);
+
+        driven.click_with(named("track", ids[0].get()), CONTROL);
+        driven.click_with(
+            named("track", ids[3].get()),
+            Modifiers {
+                shift: true,
+                ..Modifiers::none()
+            },
+        );
+
+        assert_eq!(chosen_rows(&mut driven), [0, 1, 2, 3]);
+        assert_eq!(
+            driven.read(|root, cx| root.player.read(cx).queue().len()),
+            0
+        );
+    }
+
+    #[gpui::test]
+    fn the_keys_hop_over_rows_and_choose_them_and_enter_plays_every_one_chosen_in_order(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-tracks");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 4);
+        let ids = listed_ids(&mut driven);
+
+        driven
+            .cx
+            .simulate_keystrokes("down ctrl-shift-down ctrl-shift-down");
+
+        assert_eq!(chosen_rows(&mut driven), [0]);
+        assert_eq!(
+            driven.read(|root, _| root.reached().map(|reach| reach.row)),
+            Some(2)
+        );
+
+        driven.cx.simulate_keystrokes("ctrl-space");
+
+        assert_eq!(chosen_rows(&mut driven), [0, 2]);
+
+        driven.cx.simulate_keystrokes("ctrl-space");
+
+        assert_eq!(chosen_rows(&mut driven), [0]);
+
+        driven.cx.simulate_keystrokes("ctrl-space enter");
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
+
+        assert_eq!(driven.queue(), [ids[0], ids[2]]);
+    }
+
+    #[gpui::test]
+    fn dragging_a_row_chosen_apart_carries_every_chosen_row_to_the_queue(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-tracks");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 4);
+        let ids = listed_ids(&mut driven);
+
+        driven.click_with(named("track", ids[3].get()), CONTROL);
+        driven.click_with(named("track", ids[1].get()), CONTROL);
+        let from = driven.centre_of(named("track", ids[1].get()));
+        let onto = driven.centre_of("queue");
+        driven.drag(from, onto);
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
+
+        assert_eq!(driven.queue(), [ids[1], ids[3]]);
+    }
+
+    #[gpui::test]
+    fn dragging_a_row_that_is_not_chosen_carries_that_row_alone(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-tracks");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 4);
+        let ids = listed_ids(&mut driven);
+
+        driven.click_with(named("track", ids[0].get()), CONTROL);
+        driven.click_with(named("track", ids[1].get()), CONTROL);
+        let from = driven.centre_of(named("track", ids[3].get()));
+        let onto = driven.centre_of("queue");
+        driven.drag(from, onto);
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
+
+        assert_eq!(driven.queue(), [ids[3]]);
+    }
+
+    #[gpui::test]
+    fn an_arrow_gives_up_the_rows_chosen_apart(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-tracks");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 4);
+
+        driven
+            .cx
+            .simulate_keystrokes("down ctrl-shift-down ctrl-space down");
+
+        assert_eq!(chosen_rows(&mut driven), [2]);
+    }
+
+    #[gpui::test]
+    fn the_menu_of_rows_chosen_apart_queues_every_one_of_them(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-tracks");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 4);
+        let ids = listed_ids(&mut driven);
+
+        driven
+            .cx
+            .simulate_keystrokes("down ctrl-shift-down ctrl-shift-down ctrl-space menu");
+        assert!(driven.read(|root, _| root.menu.is_some()));
+
+        driven.cx.simulate_keystrokes("down down enter");
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
+
+        assert_eq!(driven.queue(), [ids[0], ids[2]]);
+    }
+
+    #[gpui::test]
+    fn a_control_click_chooses_albums_apart_and_enter_plays_every_one_chosen(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        folder.tagged("one.wav", 1, &[(b"INAM", "One"), (b"IPRD", "Meddle")]);
+        folder.tagged("two.wav", 1, &[(b"INAM", "Two"), (b"IPRD", "Animals")]);
+        folder.tagged("three.wav", 1, &[(b"INAM", "Three"), (b"IPRD", "Wish")]);
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+        driven.click("tab-albums");
+        driven.until(|root, cx| root.library.read(cx).albums_listed() == 3);
+        let albums = driven.read(|root, cx| root.library.read(cx).albums());
+
+        driven.click_with(named("album", albums[0].id.get()), CONTROL);
+        driven.click_with(named("album", albums[2].id.get()), CONTROL);
+
+        assert_eq!(chosen_rows(&mut driven), [0, 2]);
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Albums);
+
+        driven.cx.simulate_keystrokes("enter");
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
+
+        let of_album = |album: resonate_core::AlbumId| -> TrackId {
+            library
+                .tracks(&resonate_library::TrackQuery {
+                    album: Some(album),
+                    ..resonate_library::TrackQuery::default()
+                })
+                .expect("the album's tracks")[0]
+                .id
+        };
+        assert_eq!(
+            driven.queue(),
+            [of_album(albums[0].id), of_album(albums[2].id)]
+        );
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Albums);
+    }
+
     #[gpui::test]
     fn opening_an_album_lets_go_of_the_row_reached_in_the_listing_before(cx: &mut TestAppContext) {
         let folder = Folder::new();
@@ -3140,6 +3377,54 @@ mod tests {
             after < before,
             "the body did not scroll: {before:?} to {after:?}"
         );
+    }
+
+    #[gpui::test]
+    fn the_reduce_motion_switch_reaches_gpui_and_the_app_global(cx: &mut TestAppContext) {
+        let mut driven = Driven::open(cx, catalog());
+        showing_settings(&mut driven, SettingsCategory::Appearance);
+        assert!(!driven.read(|_, cx| cx.reduce_motion()));
+
+        let track = named("reduce-motion", "track");
+        driven.click(track);
+        driven.until(|_, cx| cx.reduce_motion());
+
+        assert!(driven.read(|_, cx| cx.global::<ResonateApp>().reduced_motion));
+
+        driven.click(track);
+        driven.until(|_, cx| !cx.reduce_motion());
+
+        assert!(!driven.read(|_, cx| cx.global::<ResonateApp>().reduced_motion));
+    }
+
+    #[gpui::test]
+    fn tabbing_onto_an_icon_only_control_names_it_where_a_pointer_would_have_shown_a_hint(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let files = [folder.tone("one.wav", 5)];
+        let mut driven = Driven::opened_in(cx, catalog(), &folder);
+        driven.play(&files);
+        let root = driven.root.clone();
+        let named_now = |driven: &mut Driven| {
+            driven
+                .cx
+                .update(|window, cx| root.read(cx).focused_control_named(window))
+        };
+
+        assert_eq!(named_now(&mut driven), None);
+        assert!(
+            tabbed_onto(&mut driven, "next"),
+            "tab never reached the next button"
+        );
+
+        let caption = named_now(&mut driven).expect("the focused button is named");
+        assert!(caption.contains("Next"), "the caption reads {caption:?}");
+
+        driven.click("tab-tracks");
+        driven.settle();
+
+        assert_eq!(named_now(&mut driven), None);
     }
 
     #[gpui::test]

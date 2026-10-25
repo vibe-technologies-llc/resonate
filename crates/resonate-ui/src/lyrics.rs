@@ -593,6 +593,7 @@ pub struct LyricsModel {
     light: Turn<[Option<usize>; 2]>,
     spread: Turn<Falloff>,
     glide: Option<Glide>,
+    stilled: bool,
     hand_at: Option<Instant>,
     reached: Option<usize>,
     breathing_for: Option<Breathing>,
@@ -624,6 +625,7 @@ impl LyricsModel {
             light: Turn::still([None; 2]),
             spread: Turn::still(Falloff::Around),
             glide: None,
+            stilled: false,
             hand_at: None,
             reached: None,
             breathing_for: None,
@@ -893,6 +895,9 @@ impl LyricsModel {
     }
 
     fn rise(&self, index: usize, now: Instant) -> Pixels {
+        if self.stilled {
+            return px(0.0);
+        }
         let rises_from = self.measures().rise;
         let Some(arrived) = self.arrived else {
             return rises_from;
@@ -980,6 +985,13 @@ impl LyricsModel {
         self.scale = scale;
     }
 
+    pub fn keep_still(&mut self, stilled: bool) {
+        self.stilled = stilled;
+        if stilled {
+            self.glide = None;
+        }
+    }
+
     pub fn opened_by(&self, pointer: Point<Pixels>) -> bool {
         near_the_words(
             pointer,
@@ -1030,6 +1042,10 @@ impl LyricsModel {
     }
 
     pub fn glide_to(&mut self, lands: Pixels, now: Instant) {
+        if self.stilled {
+            self.scroll.set_offset(point(self.scroll.offset().x, lands));
+            return;
+        }
         self.glide = match self.glide {
             None => Some(Glide::from_rest(self.scroll.offset().y, lands, now)),
             Some(glide) if (glide.leg.lands - lands).abs() < SETTLED => return,
@@ -1060,10 +1076,11 @@ impl LyricsModel {
     }
 
     fn is_arriving(&self, now: Instant) -> bool {
-        self.arrived.is_some_and(|arrived| {
-            now.saturating_duration_since(arrived)
-                < RISE + lagged(RISES_AT_MOST, RISE_PER_LINE, RISES_AT_MOST)
-        })
+        !self.stilled
+            && self.arrived.is_some_and(|arrived| {
+                now.saturating_duration_since(arrived)
+                    < RISE + lagged(RISES_AT_MOST, RISE_PER_LINE, RISES_AT_MOST)
+            })
     }
 
     pub fn led_by_hand(&mut self, now: Instant) {
@@ -2151,6 +2168,41 @@ mod tests {
         let turned = model.glide.expect("a glide is in flight");
         assert_eq!(turned.leg.lands, px(-900.0));
         assert!((turned.at(half) - glide.at(half)).abs() < px(1e-3));
+    }
+
+    #[test]
+    fn a_pane_kept_still_lands_where_it_is_going_without_a_glide_or_a_rise() {
+        let now = Instant::now();
+        let mut model = arrived_and_placed(8, Scale::ONE, now);
+
+        model.keep_still(true);
+        model.follow_the_track(at(2), now);
+        model.glide_to(px(-300.0), now);
+
+        assert!(model.glide.is_none());
+        assert_eq!(model.scroll.offset().y, px(-300.0));
+        assert!(!model.glide(now));
+        assert_eq!(model.rise(3, now), px(0.0));
+        assert_eq!(model.inset(5, now), px(0.0));
+        assert!(!model.is_arriving(now));
+    }
+
+    #[test]
+    fn a_pane_set_still_gives_up_a_glide_already_under_way() {
+        let now = Instant::now();
+        let mut model = arrived_and_placed(8, Scale::ONE, now);
+
+        model.glide_to(px(-300.0), now);
+        assert!(model.glide.is_some());
+
+        model.keep_still(true);
+
+        assert!(model.glide.is_none());
+
+        model.keep_still(false);
+        model.glide_to(px(-300.0), now);
+
+        assert!(model.glide.is_some());
     }
 
     #[test]

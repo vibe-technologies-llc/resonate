@@ -13,9 +13,11 @@ use crate::{
     views::RootView,
 };
 
-const LINGER: Duration = Duration::from_secs(6);
+const LINGER_AT_LEAST: Duration = Duration::from_secs(6);
 
-const LINGER_IN_A_BURST: Duration = Duration::from_secs(2);
+const LINGER_IN_A_BURST_AT_LEAST: Duration = Duration::from_secs(2);
+
+const READING_A_WORD: Duration = Duration::from_millis(500);
 
 const ARRIVAL: Duration = Duration::from_millis(220);
 
@@ -119,6 +121,19 @@ fn wait(waiting: &mut VecDeque<Waiting>, notice: Notice) {
     waiting.push_back(Waiting::once(notice));
 }
 
+fn reading_time(text: &str) -> Duration {
+    READING_A_WORD * u32::try_from(text.split_whitespace().count()).unwrap_or(u32::MAX)
+}
+
+fn lingers(notice: &Notice, others_wait: bool) -> Option<Duration> {
+    let reading = reading_time(notice.text());
+    match (notice.tone(), others_wait) {
+        (Tone::Trouble, false) => None,
+        (_, false) => Some(LINGER_AT_LEAST.max(reading)),
+        (_, true) => Some(LINGER_IN_A_BURST_AT_LEAST.max(reading)),
+    }
+}
+
 pub(crate) fn dismiss(cx: &mut App) {
     withdraw(cx);
 }
@@ -130,14 +145,12 @@ pub(crate) fn is_showing(cx: &App) -> bool {
 }
 
 fn show(Waiting { notice, times }: Waiting, cx: &mut App) {
-    let lingers = if cx.default_global::<Toaster>().waiting.is_empty() {
-        LINGER
-    } else {
-        LINGER_IN_A_BURST
-    };
-    let fading = cx.spawn(async move |cx| {
-        cx.background_executor().timer(lingers).await;
-        cx.update(withdraw);
+    let others_wait = !cx.default_global::<Toaster>().waiting.is_empty();
+    let fading = lingers(&notice, others_wait).map(|lingers| {
+        cx.spawn(async move |cx| {
+            cx.background_executor().timer(lingers).await;
+            cx.update(withdraw);
+        })
     });
 
     let toaster = cx.default_global::<Toaster>();
@@ -148,7 +161,7 @@ fn show(Waiting { notice, times }: Waiting, cx: &mut App) {
         serial: toaster.told,
         leaving: false,
     });
-    toaster.fading = Some(fading);
+    toaster.fading = fading;
 }
 
 fn withdraw(cx: &mut App) {
@@ -460,6 +473,35 @@ mod tests {
         assert_eq!(waiting.len(), WAITING_AT_MOST + 1);
         assert_eq!(waiting.back(), Some(&Waiting::once(trouble("e"))));
         assert_eq!(waiting.front(), Some(&Waiting::once(trouble("a"))));
+    }
+
+    #[test]
+    fn a_trouble_stays_until_it_is_dismissed_unless_others_are_waiting() {
+        let failed = trouble("Couldn't read a cover");
+
+        assert_eq!(lingers(&failed, false), None);
+        assert_eq!(lingers(&failed, true), Some(LINGER_IN_A_BURST_AT_LEAST));
+    }
+
+    #[test]
+    fn a_plain_notice_lingers_a_while_and_less_in_a_burst() {
+        let short = noted("Scan finished");
+
+        assert_eq!(lingers(&short, false), Some(LINGER_AT_LEAST));
+        assert_eq!(lingers(&short, true), Some(LINGER_IN_A_BURST_AT_LEAST));
+    }
+
+    #[test]
+    fn a_long_notice_lingers_for_as_long_as_it_takes_to_read() {
+        let long = noted(
+            "Took 34 tracks out of the queue and kept them so that they can be put back where \
+             they stood",
+        );
+        let words = long.text().split_whitespace().count() as u32;
+
+        assert_eq!(lingers(&long, false), Some(READING_A_WORD * words));
+        assert!(READING_A_WORD * words > LINGER_AT_LEAST);
+        assert_eq!(lingers(&long, true), Some(READING_A_WORD * words));
     }
 
     #[test]

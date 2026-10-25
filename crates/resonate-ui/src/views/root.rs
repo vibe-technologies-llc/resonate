@@ -13,10 +13,10 @@ use ahash::{AHashMap, AHashSet, AHasher};
 use futures_channel::oneshot;
 use gpui::{
     AnimationElement, AnyElement, App, BoxShadow, Canvas, Context, Div, DragMoveEvent, ElementId,
-    Entity, ExternalPaths, FocusHandle, Focusable, KeyDownEvent, MouseButton, MouseDownEvent,
-    MouseExitEvent, MouseMoveEvent, NavigationDirection, ObjectFit, Pixels, Point, Render,
-    ScrollHandle, ScrollStrategy, SharedString, Stateful, Task, UniformListScrollHandle, Window,
-    canvas, div, hsla, img, point, prelude::*, px, rgb, rgba,
+    Entity, ExternalPaths, FocusHandle, Focusable, KeyDownEvent, Modifiers, MouseButton,
+    MouseDownEvent, MouseExitEvent, MouseMoveEvent, NavigationDirection, ObjectFit, Pixels, Point,
+    Render, ScrollHandle, ScrollStrategy, SharedString, Stateful, Task, UniformListScrollHandle,
+    Window, canvas, div, hsla, img, point, prelude::*, px, rgb, rgba,
 };
 use resonate_core::{
     AlbumId, ArtistsDrawn, Frames, MediaLocation, PlaylistId, QueueStamp, Span, TrackId, Volume,
@@ -26,7 +26,7 @@ use resonate_engine::{
     QueueRows, RepeatMode, Unclaimed, stamp_of,
 };
 use resonate_library::{
-    ArtistFound, Cut, Direction, HistoryKept, Kept, Playing, Playlist, PlaylistEntry,
+    ArtistFound, Cut, Direction, HistoryKept, Kept, Library, Playing, Playlist, PlaylistEntry,
     PlaylistOrder, RowOrder, SavedQuery, SortOrder, TokenHeld, Track, TrackQuery,
     is_a_followed_link,
 };
@@ -36,14 +36,14 @@ use crate::{
     Selection, Setting, SettingChange, SettingKey, Tabs, WindowSize,
     analysis::AnalysisModel,
     app::{
-        CycleRepeat, DropReached, FocusFilter, FocusSearch, GoToTheResults, LeaveControl,
-        LeaveSearch, Listen, LowerRow, Moved, Next, NextPane, OpenTheMenu, PasteAway, Pause,
-        PlayPauseUnlessTyping, PlayReached, Previous, PreviousPane, Quit, RaiseRow, ReachAbove,
-        ReachBelow, ReachEverything, ReachFirst, ReachLast, ReachNext, ReachPageAbove,
-        ReachPageBelow, ReachPrevious, RedoEdit, SeekBackward, SeekForward, SeekFurtherBackward,
-        SeekFurtherForward, Stop, TabOnward, ToggleMute, TogglePlayPause, ToggleQueue,
-        ToggleShuffle, UndoEdit, VolumeDown, VolumeUp, WINDOW_CONTEXT, WidenAbove, WidenBelow,
-        attend, seek_further, seek_step,
+        ChooseReached, CycleRepeat, DropReached, FocusFilter, FocusSearch, GoToTheResults,
+        HopAbove, HopBelow, LeaveControl, LeaveSearch, Listen, LowerRow, Moved, Next, NextPane,
+        OpenTheMenu, PasteAway, Pause, PlayPauseUnlessTyping, PlayReached, Previous, PreviousPane,
+        Quit, RaiseRow, ReachAbove, ReachBelow, ReachEverything, ReachFirst, ReachLast, ReachNext,
+        ReachPageAbove, ReachPageBelow, ReachPrevious, RedoEdit, SeekBackward, SeekForward,
+        SeekFurtherBackward, SeekFurtherForward, Stop, TabOnward, ToggleMute, TogglePlayPause,
+        ToggleQueue, ToggleShuffle, UndoEdit, VolumeDown, VolumeUp, WINDOW_CONTEXT, WidenAbove,
+        WidenBelow, attend, seek_further, seek_step,
     },
     downloads::{self, Download, Fetching},
     format,
@@ -69,7 +69,7 @@ use crate::{
         playlists::{self, Held, Naming, PlaylistsDrawn, Rows},
         pointed::{self, LitUnderThePointer},
         queue::{Named, QueueMeasure, QueueNames, TakenBack, took_out},
-        reorder::{self, Creeping, Lift, Lifted, LiftedTo, Listed, Reach, Shift, Step},
+        reorder::{self, Chosen, Creeping, Lift, Lifted, LiftedTo, Listed, Reach, Shift, Step},
         scrollbar::Scrollbars,
         search::{self, SearchShows, TopEntry, TopRun},
         settings::{
@@ -2231,18 +2231,24 @@ impl RootView {
             return;
         }
         self.arranged_as = arranged_as;
-        if self.reach.is_some_and(|reach| reach.shift != Shift::Queue) {
+        if self
+            .reach
+            .as_ref()
+            .is_some_and(|reach| reach.shift != Shift::Queue)
+        {
             self.reach = None;
         }
     }
 
     pub(crate) fn reaches(&self, shift: Shift, row: usize) -> bool {
         self.reach
-            .is_some_and(|reach| reach.shift == shift && reach.rows().holds(row))
+            .as_ref()
+            .is_some_and(|reach| reach.shift == shift && reach.reaches(row))
     }
 
     pub(crate) fn at_the_reach(&self, shift: Shift, row: usize) -> Option<AtTheReach> {
         self.reach
+            .as_ref()
             .filter(|reach| reach.shift == shift && reach.row == row)
             .map(|_| AtTheReach { shift, row })
     }
@@ -2267,6 +2273,89 @@ impl RootView {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) const fn reached(&self) -> Option<&Reach> {
+        self.reach.as_ref()
+    }
+
+    pub(crate) fn stands_unchosen_on(&self, shift: Shift, row: usize) -> bool {
+        self.reach
+            .as_ref()
+            .is_some_and(|reach| reach.shift == shift && reach.row == row && !reach.is_chosen())
+    }
+
+    pub(crate) fn acting_on_chosen(&self, shift: Shift, row: usize) -> Chosen {
+        match self.reach.as_ref().filter(|reach| reach.shift == shift) {
+            Some(reach) if reach.reaches(row) => reach.selected(),
+            _ => Chosen::of(Span::one(row)),
+        }
+    }
+
+    pub(crate) fn reach_by_click(
+        &mut self,
+        shift: Shift,
+        row: usize,
+        modifiers: Modifiers,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !shift.chooses_apart() || !(modifiers.control || modifiers.shift) {
+            return false;
+        }
+        self.reach_by_hand(cx);
+
+        let held = self.reach.as_ref().filter(|reach| reach.shift == shift);
+        self.reach = Some(match held {
+            Some(reach) if modifiers.control => reach.toggled(row),
+            Some(reach) => reach.widened_to(row),
+            None => Reach::at(shift, row),
+        });
+        cx.notify();
+
+        true
+    }
+
+    fn choose_the_reached(&mut self, cx: &mut Context<Self>) {
+        if self.something_stands_over_the_pane() {
+            return;
+        }
+        self.reach_by_hand(cx);
+        let Some((shift, held)) = self.reachable(cx) else {
+            return;
+        };
+        if !shift.chooses_apart() {
+            return;
+        }
+
+        self.reach = Some(match self.reach_in(shift, held) {
+            Some(reach) => reach.toggled(reach.row),
+            None => Reach::at(shift, self.opening_row(shift, held, cx)),
+        });
+        cx.notify();
+    }
+
+    fn hop_to_a_row(&mut self, step: Step, cx: &mut Context<Self>) {
+        if self.something_stands_over_the_pane() {
+            return;
+        }
+        self.reach_by_hand(cx);
+        let Some((shift, held)) = self.reachable(cx) else {
+            return;
+        };
+        if !shift.chooses_apart() {
+            return;
+        }
+        let Some(reach) = self.reach_in(shift, held) else {
+            return self.reach_row(step, cx);
+        };
+        let Some(row) = step.landing(Span::one(reach.row), held) else {
+            return;
+        };
+
+        self.reach = Some(reach.hopped_to(row));
+        self.show_row(shift, row, cx);
+        cx.notify();
+    }
+
     pub(crate) fn acting_on(&self, shift: Shift, row: usize) -> Span {
         match self.reaching(shift) {
             Some(rows) if rows.holds(row) => rows,
@@ -2276,6 +2365,7 @@ impl RootView {
 
     pub(crate) fn reaching(&self, shift: Shift) -> Option<Span> {
         self.reach
+            .as_ref()
             .filter(|reach| reach.shift == shift)
             .map(Reach::rows)
     }
@@ -2287,14 +2377,10 @@ impl RootView {
         extending: bool,
         cx: &mut Context<Self>,
     ) {
-        let held = self.reach.filter(|reach| reach.shift == shift);
+        let held = self.reach.as_ref().filter(|reach| reach.shift == shift);
         self.landed_by_a_jump = None;
         self.reach = Some(match (extending, held) {
-            (true, Some(reach)) => Reach {
-                shift,
-                anchor: reach.anchor,
-                row,
-            },
+            (true, Some(reach)) => reach.widened_to(row),
             _ => Reach::at(shift, row),
         });
         cx.notify();
@@ -2409,11 +2495,7 @@ impl RootView {
             return;
         };
 
-        self.reach = Some(Reach {
-            shift,
-            anchor: 0,
-            row: held - 1,
-        });
+        self.reach = Some(Reach::spanning(shift, 0, held - 1));
         cx.notify();
     }
 
@@ -2487,11 +2569,7 @@ impl RootView {
             return;
         };
 
-        self.reach = Some(Reach {
-            shift,
-            anchor: reach.anchor,
-            row,
-        });
+        self.reach = Some(reach.widened_to(row));
         self.show_row(shift, row, cx);
         cx.notify();
     }
@@ -2528,7 +2606,12 @@ impl RootView {
         let Some(reach) = self.reach_in(shift, held) else {
             return;
         };
-        let row = reach.rows().first();
+        let chosen = reach.selected();
+        let row = if shift.chooses_apart() {
+            chosen.first().unwrap_or(reach.row)
+        } else {
+            reach.rows().first()
+        };
 
         match shift {
             Shift::Queue => self.send_by_position(Command::JumpTo(row), cx),
@@ -2537,6 +2620,11 @@ impl RootView {
                 self.play_playlist(playlist, &entries, row, true, cx);
             }
             Shift::Listing(Listed::Tracks) => {
+                if chosen.count() > 1 {
+                    let tracks = self.library.read(cx).tracks_at(chosen.rows());
+                    self.play(&tracks, 0, cx);
+                    return;
+                }
                 if let Some(found) = self.library.read(cx).found_at(row) {
                     self.library
                         .update(cx, |library, cx| library.want_found(found, cx));
@@ -2548,6 +2636,17 @@ impl RootView {
                 self.play_the_listing_from(&played, start, window, cx);
             }
             Shift::Listing(Listed::Albums) => {
+                if chosen.count() > 1 {
+                    let albums = self.library.read(cx).albums_at(chosen.rows());
+                    self.plays_everything_in_each(
+                        albums.into_iter().map(Selection::Album).collect(),
+                        Placement::Queued,
+                        true,
+                        window,
+                        cx,
+                    );
+                    return;
+                }
                 let Some(album) = self.library.read(cx).albums().get(row).map(|held| held.id)
                 else {
                     return;
@@ -2728,13 +2827,23 @@ impl RootView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.plays_everything_in_each(vec![scoped], at, now, window, cx);
+    }
+
+    pub(crate) fn plays_everything_in_each(
+        &mut self,
+        scopes: Vec<Selection>,
+        at: Placement,
+        now: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let library = self.library.read(cx).catalog();
-        let asked = whole_of(scoped);
 
         self.listing_whole = cx.spawn_in(window, async move |this, cx| {
             let read = cx
                 .background_executor()
-                .spawn(async move { library.tracks(&asked) })
+                .spawn(async move { read_each(&library, scopes) })
                 .await;
 
             let outcome = this.update(cx, |this, cx| match read {
@@ -2795,26 +2904,30 @@ impl RootView {
 
     pub(crate) fn lifted_into(&mut self, lifted: &Lifted, into: LiftedTo, cx: &mut Context<Self>) {
         match &lifted.lift {
-            Lift::Tracks(run) => self.landed(run.tracks(), into, cx),
-            Lift::Album(album, _) => {
-                let library = self.library.read(cx).catalog();
-                let asked = whole_of(Selection::Album(*album));
-                cx.spawn(async move |this, cx| {
-                    let read = cx
-                        .background_executor()
-                        .spawn(async move { library.tracks(&asked) })
-                        .await;
-                    let _ = this.update(cx, |this, cx| match read {
-                        Ok(tracks) => this.landed(&tracks, into, cx),
-                        Err(error) => {
-                            tracing::error!(%error, "a dragged album could not be read");
-                            toast::tell(toast::could_not("read that album", &error), cx);
-                        }
-                    });
-                })
-                .detach();
-            }
+            Lift::Tracks(run) => self.landed(&run.tracks(), into, cx),
+            Lift::Album(album, _) => self.landed_albums(vec![*album], into, cx),
+            Lift::Albums(run) => self.landed_albums(run.albums(), into, cx),
         }
+    }
+
+    fn landed_albums(&mut self, albums: Vec<AlbumId>, into: LiftedTo, cx: &mut Context<Self>) {
+        let library = self.library.read(cx).catalog();
+        let scopes = albums.into_iter().map(Selection::Album).collect();
+
+        cx.spawn(async move |this, cx| {
+            let read = cx
+                .background_executor()
+                .spawn(async move { read_each(&library, scopes) })
+                .await;
+            let _ = this.update(cx, |this, cx| match read {
+                Ok(tracks) => this.landed(&tracks, into, cx),
+                Err(error) => {
+                    tracing::error!(%error, "a dragged album could not be read");
+                    toast::tell(toast::could_not("read that album", &error), cx);
+                }
+            });
+        })
+        .detach();
     }
 
     fn landed(&mut self, tracks: &[Track], into: LiftedTo, cx: &mut Context<Self>) {
@@ -2939,6 +3052,7 @@ impl RootView {
 
     fn reach_in(&self, shift: Shift, held: usize) -> Option<Reach> {
         self.reach
+            .as_ref()
             .filter(|reach| reach.shift == shift)
             .and_then(|reach| reach.within(held))
     }
@@ -3065,6 +3179,16 @@ impl RootView {
         let moved = under.moved_since(self.under_the_pointer);
         self.under_the_pointer = Some(under);
         moved
+    }
+
+    pub(crate) fn focused_control_named(&self, window: &Window) -> Option<SharedString> {
+        if !window.last_input_was_keyboard() {
+            return None;
+        }
+
+        self.controls
+            .caption_of_the_focused(window)
+            .or_else(|| self.standing_controls.caption_of_the_focused(window))
     }
 
     fn hints_are_wanted(&self, cx: &App) -> bool {
@@ -3593,7 +3717,7 @@ impl RootView {
             return;
         };
         self.reach_at(shift, row, false, cx);
-        self.landed_by_a_jump = self.reach;
+        self.landed_by_a_jump.clone_from(&self.reach);
         self.show_row(shift, row, cx);
     }
 
@@ -3624,11 +3748,11 @@ impl RootView {
     }
 
     fn stands_where_a_jump_landed(&self, cx: &App) -> bool {
-        let Some(landed) = self.landed_by_a_jump else {
+        let Some(landed) = self.landed_by_a_jump.as_ref() else {
             return false;
         };
 
-        self.reach == Some(landed)
+        self.reach.as_ref() == Some(landed)
             && self
                 .reachable(cx)
                 .is_some_and(|(shift, _)| shift == landed.shift)
@@ -3906,7 +4030,11 @@ impl RootView {
     }
 
     pub(crate) fn let_go_of_the_reach_in(&mut self, shift: Shift) {
-        if self.reach.is_some_and(|reach| reach.shift == shift) {
+        if self
+            .reach
+            .as_ref()
+            .is_some_and(|reach| reach.shift == shift)
+        {
             self.reach = None;
         }
     }
@@ -3959,6 +4087,7 @@ impl RootView {
         self.read_from_the_top(cx);
         if self
             .reach
+            .as_ref()
             .is_some_and(|reach| matches!(reach.shift, Shift::Listing(_)))
         {
             self.reach = None;
@@ -4913,11 +5042,13 @@ impl RootView {
     pub(crate) fn in_the_standing_ring(
         &self,
         named: &'static str,
-        control: Stateful<Div>,
+        mut control: Stateful<Div>,
         press: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + Clone + 'static,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let handle = self.standing_controls.at(named, cx);
+        self.standing_controls
+            .captioned_by_its_name(named, &mut control);
         Self::ringed(&handle, control, press, cx)
             .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
     }
@@ -5268,6 +5399,15 @@ impl Render for RootView {
             .on_action(cx.listener(|this, _: &ReachEverything, _, cx| {
                 this.reach_everything(cx);
             }))
+            .on_action(cx.listener(|this, _: &ChooseReached, _, cx| {
+                this.choose_the_reached(cx);
+            }))
+            .on_action(cx.listener(|this, _: &HopAbove, _, cx| {
+                this.hop_to_a_row(Step::Above, cx);
+            }))
+            .on_action(cx.listener(|this, _: &HopBelow, _, cx| {
+                this.hop_to_a_row(Step::Below, cx);
+            }))
             .on_action(cx.listener(|this, _: &DropReached, _, cx| {
                 this.drop_reached(cx);
             }))
@@ -5354,6 +5494,9 @@ impl Render for RootView {
                 toast::drawn(self.type_ahead.typed().is_some(), cx),
                 ParentElement::child,
             )
+            .when_some(self.focused_control_named(window), |app, name| {
+                app.child(hint::caption(name))
+            })
             .when_some(self.type_ahead_pill(), ParentElement::child)
             .when_some(self.downloads_over_the_app(cx), ParentElement::child)
             .when_some(self.menu_over_the_app(cx), ParentElement::child)
@@ -5423,6 +5566,15 @@ impl Deleting {
             ),
         }
     }
+}
+
+fn read_each(library: &Library, scopes: Vec<Selection>) -> resonate_library::Result<Vec<Track>> {
+    let mut read = Vec::new();
+    for scoped in scopes {
+        read.extend(library.tracks(&whole_of(scoped))?);
+    }
+
+    Ok(read)
 }
 
 fn whole_of(scoped: Selection) -> TrackQuery {
@@ -5900,7 +6052,7 @@ mod tests {
         }
 
         fn reach(driven: &mut Driven) -> Option<Reach> {
-            driven.read(|root, _| root.reach)
+            driven.read(|root, _| root.reach.clone())
         }
 
         impl Driven {
