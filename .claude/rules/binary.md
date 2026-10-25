@@ -254,12 +254,16 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   once when the pass ends (`Sourcing::unkept`, `providers::sourced`'s second half). The settings path
   is already the default config file, so no further location is tried.
 - `equaliser-measurer`: the measurer whose AutoEq correction is preferred where several measured a
-  device (one for every device); `eq --find`/`--suggest` take `--measurer` over it and the
-  equaliser pane's search and suggestion take it over the fixed ranking
-  (`EqualiserModel::prefer`); the Equaliser category's *Measured corrections* group chooses it as
-  chips (*Best ranked*, `resonate_eq::MEASURERS_BEST_FIRST`, and a held name outside them), written as
-  `Setting::EqualiserMeasurer` and worn at once on `ResonateApp::measurer` and the model
-  (`RootView::prefer_a_measurer`), and the group's mark removes the key.
+  device (for every device without one of its own); `[equaliser-measurer-for]` maps a sink's
+  `node.name` to the measurer preferred for it alone (a blank or non-text entry is passed over with a
+  warning), read as `Config::equaliser_measurer_for(sink)`. `eq --find`/`--suggest` take `--measurer`
+  over both and the equaliser pane's search and suggestion take the device in use's over the fixed
+  ranking (`EqualiserModel::prefer(Measurers)`); the Equaliser category's *Measured corrections* group
+  chooses them as chips, one field for every device and one for the device in use (*Best ranked* /
+  *As for the rest*, `resonate_eq::MEASURERS_BEST_FIRST`, and a held name outside them), written as
+  `Setting::EqualiserMeasurer` and `Setting::EqualiserMeasurerFor` and worn at once on
+  `ResonateApp::measurers` and the model (`RootView::prefer_a_measurer`, `prefer_a_measurer_for`), and
+  the group's mark removes both keys.
 - `lastfm-key`, `lastfm-secret`: an API account the listener registered (empty by default);
   `lastfm-session`: written by `resonate lastfm --user` or the Scrobbling category's *Last.fm* group,
   cleared by `--forget` or *Sign out of Last.fm*. All three are needed before anything is

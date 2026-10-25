@@ -769,7 +769,7 @@ impl RootView {
         let for_the_pass = global.for_the_pass.clone();
         let corrections = Arc::clone(&global.corrections);
         let bindings = global.bindings.clone();
-        let measurer = global.measurer.clone();
+        let measurers = global.measurers.clone();
         let places = global.places.clone();
         let resume = global.resume;
         let organise_as = global.organise_as.clone();
@@ -1089,7 +1089,7 @@ impl RootView {
                 bindings,
                 cx,
             );
-            model.prefer(measurer);
+            model.prefer(measurers);
             model
         });
         cx.observe(&equaliser, |this, equaliser, cx| {

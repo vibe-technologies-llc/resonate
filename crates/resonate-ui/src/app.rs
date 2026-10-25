@@ -28,7 +28,8 @@ use resonate_lyrics::Lyricists;
 use resonate_providers::SignsIn;
 
 use crate::{
-    AppIcon, Bindings, CaretBlink, Error, Launcher, Notice, Result, RootView, Settings, WindowKind,
+    AppIcon, Bindings, CaretBlink, Error, Launcher, Measurers, Notice, Result, RootView, Settings,
+    WindowKind,
     drawing::Drawer,
     format, icons,
     listening::Listens,
@@ -156,7 +157,7 @@ pub struct Lookups {
     pub corrections: Arc<Corrected>,
     pub online: Online,
     pub bindings: Bindings,
-    pub measurer: Option<String>,
+    pub measurers: Measurers,
     pub sourcing: Sourcing,
     pub listens: Listens,
 }
@@ -170,7 +171,7 @@ pub struct ResonateApp {
     pub settings: Arc<dyn Settings>,
     pub online: Online,
     pub bindings: Bindings,
-    pub measurer: Option<String>,
+    pub measurers: Measurers,
     pub reference: Option<Arc<dyn Reference>>,
     pub for_the_pass: Consulted,
     pub scrobblers: Option<Arc<dyn Scrobblers>>,
@@ -1037,7 +1038,7 @@ pub fn run(
             corrections: Arc::clone(&lookups.corrections),
             settings: Arc::clone(&stored.settings),
             bindings: lookups.bindings.clone(),
-            measurer: lookups.measurer.clone(),
+            measurers: lookups.measurers.clone(),
             online: lookups.online.clone(),
             reference: lookups.reference.clone(),
             for_the_pass: lookups.for_the_pass.clone(),

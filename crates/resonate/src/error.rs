@@ -45,6 +45,7 @@ pub enum ConfigKey {
     Equaliser,
     EqualiserFor,
     EqualiserMeasurer,
+    EqualiserMeasurerFor,
     EqualiserProfile,
     Convolution,
     Resume,
@@ -164,7 +165,7 @@ impl fmt::Display for Named {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 100] = [
+    pub const ALL: [Self; 101] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -200,6 +201,7 @@ impl ConfigKey {
         Self::Equaliser,
         Self::EqualiserFor,
         Self::EqualiserMeasurer,
+        Self::EqualiserMeasurerFor,
         Self::EqualiserProfile,
         Self::Convolution,
         Self::Resume,
@@ -306,6 +308,7 @@ impl ConfigKey {
             Self::Equaliser => "equaliser",
             Self::EqualiserFor => "equaliser-for",
             Self::EqualiserMeasurer => "equaliser-measurer",
+            Self::EqualiserMeasurerFor => "equaliser-measurer-for",
             Self::EqualiserProfile => "equaliser-profile",
             Self::Convolution => "convolution",
             Self::Resume => "resume",

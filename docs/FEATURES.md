@@ -66,8 +66,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   apart
 
 ## Equaliser and DSP
-- [S · 0.2.0] The preferred measurer (`equaliser-measurer`) is one for every device: none can be preferred
-  for a single device
 - [S · 0.2.0] The clamped-sample count is in the desktop inspector alone: the phones' `PlaybackState` does
   not carry it
 

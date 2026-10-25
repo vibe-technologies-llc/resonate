@@ -145,6 +145,7 @@ pub struct Config {
     pub equaliser: Option<bool>,
     pub equaliser_for: Option<Bindings>,
     pub equaliser_measurer: Option<String>,
+    pub equaliser_measurer_for: BTreeMap<NodeName, String>,
     pub resume: Option<bool>,
     pub history_kept: Option<HistoryKept>,
     pub organise_as: Option<Layout>,
@@ -262,6 +263,7 @@ impl fmt::Debug for Config {
             equaliser,
             equaliser_for,
             equaliser_measurer,
+            equaliser_measurer_for,
             resume,
             history_kept,
             organise_as,
@@ -365,6 +367,7 @@ impl fmt::Debug for Config {
             .field("equaliser", equaliser)
             .field("equaliser_for", equaliser_for)
             .field("equaliser_measurer", equaliser_measurer)
+            .field("equaliser_measurer_for", equaliser_measurer_for)
             .field("resume", resume)
             .field("history_kept", history_kept)
             .field("organise_as", organise_as)
@@ -546,6 +549,12 @@ impl Config {
 
     pub fn equaliser_measurer(&self) -> Option<&str> {
         self.equaliser_measurer.as_deref()
+    }
+
+    pub fn equaliser_measurer_for(&self, sink: Option<&NodeName>) -> Option<&str> {
+        sink.and_then(|sink| self.equaliser_measurer_for.get(sink))
+            .map(String::as_str)
+            .or_else(|| self.equaliser_measurer())
     }
 
     pub fn equaliser_on(&self) -> bool {
@@ -1000,6 +1009,9 @@ impl Config {
             ConfigKey::EqualiserMeasurer => {
                 config.equaliser_measurer = given(at.string(value)?);
             }
+            ConfigKey::EqualiserMeasurerFor => {
+                config.equaliser_measurer_for = measurers(at, value)?;
+            }
             ConfigKey::EqualiserProfile => {
                 config.equaliser_for.get_or_insert_default().fallback = at.binding(value)?;
             }
@@ -1141,6 +1153,24 @@ fn bindings(at: At<'_>, value: &Item) -> Result<BTreeMap<NodeName, Binding>> {
         };
 
         by_sink.insert(NodeName::new(named), binding);
+    }
+    Ok(by_sink)
+}
+
+fn measurers(at: At<'_>, value: &Item) -> Result<BTreeMap<NodeName, String>> {
+    let mut by_sink = BTreeMap::new();
+
+    for (named, preferred) in at.table(value)?.iter() {
+        let Some(measurer) = preferred.as_str().and_then(given) else {
+            tracing::warn!(
+                sink = named,
+                path = %at.path.display(),
+                "ignoring a preferred measurer that is not a name"
+            );
+            continue;
+        };
+
+        by_sink.insert(NodeName::new(named), measurer);
     }
     Ok(by_sink)
 }
@@ -2127,6 +2157,63 @@ mod tests {
         assert_eq!(config.equaliser_measurer(), None);
 
         assert_eq!(Config::default().equaliser_measurer(), None);
+    }
+
+    #[test]
+    fn a_measurer_is_preferred_for_one_device_and_the_one_for_every_device_serves_the_rest() {
+        let config = read(
+            r#"
+            equaliser-measurer = "Rtings"
+
+            [equaliser-measurer-for]
+            "alsa_output.usb-Topping_E30-00.analog-stereo" = " crinacle "
+            "auto_null" = "  "
+            "bluez_output.one" = 7
+            "#,
+        )
+        .expect("a well formed document");
+        let topping = NodeName::new("alsa_output.usb-Topping_E30-00.analog-stereo");
+
+        assert_eq!(
+            config.equaliser_measurer_for(Some(&topping)),
+            Some("crinacle")
+        );
+        assert_eq!(
+            config.equaliser_measurer_for(Some(&NodeName::new("auto_null"))),
+            Some("Rtings")
+        );
+        assert_eq!(
+            config.equaliser_measurer_for(Some(&NodeName::new("bluez_output.one"))),
+            Some("Rtings")
+        );
+        assert_eq!(config.equaliser_measurer_for(None), Some("Rtings"));
+        assert_eq!(config.equaliser_measurer_for.len(), 1);
+    }
+
+    #[test]
+    fn a_config_of_the_first_release_has_no_per_device_measurers_and_reads_as_it_did() {
+        let config = read("equaliser-measurer = \"Rtings\"").expect("a well formed document");
+
+        assert!(config.equaliser_measurer_for.is_empty());
+        assert_eq!(
+            config.equaliser_measurer_for(Some(&NodeName::new("any"))),
+            Some("Rtings")
+        );
+        assert_eq!(Config::default().equaliser_measurer_for(None), None);
+    }
+
+    #[test]
+    fn a_measurers_table_that_is_not_a_table_is_refused() {
+        let error =
+            read("equaliser-measurer-for = \"Rtings\"").expect_err("a string is not a table");
+
+        assert!(matches!(
+            error,
+            Error::ConfigType {
+                key: ConfigKey::EqualiserMeasurerFor,
+                ..
+            }
+        ));
     }
 
     #[cfg(feature = "ui")]
