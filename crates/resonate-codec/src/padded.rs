@@ -17,7 +17,14 @@ const LARGEST_BLOCK: u64 = (1 << 24) - 1;
 
 const ID3: &[u8; 3] = b"ID3";
 const ID3_HEADER_BYTES: usize = 10;
+const ID3_VERSION_AT: usize = 3;
 const ID3_FLAGS_AT: usize = 5;
+const ID3_FRAME_ID_BYTES: usize = 4;
+const ID3_FRAME_HEADER_BYTES: usize = 10;
+const ID3_V2_FRAME_HEADER_BYTES: usize = 6;
+const ID3_V2_FRAME_ID_BYTES: usize = 3;
+const ID3_V2_FRAME_SIZE_BYTES: usize = 3;
+const ID3_FRAME_SIZE_BYTES: usize = 4;
 const ID3_SIZE_AT: usize = 6;
 const ID3_EXTENDED_HEADER: u8 = 0x40;
 const ID3_FOOTER: u8 = 0x10;
@@ -305,12 +312,37 @@ fn id3_content(written: &[u8]) -> Option<u64> {
     if !written.starts_with(ID3) || written.len() < ID3_HEADER_BYTES {
         return None;
     }
-    Some(
-        written[ID3_HEADER_BYTES..]
-            .iter()
-            .rposition(|byte| *byte != 0)
-            .map_or(ID3_HEADER_BYTES, |last| ID3_HEADER_BYTES + last + 1) as u64,
-    )
+    let version = written[ID3_VERSION_AT];
+    let (header, id_bytes, size_len) = match version {
+        2 => (
+            ID3_V2_FRAME_HEADER_BYTES,
+            ID3_V2_FRAME_ID_BYTES,
+            ID3_V2_FRAME_SIZE_BYTES,
+        ),
+        3 | 4 => (
+            ID3_FRAME_HEADER_BYTES,
+            ID3_FRAME_ID_BYTES,
+            ID3_FRAME_SIZE_BYTES,
+        ),
+        _ => return None,
+    };
+    let mut at = ID3_HEADER_BYTES;
+    while at < written.len() && written[at] != 0 {
+        let size_bytes = written.get(at + id_bytes..at + id_bytes + size_len)?;
+        let size = match version {
+            2 | 3 => size_bytes
+                .iter()
+                .fold(0_u64, |size, byte| (size << 8) | u64::from(*byte)),
+            _ => synchsafe(size_bytes)?,
+        };
+        at = at
+            .checked_add(header)?
+            .checked_add(usize::try_from(size).ok()?)?;
+        if at > written.len() {
+            return None;
+        }
+    }
+    Some(at as u64)
 }
 
 fn id3_absorbed(written: &[u8], length: u64) -> Option<Vec<u8>> {
@@ -441,6 +473,18 @@ mod tests {
         );
     }
 
+    fn id3_frame(id: &[u8; 4], payload: &[u8]) -> Vec<u8> {
+        let mut frame = id.to_vec();
+        frame.extend_from_slice(&synchsafe_bytes(payload.len() as u64));
+        frame.extend_from_slice(&[0, 0]);
+        frame.extend_from_slice(payload);
+        frame
+    }
+
+    fn id3_frames_of(total: usize) -> Vec<u8> {
+        id3_frame(b"TIT2", &vec![b'T'; total - ID3_FRAME_HEADER_BYTES])
+    }
+
     fn id3(size: u64, flags: u8, frames: &[u8]) -> Vec<u8> {
         let mut tag = b"ID3\x04\x00".to_vec();
         tag.push(flags);
@@ -452,13 +496,13 @@ mod tests {
 
     #[test]
     fn a_rewritten_id3_tag_is_padded_to_the_size_it_stood_at() {
-        let written = id3(1200, 0, &[b'T'; 300]);
+        let written = id3(1200, 0, &id3_frames_of(300));
 
         let absorbed = id3_absorbed(&written, 800).expect("room to spare");
 
         assert_eq!(absorbed.len(), 800);
         assert_eq!(synchsafe(&absorbed[6..10]), Some(790));
-        assert_eq!(absorbed[10..310], [b'T'; 300]);
+        assert_eq!(absorbed[10..310], id3_frames_of(300));
         assert!(absorbed[310..].iter().all(|byte| *byte == 0));
         assert_eq!(
             past_id3(&mut Cursor::new(&absorbed)),
@@ -469,12 +513,37 @@ mod tests {
 
     #[test]
     fn an_id3_tag_that_will_not_fit_or_carries_a_footer_is_not_absorbed() {
-        assert_eq!(id3_absorbed(&id3(1200, 0, &[b'T'; 300]), 200), None);
-        assert_eq!(id3_absorbed(&id3(400, ID3_FOOTER, &[b'T'; 30]), 800), None);
+        assert_eq!(id3_absorbed(&id3(1200, 0, &id3_frames_of(300)), 200), None);
         assert_eq!(
-            id3_absorbed(&id3(400, ID3_EXTENDED_HEADER, &[b'T'; 30]), 800),
+            id3_absorbed(&id3(400, ID3_FOOTER, &id3_frames_of(30)), 800),
             None
         );
+        assert_eq!(
+            id3_absorbed(&id3(400, ID3_EXTENDED_HEADER, &id3_frames_of(30)), 800),
+            None
+        );
+    }
+
+    #[test]
+    fn a_last_frame_ending_in_zeros_is_content_and_not_padding() {
+        let counter = id3_frame(b"POPM", b"\0\xff\0\0\0\0");
+        let written = id3(400, 0, &[id3_frames_of(40), counter].concat());
+        let frames_end = ID3_HEADER_BYTES + 40 + ID3_FRAME_HEADER_BYTES + 6;
+
+        assert_eq!(id3_content(&written), Some(frames_end as u64));
+        let absorbed = id3_absorbed(&written, 400).expect("room to spare");
+        assert_eq!(
+            absorbed[ID3_HEADER_BYTES..frames_end],
+            written[ID3_HEADER_BYTES..frames_end]
+        );
+    }
+
+    #[test]
+    fn a_frame_declaring_more_than_the_tag_holds_has_no_content_end() {
+        let mut frame = id3_frame(b"TIT2", b"short");
+        frame[4..8].copy_from_slice(&synchsafe_bytes(5_000));
+
+        assert_eq!(id3_content(&id3(400, 0, &frame)), None);
     }
 
     fn opus_head(comment_bytes: usize) -> Vec<u8> {
@@ -586,7 +655,7 @@ mod tests {
             length: 0,
         };
         let id3_rebuilt = tag
-            .rebuilt(&id3(300, 0, &[b'T'; 300]), Room::Blocks(4096))
+            .rebuilt(&id3(300, 0, &id3_frames_of(300)), Room::Blocks(4096))
             .expect("blocks");
         assert!(id3_rebuilt.head.len().is_multiple_of(4096));
         assert!(id3_rebuilt.head.len() as u64 >= 310 + PADDING_LEFT_FOR_THE_NEXT_EDIT);

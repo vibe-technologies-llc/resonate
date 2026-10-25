@@ -10,14 +10,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Catalog
 
 ## Tagging
-- [S · 0.1.1] An in-room ID3 rewrite can cut the last frame short: `id3_content` trims every
-  trailing zero byte, the frame's own as well as the padding, and `id3_absorbed` accepts a head
-  under `Room::Held` when that trimmed content fits the standing length, so a tag with no slack
-  whose last frame ends in zeros (a UTF-16 text ending in an ASCII letter, the `00 00 00 00`
-  counter of the POPM written for a favourite) that grows by no more than those zeros is written
-  `written.len() - standing` bytes short while the frame header still declares the whole size. The
-  audio is not touched and the read-back reports it unconfirmed, but the file was already changed.
-  Reproduced on `Head::rebuilt` with one byte of growth
 - [S · 0.1.1] A crashed tag write to a file whose name is not UTF-8 is never mended or swept:
   `stamped_with` (`journal.rs`) and `staged_by` (`writing.rs`) start with `to_str()?`, so
   `kept_by`, `names_a_cut_short_write` and `sweep_what_a_dead_writer_staged` ignore the journal,
