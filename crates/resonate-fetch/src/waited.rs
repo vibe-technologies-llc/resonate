@@ -33,6 +33,8 @@ pub fn retry_after_of(response: &Response<Body>) -> Option<Duration> {
     retry_after(response.headers(), SystemTime::now())
 }
 
+const LAST_YEAR_A_DATE_NAMES: i64 = 9_999;
+
 fn month_named(name: &str) -> Option<i64> {
     let month = MONTHS.iter().position(|month| *month == name)?;
     i64::try_from(month).ok().map(|month| month + 1)
@@ -85,7 +87,7 @@ fn second_named(date: &str) -> Option<i64> {
         [_, month, day, clock, year] => (day.parse().ok()?, *month, year.parse().ok()?, *clock),
         _ => return None,
     };
-    if !(1..=LAST_DAY_OF_A_MONTH).contains(&day) {
+    if !(1..=LAST_DAY_OF_A_MONTH).contains(&day) || !(0..=LAST_YEAR_A_DATE_NAMES).contains(&year) {
         return None;
     }
     let month = month_named(month)?;
@@ -136,6 +138,16 @@ mod tests {
                 Some(Duration::from_secs(30)),
                 "{date}"
             );
+        }
+    }
+
+    #[test]
+    fn a_date_in_asctimes_form_naming_a_year_past_any_calendar_is_none() {
+        let now = UNIX_EPOCH + Duration::from_secs(NOVEMBER_THE_SIXTH_1994);
+
+        for year in ["9223372036854775807", "-9223372036854775808", "10000", "-1"] {
+            let date = format!("Sun Nov  6 08:49:37 {year}");
+            assert_eq!(retry_after(&asked(&date), now), None, "{date}");
         }
     }
 

@@ -27,10 +27,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Binary and desktop
 
 ## Providers and network
-- [S · 0.1.1] A `Retry-After` in the asctime form with a huge or negative year panics on integer
-  overflow in dev and test builds: the `[_, month, day, clock, year]` arm of `waited.rs` takes any
-  `i64`, and `CivilDate::day_since_the_epoch` multiplies unchecked; a release build wraps and the
-  callers clamp the wait, so only the thread of a dev build dies. Reproduced
 
 ## iOS
 - [S · 0.1.1] A download whose title holds `? : * " < > |` cannot be created in a folder on exFAT
