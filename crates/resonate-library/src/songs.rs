@@ -39,7 +39,19 @@ pub(crate) fn pressing_of(releases: Vec<Release>) -> Option<Release> {
     releases
         .into_iter()
         .filter(|release| release.track_count() == usual)
-        .min_by(|one, other| first_out(one).cmp(&first_out(other)))
+        .min_by(|one, other| {
+            identified(one)
+                .cmp(&identified(other))
+                .then_with(|| first_out(one).cmp(&first_out(other)))
+        })
+}
+
+fn identified(release: &Release) -> (Reverse<usize>, Reverse<usize>) {
+    let tracks = || release.media.iter().flat_map(|medium| &medium.tracks);
+    (
+        Reverse(tracks().filter(|track| !track.isrcs.is_empty()).count()),
+        Reverse(tracks().filter(|track| track.length.is_some()).count()),
+    )
 }
 
 fn first_out(release: &Release) -> (bool, &str, Reverse<usize>, &str) {
@@ -290,6 +302,28 @@ mod tests {
         assert_eq!(pressing.id.as_str(), "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d");
         assert!(pressing_of(Vec::new()).is_none());
         assert!(pressing_of(vec![pressed(PIPER, Some("1967"), 0)]).is_none());
+    }
+
+    #[test]
+    fn of_pressings_alike_the_one_whose_songs_carry_codes_is_read_over_an_earlier_one() {
+        let earlier = pressed(
+            "5a0552f9-9515-4a68-a409-5ca85488694c",
+            Some("2014-04-07"),
+            12,
+        );
+        let mut coded = pressed(
+            "1d93c312-93ae-4522-8976-6d04fd045e74",
+            Some("2014-04-14"),
+            12,
+        );
+        for track in &mut coded.media[0].tracks {
+            track.isrcs = vec![format!("TR03914{:05}", track.position)];
+            track.length = Some(Duration::from_secs(240));
+        }
+
+        let pressing = pressing_of(vec![earlier, coded]).expect("a pressing");
+
+        assert_eq!(pressing.id.as_str(), "1d93c312-93ae-4522-8976-6d04fd045e74");
     }
 
     #[test]

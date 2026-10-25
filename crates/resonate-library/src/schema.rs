@@ -7,6 +7,7 @@ const UNSTAMPED: u32 = 0;
 const MIGRATIONS: &[&str] = &[
     LISTENS_NAME_THEIR_ORIGIN,
     SONGS_RECEIVED_NAME_THEIR_RECORDING,
+    SONGS_LEARNT_UNTIMED_ARE_LEARNT_AGAIN,
 ];
 
 const STAMPS: [SchemaFingerprint; MIGRATIONS.len() + 1] = stamps();
@@ -29,6 +30,14 @@ CREATE TABLE songs_received (
     path      TEXT NOT NULL
 ) STRICT;
 CREATE INDEX songs_received_by_path ON songs_received(path);
+";
+
+const SONGS_LEARNT_UNTIMED_ARE_LEARNT_AGAIN: &str = "
+DELETE FROM discography_songs_read WHERE release_group IN (
+    SELECT release_group FROM discography_songs
+     GROUP BY release_group
+    HAVING count(length_ms) = 0
+);
 ";
 
 const V1: &str = "

@@ -17,7 +17,7 @@ rows read via `Player::media` like any unscanned row.
 - **Schema = one `V1`, the baseline of 0.1.0, and a `MIGRATIONS` chain after it.** `V1` is the first
   release's schema as one SQL batch and is never edited, since a stamped catalog of a release would be
   stranded; a change appends a step to `MIGRATIONS` (`listens` naming the device and listen a remote
-  listen came from is the first, `songs_received` the second). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
+  listen came from is the first, `songs_received` the second, forgetting the read stamp of every learnt group whose songs carry no length the third). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
   `fingerprint_of(V1)` (the stamp 0.1.0 wrote) and `STAMPS[n + 1]` hashes `STAMPS[n]` over step `n`'s
   text, in a `const fn`; `SCHEMA_FINGERPRINT` is the last. `lay_out`: `UNSTAMPED` writes `V1` and
   every step; this build's stamp opens; a stamp that is an earlier `STAMPS` entry runs the steps after
@@ -1537,7 +1537,12 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   alone; each the browse never reached is asked alone (`Reference::releases_of_group`) after
   `songs_still_due`. A refused or unreadable browse lands nothing and falls back to the groups.
   `songs::pressing_of` takes the pressing whose track count most pressings share (fewer tracks on a
-  tie), earliest of those, full date before bare year.
+  tie); of those **the one whose songs carry the most codes, then the most lengths**
+  (`songs::identified`), and only then the earliest, full date before bare year: a song learnt off a
+  pressing with neither cannot be searched for by any provider, so a press on it was a miss
+  (`of_pressings_alike_the_one_whose_songs_carry_codes_is_read_over_an_earlier_one`). Groups learnt
+  before that rule whose songs carry no length are learnt again
+  (`SONGS_LEARNT_UNTIMED_ARE_LEARNT_AGAIN`).
 - **Landing songs.** `songs::land` replaces the group's `discography_songs` rows and stamps
   `discography_songs_read`; no pressing: stamped read with nothing; a refusal counts in `refusals`;
   an unreachable reference ends the pass. `EnrichStats::songs` counts rows. **An artist's page does

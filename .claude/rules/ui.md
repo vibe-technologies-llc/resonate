@@ -1278,7 +1278,10 @@ is never named.
       unheld releases, learnt in the lookup pass; only where Online is on) rides in the load with its
       text (`kept_for`); `kept_before_the_rest` puts them first and drops an MB answer naming the same
       recording or the same folded title and credit
-      (`songs_kept_from_a_discography_come_first_and_musicbrainz_does_not_repeat_them`). Albums likewise
+      (`songs_kept_from_a_discography_come_first_and_musicbrainz_does_not_repeat_them`); **a kept
+      song no code names gives way, in its own place, to MB's take of the same title and credit
+      that carries one**, since a provider searches by code first and a kept song carries none
+      (`a_kept_song_no_code_names_gives_way_in_its_place_to_musicbrainzs_take_that_carries_one`). Albums likewise
       (`albums_kept_for`, `albums_kept_before_the_rest`).
   - A search whose plain words a held track sings is offered as `lyrics:"…"` (`Library::sung`): *Sung in
     N tracks* in the heading's actions and in a pane's empty state, as a `search_instead`.

@@ -5843,10 +5843,26 @@ struct Reaching {
 
 fn kept_before_the_rest(kept: &[Found], rest: &[Found]) -> Vec<Found> {
     let named = |found: &Found| (folded_letters(&found.title), folded_letters(&found.artist));
-    let recordings: AHashSet<&Mbid> = kept.iter().map(|found| &found.recording).collect();
+    let coded = |found: &Found| !found.isrcs.is_empty();
+    let in_place: Vec<Found> = kept
+        .iter()
+        .map(|song| {
+            rest.iter()
+                .filter(|_| !coded(song))
+                .find(|other| coded(other) && named(other) == named(song))
+                .unwrap_or(song)
+                .clone()
+        })
+        .collect();
+    let recordings: AHashSet<&Mbid> = kept
+        .iter()
+        .chain(&in_place)
+        .map(|found| &found.recording)
+        .collect();
     let names: AHashSet<(String, String)> = kept.iter().map(named).collect();
 
-    kept.iter()
+    in_place
+        .iter()
         .cloned()
         .chain(
             rest.iter()
@@ -6853,7 +6869,9 @@ fn landed_since(folder: &Path, tried: SystemTime) -> bool {
 #[cfg(test)]
 mod tests {
     use resonate_core::{AlbumId, ArtistId};
-    use resonate_library::{AlbumFound, Direction, Found, Library, Mbid, PollStats, SortOrder};
+    use resonate_library::{
+        AlbumFound, Direction, Found, Isrc, Library, Mbid, PollStats, SortOrder,
+    };
 
     use super::{
         Arranging, Beyond, Change, Favourited, Followed, ListedRow, MissingRow,
@@ -7112,6 +7130,42 @@ mod tests {
 
         assert_eq!(shown, vec![daybreak, answered[2].clone()]);
         assert_eq!(kept_before_the_rest(&[], &answered), answered.to_vec());
+    }
+
+    #[test]
+    fn a_kept_song_no_code_names_gives_way_in_its_place_to_musicbrainzs_take_that_carries_one() {
+        let kept_take = a_song(
+            "f5505d60-b054-4538-bd92-75b003774810",
+            "Hint Kumaşı",
+            "maNga",
+        );
+        let other = a_song(
+            "83d91898-7763-47d7-b03b-b92132375c47",
+            "Bir Kadın Çizeceksin",
+            "maNga",
+        );
+        let coded = Found {
+            isrcs: vec![Isrc::new("TR0391400015").expect("an isrc")],
+            ..a_song(
+                "b4ee9f32-b746-4b5a-bb8e-a1bf55857a6b",
+                "Hint Kumaşı",
+                "maNga",
+            )
+        };
+        let uncoded_elsewhere = a_song(
+            "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+            "Hint Kumaşı",
+            "maNga",
+        );
+
+        let shown = kept_before_the_rest(
+            &[kept_take.clone(), other.clone()],
+            &[uncoded_elsewhere, coded.clone()],
+        );
+        let unanswered = kept_before_the_rest(std::slice::from_ref(&kept_take), &[]);
+
+        assert_eq!(shown, vec![coded, other]);
+        assert_eq!(unanswered, vec![kept_take]);
     }
 
     fn an_album(group: &str, title: &str, artist: &str) -> AlbumFound {
