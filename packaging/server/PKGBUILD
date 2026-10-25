@@ -11,7 +11,7 @@ makedepends=('rust' 'cargo' 'gcc' 'pkgconf' 'git')
 provides=('resonate-server')
 conflicts=('resonate-server')
 backup=('etc/resonate-server/resonate-server.env')
-options=('!lto')
+options=('!lto' '!debug')
 source=("$_pkgname::git+$url.git")
 sha256sums=('SKIP')
 

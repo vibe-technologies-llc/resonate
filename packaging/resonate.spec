@@ -7,6 +7,7 @@ Source0:        %{name}-%{version}.tar.gz
 ExclusiveArch:  x86_64
 
 %global rust_baseline x86-64-v3
+%global debug_package %{nil}
 
 BuildRequires:  cargo
 BuildRequires:  clang

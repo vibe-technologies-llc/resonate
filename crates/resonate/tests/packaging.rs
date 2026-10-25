@@ -200,6 +200,40 @@ fn every_release_recipe_builds_for_x86_64_v3_alone() {
 }
 
 #[test]
+fn no_release_recipe_builds_a_debug_package() {
+    for spec in ["resonate.spec", "server/resonate-server.spec"] {
+        assert!(
+            packaging(spec).contains("%global debug_package %{nil}"),
+            "{spec} would attach a debuginfo and a debugsource RPM to the release"
+        );
+    }
+    for recipe in ["PKGBUILD", "release/PKGBUILD", "server/PKGBUILD"] {
+        assert!(
+            packaging(recipe).contains("'!debug'"),
+            "{recipe} would build a -debug package beside the real one"
+        );
+    }
+}
+
+#[test]
+fn the_player_is_named_resonate_in_every_release_format() {
+    assert!(
+        packaging("resonate.spec")
+            .lines()
+            .any(|line| line.trim_end() == "Name:           resonate"),
+        "the RPM is not named resonate"
+    );
+    assert!(
+        packaging("release/PKGBUILD").starts_with("pkgname=resonate\n"),
+        "the Arch package is not named resonate"
+    );
+    assert!(
+        packaging(DEB_SCRIPT).contains("seal resonate\n"),
+        "the DEB is not named resonate"
+    );
+}
+
+#[test]
 fn every_server_package_installs_the_unit_and_its_environment() {
     for file in SERVER_FILES {
         packaging(&format!("server/{file}"));

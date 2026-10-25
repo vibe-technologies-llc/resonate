@@ -34,7 +34,13 @@ entry and metainfo `<provides>` are held to `MIME_TYPES` by tests (`binary.md`).
 - **Pre-release spellings are in `release.md`.** The spec tests map `-` to `~` before comparing, the
   release PKGBUILDs hold `_version` to Cargo's and `pkgver` to `${_version//-/}`, and the DEB script
   derives its version from `Cargo.toml` itself (`the_deb_script_derives_its_version_from_cargo`).
-- **`packaging/release/` holds the non-git Arch recipes** (`PKGBUILD` is `resonate-player`,
+- **A release names the player `resonate` in every format and the server `resonate-server`, and
+  attaches no debug package.** The RPM specs set `%global debug_package %{nil}` (no `-debuginfo` or
+  `-debugsource` asset) and every PKGBUILD has `'!debug'` (no `-debug` asset); the DEBs never had one
+  (`no_release_recipe_builds_a_debug_package`, `the_player_is_named_resonate_in_every_release_format`).
+  The release PKGBUILD `replaces` and conflicts with 0.1.0's `resonate-player` name; the AUR's
+  `-git` recipe keeps `resonate-player-git`.
+- **`packaging/release/` holds the non-git Arch recipes** (`PKGBUILD` is `resonate`,
   `server/PKGBUILD` is `resonate-server`): source is the GitHub archive of tag `v$_version`
   (`sha256sums` `SKIP`, an archive's bytes being GitHub's), a local file of the same name beside
   the recipe taking its place, which is how `release.yml` builds from the tag checkout it already

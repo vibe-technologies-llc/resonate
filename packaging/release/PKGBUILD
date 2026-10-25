@@ -1,4 +1,4 @@
-pkgname=resonate-player
+pkgname=resonate
 _pkgname=resonate
 _version=0.1.0
 pkgver=${_version//-/}
@@ -10,9 +10,9 @@ license=('AGPL-3.0-or-later')
 depends=('pipewire>=0.3.50' 'libpipewire>=0.3.50' 'libxkbcommon' 'wayland' 'fontconfig'
          'freetype2' 'vulkan-icd-loader')
 makedepends=('rust' 'cargo' 'clang' 'pkgconf' 'vulkan-headers' 'libxkbcommon-x11')
-provides=("$_pkgname=$pkgver")
-conflicts=("$_pkgname" "$pkgname-git" 'resonate-git')
-options=('!lto')
+conflicts=('resonate-player' 'resonate-player-git' 'resonate-git')
+replaces=('resonate-player')
+options=('!lto' '!debug')
 install="$_pkgname.install"
 source=("$pkgname-$_version.tar.gz::$url/archive/refs/tags/v$_version.tar.gz")
 sha256sums=('SKIP')

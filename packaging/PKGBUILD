@@ -11,7 +11,7 @@ depends=('pipewire>=0.3.50' 'libpipewire>=0.3.50' 'libxkbcommon' 'wayland' 'font
 makedepends=('rust' 'cargo' 'clang' 'pkgconf' 'vulkan-headers' 'libxkbcommon-x11' 'git')
 provides=("$_pkgname")
 conflicts=("$_pkgname" 'resonate-git')
-options=('!lto')
+options=('!lto' '!debug')
 install="$_pkgname.install"
 source=("$_pkgname::git+$url.git")
 sha256sums=('SKIP')
