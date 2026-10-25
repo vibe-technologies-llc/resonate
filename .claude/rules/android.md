@@ -254,15 +254,16 @@ splits history from up next by row, a repeated song included
 ## Appearance and playback tools
 
 **Theme and accent are Settings › Appearance** (`Appearance.kt`, `AppearanceScreen.kt`): `ThemeMode`
-(*System*, the default, *Light*, *Dark*) and an `Accent` or none, kept as `theme` and `accent` in the
-`appearance` preferences and published by `AppearanceStore` (`LibraryFeatures.appearance`). With no
+(*System*, the default, *Light*, *Dark*), *Pitch black* (off by default; where the theme is dark it
+asks MaterialKolor for its `isAmoled` scheme, black surfaces, and blacks the player's base) and an
+`Accent` or none, kept as `theme`, `pitch-black` and `accent` in the `appearance` preferences and published by `AppearanceStore` (`LibraryFeatures.appearance`). With no
 accent the seed is the wallpaper's (`wallpaperSeed`, `system_accent1_500`); an accent is one of the
 desktop's seven (`resonate-ui`'s `RESONATE` flavour, held equal by `AppearanceTest`). Either seeds a
 MaterialKolor `TonalSpot` scheme (`schemeOf`), never the platform's `dynamic*ColorScheme`: One UI fills
 the system surface-container roles with flat greys of its own, which greyed the mini player and the
 scrolled top bars, so only the accent hue is taken from the system. `ResonateTheme` builds one scheme and one `MaterialExpressiveTheme`
 whatever the choice, so changing it never rebuilds the content below; it provides `LocalDarkTheme`, which
-`ArtworkTheme` reads in place of the system's, and re-applies `enableEdgeToEdge` so the system bars' icon
+`ArtworkTheme` reads in place of the system's, as it reads `LocalPitchBlack`, and re-applies `enableEdgeToEdge` so the system bars' icon
 colours follow the chosen theme rather than the phone's. Widgets and the launcher keep following the
 system.
 
@@ -295,7 +296,7 @@ mini-player and the page beneath are never two routes with two exit animations. 
 a `surfaceContainerHighest` capsule (16 dp corners) with 48 dp artwork inset 8 dp at the start and top, its corners the capsule's less the inset so the two curves are concentric (4 dp and 36 dp in a short window), the title, artist, previous, play and next and
 a line of progress, inset like the artwork, that says *Song progress* with its percentage. `NowPlaying` wears an `ArtworkTheme`
 seeded from a 96-pixel sample of the cover (`rememberSeedOf`; a cover with no colour keeps the
-app's primary), shows the cover or the lyrics, and opens the queue as a sheet. Its action row is *Lyrics* and *Queue*; the sleep timer is *Sleep timer* in the player's song sheet (`Sheets.sleeping`) and its chip shows in the row only while a timer runs. The title opens the album and the artist the artist; sliders draw a 4 dp track (`CommitSlider`'s `trackHeight`). The cover's gradient strength is *Player background* in Settings › Appearance (`backgroundStrength`, 0.7 by default, kept in the `appearance` preferences).
+app's primary), shows the cover or the lyrics, and opens the queue as a sheet. Its action row is *Lyrics* and *Queue*; the sleep timer is *Sleep timer* in the player's song sheet (`Sheets.sleeping`) and its chip shows in the row only while a timer runs. The title opens the album and the artist the artist; sliders draw a 4 dp track (`CommitSlider`'s `trackHeight`). The cover's gradient strength is *Player background* in Settings › Appearance (`backgroundStrength`, 0.7 by default, kept in the `appearance` preferences); at 0 the player has no coloured background, and with *Pitch black* it is black.
 Album, artist and playlist pages wear the same theme from their first cover.
 
 **The queue sheet** lists the devices that handed off (one row), History, the playing row and Up

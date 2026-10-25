@@ -35,6 +35,8 @@ val ResonateViolet = Color(0xFF8772E7)
 
 val LocalDarkTheme = staticCompositionLocalOf { false }
 
+val LocalPitchBlack = staticCompositionLocalOf { false }
+
 @Composable
 fun ResonateTheme(appearance: Appearance, content: @Composable () -> Unit) {
     val context = LocalContext.current
@@ -45,13 +47,14 @@ fun ResonateTheme(appearance: Appearance, content: @Composable () -> Unit) {
             ThemeMode.DARK -> true
         }
     val accent = appearance.accent
+    val pitchBlack = dark && appearance.pitchBlack
     val scheme =
-        remember(accent, dark, context) {
+        remember(accent, dark, pitchBlack, context) {
             val seed = accent?.let { Color(0xFF000000.toInt() or it.hex) } ?: wallpaperSeed(context)
-            schemeOf(seed, dark)
+            schemeOf(seed, dark, pitchBlack)
         }
     SystemBarsFollow(dark)
-    CompositionLocalProvider(LocalDarkTheme provides dark) {
+    CompositionLocalProvider(LocalDarkTheme provides dark, LocalPitchBlack provides pitchBlack) {
         MaterialExpressiveTheme(
             colorScheme = scheme,
             motionScheme = MotionScheme.expressive(),
@@ -63,11 +66,11 @@ fun ResonateTheme(appearance: Appearance, content: @Composable () -> Unit) {
 fun wallpaperSeed(context: Context): Color =
     Color(context.getColor(android.R.color.system_accent1_500))
 
-fun schemeOf(seed: Color, dark: Boolean): ColorScheme =
+fun schemeOf(seed: Color, dark: Boolean, pitchBlack: Boolean = false): ColorScheme =
     dynamicColorScheme(
         seedColor = seed,
         isDark = dark,
-        isAmoled = false,
+        isAmoled = pitchBlack,
         style = PaletteStyle.TonalSpot,
     )
 
@@ -92,6 +95,7 @@ fun ArtworkTheme(seed: Color?, content: @Composable () -> Unit) {
         seedColor = seed ?: MaterialTheme.colorScheme.primary,
         motionScheme = MotionScheme.expressive(),
         isDark = LocalDarkTheme.current,
+        isAmoled = LocalPitchBlack.current,
         style = PaletteStyle.TonalSpot,
         animate = true,
         content = content,

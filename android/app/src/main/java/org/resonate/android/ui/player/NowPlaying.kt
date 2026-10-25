@@ -68,6 +68,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
@@ -99,6 +100,7 @@ import org.resonate.android.ui.quality
 import org.resonate.android.ui.shownArtist
 import org.resonate.android.ui.shownTitle
 import org.resonate.android.ui.theme.ArtworkTheme
+import org.resonate.android.ui.theme.LocalPitchBlack
 import org.resonate.android.ui.theme.rememberSeedOf
 import org.resonate.android.ui.tools.LyricsPane
 
@@ -139,6 +141,7 @@ fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
     }
     ArtworkTheme(seed) {
         val scheme = MaterialTheme.colorScheme
+        val base = if (LocalPitchBlack.current) Color.Black else scheme.surfaceContainerLow
         Surface(
             color = scheme.surface,
             modifier =
@@ -156,8 +159,8 @@ fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
                     .background(
                         Brush.verticalGradient(
                             0f to scheme.primaryContainer.copy(alpha = strength),
-                            0.55f to scheme.surfaceContainerLow,
-                            1f to scheme.surfaceContainerLow,
+                            0.55f to base,
+                            1f to base,
                         )
                     )
             ) {

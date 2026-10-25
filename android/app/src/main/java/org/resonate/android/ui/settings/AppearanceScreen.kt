@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BrightnessAuto
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Gradient
 import androidx.compose.material.icons.rounded.LightMode
@@ -67,6 +68,8 @@ class AppearanceViewModel(resonate: Resonate) : ViewModel() {
 
     fun chooseAccent(accent: Accent?) = store.chooseAccent(accent)
 
+    fun choosePitchBlack(pitchBlack: Boolean) = store.choosePitchBlack(pitchBlack)
+
     fun chooseBackgroundStrength(strength: Float) = store.chooseBackgroundStrength(strength)
 }
 
@@ -99,6 +102,16 @@ fun AppearanceScreen() {
                     modifier = Modifier.testTag("theme-${mode.name.lowercase()}"),
                 )
             }
+            item(key = "pitch-black") {
+                SwitchRow(
+                    title = "Pitch black",
+                    checked = appearance.pitchBlack,
+                    onCheckedChange = model::choosePitchBlack,
+                    icon = Icons.Rounded.Contrast,
+                    supporting = "True black backgrounds for OLED screens, in the dark theme",
+                    modifier = Modifier.testTag("pitch-black"),
+                )
+            }
             item(key = "accent") { SectionHeader("Accent colour") }
             item(key = "swatches") { Swatches(appearance, model::chooseAccent) }
             item(key = "note") {
@@ -112,7 +125,10 @@ fun AppearanceScreen() {
                 BackgroundStrength(appearance.backgroundStrength, model::chooseBackgroundStrength)
             }
             item(key = "strength-note") {
-                Footnote("How strongly the song's cover colours the background of the player.")
+                Footnote(
+                    "How strongly the song's cover colours the background of the player. " +
+                        "At 0 % the player has no coloured background."
+                )
             }
         }
     }

@@ -1,7 +1,10 @@
 package org.resonate.android
 
 import java.io.File
+import androidx.compose.ui.graphics.Color
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.resonate.android.ui.theme.schemeOf
 import org.junit.Test
 
 class AppearanceTest {
@@ -31,5 +34,18 @@ class AppearanceTest {
     fun wallpaper_is_named_when_no_accent_is_chosen() {
         assertEquals("Wallpaper", Appearance().accentLabel)
         assertEquals("Teal", Appearance(accent = Accent.TEAL).accentLabel)
+    }
+
+    @Test
+    fun pitch_black_is_off_until_chosen() {
+        assertEquals(false, Appearance().pitchBlack)
+        assertEquals(true, Appearance(pitchBlack = true).pitchBlack)
+    }
+
+    @Test
+    fun a_pitch_black_scheme_has_a_black_surface_and_a_plain_one_does_not() {
+        val seed = Color(0xFF7CB6EA)
+        assertEquals(Color.Black, schemeOf(seed, dark = true, pitchBlack = true).surface)
+        assertNotEquals(Color.Black, schemeOf(seed, dark = true).surface)
     }
 }
