@@ -12,6 +12,10 @@ mod remote_io_fill;
 mod remote_io_render;
 #[cfg(any(target_os = "ios", test))]
 mod remote_io_state;
+#[cfg(any(target_os = "ios", test))]
+mod remote_io_stream;
+#[cfg(any(target_os = "ios", test))]
+mod remote_io_unit;
 #[cfg(any(target_os = "android", test))]
 mod waits;
 

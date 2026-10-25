@@ -6,7 +6,12 @@
     clippy::indexing_slicing
 )]
 
-use std::{ffi::c_void, ptr::NonNull, slice};
+use std::{
+    ffi::c_void,
+    panic::{self, AssertUnwindSafe},
+    ptr::NonNull,
+    slice,
+};
 
 use objc2_core_audio_types::AudioBufferList;
 
@@ -26,6 +31,10 @@ pub(crate) unsafe fn rendered(rendering: NonNull<c_void>, buffers: *mut AudioBuf
     let bytes = unsafe { slice::from_raw_parts_mut(data.as_ptr(), buffer.mDataByteSize as usize) };
     rendering.fill(bytes);
     RENDERED
+}
+
+pub(crate) fn guarded(rendered: impl FnOnce() -> i32, aborting: impl FnOnce() -> i32) -> i32 {
+    panic::catch_unwind(AssertUnwindSafe(rendered)).unwrap_or_else(|_| aborting())
 }
 
 #[cfg(test)]
@@ -157,5 +166,35 @@ mod tests {
         assert_eq!(size_of::<AudioBufferList>(), 24);
         assert_eq!(align_of::<AudioBufferList>(), 8);
         assert_eq!(size_of::<AudioBuffer>(), 16);
+    }
+
+    #[test]
+    fn a_render_that_returns_hands_its_status_back_and_never_aborts() {
+        let status = guarded(|| 7, || -1);
+
+        assert_eq!(status, 7);
+    }
+
+    #[test]
+    #[allow(clippy::panic)]
+    fn a_render_that_panics_is_caught_and_answered_by_the_abort_alone() {
+        let status = guarded(|| panic!("a source that panicked in the callback"), || -1);
+
+        assert_eq!(status, -1);
+    }
+
+    #[test]
+    fn the_abort_is_not_taken_unless_the_render_panicked() {
+        let aborted = std::cell::Cell::new(false);
+
+        guarded(
+            || RENDERED,
+            || {
+                aborted.set(true);
+                -1
+            },
+        );
+
+        assert!(!aborted.get());
     }
 }

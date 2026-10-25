@@ -12,9 +12,11 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   gap of the RemoteIO reopen it causes has been heard
 
 ## iOS
-- [S · 0.1.1] RemoteIO's `Unit` open path, the render callback's panic catch and the output thread's loop
-  stay iOS-only and untested on the host; `Routing`, `Drain`, `fill` and the buffer list's pointer
-  handling are proved
+- [S · blocked: iPhone] The RemoteIO `CoreAudio` toolbox (the unsafe `AudioComponentInstanceNew`,
+  `AudioUnitSetProperty`, `AudioOutputUnitStart` and sibling calls) and `render`'s `extern "C-unwind"`
+  shell stay iOS-only; the unit's sequence, the output thread and the panic catch are proved on the
+  host over fakes, so what no test has run is Apple's answer to the calls (that the format is
+  accepted, the callback is called with the `Rendering`, a stop disposes cleanly)
 - [S · blocked: Xcode's processor] `ios/app-intents.py` is held by a fixture of `Siri.swift`'s const
   values and its own output, never by Apple's: it was compared with `appintentsmetadataprocessor`
   by hand, on another xtool app's fixtures (a plain intent, a `String` parameter, App Shortcuts),

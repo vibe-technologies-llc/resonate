@@ -22,8 +22,8 @@ two. **An owned descriptor**: the front end hands Rust a descriptor it opened (A
 `ParcelFileDescriptor`, iOS calls `open(2)`), transferred once and closed by Rust's `File`; a
 negative descriptor is refused. The same transfer (`downloads::fresh_destination`) owns a newly
 created download or received-song destination, never an existing music document. **The iOS audio
-unit**: `output/remote_io.rs` creates, configures and disposes a RemoteIO unit through
-`objc2-audio-toolbox`, and `output/remote_io_render.rs` is the render callback, whose `output/remote_io_buffers.rs` reads the
+unit**: `output/remote_io.rs` holds the AudioToolbox calls that create, configure and dispose a RemoteIO unit
+(`objc2-audio-toolbox`), sequenced by `output/remote_io_unit.rs`, and `output/remote_io_render.rs` is the render callback, whose `output/remote_io_buffers.rs` reads the
 buffer list the system hands it and passes the bytes on to `Rendering::fill`. Domain, codec, DSP, engine and all other crates remain under `forbid`. New errors
 are typed and bounded as in `errors.md`.
 
@@ -202,9 +202,28 @@ phones* (`equaliser.rs`); `playback.rs` sends it with the other sound preference
   zeroed, the `empty` flag set exactly when the source gave nothing). `remote_io_buffers.rs` reads the system's buffer list
   (`objc2-core-audio-types`, plain C structs that build on the host, so the pointer handling is proved
   there: `the_systems_buffer_is_filled_up_to_the_bytes_it_declares_and_no_further`, a null list, a
-  buffer with no memory, one declaring no bytes, the list's size and alignment). `remote_io.rs` and
-  `remote_io_render.rs` are `cfg(target_os = "ios")` and keep only the unit, the callback's panic
-  catch and the output thread's loop (`a_short_fill_zeroes_the_rest_and_leaves_the_flag_down`,
+  buffer with no memory, one declaring no bytes, the list's size and alignment). **The unit's sequence
+  and the output thread are generic over what touches CoreAudio, so they run on the host too**:
+  `remote_io_unit.rs` holds `Toolbox` (the nine AudioToolbox calls a RemoteIO unit takes: find the
+  component, make an instance, set the format, set the render callback, initialize, start, stop,
+  uninitialize, dispose) and `Unit<T: Toolbox>` (the open path: the format asked for is interleaved
+  Float32 stereo at the route's rate, the callback is handed the `Rendering`, every refused step is
+  an `Error::Backend` naming `Operation::Open` and the `OSStatus`, a unit made is taken down by
+  `Drop` in the order stop, uninitialize, dispose and the `Rendering` is freed exactly once however
+  far the open got); `remote_io_stream.rs` holds `Hardware` (start and stop), `launch` (the
+  format check, the open thread, the `UNIT_WITHIN`-bounded wait for the unit, the close that waits
+  for disposal) and `serve` (the commands, a refused start or stop told as `StreamEvent::Refused`
+  with the status, the drain, the moved latency). Their tests drive a fake `Toolbox` and a fake
+  `Hardware`
+  (`a_step_refused_after_the_instance_took_the_unit_down_and_frees_the_source_once`,
+  `a_refused_start_is_told_with_its_status_and_leaves_the_stream_failed`,
+  `an_open_that_never_answers_times_out_and_the_late_unit_is_disposed_by_its_own_thread`,
+  `closing_returns_only_once_the_unit_is_disposed`). `remote_io_buffers::guarded` is the callback's
+  panic catch, taking what to do on a panic (`process::abort` in `render`;
+  `a_render_that_panics_is_caught_and_answered_by_the_abort_alone`). `remote_io.rs` and
+  `remote_io_render.rs` are `cfg(target_os = "ios")` and keep only `CoreAudio`, the `Toolbox` whose
+  methods are the unsafe AudioToolbox calls, and the callback's `extern "C-unwind"` shell
+  (`a_short_fill_zeroes_the_rest_and_leaves_the_flag_down`,
   `a_drain_waits_the_latency_after_the_ring_empties_and_then_settles_once`,
   `a_moved_rate_is_announced_once_and_an_unmoved_one_is_not`). Swift reports the rate and the output latency (`outputLatency + ioBufferDuration`)
   through `output_route_changed` (after asking the session for the playing song's rate, `ios.md`'s

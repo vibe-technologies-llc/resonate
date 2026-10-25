@@ -39,7 +39,7 @@ rest on this discipline alone):
 - `resonate-mobile/src/output/oboe_render.rs`: preallocated ring bytes to Oboe stereo float
   frames; short fills zero the rest and publish completion/failure through atomics.
 - `resonate-mobile/src/output/remote_io_render.rs`, `remote_io_buffers.rs` and `remote_io_fill.rs`:
-  the RemoteIO render callback (`render`, which catches a panic and aborts) hands the system's own
+  the RemoteIO render callback (`render`, which catches a panic through `guarded` and aborts) hands the system's own
   interleaved float buffer (`rendered`, reading the buffer list) to `Rendering::fill`, which fills it
   from the source, zeroes a short fill and publishes emptiness through an atomic; it allocates
   nothing and touches no lock. The buffer handling and the fill are on the host as well, so their

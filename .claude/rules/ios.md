@@ -6,6 +6,8 @@ paths:
   - "crates/resonate-mobile/src/output/remote_io_buffers.rs"
   - "crates/resonate-mobile/src/output/remote_io_fill.rs"
   - "crates/resonate-mobile/src/output/remote_io_state.rs"
+  - "crates/resonate-mobile/src/output/remote_io_stream.rs"
+  - "crates/resonate-mobile/src/output/remote_io_unit.rs"
 ---
 
 # iOS
