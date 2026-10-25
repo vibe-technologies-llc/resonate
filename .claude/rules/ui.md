@@ -1131,18 +1131,27 @@ is never named.
   `Fetching`); `LibraryModel::want_found` writes it: `Landing`, then `Queued` (`NoProvider` where
   `Sourcing::providers` registers none, `Unwanted` where landing failed). `Downloads::followed` reads
   each shelves load's `WantStanding`s: delivered = `Downloaded`; tried since queued with nothing offered
-  = `Retrying { tries, at }`; given up = `GaveUp`. **A download says two things while underway: *Looking
-  it up…* and *Downloading…*.** `Landing`, `Queued`, `Retrying`, `Unreached` and a `Downloading` with
-  nothing yet received read *Looking it up…* (never an attempt count or *No match* between polls);
-  `downloads::saying_while` reads *Downloading…* once `Fetched::is_arriving` (`LibraryModel::fetched`),
-  on the panel and the song's own row (`told_found`, `told_want`). Sidebar `summed_up` says one of the
-  two with *· N left* while more than one song is underway, else *N downloaded · N not downloaded*
-  (`a_download_says_it_is_looking_the_song_up_until_bytes_arrive_and_downloading_after`,
-  `the_sidebar_says_looking_it_up_or_downloading_and_how_many_songs_are_left`). Only an ending speaks
+  = `Retrying { tries, at }`; given up = `GaveUp`. **A download says which step it is on.** `Landing` reads *Reading the
+  release…*, `Queued` *Waiting its turn…*, a `Downloading` *Searching…* (*Searching <provider>…* once
+  the poll names the provider asked, `PollProgress::provider_of`), *Starting the download…* once an
+  offer is being opened (`PollProgress::is_opening`, set by `opens_from` as `offer_landed` takes it)
+  and *Downloading…* once `Fetched::is_arriving` (`downloads::saying_while`, `LibraryModel::fetched`),
+  on the panel and the song's own row (`told_found`, `told_want`); `Retrying` reads *Not found yet ·
+  next try HH:MM* on the listener's clock (`Calendar::minute_of_the_day`), *Not found yet · trying
+  again* once due; `Unreached` *Can't reach the providers · trying again*. Never an attempt count.
+  Sidebar `summed_up` says *Searching…* or *Downloading…* with *· N left* while more than one song is
+  underway, else *N downloaded · N not downloaded*
+  (`a_download_says_which_step_it_is_on_from_the_release_to_the_bytes`,
+  `a_song_not_found_yet_says_when_it_is_next_tried_on_the_listeners_clock`,
+  `the_sidebar_says_searching_or_downloading_and_how_many_songs_are_left`). Only an ending speaks
   otherwise: *Downloaded*, *Not found*, *No provider is set up*, *Couldn't add it*. A poll ending with a
   provider refusing or late (`PollStats::refused`/`late`) sets `LibraryModel::providers_unheard`; while
   set, a queued or past-due retrying download reads `Unreached { attempt }` (`providers.md`;
-  `Fetching::while_polling` is the one reading). **Standings are re-read while the poll runs**
+  `Fetching::while_polling` is the one reading). **Providers that keep refusing are asked less often**: each self-started
+  poll ending unheard with nothing kept doubles the timer's floor (`unheard_in_a_row`,
+  `retried_after`: `RETRIES_ASKED_AT_LEAST` times two per poll, at most
+  `UNHEARD_RETRIES_DOUBLE_AT_MOST` doublings), one heard resets it; a press still asks at once
+  (`providers_that_keep_refusing_are_asked_less_and_less_often`). **Standings are re-read while the poll runs**
   (`Followed` weighs `PollStats` each `SCAN_POLL`, rereading shelves every
   `POLLS_PER_REREAD_WHILE_ASKING` (5) ticks that moved). **The list outlives the window**:
   `Downloads::restored` relists every want still underway

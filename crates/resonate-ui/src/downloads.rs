@@ -2,12 +2,22 @@ use std::time::{Duration, Instant, SystemTime};
 
 use ahash::AHashMap;
 use gpui::SharedString;
-use resonate_core::{AlbumId, SourceId, TrackId, WantId};
+use resonate_core::{AlbumId, Calendar, SourceId, TrackId, WantId};
 use resonate_library::{Found, Issued, Mbid, RecordingRelease, Want};
 
-const LOOKING_IT_UP: &str = "Looking it up…";
+const READING_THE_RELEASE: &str = "Reading the release…";
+
+const WAITING_ITS_TURN: &str = "Waiting its turn…";
+
+const SEARCHING: &str = "Searching…";
+
+const STARTING: &str = "Starting the download…";
 
 const DOWNLOADING: &str = "Downloading…";
+
+const UNREACHED: &str = "Can't reach the providers · trying again";
+
+const NOT_FOUND_YET: &str = "Not found yet";
 
 pub(crate) const PLAYED_IF_LANDED_WITHIN: Duration = Duration::from_secs(30);
 
@@ -75,12 +85,24 @@ impl Fetching {
     }
 
     pub fn saying(self) -> SharedString {
+        self.saying_at(SystemTime::now(), &Calendar::local())
+    }
+
+    fn saying_at(self, now: SystemTime, calendar: &Calendar) -> SharedString {
         match self {
-            Self::Landing
-            | Self::Queued
-            | Self::Downloading { .. }
-            | Self::Unreached { .. }
-            | Self::Retrying { .. } => SharedString::new_static(LOOKING_IT_UP),
+            Self::Landing => SharedString::new_static(READING_THE_RELEASE),
+            Self::Queued => SharedString::new_static(WAITING_ITS_TURN),
+            Self::Downloading { .. } => SharedString::new_static(SEARCHING),
+            Self::Unreached { .. } => SharedString::new_static(UNREACHED),
+            Self::Retrying { at, .. } if at > now => {
+                let minute = calendar.minute_of_the_day(at);
+                SharedString::from(format!(
+                    "{NOT_FOUND_YET} · next try {:02}:{:02}",
+                    minute / 60,
+                    minute % 60
+                ))
+            }
+            Self::Retrying { .. } => SharedString::from(format!("{NOT_FOUND_YET} · trying again")),
             Self::Downloaded => SharedString::new_static("Downloaded"),
             Self::GaveUp => SharedString::new_static("Not found"),
             Self::NoProvider => SharedString::new_static("No provider is set up"),
@@ -92,6 +114,7 @@ impl Fetching {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Fetched {
     pub provider: SourceId,
+    pub opening: bool,
     pub received: u64,
 }
 
@@ -106,6 +129,12 @@ pub(crate) fn saying_while(fetching: Fetching, fetched: Option<&Fetched>) -> Sha
         (Fetching::Downloading { .. }, Some(fetched)) if fetched.is_arriving() => {
             SharedString::new_static(DOWNLOADING)
         }
+        (Fetching::Downloading { .. }, Some(fetched)) if fetched.opening => {
+            SharedString::new_static(STARTING)
+        }
+        (Fetching::Downloading { .. }, Some(fetched)) => {
+            SharedString::from(format!("Searching {}…", fetched.provider))
+        }
         (fetching, _) => fetching.saying(),
     }
 }
@@ -115,10 +144,10 @@ pub(crate) fn summed_up(fetching: &[Fetching], arriving: bool) -> SharedString {
 
     match underway {
         0 => finished(fetching),
-        1 => SharedString::new_static(if arriving { DOWNLOADING } else { LOOKING_IT_UP }),
+        1 => SharedString::new_static(if arriving { DOWNLOADING } else { SEARCHING }),
         more => SharedString::from(format!(
             "{} · {more} left",
-            if arriving { DOWNLOADING } else { LOOKING_IT_UP }
+            if arriving { DOWNLOADING } else { SEARCHING }
         )),
     }
 }
@@ -650,40 +679,66 @@ mod tests {
     }
 
     #[test]
-    fn a_download_says_it_is_looking_the_song_up_until_bytes_arrive_and_downloading_after() {
-        let asking = Fetched {
-            provider: SourceId::new("tidal").expect("a source name"),
+    fn a_download_says_which_step_it_is_on_from_the_release_to_the_bytes() {
+        let searching = Fetched {
+            provider: SourceId::new("resonate").expect("a source name"),
+            opening: false,
             received: 0,
+        };
+        let starting = Fetched {
+            opening: true,
+            ..searching.clone()
         };
         let arriving = Fetched {
             received: 3 * 1024 * 1024,
-            ..asking.clone()
+            ..starting.clone()
         };
         let downloading = Fetching::Downloading { attempt: 2 };
-        let retrying = Fetching::Retrying {
-            tries: 1,
-            at: SystemTime::UNIX_EPOCH,
-        };
 
-        assert_eq!(saying_while(downloading, Some(&asking)), "Looking it up…");
+        assert_eq!(Fetching::Landing.saying(), "Reading the release…");
+        assert_eq!(Fetching::Queued.saying(), "Waiting its turn…");
+        assert_eq!(saying_while(downloading, None), "Searching…");
+        assert_eq!(
+            saying_while(downloading, Some(&searching)),
+            "Searching resonate…"
+        );
+        assert_eq!(
+            saying_while(downloading, Some(&starting)),
+            "Starting the download…"
+        );
         assert_eq!(saying_while(downloading, Some(&arriving)), "Downloading…");
-        assert_eq!(saying_while(downloading, None), "Looking it up…");
         assert_eq!(
             saying_while(Fetching::Queued, Some(&arriving)),
-            "Looking it up…"
+            "Waiting its turn…"
         );
-        for lookup in [
-            Fetching::Landing,
-            Fetching::Queued,
-            Fetching::Unreached { attempt: 3 },
-            retrying,
-        ] {
-            assert_eq!(lookup.saying(), "Looking it up…");
-        }
+        assert_eq!(
+            Fetching::Unreached { attempt: 3 }.saying(),
+            "Can't reach the providers · trying again"
+        );
     }
 
     #[test]
-    fn the_sidebar_says_looking_it_up_or_downloading_and_how_many_songs_are_left() {
+    fn a_song_not_found_yet_says_when_it_is_next_tried_on_the_listeners_clock() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(20_000 * 86_400);
+        let later = now + Duration::from_secs(14 * 3_600 + 5 * 60);
+        let due = Fetching::Retrying { tries: 1, at: now };
+        let waiting = Fetching::Retrying {
+            tries: 1,
+            at: later,
+        };
+
+        assert_eq!(
+            waiting.saying_at(now, &Calendar::utc()),
+            "Not found yet · next try 14:05"
+        );
+        assert_eq!(
+            due.saying_at(now, &Calendar::utc()),
+            "Not found yet · trying again"
+        );
+    }
+
+    #[test]
+    fn the_sidebar_says_searching_or_downloading_and_how_many_songs_are_left() {
         let retrying = Fetching::Retrying {
             tries: 1,
             at: SystemTime::UNIX_EPOCH,
@@ -698,14 +753,14 @@ mod tests {
                 ],
                 false
             ),
-            "Looking it up… · 3 left"
+            "Searching… · 3 left"
         );
         assert_eq!(
             summed_up(&[Fetching::Downloaded, retrying, Fetching::Queued], true),
             "Downloading… · 2 left"
         );
-        assert_eq!(summed_up(&[Fetching::Queued], false), "Looking it up…");
-        assert_eq!(summed_up(&[Fetching::Landing], false), "Looking it up…");
+        assert_eq!(summed_up(&[Fetching::Queued], false), "Searching…");
+        assert_eq!(summed_up(&[Fetching::Landing], false), "Searching…");
         assert_eq!(
             summed_up(
                 &[Fetching::Downloaded, Fetching::Downloaded, Fetching::GaveUp],

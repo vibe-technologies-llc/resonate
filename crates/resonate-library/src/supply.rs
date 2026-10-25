@@ -44,6 +44,7 @@ pub const RETRY_WAITS: [Duration; 5] = [
 ];
 pub const TRIES_BEFORE_GIVING_UP: u32 = RETRY_WAITS.len() as u32 + 1;
 pub const ANSWERS_WITHIN: Duration = Duration::from_secs(30);
+pub const FIRST_BYTES_WITHIN: Duration = Duration::from_secs(90);
 const CHUNK_BYTES: usize = 64 * 1024;
 const CHUNKS_AHEAD: usize = 4;
 const HEEDED_EVERY: Duration = Duration::from_millis(50);
@@ -128,6 +129,7 @@ fn status_changed(metadata: &fs::Metadata) -> Option<SystemTime> {
 pub struct PollOptions {
     pub every_want: bool,
     pub answers_within: Duration,
+    pub first_bytes_within: Duration,
     pub lanes: NonZeroUsize,
 }
 
@@ -135,6 +137,7 @@ impl PollOptions {
     pub const ASKING_EVERY_WANT: Self = Self {
         every_want: true,
         answers_within: ANSWERS_WITHIN,
+        first_bytes_within: FIRST_BYTES_WITHIN,
         lanes: WANTS_ASKED_AT_ONCE,
     };
 }
@@ -144,6 +147,7 @@ impl Default for PollOptions {
         Self {
             every_want: false,
             answers_within: ANSWERS_WITHIN,
+            first_bytes_within: FIRST_BYTES_WITHIN,
             lanes: WANTS_ASKED_AT_ONCE,
         }
     }
@@ -164,6 +168,7 @@ pub struct PollStats {
 struct Lane {
     want: WantId,
     provider: Option<SourceId>,
+    opening: bool,
     received: u64,
 }
 
@@ -240,13 +245,29 @@ impl PollProgress {
         self.lanes.lock().push(Lane {
             want,
             provider: None,
+            opening: false,
             received: 0,
         });
+    }
+
+    pub fn is_opening(&self, want: WantId) -> bool {
+        self.lanes
+            .lock()
+            .iter()
+            .any(|lane| lane.want == want && lane.opening)
     }
 
     fn turns_to(&self, want: WantId, provider: Option<&SourceId>) {
         if let Some(lane) = self.lanes.lock().iter_mut().find(|lane| lane.want == want) {
             lane.provider = provider.cloned();
+            lane.opening = false;
+        }
+    }
+
+    fn opens_from(&self, want: WantId, provider: &SourceId) {
+        if let Some(lane) = self.lanes.lock().iter_mut().find(|lane| lane.want == want) {
+            lane.provider = Some(provider.clone());
+            lane.opening = true;
         }
     }
 
@@ -325,6 +346,7 @@ enum Landed {
     Kept(MediaLocation),
     NotTheSong,
     Unopened(Unopened),
+    Stalled,
     Unkept,
 }
 
@@ -371,8 +393,7 @@ fn landed(
         Delivery::Stream {
             extension, opening, ..
         } => {
-            let mut pumped = match Pumped::from(opening, progress, want.id, options.answers_within)
-            {
+            let mut pumped = match Pumped::from(opening, progress, want.id, Silence::of(options)) {
                 Ok(pumped) => pumped,
                 Err(source) => return Err(Error::ThreadSpawn { source }),
             };
@@ -384,7 +405,7 @@ fn landed(
                 tracing::warn!(%taken_from, "a delivery stopped sending and was given up");
                 progress.late.fetch_add(1, Ordering::Relaxed);
                 away.lock().note(&delivered.provider);
-                return Ok(Landed::Unkept);
+                return Ok(Landed::Stalled);
             }
             keeping
         }
@@ -431,15 +452,31 @@ enum Pumping {
     Unopened(Unopened),
 }
 
+#[derive(Clone, Copy)]
+struct Silence {
+    before_the_first_bytes: Duration,
+    between_bytes: Duration,
+}
+
+impl Silence {
+    const fn of(options: PollOptions) -> Self {
+        Self {
+            before_the_first_bytes: options.first_bytes_within,
+            between_bytes: options.answers_within,
+        }
+    }
+}
+
 struct Pumped<'a> {
     want: WantId,
     chunks: Receiver<Pumping>,
     held: Vec<u8>,
     read: usize,
     ended: bool,
+    heard: bool,
     stalled: bool,
     unopened: Option<Unopened>,
-    stalls_after: Duration,
+    silence: Silence,
     progress: &'a PollProgress,
 }
 
@@ -448,7 +485,7 @@ impl<'a> Pumped<'a> {
         opening: Opening,
         progress: &'a PollProgress,
         want: WantId,
-        stalls_after: Duration,
+        silence: Silence,
     ) -> io::Result<Self> {
         let (sender, chunks) = mpsc::sync_channel(CHUNKS_AHEAD);
         thread::Builder::new()
@@ -461,18 +498,27 @@ impl<'a> Pumped<'a> {
             held: Vec::new(),
             read: 0,
             ended: false,
+            heard: false,
             stalled: false,
             unopened: None,
-            stalls_after,
+            silence,
             progress,
         })
     }
 
     fn next_chunk(&mut self) -> Chunk {
         let began = Instant::now();
+        let stalls_after = if self.heard {
+            self.silence.between_bytes
+        } else {
+            self.silence.before_the_first_bytes
+        };
         loop {
             match self.chunks.recv_timeout(HEEDED_EVERY) {
-                Ok(Pumping::Read(chunk)) => return chunk,
+                Ok(Pumping::Read(chunk)) => {
+                    self.heard = true;
+                    return chunk;
+                }
                 Ok(Pumping::Unopened(unopened)) => {
                     self.unopened = Some(unopened);
                     return Err(io::Error::from(io::ErrorKind::NotFound));
@@ -484,7 +530,7 @@ impl<'a> Pumped<'a> {
                     if self.progress.is_cancelled() {
                         return Err(io::Error::from(io::ErrorKind::ConnectionAborted));
                     }
-                    if began.elapsed() >= self.stalls_after {
+                    if began.elapsed() >= stalls_after {
                         self.stalled = true;
                         return Err(io::Error::from(io::ErrorKind::TimedOut));
                     }
@@ -634,9 +680,8 @@ fn filed_in_the_music_folder(
         Delivery::Stream {
             extension, opening, ..
         } => {
-            let mut pumped =
-                Pumped::from(opening, progress, want.id, landing.options.answers_within)
-                    .map_err(|source| Error::ThreadSpawn { source })?;
+            let mut pumped = Pumped::from(opening, progress, want.id, Silence::of(landing.options))
+                .map_err(|source| Error::ThreadSpawn { source })?;
             let outcome = filed::filed(library, &into, want, &mut pumped, extension.as_str());
             if let Some(unopened) = pumped.unopened.take() {
                 return Ok(Landed::Unopened(unopened));
@@ -645,7 +690,7 @@ fn filed_in_the_music_folder(
                 tracing::warn!(%taken_from, "a delivery stopped sending and was given up");
                 progress.late.fetch_add(1, Ordering::Relaxed);
                 landing.away.lock().note(&delivered.provider);
-                return Ok(Landed::Unkept);
+                return Ok(Landed::Stalled);
             }
             outcome
         }
@@ -1041,7 +1086,7 @@ impl<'a> Lanes<'a> {
 
     fn offer_landed(&self, want: &Want, delivered: Delivered) -> Result<Offer> {
         let progress = self.progress;
-        progress.turns_to(want.id, Some(&delivered.provider));
+        progress.opens_from(want.id, &delivered.provider);
         progress.offered.fetch_add(1, Ordering::Relaxed);
         let taken_from = delivered.taken_from();
         let provider = delivered.provider.clone();
@@ -1078,12 +1123,16 @@ impl<'a> Lanes<'a> {
                 tracing::info!(want = %want.id, %taken_from, "a delivery that was not the song is passed over and the next offer taken");
                 Ok(Offer::FellThrough { heard: true })
             }
+            Landed::Stalled => {
+                tracing::info!(want = %want.id, %taken_from, "a delivery that went quiet is no verdict on the song, and the next offer is taken");
+                Ok(Offer::FellThrough { heard: false })
+            }
             Landed::Unopened(Unopened::Gone) => {
                 tracing::info!(want = %want.id, %taken_from, "an offer was gone by the time it was opened, and the next is taken");
                 Ok(Offer::FellThrough { heard: true })
             }
             Landed::Unopened(Unopened::Refused(error)) => {
-                tracing::warn!(%error, want = %want.id, %taken_from, "an offer could not be opened, and the next is taken");
+                tracing::warn!(%error, cause = ?error.cause(), want = %want.id, %taken_from, "an offer could not be opened, and the next is taken");
                 progress.refused.fetch_add(1, Ordering::Relaxed);
                 if error.is_the_provider_away() {
                     self.away.lock().note(&provider);

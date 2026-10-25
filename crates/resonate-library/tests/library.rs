@@ -21905,7 +21905,7 @@ fn a_poll_nudged_before_it_was_cancelled_owes_another() -> Result<()> {
 }
 
 #[test]
-fn a_stream_that_stops_sending_is_given_up_as_late_and_the_want_stamped_as_tried() -> Result<()> {
+fn a_stream_that_stops_sending_is_given_up_as_late_and_the_want_left_due() -> Result<()> {
     let held = Tree::new();
     let orbits = orbits_tree();
     let (library, vault) = opened_with_a_vault(&held)?;
@@ -21938,7 +21938,11 @@ fn a_stream_that_stops_sending_is_given_up_as_late_and_the_want_stamped_as_tried
         0
     );
     let wants = library.wants()?;
-    assert!(wants[0].tried.is_some());
+    assert!(
+        wants[0].tried.is_none(),
+        "a delivery that went quiet is no verdict on the song"
+    );
+    assert_eq!(wants[0].misses, 0);
     assert_eq!(wants[0].offered, None);
     Ok(())
 }

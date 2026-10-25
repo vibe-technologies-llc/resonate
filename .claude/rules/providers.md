@@ -122,14 +122,19 @@ away**: `StillArriving` counts `refused`, the want stays unstamped and due.
   before any provider is asked again
   (`an_offer_held_back_by_the_race_is_opened_when_the_one_taken_cannot_be`).
 - **Stream reading.** `Pumped` reads `CHUNK_BYTES` at a time, at most `CHUNKS_AHEAD` ahead. A cancel
-  discards the staging, want untried; a stream silent for `answers_within` is given up, counted
-  `late`, want stamped tried, provider noted `Away`. Bytes bounded by the vault's `LARGEST_DELIVERY`.
+  discards the staging, want untried. **A server is given longer for its first bytes than between
+  them**: `Silence` waits `first_bytes_within` (`FIRST_BYTES_WITHIN`, 90 s, past the keyed server's
+  60 s relay) before the first chunk and `answers_within` between chunks. A stream gone quiet is
+  given up as `Landed::Stalled`, counted `late`, provider noted `Away`, and **is no verdict on the
+  song**: the next offer is taken and the want stays unstamped and due, never a miss
+  (`a_stream_that_stops_sending_is_given_up_as_late_and_the_want_left_due`). A refusal is logged
+  with the error it wraps (`Error::cause`). Bytes bounded by the vault's `LARGEST_DELIVERY`.
 - **Keeping** is `Vault::keep_delivered`: a delivery meets the import's bit-exact, never-larger
   promise.
 - **A delivery is weighed against the row's length.** Where the release row names one,
   `Want::lasts_as_long_as` takes a delivery only within `LENGTHS_AGREE_WITHIN`; further off counts
   `unkept`, the object left to `--prune`, a filed landing removed. `landed` answers a `Landed`:
-  `Kept`; `Unkept` (vault or folder failed, stream stalled, row held meanwhile); `NotTheSong` (wrong
+  `Kept`; `Stalled` (above); `Unkept` (vault or folder failed, row held meanwhile); `NotTheSong` (wrong
   length, vault `Keeping::Refused`, filing too large or undecodable); `Unopened`. **On `NotTheSong`
   the offer goes to `refused_offers`** (want, `taken_from`, when) and the next
   held-back offer is taken; once spent, the want is asked again in the same claim with every heard
@@ -388,7 +393,10 @@ manifest URL must be HTTPS on `manifest.tidal.com` or a subdomain.
 - **Asked by link, then by the seam's choice**, via `played::found`: the linked track first; else the
   hosted flow searches TIDAL's web API by each of `Identity::wordings` through a `Choosing`, up to
   `TRACKS_TRIED_AT_MOST` ranked tracks. A custom server keeps the hifi-api routes, asked by each code
-  (`/search/?i=`, up to `CODES_ASKED_AT_MOST`) with `data.items` checked by ISRC. **A want with no
+  (`/search/?i=`, up to `CODES_ASKED_AT_MOST`) with `data.items` checked by ISRC; **where no code
+  lists anything the want is searched by its words** as one with no code is, since a re-release's
+  codes are often not the ones MusicBrainz holds
+  (`a_want_whose_codes_the_server_lists_nothing_under_is_searched_by_its_name`). **A want with no
   code at all is searched by its words** (`/search/?s=`, each of `Identity::wordings` until one holds a
   taken listing, only where `may_be_listed`) through a `Choosing`
   (`a_want_with_no_code_is_searched_by_its_name_and_a_listing_with_a_code_is_asked_for_first`,

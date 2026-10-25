@@ -633,6 +633,9 @@ impl Finds for HifiApi {
                 }
             }
         }
+        if tracks.is_empty() {
+            return self.tracks_named(identity);
+        }
         tracks.truncate(TRACKS_TRIED_AT_MOST);
         Ok(tracks)
     }

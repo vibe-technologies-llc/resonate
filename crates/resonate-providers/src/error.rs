@@ -88,6 +88,10 @@ pub fn is_a_page(bytes: &[u8]) -> bool {
 }
 
 impl Error {
+    pub fn cause(&self) -> Option<String> {
+        std::error::Error::source(self).map(ToString::to_string)
+    }
+
     pub fn is_the_provider_away(&self) -> bool {
         match self {
             Self::Io { .. }

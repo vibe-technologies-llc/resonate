@@ -265,7 +265,7 @@ impl Providers {
                 }
                 Ok(Obtained::Nothing) => {}
                 Err(error) => {
-                    tracing::warn!(%error, provider = %provider.source(), title = %identity.title, "a provider refused");
+                    tracing::warn!(%error, cause = ?error.cause(), provider = %provider.source(), title = %identity.title, "a provider refused");
                     answer.refused += 1;
                     if error.is_the_provider_away() {
                         away.note(provider.source());

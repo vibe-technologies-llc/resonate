@@ -90,6 +90,7 @@ const POLLS_PER_REREAD_WHILE_ASKING: u32 = 5;
 const FIRST_ASKED_AFTER: Duration = Duration::from_secs(60);
 const ASKED_EVERY: Duration = Duration::from_secs(30 * 60);
 const RETRIES_ASKED_AT_LEAST: Duration = Duration::from_secs(30);
+const UNHEARD_RETRIES_DOUBLE_AT_MOST: u32 = 5;
 const WATCHED_EVERY: Duration = Duration::from_secs(2);
 const ROOTS_LOOKED_AT_EVERY: Duration = Duration::from_millis(250);
 const ROOTS_QUIET_FOR: Duration = Duration::from_secs(2);
@@ -757,6 +758,7 @@ pub struct LibraryModel {
     owed: Option<String>,
     unreached_for: Option<String>,
     providers_unheard: bool,
+    unheard_in_a_row: u32,
     wanting: AHashMap<Mbid, Task<()>>,
     release_tracks: Arc<[HeldReleaseTrack]>,
     release: Option<ReleaseDetail>,
@@ -975,6 +977,7 @@ impl LibraryModel {
             owed: None,
             unreached_for: None,
             providers_unheard: false,
+            unheard_in_a_row: 0,
             wanting: AHashMap::new(),
             release_tracks: Arc::default(),
             release: None,
@@ -1283,7 +1286,7 @@ impl LibraryModel {
         });
 
         due.max(self.asks_from)
-            .max(now + RETRIES_ASKED_AT_LEAST)
+            .max(now + retried_after(self.unheard_in_a_row))
             .min(latest)
     }
 
@@ -2205,6 +2208,7 @@ impl LibraryModel {
         let progress = self.work.polling()?;
         Some(Fetched {
             provider: progress.provider_of(want)?,
+            opening: progress.is_opening(want),
             received: progress.received_for(want),
         })
     }
@@ -5245,6 +5249,12 @@ impl LibraryModel {
                         if !summary.cancelled {
                             this.providers_unheard =
                                 summary.stats.refused > 0 || summary.stats.late > 0;
+                            this.unheard_in_a_row =
+                                if this.providers_unheard && summary.stats.kept == 0 {
+                                    this.unheard_in_a_row.saturating_add(1)
+                                } else {
+                                    0
+                                };
                         }
                         let told_by_the_downloads =
                             prompted == Prompted::OnItsOwn && !this.downloads.is_empty();
@@ -5601,6 +5611,10 @@ fn scanned(summary: &ScanSummary, prompted: Prompted) -> Option<Notice> {
         told.push_str(", stopped early");
     }
     Some(Notice::Noted(told))
+}
+
+fn retried_after(unheard_in_a_row: u32) -> Duration {
+    RETRIES_ASKED_AT_LEAST * 2_u32.pow(unheard_in_a_row.min(UNHEARD_RETRIES_DOUBLE_AT_MOST))
 }
 
 fn relocations(summary: &OrganiseSummary) -> Vec<(MediaLocation, MediaLocation)> {
@@ -6846,8 +6860,15 @@ mod tests {
         POLLS_PER_REREAD_WHILE_ASKING, Pass, Planned, Reaching, Shared, Wanted,
         albums_kept_before_the_rest, arranged, beyond_the_listing, elsewhere_standing,
         headed_by_disc, held_at, held_in, kept_before_the_rest, landed_since, missing_track_rows,
-        on_the_clipboard, renewed, unheld_release_rows,
+        on_the_clipboard, renewed, retried_after, unheld_release_rows,
     };
+
+    #[test]
+    fn providers_that_keep_refusing_are_asked_less_and_less_often() {
+        let waits: Vec<u64> = (0..8).map(|polls| retried_after(polls).as_secs()).collect();
+
+        assert_eq!(waits, [30, 60, 120, 240, 480, 960, 960, 960]);
+    }
 
     #[test]
     fn a_poll_that_moved_is_read_again_while_it_runs_and_a_landing_rereads_everything() {

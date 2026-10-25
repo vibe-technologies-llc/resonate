@@ -55,6 +55,14 @@ impl Calendar {
         moment(began)
     }
 
+    pub fn minute_of_the_day(&self, at: SystemTime) -> u32 {
+        let seconds = seconds_since_the_epoch(at);
+        let into_the_day = seconds
+            .saturating_add(self.offset_at(seconds))
+            .rem_euclid(SECONDS_PER_DAY);
+        u32::try_from(into_the_day / 60).unwrap_or_default()
+    }
+
     fn day_at(&self, seconds: i64) -> i64 {
         seconds
             .saturating_add(self.offset_at(seconds))
@@ -138,6 +146,19 @@ mod tests {
         Calendar {
             zone: TimeZone::posix(rule).expect("the fixture rule reads"),
         }
+    }
+
+    #[test]
+    fn a_moment_is_read_as_the_clock_on_the_listeners_wall_says_it() {
+        let quarter_past_one = THE_SEVENTH_OF_JULY_2024 * SECONDS_PER_DAY + AN_HOUR + 15 * 60;
+        let west = Calendar::fixed(FIVE_HOURS_WEST).expect("a fixed offset is a zone");
+
+        assert_eq!(Calendar::utc().minute_of_the_day(at(quarter_past_one)), 75);
+        assert_eq!(
+            zoned(CENTRAL_EUROPE).minute_of_the_day(at(quarter_past_one)),
+            195
+        );
+        assert_eq!(west.minute_of_the_day(at(quarter_past_one)), 20 * 60 + 15);
     }
 
     #[test]

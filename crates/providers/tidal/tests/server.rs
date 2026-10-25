@@ -1058,7 +1058,11 @@ fn a_hifi_api_track_whose_isrc_is_not_the_wanted_one_is_never_asked_for() {
         fake.hifi().find(&by_isrc()),
         Ok(Obtained::Nothing)
     ));
-    assert_eq!(fake.paths(), vec!["/search/".to_owned()]);
+    assert!(
+        fake.paths().iter().all(|path| path == "/search/"),
+        "{:?}",
+        fake.paths()
+    );
 }
 
 #[test]
@@ -1469,6 +1473,35 @@ fn a_want_with_no_code_is_searched_by_its_name_and_a_listing_with_a_code_is_aske
     assert_eq!(heard[0].path, "/search/");
     assert!(heard[0].query.starts_with("s=Echoes"), "{}", heard[0].query);
     assert_eq!(heard[1].query, format!("id={TRACK}"));
+}
+
+#[test]
+fn a_want_whose_codes_the_server_lists_nothing_under_is_searched_by_its_name() {
+    let fake = Fake::serving(|asked, _, _| match asked.path.as_str() {
+        "/search/" if asked.query.starts_with("i=") => Canned::json(
+            r#"{"version":"2.10","data":{"limit":25,"offset":0,"totalNumberOfItems":0,"items":[]}}"#,
+        ),
+        "/search/" => named_listing(),
+        "/file/" => Canned::media(b"fLaC-by-name"),
+        _ => Canned::refused(404, "{}"),
+    });
+    let reissued = Identity {
+        isrcs: vec![Isrc::new("USXYZ1234567").expect("an isrc")],
+        ..without_a_code()
+    };
+
+    let keyed = fake.hifi().with_secret("key");
+    let (key, _, bytes) = streamed(keyed.find(&reissued).expect("an answer")).expect("a delivery");
+
+    assert_eq!(key, format!("track/{TRACK}"));
+    assert_eq!(bytes, b"fLaC-by-name");
+    let heard = fake.heard();
+    assert!(
+        heard[0].query.starts_with("i=USXYZ1234567"),
+        "{}",
+        heard[0].query
+    );
+    assert!(heard[1].query.starts_with("s=Echoes"), "{}", heard[1].query);
 }
 
 #[test]
