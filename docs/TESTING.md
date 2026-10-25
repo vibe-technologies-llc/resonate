@@ -39,10 +39,9 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   nothing here has run
 
 ## Testing
-- [S · 0.1.1] The drop overlay is driven by a real drag only by hand, on a hosted KWin (the `drive-a-drag`
-  skill, which proves the overlay and the copy there): gpui's `ExternalPaths` is `pub(crate)`, so
-  `driven.rs` still calls `dragged_over` and `dropped` directly and no test or CI step feeds the
-  platform's events; no other compositor has been tried
+- [S · 0.1.1] The drop overlay's drawing mid-drag is not asserted: `dragging.rs` (opt-in, on a hosted
+  KWin) proves the platform's events reach the root and the drop copies the file, but `over.png`
+  is only looked at, and no other compositor has been tried
 - [M · blocked: network namespaces] Hole punching is proved over loopback alone; two devices
   behind real NATs, a phone on a mobile network and a Linux desktop, have not been driven against a
   live server. NATs built from user namespaces and nftables need a `veth` pair, which the running

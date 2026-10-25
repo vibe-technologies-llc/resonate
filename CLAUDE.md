@@ -184,7 +184,9 @@ Invariants the layering protects (the rules files have the rest):
   bus; notification and headset presses run under `dbus-run-session`); `resonate-codec --test
   encoded` (ffmpeg, `metaflac`, `wavpack`, `mac`, `lame`); `resonate-library --test library`
   (ffmpeg); `resonate-analysis --test references` (ffmpeg, `fpcalc`); `resonate-online --test live` (`RESONATE_ONLINE_TESTS`); `resonate --test terminal`
-  (`setsid`, a pseudo-terminal). `resonate-subsonic`, `-tidal` and `-monochrome` serve fake servers
+  (`setsid`, a pseudo-terminal); `resonate --test dragging` (`RESONATE_DRAG_TESTS`, a hosted KWin, GTK 4
+  in python3, `spectacle`); `resonate-mpris --test trash` (`xdg-desktop-portal`, and `bwrap` with `xdg-dbus-proxy` for the
+  sandboxed case). `resonate-subsonic`, `-tidal` and `-monochrome` serve fake servers
   on loopback.
 - `cargo run -p resonate-server -- --help`: the sync server. `cargo test -p resonate-server` runs
   it in-process with two clients over loopback (playlists, favourites, a peer fetch, a stranger's

@@ -64,6 +64,6 @@ window's contents are only where the screenshot shows them.
 ## What it proves
 
 That a file dragged from another client reaches the root's `on_drag_move::<ExternalPaths>` on a real
-Wayland compositor (KWin), draws the overlay, and that the drop copies the file. It is not in CI
+Wayland compositor (KWin), draws the overlay, and that the drop copies the file. `crates/resonate/tests/dragging.rs` runs it with `RESONATE_DRAG_TESTS=1` and checks what it checks; it is not in CI
 (a compositor, a GPU and a Vulkan driver), and it says nothing of another compositor's data-device
 behaviour.
