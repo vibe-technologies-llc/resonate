@@ -76,7 +76,16 @@ impl Shift {
     }
 
     pub(crate) const fn chooses_apart(self) -> bool {
-        matches!(self, Self::Listing(Listed::Tracks | Listed::Albums))
+        matches!(
+            self,
+            Self::Listing(
+                Listed::Tracks
+                    | Listed::Albums
+                    | Listed::Artists
+                    | Listed::Favourites
+                    | Listed::Suggested
+            )
+        )
     }
 }
 
@@ -963,11 +972,26 @@ mod tests {
     }
 
     #[test]
-    fn only_tracks_and_albums_choose_rows_apart() {
-        assert!(Shift::Listing(Listed::Tracks).chooses_apart());
-        assert!(Shift::Listing(Listed::Albums).chooses_apart());
+    fn only_the_catalog_listings_choose_rows_apart() {
+        for listed in [
+            Listed::Tracks,
+            Listed::Albums,
+            Listed::Artists,
+            Listed::Favourites,
+            Listed::Suggested,
+        ] {
+            assert!(Shift::Listing(listed).chooses_apart(), "{listed:?}");
+        }
+        for listed in [
+            Listed::Playlists,
+            Listed::Missing,
+            Listed::Offered,
+            Listed::Heard,
+            Listed::Top,
+        ] {
+            assert!(!Shift::Listing(listed).chooses_apart(), "{listed:?}");
+        }
         assert!(!Shift::Queue.chooses_apart());
-        assert!(!Shift::Listing(Listed::Artists).chooses_apart());
     }
 
     proptest! {

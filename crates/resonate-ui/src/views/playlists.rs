@@ -1618,7 +1618,7 @@ impl RootView {
             move |this, _, cx| {
                 cx.stop_propagation();
                 let chosen = this.acting_on_chosen(shift, row);
-                let tracks = this.library.read(cx).tracks_at(chosen.rows());
+                let tracks = this.tracks_chosen(shift, &chosen, cx);
                 this.queue(&listed(&tracks), at, cx);
             },
             cx,

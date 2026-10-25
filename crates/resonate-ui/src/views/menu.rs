@@ -70,6 +70,14 @@ struct Entry {
 }
 
 impl Menu {
+    #[cfg(test)]
+    pub(crate) fn labels(&self) -> Vec<String> {
+        self.entries
+            .iter()
+            .map(|entry| entry.label.to_string())
+            .collect()
+    }
+
     pub(crate) fn at(at: Point<Pixels>) -> Self {
         Self {
             at,
@@ -436,6 +444,12 @@ pub(crate) const ADD_TO_PLAYLIST: &str = "Add to playlist…";
 pub(crate) const GO_TO_ARTIST: &str = "Go to artist";
 pub(crate) const GO_TO_ALBUM: &str = "Go to album";
 pub(crate) const COPY_PATH: &str = "Copy the file path";
+
+pub(crate) const COPY_PATHS: &str = "Copy the file paths";
+
+pub(crate) const HIDE_EACH: &str = "Hide from library";
+
+pub(crate) const SHOW_EACH: &str = "Show in library";
 pub(crate) const COPY_TITLE: &str = "Copy the title";
 pub(crate) const COPY_ARTIST: &str = "Copy the artist";
 pub(crate) const COPY_ALBUM: &str = "Copy the album";
@@ -450,6 +464,8 @@ pub(crate) const OPEN_ARTIST: &str = "Show this artist";
 pub(crate) const FAVOUR: &str = "Add to favourites";
 pub(crate) const UNFAVOUR: &str = "Take out of favourites";
 pub(crate) const SHARE: &str = "Share";
+
+pub(crate) const DELETE_FROM_DISK: &str = "Delete from disk…";
 pub(crate) const PIN: &str = "Pin to the top";
 pub(crate) const UNPIN: &str = "Stop pinning";
 pub(crate) const RENAME: &str = "Rename";
@@ -543,6 +559,17 @@ impl Menu {
             });
         }
         menu
+    }
+
+    pub(crate) fn offers_the_files(self, paths: Vec<String>) -> Self {
+        if paths.is_empty() {
+            return self;
+        }
+
+        self.apart()
+            .does(Icon::Rename, COPY_PATHS, move |_, _, cx| {
+                clipboard::copy(paths.join("\n"), cx);
+            })
     }
 
     pub(crate) fn offers_the_file(self, location: &MediaLocation, names: Called) -> Self {

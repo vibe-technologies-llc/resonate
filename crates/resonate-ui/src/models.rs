@@ -409,8 +409,8 @@ impl Change {
             Self::BringBack => "bring back what was dismissed",
             Self::Favour { favourite: true } => "mark it a favourite",
             Self::Favour { favourite: false } => "take it out of the favourites",
-            Self::Hide { hidden: true } => "hide that track",
-            Self::Hide { hidden: false } => "show that track again",
+            Self::Hide { hidden: true } => "hide that from the library",
+            Self::Hide { hidden: false } => "show that in the library again",
             Self::ForgetDelivered => "forget that delivery",
             Self::ForgetTheMatch => "forget that match",
             Self::TakePressing => "take that pressing",
@@ -2428,10 +2428,19 @@ impl LibraryModel {
     }
 
     pub fn hide_track(&mut self, id: TrackId, hidden: bool, cx: &mut Context<Self>) {
+        self.hide_tracks(vec![id], hidden, cx);
+    }
+
+    pub fn hide_tracks(&mut self, ids: Vec<TrackId>, hidden: bool, cx: &mut Context<Self>) {
         self.edited(
             Wanted::Everything,
             Change::Hide { hidden },
-            move |library| library.hide_track(id, hidden).map(|_| None),
+            move |library| {
+                for id in ids {
+                    library.hide_track(id, hidden)?;
+                }
+                Ok(None)
+            },
             cx,
         );
     }
@@ -2641,19 +2650,20 @@ impl LibraryModel {
         );
     }
 
-    pub fn delete_track(&mut self, track: TrackId, title: String, cx: &mut Context<Self>) {
+    pub fn delete_tracks(&mut self, tracks: Vec<TrackId>, title: String, cx: &mut Context<Self>) {
         let library = Arc::clone(&self.library);
+        let asked = tracks.len();
         let before = mem::replace(&mut self._edit, Task::ready(()));
 
         self._edit = cx.spawn(async move |this, cx| {
             before.await;
             let deleted = cx
                 .background_executor()
-                .spawn(async move { library.delete_tracks(&[track]) })
+                .spawn(async move { library.delete_tracks(&tracks) })
                 .await;
 
             let told = this.update(cx, |this, cx| {
-                toast::tell(deletion_told(deleted, &title), cx);
+                toast::tell(deletion_told(deleted, &title, asked), cx);
                 this.read(Wanted::Everything, cx);
             });
             let _ = told;
@@ -2905,6 +2915,12 @@ impl LibraryModel {
     pub fn albums_at(&self, rows: impl IntoIterator<Item = usize>) -> Vec<AlbumId> {
         rows.into_iter()
             .filter_map(|row| self.albums.get(row).map(|album| album.id))
+            .collect()
+    }
+
+    pub fn artists_at(&self, rows: impl IntoIterator<Item = usize>) -> Vec<ArtistId> {
+        rows.into_iter()
+            .filter_map(|row| self.artists.get(row).map(|artist| artist.id))
             .collect()
     }
 
@@ -5673,15 +5689,31 @@ fn vaulted(summary: &ImportSummary) -> Notice {
     Notice::Done(told)
 }
 
-fn deletion_told(deleted: resonate_library::Result<Deleted>, title: &str) -> Notice {
-    match deleted {
-        Ok(deleted) if deleted.kept > 0 => Notice::Trouble(format!(
+fn deletion_told(deleted: resonate_library::Result<Deleted>, title: &str, asked: usize) -> Notice {
+    match (deleted, asked) {
+        (Ok(deleted), 1) if deleted.kept > 0 => Notice::Trouble(format!(
             "Couldn't delete “{title}” — its file couldn't be removed"
         )),
-        Ok(_) => Notice::Done(format!("Deleted “{title}”")),
-        Err(error) => {
-            tracing::error!(%error, "a track could not be deleted");
-            toast::could_not("delete that track", &error)
+        (Ok(_), 1) => Notice::Done(format!("Deleted “{title}”")),
+        (Ok(deleted), asked) if deleted.kept > 0 => Notice::Trouble(format!(
+            "Couldn't delete {} of {} — their files couldn't be removed",
+            format::counted(deleted.kept as usize, "song", "songs"),
+            format::counted(asked, "song", "songs"),
+        )),
+        (Ok(_), asked) => Notice::Done(format!(
+            "Deleted {}",
+            format::counted(asked, "song", "songs")
+        )),
+        (Err(error), asked) => {
+            tracing::error!(%error, "tracks could not be deleted");
+            toast::could_not(
+                if asked == 1 {
+                    "delete that track"
+                } else {
+                    "delete those tracks"
+                },
+                &error,
+            )
         }
     }
 }

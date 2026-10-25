@@ -9,9 +9,9 @@ use crate::{
     icons::Icon,
     theme,
     views::{
-        browser::{Plays, Rowed, TRACK_CONTROLS},
+        browser::{Chooses, Plays, Rowed, TRACK_CONTROLS},
         kit, listing,
-        reorder::{self, Listed, Shift},
+        reorder::{Listed, Shift},
         root::{RootView, empty},
         scrollbar::Scrollbars,
         sorting,
@@ -116,26 +116,20 @@ impl RootView {
                                 let Some(track) = rows.get(index) else {
                                     continue;
                                 };
-                                let reached =
-                                    this.reaches(Shift::Listing(Listed::Favourites), index);
-                                drawn.push(reorder::marked(
-                                    this.track_row(
-                                        &rows,
-                                        index,
-                                        track,
-                                        Rowed {
-                                            playing: playing == Some(track.id),
-                                            plays: Plays::TheseRows,
-                                            reach: this.at_the_reach(
-                                                Shift::Listing(Listed::Favourites),
-                                                index,
-                                            ),
-                                            listed_at: None,
-                                        },
-                                        cx,
-                                    ),
-                                    reached,
-                                ));
+                                let shift = Shift::Listing(Listed::Favourites);
+                                let row = this.track_row(
+                                    &rows,
+                                    index,
+                                    track,
+                                    Rowed {
+                                        playing: playing == Some(track.id),
+                                        plays: Plays::TheseRows,
+                                        reach: this.at_the_reach(shift, index),
+                                        chooses: Some(Chooses::among(Listed::Favourites, index)),
+                                    },
+                                    cx,
+                                );
+                                drawn.push(this.marked_where_reached(shift, index, row));
                             }
                             drawn
                         }),
