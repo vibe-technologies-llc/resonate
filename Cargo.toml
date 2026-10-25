@@ -72,12 +72,12 @@ ahash = { version = "0.8.12", default-features = false, features = ["std", "runt
 imbl = { version = "7.0.2", default-features = false }
 qrcode = { version = "0.14.1", default-features = false }
 parking_lot = { version = "0.13.0", default-features = false }
-notify = { version = "8.2.0", default-features = false }
+notify = { version = "8.2.1", default-features = false }
 bytemuck = { version = "1.25.2", default-features = false }
 crossbeam-channel = { version = "0.5.17", default-features = false, features = ["std"] }
 futures-channel = { version = "0.3.34", default-features = false, features = ["alloc"] }
 signal-hook = { version = "0.4.5", default-features = false, features = ["iterator"] }
-rtrb = { version = "0.4.0", default-features = false, features = ["std"] }
+rtrb = { version = "0.4.1", default-features = false, features = ["std"] }
 smallvec = { version = "1.16.4", default-features = false, features = ["union", "const_generics"] }
 unicode-segmentation = { version = "1.13.3", default-features = false }
 unicode-width = { version = "0.2.2", default-features = false }
@@ -128,7 +128,7 @@ symphonia = {
 symphonia-codec-wavpack = { version = "0.1.1", default-features = false }
 ape-decoder = { version = "0.3.2", default-features = false }
 
-opus-rs = { version = "0.1.39", default-features = false, features = ["std", "heap"] }
+opus-rs = { version = "0.1.40", default-features = false, features = ["std", "heap"] }
 
 lofty = { version = "0.25.4", default-features = false, features = ["id3v2_compression_support"] }
 

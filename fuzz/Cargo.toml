@@ -9,7 +9,7 @@ publish = false
 cargo-fuzz = true
 
 [dependencies]
-libfuzzer-sys = { version = "0.4.11", default-features = false, features = ["link_libfuzzer"] }
+libfuzzer-sys = { version = "0.4.13", default-features = false, features = ["link_libfuzzer"] }
 resonate-analysis.path = "../crates/resonate-analysis"
 resonate-core.path = "../crates/resonate-core"
 resonate-codec.path = "../crates/resonate-codec"
