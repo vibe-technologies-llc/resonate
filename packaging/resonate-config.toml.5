@@ -127,6 +127,10 @@ String. The measurer whose AutoEq correction is preferred where several measured
 resonate\-eq \-\-find and \-\-suggest (which \-\-measurer outranks) and the pane's suggestions.
 A device it did not measure keeps the usual ranking. Default: none.
 .TP
+.B equaliser-measurer-for
+Table. Maps a sink's node.name to the measurer preferred for that device alone, in place of
+equaliser\-measurer. Default: empty.
+.TP
 .B convolution
 Path. An impulse response convolved with the signal, for room correction. Default: none.
 .SH LIBRARY AND FILES

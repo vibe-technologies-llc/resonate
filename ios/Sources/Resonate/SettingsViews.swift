@@ -891,6 +891,9 @@ struct OutputView: View {
                 LabeledContent("Hardware rate", value: "\(Int(reading.sampleRate)) Hz")
                 LabeledContent("Output latency", value: String(format: "%.1f ms", reading.latencyMs))
                 LabeledContent("Underruns", value: "\(library.clock.underruns)")
+                if library.clock.overs > 0 {
+                    LabeledContent("Clamped samples", value: "\(library.clock.overs)")
+                }
             } header: {
                 Text("Current stream")
             } footer: {

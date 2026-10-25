@@ -1,11 +1,12 @@
 use std::{
     cmp::{Ordering, Reverse},
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{Arc, OnceLock},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use parking_lot::Mutex;
+use resonate_analysis::Verdict;
 use resonate_codec::Codec;
 use resonate_core::{folded_letters, is_lettered};
 use resonate_library::{
@@ -200,6 +201,7 @@ pub(crate) struct Searching {
     held: Mutex<Option<Arc<Index>>>,
     building: Mutex<()>,
     sung: Mutex<Option<Arc<Sung>>>,
+    studied: Mutex<Option<Arc<Studied>>>,
     ordered: Mutex<Option<Ordered>>,
 }
 
@@ -209,14 +211,29 @@ struct Ordered {
     filter: TrackFilter,
     index: Arc<Index>,
     sung: Option<Arc<Sung>>,
+    studied: Option<Arc<Studied>>,
     made: Instant,
     found: Arc<Vec<usize>>,
 }
 
 impl Ordered {
-    fn answers(&self, filter: &TrackFilter, index: &Arc<Index>, sung: &Option<Arc<Sung>>) -> bool {
+    fn answers(
+        &self,
+        filter: &TrackFilter,
+        index: &Arc<Index>,
+        sung: &Option<Arc<Sung>>,
+        asking: Option<&Asking>,
+    ) -> bool {
         self.filter == *filter
             && Arc::ptr_eq(&self.index, index)
+            && match (
+                &self.studied,
+                asking.and_then(|asking| asking.studied.as_ref()),
+            ) {
+                (None, None) => true,
+                (Some(held), Some(asked)) => Arc::ptr_eq(held, asked),
+                _ => false,
+            }
             && match (&self.sung, sung) {
                 (None, None) => true,
                 (Some(held), Some(asked)) => Arc::ptr_eq(held, asked),
@@ -239,7 +256,7 @@ impl Searching {
         }
 
         let index = self.index(catalog)?;
-        let asking = Asking::of(&search, now());
+        let asking = self.asking(catalog, &search)?;
         let sung = self.sung_for(catalog, &asking)?;
         let found = index.ranked(&asking, sung.as_deref());
         let shown = limit.min(LISTED_AT_MOST) as usize;
@@ -286,7 +303,7 @@ impl Searching {
         }
 
         let index = self.index(catalog)?;
-        let asking = Asking::of(&search, now());
+        let asking = self.asking(catalog, &search)?;
         let sung = self.sung_for(catalog, &asking)?;
 
         Ok(index
@@ -346,7 +363,8 @@ impl Searching {
         filter: &TrackFilter,
     ) -> Result<Option<Admitted>> {
         let asking = (!filter.text.trim().is_empty())
-            .then(|| Asking::of(&Search::read(&filter.text), now()));
+            .then(|| self.asking(catalog, &Search::read(&filter.text)))
+            .transpose()?;
         if asking.as_ref().is_some_and(Asking::asks_nothing) {
             return Ok(None);
         }
@@ -357,7 +375,7 @@ impl Searching {
             None => None,
         };
         if let Some(ordered) = self.ordered.lock().as_ref()
-            && ordered.answers(filter, &index, &sung)
+            && ordered.answers(filter, &index, &sung, asking.as_ref())
         {
             return Ok(Some((index, Arc::clone(&ordered.found))));
         }
@@ -372,6 +390,7 @@ impl Searching {
             filter: filter.clone(),
             index: Arc::clone(&index),
             sung,
+            studied: asking.as_ref().and_then(|asking| asking.studied.clone()),
             made: Instant::now(),
             found: Arc::clone(&found),
         });
@@ -528,6 +547,35 @@ impl Searching {
             .as_ref()
             .filter(|index| index.revision == catalog.revision())
             .map(Arc::clone)
+    }
+
+    fn asking(&self, catalog: &Catalog, search: &Search) -> Result<Asking> {
+        let mut asking = Asking::of(search, now());
+        if asking.asks_of_studies {
+            asking.studied = Some(self.studied_by(catalog)?);
+        }
+
+        Ok(asking)
+    }
+
+    fn studied_by(&self, catalog: &Catalog) -> Result<Arc<Studied>> {
+        let connection = catalog.0.lock();
+        let stamp =
+            Studied::stamp_of(&connection).map_err(|source| Error::store(StoreOp::Read, source))?;
+        let mut held = self.studied.lock();
+        if let Some(studied) = held.as_ref()
+            && studied.stamp == stamp
+        {
+            return Ok(Arc::clone(studied));
+        }
+
+        let studied = Arc::new(
+            Studied::read(&connection, stamp)
+                .map_err(|source| Error::store(StoreOp::Read, source))?,
+        );
+        *held = Some(Arc::clone(&studied));
+
+        Ok(studied)
     }
 
     fn sung_for(&self, catalog: &Catalog, asking: &Asking) -> Result<Option<Arc<Sung>>> {
@@ -768,6 +816,8 @@ struct Asking {
     ranked: Vec<Worded>,
     joined: Option<Joined>,
     sings: bool,
+    asks_of_studies: bool,
+    studied: Option<Arc<Studied>>,
     now: i64,
 }
 
@@ -781,6 +831,7 @@ impl Asking {
         let mut narrowing = Vec::new();
         let mut ranked = Vec::new();
         let mut sings = false;
+        let mut asks_of_studies = false;
 
         for clause in &search.clauses {
             if let Some(word) = clause.lone_word() {
@@ -802,7 +853,10 @@ impl Asking {
                                 sings |= word.column == Some(Column::Lyrics);
                                 Asks::Word(Worded::of(word.column, word.reach, &word.text, false))
                             }
-                            Condition::Term(term) => Asks::Term(*term),
+                            Condition::Term(term) => {
+                                asks_of_studies |= is_studied(*term);
+                                Asks::Term(*term)
+                            }
                         })
                         .collect(),
                 })
@@ -829,6 +883,8 @@ impl Asking {
             ranked,
             joined,
             sings,
+            asks_of_studies,
+            studied: None,
             now,
         }
     }
@@ -841,9 +897,9 @@ impl Asking {
         let names = row.names(sung.unwrap_or(&NOTHING_SUNG));
 
         let narrowed = self.narrowing.iter().all(|clause| {
-            clause
-                .iter()
-                .any(|alternative| alternative.holds(&names, row, self.now))
+            clause.iter().any(|alternative| {
+                alternative.holds(&names, row, self.now, self.studied.as_deref())
+            })
         });
         if !narrowed {
             return None;
@@ -905,19 +961,31 @@ impl Joined {
 }
 
 impl Alternative {
-    fn holds(&self, names: &[(Field, &Name)], row: &Row, now: i64) -> bool {
+    fn holds(
+        &self,
+        names: &[(Field, &Name)],
+        row: &Row,
+        now: i64,
+        studied: Option<&Studied>,
+    ) -> bool {
         let all = self.all.iter().all(|asks| match asks {
             Asks::Word(word) => word.fit(names).is_some(),
-            Asks::Term(term) => term_holds(*term, row, now),
+            Asks::Term(term) => term_holds(*term, row, now, studied),
         });
 
         all != self.denied
     }
 }
 
-fn term_holds(term: Term, row: &Row, now: i64) -> bool {
+fn is_studied(term: Term) -> bool {
+    matches!(term, Term::Shape(Shape::Fake | Shape::Suspect))
+}
+
+fn term_holds(term: Term, row: &Row, now: i64, studied: Option<&Studied>) -> bool {
     match term {
-        Term::Added { .. } => false,
+        Term::Added { compare, age } => row
+            .added
+            .is_some_and(|at| compared(compare.flipped(), at, now.saturating_sub(seconds_of(age)))),
         Term::Plays {
             compare,
             plays,
@@ -947,11 +1015,11 @@ fn term_holds(term: Term, row: &Row, now: i64) -> bool {
             .bits
             .is_some_and(|held| compared(compare, held, u32::from(bits))),
         Term::Codec(codec) => row.codec == codec,
-        Term::Shape(shape) => shaped(shape, row),
+        Term::Shape(shape) => shaped(shape, row, studied),
     }
 }
 
-fn shaped(shape: Shape, row: &Row) -> bool {
+fn shaped(shape: Shape, row: &Row, studied: Option<&Studied>) -> bool {
     let track = &row.track;
 
     match shape {
@@ -966,7 +1034,9 @@ fn shaped(shape: Shape, row: &Row) -> bool {
                     || track.bits.is_some_and(|bits| bits > CD_SAMPLE_DEPTH))
         }
         Shape::Favourite => track.favourite,
-        Shape::Hidden | Shape::Fake | Shape::Suspect | Shape::Misnamed => false,
+        Shape::Fake => studied.is_some_and(|studied| studied.fake.contains(&track.id)),
+        Shape::Suspect => studied.is_some_and(|studied| studied.suspect.contains(&track.id)),
+        Shape::Hidden | Shape::Misnamed => false,
     }
 }
 
@@ -1009,11 +1079,18 @@ struct Row {
     year: Option<i32>,
     codec: Codec,
     heard: Vec<i64>,
+    added: Option<i64>,
     album_group: Option<usize>,
 }
 
 impl Row {
-    fn of(track: Track, heard: Vec<i64>) -> Self {
+    fn of(stored: Stored) -> Self {
+        let Stored {
+            track,
+            heard,
+            added,
+        } = stored;
+
         Self {
             title: Name::of(&track.title),
             artist: Name::of(&track.artist),
@@ -1028,6 +1105,7 @@ impl Row {
             year: year_of(&track.date),
             codec: codec_named(&track.codec),
             heard,
+            added,
             album_group: None,
             track,
         }
@@ -1230,7 +1308,7 @@ struct Index {
 }
 
 impl Index {
-    fn stored(catalog: &Catalog) -> Result<Vec<(Track, Vec<i64>)>> {
+    fn stored(catalog: &Catalog) -> Result<Vec<Stored>> {
         let mut heard: HashMap<u64, Vec<i64>> = HashMap::new();
         let mut after = 0_i64;
         loop {
@@ -1269,28 +1347,28 @@ impl Index {
                     .prepare_cached("SELECT * FROM documents WHERE missing = 0 AND id > ?1 ORDER BY id LIMIT ?2")
                     .map_err(read_error)?;
                 documents
-                    .query_map(params![after, STORED_PAGE], read)
+                    .query_map(params![after, STORED_PAGE], |row| {
+                        Ok((read(row)?, row.get::<_, Option<i64>>("added")?))
+                    })
                     .map_err(read_error)?
                     .collect::<rusqlite::Result<Vec<_>>>()
                     .map_err(read_error)?
             };
-            let Some(last) = page.last().map(|track| track.id) else {
+            let Some(last) = page.last().map(|(track, _)| track.id) else {
                 break;
             };
             after = last as i64;
-            stored.extend(page.into_iter().map(|track| {
-                let listened = heard.remove(&track.id).unwrap_or_default();
-                (track, listened)
+            stored.extend(page.into_iter().map(|(track, added)| Stored {
+                heard: heard.remove(&track.id).unwrap_or_default(),
+                track,
+                added,
             }));
         }
         Ok(stored)
     }
 
-    fn rows_of(stored: Vec<(Track, Vec<i64>)>) -> Vec<Row> {
-        stored
-            .into_iter()
-            .map(|(track, listened)| Row::of(track, listened))
-            .collect()
+    fn rows_of(stored: Vec<Stored>) -> Vec<Row> {
+        stored.into_iter().map(Row::of).collect()
     }
 
     fn gathered(mut rows: Vec<Row>, revision: u64) -> Self {
@@ -1402,6 +1480,54 @@ impl Index {
 
     fn tracks_at(&self, rows: &[usize]) -> Vec<Track> {
         rows.iter().map(|at| self.rows[*at].track.clone()).collect()
+    }
+}
+
+struct Stored {
+    track: Track,
+    heard: Vec<i64>,
+    added: Option<i64>,
+}
+
+struct Studied {
+    stamp: StudiedStamp,
+    fake: HashSet<u64>,
+    suspect: HashSet<u64>,
+}
+
+type StudiedStamp = (i64, i64, i64);
+
+impl Studied {
+    fn stamp_of(connection: &Connection) -> rusqlite::Result<StudiedStamp> {
+        connection.query_row(
+            "SELECT count(*), coalesce(sum(CASE verdict WHEN ?1 THEN track ELSE 0 END), 0), coalesce(sum(CASE verdict WHEN ?2 THEN track ELSE 0 END), 0) FROM studies",
+            params![Verdict::Fake.as_str(), Verdict::Suspect.as_str()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+    }
+
+    fn read(connection: &Connection, stamp: StudiedStamp) -> rusqlite::Result<Self> {
+        let mut query =
+            connection.prepare("SELECT track, verdict FROM studies WHERE verdict IN (?1, ?2)")?;
+        let judged = query
+            .query_map(
+                params![Verdict::Fake.as_str(), Verdict::Suspect.as_str()],
+                |row| Ok((row.get::<_, i64>(0)? as u64, row.get::<_, String>(1)?)),
+            )?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let held = |verdict: Verdict| {
+            judged
+                .iter()
+                .filter(|(_, judgement)| judgement == verdict.as_str())
+                .map(|(track, _)| *track)
+                .collect()
+        };
+
+        Ok(Self {
+            stamp,
+            fake: held(Verdict::Fake),
+            suspect: held(Verdict::Suspect),
+        })
     }
 }
 
@@ -2072,16 +2198,81 @@ mod tests {
     }
 
     #[test]
-    fn terms_the_documents_cannot_answer_hold_nothing_and_their_denial_everything() {
+    fn a_term_the_documents_cannot_answer_holds_nothing_and_its_denial_everything() {
         let catalog = library();
 
-        let added = searched(&catalog, "added:<7d");
-        let not_added = searched(&catalog, "-added:<7d");
+        let misnamed = searched(&catalog, "is:misnamed");
+        let not_misnamed = searched(&catalog, "-is:misnamed");
         let measured = searched(&catalog, "is:lossless codec:flac rate:44.1 length:3:20");
 
-        assert_eq!(added.track_count, 0);
-        assert_eq!(not_added.track_count, 9);
+        assert_eq!(misnamed.track_count, 0);
+        assert_eq!(not_misnamed.track_count, 9);
         assert_eq!(measured.track_count, 9);
+    }
+
+    #[test]
+    fn songs_are_found_by_the_age_the_catalog_dated_them_and_an_undated_one_answers_neither_way() {
+        let catalog = library();
+        {
+            let connection = catalog.0.lock();
+            connection
+                .execute(
+                    "UPDATE documents SET added = unixepoch() - 30 * 86400 WHERE title IN ('Time', 'Money')",
+                    [],
+                )
+                .expect("older songs");
+            connection
+                .execute("UPDATE documents SET added = NULL WHERE title = 'Jóga'", [])
+                .expect("an undated song");
+        }
+
+        let recent = searched(&catalog, "added:<7d");
+        let older = searched(&catalog, "added:>7d");
+        let not_recent = searched(&catalog, "-added:<7d");
+
+        assert_eq!(recent.track_count, 6);
+        assert!(!titles(&recent.tracks).contains(&"Jóga"));
+        assert_eq!(older.track_count, 2);
+        assert!(
+            titles(&older.tracks)
+                .iter()
+                .all(|title| ["Time", "Money"].contains(title))
+        );
+        assert_eq!(not_recent.track_count, 3);
+    }
+
+    #[test]
+    fn songs_studied_as_fake_or_suspect_are_found_and_a_new_verdict_is_seen_at_once() {
+        let catalog = library();
+        let studying = |title: &str, verdict: Verdict| {
+            catalog
+                .0
+                .lock()
+                .execute(
+                    "INSERT INTO studies (track, verdict, peak, rms, true_peak, clipped)
+                     SELECT id, ?2, 0.5, 0.1, 0.5, 0 FROM documents WHERE title = ?1
+                     ON CONFLICT(track) DO UPDATE SET verdict = excluded.verdict",
+                    params![title, verdict.as_str()],
+                )
+                .expect("a study");
+        };
+        let searching = Searching::default();
+        let searched = |text: &str| searching.search(&catalog, text, 100).expect("a search");
+        studying("Time", Verdict::Fake);
+        studying("Money", Verdict::Suspect);
+        studying("Jóga", Verdict::Genuine);
+
+        let fake = searched("is:fake");
+        let suspect = searched("is:suspect");
+        let not_fake = searched("-is:fake");
+        studying("Time", Verdict::Genuine);
+        studying("Jóga", Verdict::Fake);
+        let fake_again = searched("is:fake");
+
+        assert_eq!(titles(&fake.tracks), vec!["Time"]);
+        assert_eq!(titles(&suspect.tracks), vec!["Money"]);
+        assert_eq!(not_fake.track_count, 8);
+        assert_eq!(titles(&fake_again.tracks), vec!["Jóga"]);
     }
 
     #[test]

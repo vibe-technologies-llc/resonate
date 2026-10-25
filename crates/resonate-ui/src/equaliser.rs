@@ -11,7 +11,7 @@ use resonate_eq::{
     suggest_preferring,
 };
 
-use crate::{Bindings, models::Notice, toast};
+use crate::{Bindings, Measurers, models::Notice, toast};
 
 pub const CURVE_COLUMNS: usize = 192;
 pub const DRAWN_BETWEEN_MILLIBELS: i32 = 15_000;
@@ -215,7 +215,8 @@ pub struct EqualiserModel {
     store: Store,
     corrections: Arc<Corrected>,
     bindings: Bindings,
-    measurer: Option<String>,
+    measurers: Measurers,
+    looking_on: Option<NodeName>,
     kept: Vec<ProfileName>,
     shown: Option<(Curve, Profile)>,
     held: BTreeMap<Curve, Arc<Profile>>,
@@ -248,7 +249,8 @@ impl EqualiserModel {
             store,
             corrections,
             bindings,
-            measurer: None,
+            measurers: Measurers::default(),
+            looking_on: None,
             kept,
             shown: None,
             held: BTreeMap::new(),
@@ -512,12 +514,12 @@ impl EqualiserModel {
         self.bindings.enabled = on;
     }
 
-    pub fn prefer(&mut self, measurer: Option<String>) {
-        self.measurer = measurer;
+    pub fn prefer(&mut self, measurers: Measurers) {
+        self.measurers = measurers;
     }
 
-    pub fn measurer(&self) -> Option<&str> {
-        self.measurer.as_deref()
+    pub fn measurer_for(&self, sink: Option<&NodeName>) -> Option<&str> {
+        self.measurers.for_sink(sink)
     }
 
     pub fn rebound(&mut self, bindings: Bindings) {
@@ -865,14 +867,15 @@ impl EqualiserModel {
         self.kept = self.store.names().unwrap_or_default();
     }
 
-    pub fn look(&mut self, typed: &str, cx: &mut Context<Self>) {
+    pub fn look(&mut self, typed: &str, sink: Option<&NodeName>, cx: &mut Context<Self>) {
+        self.looking_on = sink.cloned();
         if typed.trim().is_empty() {
             self.found.clear();
             cx.notify();
             return;
         }
         if let Some(catalogue) = self.catalogue.clone() {
-            self.found = search_preferring(&catalogue, typed, self.measurer.as_deref())
+            self.found = search_preferring(&catalogue, typed, self.measurers.for_sink(sink))
                 .into_iter()
                 .take(FOUND_SHOWN)
                 .collect();
@@ -901,7 +904,8 @@ impl EqualiserModel {
                     Ok(catalogue) => {
                         this.catalogue = Some(catalogue);
                         if let Some(typed) = then {
-                            this.look(&typed, cx);
+                            let sink = this.looking_on.clone();
+                            this.look(&typed, sink.as_ref(), cx);
                         }
                     }
                     Err(error) => {
@@ -924,9 +928,9 @@ impl EqualiserModel {
             .collect()
     }
 
-    pub fn suggested(&self, description: &str) -> Option<&Device> {
+    pub fn suggested(&self, description: &str, sink: Option<&NodeName>) -> Option<&Device> {
         let catalogue = self.catalogue.as_ref()?;
-        suggest_preferring(catalogue, description, self.measurer.as_deref())
+        suggest_preferring(catalogue, description, self.measurers.for_sink(sink))
             .and_then(|found| catalogue.device(found))
     }
 
@@ -1318,16 +1322,56 @@ mod tests {
         ])));
         let measurer_of = |model: &EqualiserModel| {
             model
-                .suggested("Maker Thing 100")
+                .suggested("Maker Thing 100", None)
                 .map(|device| device.measured_by.clone())
         };
 
         let ranked = measurer_of(&model);
-        model.prefer(Some("rtings".to_owned()));
+        model.prefer(Measurers {
+            fallback: Some("rtings".to_owned()),
+            by_sink: BTreeMap::new(),
+        });
         let preferred = measurer_of(&model);
 
         assert_eq!(ranked.as_deref(), Some("oratory1990"));
         assert_eq!(preferred.as_deref(), Some("Rtings"));
+    }
+
+    #[test]
+    fn the_pane_suggests_from_the_measurer_preferred_for_the_device_in_use_before_the_one_for_every_device()
+     {
+        let by = |measured_by: &str| Device {
+            id: DeviceId::new(&format!("{measured_by}/over-ear/Maker Thing 100")).expect("a path"),
+            label: "Maker Thing 100".to_owned(),
+            measured_by: measured_by.to_owned(),
+            rig: None,
+        };
+        let folder = std::env::temp_dir().join("resonate-ui-equaliser-measurer-for");
+        let mut model = EqualiserModel::new(
+            folder,
+            Arc::new(Corrected::uncorrected()),
+            Bindings::default(),
+        );
+        model.catalogue = Some(Arc::new(Catalogue::of(vec![
+            by("Rtings"),
+            by("oratory1990"),
+            by("crinacle"),
+        ])));
+        let dac = NodeName::new("alsa_output.dac");
+        let speakers = NodeName::new("alsa_output.speakers");
+        model.prefer(Measurers {
+            fallback: Some("rtings".to_owned()),
+            by_sink: BTreeMap::from([(dac.clone(), "crinacle".to_owned())]),
+        });
+        let measurer_of = |sink: Option<&NodeName>| {
+            model
+                .suggested("Maker Thing 100", sink)
+                .map(|device| device.measured_by.clone())
+        };
+
+        assert_eq!(measurer_of(Some(&dac)).as_deref(), Some("crinacle"));
+        assert_eq!(measurer_of(Some(&speakers)).as_deref(), Some("Rtings"));
+        assert_eq!(measurer_of(None).as_deref(), Some("Rtings"));
     }
 
     #[test]

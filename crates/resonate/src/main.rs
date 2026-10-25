@@ -2714,7 +2714,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             signs_in: providers::signs_in(),
             corrections: Arc::new(online::corrections(&config, Some(Arc::clone(&library)))),
             bindings: equaliser::bound(&config),
-            measurer: config.equaliser_measurer().map(str::to_owned),
+            measurers: equaliser::measured_by(&config),
             online: resonate_ui::Online {
                 enabled: config.online_enabled(),
                 after_scan: config.enriches_after_scan(),

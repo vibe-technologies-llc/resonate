@@ -142,6 +142,7 @@ import Testing
         var other = snapshot(.playing, current: track(1), positionMs: 9_000, durationMs: 200_000, queueRevision: 5, catalogRevision: 6)
         other.outputRate = 48_000
         other.underruns = 3
+        other.overs = 41
         other.failure = "A failure"
 
         #expect(Polling.steady(one) == Polling.steady(other))

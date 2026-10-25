@@ -43,6 +43,7 @@ final class PlayClock {
     private(set) var sleepRemainingMs: UInt64?
     private(set) var outputRate: UInt32 = 0
     private(set) var underruns: UInt64 = 0
+    private(set) var overs: UInt64 = 0
 
     func follow(_ state: Snapshot) {
         if positionMs != state.positionMs { positionMs = state.positionMs }
@@ -50,6 +51,7 @@ final class PlayClock {
         if sleepRemainingMs != state.sleepRemainingMs { sleepRemainingMs = state.sleepRemainingMs }
         if outputRate != state.outputRate { outputRate = state.outputRate }
         if underruns != state.underruns { underruns = state.underruns }
+        if overs != state.overs { overs = state.overs }
     }
 }
 
@@ -754,6 +756,7 @@ final class Library {
         live.sleepRemainingMs = clock.sleepRemainingMs
         live.outputRate = clock.outputRate
         live.underruns = clock.underruns
+        live.overs = clock.overs
         return live
     }
 

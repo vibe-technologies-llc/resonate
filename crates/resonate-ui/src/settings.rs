@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fmt, mem,
     path::{Path, PathBuf},
     sync::{
@@ -194,6 +195,7 @@ pub enum SettingKey {
     EqualiserFor,
     EqualiserProfile,
     EqualiserMeasurer,
+    EqualiserMeasurerFor,
     Convolution,
     Resume,
     HistoryKept,
@@ -252,7 +254,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 97] = [
+    pub const ALL: [Self; 98] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -295,6 +297,7 @@ impl SettingKey {
         Self::EqualiserFor,
         Self::EqualiserProfile,
         Self::EqualiserMeasurer,
+        Self::EqualiserMeasurerFor,
         Self::Convolution,
         Self::Resume,
         Self::HistoryKept,
@@ -400,6 +403,10 @@ pub enum Setting {
     },
     EqualiserProfile(Option<Binding>),
     EqualiserMeasurer(Option<String>),
+    EqualiserMeasurerFor {
+        sink: NodeName,
+        measurer: Option<String>,
+    },
     Convolution(Option<PathBuf>),
     Resume(bool),
     HistoryKept(HistoryKept),
@@ -502,6 +509,7 @@ impl Setting {
             Self::EqualiserFor { .. } => SettingKey::EqualiserFor,
             Self::EqualiserProfile(_) => SettingKey::EqualiserProfile,
             Self::EqualiserMeasurer(_) => SettingKey::EqualiserMeasurer,
+            Self::EqualiserMeasurerFor { .. } => SettingKey::EqualiserMeasurerFor,
             Self::Convolution(_) => SettingKey::Convolution,
             Self::Resume(_) => SettingKey::Resume,
             Self::HistoryKept(_) => SettingKey::HistoryKept,
@@ -720,6 +728,43 @@ impl Default for Sourcing {
             inbox: None,
             register: Arc::new(|_| Providers::none()),
             unkept: Arc::new(|| false),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Measurers {
+    pub fallback: Option<String>,
+    pub by_sink: BTreeMap<NodeName, String>,
+}
+
+impl Measurers {
+    pub fn for_sink(&self, sink: Option<&NodeName>) -> Option<&str> {
+        sink.and_then(|sink| self.by_sink.get(sink))
+            .or(self.fallback.as_ref())
+            .map(String::as_str)
+    }
+
+    pub fn of_the_device(&self, sink: &NodeName) -> Option<&str> {
+        self.by_sink.get(sink).map(String::as_str)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.fallback.is_none() && self.by_sink.is_empty()
+    }
+
+    pub fn prefer_for_every_device(&mut self, measurer: Option<String>) {
+        self.fallback = measurer;
+    }
+
+    pub fn prefer_for(&mut self, sink: NodeName, measurer: Option<String>) {
+        match measurer {
+            Some(measurer) => {
+                self.by_sink.insert(sink, measurer);
+            }
+            None => {
+                self.by_sink.remove(&sink);
+            }
         }
     }
 }

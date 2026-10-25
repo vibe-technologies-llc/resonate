@@ -55,6 +55,25 @@ fn bound(
     }
 }
 
+fn preferred(
+    editing: &mut Editing<'_>,
+    sink: &NodeName,
+    measurer: Option<&str>,
+) -> crate::Result<()> {
+    match measurer
+        .map(str::trim)
+        .filter(|measurer| !measurer.is_empty())
+    {
+        Some(measurer) => {
+            editing.store_in_table(ConfigKey::EqualiserMeasurerFor, sink.as_str(), measurer)
+        }
+        None => {
+            editing.clear_in_table(ConfigKey::EqualiserMeasurerFor, sink.as_str());
+            Ok(())
+        }
+    }
+}
+
 impl Settings for File {
     fn apply(&self, changes: &[SettingChange]) -> resonate_ui::Result<()> {
         let Some(first) = changes.first() else {
@@ -99,6 +118,9 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
     let (key, value): (ConfigKey, Option<Value>) = match setting {
         Setting::EqualiserFor { sink, binding } => {
             return written_as_a_binding(setting, bound(editing, sink, binding.as_ref()));
+        }
+        Setting::EqualiserMeasurerFor { sink, measurer } => {
+            return written_as_a_binding(setting, preferred(editing, sink, measurer.as_deref()));
         }
         Setting::EqualiserMeasurer(measurer) => given_or_cleared(
             ConfigKey::EqualiserMeasurer,
@@ -411,6 +433,7 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::EqualiserFor => ConfigKey::EqualiserFor,
         SettingKey::EqualiserProfile => ConfigKey::EqualiserProfile,
         SettingKey::EqualiserMeasurer => ConfigKey::EqualiserMeasurer,
+        SettingKey::EqualiserMeasurerFor => ConfigKey::EqualiserMeasurerFor,
         SettingKey::Resume => ConfigKey::Resume,
         SettingKey::HistoryKept => ConfigKey::HistoryKept,
         SettingKey::OrganiseAs => ConfigKey::OrganiseAs,
@@ -655,6 +678,42 @@ mod tests {
 
         assert_eq!(preferred.equaliser_measurer(), Some("Rtings"));
         assert_eq!(forgotten.equaliser_measurer(), None);
+    }
+
+    #[test]
+    fn a_measurer_the_pane_prefers_for_one_device_reads_back_beside_the_rest_and_goes_when_cleared()
+    {
+        let folder =
+            env::temp_dir().join(format!("resonate-settings-measurer-for-{}", process::id()));
+        let path = folder.join("config.toml");
+        let file = File::at(path.clone());
+        let dac = NodeName::new("alsa_output.dac");
+
+        file.apply(&[
+            SettingChange::Store(Setting::EqualiserMeasurer(Some("Rtings".to_owned()))),
+            SettingChange::Store(Setting::EqualiserMeasurerFor {
+                sink: dac.clone(),
+                measurer: Some("crinacle".to_owned()),
+            }),
+        ])
+        .expect("a writable temporary directory");
+        let preferred = config::load(Some(&path)).expect("the file reads back");
+
+        file.apply(&[SettingChange::Store(Setting::EqualiserMeasurerFor {
+            sink: dac.clone(),
+            measurer: None,
+        })])
+        .expect("a writable temporary directory");
+        let cleared = config::load(Some(&path)).expect("the file reads back");
+        let text = fs::read_to_string(&path).expect("the file is there");
+        let _ = fs::remove_dir_all(folder);
+
+        assert_eq!(
+            preferred.equaliser_measurer_for(Some(&dac)),
+            Some("crinacle")
+        );
+        assert_eq!(cleared.equaliser_measurer_for(Some(&dac)), Some("Rtings"));
+        assert!(!text.contains("equaliser-measurer-for"), "{text}");
     }
 
     #[test]

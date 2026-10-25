@@ -605,7 +605,10 @@ impl Group {
             Self::LossySources => &[SettingKey::Restoration],
             Self::Equalising => &[SettingKey::Equaliser],
             Self::BoundTo => &[SettingKey::EqualiserFor],
-            Self::Measured => &[SettingKey::EqualiserMeasurer],
+            Self::Measured => &[
+                SettingKey::EqualiserMeasurer,
+                SettingKey::EqualiserMeasurerFor,
+            ],
             Self::Organising => &[SettingKey::OrganiseAs],
             Self::Vault => &[],
             Self::Inbox => &[SettingKey::Inbox],

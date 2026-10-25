@@ -50,10 +50,11 @@ fn performed(cli: &Cli, config: &Config, wanted: &EqArgs, settings: &Path) -> Re
     let bound = wanted.r#for.as_deref().map(NodeName::new);
 
     if let Some(text) = wanted.find.as_deref() {
-        return find(config, text, measurer_of(config, wanted));
+        let sink = crate::wanted_sink(cli, config);
+        return find(config, text, measurer_of(config, wanted, sink.as_ref()));
     }
     if wanted.suggest {
-        return suggested(cli, config, measurer_of(config, wanted));
+        return suggested(cli, config, wanted);
     }
     if wanted.list {
         return list(&store, config);
@@ -463,11 +464,23 @@ fn asked(config: &Config) -> Result<(Corrected, Arc<Catalogue>)> {
     Ok((corrections, catalogue))
 }
 
-fn measurer_of<'a>(config: &'a Config, wanted: &'a EqArgs) -> Option<&'a str> {
+fn measurer_of<'a>(
+    config: &'a Config,
+    wanted: &'a EqArgs,
+    sink: Option<&NodeName>,
+) -> Option<&'a str> {
     wanted
         .measurer
         .as_deref()
-        .or_else(|| config.equaliser_measurer())
+        .or_else(|| config.equaliser_measurer_for(sink))
+}
+
+#[cfg(feature = "ui")]
+pub fn measured_by(config: &Config) -> resonate_ui::Measurers {
+    resonate_ui::Measurers {
+        fallback: config.equaliser_measurer().map(str::to_owned),
+        by_sink: config.equaliser_measurer_for.clone(),
+    }
 }
 
 fn find(config: &Config, text: &str, measurer: Option<&str>) -> Result<()> {
@@ -497,7 +510,7 @@ fn measurer_missed(asked_for: Option<&str>, chosen: &str) -> Option<String> {
         .then(|| format!("{asked_for} measured nothing for it: {chosen}'s is the best ranked"))
 }
 
-fn suggested(cli: &Cli, config: &Config, measurer: Option<&str>) -> Result<()> {
+fn suggested(cli: &Cli, config: &Config, wanted: &EqArgs) -> Result<()> {
     let pipewire = PipeWire::start("Resonate")?;
     let sink = select_sink(
         pipewire.enumerate_sinks(SINK_TIMEOUT)?,
@@ -506,6 +519,8 @@ fn suggested(cli: &Cli, config: &Config, measurer: Option<&str>) -> Result<()> {
     pipewire.shutdown()?;
 
     said!("sink:   {} ({})", sink.description, sink.name);
+
+    let measurer = measurer_of(config, wanted, Some(&sink.name));
 
     let (_, catalogue) = asked(config)?;
     match suggest_preferring(&catalogue, &sink.description, measurer)
@@ -635,6 +650,7 @@ pub fn resolved(config: &Config) -> resonate_engine::Equalisation {
 #[cfg(test)]
 mod tests {
     use std::{
+        collections::BTreeMap,
         env, fs,
         path::PathBuf,
         process,
@@ -747,9 +763,28 @@ mod tests {
         let plain = asked(&["--suggest"]);
         let flagged = asked(&["--suggest", "--measurer", "crinacle"]);
 
-        assert_eq!(measurer_of(&kept, &plain), Some("Rtings"));
-        assert_eq!(measurer_of(&kept, &flagged), Some("crinacle"));
-        assert_eq!(measurer_of(&Config::default(), &plain), None);
+        assert_eq!(measurer_of(&kept, &plain, None), Some("Rtings"));
+        assert_eq!(measurer_of(&kept, &flagged, None), Some("crinacle"));
+        assert_eq!(measurer_of(&Config::default(), &plain, None), None);
+    }
+
+    #[test]
+    fn the_measurer_kept_for_the_sink_outranks_the_one_for_every_device_and_a_flag_outranks_both() {
+        let dac = NodeName::new("alsa_output.dac");
+        let kept = Config {
+            equaliser_measurer: Some("Rtings".to_owned()),
+            equaliser_measurer_for: BTreeMap::from([(dac.clone(), "oratory1990".to_owned())]),
+            ..Config::default()
+        };
+        let plain = asked(&["--suggest"]);
+        let flagged = asked(&["--suggest", "--measurer", "crinacle"]);
+
+        assert_eq!(measurer_of(&kept, &plain, Some(&dac)), Some("oratory1990"));
+        assert_eq!(measurer_of(&kept, &flagged, Some(&dac)), Some("crinacle"));
+        assert_eq!(
+            measurer_of(&kept, &plain, Some(&NodeName::new("alsa_output.other"))),
+            Some("Rtings")
+        );
     }
 
     #[test]

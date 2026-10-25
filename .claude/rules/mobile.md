@@ -66,6 +66,13 @@ bound again or the transport stops (`waiting_is_over`), so a front end shows it 
 takes it down when playback goes on
 (`a_snapshot_says_there_is_no_device_to_play_through_until_the_transport_stops`).
 
+**A snapshot carries the open stream's figures** (`OutputFigures::of`): `output_rate`, `underruns`
+and `overs`, the samples the chain clamped at full scale (the desktop inspector's *clamped
+samples*, `audio.md`), all 0 with no stream open
+(`a_snapshot_carries_the_clamped_samples_of_the_open_stream_and_none_without_one`). Android's
+*Audio output* page shows `overs` as a *Clamped samples* row only once it is above 0
+(`clampedSamplesWords`); iOS's output page shows the same in *Current stream*, read from `PlayClock`.
+
 `snapshot` consumes (it drains engine events and takes the failure), so a caller that
 only needs the transport asks `transport`, which reads the engine's state and nothing else.
 

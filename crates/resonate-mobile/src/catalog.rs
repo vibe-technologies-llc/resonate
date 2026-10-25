@@ -47,7 +47,17 @@ INSERT INTO sqlite_sequence (name, seq)
     );
 ";
 
-const MIGRATIONS: &[&str] = &[V1, LISTENS_NAME_THEIR_ORIGIN, LISTENS_NEVER_REUSE_AN_ID];
+const DOCUMENTS_KEEP_WHEN_THEY_WERE_ADDED: &str = "
+ALTER TABLE documents ADD COLUMN added INTEGER;
+CREATE TRIGGER documents_dated AFTER INSERT ON documents BEGIN UPDATE documents SET added = unixepoch() WHERE id = new.id AND new.added IS NULL; END;
+";
+
+const MIGRATIONS: &[&str] = &[
+    V1,
+    LISTENS_NAME_THEIR_ORIGIN,
+    LISTENS_NEVER_REUSE_AN_ID,
+    DOCUMENTS_KEEP_WHEN_THEY_WERE_ADDED,
+];
 
 #[cfg(test)]
 pub(crate) const FIRST_VERSION: &str = V1;
@@ -750,6 +760,60 @@ mod tests {
 
         assert_eq!(next, 6);
         assert_eq!(kept, 2);
+        drop(held);
+        drop(opened);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn a_catalog_of_before_dates_added_knows_none_of_its_rows_and_dates_the_next() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock")
+            .as_nanos();
+        let path = env::temp_dir().join(format!("resonate-mobile-added-{unique}.sqlite"));
+        let connection = Connection::open(&path).expect("a database");
+        connection
+            .create_scalar_function(
+                "folded",
+                1,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
+            )
+            .expect("the fold");
+        for step in [V1, LISTENS_NAME_THEIR_ORIGIN, LISTENS_NEVER_REUSE_AN_ID] {
+            connection.execute_batch(step).expect("an earlier version");
+        }
+        connection
+            .execute_batch(
+                "INSERT INTO documents (uri, name, title, artist, album, duration_ms, rate, codec)
+                 VALUES ('content://music/old.flac', 'old.flac', 'Old', 'A', 'B', 1000, 44100, 'flac')",
+            )
+            .expect("a document of before");
+        connection
+            .pragma_update(None, "user_version", 3)
+            .expect("its stamp");
+        drop(connection);
+
+        let opened = Catalog::open(&path).expect("migrated");
+        opened
+            .upsert(Track {
+                uri: "content://music/new.flac".into(),
+                name: "new.flac".into(),
+                title: "New".into(),
+                ..Track::default()
+            })
+            .expect("a new document");
+        let held = opened.0.lock();
+        let added = |uri: &str| -> Option<i64> {
+            held.query_row("SELECT added FROM documents WHERE uri = ?1", [uri], |row| {
+                row.get(0)
+            })
+            .expect("a document")
+        };
+
+        assert_eq!(added("content://music/old.flac"), None);
+        assert!(added("content://music/new.flac").is_some_and(|at| at > 0));
         drop(held);
         drop(opened);
         let _ = fs::remove_file(path);

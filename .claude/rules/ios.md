@@ -155,7 +155,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   State a poll reads (`syncStatus`, `syncHandoffs`, `transferring`, enrichment's status) is assigned
   only when it changed, so an unchanged answer redraws nothing.
 - **What moves every tick lives in `PlayClock`** (`library.clock`): position, duration, sleep time
-  left, output rate and underruns. `snapshot` is assigned only when something else changed, and
+  left, output rate, underruns and clamped samples. `snapshot` is assigned only when something else changed, and
   `currentId`/`currentQueueId` only when the song does, so a list that marks the playing row is not
   redrawn four times a second; `transport`, `playingTrack` and `playingNext` are derived from each
   snapshot assigned (`Library.derive`) and stored only when they move, so a view that needs the
@@ -168,7 +168,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   **A steer starts from the live clock, never from `snapshot`'s stale fields**
   (`Library.withLiveClock`): the optimistic state a pause, play, shuffle or repeat shows is written
   into the clock too, and built from the snapshot it set the position, length, sleep time, output
-  rate and underruns back to those of the last time something else changed, so the bar and times
+  rate, underruns and clamped samples back to those of the last time something else changed, so the bar and times
   jumped to an old place (far from the live one after a seek) until the next poll.
 - **A skip shows the song it lands on at once.** Next and previous steer the song (`Steered.song`,
   `Library.neighbour`): the queue row after or before the playing one, the first row when next

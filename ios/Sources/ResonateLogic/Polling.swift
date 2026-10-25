@@ -101,6 +101,7 @@ public enum Polling {
         steady.sleepRemainingMs = state.sleepRemainingMs.map { _ in 0 }
         steady.outputRate = 0
         steady.underruns = 0
+        steady.overs = 0
         steady.failure = nil
         steady.queueRevision = 0
         steady.catalogRevision = 0

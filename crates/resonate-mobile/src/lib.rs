@@ -43,7 +43,8 @@ use parking_lot::Mutex;
 use resonate_codec::{Picturing, Sources, probe_pictured};
 use resonate_core::{Frames, Resumable, Resumption, SampleRate, TrackId, Volume};
 use resonate_engine::{
-    Command, EngineConfig, PlaybackState, Player, PlayerState, QueueItem, QueueRows, RepeatMode,
+    Command, EngineConfig, OutputStatus, PlaybackState, Player, PlayerState, QueueItem, QueueRows,
+    RepeatMode,
 };
 
 use crate::{
@@ -125,6 +126,23 @@ const fn transport_of(playback: PlaybackState) -> Transport {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct OutputFigures {
+    rate: u32,
+    underruns: u64,
+    overs: u64,
+}
+
+impl OutputFigures {
+    fn of(output: Option<&OutputStatus>) -> Self {
+        output.map_or_else(Self::default, |output| Self {
+            rate: output.negotiated.rate.hz(),
+            underruns: output.underruns,
+            overs: output.overs,
+        })
+    }
+}
+
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct Snapshot {
     pub transport: Transport,
@@ -137,6 +155,8 @@ pub struct Snapshot {
     pub repeat: u32,
     pub output_rate: u32,
     pub underruns: u64,
+    #[uniffi(default)]
+    pub overs: u64,
     pub failure: Option<String>,
     pub sleep: Option<SleepTimer>,
     pub sleep_remaining_ms: Option<u64>,
@@ -448,6 +468,7 @@ impl MobilePlayer {
         let next_count = queue
             .next
             .map_or(0, |next| (next.last() - next.first() + 1) as u32);
+        let figures = OutputFigures::of(state.output.as_ref());
         Ok(Snapshot {
             transport: transport_of(state.playback),
             current,
@@ -463,8 +484,9 @@ impl MobilePlayer {
                 RepeatMode::Track => 1,
                 RepeatMode::Queue => 2,
             },
-            output_rate: state.output.map_or(0, |output| output.negotiated.rate.hz()),
-            underruns: state.output.map_or(0, |output| output.underruns),
+            output_rate: figures.rate,
+            underruns: figures.underruns,
+            overs: figures.overs,
             failure: self.failure.lock().take(),
             sleep: state.sleeping.map(|sleep| sleep.until.into()),
             sleep_remaining_ms: state
@@ -568,5 +590,46 @@ impl MobilePlayer {
             .ok_or(Error::Closed)?
             .send(command)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use resonate_core::{ChannelLayout, Frames, SampleFormat, StreamSpec};
+    use resonate_engine::{OutputMode, SinkId, StreamVolume};
+
+    use super::*;
+
+    fn output_with(underruns: u64, overs: u64) -> OutputStatus {
+        let rate = SampleRate::new(48_000).expect("a rate");
+        OutputStatus {
+            sink: SinkId::new(1),
+            negotiated: StreamSpec::new(rate, ChannelLayout::Stereo, SampleFormat::F32),
+            words: None,
+            mode: OutputMode::Converted,
+            graph_rate: None,
+            latency: Frames::ZERO,
+            underruns,
+            went_without: Frames::ZERO,
+            overs,
+            device_turned: false,
+            device_muted: false,
+            stream_volume: StreamVolume::Unity,
+        }
+    }
+
+    #[test]
+    fn a_snapshot_carries_the_clamped_samples_of_the_open_stream_and_none_without_one() {
+        let open = output_with(2, 41);
+
+        assert_eq!(
+            OutputFigures::of(Some(&open)),
+            OutputFigures {
+                rate: 48_000,
+                underruns: 2,
+                overs: 41,
+            }
+        );
+        assert_eq!(OutputFigures::of(None), OutputFigures::default());
     }
 }

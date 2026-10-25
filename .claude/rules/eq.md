@@ -259,10 +259,16 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   name (case-folded) and rank it first among the rows that tie, `resonate eq --measurer` beside
   `--find` or `--suggest`; a device it did not measure keeps the ranking and `--suggest` says so
   (`a_measurer_the_listener_names_is_taken_before_the_ranking_and_a_device_it_did_not_measure_keeps_the_ranking`).
-  `equaliser-measurer` keeps one for every device: the flag outranks it, and the pane's search and
-  suggestion read it too, and the *Measured corrections* group chooses it live (`prefer_a_measurer`: the
-  global, the model and a search standing are changed together, then the file;
-  `a_preferred_measurer_is_chosen_from_the_equaliser_pane_and_worn_at_once`)
+  `equaliser-measurer` keeps one for every device and `[equaliser-measurer-for]` (`node.name` to
+  measurer, like `[equaliser-for]`) one for a single device, which outranks it
+  (`Config::equaliser_measurer_for`); the flag outranks both, and the pane's search and suggestion
+  read the device in use's (`Measurers::for_sink`, `EqualiserModel::look`/`suggested` take the sink;
+  `the_pane_suggests_from_the_measurer_preferred_for_the_device_in_use_before_the_one_for_every_device`).
+  `--suggest` reads the chosen sink's, `--find` the `--sink` or configured sink's. The *Measured
+  corrections* group chooses both live, a field for every device and one for the device in use
+  (`prefer_a_measurer`, `prefer_a_measurer_for`: the global, the model and a search standing are
+  changed together, then the file; `a_preferred_measurer_is_chosen_from_the_equaliser_pane_and_worn_at_once`,
+  `a_measurer_is_chosen_for_the_device_in_use_alone_and_worn_at_once`)
   (`the_pane_suggests_from_the_measurer_the_settings_prefer_before_the_fixed_ranking`).
 - **Cached in catalog and process**: `corrections_index`, `corrections_kept` are tables of `V1` (first
   `CHECK (id = 1)`; `library.md`). Ages are `resonate-online`

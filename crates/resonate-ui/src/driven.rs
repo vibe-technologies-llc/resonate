@@ -30,7 +30,7 @@ use resonate_lyrics::Lyricists;
 use resonate_providers::Providers;
 
 use crate::{
-    AppIcon, Bindings, Consulted, Ephemeral, Launcher, Listens, Online, Places, Present,
+    AppIcon, Bindings, Consulted, Ephemeral, Launcher, Listens, Measurers, Online, Places, Present,
     ResonateApp, RootView, SettingsCategory, Sourcing, Tabs, WindowButtons, app,
     drawing::Drawer,
     settings::{Registering, Supplying},
@@ -371,7 +371,7 @@ impl Driven {
                 settings: Arc::new(Ephemeral),
                 online,
                 bindings: Bindings::default(),
-                measurer: None,
+                measurers: Measurers::default(),
                 for_the_pass: Consulted {
                     reference: reference.clone(),
                     fingerprinters,
@@ -2982,8 +2982,11 @@ mod tests {
         let worn = |driven: &mut Driven| {
             driven.read(|root, cx| {
                 (
-                    cx.global::<ResonateApp>().measurer.clone(),
-                    root.equaliser.read(cx).measurer().map(str::to_owned),
+                    cx.global::<ResonateApp>().measurers.fallback.clone(),
+                    root.equaliser
+                        .read(cx)
+                        .measurer_for(None)
+                        .map(str::to_owned),
                 )
             })
         };
@@ -3001,6 +3004,52 @@ mod tests {
         driven.click("measurer-best-ranked");
 
         assert_eq!(worn(&mut driven), (None, None));
+    }
+
+    #[gpui::test]
+    fn a_measurer_is_chosen_for_the_device_in_use_alone_and_worn_at_once(cx: &mut TestAppContext) {
+        use resonate_engine::NodeName;
+
+        let desk = NodeName::new("alsa_output.desk");
+        let worn = |driven: &mut Driven| {
+            let desk = desk.clone();
+            driven.read(move |root, cx| {
+                (
+                    cx.global::<ResonateApp>().measurers.clone(),
+                    root.equaliser
+                        .read(cx)
+                        .measurer_for(Some(&desk))
+                        .map(str::to_owned),
+                )
+            })
+        };
+        let mut driven = Driven::hearing(
+            cx,
+            catalog(),
+            vec![
+                sink_named(1, "alsa_output.desk", "Desk speakers", true),
+                sink_named(2, "alsa_output.usb", "USB DAC", false),
+            ],
+        );
+        driven.until(|root, cx| root.player.read(cx).sinks().len() == 2);
+        driven.click("tab-settings");
+        driven.click("category-Equaliser");
+
+        driven.click("measurer-rtings");
+        driven.click("device-measurer-crinacle");
+
+        let (measurers, for_the_desk) = worn(&mut driven);
+        assert_eq!(measurers.fallback.as_deref(), Some("rtings"));
+        assert_eq!(measurers.of_the_device(&desk), Some("crinacle"));
+        assert_eq!(measurers.by_sink.len(), 1);
+        assert_eq!(for_the_desk.as_deref(), Some("crinacle"));
+
+        driven.click("device-measurer-best-ranked");
+
+        let (measurers, for_the_desk) = worn(&mut driven);
+        assert_eq!(measurers.fallback.as_deref(), Some("rtings"));
+        assert!(measurers.by_sink.is_empty());
+        assert_eq!(for_the_desk.as_deref(), Some("rtings"));
     }
 
     #[gpui::test]

@@ -44,6 +44,12 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import org.resonate.android.AudioOutput
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.Page
@@ -53,10 +59,17 @@ import org.resonate.android.ui.resonateViewModel
 
 class OutputViewModel(resonate: Resonate) : ViewModel() {
     private val features = resonate.features
+    private val library = resonate.library
 
     val outputs = features.outputs
     val selected = features.selectedOutput
     val actual = features.actualOutput
+
+    val clamped: StateFlow<ULong> =
+        library.snapshot
+            .map { it?.overs ?: 0uL }
+            .distinctUntilChanged()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0uL)
 
     fun refresh() = features.refreshOutputs()
 
@@ -100,6 +113,7 @@ fun OutputScreen() {
     val outputs by model.outputs.collectAsStateWithLifecycle()
     val selected by model.selected.collectAsStateWithLifecycle()
     val actual by model.actual.collectAsStateWithLifecycle()
+    val clamped by model.clamped.collectAsStateWithLifecycle()
     FollowDevices(model::refresh)
     val choices = withSystemDefault(outputs)
     Page(
@@ -117,6 +131,16 @@ fun OutputScreen() {
                     playingName = outputNamed(outputs, actual),
                     pending = if (selected != actual) outputNamed(outputs, selected) else null,
                 )
+            }
+            clampedSamplesWords(clamped)?.let { words ->
+                item(key = "clamped") {
+                    SettingRow(
+                        title = "Clamped samples",
+                        supporting = CLAMPED_SAMPLES_NOTE,
+                        trailing = { Text(words) },
+                        modifier = Modifier.testTag("clamped-samples"),
+                    )
+                }
             }
             item(key = "choose") { SectionHeader("Play through") }
             item(key = "choices") {

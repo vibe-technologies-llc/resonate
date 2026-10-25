@@ -186,7 +186,7 @@ all, a 0.1.0 file the steps after `V1`); there is no copy kept before one. A lat
 step and never edits `V1`; step 2 gave `listens` the `origin_device` and `origin_id` a remote listen
 is credited by, unique together, and step 3 rebuilt `listens` with `AUTOINCREMENT`, as the desktop's is, so a deleted
 song's listen ids are never handed to the next listen (the ledger and scrobbling read `id > mark`), seeding the
-sequence past the highest `submissions.through`. A version past the chain is `Error::CatalogVersion`. `V1` holds `documents` (the metadata, the lookup's clocks `asked`/`answered`
+sequence past the highest `submissions.through`; step 4 gave `documents` an `added` (Unix seconds, `NULL` for a row indexed before it, which no age term answers, since a guess is never written) that the `documents_dated` trigger sets on every insert, which the search index reads for `added:`. A version past the chain is `Error::CatalogVersion`. `V1` holds `documents` (the metadata, the lookup's clocks `asked`/`answered`
 as nanosecond stamps with `asks` and `refusals`, `release_group`, `isrc` kept from tags on index,
 `album_key`, `art_changed`, `missing`, and `size`, `modified` and `indexed_by`, the stamp a scan saw
 the file by and the `INDEXING_REVISION` that read it), `resume`, `queue`, `lyrics`, `listens`
@@ -560,9 +560,12 @@ genre, never lyrics; `title:`, `artist:` (artist or album artist), `album:`, `ge
 scope; quotes ask a run of whole words inside one name; `artist:=Air` asks the whole name (not
 *Airiel*); `-` denies one token; `or` alternates. Terms answered: `year:`, `length:`, `rate:`,
 `depth:` (`bits`), `codec:`, `plays:` (with `@` windows over listens), `played:`, `is:` lossless,
-lossy, mono, stereo, multichannel, hires, favourite. `added:` (a row keeps no added time) and
-`is:hidden`/`fake`/`suspect`/`misnamed` hold nothing, so their denial holds everything, as the
-desktop's `NOT coalesce(…, 0)` does for a row unable to answer. A text reading nothing (`!!!`)
+lossy, mono, stereo, multichannel, hires, favourite. `added:` (a row's `added` second, `Row::added`; an undated row answers neither way), and `is:fake`/`suspect` (the
+`studies` verdict, read apart from the index as `Studied`, stamped by the counts and id sums of its
+fake and suspect rows and held beside the cached order, so a study written without moving the catalog
+revision is seen by the next search). `is:hidden`/`misnamed` hold nothing (a phone keeps no
+agreement of a name with its audio), so their denial holds everything, as the desktop's
+`NOT coalesce(…, 0)` does for a row unable to answer. A text reading nothing (`!!!`)
 matches nothing. A lone undenied word of three letters or more also matches inside a word, below
 every other fit.
 
