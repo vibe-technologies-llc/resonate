@@ -4477,6 +4477,55 @@ mod tests {
             assert!(library.wants().expect("the wants read").is_empty());
         }
 
+        #[gpui::test]
+        fn a_pressed_song_no_provider_delivers_is_still_found_when_the_search_is_asked_again(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let asked = Arc::new(Mutex::new(Vec::new()));
+            let told = Arc::clone(&asked);
+            let reaching = Reaching {
+                reference: Arc::new(MusicBrainz::new()),
+                register: Arc::new(move |_: &Supplying<'_>| {
+                    Providers::none().and(Arc::new(Shop {
+                        source: SourceId::new("shop").expect("a source name"),
+                        asked: Arc::clone(&told),
+                    }))
+                }),
+            };
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+            let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
+            let recording = mbid(HEROES_TONIGHT);
+            let found_now = |root: &crate::views::root::RootView, cx: &gpui::App| {
+                root.library
+                    .read(cx)
+                    .found()
+                    .iter()
+                    .any(|found| found.recording == recording)
+            };
+
+            typed(&mut driven, "Heroes Tonight");
+            driven.until(|root, cx| found_now(root, cx));
+            driven.click("unheld-title-0");
+            driven.until(|_, _| !asked.lock().is_empty());
+
+            assert!(
+                driven.read(|root, cx| found_now(root, cx)),
+                "the pressed song left the search"
+            );
+
+            let model = driven.read(|root, _| root.library.clone());
+            driven.cx.update(|_, cx| {
+                model.update(cx, |library, cx| library.ask_elsewhere_again(cx));
+            });
+            driven.until(|root, cx| !root.library.read(cx).is_asking_elsewhere());
+
+            assert!(
+                driven.read(|root, cx| found_now(root, cx)),
+                "a song no provider delivered could not be found again"
+            );
+        }
+
         struct Delivers {
             source: SourceId,
             file: std::path::PathBuf,

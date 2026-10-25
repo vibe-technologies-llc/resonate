@@ -1233,7 +1233,9 @@ is never named.
     `want_found`, landing its release and wanting the row on bg, mark greyed meanwhile.
     `restate_what_was_found` passes over a found song whose want holds a track the held listing draws
     (`is_listed_as_held`), so it is listed once, as the held track, once the catalog's next read carries
-    it (`a_found_song_that_landed_is_listed_once_as_the_held_track`). **A found song's whole row is that
+    it (`a_found_song_that_landed_is_listed_once_as_the_held_track`); until then, delivered or not, it
+    stays listed as found
+    (`a_pressed_song_no_provider_delivers_is_still_found_when_the_search_is_asked_again`). **A found song's whole row is that
     press** (`found_row`, `FETCH_FOUND_HINT`); the mark's own press finds the recording already
     `wanting`; while asked for, the row takes no press. `wanting` holds a task per recording.
     **A song pressed plays once it lands, if it lands within half a minute.** The row's press, `enter`

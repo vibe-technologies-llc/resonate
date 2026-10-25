@@ -1501,8 +1501,11 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
 - **Found elsewhere: `Library::found_elsewhere`.** Sends the words asked by name to
   `Reference::find_songs`, answers `Found`s: recording, title, credit, length, the release meant,
   `performer` (first credited artist MusicBrainz names by id, `Performer::Elsewhere`). Leaves out
-  recordings already held (`tracks.mbid`, `release_tracks.recording_mbid`) and recordings on
-  bootlegs alone naming no ISRC (`is_worth_offering`). **Of the takes of one folded title and credit
+  recordings a file holds (`tracks.mbid`, or a `release_tracks.recording_mbid` paired with a
+  `track_id`) and recordings on bootlegs alone naming no ISRC (`is_worth_offering`). **A recording
+  the catalog only learnt is still offered**: wanting a song lands its release rows before any file,
+  and the search draws no unheld rows, so counting those as held took a pressed song out of the
+  search at once and kept it out after a failed download. **Of the takes of one folded title and credit
   it offers the one a provider can deliver** (`the_take_worth_offering`: ISRC first, then the best
   standing and kind of release, then the most releases). **Songs are ranked before the cap**:
   `found_among` orders groups by `Fit` (`Titled`, `Answered`, `Partly`), then by the releases the

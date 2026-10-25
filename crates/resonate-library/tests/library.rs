@@ -23500,10 +23500,11 @@ fn a_song_found_elsewhere_is_wanted_by_landing_the_release_it_first_came_out_on(
     );
 
     let again = library.found_elsewhere(&fake, "echoes")?;
+    let offered: Vec<&str> = again.iter().map(|found| found.recording.as_str()).collect();
+
     assert!(
-        again.iter().all(|found| found.recording.as_str() != ECHOES
-            && found.recording.as_str() != ANOTHER_RECORDING),
-        "a recording the catalog names is not offered again"
+        offered.contains(&ECHOES) && offered.contains(&ANOTHER_RECORDING),
+        "a recording the catalog names but holds no file of is still offered: {offered:?}"
     );
     assert_eq!(library.want_found(&fake, &found[0])?, want);
 

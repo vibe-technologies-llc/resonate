@@ -3858,7 +3858,8 @@ impl Library {
         let asked = vec!["?"; matches.len()].join(", ");
         let sql = format!(
             "SELECT mbid FROM tracks WHERE mbid IN ({asked})
-             UNION SELECT recording_mbid FROM release_tracks WHERE recording_mbid IN ({asked})"
+             UNION SELECT recording_mbid FROM release_tracks
+                    WHERE recording_mbid IN ({asked}) AND track_id IS NOT NULL"
         );
         let named: Vec<Value> = matches
             .iter()
