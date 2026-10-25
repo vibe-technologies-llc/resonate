@@ -1,7 +1,9 @@
 package org.resonate.android.ui.settings
 
+import org.resonate.android.Readiness
 import org.resonate.android.nativecore.DownloadAccount
 import org.resonate.android.nativecore.MusicProvider
+import org.resonate.android.readiness
 
 enum class ProviderField {
     SERVER,
@@ -65,3 +67,36 @@ fun DownloadAccount.with(field: ProviderField, value: String): DownloadAccount =
 
 fun DownloadAccount.trimmed(): DownloadAccount =
     copy(server = server.trim(), user = user.trim(), clientId = clientId.trim())
+
+fun readinessWords(readiness: Readiness): String =
+    when (readiness) {
+        Readiness.READY -> "Ready"
+        Readiness.MISSING_SERVER -> "Needs a server address"
+        Readiness.MISSING_LOGIN -> "Needs a username and password"
+        Readiness.MISSING_CLIENT -> "Needs a TIDAL client ID"
+        Readiness.NEEDS_SIGN_IN -> "Needs Sign in with TIDAL"
+    }
+
+fun accountLocation(account: DownloadAccount): String {
+    val server = account.server.trim().substringAfter("://").trimEnd('/')
+    return when {
+        server.isNotEmpty() -> server
+        account.provider == MusicProvider.TIDAL -> "Your subscription"
+        account.provider == MusicProvider.HIFI_API && account.password.isNotBlank() ->
+            "Your own server"
+        account.provider == MusicProvider.SUBSONIC -> "No server yet"
+        else -> "Hosted service"
+    }
+}
+
+fun accountSummary(account: DownloadAccount, on: Boolean): String {
+    val status = if (on) readinessWords(account.readiness()) else "Off"
+    return "${accountLocation(account)} · $status"
+}
+
+fun accountsLead(count: Int): String =
+    when (count) {
+        0 -> "No source is set up yet."
+        1 -> "One source is asked for each song."
+        else -> "All $count sources are asked at once for each song, and the first to deliver wins."
+    }

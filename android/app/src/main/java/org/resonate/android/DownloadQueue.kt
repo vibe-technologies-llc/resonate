@@ -108,7 +108,7 @@ class DownloadQueue(
         mutableAutomatic.value &&
             seams.online() &&
             seams.unmetered() &&
-            seams.account() != null &&
+            seams.accounts().isNotEmpty() &&
             seams.writable(mutableRemembered.value)
 
     private suspend fun keepAsking() {
@@ -153,14 +153,15 @@ class DownloadQueue(
         var created: Uri? = null
         try {
             awaitService()
-            val account = checkNotNull(seams.account()) { "Set up a download provider first" }
+            val accounts = seams.accounts()
+            check(accounts.isNotEmpty()) { "Set up a download provider first" }
             val native = library.native()
             val song = checkNotNull(job(key)).song
             val folder = Uri.parse(checkNotNull(job(key)).folder)
             val id = native.beginDownload(song)
             change(key) { it.copy(native = id) }
             if (job(key)?.state == DownloadState.CANCELLED) native.cancelDownload(id)
-            val offer = native.findDownload(id, listOf(account))
+            val offer = native.findDownload(id, accounts)
             native.refreshedTidalToken()?.let(seams::renewed)
             change(key) { it.copy(state = DownloadState.DOWNLOADING, name = offer.name) }
             val uri = MusicDocuments.create(context, folder, mimeOf(offer.extension), offer.name)
@@ -265,7 +266,7 @@ class DownloadQueue(
 }
 
 interface DownloadSeams {
-    fun account(): org.resonate.android.nativecore.DownloadAccount?
+    fun accounts(): List<org.resonate.android.nativecore.DownloadAccount>
 
     fun renewed(token: String)
 

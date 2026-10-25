@@ -10,8 +10,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   not give
 - [L · 0.2.0] Android output is shared stereo float at 48 kHz; exclusive/bit-perfect output, per-route
   format enumeration and DoP need capability negotiation and physical-device validation
-- [M · 0.2.0] Android keeps one download account: the boundary races every account, but Settings stores one
-  and the screens show one
 
 ## iOS parity
 - [M · 0.2.0] iOS downloads cannot resume: any cancel, failure or background expiry deletes the partial

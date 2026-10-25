@@ -84,16 +84,20 @@ class DownloadQueueTest {
             ActivityScenario.launch(MainActivity::class.java).use {
                 val library = (context.applicationContext as ResonateApplication).library
                 val features = library.features
-                features.providerAccount.value =
-                    DownloadAccount(
-                        MusicProvider.SUBSONIC,
-                        "http://127.0.0.1:${server.localPort}",
-                        "fixture",
-                        "fixture",
-                        "",
-                        "",
-                        "",
-                    )
+                features.providerAccounts.value =
+                    ProviderAccountBook()
+                        .saved(
+                            1L,
+                            DownloadAccount(
+                                MusicProvider.SUBSONIC,
+                                "http://127.0.0.1:${server.localPort}",
+                                "fixture",
+                                "fixture",
+                                "",
+                                "",
+                                "",
+                            ),
+                        )
                 val folder = runBlocking { features.useDownloads() }
                 features.download(songs, folder)
                 var most = 0

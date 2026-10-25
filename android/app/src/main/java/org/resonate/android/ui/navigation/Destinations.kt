@@ -17,6 +17,7 @@ import org.resonate.android.ui.settings.FoldersScreen
 import org.resonate.android.ui.settings.LibraryToolsScreen
 import org.resonate.android.ui.settings.OutputScreen
 import org.resonate.android.ui.settings.ProcessingScreen
+import org.resonate.android.ui.settings.ProviderAccountScreen
 import org.resonate.android.ui.settings.ProvidersScreen
 import org.resonate.android.ui.settings.ScrobblingScreen
 import org.resonate.android.ui.settings.SettingsScreen
@@ -56,6 +57,7 @@ fun ScreenContent(screen: Screen) {
         Screen.IdenticalSongs -> IdenticalSongsScreen()
         Screen.Wanted -> WantedScreen()
         Screen.Providers -> ProvidersScreen()
+        is Screen.ProviderAccount -> ProviderAccountScreen(screen)
         Screen.Scrobbling -> ScrobblingScreen()
         Screen.Sync -> SyncScreen()
         Screen.Appearance -> AppearanceScreen()

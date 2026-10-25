@@ -19,16 +19,33 @@ class ProviderAccountStoreTest {
         val storage = context.getSharedPreferences("provider-accounts", Context.MODE_PRIVATE)
         storage.edit().clear().commit()
         try {
-            val account =
-                DownloadAccount(
-                    MusicProvider.SUBSONIC,
-                    "https://music.invalid",
-                    "fixture-user",
-                    "fixture-password",
-                    "fixture-client",
-                    "fixture-secret",
-                    "fixture-refresh",
-                )
+            val book =
+                ProviderAccountBook()
+                    .saved(
+                        1L,
+                        DownloadAccount(
+                            MusicProvider.SUBSONIC,
+                            "https://music.invalid",
+                            "fixture-user",
+                            "fixture-password",
+                            "fixture-client",
+                            "fixture-secret",
+                            "fixture-refresh",
+                        ),
+                    )
+                    .saved(
+                        2L,
+                        DownloadAccount(
+                            MusicProvider.SUBSONIC,
+                            "https://other.invalid",
+                            "fixture-second-user",
+                            "fixture-second-password",
+                            "",
+                            "",
+                            "",
+                        ),
+                    )
+                    .turned(2L, false)
             val scrobbling =
                 ScrobbleAccount(
                     "fixture-listenbrainz",
@@ -37,17 +54,17 @@ class ProviderAccountStoreTest {
                     "fixture-session",
                 )
             ProviderAccountStore(context).apply {
-                write(account)
+                writeAccounts(book)
                 writeScrobbling(scrobbling)
                 writeRecognitionKey("fixture-acoustid")
             }
             ProviderAccountStore(context).apply {
-                assertEquals(account, read())
+                assertEquals(book, readAccounts())
                 assertEquals(scrobbling, readScrobbling())
                 assertEquals("fixture-acoustid", readRecognitionKey())
             }
             storage.all
-                .filterKeys { it !in setOf("server", "provider") }
+                .filterKeys { !it.endsWith("-server") && !it.endsWith("-provider") }
                 .values
                 .forEach { value ->
                     assertFalse(value.toString().contains("fixture"))

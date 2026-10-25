@@ -729,8 +729,8 @@ call it.
 
 Monochrome, hifi-api, Subsonic and the listener's TIDAL account use the existing provider matching
 and delivery code. Credentials and recognition keys are encrypted with AES-GCM under Android
-Keystore. TIDAL device sign-in displays the code and authorization page, and renewed refresh
-tokens are saved. The user chooses a write-granted music folder per download. A data-sync
+Keystore. TIDAL device sign-in displays the code and authorization page, and the renewed refresh
+token is saved on the TIDAL account. The user chooses a write-granted music folder per download. A data-sync
 foreground service retains the engine and offers cancellation; a download waits at most ten seconds for
 that service to start and then fails with a notice, so one that never starts cannot hold the
 download slot (`DownloadQueue.SERVICE_STARTS_WITHIN_MS`). Choosing Downloads writes its preference on the IO
@@ -738,8 +738,31 @@ dispatcher, never the main thread. Background tasks of `LibraryFeatures` share a
 `CoroutineExceptionHandler` that logs and says the failure, and `Resonate.attempt` catches every
 native failure, a `LinkageError` included, so a screen never waits for ever.
 
+**Download accounts are a list** (`ProviderAccountBook`, `ProviderAccountRecords`, `ProviderAccountStore`):
+any number of Monochrome, hifi-api and Subsonic accounts, each its own row with its own switch, and at
+most one TIDAL account, because the boundary hands back one renewed refresh token
+(`refreshed_tidal_token`) that cannot say which account it renews. An account is asked when it is on
+and ready (`Readiness`, iOS's `DownloadAccount.readiness`: Monochrome and hifi-api always, Subsonic
+with a server, user and password, TIDAL with a client ID and refresh token), and `find_download`
+takes every such account in list order, which only breaks ties, the boundary racing them; there is
+no order of the listener's, as on iOS and the desktop. The stored form is version 2, in the
+`provider-accounts` preferences: `accounts-version`, `accounts-ids` (the ids in order) and per id
+`account-<id>-provider`, `-server`, `-on` in plain text and `-user`, `-password`, `-client-id`,
+`-client-secret`, `-refresh-token` each sealed with AES-GCM under Android Keystore as before. Every
+write replaces all `account-` keys in one commit, so a removed account leaves nothing behind. The
+first read of an earlier store migrates it in one commit: the single `provider`, `server` and sealed
+fields become account 1, copied without being opened, and a store with no account at all starts as
+one hosted Monochrome, as the single account's default always asked it; an empty list written later
+stays empty (`ProviderAccountRecordsTest`, `ProviderAccountStoreTest`). Every change is
+`ProviderAccountStore.change`, a read, an edit and a write under one lock, whether the listener's
+(`LibraryFeatures.keepProviderAccount`, `turnProviderAccount`, `removeProviderAccount`) or a
+renewed token's. Settings › Download sources lists the accounts with their switches and what each
+needs (`accountSummary`) and offers *Add a source* per kind; an account opens in its own page
+(`Screen.ProviderAccount`: an id, or none for a new one that is stored only on *Add*) with its
+fields, TIDAL sign-in and *Remove* (confirmed). *Ask the hosted services* stays one switch for all.
+
 **A download is a job** (`downloads.rs`), several at once: `begin_download(song)` answers its
-number, `find_download(job, accounts)` races every account through `Providers::first` (registration
+number, `find_download(job, accounts)` races every account it is given through `Providers::first` (registration
 order, `TURNED_TO_APART`, the grace, `ANSWERS_WITHIN`) and opens the offer taken, falling to the
 held-back offers in rank order where one is `Gone` or refused, so the `DownloadOffer` names the
 extension, the answering `MusicProvider` and the `Opened::Reading` length before the front end

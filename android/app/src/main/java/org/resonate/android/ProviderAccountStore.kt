@@ -9,8 +9,6 @@ import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
-import org.resonate.android.nativecore.DownloadAccount
-import org.resonate.android.nativecore.MusicProvider
 import org.resonate.android.nativecore.ScrobbleAccount
 import org.resonate.android.nativecore.SyncConfig
 
@@ -19,35 +17,23 @@ class ProviderAccountStore(context: Context) {
     private val alias = "resonate-provider-accounts"
 
     @Synchronized
-    fun read(): DownloadAccount =
-        DownloadAccount(
-            provider =
-                MusicProvider.entries.find { it.name == storage.getString("provider", null) }
-                    ?: MusicProvider.MONOCHROME,
-            server = storage.getString("server", "").orEmpty(),
-            user = decrypt("user"),
-            password = decrypt("password"),
-            clientId = decrypt("client-id"),
-            clientSecret = decrypt("client-secret"),
-            refreshToken = decrypt("refresh-token"),
-        )
+    fun readAccounts(): ProviderAccountBook {
+        if (!ProviderAccountRecords.isCurrent(storage.all)) {
+            committed(ProviderAccountRecords.migration(storage.all, ::encrypt), ACCOUNTS_NOT_SAVED)
+        }
+        return ProviderAccountRecords.decode(storage.all, ::open)
+    }
 
     @Synchronized
-    fun write(account: DownloadAccount) {
-        val edit =
-            storage
-                .edit()
-                .putString("provider", account.provider.name)
-                .putString("server", account.server)
-        mapOf(
-                "user" to account.user,
-                "password" to account.password,
-                "client-id" to account.clientId,
-                "client-secret" to account.clientSecret,
-                "refresh-token" to account.refreshToken,
-            )
-            .forEach { (name, value) -> edit.putString(name, encrypt(value)) }
-        check(edit.commit()) { "Provider account could not be saved" }
+    fun writeAccounts(book: ProviderAccountBook) {
+        committed(ProviderAccountRecords.encode(book, ::encrypt, storage.all.keys), ACCOUNTS_NOT_SAVED)
+    }
+
+    @Synchronized
+    fun change(edit: (ProviderAccountBook) -> ProviderAccountBook): ProviderAccountBook {
+        val changed = edit(readAccounts())
+        writeAccounts(changed)
+        return changed
     }
 
     @Synchronized
@@ -150,8 +136,18 @@ class ProviderAccountStore(context: Context) {
             Base64.encodeToString(cipher.doFinal(value.toByteArray(Charsets.UTF_8)), Base64.NO_WRAP)
     }
 
-    private fun decrypt(name: String): String {
-        val stored = storage.getString(name, null)?.takeIf { it.isNotBlank() } ?: return ""
+    private fun committed(changes: Changes, failure: String) {
+        val edit = storage.edit()
+        changes.forEach { (name, value) ->
+            if (value == null) edit.remove(name) else edit.putString(name, value)
+        }
+        check(edit.commit()) { failure }
+    }
+
+    private fun decrypt(name: String): String = open(storage.getString(name, null).orEmpty())
+
+    private fun open(stored: String): String {
+        if (stored.isBlank()) return ""
         val parts = stored.split(':', limit = 2)
         val cipher =
             Cipher.getInstance("AES/GCM/NoPadding").apply {
@@ -162,5 +158,9 @@ class ProviderAccountStore(context: Context) {
                 )
             }
         return String(cipher.doFinal(Base64.decode(parts[1], Base64.NO_WRAP)), Charsets.UTF_8)
+    }
+
+    private companion object {
+        const val ACCOUNTS_NOT_SAVED = "Provider accounts could not be saved"
     }
 }

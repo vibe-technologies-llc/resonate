@@ -93,9 +93,9 @@ class Downloads(private val resonate: Resonate, private val scope: CoroutineScop
             .stateIn(scope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val ready: StateFlow<Boolean> =
-        features.providerAccount
-            .map { it != null }
-            .stateIn(scope, SharingStarted.WhileSubscribed(5_000), features.providerAccount.value != null)
+        features.providerAccounts
+            .map { it?.ready == true }
+            .stateIn(scope, SharingStarted.WhileSubscribed(5_000), features.providerAccounts.value?.ready == true)
 
     val running: StateFlow<Boolean> = features.downloading
 

@@ -59,6 +59,8 @@ sealed interface Screen : NavKey {
 
     @Serializable data object Providers : Screen
 
+    @Serializable data class ProviderAccount(val id: Long, val provider: String) : Screen
+
     @Serializable data object Scrobbling : Screen
 
     @Serializable data object Sync : Screen

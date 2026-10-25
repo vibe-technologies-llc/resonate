@@ -110,7 +110,7 @@ enum class Setting(
         SettingsGroup.ONLINE,
         "Download sources",
         "Monochrome, hifi-api, Subsonic and TIDAL",
-        listOf("Download provider", "Server address", "Sign in with TIDAL"),
+        listOf("Download provider", "Add a source", "Server address", "Sign in with TIDAL"),
     ),
     SCROBBLING(
         SettingsGroup.ONLINE,

@@ -148,18 +148,12 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val outputs = MutableStateFlow<List<AudioOutput>>(emptyList())
     val selectedOutput = MutableStateFlow(0)
     val actualOutput = MutableStateFlow(0)
-    val providerAccount = MutableStateFlow<DownloadAccount?>(null)
+    val providerAccounts = MutableStateFlow<ProviderAccountBook?>(null)
     private val downloadSeams =
         object : DownloadSeams {
-            override fun account() = providerAccount.value
+            override fun accounts() = providerAccounts.value?.asked.orEmpty()
 
-            override fun renewed(token: String) {
-                providerAccount.value?.let {
-                    val renewed = it.copy(refreshToken = token)
-                    accounts.write(renewed)
-                    providerAccount.value = renewed
-                }
-            }
+            override fun renewed(token: String) = changeAccounts { it.renewed(token) }
 
             override fun online() = online.value
 
@@ -280,20 +274,12 @@ class LibraryFeatures(private val context: Context, private val library: Library
     fun initialize(native: MobilePlayer) {
         room.restore(native)
         routes.start()
-        providerAccount.value =
+        providerAccounts.value =
             try {
-                accounts.read()
+                accounts.readAccounts()
             } catch (failure: Exception) {
                 library.report(failure)
-                DownloadAccount(
-                    org.resonate.android.nativecore.MusicProvider.MONOCHROME,
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                )
+                ProviderAccountBook()
             }
         scrobbleAccount.value =
             try {
@@ -1338,17 +1324,16 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     }
 
-    fun authorizeTidal(account: DownloadAccount) {
+    fun authorizeTidal(id: Long, account: DownloadAccount) {
         tidalBusy.value = true
         work { native ->
             try {
                 tidalAuthorization.value =
                     native.authorizeTidal(account.clientId, account.clientSecret)
                 val token = native.finishTidalAuthorization() ?: return@work
-                val updated = account.copy(refreshToken = token)
-                accounts.write(updated)
-                providerAccount.value = updated
+                changeAccounts { it.saved(id, account.copy(refreshToken = token)) }
                 tidalAuthorization.value = null
+                downloads.wantsChanged()
                 library.notice("Signed in to TIDAL")
             } finally {
                 tidalBusy.value = false
@@ -1356,11 +1341,34 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     }
 
-    fun saveProviderAccount(account: DownloadAccount) = work {
-        accounts.write(account)
-        providerAccount.value = account
+    private fun changeAccounts(edit: (ProviderAccountBook) -> ProviderAccountBook) {
+        synchronized(accounts) { providerAccounts.value = accounts.change(edit) }
+    }
+
+    fun keepProviderAccount(id: Long, account: DownloadAccount): Long {
+        var kept = id
+        changeAccounts { book ->
+            if (id == ProviderAccountBook.UNSAVED) kept = book.nextId()
+            book.saved(kept, account)
+        }
+        return kept
+    }
+
+    fun saveProviderAccount(id: Long, account: DownloadAccount) = work {
+        keepProviderAccount(id, account)
         downloads.wantsChanged()
-        library.notice("Download provider saved")
+        library.notice("Download source saved")
+    }
+
+    fun turnProviderAccount(id: Long, on: Boolean) = work {
+        changeAccounts { it.turned(id, on) }
+        downloads.wantsChanged()
+    }
+
+    fun removeProviderAccount(id: Long) = work {
+        changeAccounts { it.removed(id) }
+        downloads.wantsChanged()
+        library.notice("Download source removed")
     }
 
     fun download(song: SearchSong, folder: MusicFolder) {
@@ -1368,7 +1376,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     }
 
     fun download(songs: List<SearchSong>, folder: MusicFolder) {
-        if (providerAccount.value == null) {
+        if (providerAccounts.value?.ready != true) {
             library.notice("Set up a download provider first")
             return
         }
