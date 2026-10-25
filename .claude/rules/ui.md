@@ -1129,7 +1129,11 @@ is never named.
 - **A song asked for is followed in the sidebar, never told in a toast.** `downloads.rs`: `Downloads`
   holds a `Download` per found song pressed (the `Found`, `WantId` once landed, when queued, a
   `Fetching`); `LibraryModel::want_found` writes it: `Landing`, then `Queued` (`NoProvider` where
-  `Sourcing::providers` registers none, `Unwanted` where landing failed). `Downloads::followed` reads
+  `Sourcing::providers` registers none, `Unwanted` where landing failed). **The providers are asked
+  while the release is read**: `want_found` runs `Library::foresee` on the background executor beside
+  `want_found_uncovered` and starts the poll once both are done, the want reading *Waiting its turn…*
+  meanwhile (`providers.md`; `a_found_song_pressed_lands_once_as_the_held_track_and_plays` holds that
+  the one ask began before the release was read). `Downloads::followed` reads
   each shelves load's `WantStanding`s: delivered = `Downloaded`; tried since queued with nothing offered
   = `Retrying { tries, at }`; given up = `GaveUp`. **A download says which step it is on.** `Landing` reads *Reading the
   release…*, `Queued` *Waiting its turn…*, a `Downloading` *Searching…* (*Searching <provider>…* once

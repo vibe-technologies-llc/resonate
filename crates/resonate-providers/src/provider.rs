@@ -172,6 +172,10 @@ impl Providers {
             .unwrap_or(NonZeroUsize::MAX)
     }
 
+    pub const fn is_narrowed(&self) -> bool {
+        self.narrowed
+    }
+
     pub fn has_a_source(&self) -> bool {
         self.providers.iter().any(is_a_source)
     }

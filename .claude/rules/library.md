@@ -1582,6 +1582,8 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   say**: a `Found` carries every release of its recording, ordered by
   `Found::in_the_order_worth_offering`; the found row's *Want* mark opens them as a menu; a press is
   `want_found` with `Found::from` that release.
+  **The providers are not kept waiting for that release**: the window asks them from the `Found` while
+  it is read (`Library::foresee`, `providers.md`).
 - **An album or artist the words name is found beside the songs.** `Reference::find_albums` is a
   release-group search (`AlbumMatch`), asked after `find_songs`, failing without failing it.
   `Library::unheld_albums_among` keeps an `AlbumFound` per album or EP (soundtrack counts) every

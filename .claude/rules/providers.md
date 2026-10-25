@@ -90,6 +90,21 @@ away**: `StillArriving` counts `refused`, the want stays unstamped and due.
   or failed before any claim is `owes_a_poll` (`a_cancelled_poll_is_not_nudged_and_owes_nothing`,
   `a_poll_nudged_before_it_was_cancelled_owes_another`). `PollProgress` keeps a lane per want asked
   (`asking_all`, `provider_of`, `received_for`).
+- **A pressed song is searched for while its release is read.** `Library::foresee` (`foresight.rs`)
+  asks the registry (`Providers::first`, every provider, never a narrowed registry) from the
+  `Found` alone: recording, release, every code, title, credit, release title and length; no disc,
+  position or link, which only the landed row has. An offer is kept for the recording with the
+  providers heard, `FORESEEN_FOR` (2 minutes: a stream offer may lapse), at most
+  `WANTS_ASKED_AT_ONCE` searches at once (more are skipped, not queued). **Only an offer is kept**:
+  a foresight that found nothing leaves the poll to ask with the full identity, since a link may
+  find what the codes and words did not. `Lanes::asked` takes it once (`Foresight::take`) in place
+  of its first `Providers::first`, keeping only offers of a provider the poll registers, not found
+  gone and not declined (`foreseen_answer`); an offer falling through is followed by the ordinary
+  rounds with the heard providers passed. The window runs it beside `want_found_uncovered` and
+  starts the poll when both are done (`ui.md`); `forget_foresight` lets one go when the want fails
+  (`a_song_foreseen_from_what_the_search_found_is_not_asked_of_the_provider_again_by_the_poll`,
+  `a_foresight_is_spent_by_the_poll_that_takes_it_and_asked_afresh_by_the_next`,
+  `an_offer_foreseen_of_a_provider_the_poll_does_not_register_is_not_taken`).
 - **Due wants.** `wants.misses` counts consecutive tries every provider answered nothing.
   `Want::due_at`: at once if never tried; `RETRY_WAITS` after the last try; `POLL_AGAIN_AFTER` after
   an offer the catalog does not hold yet; `None` once misses reach `TRIES_BEFORE_GIVING_UP`

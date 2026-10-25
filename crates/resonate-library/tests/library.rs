@@ -23560,6 +23560,139 @@ fn a_song_found_elsewhere_is_wanted_with_every_code_of_it_and_from_its_next_rele
     Ok(())
 }
 
+fn a_provider_offering_echoes(source: &str) -> Arc<Offering> {
+    Arc::new(Offering::new(
+        source,
+        Delivering::Bytes {
+            key: "track/1411",
+            extension: "wav",
+            bytes: Wav::new().text(TITLE, "Echoes").frames(8_820).build(),
+        },
+    ))
+}
+
+fn meddle_fake() -> Fake {
+    Fake::new(Canned {
+        found_songs: vec![echoes_found()],
+        releases: vec![meddle_release()],
+        ..Canned::default()
+    })
+}
+
+#[test]
+fn a_song_foreseen_from_what_the_search_found_is_not_asked_of_the_provider_again_by_the_poll()
+-> Result<()> {
+    let held = Tree::new();
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&orbits))?;
+    let fake = meddle_fake();
+    let found = library.found_elsewhere(&fake, "echoes")?;
+    let shop = a_provider_offering_echoes("shop");
+
+    assert!(library.foresee(&shop.registered(), &found[0]));
+    let asked = shop.asked();
+    assert_eq!(asked.len(), 1);
+    assert_eq!(asked[0].title, "Echoes");
+    assert_eq!(asked[0].artist.as_deref(), Some("Pink Floyd"));
+    assert_eq!(asked[0].recording, Some(mbid(ECHOES)));
+    assert_eq!(asked[0].album.as_deref(), Some("Meddle"));
+    assert_eq!(asked[0].length, Some(Duration::from_secs(1_411)));
+
+    library.want_found(&fake, &found[0])?;
+    let summary = library
+        .poll(shop.registered(), PollOptions::default())?
+        .join()?;
+
+    assert_eq!(shop.asked().len(), 1, "the poll asked the provider again");
+    assert_eq!(summary.stats.asked, 1);
+    assert_eq!(summary.stats.offered, 1);
+    assert_eq!(summary.stats.kept, 1);
+    assert_eq!(shop.opened(), 1);
+    assert!(library.wants()?[0].held.is_some());
+    Ok(())
+}
+
+#[test]
+fn a_foresight_is_spent_by_the_poll_that_takes_it_and_asked_afresh_by_the_next() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let fake = meddle_fake();
+    let found = library.found_elsewhere(&fake, "echoes")?;
+    let shop = a_provider_offering_echoes("shop");
+
+    assert!(library.foresee(&shop.registered(), &found[0]));
+    library.want_found(&fake, &found[0])?;
+    library
+        .poll(shop.registered(), PollOptions::default())?
+        .join()?;
+    assert_eq!(shop.asked().len(), 1);
+
+    library
+        .poll(shop.registered(), PollOptions::ASKING_EVERY_WANT)?
+        .join()?;
+    assert_eq!(
+        shop.asked().len(),
+        2,
+        "a second ask was answered from a foresight already spent"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_provider_offering_nothing_foresees_nothing_and_the_poll_asks_for_itself() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let fake = meddle_fake();
+    let found = library.found_elsewhere(&fake, "echoes")?;
+    let empty = Arc::new(Offering::new("shop", Delivering::Nothing));
+
+    assert!(!library.foresee(&empty.registered(), &found[0]));
+    library.want_found(&fake, &found[0])?;
+    let summary = library
+        .poll(empty.registered(), PollOptions::default())?
+        .join()?;
+
+    assert_eq!(empty.asked().len(), 2);
+    assert_eq!(summary.stats.nothing, 1);
+    Ok(())
+}
+
+#[test]
+fn an_offer_foreseen_of_a_provider_the_poll_does_not_register_is_not_taken() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let fake = meddle_fake();
+    let found = library.found_elsewhere(&fake, "echoes")?;
+    let gone = a_provider_offering_echoes("old");
+    let current = Arc::new(Offering::new("current", Delivering::Nothing));
+
+    assert!(library.foresee(&gone.registered(), &found[0]));
+    library.want_found(&fake, &found[0])?;
+    library
+        .poll(current.registered(), PollOptions::default())?
+        .join()?;
+
+    assert_eq!(current.asked().len(), 1);
+    assert_eq!(gone.opened(), 0);
+    Ok(())
+}
+
+#[test]
+fn a_foresight_let_go_of_is_asked_afresh_by_the_poll() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let fake = meddle_fake();
+    let found = library.found_elsewhere(&fake, "echoes")?;
+    let shop = a_provider_offering_echoes("shop");
+
+    assert!(library.foresee(&shop.registered(), &found[0]));
+    library.forget_foresight(&found[0].recording);
+    library.want_found(&fake, &found[0])?;
+    library
+        .poll(shop.registered(), PollOptions::default())?
+        .join()?;
+
+    assert_eq!(shop.asked().len(), 2);
+    Ok(())
+}
+
 const A_SPOTIFY_LINK: &str = "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT";
 
 fn linked_to_spotify() -> SongLink {

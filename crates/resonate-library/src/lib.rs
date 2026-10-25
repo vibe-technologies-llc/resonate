@@ -10,6 +10,7 @@ mod error;
 mod filed;
 mod filters;
 mod fingerprint;
+mod foresight;
 mod hinted;
 mod history;
 mod import;
@@ -99,6 +100,7 @@ pub use crate::{
     filed::DeliveryFolder,
     filters::{MinimumLength, MusicExtensions, MusicFilters},
     fingerprint::{Fingerprinters, Fingerprints, NoFingerprints, Printed, Recognition, Sounded},
+    foresight::FORESEEN_FOR,
     history::{Aged, HistoryKept},
     import::{
         ImportOptions, ImportPlan, ImportProgress, ImportStats, ImportSummary, Passed, Passing,

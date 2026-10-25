@@ -4460,13 +4460,15 @@ mod tests {
                 Some(ncs_cover())
             );
 
-            assert_eq!(
-                asked.lock().clone(),
-                vec![Asked {
-                    recording: Some(mbid(HEROES_TONIGHT)),
-                    isrc: Some(Isrc::new(HEROES_TONIGHT_ISRC).expect("an isrc")),
-                    artist: Some("Janji & Johnning".to_owned()),
-                }]
+            let expected = Asked {
+                recording: Some(mbid(HEROES_TONIGHT)),
+                isrc: Some(Isrc::new(HEROES_TONIGHT_ISRC).expect("an isrc")),
+                artist: Some("Janji & Johnning".to_owned()),
+            };
+            let heard = asked.lock().clone();
+            assert!(
+                heard.len() == 2 && heard.iter().all(|asked| *asked == expected),
+                "the providers were asked once from what the search found and once by the poll: {heard:?}"
             );
 
             let recording = mbid(HEROES_TONIGHT);
@@ -4529,6 +4531,7 @@ mod tests {
         struct Delivers {
             source: SourceId,
             file: std::path::PathBuf,
+            positions: Arc<Mutex<Vec<Option<u32>>>>,
         }
 
         impl Provider for Delivers {
@@ -4536,7 +4539,8 @@ mod tests {
                 &self.source
             }
 
-            fn find(&self, _: &Identity) -> resonate_providers::Result<Obtained> {
+            fn find(&self, identity: &Identity) -> resonate_providers::Result<Obtained> {
+                self.positions.lock().push(identity.position);
                 Ok(Obtained::Found(resonate_providers::Delivery::File(
                     self.file.clone(),
                 )))
@@ -4581,12 +4585,15 @@ mod tests {
             let folder = Folder::new();
             let music = Folder::new();
             let file = folder.tone("delivered.wav", 1);
+            let positions = Arc::new(Mutex::new(Vec::new()));
+            let heard = Arc::clone(&positions);
             let reaching = Reaching {
                 reference: Arc::new(MusicBrainz::new()),
                 register: Arc::new(move |_: &Supplying<'_>| {
                     Providers::none().and(Arc::new(Delivers {
                         source: SourceId::new("shop").expect("a source name"),
                         file: file.clone(),
+                        positions: Arc::clone(&heard),
                     }))
                 }),
             };
@@ -4615,6 +4622,11 @@ mod tests {
             assert!(
                 driven.read(|root, cx| !root.library.read(cx).is_awaited(&mbid(HEROES_TONIGHT))),
                 "a song pressed and landed within half a minute plays once and is awaited no more"
+            );
+            assert_eq!(
+                positions.lock().clone(),
+                vec![None],
+                "the one ask began from what the search found, before the release was read"
             );
         }
 
