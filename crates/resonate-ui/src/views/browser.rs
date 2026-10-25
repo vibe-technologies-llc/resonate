@@ -36,7 +36,10 @@ use crate::{
         playlists::{ADD_SONG_HINT, FINISH_ADDING_HINT, Held, Naming, ROW_GROUP, SAVE_SEARCH_HINT},
         pointed::{self, LitUnderThePointer},
         reorder::{self, Chosen, Lifted, Listed, Shift},
-        root::{Deleting, Magnified, Pane, RootView, empty, framed_cover, listed, row, tall_row},
+        root::{
+            Deleting, Magnified, Pane, RootView, cover_rounding, empty, framed_cover, listed, row,
+            tall_row,
+        },
         scrollbar::{SHELF_INSET, Scrollbars},
         sorting,
         transport::COVER_HINT,
@@ -1349,6 +1352,16 @@ impl RootView {
             Asks::Found(found) => found.performer.clone(),
             Asks::Row(_) => None,
         };
+        let spun = match (&beside, &asks) {
+            (
+                Beside::ASearch {
+                    fetching: Some(fetching),
+                    ..
+                },
+                Asks::Found(found),
+            ) if fetching.is_underway() => Some(listing::keyed_by("fetching", &found.recording)),
+            _ => None,
+        };
         let mark = self.want_mark(asks, cx);
         let fitted = self.columns_fit.shown();
         let (title, lit_title, lit_artist) = match &beside {
@@ -1367,7 +1380,7 @@ impl RootView {
         let row = row(false)
             .child(listing::number_cell(number))
             .when_some(beside.pictured(), |row, sleeve| {
-                row.child(match sleeve {
+                let cover = match sleeve {
                     Sleeve::Released(release) => {
                         let art = self.library.update(cx, |library, cx| {
                             library.released_cover(release, Drawn::InARow, cx)
@@ -1380,6 +1393,10 @@ impl RootView {
                         }
                     }
                     Sleeve::Unknown => unheld_cover(theme::row_cover()),
+                };
+                row.child(match spun {
+                    Some(spun) => fetching_over(cover, spun),
+                    None => cover,
                 })
             })
             .child(
@@ -1526,7 +1543,7 @@ impl RootView {
             .on_click(cx.listener(move |this, _, _, cx| {
                 let wanted = fetched.clone();
                 this.library
-                    .update(cx, |library, cx| library.want_found(wanted, cx));
+                    .update(cx, |library, cx| library.fetch_and_play(wanted, cx));
             }))
     }
 
@@ -3218,6 +3235,32 @@ fn described(kind: &Option<String>, first_released: Option<&str>) -> String {
     .join(" · ")
 }
 
+const FETCHING_VEIL: u8 = 0xb8;
+
+fn fetching_over(cover: Div, spun: ElementId) -> Div {
+    let side = theme::row_cover();
+
+    div()
+        .relative()
+        .flex_none()
+        .size(px(side))
+        .child(cover)
+        .child(
+            div()
+                .absolute()
+                .inset_0()
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(cover_rounding(side)))
+                .bg(theme::tinted(theme::background(), FETCHING_VEIL))
+                .child(motion::spinning(
+                    icons::icon(Icon::Spinner, side * 0.6, theme::accent()),
+                    spun,
+                )),
+        )
+}
+
 fn unheld_cover(side: f32) -> Div {
     div()
         .flex()
@@ -4485,7 +4528,7 @@ mod tests {
         }
 
         #[gpui::test]
-        fn a_found_song_that_landed_is_listed_once_as_the_held_track(cx: &mut TestAppContext) {
+        fn a_found_song_pressed_lands_once_as_the_held_track_and_plays(cx: &mut TestAppContext) {
             let folder = Folder::new();
             let music = Folder::new();
             let file = folder.tone("delivered.wav", 1);
@@ -4518,6 +4561,11 @@ mod tests {
             assert_eq!(
                 driven.read(|root, cx| root.library.read(cx).listing().len()),
                 1
+            );
+            driven.until(|root, cx| root.player.read(cx).state().current.is_some());
+            assert!(
+                driven.read(|root, cx| !root.library.read(cx).is_awaited(&mbid(HEROES_TONIGHT))),
+                "a song pressed and landed within half a minute plays once and is awaited no more"
             );
         }
 

@@ -1,4 +1,4 @@
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 
 use ahash::AHashMap;
 use gpui::SharedString;
@@ -8,6 +8,8 @@ use resonate_library::{Found, Issued, Mbid, RecordingRelease, Want};
 const LOOKING_IT_UP: &str = "Looking it up…";
 
 const DOWNLOADING: &str = "Downloading…";
+
+pub(crate) const PLAYED_IF_LANDED_WITHIN: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fetching {
@@ -228,9 +230,16 @@ impl Download {
     }
 }
 
+#[derive(Clone, Debug)]
+struct Awaited {
+    recording: Mbid,
+    pressed: Instant,
+}
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Downloads {
     held: Vec<Download>,
+    awaited: Option<Awaited>,
 }
 
 impl Downloads {
@@ -300,6 +309,39 @@ impl Downloads {
         moved
     }
 
+    pub(crate) fn play_once_landed(&mut self, recording: Mbid, pressed: Instant) {
+        self.awaited = Some(Awaited { recording, pressed });
+    }
+
+    pub(crate) fn is_awaited(&self, recording: &Mbid) -> bool {
+        self.awaited
+            .as_ref()
+            .is_some_and(|awaited| &awaited.recording == recording)
+    }
+
+    pub(crate) fn landed_to_play(
+        &mut self,
+        standings: &AHashMap<WantId, WantStanding>,
+        now: Instant,
+    ) -> Option<TrackId> {
+        let awaited = self.awaited.as_ref()?;
+        let overdue = now.saturating_duration_since(awaited.pressed) > PLAYED_IF_LANDED_WITHIN;
+        let download = self.of(&awaited.recording);
+        let held = download
+            .filter(|download| download.fetching == Fetching::Downloaded)
+            .and_then(Download::want)
+            .and_then(|want| standings.get(&want))
+            .and_then(|standing| standing.held());
+        let still_coming = download.is_some_and(|download| {
+            download.fetching.is_underway() || download.fetching == Fetching::Downloaded
+        });
+
+        if held.is_some() || overdue || !still_coming {
+            self.awaited = None;
+        }
+        held.filter(|_| !overdue)
+    }
+
     pub(crate) fn restored(&mut self, unfinished: Vec<Unfinished>) {
         for each in unfinished {
             if self.of(&each.found.recording).is_some() || !each.fetching.is_underway() {
@@ -326,6 +368,9 @@ impl Downloads {
     }
 
     pub(crate) fn dismiss(&mut self, recording: &Mbid) {
+        if self.is_awaited(recording) {
+            self.awaited = None;
+        }
         self.held
             .retain(|download| &download.found.recording != recording);
     }
@@ -506,6 +551,63 @@ mod tests {
         assert_eq!(fetching(&given_up, None), vec![Fetching::GaveUp]);
         assert!(Fetching::GaveUp.can_be_asked_again());
         assert!(!Fetching::GaveUp.is_underway());
+    }
+
+    fn delivered_as(track: Option<TrackId>) -> WantStanding {
+        WantStanding {
+            held: track,
+            ..standing(SystemTime::now(), 0, true)
+        }
+    }
+
+    #[test]
+    fn a_song_pressed_plays_once_it_lands_unless_it_took_longer_than_half_a_minute() {
+        let now = SystemTime::now();
+        let pressed = Instant::now();
+        let track = TrackId::new(9).expect("a track id");
+        let mut quick = queued(ECHOES, want(1), now);
+        let mut slow = queued(ECHOES, want(1), now);
+        let mut unscanned = queued(ECHOES, want(1), now);
+        let mut unpressed = queued(ECHOES, want(1), now);
+        let landed = AHashMap::from_iter([(want(1), delivered_as(Some(track)))]);
+        let offered = AHashMap::from_iter([(want(1), delivered_as(None))]);
+        let late = pressed + PLAYED_IF_LANDED_WITHIN + Duration::from_secs(1);
+
+        for downloads in [&mut quick, &mut slow, &mut unscanned] {
+            downloads.play_once_landed(found(ECHOES).recording, pressed);
+        }
+        quick.followed(&landed);
+        slow.followed(&landed);
+        unscanned.followed(&offered);
+        unpressed.followed(&landed);
+
+        assert_eq!(quick.landed_to_play(&landed, pressed), Some(track));
+        assert_eq!(quick.landed_to_play(&landed, pressed), None, "played once");
+        assert_eq!(slow.landed_to_play(&landed, late), None);
+        assert!(!slow.is_awaited(&found(ECHOES).recording));
+        assert_eq!(unscanned.landed_to_play(&offered, pressed), None);
+        assert!(unscanned.is_awaited(&found(ECHOES).recording));
+        assert_eq!(unscanned.landed_to_play(&landed, pressed), Some(track));
+        assert_eq!(unpressed.landed_to_play(&landed, pressed), None);
+    }
+
+    #[test]
+    fn a_song_given_up_or_dismissed_is_no_longer_awaited() {
+        let now = SystemTime::now();
+        let pressed = Instant::now();
+        let mut given_up = queued(ECHOES, want(1), now);
+        let mut dismissed = queued(ECHOES, want(1), now);
+        let gave_up =
+            AHashMap::from_iter([(want(1), standing(now, TRIES_BEFORE_GIVING_UP, false))]);
+
+        given_up.play_once_landed(found(ECHOES).recording, pressed);
+        dismissed.play_once_landed(found(ECHOES).recording, pressed);
+        given_up.followed(&gave_up);
+        dismissed.dismiss(&found(ECHOES).recording);
+
+        assert_eq!(given_up.landed_to_play(&gave_up, pressed), None);
+        assert!(!given_up.is_awaited(&found(ECHOES).recording));
+        assert!(!dismissed.is_awaited(&found(ECHOES).recording));
     }
 
     #[test]

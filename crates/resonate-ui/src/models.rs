@@ -791,6 +791,7 @@ pub struct LibraryModel {
     polling_every_provider: bool,
     organised: Option<(Pass, OrganiseSummary)>,
     relocated: Vec<(MediaLocation, MediaLocation)>,
+    arrived: Option<TrackId>,
     walks_back: bool,
     tags_walk_back: bool,
     previewed: Planned,
@@ -1008,6 +1009,7 @@ impl LibraryModel {
             polling_every_provider: false,
             organised: None,
             relocated: Vec::new(),
+            arrived: None,
             walks_back,
             tags_walk_back,
             previewed: Planned::Not,
@@ -1754,6 +1756,22 @@ impl LibraryModel {
             }
         });
         self.wanting.insert(recording, wanting);
+    }
+
+    pub fn fetch_and_play(&mut self, found: Found, cx: &mut Context<Self>) {
+        let recording = found.recording.clone();
+        self.want_found(found, cx);
+        let landing = self
+            .downloads
+            .of(&recording)
+            .is_some_and(|download| self.fetching(download).is_underway());
+        if landing {
+            self.downloads.play_once_landed(recording, Instant::now());
+        }
+    }
+
+    pub fn is_awaited(&self, recording: &Mbid) -> bool {
+        self.downloads.is_awaited(recording)
     }
 
     pub fn want_album(&mut self, group: Mbid, pressing: Option<Mbid>, cx: &mut Context<Self>) {
@@ -3605,6 +3623,10 @@ impl LibraryModel {
         }
     }
 
+    pub fn take_arrival(&mut self) -> Option<TrackId> {
+        self.arrived.take()
+    }
+
     pub fn take_relocations(&mut self) -> Vec<(MediaLocation, MediaLocation)> {
         std::mem::take(&mut self.relocated)
     }
@@ -4299,6 +4321,12 @@ impl LibraryModel {
             self.downloads.restored(wants.unfinished);
         }
         self.downloads.followed(&wants.standings);
+        if let Some(track) = self
+            .downloads
+            .landed_to_play(&wants.standings, Instant::now())
+        {
+            self.arrived = Some(track);
+        }
         self.standings = wants.standings;
     }
 

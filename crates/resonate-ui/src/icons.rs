@@ -134,6 +134,7 @@ icons! {
     Phone => "phone",
     Reveal => "reveal",
     Conceal => "conceal",
+    Spinner => "spinner",
 }
 
 pub(crate) struct Embedded;

@@ -1227,6 +1227,18 @@ is never named.
     it (`a_found_song_that_landed_is_listed_once_as_the_held_track`). **A found song's whole row is that
     press** (`found_row`, `FETCH_FOUND_HINT`); the mark's own press finds the recording already
     `wanting`; while asked for, the row takes no press. `wanting` holds a task per recording.
+    **A song pressed plays once it lands, if it lands within half a minute.** The row's press, `enter`
+    on a found row and on *Top results* call `LibraryModel::fetch_and_play`: `want_found`, then
+    `Downloads::play_once_landed` (one song awaited, the latest press winning; the heart, a release
+    from its menu, a pasted link and *Ask again* only want). `take_the_wants` asks
+    `Downloads::landed_to_play`, which answers the held `TrackId` once the want is delivered and
+    scanned within `PLAYED_IF_LANDED_WITHIN` (30 s) of the press and lets go of a song that took longer,
+    gave up or was dismissed; `RootView`'s observer drains `take_arrival` into
+    `play_what_was_downloaded`
+    (`a_song_pressed_plays_once_it_lands_unless_it_took_longer_than_half_a_minute`,
+    `a_found_song_pressed_lands_once_as_the_held_track_and_plays`). While underway the row's cover
+    wears `fetching_over`: a `FETCHING_VEIL` of the background and `Icon::Spinner` turning in the
+    accent (`motion.md`).
   - **A search reaches MB as seldom as it can and never leaves the listener looking at nothing.** MB
     answers one request a second, so turns go only to what is still being typed:
     - *Asked once per spelling*: `answers`, a `Recent` of `ANSWERS_HELD` (128) keyed by `songs_asked`

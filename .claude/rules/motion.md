@@ -98,3 +98,7 @@ state and asks for no frames, so a surface arrives at once. What does not go thr
 
 An animation asks for the next frame of its own view; the window is four cached `Part`s, so a
 flipping switch redraws the pane, not the transport. Nothing asks for frames once landed.
+
+**The one motion that never lands is `spinning`**: `Icon::Spinner` turned a whole turn every
+`TURNS_OVER` (900 ms) on a repeating animation, drawn only while a found song is underway, so its
+frames end with the download. Under reduced motion gpui draws its end state, the arc at rest.

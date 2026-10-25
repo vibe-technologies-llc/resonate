@@ -830,9 +830,14 @@ impl RootView {
         cx.observe_in(&library, window, |this, library, window, cx| {
             this.forget_what_has_gone(&library, cx);
             this.let_go_of_a_reach_the_rows_left(cx);
-            let relocated = library.update(cx, |model, _| model.take_relocations());
+            let (relocated, arrived) = library.update(cx, |model, _| {
+                (model.take_relocations(), model.take_arrival())
+            });
             if !relocated.is_empty() {
                 this.send(Command::Relocate(relocated), cx);
+            }
+            if let Some(track) = arrived {
+                this.play_what_was_downloaded(track, cx);
             }
             if this.waiting_for_the_results && !library.read(cx).is_reading_the_search() {
                 this.waiting_for_the_results = false;
@@ -2627,7 +2632,7 @@ impl RootView {
                 }
                 if let Some(found) = self.library.read(cx).found_at(row) {
                     self.library
-                        .update(cx, |library, cx| library.want_found(found, cx));
+                        .update(cx, |library, cx| library.fetch_and_play(found, cx));
                     return;
                 }
                 let Some((played, start)) = self.library.read(cx).played_from(row) else {
@@ -2882,7 +2887,7 @@ impl RootView {
             TopEntry::Found(at) => {
                 if let Some(found) = library.found().get(at).cloned() {
                     self.library
-                        .update(cx, |library, cx| library.want_found(found, cx));
+                        .update(cx, |library, cx| library.fetch_and_play(found, cx));
                 }
             }
             TopEntry::Album(at) => {
@@ -5270,7 +5275,7 @@ impl RootView {
     }
 }
 
-fn cover_rounding(side: f32) -> f32 {
+pub(crate) fn cover_rounding(side: f32) -> f32 {
     if side >= theme::shelf_cover() {
         8.0
     } else if side >= theme::now_playing_cover() {

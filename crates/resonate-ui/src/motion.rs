@@ -1,9 +1,12 @@
-use std::time::{Duration, Instant};
+use std::{
+    f32::consts::TAU,
+    time::{Duration, Instant},
+};
 
 use gpui::{
     Animation, AnimationElement, AnimationExt as _, AnyElement, App, Element, ElementId,
     GlobalElementId, InspectorElementId, IntoElement, LayoutId, Pixels, Styled, Svg,
-    Transformation, Window, px, size,
+    Transformation, Window, px, radians, size,
 };
 
 pub(crate) const ARRIVES_OVER: Duration = Duration::from_millis(150);
@@ -13,6 +16,8 @@ pub(crate) const FLIPS_OVER: Duration = Duration::from_millis(140);
 pub(crate) const HANDS_OVER: Duration = Duration::from_millis(280);
 
 pub(crate) const HINT_ARRIVES_OVER: Duration = Duration::from_millis(100);
+
+pub(crate) const TURNS_OVER: Duration = Duration::from_millis(900);
 
 pub(crate) const LIFT: Pixels = px(4.0);
 
@@ -112,6 +117,12 @@ pub(crate) fn faded_in<E: IntoElement + Styled + 'static>(
         Animation::new(over).with_easing(settling),
         |arriving, share| arriving.opacity(share),
     )
+}
+
+pub(crate) fn spinning(icon: Svg, key: impl Into<ElementId>) -> AnimationElement<Svg> {
+    icon.with_animation(key, Animation::new(TURNS_OVER).repeat(), |icon, share| {
+        icon.with_transformation(Transformation::rotate(radians(share * TAU)))
+    })
 }
 
 pub(crate) fn popped<T: Copy + PartialEq + 'static>(
