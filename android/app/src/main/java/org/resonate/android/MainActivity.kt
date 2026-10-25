@@ -233,6 +233,15 @@ class MainActivity : ComponentActivity(), Host {
     private fun folderChosen(result: ActivityResult) {
         val data = result.data ?: return
         val uri = data.data?.takeIf { result.resultCode == RESULT_OK } ?: return
+        if (overlapsGrantedFolder(uri)) {
+            library.report(
+                IllegalArgumentException(
+                    "${uri.lastPathSegment.orEmpty().substringAfterLast('/').substringAfter(':')} " +
+                        "holds or sits inside a folder already in your library"
+                )
+            )
+            return
+        }
         try {
             val writable = data.flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION != 0
             contentResolver.takePersistableUriPermission(
@@ -245,6 +254,15 @@ class MainActivity : ComponentActivity(), Host {
         } catch (failure: SecurityException) {
             library.report(failure)
         }
+    }
+
+    private fun overlapsGrantedFolder(chosen: Uri): Boolean {
+        if (!DocumentsContract.isTreeUri(chosen)) return false
+        val chosenId = DocumentsContract.getTreeDocumentId(chosen)
+        return contentResolver.persistedUriPermissions
+            .filter { it.isReadPermission && it.uri.authority == chosen.authority }
+            .filter { DocumentsContract.isTreeUri(it.uri) }
+            .any { OpenedNames.treesOverlap(chosenId, DocumentsContract.getTreeDocumentId(it.uri)) }
     }
 
     override fun onStart() {

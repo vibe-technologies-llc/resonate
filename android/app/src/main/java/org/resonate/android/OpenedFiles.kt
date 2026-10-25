@@ -49,6 +49,9 @@ object OpenedNames {
         documentId == treeId ||
             documentId.startsWith(if (treeId.endsWith(":")) treeId else "$treeId/")
 
+    fun treesOverlap(first: String, second: String): Boolean =
+        first != second && (withinTree(first, second) || withinTree(second, first))
+
     fun safeName(wanted: String?): String =
         wanted
             .orEmpty()

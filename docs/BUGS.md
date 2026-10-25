@@ -6,12 +6,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Device sync
 
 ## Android
-- [S · 0.1.1] Deleting identical songs can delete the only copy when two folder grants overlap:
-  `folderChosen` takes any tree, so a file under `Music` and `Music/Albums` is indexed under two
-  `buildDocumentUriUsingTree` URIs and two `documents` rows, `identical_songs` groups them as
-  byte-identical copies, and `foldCopies` deletes one URI, which is the other's file too. iOS
-  refuses a folder that holds or sits inside a granted one (`FolderFailure.overlapping`); Android
-  has no such check. Read, not run
 
 ## Catalog
 - [S · 0.1.1] A playlist entry keeps the length a cue track had when it was added:

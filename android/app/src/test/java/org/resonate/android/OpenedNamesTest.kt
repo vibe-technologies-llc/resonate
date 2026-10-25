@@ -15,6 +15,15 @@ class OpenedNamesTest {
     }
 
     @Test
+    fun twoTreesOverlapWhenOneHoldsTheOtherAndNotWhenTheyAreTheSameOrApart() {
+        assertTrue(OpenedNames.treesOverlap("primary:Music", "primary:Music/Albums"))
+        assertTrue(OpenedNames.treesOverlap("primary:Music/Albums", "primary:Music"))
+        assertFalse(OpenedNames.treesOverlap("primary:Music", "primary:Music"))
+        assertFalse(OpenedNames.treesOverlap("primary:Music", "primary:Music2"))
+        assertFalse(OpenedNames.treesOverlap("primary:Music", "primary:Podcasts"))
+    }
+
+    @Test
     fun aTakenNameGainsANumberBeforeItsExtension() {
         assertEquals("a.flac", OpenedNames.nameAmong("a.flac", setOf("b.flac")))
         assertEquals("a (2).flac", OpenedNames.nameAmong("a.flac", setOf("a.flac")))

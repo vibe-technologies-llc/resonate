@@ -639,6 +639,9 @@ The controller awaits the engine before taking its operation mutex, and repeated
 notifications do nothing: the first Activity start can precede the service's engine creation,
 so waiting there under the mutex would block every later artwork action.
 
+A chosen tree that holds or sits inside one already granted is refused with *holds or sits inside a
+folder already in your library* (`OpenedNames.treesOverlap`, as iOS's `FolderFailure.overlapping`): a file
+under both would be indexed at two URIs, and deleting identical copies would delete the only file.
 The SAF folder chooser starts at Music. Android refuses a tree grant for the storage root and
 Downloads itself; Settings offers Use Downloads and the download chooser offers Downloads
 directly. This uses MediaStore rather than sending the listener back to the restricted picker.
