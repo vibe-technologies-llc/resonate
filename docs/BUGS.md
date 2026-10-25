@@ -12,12 +12,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Tagging
 
 ## Playback and output
-- [S · 0.1.1] An insert asked past the end lands before the queued rows while a play-next row is
-  playing: `Placement::At(row)` clamps to `InOrder(order.len())` and `land_in_order` reads
-  `at <= after` on the `Next` seat as inside the passed rows, so `[A]` with `Q1 Q2` queued and `Q1`
-  heard becomes `[A, X, Q1, Q2]` for `At(10)` instead of `[A, Q1, Q2, X]`. Needs a stale row (a
-  snapshot the queue shrank under, the UI's `put_the_queue_back`); `At(row <= len)` is correct.
-  Reproduced in the queue's tests
 
 ## Formats
 - [S · 0.1.1] A UTF-8 BOM followed by any non-UTF-8 byte keeps the BOM in the text: `detected`

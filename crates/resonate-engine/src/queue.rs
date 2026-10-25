@@ -646,6 +646,8 @@ impl Queue {
         }
         let arrived = one_id_each(items, &mut self.ids);
         let row = self.landing(at);
+        let before_the_queued = self.seat == Seat::Next
+            && matches!(at, Placement::At(row) if self.cursor().is_some_and(|playing| row <= playing));
         let landed: Vector<Held> = arrived.into_iter().map(|item| self.held(item)).collect();
 
         for held in &landed {
@@ -653,7 +655,7 @@ impl Queue {
         }
         match row {
             Row::Next(at) => spliced(&mut self.next, at, landed),
-            Row::InOrder(at) => self.land_in_order(at, landed),
+            Row::InOrder(at) => self.land_in_order(at, landed, before_the_queued),
         }
         self.rows_moved();
         Some(self.drawn_at(row))
@@ -1112,7 +1114,7 @@ impl Queue {
         }
     }
 
-    fn land_in_order(&mut self, at: usize, landed: Vector<Held>) {
+    fn land_in_order(&mut self, at: usize, landed: Vector<Held>, before_the_queued: bool) {
         let count = landed.len();
         if self.shuffle {
             let anchor = self.unshuffled_anchor(at);
@@ -1126,7 +1128,9 @@ impl Queue {
                 self.seat = Seat::InOrder;
             }
             Seat::InOrder if at < self.after => self.after += count,
-            Seat::Next if at <= self.after => self.after += count,
+            Seat::Next if at < self.after || (at == self.after && before_the_queued) => {
+                self.after += count;
+            }
             Seat::InOrder | Seat::Next => {}
         }
     }
@@ -1908,6 +1912,31 @@ mod tests {
         assert_eq!(queue.insert(vec![item(90)], Placement::Next), Some(3));
         assert_eq!(queue.cursor(), Some(3), "the queue did not resume on it");
         assert_eq!(current(&queue), Some(90));
+    }
+
+    #[test]
+    fn a_row_asked_for_past_the_end_lands_after_the_queued_rows_while_one_of_them_plays() {
+        let mut queue = loaded(1, 0);
+        queue.insert(vec![item(91), item(92)], Placement::Queued);
+        queue.advance(false);
+        assert_eq!(current(&queue), Some(91));
+
+        assert_eq!(queue.insert(vec![item(90)], Placement::At(10)), Some(3));
+
+        assert_eq!(numbered(&queue), [1, 91, 92, 90]);
+        assert_eq!(current(&queue), Some(91));
+    }
+
+    #[test]
+    fn a_row_asked_for_just_before_the_queued_row_playing_lands_before_it() {
+        let mut queue = loaded(1, 0);
+        queue.insert(vec![item(91), item(92)], Placement::Queued);
+        queue.advance(false);
+
+        assert_eq!(queue.insert(vec![item(90)], Placement::At(1)), Some(1));
+
+        assert_eq!(numbered(&queue), [1, 90, 91, 92]);
+        assert_eq!(current(&queue), Some(91));
     }
 
     #[test]
