@@ -5608,7 +5608,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "resonate"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "clap_complete",
@@ -5646,7 +5646,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-analysis"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "resonate-codec",
  "resonate-core",
@@ -5660,7 +5660,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-audio"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "crossbeam-channel",
  "resonate-core",
@@ -5669,14 +5669,14 @@ dependencies = [
 
 [[package]]
 name = "resonate-bindgen"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "uniffi",
 ]
 
 [[package]]
 name = "resonate-codec"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ape-decoder",
  "image",
@@ -5693,7 +5693,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bytemuck",
  "chardetng",
@@ -5706,7 +5706,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-discord"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "crossbeam-channel",
  "parking_lot 0.13.0",
@@ -5721,7 +5721,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-dsp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "parking_lot 0.13.0",
  "realfft",
@@ -5732,7 +5732,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-engine"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ahash",
  "crossbeam-channel",
@@ -5752,7 +5752,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-eq"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "resonate-core",
  "thiserror 2.0.21",
@@ -5761,7 +5761,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-fetch"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "resonate-core",
  "resonate-providers",
@@ -5774,7 +5774,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-inbox"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "parking_lot 0.13.0",
  "resonate-core",
@@ -5783,7 +5783,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-library"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ahash",
  "crossbeam-channel",
@@ -5807,7 +5807,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-listen"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "crossbeam-channel",
  "resonate-core",
@@ -5818,7 +5818,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-lyrics"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "parking_lot 0.13.0",
  "resonate-core",
@@ -5831,7 +5831,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-mcp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ahash",
  "resonate-core",
@@ -5847,7 +5847,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-mobile"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "crc32fast",
  "crossbeam-channel",
@@ -5880,7 +5880,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-monochrome"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "parking_lot 0.13.0",
  "resonate-core",
@@ -5894,7 +5894,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-mpris"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ahash",
  "crossbeam-channel",
@@ -5910,7 +5910,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-online"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "flate2",
  "md-5 0.11.0",
@@ -5933,7 +5933,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-pipewire"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "crossbeam-channel",
  "libspa",
@@ -5948,7 +5948,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-providers"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "parking_lot 0.13.0",
  "resonate-core",
@@ -5958,7 +5958,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-server"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.23.1",
  "clap",
@@ -5986,7 +5986,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-subsonic"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "md-5 0.11.0",
  "parking_lot 0.13.0",
@@ -6001,7 +6001,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-sync"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ahash",
  "flate2",
@@ -6028,7 +6028,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-tidal"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.23.1",
  "parking_lot 0.13.0",
@@ -6044,7 +6044,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-ui"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ahash",
  "crossbeam-channel",
@@ -6072,7 +6072,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-vault"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "flacenc",
  "image",
