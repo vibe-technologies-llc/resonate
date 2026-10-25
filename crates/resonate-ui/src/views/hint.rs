@@ -1,8 +1,14 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
+use ahash::AHashMap;
 use gpui::{
-    AnyView, App, BoxShadow, Context, Div, IntoElement, MouseButton, Render, SharedString,
-    Stateful, StatefulInteractiveElement, Window, div, hsla, point, prelude::*, px, rgb,
+    AnyView, App, BoxShadow, Context, Div, ElementId, IntoElement, MouseButton, Render,
+    SharedString, Stateful, StatefulInteractiveElement, Window, div, hsla, point, prelude::*, px,
+    rgb,
 };
 
 use crate::{
@@ -12,7 +18,33 @@ use crate::{
 
 const HINT_GROUP: &str = "hint";
 
+const NAMED_AT_MOST: usize = 256;
+
+const CAPTION_FROM_THE_EDGE: f32 = 12.0;
+
+pub(crate) type Wording = Rc<dyn Fn() -> SharedString>;
+
 static ASKED: AtomicBool = AtomicBool::new(true);
+
+thread_local! {
+    static NAMED: RefCell<AHashMap<ElementId, Wording>> = RefCell::default();
+}
+
+fn remember(id: Option<ElementId>, wording: Wording) {
+    let Some(id) = id else {
+        return;
+    };
+    NAMED.with_borrow_mut(|named| {
+        if named.len() >= NAMED_AT_MOST && !named.contains_key(&id) {
+            named.clear();
+        }
+        named.insert(id, wording);
+    });
+}
+
+pub(crate) fn wording_of(id: &ElementId) -> Option<Wording> {
+    NAMED.with_borrow(|named| named.get(id).cloned())
+}
 
 pub(crate) fn asking(can: bool) {
     ASKED.store(can, Ordering::Relaxed);
@@ -23,20 +55,28 @@ pub(crate) fn asked() -> bool {
 }
 
 pub(crate) trait Names: StatefulInteractiveElement {
-    fn names(self, itself: impl Into<SharedString>) -> Self {
+    fn names(mut self, itself: impl Into<SharedString>) -> Self {
+        let itself = itself.into();
+        let spoken = itself.clone();
+        remember(
+            self.interactivity().element_id.clone(),
+            Rc::new(move || spoken.clone()),
+        );
         if !asked() {
             return self;
         }
 
-        self.tooltip(saying(itself.into()))
+        self.tooltip(saying(itself))
     }
 
-    fn names_when_raised(self, itself: impl Fn() -> SharedString + 'static) -> Self {
+    fn names_when_raised(mut self, itself: impl Fn() -> SharedString + 'static) -> Self {
+        let itself = Rc::new(itself);
+        remember(self.interactivity().element_id.clone(), itself.clone());
         if !asked() {
             return self;
         }
 
-        self.tooltip(written(itself))
+        self.tooltip(written(move || itself()))
     }
 }
 
@@ -46,31 +86,45 @@ pub(crate) struct Hint {
     text: SharedString,
 }
 
+fn plate(text: SharedString) -> Div {
+    div()
+        .max_w(px(theme::hint_width()))
+        .px_3()
+        .py_2()
+        .rounded_md()
+        .bg(rgb(theme::raised()))
+        .border_1()
+        .border_color(rgb(theme::outline()))
+        .shadow(vec![BoxShadow {
+            color: hsla(0.0, 0.0, 0.0, 0.45),
+            offset: point(px(0.0), px(4.0)),
+            blur_radius: px(16.0),
+            spread_radius: px(0.0),
+            inset: false,
+        }])
+        .font_family(theme::ui_face())
+        .text_size(px(theme::text_sm()))
+        .line_height(px(theme::text_sm() * 1.45))
+        .text_color(rgb(theme::text()))
+        .child(text)
+}
+
 impl Render for Hint {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        let drawn = div()
-            .max_w(px(theme::hint_width()))
-            .px_3()
-            .py_2()
-            .rounded_md()
-            .bg(rgb(theme::raised()))
-            .border_1()
-            .border_color(rgb(theme::outline()))
-            .shadow(vec![BoxShadow {
-                color: hsla(0.0, 0.0, 0.0, 0.45),
-                offset: point(px(0.0), px(4.0)),
-                blur_radius: px(16.0),
-                spread_radius: px(0.0),
-                inset: false,
-            }])
-            .font_family(theme::ui_face())
-            .text_size(px(theme::text_sm()))
-            .line_height(px(theme::text_sm() * 1.45))
-            .text_color(rgb(theme::text()))
-            .child(self.text.clone());
-
-        motion::faded_in(drawn, "hint", motion::HINT_ARRIVES_OVER)
+        motion::faded_in(plate(self.text.clone()), "hint", motion::HINT_ARRIVES_OVER)
     }
+}
+
+pub(crate) fn caption(text: SharedString) -> impl IntoElement {
+    motion::faded_in(
+        div()
+            .absolute()
+            .left(px(CAPTION_FROM_THE_EDGE))
+            .bottom(px(theme::transport_height() + CAPTION_FROM_THE_EDGE))
+            .child(plate(text)),
+        "focus-caption",
+        motion::HINT_ARRIVES_OVER,
+    )
 }
 
 pub(crate) fn explains(about: &'static str, text: impl Into<SharedString>) -> Stateful<Div> {
@@ -107,6 +161,40 @@ fn written(
 #[cfg(test)]
 mod tests {
     use std::{fs, path::Path};
+
+    use super::*;
+
+    #[test]
+    fn a_control_named_is_worded_by_its_element_id_for_the_ring_to_caption() {
+        let _ = div().id("next-song").names("Next — right or n");
+
+        let wording = wording_of(&ElementId::from("next-song")).expect("the name was remembered");
+
+        assert_eq!(wording(), SharedString::from("Next — right or n"));
+        assert!(wording_of(&ElementId::from("never-named")).is_none());
+    }
+
+    #[test]
+    fn a_name_raised_late_is_asked_for_each_time_it_is_wanted() {
+        let _ = div()
+            .id("late")
+            .names_when_raised(|| SharedString::from("Raised"));
+
+        let wording = wording_of(&ElementId::from("late")).expect("the name was remembered");
+
+        assert_eq!(wording(), SharedString::from("Raised"));
+    }
+
+    #[test]
+    fn the_names_remembered_never_outgrow_their_bound() {
+        for nth in 0..NAMED_AT_MOST * 3 {
+            let _ = div().id(("row", nth)).names("A row");
+        }
+
+        let held = NAMED.with_borrow(|named| named.len());
+
+        assert!(held <= NAMED_AT_MOST, "{held} names are held");
+    }
 
     const SEAM: &str = "hint.rs";
     const ATTACHED: &str = concat!("tooltip", "(");

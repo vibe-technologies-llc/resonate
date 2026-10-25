@@ -573,6 +573,16 @@ is never named.
   `MouseExitEvent`, `MouseMoveEvent` and `MouseDownEvent` window listeners from its *paint* (the only
   phase `Window::on_mouse_event` may be called in); its flag also closes the lyrics pane's hover.
   Every control carries a tooltip; a toggle names its state and the key changing it.
+- **A control in the ring is named on keyboard focus as it is named on hover.** gpui raises no
+  tooltip while the last input was the keyboard, so `Names::names` also remembers the wording under
+  the element's id (`hint::wording_of`, a thread-local bounded by `NAMED_AT_MOST`, cleared when it
+  fills), and each ring wrapper (`in_the_ring`, `in_the_ring_at`, `option_in_the_ring`, the pane and
+  standing rings) hands the control to `Controls::captioned_by_its_name`, which keeps the wording
+  under the handle's name beside the handle (pruned with it in `opening`). `RootView::render` asks
+  `focused_control_named` (keyboard modality, a handle of `controls` or `standing_controls` focused)
+  and draws `hint::caption`: the hint's plate, bottom left above the playback bar, clear of the
+  centred toast. A control built without a name (a field, a row with no hint) shows nothing
+  (`tabbing_onto_an_icon_only_control_names_it_where_a_pointer_would_have_shown_a_hint`).
 - **A playlist row no scan has seen draws as a queued one does.** `views/listing.rs` owns the `Row`
   the queue and playlists panes build: the scanned `Track` where the library has one, `Player::media`
   where not, the file stem only where the file cannot be read. The play count rides on the same `Row`
@@ -619,8 +629,11 @@ is never named.
 - **Every notice is a toast: a pill that rises over the playback bar, lingers and goes.** `toast.rs` is
   the whole of it. `Toaster` is a gpui global, so engine failures, library passes, the equaliser and
   every gesture tell it alike (`toast::tell(notice, cx)`). One pill at a time, `type_ahead_lift` above
-  the bar; rises `RISE` (10 px), fades in over `ARRIVAL` (220 ms), lingers `LINGER` (6 s;
-  `LINGER_IN_A_BURST` 2 s where more wait; at most `WAITING_AT_MOST` (4) waiting, never the same words
+  the bar; rises `RISE` (10 px), fades in over `ARRIVAL` (220 ms), lingers `LINGER_AT_LEAST` (6 s;
+  `LINGER_IN_A_BURST_AT_LEAST` 2 s where more wait; a notice is read for `READING_A_WORD` (500 ms) a
+  word where that is longer than its floor (`reading_time`, `lingers`); **a `Trouble` with nothing
+  waiting stays until a click or escape takes it**, since a failure unread is lost
+  (`a_trouble_stays_until_it_is_dismissed_unless_others_are_waiting`); at most `WAITING_AT_MOST` (4) waiting, never the same words
   twice (a `Trouble` told again while the same one shows or waits is counted on it, *… (×3)*, and a
   repeat of any other tone is dropped); a full line gives up its oldest non-`Trouble` for a newer notice, turns a plain one away where
   only troubles wait, and keeps every `Trouble`, so troubles alone may pass four), fades out over `WITHDRAWAL`; a click or escape takes it early. A `Notice` is `Trouble`,
@@ -1465,7 +1478,9 @@ is never named.
   border when worn. An accent is a round `kit::dot_swatch` with a check in `theme::ink_over`'s ink.
   Appearance is the one category with nothing behind it but the window: a choice is worn via
   `theme::wear`, saved through the `Settings` seam, redrawn by `cx.refresh_windows()`; no `Command`.
-  Groups in order: *Colour*; *Layout* (text size); *Window buttons* (worn via
+  Groups in order: *Colour*; *Layout* (text size: Small, Medium, Large and Larger, roots of 12, 13.5, 15.5
+  and 19 against the 13.5 middling one, so Larger reads at 141 per cent); *Motion* (`reduced-motion`,
+  `ResonateApp::reduced_motion`, `RootView::reduce_motion`; `motion.md`); *Window buttons* (worn via
   `RootView::show_window_buttons` onto the global, not `theme`); *The volume wheel*
   (`ResonateApp::scroll_volume`, `scroll-volume`); *Mouse navigation* (`mouse-navigation`);
   *Scrollbars*: Always / While scrolling (`ScrollbarMode::AutoHidden`, default) / Never

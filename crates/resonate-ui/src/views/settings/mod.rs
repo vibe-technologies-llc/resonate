@@ -454,6 +454,7 @@ impl RootView {
             Group::DiscordShows => self.discord_shows_group(cx),
             Group::Colour => self.colour_group(cx),
             Group::Layout => self.layout_group(cx),
+            Group::Motion => self.motion_group(cx),
             Group::WindowButtons => self.window_buttons_group(cx),
             Group::VolumeWheel => self.volume_wheel_group(cx),
             Group::MouseNavigation => self.mouse_navigation_group(cx),
@@ -602,6 +603,7 @@ impl RootView {
             Group::MouseNavigation => {
                 self.navigate_with_mouse_buttons(defaults::MOUSE_NAVIGATION, cx);
             }
+            Group::Motion => self.reduce_motion(defaults::REDUCED_MOTION, cx),
             Group::Scrollbars => self.draw_scrollbars(defaults::SCROLLBARS, cx),
             Group::LiveSpectrum => self.read_the_spectrum(defaults::SPECTRAL, cx),
             Group::Tabs => self.show_tabs(defaults::TABS, cx),
@@ -634,6 +636,7 @@ impl RootView {
         let window_buttons = cx.global::<ResonateApp>().window_buttons;
         let scroll_volume = cx.global::<ResonateApp>().scroll_volume;
         let mouse_navigation = cx.global::<ResonateApp>().mouse_navigation;
+        let reduced_motion = cx.global::<ResonateApp>().reduced_motion;
         let scrollbars = cx.global::<ResonateApp>().scrollbars;
         let spectral = cx.global::<ResonateApp>().spectral;
         let tabs = cx.global::<ResonateApp>().tabs;
@@ -706,6 +709,7 @@ impl RootView {
             window_buttons,
             scroll_volume,
             mouse_navigation,
+            reduced_motion,
             scrollbars,
             spectral,
             tabs,
@@ -762,12 +766,14 @@ impl RootView {
     pub(crate) fn in_the_ring_at(
         &self,
         named: impl Into<String>,
-        control: Stateful<Div>,
+        mut control: Stateful<Div>,
         press: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + Clone + 'static,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let named = named.into();
         let clicked = press.clone();
+        self.controls
+            .captioned_by_its_name(named.clone(), &mut control);
 
         control
             .track_focus(&self.controls.at(&named, cx))
@@ -793,11 +799,12 @@ impl RootView {
     pub(crate) fn in_the_ring(
         &self,
         named: &'static str,
-        control: Stateful<Div>,
+        mut control: Stateful<Div>,
         press: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + Clone + 'static,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let handle = self.controls.at(named, cx);
+        self.controls.captioned_by_its_name(named, &mut control);
         Self::ringed(&handle, control, press, cx)
     }
 
@@ -847,6 +854,7 @@ impl RootView {
             .map_or_else(SharedString::default, |id| {
                 SharedString::from(id.to_string())
             });
+        self.controls.captioned_by_its_name(named.clone(), control);
         self.controls.at(named, cx)
     }
 
@@ -975,16 +983,19 @@ impl RootView {
 
     fn option_in_the_ring(
         &self,
-        control: Stateful<Div>,
+        mut control: Stateful<Div>,
         id: &'static str,
         index: usize,
         press: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + Clone + 'static,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let clicked = press.clone();
+        let named = format!("{id}-{index}");
+        self.controls
+            .captioned_by_its_name(named.clone(), &mut control);
 
         control
-            .track_focus(&self.controls.at(format!("{id}-{index}"), cx))
+            .track_focus(&self.controls.at(named, cx))
             .key_context(CONTROL_CONTEXT)
             .focus(|option| option.bg(theme::tinted(theme::accent(), 0x2a)))
             .on_action(

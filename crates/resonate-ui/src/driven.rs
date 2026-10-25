@@ -397,6 +397,7 @@ impl Driven {
                 window_buttons: WindowButtons::SHOWN,
                 scroll_volume: true,
                 mouse_navigation: true,
+                reduced_motion: false,
                 caret: crate::CaretBlink::as_built(),
                 scrollbars: resonate_core::ScrollbarMode::default(),
                 spectral: resonate_core::Spectral::default(),
@@ -3091,6 +3092,54 @@ mod tests {
             after < before,
             "the body did not scroll: {before:?} to {after:?}"
         );
+    }
+
+    #[gpui::test]
+    fn the_reduce_motion_switch_reaches_gpui_and_the_app_global(cx: &mut TestAppContext) {
+        let mut driven = Driven::open(cx, catalog());
+        showing_settings(&mut driven, SettingsCategory::Appearance);
+        assert!(!driven.read(|_, cx| cx.reduce_motion()));
+
+        let track = named("reduce-motion", "track");
+        driven.click(track);
+        driven.until(|_, cx| cx.reduce_motion());
+
+        assert!(driven.read(|_, cx| cx.global::<ResonateApp>().reduced_motion));
+
+        driven.click(track);
+        driven.until(|_, cx| !cx.reduce_motion());
+
+        assert!(!driven.read(|_, cx| cx.global::<ResonateApp>().reduced_motion));
+    }
+
+    #[gpui::test]
+    fn tabbing_onto_an_icon_only_control_names_it_where_a_pointer_would_have_shown_a_hint(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let files = [folder.tone("one.wav", 5)];
+        let mut driven = Driven::opened_in(cx, catalog(), &folder);
+        driven.play(&files);
+        let root = driven.root.clone();
+        let named_now = |driven: &mut Driven| {
+            driven
+                .cx
+                .update(|window, cx| root.read(cx).focused_control_named(window))
+        };
+
+        assert_eq!(named_now(&mut driven), None);
+        assert!(
+            tabbed_onto(&mut driven, "next"),
+            "tab never reached the next button"
+        );
+
+        let caption = named_now(&mut driven).expect("the focused button is named");
+        assert!(caption.contains("Next"), "the caption reads {caption:?}");
+
+        driven.click("tab-tracks");
+        driven.settle();
+
+        assert_eq!(named_now(&mut driven), None);
     }
 
     #[gpui::test]

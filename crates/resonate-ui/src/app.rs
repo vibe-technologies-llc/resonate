@@ -189,6 +189,7 @@ pub struct ResonateApp {
     pub window_buttons: WindowButtons,
     pub scroll_volume: bool,
     pub mouse_navigation: bool,
+    pub reduced_motion: bool,
     pub caret: CaretBlink,
     pub scrollbars: ScrollbarMode,
     pub spectral: Spectral,
@@ -1057,6 +1058,7 @@ pub fn run(
             window_buttons: stored.window_buttons,
             scroll_volume: stored.scroll_volume,
             mouse_navigation: stored.mouse_navigation,
+            reduced_motion: stored.reduced_motion,
             caret: stored.caret.clone(),
             scrollbars: stored.scrollbars,
             spectral: stored.spectral,
@@ -1079,6 +1081,7 @@ pub fn run(
             first_read,
             copying,
         });
+        cx.set_reduce_motion(stored.reduced_motion);
         cx.bind_keys(bindings());
         cx.activate(true);
         close_when_asked(bus.quit, cx);

@@ -177,6 +177,14 @@ impl<T: Copy + PartialEq> Flipping<T> {
         self.started = Some(started);
     }
 
+    pub(crate) fn moves_to(&mut self, to: T, now: Instant, over: Duration, reduced: bool) {
+        if reduced {
+            *self = Self::still(to);
+        } else {
+            self.towards(to, now, over);
+        }
+    }
+
     pub(crate) fn share(&self, now: Instant, over: Duration) -> f32 {
         self.started.map_or(1.0, |started| {
             (now.saturating_duration_since(started).as_secs_f32() / over.as_secs_f32()).min(1.0)
@@ -254,12 +262,13 @@ impl<E: IntoElement + 'static, T: Copy + PartialEq + 'static> Element for Flip<E
         };
         let value = self.value;
         let over = self.over;
+        let reduced = cx.reduce_motion();
 
         let (from, to, share) =
             window.with_element_state(global_id, |state: Option<Flipping<T>>, _| {
                 let now = Instant::now();
                 let mut flipping = state.unwrap_or_else(|| Flipping::still(value));
-                flipping.towards(value, now, over);
+                flipping.moves_to(value, now, over, reduced);
                 (flipping.at(now, over), flipping)
             });
         if share < 1.0 {
@@ -423,6 +432,30 @@ mod tests {
             flipping.at(now + FLIPS_OVER, FLIPS_OVER),
             (false, true, 1.0)
         );
+    }
+
+    #[test]
+    fn a_flip_under_reduced_motion_lands_at_once_and_asks_for_no_frames() {
+        let now = Instant::now();
+        let mut flipping = Flipping::still(false);
+
+        flipping.moves_to(true, now, FLIPS_OVER, true);
+
+        assert_eq!(flipping.at(now, FLIPS_OVER), (true, true, 1.0));
+
+        flipping.moves_to(false, now, FLIPS_OVER, true);
+
+        assert_eq!(flipping.at(now, FLIPS_OVER), (false, false, 1.0));
+    }
+
+    #[test]
+    fn a_flip_that_may_move_still_does() {
+        let now = Instant::now();
+        let mut flipping = Flipping::still(false);
+
+        flipping.moves_to(true, now, FLIPS_OVER, false);
+
+        assert_eq!(flipping.at(now, FLIPS_OVER), (false, true, 0.0));
     }
 
     #[test]

@@ -194,7 +194,7 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
 **Keys whose rule is not obvious**
 
 - **Live keys ride `Stored` onto a `ResonateApp` field** (`music_folder`, `file_dropped`,
-  `scroll_volume`, `mouse_navigation`, `scrollbars`, `tabs`, `WindowButtons`), written by the
+  `scroll_volume`, `mouse_navigation`, `reduced_motion`, `scrollbars`, `tabs`, `WindowButtons`), written by the
   Appearance and Library panes, live at once. `Config::window_buttons`/`Config::tabs` fold their
   switches; close is never a window button; an off tab leaves the sidebar and pane keys,
   `RootView::set_pane` lands on the tracks, the artist page's *not held* button is not drawn.

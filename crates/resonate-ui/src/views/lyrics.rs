@@ -191,7 +191,9 @@ impl RootView {
         let position = self.lyrics.read(cx).ahead().read(heard_at);
         let sounding = heard.is_some_and(|heard| heard.playing);
 
+        let stilled = cx.reduce_motion();
         let moving = self.lyrics.update(cx, |model, _| {
+            model.keep_still(stilled);
             model.follow_the_track(position, now);
             let placing = model.place(now);
 

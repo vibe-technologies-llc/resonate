@@ -153,6 +153,7 @@ pub struct Config {
     pub maximise_button: Option<bool>,
     pub scroll_volume: Option<bool>,
     pub mouse_navigation: Option<bool>,
+    pub reduced_motion: Option<bool>,
     pub scrollbars: Option<ScrollbarMode>,
     pub spectrum_tilt: Option<SpectrumTilt>,
     pub spectrum_floor: Option<SpectrumFloor>,
@@ -270,6 +271,7 @@ impl fmt::Debug for Config {
             maximise_button,
             scroll_volume,
             mouse_navigation,
+            reduced_motion,
             scrollbars,
             spectrum_tilt,
             spectrum_floor,
@@ -373,6 +375,7 @@ impl fmt::Debug for Config {
             .field("maximise_button", maximise_button)
             .field("scroll_volume", scroll_volume)
             .field("mouse_navigation", mouse_navigation)
+            .field("reduced_motion", reduced_motion)
             .field("scrollbars", scrollbars)
             .field("spectrum_tilt", spectrum_tilt)
             .field("spectrum_floor", spectrum_floor)
@@ -582,6 +585,11 @@ impl Config {
     #[cfg(feature = "ui")]
     pub fn navigates_with_mouse_buttons(&self) -> bool {
         self.mouse_navigation.unwrap_or(true)
+    }
+
+    #[cfg(feature = "ui")]
+    pub fn reduces_motion(&self) -> bool {
+        self.reduced_motion.unwrap_or(false)
     }
 
     #[cfg(feature = "ui")]
@@ -956,6 +964,7 @@ impl Config {
             ConfigKey::MouseNavigation => {
                 config.mouse_navigation = Some(at.boolean(value)?);
             }
+            ConfigKey::ReducedMotion => config.reduced_motion = Some(at.boolean(value)?),
             ConfigKey::SpectrumTilt => {
                 config.spectrum_tilt = Some(at.one_of(value, SpectrumTilt::parse)?);
             }
@@ -2259,6 +2268,17 @@ mod tests {
         );
         assert!(read("history-kept = 0").is_err());
         assert!(read("history-kept = \"a while\"").is_err());
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn motion_is_kept_until_the_file_asks_for_it_reduced() {
+        assert!(!read("").expect("empty is valid").reduces_motion());
+        assert!(
+            read("reduced-motion = true")
+                .expect("a boolean is valid")
+                .reduces_motion()
+        );
     }
 
     #[cfg(feature = "ui")]

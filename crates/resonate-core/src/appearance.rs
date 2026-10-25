@@ -173,10 +173,11 @@ pub enum TextSize {
     Small,
     Medium,
     Large,
+    Larger,
 }
 
 impl TextSize {
-    pub const ALL: [Self; 3] = [Self::Small, Self::Medium, Self::Large];
+    pub const ALL: [Self; 4] = [Self::Small, Self::Medium, Self::Large, Self::Larger];
 
     pub const MIDDLING: f32 = 13.5;
 
@@ -185,6 +186,7 @@ impl TextSize {
             Self::Small => "small",
             Self::Medium => "medium",
             Self::Large => "large",
+            Self::Larger => "larger",
         }
     }
 
@@ -193,6 +195,7 @@ impl TextSize {
             Self::Small => "Small",
             Self::Medium => "Medium",
             Self::Large => "Large",
+            Self::Larger => "Larger",
         }
     }
 
@@ -201,6 +204,7 @@ impl TextSize {
             Self::Small => 12.0,
             Self::Medium => Self::MIDDLING,
             Self::Large => 15.5,
+            Self::Larger => 19.0,
         }
     }
 
@@ -524,5 +528,22 @@ mod tests {
         assert_eq!(TextSize::Medium.scale(), 1.0);
         assert!(TextSize::Small.scale() < 1.0);
         assert!(TextSize::Large.scale() > 1.0);
+    }
+
+    #[test]
+    fn each_size_is_drawn_larger_than_the_one_before_it() {
+        for pair in TextSize::ALL.windows(2) {
+            assert!(
+                pair[0].root() < pair[1].root(),
+                "{} is not larger than {}",
+                pair[1],
+                pair[0]
+            );
+        }
+    }
+
+    #[test]
+    fn the_largest_size_is_at_least_a_third_again_the_middling_one() {
+        assert!(TextSize::Larger.scale() >= 4.0 / 3.0);
     }
 }

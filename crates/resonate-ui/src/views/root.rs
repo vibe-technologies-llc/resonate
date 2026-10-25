@@ -3067,6 +3067,16 @@ impl RootView {
         moved
     }
 
+    pub(crate) fn focused_control_named(&self, window: &Window) -> Option<SharedString> {
+        if !window.last_input_was_keyboard() {
+            return None;
+        }
+
+        self.controls
+            .caption_of_the_focused(window)
+            .or_else(|| self.standing_controls.caption_of_the_focused(window))
+    }
+
     fn hints_are_wanted(&self, cx: &App) -> bool {
         self.pointer_inside
             && self.grabbed.is_none()
@@ -4913,11 +4923,13 @@ impl RootView {
     pub(crate) fn in_the_standing_ring(
         &self,
         named: &'static str,
-        control: Stateful<Div>,
+        mut control: Stateful<Div>,
         press: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + Clone + 'static,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let handle = self.standing_controls.at(named, cx);
+        self.standing_controls
+            .captioned_by_its_name(named, &mut control);
         Self::ringed(&handle, control, press, cx)
             .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
     }
@@ -5354,6 +5366,9 @@ impl Render for RootView {
                 toast::drawn(self.type_ahead.typed().is_some(), cx),
                 ParentElement::child,
             )
+            .when_some(self.focused_control_named(window), |app, name| {
+                app.child(hint::caption(name))
+            })
             .when_some(self.type_ahead_pill(), ParentElement::child)
             .when_some(self.downloads_over_the_app(cx), ParentElement::child)
             .when_some(self.menu_over_the_app(cx), ParentElement::child)

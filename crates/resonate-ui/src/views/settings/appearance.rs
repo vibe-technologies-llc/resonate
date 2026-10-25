@@ -27,6 +27,7 @@ const MAXIMISE_ID: &str = "show-the-maximise-button";
 
 const VOLUME_WHEEL_ID: &str = "wheel-the-volume";
 const MOUSE_NAVIGATION_ID: &str = "mouse-navigation";
+const REDUCED_MOTION_ID: &str = "reduce-motion";
 const SUGGESTIONS_TAB_ID: &str = "show-the-suggestions-tab";
 
 const MISSING_TAB_ID: &str = "show-the-missing-tab";
@@ -44,14 +45,10 @@ const WINDOW_BUTTONS_NOTE: &str = "A button the compositor does not offer is lef
                                    carries that titlebar's buttons rather than these.";
 
 impl Choice for TextSize {
-    const ALL: &'static [Self] = &[Self::Small, Self::Medium, Self::Large];
+    const ALL: &'static [Self] = &TextSize::ALL;
 
     fn label(self) -> &'static str {
-        match self {
-            Self::Small => "Small",
-            Self::Medium => "Medium",
-            Self::Large => "Large",
-        }
+        TextSize::label(self)
     }
 
     fn meaning(self) -> SharedString {
@@ -301,6 +298,25 @@ impl RootView {
         ))
     }
 
+    pub(super) fn motion_group(&mut self, cx: &mut Context<Self>) -> Div {
+        let reduced = cx.global::<ResonateApp>().reduced_motion;
+
+        kit::section_body().child(self.in_the_ring(
+            REDUCED_MOTION_ID,
+            switch_row(
+                "Reduce motion",
+                "Things appear at once instead of sliding, fading or gliding into place",
+                reduced,
+                REDUCED_MOTION_ID,
+            ),
+            move |this, _, cx| {
+                this.reduce_motion(!reduced, cx);
+                this.store(&Setting::ReducedMotion(!reduced), cx);
+            },
+            cx,
+        ))
+    }
+
     pub(super) fn window_buttons_group(&mut self, cx: &mut Context<Self>) -> Div {
         let shown = cx.global::<ResonateApp>().window_buttons;
         let flip_minimise = WindowButtons {
@@ -514,6 +530,12 @@ impl RootView {
 
     pub(crate) fn wheel_the_volume(&self, wheeled: bool, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.scroll_volume = wheeled);
+        cx.notify();
+    }
+
+    pub(crate) fn reduce_motion(&self, reduced: bool, cx: &mut Context<Self>) {
+        cx.update_global::<ResonateApp, _>(|global, _| global.reduced_motion = reduced);
+        cx.set_reduce_motion(reduced);
         cx.notify();
     }
 

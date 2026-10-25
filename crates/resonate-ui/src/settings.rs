@@ -205,6 +205,7 @@ pub enum SettingKey {
     MaximiseButton,
     ScrollVolume,
     MouseNavigation,
+    ReducedMotion,
     Scrollbars,
     SpectrumTilt,
     SpectrumFloor,
@@ -252,7 +253,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 97] = [
+    pub const ALL: [Self; 98] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -306,6 +307,7 @@ impl SettingKey {
         Self::MaximiseButton,
         Self::ScrollVolume,
         Self::MouseNavigation,
+        Self::ReducedMotion,
         Self::Scrollbars,
         Self::SpectrumTilt,
         Self::SpectrumFloor,
@@ -411,6 +413,7 @@ pub enum Setting {
     MaximiseButton(bool),
     ScrollVolume(bool),
     MouseNavigation(bool),
+    ReducedMotion(bool),
     Scrollbars(ScrollbarMode),
     SpectrumTilt(SpectrumTilt),
     SpectrumFloor(SpectrumFloor),
@@ -513,6 +516,7 @@ impl Setting {
             Self::MaximiseButton(_) => SettingKey::MaximiseButton,
             Self::ScrollVolume(_) => SettingKey::ScrollVolume,
             Self::MouseNavigation(_) => SettingKey::MouseNavigation,
+            Self::ReducedMotion(_) => SettingKey::ReducedMotion,
             Self::Scrollbars(_) => SettingKey::Scrollbars,
             Self::SpectrumTilt(_) => SettingKey::SpectrumTilt,
             Self::SpectrumFloor(_) => SettingKey::SpectrumFloor,
@@ -832,6 +836,7 @@ pub struct Stored {
     pub window_buttons: WindowButtons,
     pub scroll_volume: bool,
     pub mouse_navigation: bool,
+    pub reduced_motion: bool,
     pub scrollbars: ScrollbarMode,
     pub spectral: Spectral,
     pub tabs: Tabs,

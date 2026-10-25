@@ -57,6 +57,7 @@ pub enum ConfigKey {
     MaximiseButton,
     ScrollVolume,
     MouseNavigation,
+    ReducedMotion,
     Scrollbars,
     SpectrumTilt,
     SpectrumFloor,
@@ -164,7 +165,7 @@ impl fmt::Display for Named {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 100] = [
+    pub const ALL: [Self; 101] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -212,6 +213,7 @@ impl ConfigKey {
         Self::MaximiseButton,
         Self::ScrollVolume,
         Self::MouseNavigation,
+        Self::ReducedMotion,
         Self::Scrollbars,
         Self::SpectrumTilt,
         Self::SpectrumFloor,
@@ -316,6 +318,7 @@ impl ConfigKey {
             Self::MaximiseButton => "maximise-button",
             Self::ScrollVolume => "scroll-volume",
             Self::MouseNavigation => "mouse-navigation",
+            Self::ReducedMotion => "reduced-motion",
             Self::Scrollbars => "scrollbars",
             Self::SpectrumTilt => "spectrum-tilt",
             Self::SpectrumFloor => "spectrum-floor",

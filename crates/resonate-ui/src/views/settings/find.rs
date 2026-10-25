@@ -133,6 +133,7 @@ pub(crate) enum Group {
     DiscordShows,
     Colour,
     Layout,
+    Motion,
     WindowButtons,
     VolumeWheel,
     MouseNavigation,
@@ -146,7 +147,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 61] = [
+    pub(crate) const ALL: [Self; 62] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -198,6 +199,7 @@ impl Group {
         Self::DiscordShows,
         Self::Colour,
         Self::Layout,
+        Self::Motion,
         Self::WindowButtons,
         Self::VolumeWheel,
         Self::MouseNavigation,
@@ -254,6 +256,7 @@ impl Group {
             Self::Notifications | Self::Discord | Self::DiscordShows => Category::Desktop,
             Self::Colour
             | Self::Layout
+            | Self::Motion
             | Self::WindowButtons
             | Self::VolumeWheel
             | Self::MouseNavigation
@@ -322,6 +325,7 @@ impl Group {
             Self::DiscordShows => "What Discord shows",
             Self::Colour => "Colour",
             Self::Layout => "Layout",
+            Self::Motion => "Motion",
             Self::WindowButtons => "Window buttons",
             Self::VolumeWheel => "The volume wheel",
             Self::MouseNavigation => "Mouse navigation",
@@ -392,6 +396,7 @@ impl Group {
             Self::DiscordShows => DISCORD_SHOWS_HINT,
             Self::Colour => COLOUR_HINT,
             Self::Layout => LAYOUT_HINT,
+            Self::Motion => MOTION_HINT,
             Self::WindowButtons => WINDOW_BUTTONS_HINT,
             Self::VolumeWheel => VOLUME_WHEEL_HINT,
             Self::MouseNavigation => MOUSE_NAVIGATION_HINT,
@@ -552,7 +557,11 @@ impl Group {
                  paused details"
             }
             Self::Colour => "theme accent palette dark swatch",
-            Self::Layout => "text size type scale larger smaller density",
+            Self::Layout => "text size type scale larger largest smaller density",
+            Self::Motion => {
+                "animation animations reduced reduce motion fade slide glide transition still \
+                 vestibular accessibility"
+            }
             Self::WindowButtons => {
                 "titlebar minimize maximize minimise maximise zoom decorations chrome tiling \
                                      controls hide"
@@ -662,6 +671,7 @@ impl Group {
             ],
             Self::Colour => &[SettingKey::Theme, SettingKey::Accent],
             Self::Layout => &[SettingKey::TextSize],
+            Self::Motion => &[SettingKey::ReducedMotion],
             Self::WindowButtons => &[SettingKey::MinimiseButton, SettingKey::MaximiseButton],
             Self::VolumeWheel => &[SettingKey::ScrollVolume],
             Self::MouseNavigation => &[SettingKey::MouseNavigation],
@@ -1135,6 +1145,11 @@ pub(crate) const WINDOW_BUTTONS_HINT: &str = "Whether the titlebar this window d
      session where a key already does both, has no use for them. Close always stays, because it \
      is the one way out a pointer has, and a double press on the titlebar still fills the screen \
      and gives the window back either way.";
+
+pub(crate) const MOTION_HINT: &str = "Whether the window moves things about. Reduced, a menu, a \
+     sheet or a notice appears at once instead of rising into place, a switch lands without \
+     sliding, a song change replaces the last without fading, the scrollbars and the lyrics jump \
+     rather than glide.";
 
 pub(crate) const VOLUME_WHEEL_HINT: &str = "Whether turning the wheel over the volume slider \
      moves the volume, a notch at a time. Off, the slider answers only to a press or a drag and \

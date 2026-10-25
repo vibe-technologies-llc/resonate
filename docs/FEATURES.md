@@ -86,8 +86,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   weighed
 
 ## Keyboard and accessibility
-- [M · 0.2.0] An icon-only control shows no name on focus (tooltips need a pointer) and the confirming toast
-  leaves after 6 s; `TextSize::Large` is 1.15× the normal; no reduced-motion setting
 - [M · 0.2.0] A selection is a contiguous run reached by Shift; Tracks and Albums act on its first row
   alone; nothing adds a row with Control
 - [L · 0.2.0] Nothing is exposed to a screen reader: gpui now carries AccessKit, which the views
