@@ -4,7 +4,10 @@ use crate::{Error, Result, SchemaFingerprint, StoreOp, store};
 
 const UNSTAMPED: u32 = 0;
 
-const MIGRATIONS: &[&str] = &[LISTENS_NAME_THEIR_ORIGIN];
+const MIGRATIONS: &[&str] = &[
+    LISTENS_NAME_THEIR_ORIGIN,
+    SONGS_RECEIVED_NAME_THEIR_RECORDING,
+];
 
 const STAMPS: [SchemaFingerprint; MIGRATIONS.len() + 1] = stamps();
 
@@ -18,6 +21,14 @@ const LISTENS_NAME_THEIR_ORIGIN: &str = "
 ALTER TABLE listens ADD COLUMN origin_device BLOB;
 ALTER TABLE listens ADD COLUMN origin_id INTEGER;
 CREATE UNIQUE INDEX listens_by_origin ON listens(origin_device, origin_id) WHERE origin_device IS NOT NULL;
+";
+
+const SONGS_RECEIVED_NAME_THEIR_RECORDING: &str = "
+CREATE TABLE songs_received (
+    recording TEXT PRIMARY KEY,
+    path      TEXT NOT NULL
+) STRICT;
+CREATE INDEX songs_received_by_path ON songs_received(path);
 ";
 
 const V1: &str = "

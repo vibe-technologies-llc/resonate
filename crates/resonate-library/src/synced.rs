@@ -35,6 +35,10 @@ const FIRST_ALIAS: usize = 2;
 
 const DEVICES: &str = "devices";
 
+const SCANS_TRIED_AT_MOST: u32 = 30;
+
+const SCAN_TRIED_AGAIN_AFTER: Duration = Duration::from_secs(2);
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SyncedPlaylist {
     pub id: PlaylistId,
@@ -583,6 +587,9 @@ fn resolved(connection: &Connection, recording: &Recording) -> Result<Option<Cut
             return Ok(held);
         }
     }
+    if let Some(received) = received_as(connection, recording)? {
+        return Ok(Some(received));
+    }
     let words = resonate_core::title_words(&recording.title);
     if words.is_empty() {
         return Ok(None);
@@ -611,6 +618,39 @@ fn resolved(connection: &Connection, recording: &Recording) -> Result<Option<Cut
         })
     });
     Ok(alike.next().map(|(cut, _)| cut))
+}
+
+fn received_as(connection: &Connection, recording: &Recording) -> Result<Option<Cut>> {
+    let key = recording.key();
+    let named = recording.named_key();
+    connection
+        .query_row(
+            "SELECT t.path, t.span_start, t.span_frames
+               FROM songs_received s JOIN tracks t ON t.path = s.path
+              WHERE s.recording IN (?1, ?2) AND t.hidden = 0
+              ORDER BY t.alternative_of IS NOT NULL, t.id LIMIT 1",
+            params![key.as_str(), named.as_str()],
+            cut_at,
+        )
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
+pub(crate) fn note_received_at(inner: &Inner, recording: &Recording, path: &Path) -> Result<()> {
+    let text = store::path_text(path).into_owned();
+    let keys = [recording.key(), recording.named_key()];
+    inner.write(|transaction| {
+        for key in &keys {
+            transaction
+                .execute(
+                    "INSERT INTO songs_received (recording, path) VALUES (?1, ?2)
+                     ON CONFLICT (recording) DO UPDATE SET path = excluded.path",
+                    params![key.as_str(), text],
+                )
+                .map_err(|source| Error::store(StoreOp::Insert, source))?;
+        }
+        Ok(())
+    })
 }
 
 fn lasts_alike(held: Option<Duration>, wanted: Option<Duration>) -> bool {
@@ -893,9 +933,8 @@ pub(crate) fn file_song(
     let whole = folder.join(relative);
     match filed::landed_beside(library, &whole, reader) {
         Ok(path) => {
-            if let Err(error) = library.scan(scanning(root)).and_then(PassHandle::join) {
-                tracing::warn!(%error, "the folder a song from another device was filed in could not be read yet");
-            }
+            library.note_song_received_at(recording, &path)?;
+            scanned_once_free(library, root);
             Ok(SongFiled::Filed(path))
         }
         Err(Unfiled::Catalog(error)) => Err(error),
@@ -947,6 +986,26 @@ fn vaulted(
     }
 
     Ok(SongFiled::Vaulted(kept.path))
+}
+
+fn scanned_once_free(library: &Library, root: PathBuf) {
+    let mut tries = 1;
+    loop {
+        match library
+            .scan(scanning(root.clone()))
+            .and_then(PassHandle::join)
+        {
+            Err(Error::AlreadyWalking) if tries < SCANS_TRIED_AT_MOST => {
+                tries += 1;
+                thread::sleep(SCAN_TRIED_AGAIN_AFTER);
+            }
+            Err(error) => {
+                tracing::warn!(%error, "the folder a song from another device was filed in could not be read yet");
+                return;
+            }
+            Ok(_) => return,
+        }
+    }
 }
 
 fn scanning(root: PathBuf) -> ScanOptions {

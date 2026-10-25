@@ -202,7 +202,16 @@ groups the song as the first did
 (`songs_passed_on_by_a_vaulted_device_keep_the_album_artist_year_and_totals_the_vault_dropped`).
 An unvaulted sender says nothing, its file carrying the tags. Audio the vault holds already under another recording is `Refused`. With no vault, a song is
 filed in the music folder under `organise-as` like a delivery (`filed::landed_beside`) and its
-root scanned. With neither it is refused (`SongFiled::Nowhere`), and one that does not probe (or the
+root scanned. **A song filed is held by what was asked for, never landed twice**: the catalog's
+`songs_received` keeps each recording key a song was filed for (`key` and `named_key`) against its
+path, and `synced::resolved` asks it after the MBID and before the tag match, so a sender whose
+catalog names the song otherwise than its file does is not fetched again on every follow; a file
+of the same bytes already standing at the name (or a numbered one) is the song
+(`filed::Landed::Standing`), not a ` (2)` beside it; the scan after filing waits out another pass
+(`scanned_once_free`: `SCANS_TRIED_AT_MOST` tries `SCAN_TRIED_AGAIN_AFTER` apart) rather than leave
+the song uncatalogued to be fetched again
+(`a_song_from_another_device_is_held_by_what_was_asked_and_never_filed_twice`). Copies such a
+fetch left are folded by `resonate dedupe` (`library.md`). With neither it is refused (`SongFiled::Nowhere`), and one that does not probe (or the
 vault refuses) is deleted and answered `false` (`SongFiled::Refused`), so a damaged file is never
 filed to be fetched again. **A vaulted song is offered onward**: `Library::held_songs` lists the
 rootless vaulted rows beside the rooted unvaulted ones, and `Library::open_song` opens either;

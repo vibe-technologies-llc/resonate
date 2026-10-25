@@ -44,6 +44,7 @@ use crate::{
     SortOrder, Spellings, Statistics, StoreOp, Study, Submitted, Suggestion, Sung, TagSink, Term,
     Track, TrackQuery, TrackToAsk, Uncovered, Undoable, Unfinished, UnheldRelease, Vault, VaultKey,
     VaultObject, Verdict, Waits, Want, Window, Word, alternatives,
+    copies::{self, Copies, NumberedCopy},
     deleted::{self, Deleted, Removal, Trashes},
     elsewhere, enrich, enriched,
     filed::{AlbumToFile, DeliveryFolder},
@@ -2195,6 +2196,25 @@ impl Library {
         Ok(())
     }
 
+    pub fn numbered_copies(&self) -> Result<Copies> {
+        self.inner.read(copies::found)
+    }
+
+    pub fn fold_copies(&self, numbered: &[NumberedCopy]) -> Result<Deleted> {
+        if numbered.is_empty() {
+            return Ok(Deleted::default());
+        }
+        self.inner.write(|transaction| {
+            for copy in numbered {
+                copies::handed_over(transaction, copy)?;
+            }
+            Ok(())
+        })?;
+        self.inner.playlists_changed();
+        let copies: Vec<TrackId> = numbered.iter().map(NumberedCopy::copy_id).collect();
+        self.delete_tracks(&copies)
+    }
+
     pub fn delete_tracks(&self, tracks: &[TrackId]) -> Result<Deleted> {
         let _walk = self.walk_the_tree()?;
         let files = self
@@ -2516,6 +2536,14 @@ impl Library {
 
     pub fn song_tags(&self, path: &Path) -> Result<synced::HeldTags> {
         synced::tags_of(&self.inner, path)
+    }
+
+    pub(crate) fn note_song_received_at(
+        &self,
+        recording: &resonate_core::Recording,
+        path: &Path,
+    ) -> Result<()> {
+        synced::note_received_at(&self.inner, recording, path)
     }
 
     pub fn file_song_from_elsewhere(

@@ -204,7 +204,7 @@ stack's test harness:
 
 - **Output:** `sinks`, `explain`, `info`, `analyse` (`--recognise` asks AcoustID), `listen`, `eq`.
 - **Playing:** `play <files>` (transport keys on stdin), `queue`, `players`, `sleep`, `share`, `mcp`.
-- **Catalog:** `scan`, `roots`, `forget`, `enrich`, `tag`, `organise`, `vault`, `studies`, `stats`,
+- **Catalog:** `scan`, `roots`, `forget`, `enrich`, `tag`, `organise`, `dedupe`, `vault`, `studies`, `stats`,
   `favourites`, `suggest`, `playlists`, `playlist`, `import`.
 - **Wants:** `wants`, `missing`, `poll`, `tidal` (device sign-in), `lastfm` (scrobbling sign-in).
 - **Devices:** `sync` (pairing code and devices; `--join`, `--leave`, `--fetch --from`, `--handoff`).

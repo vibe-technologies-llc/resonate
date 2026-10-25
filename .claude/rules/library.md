@@ -17,7 +17,7 @@ rows read via `Player::media` like any unscanned row.
 - **Schema = one `V1`, the baseline of 0.1.0, and a `MIGRATIONS` chain after it.** `V1` is the first
   release's schema as one SQL batch and is never edited, since a stamped catalog of a release would be
   stranded; a change appends a step to `MIGRATIONS` (`listens` naming the device and listen a remote
-  listen came from is the first). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
+  listen came from is the first, `songs_received` the second). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
   `fingerprint_of(V1)` (the stamp 0.1.0 wrote) and `STAMPS[n + 1]` hashes `STAMPS[n]` over step `n`'s
   text, in a `const fn`; `SCHEMA_FINGERPRINT` is the last. `lay_out`: `UNSTAMPED` writes `V1` and
   every step; this build's stamp opens; a stamp that is an earlier `STAMPS` entry runs the steps after
@@ -1210,6 +1210,16 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   (`deleting_a_track_removes_its_file_and_its_row_and_leaves_the_rest`,
   `deleting_a_track_takes_its_lyrics_and_the_sheet_that_cuts_it_alone_and_the_folder_it_emptied_and_keeps_the_listens`,
   `a_file_with_no_trash_to_go_to_is_kept_with_its_row`)
+
+- **A copy numbered beside its song is folded into it.** `Library::numbered_copies` (`copies.rs`)
+  reads every whole-file row (one row at the path, no span, not vaulted) whose stem ends ` (N)`
+  and finds the song it copies: the bare name, then each lower number, the first catalogued with
+  the same size and the same bytes (`take_in::holds_the_same_bytes`); a numbered file differing
+  from all of them is `Copies::differing` and stays. `fold_copies` hands each copy's plays, last
+  play, favourite, listens, playlist entries, queue rows and `songs_received` row to the song in
+  one transaction (`copies::handed_over`), then `delete_tracks` trashes the copies as any deletion.
+  `resonate dedupe` previews, `--apply` folds
+  (`a_copy_numbered_beside_its_song_is_folded_into_it_and_one_that_differs_is_left`).
 
 ## Organising
 

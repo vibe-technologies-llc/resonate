@@ -968,6 +968,21 @@ pub enum Sub {
     },
 
     #[command(
+        about = "Print every song held twice under a numbered name, such as Song (1).flac \
+                 beside Song.flac, whose bytes are the same as the song it was numbered after. \
+                 Nothing is folded until --apply says so"
+    )]
+    Dedupe {
+        #[arg(
+            long,
+            help = "Fold each copy into the song it copies: its plays, favourite, playlist \
+                    entries and queue rows move to the song, and the copy goes to the trash. \
+                    A file whose bytes differ is left where it is"
+        )]
+        apply: bool,
+    },
+
+    #[command(
         about = "Say what the managed vault holds. The vault keeps a bit-exact copy of every \
                  track imported into it, stripped of its tags and re-encoded, and the library \
                  it was imported from is read and never touched"

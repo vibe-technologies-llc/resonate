@@ -103,8 +103,9 @@ pub(crate) fn filed(
 
     let staged = staged_beside(&whole);
     library.staging(&staged).map_err(Unfiled::Catalog)?;
-    let landed = staged_from(reader, &staged)
-        .and_then(|held| placed(&staged, &whole).map(|path| (path, held)));
+    let landed = staged_from(reader, &staged).and_then(|held| {
+        placed(&staged, &whole, Standing::PassedOver).map(|landed| (landed.path(), held))
+    });
     staged_away(library, &staged);
     let path = landed.map(|(path, _)| path)?;
 
@@ -131,14 +132,19 @@ pub(crate) fn landed_beside(
     fs::create_dir_all(parent)?;
     let staged = staged_beside(whole);
     library.staging(&staged).map_err(Unfiled::Catalog)?;
-    let landed = staged_from(reader, &staged).and_then(|_held| placed(&staged, whole));
+    let landed =
+        staged_from(reader, &staged).and_then(|_held| placed(&staged, whole, Standing::Weighed));
     staged_away(library, &staged);
-    let path = landed?;
-    if resonate_codec::probe(&Sources::local(), &MediaLocation::local(&path)).is_err() {
-        let _ = fs::remove_file(&path);
-        return Err(Unfiled::Undecodable);
+    match landed? {
+        Landed::Standing(path) => Ok(path),
+        Landed::Placed(path) => {
+            if resonate_codec::probe(&Sources::local(), &MediaLocation::local(&path)).is_err() {
+                let _ = fs::remove_file(&path);
+                return Err(Unfiled::Undecodable);
+            }
+            Ok(path)
+        }
     }
-    Ok(path)
 }
 
 fn weighed(path: &Path, want: &Want) -> std::result::Result<(), Unfiled> {
@@ -210,17 +216,39 @@ fn staged_from(reader: &mut dyn Read, staged: &Path) -> std::result::Result<Held
     Ok(held)
 }
 
-fn placed(staged: &Path, whole: &Path) -> std::result::Result<PathBuf, Unfiled> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Standing {
+    PassedOver,
+    Weighed,
+}
+
+enum Landed {
+    Placed(PathBuf),
+    Standing(PathBuf),
+}
+
+impl Landed {
+    fn path(self) -> PathBuf {
+        match self {
+            Self::Placed(path) | Self::Standing(path) => path,
+        }
+    }
+}
+
+fn placed(staged: &Path, whole: &Path, standing: Standing) -> std::result::Result<Landed, Unfiled> {
     for candidate in take_in::candidates(whole) {
         if fs::symlink_metadata(&candidate).is_ok() {
+            if standing == Standing::Weighed && take_in::holds_the_same_bytes(staged, &candidate) {
+                return Ok(Landed::Standing(candidate));
+            }
             continue;
         }
         match fs::hard_link(staged, &candidate) {
-            Ok(()) => return Ok(candidate),
+            Ok(()) => return Ok(Landed::Placed(candidate)),
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
             Err(_) if candidate.exists() => {}
             Err(_) => match unreplacing::renamed_over_nothing(staged, &candidate) {
-                Ok(()) => return Ok(candidate),
+                Ok(()) => return Ok(Landed::Placed(candidate)),
                 Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
                 Err(error) => return Err(error.into()),
             },

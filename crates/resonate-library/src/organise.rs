@@ -2789,6 +2789,7 @@ pub(crate) fn files_moved(tx: &Transaction<'_>, landed: &[Move]) -> Result<()> {
     let mut retags = prepared(tx, "UPDATE retagged SET path = ?2 WHERE path = ?1")?;
     let mut retagged_fields = prepared(tx, "UPDATE retagged_fields SET path = ?2 WHERE path = ?1")?;
     let mut entries = prepared(tx, "UPDATE playlist_entries SET path = ?2 WHERE path = ?1")?;
+    let mut received = prepared(tx, "UPDATE songs_received SET path = ?2 WHERE path = ?1")?;
     let mut touched = prepared(
         tx,
         "UPDATE playlists SET modified = ?2
@@ -2820,6 +2821,7 @@ pub(crate) fn files_moved(tx: &Transaction<'_>, landed: &[Move]) -> Result<()> {
             &mut tracks,
             &mut retags,
             &mut retagged_fields,
+            &mut received,
         ] {
             statement
                 .execute(params![from, to])

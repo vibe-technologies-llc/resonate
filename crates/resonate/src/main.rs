@@ -298,6 +298,7 @@ fn run() -> Result<()> {
         Some(Sub::Tag { root, apply, undo }) => {
             tag(&open_library(&cli, &config)?, root, *apply, *undo)
         }
+        Some(Sub::Dedupe { apply }) => dedupe(&open_library(&cli, &config)?, *apply),
         Some(Sub::Vault(args)) => {
             let held = vault_asked_for(&cli, &config)?;
             vault::run(&open_library_with(&cli, &config, Some(&held))?, &held, args)
@@ -1175,6 +1176,42 @@ fn tag(library: &Library, roots: &[PathBuf], apply: bool, undo: bool) -> Result<
         .filter(|passed| passed.why.is_a_failure())
         .count();
     none_failed(PassKind::Retag, if apply { failed as u64 } else { 0 })
+}
+
+fn dedupe(library: &Library, apply: bool) -> Result<()> {
+    let copies = library.numbered_copies()?;
+    for copy in &copies.numbered {
+        said!("{} copies {}", copy.copy.display(), copy.kept.display());
+    }
+    for differing in &copies.differing {
+        said!(
+            "{} is numbered like a copy but differs, so it stays",
+            differing.display()
+        );
+    }
+    if !apply {
+        said!(
+            "{}",
+            copies_counted(copies.numbered.len(), "to fold; --apply folds them")
+        );
+        return Ok(());
+    }
+    let deleted = library.fold_copies(&copies.numbered)?;
+    said!(
+        "{}",
+        copies_counted(deleted.files as usize, "folded and sent to the trash")
+    );
+    if deleted.kept > 0 {
+        said!("{} the trash would not take, so they stay", deleted.kept);
+    }
+    Ok(())
+}
+
+fn copies_counted(copies: usize, what: &str) -> String {
+    match copies {
+        1 => format!("1 copy {what}"),
+        copies => format!("{copies} copies {what}"),
+    }
 }
 
 fn pictured(picture: &CoverArt) -> String {

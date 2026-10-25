@@ -906,3 +906,107 @@ fn a_song_filed_in_a_music_folder_reports_no_tags_to_pass_on() -> Result<()> {
     assert_eq!(library.song_tags(&path)?, HeldTags::default());
     Ok(())
 }
+
+#[test]
+fn a_song_from_another_device_is_held_by_what_was_asked_and_never_filed_twice() -> Result<()> {
+    let tree = Tree::new();
+    let library = Library::open_in_memory()?;
+    library.deliver_into(Some(DeliveryFolder {
+        path: tree.root.clone(),
+        layout: Layout::default(),
+    }));
+    let asked = song(
+        "San Tropez (2011 Remaster)",
+        "Pink Floyd",
+        "Meddle (Remastered)",
+    );
+    let bytes = tagged_wav("San Tropez", "Pink Floyd", "Meddle");
+
+    let SongFiled::Filed(filed) = library.file_song_from_elsewhere(
+        &asked,
+        &HeldTags::default(),
+        "wav",
+        &mut Cursor::new(bytes.clone()),
+    )?
+    else {
+        panic!("filed");
+    };
+    let held = library.resolve_recording(&asked)?;
+    let again = library.file_song_from_elsewhere(
+        &asked,
+        &HeldTags::default(),
+        "wav",
+        &mut Cursor::new(bytes),
+    )?;
+
+    assert_eq!(
+        held.map(|cut| cut.location),
+        Some(MediaLocation::local(&filed)),
+        "a song is held by the recording it was asked for, whatever its file says"
+    );
+    assert_eq!(again, SongFiled::Filed(filed.clone()));
+    let mut names: Vec<_> = fs::read_dir(filed.parent().expect("a folder"))
+        .expect("a folder")
+        .map(|entry| entry.expect("an entry").file_name())
+        .collect();
+    names.sort();
+    assert_eq!(names, [filed.file_name().expect("a name").to_owned()]);
+    Ok(())
+}
+
+#[test]
+fn a_copy_numbered_beside_its_song_is_folded_into_it_and_one_that_differs_is_left() -> Result<()> {
+    let tree = Tree::new();
+    let trash = Tree::new();
+    let original = tree.song("Echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let copy = tree.root.join("Echoes (1).wav");
+    fs::copy(&original, &copy).expect("a copy");
+    let other = tree.song("Fearless.wav", "Fearless", "Pink Floyd", "Meddle");
+    let differing = tree.song(
+        "Fearless (1).wav",
+        "Fearless",
+        "Pink Floyd",
+        "Meddle (Live)",
+    );
+    let library = Library::open_in_memory()?;
+    library.trash_into(Some(trash.root.clone()));
+    scan(&library, &tree.root)?;
+    let copied = library
+        .track_at(&copy, None)?
+        .expect("the copy was scanned");
+    library.favour(resonate_library::Favoured::Track(copied.id), true)?;
+    let playlist = library.create_playlist("Mix")?;
+    library.add_to_playlist(
+        playlist,
+        &[Cut {
+            location: MediaLocation::local(&copy),
+            span: None,
+        }],
+    )?;
+
+    let found = library.numbered_copies()?;
+    let deleted = library.fold_copies(&found.numbered)?;
+
+    assert_eq!(found.numbered.len(), 1);
+    assert_eq!(found.numbered[0].kept, original);
+    assert_eq!(found.numbered[0].copy, copy);
+    assert_eq!(found.differing, std::slice::from_ref(&differing));
+    assert_eq!(deleted.files, 1);
+    assert!(!copy.exists());
+    assert!(original.exists() && other.exists() && differing.exists());
+    let kept = library.track_at(&original, None)?.expect("the song stays");
+    assert!(
+        kept.favourite.is_some(),
+        "the copy's favourite is the song's"
+    );
+    let entries = library.playlist_entries(playlist, None)?;
+    assert_eq!(
+        entries
+            .iter()
+            .map(|entry| entry.cut.location.clone())
+            .collect::<Vec<_>>(),
+        [MediaLocation::local(&original)]
+    );
+    assert!(library.numbered_copies()?.numbered.is_empty());
+    Ok(())
+}

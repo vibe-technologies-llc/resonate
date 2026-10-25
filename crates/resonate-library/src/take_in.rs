@@ -788,6 +788,11 @@ fn place(staged: &Path, content: &Content, whole: &Path) -> std::result::Result<
     Err(Passing::Unwritable)
 }
 
+pub(crate) fn holds_the_same_bytes(one: &Path, other: &Path) -> bool {
+    let length = |path: &Path| fs::metadata(path).map(|held| held.len()).ok();
+    length(one).is_some_and(|held| Some(held) == length(other)) && verified(one, other).is_ok()
+}
+
 fn verified(one: &Path, other: &Path) -> io::Result<()> {
     let mut one = File::open(one)?;
     let mut other = File::open(other)?;
