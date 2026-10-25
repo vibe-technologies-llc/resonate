@@ -37,7 +37,7 @@ use crate::{
     cue::{self, CueFile, CueSheet},
     dsd::{self, Packing},
     matroska::Voided,
-    mpa, opus,
+    mpa, ogg, opus,
     prescan::Prescan,
     riff::{self, Riff},
     source::{FormatHint, Media, MediaStream, Reading, Replaying, Sources},
@@ -111,6 +111,13 @@ impl Opened {
     pub(crate) fn layout(&self) -> Option<boxes::BoxLayout> {
         match self {
             Self::Coded(coded) => coded.prescan.layout.clone(),
+            Self::Dsd(_) => None,
+        }
+    }
+
+    pub(crate) fn chain(&self) -> Option<ogg::Chain> {
+        match self {
+            Self::Coded(coded) => coded.prescan.chain.clone(),
             Self::Dsd(_) => None,
         }
     }
@@ -512,6 +519,27 @@ fn spooled(bytes: &mut dyn MediaStream, at_most: u64, within: Duration) -> Spool
     }
 }
 
+pub(crate) fn reopened(
+    reader: Box<dyn FormatReader>,
+    location: &MediaLocation,
+) -> Result<Box<dyn FormatReader>> {
+    let mut stream = reader.into_inner();
+    stream
+        .seek(SeekFrom::Start(0))
+        .map_err(|source| Error::Io {
+            location: location.clone(),
+            source,
+        })?;
+    crate::registry::formats()
+        .probe(
+            &Hint::new(),
+            stream,
+            FormatOptions::default(),
+            MetadataOptions::default(),
+        )
+        .map_err(|source| Error::from_symphonia(source, CodecOp::Probe, location))
+}
+
 pub(crate) fn audio_track<'a>(
     reader: &'a dyn FormatReader,
     location: &MediaLocation,
@@ -543,7 +571,19 @@ pub(crate) fn coded_info(
     let carrying = Carrying::of(opened.reader.format_info().format, params.codec);
     let noted = itunes_priming(opened, track, params);
     let primed = priming(track, params, carrying, prescan, spec.rate).or(noted);
-    let playable = primed.as_ref().and_then(Priming::window);
+    let chained = prescan
+        .chain
+        .as_ref()
+        .map(|chain| chain.length_at(spec.rate));
+    let playable = primed
+        .as_ref()
+        .and_then(Priming::window)
+        .map(|window| match chained {
+            Some(length) => {
+                FrameSpan::between(window.start(), window.start().saturating_add(length))
+            }
+            None => window,
+        });
     let tags = tags::read(
         &opened.revisions,
         track.id,
@@ -558,19 +598,22 @@ pub(crate) fn coded_info(
         codec: prescan.wavpack.codec(params.codec),
         spec,
         speakers: Speakers::of(opus::channels_of(params).as_ref()),
-        duration: playable.and_then(FrameSpan::frames).or_else(|| {
-            prescan
-                .segment
-                .counted_frames_of(track.id)
-                .or(prescan.mpeg_frames)
-                .or_else(|| duration(track, spec.rate))
-                .filter(|declared| *declared != Frames::ZERO)
-                .or_else(|| prescan.boxes.fragmented_length(spec.rate))
-                .or_else(|| prescan.segment_duration(spec.rate))
-                .map(|declared| {
-                    declared.saturating_sub(carrying.declared_before_the_music(primed.as_ref()))
-                })
-        }),
+        duration: playable
+            .and_then(FrameSpan::frames)
+            .or(chained)
+            .or_else(|| {
+                prescan
+                    .segment
+                    .counted_frames_of(track.id)
+                    .or(prescan.mpeg_frames)
+                    .or_else(|| duration(track, spec.rate))
+                    .filter(|declared| *declared != Frames::ZERO)
+                    .or_else(|| prescan.boxes.fragmented_length(spec.rate))
+                    .or_else(|| prescan.segment_duration(spec.rate))
+                    .map(|declared| {
+                        declared.saturating_sub(carrying.declared_before_the_music(primed.as_ref()))
+                    })
+            }),
         whole_file: None,
         encoder_delay: track
             .delay
@@ -736,7 +779,7 @@ fn segment_title_names_the_track(reader: &dyn FormatReader) -> bool {
         == 1
 }
 
-fn stream_spec(
+pub(crate) fn stream_spec(
     params: &AudioCodecParameters,
     location: &MediaLocation,
     track: StreamTrackId,
@@ -778,6 +821,14 @@ fn channel_layout(
         property: TrackProperty::ChannelLayout,
     })?;
 
+    laid_out(channels, location, track)
+}
+
+pub(crate) fn laid_out(
+    channels: &Channels,
+    location: &MediaLocation,
+    track: StreamTrackId,
+) -> Result<ChannelLayout> {
     let count = ChannelCount::new(u16::try_from(channels.count()).unwrap_or(u16::MAX))?;
     match channels {
         Channels::Positioned(positions) => Ok(positioned_layout(*positions, count)),

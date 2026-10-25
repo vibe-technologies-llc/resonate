@@ -13,8 +13,8 @@ use resonate_audio::{
 };
 use resonate_codec::{BoxLayout, Decoder, MediaInfo, Packing, ProfileBuilder, ReplayGain, Sources};
 use resonate_core::{
-    AppliedGain, AudioBuffer, FrameSpan, Frames, Gain, MeasuredGain, MediaLocation, RtFault, Span,
-    StreamSpec, TrackHints, TrackId, Volume,
+    AppliedGain, AudioBuffer, FrameSpan, Frames, Gain, MeasuredGain, MediaLocation, RtFault,
+    SampleRate, Span, StreamSpec, TrackHints, TrackId, Volume,
 };
 use resonate_dsp::{Chain, Easing};
 use smallvec::SmallVec;
@@ -84,6 +84,7 @@ enum Filled {
     AsFarAsItGoes,
     ForNow,
     WhenTheSourceAnswers,
+    AtAChange,
 }
 
 struct Track {
@@ -92,6 +93,8 @@ struct Track {
     span: Option<FrameSpan>,
     decoding: Decoding,
     info: Arc<MediaInfo>,
+    sounding: StreamSpec,
+    at_a_change: bool,
     layout: Option<Arc<BoxLayout>>,
     hints: TrackHints,
     replay_gain: AppliedGain,
@@ -119,10 +122,11 @@ struct Unwrapped {
 
 impl Unwrapped {
     fn open(item: &QueueItem, sources: &Sources) -> resonate_codec::Result<Self> {
-        let (decoder, info) = match item.span {
+        let (mut decoder, info) = match item.span {
             Some(span) => Decoder::open_span(sources, &item.location, span)?,
             None => Decoder::open(sources, &item.location)?,
         };
+        decoder.follow_format_changes();
         let layout = decoder.layout().cloned();
         Ok(Self {
             decoder,
@@ -189,6 +193,8 @@ impl Track {
             layout: layout.map(Arc::new),
             profile: ProfileBuilder::new(info.spec.rate),
             decoding: Decoding::new(decoder),
+            sounding: info.spec,
+            at_a_change: false,
             info: Arc::new(info),
             replay_gain,
             decoded_at: 0,
@@ -232,15 +238,26 @@ impl Track {
     }
 
     fn source(&self) -> StreamSpec {
-        self.info.spec
+        self.sounding
+    }
+
+    fn clock(&self) -> SampleRate {
+        self.info.spec.rate
     }
 
     fn decoded(&self) -> Decoded {
-        Decoded::of(&self.info, self.hints.lowpass)
+        Decoded {
+            spec: self.sounding,
+            ..Decoded::of(&self.info, self.hints.lowpass)
+        }
     }
 
     fn undecoded(&self) -> usize {
         self.decoded.frames().saturating_sub(self.decoded_at)
+    }
+
+    fn undecoded_on_the_clock(&self) -> Frames {
+        Frames(self.undecoded() as u64).rescaled(self.sounding.rate, self.clock())
     }
 
     fn rewind_carry(&mut self) {
@@ -348,6 +365,7 @@ struct Output {
     status: OutputStatus,
     draining: Option<usize>,
     ended: bool,
+    ends_at_a_change: bool,
     deaf: bool,
     tail: Tail,
     silent_until: Option<Instant>,
@@ -472,6 +490,7 @@ impl Output {
             capacity: capacity.get() as usize,
             draining: None,
             ended: false,
+            ends_at_a_change: false,
             deaf: false,
             tail: Tail::Unasked,
             silent_until: None,
@@ -1824,7 +1843,7 @@ impl Engine {
         let Some((rate, duration)) = self
             .track
             .as_ref()
-            .map(|track| (track.source().rate, track.info.duration))
+            .map(|track| (track.clock(), track.info.duration))
         else {
             return false;
         };
@@ -2130,7 +2149,12 @@ impl Engine {
     }
 
     fn keeps_its_stream(&self) -> bool {
-        let (Some(output), Some(wanted)) = (self.output.as_ref(), self.plan_wanted_now()) else {
+        self.plan_wanted_now()
+            .is_some_and(|wanted| self.keeps_its_stream_for(&wanted))
+    }
+
+    fn keeps_its_stream_for(&self, wanted: &OutputPlan) -> bool {
+        let Some(output) = self.output.as_ref() else {
             return false;
         };
         let capacity = ring_capacity(
@@ -2182,7 +2206,9 @@ impl Engine {
         let Some(track) = self.track.as_ref() else {
             return Ok(());
         };
-        let entering = if at.unwrap_or_else(|| track.decoding.position()) > Frames::ZERO {
+        let entering = if track.at_a_change && at.is_none() {
+            Entering::Whole
+        } else if at.unwrap_or_else(|| track.decoding.position()) > Frames::ZERO {
             Entering::FadedIn
         } else {
             Entering::Whole
@@ -2199,6 +2225,7 @@ impl Engine {
 
         let delivery = output.plan.delivery();
         if let Some(track) = self.track.as_mut() {
+            track.at_a_change = false;
             track.decoding.deliver(delivery);
             track.rewind_carry();
             track.restart_profile();
@@ -2339,6 +2366,9 @@ impl Engine {
         let delivery = wanted.delivery();
         track.decoding.deliver(delivery);
         track.decoded.retype(delivery.format);
+        output
+            .widened
+            .resize(CHAIN_BLOCK * source.channel_count().get() as usize, 0.0);
 
         let status = output.take_chain(chain, wanted);
         output.note_the_rendered_level();
@@ -2592,9 +2622,41 @@ impl Engine {
             Self::fill(track, output)
         };
         match outcome {
+            Ok(Filled::AtAChange) => self.follow_the_change(),
             Ok(filled) => self.fill_owed = filled == Filled::ForNow,
             Err(error) => self.fail(error),
         }
+    }
+
+    fn follow_the_change(&mut self) {
+        self.fill_owed = true;
+        let kept = self
+            .plan_wanted_now()
+            .filter(|wanted| self.keeps_its_stream_for(wanted));
+        if let Some(wanted) = kept {
+            if let Err(error) = self.swap_chain(wanted) {
+                self.fail(error);
+            }
+            return;
+        }
+
+        let (Some(track), Some(output)) = (self.track.as_mut(), self.output.as_mut()) else {
+            return;
+        };
+        track.at_a_change = true;
+        if output.stream.is_none() && output.buffered() == 0 {
+            if let Err(error) = self.reopen_at_the_change() {
+                self.fail(error);
+            }
+            return;
+        }
+        output.ends_at_a_change = true;
+        Self::flush(output);
+    }
+
+    fn reopen_at_the_change(&mut self) -> Result<()> {
+        tracing::debug!("the source changed its rate or channels; the stream is reopened for it");
+        self.rebind(None, None)
     }
 
     fn fill(track: &mut Track, output: &mut Output) -> Result<Filled> {
@@ -2618,6 +2680,10 @@ impl Engine {
                     Block::Ended => {
                         Self::flush(output);
                         return Ok(Filled::AsFarAsItGoes);
+                    }
+                    Block::Reformatted(spec) => {
+                        track.sounding = spec;
+                        return Ok(Filled::AtAChange);
                     }
                     Block::Awaited => return Ok(Filled::WhenTheSourceAnswers),
                 }
@@ -3114,10 +3180,12 @@ impl Engine {
     }
 
     fn settle(&mut self) {
+        let at_a_change;
         let finished = {
             let Some(output) = self.output.as_mut() else {
                 return;
             };
+            at_a_change = output.ends_at_a_change;
             if !output.ended {
                 return;
             }
@@ -3139,6 +3207,12 @@ impl Engine {
             self.transport = TransportState::Draining;
         }
         if !finished {
+            return;
+        }
+        if at_a_change {
+            if let Err(error) = self.reopen_at_the_change() {
+                self.fail(error);
+            }
             return;
         }
         self.failures = 0;
@@ -3306,7 +3380,7 @@ impl Engine {
         let decoded = track
             .decoding
             .position()
-            .saturating_sub(Frames(track.undecoded() as u64));
+            .saturating_sub(track.undecoded_on_the_clock());
 
         let Some(output) = self.output.as_ref() else {
             return self.unbound.unwrap_or(decoded);
@@ -3317,10 +3391,9 @@ impl Engine {
         let downstream = (output.buffered() as u64)
             .saturating_add(output.latency().get())
             .saturating_add(output.chain.latency_frames().round() as u64);
-        let at_source = u128::from(downstream) * u128::from(track.source().rate.hz())
-            / u128::from(output.plan.stream.rate.hz());
+        let on_the_clock = Frames(downstream).rescaled(output.plan.stream.rate, track.clock());
 
-        decoded.saturating_sub(Frames(at_source as u64))
+        decoded.saturating_sub(on_the_clock)
     }
 
     fn publish(&mut self) {
@@ -3335,7 +3408,7 @@ impl Engine {
         let position = self.heard_position();
         let current = self.track.as_ref().map(|track| TrackState {
             id: track.id,
-            source: track.source(),
+            source: track.info.spec,
             position,
             duration: track.info.duration,
         });

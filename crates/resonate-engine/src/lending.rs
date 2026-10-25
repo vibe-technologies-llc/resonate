@@ -2,12 +2,13 @@ use std::{mem, thread};
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use resonate_codec::{DecodeStatus, Decoder, Delivery, PacketSpan};
-use resonate_core::{AudioBuffer, Frames};
+use resonate_core::{AudioBuffer, Frames, StreamSpec};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Block {
     Decoded,
     Ended,
+    Reformatted(StreamSpec),
     Awaited,
 }
 
@@ -16,6 +17,7 @@ impl From<DecodeStatus> for Block {
         match status {
             DecodeStatus::Decoded => Self::Decoded,
             DecodeStatus::EndOfStream => Self::Ended,
+            DecodeStatus::Reformatted(spec) => Self::Reformatted(spec),
         }
     }
 }

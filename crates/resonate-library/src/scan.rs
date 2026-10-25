@@ -104,6 +104,7 @@ impl Failure {
             | Codec::LayoutNotRepresentable { .. }
             | Codec::TooManyChannels { .. }
             | Codec::ChannelMaskNotRepresentable { .. }
+            | Codec::FormatChanged { .. }
             | Codec::DsdChunkMissing { .. }
             | Codec::DsdFieldNotUsable { .. }
             | Codec::PacketTooLarge { .. }

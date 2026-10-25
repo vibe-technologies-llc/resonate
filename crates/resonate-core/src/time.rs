@@ -37,6 +37,14 @@ impl Frames {
         Duration::new(seconds, (remainder * 1_000_000_000 / hz) as u32)
     }
 
+    pub fn rescaled(self, from: SampleRate, to: SampleRate) -> Self {
+        if from == to {
+            return self;
+        }
+        let scaled = u128::from(self.0) * u128::from(to.hz()) / u128::from(from.hz());
+        Self(u64::try_from(scaled).unwrap_or(u64::MAX))
+    }
+
     pub fn from_duration(duration: Duration, rate: SampleRate) -> Self {
         let hz = u128::from(rate.hz());
         let nanos = duration.as_nanos();
@@ -157,6 +165,22 @@ mod tests {
         assert_eq!(
             Frames::from_duration(duration, SampleRate::HZ_44100),
             frames
+        );
+    }
+
+    #[test]
+    fn frames_counted_at_another_rate_last_as_long_and_are_untouched_at_their_own() {
+        assert_eq!(
+            Frames(44_100).rescaled(SampleRate::HZ_44100, SampleRate::HZ_48000),
+            Frames(48_000)
+        );
+        assert_eq!(
+            Frames(u64::MAX).rescaled(SampleRate::HZ_44100, SampleRate::HZ_44100),
+            Frames(u64::MAX)
+        );
+        assert_eq!(
+            Frames(u64::MAX).rescaled(SampleRate::HZ_44100, SampleRate::HZ_192000),
+            Frames(u64::MAX)
         );
     }
 

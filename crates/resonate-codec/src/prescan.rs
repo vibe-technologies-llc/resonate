@@ -9,6 +9,7 @@ use crate::{
     flac::{self, Flac},
     matroska::{self, Segment},
     mpa::{self, FrameHeader},
+    ogg::{self, Chain},
     riff::{self, Riff},
     tags::ReplayGain,
     walked::{ClusterTally, Walked},
@@ -51,6 +52,7 @@ pub(crate) struct Prescan {
     pub(crate) caf: Option<Overflow>,
     pub(crate) wavpack: Coding,
     pub(crate) mpeg_frames: Option<Frames>,
+    pub(crate) chain: Option<Chain>,
     pub(crate) layout: Option<boxes::BoxLayout>,
     pub(crate) encoder_gain: ReplayGain,
     pub(crate) walked: Option<Walked>,
@@ -72,6 +74,7 @@ impl Prescan {
             wavpack: wavpack::read_coding(source).or(segment.wavpack),
             segment,
             mpeg_frames: None,
+            chain: None,
             layout: None,
             encoder_gain: mpa::encoder_gain(source),
             walked: None,
@@ -97,6 +100,10 @@ impl Prescan {
                 .ok()
                 .and_then(|_| mpa::counted_frames(&mut window)),
         };
+        found.chain = window
+            .seek(SeekFrom::Start(origin))
+            .ok()
+            .and_then(|_| ogg::chain(&mut window));
         window.rewind_the_source();
         found.layout = boxes::read_layout(source);
         found.walked = size.map(|size| found.walked_at(size));

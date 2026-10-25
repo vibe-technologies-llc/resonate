@@ -1,4 +1,6 @@
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom};
+
+use resonate_core::{Frames, SampleRate};
 
 const CAPTURE: [u8; 4] = *b"OggS";
 const FIXED_HEADER_BYTES: usize = 27;
@@ -16,6 +18,15 @@ const SEGMENTS_A_PAGE: usize = 32;
 pub(crate) const PAGE_BODY_AT_MOST: usize = LACING_FULL * SEGMENTS_A_PAGE;
 const MOST_PAGES: usize = 4_096;
 const COMMENT_AT: usize = 1;
+
+const GRANULE_AT: usize = 6;
+const NO_GRANULE: u64 = u64::MAX;
+const TAILS_LOOKED_AT: [u64; 2] = [8 * 1024, 64 * 1024];
+const MOST_PAGES_WALKED: usize = 1 << 20;
+const IDENTIFICATION_READ: usize = 16;
+const VORBIS_RATE_AT: usize = 12;
+const OPUS_PRE_SKIP_AT: usize = 10;
+const OPUS_DECODED_HZ: u32 = 48_000;
 
 const VORBIS_IDENTIFICATION: &[u8] = b"\x01vorbis";
 const VORBIS_COMMENT: &[u8] = b"\x03vorbis";
@@ -138,6 +149,197 @@ pub(crate) fn headers<S: Read + ?Sized>(codec: Codec, source: &mut S) -> Option<
         }
     }
     None
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Link {
+    pub(crate) rate: SampleRate,
+    pub(crate) frames: Frames,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Chain {
+    links: Vec<Link>,
+}
+
+impl Chain {
+    pub(crate) fn length_at(&self, clock: SampleRate) -> Frames {
+        self.links.iter().fold(Frames::ZERO, |length, link| {
+            length.saturating_add(link.frames.rescaled(link.rate, clock))
+        })
+    }
+
+    pub(crate) fn origins_at(&self, clock: SampleRate) -> Vec<Frames> {
+        let mut origin = Frames::ZERO;
+        self.links
+            .iter()
+            .map(|link| {
+                let this = origin;
+                origin = origin.saturating_add(link.frames.rescaled(link.rate, clock));
+                this
+            })
+            .collect()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PageHead {
+    flags: u8,
+    granule: u64,
+    serial: u32,
+    head: u64,
+    body: u64,
+}
+
+impl PageHead {
+    const fn begins_a_stream(self) -> bool {
+        self.flags & FIRST_OF_STREAM != 0
+    }
+
+    const fn length(self) -> u64 {
+        self.head.saturating_add(self.body)
+    }
+
+    fn read(fixed: &[u8; FIXED_HEADER_BYTES]) -> Option<Self> {
+        if fixed[..CAPTURE.len()] != CAPTURE || fixed[VERSION_AT] != 0 {
+            return None;
+        }
+        Some(Self {
+            flags: fixed[FLAGS_AT],
+            granule: u64::from_le_bytes(fixed[GRANULE_AT..GRANULE_AT + 8].try_into().ok()?),
+            serial: u32::from_le_bytes(fixed[SERIAL_AT..SERIAL_AT + 4].try_into().ok()?),
+            head: (FIXED_HEADER_BYTES + usize::from(fixed[SEGMENT_COUNT_AT])) as u64,
+            body: 0,
+        })
+    }
+}
+
+fn page_at<S: Read + Seek + ?Sized>(source: &mut S, at: u64) -> Option<PageHead> {
+    source.seek(SeekFrom::Start(at)).ok()?;
+    let mut fixed = [0_u8; FIXED_HEADER_BYTES];
+    source.read_exact(&mut fixed).ok()?;
+    let page = PageHead::read(&fixed)?;
+    let mut lacing = vec![0_u8; usize::from(fixed[SEGMENT_COUNT_AT])];
+    source.read_exact(&mut lacing).ok()?;
+    let body = lacing.iter().map(|lace| u64::from(*lace)).sum();
+    Some(PageHead { body, ..page })
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Sounding {
+    serial: u32,
+    rate: SampleRate,
+    pre_skip: u64,
+}
+
+impl Sounding {
+    fn named_by(serial: u32, identification: &[u8]) -> Option<Self> {
+        if identification.starts_with(VORBIS_IDENTIFICATION) {
+            let hz = identification.get(VORBIS_RATE_AT..VORBIS_RATE_AT + 4)?;
+            return Some(Self {
+                serial,
+                rate: SampleRate::new(u32::from_le_bytes(hz.try_into().ok()?)).ok()?,
+                pre_skip: 0,
+            });
+        }
+        if identification.starts_with(OPUS_IDENTIFICATION) {
+            let skip = identification.get(OPUS_PRE_SKIP_AT..OPUS_PRE_SKIP_AT + 2)?;
+            return Some(Self {
+                serial,
+                rate: SampleRate::new(OPUS_DECODED_HZ).ok()?,
+                pre_skip: u64::from(u16::from_le_bytes(skip.try_into().ok()?)),
+            });
+        }
+        None
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct Walking {
+    sounding: Option<Sounding>,
+    last_granule: Option<u64>,
+    past_its_heads: bool,
+}
+
+impl Walking {
+    fn link(self) -> Option<Link> {
+        let sounding = self.sounding?;
+        Some(Link {
+            rate: sounding.rate,
+            frames: Frames(self.last_granule?.saturating_sub(sounding.pre_skip)),
+        })
+    }
+}
+
+pub(crate) fn chain<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Chain> {
+    let origin = source.stream_position().ok()?;
+    let first = page_at(source, origin)?;
+    if !first.begins_a_stream() || !ends_in_another_stream(source, first.serial) {
+        return None;
+    }
+
+    let mut links = Vec::new();
+    let mut walking: Option<Walking> = None;
+    let mut at = origin;
+    for _ in 0..MOST_PAGES_WALKED {
+        let Some(page) = page_at(source, at) else {
+            break;
+        };
+        if page.begins_a_stream() {
+            if walking.is_none_or(|link| link.past_its_heads) {
+                if let Some(finished) = walking.take() {
+                    links.push(finished.link()?);
+                }
+                walking = Some(Walking::default());
+            }
+            let mut identification = [0_u8; IDENTIFICATION_READ];
+            let read = usize::try_from(page.body)
+                .map_or(IDENTIFICATION_READ, |body| body.min(IDENTIFICATION_READ));
+            source.read_exact(identification.get_mut(..read)?).ok()?;
+            if let Some(link) = walking.as_mut()
+                && link.sounding.is_none()
+            {
+                link.sounding = Sounding::named_by(page.serial, &identification[..read]);
+            }
+        } else if let Some(link) = walking.as_mut() {
+            link.past_its_heads = true;
+            let sounds = link
+                .sounding
+                .is_some_and(|sounding| sounding.serial == page.serial);
+            if sounds && page.granule != NO_GRANULE {
+                link.last_granule = Some(page.granule);
+            }
+        }
+        at = at.saturating_add(page.length());
+    }
+    links.push(walking?.link()?);
+
+    (links.len() > 1).then_some(Chain { links })
+}
+
+fn ends_in_another_stream<S: Read + Seek + ?Sized>(source: &mut S, serial: u32) -> bool {
+    TAILS_LOOKED_AT
+        .iter()
+        .find_map(|looked_at| last_page_within(source, *looked_at))
+        .is_some_and(|page| page.serial != serial)
+}
+
+fn last_page_within<S: Read + Seek + ?Sized>(source: &mut S, looked_at: u64) -> Option<PageHead> {
+    let end = source.seek(SeekFrom::End(0)).ok()?;
+    source
+        .seek(SeekFrom::Start(end.saturating_sub(looked_at)))
+        .ok()?;
+    let mut tail = Vec::new();
+    source.take(looked_at).read_to_end(&mut tail).ok()?;
+    tail.windows(CAPTURE.len())
+        .enumerate()
+        .rev()
+        .filter(|(_, marker)| *marker == CAPTURE)
+        .find_map(|(at, _)| {
+            let fixed: &[u8; FIXED_HEADER_BYTES] =
+                tail.get(at..at + FIXED_HEADER_BYTES)?.try_into().ok()?;
+            PageHead::read(fixed)
+        })
 }
 
 fn signed(codec: Codec, packets: &[Vec<u8>]) -> Option<()> {

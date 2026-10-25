@@ -161,13 +161,13 @@ fn weighed(path: &Path, want: &Want) -> std::result::Result<(), Unfiled> {
 
 fn heard_whole(location: &MediaLocation) -> Option<(Frames, SampleRate)> {
     let (mut decoder, info) = Decoder::open(&Sources::local(), location).ok()?;
+    decoder.follow_format_changes();
     let mut block = AudioBuffer::empty(info.spec);
-    let mut frames = 0_u64;
 
     loop {
         match decoder.next_block(&mut block).ok()? {
-            DecodeStatus::Decoded => frames += block.frames() as u64,
-            DecodeStatus::EndOfStream => return Some((Frames(frames), info.spec.rate)),
+            DecodeStatus::Decoded | DecodeStatus::Reformatted(_) => {}
+            DecodeStatus::EndOfStream => return Some((decoder.position(), info.spec.rate)),
         }
     }
 }

@@ -1181,6 +1181,7 @@ fn decoded_with_holes(
     loop {
         match decoder.next_block(&mut block) {
             Ok(DecodeStatus::Decoded) => frames += block.frames(),
+            Ok(DecodeStatus::Reformatted(_)) => {}
             Ok(DecodeStatus::EndOfStream) => return (frames, decoder.holes(), None),
             Err(error) => return (frames, decoder.holes(), Some(error)),
         }
@@ -4322,4 +4323,296 @@ fn an_adpcm_wave_opens_and_is_billed_as_the_lossy_codec_it_is() {
             samples.len()
         );
     }
+}
+
+const LINK_SECONDS: u32 = 1;
+const A_TONE_AT_THE_LEAST: f32 = 0.05;
+
+#[derive(Clone, Copy)]
+struct Link {
+    rate: SampleRate,
+    layout: ChannelLayout,
+    hertz: u32,
+}
+
+impl Link {
+    const fn frames(self) -> u64 {
+        self.rate.hz() as u64 * LINK_SECONDS as u64
+    }
+}
+
+const MONO_AT_CD_RATE: Link = Link {
+    rate: SampleRate::HZ_44100,
+    layout: ChannelLayout::Mono,
+    hertz: 440,
+};
+
+const STEREO_AT_DAT_RATE: Link = Link {
+    rate: SampleRate::HZ_48000,
+    layout: ChannelLayout::Stereo,
+    hertz: 660,
+};
+
+const STEREO_AT_CD_RATE: Link = Link {
+    rate: SampleRate::HZ_44100,
+    layout: ChannelLayout::Stereo,
+    hertz: 660,
+};
+
+const VORBIS_IN_OGG: [&str; 4] = ["-c:a", "libvorbis", "-f", "ogg"];
+const BARE_MP3: [&str; 10] = [
+    "-c:a",
+    "libmp3lame",
+    "-b:a",
+    "128k",
+    "-write_xing",
+    "0",
+    "-id3v2_version",
+    "0",
+    "-f",
+    "mp3",
+];
+
+fn joined(tree: &Tree, name: &str, links: &[Link], codec: &[&str]) -> Option<PathBuf> {
+    if !ffmpeg() {
+        eprintln!("skipped: no ffmpeg to build {name}");
+        return None;
+    }
+
+    let mut whole = Vec::new();
+    for (index, link) in links.iter().enumerate() {
+        let part = tree.at(&format!("{index}-{name}"));
+        let tone = format!(
+            "sine=frequency={}:sample_rate={}:duration={LINK_SECONDS}",
+            link.hertz,
+            link.rate.hz()
+        );
+        let channels = link.layout.count().get().to_string();
+        let made = Command::new("ffmpeg")
+            .args([
+                "-y", "-v", "error", "-f", "lavfi", "-i", &tone, "-ac", &channels,
+            ])
+            .args(codec)
+            .arg(&part)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success());
+        let Some(bytes) = made.then(|| fs::read(&part).ok()).flatten() else {
+            eprintln!("skipped: ffmpeg would not encode a link of {name}");
+            return None;
+        };
+        whole.extend_from_slice(&bytes);
+    }
+
+    let path = tree.at(name);
+    fs::write(&path, whole).expect("a writable fixture");
+    Some(path)
+}
+
+struct Run {
+    spec: StreamSpec,
+    samples: Vec<f32>,
+}
+
+impl Run {
+    fn frames(&self) -> u64 {
+        (self.samples.len() / usize::from(self.spec.channel_count().get())) as u64
+    }
+}
+
+fn runs_of(decoder: &mut Decoder, spec: StreamSpec) -> Vec<Run> {
+    decoder.set_output_format(SampleFormat::F32);
+
+    let mut block = AudioBuffer::empty(spec);
+    let mut runs = vec![Run {
+        spec: decoder.sounding(),
+        samples: Vec::new(),
+    }];
+    loop {
+        match decoder.next_block(&mut block).expect("a clean decode") {
+            DecodeStatus::Decoded => {
+                let resonate_core::SampleData::F32(samples) = block.data() else {
+                    panic!("the decoder ignored the requested output format");
+                };
+                let run = runs.last_mut().expect("a run is always open");
+                assert_eq!(block.spec().channels, run.spec.channels);
+                run.samples.extend_from_slice(samples);
+            }
+            DecodeStatus::Reformatted(spec) => runs.push(Run {
+                spec,
+                samples: Vec::new(),
+            }),
+            DecodeStatus::EndOfStream => return runs,
+        }
+    }
+}
+
+fn loudness(samples: &[f32]) -> f32 {
+    let sum: f32 = samples.iter().map(|sample| sample * sample).sum();
+    (sum / samples.len().max(1) as f32).sqrt()
+}
+
+fn followed(path: &Path) -> (Decoder, resonate_codec::MediaInfo) {
+    let (mut decoder, info) = Decoder::open(&Sources::local(), &MediaLocation::local(path))
+        .expect("a well-formed file opens");
+    decoder.follow_format_changes();
+    (decoder, info)
+}
+
+#[test]
+fn a_chained_ogg_plays_every_link_at_its_own_rate_and_lasts_as_long_as_all_of_them() {
+    let tree = Tree::new();
+    let links = [MONO_AT_CD_RATE, STEREO_AT_DAT_RATE];
+    let Some(path) = joined(&tree, "chained.ogg", &links, &VORBIS_IN_OGG) else {
+        return;
+    };
+
+    let (mut decoder, info) = followed(&path);
+    let runs = runs_of(&mut decoder, info.spec);
+
+    let shapes: Vec<_> = runs
+        .iter()
+        .map(|run| (run.spec.rate, run.spec.channels, run.frames()))
+        .collect();
+    assert_eq!(
+        shapes,
+        links
+            .iter()
+            .map(|link| (link.rate, link.layout, link.frames()))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        runs.iter()
+            .all(|run| loudness(&run.samples) > A_TONE_AT_THE_LEAST)
+    );
+    assert_eq!(info.spec.rate, SampleRate::HZ_44100);
+    assert_eq!(info.duration, Some(Frames(2 * MONO_AT_CD_RATE.frames())));
+    assert_eq!(decoder.position(), Frames(2 * MONO_AT_CD_RATE.frames()));
+}
+
+#[test]
+fn a_reader_that_does_not_follow_a_change_is_told_where_the_stream_turns() {
+    let tree = Tree::new();
+    let links = [MONO_AT_CD_RATE, STEREO_AT_DAT_RATE];
+    let Some(path) = joined(&tree, "chained.ogg", &links, &VORBIS_IN_OGG) else {
+        return;
+    };
+
+    let (mut decoder, info) = Decoder::open(&Sources::local(), &MediaLocation::local(&path))
+        .expect("a chained ogg opens");
+    let mut block = AudioBuffer::empty(info.spec);
+    let turned = loop {
+        match decoder.next_block(&mut block) {
+            Ok(DecodeStatus::Decoded) => {}
+            Ok(status) => panic!("the stream ran to {status:?} without turning"),
+            Err(error) => break error,
+        }
+    };
+
+    assert!(matches!(
+        turned,
+        resonate_codec::Error::FormatChanged { from, to, .. }
+            if from.rate == SampleRate::HZ_44100
+                && from.channels == ChannelLayout::Mono
+                && to.rate == SampleRate::HZ_48000
+                && to.channels == ChannelLayout::Stereo
+    ));
+    assert_eq!(decoder.position(), Frames(MONO_AT_CD_RATE.frames()));
+}
+
+#[test]
+fn a_seek_into_a_later_link_lands_there_and_a_seek_back_rewinds_to_the_first() {
+    let tree = Tree::new();
+    let links = [MONO_AT_CD_RATE, STEREO_AT_DAT_RATE];
+    let Some(path) = joined(&tree, "chained.ogg", &links, &VORBIS_IN_OGG) else {
+        return;
+    };
+    let (mut decoder, info) = followed(&path);
+    decoder.set_output_format(SampleFormat::F32);
+    let mut block = AudioBuffer::empty(info.spec);
+    let into_the_second = Frames(MONO_AT_CD_RATE.frames() * 3 / 2);
+    let into_the_first = Frames(MONO_AT_CD_RATE.frames() / 2);
+
+    let landed = decoder
+        .seek(into_the_second)
+        .expect("a chained ogg seeks forward");
+    let turned = decoder
+        .next_block(&mut block)
+        .expect("a decode after the seek");
+    let heard = decoder
+        .next_block(&mut block)
+        .expect("a decode after the turn");
+
+    assert_eq!(landed, into_the_second);
+    assert_eq!(
+        turned,
+        DecodeStatus::Reformatted(StreamSpec {
+            format: info.spec.format,
+            ..StreamSpec::new(
+                SampleRate::HZ_48000,
+                ChannelLayout::Stereo,
+                info.spec.format
+            )
+        })
+    );
+    assert_eq!(heard, DecodeStatus::Decoded);
+    assert_eq!(block.spec().channels, ChannelLayout::Stereo);
+
+    let landed = decoder
+        .seek(into_the_first)
+        .expect("a chained ogg seeks back");
+    let turned = decoder
+        .next_block(&mut block)
+        .expect("a decode after the seek back");
+    let heard = decoder
+        .next_block(&mut block)
+        .expect("a decode after the turn back");
+
+    assert_eq!(landed, into_the_first);
+    assert_eq!(
+        turned,
+        DecodeStatus::Reformatted(StreamSpec::new(
+            SampleRate::HZ_44100,
+            ChannelLayout::Mono,
+            info.spec.format
+        ))
+    );
+    assert_eq!(heard, DecodeStatus::Decoded);
+    assert_eq!(
+        decoder.position(),
+        into_the_first.saturating_add(Frames(block.frames() as u64))
+    );
+    let rest = runs_of(&mut decoder, info.spec);
+    assert_eq!(
+        rest.iter().map(|run| run.spec.channels).collect::<Vec<_>>(),
+        [ChannelLayout::Mono, ChannelLayout::Stereo]
+    );
+    assert_eq!(decoder.position(), Frames(2 * MONO_AT_CD_RATE.frames()));
+}
+
+#[test]
+fn an_mpeg_stream_turning_from_mono_to_stereo_decodes_the_stereo_rather_than_silence() {
+    let tree = Tree::new();
+    let links = [MONO_AT_CD_RATE, STEREO_AT_CD_RATE];
+    let Some(path) = joined(&tree, "turning.mp3", &links, &BARE_MP3) else {
+        return;
+    };
+
+    let (mut decoder, info) = followed(&path);
+    let runs = runs_of(&mut decoder, info.spec);
+
+    assert_eq!(
+        runs.iter().map(|run| run.spec.channels).collect::<Vec<_>>(),
+        [ChannelLayout::Mono, ChannelLayout::Stereo]
+    );
+    assert!(
+        runs.iter()
+            .all(|run| loudness(&run.samples) > A_TONE_AT_THE_LEAST)
+    );
+    assert!(decoder.holes().is_none(), "{:?}", decoder.holes());
+    assert_eq!(
+        decoder.position().get(),
+        runs.iter().map(Run::frames).sum::<u64>()
+    );
 }

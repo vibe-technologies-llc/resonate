@@ -129,6 +129,21 @@ impl FrameClock {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Shape {
+    stream: Stream,
+    mono: bool,
+}
+
+pub(crate) fn shape_of(codec: AudioCodecId, frame: &[u8]) -> Option<Shape> {
+    match codec {
+        CODEC_ID_MP1 | CODEC_ID_MP2 | CODEC_ID_MP3 => {
+            FrameHeader::read(frame).map(FrameHeader::shape)
+        }
+        _ => None,
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct FrameHeader {
     pub(crate) stream: Stream,
     kbps: u32,
@@ -211,6 +226,13 @@ impl FrameHeader {
             has_crc: flags & 1 == 0,
             length: usize::try_from(slots * bytes_a_slot).ok()?,
         })
+    }
+
+    pub(crate) const fn shape(self) -> Shape {
+        Shape {
+            stream: self.stream,
+            mono: self.mono,
+        }
     }
 
     pub(crate) const fn is_mpeg_one(self) -> bool {

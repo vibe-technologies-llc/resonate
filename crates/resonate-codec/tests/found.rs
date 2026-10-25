@@ -34,6 +34,7 @@ fn weigh_the_blocks_of(path: &Path) {
     else {
         return;
     };
+    decoder.follow_format_changes();
     let mut block = AudioBuffer::empty(info.spec);
 
     for _ in 0..BLOCKS_WEIGHED {
@@ -44,6 +45,7 @@ fn weigh_the_blocks_of(path: &Path) {
                 path.display(),
                 block.frames()
             ),
+            Ok(DecodeStatus::Reformatted(_)) => {}
             Ok(DecodeStatus::EndOfStream) | Err(_) => break,
         }
     }
