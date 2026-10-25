@@ -184,7 +184,9 @@ it does not put invented paths in the Linux catalog. Its schema is `V1` and a `M
 `user_version` the number of steps laid, all run in one immediate transaction (a fresh file lays them
 all, a 0.1.0 file the steps after `V1`); there is no copy kept before one. A later change appends a
 step and never edits `V1`; step 2 gave `listens` the `origin_device` and `origin_id` a remote listen
-is credited by, unique together. A version past the chain is `Error::CatalogVersion`. `V1` holds `documents` (the metadata, the lookup's clocks `asked`/`answered`
+is credited by, unique together, and step 3 rebuilt `listens` with `AUTOINCREMENT`, as the desktop's is, so a deleted
+song's listen ids are never handed to the next listen (the ledger and scrobbling read `id > mark`), seeding the
+sequence past the highest `submissions.through`. A version past the chain is `Error::CatalogVersion`. `V1` holds `documents` (the metadata, the lookup's clocks `asked`/`answered`
 as nanosecond stamps with `asks` and `refusals`, `release_group`, `isrc` kept from tags on index,
 `album_key`, `art_changed`, `missing`, and `size`, `modified` and `indexed_by`, the stamp a scan saw
 the file by and the `INDEXING_REVISION` that read it), `resume`, `queue`, `lyrics`, `listens`

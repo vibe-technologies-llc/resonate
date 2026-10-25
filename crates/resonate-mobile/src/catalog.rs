@@ -22,7 +22,32 @@ ALTER TABLE listens ADD COLUMN origin_id INTEGER;
 CREATE UNIQUE INDEX listens_by_origin ON listens(origin_device, origin_id) WHERE origin_device IS NOT NULL;
 ";
 
-const MIGRATIONS: &[&str] = &[V1, LISTENS_NAME_THEIR_ORIGIN];
+const LISTENS_NEVER_REUSE_AN_ID: &str = "
+CREATE TABLE listens_rebuilt (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    track         INTEGER REFERENCES documents(id),
+    began         INTEGER NOT NULL,
+    heard_ms      INTEGER NOT NULL,
+    counted       INTEGER NOT NULL DEFAULT 0,
+    elsewhere     INTEGER NOT NULL DEFAULT 0,
+    origin_device BLOB,
+    origin_id     INTEGER
+) STRICT;
+INSERT INTO listens_rebuilt (id, track, began, heard_ms, counted, elsewhere, origin_device, origin_id)
+    SELECT id, track, began, heard_ms, counted, elsewhere, origin_device, origin_id FROM listens;
+DROP TABLE listens;
+ALTER TABLE listens_rebuilt RENAME TO listens;
+CREATE INDEX listens_track ON listens(track, began);
+CREATE UNIQUE INDEX listens_by_origin ON listens(origin_device, origin_id) WHERE origin_device IS NOT NULL;
+DELETE FROM sqlite_sequence WHERE name = 'listens';
+INSERT INTO sqlite_sequence (name, seq)
+    SELECT 'listens', max(
+        coalesce((SELECT max(id) FROM listens), 0),
+        coalesce((SELECT max(through) FROM submissions), 0)
+    );
+";
+
+const MIGRATIONS: &[&str] = &[V1, LISTENS_NAME_THEIR_ORIGIN, LISTENS_NEVER_REUSE_AN_ID];
 
 #[cfg(test)]
 pub(crate) const FIRST_VERSION: &str = V1;
@@ -652,6 +677,81 @@ mod tests {
             0
         );
         drop(reopened);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn a_deleted_listens_id_is_never_handed_to_the_next_listen() {
+        let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+        let connection = catalog.0.lock();
+
+        connection
+            .execute_batch(
+                "INSERT INTO listens (track, began, heard_ms) VALUES (NULL, 1, 1000), (NULL, 2, 1000);
+                 DELETE FROM listens WHERE id = 2;
+                 INSERT INTO listens (track, began, heard_ms) VALUES (NULL, 3, 1000);",
+            )
+            .expect("listens written and one deleted");
+        let newest: i64 = connection
+            .query_row("SELECT max(id) FROM listens", [], |row| row.get(0))
+            .expect("the newest id");
+
+        assert_eq!(newest, 3);
+    }
+
+    #[test]
+    fn a_catalog_whose_listens_reused_ids_is_carried_forward_past_what_was_submitted() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock")
+            .as_nanos();
+        let path = env::temp_dir().join(format!("resonate-mobile-listens-{unique}.sqlite"));
+        let connection = Connection::open(&path).expect("a database");
+        connection
+            .create_scalar_function(
+                "folded",
+                1,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
+            )
+            .expect("the fold");
+        connection.execute_batch(V1).expect("the first version");
+        connection
+            .execute_batch(LISTENS_NAME_THEIR_ORIGIN)
+            .expect("the second");
+        connection
+            .execute_batch(
+                "INSERT INTO listens (track, began, heard_ms) VALUES (NULL, 1, 1000), (NULL, 2, 1000);
+                 INSERT INTO submissions (service, through) VALUES ('listenbrainz', 5);",
+            )
+            .expect("listens and a mark");
+        connection
+            .pragma_update(None, "user_version", 2)
+            .expect("its stamp");
+        drop(connection);
+
+        let opened = Catalog::open(&path).expect("carried forward");
+        let held = opened.0.lock();
+        held.execute(
+            "INSERT INTO listens (track, began, heard_ms) VALUES (NULL, 3, 1000)",
+            [],
+        )
+        .expect("a listen");
+        let next: i64 = held
+            .query_row("SELECT max(id) FROM listens", [], |row| row.get(0))
+            .expect("the newest id");
+        let kept: i64 = held
+            .query_row(
+                "SELECT count(*) FROM listens WHERE id IN (1, 2)",
+                [],
+                |row| row.get(0),
+            )
+            .expect("the old rows");
+
+        assert_eq!(next, 6);
+        assert_eq!(kept, 2);
+        drop(held);
+        drop(opened);
         let _ = fs::remove_file(path);
     }
 

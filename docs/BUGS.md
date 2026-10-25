@@ -8,12 +8,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Android
 
 ## Catalog
-- [M · 0.1.1] The phones' next listen can be lost after the newest one was deleted: the mobile
-  catalog's `listens` has `id INTEGER PRIMARY KEY` without `AUTOINCREMENT` (the desktop's does),
-  `forgotten_in` deletes a deleted song's listens, SQLite hands the next insert `max(rowid) + 1`,
-  which is the deleted id, and both the ledger (`listens_mark`) and scrobbling
-  (`submissions.through`) read `id > mark`, so that listen is never sent to the other devices nor
-  scrobbled. `V1` is the baseline of 0.1.0, so the fix is a `MIGRATIONS` step rebuilding the table
 - [S · 0.1.1] A scan that did not walk a root forgets its files when a folder is readable but not
   searchable: `tidy_the_roots_beside` and `forget_at_or_under` test `Path::exists()`, which is
   false on `EACCES` as on `NotFound`, and `sizes_of_files_not_catalogued` lists the folder fine,
