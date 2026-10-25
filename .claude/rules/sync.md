@@ -60,8 +60,10 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   reading code, optional row cap) or none for a tombstone; a build without it skips it as it skips any
   later tag. The two codes are the library's `store::sort_code` and `direction_code`, which are
   stored and so never renumbered. One cost of that tolerance: a build without tag 6 that compacts the
-  server's log writes a snapshot lacking the queries, so a device joining from the server alone
-  misses them until a device holding them edits them or tells it on the network.
+  server's log writes a snapshot lacking the queries. **A device hearing a `Compacted` it did not ask
+  for owes every query again** (`Ledger::owe_queries`) and pushes at once, so the records after the
+  snapshot carry them to a device joining from the server alone
+  (`saved_queries_compacted_away_by_a_build_without_them_are_told_to_the_server_again`).
 - **A server address of `ws://` or `wss://` runs the same frames over a WebSocket** (`web.rs`: TCP,
   TLS through `tokio-rustls` for `wss`, one binary message a frame, at most `LARGEST_FRAME`),
   for a server behind a proxy that carries no UDP (`server.md`). Any other address is QUIC. The

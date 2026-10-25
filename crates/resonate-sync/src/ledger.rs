@@ -335,6 +335,12 @@ impl Ledger {
         Ok(through)
     }
 
+    pub fn owe_queries(&mut self) -> Result<usize> {
+        self.connection
+            .execute("UPDATE queries SET owed = 1", [])
+            .map_err(|source| Error::store(StoreOp::Write, source))
+    }
+
     pub fn space_made_anew(&mut self) -> Result<()> {
         let transaction = self.writing()?;
         transaction

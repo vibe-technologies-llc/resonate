@@ -2,6 +2,7 @@ use std::{
     cmp::Reverse,
     collections::{BTreeMap, BTreeSet, VecDeque},
     future::{Future, pending},
+    mem,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket},
     path::PathBuf,
     sync::{
@@ -1385,11 +1386,23 @@ impl Syncing {
                 sealed,
             } => self.punched(device, address, &sealed).await?,
             FromServer::Compacted { through } => {
-                if let Some(link) = self.server.as_mut() {
-                    link.compacting = false;
-                }
+                let by_another = self
+                    .server
+                    .as_mut()
+                    .is_some_and(|link| !mem::replace(&mut link.compacting, false));
                 let ledger = Arc::clone(&self.running.ledger);
-                blocking(move || ledger.lock().compacted(through)).await?;
+                blocking(move || {
+                    let mut ledger = ledger.lock();
+                    ledger.compacted(through)?;
+                    if by_another {
+                        ledger.owe_queries()?;
+                    }
+                    Ok(())
+                })
+                .await?;
+                if by_another {
+                    self.push().await?;
+                }
             }
             FromServer::Refused(Refusal::Stale) => {
                 if let Some(link) = self.server.as_mut() {

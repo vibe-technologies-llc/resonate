@@ -11,7 +11,12 @@ use std::{
 };
 
 use resonate_server::{Allowance, Limits, Server, Store};
-use resonate_sync::{Follow, Me, Platform, Settings, Standing, Sync, SyncKey, wire::Refusal};
+use resonate_sync::{
+    DeviceId, Follow, Me, Platform, Settings, Standing, Sync, SyncKey, connect, sealed, to_the_web,
+    web_address,
+    wire::{FromServer, PROTOCOL_VERSION, Refusal, ToServer, encoded_bundle},
+};
+use rustls::RootCertStore;
 use tokio::net::TcpListener;
 
 use crate::shelf::Shelf;
@@ -188,6 +193,84 @@ fn a_known_space_is_not_counted_against_the_spaces_an_address_may_make() {
         desk.shown().standing == Standing::Connected
             && phone.shown().standing == Standing::Connected
     });
+
+    drop(phone);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn saved_queries_compacted_away_by_a_build_without_them_are_told_to_the_server_again() {
+    let folder = scratch("compacted-away");
+    let hosted = hosted(Limits::default(), None);
+    let key = SyncKey::minted().expect("a key");
+    let desk_shelf = Arc::new(Shelf::holding(&["A"]));
+    let phone_shelf = Arc::new(Shelf::holding(&["A"]));
+    desk_shelf.make_query("Recent", "added:<30d");
+
+    let desk = device(&hosted, &folder, &key, "Desk", desk_shelf);
+    eventually("the desk telling the server", || {
+        let shown = desk.shown();
+        shown.standing == Standing::Connected && shown.owed == 0
+    });
+
+    let derived = key.derived().expect("derived");
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("a runtime");
+    runtime.block_on(async {
+        let address = web_address(&format!("ws://{}/", hosted.address)).expect("an address");
+        let tls = to_the_web(RootCertStore::empty()).expect("a configuration");
+        let (mut outgoing, mut incoming) = connect(&address, &tls).await.expect("connected");
+        outgoing
+            .send(
+                &ToServer::Hello {
+                    version: PROTOCOL_VERSION,
+                    space: derived.space,
+                    token: derived.token.clone(),
+                    device: DeviceId::minted().expect("a device"),
+                    after: 0,
+                }
+                .encoded(),
+            )
+            .await
+            .expect("said hello");
+        let head = loop {
+            let heard = incoming.read().await.expect("read").expect("a frame");
+            if let FromServer::Welcome { head, .. } = FromServer::decoded(&heard).expect("a frame")
+            {
+                break head;
+            }
+        };
+        let without_queries =
+            sealed(&derived.sealer, derived.space, &encoded_bundle(&[])).expect("sealed");
+        outgoing
+            .send(
+                &ToServer::Compact {
+                    through: head,
+                    parts: vec![without_queries],
+                }
+                .encoded(),
+            )
+            .await
+            .expect("compacted");
+        loop {
+            let heard = incoming.read().await.expect("read").expect("a frame");
+            if matches!(
+                FromServer::decoded(&heard).expect("a frame"),
+                FromServer::Compacted { .. }
+            ) {
+                break;
+            }
+        }
+    });
+
+    let phone = device(&hosted, &folder, &key, "Phone", Arc::clone(&phone_shelf));
+    eventually(
+        "the query reaching a device that joined from the server alone",
+        || phone_shelf.query_named("Recent").is_some(),
+    );
 
     drop(phone);
     drop(desk);

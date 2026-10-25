@@ -57,8 +57,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Device sync
 - [L · 0.2.0] The phones carry saved-query playlists on to other devices but hold none themselves: their
   catalog has no saved queries and no search grammar to read one with
-- [S · 0.2.0] A build without the saved-query record that compacts the server's log drops the saved queries
-  from it; a device joining from the server alone misses them until one holding them edits them
 - [S · 0.2.0] A song a vaulted device passes on has lost its tags to the vault, so the third device groups
   it by title and track artist alone unless the sender's file declared more; the wire's
   `Recording` carries no album artist, year or totals
