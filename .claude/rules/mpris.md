@@ -136,7 +136,16 @@ instance names are keyed by pid and each process has its own `INSTANCES` pool.
   code, which answers `Refused` (result 0, the only trace being its debug log) where the trash
   folder is not mode 0700 (*Directory already exists with bad permissions*); the descriptor kind
   (`O_PATH`, read-write, read-only) makes no difference, and a run against a desktop's own portal
-  says nothing of the code until that folder is 0700. A Flatpak-sandboxed caller is still unproved.
+  says nothing of the code until that folder is 0700. **A sandboxed caller is proved by a sandbox
+  built to Flatpak's pattern** (`a_file_is_taken_to_the_trash_from_a_sandbox_the_portal_knows_by_its_app_id`):
+  `bwrap` with its own pid namespace and an empty root holding `/usr` and a `/.flatpak-info` naming
+  an app id and an instance id, `xdg-dbus-proxy --filter` in a sandbox of the same file between it
+  and the bus (the portal names the app by the `/proc/<pid>/root/.flatpak-info` of the connection's
+  process, which is the proxy's), the portal given a runtime directory of its own holding
+  `.flatpak/<instance>/bwrapinfo.json` as `bwrap --info-fd` writes it, and the test binary run inside
+  to trash a file on a bound folder, the descriptor crossing the proxy. It skips without `bwrap`,
+  `xdg-dbus-proxy` or a portal, or where the kernel refuses an unprivileged sandbox. It is not
+  Flatpak itself: no `flatpak run`, no document portal, no permissions of a real manifest.
 - **A notification is keyed on what it *says*.** The cover lands a moment after the track starts:
   the second telling replaces the first under the server's `replaces_id`; teardown closes it and
   waits `FAREWELL` (500 ms). Body escaped only where `GetCapabilities` answers `body-markup`.

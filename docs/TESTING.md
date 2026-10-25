@@ -28,9 +28,10 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   the documentation and `tests/live.rs` has no AcoustID test
 
 ## Catalog
-- [S · 0.1.1] Trashing through the portal (`trash_through_the_portal`) is proved against a hosted
-  `xdg-desktop-portal` but not from inside a Flatpak sandbox, where the portal reads the caller's
-  app id and the descriptor crosses the sandbox
+- [S · blocked: flatpak] Trashing through the portal is proved from a `bwrap` sandbox built to
+  Flatpak's pattern (`.flatpak-info`, a filtering `xdg-dbus-proxy`, `bwrapinfo.json`), not from a
+  `flatpak run` of the real manifest: no `flatpak` is installed here, so the document portal and the
+  manifest's own permissions have never been in the path
 
 ## Providers and network
 - [S · blocked: network] That the hosted hifi service still answers a request carrying neither
