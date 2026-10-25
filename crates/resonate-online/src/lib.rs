@@ -21,6 +21,7 @@ mod shared;
 mod shazam;
 mod soundcloud;
 mod spotify;
+mod tidal;
 mod wikidata;
 mod wikipedia;
 mod youtube;
@@ -31,6 +32,7 @@ pub fn read_a_shared_page(page: &str) {
     let _ = crate::shared::next_data(page);
     let _ = crate::spotify::read_embedded(page);
     let _ = crate::youtube::read_listed(page);
+    let _ = crate::tidal::read_embedded(page);
     let _ = crate::linked::read_pages(page);
 }
 

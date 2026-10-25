@@ -30,6 +30,7 @@ pub enum Host {
     ListenBrainz,
     LastFm,
     Youtube,
+    TidalEmbed,
 }
 
 impl Host {
@@ -57,6 +58,7 @@ impl Host {
             Self::ListenBrainz => "https://api.listenbrainz.org",
             Self::LastFm => "https://ws.audioscrobbler.com/2.0/",
             Self::Youtube => "https://www.youtube.com",
+            Self::TidalEmbed => "https://embed.tidal.com",
         }
     }
 }

@@ -69,7 +69,7 @@ Linux sound server or GUI libraries are needed.
   indexing and the reader), `padding` (the tag writer's padded heads), `journal` (an undo journal,
   sealed by the seam so the checksum is not the fuzzer's to guess), `overlay` (the write overlay
   driven against a byte-vector model, then landed), `cover` (`Drawing::of` and its scalings),
-  `pages` (the shared-page, Spotify, YouTube and song.link readers), `manifest` (TIDAL's BTS and
+  `pages` (the shared-page, Spotify, YouTube, TIDAL embed and song.link readers), `manifest` (TIDAL's BTS and
   DASH documents), `kept` (the analysis cache reader).
 - **`probe`'s input is the file and its last three bytes are the run's shape**, so a seed stays a
   plain file a player opens (`fuzz_targets/held.rs`, its `MediaProvider`, is shared with `boxes` and

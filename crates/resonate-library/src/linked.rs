@@ -23,6 +23,8 @@ const SPOTIFY_ARTIST: &str = "spotify:artist:";
 const SPOTIFY_PLAYLIST: &str = "spotify:playlist:";
 const APPLE_MUSIC_PLAYLIST: &str = "pl.";
 const SPOTIFY_ID_LENGTH: usize = 22;
+const TIDAL_PLAYLIST_LENGTH: usize = 36;
+const TIDAL_PLAYLIST_DASHES: [usize; 4] = [8, 13, 18, 23];
 const DEEZER_ARTIST_PAGE: &str = "https://www.deezer.com/artist/";
 const APPLE_MUSIC_IN_EVERY_STOREFRONT: &str = "us";
 const SONG_LINK_PAGES: &str = "https://song.link/";
@@ -133,6 +135,7 @@ pub enum PlaylistLink {
     Spotify(String),
     AppleMusic { storefront: String, id: String },
     Youtube(String),
+    Tidal(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -470,6 +473,10 @@ impl PlaylistLink {
             .flatten()
             .filter(|list| names_an_id(list) && !list.starts_with(YOUTUBE_MUSIC_ALBUMS))
             .map(|list| Self::Youtube(list.to_owned())),
+            "tidal.com" | "listen.tidal.com" => address
+                .after("playlist")
+                .filter(|id| names_a_tidal_playlist(id))
+                .map(|id| Self::Tidal(id.to_ascii_lowercase())),
             "music.apple.com" => match address.segments.as_slice() {
                 [storefront, "playlist", .., id] if names_a_storefront(storefront) => {
                     names_an_apple_music_playlist(id).then(|| Self::AppleMusic {
@@ -482,6 +489,17 @@ impl PlaylistLink {
             _ => None,
         }
     }
+}
+
+fn names_a_tidal_playlist(id: &str) -> bool {
+    id.len() == TIDAL_PLAYLIST_LENGTH
+        && id.bytes().enumerate().all(|(place, byte)| {
+            if TIDAL_PLAYLIST_DASHES.contains(&place) {
+                byte == b'-'
+            } else {
+                byte.is_ascii_hexdigit()
+            }
+        })
 }
 
 fn names_a_storefront(storefront: &str) -> bool {
@@ -1162,6 +1180,20 @@ mod tests {
             Some(FollowedLink::Song(_))
         ));
         assert_eq!(
+            FollowedLink::read("https://tidal.com/playlist/36EA71A8-445e-41a4-82ab-6628c581535d"),
+            Some(FollowedLink::Playlist(PlaylistLink::Tidal(
+                "36ea71a8-445e-41a4-82ab-6628c581535d".to_owned()
+            )))
+        );
+        assert_eq!(
+            PlaylistLink::read(
+                "https://listen.tidal.com/browse/playlist/36ea71a8-445e-41a4-82ab-6628c581535d?u"
+            ),
+            Some(PlaylistLink::Tidal(
+                "36ea71a8-445e-41a4-82ab-6628c581535d".to_owned()
+            ))
+        );
+        assert_eq!(
             PlaylistLink::read("https://music.apple.com/gb/playlist/pl.u-AkAmPlyUxEAm9V?l=en"),
             Some(PlaylistLink::AppleMusic {
                 storefront: "gb".to_owned(),
@@ -1179,6 +1211,11 @@ mod tests {
             "https://music.apple.com/us/album/x/pl.f4d106fed2bd41149aaacabb233eb5eb",
             "https://listenbrainz.org/user/rob/playlists",
             "https://open.spotify.com/playlist/not-an-id",
+            "https://tidal.com/playlist/not-an-id",
+            "https://tidal.com/playlist/36ea71a8-445e-41a4-82ab-6628c581535",
+            "https://tidal.com/playlist/36ea71a8_445e_41a4_82ab_6628c581535d",
+            "https://tidal.com/album/36ea71a8-445e-41a4-82ab-6628c581535d",
+            "https://tidal.com/playlist/36ea71a8-445e-41a4-82ab-6628c581535d too",
             "https://www.deezer.com/playlist/3155776842 too",
         ] {
             assert_eq!(PlaylistLink::read(text), None, "{text}");

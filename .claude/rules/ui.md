@@ -1301,7 +1301,7 @@ is never named.
   nothing searched; an unnamed link gets a toast. An artist link opens the page (held at once, else
   MB-named via `land_artist_found`); Deezer, Spotify, Apple Music, TIDAL, YouTube, SoundCloud, Bandcamp
   and Amazon Music artist links are caught too, followed by the artist MB files their page under. **A
-  Deezer, ListenBrainz, Spotify, Apple Music or YouTube playlist link fills a playlist of what is held
+  Deezer, ListenBrainz, Spotify, TIDAL, Apple Music or YouTube playlist link fills a playlist of what is held
   and wants the rest**: `followed_a_playlist` wants every found song, then `Library::fill_playlist_named`
   on bg puts the held songs into the playlist of that name (made where none is; an existing one gains
   only what it lacks), opens it and toasts (`playlist_told`); where nothing is held no playlist is made

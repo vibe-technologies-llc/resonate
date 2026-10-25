@@ -23,6 +23,52 @@ pub(crate) fn stated(text: Option<&str>) -> Option<String> {
         .map(str::to_owned)
 }
 
+const LONGEST_ENTITY: usize = 10;
+
+pub(crate) fn unescaped(text: &str) -> String {
+    let mut plain = String::with_capacity(text.len());
+    let mut rest = text;
+
+    while let Some(at) = rest.find('&') {
+        plain.push_str(&rest[..at]);
+        let tail = &rest[at..];
+        let spelt = tail
+            .find(';')
+            .filter(|end| *end <= LONGEST_ENTITY)
+            .and_then(|end| Some((entity(&tail[1..end])?, end)));
+        match spelt {
+            Some((letter, end)) => {
+                plain.push(letter);
+                rest = &tail[end + 1..];
+            }
+            None => {
+                plain.push('&');
+                rest = &tail[1..];
+            }
+        }
+    }
+    plain.push_str(rest);
+    plain
+}
+
+fn entity(name: &str) -> Option<char> {
+    match name {
+        "amp" => Some('&'),
+        "lt" => Some('<'),
+        "gt" => Some('>'),
+        "quot" => Some('"'),
+        "apos" => Some('\''),
+        _ => {
+            let digits = name.strip_prefix('#')?;
+            let code = match digits.strip_prefix(['x', 'X']) {
+                Some(hex) => u32::from_str_radix(hex, 16).ok()?,
+                None => digits.parse().ok()?,
+            };
+            char::from_u32(code)
+        }
+    }
+}
+
 pub(crate) fn next_data(page: &str) -> Option<&str> {
     let from = page.find(PAGE_DATA_OPENS)? + PAGE_DATA_OPENS.len();
     let rest = &page[from..];
@@ -70,6 +116,19 @@ mod tests {
             Some("https://i.scdn.co/image/ab676161")
         );
         assert_eq!(shared_picture("<head></head>"), None);
+    }
+
+    #[test]
+    fn a_pages_escapes_are_read_as_the_letters_they_spell_and_nothing_else() {
+        assert_eq!(
+            unescaped("Ain&#39;t &quot;Toy&quot; &amp; Co&#x2F;&lt;3&gt; &apos;x&apos; &#233;"),
+            "Ain't \"Toy\" & Co/<3> 'x' \u{e9}"
+        );
+        assert_eq!(
+            unescaped("a & b &nosuch; &#; &#x110000; &amp"),
+            "a & b &nosuch; &#; &#x110000; &amp"
+        );
+        assert_eq!(unescaped(""), "");
     }
 
     #[test]

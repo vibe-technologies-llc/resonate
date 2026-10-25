@@ -178,7 +178,8 @@ impl Host {
             | Self::SoundCloudPictures
             | Self::SongLink
             | Self::LastFm
-            | Self::Youtube => false,
+            | Self::Youtube
+            | Self::TidalEmbed => false,
         }
     }
 }
@@ -285,6 +286,7 @@ impl Host {
             | Self::SoundCloudPictures
             | Self::SongLink
             | Self::Youtube
+            | Self::TidalEmbed
             | Self::Commons
             | Self::Wikidata
             | Self::Lrclib

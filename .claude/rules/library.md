@@ -1630,10 +1630,10 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   carrying the group or release (`album_held`) gives `Linked::HeldAlbum`; else `Linked::Album`, both
   handed to `want_album` (a named pressing is read whole and its songs landed as the group's; a
   group-only link is wanted from the pressing most of its pressings share). **Playlist link**:
-  `PlaylistLink::read` takes Deezer, ListenBrainz, Spotify, Apple Music and YouTube playlists (never
+  `PlaylistLink::read` takes Deezer, ListenBrainz, Spotify, TIDAL (`tidal.com` or `listen.tidal.com`, a `/playlist/<uuid>` read whole as a UUID and kept lowercase), Apple Music and YouTube playlists (never
   an `OLAK5uy_` album list or a `watch` link carrying a `list`); `Reference::playlist_linked`
-  answers a `LinkedPlaylist` of `ListedSong`s (`Recording`, `Named` (`LinkNames`; Spotify's and
-  Apple Music's are followed by the strict search) or `Uploaded` (YouTube));
+  answers a `LinkedPlaylist` of `ListedSong`s (`Recording`, `Named` (`LinkNames`; Spotify's,
+  TIDAL's and Apple Music's are followed by the strict search) or `Uploaded` (YouTube));
   `Library::follow_playlist_link` follows each as `follow_link` would;
   `Library::fill_playlist_named` (`playlist::fill`) puts held tracks into the list of that name
   (folded), only rows it lacks, else starts one under a free name (`Filled`). **Artist link**:

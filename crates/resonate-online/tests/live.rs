@@ -496,6 +496,29 @@ fn a_link_to_a_youtube_playlist_names_its_uploads_off_the_public_page() {
 }
 
 #[test]
+fn a_link_to_a_tidal_playlist_names_its_songs_off_the_public_embed_page() {
+    let Some(client) = reached() else {
+        return;
+    };
+    let online = Online::with_client(client);
+    let link =
+        PlaylistLink::read("https://tidal.com/playlist/36ea71a8-445e-41a4-82ab-6628c581535d")
+            .expect("a TIDAL playlist link");
+
+    let playlist = online
+        .playlist_linked(&link)
+        .expect("TIDAL answered")
+        .expect("the page names the playlist");
+
+    assert!(!playlist.name.is_empty());
+    assert!(playlist.songs.len() >= 20, "{} songs", playlist.songs.len());
+    assert!(playlist.songs.iter().all(|song| matches!(
+        song,
+        ListedSong::Named(names) if names.title.is_some() && names.artist.is_some()
+    )));
+}
+
+#[test]
 fn musicbrainz_names_the_artist_a_spotify_page_belongs_to() {
     let Some(client) = reached() else {
         return;

@@ -115,7 +115,7 @@ fn clock_in(value: &Value) -> Option<Duration> {
     }
 }
 
-fn clock(text: &str) -> Option<Duration> {
+pub(crate) fn clock(text: &str) -> Option<Duration> {
     let parts: Vec<&str> = text.trim().split(':').collect();
     if !(2..=CLOCK_PARTS_AT_MOST).contains(&parts.len()) {
         return None;

@@ -253,6 +253,18 @@ before a source joined is asked again by `look_again_for_portraits`.
   - Spotify: the public `/embed/playlist/<id>` page, whose `__NEXT_DATA__` (`shared::next_data`)
     holds `name` and a `trackList` of title, `subtitle` (artists as billed) and milliseconds; no
     ISRC; at most what Spotify puts on the embed (fifty to a hundred).
+  - TIDAL (`Host::TidalEmbed`, the others' pace): the public `embed.tidal.com/playlists/<uuid>` page,
+    asked with no login, key or token (`tidal.com/playlist/<uuid>` itself is a shell that holds only
+    the name). The page is server-rendered markup, not JSON: the name is the anchor in
+    `h1.media-album`, each song a `<list-item product-type="track">` whose `slot="title"` span is the
+    title, `slot="artist"` anchors the artists (joined `, `, as billed) and `slot="duration"` a clock
+    (`youtube::clock`); an item of another `product-type`, or with no title or no artist, is passed
+    over, and `shared::unescaped` reads the page's escapes (`&#39;`, `&quot;`). The page's
+    `tidalMediaSessionMetadata` script lists previews, not the playlist, and is not read. The embed
+    lists the first fifty songs and no continuation is asked; no ISRC (`a_tidal_playlist_names_its_title_and_each_song_by_its_title_artists_and_length`,
+    `a_link_to_a_tidal_playlist_names_its_songs_off_the_public_embed_page`, live). TIDAL's account
+    API would give ISRCs and every song but needs the listener's sign-in (`providers.md`), which a
+    pasted link never asks for.
   - Apple Music: the public `/<storefront>/playlist/<id>` page (`apple::playlist_named`), whose
     `serialized-server-data` script holds sections by `itemKind`: `containerDetailHeaderLockup`
     `title` is the name, each `trackLockup` a song (a `contentDescriptor` kind other than `song`
