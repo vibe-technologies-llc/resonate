@@ -6,6 +6,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -110,6 +111,46 @@ class PlaybackPreferencesTest {
             player.close()
             context.deleteSharedPreferences(name)
             folder.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun aCurveBoundToAnOutputIsReadForThatOutputAndWrittenToItAlone() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val name = "route-test-${System.nanoTime()}"
+        val store = PlaybackPreferencesStore(context.getSharedPreferences(name, Context.MODE_PRIVATE))
+        val buds = OutputRoute("v1:bluetooth:AA", "Buds")
+        val car = OutputRoute("v1:bluetooth:BB", "Car")
+        try {
+            val shared = defaultPlaybackPreferences().copy(equaliser = tenBandCurve(0f, List(10) { 0f }))
+            store.write(shared)
+            store.bind(buds, tenBandCurve(-3f, List(10) { if (it == 2) 4f else 0f }))
+
+            assertTrue(store.isBound(buds))
+            assertEquals(listOf(buds), store.boundRoutes())
+            assertEquals(-3f, store.read(buds).equaliser.preampDb, 0.01f)
+            assertEquals(shared.equaliser.preampDb, store.read(car).equaliser.preampDb, 0.01f)
+            assertEquals(shared.equaliser.preampDb, store.read(null).equaliser.preampDb, 0.01f)
+
+            store.write(store.read(buds).copy(quality = ResamplingQuality.FAST), buds)
+            store.write(
+                store.read(null).copy(equaliser = tenBandCurve(-9f, List(10) { 0f })),
+                buds,
+            )
+
+            assertEquals(-9f, store.read(buds).equaliser.preampDb, 0.01f)
+            assertEquals(shared.equaliser.preampDb, store.read(car).equaliser.preampDb, 0.01f)
+            assertEquals(ResamplingQuality.FAST, store.read(car).quality)
+
+            store.bind(car, shared.equaliser)
+            assertEquals(listOf(buds, car).sortedBy { it.name }, store.boundRoutes())
+
+            store.unbind(buds)
+            assertFalse(store.isBound(buds))
+            assertEquals(listOf(car), store.boundRoutes())
+            assertEquals(shared.equaliser.preampDb, store.read(buds).equaliser.preampDb, 0.01f)
+        } finally {
+            context.deleteSharedPreferences(name)
         }
     }
 

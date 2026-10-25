@@ -1,6 +1,7 @@
 package org.resonate.android.ui.settings
 
 import org.resonate.android.AudioOutput
+import org.resonate.android.outputName
 
 const val SYSTEM_DEFAULT_OUTPUT = 0
 
@@ -11,11 +12,7 @@ val systemDefaultOutput = AudioOutput(SYSTEM_DEFAULT_OUTPUT, "System default", A
 private val namedByKind = setOf("Built-in speaker", "Earpiece")
 
 fun outputTitle(output: AudioOutput): String =
-    when {
-        output.kind == AUTOMATIC_KIND -> output.name
-        output.kind in namedByKind -> output.kind
-        else -> output.name.ifBlank { output.kind }
-    }
+    if (output.kind == AUTOMATIC_KIND) output.name else outputName(output.kind, output.name)
 
 fun outputSubtitle(output: AudioOutput): String =
     when {

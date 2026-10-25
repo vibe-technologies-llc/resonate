@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.resonate.android.OutputRoute
 import org.resonate.android.RoomView
 import org.resonate.android.nativecore.EqualiserCurve
 import org.resonate.android.nativecore.EqualiserPreset
@@ -61,6 +62,10 @@ class EqualiserViewModel(private val resonate: Resonate) : ViewModel() {
             .conflate()
             .mapLatest { curve -> withContext(Dispatchers.Default) { responseOf(curve) } }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val route: StateFlow<OutputRoute?> = library.route
+
+    val boundRoutes: StateFlow<List<OutputRoute>> = library.boundRoutes
 
     val room: StateFlow<RoomView> = resonate.features.room.view
 
@@ -126,6 +131,10 @@ class EqualiserViewModel(private val resonate: Resonate) : ViewModel() {
     fun importProfile(name: String, text: String) {
         resonate.features.applyProfileText(name.trim(), text)
     }
+
+    fun bind(bound: Boolean) = library.bindEqualiser(bound)
+
+    fun forget(route: OutputRoute) = library.forgetEqualiser(route)
 
     fun chooseRoomResponse() = resonate.host.chooseRoomResponse()
 

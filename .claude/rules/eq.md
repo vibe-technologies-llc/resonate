@@ -355,8 +355,8 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   `PlaybackPreferences::equaliser` is an `EqualiserCurve` (name, preamp, bands of
   `EqualiserFilter`, one per `BandKind`, frequency, gain and Q as `f32`). `EqualiserCurve::profile`
   is the one way to a `Profile`, so stage, graph and validation share core's quantisation; the
-  engine gets it as the `Equalisation` fallback, every route alike; iOS binds a curve to an output
-  itself, sending the one the route in use calls for (`ios.md`). A change of name alone sends
+  engine gets it as the `Equalisation` fallback, every route alike; both phones bind a curve to an
+  output themselves, sending the one the route in use calls for (`ios.md`, `android.md`). A change of name alone sends
   nothing (`sounds_unlike`).
 - **Bounds are the phone's, refused typed before any command**: at most `MAX_BANDS` (32); 20 Hz to
   20 kHz (`LOWEST_HZ`, `HIGHEST_HZ`); gain and preamp within 24 dB (`GAIN_AT_MOST_DB`,

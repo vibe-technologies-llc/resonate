@@ -81,9 +81,10 @@ data class AudioOutput(
     val rates: List<Int>,
     val channels: List<Int>,
     val encodings: List<Int>,
+    val route: OutputRoute? = null,
 )
 
-private fun outputKind(type: Int): String =
+internal fun outputKind(type: Int): String =
     when (type) {
         AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
         AudioDeviceInfo.TYPE_BUILTIN_SPEAKER_SAFE -> "Built-in speaker"
@@ -143,6 +144,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     private var submitting: Job? = null
     private var missingChecked = -MISSING_CHECKED_EVERY_MS
     private var hidingFailure: String? = null
+    private val routes = OutputWatch(context) { library.outputRouteChanged(it) }
     val outputs = MutableStateFlow<List<AudioOutput>>(emptyList())
     val selectedOutput = MutableStateFlow(0)
     val actualOutput = MutableStateFlow(0)
@@ -273,8 +275,11 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     @Volatile private var lyricWatchers = 0
 
+    fun routeInUse(): OutputRoute? = routes.routeNow()
+
     fun initialize(native: MobilePlayer) {
         room.restore(native)
+        routes.start()
         providerAccount.value =
             try {
                 accounts.read()
@@ -1168,7 +1173,9 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 if (snapshot.current?.id == sheet.trackId)
                     lyricFrame.value = native.lyricFrame(sheet.trackId, snapshot.positionMs)
             }
-        actualOutput.value = native.outputDevice()
+        val device = native.outputDevice()
+        actualOutput.value = device
+        routes.streamOn(device)
         if (downloading.value) downloads.follow(native)
         if (analysisBusy.value) analysisProgress.value = native.analysisProgress()
     }
@@ -1320,17 +1327,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     fun refreshOutputs() {
         scope.launch {
             val manager = context.getSystemService(android.media.AudioManager::class.java)
-            outputs.value =
-                manager.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS).map { device ->
-                    AudioOutput(
-                        device.id,
-                        device.productName.toString(),
-                        outputKind(device.type),
-                        device.sampleRates.toList(),
-                        device.channelCounts.toList(),
-                        device.encodings.toList(),
-                    )
-                }
+            outputs.value = audioOutputs(manager)
         }
     }
 
@@ -1525,6 +1522,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     }
 
     fun stop() {
+        routes.stop()
         enrichment.close()
         scope.coroutineContext.cancelChildren()
         submitting = null

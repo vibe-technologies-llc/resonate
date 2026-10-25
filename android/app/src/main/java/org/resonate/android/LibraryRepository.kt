@@ -62,6 +62,8 @@ class LibraryRepository(private val context: Context) {
     private val mutableStatus = MutableStateFlow<String?>(null)
     private val mutableScanning = MutableStateFlow(false)
     private val mutablePreferences = MutableStateFlow<PlaybackPreferences?>(null)
+    private val mutableRoute = MutableStateFlow<OutputRoute?>(null)
+    private val mutableBoundRoutes = MutableStateFlow<List<OutputRoute>>(emptyList())
     private val mutableFavourites = MutableSharedFlow<Favourited>(extraBufferCapacity = 64)
     val favourites: SharedFlow<Favourited> = mutableFavourites.asSharedFlow()
     val tracks = mutableTracks.asStateFlow()
@@ -70,6 +72,8 @@ class LibraryRepository(private val context: Context) {
     val status = mutableStatus.asStateFlow()
     val scanning = mutableScanning.asStateFlow()
     val preferences = mutablePreferences.asStateFlow()
+    val route = mutableRoute.asStateFlow()
+    val boundRoutes = mutableBoundRoutes.asStateFlow()
     private var started = false
     private var owners = 0
 
@@ -200,7 +204,10 @@ class LibraryRepository(private val context: Context) {
                         },
                     )
                 opened = native
-                val preferences = preferencesStore().read()
+                val store = preferencesStore()
+                mutableRoute.value = features.routeInUse()
+                mutableBoundRoutes.value = store.boundRoutes()
+                val preferences = store.read(mutableRoute.value)
                 native.configurePlayback(preferences)
                 mutablePreferences.value = preferences
                 features.initialize(native)
@@ -327,8 +334,46 @@ class LibraryRepository(private val context: Context) {
             val next = change(native.playbackPreferences())
             native.configurePlayback(next)
             mutablePreferences.value = next
-            preferencesStore().write(next)
+            preferencesStore().write(next, mutableRoute.value)
         }
+    }
+
+    fun outputRouteChanged(now: OutputRoute?) {
+        request { native ->
+            if (now == mutableRoute.value) return@request
+            mutableRoute.value = now
+            followRoute(native)
+        }
+    }
+
+    fun bindEqualiser(bound: Boolean) {
+        request { native ->
+            val route = mutableRoute.value ?: return@request
+            val store = preferencesStore()
+            if (bound) store.bind(route, native.playbackPreferences().equaliser)
+            else store.unbind(route)
+            mutableBoundRoutes.value = store.boundRoutes()
+            if (!bound) followRoute(native)
+        }
+    }
+
+    fun forgetEqualiser(forgotten: OutputRoute) {
+        request { native ->
+            val store = preferencesStore()
+            store.unbind(forgotten)
+            mutableBoundRoutes.value = store.boundRoutes()
+            if (forgotten.id == mutableRoute.value?.id) followRoute(native)
+            notice("Forgot the curve for ${forgotten.name}")
+        }
+    }
+
+    private fun followRoute(native: MobilePlayer) {
+        val curve = preferencesStore().read(mutableRoute.value).equaliser
+        val current = native.playbackPreferences()
+        if (curve == current.equaliser) return
+        val next = current.copy(equaliser = curve)
+        native.configurePlayback(next)
+        mutablePreferences.value = next
     }
 
     private fun preferencesStore() =

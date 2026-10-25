@@ -129,6 +129,9 @@ private fun EqualiserContent(
     padding: PaddingValues,
 ) {
     val navigator = LocalNavigator.current
+    val route by model.route.collectAsStateWithLifecycle()
+    val bound by model.boundRoutes.collectAsStateWithLifecycle()
+    val scope = curveScope(route, bound)
     var advanced by rememberSaveable { mutableStateOf(false) }
     var importing by rememberSaveable { mutableStateOf(false) }
     var selected by rememberSaveable { mutableStateOf<Int?>(null) }
@@ -141,7 +144,10 @@ private fun EqualiserContent(
             modifier = Modifier.widthIn(max = 840.dp).fillMaxWidth().testTag("equaliser-list"),
         ) {
             item(key = "switch") {
-                MasterSwitch(enabled, shownName(curve), model::enable)
+                MasterSwitch(enabled, shownName(curve), scope, model::enable)
+            }
+            item(key = "output-curve") {
+                OutputCurveSection(model)
             }
             item(key = "presets") {
                 Presets(info.presets, preset, model::choose)
@@ -206,6 +212,9 @@ private fun EqualiserContent(
             }
             item(key = "room") {
                 RoomCorrectionSection(model)
+            }
+            item(key = "kept-curves") {
+                KeptCurves(model)
             }
         }
     }
@@ -310,7 +319,7 @@ private fun LazyListScope.advancedItems(
 }
 
 @Composable
-private fun MasterSwitch(enabled: Boolean, name: String, onChange: (Boolean) -> Unit) {
+private fun MasterSwitch(enabled: Boolean, name: String, scope: String, onChange: (Boolean) -> Unit) {
     val container by
         animateColorAsState(
             if (enabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -333,7 +342,7 @@ private fun MasterSwitch(enabled: Boolean, name: String, onChange: (Boolean) -> 
             leadingContent = { Icon(Icons.Rounded.Equalizer, null) },
             supportingContent = {
                 Text(
-                    if (enabled) "$name · Every output" else "Off · Original sound",
+                    if (enabled) "$name · $scope" else "Off · Original sound",
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )

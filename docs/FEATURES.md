@@ -4,8 +4,8 @@ Gaps: what is not built, a limit by design, an unsupported format or a behaviour
 reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Android parity
-- [M · 0.2.0] Android does not organise its folders or bind a curve to an output; iOS does both (moves in
-  Swift over `plan_organise` and `documents_moved`; curves per route in Swift)
+- [M · 0.2.0] Android does not organise its folders; iOS does (moves in Swift over `plan_organise` and
+  `documents_moved`)
 - [M · 0.2.0] Android cannot edit tags: `edit_tags` writes at a filesystem path, which a SAF document does
   not give
 - [L · 0.2.0] Android output is shared stereo float at 48 kHz; exclusive/bit-perfect output, per-route

@@ -349,8 +349,8 @@ and offers *Follow lyrics*; tapping a timed line seeks. Blur is dropped where an
 (`ANIMATOR_DURATION_SCALE` zero) or TalkBack is exploring (`rememberCalm`).
 
 The equaliser is the boundary's parametric curve (`eq.md`'s *The phones*): any number of bands up
-to 32, through core's `Profile` and the engine's `Equalisation` fallback. One curve applies to all
-Android routes; no UI implies a per-device binding. Android opens on the boundary's nine named
+to 32, through core's `Profile` and the engine's `Equalisation` fallback. The engine holds one curve at
+a time; which one is the route's business (below). Android opens on the boundary's nine named
 presets (`equaliser_presets`, handed over in `equaliserInfo`; `eq.md`'s *The phones*) and
 frequency sliders labelled by their audible range, with live signed gain values. Selecting a
 preset enables the equaliser and stores its name and curve through the existing preferences;
@@ -378,6 +378,29 @@ an unreadable curve reads flat. The ordered repository worker restores these pre
 allowing playback actions, sends edits and commits each completed gesture off the main thread.
 Sliders keep an in-progress value locally and commit on release, avoiding a file write or stream
 rebuild for each motion event.
+
+**A curve may be kept for one output, as iOS's** (`OutputRoutes.kt`, `OutputCurves.kt`). The route in
+use is `OutputRoute(id, name)`: the output the Oboe stream opened on (`output_device`), else the one
+`AudioManager.getAudioDevicesForAttributes` says media would take (so the right curve is read before
+the first song opens and while paused), found among `audioOutputs` by device id. The id is versioned
+(`v1:<kind>:<which>`) and never holds an `AudioDeviceInfo.id`, which Android hands out afresh: `kind` is
+speaker (both speaker types), earpiece, wired headphones, wired headset, bluetooth (A2DP, SCO, BLE, hearing aid, so
+a headset on either profile is one route), usb or hdmi, and `which` is the Bluetooth address, else the
+product name (a USB card number moves between plugs; neither needs a permission). The name shown is
+the output page's title (`outputName`). `OutputWatch` (started by `LibraryFeatures.initialize`, stopped
+by `stop`) registers an `AudioDeviceCallback` and is told the stream's device every tick; each change
+reaches `LibraryRepository.outputRouteChanged` on the ordered worker, which sends the bound curve, else
+the shared one, where it differs from the one playing (`followRoute`), writing nothing.
+`PlaybackPreferencesStore` keeps a bound curve in `playback` beside the shared one:
+`equaliser-curve-for.<id>` (EqualizerAPO text), `equaliser-curve-name-for.<id>` and
+`equaliser-route-names.<id>`. While the output in use is bound every edit (sliders, graph, AutoEq,
+import, reset) writes its curve and the other choices still go to the shared keys
+(`write(preferences, route)`); an unreadable bound curve reads as the shared one. *Only for <output>*
+on the equaliser page (`OutputCurveSection`) binds the curve playing to that output or unbinds it,
+falling back to the shared curve at once; *Curves kept for other outputs* lists the rest, each *Forget*
+confirmed and told in a notice (Android's idiom, where iOS offers Undo). The equaliser switch and
+room correction stay one for every output, as on the desktop and iOS
+(`OutputRoutesTest`, `OutputCurvesTest`, `PlaybackPreferencesTest`).
 
 **Room correction is the equaliser page's last section** (`RoomCorrectionSection`, `RoomCorrectionState.kt`):
 *Choose a response…* opens the system document picker for audio (`ACTION_OPEN_DOCUMENT`), the chosen
@@ -686,7 +709,7 @@ AudD token is kept encrypted beside the other keys (`audd-token`) and typed in L
 *Recognition* section; blank, only Shazam is asked (`ListenPlanTest`).
 
 AutoEq and pasted EqualizerAPO/GraphicEQ profiles use the shared parser and load as the curve's
-bands, every filter kept (`EqualiserImport`). One curve still applies to every route. ListenBrainz and Last.fm accounts are opt-in,
+bands, every filter kept (`EqualiserImport`), into the curve in use (the bound one on a bound output). ListenBrainz and Last.fm accounts are opt-in,
 validate through their existing seams, and submit counted local listens in batches of 100 with
 independent durable marks advanced only after success. Existing history is included only when
 asked; Last.fm password sign-in saves the returned session, never that password. Favourites
