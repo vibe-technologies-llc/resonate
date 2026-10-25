@@ -4,13 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Device sync
-- [M · 0.1.1] An edit made before a device's first catch-up is overwritten by an older note: the
-  service applies arrivals while `may_look` is false, and `playlist_arrived` and `favourite_arrived`
-  compare a note with the stored stamp alone, not with a catalog that moved since the last look, so
-  a playlist reordered or a song unfavourited while the server is out of reach (or in the seconds
-  before the link catches up) is replaced by the older remote note and never sent. Reproduced at
-  the ledger (`receive` after an unlooked edit keeps the remote rows); the gating in `service.rs` is
-  read, not driven
 
 ## Android
 - [S · 0.1.1] Deleting identical songs can delete the only copy when two folder grants overlap:

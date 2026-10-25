@@ -97,6 +97,12 @@ platforms; the catalog seam stays thin.
   what the catalog showed at the last look or apply, so a change there is the listener's. Listens:
   past a mark, this device's own alone. The resume state: a digest of rows, place and position to
   the ten seconds.
+- **An arrival first looks at what the ledger already holds.** `arrived` begins with a look limited
+  to rows with a stored counterpart (`Looking::AtWhatIsHeld`: a mapped playlist or query edited or
+  gone, a favourite changed), before the clock has seen any arriving stamp, so an edit made while
+  the link was behind is stamped by its own time and competes with the older note instead of being
+  overwritten by it. Nothing is minted or adopted by it: that stays the first full look, after
+  catch-up (`a_playlist_edited_before_its_first_look_outranks_an_older_note_that_arrives`).
 - **Songs a device lacks stay in the playlist it edits.** The ledger keeps every entry and whether
   it is held here; `merge::spliced` puts unheld entries back after the nearest earlier held one the
   edit kept (or where it stood, or at the head). A song arriving later is written in place by

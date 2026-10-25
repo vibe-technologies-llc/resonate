@@ -490,6 +490,43 @@ fn the_later_edit_wins_where_two_devices_edit_one_playlist() {
 }
 
 #[test]
+fn a_playlist_edited_before_its_first_look_outranks_an_older_note_that_arrives() {
+    let mut desk = Device::new("Desk", &["A", "B", "C"]);
+    let mut phone = Device::new("Phone", &["A", "B", "C"]);
+    let summer = desk.shelf.make_playlist("Summer", &["A"]);
+    sync(&mut desk, &mut phone);
+    let (on_phone, _) = phone.shelf.playlist_named("Summer").expect("arrived");
+
+    desk.shelf.edit_playlist(summer, &["A", "B"]);
+    let from_desk = desk.send();
+    phone.shelf.edit_playlist(on_phone, &["A", "C"]);
+    phone.receive(&from_desk);
+    sync(&mut phone, &mut desk);
+
+    assert_eq!(titles(&phone, "Summer"), ["A", "C"]);
+    assert_eq!(titles(&desk, "Summer"), ["A", "C"]);
+}
+
+#[test]
+fn a_favourite_removed_before_its_first_look_outranks_an_older_note_that_arrives() {
+    let mut desk = Device::new("Desk", &["A", "B"]);
+    let mut phone = Device::new("Phone", &["A", "B"]);
+    desk.shelf.favour_here("A", true);
+    sync(&mut desk, &mut phone);
+    desk.shelf.favour_here("A", false);
+    desk.send();
+    desk.shelf.favour_here("A", true);
+    let from_desk = desk.send();
+
+    phone.shelf.favour_here("A", false);
+    phone.receive(&from_desk);
+    sync(&mut phone, &mut desk);
+
+    assert!(phone.shelf.favourite_titles().is_empty());
+    assert!(desk.shelf.favourite_titles().is_empty());
+}
+
+#[test]
 fn favourites_travel_both_ways_and_a_tombstone_never_takes_an_unmet_favourite() {
     let mut desk = Device::new("Desk", &["A", "B"]);
     let mut phone = Device::new("Phone", &["A", "B"]);

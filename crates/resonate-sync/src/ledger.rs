@@ -166,6 +166,12 @@ pub struct Applied {
     pub changed_here: usize,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Looking {
+    Everything,
+    AtWhatIsHeld,
+}
+
 pub struct Ledger {
     connection: Connection,
     device: DeviceId,
@@ -406,9 +412,9 @@ impl Ledger {
 
     pub fn look(&mut self, catalog: &dyn Catalog, me: &Me) -> Result<Looked> {
         self.look_at_me(me)?;
-        self.look_at_playlists(catalog)?;
-        self.look_at_queries(catalog)?;
-        self.look_at_favourites(catalog)?;
+        self.look_at_playlists(catalog, Looking::Everything)?;
+        self.look_at_queries(catalog, Looking::Everything)?;
+        self.look_at_favourites(catalog, Looking::Everything)?;
         self.look_at_listens(catalog)?;
         self.look_at_resumption(catalog)?;
         self.keep_the_clock()?;
@@ -417,6 +423,12 @@ impl Ledger {
         Ok(Looked {
             owed: self.owed_count()?,
         })
+    }
+
+    fn look_at_what_is_held(&mut self, catalog: &dyn Catalog) -> Result<()> {
+        self.look_at_playlists(catalog, Looking::AtWhatIsHeld)?;
+        self.look_at_queries(catalog, Looking::AtWhatIsHeld)?;
+        self.look_at_favourites(catalog, Looking::AtWhatIsHeld)
     }
 
     fn look_at_me(&mut self, me: &Me) -> Result<()> {
@@ -445,7 +457,7 @@ impl Ledger {
         Ok(())
     }
 
-    fn look_at_playlists(&mut self, catalog: &dyn Catalog) -> Result<()> {
+    fn look_at_playlists(&mut self, catalog: &dyn Catalog, looking: Looking) -> Result<()> {
         let locals = catalog.playlists().map_err(Error::Catalog)?;
         let stored = self.stored_playlists()?;
         let mut by_local = BTreeMap::new();
@@ -467,6 +479,7 @@ impl Ledger {
                     }
                     self.edited_here(synced, local, &digest)?;
                 }
+                None if looking == Looking::AtWhatIsHeld => {}
                 None => {
                     if let Some(adopted) = stored.iter().enumerate().find(|(at, synced)| {
                         synced.local.is_none()
@@ -614,7 +627,7 @@ impl Ledger {
         Ok(())
     }
 
-    fn look_at_queries(&mut self, catalog: &dyn Catalog) -> Result<()> {
+    fn look_at_queries(&mut self, catalog: &dyn Catalog, looking: Looking) -> Result<()> {
         if !catalog.keeps_queries() {
             return Ok(());
         }
@@ -639,6 +652,7 @@ impl Ledger {
                     }
                     self.query_edited_here(synced, local, &digest)?;
                 }
+                None if looking == Looking::AtWhatIsHeld => {}
                 None => {
                     if let Some((at, synced)) = stored.iter().enumerate().find(|(at, synced)| {
                         synced.local.is_none()
@@ -757,7 +771,7 @@ impl Ledger {
         Ok(())
     }
 
-    fn look_at_favourites(&mut self, catalog: &dyn Catalog) -> Result<()> {
+    fn look_at_favourites(&mut self, catalog: &dyn Catalog, looking: Looking) -> Result<()> {
         let favourites = catalog.favourites().map_err(Error::Catalog)?;
         let held = self.held_favourites()?;
         let mut held_by_key = BTreeMap::new();
@@ -820,6 +834,7 @@ impl Ledger {
                         )
                         .map_err(|source| Error::store(StoreOp::Write, source))?;
                 }
+                None if looking == Looking::AtWhatIsHeld => {}
                 None => {
                     transaction
                         .execute(
@@ -1087,6 +1102,7 @@ impl Ledger {
     }
 
     pub fn arrived(&mut self, catalog: &dyn Catalog, changes: &[Change]) -> Result<Applied> {
+        self.look_at_what_is_held(catalog)?;
         let mut applied = Applied::default();
         for change in changes {
             if let Some(stamp) = change.stamp() {
