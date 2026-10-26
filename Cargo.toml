@@ -132,7 +132,7 @@ ape-decoder = { version = "0.3.2", default-features = false }
 
 opus-rs = { version = "0.1.40", default-features = false, features = ["std", "heap"] }
 
-lofty = { version = "0.25.4", default-features = false, features = ["id3v2_compression_support"] }
+lofty = { version = "0.25.5", default-features = false, features = ["id3v2_compression_support"] }
 
 flacenc = { version = "0.5.1", default-features = false, features = ["par"] }
 zstd = { version = "0.14.3", default-features = false }
