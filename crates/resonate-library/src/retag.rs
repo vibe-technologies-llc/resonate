@@ -331,6 +331,7 @@ pub(crate) struct TrackToTag {
     pub catalog_number: Option<String>,
     pub barcode: Option<String>,
     pub pressing_fitted: bool,
+    pub pressing_counted: bool,
     pub track_total: Option<u32>,
     pub disc_total: Option<u32>,
     pub popularity: Popularity,
@@ -549,7 +550,7 @@ pub(crate) fn offered(row: &TrackToTag) -> Vec<(TagField, String)> {
     if row.album_answered {
         offer(&mut offered, TagField::Album, row.album.as_deref());
     }
-    if row.album_answered && !row.pressing_fitted {
+    if row.album_answered && (!row.pressing_fitted || row.pressing_counted) {
         counted(&mut offered, TagField::TrackTotal, row.track_total);
         counted(&mut offered, TagField::DiscTotal, row.disc_total);
     }
@@ -1497,6 +1498,7 @@ mod tests {
             catalog_number: None,
             barcode: None,
             pressing_fitted: false,
+            pressing_counted: false,
             track_total: Some(6),
             disc_total: Some(1),
             popularity: Popularity::default(),
@@ -1662,6 +1664,52 @@ mod tests {
         ] {
             assert!(withholding.contains(&kept), "{kept:?} was not offered");
         }
+    }
+
+    #[test]
+    fn a_closest_pressing_every_pressing_of_its_group_agrees_with_writes_its_totals_but_not_its_identity()
+     {
+        let agreed = TrackToTag {
+            pressing_fitted: true,
+            pressing_counted: true,
+            catalog_number: Some("SHVL 795".to_owned()),
+            barcode: Some("077774638521".to_owned()),
+            ..row()
+        };
+
+        let offering: Vec<TagField> = offered(&agreed)
+            .into_iter()
+            .map(|(field, _)| field)
+            .collect();
+
+        for written in [TagField::TrackTotal, TagField::DiscTotal, TagField::Album] {
+            assert!(offering.contains(&written), "{written:?} was not offered");
+        }
+        for withheld in [
+            TagField::MusicBrainzAlbumId,
+            TagField::CatalogNumber,
+            TagField::Barcode,
+        ] {
+            assert!(!offering.contains(&withheld), "{withheld:?} was offered");
+        }
+    }
+
+    #[test]
+    fn totals_an_album_has_no_answer_for_are_never_offered_however_the_pressing_was_counted() {
+        let unanswered = TrackToTag {
+            album_answered: false,
+            pressing_fitted: true,
+            pressing_counted: true,
+            ..row()
+        };
+
+        let offering: Vec<TagField> = offered(&unanswered)
+            .into_iter()
+            .map(|(field, _)| field)
+            .collect();
+
+        assert!(!offering.contains(&TagField::TrackTotal));
+        assert!(!offering.contains(&TagField::DiscTotal));
     }
 
     #[test]

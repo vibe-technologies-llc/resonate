@@ -777,7 +777,10 @@ pub enum Fit {
     Exact,
     Wider,
     Narrower,
+    WiderAndAgreed,
 }
+
+const WIDER_AND_AGREED_STORED: i64 = 3;
 
 impl Fit {
     pub(crate) const fn stored(self) -> Option<i64> {
@@ -785,7 +788,12 @@ impl Fit {
             Self::Exact => None,
             Self::Wider => Some(1),
             Self::Narrower => Some(2),
+            Self::WiderAndAgreed => Some(WIDER_AND_AGREED_STORED),
         }
+    }
+
+    pub(crate) const fn counts_agreed_by_every_pressing(stored: Option<i64>) -> bool {
+        matches!(stored, Some(WIDER_AND_AGREED_STORED))
     }
 }
 
@@ -1116,6 +1124,18 @@ fn widths(group: &ReleaseGroup) -> impl Iterator<Item = u32> + '_ {
         .filter_map(|release| release.track_count)
 }
 
+fn every_pressing_agrees_on_its_discs(group: &ReleaseGroup) -> bool {
+    let Some(first) = group.releases.first() else {
+        return false;
+    };
+
+    !first.discs.is_empty()
+        && group
+            .releases
+            .iter()
+            .all(|release| release.discs == first.discs)
+}
+
 pub fn closest_release<'a>(
     group: &'a ReleaseGroup,
     album: &AlbumToAsk,
@@ -1125,7 +1145,11 @@ pub fn closest_release<'a>(
     }
     let held = album.track_count;
     if let Some(smallest_wider) = widths(group).filter(|count| *count > held).min() {
-        return earliest_of(counted(group, smallest_wider)).map(|wider| (wider, Fit::Wider));
+        let fit = match album.tagged_tracks.is_none() && every_pressing_agrees_on_its_discs(group) {
+            true => Fit::WiderAndAgreed,
+            false => Fit::Wider,
+        };
+        return earliest_of(counted(group, smallest_wider)).map(|wider| (wider, fit));
     }
     let widest_narrower = widths(group).filter(|count| *count <= held).max()?;
 
@@ -2468,6 +2492,15 @@ mod tests {
             date: date.map(str::to_owned),
             country: None,
             track_count: tracks,
+            discs: Vec::new(),
+        }
+    }
+
+    fn laid_out(release: GroupRelease, discs: &[u32]) -> GroupRelease {
+        GroupRelease {
+            track_count: Some(discs.iter().sum()),
+            discs: discs.to_vec(),
+            ..release
         }
     }
 
@@ -2875,6 +2908,70 @@ mod tests {
             fitted_from(&as_wide_as_the_rip, &declared_wider),
             Some((ORBITS.to_owned(), Fit::Narrower))
         );
+    }
+
+    #[test]
+    fn a_wider_pressing_is_agreed_where_every_pressing_of_the_group_lays_its_discs_out_alike() {
+        let owned = album(Some("The Orbiters"));
+        let alike = group_of(vec![
+            laid_out(group_release(PORTAL, Some("1971-10-30"), None), &[6]),
+            laid_out(group_release(ORBITS, Some("1971"), None), &[6]),
+        ]);
+        assert_eq!(
+            fitted_from(&alike, &owned),
+            Some((ORBITS.to_owned(), Fit::WiderAndAgreed))
+        );
+
+        let split_differently = group_of(vec![
+            laid_out(group_release(PORTAL, Some("1971-10-30"), None), &[3, 3]),
+            laid_out(group_release(ORBITS, Some("1971"), None), &[6]),
+        ]);
+        assert_eq!(
+            fitted_from(&split_differently, &owned),
+            Some((ORBITS.to_owned(), Fit::Wider))
+        );
+
+        let one_unlaid = group_of(vec![
+            laid_out(group_release(PORTAL, Some("1971-10-30"), None), &[6]),
+            group_release(ORBITS, Some("1971"), Some(6)),
+        ]);
+        assert_eq!(
+            fitted_from(&one_unlaid, &owned),
+            Some((ORBITS.to_owned(), Fit::Wider))
+        );
+
+        let declared = AlbumToAsk {
+            tagged_tracks: Some(5),
+            ..album(Some("The Orbiters"))
+        };
+        assert_eq!(
+            fitted_from(&alike, &declared),
+            Some((ORBITS.to_owned(), Fit::Wider))
+        );
+    }
+
+    #[test]
+    fn a_narrower_pressing_is_never_agreed_however_alike_the_pressings_of_its_group_are() {
+        let owned = album(Some("The Orbiters"));
+        let alike = group_of(vec![
+            laid_out(group_release(PORTAL, Some("1971-10-30"), None), &[2]),
+            laid_out(group_release(ORBITS, Some("1971"), None), &[2]),
+        ]);
+
+        assert_eq!(
+            fitted_from(&alike, &owned),
+            Some((ORBITS.to_owned(), Fit::Narrower))
+        );
+    }
+
+    #[test]
+    fn only_the_fit_every_pressing_agreed_on_is_stored_as_agreed() {
+        assert!(Fit::counts_agreed_by_every_pressing(
+            Fit::WiderAndAgreed.stored()
+        ));
+        for fit in [Fit::Exact, Fit::Wider, Fit::Narrower] {
+            assert!(!Fit::counts_agreed_by_every_pressing(fit.stored()));
+        }
     }
 
     #[test]

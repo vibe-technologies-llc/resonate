@@ -11162,6 +11162,7 @@ fn group_release(id: &str, date: &str, tracks: Option<u32>) -> GroupRelease {
         date: Some(date.to_owned()),
         country: None,
         track_count: tracks,
+        discs: Vec::new(),
     }
 }
 
@@ -12316,6 +12317,108 @@ fn an_album_wider_than_every_pressing_of_its_group_lands_the_widest_one() -> Res
                     "the closest pressing was written as a match: {fields:?}"
                 );
             }
+        }
+    }
+    Ok(())
+}
+
+fn five_track_pressing_rows() -> Vec<ReleaseTrack> {
+    orbits_rows()
+        .into_iter()
+        .chain([
+            release_row(4, "Careful with That Axe", Vec::new()),
+            release_row(5, "Set the Controls", Vec::new()),
+        ])
+        .collect()
+}
+
+fn group_of_pressings_laid_out(layouts: [&[u32]; 2]) -> ReleaseGroup {
+    let [earlier, later] = layouts;
+    orbits_group(
+        vec![
+            GroupRelease {
+                discs: later.to_vec(),
+                ..group_release(HOURS, "1996-05-06", Some(later.iter().sum()))
+            },
+            GroupRelease {
+                discs: earlier.to_vec(),
+                ..group_release(RELEASE, "1971-10-30", Some(earlier.iter().sum()))
+            },
+        ],
+        Vec::new(),
+    )
+}
+
+#[test]
+fn an_album_every_pressing_of_its_group_counts_alike_is_written_the_totals_but_not_the_pressing()
+-> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let fake = Arc::new(Fake::new(Canned {
+        found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(4))],
+        found_groups: vec![orbits_group_match(100, Some("The Orbiters"))],
+        groups: vec![group_of_pressings_laid_out([&[5], &[5]])],
+        releases: vec![orbits(five_track_pressing_rows(), Vec::new())],
+        ..Canned::default()
+    }));
+    enrich(&library, &fake, false)?;
+
+    let landed = retagged(&library, false)?;
+    enrich(&library, &fake, true)?;
+    let landed_again = retagged(&library, false)?;
+
+    for preview in [&landed, &landed_again] {
+        assert!(!preview.retagging.writes.is_empty());
+        for write in &preview.retagging.writes {
+            let fields = fields_of(write);
+            for written in [TagField::TrackTotal, TagField::DiscTotal] {
+                assert!(
+                    fields.contains(&written),
+                    "the count every pressing agrees on was withheld: {fields:?}"
+                );
+            }
+            for withheld in [
+                TagField::MusicBrainzAlbumId,
+                TagField::CatalogNumber,
+                TagField::Barcode,
+            ] {
+                assert!(
+                    !fields.contains(&withheld),
+                    "the closest pressing was written as a match: {fields:?}"
+                );
+            }
+            let total = write
+                .edits
+                .iter()
+                .find(|edit| edit.field == TagField::TrackTotal)
+                .map(|edit| edit.value.as_str());
+            assert_eq!(total, Some("5"));
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn an_album_the_pressings_of_its_group_count_apart_is_written_no_totals() -> Result<()> {
+    let (_tree, library) = scanned_orbits()?;
+    let fake = Arc::new(Fake::new(Canned {
+        found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(4))],
+        found_groups: vec![orbits_group_match(100, Some("The Orbiters"))],
+        groups: vec![group_of_pressings_laid_out([&[5], &[3, 2]])],
+        releases: vec![orbits(five_track_pressing_rows(), Vec::new())],
+        ..Canned::default()
+    }));
+    enrich(&library, &fake, false)?;
+
+    let preview = retagged(&library, false)?;
+
+    assert!(!preview.retagging.writes.is_empty());
+    for write in &preview.retagging.writes {
+        let fields = fields_of(write);
+        for withheld in [TagField::TrackTotal, TagField::DiscTotal] {
+            assert!(
+                !fields.contains(&withheld),
+                "a count the pressings disagree on was written: {fields:?}"
+            );
         }
     }
     Ok(())
