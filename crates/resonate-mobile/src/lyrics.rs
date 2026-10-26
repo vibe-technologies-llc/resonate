@@ -601,6 +601,33 @@ mod tests {
     }
 
     #[test]
+    fn an_untimed_line_among_timed_ones_is_a_row_with_no_moment_and_is_never_lit() {
+        let player = player();
+        let id = sung(
+            &player,
+            "[00:01.00]one\n(chorus)\n[00:02.00]two\n[00:30.00]three",
+        );
+
+        let sheet = player.lyrics(id, false).expect("the kept sheet");
+        let frame = player.lyric_frame(id, 1_500);
+        let later = player.lyric_frame(id, 2_500);
+
+        assert_eq!(
+            sheet
+                .lines
+                .iter()
+                .map(|line| line.at_ms)
+                .collect::<Vec<_>>(),
+            vec![Some(1_000), None, Some(2_000), Some(30_000)]
+        );
+        assert_eq!(sheet.lines[1].text, "(chorus)");
+        assert_eq!(frame.line, Some(0));
+        assert_eq!(frame.active, vec![0]);
+        assert_eq!(later.line, Some(2));
+        assert_eq!(later.active, vec![2]);
+    }
+
+    #[test]
     fn a_pause_counts_down_to_the_next_written_line_and_the_light_is_spent() {
         let player = player();
         let id = sung(&player, "[00:01.00]one\n[00:05.00]\n[00:30.00]two");

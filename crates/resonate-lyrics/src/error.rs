@@ -32,8 +32,8 @@ pub enum Error {
     #[error("no lyric provider is named {provider}")]
     NoSuchProvider { provider: SourceId },
 
-    #[error("a synced lyric line carries the moment it is sung at")]
-    LineNotTimed,
+    #[error("a synced lyric set carries at least one line with the moment it is sung at")]
+    NoLineTimed,
 
     #[error(transparent)]
     Domain(#[from] resonate_core::Error),

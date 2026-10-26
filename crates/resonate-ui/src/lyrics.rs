@@ -2070,6 +2070,34 @@ mod tests {
     }
 
     #[test]
+    fn an_untimed_line_between_timed_ones_is_drawn_but_never_lit_nor_read_at() {
+        let now = Instant::now();
+        let settled = now + TURN;
+        let mut model = sung(vec![
+            LyricLine::sung(at(0), "all that you touch"),
+            LyricLine::untimed("(Chorus)"),
+            LyricLine::sung(at(4), "all that you see"),
+        ]);
+        let position = Duration::from_millis(3_900);
+
+        model.follow_the_track(position, now);
+
+        assert_eq!(model.text().len(), 3);
+        assert_eq!(model.moments()[1], None);
+        assert_eq!(model.in_play(position), [Some(0), None]);
+        assert_eq!(model.read_at(), Some(0));
+        assert!((model.lead(0, settled) - 1.0).abs() < f32::EPSILON);
+        assert!(model.lead(1, settled).abs() < f32::EPSILON);
+        assert!(model.standing(1, settled) < LIT);
+
+        model.follow_the_track(at(4), settled);
+
+        assert_eq!(model.in_play(at(4)), [Some(2), None]);
+        assert_eq!(model.read_at(), Some(2));
+        assert!(model.lead(1, settled + TURN).abs() < f32::EPSILON);
+    }
+
+    #[test]
     fn a_pause_leaves_the_line_it_waits_on_and_the_one_after_readable_under_the_dots() {
         let now = Instant::now();
         let settled = now + TURN;

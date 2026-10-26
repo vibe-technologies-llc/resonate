@@ -96,8 +96,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   1 024-frame window, leaves the first second and a half of an unstudied track unextended
 
 ## Later: Lyrics
-- [M] A partly timed LRC drops its untimed lines (section heads, credits, translations) unsaid:
-  placing one needs a moment that neither lights it nor ends the timed line beside it early
 - [L · blocked: gpui] The sung line cannot grow as it lights: gpui 0.2.2 on Linux draws a glyph on a
   whole pixel vertically (`SUBPIXEL_VARIANTS_Y = 1`) and cosmic-text hints every size, so a type
   size in motion shimmers and hops; the line only brightens

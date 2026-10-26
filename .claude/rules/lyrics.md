@@ -26,6 +26,18 @@ dependency (tested without a window).
   its next line or `LIT_AT_MOST`, so one singer entering does not put out the other; with neither
   active the set dims and the pane stays put. `Lyrics` notes at construction whether any line names
   the second voice, so a one-voice sheet reads its latest passed line alone, never the lines before.
+- **A synced set may hold untimed lines, kept where they were written.** `LyricLine::untimed` in a
+  `Lyrics::synced` set is an aside (a section head, a credit, a translation): it stands after the
+  timed line written before it, whatever moment that line is sung at (`placed` groups each timed line
+  with the asides after it, then sorts the groups; ones ahead of every timed line head the set), and
+  `Lyrics::stands` holds the moment each line stands at (an aside's is its timed line's) so
+  `passed` stays a partition point. An aside is never lit, read at or waited on
+  (`LyricLine::can_be_lit`): `line_at`, `voices_in_play`, `waiting_at`, `went_out_before`,
+  `has_ended` and `is_empty` skip it, and `span_of` ignores it when finding where its neighbour's
+  voice next sings, so it never ends the timed line beside it early. `within` carries an aside with
+  its timed line. `synced` refuses a set with no timed line (`Error::NoLineTimed`). The pane and the
+  phones draw an aside as any unlit row, with no moment (`at_ms` none, so it is not a seek target),
+  dimmed by the falloff like its neighbours.
 - **`Credits`**: what a sheet claims about its own making, not which track it is; embedded sets
   carry them unchecked.
 - **A line may carry words, each with a moment, and the sheet's end for it.** `LyricLine::worded`
@@ -170,6 +182,10 @@ dependency (tested without a window).
   line's end. Words go through `[offset:]` with the line; a multi-moment line carries its words to
   each moment. The search index strips the stamps (`store::sung_words`), so `lyrics:` never reaches
   one.
+- **A line with no stamp among stamped lines is kept as an aside.** `Reading` notes how many timed
+  lines precede each (`plain`), and `finish` interleaves them back in file order
+  (`an_untimed_line_among_timed_ones_is_kept_where_it_was_written`); a sheet with no stamp at all is
+  unsynced as before. A multi-stamp line's aside follows its last moment.
 - **Voices: `[v1: words]` / `[v2: words]` after a timed line's timestamp.** The marker is removed
   from the text; none = voice one; an unrecognised bracket stays text.
 

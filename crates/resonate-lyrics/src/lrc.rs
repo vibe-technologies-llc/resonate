@@ -278,7 +278,7 @@ fn moved(at: Duration, from: Duration, to: Duration) -> Duration {
 struct Reading {
     source: SourceId,
     timed: Vec<Timed>,
-    plain: Vec<String>,
+    plain: Vec<(usize, String)>,
     declared: Declared,
     credits: Credits,
     shift: i64,
@@ -378,7 +378,7 @@ impl Reading {
         let text = rest.trim();
         if !identified && !text.is_empty() {
             self.hold(text)?;
-            self.plain.push(text.to_owned());
+            self.plain.push((self.timed.len(), text.to_owned()));
         }
 
         Ok(())
@@ -422,41 +422,49 @@ impl Reading {
         } = self;
 
         if timed.is_empty() {
+            let plain = plain.into_iter().map(|(_, text)| text);
             return Ok(Sheet {
                 declared,
                 lyrics: worth_drawing(Lyrics::plain(source, plain).credited(credits)),
             });
         }
-        let lines = timed
-            .into_iter()
-            .map(|timed| {
-                let at = shifted(timed.at, shift);
-                let line = if timed.words.is_empty() {
-                    LyricLine::sung(at, timed.text)
-                } else {
-                    LyricLine::worded(
-                        at,
-                        timed
-                            .words
-                            .into_iter()
-                            .map(|(sung, word)| SungWord::sung(shifted(sung, shift), word))
-                            .collect(),
-                    )
-                };
-                let line = match timed.ends {
-                    Some(ends) => line.ending(shifted(ends, shift)),
-                    None => line,
-                };
-
-                line.voiced(timed.voice)
-            })
-            .collect();
+        let mut asides = plain.into_iter().peekable();
+        let mut lines = Vec::new();
+        for (index, timed) in timed.into_iter().enumerate() {
+            while let Some((_, text)) = asides.next_if(|(after, _)| *after <= index) {
+                lines.push(LyricLine::untimed(text));
+            }
+            lines.push(lyric_of(timed, shift));
+        }
+        lines.extend(asides.map(|(_, text)| LyricLine::untimed(text)));
 
         Ok(Sheet {
             declared,
             lyrics: worth_drawing(Lyrics::synced(source, lines)?.credited(credits)),
         })
     }
+}
+
+fn lyric_of(timed: Timed, shift: i64) -> LyricLine {
+    let at = shifted(timed.at, shift);
+    let line = if timed.words.is_empty() {
+        LyricLine::sung(at, timed.text)
+    } else {
+        LyricLine::worded(
+            at,
+            timed
+                .words
+                .into_iter()
+                .map(|(sung, word)| SungWord::sung(shifted(sung, shift), word))
+                .collect(),
+        )
+    };
+    let line = match timed.ends {
+        Some(ends) => line.ending(shifted(ends, shift)),
+        None => line,
+    };
+
+    line.voiced(timed.voice)
 }
 
 fn voiced_text(text: &str) -> (Voice, &str) {
@@ -903,6 +911,57 @@ mod tests {
 
         assert_eq!(lyrics.timing(), Timing::Unsynced);
         assert_eq!(plain(&lyrics), ["all that you touch", "all that you see"]);
+    }
+
+    #[test]
+    fn an_untimed_line_among_timed_ones_is_kept_where_it_was_written() {
+        let lyrics = lyrics(
+            "[Verse 1]\n[00:05.00]all that you touch\n(all that you do)\n[00:10.00]all that you see\n\nWritten by Roger",
+        )
+        .expect("a set");
+
+        assert_eq!(lyrics.timing(), Timing::Synced);
+        assert_eq!(
+            lyrics
+                .lines()
+                .iter()
+                .map(|line| (line.at, line.text.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                (None, "[Verse 1]"),
+                (Some(Duration::from_secs(5)), "all that you touch"),
+                (None, "(all that you do)"),
+                (Some(Duration::from_secs(10)), "all that you see"),
+                (None, "Written by Roger"),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_untimed_line_follows_its_timed_line_when_the_timed_lines_are_out_of_order() {
+        let lyrics =
+            lyrics("[00:20.00]second\nnote on the second\n[00:05.00]first\nnote on the first")
+                .expect("a set");
+
+        assert_eq!(
+            plain(&lyrics),
+            ["first", "note on the first", "second", "note on the second"]
+        );
+    }
+
+    #[test]
+    fn untimed_lines_leave_the_timed_line_beside_them_lit_to_its_own_end() {
+        let lyrics = lyrics("[00:00.00]all that you touch\n(chorus)\n[00:04.00]all that you see")
+            .expect("a set");
+
+        assert_eq!(
+            lyrics.voices_in_play(Duration::from_millis(3_900)),
+            [Some(0), None]
+        );
+        assert_eq!(
+            lyrics.voices_in_play(Duration::from_secs(4)),
+            [Some(2), None]
+        );
     }
 
     #[test]
