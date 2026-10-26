@@ -14,7 +14,7 @@ paths:
 # Device sync
 
 `resonate-sync` keeps a listener's devices in step: playlists and saved-query playlists, track favourites, listening history,
-what each device was playing and what a lookup or study learnt about a song (kept lyrics, a study) travel through a server that cannot read them, or straight between
+what each device was playing and what a lookup or study learnt about a song (kept lyrics, a study, a release) travel through a server that cannot read them, or straight between
 devices on one network when the server is away; songs travel from one device to another directly, or through the server's relay where no direct path opens.
 It reaches `resonate-core` alone among workspace crates (the layering job refuses the library,
 engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) and
@@ -164,12 +164,24 @@ platforms; the catalog seam stays thin.
   kind byte, then `SharedLyrics` (text up to `LONGEST_SHARED_LYRICS`, 32 KiB, and whether timed;
   kind 0) or `SharedStudy` (kind 1: the `WholeFile` it measured, i.e. the scan's first-packets
   digest, frame count and rate, then `JUDGED_UNDER`, verdict and its basis, levels, loudness, range,
-  DR, clipping and the 29 band levels; floats as `Figure` bits so a record reads back as itself). A
-  kind a later build adds skips the change, as an unknown tag does
-  (`an_answer_of_a_kind_a_later_build_adds_is_skipped_and_the_rest_read`). The print, recognition,
-  Lyricsfile, release, credits, links and covers do not travel (`FEATURES.md`): the server keeps
-  what is small. **The ledger's `answers` row is keyed by the recording key, the kind and the file**
-  (a study per encode), holds the encoded answer, `here`, stamp and `owed`. A look reads
+  DR, clipping and the 29 band levels; floats as `Figure` bits so a record reads back as itself) or
+  `SharedRelease` (kind 2, boxed in `Answer`: what `land_release` lands, i.e. the release's ids,
+  title, credit, date, country, label, numbers, kind, front-cover flag and links, its media and every
+  track with its recording and track ids, length in milliseconds, codes and links; a link travels as
+  its MusicBrainz type and URL, the service read off the URL again). A kind a later build adds skips
+  the change, as an unknown tag does
+  (`an_answer_of_a_kind_a_later_build_adds_is_skipped_and_the_rest_read`), so a build reading only
+  lyrics and studies skips a release whole
+  (`a_release_reads_back_and_a_build_knowing_only_lyrics_and_studies_skips_it`). **A release is kept
+  small for the server**: it travels only with a track, at most `LINKS_SHARED_AT_MOST` (32) links on
+  the release and on each track, `CODES_SHARED_AT_MOST` (8) codes a track and a
+  `SharedRelease::weight` (its text plus 16 bytes an item) of at most `HEAVIEST_SHARED_RELEASE`
+  (64 KiB); the reader refuses longer lists
+  (`a_release_heavier_than_the_server_keeps_stays_home`). The print, recognition, Lyricsfile and
+  covers do not travel (`FEATURES.md`). **The ledger's `answers` row is keyed by the recording key,
+  the kind and the file** (a study per encode; lyrics kind 0 and a release kind 2 with no file, so
+  the words and the release of one song are two rows,
+  `a_release_travels_beside_the_words_of_its_song_and_is_not_sent_back`), holds the encoded answer, `here`, stamp and `owed`. A look reads
   `Catalog::answers_after(answers_mark)` (`ANSWERS_LOOKED_AT_ONCE`, 500, up to
   `ANSWER_PAGES_A_LOOK` pages; the catalog answers `at >= mark`, the mark moves to the last `at`, and
   a whole page of one instant steps past it) and stamps and owes only an answer whose encoding
@@ -224,7 +236,24 @@ study lands only on a copy that is the same file**: every whole-file row whose `
 lossy guess this build cannot name, another `JUDGED_UNDER` or another band layout is settled and
 written nowhere
 (`a_study_and_kept_words_land_on_a_catalog_holding_the_same_file_and_read_back_as_they_went`,
-`a_study_of_another_encode_or_words_for_another_take_are_never_written`). The binary's
+`a_study_of_another_encode_or_words_for_another_take_are_never_written`). **A release travels once
+an album, keyed by the album's first paired track** (lowest disc and position), and only where the
+album's own landing was a release matched exactly: `albums.mbid` and `release_title` set,
+`pressing_fit` NULL (a closest pressing is a guess for this album, never another's answer), its
+credit kept in `release_credits` (an album landed before that table is shared once its release is
+landed again) and a release row paired with a track; `at` is `albums.answered`. **It lands only
+through the rules `land_release` lands with**: the album is that of the copy holding the recording
+strictly (as words do), else every album holding a track whose recording id one of the release's
+tracks names; an album the listener refused the release for, one whose files or own answer name
+another release (`albums.mbid`; the same id, never answered, lands as `Pressing::AsHeld`) or
+another release group is passed over; otherwise the release is weighed as a strict search answer
+(`enrich::takes_strictly`: the credit agrees with the owner or the performers, the track count is
+the declared one) and lands as an exact pressing, then `rematch_release_tracks` pairs the rows
+(titles and numbers of the files are never rewritten; ids and codes only fill) and each credited
+artist the catalog holds by its folded name, unidentified, takes the credit's MBID. The album is
+then answered and its tracks paired, so the pass asks neither again
+(`a_release_landed_on_one_catalog_lands_on_another_holding_the_album_and_is_not_asked_again`,
+`a_release_the_album_held_there_does_not_strictly_match_is_never_written`). The binary's
 `Catalogued` sits over `Library` (`resonate-library`'s `synced.rs`: `synced_playlists` reads lists
 only and `synced_queries` the saved queries, a query written over a list or the reverse made anew
 rather than overwritten; a recording resolves by MBID, else folded artist, title words and album with lengths within

@@ -17,7 +17,7 @@ rows read via `Player::media` like any unscanned row.
 - **Schema = one `V1`, the baseline of 0.1.0, and a `MIGRATIONS` chain after it.** `V1` is the first
   release's schema as one SQL batch and is never edited, since a stamped catalog of a release would be
   stranded; a change appends a step to `MIGRATIONS` (`listens` naming the device and listen a remote
-  listen came from is the first, `songs_received` the second, forgetting the read stamp of every learnt group whose songs carry no length the third, `retagged_sheets` the fourth, `offered_steps` the fifth, `track_studies.band_levels` the sixth). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
+  listen came from is the first, `songs_received` the second, forgetting the read stamp of every learnt group whose songs carry no length the third, `retagged_sheets` the fourth, `offered_steps` the fifth, `track_studies.band_levels` the sixth, `release_credits` the seventh). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
   `fingerprint_of(V1)` (the stamp 0.1.0 wrote) and `STAMPS[n + 1]` hashes `STAMPS[n]` over step `n`'s
   text, in a `const fn`; `SCHEMA_FINGERPRINT` is the last. `lay_out`: `UNSTAMPED` writes `V1` and
   every step; this build's stamp opens; a stamp that is an earlier `STAMPS` entry runs the steps after
@@ -542,8 +542,10 @@ rows read via `Player::media` like any unscanned row.
   a taken name aliased like a list's, a query written over a list made anew, an unknown code
   `None`; `a_saved_query_is_read_with_its_text_and_written_on_another_catalog_to_be_asked_there`).
   **What a lookup or study learnt is shared as an answer** (`answers.rs`, `sync.md`): kept words
-  and current studies of whole files read out in `at` order, taken back only where the recording is
-  held strictly (words) or the copy is the same file by packets digest, length and rate (a study).
+  and current studies of whole files read out in `at` order, and releases landed exactly, taken back
+  only where the recording is held strictly (words, a release: weighed again by the strict rule and
+  landed through `land_release`) or the copy is the same file by packets digest, length and rate (a
+  study).
   `Library::synced_revision`
   counts these writes, which `data_version` cannot see; `catalog_revision` adds every other writer.
 
@@ -734,7 +736,9 @@ rows read via `Player::media` like any unscanned row.
   listings, sorts, wants and `organise` destinations read.
 - **Landing a release is one transaction, pairing its rows a second.** `land_release` writes release
   columns, fills `year` only where the scan left none, stamps `answered`, deletes and reinserts
-  `release_tracks`, `release_media`, `album_links`, writes each row's `release_track_links`. Wants
+  `release_tracks`, `release_media`, `album_links`, `release_credits` (the release's credit in order:
+name, join phrase, MBID; what a release shared with a paired device is weighed by, `sync.md`; a
+group landing and `forget_the_match` clear it), writes each row's `release_track_links`. Wants
   under the album are read first (`wants_under`) and put back after. **A release row keeps every
   code of its recording** in `release_track_isrcs` (`WANTS_UNHELD` reads them into `Want::isrcs`,
   `providers.md`). `Carried` = what a want is put back *by*, most exact first: `Track`, `Recording`,

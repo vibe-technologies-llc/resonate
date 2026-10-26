@@ -4,7 +4,9 @@ use std::{
 };
 
 use resonate_core::{
-    Answer, Figure, LONGEST_SHARED_LYRICS, Mbid, Recording, SharedLyrics, SharedStudy, WholeFile,
+    Answer, CODES_SHARED_AT_MOST, Figure, LINKS_SHARED_AT_MOST, LONGEST_SHARED_LYRICS, Link, Mbid,
+    Recording, SharedCredit, SharedLyrics, SharedMedium, SharedRelease, SharedStudy, SharedTrack,
+    WholeFile,
 };
 
 use crate::{
@@ -30,6 +32,13 @@ const RECORD_AT_LEAST: usize = 2;
 const BAND_LEVELS_AT_MOST: usize = 256;
 const ANSWER_LYRICS: u8 = 0;
 const ANSWER_STUDY: u8 = 1;
+const ANSWER_RELEASE: u8 = 2;
+const ANSWER_KINDS: &[u8] = &[ANSWER_LYRICS, ANSWER_STUDY, ANSWER_RELEASE];
+const MEDIUM_AT_LEAST: usize = 4;
+const TRACK_AT_LEAST: usize = 9;
+const CREDIT_AT_LEAST: usize = 3;
+const LINK_AT_LEAST: usize = 2;
+const CODE_AT_LEAST: usize = 1;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ToServer {
@@ -321,7 +330,75 @@ impl Writer {
                 let end = study.band_levels.len().min(BAND_LEVELS_AT_MOST);
                 self.bytes(&study.band_levels[..end]);
             }
+            Answer::Release(release) => {
+                self.byte(ANSWER_RELEASE);
+                self.release(release);
+            }
         }
+    }
+
+    fn optional_mbid(&mut self, mbid: Option<&Mbid>) {
+        self.optional_text(mbid.map(Mbid::as_str));
+    }
+
+    fn links(&mut self, links: &[Link]) {
+        let kept = &links[..links.len().min(LINKS_SHARED_AT_MOST)];
+        self.length(kept.len());
+        for link in kept {
+            self.text(link.relation.spelled());
+            self.text(&link.url);
+        }
+    }
+
+    fn release(&mut self, release: &SharedRelease) {
+        self.text(release.id.as_str());
+        self.optional_mbid(release.group.as_ref());
+        self.text(&release.title);
+        self.length(release.credit.len());
+        for credit in &release.credit {
+            self.text(&credit.name);
+            self.text(&credit.joined_by);
+            self.optional_mbid(credit.mbid.as_ref());
+        }
+        for text in [
+            &release.date,
+            &release.country,
+            &release.label,
+            &release.catalog_number,
+            &release.barcode,
+            &release.kind,
+            &release.disambiguation,
+        ] {
+            self.optional_text(text.as_deref());
+        }
+        self.flag(release.has_front_cover);
+        self.links(&release.links);
+        self.length(release.media.len());
+        for medium in &release.media {
+            self.number(u64::from(medium.position));
+            self.optional_text(medium.format.as_deref());
+            self.optional_text(medium.title.as_deref());
+            self.length(medium.tracks.len());
+            for track in &medium.tracks {
+                self.track(track);
+            }
+        }
+    }
+
+    fn track(&mut self, track: &SharedTrack) {
+        self.number(u64::from(track.position));
+        self.text(&track.number);
+        self.text(&track.title);
+        self.optional_text(track.artist.as_deref());
+        self.optional_mbid(track.recording.as_ref());
+        self.optional_mbid(track.track.as_ref());
+        self.optional_number(track.length_ms);
+        let codes = &track.isrcs[..track.isrcs.len().min(CODES_SHARED_AT_MOST)];
+        self.length(codes.len());
+        for code in codes {
+            self.text(code);
+        }
+        self.links(&track.links);
     }
 
     pub fn tags(&mut self, tags: &SongTags) {
@@ -539,7 +616,15 @@ impl<'a> Reader<'a> {
     }
 
     pub fn answer(&mut self) -> Result<Option<Answer>> {
-        match self.byte()? {
+        self.answer_among(ANSWER_KINDS)
+    }
+
+    fn answer_among(&mut self, known: &[u8]) -> Result<Option<Answer>> {
+        let kind = self.byte()?;
+        if !known.contains(&kind) {
+            return Ok(None);
+        }
+        match kind {
             ANSWER_LYRICS => {
                 let text = str::from_utf8(self.bytes(LONGEST_SHARED_LYRICS)?)
                     .map(str::to_owned)
@@ -576,8 +661,125 @@ impl<'a> Reader<'a> {
                     band_levels: self.bytes(BAND_LEVELS_AT_MOST)?.to_vec(),
                 })))
             }
+            ANSWER_RELEASE => self
+                .release()
+                .map(|release| Some(Answer::Release(Box::new(release)))),
             _ => Ok(None),
         }
+    }
+
+    fn mbid(&mut self) -> Result<Mbid> {
+        Mbid::new(&self.text()?).map_err(|_| Error::Malformed(Malformed::NotAnMbid))
+    }
+
+    fn optional_mbid(&mut self) -> Result<Option<Mbid>> {
+        if self.flag()? {
+            self.mbid().map(Some)
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn at_most(&mut self, each_at_least: usize, most: usize) -> Result<usize> {
+        let count = self.count_of(each_at_least)?;
+        if count > most {
+            return Err(Error::Malformed(Malformed::Overlong { length: count }));
+        }
+        Ok(count)
+    }
+
+    fn links(&mut self) -> Result<Vec<Link>> {
+        let count = self.at_most(LINK_AT_LEAST, LINKS_SHARED_AT_MOST)?;
+        (0..count)
+            .map(|_| {
+                let relation = self.text()?;
+                Ok(Link::new(&relation, self.text()?))
+            })
+            .collect()
+    }
+
+    fn release(&mut self) -> Result<SharedRelease> {
+        let id = self.mbid()?;
+        let group = self.optional_mbid()?;
+        let title = self.text()?;
+        let credits = self.count_of(CREDIT_AT_LEAST)?;
+        let credit = (0..credits)
+            .map(|_| {
+                Ok(SharedCredit {
+                    name: self.text()?,
+                    joined_by: self.text()?,
+                    mbid: self.optional_mbid()?,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let date = self.optional_text()?;
+        let country = self.optional_text()?;
+        let label = self.optional_text()?;
+        let catalog_number = self.optional_text()?;
+        let barcode = self.optional_text()?;
+        let kind = self.optional_text()?;
+        let disambiguation = self.optional_text()?;
+        let has_front_cover = self.flag()?;
+        let links = self.links()?;
+        let media = self.count_of(MEDIUM_AT_LEAST)?;
+        let media = (0..media)
+            .map(|_| {
+                let position = self.small()?;
+                let format = self.optional_text()?;
+                let title = self.optional_text()?;
+                let tracks = self.count_of(TRACK_AT_LEAST)?;
+                let tracks = (0..tracks)
+                    .map(|_| self.track())
+                    .collect::<Result<Vec<_>>>()?;
+                Ok(SharedMedium {
+                    position,
+                    format,
+                    title,
+                    tracks,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(SharedRelease {
+            id,
+            group,
+            title,
+            credit,
+            date,
+            country,
+            label,
+            catalog_number,
+            barcode,
+            kind,
+            disambiguation,
+            has_front_cover,
+            links,
+            media,
+        })
+    }
+
+    fn track(&mut self) -> Result<SharedTrack> {
+        let position = self.small()?;
+        let number = self.text()?;
+        let title = self.text()?;
+        let artist = self.optional_text()?;
+        let recording = self.optional_mbid()?;
+        let track = self.optional_mbid()?;
+        let length_ms = self.optional_number()?;
+        let codes = self.at_most(CODE_AT_LEAST, CODES_SHARED_AT_MOST)?;
+        let isrcs = (0..codes)
+            .map(|_| self.text())
+            .collect::<Result<Vec<_>>>()?;
+        Ok(SharedTrack {
+            position,
+            number,
+            title,
+            artist,
+            recording,
+            track,
+            length_ms,
+            isrcs,
+            links: self.links()?,
+        })
     }
 
     pub fn tags(&mut self) -> Result<SongTags> {
@@ -1136,12 +1338,16 @@ pub fn encoded_change(change: &Change) -> Vec<u8> {
 }
 
 pub fn decoded_bundle(bytes: &[u8]) -> Result<Vec<Change>> {
+    decoded_bundle_knowing(bytes, ANSWER_KINDS)
+}
+
+fn decoded_bundle_knowing(bytes: &[u8], answers: &[u8]) -> Result<Vec<Change>> {
     let mut reader = Reader::new(bytes);
     let count = reader.count()?;
     let mut changes = Vec::with_capacity(count);
     for _ in 0..count {
         let encoded = reader.bytes(LARGEST_BLOB)?;
-        if let Some(change) = decoded_change(encoded)? {
+        if let Some(change) = decoded_change(encoded, answers)? {
             changes.push(change);
         }
     }
@@ -1149,7 +1355,7 @@ pub fn decoded_bundle(bytes: &[u8]) -> Result<Vec<Change>> {
     Ok(changes)
 }
 
-fn decoded_change(bytes: &[u8]) -> Result<Option<Change>> {
+fn decoded_change(bytes: &[u8], answers: &[u8]) -> Result<Option<Change>> {
     let mut reader = Reader::new(bytes);
     let change = match reader.byte()? {
         0 => Change::Device(DeviceNote {
@@ -1244,7 +1450,7 @@ fn decoded_change(bytes: &[u8]) -> Result<Option<Change>> {
         7 => {
             let recording = reader.recording()?;
             let stamp = reader.stamp()?;
-            let Some(answer) = reader.answer()? else {
+            let Some(answer) = reader.answer_among(answers)? else {
                 return Ok(None);
             };
             Change::Answer(AnswerNote {
@@ -1693,6 +1899,75 @@ mod tests {
         assert_eq!(
             decoded_bundle(&bundle.finish()).expect("decoded"),
             vec![known]
+        );
+    }
+
+    fn released() -> Answer {
+        let echoes = SharedTrack {
+            position: 6,
+            number: "6".into(),
+            title: "Echoes".into(),
+            artist: None,
+            recording: Some(Mbid::new("83d91898-7763-47d7-b03b-b92132375c47").expect("mbid")),
+            track: None,
+            length_ms: Some(1_411_000),
+            isrcs: vec!["GBN9Y1100006".into()],
+            links: vec![Link::new(
+                "streaming",
+                "https://tidal.com/track/55391743".into(),
+            )],
+        };
+        Answer::Release(Box::new(SharedRelease {
+            id: Mbid::new("b84ee12a-09ef-421b-82de-0441a926375b").expect("mbid"),
+            group: Some(Mbid::new("a5bdf1b3-0cd8-3a1e-9e3a-0a4b1a4c4f0e").expect("mbid")),
+            title: "Meddle".into(),
+            credit: vec![SharedCredit {
+                name: "Pink Floyd".into(),
+                joined_by: String::new(),
+                mbid: Some(Mbid::new("83d91898-7763-47d7-b03b-b92132375c47").expect("mbid")),
+            }],
+            date: Some("1971-10-30".into()),
+            country: Some("GB".into()),
+            label: Some("Harvest".into()),
+            catalog_number: None,
+            barcode: None,
+            kind: Some("Album".into()),
+            disambiguation: None,
+            has_front_cover: true,
+            links: vec![Link::new(
+                "discogs",
+                "https://www.discogs.com/release/1".into(),
+            )],
+            media: vec![SharedMedium {
+                position: 1,
+                format: Some("CD".into()),
+                title: None,
+                tracks: vec![echoes],
+            }],
+        }))
+    }
+
+    #[test]
+    fn a_release_reads_back_and_a_build_knowing_only_lyrics_and_studies_skips_it() {
+        let release = Change::Answer(AnswerNote {
+            recording: song("Echoes"),
+            stamp: stamp(),
+            answer: released(),
+        });
+        let study = Change::Answer(AnswerNote {
+            recording: song("Echoes"),
+            stamp: stamp(),
+            answer: studied(),
+        });
+        let bundle = encoded_bundle(&[release.clone(), study.clone()]);
+
+        assert_eq!(
+            decoded_bundle(&bundle).expect("decoded"),
+            vec![release, study.clone()]
+        );
+        assert_eq!(
+            decoded_bundle_knowing(&bundle, &[ANSWER_LYRICS, ANSWER_STUDY]).expect("decoded"),
+            vec![study]
         );
     }
 

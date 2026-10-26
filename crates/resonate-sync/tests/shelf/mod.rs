@@ -106,6 +106,7 @@ impl Shelf {
         let at = inside.next_answered;
         inside.answers.retain(|held| {
             !(held.recording.names_the_same_song_as(&recording)
+                && std::mem::discriminant(&held.answer) == std::mem::discriminant(&answer)
                 && held.answer.file() == answer.file())
         });
         inside.answers.push(Answered {

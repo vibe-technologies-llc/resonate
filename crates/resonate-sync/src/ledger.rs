@@ -26,6 +26,7 @@ pub const ANSWERS_LOOKED_AT_ONCE: usize = 500;
 const ANSWER_PAGES_A_LOOK: usize = 8;
 const ANSWER_OF_LYRICS: i64 = 0;
 const ANSWER_OF_A_STUDY: i64 = 1;
+const ANSWER_OF_A_RELEASE: i64 = 2;
 
 const V1: &str = "
 CREATE TABLE state (
@@ -211,13 +212,14 @@ struct AnswerSlot {
 
 impl AnswerSlot {
     fn of(recording: &Recording, answer: &Answer) -> Self {
-        let (kind, file) = match answer.file() {
-            None => (ANSWER_OF_LYRICS, Vec::new()),
-            Some(file) => {
+        let (kind, file) = match answer {
+            Answer::Lyrics(_) => (ANSWER_OF_LYRICS, Vec::new()),
+            Answer::Release(_) => (ANSWER_OF_A_RELEASE, Vec::new()),
+            Answer::Study(study) => {
                 let mut slot = Vec::with_capacity(20);
-                slot.extend_from_slice(&file.packets.to_le_bytes());
-                slot.extend_from_slice(&file.frames.to_le_bytes());
-                slot.extend_from_slice(&file.rate.to_le_bytes());
+                slot.extend_from_slice(&study.file.packets.to_le_bytes());
+                slot.extend_from_slice(&study.file.frames.to_le_bytes());
+                slot.extend_from_slice(&study.file.rate.to_le_bytes());
                 (ANSWER_OF_A_STUDY, slot)
             }
         };
