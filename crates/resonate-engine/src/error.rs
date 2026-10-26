@@ -159,7 +159,10 @@ const fn cause_of_a_read(read: &resonate_codec::Error) -> Cause {
         | Read::OpenTookTooLong { .. }
         | Read::LocatorNotUsable { .. }
         | Read::NoRoomToSpool { .. }
-        | Read::Unwritable { .. } => Cause::Unreadable,
+        | Read::Unwritable { .. }
+        | Read::SheetUnspellable { .. }
+        | Read::SheetTrackNotNamedOnce { .. }
+        | Read::SheetValueUnwritable { .. } => Cause::Unreadable,
         Read::UnrecognisedContainer { .. }
         | Read::NoAudioTrack { .. }
         | Read::NoDecoder { .. }

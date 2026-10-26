@@ -46,7 +46,7 @@ const MOVES_PER_BATCH: usize = 256;
 
 const COMPONENT_BYTES: usize = 255;
 const SHEET_EXTENSION: &str = "cue";
-const STAGED: &str = ".resonate-staging";
+pub(crate) const STAGED: &str = ".resonate-staging";
 const PARKED: &str = "resonate-parked";
 const COMPARED_AT_ONCE: usize = 1 << 20;
 const SEGMENT_SEPARATOR: char = '/';
@@ -2298,7 +2298,7 @@ fn noted_staging(library: &Library, landing: &Path) -> Result<PathBuf> {
     Ok(staged)
 }
 
-fn staged_left(library: &Library, staged: &Path) {
+pub(crate) fn staged_left(library: &Library, staged: &Path) {
     match swept(staged) {
         Ok(()) => {
             if let Err(error) = library.staged_away(staged) {
@@ -2764,7 +2764,7 @@ fn settle(landed: &[Move]) {
     }
 }
 
-fn settled_folder(folder: &Path) {
+pub(crate) fn settled_folder(folder: &Path) {
     if let Err(source) = fs::File::open(folder).and_then(|opened| opened.sync_all()) {
         let error = Error::Move {
             op: MoveOp::Settle,

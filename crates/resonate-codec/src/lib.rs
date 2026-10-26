@@ -25,6 +25,7 @@ mod prescan;
 mod probe;
 mod registry;
 mod riff;
+mod sheet;
 mod source;
 mod speakers;
 mod splices;
@@ -64,6 +65,7 @@ pub use crate::{
         CoverArt, ImageFormat, PacketDigest, Pictured, Picturing, Scanned, probe, probe_cover_art,
         probe_pictured, probe_scanned, probe_span,
     },
+    sheet::{Placing, SheetEdit, SheetField, SheetScope, SheetText},
     source::{
         FormatHint, Hinting, LocalFiles, Media, MediaProvider, MediaStream, Reading, Sources,
         StandIn, StoodIn,
