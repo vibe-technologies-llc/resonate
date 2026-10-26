@@ -55,6 +55,7 @@ tracing-subscriber.workspace = true
 unicode-width.workspace = true
 
 [dev-dependencies]
+png.workspace = true
 rustix = { workspace = true, features = ["pty"] }
 
 [lints]

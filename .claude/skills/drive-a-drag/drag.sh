@@ -72,6 +72,8 @@ send() {
 }
 until grep -q '^fakein: ready' "$OUT/fakein.log"; do sleep 0.1; done
 
+spectacle -b -n -f -o "$OUT/before.png" > /dev/null 2>&1
+
 set -- $FROM
 send "move $1 $2"
 send "sleep 0.3"
@@ -88,6 +90,7 @@ echo quit >&3
 status=0
 grep -q '^source: drag-end False' "$OUT/source.log" || { echo "the drag was not accepted"; status=1; }
 [ -f "$OUT/music/one.flac" ] || { echo "the dropped file was not copied into the music folder"; status=1; }
+[ -s "$OUT/before.png" ] || { echo "no screenshot before the drag"; status=1; }
 [ -s "$OUT/over.png" ] || { echo "no screenshot of the drag"; status=1; }
 echo "screenshots and logs in $OUT"
 exit $status
