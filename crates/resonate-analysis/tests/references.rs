@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use resonate_analysis::{Loudness, Watch, study};
+use resonate_analysis::{Finding, Loudness, Verdict, Watch, study};
 use resonate_codec::Sources;
 use resonate_core::MediaLocation;
 
@@ -33,6 +33,12 @@ const TONE_HZ: f32 = 997.0;
 const PRINT_SECONDS: u32 = 20;
 const PRINT_RATE: u32 = 11_025;
 const PRINT_ALGORITHM: &str = "2";
+
+const MUSIC_RATE: u32 = 44_100;
+const MUSIC_SECONDS: u32 = 30;
+const AAC_BITRATES: [&str; 2] = ["256k", "320k"];
+const FRAMES_CUT_FROM_THE_DECODE: u32 = 1_000;
+const SOURCE_LATTICE_BELOW: f32 = 0.01;
 
 static NEXT: AtomicU32 = AtomicU32::new(0);
 
@@ -360,4 +366,108 @@ fn a_print_of_a_clip_at_chromaprints_own_rate_is_the_one_fpcalc_makes() {
         Duration::from_secs(u64::from(PRINT_SECONDS))
     );
     assert_eq!(printed.encoded(), reference.trim_end_matches('='));
+}
+
+fn wideband_music(rate: u32, seconds: u32) -> Vec<f32> {
+    let mut noises = [Noise(0x0bad_cafe), Noise(0x5eed_1e55)];
+    let mut swell = Noise(0x0dd_ba11);
+    let mut gain = 0.2_f32;
+    let beat = rate as usize / 4;
+    (0..(rate * seconds) as usize)
+        .flat_map(|frame| {
+            if frame % beat == 0 {
+                gain = 0.05 + 0.15 * (swell.next() + 1.0);
+            }
+            let time = frame as f32 / rate as f32;
+            let decay = (-((frame % beat) as f32) / beat as f32 * 3.0).exp();
+            let melody =
+                (time * std::f32::consts::TAU * (330.0 + 110.0 * (time * 0.7).sin())).sin();
+            let shared = noises[0].next();
+            let apart = noises[1].next();
+            let left = gain * decay * (0.6 * shared + 0.4 * apart) + 0.2 * melody;
+            let right = gain * decay * (0.6 * shared - 0.4 * apart) + 0.15 * melody;
+            [left, right]
+        })
+        .collect()
+}
+
+fn ffmpeg(arguments: &[&std::ffi::OsStr]) -> Option<()> {
+    let status = Command::new("ffmpeg")
+        .args(["-v", "error", "-y"])
+        .args(arguments)
+        .status()
+        .ok()?;
+    status.success().then_some(())
+}
+
+fn on_aac_steps(study: &resonate_analysis::Study) -> bool {
+    study
+        .judgement
+        .findings
+        .iter()
+        .any(|finding| matches!(finding, Finding::AacSteps { .. }))
+}
+
+#[test]
+fn ffmpegs_aac_at_256_and_320_kbps_decoded_back_to_flac_lands_on_its_quantiser_steps_and_the_source_does_not()
+ {
+    let tree = Tree::new();
+    let wave = tree.wave(
+        "music.wav",
+        MUSIC_RATE,
+        STEREO,
+        &wideband_music(MUSIC_RATE, MUSIC_SECONDS),
+    );
+    let source = tree.root.join("source.flac");
+    let as_flac = |from: &Path, to: &Path, filter: Option<String>| {
+        let mut arguments = vec![std::ffi::OsStr::new("-i"), from.as_os_str()];
+        let filter = filter.map(std::ffi::OsString::from);
+        if let Some(filter) = &filter {
+            arguments.extend([std::ffi::OsStr::new("-af"), filter.as_os_str()]);
+        }
+        arguments.extend(["-sample_fmt", "s16", "-c:a", "flac"].map(std::ffi::OsStr::new));
+        arguments.push(to.as_os_str());
+        ffmpeg(&arguments)
+    };
+    if as_flac(&wave, &source, None).is_none() {
+        eprintln!("skipped: no ffmpeg to encode AAC with");
+        return;
+    }
+
+    let studied_source = studied(&source);
+
+    assert!(!on_aac_steps(&studied_source), "{studied_source:?}");
+    assert_ne!(studied_source.judgement.verdict, Verdict::Fake);
+    let steps = studied_source.steps.expect("a lossless source is weighed");
+    assert!(steps.lattice < SOURCE_LATTICE_BELOW, "{steps:?}");
+
+    for bitrate in AAC_BITRATES {
+        let encoded = tree.root.join(format!("{bitrate}.m4a"));
+        ffmpeg(&[
+            "-i".as_ref(),
+            source.as_os_str(),
+            "-c:a".as_ref(),
+            "aac".as_ref(),
+            "-b:a".as_ref(),
+            bitrate.as_ref(),
+            encoded.as_os_str(),
+        ])
+        .expect("an AAC encode");
+        let whole = tree.root.join(format!("{bitrate}.flac"));
+        let cut = tree.root.join(format!("{bitrate}-cut.flac"));
+        as_flac(&encoded, &whole, None).expect("a decode");
+        as_flac(
+            &encoded,
+            &cut,
+            Some(format!("atrim=start_sample={FRAMES_CUT_FROM_THE_DECODE}")),
+        )
+        .expect("a cut decode");
+
+        for decoded in [&whole, &cut] {
+            let study = studied(decoded);
+
+            assert!(on_aac_steps(&study), "{bitrate}: {study:?}");
+            assert_eq!(study.judgement.verdict, Verdict::Fake, "{bitrate}");
+        }
+    }
 }

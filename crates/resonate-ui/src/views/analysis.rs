@@ -365,7 +365,8 @@ fn finding_colour(finding: &Finding) -> u32 {
     match finding {
         Finding::Wall { lossy: Some(_), .. }
         | Finding::Upsampled { .. }
-        | Finding::Padded { .. } => theme::failure(),
+        | Finding::Padded { .. }
+        | Finding::AacSteps { .. } => theme::failure(),
         Finding::Clipped { .. } | Finding::DcOffset { .. } | Finding::MonoAsStereo => {
             theme::converted()
         }

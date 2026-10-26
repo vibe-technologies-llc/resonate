@@ -61,9 +61,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   lyric text (LRCLIB's text search finds none)
 
 ## Identification
-- [L · 0.2.0] An encode with no lowpass a wall can find reads as lossless: ffmpeg's AAC at 256 and 320 kbps
-  measured the same as its source by every spectral feature `analysis.md` lists; no FhG encode
-  weighed
+- [M · 0.2.0] AAC's quantiser steps were weighed only on ffmpeg's encoder (every decode at 256 and
+  320 kbps found) and faac's (18 of 31 at 160 kbps): no Apple, FhG or fdk encode weighed, and a
+  lossy decode with neither a wall nor AAC's frames (a resampled AAC, an MP3 or Vorbis with no
+  lowpass) still reads as lossless
 
 ## Keyboard and accessibility
 - [S · 0.2.0] The Favourites shelves (strips no reach key walks) take a plain click alone: a choice
