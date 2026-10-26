@@ -68,7 +68,8 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Keyboard and accessibility
 - [S · 0.2.0] A screen reader hears a plot as an image with a one-line description (the cutoff, the
   mode, the band count), not its values, and the Statistics chart's bars and the Missing and
-  Suggestions cards are not named; none of the cells, links, lyric
+  Suggestions cards are not named; a link `kit::cut_to_fit` shortened (the bar's, the inspector's) is
+  named by its cut text (*Echo…*); none of the cells, links, lyric
   lines, plots, the caret and selection or the menu the reader follows has been heard over AT-SPI
   with a reader, only built and read back in tests, since gpui's test platform never activates the
   tree
