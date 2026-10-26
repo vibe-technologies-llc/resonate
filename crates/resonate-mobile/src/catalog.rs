@@ -71,6 +71,14 @@ CREATE TABLE playlist_queries (
 ) STRICT;
 ";
 
+const DOCUMENTS_THAT_WILL_NOT_DECODE_ARE_REMEMBERED: &str = "
+CREATE TABLE unstudied (
+    track INTEGER PRIMARY KEY REFERENCES documents(id),
+    under INTEGER NOT NULL
+) STRICT;
+CREATE TRIGGER documents_forget_what_would_not_decode AFTER UPDATE OF size, modified ON documents WHEN old.size IS NOT new.size OR old.modified IS NOT new.modified BEGIN DELETE FROM unstudied WHERE track = new.id; END;
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     LISTENS_NAME_THEIR_ORIGIN,
@@ -79,6 +87,7 @@ const MIGRATIONS: &[&str] = &[
     DOCUMENTS_FROM_BEFORE_DATES_TAKE_THEIR_FILES_TIME,
     STUDIES_KEEP_WHAT_WAS_HEARD,
     PLAYLISTS_FILL_THEMSELVES_FROM_A_SAVED_SEARCH,
+    DOCUMENTS_THAT_WILL_NOT_DECODE_ARE_REMEMBERED,
 ];
 
 #[cfg(test)]
@@ -878,6 +887,65 @@ mod tests {
 
         assert_eq!(after_retitle.as_deref(), Some("disagrees"));
         assert_eq!(after_change, None);
+        drop(held);
+        drop(opened);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn a_catalog_of_before_the_marks_gains_them_and_forgets_a_mark_with_the_file() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock")
+            .as_nanos();
+        let path = env::temp_dir().join(format!("resonate-mobile-unstudied-{unique}.sqlite"));
+        let connection = Connection::open(&path).expect("a database");
+        connection
+            .create_scalar_function(
+                "folded",
+                1,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
+            )
+            .expect("the fold");
+        for step in &MIGRATIONS[..MIGRATIONS.len() - 1] {
+            connection.execute_batch(step).expect("an earlier version");
+        }
+        connection
+            .execute_batch(
+                "INSERT INTO documents (uri, name, title, artist, album, duration_ms, rate, codec, size, modified)
+                 VALUES ('content://music/old.flac', 'old.flac', 'Old', 'A', 'B', 1000, 44100, 'flac', 10, 1700000000123)",
+            )
+            .expect("a document of before");
+        connection
+            .pragma_update(
+                None,
+                "user_version",
+                u32::try_from(MIGRATIONS.len() - 1).expect("a count"),
+            )
+            .expect("its stamp");
+        drop(connection);
+
+        let opened = Catalog::open(&path).expect("migrated");
+        let held = opened.0.lock();
+        let marks = || -> i64 {
+            held.query_row("SELECT count(*) FROM unstudied", [], |row| row.get(0))
+                .expect("a count")
+        };
+        held.execute(
+            "INSERT INTO unstudied (track, under) SELECT id, 2 FROM documents",
+            [],
+        )
+        .expect("a mark");
+        held.execute("UPDATE documents SET title = 'Older'", [])
+            .expect("a retitle");
+        let after_retitle = marks();
+        held.execute("UPDATE documents SET modified = 1700000000124", [])
+            .expect("a touched file");
+        let after_touch = marks();
+
+        assert_eq!(after_retitle, 1);
+        assert_eq!(after_touch, 0);
         drop(held);
         drop(opened);
         let _ = fs::remove_file(path);

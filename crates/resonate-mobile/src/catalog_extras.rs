@@ -385,7 +385,22 @@ impl Catalog {
     }
 
     fn keep_figures(&self, id: u64, figures: Figures<'_>) -> Result<()> {
-        self.0.lock().execute("INSERT INTO studies(track, verdict, peak, rms, true_peak, loudness, dynamic_range, clipped, bits) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) ON CONFLICT(track) DO UPDATE SET verdict = excluded.verdict, peak = excluded.peak, rms = excluded.rms, true_peak = excluded.true_peak, loudness = excluded.loudness, dynamic_range = excluded.dynamic_range, clipped = excluded.clipped, bits = excluded.bits", params![id as i64, figures.verdict, figures.peak, figures.rms, figures.true_peak, figures.loudness, figures.dynamic_range, figures.clipped.min(i64::MAX as u64) as i64, figures.bits]).map_err(|source| Error::store(StoreOp::Write, source))?;
+        let connection = self.0.lock();
+        connection.execute("INSERT INTO studies(track, verdict, peak, rms, true_peak, loudness, dynamic_range, clipped, bits) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) ON CONFLICT(track) DO UPDATE SET verdict = excluded.verdict, peak = excluded.peak, rms = excluded.rms, true_peak = excluded.true_peak, loudness = excluded.loudness, dynamic_range = excluded.dynamic_range, clipped = excluded.clipped, bits = excluded.bits", params![id as i64, figures.verdict, figures.peak, figures.rms, figures.true_peak, figures.loudness, figures.dynamic_range, figures.clipped.min(i64::MAX as u64) as i64, figures.bits]).map_err(|source| Error::store(StoreOp::Write, source))?;
+        connection
+            .execute("DELETE FROM unstudied WHERE track = ?1", [id as i64])
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(())
+    }
+
+    pub(crate) fn note_unstudied(&self, id: u64) -> Result<()> {
+        self.0
+            .lock()
+            .execute(
+                "INSERT OR REPLACE INTO unstudied (track, under) VALUES (?1, ?2)",
+                params![id as i64, resonate_analysis::JUDGED_UNDER],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
         Ok(())
     }
 }

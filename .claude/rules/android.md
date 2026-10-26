@@ -186,7 +186,7 @@ all, a 0.1.0 file the steps after `V1`); there is no copy kept before one. A lat
 step and never edits `V1`; step 2 gave `listens` the `origin_device` and `origin_id` a remote listen
 is credited by, unique together, and step 3 rebuilt `listens` with `AUTOINCREMENT`, as the desktop's is, so a deleted
 song's listen ids are never handed to the next listen (the ledger and scrobbling read `id > mark`), seeding the
-sequence past the highest `submissions.through`; step 4 gave `documents` an `added` (Unix seconds) that the `documents_dated` trigger sets on every insert, which the search index reads for `added:`; step 5 dates the rows step 4 found undated by their file's modification time (`modified` in ms, capped at now) and, for one never stamped, by the migration's own time, so no row is undated; step 6 gave `studies` an `agreement` (what `resonate_library::agreement` said of the audio against the song's name) that the `documents_forget_what_was_heard` trigger clears when a document's `size` or `modified` moves; step 7 made `playlist_queries` (`playlist` keyed to `playlists(id)` with `ON DELETE CASCADE`, `text`, `sort`, `reading`, `max_rows`: the desktop's columns and codes), the saved search a playlist fills itself from. A version past the chain is `Error::CatalogVersion`. `V1` holds `documents` (the metadata, the lookup's clocks `asked`/`answered`
+sequence past the highest `submissions.through`; step 4 gave `documents` an `added` (Unix seconds) that the `documents_dated` trigger sets on every insert, which the search index reads for `added:`; step 5 dates the rows step 4 found undated by their file's modification time (`modified` in ms, capped at now) and, for one never stamped, by the migration's own time, so no row is undated; step 6 gave `studies` an `agreement` (what `resonate_library::agreement` said of the audio against the song's name) that the `documents_forget_what_was_heard` trigger clears when a document's `size` or `modified` moves; step 7 made `playlist_queries` (`playlist` keyed to `playlists(id)` with `ON DELETE CASCADE`, `text`, `sort`, `reading`, `max_rows`: the desktop's columns and codes), the saved search a playlist fills itself from; step 8 made `unstudied` (`track` keyed to `documents(id)`, `under` the `JUDGED_UNDER` that failed it), the songs the enrichment pass could not decode, which the `documents_forget_what_would_not_decode` trigger clears when a document's `size` or `modified` moves. A version past the chain is `Error::CatalogVersion`. `V1` holds `documents` (the metadata, the lookup's clocks `asked`/`answered`
 as nanosecond stamps with `asks` and `refusals`, `release_group`, `isrc` kept from tags on index,
 `album_key`, `art_changed`, `missing`, and `size`, `modified` and `indexed_by`, the stamp a scan saw
 the file by and the `INDEXING_REVISION` that read it), `resume`, `queue`, `lyrics`, `listens`
@@ -788,13 +788,21 @@ levels, verdict and print, stopped within a decode by `stop_enrichment` through 
 refresh. A song whose study has no print is kept `Unheard`, not studied again. A refusal or unreadable
 answer stamps nothing (asked again by the next pass) and `RECOGNITIONS_REFUSED_BEFORE_GIVING_UP` in a row
 ends the recognition only, the rest of the pass going on; an unreachable service or going offline ends it
-too. A file that will not decode, or one out of reach, is left unmarked and tried again by the next pass
-(unlike the desktop's `unstudied`, no step of the schema holds the failure). The study thread counts into
+too. **A study that fails is kept as failed, as the desktop's `unstudied`**: a file that will not decode is noted
+in `unstudied` under `JUDGED_UNDER` (`note_unstudied`), and `tracks_to_hear` passes it over until its `size`
+or `modified` moves (the trigger), `JUDGED_UNDER` moves, or `refresh` asks again; a study kept
+(`keep_figures`) clears the mark. A stopped study and a file out of reach
+(`Error::is_out_of_reach`) leave no mark and are tried again by the next pass, and a song forgotten or
+handed over takes its mark with it (`referring_tables`). The study thread counts into
 `due` and `asked` and the pass is `running` until it has finished
 (`a_pass_given_a_key_studies_and_hears_every_song_so_is_misnamed_fills_unasked`,
 `a_pass_with_no_key_studies_and_hears_nothing`, `a_refusal_leaves_the_song_unheard_for_the_next_pass_to_ask`,
 `recognition_is_given_up_after_a_run_of_refusals_while_the_pass_goes_on`,
-`a_song_heard_is_not_asked_again_unless_the_pass_refreshes`, `a_pass_told_to_stop_studies_nothing`).
+`a_song_heard_is_not_asked_again_unless_the_pass_refreshes`, `a_pass_told_to_stop_studies_nothing`,
+`a_song_that_will_not_decode_is_not_decoded_again_until_its_file_changes`,
+`a_song_that_will_not_decode_is_studied_again_when_the_pass_refreshes`,
+`a_song_marked_under_an_earlier_judgement_is_studied_again`, `a_song_forgotten_takes_its_mark_with_it`,
+`a_catalog_of_before_the_marks_gains_them_and_forgets_a_mark_with_the_file`).
 The pass is gated as it is, so the study runs only where automatic lookup, online and (if chosen) an
 unmetered network permit.
 
