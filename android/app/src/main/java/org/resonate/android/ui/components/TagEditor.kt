@@ -22,14 +22,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.runtime.mutableStateMapOf
@@ -83,8 +86,18 @@ fun TagEditorSheet(tracks: List<Track>, dismiss: () -> Unit) {
 
     val changed = TagDiff.changed(shown, read, mixed, emptied)
     val request = { if (changed.isEmpty()) dismiss() else discarding = true }
+    val unsaved by rememberUpdatedState(changed.isNotEmpty())
+    val sheet =
+        rememberBottomSheetState(
+            SheetValue.Hidden,
+            confirmValueChange = { value ->
+                val vetoed = value == SheetValue.Hidden && unsaved
+                if (vetoed) discarding = true
+                !vetoed
+            }
+        )
 
-    ModalBottomSheet(onDismissRequest = request) {
+    ModalBottomSheet(onDismissRequest = dismiss, sheetState = sheet) {
         Column(
             Modifier.verticalScroll(rememberScrollState())
                 .imePadding()

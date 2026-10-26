@@ -33,7 +33,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -63,6 +62,8 @@ fun Banners(modifier: Modifier = Modifier) {
         }
     }
     val activity = syncActivity(sync, asked, now)
+    val leavingActivity = heldWhileLeaving(activity)
+    val leavingStatus = heldWhileLeaving(status)
     Column(modifier.fillMaxWidth()) {
         AnimatedVisibility(
             scanning,
@@ -76,13 +77,13 @@ fun Banners(modifier: Modifier = Modifier) {
             enter = expandVertically() + fadeIn(),
             exit = shrinkVertically() + fadeOut(),
         ) {
-            when (activity) {
+            when (val shown = leavingActivity) {
                 is SyncActivity.Fetching ->
                     ProgressBanner(
                         Icons.Rounded.Sync,
                         "Fetching songs from your devices",
-                        activity.fraction,
-                        detail = counted(activity.songs, "song"),
+                        shown.fraction,
+                        detail = counted(shown.songs, "song"),
                     )
                 else -> ProgressBanner(Icons.Rounded.Sync, "Syncing with your devices", null)
             }
@@ -92,9 +93,20 @@ fun Banners(modifier: Modifier = Modifier) {
             enter = expandVertically() + fadeIn(),
             exit = shrinkVertically() + fadeOut(),
         ) {
-            NoticeBanner(status.orEmpty(), onDismiss = resonate.library::dismissStatus)
+            NoticeBanner(leavingStatus.orEmpty(), onDismiss = resonate.library::dismissStatus)
         }
     }
+}
+
+private class Held<T : Any> {
+    var value: T? = null
+}
+
+@Composable
+private fun <T : Any> heldWhileLeaving(value: T?): T? {
+    val held = remember { Held<T>() }
+    if (value != null) held.value = value
+    return held.value
 }
 
 @Composable
@@ -164,7 +176,7 @@ private fun NoticeBanner(message: String, onDismiss: () -> Unit) {
                 modifier = Modifier.weight(1f).padding(vertical = 10.dp),
             )
             IconButton(onClick = onDismiss) {
-                Icon(Icons.Rounded.Close, contentDescription = "Dismiss", tint = Color.Unspecified)
+                Icon(Icons.Rounded.Close, contentDescription = "Dismiss")
             }
         }
     }

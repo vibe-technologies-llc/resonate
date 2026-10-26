@@ -64,7 +64,6 @@ fun <T> Resonate.catalogRead(
     query: (MobilePlayer) -> T,
 ): Flow<Loaded<T>> = channelFlow {
     var shown: Loaded<T> = Loaded.Loading
-    send(shown)
     val changes = if (follow) catalogChanges() else flowOf(Unit)
     combine(changes, retry.asked) { _, asked -> asked }
         .collectLatest {

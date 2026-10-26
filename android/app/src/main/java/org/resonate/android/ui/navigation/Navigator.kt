@@ -44,6 +44,13 @@ class Navigator(private val stacks: List<NavBackStack<NavKey>>, selected: Int) {
         }
     }
 
+    fun selectAtRoot(screen: Screen) {
+        val index = rootScreens.indexOf(screen).takeIf { it >= 0 } ?: return
+        val stack = stacks[index]
+        while (stack.size > 1) stack.removeAt(stack.lastIndex)
+        selected = index
+    }
+
     fun open(screen: Screen) {
         beforeOpen()
         if (screen in rootScreens) {

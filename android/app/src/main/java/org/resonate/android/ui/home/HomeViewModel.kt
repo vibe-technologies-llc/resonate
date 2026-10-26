@@ -2,8 +2,10 @@ package org.resonate.android.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import org.resonate.android.nativecore.AlbumHit
@@ -34,6 +36,7 @@ class HomeViewModel(private val resonate: Resonate) : ViewModel() {
     val favourites: StateFlow<List<Track>> =
         resonate.library.allTracks
             .map { songs -> songs.filter { it.favourite } }
+            .flowOn(Dispatchers.Default)
             .stateIn(viewModelScope, shared, emptyList())
 
     val recentAlbums: StateFlow<Loaded<List<AlbumHit>>> =

@@ -44,6 +44,7 @@ import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -58,7 +59,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.resonate.android.nativecore.TrackFilter
 import org.resonate.android.nativecore.TrackOrder
 import org.resonate.android.ui.LocalResonate
@@ -210,7 +213,11 @@ private fun SuggestingField(
 ) {
     val catalog by LocalResonate.current.library.allTracks.collectAsStateWithLifecycle()
     var open by remember { mutableStateOf(false) }
-    val offered = remember(catalog, value) { suggestions(values(catalog), value) }
+    val typed = value
+    val offered by
+        produceState(emptyList<String>(), catalog, typed) {
+            this.value = withContext(Dispatchers.Default) { suggestions(values(catalog), typed) }
+        }
     ExposedDropdownMenuBox(expanded = open && offered.isNotEmpty(), onExpandedChange = { open = it }) {
         OutlinedTextField(
             value = value,

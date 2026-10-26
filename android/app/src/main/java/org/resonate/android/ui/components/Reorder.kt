@@ -3,6 +3,7 @@ package org.resonate.android.ui.components
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material.icons.Icons
@@ -19,11 +20,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.zIndex
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.flow.collectLatest
 
 @Stable
 class Reorder<T>(
@@ -82,6 +87,29 @@ class Reorder<T>(
         offset += (current.offset - target.offset).toFloat()
     }
 
+    fun edgeSpeed(edge: Float): Float {
+        val key = dragged ?: return 0f
+        val info = list.layoutInfo
+        val current = info.visibleItemsInfo.firstOrNull { it.key == key } ?: return 0f
+        val top = current.offset + offset
+        val bottom = top + current.size
+        val start = edge
+        val end = info.viewportEndOffset - info.afterContentPadding - edge
+        val past =
+            when {
+                bottom > end -> bottom - end
+                top < start -> top - start
+                else -> 0f
+            }
+        return (past / edge).coerceIn(-1f, 1f) * edge * EDGE_SPEED_PER_FRAME
+    }
+
+    fun scrolled(by: Float) {
+        if (dragged == null || by == 0f) return
+        offset += by
+        drag(0f)
+    }
+
     fun end() {
         val key = dragged ?: return
         val finalAt = shown.indexOfFirst { keyOf(it) == key }
@@ -112,8 +140,22 @@ fun <T> rememberReorder(
                 .also { it.follow(items) }
         }
     LaunchedEffect(items) { reorder.follow(items) }
+    val edge = with(LocalDensity.current) { SCROLLING_EDGE.toPx() }
+    LaunchedEffect(reorder, edge) {
+        snapshotFlow { reorder.dragged != null }
+            .collectLatest { dragging ->
+                while (dragging) {
+                    withFrameNanos {}
+                    val speed = reorder.edgeSpeed(edge)
+                    if (speed != 0f) reorder.scrolled(list.scrollBy(speed))
+                }
+            }
+    }
     return reorder
 }
+
+private val SCROLLING_EDGE = 56.dp
+private const val EDGE_SPEED_PER_FRAME = 0.3f
 
 @Composable
 fun LazyItemScope.reorderable(reorder: Reorder<*>, key: Any): Modifier {

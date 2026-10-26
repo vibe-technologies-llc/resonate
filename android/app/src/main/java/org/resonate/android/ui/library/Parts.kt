@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -393,47 +394,49 @@ fun <T> LoadedContent(
 @Composable
 fun Welcome(modifier: Modifier = Modifier) {
     val host = LocalResonate.current.host
-    Column(
-        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(32.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Surface(
-            color = MaterialTheme.colorScheme.primaryContainer,
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            shape = MaterialShapes.Cookie9Sided.toShape(),
-            modifier = Modifier.size(112.dp),
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = maxHeight).padding(32.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(Icons.Rounded.LibraryMusic, contentDescription = null, modifier = Modifier.size(48.dp))
+            Surface(
+                color = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                shape = MaterialShapes.Cookie9Sided.toShape(),
+                modifier = Modifier.size(112.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.LibraryMusic, contentDescription = null, modifier = Modifier.size(48.dp))
+                }
             }
-        }
-        Spacer(Modifier.height(24.dp))
-        Text(
-            "Make room for your music",
-            style = MaterialTheme.typography.headlineSmall,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.widthIn(max = 420.dp),
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Add a music folder, or use your Downloads, to bring your albums, artists and favourites together.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.widthIn(max = 420.dp),
-        )
-        Spacer(Modifier.height(24.dp))
-        Button(onClick = host::chooseFolder, modifier = Modifier.testTag("add-folder")) {
-            Icon(Icons.Rounded.CreateNewFolder, null, Modifier.size(ButtonDefaults.IconSize))
-            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-            Text("Add music folder")
-        }
-        Spacer(Modifier.height(8.dp))
-        OutlinedButton(onClick = host::useDownloads, modifier = Modifier.testTag("use-downloads")) {
-            Icon(Icons.Rounded.Download, null, Modifier.size(ButtonDefaults.IconSize))
-            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-            Text("Use Downloads")
+            Spacer(Modifier.height(24.dp))
+            Text(
+                "Make room for your music",
+                style = MaterialTheme.typography.headlineSmall,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.widthIn(max = 420.dp),
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Add a music folder, or use your Downloads, to bring your albums, artists and favourites together.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.widthIn(max = 420.dp),
+            )
+            Spacer(Modifier.height(24.dp))
+            Button(onClick = host::chooseFolder, modifier = Modifier.testTag("add-folder")) {
+                Icon(Icons.Rounded.CreateNewFolder, null, Modifier.size(ButtonDefaults.IconSize))
+                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                Text("Add music folder")
+            }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = host::useDownloads, modifier = Modifier.testTag("use-downloads")) {
+                Icon(Icons.Rounded.Download, null, Modifier.size(ButtonDefaults.IconSize))
+                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                Text("Use Downloads")
+            }
         }
     }
 }

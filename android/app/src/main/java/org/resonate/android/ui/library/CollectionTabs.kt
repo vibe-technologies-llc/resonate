@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
@@ -106,9 +107,11 @@ fun AlbumsTab(model: LibraryViewModel, padding: PaddingValues) {
     val albums by model.albums.collectAsStateWithLifecycle()
     val order by model.albumOrder.collectAsStateWithLifecycle()
     val direction = LocalLayoutDirection.current
+    val grid = rememberLazyGridState()
     LoadedContent(albums, model.albumsRetry::again, Modifier.padding(padding)) { shown ->
         LazyVerticalGrid(
             columns = GridCells.Adaptive(150.dp),
+            state = grid,
             contentPadding =
                 PaddingValues(
                     start = padding.calculateStartPadding(direction) + Sizes.gutter,
@@ -140,8 +143,8 @@ fun ArtistsTab(model: LibraryViewModel, padding: PaddingValues) {
     val navigator = LocalNavigator.current
     val artists by model.artists.collectAsStateWithLifecycle()
     val order by model.artistOrder.collectAsStateWithLifecycle()
+    val list = rememberLazyListState()
     LoadedContent(artists, model.artistsRetry::again, Modifier.padding(padding)) { shown ->
-        val list = rememberLazyListState()
         Box(Modifier.fillMaxSize()) {
             LazyColumn(state = list, contentPadding = padding, modifier = Modifier.fillMaxSize().testTag("artists")) {
                 item("header") {

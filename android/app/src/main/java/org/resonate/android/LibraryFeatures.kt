@@ -1067,9 +1067,9 @@ class LibraryFeatures(private val context: Context, private val library: Library
             }
     }
 
-    fun createPlaylist(name: String, track: Track? = null) = work { native ->
+    fun createPlaylist(name: String, tracks: List<Track> = emptyList()) = work { native ->
         val id = native.createPlaylist(name)
-        if (track != null) native.addToPlaylist(id, listOf(track.id))
+        if (tracks.isNotEmpty()) native.addToPlaylist(id, tracks.map { it.id })
         playlists.value = native.playlists()
         if (openPlaylist.value == id) reloadPlaylist(native, id)
     }

@@ -36,10 +36,15 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.resonate.android.nativecore.AlbumHit
 import org.resonate.android.nativecore.ArtistInformation
 import org.resonate.android.nativecore.Track
@@ -78,11 +83,22 @@ class ArtistViewModel(private val resonate: Resonate, name: String) : ViewModel(
             }
             .stateIn(viewModelScope, shared, Loaded.Loading)
 
-    val information: StateFlow<ArtistInformation?> = resonate.features.artist
+    private val learned = MutableStateFlow<ArtistInformation?>(null)
+    private var learnedFor: ULong? = null
+
+    val information: StateFlow<ArtistInformation?> = learned.asStateFlow()
 
     val playing: StateFlow<ULong?> = resonate.playingId().stateIn(viewModelScope, shared, null)
 
-    fun learn(song: ULong) = resonate.features.loadArtist(song)
+    fun learn(song: ULong) {
+        if (song == learnedFor) return
+        learnedFor = song
+        viewModelScope.launch {
+            resonate
+                .read { native -> withContext(Dispatchers.IO) { native.artistInformation(song) } }
+                .onSuccess { found -> if (song == learnedFor) learned.value = found }
+        }
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -188,7 +204,7 @@ fun ArtistScreen(screen: Screen.Artist) {
                     }
                 }
             }
-            val links = about?.links.orEmpty()
+            val links = about?.links.orEmpty().distinct()
             if (links.isNotEmpty()) {
                 item("links-title") { SectionHeader("Elsewhere") }
                 links.forEach { link ->

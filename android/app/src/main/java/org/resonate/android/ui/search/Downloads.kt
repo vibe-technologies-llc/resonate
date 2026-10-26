@@ -100,9 +100,7 @@ class Downloads(private val resonate: Resonate, private val scope: CoroutineScop
     val running: StateFlow<Boolean> = features.downloading
 
     val remembered: StateFlow<MusicFolder?> =
-        combine(features.downloads.rememberedFolder, features.folders) { chosen, all ->
-                all.firstOrNull { it.uri.toString() == chosen && it.readable && it.writable }
-            }
+        combine(features.downloads.rememberedFolder, features.folders, ::rememberedAmong)
             .stateIn(scope, SharingStarted.WhileSubscribed(5_000), null)
 
     val automatic: StateFlow<Boolean> = features.downloads.automatic
@@ -112,7 +110,7 @@ class Downloads(private val resonate: Resonate, private val scope: CoroutineScop
     }
 
     fun request(songs: List<SearchSong>, choose: () -> Unit) {
-        val folder = remembered.value
+        val folder = rememberedAmong(features.downloads.rememberedFolder.value, features.folders.value)
         if (folder == null) choose() else into(songs, folder, remember = false)
     }
 
@@ -148,6 +146,9 @@ class Downloads(private val resonate: Resonate, private val scope: CoroutineScop
         features.downloads.clearSettled()
     }
 }
+
+private fun rememberedAmong(chosen: String?, all: List<MusicFolder>): MusicFolder? =
+    all.firstOrNull { it.uri.toString() == chosen && it.readable && it.writable }
 
 fun downloadFolders(folders: List<MusicFolder>): List<MusicFolder> =
     folders.filter { it.readable && it.writable && it.uri != MusicDocuments.downloads }

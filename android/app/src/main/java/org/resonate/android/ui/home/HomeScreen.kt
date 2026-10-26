@@ -37,9 +37,10 @@ import androidx.compose.material3.carousel.HorizontalMultiBrowseCarousel
 import androidx.compose.material3.carousel.rememberCarouselState
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -56,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.time.LocalTime
 import org.resonate.android.nativecore.AlbumHit
@@ -97,8 +99,13 @@ fun HomeScreen() {
     val model = resonateViewModel { HomeViewModel(it) }
     val ready by model.ready.collectAsStateWithLifecycle()
     val songs by model.songs.collectAsStateWithLifecycle()
-    val title = remember { greeting(LocalTime.now().hour) }
-    LaunchedEffect(Unit) { model.refresh() }
+    var hour by remember { mutableIntStateOf(LocalTime.now().hour) }
+    val title = greeting(hour)
+    LifecycleResumeEffect(model) {
+        hour = LocalTime.now().hour
+        model.refresh()
+        onPauseOrDispose {}
+    }
     Page(title, size = TitleSize.LARGE, back = false, actions = { SettingsAction() }) { padding ->
         when {
             !ready -> Loading(Modifier.padding(padding))

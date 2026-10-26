@@ -288,7 +288,9 @@ system.
 `NavigationSuiteScaffold`, a bottom bar on a phone and a rail on a wide window; Settings is a page,
 opened from the gear (`SettingsAction`) in each root's header. Each root has its own Navigation 3
 back stack (`Navigator`), kept across Activity recreation with the selected root: choosing the
-current root pops it to its base, and Back at the base of a root other than Home returns to Home.
+current root pops it to its base, and Back at the base of a root other than Home returns to Home; *Find it*
+and *Search online* open Search at its base (`Navigator.selectAtRoot`), the online trail rooted again by
+`SearchViewModel.search`.
 Home stays composed beside the selected root. A pushed page slides a sixth of the width and fades
 (300 ms), and the pop reverses it; the system's back swipe (`predictivePopTransitionSpec`) slides the leaving page wholly off, opaque, over the one beneath shifting a sixth of the width, since a fading or shrinking leaving page shows the page beneath through it; each page is a `Page`, a Scaffold with a large, medium or small
 flexible top bar that stays `surface` when content scrolls under it (no scrolled container colour). Above the navigation bar sit the banners and the mini-player, so they show
@@ -325,18 +327,21 @@ the queue's length. *Save queue as playlist* and *Clear* sit in its header.
 
 **Library** is a pager of Songs, Albums, Artists and Playlists under a tab row (scrollable past a
 font scale of 1.3), *New playlist* a floating button on Playlists (the heading carries no second one), Songs opening on full-width *Play* and *Shuffle* with the count at the start and sort and filters at the end of one row, as Albums and Artists put their sort, the active filters on a row beneath, *More* the folder, rescan and
-Library tools entries. **A sort menu lists only the orders**, in compact 40 dp rows (`MenuEntry.Choice`): choosing the order already held flips its direction, which the sort chip's arrow shows (a *Descending* switch under seven rows made the popup overrun the list and the notice). Favourites and the counts read the repository's whole catalog, never the
+Library tools entries. **A sort menu lists only the orders**, in compact 40 dp rows (`MenuEntry.Choice`): choosing the order already held flips its direction, which the sort chip's arrow shows (a *Descending* switch under seven rows made the popup overrun the list and the notice). A catalog read (`catalogRead`) never emits a spinner over a result it held, so a page subscribed again
+keeps its rows, and the Albums and Artists tabs keep their scroll across a reload. Favourites and the counts read the repository's whole catalog, never the
 song browser's filtered page. A completed favourite write updates the catalog, the browser, the
 queue, the snapshot and the open playlist in place (`setFavourite`) before the catalog is read
 again. A playlist is a spinner until its rows arrive (`playlistLoading`; selecting one clears the
 previous rows at once).
 
 **Search is one page of the library and online**, as iOS's: the library's answer (songs, albums and
-artists, `search_library`, at most 500, the *Songs* chip saying how many it lists, *Show more* reading on)
+artists, `search_library`, at most 500, the *Songs* chip saying how many it lists, *Show more* reading on,
+one page at a time behind a spinner, rows kept once by id)
 then an *Online* section of the best five songs and three albums and artists, each with *See all*
 (`OnlineView.Found`, a nested page with Back) and a line naming what is still awaited. Typing asks the three
 online kinds in a chain after 450 ms (`SearchViewModel.askTop`, an answer per spelling kept); a link shows
-the online page alone; with online off the section is one card that turns it on. The last ten queries are
+the online page alone; with online off the section, and a link's page, is one card that turns it on. Each
+level of the online trail keeps its own scroll, so Back returns to where that page was. The last ten queries are
 kept in `library-features` as `recent-searches` (`keepRecentSearches`, `keptSearch` puts a typed one first
 and never a link) unless *Remember recent searches* in Library tools is off (`remember-searches`, on by
 default; turning it off clears them); a library search asks `highlights` once for every title, artist, album
@@ -354,7 +359,9 @@ refresh). Missing art is a quiet `surfaceContainerHighest` square with a note.
 
 **Collection pages** (album, artist, playlist, mix, favourites) share cover-led headers with the song
 count and length and Play and Shuffle. Albums keep disc and track order (`album_tracks`); an artist
-page lists their albums and songs. A playlist cover is `MusicPlaylist.covers`: none shows an icon,
+page lists their albums and songs, its profile read by its own `ArtistViewModel` (never the shared
+`LibraryFeatures.artist` that Details reads, so another artist's page cannot lend it theirs) and each link
+listed once. A playlist cover is `MusicPlaylist.covers`: none shows an icon,
 one to three the first song's picture, four a 2 by 2 (`PlaylistCover`). A playlist adds songs through
 a searchable multi-song picker over the batched add seam; rename, revision-checked moves and removal,
 delete and undo are the native calls. A row plays its list from the position tapped
@@ -621,7 +628,8 @@ One song shows all eleven fields; several hide title and track number, show a fi
 with its value and one they differ in as *Mixed* (changed only once typed into, or cleared on every
 song by the field's button), read at most 500 songs, and say how many cannot be written. *Save* sends
 only the fields that moved (`TagDiff`, the Swift `TagDiff`'s arithmetic held by `TagEditingTest`), a
-sheet with unsaved edits asks before it closes, and the notice counts saved, unchanged and failed songs
+sheet with unsaved edits asks before it closes (its state vetoes the hide and raises *Discard your
+changes?*, so *Keep editing* leaves it open), and the notice counts saved, unchanged and failed songs
 (`TagSentences`). Library tools offers *Undo tag edit* while `tags_to_undo` names a step.
 
 **A song is deleted by the front end, then forgotten; identical files fold into one** (`deleting.rs`).

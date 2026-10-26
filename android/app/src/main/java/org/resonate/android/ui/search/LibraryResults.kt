@@ -98,6 +98,7 @@ import org.resonate.android.ui.components.TrackRow
 import org.resonate.android.ui.components.lit
 import org.resonate.android.ui.counted
 import org.resonate.android.ui.library.SavedSearchDraft
+import org.resonate.android.ui.library.shownName
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.shownArtist
@@ -468,8 +469,13 @@ private fun LazyListScope.answered(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        TextButton(onClick = model::moreSongs, modifier = Modifier.testTag("more-songs")) {
-                            Text("Show more")
+                        val loadingMore by model.loadingMoreSongs.collectAsStateWithLifecycle()
+                        if (loadingMore) {
+                            LoadingIndicator(Modifier.size(40.dp).testTag("more-songs-loading"))
+                        } else {
+                            TextButton(onClick = model::moreSongs, modifier = Modifier.testTag("more-songs")) {
+                                Text("Show more")
+                            }
                         }
                     }
                 }
@@ -506,7 +512,7 @@ private fun LazyListScope.answered(
                     },
                 ) {
                         Text(
-                            lit(artist.name, answer.lit.of(SearchColumn.ARTIST, artist.name), bold()),
+                            lit(artist.shownName, answer.lit.of(SearchColumn.ARTIST, artist.name), bold()),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -745,7 +751,7 @@ private fun ArtistTile(artist: ArtistHit, lit: Lit, onClick: () -> Unit) {
         ArtistPortrait(artist.artworkTrack, Sizes.artistCircle)
         Spacer(Modifier.height(8.dp))
         Text(
-            lit(artist.name, lit.of(SearchColumn.ARTIST, artist.name), emphasis),
+            lit(artist.shownName, lit.of(SearchColumn.ARTIST, artist.name), emphasis),
             style = MaterialTheme.typography.titleSmall,
             textAlign = TextAlign.Center,
             maxLines = 2,
