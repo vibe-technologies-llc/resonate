@@ -43,7 +43,7 @@ use crate::{
         },
         scrollbar::{SHELF_INSET, Scrollbars},
         sorting,
-        spoken::{self, Spoken},
+        spoken::{self, Spelt, Spoken},
         transport::COVER_HINT,
     },
 };
@@ -121,6 +121,8 @@ const OPENING: &str = "Opening…";
 
 const OPEN_ARTIST_FOUND_HINT: &str =
     "Open this artist to see their releases and download the songs you want";
+
+const NOT_IN_THE_LIBRARY: &str = "not in your library";
 
 const OPEN_ALBUM_NOT_HELD_HINT: &str = "Open this album to see its songs and download the ones you \
                                         want";
@@ -515,6 +517,8 @@ impl RootView {
         let cell = div()
             .id(cell_id.clone())
             .debug_selector(move || format!("album-{}", id.get()))
+            .listed_as(|| spoken::song(&album.title, album.artist.as_deref()))
+            .chosen(reached)
             .follows_the_pointer(cell_id)
             .group(CELL_GROUP)
             .flex()
@@ -797,6 +801,13 @@ impl RootView {
                                         tall_row(chosen)
                                             .id(("artist", id.get()))
                                             .debug_selector(move || format!("artist-{}", id.get()))
+                                            .listed_as(|| {
+                                                spoken::artist(
+                                                    &artist.name,
+                                                    artist.album_count as usize,
+                                                    artist.track_count as usize,
+                                                )
+                                            })
                                             .group(ROW_GROUP)
                                             .cursor_pointer()
                                             .hover(|entry| entry.bg(rgb(theme::hover())))
@@ -1515,7 +1526,7 @@ impl RootView {
     fn performed_by(
         &self,
         id: impl Into<ElementId>,
-        label: impl IntoElement,
+        label: impl IntoElement + Spelt,
         performer: Option<Performer>,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
@@ -1748,6 +1759,14 @@ impl RootView {
         let cell = div()
             .id(cell_id.clone())
             .debug_selector(move || format!("artist-{}", id.get()))
+            .listed_as(|| {
+                spoken::artist(
+                    &artist.name,
+                    artist.album_count as usize,
+                    artist.track_count as usize,
+                )
+            })
+            .chosen(reached)
             .follows_the_pointer(cell_id)
             .group(CELL_GROUP)
             .flex()
@@ -2691,6 +2710,7 @@ impl RootView {
 
         let cell = div()
             .id(listing::keyed_by("album-not-held", &group))
+            .listed_as(|| spoken::song(album.title, Some(NOT_IN_THE_LIBRARY)))
             .group(CELL_GROUP)
             .flex()
             .flex_none()
@@ -2855,6 +2875,14 @@ impl RootView {
         let cell = div()
             .id(cell_id.clone())
             .debug_selector(move || format!("artist-{}", id.get()))
+            .listed_as(|| {
+                spoken::artist(
+                    &artist.name,
+                    artist.album_count as usize,
+                    artist.track_count as usize,
+                )
+            })
+            .chosen(reached)
             .follows_the_pointer(cell_id)
             .group(CELL_GROUP)
             .flex()
@@ -2924,6 +2952,7 @@ impl RootView {
 
         div()
             .id(cell_id.clone())
+            .listed_as(|| SharedString::from(found.name.clone()))
             .follows_the_pointer(cell_id)
             .group(CELL_GROUP)
             .flex()

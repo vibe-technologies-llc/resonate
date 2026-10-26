@@ -1,11 +1,15 @@
 use std::cell::Cell;
 
 use gpui::{
-    Role, SharedString, StatefulInteractiveElement, Toggled,
-    accesskit::{ActionData, Live},
+    A11ySubtreeBuilder, Role, SharedString, StatefulInteractiveElement, Toggled,
+    accesskit::{ActionData, Live, Node, NodeId, TextPosition, TextSelection},
 };
 
+use crate::format;
+
 const THE_KEYS_FOLLOW: &str = " — ";
+
+const THE_RUN: &str = "the-run";
 
 const PERCENT: f64 = 100.0;
 
@@ -34,6 +38,14 @@ pub(crate) fn song(title: &str, artist: Option<&str>) -> SharedString {
     }
 }
 
+pub(crate) fn artist(name: &str, albums: usize, tracks: usize) -> SharedString {
+    SharedString::from(format!(
+        "{name}, {}, {}",
+        format::counted(albums, "album", "albums"),
+        format::counted(tracks, "track", "tracks")
+    ))
+}
+
 pub(crate) fn share_asked(asked: Option<&ActionData>) -> Option<f32> {
     match asked? {
         ActionData::NumericValue(value) => Some((value / PERCENT).clamp(0.0, 1.0) as f32),
@@ -43,6 +55,64 @@ pub(crate) fn share_asked(asked: Option<&ActionData>) -> Option<f32> {
 
 const fn toggled(on: bool) -> Toggled {
     if on { Toggled::True } else { Toggled::False }
+}
+
+pub(crate) trait Spelt {
+    fn spelt(&self) -> SharedString;
+}
+
+impl Spelt for SharedString {
+    fn spelt(&self) -> SharedString {
+        self.clone()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Typing {
+    pub(crate) text: SharedString,
+    pub(crate) anchor: usize,
+    pub(crate) focus: usize,
+}
+
+impl Typing {
+    fn run(&self) -> Node {
+        let lengths: Vec<u8> = self
+            .text
+            .chars()
+            .map(|letter| letter.len_utf8() as u8)
+            .collect();
+        let mut run = Node::new(Role::TextRun);
+        run.set_value(self.text.to_string());
+        run.set_character_lengths(lengths);
+        run
+    }
+
+    fn letters_before(&self, offset: usize) -> usize {
+        self.text
+            .char_indices()
+            .take_while(|(at, _)| *at < offset)
+            .count()
+    }
+
+    fn position(&self, run: NodeId, offset: usize) -> TextPosition {
+        TextPosition {
+            node: run,
+            character_index: self.letters_before(offset),
+        }
+    }
+
+    fn selection(&self, run: NodeId) -> TextSelection {
+        TextSelection {
+            anchor: self.position(run, self.anchor),
+            focus: self.position(run, self.focus),
+        }
+    }
+
+    fn write(&self, built: &mut A11ySubtreeBuilder) {
+        let run = built.synthetic_node_id(THE_RUN);
+        built.push_child(run, self.run());
+        built.parent_node().set_text_selection(self.selection(run));
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -168,6 +238,45 @@ pub(crate) trait Spoken: StatefulInteractiveElement + Sized {
         self.role(urgency.role())
             .aria_label(said)
             .a11y_synthetic_children(move |built| built.parent_node().set_live(live))
+    }
+
+    fn pictured_as(self, label: &str, saying: impl FnOnce() -> String) -> Self {
+        if !listening() {
+            return self;
+        }
+        let described = saying();
+        self.named_as(Role::Image, label, &described)
+    }
+
+    fn chosen_among(self, label: &str, saying: impl FnOnce() -> String, chosen: bool) -> Self {
+        if !listening() {
+            return self;
+        }
+        let described = saying();
+        self.named_as(Role::RadioButton, label, &described)
+            .thrown(chosen)
+    }
+
+    fn focused_while(self, reached: bool) -> Self {
+        match reached && listening() {
+            true => self.aria_active_descendant(),
+            false => self,
+        }
+    }
+
+    fn read_as_typed(self, typing: impl FnOnce() -> Typing) -> Self {
+        if !listening() {
+            return self;
+        }
+        let typing = typing();
+        self.a11y_synthetic_children(move |built| typing.write(built))
+    }
+
+    fn linked_as(self, name: &impl Spelt, saying: &str) -> Self {
+        if !listening() {
+            return self;
+        }
+        self.named_as(Role::Link, &name.spelt(), saying)
     }
 
     fn read_as(self, label: &'static str, reading: Reading) -> Self {
@@ -314,6 +423,136 @@ mod tests {
             Some(1.0)
         );
         assert_eq!(share_asked(None), None);
+    }
+
+    #[test]
+    fn a_link_is_named_by_the_words_it_draws_and_described_by_where_it_goes() {
+        listened_to(true);
+
+        let link = node_of(
+            &div()
+                .id("artist")
+                .linked_as(&SharedString::new_static("Pink Floyd"), "Open this artist"),
+        )
+        .expect("a heard link is a node");
+
+        assert_eq!(link.role(), Role::Link);
+        assert_eq!(link.label(), Some("Pink Floyd"));
+        assert_eq!(link.description(), Some("Open this artist"));
+    }
+
+    #[test]
+    fn a_plot_is_an_image_that_says_what_it_shows() {
+        listened_to(true);
+
+        let plot = node_of(
+            &div()
+                .id("plot")
+                .pictured_as("Waveform", || "Loud in the middle".to_owned()),
+        )
+        .expect("a heard plot is a node");
+
+        assert_eq!(plot.role(), Role::Image);
+        assert_eq!(plot.label(), Some("Waveform"));
+        assert_eq!(plot.description(), Some("Loud in the middle"));
+    }
+
+    #[test]
+    fn a_choice_is_a_radio_button_that_is_on_where_chosen() {
+        listened_to(true);
+
+        let chosen = node_of(&div().id("a").chosen_among("Mauve", String::new, true))
+            .expect("a heard choice is a node");
+        let passed = node_of(
+            &div()
+                .id("b")
+                .chosen_among("Blue", || "Cool".to_owned(), false),
+        )
+        .expect("a heard choice is a node");
+
+        assert_eq!(chosen.role(), Role::RadioButton);
+        assert_eq!(chosen.label(), Some("Mauve"));
+        assert_eq!(chosen.toggled(), Some(Toggled::True));
+        assert_eq!(passed.toggled(), Some(Toggled::False));
+        assert_eq!(passed.description(), Some("Cool"));
+    }
+
+    #[test]
+    fn nothing_new_is_spoken_while_no_reader_listens() {
+        listened_to(false);
+
+        let link = div()
+            .id("artist")
+            .linked_as(&SharedString::new_static("Pink Floyd"), "Open this artist");
+        let plot = div()
+            .id("plot")
+            .pictured_as("Waveform", || unreachable!("no reader asked"));
+        let choice =
+            div()
+                .id("choice")
+                .chosen_among("Mauve", || unreachable!("no reader asked"), true);
+        let typed = div()
+            .id("field")
+            .read_as_typed(|| unreachable!("no reader asked"));
+
+        assert!(node_of(&link).is_none());
+        assert!(node_of(&plot).is_none());
+        assert!(node_of(&choice).is_none());
+        assert!(node_of(&typed).is_none());
+    }
+
+    #[test]
+    fn a_caret_and_a_selection_are_places_between_letters_of_the_run() {
+        let caret = Typing {
+            text: SharedString::new_static("dark side"),
+            anchor: 4,
+            focus: 4,
+        };
+        let selected = Typing {
+            text: SharedString::new_static("dark side"),
+            anchor: 9,
+            focus: 5,
+        };
+        let run = NodeId(7);
+
+        assert_eq!(caret.selection(run).anchor, caret.selection(run).focus);
+        assert_eq!(caret.selection(run).focus.character_index, 4);
+        assert_eq!(selected.selection(run).anchor.character_index, 9);
+        assert_eq!(selected.selection(run).focus.character_index, 5);
+        assert_eq!(selected.selection(run).focus.node, run);
+    }
+
+    #[test]
+    fn a_position_counts_letters_not_bytes() {
+        let typing = Typing {
+            text: SharedString::new_static("café au lait"),
+            anchor: 6,
+            focus: 6,
+        };
+        let run = typing.run();
+
+        assert_eq!(typing.selection(NodeId(1)).focus.character_index, 5);
+        assert_eq!(run.role(), Role::TextRun);
+        assert_eq!(run.value(), Some("café au lait"));
+        assert_eq!(
+            run.character_lengths().len(),
+            "café au lait".chars().count()
+        );
+        assert_eq!(
+            run.character_lengths()
+                .iter()
+                .map(|&len| usize::from(len))
+                .sum::<usize>(),
+            "café au lait".len()
+        );
+    }
+
+    #[test]
+    fn an_artist_is_spoken_by_its_name_and_what_it_holds() {
+        assert_eq!(
+            artist("Pink Floyd", 15, 1),
+            "Pink Floyd, 15 albums, 1 track"
+        );
     }
 
     #[test]

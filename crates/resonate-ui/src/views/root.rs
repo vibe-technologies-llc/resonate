@@ -79,7 +79,7 @@ use crate::{
             SigningIn, TidalAccount,
         },
         slider::{Grab, Rail},
-        spoken::{self, Spoken},
+        spoken::{self, Spelt, Spoken},
         transport::{Handovers, Resolved, ShownCover},
         typing::{self, TypeAhead, jumped},
         visualiser::Visualiser,
@@ -698,6 +698,7 @@ pub struct RootView {
     pub(crate) shown_cover: RefCell<Option<ShownCover>>,
     pub(crate) handovers: RefCell<Handovers>,
     pub(crate) focus: FocusHandle,
+    pub(crate) menu_focus: FocusHandle,
     pub(crate) search: Entity<Field>,
     pub(crate) remember_tab: bool,
     pub(crate) remember_window_size: bool,
@@ -866,6 +867,7 @@ impl RootView {
 
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
+        let menu_focus = cx.focus_handle();
 
         let search = cx.new(|cx| {
             Field::new(SEARCH_PLACEHOLDER, window, cx)
@@ -1282,6 +1284,7 @@ impl RootView {
             shown_cover: RefCell::new(None),
             handovers: RefCell::default(),
             focus,
+            menu_focus,
             search,
             remember_tab,
             remember_window_size,
@@ -3512,7 +3515,7 @@ impl RootView {
     pub(crate) fn opens(
         &self,
         id: impl Into<ElementId>,
-        label: impl IntoElement,
+        label: impl IntoElement + Spelt,
         saying: &'static str,
         selection: Option<Selection>,
         cx: &mut Context<Self>,
@@ -3527,7 +3530,7 @@ impl RootView {
     pub(crate) fn pressed_to(
         &self,
         id: impl Into<ElementId>,
-        label: impl IntoElement,
+        label: impl IntoElement + Spelt,
         saying: &'static str,
         press: Option<impl Fn(&mut Self, &mut Context<Self>) + 'static>,
         cx: &mut Context<Self>,
@@ -3539,6 +3542,7 @@ impl RootView {
             .min_w(px(0.0))
             .truncate()
             .ends_in_an_ellipsis()
+            .when(press.is_some(), |named| named.linked_as(&label, saying))
             .child(label)
             .when_some(press, |named, press| {
                 named
@@ -5550,6 +5554,7 @@ impl RootView {
 impl Render for RootView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         spoken::listened_to(window.is_a11y_active());
+        self.hand_the_reader_the_menu(window, cx);
         let moved = self.moved_under_a_still_pointer(window, cx);
         hint::asking(self.hints_are_wanted(cx) && !moved);
         let opened = menu::Opened(self.menu.as_ref().and_then(|menu| menu.owner().cloned()));

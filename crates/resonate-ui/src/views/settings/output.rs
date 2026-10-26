@@ -14,6 +14,7 @@ use crate::{
         kit,
         root::RootView,
         settings::{Choice, note, switch_row},
+        spoken,
     },
 };
 
@@ -59,6 +60,21 @@ const OR: &str = ", ";
 
 fn known_as(sink: &SinkInfo) -> String {
     format!("The graph knows it as {}", sink.name)
+}
+
+fn sink_spoken(routed: &[String], formats: &[String]) -> String {
+    let takes = if formats.is_empty() {
+        UNADVERTISED.to_owned()
+    } else {
+        format!("Takes {}", formats.join(", "))
+    };
+
+    routed
+        .iter()
+        .map(String::as_str)
+        .chain([takes.as_str()])
+        .collect::<Vec<_>>()
+        .join(". ")
 }
 
 fn routes_to(sinks: &[SinkInfo]) -> String {
@@ -443,7 +459,7 @@ impl RootView {
     ) -> Stateful<Div> {
         self.in_the_ring(
             "follow-the-default",
-            kit::choice_row("follow-the-default", chosen)
+            kit::choice_row("follow-the-default", FOLLOW, || routes_to.clone(), chosen)
                 .child(kit::level_with_the_choice(kit::radio(chosen)))
                 .child(
                     described(kit::choice_name(FOLLOW, true))
@@ -499,6 +515,12 @@ impl RootView {
             })
             .children(verdict);
 
+        let saying = if spoken::listening() {
+            sink_spoken(&routed, &formats)
+        } else {
+            String::new()
+        };
+
         let takes = if formats.is_empty() {
             kit::details([kit::detail(UNADVERTISED)])
         } else {
@@ -507,7 +529,7 @@ impl RootView {
 
         self.device_in_the_ring(
             reached.clone(),
-            kit::choice_row(reached, chosen)
+            kit::choice_row(reached, &sink.description, || saying, chosen)
                 .child(kit::level_with_the_choice(kit::radio(chosen)))
                 .child(
                     described(named)

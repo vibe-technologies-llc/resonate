@@ -15,7 +15,7 @@ use crate::{
     clipboard,
     edit::{Anchor, Edit, Motion, Removal},
     theme,
-    views::spoken::{self, Spoken},
+    views::spoken::{self, Spoken, Typing},
 };
 
 actions!(
@@ -198,6 +198,14 @@ impl Field {
                 Some(SharedString::from(self.text().to_owned()))
             }
             Shown::Plainly | Shown::Masked => None,
+        }
+    }
+
+    fn typing(&self, text: SharedString) -> Typing {
+        Typing {
+            text,
+            anchor: self.edit.anchor(),
+            focus: self.edit.cursor(),
         }
     }
 
@@ -504,8 +512,9 @@ impl Render for Field {
             .named_as(self.typed_into, &self.placeholder, "")
             .when_some(self.spoken_value(), |field, value| {
                 field
-                    .aria_value(value)
+                    .aria_value(value.clone())
                     .aria_placeholder(self.placeholder.clone())
+                    .read_as_typed(|| self.typing(value))
             })
             .track_focus(&self.focus)
             .key_context(SEARCH_CONTEXT)

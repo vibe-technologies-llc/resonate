@@ -20,6 +20,7 @@ use crate::{
         kit, plot,
         root::RootView,
         settings::marked_at,
+        spoken::Spoken as _,
         transport::Playing,
     },
 };
@@ -334,6 +335,8 @@ impl Render for Visualiser {
         }
 
         let plot = div()
+            .id("visualiser-plot")
+            .pictured_as(self.showing.label(), || self.showing.about(spectral))
             .relative()
             .size_full()
             .child(follows_the_display(playing && tap.is_some()));

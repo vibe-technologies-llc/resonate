@@ -31,12 +31,15 @@ use crate::{
             curve::{CURVE_LINE, HeldBand, PIXELS_PER_NOTCH, Plot, Plotted, across_at},
             hugging, note, rows, switch_row,
         },
+        spoken::Spoken as _,
     },
 };
 
 const BOUND_TO_NOTE: &str = "Each device plays through what is bound to it here — nothing, a \
                              curve of its own drawn under Bands, or a kept profile — and a \
                              device bound to nothing takes what every other device does.";
+
+const THE_CURVE: &str = "Equaliser curve";
 
 const DRAG_TOLD_EVERY: Duration = Duration::from_millis(50);
 const CURVE_HEIGHT: f32 = 168.0;
@@ -279,6 +282,7 @@ impl RootView {
         div()
             .id("equaliser-curve")
             .debug_selector(|| "equaliser-curve".to_owned())
+            .pictured_as(THE_CURVE, || curve_said(handles.bands.len(), widest))
             .relative()
             .h(px(CURVE_HEIGHT))
             .w_full()
@@ -905,6 +909,13 @@ struct MeasurerChips {
     unset: &'static str,
     unset_names: &'static str,
     preferred: Option<String>,
+}
+
+fn curve_said(bands: usize, widest: f32) -> String {
+    format!(
+        "Gain against frequency, drawn within {widest:.0} dB either side of flat, shaped by {}",
+        crate::format::counted(bands, "band", "bands")
+    )
 }
 
 fn widest_drawn(traced: &[Traced]) -> f32 {

@@ -141,6 +141,14 @@ impl Edit {
         }
     }
 
+    pub(crate) const fn anchor(&self) -> usize {
+        if self.reversed {
+            self.selection.end
+        } else {
+            self.selection.start
+        }
+    }
+
     pub(crate) fn selected(&self) -> &str {
         self.slice(self.selection.clone())
     }
@@ -464,6 +472,21 @@ mod tests {
 
         assert_eq!(edit.cursor(), 9);
         assert!(edit.selected().is_empty());
+    }
+
+    #[test]
+    fn a_selection_is_anchored_where_it_began_and_the_caret_is_where_it_ends() {
+        let mut forward = at("dark side", 2);
+        forward.go(Motion::Right, Anchor::Extend);
+        forward.go(Motion::Right, Anchor::Extend);
+
+        let mut backward = at("dark side", 6);
+        backward.go(Motion::Left, Anchor::Extend);
+        backward.go(Motion::Left, Anchor::Extend);
+
+        assert_eq!((forward.anchor(), forward.cursor()), (2, 4));
+        assert_eq!((backward.anchor(), backward.cursor()), (6, 4));
+        assert_eq!(at("dark side", 3).anchor(), 3);
     }
 
     #[test]
