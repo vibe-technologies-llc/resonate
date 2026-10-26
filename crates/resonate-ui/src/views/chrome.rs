@@ -2,15 +2,15 @@ use std::cell::Cell;
 
 use gpui::{
     AnyElement, App, Bounds, BoxShadow, Corners, CursorStyle, Decorations, Div, HitboxBehavior,
-    MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, ResizeEdge, Size, Stateful, Svg,
-    Tiling, Window, canvas, div, hsla, point, prelude::*, px, rgb,
+    MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, ResizeEdge, Role, Size, Stateful,
+    Svg, Tiling, Window, canvas, div, hsla, point, prelude::*, px, rgb,
 };
 
 use crate::{
     ResonateApp, RootView,
     icons::{self, Icon},
     theme,
-    views::hint::Names,
+    views::{hint::Names, spoken::Spoken},
 };
 
 const SHADOW_ALPHA: f32 = 0.45;
@@ -118,6 +118,7 @@ fn window_control(control: Control) -> Stateful<Div> {
         .rounded_md()
         .cursor_pointer()
         .hover(|button| button.bg(rgb(control.hover())))
+        .said_as(Role::Button, control.saying())
         .names(control.saying())
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(move |_, window, _| control.act(window))

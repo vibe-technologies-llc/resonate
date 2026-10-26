@@ -43,6 +43,7 @@ use crate::{
         },
         scrollbar::{SHELF_INSET, Scrollbars},
         sorting,
+        spoken::{self, Spoken},
         transport::COVER_HINT,
     },
 };
@@ -1089,6 +1090,7 @@ impl RootView {
         let row = row(playing)
             .id(("track", id.get()))
             .debug_selector(move || format!("track-{}", id.get()))
+            .listed_as(|| spoken::song(&track.title, track.artist.as_deref()))
             .group(ROW_GROUP)
             .cursor_pointer()
             .hover(|entry| entry.bg(rgb(theme::hover())))

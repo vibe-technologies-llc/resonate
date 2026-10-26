@@ -583,6 +583,43 @@ is never named.
   and draws `hint::caption`: the hint's plate, bottom left above the playback bar, clear of the
   centred toast. A control built without a name (a field, a row with no hint) shows nothing
   (`tabbing_onto_an_icon_only_control_names_it_where_a_pointer_would_have_shown_a_hint`).
+- **A screen reader hears the window through gpui's AccessKit tree, built only while one listens.**
+  gpui 0.2.2 (the pinned zed rev) publishes a node for every element with an `id` *and* a `role`
+  over `accesskit_unix` (AT-SPI) on Wayland; text children make no node, so every node carries its
+  own label. `views/spoken.rs` is the one vocabulary: `spoken::listened_to` is a thread-local written
+  once a frame by `RootView::render` from `Window::is_a11y_active`, and every `Spoken` builder
+  (`said_as`, `named_as`, `spoken_as`, `thrown`, `chosen`, `listed_as`, `placed`, `keyed`, `told`,
+  `read_as`, `greyed_for_a_reader`) is a no-op while it says no, so a frame with no reader formats
+  and allocates nothing for one.
+  - **A control is named by its hint up to the keys**: `said_as` labels it with what precedes `keyed!`'s
+    em dash (`named_by`: *Play — space* is *Play*) and describes it by the whole hint where that says
+    more; `named_as` takes a visible label and keeps the hint as the description. The kit names its
+    own: `kit::button`/`button_when` and the marks are buttons (greyed = AccessKit's disabled, through
+    `a11y_synthetic_children`), `star` and `chip` toggle buttons, `segment` a radio button;
+    `settings::switch_row` and the Listen sheet's *Keep listening* are the switch, never the
+    `kit::switch` mark inside them.
+  - **What is spoken**: the playback bar is a group *Playback* holding *Now playing: title, artist*,
+    previous/play-pause/next, shuffle, repeat and queue as toggles, the sleep control, mute, and the
+    seek and volume rails as sliders (`read_as`: 0 to 100 with the said value, *1:23 of 4:56* or
+    *40%*; Increment/Decrement step the rail as its keys do, SetValue lands it via
+    `RootView::set_by_a_reader`); the sidebar is a navigation landmark of page tabs, the one in front
+    selected, pinned playlists links; a track, queue or playlist row is a list item named
+    `spoken::song` (*title, artist*), selected where `marked_where_reached` (or the queue/playlist
+    reach) says, the queue and playlist rows placed *n of m*; a `Field` is a text, search or password
+    input labelled by its placeholder, its value the text unless masked; a menu is a menu of items
+    with their keys, placed, the reached one selected; a toast is an alert (`Trouble`, assertive) or a
+    status (polite), keyed `("toast", serial)` so each notice is a new node and is announced.
+  - **No two nodes share a global id**: gpui panics in a debug build on a duplicate (release drops
+    the node), so a role goes only on an element whose id is unique under its parents.
+  - **The four `Part`s draw uncached while a reader listens**: a reused cached view replays hitboxes
+    but not AccessKit nodes, so a region nothing notified would drop out of the tree that frame;
+    `part::cached` lays the part out in a plain div of the same style instead.
+  - Held by `views/spoken.rs`, `kit.rs` and `transport.rs` tests reading the built element's
+    `Element::a11y_role`/`write_a11y_info` (`spoken::node_of`); gpui's test platform never activates
+    the tree. Heard for real once over AT-SPI: a hosted `kwin_wayland --virtual`, the app on a
+    private session bus with `at-spi-bus-launcher` and `at-spi2-registryd`, `org.a11y.Status
+    IsEnabled` set, read with python's `Atspi` (a tab clicked through the Action interface changed
+    pane, the volume set through the Value interface moved); no screen reader (Orca) was run.
 - **A playlist row no scan has seen draws as a queued one does.** `views/listing.rs` owns the `Row`
   the queue and playlists panes build: the scanned `Track` where the library has one, `Player::media`
   where not, the file stem only where the file cannot be read. The play count rides on the same `Row`

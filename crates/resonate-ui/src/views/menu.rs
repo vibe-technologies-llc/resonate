@@ -7,8 +7,8 @@ use std::{
 
 use gpui::{
     AnyElement, App, Bounds, BoxShadow, ClickEvent, Context, Div, ElementId, Global, MouseButton,
-    MouseDownEvent, Pixels, Point, SharedString, Stateful, Window, anchored, canvas, deferred, div,
-    hsla, point, prelude::*, px, rgb,
+    MouseDownEvent, Pixels, Point, Role, SharedString, Stateful, Window, anchored, canvas,
+    deferred, div, hsla, point, prelude::*, px, rgb,
 };
 use resonate_core::{AlbumId, ArtistId, FrameSpan, MediaLocation, TrackId};
 use resonate_engine::Placement;
@@ -23,6 +23,7 @@ use crate::{
         playlists::Held,
         reorder::Shift,
         root::RootView,
+        spoken::{Placed, Spoken},
     },
 };
 
@@ -259,8 +260,14 @@ impl RootView {
 
     pub(crate) fn menu_over_the_app(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let menu = self.menu.clone()?;
+        let entries = menu
+            .entries
+            .iter()
+            .filter(|entry| entry.does.is_some())
+            .count();
         let mut panel = div()
             .id("menu")
+            .spoken_as(Role::Menu)
             .flex()
             .flex_col()
             .w(theme::width(theme::menu_width()))
@@ -280,9 +287,23 @@ impl RootView {
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation());
 
+        let mut offered = 0;
         for (at, entry) in menu.entries.iter().enumerate() {
             panel = panel.child(match entry.does.clone() {
-                Some(does) => self.menu_entry(at, entry, &does, menu.reached == Some(at), cx),
+                Some(does) => {
+                    offered += 1;
+                    self.menu_entry(
+                        at,
+                        entry,
+                        &does,
+                        menu.reached == Some(at),
+                        Placed {
+                            at: offered - 1,
+                            of: entries,
+                        },
+                        cx,
+                    )
+                }
                 None => apart().into_any_element(),
             });
         }
@@ -323,6 +344,7 @@ impl RootView {
         entry: &Entry,
         does: &Rc<Doing>,
         reached: bool,
+        placed: Placed,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let pressed = Rc::clone(does);
@@ -330,6 +352,10 @@ impl RootView {
         div()
             .id(("menu-entry", at))
             .debug_selector(move || format!("menu-entry-{at}"))
+            .named_as(Role::MenuItem, &entry.label, "")
+            .keyed(entry.key.clone())
+            .placed(placed)
+            .chosen(reached)
             .group(MENU_GROUP)
             .flex()
             .items_center()

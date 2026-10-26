@@ -3,7 +3,10 @@ use gpui::{
     StyleRefinement, Styled, WeakEntity, Window, div, px,
 };
 
-use crate::{theme, views::root::RootView};
+use crate::{
+    theme,
+    views::{root::RootView, spoken},
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Region {
@@ -108,6 +111,14 @@ impl Parts {
     }
 }
 
-fn cached(part: &Entity<Part>, region: Region) -> impl IntoElement {
-    AnyView::from(part.clone()).cached(region.laid_out())
+fn cached(part: &Entity<Part>, region: Region) -> AnyElement {
+    if !spoken::listening() {
+        return AnyView::from(part.clone())
+            .cached(region.laid_out())
+            .into_any_element();
+    }
+
+    let mut drawn_whole = div();
+    *drawn_whole.style() = region.laid_out();
+    drawn_whole.child(part.clone()).into_any_element()
 }

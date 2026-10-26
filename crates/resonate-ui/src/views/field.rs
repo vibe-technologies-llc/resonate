@@ -5,7 +5,7 @@ use gpui::{
     ElementInputHandler, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable,
     GlobalElementId, InputHandler, InspectorElementId, IntoElement, KeyBinding, LayoutId,
     LineLayout, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels,
-    Point, Render, ShapedLine, SharedString, Style, Task, TextAlign, TextRun, UTF16Selection,
+    Point, Render, Role, ShapedLine, SharedString, Style, Task, TextAlign, TextRun, UTF16Selection,
     UnderlineStyle, Window, actions, div, fill, point, prelude::*, px, relative, rgb, rgba, size,
 };
 
@@ -15,6 +15,7 @@ use crate::{
     clipboard,
     edit::{Anchor, Edit, Motion, Removal},
     theme,
+    views::spoken::{self, Spoken},
 };
 
 actions!(
@@ -135,6 +136,7 @@ pub(crate) struct Field {
     marked: Option<Range<usize>>,
     placeholder: SharedString,
     shown: Shown,
+    typed_into: Role,
     focus: FocusHandle,
     painted: Option<Painted>,
     scrolled_by: Pixels,
@@ -162,6 +164,7 @@ impl Field {
             marked: None,
             placeholder: SharedString::new_static(placeholder),
             shown: Shown::Plainly,
+            typed_into: Role::TextInput,
             focus,
             painted: None,
             scrolled_by: px(0.0),
@@ -180,7 +183,22 @@ impl Field {
 
     pub(crate) const fn masked(mut self) -> Self {
         self.shown = Shown::Masked;
+        self.typed_into = Role::PasswordInput;
         self
+    }
+
+    pub(crate) const fn searching(mut self) -> Self {
+        self.typed_into = Role::SearchInput;
+        self
+    }
+
+    fn spoken_value(&self) -> Option<SharedString> {
+        match self.shown {
+            Shown::Plainly if spoken::listening() => {
+                Some(SharedString::from(self.text().to_owned()))
+            }
+            Shown::Plainly | Shown::Masked => None,
+        }
     }
 
     pub(crate) const fn caret_is_lit(&self) -> bool {
@@ -482,6 +500,13 @@ impl Focusable for Field {
 impl Render for Field {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
+            .id("field")
+            .named_as(self.typed_into, &self.placeholder, "")
+            .when_some(self.spoken_value(), |field, value| {
+                field
+                    .aria_value(value)
+                    .aria_placeholder(self.placeholder.clone())
+            })
             .track_focus(&self.focus)
             .key_context(SEARCH_CONTEXT)
             .flex()
