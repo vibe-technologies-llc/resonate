@@ -1249,6 +1249,9 @@ impl Hearer<'_> {
             Err(resonate_analysis::Error::Stopped) => return Err(Ended::Cancelled),
             Err(error) => {
                 tracing::debug!(%error, track, "a track could not be studied");
+                if !error.is_out_of_reach() {
+                    self.catalog.note_unstudied(track)?;
+                }
                 return Ok(());
             }
         };
@@ -1558,11 +1561,15 @@ impl Catalog {
         let mut query = connection
             .prepare(
                 "SELECT d.id FROM documents d LEFT JOIN studies s ON s.track = d.id
-                 WHERE d.missing = 0 AND (?1 OR s.agreement IS NULL) ORDER BY d.id",
+                 WHERE d.missing = 0 AND (?1 OR (s.agreement IS NULL AND NOT EXISTS (
+                    SELECT 1 FROM unstudied u WHERE u.track = d.id AND u.under = ?2)))
+                 ORDER BY d.id",
             )
             .map_err(read_error)?;
         query
-            .query_map([refresh], |row| row.get::<_, i64>(0))
+            .query_map(params![refresh, resonate_analysis::JUDGED_UNDER], |row| {
+                row.get::<_, i64>(0)
+            })
             .map_err(read_error)?
             .map(|id| id.map(|id| id as u64))
             .collect::<rusqlite::Result<Vec<_>>>()
@@ -3026,6 +3033,139 @@ mod tests {
 
             assert_eq!(printer.calls(), 0);
             assert_eq!(studies(&harness), 0);
+        }
+
+        fn broken_then_stamped(harness: &Harness) -> u64 {
+            let song = harness.song('a').id;
+            fs::write(harness.folder.join("a.wav"), b"not a song").expect("a broken file");
+            harness
+                .player
+                .catalog
+                .0
+                .lock()
+                .execute(
+                    "UPDATE documents SET size = 10, modified = 1000 WHERE id = ?1",
+                    [song as i64],
+                )
+                .expect("a stamped document");
+            song
+        }
+
+        fn mended(harness: &Harness) {
+            fs::write(harness.folder.join("a.wav"), tones()).expect("a mended file");
+        }
+
+        fn unstudied(harness: &Harness) -> Vec<i64> {
+            let held = harness.player.catalog.0.lock();
+            let mut query = held
+                .prepare("SELECT track FROM unstudied ORDER BY track")
+                .expect("a query");
+            query
+                .query_map([], |row| row.get(0))
+                .expect("rows")
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .expect("tracks")
+        }
+
+        #[test]
+        fn a_song_that_will_not_decode_is_not_decoded_again_until_its_file_changes() {
+            let harness = sounding_library();
+            let printer = Printer::hearing("Time");
+            let song = broken_then_stamped(&harness);
+
+            hearing(&harness, &printer);
+            let after_failing = (studies(&harness), unstudied(&harness));
+
+            mended(&harness);
+            hearing(&harness, &printer);
+            let after_mending_unseen = (studies(&harness), unstudied(&harness));
+
+            harness
+                .player
+                .catalog
+                .0
+                .lock()
+                .execute(
+                    "UPDATE documents SET size = 11 WHERE id = ?1",
+                    [song as i64],
+                )
+                .expect("a changed file");
+            hearing(&harness, &printer);
+
+            assert_eq!(after_failing, (3, vec![song as i64]));
+            assert_eq!(after_mending_unseen, (3, vec![song as i64]));
+            assert_eq!(studies(&harness), 4);
+            assert!(unstudied(&harness).is_empty());
+            assert_eq!(printer.calls(), 4);
+        }
+
+        #[test]
+        fn a_song_that_will_not_decode_is_studied_again_when_the_pass_refreshes() {
+            let harness = sounding_library();
+            let printer = Printer::hearing("Time");
+            let song = broken_then_stamped(&harness);
+
+            hearing(&harness, &printer);
+            let marked = unstudied(&harness);
+
+            mended(&harness);
+            let fake = Arc::new(Fake::default());
+            let asking =
+                asking(&fake).hearing_through(Arc::clone(&printer) as Arc<dyn Fingerprints>);
+            passed_by(
+                &harness,
+                &asking,
+                &Arc::new(Told::default()),
+                EnrichmentOptions {
+                    refresh: true,
+                    ..EnrichmentOptions::default()
+                },
+            );
+
+            assert_eq!(marked, vec![song as i64]);
+            assert_eq!(studies(&harness), 4);
+            assert!(unstudied(&harness).is_empty());
+        }
+
+        #[test]
+        fn a_song_marked_under_an_earlier_judgement_is_studied_again() {
+            let harness = sounding_library();
+            let printer = Printer::hearing("Time");
+            let song = broken_then_stamped(&harness);
+
+            hearing(&harness, &printer);
+            harness
+                .player
+                .catalog
+                .0
+                .lock()
+                .execute(
+                    "UPDATE unstudied SET under = under - 1 WHERE track = ?1",
+                    [song as i64],
+                )
+                .expect("an older mark");
+            mended(&harness);
+            hearing(&harness, &printer);
+
+            assert_eq!(studies(&harness), 4);
+            assert!(unstudied(&harness).is_empty());
+        }
+
+        #[test]
+        fn a_song_forgotten_takes_its_mark_with_it() {
+            let harness = sounding_library();
+            let printer = Printer::hearing("Time");
+            let song = broken_then_stamped(&harness);
+
+            hearing(&harness, &printer);
+            let marked = unstudied(&harness);
+            harness
+                .player
+                .forget_deleted_songs(vec![song])
+                .expect("a deletion");
+
+            assert_eq!(marked, vec![song as i64]);
+            assert!(unstudied(&harness).is_empty());
         }
 
         #[test]
