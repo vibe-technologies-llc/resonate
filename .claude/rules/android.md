@@ -133,8 +133,10 @@ Assistant, the car-assistant and the Auto simulator connect as controllers besid
 Audio focus loss and noisy-output events pause playback; a transient loss resumes on regaining
 focus if the engine was playing or loading, and a duck is left to the platform
 (`setWillPauseWhenDucked(false)`). The Media3 state is invalidated only when the transport, queue
-place, repeat, shuffle, volume or song moved (the position is read live from the latest snapshot,
-so *previous* past 3 s restarts the song and the notification's bar moves), and its playlist is
+place, repeat, shuffle, volume or song moved, or the position jumped more than a second from where
+the last snapshot and the time since put it (`positionJumped`: a seek or a restart within the song,
+which the system session would otherwise go on extrapolating past); the position is read live from
+the latest snapshot, so *previous* past 3 s restarts the song and the notification's bar moves, and its playlist is
 rebuilt only when the queue or the cover moved. An Activity's recreation does not own or close the
 audio engine. Playback and download services each retain the repository; the last
 release cancels its workers and saves and closes the engine off the main thread, then clears the

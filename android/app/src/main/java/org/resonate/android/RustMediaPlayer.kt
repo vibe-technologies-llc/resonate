@@ -7,6 +7,7 @@ import android.content.IntentFilter
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Looper
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -16,6 +17,7 @@ import androidx.media3.common.SimpleBasePlayer
 import androidx.media3.common.util.UnstableApi
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -35,6 +37,7 @@ class RustMediaPlayer(private val context: Context, private val library: Library
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val audio = context.getSystemService(AudioManager::class.java)
     @Volatile private var snapshot: Snapshot? = null
+    private var snapshotAt = 0L
     private var tracks = emptyList<Track>()
     private var artwork: ByteArray? = null
     private var artworkId: ULong? = null
@@ -90,17 +93,21 @@ class RustMediaPlayer(private val context: Context, private val library: Library
         )
         scope.launch {
             library.snapshot.collect { value ->
+                val now = SystemClock.elapsedRealtime()
                 val moved = value.stateKey() != snapshot.stateKey()
+                val jumped = positionJumped(snapshot, value, now - snapshotAt)
                 val stoppedItself =
                     snapshot.playsOrLoads() && !value.playsOrLoads() && !resumeAfterFocus
+
                 snapshot = value
+                snapshotAt = now
                 if (stoppedItself) audio.abandonAudioFocusRequest(focus)
                 ResonateWidgets.publish(
                     context,
                     value,
                     artwork.takeIf { artworkId == value?.current?.id },
                 )
-                if (moved) invalidateState()
+                if (moved || jumped) invalidateState()
             }
         }
         scope.launch {
@@ -347,6 +354,15 @@ private fun Snapshot?.stateKey() =
     this?.let {
         StateKey(it.transport, it.queueIndex, it.repeat, it.shuffle, it.volume, it.current?.id)
     }
+
+private const val POSITION_JUMP_MS = 1_000L
+
+internal fun positionJumped(before: Snapshot?, after: Snapshot?, elapsedMs: Long): Boolean {
+    if (before == null || after == null) return false
+
+    val expected = before.positionMs.toLong() + if (before.playsOrLoads()) elapsedMs else 0L
+    return abs(after.positionMs.toLong() - expected) > POSITION_JUMP_MS
+}
 
 private fun Snapshot?.playsOrLoads() =
     this?.transport == Transport.PLAYING || this?.transport == Transport.LOADING
