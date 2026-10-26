@@ -129,7 +129,7 @@ fun OutputScreen() {
                 RouteCard(
                     playing = choices.firstOrNull { it.id == actual },
                     playingName = outputNamed(outputs, actual),
-                    pending = if (selected != actual) outputNamed(outputs, selected) else null,
+                    pending = pendingOutput(selected, actual)?.let { outputNamed(outputs, it) },
                 )
             }
             clampedSamplesWords(clamped)?.let { words ->

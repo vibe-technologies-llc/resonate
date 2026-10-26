@@ -14,6 +14,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
@@ -59,7 +60,6 @@ object OrganiseWords {
 
 class OrganiseViewModel(private val resonate: Resonate, private val folder: Uri) : ViewModel() {
     private val organising = resonate.features.organising
-    private val mutableLayout = MutableStateFlow(organising.layout())
     private val mutablePlanned = MutableStateFlow<Planned?>(null)
     private val mutableFailedFor = MutableStateFlow<String?>(null)
     private val mutablePlanning = MutableStateFlow(false)
@@ -67,22 +67,23 @@ class OrganiseViewModel(private val resonate: Resonate, private val folder: Uri)
     val name: String =
         resonate.features.folders.value.firstOrNull { it.uri == folder }?.name ?: "this folder"
     val rootId: String = DocumentsContract.getTreeDocumentId(folder)
-    val layout: StateFlow<String> = mutableLayout.asStateFlow()
+    var layout by mutableStateOf(organising.layout())
+        private set
     val planned: StateFlow<Planned?> = mutablePlanned.asStateFlow()
     val failedFor: StateFlow<String?> = mutableFailedFor.asStateFlow()
     val planning: StateFlow<Boolean> = mutablePlanning.asStateFlow()
     val busy = organising.busy
 
     init {
-        viewModelScope.launch { mutableLayout.collectLatest { preview(it) } }
+        viewModelScope.launch { snapshotFlow { layout }.collectLatest { preview(it) } }
     }
 
     fun type(text: String) {
-        mutableLayout.value = text
+        layout = text
     }
 
     fun organise(moves: List<FiledSong>) {
-        organising.keepLayout(mutableLayout.value)
+        organising.keepLayout(layout)
         organising.organise(folder, moves)
     }
 
@@ -116,7 +117,7 @@ fun OrganiseScreen(folder: String) {
     val uri = remember(folder) { Uri.parse(folder) }
     val model = resonateViewModel(key = "organise:$folder") { OrganiseViewModel(it, uri) }
     val navigator = LocalNavigator.current
-    val layout by model.layout.collectAsStateWithLifecycle()
+    val layout = model.layout
     val planned by model.planned.collectAsStateWithLifecycle()
     val failedFor by model.failedFor.collectAsStateWithLifecycle()
     val planning by model.planning.collectAsStateWithLifecycle()

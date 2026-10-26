@@ -174,12 +174,12 @@ class EqualiserCurvesTest {
     }
 
     @Test
-    fun anEditTurnsTheEqualiserOnOnlyWhereAsked() {
+    fun everyEditTurnsTheEqualiserOn() {
         val edited = imported.withGain(0, 1f, bounds)
 
-        assertFalse(preferences().withCurve(edited, enable = false).equaliserEnabled)
-        assertTrue(preferences().withCurve(edited, enable = true).equaliserEnabled)
-        assertTrue(preferences(enabled = true).withCurve(edited, enable = false).equaliserEnabled)
+        assertTrue(preferences().withCurve(edited).equaliserEnabled)
+        assertTrue(preferences(enabled = true).withCurve(edited).equaliserEnabled)
+        assertEquals(edited, preferences().withCurve(edited).equaliser)
     }
 
     @Test

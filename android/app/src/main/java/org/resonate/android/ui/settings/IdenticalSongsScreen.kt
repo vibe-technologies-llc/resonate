@@ -14,7 +14,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -29,6 +28,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -65,6 +65,11 @@ fun keptAfterChoices(sets: List<IdenticalSongs>, chosen: Map<ULong, ULong>): Lis
         )
     }
 
+fun choicesStillStanding(sets: List<IdenticalSongs>, chosen: Map<ULong, ULong>): Map<ULong, ULong> =
+    chosen.filter { (kept, keeping) ->
+        sets.any { set -> set.kept.id == kept && (set.kept.id == keeping || set.copies.any { it.id == keeping }) }
+    }
+
 class IdenticalSongsViewModel(private val resonate: Resonate) : ViewModel() {
     private val mutableState = MutableStateFlow<IdenticalState>(IdenticalState.Comparing)
     private val mutableChosen = MutableStateFlow<Map<ULong, ULong>>(emptyMap())
@@ -73,12 +78,18 @@ class IdenticalSongsViewModel(private val resonate: Resonate) : ViewModel() {
     val state: StateFlow<IdenticalState> = mutableState.asStateFlow()
     val chosen: StateFlow<Map<ULong, ULong>> = mutableChosen.asStateFlow()
     val deleting: StateFlow<Boolean> = mutableDeleting.asStateFlow()
+    private var finding: Job? = null
+
+    init {
+        find()
+    }
 
     fun find() {
+        finding?.cancel()
         mutableState.value = IdenticalState.Comparing
-        viewModelScope.launch {
+        finding = viewModelScope.launch {
             val found = resonate.read { native -> withContext(Dispatchers.IO) { native.identicalSongs() } }
-            mutableChosen.value = emptyMap()
+            found.onSuccess { sets -> mutableChosen.value = choicesStillStanding(sets, mutableChosen.value) }
             mutableState.value =
                 found.fold(
                     { IdenticalState.Found(it) },
@@ -124,7 +135,6 @@ fun IdenticalSongsScreen() {
     val chosen by model.chosen.collectAsStateWithLifecycle()
     val deleting by model.deleting.collectAsStateWithLifecycle()
     var confirming by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(Unit) { model.find() }
     val found = (state as? IdenticalState.Found)?.sets.orEmpty()
     val copies = keptAfterChoices(found, chosen).sumOf { it.copies.size }
     Page(

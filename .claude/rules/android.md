@@ -168,7 +168,8 @@ timed-out open the engine parks, not a blocked engine thread, and the late strea
 The output pane lists `AudioManager` devices and sends a chosen device id to Oboe before
 rebinding; system default is id zero. Device type distinguishes outputs that share a product name.
 The pane shows the actual route in a status card and names a different requested route when one
-is pending. Android owns the physical route, and this is no promise of a DAC's rate or
+is pending (`pendingOutput`); asking for the system default is never pending, since Android then
+reports the device it chose. Android owns the physical route, and this is no promise of a DAC's rate or
 bit-perfect delivery. Buffer length is validated from 50 to 2000 ms at the native boundary.
 DoP, exclusive output and per-device format enumeration are not offered by this backend yet.
 The native callback is `output/oboe_render.rs`, under the realtime lint set: preallocated bytes only,
@@ -297,7 +298,12 @@ flexible top bar that stays `surface` when content scrolls under it (no scrolled
 on every page. They overlay the pages in a transparent bottom-aligned column, so page content
 continues behind the mini-player's outer padding instead of ending at an opaque strip. The measured
 banner and mini-player height supplies each `Page`'s bottom content inset and floating-action-button
-clearance, so the last items can scroll above the controls. Each banner carries its own 8 dp above it and the column none,
+clearance, so the last items can scroll above the controls. The page is edge to edge, so the window
+never resizes for the keyboard: `Page` shrinks itself by the part of the IME inset that covers it and
+lowers its bottom inset by as much, so a focused field low on a page scrolls above the keyboard and the
+mini-player's room is not counted twice. A text field's value is Compose state (a view model's
+`mutableStateOf`, read on as a `snapshotFlow` where typing drives work, or `rememberSaveable`), never a
+`StateFlow` collected back into it, whose frame of lag drops keyboard edits and moves the cursor. Each banner carries its own 8 dp above it and the column none,
 so with no banner shown the mini player's gap above equals the one below. The empty library's *Welcome* scrolls, so the banners
 arriving on a first scan never squeeze its buttons.
 
@@ -389,9 +395,12 @@ Q and preamp; its gain-bearing bands get sliders without being converted to the 
 Advanced exposes the interactive graph, accessible band selectors and per-band type, frequency,
 gain and Q. *Fit the preamp* under the preamp slider sends the shown curve to the boundary's
 `fitted_preamp` at the stream rate (`fittedPreamp`, off the main thread) and commits
-the answer as a preamp edit, clearing the preset name; it is off with no bands. Preamp and bands
-remain independent of the enable switch; confirmed reset removes
-every band and returns the preamp to zero without changing that switch. The drawn response is the
+the answer as a preamp edit, clearing the preset name; it is off with no bands. Every edit of a band
+or the preamp (slider, graph, band editor, added or deleted band, fit) switches the equaliser on, as a
+preset does (`withCurve`); only the switch turns it off, and confirmed reset removes
+every band and returns the preamp to zero without changing that switch. An edit is shown at once as a
+draft over the stored curve; the draft goes once the repository has tried it, so a rejected curve falls
+back to the stored one, and a graph drag the gesture loses (cancelled, scrolled away) is released, not kept. The drawn response is the
 stage's arithmetic at the stream rate (48 kHz with nothing open, so the graph never reads empty);
 the native boundary validates the whole curve before sending any commands, and sends only fields
 that changed. ReplayGain, true-peak clip
@@ -557,7 +566,11 @@ Analysis uses the shared whole-track pass for waveform, spectrum, lossless asses
 true peak, clipping and bit use. Eight full results are cached in memory, invalidated on rescan;
 summary studies are persisted. A `Watch` cancels decoding. The live visualizer subscribes to the
 engine tap only while visible and samples on a worker; it never involves Kotlin in the callback.
-The inspector probes the original document and displays both technical and tagged metadata.
+The inspector probes the original document and displays both technical and tagged metadata; each
+Details page reads its own (`InspectorState`), offering *Try again* where the file could not be read.
+The analysis pane shows the pass running only for the song it was started on (`analysisTrack`), and
+the lyrics view keeps the sheet it was given for its song, asking again only where the shared sheet
+moved to another song before it saw one.
 
 **Tags are written through the desktop's writer, on a copy of the document, then the document is replaced** (`tagging.rs`, `rewriting.rs`).
 `FileTags` writes by path alone (staged copy, journal, read back: `library.md`'s *Writing the catalog
@@ -890,7 +903,12 @@ AutoEq and pasted EqualizerAPO/GraphicEQ profiles use the shared parser and load
 bands, every filter kept (`EqualiserImport`), into the curve in use (the bound one on a bound output). ListenBrainz and Last.fm accounts are opt-in,
 validate through their existing seams, and submit counted local listens in batches of 100 with
 independent durable marks advanced only after success. Existing history is included only when
-asked; Last.fm password sign-in saves the returned session, never that password. Favourites
+asked; Last.fm password sign-in saves the returned session, never that password, into the saved
+accounts with the key and secret it was made under, leaving every other unsaved field as typed; the
+password field clears only once the sign-in succeeds, and *Sign out* saves the account without its
+session. *Headphone correction* searches as typing settles or on the keyboard's search, once per text;
+emptying the field clears the results, and applying one shows its own progress and says when AutoEq
+gave no profile. Favourites
 are told by `tell_loves(account)` (`loves.rs`), which both phones' 30 s scrobbling loop calls after
 the listens (the Scrobbling page says so; there is no send button, and a favourite taken back is
 unloved on each saved account). It is the desktop's `Library::tell_loves` over the document

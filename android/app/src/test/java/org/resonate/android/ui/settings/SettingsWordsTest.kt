@@ -147,6 +147,14 @@ class SettingsWordsTest {
     }
 
     @Test
+    fun onlyADeviceAskedForAndNotYetPlayingIsPending() {
+        assertNull(pendingOutput(SYSTEM_DEFAULT_OUTPUT, 7))
+        assertNull(pendingOutput(SYSTEM_DEFAULT_OUTPUT, SYSTEM_DEFAULT_OUTPUT))
+        assertNull(pendingOutput(7, 7))
+        assertEquals(7, pendingOutput(7, 3))
+    }
+
+    @Test
     fun theBufferSnapsToTenMillisecondsWithinItsBounds() {
         assertEquals(50, bufferStep(12f))
         assertEquals(250, bufferStep(254.9f))

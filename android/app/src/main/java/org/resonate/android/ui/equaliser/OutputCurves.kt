@@ -86,7 +86,7 @@ fun KeptCurves(model: EqualiserViewModel) {
                         leadingContent = { Icon(Icons.Rounded.SpeakerGroup, null) },
                         trailingContent = {
                             IconButton(onClick = { forgetting = other.id }) {
-                                Icon(Icons.Rounded.DeleteOutline, "Forget its curve")
+                                Icon(Icons.Rounded.DeleteOutline, "Forget the curve for ${other.name}")
                             }
                         },
                     ) { Text(other.name) }

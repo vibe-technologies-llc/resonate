@@ -95,17 +95,23 @@ fun LyricsView(track: Track, style: TextStyle, modifier: Modifier = Modifier) {
     val sheet by features.lyrics.collectAsStateWithLifecycle()
     val loading by features.lyricsLoading.collectAsStateWithLifecycle()
     val online by features.online.collectAsStateWithLifecycle()
-    LaunchedEffect(track.id) {
-        if (features.lyrics.value?.trackId != track.id) features.loadLyrics(track.id)
+    var held by remember(track.id) { mutableStateOf<LyricSheet?>(null) }
+    val current = sheet?.takeIf { it.trackId == track.id }
+    val mine = current ?: held
+    LaunchedEffect(current) {
+        if (current != null) held = current
+    }
+    LaunchedEffect(track.id, sheet?.trackId, loading) {
+        if (!loading && mine == null && features.lyrics.value?.trackId != track.id) features.loadLyrics(track.id)
     }
     DisposableEffect(Unit) {
         features.watchLyrics(true)
         onDispose { features.watchLyrics(false) }
     }
-    val shown = sheet?.takeIf { it.trackId == track.id && it.lines.isNotEmpty() }
+    val shown = mine?.takeIf { it.lines.isNotEmpty() }
     Box(modifier.testTag("lyrics"), contentAlignment = Alignment.Center) {
         when {
-            loading -> LoadingIndicator()
+            loading && shown == null -> LoadingIndicator()
             shown == null ->
                 EmptyState(
                     Icons.Rounded.Lyrics,

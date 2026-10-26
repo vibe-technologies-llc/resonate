@@ -49,12 +49,18 @@ fun EqualiserGraph(
     onEdit: (EqualiserCurve) -> Unit,
     onCommit: (EqualiserCurve) -> Unit,
     onAdd: (hertz: Float, gainDb: Float) -> Unit,
+    onRelease: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var frozen by remember { mutableStateOf<Float?>(null) }
     val span = frozen ?: GraphScale.span(response, curve)
     val latest by rememberUpdatedState(curve)
     val latestSpan by rememberUpdatedState(span)
+    val select by rememberUpdatedState(onSelect)
+    val edit by rememberUpdatedState(onEdit)
+    val commit by rememberUpdatedState(onCommit)
+    val add by rememberUpdatedState(onAdd)
+    val release by rememberUpdatedState(onRelease)
     val scheme = MaterialTheme.colorScheme
     val measurer = rememberTextMeasurer()
     val labels = MaterialTheme.typography.labelSmall.copy(color = scheme.onSurfaceVariant)
@@ -83,47 +89,55 @@ fun EqualiserGraph(
                         else {
                             val centre = frame.handle(latest, found)
                             down.consume()
-                            onSelect(found)
+                            select(found)
                             Hold(found, latestSpan, down.position, Offset(centre.x, centre.y) - down.position)
                         }
                     frozen = hold.span
                     var moved = false
                     var abandoned = false
+                    var finished = false
                     var last = down.position
                     var placed: EqualiserCurve? = null
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                        if (!change.pressed) {
-                            last = change.position
-                            break
-                        }
-                        if (hold.band != null) {
-                            last = change.position
-                            if (!moved && (change.position - hold.start).getDistance() > 2f) moved = true
-                            if (moved) {
-                                val at = change.position + hold.offset
-                                placed = frame.placed(latest, hold.band, GraphPoint(at.x, at.y), bounds)
-                                onEdit(placed)
-                            }
-                            change.consume()
-                        } else {
-                            last = change.position
-                            if (change.isConsumed ||
-                                (change.positionChange() != Offset.Zero &&
-                                    (change.position - hold.start).getDistance() > tapTravel)
-                            ) {
-                                abandoned = true
+                    try {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) {
+                                last = change.position
                                 break
                             }
+                            if (hold.band != null) {
+                                last = change.position
+                                if (!moved && (change.position - hold.start).getDistance() > 2f) moved = true
+                                if (moved) {
+                                    val at = change.position + hold.offset
+                                    val next = frame.placed(latest, hold.band, GraphPoint(at.x, at.y), bounds)
+                                    placed = next
+                                    edit(next)
+                                }
+                                change.consume()
+                            } else {
+                                last = change.position
+                                if (change.isConsumed ||
+                                    (change.positionChange() != Offset.Zero &&
+                                        (change.position - hold.start).getDistance() > tapTravel)
+                                ) {
+                                    abandoned = true
+                                    break
+                                }
+                            }
+                        }
+                        finished = true
+                    } finally {
+                        frozen = null
+                        if (hold.band != null && moved) {
+                            val ending = placed
+                            if (finished && ending != null) commit(ending) else release()
                         }
                     }
-                    frozen = null
-                    if (hold.band != null) {
-                        if (moved) placed?.let(onCommit)
-                    } else if (!abandoned && (last - hold.start).getDistance() <= tapTravel) {
+                    if (hold.band == null && !abandoned && (last - hold.start).getDistance() <= tapTravel) {
                         val (hertz, gain) = frame.added(latest, GraphPoint(hold.start.x, hold.start.y))
-                        onAdd(hertz, gain)
+                        add(hertz, gain)
                     }
                 }
             }

@@ -43,3 +43,6 @@ fun withSystemDefault(outputs: List<AudioOutput>): List<AudioOutput> =
 fun outputNamed(outputs: List<AudioOutput>, id: Int): String =
     withSystemDefault(outputs).firstOrNull { it.id == id }?.let(::outputTitle)
         ?: "An unavailable device"
+
+fun pendingOutput(selected: Int, actual: Int): Int? =
+    selected.takeIf { it != SYSTEM_DEFAULT_OUTPUT && it != actual }

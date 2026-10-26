@@ -346,7 +346,7 @@ private fun EnrichmentState(status: EnrichmentStatus?, running: Boolean, onStop:
 
 @Composable
 private fun RecognitionKey(stored: String, onSave: (String) -> Unit) {
-    var draft by remember(stored) { mutableStateOf(stored) }
+    var draft by rememberSaveable(stored) { mutableStateOf(stored) }
     SettingRow(
         title = "AcoustID key",
         icon = Icons.Rounded.Fingerprint,
@@ -378,7 +378,7 @@ private fun RecognitionKey(stored: String, onSave: (String) -> Unit) {
 
 @Composable
 private fun AuddToken(stored: String, onSave: (String) -> Unit) {
-    var draft by remember(stored) { mutableStateOf(stored) }
+    var draft by rememberSaveable(stored) { mutableStateOf(stored) }
     SettingRow(
         title = "AudD token",
         icon = Icons.Rounded.Hearing,

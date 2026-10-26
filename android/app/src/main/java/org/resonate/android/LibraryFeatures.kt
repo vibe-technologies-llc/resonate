@@ -48,7 +48,6 @@ import org.resonate.android.nativecore.ArtistInformation
 import org.resonate.android.nativecore.AutoEqDevice
 import org.resonate.android.nativecore.DownloadAccount
 import org.resonate.android.nativecore.HandedOff
-import org.resonate.android.nativecore.Inspector
 import org.resonate.android.nativecore.LibraryStatistics
 import org.resonate.android.nativecore.LyricFrame
 import org.resonate.android.nativecore.LyricSheet
@@ -70,7 +69,6 @@ import org.resonate.android.nativecore.SyncStatus
 import org.resonate.android.nativecore.SyncedDevice
 import org.resonate.android.nativecore.TidalAuthorization
 import org.resonate.android.nativecore.Track
-import org.resonate.android.nativecore.parseEqProfile
 import org.resonate.android.nativecore.syncCodeInLink
 import org.resonate.android.nativecore.syncDeviceCalled
 import org.resonate.android.nativecore.syncNewCode
@@ -140,6 +138,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     private val analysisRequest = AtomicLong()
     val corrections = MutableStateFlow<List<AutoEqDevice>>(emptyList())
     val correctionBusy = MutableStateFlow(false)
+    val correctionApplying = MutableStateFlow(false)
     val scrobbleAccount = MutableStateFlow<ScrobbleAccount?>(null)
     val scrobbleStatus = MutableStateFlow<String?>(null)
     private var submitting: Job? = null
@@ -206,13 +205,12 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val recognitionBusy = MutableStateFlow(false)
     val recognitionTrack = MutableStateFlow<ULong?>(null)
     private val recognitionRequest = AtomicLong()
-    private val inspectorRequest = AtomicLong()
     private val correctionRequest = AtomicLong()
     val artistAlbumsNext = MutableStateFlow<UInt?>(null)
     val analysis = MutableStateFlow<AnalysisReport?>(null)
     val analysisBusy = MutableStateFlow(false)
+    val analysisTrack = MutableStateFlow<ULong?>(null)
     val analysisProgress = MutableStateFlow<Float?>(null)
-    val inspector = MutableStateFlow<Inspector?>(null)
     val artist = MutableStateFlow<ArtistInformation?>(null)
     val playlists = MutableStateFlow<List<MusicPlaylist>>(emptyList())
     val playlistRows = MutableStateFlow<List<Track>>(emptyList())
@@ -1111,17 +1109,6 @@ class LibraryFeatures(private val context: Context, private val library: Library
         statistics.value = native.statistics(days)
     }
 
-    fun loadInspector(id: ULong) {
-        val request = inspectorRequest.incrementAndGet()
-        inspector.value = null
-        artistRequest.incrementAndGet()
-        artist.value = null
-        work { native ->
-            val found = native.inspector(id)
-            if (request == inspectorRequest.get()) inspector.value = found
-        }
-    }
-
     fun loadArtist(id: ULong) {
         val request = artistRequest.incrementAndGet()
         artist.value = null
@@ -1220,6 +1207,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
         recognitionBusy.value = false
         val request = analysisRequest.incrementAndGet()
         analysis.value = null
+        analysisProgress.value = null
+        analysisTrack.value = id
         analysisBusy.value = true
         work { native ->
             try {
@@ -1279,17 +1268,27 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     }
 
-    fun applyCorrection(id: String) {
-        correctionBusy.value = true
+    fun clearCorrections() {
+        correctionRequest.incrementAndGet()
+        corrections.value = emptyList()
+        correctionBusy.value = false
+    }
+
+    fun applyCorrection(id: String, name: String) {
+        correctionApplying.value = true
         work { native ->
             try {
-                val found = native.autoEqProfile(id) ?: return@work
+                val found = native.autoEqProfile(id)
+                if (found == null) {
+                    library.notice("AutoEq could not give a correction for $name")
+                    return@work
+                }
                 library.updatePreferences {
                     it.copy(equaliserEnabled = true, equaliser = found.curve)
                 }
                 library.notice("Applied ${found.curve.name}")
             } finally {
-                correctionBusy.value = false
+                correctionApplying.value = false
             }
         }
     }
@@ -1315,13 +1314,28 @@ class LibraryFeatures(private val context: Context, private val library: Library
         scrobbleStatus.value = native.validateScrobbling(account).joinToString(" · ")
     }
 
-    fun signInLastFm(account: ScrobbleAccount, user: String, password: String) = work { native ->
+    fun signInLastFm(account: ScrobbleAccount, user: String, password: String, onSignedIn: () -> Unit) = work { native ->
         val session = native.lastfmSignIn(account.lastfmKey, account.lastfmSecret, user, password)
-        val signedIn = account.copy(lastfmSession = session)
+        val kept = scrobbleAccount.value ?: account.copy(listenbrainzToken = "")
+        val signedIn =
+            kept.copy(
+                lastfmKey = account.lastfmKey,
+                lastfmSecret = account.lastfmSecret,
+                lastfmSession = session,
+            )
         accounts.writeScrobbling(signedIn)
         native.startScrobbling(ScrobbleService.LAST_FM, false)
         scrobbleAccount.value = signedIn
         scrobbleStatus.value = "Signed in to Last.fm"
+        onSignedIn()
+    }
+
+    fun signOutLastFm() = work { _ ->
+        val kept = scrobbleAccount.value ?: return@work
+        val signedOut = kept.copy(lastfmSession = "")
+        accounts.writeScrobbling(signedOut)
+        scrobbleAccount.value = signedOut
+        scrobbleStatus.value = "Signed out of Last.fm"
     }
 
     fun refreshOutputs() {
@@ -1503,11 +1517,6 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     }
 
-    fun applyProfileText(name: String, text: String) = work { _ ->
-        val found = parseEqProfile(text.toByteArray(Charsets.UTF_8), name)
-        library.updatePreferences { it.copy(equaliserEnabled = true, equaliser = found.curve) }
-    }
-
     fun searchOnline(text: String) {
         clearCollection()
         val request = searchRequest.incrementAndGet()
@@ -1566,7 +1575,6 @@ class LibraryFeatures(private val context: Context, private val library: Library
         syncHandoffs.value = emptyList()
         analysisRequest.incrementAndGet()
         recognitionRequest.incrementAndGet()
-        inspectorRequest.incrementAndGet()
         correctionRequest.incrementAndGet()
         recognitionBusy.value = false
         artistRequest.incrementAndGet()
@@ -1578,6 +1586,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         enriching.value = false
         tidalBusy.value = false
         correctionBusy.value = false
+        correctionApplying.value = false
     }
 
     private fun work(action: suspend (MobilePlayer) -> Unit) {

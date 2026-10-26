@@ -14,6 +14,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -22,9 +24,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.resonate.android.nativecore.ScrobbleAccount
 import org.resonate.android.ui.Resonate
@@ -58,8 +57,8 @@ class ScrobblingViewModel(resonate: Resonate) : ViewModel() {
     val stored = features.scrobbleAccount
     val status = features.scrobbleStatus
     val online = features.online
-    private val mutableDraft = MutableStateFlow<ScrobbleDraft?>(null)
-    val draft = mutableDraft.asStateFlow()
+    var draft by mutableStateOf<ScrobbleDraft?>(null)
+        private set
 
     init {
         viewModelScope.launch {
@@ -68,7 +67,8 @@ class ScrobblingViewModel(resonate: Resonate) : ViewModel() {
                 if (account == null) return@collect
                 val before = previous
                 previous = account
-                mutableDraft.update { current ->
+                val current = draft
+                draft =
                     when {
                         current == null -> ScrobbleDraft(account)
                         before?.lastfmSession != account.lastfmSession ->
@@ -77,32 +77,32 @@ class ScrobblingViewModel(resonate: Resonate) : ViewModel() {
                             )
                         else -> current
                     }
-                }
             }
         }
     }
 
     fun edit(change: (ScrobbleDraft) -> ScrobbleDraft) {
-        mutableDraft.update { it?.let(change) }
+        draft = draft?.let(change)
     }
 
     fun save() {
-        val current = draft.value ?: return
+        val current = draft ?: return
         features.saveScrobbling(current.account.trimmed(), current.includeHistory)
         edit { it.copy(includeHistory = false) }
     }
 
     fun validate() {
-        draft.value?.let { features.validateScrobbling(it.account.trimmed()) }
+        draft?.let { features.validateScrobbling(it.account.trimmed()) }
     }
 
     fun signIn() {
-        val current = draft.value ?: return
-        features.signInLastFm(current.account.trimmed(), current.user.trim(), current.password)
-        edit { it.copy(password = "") }
+        val current = draft ?: return
+        features.signInLastFm(current.account.trimmed(), current.user.trim(), current.password) {
+            viewModelScope.launch { edit { it.copy(password = "") } }
+        }
     }
 
-    fun signOut() = edit { it.copy(account = it.account.copy(lastfmSession = "")) }
+    fun signOut() = features.signOutLastFm()
 
     fun goOnline() = features.setOnline(true)
 }
@@ -111,7 +111,7 @@ class ScrobblingViewModel(resonate: Resonate) : ViewModel() {
 fun ScrobblingScreen() {
     val model = resonateViewModel { ScrobblingViewModel(it) }
     val stored by model.stored.collectAsStateWithLifecycle()
-    val draft by model.draft.collectAsStateWithLifecycle()
+    val draft = model.draft
     val status by model.status.collectAsStateWithLifecycle()
     val online by model.online.collectAsStateWithLifecycle()
     Page("Scrobbling") { padding ->

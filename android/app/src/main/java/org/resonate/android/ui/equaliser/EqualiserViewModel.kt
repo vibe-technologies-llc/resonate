@@ -27,6 +27,7 @@ import org.resonate.android.nativecore.equaliserFrequencies
 import org.resonate.android.nativecore.equaliserLimits
 import org.resonate.android.nativecore.equaliserPresets
 import org.resonate.android.nativecore.fittedPreamp
+import org.resonate.android.nativecore.parseEqProfile
 import org.resonate.android.nativecore.responseCurve
 import org.resonate.android.ui.Resonate
 
@@ -100,6 +101,7 @@ class EqualiserViewModel(private val resonate: Resonate) : ViewModel() {
         holding = false
         draft.value = preset.curve
         library.updatePreferences { it.withPreset(preset) }
+        settle(preset.curve)
     }
 
     fun hold(curve: EqualiserCurve) {
@@ -107,16 +109,27 @@ class EqualiserViewModel(private val resonate: Resonate) : ViewModel() {
         draft.value = curve
     }
 
-    fun commit(curve: EqualiserCurve, enable: Boolean = false) {
+    fun release() {
+        holding = false
+        draft.value = null
+    }
+
+    fun commit(curve: EqualiserCurve) {
         holding = false
         draft.value = curve
-        library.updatePreferences { it.withCurve(curve, enable) }
+        library.updatePreferences { it.withCurve(curve) }
+        settle(curve)
     }
 
     fun reset() {
         holding = false
         draft.value = flatCurve
         library.updatePreferences { it.reset() }
+        settle(flatCurve)
+    }
+
+    private fun settle(curve: EqualiserCurve) {
+        library.request { draft.compareAndSet(curve, null) }
     }
 
     fun fitPreamp(curve: EqualiserCurve) {
@@ -134,8 +147,15 @@ class EqualiserViewModel(private val resonate: Resonate) : ViewModel() {
         }
     }
 
-    fun importProfile(name: String, text: String) {
-        resonate.features.applyProfileText(name.trim(), text)
+    fun importProfile(name: String, text: String, onApplied: () -> Unit) {
+        resonate.attempt(viewModelScope) { _ ->
+            val found =
+                withContext(Dispatchers.Default) {
+                    parseEqProfile(text.toByteArray(Charsets.UTF_8), name.trim())
+                }
+            commit(found.curve)
+            onApplied()
+        }
     }
 
     fun bind(bound: Boolean) = library.bindEqualiser(bound)

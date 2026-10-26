@@ -50,9 +50,9 @@ fun SliderBank(
     val style = MaterialTheme.typography.labelMedium
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
+    val samples = listOf("+${cap.toInt()}.0") + gained.map { shortHertz(curve.bands[it].frequencyHz) }
     val labelDp =
-        remember(gained, style, density) {
-            val samples = listOf("+${cap.toInt()}.0") + gained.map { shortHertz(curve.bands[it].frequencyHz) }
+        remember(samples, style, density) {
             samples.maxOf { measurer.measure(it, style).size.width }.let { with(density) { it.toDp().value } }
         }
     BoxWithConstraints(modifier.fillMaxWidth()) {
