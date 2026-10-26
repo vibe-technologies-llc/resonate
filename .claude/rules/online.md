@@ -252,7 +252,8 @@ before a source joined is asked again by `look_again_for_portraits`.
     `musicbrainz.org/recording/<mbid>`.
   - Spotify: the public `/embed/playlist/<id>` page, whose `__NEXT_DATA__` (`shared::next_data`)
     holds `name` and a `trackList` of title, `subtitle` (artists as billed) and milliseconds; no
-    ISRC; at most what Spotify puts on the embed (fifty to a hundred).
+    ISRC; at most what Spotify puts on the embed (fifty to a hundred), with no continuation and no
+    keyless route past it (its Web API wants a registered client).
   - TIDAL (`Host::TidalEmbed`, the others' pace): the public `embed.tidal.com/playlists/<uuid>` page,
     asked with no login, key or token (`tidal.com/playlist/<uuid>` itself is a shell that holds only
     the name). The page is server-rendered markup, not JSON: the name is the anchor in
@@ -261,21 +262,47 @@ before a source joined is asked again by `look_again_for_portraits`.
     (`youtube::clock`); an item of another `product-type`, or with no title or no artist, is passed
     over, and `shared::unescaped` reads the page's escapes (`&#39;`, `&quot;`). The page's
     `tidalMediaSessionMetadata` script lists previews, not the playlist, and is not read. The embed
-    lists the first fifty songs and no continuation is asked; no ISRC (`a_tidal_playlist_names_its_title_and_each_song_by_its_title_artists_and_length`,
-    `a_link_to_a_tidal_playlist_names_its_songs_off_the_public_embed_page`, live). TIDAL's account
-    API would give ISRCs and every song but needs the listener's sign-in (`providers.md`), which a
-    pasted link never asks for.
+    lists the first fifty songs and offers no continuation, and TIDAL's OpenAPI wants a registered
+    client or the listener's sign-in (`providers.md`), which a pasted link never asks for. **The embed
+    names no ISRC, but each item's `product-id` is the track**: `Embed::coded_by` asks
+    `tidal.com/track/<id>` (`Host::Tidal`, the others' pace) for each song and reads the `isrcCode`
+    of the page's `MusicRecording` JSON-LD (`isrc_in`, schema.org structured data, not the app
+    bundle), so `follow_names` tries the catalog's ISRC first and the strict search after. This is
+    the one playlist read that asks a request a song; it costs what the strict search's own
+    per-song MusicBrainz request costs and saves it for a song held or found by code. A song page
+    that fails (any error but `Offline`, which ends the read) stops the asking and the remaining
+    songs go uncoded to the strict search; one with no code is passed over
+    (`a_track_page_names_its_isrc_in_its_structured_data_and_nothing_else_does`,
+    `each_song_of_the_embed_page_keeps_the_track_it_is`,
+    `a_tidal_playlist_names_its_title_and_each_song_by_its_title_artists_and_length`,
+    `a_link_to_a_tidal_playlist_names_its_songs_off_the_public_embed_page`, live, which asks that
+    most songs name a code).
   - Apple Music: the public `/<storefront>/playlist/<id>` page (`apple::playlist_named`), whose
     `serialized-server-data` script holds sections by `itemKind`: `containerDetailHeaderLockup`
     `title` is the name, each `trackLockup` a song (a `contentDescriptor` kind other than `song`
-    passed over); no ISRC (`a_link_to_an_apple_music_playlist_names_its_songs_off_the_public_page`,
+    passed over); no ISRC, no continuation in the page's data and no keyless route past it (Apple's
+    catalog API wants a developer token) (`a_link_to_an_apple_music_playlist_names_its_songs_off_the_public_page`,
     live).
   - YouTube (`Host::Youtube`, the others' pace): the public `/playlist?list=<id>` page's
     `ytInitialData`, name at `metadata.playlistMetadataRenderer.title`; the whole document is walked
     for entries (`uploads_in`) since the layout moves: a `lockupViewModel` of
     `LOCKUP_CONTENT_TYPE_VIDEO` or the older `playlistVideoRenderer`, each a `ListedSong::Uploaded`;
-    the page holds the first hundred, the continuation is not asked
-    (`a_link_to_a_youtube_playlist_names_its_uploads_off_the_public_page`, live).
+    the page holds the first hundred. **The rest is asked of the page's own continuation**: the
+    `continuationCommand` token sitting beside the rows in their array (`token_after`; the
+    section-level continuation elsewhere in the page is a different list and is not taken) is posted
+    as JSON to `/youtubei/v1/browse?key=` with the `INNERTUBE_API_KEY` and
+    `INNERTUBE_CONTEXT_CLIENT_VERSION` the page itself carries (`Asking::read`, each cut to the
+    characters a key or a version holds), a `WEB` client and no other identity, under
+    `LARGEST_CONTINUATION` since the answer echoes the page. Only the answer's
+    `onResponseReceivedActions` is read (`continuation_read`), each answer adding its uploads and
+    naming the next token, until none, a token already asked, an answer adding nothing, an error
+    (a failed continuation keeps what was read; `Offline` alone fails the read) or
+    `UPLOADS_AT_MOST` (1 000). An upload names no ISRC
+    (`a_page_holding_more_than_it_lists_names_the_continuation_beside_its_uploads_and_how_to_ask`,
+    `a_continuation_adds_its_uploads_once_and_names_the_next_only_where_it_has_one`,
+    `a_youtube_playlist_names_its_title_and_each_upload_by_its_title_channel_and_length`,
+    `a_link_to_a_youtube_playlist_names_its_uploads_off_the_public_page`, live, a playlist of over a
+    hundred).
   A playlist with no title names nothing.
 
 ## ListenBrainz

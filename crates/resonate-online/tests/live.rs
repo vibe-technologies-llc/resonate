@@ -488,7 +488,11 @@ fn a_link_to_a_youtube_playlist_names_its_uploads_off_the_public_page() {
         .expect("the page names the playlist");
 
     assert!(!playlist.name.is_empty());
-    assert!(playlist.songs.len() >= 20, "{} songs", playlist.songs.len());
+    assert!(
+        playlist.songs.len() > 100,
+        "{} songs, the page's own hundred and no more",
+        playlist.songs.len()
+    );
     assert!(playlist.songs.iter().all(|song| matches!(
         song,
         ListedSong::Uploaded(names) if names.title.is_some() && names.length.is_some()
@@ -516,6 +520,16 @@ fn a_link_to_a_tidal_playlist_names_its_songs_off_the_public_embed_page() {
         song,
         ListedSong::Named(names) if names.title.is_some() && names.artist.is_some()
     )));
+    let coded = playlist
+        .songs
+        .iter()
+        .filter(|song| matches!(song, ListedSong::Named(names) if !names.isrcs.is_empty()))
+        .count();
+    assert!(
+        coded * 2 > playlist.songs.len(),
+        "{coded} of {} songs name a code",
+        playlist.songs.len()
+    );
 }
 
 #[test]
