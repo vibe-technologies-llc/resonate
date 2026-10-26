@@ -68,9 +68,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   lowpass) still reads as lossless
 
 ## Keyboard and accessibility
-- [S · 0.2.0] The Favourites shelves (strips no reach key walks) take a plain click alone: a choice
-  apart cannot be made or extended there by key, so Control-click is left out until the shelves
-  join the reach
+- [M · 0.2.0] No reach key walks the Favourites shelves: a choice apart there is made by
+  Control-click and Shift-click alone, the arrows and `ctrl-space` reaching only the tracks under
+  them, until the strips join the pane's reach as Top results' do
 - [L · 0.2.0] Nothing is exposed to a screen reader: gpui now carries AccessKit, which the views
   do not yet use
 

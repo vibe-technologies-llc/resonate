@@ -934,7 +934,7 @@ impl RootView {
                 .take(STRIP_AT_MOST)
                 .enumerate()
                 .map(|(at, artist)| {
-                    let cell = self.artist_cell_at(artist, ARTIST_AT_THE_TOP, cx);
+                    let cell = self.artist_cell_at(artist, ARTIST_AT_THE_TOP, None, cx);
                     self.at_the_top(
                         cell,
                         run.row_of(TopEntry::Artist(at)),
@@ -957,7 +957,7 @@ impl RootView {
                 .take(STRIP_AT_MOST)
                 .enumerate()
                 .map(|(at, album)| {
-                    let cell = self.album_cell_at(album, theme::shelf_cover(), cx);
+                    let cell = self.album_cell_at(album, theme::shelf_cover(), None, cx);
                     self.at_the_top(
                         cell,
                         run.row_of(TopEntry::Album(at)),

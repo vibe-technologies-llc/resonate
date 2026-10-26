@@ -63,6 +63,8 @@ pub(crate) enum Listed {
     Artists,
     Playlists,
     Favourites,
+    FavouriteArtists,
+    FavouriteAlbums,
     Missing,
     Suggested,
     Offered,
@@ -88,6 +90,8 @@ impl Shift {
                     | Listed::Artists
                     | Listed::Playlists
                     | Listed::Favourites
+                    | Listed::FavouriteArtists
+                    | Listed::FavouriteAlbums
                     | Listed::Suggested
                     | Listed::Top
             ) | Self::Playlist(_)
@@ -1038,6 +1042,8 @@ mod tests {
             Listed::Artists,
             Listed::Playlists,
             Listed::Favourites,
+            Listed::FavouriteArtists,
+            Listed::FavouriteAlbums,
             Listed::Suggested,
             Listed::Top,
         ] {
