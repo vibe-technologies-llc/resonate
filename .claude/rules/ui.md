@@ -1375,9 +1375,9 @@ is never named.
   reorderable row reserves the edge in `theme::UNMARKED`; saved queries draw none. A drop does not ask
   `acting_on`: `reorder::movable` takes the row it stands for beside the `Carried` it would hand over.
 - **The catalog listings choose rows apart.** Only `Shift::chooses_apart` (Tracks, Albums, Artists,
-  the playlists index, Favourites and an opened suggestion; not the queue or an opened playlist, whose
-  rows are moved and dropped as one run, nor Missing, Top results, the Favourites shelves or the
-  Suggestions and Statistics shelves, whose runs mix kinds of row or are strips no key reaches) takes `ctrl`-click (add the row, or let it go if chosen) and `shift`-click (widen from the
+  the playlists index, Favourites, an opened suggestion, an opened playlist and the songs of Top
+  results; not the queue, Missing, the Favourites shelves or the Suggestions and Statistics shelves,
+  whose runs are strips no key reaches or mix kinds of row) takes `ctrl`-click (add the row, or let it go if chosen) and `shift`-click (widen from the
   anchor, keeping what was chosen apart); a plain click still plays or opens, a modified click only
   chooses (`RootView::reach_by_click`). `ctrl-space` chooses or lets go of the row the cursor is on
   (`ChooseReached`), `ctrl-shift-up`/`down` hop the cursor a row without touching the choice
@@ -1405,10 +1405,25 @@ is never named.
   per folder, on the first of its files, since the portal reveals one file and a folder opens once) and
   *Share each* (`LibraryModel::share_each`: every link on the clipboard one to a line, the toast
   counting them and saying how many of the choice had one). What takes one row still: *Go to* entries
-  and the other copies; album and artist menus never had Hide, Delete or file entries. Top results is
-  one run of songs, found songs and strips of artists and albums, an opened playlist moves and drops
-  its reach as one `Span` (`Command::Move`, `remove_from_playlist`), and the Favourites shelves are
-  strips beside the listing that no reach key walks, so those keep Shift alone.
+  and the other copies; album and artist menus never had Hide, Delete or file entries.
+  **Top results chooses its songs only.** The run mixes songs, found songs and strips of artists and
+  albums, so `RootView::choosable_rows` is the songs shown (`TopRun::songs`): `reach_by_click`,
+  `choose_the_reached` and `hop_to_a_row` refuse a row past it (a strip keeps its plain click, found
+  songs theirs), and `RootView::choosable` clips a reach that arrow keys or *reach every row* ran
+  across kinds to its songs wherever a choice acts (`enter`, the menu, the queue buttons, the lift,
+  `tracks_chosen`). **An opened playlist chooses its entries apart too, and its edits take the
+  choice whole**: *Take out* (`delete`, the ✕, the menu) is `RootView::drop_chosen`, one
+  `remove_runs_from_playlist` and one undo step, leaving the reach on the row where the first run
+  stood (`Reach::after_dropping_runs`); a drag, `alt`-up/down and the row arrows are
+  `RootView::shift_chosen`, which for one span is the old `Command::Move`/`move_in_playlist` and for
+  several is `gather_in_playlist`, the rows setting down together in order at the drop row (arrows:
+  one place above the first chosen row or below the last) and the reach becoming that block
+  (`Chosen::gathered_by`); `Carried` carries a `Chosen`. `enter` on a choice plays the playlist from
+  its first chosen row (`Shift::plays_the_chosen_rows` is false there: the badge and the queue
+  stamp belong to the whole playlist), while the queue buttons and *Add to playlist* take exactly
+  the chosen entries (`Reaching` holds a `Chosen`). The Favourites shelves are strips beside the
+  listing that no reach key walks, so a choice could neither be made nor extended there by key and
+  they keep a plain click.
 - **A track or album is dragged out of a listing into the queue or a playlist.** Track rows and album
   cells carry a `reorder::Lifted` (`Lift::Tracks`/`Lift::Album`/`Lift::Albums`) through
   `reorder::liftable`; a row standing in the choice carries every loaded row of it as a

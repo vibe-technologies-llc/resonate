@@ -925,6 +925,46 @@ pub fn remove_rows(inner: &Inner, id: PlaylistId, rows: Span) -> Result<bool> {
     Ok(changed)
 }
 
+pub fn remove_runs(inner: &Inner, id: PlaylistId, runs: &[Span]) -> Result<usize> {
+    dropped_where(inner, id, Edit::Removed, Going::Rows(runs))
+}
+
+pub fn gather_rows(inner: &Inner, id: PlaylistId, runs: &[Span], onto: usize) -> Result<bool> {
+    let changed = undo::edited(inner, id, Edit::Moved, Reach::Whole, |transaction| {
+        only_a_list(transaction, id)?;
+        refuse_a_kept_order(transaction, id)?;
+        let held = numbered(transaction, id)?;
+        let Some(order) = Span::gathered(runs, held.len(), onto) else {
+            return Ok(Change::Nothing(false));
+        };
+        let Some(first) = order
+            .iter()
+            .enumerate()
+            .position(|(place, row)| place != *row)
+        else {
+            return Ok(Change::Nothing(false));
+        };
+
+        transaction
+            .execute(
+                "DELETE FROM playlist_entries WHERE playlist_id = ?1 AND position >= ?2",
+                params![id.get() as i64, first as i64],
+            )
+            .map_err(|source| Error::store(StoreOp::Delete, source))?;
+        for (position, row) in (first..).zip(&order[first..]) {
+            insert(transaction, id, position as i64, &held[*row].1)?;
+        }
+        touch(transaction, id)?;
+
+        Ok(Change::Made(true))
+    })?;
+
+    if changed {
+        inner.playlists_changed();
+    }
+    Ok(changed)
+}
+
 pub fn move_rows(inner: &Inner, id: PlaylistId, rows: Span, to: usize) -> Result<bool> {
     let reach = Reach::Shuffled(Span::between(rows.first().min(to), rows.last().max(to)));
     let changed = undo::edited(inner, id, Edit::Moved, reach, |transaction| {
@@ -1072,6 +1112,7 @@ pub fn remove_matching(inner: &Inner, id: PlaylistId, matching: &str) -> Result<
 }
 
 enum Going<'a> {
+    Rows(&'a [Span]),
     Gone(&'a AHashSet<String>),
     Doubled,
     Unwanted(&'a AHashSet<String>),
@@ -1085,6 +1126,10 @@ fn asked_of(
     question: Going<'_>,
 ) -> Result<Vec<bool>> {
     Ok(match question {
+        Going::Rows(runs) => held
+            .iter()
+            .map(|(position, _)| runs.iter().any(|run| run.holds(*position as usize)))
+            .collect(),
         Going::Gone(gone) => held
             .iter()
             .map(|(_, row)| gone.contains(&row.path))

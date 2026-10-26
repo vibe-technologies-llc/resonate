@@ -66,8 +66,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   weighed
 
 ## Keyboard and accessibility
-- [M · 0.2.0] *Top results* (songs, artists and albums in one run), the Favourites shelves (strips no
-  reach key walks) and an opened playlist (a reach there moves and drops as one run) take Shift alone
+- [S · 0.2.0] The Favourites shelves (strips no reach key walks) take a plain click alone: a choice
+  apart cannot be made or extended there by key, so Control-click is left out until the shelves
+  join the reach
 - [L · 0.2.0] Nothing is exposed to a screen reader: gpui now carries AccessKit, which the views
   do not yet use
 

@@ -2256,6 +2256,34 @@ impl RootView {
         }
     }
 
+    pub(crate) fn shift_chosen(
+        &mut self,
+        shift: Shift,
+        chosen: &Chosen,
+        to: usize,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(rows) = chosen.single() {
+            self.shift_rows(shift, rows, to, cx);
+            return;
+        }
+        let Shift::Playlist(playlist) = shift else {
+            return;
+        };
+
+        let held = self.library.read(cx).entries().len();
+        let landed = chosen.gathered_by(to, held);
+        let runs = chosen.runs().to_vec();
+        self.library.update(cx, |library, cx| {
+            library.gather_in_playlist(playlist, runs, to, cx);
+        });
+        if let Some(landed) = landed {
+            self.reach = Some(Reach::spanning(shift, landed.first(), landed.last()));
+        }
+        self.landed_by_a_jump = None;
+        cx.notify();
+    }
+
     fn arrangement(&self, cx: &App) -> Arrangement {
         let library = self.library.read(cx);
 
@@ -2334,6 +2362,24 @@ impl RootView {
         }
     }
 
+    pub(crate) fn choosable(&self, shift: Shift, chosen: Chosen, cx: &App) -> Chosen {
+        chosen.within(self.choosable_rows(shift, cx))
+    }
+
+    fn choosable_rows(&self, shift: Shift, cx: &App) -> usize {
+        match shift {
+            Shift::Listing(Listed::Top) => TopRun::of(self.library.read(cx)).songs(),
+            _ => usize::MAX,
+        }
+    }
+
+    pub(crate) fn reached_chosen(&self, shift: Shift) -> Option<Chosen> {
+        self.reach
+            .as_ref()
+            .filter(|reach| reach.shift == shift)
+            .map(Reach::selected)
+    }
+
     pub(crate) fn tracks_chosen(&self, shift: Shift, chosen: &Chosen, cx: &App) -> Vec<Track> {
         let library = self.library.read(cx);
         let picked = |tracks: &[Track]| -> Vec<Track> {
@@ -2349,6 +2395,10 @@ impl RootView {
             Shift::Listing(Listed::Suggested) => library
                 .opened_suggestion()
                 .map_or_else(Vec::new, |opened| picked(&opened.tracks)),
+            Shift::Listing(Listed::Top) => {
+                let songs = TopRun::of(library).songs();
+                picked(&library.listing()[..songs.min(library.listing().len())])
+            }
             _ => Vec::new(),
         }
     }
@@ -2375,9 +2425,17 @@ impl RootView {
         if !shift.chooses_apart() || !(modifiers.control || modifiers.shift) {
             return false;
         }
+        let choosable = self.choosable_rows(shift, cx);
+        if row >= choosable {
+            return false;
+        }
         self.reach_by_hand(cx);
 
-        let held = self.reach.as_ref().filter(|reach| reach.shift == shift);
+        let held = self
+            .reach
+            .as_ref()
+            .filter(|reach| reach.shift == shift)
+            .and_then(|reach| reach.within(choosable));
         self.reach = Some(match held {
             Some(reach) if modifiers.control => reach.toggled(row),
             Some(reach) => reach.widened_to(row),
@@ -2396,11 +2454,13 @@ impl RootView {
         let Some((shift, held)) = self.reachable(cx) else {
             return;
         };
-        if !shift.chooses_apart() {
+        let choosable = self.choosable_rows(shift, cx);
+        if !shift.chooses_apart() || choosable == 0 {
             return;
         }
 
         self.reach = Some(match self.reach_in(shift, held) {
+            Some(reach) if reach.row >= choosable => return,
             Some(reach) => reach.toggled(reach.row),
             None => Reach::at(shift, self.opening_row(shift, held, cx)),
         });
@@ -2424,6 +2484,10 @@ impl RootView {
         let Some(row) = step.landing(Span::one(reach.row), held) else {
             return;
         };
+        let choosable = self.choosable_rows(shift, cx);
+        if row >= choosable || reach.row >= choosable {
+            return;
+        }
 
         self.reach = Some(reach.hopped_to(row));
         self.show_row(shift, row, cx);
@@ -2590,7 +2654,7 @@ impl RootView {
             return false;
         }
 
-        self.drop_rows(shift, reach.rows(), cx);
+        self.drop_chosen(shift, &reach.acted_on(), cx);
         true
     }
 
@@ -2658,12 +2722,23 @@ impl RootView {
         let Some(reach) = self.reach_in(shift, held) else {
             return;
         };
-        let Some(to) = step.landing(reach.rows(), held) else {
+        let chosen = reach.acted_on();
+        let Some(to) = chosen
+            .bounds()
+            .and_then(|bounds| step.landing(bounds, held))
+        else {
             return;
         };
+        let landed = chosen.gathered_by(to, held);
 
-        self.shift_rows(shift, reach.rows(), to, cx);
-        self.reach = Some(reach.stepped(step));
+        self.shift_chosen(shift, &chosen, to, cx);
+        match (chosen.single(), landed) {
+            (Some(rows), _) if rows == reach.rows() => self.reach = Some(reach.stepped(step)),
+            (Some(_), Some(landed)) => {
+                self.reach = Some(Reach::spanning(shift, landed.first(), landed.last()));
+            }
+            _ => {}
+        }
         self.landed_by_a_jump = None;
         self.show_row(shift, to, cx);
         cx.notify();
@@ -2680,14 +2755,14 @@ impl RootView {
         let Some(reach) = self.reach_in(shift, held) else {
             return;
         };
-        let chosen = reach.selected();
+        let chosen = self.choosable(shift, reach.selected(), cx);
         let row = if shift.chooses_apart() {
             chosen.first().unwrap_or(reach.row)
         } else {
             reach.rows().first()
         };
 
-        if shift.chooses_apart() && chosen.count() > 1 {
+        if shift.plays_the_chosen_rows() && chosen.count() > 1 {
             self.play_the_chosen(shift, &chosen, window, cx);
             return;
         }
@@ -2805,11 +2880,7 @@ impl RootView {
         let queued = self.player.read(cx).queue();
         let kept = self.took_out.keeping_all(&queued, &runs);
 
-        let mut held = queued.len();
-        for rows in runs.iter().rev() {
-            self.reach = Reach::after_dropping(Shift::Queue, *rows, held);
-            held = held.saturating_sub(rows.rows());
-        }
+        self.reach = Reach::after_dropping_runs(Shift::Queue, &runs, queued.len());
         self.landed_by_a_jump = None;
 
         self.send_by_position(Command::RemoveAll(runs), cx);
@@ -2817,6 +2888,28 @@ impl RootView {
             toast::tell(took_out(kept), cx);
         }
         cx.notify();
+    }
+
+    pub(crate) fn drop_chosen(&mut self, shift: Shift, chosen: &Chosen, cx: &mut Context<Self>) {
+        if let Some(rows) = chosen.single() {
+            self.drop_rows(shift, rows, cx);
+            return;
+        }
+
+        match shift {
+            Shift::Queue => self.drop_queue_runs(chosen.runs().to_vec(), cx),
+            Shift::Playlist(playlist) => {
+                let held = self.library.read(cx).entries().len();
+                let runs = chosen.runs().to_vec();
+                self.reach = Reach::after_dropping_runs(shift, &runs, held);
+                self.landed_by_a_jump = None;
+                self.library.update(cx, |library, cx| {
+                    library.remove_runs_from_playlist(playlist, runs, cx);
+                });
+                cx.notify();
+            }
+            Shift::Listing(_) => {}
+        }
     }
 
     pub(crate) fn drop_rows(&mut self, shift: Shift, rows: Span, cx: &mut Context<Self>) {

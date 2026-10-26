@@ -3052,6 +3052,231 @@ mod tests {
         assert!(chosen_rows(&mut driven).is_empty());
     }
 
+    fn a_playlist_of_five_songs_opened(
+        cx: &mut TestAppContext,
+        folder: &Folder,
+    ) -> (Driven, Vec<TrackId>) {
+        let library = scanned_catalog(folder, &["Aa", "Bb", "Cc", "Dd", "Ee"]);
+        let tracks = library
+            .tracks(&resonate_library::TrackQuery::default())
+            .expect("the scanned tracks");
+        let playlist = library.create_playlist("Evening").expect("a playlist");
+        let cuts: Vec<_> = tracks.iter().map(resonate_library::Cut::of).collect();
+        library
+            .add_to_playlist(playlist, &cuts)
+            .expect("rows put in");
+        let mut driven = Driven::opened_in(cx, library, folder);
+        driven.click("tab-playlists");
+        driven.until(|root, cx| root.library.read(cx).playlists().len() == 1);
+        driven.click(named("playlist", playlist.get()));
+        driven.until(|root, cx| root.library.read(cx).entries().len() == 5);
+
+        (driven, tracks.iter().map(|track| track.id).collect())
+    }
+
+    fn entries_held(driven: &mut Driven) -> Vec<TrackId> {
+        driven.read(|root, cx| {
+            root.library
+                .read(cx)
+                .entries()
+                .iter()
+                .filter_map(|entry| entry.track.as_ref().map(|track| track.id))
+                .collect()
+        })
+    }
+
+    #[gpui::test]
+    fn a_control_click_chooses_playlist_rows_apart_and_a_plain_click_still_plays(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, ids) = a_playlist_of_five_songs_opened(cx, &folder);
+
+        driven.click_with(named("entry", 0), CONTROL);
+        driven.click_with(named("entry", 2), CONTROL);
+
+        assert_eq!(chosen_rows(&mut driven), [0, 2]);
+        assert_eq!(
+            driven.read(|root, cx| root.player.read(cx).queue().len()),
+            0
+        );
+
+        driven.click_with(
+            named("entry", 4),
+            Modifiers {
+                shift: true,
+                ..Modifiers::none()
+            },
+        );
+
+        assert_eq!(chosen_rows(&mut driven), [0, 2, 3, 4]);
+
+        driven.click(named("entry", 1));
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 5);
+
+        assert_eq!(driven.queue(), ids);
+        assert_eq!(chosen_rows(&mut driven), [1]);
+    }
+
+    #[gpui::test]
+    fn taking_out_playlist_rows_chosen_apart_is_one_edit_and_one_undo(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let (mut driven, ids) = a_playlist_of_five_songs_opened(cx, &folder);
+
+        driven.click_with(named("entry", 0), CONTROL);
+        driven.click_with(named("entry", 2), CONTROL);
+        driven.cx.simulate_keystrokes("delete");
+        driven.until(|root, cx| root.library.read(cx).entries().len() == 3);
+
+        assert_eq!(entries_held(&mut driven), [ids[1], ids[3], ids[4]]);
+        assert_eq!(chosen_rows(&mut driven), [0]);
+
+        driven
+            .root
+            .update(&mut driven.cx, |root, cx| root.undo_edit(cx));
+        driven.until(|root, cx| root.library.read(cx).entries().len() == 5);
+
+        assert_eq!(entries_held(&mut driven), ids);
+    }
+
+    #[gpui::test]
+    fn dragging_a_playlist_row_chosen_apart_gathers_every_chosen_row_where_it_drops(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, ids) = a_playlist_of_five_songs_opened(cx, &folder);
+
+        driven.click_with(named("entry", 0), CONTROL);
+        driven.click_with(named("entry", 2), CONTROL);
+        let from = driven.centre_of(named("entry", 0));
+        let onto = driven.centre_of(named("entry", 4));
+        driven.drag(from, onto);
+        driven.until(|root, cx| {
+            root.library
+                .read(cx)
+                .entries()
+                .first()
+                .and_then(|entry| entry.track.as_ref())
+                .is_some_and(|track| track.title != "Aa")
+        });
+
+        assert_eq!(
+            entries_held(&mut driven),
+            [ids[1], ids[3], ids[4], ids[0], ids[2]]
+        );
+        assert_eq!(chosen_rows(&mut driven), [3, 4]);
+
+        driven
+            .root
+            .update(&mut driven.cx, |root, cx| root.undo_edit(cx));
+        driven.until(|root, cx| {
+            root.library
+                .read(cx)
+                .entries()
+                .first()
+                .and_then(|entry| entry.track.as_ref())
+                .is_some_and(|track| track.title == "Aa")
+        });
+
+        assert_eq!(entries_held(&mut driven), ids);
+    }
+
+    #[gpui::test]
+    fn the_move_keys_gather_playlist_rows_chosen_apart_one_place_down(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let (mut driven, ids) = a_playlist_of_five_songs_opened(cx, &folder);
+
+        driven.click_with(named("entry", 0), CONTROL);
+        driven.click_with(named("entry", 2), CONTROL);
+        driven.cx.simulate_keystrokes("alt-down");
+        driven.until(|root, cx| {
+            root.library
+                .read(cx)
+                .entries()
+                .first()
+                .and_then(|entry| entry.track.as_ref())
+                .is_some_and(|track| track.title != "Aa")
+        });
+
+        assert_eq!(
+            entries_held(&mut driven),
+            [ids[1], ids[3], ids[0], ids[2], ids[4]]
+        );
+        assert_eq!(chosen_rows(&mut driven), [2, 3]);
+    }
+
+    fn searched_for_echoes(driven: &mut Driven) {
+        driven.click("tab-tracks");
+        let model = driven.read(|root, _| root.library.clone());
+        driven.cx.update(|_, cx| {
+            model.update(cx, |library, cx| library.set_query("echoes".to_owned(), cx));
+        });
+    }
+
+    #[gpui::test]
+    fn a_control_click_chooses_top_results_songs_apart_and_enter_plays_them(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        for title in ["Echoes One", "Echoes Two", "Echoes Three"] {
+            folder.tagged(&format!("{title}.wav"), 1, &[(b"INAM", title)]);
+        }
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        searched_for_echoes(&mut driven);
+        driven.until(|root, cx| root.library.read(cx).listing().len() == 3);
+        let ids = listed_ids(&mut driven);
+
+        driven.click_with(named("track", ids[0].get()), CONTROL);
+        driven.click_with(named("track", ids[2].get()), CONTROL);
+
+        assert_eq!(chosen_rows(&mut driven), [0, 2]);
+        assert_eq!(
+            driven.read(|root, cx| root.player.read(cx).queue().len()),
+            0
+        );
+
+        driven.cx.simulate_keystrokes("enter");
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
+
+        assert_eq!(driven.queue(), [ids[0], ids[2]]);
+    }
+
+    #[gpui::test]
+    fn the_keys_choose_top_results_songs_and_never_an_artist_or_an_album(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        for title in ["Echoes One", "Echoes Two"] {
+            folder.tagged(
+                &format!("{title}.wav"),
+                1,
+                &[(b"INAM", title), (b"IART", "Echoes"), (b"IPRD", "Echoes")],
+            );
+        }
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        searched_for_echoes(&mut driven);
+        driven.until(|root, cx| {
+            let library = root.library.read(cx);
+            library.listing().len() == 2
+                && !library.artists().is_empty()
+                && !library.albums().is_empty()
+        });
+
+        driven.focus(|root| &root.search);
+        for key in ["down", "ctrl-shift-down", "ctrl-shift-down", "ctrl-space"] {
+            driven.cx.simulate_keystrokes(key);
+            driven.settle();
+        }
+
+        assert_eq!(chosen_rows(&mut driven), [0, 1]);
+        assert_eq!(
+            driven.read(|root, _| root.reached().map(|reach| reach.row)),
+            Some(1)
+        );
+    }
+
     #[gpui::test]
     fn the_menu_of_playlists_chosen_apart_queues_the_songs_of_each_and_nothing_else(
         cx: &mut TestAppContext,

@@ -2407,6 +2407,14 @@ impl Library {
         playlist::remove_rows(&self.inner, id, rows)
     }
 
+    pub fn remove_runs_from_playlist(&self, id: PlaylistId, runs: &[Span]) -> Result<usize> {
+        playlist::remove_runs(&self.inner, id, runs)
+    }
+
+    pub fn gather_in_playlist(&self, id: PlaylistId, runs: &[Span], onto: usize) -> Result<bool> {
+        playlist::gather_rows(&self.inner, id, runs, onto)
+    }
+
     pub fn remove_matching(&self, id: PlaylistId, matching: &str) -> Result<usize> {
         playlist::remove_matching(&self.inner, id, matching)
     }

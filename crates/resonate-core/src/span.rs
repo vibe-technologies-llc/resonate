@@ -72,6 +72,31 @@ impl Span {
             self.first
         }
     }
+
+    pub fn gathered(runs: &[Self], held: usize, onto: usize) -> Option<Vec<usize>> {
+        if onto >= held {
+            return None;
+        }
+
+        let chosen: Vec<bool> = (0..held)
+            .map(|row| runs.iter().any(|run| run.holds(row)))
+            .collect();
+        let first = chosen.iter().position(|chosen| *chosen)?;
+        if chosen[onto] {
+            return None;
+        }
+
+        let taken: Vec<usize> = (0..held).filter(|row| chosen[*row]).collect();
+        let mut order: Vec<usize> = (0..held).filter(|row| !chosen[*row]).collect();
+        let at = order.partition_point(|row| *row < onto) + usize::from(onto > first);
+        order.splice(at..at, taken);
+
+        order
+            .iter()
+            .enumerate()
+            .any(|(place, row)| place != *row)
+            .then_some(order)
+    }
 }
 
 impl fmt::Display for Span {
@@ -120,6 +145,39 @@ mod tests {
         let at = rows.landing(to);
         list.splice(at..at, taken);
         list
+    }
+
+    #[test]
+    fn rows_chosen_apart_gather_in_order_where_they_are_dropped() {
+        let apart = [Span::one(1), Span::one(5)];
+
+        assert_eq!(
+            Span::gathered(&apart, 7, 3),
+            Some(vec![0, 2, 3, 1, 5, 4, 6])
+        );
+        assert_eq!(
+            Span::gathered(&apart, 7, 0),
+            Some(vec![1, 5, 0, 2, 3, 4, 6])
+        );
+        assert_eq!(
+            Span::gathered(&apart, 7, 6),
+            Some(vec![0, 2, 3, 4, 6, 1, 5])
+        );
+    }
+
+    #[test]
+    fn rows_gathered_onto_a_chosen_row_or_off_the_end_move_nothing() {
+        let apart = [Span::one(1), Span::between(4, 5)];
+
+        assert_eq!(Span::gathered(&apart, 7, 1), None);
+        assert_eq!(Span::gathered(&apart, 7, 5), None);
+        assert_eq!(Span::gathered(&apart, 7, 7), None);
+        assert_eq!(Span::gathered(&[], 7, 3), None);
+        assert_eq!(
+            Span::gathered(&[Span::between(1, 2)], 7, 3),
+            Some(vec![0, 3, 1, 2, 4, 5, 6])
+        );
+        assert_eq!(Span::gathered(&[Span::between(1, 2)], 7, 2), None);
     }
 
     #[test]
@@ -267,6 +325,18 @@ mod tests {
             (held, rows, to) in a_list_a_span_and_a_row(),
         ) {
             prop_assert!(rows.landing(to) + rows.rows() <= held);
+        }
+
+        #[test]
+        fn one_span_gathered_lands_as_it_does_when_moved(
+            (held, rows, to) in a_list_a_span_and_a_row(),
+        ) {
+            prop_assume!(!rows.holds(to));
+
+            prop_assert_eq!(
+                Span::gathered(&[rows], held, to),
+                Some(after_moving(held, rows, to))
+            );
         }
 
         #[test]

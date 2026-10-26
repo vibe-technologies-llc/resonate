@@ -11,7 +11,7 @@ use crate::{
     icons::Icon,
     theme, toast,
     views::{
-        browser::{Plays, Rowed, reached_ring},
+        browser::{Chooses, Plays, Rowed, reached_ring},
         hint::Names,
         kit::{self, Found as _, Tone},
         listing,
@@ -145,6 +145,10 @@ impl TopRun {
             (self.albums, TopEntry::Album),
             (self.albums_found, TopEntry::AlbumFound),
         ]
+    }
+
+    pub(crate) const fn songs(self) -> usize {
+        self.songs
     }
 
     pub(crate) fn len(self) -> usize {
@@ -880,24 +884,23 @@ impl RootView {
             let mut rows = div().flex().flex_col();
             for (index, track) in tracks.iter().enumerate().take(SONGS_AT_THE_TOP) {
                 let row = run.row_of(TopEntry::Song(index));
-                let reached = self.reaches(Shift::Listing(Listed::Top), row);
+                let shift = Shift::Listing(Listed::Top);
+                let reached = self.reaches(shift, row);
+                let listed = self.track_row(
+                    &tracks,
+                    index,
+                    track,
+                    Rowed {
+                        playing: playing == Some(track.id),
+                        plays: Plays::AsTheListingIsDrawn { in_an_album: false },
+                        reach: self.at_the_reach(shift, row),
+                        chooses: Some(Chooses::among(Listed::Top, row)),
+                    },
+                    cx,
+                );
                 rows = rows.child(
-                    reorder::marked(
-                        self.track_row(
-                            &tracks,
-                            index,
-                            track,
-                            Rowed {
-                                playing: playing == Some(track.id),
-                                plays: Plays::AsTheListingIsDrawn { in_an_album: false },
-                                reach: self.at_the_reach(Shift::Listing(Listed::Top), row),
-                                chooses: None,
-                            },
-                            cx,
-                        ),
-                        reached,
-                    )
-                    .when(reached, |row| row.child(self.brought_into_view(None))),
+                    self.marked_where_reached(shift, row, listed)
+                        .when(reached, |row| row.child(self.brought_into_view(None))),
                 );
             }
             sections = sections

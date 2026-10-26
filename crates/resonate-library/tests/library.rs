@@ -3515,6 +3515,57 @@ fn a_playlist_moves_and_loses_a_whole_span_of_rows_at_once() -> Result<()> {
 }
 
 #[test]
+fn a_playlist_gathers_and_loses_rows_chosen_apart_as_one_undo_step() -> Result<()> {
+    let (tree, library) = scanned_playlist_tree();
+    let id = library.create_playlist("Evening")?;
+    let files = ["a.wav", "b.wav", "c.wav", "d.wav", "e.wav"];
+    for file in &files[3..] {
+        tree.write(file, &Wav::new().text(TITLE, file).build());
+    }
+    library.add_to_playlist(
+        id,
+        &files
+            .iter()
+            .map(|file| Cut::whole(MediaLocation::local(tree.path().join(file))))
+            .collect::<Vec<_>>(),
+    )?;
+    let apart = [Span::one(0), Span::one(2)];
+
+    assert!(library.gather_in_playlist(id, &apart, 3)?);
+    assert_eq!(
+        stems(&library.playlist_cuts(id)?),
+        vec!["b", "d", "a", "c", "e"],
+        "rows chosen apart did not gather in order after the row they were dropped on"
+    );
+
+    assert!(library.undo()?.is_some());
+    assert_eq!(
+        stems(&library.playlist_cuts(id)?),
+        vec!["a", "b", "c", "d", "e"],
+        "gathering rows took more than one undo step"
+    );
+
+    assert!(!library.gather_in_playlist(id, &apart, 2)?);
+    assert!(!library.gather_in_playlist(id, &apart, 9)?);
+
+    assert_eq!(
+        library.remove_runs_from_playlist(id, &[Span::one(0), Span::between(3, 4)])?,
+        3
+    );
+    assert_eq!(stems(&library.playlist_cuts(id)?), vec!["b", "c"]);
+
+    assert!(library.undo()?.is_some());
+    assert_eq!(
+        stems(&library.playlist_cuts(id)?),
+        vec!["a", "b", "c", "d", "e"],
+        "removing rows chosen apart took more than one undo step"
+    );
+
+    assert_eq!(library.remove_runs_from_playlist(id, &[Span::one(9)])?, 0);
+    Ok(())
+}
+
+#[test]
 fn a_playlist_reorders_and_loses_the_row_it_is_told_to() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
     let id = library.create_playlist("Evening")?;
