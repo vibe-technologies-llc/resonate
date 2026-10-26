@@ -19298,6 +19298,68 @@ fn a_tag_run_written_into_a_sheet_is_put_back_byte_for_byte() -> Result<()> {
 }
 
 #[test]
+fn a_tag_run_written_into_a_sheet_is_put_back_after_organise_moved_the_sheet_and_its_file()
+-> Result<()> {
+    let tree = Tree::new();
+    let file = tree.write("Meddle.aiff", &Aiff::new().frames(44_100).build());
+    tree.write("Meddle.cue", MEDDLE_AIFF_SHEET.as_bytes());
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    answer_the_cut(&database, &file, false, "One of These Days", "Ada");
+    answer_the_cut(&database, &file, true, "Echoes (Live)", "Ada");
+    let written = retagged(&library, true)?;
+    assert!(why_passed_over(&written).is_empty(), "{written:?}");
+
+    let organised = applied(&library)?;
+    let landed = landings(&organised)
+        .into_iter()
+        .map(|(_, to)| to)
+        .next()
+        .expect("the file a sheet cuts was filed");
+    let sheet = landed.with_file_name("Meddle.cue");
+    assert!(sheet.exists(), "the sheet did not travel with the file");
+    assert!(!tree.path().join("Meddle.cue").exists());
+
+    let put_back = walked_back(&library, true)?;
+    assert!(why_passed_over(&put_back).is_empty(), "{put_back:?}");
+    assert_eq!(put_back.retagging.sheets.len(), 1, "{put_back:?}");
+    let read = fs::read_to_string(&sheet).expect("the sheet is where organise put it");
+    assert!(read.contains("    TITLE \"Echoes\"\n"), "{read}");
+    assert!(!read.contains("Echoes (Live)"), "{read}");
+    Ok(())
+}
+
+#[test]
+fn a_tag_run_written_into_a_sheet_is_put_back_after_a_hand_move_the_scan_followed() -> Result<()> {
+    let tree = Tree::new();
+    let file = tree.write("rip/Meddle.aiff", &Aiff::new().frames(44_100).build());
+    tree.write("rip/Meddle.cue", MEDDLE_AIFF_SHEET.as_bytes());
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    answer_the_cut(&database, &file, false, "One of These Days", "Ada");
+    answer_the_cut(&database, &file, true, "Echoes (Live)", "Ada");
+    let written = retagged(&library, true)?;
+    assert!(why_passed_over(&written).is_empty(), "{written:?}");
+
+    fs::create_dir_all(tree.path().join("filed")).expect("a writable temporary directory");
+    fs::rename(tree.path().join("rip"), tree.path().join("filed/Meddle"))
+        .expect("the rip is moved by hand");
+    let stats = scan(&library, &options(&tree))?;
+    assert_eq!(stats.moved, 2);
+
+    let put_back = walked_back(&library, true)?;
+    assert!(why_passed_over(&put_back).is_empty(), "{put_back:?}");
+    assert_eq!(put_back.retagging.sheets.len(), 1, "{put_back:?}");
+    let read = fs::read_to_string(tree.path().join("filed/Meddle/Meddle.cue"))
+        .expect("the sheet is where the hand put it");
+    assert!(read.contains("    TITLE \"Echoes\"\n"), "{read}");
+    assert!(!read.contains("Echoes (Live)"), "{read}");
+    Ok(())
+}
+
+#[test]
 fn a_sheet_in_a_code_page_is_written_in_it_and_a_name_it_cannot_spell_is_refused() -> Result<()> {
     let latin = |text: &str| {
         text.chars()

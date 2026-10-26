@@ -1168,7 +1168,16 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   `sheeted::undone` plans each sheet from them, keeping only lines still saying what was written,
   so an untouched sheet comes back byte for byte and walking the walk back writes the run again
   (`a_tag_run_written_into_a_sheet_is_put_back_byte_for_byte`); `retag_walks_back` asks both
-  tables. The notes are keyed by the sheet's path and do not yet follow an organise.
+  tables. **The notes follow the sheet and the file** (`sheeted::notes_follow_the_sheet`,
+  `notes_follow_the_file`): `organise::files_moved` rekeys `sheet` by each move's sidecars and `file`
+  by each file it moves (a note at the destination dropped first), organise's walk back through the
+  same reversed moves; the scan's move pairing rekeys `file` through the same call and, as it cannot
+  see a sheet, `notes_follow_a_sheet_moved_beside` carries the old sheet's place to the audio's
+  (the folders they no longer share, the sheet's place within them) and rekeys only where the sheet
+  is gone from where it stood and a file stands at the new place; a sheet that moved by itself, or
+  to a place that does not mirror its audio's, keeps its old key and is put back by nothing
+  (`a_tag_run_written_into_a_sheet_is_put_back_after_organise_moved_the_sheet_and_its_file`,
+  `a_tag_run_written_into_a_sheet_is_put_back_after_a_hand_move_the_scan_followed`).
 - **The catalog follows the file, which the next scan reads.** A write changes size and mtime, so
   `files_retagged` writes both back (next walk: row unchanged) and `tagged_title`, `tagged_artist`,
   `title_sort`, `artist_sort`, only for fields it wrote (an unrecorded corrected title would read as

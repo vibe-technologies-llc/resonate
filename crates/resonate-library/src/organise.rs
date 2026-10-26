@@ -37,7 +37,7 @@ use crate::{
     filed,
     paged::{Paging, ROWS_A_PAGE},
     pass::{Cancelling, OrganiseHandle, PassHandle, PassKind},
-    scan, store, unreplacing, volumes,
+    scan, sheeted, store, unreplacing, volumes,
 };
 
 pub const DEFAULT_LAYOUT: &str = "{albumartist}/{album}/{disc}{track} {title}";
@@ -2827,6 +2827,7 @@ pub(crate) fn files_moved(tx: &Transaction<'_>, landed: &[Move]) -> Result<()> {
                 .execute(params![from, to])
                 .map_err(|source| Error::store(StoreOp::Update, source))?;
         }
+        sheeted::notes_follow_the_file(tx, from_path, to_path)?;
         let renamed = entries
             .execute(params![from, to])
             .map_err(|source| Error::store(StoreOp::Update, source))?;
@@ -2842,6 +2843,10 @@ pub(crate) fn files_moved(tx: &Transaction<'_>, landed: &[Move]) -> Result<()> {
                 MediaLocation::local(to_path).to_uri()
             ])
             .map_err(|source| Error::store(StoreOp::Update, source))?;
+    }
+
+    for sidecar in landed.iter().flat_map(|moved| &moved.sidecars) {
+        sheeted::notes_follow_the_sheet(tx, &sidecar.from, &sidecar.to)?;
     }
 
     Ok(())
