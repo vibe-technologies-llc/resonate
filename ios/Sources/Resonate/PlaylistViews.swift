@@ -72,6 +72,7 @@ struct PlaylistView: View {
     @Environment(\.dismiss) private var dismiss
     let id: UInt64
     @State private var renaming = false
+    @State private var revising = false
     @State private var deleting = false
     @State private var adding = false
     @State private var seen = false
@@ -117,7 +118,14 @@ struct PlaylistView: View {
                     if !rows.isEmpty {
                         CollectionQueueActions(tracks: rows, choosingPlaylist: $choosingPlaylist, queued: $queued)
                     }
-                    PlaylistOptions(id: id, fills: search != nil, renaming: $renaming, deleting: $deleting, export: export)
+                    PlaylistOptions(
+                        id: id,
+                        fills: search != nil,
+                        renaming: $renaming,
+                        revising: $revising,
+                        deleting: $deleting,
+                        export: export
+                    )
                 }
                 .simultaneousGesture(TapGesture().onEnded { features.loadPlaylistSync(id) })
             }
@@ -141,6 +149,15 @@ struct PlaylistView: View {
         .alert("Rename playlist", isPresented: $renaming) {
             PlaylistNameField(initial: playlist?.name ?? "") { name in
                 edit { native, revision in try native.renamePlaylist(id: id, revision: revision, name: name) }
+            }
+        }
+        .sheet(isPresented: $revising) {
+            if let search {
+                SavedSearchSheet(title: "Edit saved search", draft: .of(name: name, search: search)) { renamed, revised in
+                    library.features.reviseSearch(id, name: renamed, search: revised) { problem in
+                        if let problem { library.fail(problem) }
+                    }
+                }
             }
         }
         .confirmationDialog("Delete \(name)?", isPresented: $deleting, titleVisibility: .visible) {
@@ -243,6 +260,7 @@ struct PlaylistOptions: View {
     let id: UInt64
     var fills = false
     @Binding var renaming: Bool
+    @Binding var revising: Bool
     @Binding var deleting: Bool
     let export: (PlaylistFileFormat) -> Void
 
@@ -253,6 +271,9 @@ struct PlaylistOptions: View {
             !device.thisDevice && (device.nearby || device.online && features.online)
         }
         Section {
+            if fills {
+                Button("Edit search", systemImage: "slider.horizontal.3") { revising = true }
+            }
             Button("Rename playlist", systemImage: "pencil") { renaming = true }
             Button("Undo last playlist edit", systemImage: "arrow.uturn.backward") { features.undoPlaylistEdit() }
             Menu("Export playlist", systemImage: "square.and.arrow.up") {
@@ -283,11 +304,16 @@ struct SavedSearchRows: View {
     let rows: [Track]
 
     var body: some View {
-        Text(search.text.isEmpty ? "Every song" : search.text)
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
+        VStack(alignment: .leading, spacing: 2) {
+            Text(search.text.isEmpty ? "Every song" : search.text)
+                .font(.subheadline)
+            Text(search.reading)
+                .font(.footnote)
+        }
+        .foregroundStyle(.secondary)
+        .accessibilityElement(children: .combine)
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
         if rows.isEmpty {
             Text("No song in your library matches this search yet.")
                 .multilineTextAlignment(.center)

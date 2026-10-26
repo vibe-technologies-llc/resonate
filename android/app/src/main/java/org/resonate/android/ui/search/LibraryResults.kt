@@ -97,6 +97,7 @@ import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.components.TrackRow
 import org.resonate.android.ui.components.lit
 import org.resonate.android.ui.counted
+import org.resonate.android.ui.library.SavedSearchDraft
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.shownArtist
@@ -445,7 +446,12 @@ private fun LazyListScope.answered(
                 Row(Modifier.fillMaxWidth().padding(horizontal = Sizes.gutter), horizontalArrangement = Arrangement.End) {
                     TextButton(
                         onClick = {
-                            sheets.name("Save search as playlist", answer.query) { model.saveSearch(it, answer.query) }
+                            sheets.editSearch(
+                                "Save search as playlist",
+                                SavedSearchDraft.starting(answer.query, answer.query),
+                            ) { name, search ->
+                                model.saveSearch(name, search)
+                            }
                         },
                         modifier = Modifier.testTag("save-search"),
                     ) {

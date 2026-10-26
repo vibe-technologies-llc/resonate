@@ -470,14 +470,25 @@ and `covers` run it through the search index (`Searching::saved`: the grammar's 
 order otherwise, the other orders read the index's columns with the desktop's tie on the title, the
 reading reverses, the cap cuts), so it answers differently once the catalog or the clock moves; a
 page's `queue_id` is the row's place in the answer. `save_search(name, search)` makes one (one undo
-step); rename, delete and undo are a list's calls (undo restores the query with the row); `add_to_playlist`,
+step) and `revise_search(id, revision, name, search)` rewrites its name, text, order, direction and cap
+in place as one revision-checked, undoable step (`Error::NotASavedSearch` for a list,
+`PlaylistChanged` for a stale revision, `DuplicatePlaylistName` for a taken name; the next sync offers
+the new body as the desktop's `revise_query` is offered, `a_saved_search_revised_on_the_phone_is_offered_to_the_other_devices_in_its_new_form`);
+a cap of 0 is no cap, since a search asking no row would only be empty
+(`a_saved_search_is_revised_in_text_order_cap_and_name_as_one_undoable_step`,
+`a_revision_of_a_stale_a_taken_or_a_list_playlist_is_refused_and_changes_nothing`,
+`a_cap_of_none_or_zero_asks_every_row`); rename, delete and undo are a list's calls (undo restores the query with the row); `add_to_playlist`,
 `remove_from_playlist` and `move_in_playlist` refuse it with `NotAList`
 (`a_saved_search_answers_from_the_catalog_in_its_order_and_under_its_cap`,
 `a_saved_search_refuses_list_edits_and_is_renamed_deleted_and_restored_whole`).
 `search_order_reads_descending(order)` is the desktop's `SortOrder::reads`. Android saves a search from
-Search's Songs scope (*Save as playlist*, named in the naming sheet, relevance order, no cap); its
-playlist page shows *Saved search* and the text, plain rows without swipe, handle or *Add songs*, and
-its menu keeps rename, undo and delete; the *Add to playlist* picker lists lists alone.
+Search's Songs scope (*Save as playlist*) in `SavedSearchDialog`: a name, the search text, an order
+menu of the ten `SearchOrder`s (choosing one takes `search_order_reads_descending`), a *Descending*
+switch and a *Limit* (`SavedSearchDraft`: blank for every row, else a whole number above zero, which
+`capped` holds); its playlist page shows *Saved search*, the text and the order, direction and cap
+(`SavedSearch.reading`), plain rows without swipe, handle or *Add songs*, and its menu offers *Edit
+search* (the same dialog, `revise_search`) beside rename, undo and delete; the *Add to playlist*
+picker lists lists alone (`SavedSearchDraftTest`).
 
 Filters combine search text, folded artist/genre/album, minimum rate/depth, favourites and unplayed,
 with seven stable orders (title, album, artist, duration, added, plays and last played, the latest

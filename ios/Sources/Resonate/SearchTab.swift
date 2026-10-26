@@ -50,10 +50,13 @@ struct SearchTab: View {
                 Button { navigation.listening = true } label: { Label("Listen", systemImage: "ear") }
             }
         }
-        .alert("Save search as playlist", isPresented: $savingSearch) {
-            PlaylistNameField(initial: search.query) { name in
+        .sheet(isPresented: $savingSearch) {
+            SavedSearchSheet(
+                title: "Save search as playlist",
+                draft: .starting(name: search.query, text: search.query)
+            ) { name, saved in
                 remember(search)
-                library.features.saveSearch(name, text: search.query) { problem in
+                library.features.saveSearch(name, search: saved) { problem in
                     if let problem {
                         library.fail(problem)
                     } else {
@@ -61,8 +64,6 @@ struct SearchTab: View {
                     }
                 }
             }
-        } message: {
-            Text("The playlist fills itself with the songs this search finds.")
         }
         .onlineSongActions($actions)
         .onAppear {

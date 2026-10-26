@@ -70,6 +70,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.resonate.android.nativecore.SavedSearch
 import org.resonate.android.nativecore.Track
 import org.resonate.android.nativecore.albumKey
 import org.resonate.android.ui.LocalResonate
@@ -80,6 +81,9 @@ import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Navigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.shownArtist
+import org.resonate.android.ui.library.SavedSearchDialog
+import org.resonate.android.ui.library.SavedSearchDraft
+import org.resonate.android.ui.library.SearchEditing
 import org.resonate.android.ui.shownTitle
 import org.resonate.android.DeletionSentences
 
@@ -92,6 +96,7 @@ class Sheets(val snackbar: SnackbarHostState) {
     var song by mutableStateOf<SongSheetRequest?>(null)
     var picker by mutableStateOf<List<Track>?>(null)
     var naming by mutableStateOf<NamingRequest?>(null)
+    var searching by mutableStateOf<SearchEditing?>(null)
     var deleting by mutableStateOf<List<Track>?>(null)
     var editingTags by mutableStateOf<List<Track>?>(null)
     var listening by mutableStateOf(false)
@@ -115,6 +120,10 @@ class Sheets(val snackbar: SnackbarHostState) {
 
     fun name(title: String, initial: String = "", save: (String) -> Unit) {
         naming = NamingRequest(title, initial, save)
+    }
+
+    fun editSearch(title: String, draft: SavedSearchDraft, save: (String, SavedSearch) -> Unit) {
+        searching = SearchEditing(title, draft, save)
     }
 }
 
@@ -162,6 +171,7 @@ fun SheetHost() {
     sheets.song?.let { request -> SongSheet(request) { sheets.song = null } }
     sheets.picker?.let { tracks -> PlaylistPicker(tracks) { sheets.picker = null } }
     sheets.naming?.let { request -> NamePlaylistDialog(request) { sheets.naming = null } }
+    sheets.searching?.let { request -> SavedSearchDialog(request) { sheets.searching = null } }
     sheets.deleting?.let { tracks -> DeleteSongsDialog(tracks) { sheets.deleting = null } }
     sheets.editingTags?.let { tracks -> TagEditorSheet(tracks) { sheets.editingTags = null } }
     if (sheets.listening) ListenSheet { sheets.listening = false }

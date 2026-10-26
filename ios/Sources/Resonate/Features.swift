@@ -872,9 +872,15 @@ final class Features {
         }, then: then)
     }
 
-    func saveSearch(_ name: String, text: String, then: PlaylistEdited? = nil) {
-        let search = SavedSearch(text: text, order: .relevance, descending: false, rows: nil)
+    func saveSearch(_ name: String, search: SavedSearch, then: PlaylistEdited? = nil) {
         editPlaylist({ native in _ = try native.saveSearch(name: name, search: search) }, then: then)
+    }
+
+    func reviseSearch(_ id: UInt64, name: String, search: SavedSearch, then: PlaylistEdited? = nil) {
+        editPlaylist({ native in
+            guard let revision = try native.playlists().first(where: { $0.id == id })?.revision else { return }
+            try native.reviseSearch(id: id, revision: revision, name: name, search: search)
+        }, then: then)
     }
 
     func addToPlaylist(_ id: UInt64, _ tracks: [Track], then: PlaylistEdited? = nil) {

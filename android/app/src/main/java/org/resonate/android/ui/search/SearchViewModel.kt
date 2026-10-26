@@ -24,6 +24,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.resonate.android.nativecore.LibrarySearch
 import org.resonate.android.nativecore.MobilePlayer
+import org.resonate.android.nativecore.SavedSearch
 import org.resonate.android.nativecore.SearchAlbum
 import org.resonate.android.nativecore.SearchArtist
 import org.resonate.android.nativecore.SearchRelease
@@ -289,9 +290,9 @@ class SearchViewModel(private val resonate: Resonate) : ViewModel() {
         features.keepRecentSearches(keptSearch(recent.value, query.value))
     }
 
-    fun saveSearch(name: String, text: String) {
+    fun saveSearch(name: String, search: SavedSearch) {
         keep()
-        features.saveSearch(name, text)
+        features.saveSearch(name, search)
     }
 
     fun forget(text: String) {

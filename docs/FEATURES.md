@@ -43,8 +43,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Providers and network
 
 ## Device sync
-- [S · 0.2.0] A phone saves a search only in its relevance order with no row cap, and cannot revise a
-  saved search's text, order or cap once made, though a revision made on the desktop arrives
 
 ## Equaliser and DSP
 
