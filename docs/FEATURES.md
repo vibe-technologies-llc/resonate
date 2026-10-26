@@ -42,6 +42,17 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Device sync
 - [S · 0.2.0] A phone saves a search only in its relevance order with no row cap, and cannot revise a
   saved search's text, order or cap once made, though a revision made on the desktop arrives
+- [L · 0.2.0] Enrichment is not shared between paired devices: each asks MusicBrainz, the Cover Art
+  Archive, the lyric services and AcoustID for the same songs at the reference's paced rate and
+  decodes every song for its own study, though a device holding the same recording has already
+  landed its release, credits, links, kept lyrics, cover and study (verdict, loudness, print, band
+  levels). An answer could travel as a sealed record keyed by `Recording::key()` (an MBID where
+  landed, else the folded names and length a favourite is matched by), taken by the receiving
+  catalog through the same strict rules a lookup lands with (a guess is still never written, a file's
+  own tags and pictures still win) and stamped answered so the pass steps past it; a study only
+  where the copies are one file (the packets digest or the print agree), since a study of another
+  encode is not this file's; covers and the larger answers fetched device to device as songs are,
+  not kept on the server
 
 ## Equaliser and DSP
 
