@@ -1906,7 +1906,12 @@ is never named.
   that is only compared) on a background thread every `WATCHED_EVERY` (2 s) and reloads once the stamp
   moved since the last reload *and* read the same the tick before, so a scan committing batch after
   batch costs one reload when it pauses. This process's own writes never move the stamp; a busy writer
-  answers nothing and the tick is passed over.
+  answers nothing and the tick is passed over. **A model's playlist edits come with it onto *Undo***:
+  every such reload, and the watch's start, first runs `LibraryModel::take_what_a_model_offered`
+  (`Library::take_what_a_model_offered` on the background executor, chained like the edits,
+  notifying where it took any; `library.md`). Undo, Redo and their toasts say a model made the
+  step (`made_by` in `views/playlists.rs`, `made_by_saying`)
+  (`an_edit_a_model_made_beside_the_window_is_taken_onto_its_undo_and_put_back_there`).
 - **`Raise` activates the window; `Quit` closes it.** The binary's host answers `can_raise` with whether
   it holds a raise channel (the window's does; windowless `resonate play` and the bus's default `Host`
   answer false); `Raise` sends on it, `raise_when_asked` drains it on the gpui foreground and calls

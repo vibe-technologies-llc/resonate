@@ -18,6 +18,7 @@ use crate::{Result, cli::Cli, config::Config};
 #[cfg(feature = "mcp")]
 pub fn serve(cli: &Cli, config: &Config, player: Option<&str>) -> Result<()> {
     let library = crate::open_library(cli, config)?;
+    library.offer_edits_as_a_model();
     let sources = library.sources();
     let server = Server::new(library, OnTheBus::named(player.map(PlayerName::new)))
         .looking_up_with(Lookups {

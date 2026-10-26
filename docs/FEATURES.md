@@ -107,7 +107,3 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Later: Listen and recognition
 - [M · blocked: Shazam] Reached through an undocumented endpoint (`amp.shazam.com`); a change on its
   side stops recognition
-
-## Later: MCP
-- [L] An edit a model makes is not on the window's *Undo*: undo stacks live in the process that made
-  it

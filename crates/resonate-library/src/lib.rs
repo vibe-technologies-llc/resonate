@@ -23,6 +23,7 @@ mod meant;
 mod model;
 mod moves;
 mod numerals;
+mod offered;
 mod organise;
 mod paged;
 mod pass;
@@ -181,6 +182,6 @@ pub use crate::{
         Dropped, Landed, Looks, Passed as TakenPassed, Passing as TakenPassing, TakeInOptions,
         TakeInProgress, TakeInStats, TakeInSummary, take_in, weigh,
     },
-    undo::{Edit, Undoable},
+    undo::{Edit, Maker, Undoable},
     watch::RootsWatch,
 };

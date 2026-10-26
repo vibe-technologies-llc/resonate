@@ -1833,8 +1833,8 @@ pub(crate) fn insert(
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct Row {
     pub(crate) path: String,
-    start: i64,
-    frames: Option<i64>,
+    pub(crate) start: i64,
+    pub(crate) frames: Option<i64>,
 }
 
 impl Row {

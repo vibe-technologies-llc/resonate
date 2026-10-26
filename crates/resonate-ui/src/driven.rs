@@ -614,7 +614,7 @@ mod tests {
     use gpui::BorrowAppContext as _;
     use resonate_core::Span;
     use resonate_engine::Placement;
-    use resonate_library::{Direction, SortOrder};
+    use resonate_library::{Direction, Maker, SortOrder};
 
     use super::*;
     use crate::{
@@ -630,6 +630,45 @@ mod tests {
 
     fn catalog() -> Arc<Library> {
         Arc::new(Library::open_in_memory().expect("a catalog in memory"))
+    }
+
+    #[gpui::test]
+    fn an_edit_a_model_made_beside_the_window_is_taken_onto_its_undo_and_put_back_there(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let database = folder.path().join("library.db");
+        let window = Arc::new(Library::open(&database).expect("a catalog on disc"));
+        let model = Library::open(&database).expect("a second handle on the catalog");
+        model.offer_edits_as_a_model();
+        let mut driven = Driven::opened_in(cx, window, &folder);
+
+        let evening = model
+            .create_playlist("Evening")
+            .expect("the model starts a playlist");
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.library
+                .update(cx, |library, cx| library.take_what_a_model_offered(cx));
+        });
+        driven.until(|root, cx| {
+            root.library
+                .read(cx)
+                .undoable()
+                .is_some_and(|step| step.made_by == Maker::AModel && step.playlist == evening)
+        });
+
+        driven
+            .root
+            .update(&mut driven.cx, |root, cx| root.undo_edit(cx));
+        driven.until(|_, _| {
+            model
+                .playlist(evening)
+                .is_ok_and(|standing| standing.is_none())
+        });
+        assert!(
+            driven.read(|root, cx| root.library.read(cx).undoable().is_none()),
+            "the model's edit was still offered once put back"
+        );
     }
 
     #[gpui::test]

@@ -98,8 +98,10 @@ stays in the grammar (`build.rs` reads `cli.rs` featureless) and answers `Error:
 - **Edits are the library's calls, under its rules.** `mark_favourite` is `Library::favour_all`, one
   transaction: an unknown id anywhere answers `UnknownTrack`/`UnknownAlbum`/`UnknownArtist` and marks
   none. Playlist tools call `create_playlist`, `start_playlist`, `save_query` (with `fills_from`),
-  `remove_playlist`; adding to a self-filling playlist is `NotAList`. A model's change is not on the
-  window's *Undo*, though a window beside the session draws it (`Library::written_elsewhere`).
+  `remove_playlist`; adding to a self-filling playlist is `NotAList`. **A model's playlist edit is
+  on the window's *Undo* too**: `resonate mcp` calls `Library::offer_edits_as_a_model`, so every step
+  it stacks is also written to the catalog for a window to take (`library.md`'s *Undo*); a
+  favourite, a want or a pass has no undo in the window either and is offered nothing.
 - **A playlist row is named by position**: `playlist_tracks` answers each `row`;
   `remove_from_playlist` takes `row`..`through_row` (one `Span`; a `through_row` before `row` is
   `Refusal::OutOfRange`) or every row a search matches; past the end is `Error::NotInThePlaylist`.
@@ -113,8 +115,9 @@ stays in the grammar (`build.rs` reads `cli.rs` featureless) and answers `Error:
 - **`Tool::destroys` is `destructiveHint`**: the removals, `forget_folder`, `undo_edit`,
   `play_playlist`. **`Tool::reaches_the_network` is `openWorldHint`**: `start_lookup`, `start_poll`.
 - **A session undoes only its own edits.** `undo_edit` is `Library::undo` (`Library::redo` with
-  `redo`) over this process's stack; a playlist since changed by anything else is
-  `Error::PlaylistChanged`. Answers `edit`, `playlist`, `more_to_undo`, or `walked: null`.
+  `redo`) over this process's stack; a playlist since changed by anything else (a window that took
+  the step and walked it back included) is `Error::PlaylistChanged`. Undoing withdraws the step's
+  offer, redoing offers it again. Answers `edit`, `playlist`, `more_to_undo`, or `walked: null`.
 - **Unreadable combinations are refusals**: `OneOf`, `AtLeastOneOf`, `AtMostOneOf`, `BlankField` (a
   blank `query`/`fills_from` would read as no condition and take the whole library;
   `a_blank_query_or_search_is_refused_rather_than_taken_as_the_whole_library`).

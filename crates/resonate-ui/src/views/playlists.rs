@@ -7,7 +7,7 @@ use gpui::{
 };
 use resonate_core::{Accent, AlbumId, FrameSpan, MediaLocation, PlaylistId, Span};
 use resonate_engine::{Command, Placement, QueueItem, QueueRows, Queued, Unclaimed};
-use resonate_library::{Cut, Edit, Favoured, Lit, Playlist, PlaylistEntry, Undoable};
+use resonate_library::{Cut, Edit, Favoured, Lit, Maker, Playlist, PlaylistEntry, Undoable};
 use smallvec::smallvec;
 
 use crate::{
@@ -2225,7 +2225,8 @@ fn puts_back(undoable: &Undoable) -> SharedString {
     };
 
     SharedString::from(format!(
-        "{doing}. {UNDO_KEY}. {}",
+        "{doing}. {}{UNDO_KEY}. {}",
+        made_by(undoable.made_by),
         steps_behind(undoable.behind)
     ))
 }
@@ -2249,9 +2250,17 @@ fn does_again(redoable: &Undoable) -> SharedString {
     };
 
     SharedString::from(format!(
-        "{doing}. {REDO_KEY}. {}",
+        "{doing}. {}{REDO_KEY}. {}",
+        made_by(redoable.made_by),
         steps_behind(redoable.behind)
     ))
+}
+
+const fn made_by(maker: Maker) -> &'static str {
+    match maker {
+        Maker::ThisRun => "",
+        Maker::AModel => "A model made this edit, in a session beside the window. ",
+    }
 }
 
 fn steps_behind(steps: usize) -> String {
