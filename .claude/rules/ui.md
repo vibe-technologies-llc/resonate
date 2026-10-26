@@ -864,7 +864,7 @@ is never named.
   switch is pressed and read back off `Player::output_settings`; `Driven::hearing` hands the
   `Unplugged` backend sinks to list, so a device row is pressed too. gpui can't build an
   `ExternalPaths` in a test: `dragged_over` and `dropped` are called on the `RootView`; the platform's
-  own drag events are driven by the `drive-a-drag` skill on a hosted KWin, which `crates/resonate/tests/dragging.rs` runs (opt-in: `RESONATE_DRAG_TESTS=1`, a compositor, GTK 4 in python3 and `spectacle` on the path) and which proves the drop is accepted and copied; the overlay's drawing is looked at in the skill's `over.png`. `views/root.rs`
+  own drag events are driven by the `drive-a-drag` skill on a hosted KWin, which `crates/resonate/tests/dragging.rs` runs (opt-in: `RESONATE_DRAG_TESTS=1`, a compositor, GTK 4 in python3 and `spectacle` on the path) and which proves the drop is accepted and copied and the overlay drawn: against `before.png` the window drew widely, and in `over.png` (decoded with the `png` dev-dependency, found by what is drawn rather than by the window's place, which KWin does not always honour) everything past the source window but one card-sized, drop-centred box sits under the scrim, and that box holds a tinted border several times what the same box held before. `views/root.rs`
   drives keys. The equaliser's note is always drawn and `kit::section_header` holds a row control's
   height, so pressing the curve with the equaliser off moves nothing under the press.
 

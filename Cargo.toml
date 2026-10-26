@@ -95,6 +95,8 @@ image = {
     features = ["bmp", "gif", "jpeg", "png", "webp"]
 }
 
+png = { version = "0.18.1", default-features = false }
+
 realfft = { version = "3.5.0", default-features = false, features = ["avx", "sse", "neon"] }
 rustfft = { version = "6.4.1", default-features = false, features = ["avx", "sse", "neon"] }
 rusty-chromaprint = { version = "0.3.0", default-features = false }

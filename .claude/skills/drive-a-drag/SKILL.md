@@ -15,10 +15,10 @@ events from KWin's `org_kde_kwin_fake_input`.
 ```
 
 It builds `resonate` (default features, the `ui` one) and `fakein`, hosts the compositor, places the
-two windows (`place.js`, through KWin's scripting), presses on the source, drags to the window's
+two windows (`place.js`, through KWin's scripting), takes `before.png`, presses on the source, drags to the window's
 middle in 40 steps, holds, takes `over.png`, releases, waits and takes `after.png`. It exits 1 unless
 the source saw `drag-end False` (the target took the copy), the file landed in the run's music
-folder and the screenshot exists. Look at `over.png` (downscale it first: `PIL.Image.thumbnail`): it
+folder and both screenshots exist. Look at `over.png` (downscale it first: `PIL.Image.thumbnail`): it
 shows the overlay, the destination and each name with its mark. The run's logs and scratch library
 are in the output folder.
 
@@ -64,6 +64,6 @@ window's contents are only where the screenshot shows them.
 ## What it proves
 
 That a file dragged from another client reaches the root's `on_drag_move::<ExternalPaths>` on a real
-Wayland compositor (KWin), draws the overlay, and that the drop copies the file. `crates/resonate/tests/dragging.rs` runs it with `RESONATE_DRAG_TESTS=1` and checks what it checks; it is not in CI
+Wayland compositor (KWin), draws the overlay, and that the drop copies the file. `crates/resonate/tests/dragging.rs` runs it with `RESONATE_DRAG_TESTS=1` and checks what it checks, the overlay by comparing `over.png` with `before.png` (the scrim leaves only a card-sized, tinted box drawn); it is not in CI
 (a compositor, a GPU and a Vulkan driver), and it says nothing of another compositor's data-device
 behaviour.
