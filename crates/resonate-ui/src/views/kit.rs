@@ -11,7 +11,12 @@ use crate::{
     format,
     icons::{self, Icon},
     motion, theme,
-    views::{hint::Names, listing, pointed::LitUnderThePointer, spoken::Spoken},
+    views::{
+        hint::Names,
+        listing,
+        pointed::LitUnderThePointer,
+        spoken::{Spelt, Spoken},
+    },
 };
 
 const BUTTON_GROUP: &str = "button";
@@ -131,20 +136,49 @@ impl<T: Styled> EndsInAnEllipsis for T {}
 
 const ELLIPSIS: &str = "…";
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Cut {
+    whole: SharedString,
+    drawn: SharedString,
+}
+
+impl Cut {
+    pub(crate) fn of(whole: SharedString, drawn: SharedString) -> Self {
+        Self { whole, drawn }
+    }
+}
+
+impl IntoElement for Cut {
+    type Element = SharedString;
+
+    fn into_element(self) -> SharedString {
+        self.drawn
+    }
+}
+
+impl Spelt for Cut {
+    fn spelt(&self) -> SharedString {
+        self.whole.clone()
+    }
+}
+
 pub(crate) fn cut_to_fit(
     text: SharedString,
     room: Pixels,
     font: Font,
     size: Pixels,
     cx: &App,
-) -> SharedString {
+) -> Cut {
     if room <= px(0.0) {
-        return text;
+        return Cut::of(text.clone(), text);
     }
-    cx.text_system()
+    let drawn = cx
+        .text_system()
         .line_wrapper(font, size)
-        .truncate_line(text, room, ELLIPSIS, &[], TruncateFrom::End)
-        .0
+        .truncate_line(text.clone(), room, ELLIPSIS, &[], TruncateFrom::End)
+        .0;
+
+    Cut::of(text, drawn)
 }
 
 pub(crate) fn width_of(text: &str, font: &Font, size: Pixels, cx: &App) -> Pixels {
@@ -1196,6 +1230,34 @@ mod tests {
         assert_eq!(swatch.role(), Role::RadioButton);
         assert_eq!(swatch.label(), Some("Mauve"));
         assert_eq!(swatch.toggled(), Some(gpui::Toggled::False));
+    }
+
+    #[test]
+    fn a_link_cut_to_fit_is_drawn_cut_and_named_whole() {
+        spoken::listened_to(true);
+
+        let cut = Cut::of(
+            SharedString::new_static("Echoes (2011 Remaster)"),
+            SharedString::new_static("Echoes…"),
+        );
+        let uncut = Cut::of(
+            SharedString::new_static("Meddle"),
+            SharedString::new_static("Meddle"),
+        );
+
+        let link = node_of(&div().id("playing-title").linked_as(&cut, "Open this album"))
+            .expect("a heard link is a node");
+        let whole = node_of(
+            &div()
+                .id("playing-album")
+                .linked_as(&uncut, "Open this album"),
+        )
+        .expect("a heard link is a node");
+
+        assert_eq!(cut.clone().into_element(), "Echoes…");
+        assert_eq!(link.role(), Role::Link);
+        assert_eq!(link.label(), Some("Echoes (2011 Remaster)"));
+        assert_eq!(whole.label(), Some("Meddle"));
     }
 
     #[test]

@@ -23,6 +23,7 @@ use crate::{
         root::{RootView, empty, listed},
         scrollbar::Scrollbars,
         sorting,
+        spoken::{self, Spoken as _},
     },
 };
 
@@ -131,12 +132,15 @@ impl RootView {
         suggestion: &Suggestion,
         reached: bool,
         cx: &mut Context<Self>,
-    ) -> Div {
+    ) -> Stateful<Div> {
         let opening = suggestion.query.clone();
         let side = theme::suggestion_card();
         let art = self.suggestion_art(suggestion, side, Drawn::InAGrid, true, cx);
 
         kit::card()
+            .id(("suggestion-card", index))
+            .listed_as(|| said_of(suggestion))
+            .chosen(reached)
             .flex_none()
             .w(px(side))
             .p_0()
@@ -504,6 +508,14 @@ fn measured(suggestion: &Suggestion) -> String {
     parts.join(" · ")
 }
 
+fn said_of(suggestion: &Suggestion) -> SharedString {
+    spoken::joined([
+        suggestion.name.as_str(),
+        suggestion.reason.says().as_str(),
+        measured(suggestion).as_str(),
+    ])
+}
+
 fn measured_shown(suggestion: &Suggestion, shown: usize) -> String {
     let whole = measured(suggestion);
     match (shown as u64) < suggestion.rows && shown > 0 {
@@ -589,6 +601,22 @@ mod tests {
             reached,
             ["Never heard", "Most played", "The 1970s", "Rock", "Hi-res"]
         );
+    }
+
+    #[test]
+    fn a_card_is_heard_as_its_name_its_reason_and_what_it_would_hold() {
+        let rock = Suggestion {
+            rows: 12,
+            length: Some(std::time::Duration::from_secs(3_600)),
+            ..offered("Rock", Reason::Genre)
+        };
+
+        let said = said_of(&rock);
+
+        assert!(said.starts_with("Rock, "));
+        assert!(said.contains(rock.reason.says().as_str()));
+        assert!(said.ends_with(&measured(&rock)));
+        assert!(said.contains("12 tracks"));
     }
 
     #[test]

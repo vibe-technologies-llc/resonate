@@ -9,6 +9,8 @@ use crate::format;
 
 const THE_KEYS_FOLLOW: &str = " — ";
 
+const THE_PARTS_JOIN: &str = ", ";
+
 const THE_RUN: &str = "the-run";
 
 const PERCENT: f64 = 100.0;
@@ -44,6 +46,16 @@ pub(crate) fn artist(name: &str, albums: usize, tracks: usize) -> SharedString {
         format::counted(albums, "album", "albums"),
         format::counted(tracks, "track", "tracks")
     ))
+}
+
+pub(crate) fn joined<'a>(parts: impl IntoIterator<Item = &'a str>) -> SharedString {
+    SharedString::from(
+        parts
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join(THE_PARTS_JOIN),
+    )
 }
 
 pub(crate) fn share_asked(asked: Option<&ActionData>) -> Option<f32> {
@@ -378,6 +390,15 @@ mod tests {
         assert_eq!(row.position_in_set(), Some(3));
         assert_eq!(row.size_of_set(), Some(9));
         assert_eq!(row.is_selected(), Some(true));
+    }
+
+    #[test]
+    fn parts_are_joined_by_commas_and_an_empty_part_says_nothing() {
+        assert_eq!(
+            joined(["Echoes", "", "Pink Floyd", "3 missing"]),
+            "Echoes, Pink Floyd, 3 missing"
+        );
+        assert_eq!(joined(["", ""]), "");
     }
 
     #[test]

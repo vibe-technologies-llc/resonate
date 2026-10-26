@@ -1017,7 +1017,7 @@ pub fn unused_name(kept: &[ProfileName], called: &str) -> ProfileName {
         .unwrap_or(plain)
 }
 
-const HERTZ_A_KILOHERTZ: f64 = 1_000.0;
+pub const HERTZ_A_KILOHERTZ: f64 = 1_000.0;
 const DIGITS_IN_A_THOUSANDS_GROUP: usize = 3;
 
 const MOST_DECIMALS_WRITTEN: usize = 6;

@@ -1,10 +1,10 @@
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, sync::Arc, time::Duration};
 
 use gpui::{
     AnyElement, Bounds, Canvas, Context, Div, MouseButton, MouseDownEvent, ObjectFit, Pixels,
     Point, SharedString, canvas, div, fill, img, point, prelude::*, px, relative, rgb,
 };
-use resonate_engine::{Analysis, Finding, Reach, Verdict};
+use resonate_engine::{Analysis, Finding, Judgement, Levels, Loudness, Reach, Spectrum, Verdict};
 use resonate_library::{Agreement, HeardAs};
 
 use crate::{
@@ -234,7 +234,9 @@ impl RootView {
                 card(WAVEFORM).child(
                     div()
                         .id("analysis-waveform")
-                        .pictured_as(WAVEFORM, || WAVEFORM_HINT.to_owned())
+                        .pictured_as(WAVEFORM, || {
+                            waveform_said(&analysis.study.levels, &analysis.study.loudness)
+                        })
                         .relative()
                         .h(px(WAVEFORM_HEIGHT + LABEL_ROOM))
                         .cursor_pointer()
@@ -519,7 +521,13 @@ fn spectrogram_card(
 
     let mut plot = div()
         .id("analysis-spectrogram")
-        .pictured_as(SPECTROGRAM, || cutoff_said(analysis))
+        .pictured_as(SPECTROGRAM, || {
+            spectrogram_said(
+                &analysis.study.judgement,
+                nyquist,
+                analysis.study.spectrum.heard(),
+            )
+        })
         .relative()
         .h(px(SPECTROGRAM_HEIGHT))
         .rounded_md()
@@ -562,13 +570,72 @@ fn spectrogram_card(
     card(SPECTROGRAM).child(plot)
 }
 
-fn cutoff_said(analysis: &Analysis) -> String {
-    match analysis.study.judgement.cutoff {
+fn cutoff_said(judgement: &Judgement) -> String {
+    let wall = match judgement.cutoff {
         Some(cutoff) => format!(
-            "The sound falls away near {:.1} kHz",
-            cutoff.hz as f32 / HZ_A_KILOHERTZ
+            "The sound falls away near {:.1} kHz, {:.0} dB down",
+            cutoff.hz as f32 / HZ_A_KILOHERTZ,
+            cutoff.drop_db.abs()
         ),
         None => NO_CUTOFF.to_owned(),
+    };
+
+    format!("{wall}. {}", judgement.verdict.told())
+}
+
+fn spectrogram_said(judgement: &Judgement, nyquist_hz: u32, heard: Duration) -> String {
+    format!(
+        "{}. Frequency up to {:.1} kHz over {}",
+        cutoff_said(judgement),
+        nyquist_hz as f32 / HZ_A_KILOHERTZ,
+        format::spanned(heard)
+    )
+}
+
+fn spectrum_said(judgement: &Judgement, spectrum: &Spectrum) -> String {
+    let nyquist = spectrum.nyquist_hz();
+    let level = |from: f32, to: f32, named: &str| {
+        spectrum
+            .band_db(from, to.min(nyquist))
+            .map(|db| format!("{db:.0} dB {named}"))
+    };
+    let averages: Vec<String> = [
+        level(0.0, 1_000.0, "under 1 kHz"),
+        level(1_000.0, 4_000.0, "from 1 to 4 kHz"),
+        level(4_000.0, 10_000.0, "from 4 to 10 kHz"),
+        level(10_000.0, nyquist, "above 10 kHz"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+
+    match averages.is_empty() {
+        true => cutoff_said(judgement),
+        false => format!(
+            "{}. Average level {}",
+            cutoff_said(judgement),
+            averages.join(", ")
+        ),
+    }
+}
+
+fn waveform_said(levels: &Levels, loudness: &Loudness) -> String {
+    let values: Vec<String> = [
+        decibels(levels.peak).map(|peak| format!("peak {peak}")),
+        loudness
+            .integrated
+            .map(|lufs| format!("loudness {lufs:.1} LUFS")),
+        loudness
+            .dynamic_range
+            .map(|dr| format!("dynamic range DR{dr}")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+
+    match values.is_empty() {
+        true => WAVEFORM_HINT.to_owned(),
+        false => format!("{WAVEFORM_HINT}; {}", values.join(", ")),
     }
 }
 
@@ -581,7 +648,9 @@ fn spectrum_card(drawn: &Drawn) -> Div {
 
     let mut plot = div()
         .id("analysis-spectrum")
-        .pictured_as(AVERAGE_SPECTRUM, || cutoff_said(analysis))
+        .pictured_as(AVERAGE_SPECTRUM, || {
+            spectrum_said(&analysis.study.judgement, &analysis.study.spectrum)
+        })
         .relative()
         .h(px(SPECTRUM_HEIGHT + LABEL_ROOM))
         .child(
@@ -890,16 +959,16 @@ fn heard_row(heard: &HeardAs) -> Div {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{sync::Arc, time::Duration};
 
     use gpui::TestAppContext;
     use resonate_core::{Mbid, SourceId};
-    use resonate_engine::Verdict;
+    use resonate_engine::{Cutoff, Judgement, Levels, Loudness, Spectrum, Verdict};
     use resonate_library::{
         Credit, Fingerprinters, Fingerprints, Library, Printed, RecordingMatch, Sounded, TrackQuery,
     };
 
-    use super::verdict_colour;
+    use super::{spectrogram_said, spectrum_said, verdict_colour, waveform_said};
     use crate::{
         Pane,
         analysis::Hearing,
@@ -907,6 +976,98 @@ mod tests {
     };
 
     const HEARD_AS: &str = "0e1a2b3c-4d5e-4f60-8a71-92b3c4d5e6f7";
+
+    fn walled_at_16_khz() -> Judgement {
+        Judgement {
+            verdict: Verdict::Fake,
+            cutoff: Some(Cutoff {
+                hz: 16_000,
+                drop_db: -45.0,
+            }),
+            extent_hz: None,
+            findings: Vec::new(),
+        }
+    }
+
+    fn unjudged() -> Judgement {
+        Judgement {
+            verdict: Verdict::NotJudged,
+            cutoff: None,
+            extent_hz: None,
+            findings: Vec::new(),
+        }
+    }
+
+    fn levels_peaking_at(peak: f32) -> Levels {
+        Levels {
+            peak,
+            rms: 0.1,
+            dc: 0.0,
+            clipped: 0,
+            clipped_runs: 0,
+            bits_in_use: None,
+            stereo: None,
+        }
+    }
+
+    fn loudness_of(integrated: Option<f32>, dynamic_range: Option<u8>) -> Loudness {
+        Loudness {
+            integrated,
+            range: None,
+            momentary_max: None,
+            short_term_max: None,
+            dynamic_range,
+            true_peak: 0.0,
+        }
+    }
+
+    #[test]
+    fn a_waveform_is_heard_with_its_peak_its_loudness_and_its_dynamic_range() {
+        let said = waveform_said(&levels_peaking_at(0.5), &loudness_of(Some(-9.84), Some(8)));
+
+        assert_eq!(
+            said,
+            "Press anywhere on the waveform to play from there; \
+             peak -6.02 dBFS, loudness -9.8 LUFS, dynamic range DR8"
+        );
+        assert_eq!(
+            waveform_said(&levels_peaking_at(0.0), &loudness_of(None, None)),
+            "Press anywhere on the waveform to play from there"
+        );
+    }
+
+    #[test]
+    fn a_spectrogram_is_heard_with_its_wall_its_verdict_and_how_far_it_reaches() {
+        let said = spectrogram_said(&walled_at_16_khz(), 22_050, Duration::from_secs(185));
+
+        assert!(said.starts_with("The sound falls away near 16.0 kHz, 45 dB down. Fake"));
+        assert!(
+            said.ends_with("Frequency up to 22.0 kHz over 3:05"),
+            "{said}"
+        );
+        assert!(
+            spectrogram_said(&unjudged(), 22_050, Duration::from_secs(5))
+                .starts_with("No cutoff was found. Not judged")
+        );
+    }
+
+    #[test]
+    fn an_average_spectrum_is_heard_with_its_level_in_each_stretch_of_the_band() {
+        let mut levels = vec![-30.0; 10];
+        levels.resize(23, -90.0);
+        let spectrum = Spectrum::new(1_000.0, levels, Duration::from_secs(60));
+
+        let said = spectrum_said(&walled_at_16_khz(), &spectrum);
+
+        assert!(said.starts_with("The sound falls away near 16.0 kHz, 45 dB down. Fake"));
+        assert!(
+            said.ends_with(
+                "Average level -30 dB under 1 kHz, -30 dB from 1 to 4 kHz, \
+             -30 dB from 4 to 10 kHz, -90 dB above 10 kHz"
+            ),
+            "{said}"
+        );
+    }
 
     struct HearsEchoes {
         source: SourceId,

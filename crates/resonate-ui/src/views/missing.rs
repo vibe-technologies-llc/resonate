@@ -19,6 +19,7 @@ use crate::{
         reorder::{self, Listed, Shift},
         root::{RootView, empty, row},
         scrollbar::Scrollbars,
+        spoken::{self, Spoken as _},
     },
 };
 
@@ -184,11 +185,14 @@ impl RootView {
                                             tracks.get(first).map(|track| {
                                                 this.album_heading(first, track, &tracks, cx)
                                                     .id(("missing-row", index))
+                                                    .listed_as(|| album_said(first, track, &tracks))
                                             })
                                         }
                                         Some(MissingRow::Disc(first)) => {
                                             tracks.get(first).map(|track| {
-                                                disc_heading(track.disc).id(("missing-row", index))
+                                                disc_heading(track.disc)
+                                                    .id(("missing-row", index))
+                                                    .listed_as(|| disc_said(track.disc))
                                             })
                                         }
                                         Some(MissingRow::Track(track)) => {
@@ -200,12 +204,16 @@ impl RootView {
                                             releases.get(first).map(|release| {
                                                 this.artist_heading(first, release, &releases, cx)
                                                     .id(("missing-row", index))
+                                                    .listed_as(|| {
+                                                        artist_said(first, release, &releases)
+                                                    })
                                             })
                                         }
                                         Some(MissingRow::Release(release)) => {
                                             releases.get(release).map(|held| {
                                                 this.release_row(release, held, cx)
                                                     .id(("missing-row", index))
+                                                    .listed_as(|| release_said(held))
                                             })
                                         }
                                         None => None,
@@ -366,11 +374,6 @@ impl RootView {
         tracks: &[MissingTrack],
         cx: &mut Context<Self>,
     ) -> Div {
-        let short = tracks[index..]
-            .iter()
-            .take_while(|held| held.album == track.album)
-            .count();
-
         run_band(
             self.cover(Pictured::Album(track.album), cx),
             self.opens(
@@ -382,7 +385,7 @@ impl RootView {
             )
             .keeps_its_width(),
             track.owner.clone().map(SharedString::from),
-            format!("{short} missing"),
+            missing_from_album(index, track, tracks),
         )
     }
 
@@ -393,10 +396,6 @@ impl RootView {
         releases: &[UnheldRelease],
         cx: &mut Context<Self>,
     ) -> Div {
-        let unheld = releases[index..]
-            .iter()
-            .take_while(|other| other.artist == release.artist)
-            .count();
         let portrait = self
             .library
             .update(cx, |library, cx| {
@@ -423,9 +422,60 @@ impl RootView {
             )
             .keeps_its_width(),
             None,
-            format::counted(unheld, "release", "releases"),
+            unheld_by_artist(index, release, releases),
         )
     }
+}
+
+fn missing_from_album(index: usize, track: &MissingTrack, tracks: &[MissingTrack]) -> String {
+    let short = tracks[index..]
+        .iter()
+        .take_while(|held| held.album == track.album)
+        .count();
+
+    format!("{short} missing")
+}
+
+fn unheld_by_artist(index: usize, release: &UnheldRelease, releases: &[UnheldRelease]) -> String {
+    let unheld = releases[index..]
+        .iter()
+        .take_while(|other| other.artist == release.artist)
+        .count();
+
+    format::counted(unheld, "release", "releases")
+}
+
+fn album_said(index: usize, track: &MissingTrack, tracks: &[MissingTrack]) -> SharedString {
+    spoken::joined([
+        track.album_title.as_str(),
+        track.owner.as_deref().unwrap_or_default(),
+        missing_from_album(index, track, tracks).as_str(),
+    ])
+}
+
+fn artist_said(index: usize, release: &UnheldRelease, releases: &[UnheldRelease]) -> SharedString {
+    spoken::joined([
+        release.artist_name.as_str(),
+        unheld_by_artist(index, release, releases).as_str(),
+    ])
+}
+
+fn release_said(release: &UnheldRelease) -> SharedString {
+    let year = release
+        .first_released
+        .as_deref()
+        .map(year_of)
+        .unwrap_or_default();
+
+    spoken::joined([
+        release.title.as_str(),
+        release.kind.as_deref().unwrap_or_default(),
+        year,
+    ])
+}
+
+fn disc_said(disc: u32) -> SharedString {
+    SharedString::from(format!("Disc {disc}"))
 }
 
 fn headings(rows: &[MissingRow], heads: fn(&MissingRow) -> bool) -> usize {

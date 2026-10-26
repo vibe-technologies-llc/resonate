@@ -21,7 +21,7 @@ use crate::{
         BAND_CONTEXT, BandHigher, BandLouder, BandLower, BandNarrower, BandQuieter, BandWider,
         CONTROL_CONTEXT,
     },
-    equaliser::{CURVE_COLUMNS, Cell, DRAWN_BETWEEN_MILLIBELS, Editing, Nudge},
+    equaliser::{CURVE_COLUMNS, Cell, DRAWN_BETWEEN_MILLIBELS, Editing, HERTZ_A_KILOHERTZ, Nudge},
     icons::Icon,
     theme, toast,
     views::{
@@ -285,7 +285,7 @@ impl RootView {
         div()
             .id("equaliser-curve")
             .debug_selector(|| "equaliser-curve".to_owned())
-            .pictured_as(THE_CURVE, || curve_said(handles.bands.len(), widest))
+            .pictured_as(THE_CURVE, || curve_said(&handles.bands, widest))
             .relative()
             .h(px(CURVE_HEIGHT))
             .w_full()
@@ -914,11 +914,48 @@ struct MeasurerChips {
     preferred: Option<String>,
 }
 
-fn curve_said(bands: usize, widest: f32) -> String {
-    format!(
+fn curve_said(bands: &[Band], widest: f32) -> String {
+    let drawn = format!(
         "Gain against frequency, drawn within {widest:.0} dB either side of flat, shaped by {}",
-        crate::format::counted(bands, "band", "bands")
-    )
+        crate::format::counted(bands.len(), "band", "bands")
+    );
+    if bands.is_empty() {
+        return drawn;
+    }
+
+    let described: Vec<String> = bands
+        .iter()
+        .enumerate()
+        .map(|(row, band)| format!("{}, {}", row + 1, band_said(*band)))
+        .collect();
+
+    format!("{drawn}: {}", described.join("; "))
+}
+
+fn band_said(band: Band) -> String {
+    let hertz = band.frequency.hertz();
+    let at = match hertz >= HERTZ_A_KILOHERTZ {
+        true => format!("{} kHz", trimmed(hertz / HERTZ_A_KILOHERTZ)),
+        false => format!("{} Hz", trimmed(hertz)),
+    };
+    let gain = match band.kind.uses_gain() {
+        true => format!(", {:+.1} dB", band.gain.decibels()),
+        false => String::new(),
+    };
+    let off = match band.on {
+        true => "",
+        false => ", off",
+    };
+
+    format!("{} at {at}{gain}{off}", band.kind.label().to_lowercase())
+}
+
+fn trimmed(number: f64) -> String {
+    let written = format!("{number:.2}");
+    written
+        .trim_end_matches('0')
+        .trim_end_matches('.')
+        .to_owned()
 }
 
 fn widest_drawn(traced: &[Traced]) -> f32 {
@@ -1831,6 +1868,8 @@ fn unplugged(bindings: &crate::Bindings, devices: &[(NodeName, String)]) -> Vec<
 
 #[cfg(test)]
 mod tests {
+    use resonate_core::eq::{BandGain, Frequency, Q};
+
     use super::*;
 
     fn traced(on: TracedOn, decibels: &[f64]) -> Traced {
@@ -1866,6 +1905,63 @@ mod tests {
             .is_empty()
         );
         assert!(unplugged(&crate::Bindings::default(), &plugged).is_empty());
+    }
+
+    #[test]
+    fn a_curve_is_heard_as_its_range_and_every_band_it_is_shaped_by() {
+        let low = Band::new(
+            BandKind::LowShelf,
+            Frequency::from_hertz(105.0).unwrap(),
+            BandGain::from_decibels(4.5).unwrap(),
+            Q::from_units(0.7).unwrap(),
+        );
+        let mid = Band::peaking(
+            Frequency::from_hertz(2_500.0).unwrap(),
+            BandGain::from_decibels(-3.0).unwrap(),
+            Q::from_units(1.0).unwrap(),
+        );
+        let mut off = Band::peaking(
+            Frequency::from_hertz(12_000.0).unwrap(),
+            BandGain::from_decibels(2.0).unwrap(),
+            Q::from_units(1.0).unwrap(),
+        );
+        off.on = false;
+
+        assert_eq!(
+            curve_said(&[low, mid, off], 6.0),
+            "Gain against frequency, drawn within 6 dB either side of flat, shaped by 3 bands: \
+             1, low shelf at 105 Hz, +4.5 dB; \
+             2, peak at 2.5 kHz, -3.0 dB; \
+             3, peak at 12 kHz, +2.0 dB, off"
+        );
+        assert_eq!(
+            curve_said(&[], 6.0),
+            "Gain against frequency, drawn within 6 dB either side of flat, shaped by 0 bands"
+        );
+    }
+
+    #[test]
+    fn a_curve_plot_is_an_image_whose_description_lists_the_bands() {
+        crate::views::spoken::listened_to(true);
+
+        let band = Band::peaking(
+            Frequency::from_hertz(1_000.0).unwrap(),
+            BandGain::from_decibels(3.0).unwrap(),
+            Q::from_units(1.0).unwrap(),
+        );
+        let plot = crate::views::spoken::node_of(
+            &div()
+                .id("equaliser-curve")
+                .pictured_as(THE_CURVE, || curve_said(&[band], 6.0)),
+        )
+        .expect("a heard plot is a node");
+
+        assert_eq!(plot.role(), gpui::Role::Image);
+        assert_eq!(plot.label(), Some(THE_CURVE));
+        assert!(
+            plot.description()
+                .is_some_and(|said| said.ends_with("1, peak at 1 kHz, +3.0 dB"))
+        );
     }
 
     #[test]

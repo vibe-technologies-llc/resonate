@@ -1407,6 +1407,7 @@ impl RootView {
                 )
             }
         };
+        let said = spoken::listening().then(|| unheld_said(&title, &artist));
         let artist = listing::matched(artist, lit_artist);
 
         let row = row(false)
@@ -1513,15 +1514,17 @@ impl RootView {
                     .child(mark),
             );
 
-        row.id(id).when_some(download, |row, release_track| {
-            row.cursor_pointer()
-                .hover(|row| row.bg(rgb(theme::hover())))
-                .names(WANT_HINT)
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.library
-                        .update(cx, |library, cx| library.want(release_track, cx));
-                }))
-        })
+        row.id(id)
+            .when_some(said, |row, said| row.listed_as(|| said))
+            .when_some(download, |row, release_track| {
+                row.cursor_pointer()
+                    .hover(|row| row.bg(rgb(theme::hover())))
+                    .names(WANT_HINT)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.library
+                            .update(cx, |library, cx| library.want(release_track, cx));
+                    }))
+            })
     }
 
     fn performed_by(
@@ -3910,6 +3913,13 @@ fn years_of(begin: Option<&str>, end: Option<&str>) -> Option<String> {
         (None, Some(end)) => Some(format!("–{end}")),
         (None, None) => None,
     }
+}
+
+fn unheld_said(title: &str, artist: &str) -> SharedString {
+    spoken::joined([
+        spoken::song(title, Some(artist)).as_ref(),
+        NOT_IN_THE_LIBRARY,
+    ])
 }
 
 pub(crate) fn year_of(date: &str) -> &str {
