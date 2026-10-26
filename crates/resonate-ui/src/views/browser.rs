@@ -419,16 +419,23 @@ impl RootView {
     }
 
     fn album_cell(&self, album: &Album, at: usize, cx: &mut Context<Self>) -> Stateful<Div> {
-        self.album_cell_captioned(album, theme::grid_cover(), Caption::ByArtist, Some(at), cx)
+        self.album_cell_captioned(
+            album,
+            theme::grid_cover(),
+            Caption::ByArtist,
+            Some(Chooses::among(Listed::Albums, at)),
+            cx,
+        )
     }
 
     pub(crate) fn album_cell_at(
         &self,
         album: &Album,
         side: f32,
+        chooses: Option<Chooses>,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
-        self.album_cell_captioned(album, side, Caption::ByArtist, None, cx)
+        self.album_cell_captioned(album, side, Caption::ByArtist, chooses, cx)
     }
 
     fn album_cell_captioned(
@@ -436,14 +443,13 @@ impl RootView {
         album: &Album,
         side: f32,
         caption: Caption,
-        listed_at: Option<usize>,
+        chooses: Option<Chooses>,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let id = album.id;
-        let reached = listed_at.is_some_and(|at| self.reaches(Shift::Listing(Listed::Albums), at));
-        let reach = listed_at.and_then(|at| self.at_the_reach(Shift::Listing(Listed::Albums), at));
-        let cursor_only =
-            listed_at.is_some_and(|at| self.stands_unchosen_on(Shift::Listing(Listed::Albums), at));
+        let reached = chooses.is_some_and(|at| self.reaches(at.shift, at.row));
+        let reach = chooses.and_then(|at| self.at_the_reach(at.shift, at.row));
+        let cursor_only = chooses.is_some_and(|at| self.stands_unchosen_on(at.shift, at.row));
         let (lit_title, lit_artist) = {
             let search = self.library.read(cx).search();
             (
@@ -573,24 +579,25 @@ impl RootView {
                     .child(under),
             )
             .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
-                if let Some(at) = listed_at
-                    && this.reach_by_click(
-                        Shift::Listing(Listed::Albums),
-                        at,
-                        event.modifiers(),
-                        cx,
-                    )
+                if let Some(at) = chooses
+                    && this.reach_by_click(at.shift, at.row, event.modifiers(), cx)
                 {
                     return;
                 }
                 this.opened(Selection::Album(id), cx);
             }));
 
-        let lifted = match listed_at {
+        let lifted = match chooses {
             Some(at) => {
-                let chosen = self.acting_on_chosen(Shift::Listing(Listed::Albums), at);
+                let chosen = self.acting_on_chosen(at.shift, at.row);
                 if chosen.count() > 1 {
-                    Lifted::albums(&self.library.read(cx).albums(), chosen)
+                    let page = match at.shift {
+                        Shift::Listing(Listed::FavouriteAlbums) => {
+                            self.library.read(cx).favourite_albums()
+                        }
+                        _ => self.library.read(cx).albums(),
+                    };
+                    Lifted::albums(&page, chosen)
                 } else {
                     Lifted::album(id, &album.title)
                 }
@@ -603,11 +610,11 @@ impl RootView {
             cell,
             reach,
             move |this, at, cx| {
-                if let Some(row) = listed_at {
-                    let chosen = this.acting_on_chosen(Shift::Listing(Listed::Albums), row);
+                if let Some(row) = chooses {
+                    let chosen = this.acting_on_chosen(row.shift, row.row);
                     if chosen.count() > 1 {
-                        let albums = this.library.read(cx).albums_at(chosen.rows());
-                        return chosen_albums_menu(at, albums, this, cx);
+                        let albums = this.albums_chosen(row.shift, &chosen, cx);
+                        return chosen_albums_menu(at, row.shift, albums, this, cx);
                     }
                 }
                 album_menu(at, id, owner).favours(Favoured::Album(id), favourite)
@@ -849,7 +856,14 @@ impl RootView {
                                         listed,
                                         reach,
                                         move |this, at, cx| {
-                                            artist_menu_among(at, id, favourite, index, this, cx)
+                                            artist_menu_among(
+                                                at,
+                                                id,
+                                                favourite,
+                                                Chooses::among(Listed::Artists, index),
+                                                this,
+                                                cx,
+                                            )
                                         },
                                         cx,
                                     ));
@@ -1814,7 +1828,16 @@ impl RootView {
         menu::opens_a_reachable_menu(
             cell,
             reach,
-            move |this, menu_at, cx| artist_menu_among(menu_at, id, favourite, at, this, cx),
+            move |this, menu_at, cx| {
+                artist_menu_among(
+                    menu_at,
+                    id,
+                    favourite,
+                    Chooses::among(Listed::Artists, at),
+                    this,
+                    cx,
+                )
+            },
             cx,
         )
         .into_any_element()
@@ -2741,13 +2764,19 @@ impl RootView {
         id: &'static str,
         named: String,
         albums: &[Album],
+        listed: Listed,
         cx: &mut Context<Self>,
     ) -> Div {
         let mut cells = Vec::new();
-        for album in albums.iter().take(SHELF_AT_MOST) {
+        for (at, album) in albums.iter().take(SHELF_AT_MOST).enumerate() {
             cells.push(
-                self.album_cell_at(album, theme::shelf_cover(), cx)
-                    .into_any_element(),
+                self.album_cell_at(
+                    album,
+                    theme::shelf_cover(),
+                    Some(Chooses::among(listed, at)),
+                    cx,
+                )
+                .into_any_element(),
             );
         }
 
@@ -2765,13 +2794,19 @@ impl RootView {
         id: &'static str,
         named: String,
         artists: &[Artist],
+        listed: Listed,
         cx: &mut Context<Self>,
     ) -> Div {
         let mut cells = Vec::new();
-        for artist in artists.iter().take(SHELF_AT_MOST) {
+        for (at, artist) in artists.iter().take(SHELF_AT_MOST).enumerate() {
             cells.push(
-                self.artist_cell_at(artist, theme::shelf_cover(), cx)
-                    .into_any_element(),
+                self.artist_cell_at(
+                    artist,
+                    theme::shelf_cover(),
+                    Some(Chooses::among(listed, at)),
+                    cx,
+                )
+                .into_any_element(),
             );
         }
 
@@ -2788,9 +2823,12 @@ impl RootView {
         &self,
         artist: &Artist,
         side: f32,
+        chooses: Option<Chooses>,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let id = artist.id;
+        let reached = chooses.is_some_and(|at| self.reaches(at.shift, at.row));
+        let cursor_only = chooses.is_some_and(|at| self.stands_unchosen_on(at.shift, at.row));
         let favourite = self
             .library
             .read(cx)
@@ -2816,6 +2854,7 @@ impl RootView {
 
         let cell = div()
             .id(cell_id.clone())
+            .debug_selector(move || format!("artist-{}", id.get()))
             .follows_the_pointer(cell_id)
             .group(CELL_GROUP)
             .flex()
@@ -2826,7 +2865,18 @@ impl RootView {
             .w(px(side))
             .cursor_pointer()
             .names(OPEN_ARTIST_HINT)
-            .child(picture)
+            .child(
+                div()
+                    .relative()
+                    .rounded(px(side / 2.0))
+                    .child(picture)
+                    .when(reached, |frame| {
+                        frame.child(reached_ring().rounded(px(side / 2.0 + REACHED_RING + 1.0)))
+                    })
+                    .when(cursor_only, |frame| {
+                        frame.child(cursor_ring().rounded(px(side / 2.0 + REACHED_RING + 1.0)))
+                    }),
+            )
             .child(
                 div()
                     .w_full()
@@ -2842,13 +2892,21 @@ impl RootView {
                     .ends_in_an_ellipsis()
                     .child(SharedString::from(artist.name.clone())),
             )
-            .on_click(cx.listener(move |this, _, _, cx| {
+            .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
+                if let Some(at) = chooses
+                    && this.reach_by_click(at.shift, at.row, event.modifiers(), cx)
+                {
+                    return;
+                }
                 this.opened(Selection::Artist(id), cx);
             }));
 
         menu::opens_a_menu(
             cell,
-            move |_, at, _| artist_menu(at, id).favours(Favoured::Artist(id), favourite),
+            move |this, at, cx| match chooses {
+                Some(chooses) => artist_menu_among(at, id, favourite, chooses, this, cx),
+                None => artist_menu(at, id).favours(Favoured::Artist(id), favourite),
+            },
             cx,
         )
     }
@@ -3056,15 +3114,14 @@ fn artist_menu_among(
     at: Point<Pixels>,
     artist: ArtistId,
     favourite: bool,
-    row: usize,
+    chooses: Chooses,
     this: &RootView,
     cx: &App,
 ) -> Menu {
-    let shift = Shift::Listing(Listed::Artists);
-    let chosen = this.acting_on_chosen(shift, row);
+    let chosen = this.acting_on_chosen(chooses.shift, chooses.row);
     if chosen.count() > 1 {
-        let artists = this.library.read(cx).artists_at(chosen.rows());
-        return chosen_artists_menu(at, artists, this, cx);
+        let artists = this.artists_chosen(chooses.shift, &chosen, cx);
+        return chosen_artists_menu(at, chooses.shift, artists, this, cx);
     }
 
     artist_menu(at, artist).favours(Favoured::Artist(artist), favourite)
@@ -3926,21 +3983,48 @@ fn chosen_tracks_menu(at: Point<Pixels>, tracks: Vec<Track>, this: &RootView, cx
         })
 }
 
+fn artists_are_favoured(this: &RootView, shift: Shift, artists: &[ArtistId], cx: &App) -> bool {
+    let library = this.library.read(cx);
+    let among = match shift {
+        Shift::Listing(Listed::FavouriteArtists) => library.favourite_artists(),
+        _ => library.artists(),
+    };
+
+    artists.iter().all(|artist| {
+        among.iter().any(|held| {
+            held.id == *artist
+                && library.favours(Favoured::Artist(*artist), held.favourite.is_some())
+        })
+    })
+}
+
+fn albums_are_favoured(this: &RootView, shift: Shift, albums: &[AlbumId], cx: &App) -> bool {
+    let library = this.library.read(cx);
+    let shelf = library.favourite_albums();
+
+    albums.iter().all(|album| {
+        let stored = match shift {
+            Shift::Listing(Listed::FavouriteAlbums) => shelf
+                .iter()
+                .find(|held| held.id == *album)
+                .map(|held| held.favourite.is_some()),
+            _ => library
+                .album_of(*album)
+                .map(|held| held.favourite.is_some()),
+        };
+
+        stored.is_some_and(|stored| library.favours(Favoured::Album(*album), stored))
+    })
+}
+
 fn chosen_artists_menu(
     at: Point<Pixels>,
+    shift: Shift,
     artists: Vec<ArtistId>,
     this: &RootView,
     cx: &App,
 ) -> Menu {
-    let favoured = artists.iter().all(|artist| {
-        this.library.read(cx).artists().iter().any(|held| {
-            held.id == *artist
-                && this
-                    .library
-                    .read(cx)
-                    .favours(Favoured::Artist(*artist), held.favourite.is_some())
-        })
-    });
+    let favoured = artists_are_favoured(this, shift, &artists, cx);
     let scopes: Vec<Selection> = artists.iter().copied().map(Selection::Artist).collect();
     let (play, next, last) = (scopes.clone(), scopes.clone(), scopes);
 
@@ -3980,14 +4064,14 @@ fn chosen_artists_menu(
         )
 }
 
-fn chosen_albums_menu(at: Point<Pixels>, albums: Vec<AlbumId>, this: &RootView, cx: &App) -> Menu {
-    let favoured = albums.iter().all(|album| {
-        this.library.read(cx).album_of(*album).is_some_and(|held| {
-            this.library
-                .read(cx)
-                .favours(Favoured::Album(*album), held.favourite.is_some())
-        })
-    });
+fn chosen_albums_menu(
+    at: Point<Pixels>,
+    shift: Shift,
+    albums: Vec<AlbumId>,
+    this: &RootView,
+    cx: &App,
+) -> Menu {
+    let favoured = albums_are_favoured(this, shift, &albums, cx);
     let scopes: Vec<Selection> = albums.iter().copied().map(Selection::Album).collect();
     let (play, next, last) = (scopes.clone(), scopes.clone(), scopes);
 

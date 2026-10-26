@@ -3011,6 +3011,221 @@ mod tests {
         assert!(!driven.read(|root, cx| root.library.read(cx).favoured_artist(artists[2].id)));
     }
 
+    fn three_records_all_favourite(folder: &Folder) -> Arc<Library> {
+        for (file, title, artist, album) in [
+            ("one.wav", "One", "Air", "Meddle"),
+            ("two.wav", "Two", "Beck", "Animals"),
+            ("three.wav", "Three", "Cake", "Wish"),
+        ] {
+            folder.tagged(
+                file,
+                1,
+                &[(b"INAM", title), (b"IART", artist), (b"IPRD", album)],
+            );
+        }
+        let library = catalog();
+        Driven::scanned(&library, folder);
+        favourite_everything(&library);
+        for album in library
+            .albums(&resonate_library::AlbumQuery::default())
+            .expect("the scanned albums")
+        {
+            library
+                .favour(resonate_library::Favoured::Album(album.id), true)
+                .expect("a favourite kept");
+        }
+        for artist in library
+            .artists(&resonate_library::ArtistQuery::default())
+            .expect("the scanned artists")
+        {
+            library
+                .favour(resonate_library::Favoured::Artist(artist.id), true)
+                .expect("a favourite kept");
+        }
+        library
+    }
+
+    fn favourites_with_shelves(cx: &mut TestAppContext, folder: &Folder) -> (Driven, Arc<Library>) {
+        let library = three_records_all_favourite(folder);
+        let mut driven = Driven::opened_in(cx, Arc::clone(&library), folder);
+        driven.click("tab-favourites");
+        driven.until(|root, cx| {
+            let held = root.library.read(cx).favourited();
+            held.artists == 3 && held.albums == 3
+        });
+
+        (driven, library)
+    }
+
+    fn the_tracks_of_an_artist(library: &Library, artist: resonate_core::ArtistId) -> TrackId {
+        library
+            .tracks(&resonate_library::TrackQuery {
+                artist: Some(artist),
+                ..resonate_library::TrackQuery::default()
+            })
+            .expect("the artist's tracks")[0]
+            .id
+    }
+
+    fn the_tracks_of_an_album(library: &Library, album: resonate_core::AlbumId) -> TrackId {
+        library
+            .tracks(&resonate_library::TrackQuery {
+                album: Some(album),
+                ..resonate_library::TrackQuery::default()
+            })
+            .expect("the album's tracks")[0]
+            .id
+    }
+
+    #[gpui::test]
+    fn a_control_click_chooses_favourite_artists_apart_and_the_menu_queues_each_in_turn(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, library) = favourites_with_shelves(cx, &folder);
+        let artists = driven.read(|root, cx| root.library.read(cx).favourite_artists());
+
+        driven.click_with(named("artist", artists[2].id.get()), CONTROL);
+        driven.click_with(named("artist", artists[0].id.get()), CONTROL);
+
+        assert_eq!(chosen_rows(&mut driven), [0, 2]);
+        assert_eq!(
+            driven.read(|root, _| root.reached().map(|reach| reach.shift)),
+            Some(Shift::Listing(Listed::FavouriteArtists))
+        );
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Favourites);
+        assert_eq!(
+            driven.read(|root, cx| root.player.read(cx).queue().len()),
+            0
+        );
+
+        driven.right_click(named("artist", artists[0].id.get()));
+
+        assert_eq!(
+            menu_labels(&mut driven),
+            [
+                menu::PLAY,
+                menu::PLAY_NEXT,
+                menu::ADD_TO_QUEUE,
+                "",
+                menu::UNFAVOUR
+            ]
+        );
+
+        pressed_in_the_menu(&mut driven, menu::ADD_TO_QUEUE);
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
+
+        assert_eq!(
+            driven.queue(),
+            [
+                the_tracks_of_an_artist(&library, artists[0].id),
+                the_tracks_of_an_artist(&library, artists[2].id)
+            ]
+        );
+    }
+
+    #[gpui::test]
+    fn a_control_click_chooses_favourite_albums_apart_and_the_menu_plays_each_in_turn(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, library) = favourites_with_shelves(cx, &folder);
+        let albums = driven.read(|root, cx| root.library.read(cx).favourite_albums());
+
+        driven.click_with(named("album", albums[1].id.get()), CONTROL);
+        driven.click_with(named("album", albums[2].id.get()), CONTROL);
+
+        assert_eq!(chosen_rows(&mut driven), [1, 2]);
+        assert_eq!(
+            driven.read(|root, _| root.reached().map(|reach| reach.shift)),
+            Some(Shift::Listing(Listed::FavouriteAlbums))
+        );
+
+        driven.right_click(named("album", albums[1].id.get()));
+        pressed_in_the_menu(&mut driven, menu::PLAY);
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
+
+        assert_eq!(
+            driven.queue(),
+            [
+                the_tracks_of_an_album(&library, albums[1].id),
+                the_tracks_of_an_album(&library, albums[2].id)
+            ]
+        );
+    }
+
+    #[gpui::test]
+    fn a_shift_click_widens_the_choice_along_a_favourites_shelf(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let (mut driven, _library) = favourites_with_shelves(cx, &folder);
+        let artists = driven.read(|root, cx| root.library.read(cx).favourite_artists());
+
+        driven.click_with(named("artist", artists[0].id.get()), CONTROL);
+        driven.click_with(
+            named("artist", artists[2].id.get()),
+            Modifiers {
+                shift: true,
+                ..Modifiers::none()
+            },
+        );
+
+        assert_eq!(chosen_rows(&mut driven), [0, 1, 2]);
+    }
+
+    #[gpui::test]
+    fn a_plain_click_on_a_favourite_artist_still_opens_it_and_chooses_nothing(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, _library) = favourites_with_shelves(cx, &folder);
+        let artists = driven.read(|root, cx| root.library.read(cx).favourite_artists());
+
+        driven.click(named("artist", artists[1].id.get()));
+
+        assert_eq!(
+            driven.read(|root, cx| root.library.read(cx).selection()),
+            Selection::Artist(artists[1].id)
+        );
+        assert!(chosen_rows(&mut driven).is_empty());
+    }
+
+    #[gpui::test]
+    fn a_key_in_the_favourites_walks_the_tracks_and_gives_up_the_choice_on_a_shelf(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, _library) = favourites_with_shelves(cx, &folder);
+        let artists = driven.read(|root, cx| root.library.read(cx).favourite_artists());
+
+        driven.click_with(named("artist", artists[0].id.get()), CONTROL);
+        driven.click_with(named("artist", artists[1].id.get()), CONTROL);
+        driven.cx.simulate_keystrokes("down");
+        driven.settle();
+
+        assert_eq!(
+            driven.read(|root, _| root.reached().map(|reach| reach.shift)),
+            Some(Shift::Listing(Listed::Favourites))
+        );
+        assert_eq!(chosen_rows(&mut driven), [0]);
+    }
+
+    #[gpui::test]
+    fn unfavouriting_the_artists_chosen_on_the_shelf_lets_go_of_the_choice(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, _library) = favourites_with_shelves(cx, &folder);
+        let artists = driven.read(|root, cx| root.library.read(cx).favourite_artists());
+
+        driven.click_with(named("artist", artists[0].id.get()), CONTROL);
+        driven.click_with(named("artist", artists[1].id.get()), CONTROL);
+        driven.right_click(named("artist", artists[0].id.get()));
+        pressed_in_the_menu(&mut driven, menu::UNFAVOUR);
+        driven.until(|root, cx| root.library.read(cx).favourited().artists == 1);
+
+        assert!(chosen_rows(&mut driven).is_empty());
+    }
+
     fn three_playlists_of_a_song_each(
         folder: &Folder,
     ) -> (Arc<Library>, Vec<(resonate_core::PlaylistId, TrackId)>) {

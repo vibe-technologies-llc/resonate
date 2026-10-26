@@ -1414,8 +1414,8 @@ is never named.
   reorderable row reserves the edge in `theme::UNMARKED`; saved queries draw none. A drop does not ask
   `acting_on`: `reorder::movable` takes the row it stands for beside the `Carried` it would hand over.
 - **The catalog listings choose rows apart.** Only `Shift::chooses_apart` (Tracks, Albums, Artists,
-  the playlists index, Favourites, an opened suggestion, an opened playlist and the songs of Top
-  results; not the queue, Missing, the Favourites shelves or the Suggestions and Statistics shelves,
+  the playlists index, Favourites, the Favourites shelves, an opened suggestion, an opened playlist
+  and the songs of Top results; not the queue, Missing or the Suggestions and Statistics shelves,
   whose runs are strips no key reaches or mix kinds of row) takes `ctrl`-click (add the row, or let it go if chosen) and `shift`-click (widen from the
   anchor, keeping what was chosen apart); a plain click still plays or opens, a modified click only
   chooses (`RootView::reach_by_click`). `ctrl-space` chooses or lets go of the row the cursor is on
@@ -1460,9 +1460,20 @@ is never named.
   (`Chosen::gathered_by`); `Carried` carries a `Chosen`. `enter` on a choice plays the playlist from
   its first chosen row (`Shift::plays_the_chosen_rows` is false there: the badge and the queue
   stamp belong to the whole playlist), while the queue buttons and *Add to playlist* take exactly
-  the chosen entries (`Reaching` holds a `Chosen`). The Favourites shelves are strips beside the
-  listing that no reach key walks, so a choice could neither be made nor extended there by key and
-  they keep a plain click.
+  the chosen entries (`Reaching` holds a `Chosen`). **The Favourites shelves choose by mouse alone.**
+  Each strip is a `Listed` of its own (`FavouriteArtists`, `FavouriteAlbums`; the cell index in the
+  strip is the row), so `ctrl`-click and `shift`-click choose and widen along one strip and a
+  choice never spans two, and the cell's menu becomes `chosen_artists_menu`/`chosen_albums_menu` over
+  `RootView::artists_chosen`/`albums_chosen` (the shelf's own list, never the Artists or Albums
+  listing: a narrowing search leaves those holding other rows), with Unfavourite all in place of
+  Favourite all; an album cell lifts the choice as a drag does. No reach key walks a strip: the
+  shelves sit beside a `uniform_list` the arrows already walk, `reachable` answers the tracks of the
+  pane, and the strips are neither a `Listed` run like Top results' nor reached by `ctrl-space`,
+  `enter` or the menu key, so a key pressed after a choice on a shelf reaches the tracks and
+  gives the choice up (`a_key_in_the_favourites_walks_the_tracks_and_gives_up_the_choice_on_a_shelf`).
+  A change in how many artists or albums are favourites lets go of any reach (`Arrangement::shelves`),
+  since the cells under a stale row would otherwise wear it
+  (`unfavouriting_the_artists_chosen_on_the_shelf_lets_go_of_the_choice`).
 - **A track or album is dragged out of a listing into the queue or a playlist.** Track rows and album
   cells carry a `reorder::Lifted` (`Lift::Tracks`/`Lift::Album`/`Lift::Albums`) through
   `reorder::liftable`; a row standing in the choice carries every loaded row of it as a

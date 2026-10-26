@@ -19,7 +19,8 @@ use gpui::{
     UniformListScrollHandle, Window, canvas, div, hsla, img, point, prelude::*, px, rgb, rgba,
 };
 use resonate_core::{
-    AlbumId, ArtistsDrawn, Frames, MediaLocation, PlaylistId, QueueStamp, Span, TrackId, Volume,
+    AlbumId, ArtistId, ArtistsDrawn, Frames, MediaLocation, PlaylistId, QueueStamp, Span, TrackId,
+    Volume,
 };
 use resonate_engine::{
     Command, Counting, Keeping, Listening, Placement, PlaybackState, PlayerState, QueueItem,
@@ -255,6 +256,7 @@ struct Arrangement {
     playlists: (PlaylistOrder, Direction),
     opened_rows: (RowOrder, Direction),
     search: (SortOrder, Direction),
+    shelves: (usize, usize),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -803,6 +805,10 @@ impl RootView {
             ),
             opened_rows: (RowOrder::default(), Direction::default()),
             search: (SortOrder::default(), SortOrder::default().reads()),
+            shelves: (
+                library.read(cx).favourited().artists,
+                library.read(cx).favourited().albums,
+            ),
         };
         let lyrics = cx.new(|_| LyricsModel::new(lyricists));
         let visualiser = cx.new(|cx| Visualiser::new(player.clone(), cx));
@@ -2301,6 +2307,7 @@ impl RootView {
             playlists: (library.playlist_order(), library.playlist_reading()),
             opened_rows: (self.row_order, self.row_reading),
             search: (self.query_sort, self.query_reading),
+            shelves: (library.favourited().artists, library.favourited().albums),
         }
     }
 
@@ -2408,6 +2415,34 @@ impl RootView {
                 picked(&library.listing()[..songs.min(library.listing().len())])
             }
             _ => Vec::new(),
+        }
+    }
+
+    pub(crate) fn albums_chosen(&self, shift: Shift, chosen: &Chosen, cx: &App) -> Vec<AlbumId> {
+        let library = self.library.read(cx);
+        match shift {
+            Shift::Listing(Listed::FavouriteAlbums) => {
+                let shelf = library.favourite_albums();
+                chosen
+                    .rows()
+                    .filter_map(|row| shelf.get(row).map(|album| album.id))
+                    .collect()
+            }
+            _ => library.albums_at(chosen.rows()),
+        }
+    }
+
+    pub(crate) fn artists_chosen(&self, shift: Shift, chosen: &Chosen, cx: &App) -> Vec<ArtistId> {
+        let library = self.library.read(cx);
+        match shift {
+            Shift::Listing(Listed::FavouriteArtists) => {
+                let shelf = library.favourite_artists();
+                chosen
+                    .rows()
+                    .filter_map(|row| shelf.get(row).map(|artist| artist.id))
+                    .collect()
+            }
+            _ => library.artists_at(chosen.rows()),
         }
     }
 
@@ -2676,6 +2711,7 @@ impl RootView {
             Shift::Listing(Listed::Artists) => &self.artist_rows,
             Shift::Listing(Listed::Playlists) => &self.all_playlist_rows,
             Shift::Listing(Listed::Favourites) => &self.favourite_rows,
+            Shift::Listing(Listed::FavouriteArtists | Listed::FavouriteAlbums) => return 1,
             Shift::Listing(Listed::Missing) => &self.missing_rows,
             Shift::Listing(Listed::Suggested) => &self.suggestion_rows,
             Shift::Listing(Listed::Top) => {
@@ -2823,6 +2859,7 @@ impl RootView {
                 let tracks = self.library.read(cx).favourite_tracks();
                 self.play(&tracks, row, cx);
             }
+            Shift::Listing(Listed::FavouriteArtists | Listed::FavouriteAlbums) => {}
             Shift::Listing(Listed::Missing) => self.open_what_is_missing_at(row, cx),
             Shift::Listing(Listed::Top) => self.press_at_the_top(row, window, cx),
             Shift::Listing(Listed::Suggested) => {
@@ -2855,7 +2892,7 @@ impl RootView {
     ) {
         match shift {
             Shift::Listing(Listed::Albums) => {
-                let albums = self.library.read(cx).albums_at(chosen.rows());
+                let albums = self.albums_chosen(shift, chosen, cx);
                 self.plays_everything_in_each(
                     albums.into_iter().map(Selection::Album).collect(),
                     Placement::Queued,
@@ -2865,7 +2902,7 @@ impl RootView {
                 );
             }
             Shift::Listing(Listed::Artists) => {
-                let artists = self.library.read(cx).artists_at(chosen.rows());
+                let artists = self.artists_chosen(shift, chosen, cx);
                 self.plays_everything_in_each(
                     artists.into_iter().map(Selection::Artist).collect(),
                     Placement::Queued,
@@ -3308,6 +3345,7 @@ impl RootView {
                 self.favourite_rows
                     .scroll_to_item(row, ScrollStrategy::Center);
             }
+            Shift::Listing(Listed::FavouriteArtists | Listed::FavouriteAlbums) => {}
             Shift::Listing(Listed::Missing) => {
                 self.missing_rows
                     .scroll_to_item(row, ScrollStrategy::Center);

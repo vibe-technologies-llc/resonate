@@ -66,6 +66,7 @@ impl RootView {
                 "favourite-artists",
                 format::counted(held.artists, "artist", "artists"),
                 artists,
+                Listed::FavouriteArtists,
                 cx,
             ));
         }
@@ -74,6 +75,7 @@ impl RootView {
                 "favourite-albums",
                 format::counted(held.albums, "album", "albums"),
                 albums,
+                Listed::FavouriteAlbums,
                 cx,
             ));
         }
