@@ -1664,7 +1664,6 @@ impl RootView {
         let name = SharedString::from(playlist.name.clone());
         let pinned = playlist.pinned.is_some();
         let kind = kind_of(playlist);
-        let reached = self.reaches(Shift::Listing(Listed::Playlists), at);
         let albums = self.library.read(cx).pictured(id);
         let art = self.playlist_art(
             &playlist.name,
@@ -1674,132 +1673,139 @@ impl RootView {
             cx,
         );
 
-        let listed =
-            tall_row(playing)
-                .id(id.get() as usize)
-                .group(ROW_GROUP)
-                .cursor_pointer()
-                .hover(|row| row.bg(rgb(theme::hover())))
-                .child(art)
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .flex_1()
-                        .min_w(px(0.0))
-                        .gap_0p5()
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap_2()
-                                .child(
-                                    div()
-                                        .truncate()
-                                        .ends_in_an_ellipsis()
-                                        .font_weight(FontWeight::MEDIUM)
-                                        .text_color(rgb(if playing {
-                                            theme::accent()
-                                        } else {
-                                            theme::text()
-                                        }))
-                                        .child(name),
-                                )
-                                .when_some(kind, |row, (label, colour)| {
-                                    row.child(kit::badge(label, colour))
-                                })
-                                .when(pinned, |row| {
-                                    row.child(kit::badge("PINNED", theme::accent()))
-                                }),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(theme::text_xs()))
-                                .text_color(rgb(theme::muted()))
-                                .truncate()
-                                .ends_in_an_ellipsis()
-                                .child(counted(playlist)),
-                        ),
-                )
-                .child(listing::heard(playlist.plays, playlist.played, now))
-                .child(
-                    self.row_controls(("playlist-controls", id.get() as usize), cx)
-                        .child(
-                            control("pin-saved", id, pin_icon(pinned), pin_hint(pinned)).on_click(
-                                cx.listener(move |this, _, _, cx| {
-                                    cx.stop_propagation();
-                                    this.library.update(cx, |library, cx| {
-                                        library.pin_playlist(id, !pinned, cx);
-                                    });
-                                }),
-                            ),
-                        )
-                        .child(control("play-saved", id, Icon::Play, PLAY_HINT).on_click(
+        let listed = tall_row(playing)
+            .id(id.get() as usize)
+            .group(ROW_GROUP)
+            .cursor_pointer()
+            .hover(|row| row.bg(rgb(theme::hover())))
+            .child(art)
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .gap_0p5()
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .truncate()
+                                    .ends_in_an_ellipsis()
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(rgb(if playing {
+                                        theme::accent()
+                                    } else {
+                                        theme::text()
+                                    }))
+                                    .child(name),
+                            )
+                            .when_some(kind, |row, (label, colour)| {
+                                row.child(kit::badge(label, colour))
+                            })
+                            .when(pinned, |row| {
+                                row.child(kit::badge("PINNED", theme::accent()))
+                            }),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(theme::text_xs()))
+                            .text_color(rgb(theme::muted()))
+                            .truncate()
+                            .ends_in_an_ellipsis()
+                            .child(counted(playlist)),
+                    ),
+            )
+            .child(listing::heard(playlist.plays, playlist.played, now))
+            .child(
+                self.row_controls(("playlist-controls", id.get() as usize), cx)
+                    .child(
+                        control("pin-saved", id, pin_icon(pinned), pin_hint(pinned)).on_click(
                             cx.listener(move |this, _, _, cx| {
                                 cx.stop_propagation();
-                                this.play_the_playlist(id, cx);
+                                this.library.update(cx, |library, cx| {
+                                    library.pin_playlist(id, !pinned, cx);
+                                });
                             }),
-                        ))
-                        .child(
-                            control("shuffle-saved", id, Icon::Shuffle, SHUFFLE_HINT).on_click(
-                                cx.listener(move |this, _, _, cx| {
-                                    cx.stop_propagation();
-                                    this.shuffle_the_playlist(id, cx);
-                                }),
-                            ),
-                        )
-                        .child(
-                            control("next-saved", id, Icon::QueueNext, PLAYLIST_NEXT_HINT)
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    cx.stop_propagation();
-                                    this.queue_the_playlist(id, Placement::Next, cx);
-                                })),
-                        )
-                        .child(
-                            control("last-saved", id, Icon::QueueLast, PLAYLIST_QUEUE_HINT)
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    cx.stop_propagation();
-                                    this.queue_the_playlist(id, Placement::Queued, cx);
-                                })),
-                        )
-                        .when(playlist.query.is_none(), |controls| {
-                            controls.child(
-                                control("add-songs", id, Icon::Plus, ADD_SONGS_HINT).on_click(
-                                    cx.listener(move |this, _, _, cx| {
-                                        cx.stop_propagation();
-                                        this.add_songs_to_playlist(id, cx);
-                                    }),
-                                ),
-                            )
-                        })
-                        .child(
-                            control("drop-saved", id, Icon::Discard, DISCARD_HINT).on_click(
-                                cx.listener(move |this, _, _, cx| {
-                                    cx.stop_propagation();
-                                    this.library
-                                        .update(cx, |library, cx| library.drop_playlist(id, cx));
-                                }),
-                            ),
                         ),
-                )
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.show_playlist(Some(id), cx);
-                }));
+                    )
+                    .child(
+                        control("play-saved", id, Icon::Play, PLAY_HINT).on_click(cx.listener(
+                            move |this, _, _, cx| {
+                                cx.stop_propagation();
+                                this.play_the_playlist(id, cx);
+                            },
+                        )),
+                    )
+                    .child(
+                        control("shuffle-saved", id, Icon::Shuffle, SHUFFLE_HINT).on_click(
+                            cx.listener(move |this, _, _, cx| {
+                                cx.stop_propagation();
+                                this.shuffle_the_playlist(id, cx);
+                            }),
+                        ),
+                    )
+                    .child(
+                        control("next-saved", id, Icon::QueueNext, PLAYLIST_NEXT_HINT).on_click(
+                            cx.listener(move |this, _, _, cx| {
+                                cx.stop_propagation();
+                                this.queue_the_playlist(id, Placement::Next, cx);
+                            }),
+                        ),
+                    )
+                    .child(
+                        control("last-saved", id, Icon::QueueLast, PLAYLIST_QUEUE_HINT).on_click(
+                            cx.listener(move |this, _, _, cx| {
+                                cx.stop_propagation();
+                                this.queue_the_playlist(id, Placement::Queued, cx);
+                            }),
+                        ),
+                    )
+                    .when(playlist.query.is_none(), |controls| {
+                        controls.child(
+                            control("add-songs", id, Icon::Plus, ADD_SONGS_HINT).on_click(
+                                cx.listener(move |this, _, _, cx| {
+                                    cx.stop_propagation();
+                                    this.add_songs_to_playlist(id, cx);
+                                }),
+                            ),
+                        )
+                    })
+                    .child(
+                        control("drop-saved", id, Icon::Discard, DISCARD_HINT).on_click(
+                            cx.listener(move |this, _, _, cx| {
+                                cx.stop_propagation();
+                                this.library
+                                    .update(cx, |library, cx| library.drop_playlist(id, cx));
+                            }),
+                        ),
+                    ),
+            )
+            .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
+                if this.reach_by_click(Shift::Listing(Listed::Playlists), at, event.modifiers(), cx)
+                {
+                    return;
+                }
+                this.show_playlist(Some(id), cx);
+            }));
         let listed = match playlist.query {
             None => reorder::takes_a_lift(listed, LiftedTo::Playlist(id), cx),
             Some(_) => listed,
         };
 
         let reach = self.at_the_reach(Shift::Listing(Listed::Playlists), at);
-        reorder::marked(
-            menu::opens_a_reachable_menu(
-                listed,
-                reach,
-                move |_, at, cx| playlist_menu(at, id, pinned, cx),
-                cx,
-            ),
-            reached,
-        )
+        let listed = menu::opens_a_reachable_menu(
+            listed,
+            reach,
+            move |this, menu_at, cx| {
+                playlist_menu_among_the_chosen(this, at, menu_at, id, pinned, cx)
+            },
+            cx,
+        );
+        self.marked_where_reached(Shift::Listing(Listed::Playlists), at, listed)
     }
 
     fn playlist_cell(
@@ -1820,9 +1826,11 @@ impl RootView {
         let cell_id = ElementId::from(("playlist-cell", id.get() as usize));
         let pointed = pointed::is_pointed_at(&cell_id);
         let about = about_a_cell(playlist, now);
+        let cursor_only = self.stands_unchosen_on(Shift::Listing(Listed::Playlists), at);
 
         let cell = div()
             .id(cell_id.clone())
+            .debug_selector(move || format!("playlist-{}", id.get()))
             .follows_the_pointer(cell_id)
             .group(PLAYLIST_CELL)
             .flex()
@@ -1847,6 +1855,7 @@ impl RootView {
                     })
                     .child(art)
                     .when(reached, |frame| frame.child(browser::reached_ring()))
+                    .when(cursor_only, |frame| frame.child(browser::cursor_ring()))
                     .child(
                         self.pin_mark(id, pinned, cx)
                             .when(!pinned, |mark| {
@@ -1921,7 +1930,11 @@ impl RootView {
                             .child(about),
                     ),
             )
-            .on_click(cx.listener(move |this, _, _, cx| {
+            .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
+                if this.reach_by_click(Shift::Listing(Listed::Playlists), at, event.modifiers(), cx)
+                {
+                    return;
+                }
                 this.show_playlist(Some(id), cx);
             }));
         let cell = match playlist.query {
@@ -1933,7 +1946,9 @@ impl RootView {
         menu::opens_a_reachable_menu(
             cell,
             reach,
-            move |_, at, cx| playlist_menu(at, id, pinned, cx),
+            move |this, menu_at, cx| {
+                playlist_menu_among_the_chosen(this, at, menu_at, id, pinned, cx)
+            },
             cx,
         )
     }
@@ -2054,6 +2069,37 @@ fn about_a_cell(playlist: &Playlist, now: SystemTime) -> SharedString {
             None => SharedString::from(tracks),
         },
     }
+}
+
+fn playlist_menu_among_the_chosen(
+    this: &RootView,
+    row: usize,
+    at: Point<Pixels>,
+    id: PlaylistId,
+    pinned: bool,
+    cx: &App,
+) -> Menu {
+    let chosen = this.acting_on_chosen(Shift::Listing(Listed::Playlists), row);
+    if chosen.count() > 1 {
+        let playlists = this.library.read(cx).playlists_at(chosen.rows());
+        return chosen_playlists_menu(at, playlists);
+    }
+    playlist_menu(at, id, pinned, cx)
+}
+
+fn chosen_playlists_menu(at: Point<Pixels>, playlists: Vec<PlaylistId>) -> Menu {
+    let (play, next, last) = (playlists.clone(), playlists.clone(), playlists);
+
+    Menu::at(at)
+        .does(Icon::Play, menu::PLAY, move |this, _, cx| {
+            this.queue_the_playlists(play.clone(), Placement::Queued, true, cx);
+        })
+        .does(Icon::QueueNext, menu::PLAY_NEXT, move |this, _, cx| {
+            this.queue_the_playlists(next.clone(), Placement::Next, false, cx);
+        })
+        .does(Icon::QueueLast, menu::ADD_TO_QUEUE, move |this, _, cx| {
+            this.queue_the_playlists(last.clone(), Placement::Queued, false, cx);
+        })
 }
 
 pub(crate) fn playlist_menu(at: Point<Pixels>, id: PlaylistId, pinned: bool, cx: &App) -> Menu {

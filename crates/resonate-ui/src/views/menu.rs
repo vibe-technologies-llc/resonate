@@ -1,4 +1,9 @@
-use std::{path::Path, rc::Rc, sync::Arc};
+use std::{
+    collections::BTreeSet,
+    path::{Path, PathBuf},
+    rc::Rc,
+    sync::Arc,
+};
 
 use gpui::{
     AnyElement, App, Bounds, BoxShadow, ClickEvent, Context, Div, ElementId, Global, MouseButton,
@@ -465,6 +470,8 @@ pub(crate) const FAVOUR: &str = "Add to favourites";
 pub(crate) const UNFAVOUR: &str = "Take out of favourites";
 pub(crate) const SHARE: &str = "Share";
 
+pub(crate) const SHARE_EACH: &str = "Share each";
+
 pub(crate) const DELETE_FROM_DISK: &str = "Delete from disk…";
 pub(crate) const PIN: &str = "Pin to the top";
 pub(crate) const UNPIN: &str = "Stop pinning";
@@ -561,14 +568,33 @@ impl Menu {
         menu
     }
 
-    pub(crate) fn offers_the_files(self, paths: Vec<String>) -> Self {
+    pub(crate) fn shares_each(self, tracks: Vec<TrackId>) -> Self {
+        self.does(Icon::Share, SHARE_EACH, move |this, _, cx| {
+            this.library
+                .update(cx, |library, cx| library.share_each(tracks.clone(), cx));
+        })
+    }
+
+    pub(crate) fn offers_the_files(self, paths: Vec<PathBuf>) -> Self {
         if paths.is_empty() {
             return self;
         }
 
+        let written = paths
+            .iter()
+            .map(|path| path.to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let shown = one_file_in_each_folder(&paths);
+
         self.apart()
+            .does(Icon::Folder, SHOW_IN_FOLDER, move |_, _, cx| {
+                for path in &shown {
+                    cx.reveal_path(path);
+                }
+            })
             .does(Icon::Rename, COPY_PATHS, move |_, _, cx| {
-                clipboard::copy(paths.join("\n"), cx);
+                clipboard::copy(written.clone(), cx);
             })
     }
 
@@ -604,6 +630,16 @@ impl Menu {
             })
         })
     }
+}
+
+pub(crate) fn one_file_in_each_folder(paths: &[PathBuf]) -> Vec<PathBuf> {
+    let mut seen = BTreeSet::new();
+
+    paths
+        .iter()
+        .filter(|path| seen.insert(path.parent().map(Path::to_path_buf)))
+        .cloned()
+        .collect()
 }
 
 fn kind_of(copy: &Track) -> String {
@@ -672,6 +708,29 @@ mod tests {
             alternatives: 0,
             delivered: false,
         }
+    }
+
+    #[test]
+    fn files_in_one_folder_are_shown_by_the_first_of_them_and_each_other_folder_by_its_own() {
+        let paths: Vec<PathBuf> = [
+            "/music/a/01.flac",
+            "/music/b/01.flac",
+            "/music/a/02.flac",
+            "/music/c/03.flac",
+            "/music/b/04.flac",
+        ]
+        .into_iter()
+        .map(PathBuf::from)
+        .collect();
+
+        assert_eq!(
+            one_file_in_each_folder(&paths),
+            [
+                PathBuf::from("/music/a/01.flac"),
+                PathBuf::from("/music/b/01.flac"),
+                PathBuf::from("/music/c/03.flac"),
+            ]
+        );
     }
 
     #[test]

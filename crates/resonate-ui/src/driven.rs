@@ -2744,7 +2744,7 @@ mod tests {
     }
 
     #[gpui::test]
-    fn the_menu_of_favourites_chosen_apart_offers_to_hide_delete_and_copy_them_and_no_share(
+    fn the_menu_of_favourites_chosen_apart_offers_to_hide_delete_copy_show_and_share_them(
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
@@ -2757,12 +2757,14 @@ mod tests {
             menu::HIDE_EACH,
             menu::DELETE_FROM_DISK,
             menu::COPY_PATHS,
+            menu::SHOW_IN_FOLDER,
+            menu::SHARE_EACH,
             menu::PLAY,
             menu::UNFAVOUR,
         ] {
             assert!(labels.iter().any(|label| label == offered), "{offered}");
         }
-        for withheld in [menu::SHARE, menu::GO_TO_ALBUM, menu::SHOW_IN_FOLDER] {
+        for withheld in [menu::SHARE, menu::GO_TO_ALBUM] {
             assert!(!labels.iter().any(|label| label == withheld), "{withheld}");
         }
     }
@@ -2968,6 +2970,115 @@ mod tests {
         });
 
         assert!(!driven.read(|root, cx| root.library.read(cx).favoured_artist(artists[2].id)));
+    }
+
+    fn three_playlists_of_a_song_each(
+        folder: &Folder,
+    ) -> (Arc<Library>, Vec<(resonate_core::PlaylistId, TrackId)>) {
+        let library = scanned_catalog(folder, &["Echoes", "Money", "Time"]);
+        let tracks = library
+            .tracks(&resonate_library::TrackQuery::default())
+            .expect("the scanned tracks");
+        let held = ["Aa", "Bb", "Cc"]
+            .into_iter()
+            .zip(&tracks)
+            .map(|(name, track)| {
+                let playlist = library.create_playlist(name).expect("a playlist");
+                library
+                    .add_to_playlist(playlist, &[resonate_library::Cut::of(track)])
+                    .expect("a row put in");
+                (playlist, track.id)
+            })
+            .collect();
+
+        (library, held)
+    }
+
+    fn song_of(
+        held: &[(resonate_core::PlaylistId, TrackId)],
+        playlist: resonate_core::PlaylistId,
+    ) -> TrackId {
+        held.iter()
+            .find(|(held, _)| *held == playlist)
+            .map(|(_, track)| *track)
+            .expect("a playlist that was made")
+    }
+
+    #[gpui::test]
+    fn a_control_click_chooses_playlists_apart_and_enter_plays_every_one_chosen(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (library, held) = three_playlists_of_a_song_each(&folder);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-playlists");
+        driven.until(|root, cx| root.library.read(cx).playlists().len() == 3);
+        let listed = driven.read(|root, cx| root.library.read(cx).saved_playlists());
+
+        driven.click_with(named("playlist", listed[0].id.get()), CONTROL);
+        driven.click_with(named("playlist", listed[2].id.get()), CONTROL);
+
+        assert_eq!(chosen_rows(&mut driven), [0, 2]);
+        assert_eq!(driven.read(|root, cx| root.library.read(cx).opened()), None);
+        assert_eq!(
+            driven.read(|root, cx| root.player.read(cx).queue().len()),
+            0
+        );
+
+        driven.cx.simulate_keystrokes("enter");
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
+
+        assert_eq!(
+            driven.queue(),
+            [song_of(&held, listed[0].id), song_of(&held, listed[2].id)]
+        );
+    }
+
+    #[gpui::test]
+    fn a_plain_click_on_a_playlist_still_opens_it_and_chooses_nothing(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let (library, _) = three_playlists_of_a_song_each(&folder);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-playlists");
+        driven.until(|root, cx| root.library.read(cx).playlists().len() == 3);
+        let listed = driven.read(|root, cx| root.library.read(cx).saved_playlists());
+
+        driven.click(named("playlist", listed[1].id.get()));
+
+        assert_eq!(
+            driven.read(|root, cx| root.library.read(cx).opened()),
+            Some(listed[1].id)
+        );
+        assert!(chosen_rows(&mut driven).is_empty());
+    }
+
+    #[gpui::test]
+    fn the_menu_of_playlists_chosen_apart_queues_the_songs_of_each_and_nothing_else(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (library, held) = three_playlists_of_a_song_each(&folder);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        driven.click("tab-playlists");
+        driven.until(|root, cx| root.library.read(cx).playlists().len() == 3);
+        let listed = driven.read(|root, cx| root.library.read(cx).saved_playlists());
+
+        driven.click_with(named("playlist", listed[0].id.get()), CONTROL);
+        driven.click_with(named("playlist", listed[1].id.get()), CONTROL);
+        driven.right_click(named("playlist", listed[0].id.get()));
+
+        assert_eq!(
+            menu_labels(&mut driven),
+            [menu::PLAY, menu::PLAY_NEXT, menu::ADD_TO_QUEUE]
+        );
+
+        pressed_in_the_menu(&mut driven, menu::ADD_TO_QUEUE);
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
+
+        assert_eq!(
+            driven.queue(),
+            [song_of(&held, listed[0].id), song_of(&held, listed[1].id)]
+        );
     }
 
     #[gpui::test]

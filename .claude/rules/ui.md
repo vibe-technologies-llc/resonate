@@ -1375,8 +1375,9 @@ is never named.
   reorderable row reserves the edge in `theme::UNMARKED`; saved queries draw none. A drop does not ask
   `acting_on`: `reorder::movable` takes the row it stands for beside the `Carried` it would hand over.
 - **The catalog listings choose rows apart.** Only `Shift::chooses_apart` (Tracks, Albums, Artists,
-  Favourites and an opened suggestion; not the queue, playlists, Missing, Top results or the
-  Suggestions and Statistics shelves, whose runs mix kinds of row) takes `ctrl`-click (add the row, or let it go if chosen) and `shift`-click (widen from the
+  the playlists index, Favourites and an opened suggestion; not the queue or an opened playlist, whose
+  rows are moved and dropped as one run, nor Missing, Top results, the Favourites shelves or the
+  Suggestions and Statistics shelves, whose runs mix kinds of row or are strips no key reaches) takes `ctrl`-click (add the row, or let it go if chosen) and `shift`-click (widen from the
   anchor, keeping what was chosen apart); a plain click still plays or opens, a modified click only
   chooses (`RootView::reach_by_click`). `ctrl-space` chooses or lets go of the row the cursor is on
   (`ChooseReached`), `ctrl-shift-up`/`down` hop the cursor a row without touching the choice
@@ -1389,8 +1390,9 @@ is never named.
   it** (`RootView::acting_on_chosen`: the choice if it holds the row, else the row): `enter` plays the
   chosen tracks in order or queues the chosen albums' or artists' tracks
   (`RootView::play_the_chosen`; `plays_everything_in_each`, one background read in order), the row menu
-  becomes `chosen_tracks_menu`/`chosen_albums_menu`/`chosen_artists_menu` (Play, Play next, Add to
-  queue, Add to playlist where tracks, Favourite or Unfavourite all), a track's two queue buttons queue
+  becomes `chosen_tracks_menu`/`chosen_albums_menu`/`chosen_artists_menu`/`chosen_playlists_menu` (Play, Play next, Add to
+  queue, Add to playlist where tracks, Favourite or Unfavourite all where albums, artists and tracks; playlists
+  queue the songs of each in turn through `RootView::queue_the_playlists`, one background read), a track's two queue buttons queue
   the choice (`queue_chosen_control`), and a drag lifts it. **One row of code serves every track
   listing**: a track row carries a `Rowed::chooses` (`browser::Chooses`: the `Shift` and the listed
   row; none where the rows are not a choosable listing), and `RootView::tracks_chosen` turns a `Chosen`
@@ -1399,10 +1401,14 @@ is never named.
   choice of several tracks also offers *Hide from library* (or *Show in library* when all are
   hidden: `LibraryModel::hide_tracks`, one edit), *Delete from disk…* (one `Deleting::each` sheet and
   one `delete_tracks` for the lot, a toast counting them) and *Copy the file paths* (one per line,
-  local files only). What takes one row still: Share (a link names one recording), Show in the file
-  manager (one file), *Go to* entries and the other copies; album and artist menus never had Hide,
-  Delete or file entries. Top results is one run of songs, found songs and strips of artists and
-  albums, so it keeps Shift alone.
+  local files only), *Show in the file manager* (`menu::one_file_in_each_folder`: one `reveal_path`
+  per folder, on the first of its files, since the portal reveals one file and a folder opens once) and
+  *Share each* (`LibraryModel::share_each`: every link on the clipboard one to a line, the toast
+  counting them and saying how many of the choice had one). What takes one row still: *Go to* entries
+  and the other copies; album and artist menus never had Hide, Delete or file entries. Top results is
+  one run of songs, found songs and strips of artists and albums, an opened playlist moves and drops
+  its reach as one `Span` (`Command::Move`, `remove_from_playlist`), and the Favourites shelves are
+  strips beside the listing that no reach key walks, so those keep Shift alone.
 - **A track or album is dragged out of a listing into the queue or a playlist.** Track rows and album
   cells carry a `reorder::Lifted` (`Lift::Tracks`/`Lift::Album`/`Lift::Albums`) through
   `reorder::liftable`; a row standing in the choice carries every loaded row of it as a

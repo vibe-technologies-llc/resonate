@@ -1552,6 +1552,44 @@ impl RootView {
         });
     }
 
+    pub(crate) fn queue_the_playlists(
+        &mut self,
+        playlists: Vec<PlaylistId>,
+        at: Placement,
+        now: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(first) = playlists.first().copied() else {
+            return;
+        };
+        let library = self.library.read(cx).catalog();
+
+        cx.spawn(async move |this, cx| {
+            let read = cx
+                .background_executor()
+                .spawn(async move {
+                    let mut entries = Vec::new();
+                    for playlist in playlists {
+                        entries.extend(library.playlist_entries(playlist, None)?);
+                    }
+                    Ok::<_, resonate_library::Error>(entries)
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| match read {
+                Ok(entries) if now => {
+                    this.plays_in_order(cx);
+                    this.play_playlist(first, &entries, 0, false, cx);
+                }
+                Ok(entries) => this.queue(&entries, at, cx),
+                Err(error) => {
+                    tracing::error!(%error, "playlists could not be read");
+                    toast::tell(toast::could_not("read those playlists", &error), cx);
+                }
+            });
+        })
+        .detach();
+    }
+
     pub(crate) fn play_playlist(
         &mut self,
         playlist: PlaylistId,
@@ -2751,6 +2789,10 @@ impl RootView {
                     window,
                     cx,
                 );
+            }
+            Shift::Listing(Listed::Playlists) => {
+                let playlists = self.library.read(cx).playlists_at(chosen.rows());
+                self.queue_the_playlists(playlists, Placement::Queued, true, cx);
             }
             _ => {
                 let tracks = self.tracks_chosen(shift, chosen, cx);

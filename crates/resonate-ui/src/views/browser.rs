@@ -1,5 +1,6 @@
 use std::{
     cmp::Reverse,
+    path::{Path, PathBuf},
     slice,
     sync::Arc,
     time::{Duration, SystemTime},
@@ -3862,11 +3863,12 @@ fn chosen_tracks_menu(at: Point<Pixels>, tracks: Vec<Track>, this: &RootView, cx
     let hidden = tracks.iter().all(|track| track.hidden);
     let hiding = ids.clone();
     let deleting = Deleting::each(&tracks);
-    let paths: Vec<String> = tracks
+    let paths: Vec<PathBuf> = tracks
         .iter()
         .filter_map(|track| track.location.locator().as_path())
-        .map(|path| path.to_string_lossy().into_owned())
+        .map(Path::to_path_buf)
         .collect();
+    let sharing = ids.clone();
     let favoured = tracks.iter().all(|track| {
         this.library
             .read(cx)
@@ -3901,6 +3903,7 @@ fn chosen_tracks_menu(at: Point<Pixels>, tracks: Vec<Track>, this: &RootView, cx
             },
         )
         .offers_the_files(paths)
+        .shares_each(sharing)
         .apart()
         .does(
             if hidden { Icon::Undo } else { Icon::Discard },
@@ -4084,7 +4087,7 @@ pub(crate) fn reached_ring() -> Div {
         .border_color(rgb(theme::accent()))
 }
 
-fn cursor_ring() -> Div {
+pub(crate) fn cursor_ring() -> Div {
     reached_ring().border_color(theme::tinted(theme::accent(), reorder::CURSOR_ALPHA))
 }
 
