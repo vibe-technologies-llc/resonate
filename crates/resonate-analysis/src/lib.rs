@@ -2,6 +2,7 @@ mod analysis;
 mod conform;
 mod envelope;
 mod error;
+mod headroom;
 mod kept;
 mod levels;
 mod loudness;
@@ -22,6 +23,7 @@ pub use crate::{
     analysis::{Analysis, Examined, Excerpt, Study, analyse, excerpt, print, study},
     envelope::{ENVELOPE_COLUMNS, ENVELOPE_LANES, Envelope, Reach},
     error::{AnalysisOp, Error, Result},
+    headroom::{CUTS_AT_MOST, Cut, Loudest, loudest_through, peak_through},
     kept::{KEPT_BYTES_AT_MOST, KeptAnalyses},
     levels::{Levels, Stereo},
     loudness::Loudness,

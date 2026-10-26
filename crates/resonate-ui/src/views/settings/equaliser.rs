@@ -9,7 +9,7 @@ use resonate_core::{
     MediaLocation, SampleRate,
     eq::{Band, BandKind, Preamp, Traced, TracedOn},
 };
-use resonate_engine::{Command, NodeName, Sources, read_impulse};
+use resonate_engine::{AnalysisError, Command, NodeName, Sources, Watch, read_impulse};
 use resonate_eq::{Binding, Device, MEASURERS_BEST_FIRST, ProfileName};
 
 use crate::{
@@ -332,8 +332,8 @@ impl RootView {
                     "fit-the-preamp",
                     None,
                     "Fit",
-                    "Set the preamp from the curve's own peak, so the loudest part of it reaches \
-                     full scale and no further",
+                    "Set the preamp from the curve's own peak, then from what the songs in the queue \
+                     peak at through it, so the loudest of them reaches full scale and no further",
                     Tone::Ghost,
                 ),
                 |this, _, cx| this.fit_the_preamp(cx),
@@ -1437,7 +1437,51 @@ impl RootView {
         self.equaliser
             .update(cx, |model, cx| model.fit_the_preamp(rate, cx));
         self.tell_the_engine(cx);
+        self.fit_the_preamp_to_the_queue(cx);
         cx.notify();
+    }
+
+    fn fit_the_preamp_to_the_queue(&mut self, cx: &mut Context<Self>) {
+        self.fitting_the_preamp = Fitting::idle();
+        let Some(shown) = self.equaliser.read(cx).shown().cloned() else {
+            return;
+        };
+        let player = self.player.read(cx);
+        if player.queued().rows.is_empty() {
+            return;
+        }
+
+        let engine = player.engine();
+        let watch = Arc::new(Watch::default());
+        let measuring = Arc::clone(&watch);
+        let profile = Arc::new(shown);
+        let measured_for = Arc::clone(&profile);
+        let measured = cx
+            .background_executor()
+            .spawn(async move { engine.loudest_through(&profile, measuring.as_ref()) });
+        let landing = cx.spawn(async move |this, cx| {
+            let measured = measured.await;
+            let _ = this.update(cx, |this, cx| match measured {
+                Ok(loudest) => {
+                    let Some(fitted) = loudest.fitted_preamp() else {
+                        return;
+                    };
+                    let landed = this.equaliser.update(cx, |model, cx| {
+                        model.fit_the_preamp_to_the_music(&measured_for, fitted, cx)
+                    });
+                    if landed {
+                        this.tell_the_engine(cx);
+                        this.report(Notice::Done(fitted_to(loudest.measured)), cx);
+                        cx.notify();
+                    }
+                }
+                Err(AnalysisError::Stopped) => {}
+                Err(error) => {
+                    tracing::warn!(%error, "the queue could not be measured for the preamp")
+                }
+            });
+        });
+        self.fitting_the_preamp = Fitting::measuring(watch, landing);
     }
 
     fn import_a_profile(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
@@ -1700,6 +1744,42 @@ impl RootView {
                 }
             });
         });
+    }
+}
+
+pub(crate) struct Fitting {
+    watch: Option<Arc<Watch>>,
+    _landing: Task<()>,
+}
+
+impl Fitting {
+    pub(crate) fn idle() -> Self {
+        Self {
+            watch: None,
+            _landing: Task::ready(()),
+        }
+    }
+
+    fn measuring(watch: Arc<Watch>, landing: Task<()>) -> Self {
+        Self {
+            watch: Some(watch),
+            _landing: landing,
+        }
+    }
+}
+
+impl Drop for Fitting {
+    fn drop(&mut self) {
+        if let Some(watch) = &self.watch {
+            watch.stop();
+        }
+    }
+}
+
+fn fitted_to(songs: usize) -> String {
+    match songs {
+        1 => "The preamp is fitted to the song in the queue".to_owned(),
+        songs => format!("The preamp is fitted to the {songs} songs in the queue"),
     }
 }
 

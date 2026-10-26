@@ -28,6 +28,12 @@ pub enum Error {
         source: Box<resonate_dsp::Error>,
     },
 
+    #[error("the equaliser could not be set up to shape the stream it was measured over")]
+    Equalising {
+        #[source]
+        source: Box<resonate_dsp::Error>,
+    },
+
     #[error("the analysis was stopped before it reached the end of the stream")]
     Stopped,
 }
@@ -36,7 +42,7 @@ impl Error {
     pub fn is_out_of_reach(&self) -> bool {
         match self {
             Self::Codec { source, .. } => source.is_out_of_reach(),
-            Self::Conformity { .. } | Self::Stopped => false,
+            Self::Conformity { .. } | Self::Equalising { .. } | Self::Stopped => false,
         }
     }
 

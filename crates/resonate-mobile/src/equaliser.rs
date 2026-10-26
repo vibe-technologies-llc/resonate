@@ -1,5 +1,6 @@
-use std::f64::consts::SQRT_2;
+use std::{f64::consts::SQRT_2, sync::Arc};
 
+use resonate_analysis::Watch;
 use resonate_core::{
     SampleRate,
     eq::{
@@ -7,7 +8,7 @@ use resonate_core::{
     },
 };
 
-use crate::{Error, Result};
+use crate::{Error, MobilePlayer, Result};
 
 pub const EQUALISER_CENTRES: [f64; 10] = [
     31.25, 62.5, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
@@ -427,6 +428,30 @@ pub fn fitted_preamp(curve: EqualiserCurve, rate_hz: Option<u32>) -> Result<f32>
 }
 
 #[uniffi::export]
+impl MobilePlayer {
+    pub fn fitted_preamp_to_the_queue(&self, curve: EqualiserCurve) -> Result<Option<f32>> {
+        let profile = Arc::new(curve.profile()?);
+        let (rows, playing) = {
+            let held = self.player.lock();
+            let player = held.as_ref().ok_or(Error::Closed)?;
+            (player.queue(), player.state().queue_position)
+        };
+
+        let watch = Arc::new(Watch::default());
+        if let Some(previous) = self.services.fitting.lock().replace(Arc::clone(&watch)) {
+            previous.stop();
+        }
+        let cuts = resonate_engine::cuts_to_fit(&rows, playing);
+        let loudest =
+            resonate_analysis::loudest_through(&self.sources, &cuts, &profile, watch.as_ref())?;
+
+        Ok(loudest
+            .fitted_preamp()
+            .map(|fitted| (fitted.decibels() as f32).max(-PREAMP_AT_MOST_DB)))
+    }
+}
+
+#[uniffi::export]
 pub fn equaliser_text(curve: EqualiserCurve) -> Result<String> {
     Ok(resonate_eq::write_profile(&curve.profile()?))
 }
@@ -553,6 +578,40 @@ mod tests {
         assert!(matches!(
             fitted_preamp(boosted, Some(7)),
             Err(Error::Domain(_))
+        ));
+    }
+
+    #[test]
+    fn a_queue_of_silence_fits_nothing_and_an_empty_one_or_a_bad_curve_is_told_apart() {
+        use crate::harness::Harness;
+
+        let harness = Harness::new();
+        let boosted = curve(vec![peaking(1000.0, 6.0, 1.0)]);
+
+        assert_eq!(
+            harness
+                .player
+                .fitted_preamp_to_the_queue(boosted.clone())
+                .expect("an empty queue is measured"),
+            None
+        );
+
+        harness
+            .player
+            .load(harness.ids("ab"), 0, false)
+            .expect("a queue");
+        assert_eq!(
+            harness
+                .player
+                .fitted_preamp_to_the_queue(boosted.clone())
+                .expect("a queue of silence is measured"),
+            None
+        );
+
+        let broken = curve(vec![peaking(1000.0, 60.0, 1.0)]);
+        assert!(matches!(
+            harness.player.fitted_preamp_to_the_queue(broken),
+            Err(Error::BandGain { .. })
         ));
     }
 

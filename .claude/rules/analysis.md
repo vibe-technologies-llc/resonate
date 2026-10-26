@@ -38,6 +38,9 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
   guard and the engine's `measure::Measuring` meter each shape as it sounds
   (`a_stream_that_turns_is_as_loud_as_the_same_tone_that_never_does`,
   `a_study_of_a_stream_that_turns_covers_every_link_in_the_shape_it_opened_in`).
+- **`peak_through` is a decode of its own, not part of a study.** It walks like `print` and `excerpt`
+  (`Walking`, `follow_format_changes`) but runs the equaliser stage and a true-peak meter instead of
+  the builders, stores nothing and is asked on a press (`eq.md`, *Fit the preamp to the music*).
 - **Non-number samples are silence**: `normalised` maps float NaN/infinity to 0 before any builder
   (one would ride the K-weighting history to track end). Bit reading keeps native samples.
 - **`Watching` stops a pass.** `Watch` is the window's; `EnrichProgress` implements it, so cancelling

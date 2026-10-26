@@ -917,7 +917,7 @@ pub(crate) const BANDS_HINT: &str = "What the bound curve does to the sound, dra
      and no name. A pointer places a band to a tenth of a decibel; a number typed into a row is \
      exact, which a correction measured to the hundredth deserves. The preamp above the rows is \
      what keeps the loudest part of the curve from reaching full scale, and Fit the preamp sets it \
-     from the curve itself. Curves are kept as EqualizerAPO text, so any other player reads what is \
+     from the curve itself and then from what the songs in the queue peak at through it. Curves are kept as EqualizerAPO text, so any other player reads what is \
      exported here.";
 
 pub(crate) const MEASURED_HINT: &str = "Corrections measured by AutoEq for a few thousand \

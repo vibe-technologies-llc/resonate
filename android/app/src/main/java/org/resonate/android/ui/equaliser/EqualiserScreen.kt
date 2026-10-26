@@ -425,7 +425,7 @@ private fun Preamp(curve: EqualiserCurve, bounds: EqualiserBounds, onCommit: (Fl
                 Text("Fit the preamp")
             }
             Text(
-                "Sets the preamp from the curve's own peak, so its loudest part reaches full scale and no further.",
+                "Sets the preamp from the curve's own peak, then from what the songs in the queue peak at through it, so the loudest of them reaches full scale and no further.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),

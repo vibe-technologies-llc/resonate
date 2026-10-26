@@ -88,7 +88,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   is never a FLAC
 
 ## Later: Equaliser and DSP extras
-- [M] *Fit the preamp* models the curve rather than measuring what the music peaks at
+- [M] *Fit the preamp* measures the queue's first 32 songs by decoding them on the press: a fit over
+  the whole catalog would need a per-band measure kept in `track_studies`, and room correction and
+  the volume stage stand outside what it runs
 - [L] AutoEq is the only correction source, fetched one device at a time
 - [M] A downmix folds by position, or unplaced channels in turn: a stream's own downmix coefficients
   are not read
