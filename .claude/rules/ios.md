@@ -633,7 +633,9 @@ every route change (a pair of headphones at the same rate included), not from th
   disclosure arrow its neighbours do; a simultaneous tap clears any filter or mix and shows songs.
   **Its rows' icons are one kind of tile** (`ShelfTile`: a white symbol at `.title2` centred on a
   corner-to-corner gradient of two system colours, 56 pt scaled): Favourites pink and purple, All
-  songs orange and red, Suggestions teal and blue, Statistics indigo and blue.
+  songs orange and red, Suggestions teal and blue, Statistics indigo and blue. The tile takes no touch
+  (`allowsHitTesting(false)`) and each row is one rectangle (`contentShape(.rect)`), so a tap on the
+  tile opens the page as a tap on the words does; a tap landing on the tile alone opened nothing.
 - **The Library tab has no selector**: it is a home page (`LibraryView(page: .home)`) of one
   section of shortcuts (Favourites, All songs, Suggestions, Statistics; all but Favourites hidden
   while searching), then playlists, albums and artists as carousels (`PlaylistShelf`, `AlbumShelf`,

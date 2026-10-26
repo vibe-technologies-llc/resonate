@@ -241,6 +241,7 @@ struct PinnedFavouritesRow: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .contentShape(.rect)
         .accessibilityElement(children: .combine)
     }
 }
@@ -279,6 +280,7 @@ struct ShelfTile: View {
                 in: .rect(cornerRadius: Self.corner)
             )
             .accessibilityHidden(true)
+            .allowsHitTesting(false)
     }
 }
 
@@ -295,6 +297,7 @@ struct AllSongsRow: View {
                 Text(counted(count, "song")).font(.subheadline).foregroundStyle(.secondary)
             }
         }
+        .contentShape(.rect)
         .accessibilityElement(children: .combine)
     }
 }
@@ -311,6 +314,7 @@ struct SuggestionsRow: View {
                 Text("Mixes from your library").font(.subheadline).foregroundStyle(.secondary)
             }
         }
+        .contentShape(.rect)
         .accessibilityElement(children: .combine)
     }
 }
@@ -327,6 +331,7 @@ struct StatisticsRow: View {
                 Text("Your listening and library in numbers").font(.subheadline).foregroundStyle(.secondary)
             }
         }
+        .contentShape(.rect)
         .accessibilityElement(children: .combine)
     }
 }
