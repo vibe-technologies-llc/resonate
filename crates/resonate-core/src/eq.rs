@@ -199,6 +199,14 @@ impl Preamp {
     pub fn amplitude(self) -> f64 {
         10.0_f64.powf(self.decibels() / 20.0)
     }
+
+    pub fn holding_under_full_scale(peak_db: f64) -> Self {
+        if !peak_db.is_finite() || peak_db <= 0.0 {
+            return Self::NONE;
+        }
+        let deepest = -f64::from(BandGain::WIDEST_MILLI_DECIBELS) / MILLI_DECIBELS_PER_DECIBEL;
+        Self::from_decibels((-peak_db).max(deepest)).unwrap_or(Self::NONE)
+    }
 }
 
 impl fmt::Display for Preamp {
@@ -821,12 +829,7 @@ impl Profile {
     }
 
     pub fn fitted_preamp(&self, rate: SampleRate) -> Preamp {
-        let peak = self.peak_db(rate);
-        if !peak.is_finite() || peak <= 0.0 {
-            return Preamp::NONE;
-        }
-        let deepest = -f64::from(BandGain::WIDEST_MILLI_DECIBELS) / MILLI_DECIBELS_PER_DECIBEL;
-        Preamp::from_decibels((-peak).max(deepest)).unwrap_or(Preamp::NONE)
+        Preamp::holding_under_full_scale(self.peak_db(rate))
     }
 }
 
@@ -1382,6 +1385,25 @@ mod tests {
         }
 
         assert_eq!(Profile::flat().fitted_preamp(rate), Preamp::NONE);
+    }
+
+    #[test]
+    fn a_peak_is_held_under_full_scale_by_its_own_height_and_no_further_than_the_deepest_preamp() {
+        assert_eq!(Preamp::holding_under_full_scale(-3.0), Preamp::NONE);
+        assert_eq!(Preamp::holding_under_full_scale(0.0), Preamp::NONE);
+        assert_eq!(Preamp::holding_under_full_scale(f64::NAN), Preamp::NONE);
+        assert_eq!(
+            Preamp::holding_under_full_scale(f64::NEG_INFINITY),
+            Preamp::NONE
+        );
+        assert_eq!(
+            Preamp::holding_under_full_scale(6.5).milli_decibels(),
+            -6_500
+        );
+        assert_eq!(
+            Preamp::holding_under_full_scale(60.0).milli_decibels(),
+            -BandGain::WIDEST_MILLI_DECIBELS
+        );
     }
 
     #[test]

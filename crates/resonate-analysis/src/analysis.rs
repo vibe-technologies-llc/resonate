@@ -191,7 +191,7 @@ impl Drawing for Drawn {
     }
 }
 
-fn opened(
+pub(crate) fn opened(
     sources: &Sources,
     location: &MediaLocation,
     span: Option<FrameSpan>,
@@ -203,7 +203,7 @@ fn opened(
     .map_err(|source| Error::codec(AnalysisOp::Open, source))
 }
 
-fn native_format(info: &MediaInfo, codec: Codec) -> SampleFormat {
+pub(crate) fn native_format(info: &MediaInfo, codec: Codec) -> SampleFormat {
     if codec == Codec::Dsd || info.spec.format.is_float() {
         return SampleFormat::F32;
     }

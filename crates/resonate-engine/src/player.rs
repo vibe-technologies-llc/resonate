@@ -4,11 +4,12 @@ use std::{
     time::Duration,
 };
 
+use ahash::AHashSet;
 use crossbeam_channel::{Receiver, Sender, bounded, unbounded};
-use resonate_analysis::{Analysis, KeptAnalyses, Watching};
+use resonate_analysis::{Analysis, CUTS_AT_MOST, Cut, KeptAnalyses, Loudest, Watching};
 use resonate_audio::SinkInfo;
 use resonate_codec::Sources;
-use resonate_core::{FrameSpan, MediaLocation};
+use resonate_core::{FrameSpan, MediaLocation, eq::Profile};
 #[cfg(target_os = "linux")]
 use resonate_pipewire::PipeWire;
 
@@ -243,6 +244,15 @@ impl Player {
         Ok(analysis)
     }
 
+    pub fn loudest_through(
+        &self,
+        profile: &Arc<Profile>,
+        watch: &dyn Watching,
+    ) -> resonate_analysis::Result<Loudest> {
+        let cuts = cuts_to_fit(&self.queue(), self.state().queue_position);
+        resonate_analysis::loudest_through(&self.sources, &cuts, profile, watch)
+    }
+
     pub fn keeping_analyses(mut self, kept: KeptAnalyses) -> Self {
         self.kept = Some(kept);
         self
@@ -265,8 +275,70 @@ impl Player {
     }
 }
 
+pub fn cuts_to_fit(rows: &QueueRows, playing: Option<usize>) -> Vec<Cut> {
+    let first = playing.filter(|row| *row < rows.len()).unwrap_or(0);
+    let mut seen = AHashSet::new();
+    rows.iter()
+        .skip(first)
+        .chain(rows.iter().take(first))
+        .filter(|item| seen.insert((item.location.clone(), item.span)))
+        .take(CUTS_AT_MOST)
+        .map(|item| Cut {
+            location: item.location.clone(),
+            span: item.span,
+        })
+        .collect()
+}
+
 impl Drop for Player {
     fn drop(&mut self) {
         self.stop_thread();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use resonate_core::TrackId;
+
+    use super::*;
+    use crate::QueueItem;
+
+    fn row(number: u64, name: &str) -> QueueItem {
+        QueueItem::whole(
+            TrackId::new(number).expect("a track id"),
+            MediaLocation::local(name),
+        )
+    }
+
+    #[test]
+    fn the_cuts_to_fit_start_at_the_playing_row_wrap_round_and_meet_each_song_once() {
+        let rows: QueueRows = [row(1, "a"), row(2, "b"), row(3, "a"), row(4, "c")]
+            .into_iter()
+            .collect();
+
+        let names: Vec<_> = cuts_to_fit(&rows, Some(1))
+            .into_iter()
+            .map(|cut| cut.location)
+            .collect();
+
+        assert_eq!(
+            names,
+            vec![
+                MediaLocation::local("b"),
+                MediaLocation::local("a"),
+                MediaLocation::local("c"),
+            ]
+        );
+        assert_eq!(cuts_to_fit(&rows, None).len(), 3);
+        assert_eq!(cuts_to_fit(&rows, Some(40)).len(), 3);
+    }
+
+    #[test]
+    fn the_cuts_to_fit_stop_at_the_most_the_fit_will_decode() {
+        let rows: QueueRows = (1..=CUTS_AT_MOST as u64 * 2)
+            .map(|number| row(number, &format!("song-{number}")))
+            .collect();
+
+        assert_eq!(cuts_to_fit(&rows, None).len(), CUTS_AT_MOST);
     }
 }

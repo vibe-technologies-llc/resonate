@@ -1,6 +1,7 @@
 ---
 paths:
   - "crates/resonate-eq/**/*.rs"
+  - "crates/resonate-analysis/src/headroom.rs"
   - "crates/resonate-core/src/eq.rs"
   - "crates/resonate-dsp/src/eq.rs"
   - "crates/resonate-dsp/src/convolve.rs"
@@ -103,9 +104,43 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
 - **The preamp is a scalar before the bands.** Nothing else guards a boost: clip prevention
   attenuates, never limits (`audio.md`). *Fit* sets it from `peak_db`, which weighs every band's
   centre beside the drawn sweep (a Q 40 boost between two points is not missed); a peak past the
-  deepest preamp fits the deepest. **It glides**: `set_equalisation` moves `Preamping` over
+  deepest preamp fits the deepest. `Preamp::holding_under_full_scale(peak_db)` is the one rule from a
+  peak to a preamp (nothing at or under 0 dB, the deepest past it), shared by the model and the
+  measured fit below. **It glides**: `set_equalisation` moves `Preamping` over
   `EASED_OVER`, weighed by frames since it began (lands exactly); `is_ramping` meanwhile
   (`a_preamp_change_is_eased_in_rather_than_stepped_within_a_sample`).
+
+## Fit the preamp to the music
+
+- **The model fits a sine; the music is measured.** `Profile::fitted_preamp` assumes full scale at
+  the curve's loudest point, so a bass boost over a song with a quiet low end costs headroom it
+  never uses. `resonate_analysis::peak_through(sources, location, span, profile, watch)` decodes the
+  cut as a study does (`Walking`, the shape it opened in), runs the real `Equaliser` stage over it
+  at the file's rate, on the profile `at_rate` that rate and with its preamp taken off, and returns
+  the stage output's true peak (`TruePeakMeter::at`, the guard's own interpolator). The preamp is a
+  scalar before the bands, so one decode answers: `Preamp::holding_under_full_scale` of that peak.
+  Music at full scale on the boost fits as the model does
+  (`music_peaking_at_full_scale_on_the_boost_is_fitted_as_the_curve_alone_is`); a boost where the
+  music has no energy fits less (`a_boost_where_the_music_has_no_energy_needs_less_preamp_than_the_curve_alone_says`);
+  intersample peaks and a sum of components can fit more than the model.
+- **The set is the queue, bounded.** `loudest_through(sources, cuts, profile, watch)` measures
+  `Cut`s on `available_parallelism / 2` scoped threads sharing one counter and returns `Loudest`
+  (`peak`, `measured`, `passed_over`); a cut that will not decode is counted and logged, `Stopped`
+  ends the lot, and `Loudest::fitted_preamp` is `None` where nothing was measured or all of it was
+  silent. `engine::cuts_to_fit(rows, playing)` picks them: from the playing row on, wrapping, each
+  location and span once, at most `CUTS_AT_MOST` (32). `Player::loudest_through` reads the queue
+  and the player's own `Sources`; none of it runs on the audio thread. Room correction and the
+  volume stage are not in the run (the convolver is not part of `Equaliser`).
+- **The press keeps the model as the first answer.** The desktop's *Fit* sets the model fit at
+  once (an empty queue ends there), then `RootView::fit_the_preamp_to_the_queue` measures on the
+  background executor under a `Fitting` (a `Watch` stopped when it is dropped, so a second press or
+  the window going replaces it) and `EqualiserModel::fit_the_preamp_to_the_music` lands the measured
+  preamp only if the shown bands are the ones measured, toasting *The preamp is fitted to the N
+  songs in the queue*. The phones do the same: `MobilePlayer::fitted_preamp_to_the_queue(curve)`
+  answers the measured preamp in dB (`None` for an empty or silent queue, held to the phone's
+  `PREAMP_AT_MOST_DB`), stopping the fit before it through `Services::fitting`; Android and iOS
+  set the model fit, then the measured one if the curve is still the one fitted
+  (`a_queue_of_silence_fits_nothing_and_an_empty_one_or_a_bad_curve_is_told_apart`).
 
 ## Room correction
 
@@ -368,11 +403,11 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   `Profile::response` with the preamp, at the stream rate (48 kHz where none is given) over core's
   `sweep` (log-spaced 20 Hz to 20 kHz, points held to 2..=2048), so point *i* sits at
   `20 · 1000^(i/(n-1))` Hz (`the_drawn_response_of_one_band_is_the_biquad_the_stage_runs`).
-- ***Fit the preamp* is the desktop's fit**: `fitted_preamp(curve, rate)` is
+- ***Fit the preamp* is the desktop's fit, then the queue's**: `fitted_preamp(curve, rate)` is
   `Profile::fitted_preamp` (so `peak_db`, the bands' loudest point before the preamp, centres
   weighed beside the sweep) at the stream rate (48 kHz where none is given), held to the phone's
   `PREAMP_AT_MOST_DB`; a curve that only cuts fits 0 dB. Both phones offer it beside the preamp
-  slider and keep no peak arithmetic of their own
+  slider and keep no peak arithmetic of their own; `fitted_preamp_to_the_queue` follows it (above)
   (`the_fitted_preamp_holds_the_loudest_band_under_full_scale_as_the_desktop_does`).
 - **An import becomes editable bands, and says what it gave up**: `parse_eq_profile` (pasted or
   file text) and `auto_eq_profile` answer `EqualiserImport`: every `on` filter is a

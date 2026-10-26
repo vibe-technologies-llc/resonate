@@ -20,10 +20,10 @@ mod tap;
 mod turns;
 
 pub use resonate_analysis::{
-    Analysis, AnalysisOp, Cutoff, ENVELOPE_LANES, Envelope, Error as AnalysisError, Examined,
-    FLOOR_DB, Finding, Judgement, KeptAnalyses, Levels, LossyGuess, Loudness, Ramp, Reach,
-    SPECTROGRAM_ROWS, Spectrogram, Spectrum, Stereo, Study, Verdict, Watch, Watching, analyse,
-    study,
+    Analysis, AnalysisOp, CUTS_AT_MOST, Cut, Cutoff, ENVELOPE_LANES, Envelope,
+    Error as AnalysisError, Examined, FLOOR_DB, Finding, Judgement, KeptAnalyses, Levels,
+    LossyGuess, Loudest, Loudness, Ramp, Reach, SPECTROGRAM_ROWS, Spectrogram, Spectrum, Stereo,
+    Study, Verdict, Watch, Watching, analyse, study,
 };
 pub use resonate_audio::{
     AudioSource, Backend, CardProfile, Error as SinkError, GraphTime, HardwareVolume,
@@ -63,7 +63,7 @@ pub use crate::{
         BluetoothWake, Decoded, EngineConfig, Equalisation, Levelling, OutputMode, OutputPlan,
         plan_for, plan_output, resolve_replay_gain,
     },
-    player::Player,
+    player::{Player, cuts_to_fit},
     queue::{Placement, QueueItem, QueueRows, Queued, Unclaimed, stamp_of, unclaimed_id},
     ring::{Entering, FADED_OVER, RingConsumer, RingMonitor, RingProducer, ring},
     sleep::{Asleep, Until},

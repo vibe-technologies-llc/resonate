@@ -516,7 +516,7 @@ struct SoundSettingsView: View {
                 } header: {
                     Text("Output gain")
                 } footer: {
-                    Text("Fit the preamp sets it from the curve's own peak, so the loudest part of it reaches full scale and no further.")
+                    Text("Fit the preamp sets it from the curve's own peak, then from what the songs in the queue peak at through it, so the loudest of them reaches full scale and no further.")
                 }
                 HeadphoneCorrectionSection(model: $model, current: curve, choose: { ask(.device($0)) }, search: search)
                 ProfileImportSection(paste: paste, choose: { choosingFile = true })
@@ -612,8 +612,14 @@ struct SoundSettingsView: View {
         Task {
             do {
                 let fitted = try await Work.aside { try fittedPreamp(curve: curve, rateHz: asked) }
-                var next = curve
-                next.preampDb = fitted
+                var modelled = curve
+                modelled.preampDb = fitted
+                edited(modelled)
+                let player = try await library.player()
+                let measured = try await Work.aside { try player.fittedPreampToTheQueue(curve: curve) }
+                guard let measured, var next = drawn.curve,
+                      next.bands == curve.bands, next.preampDb == fitted else { return }
+                next.preampDb = measured
                 edited(next)
             } catch {
                 library.report(error)

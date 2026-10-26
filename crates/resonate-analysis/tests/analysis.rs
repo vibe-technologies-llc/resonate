@@ -2,15 +2,22 @@ use std::{
     env, fs,
     path::PathBuf,
     process,
-    sync::atomic::{AtomicU32, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    },
     time::Duration,
 };
 
 use resonate_analysis::{
-    Error, Finding, LossyGuess, Ramp, Verdict, Watch, Watching, analyse, print, study,
+    Cut, Error, Finding, LossyGuess, Ramp, Verdict, Watch, Watching, analyse, loudest_through,
+    peak_through, print, study,
 };
 use resonate_codec::Sources;
-use resonate_core::{FrameSpan, Frames, MediaLocation};
+use resonate_core::{
+    FrameSpan, Frames, MediaLocation, SampleRate,
+    eq::{Band, BandGain, BandKind, Frequency, Preamp, Profile, Q},
+};
 use rustfft::{FftPlanner, num_complex::Complex};
 
 const RATE: u32 = 44_100;
@@ -331,4 +338,135 @@ fn a_cut_is_analysed_alone_and_a_stopped_watch_ends_the_pass() {
         Err(Error::Stopped)
     ));
     assert!(stopped.stopped());
+}
+
+const BOOSTED_AT_HZ: f64 = 100.0;
+const BOOST_DB: f64 = 6.0;
+const SOUNDED_ELSEWHERE_HZ: f64 = 5_000.0;
+const WITHIN_DB: f64 = 0.4;
+
+fn boosting_the_bass() -> Arc<Profile> {
+    let boost = Band::new(
+        BandKind::Peaking,
+        Frequency::from_hertz(BOOSTED_AT_HZ).expect("in range"),
+        BandGain::from_decibels(BOOST_DB).expect("in range"),
+        Q::from_units(1.0).expect("in range"),
+    );
+    Arc::new(Profile::new(Preamp::NONE, vec![boost]).expect("a profile in range"))
+}
+
+fn tone(hertz: f64, amplitude: f64) -> Vec<i32> {
+    (0..(RATE * 3) as usize)
+        .flat_map(|frame| {
+            let phase = std::f64::consts::TAU * hertz * frame as f64 / f64::from(RATE);
+            let sample = (phase.sin() * amplitude * 32_767.0) as i32;
+            [sample, sample]
+        })
+        .collect()
+}
+
+fn peak_db_through(profile: &Arc<Profile>, location: &MediaLocation) -> f64 {
+    let peak = peak_through(
+        &Sources::local(),
+        location,
+        None,
+        profile,
+        &Watch::default(),
+    )
+    .expect("a measured peak");
+    20.0 * peak.log10()
+}
+
+#[test]
+fn a_boost_where_the_music_has_no_energy_needs_less_preamp_than_the_curve_alone_says() {
+    let tree = Tree::new();
+    let profile = boosting_the_bass();
+    let modelled = profile.fitted_preamp(SampleRate::HZ_44100).decibels();
+    let elsewhere = tree.wave("elsewhere.wav", RATE, 16, &tone(SOUNDED_ELSEWHERE_HZ, 0.8));
+
+    let peak = peak_db_through(&profile, &elsewhere);
+
+    assert!(modelled < -BOOST_DB + WITHIN_DB, "{modelled}");
+    assert!((peak - 20.0 * 0.8_f64.log10()).abs() < WITHIN_DB, "{peak}");
+    assert!(peak < 0.0, "{peak}");
+}
+
+#[test]
+fn a_boost_where_the_music_has_energy_costs_the_headroom_the_boost_takes() {
+    let tree = Tree::new();
+    let profile = boosting_the_bass();
+    let on_the_boost = tree.wave("on-the-boost.wav", RATE, 16, &tone(BOOSTED_AT_HZ, 0.8));
+
+    let peak = peak_db_through(&profile, &on_the_boost);
+
+    let expected = 20.0 * 0.8_f64.log10() + BOOST_DB;
+    assert!(
+        (peak - expected).abs() < WITHIN_DB,
+        "{peak} against {expected}"
+    );
+}
+
+#[test]
+fn music_peaking_at_full_scale_on_the_boost_is_fitted_as_the_curve_alone_is() {
+    let tree = Tree::new();
+    let profile = boosting_the_bass();
+    let modelled = profile.fitted_preamp(SampleRate::HZ_44100).decibels();
+    let loud = tree.wave("loud.wav", RATE, 16, &tone(BOOSTED_AT_HZ, 0.9999));
+
+    let measured = Preamp::holding_under_full_scale(peak_db_through(&profile, &loud)).decibels();
+
+    assert!(
+        (measured - modelled).abs() < WITHIN_DB,
+        "{measured} against {modelled}"
+    );
+}
+
+#[test]
+fn the_fit_over_several_cuts_holds_the_loudest_and_counts_what_could_not_be_read() {
+    let tree = Tree::new();
+    let profile = boosting_the_bass();
+    let quiet = tree.wave("quiet.wav", RATE, 16, &tone(SOUNDED_ELSEWHERE_HZ, 0.3));
+    let loud = tree.wave("loud.wav", RATE, 16, &tone(BOOSTED_AT_HZ, 0.8));
+    let missing = MediaLocation::local(tree.root.join("missing.wav"));
+    let cuts: Vec<Cut> = [quiet, loud.clone(), missing]
+        .into_iter()
+        .map(|location| Cut {
+            location,
+            span: None,
+        })
+        .collect();
+
+    let loudest = loudest_through(&Sources::local(), &cuts, &profile, &Watch::default())
+        .expect("a measured set");
+
+    assert_eq!(loudest.measured, 2);
+    assert_eq!(loudest.passed_over, 1);
+    let alone = peak_db_through(&profile, &loud);
+    assert!((loudest.peak_db().expect("a peak") - alone).abs() < 0.01);
+    assert_eq!(
+        loudest.fitted_preamp(),
+        Some(Preamp::holding_under_full_scale(alone))
+    );
+}
+
+#[test]
+fn a_stopped_watch_ends_the_fit_and_nothing_measured_fits_nothing() {
+    let tree = Tree::new();
+    let profile = boosting_the_bass();
+    let loud = tree.wave("loud.wav", RATE, 16, &tone(BOOSTED_AT_HZ, 0.8));
+    let cuts = [Cut {
+        location: loud,
+        span: None,
+    }];
+
+    let stopped = Watch::default();
+    stopped.stop();
+    assert!(matches!(
+        loudest_through(&Sources::local(), &cuts, &profile, &stopped),
+        Err(Error::Stopped)
+    ));
+
+    let nothing =
+        loudest_through(&Sources::local(), &[], &profile, &Watch::default()).expect("an empty set");
+    assert_eq!(nothing.fitted_preamp(), None);
 }

@@ -721,6 +721,23 @@ impl EqualiserModel {
         self.settle(cx);
     }
 
+    pub fn fit_the_preamp_to_the_music(
+        &mut self,
+        measured: &Profile,
+        fitted: Preamp,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some((_, profile)) = self.shown.as_mut() else {
+            return false;
+        };
+        if profile.bands() != measured.bands() {
+            return false;
+        }
+        profile.set_preamp(fitted);
+        self.settle(cx);
+        true
+    }
+
     pub fn set_preamp(&mut self, preamp: Preamp, cx: &mut Context<Self>) {
         if let Some((_, profile)) = self.shown.as_mut() {
             profile.set_preamp(preamp);
@@ -1557,5 +1574,57 @@ mod tests {
         );
         assert_eq!(fitted, Some(profile.fitted_preamp(SampleRate::HZ_96000)));
         assert_ne!(fitted, Some(profile.fitted_preamp(SampleRate::HZ_48000)));
+    }
+
+    #[gpui::test]
+    fn a_measured_preamp_lands_only_on_the_bands_it_was_measured_for(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use gpui::AppContext as _;
+
+        let folder = std::env::temp_dir().join(format!(
+            "resonate-ui-equaliser-music-{}",
+            std::process::id()
+        ));
+        let store = Store::at(folder.clone());
+        let name = named("Bass");
+        let bass = Band::new(
+            BandKind::Peaking,
+            Frequency::from_hertz(100.0).expect("a frequency"),
+            BandGain::from_decibels(6.0).expect("a gain"),
+            Q::BUTTERWORTH,
+        );
+        let profile = Profile::new(Preamp::NONE, vec![bass]).expect("a profile");
+        store.keep(&name, &profile).expect("the profile is kept");
+        let model = cx.new(|_| {
+            let mut model = EqualiserModel::new(
+                folder.clone(),
+                Arc::new(Corrected::uncorrected()),
+                Bindings {
+                    enabled: true,
+                    fallback: Some(Binding::Profile(name)),
+                    by_sink: Vec::new(),
+                },
+            );
+            model.show(None);
+            model
+        });
+        let measured = Preamp::from_decibels(-2.5).expect("a preamp");
+        let moved = Profile::new(Preamp::NONE, Vec::new()).expect("a profile");
+
+        let refused = model.update(cx, |model, cx| {
+            model.fit_the_preamp_to_the_music(&moved, measured, cx)
+        });
+        let kept_by_refusal = model.read_with(cx, |model, _| model.shown().map(Profile::preamp));
+        let landed = model.update(cx, |model, cx| {
+            model.fit_the_preamp_to_the_music(&profile, measured, cx)
+        });
+        let fitted = model.read_with(cx, |model, _| model.shown().map(Profile::preamp));
+        let _ = std::fs::remove_dir_all(&folder);
+
+        assert!(!refused);
+        assert_eq!(kept_by_refusal, Some(Preamp::NONE));
+        assert!(landed);
+        assert_eq!(fitted, Some(measured));
     }
 }

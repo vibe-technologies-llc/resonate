@@ -27,7 +27,7 @@ use resonate_listen::{CLIP_BY_DEFAULT, Listening};
 
 pub(crate) use crate::views::settings::{
     curve::{HeldBand, Plotted},
-    equaliser::marked_at,
+    equaliser::{Fitting, marked_at},
     find::{Category, Group},
     lastfm::{LastfmAccount, LastfmSigning},
     subsonic::Account,

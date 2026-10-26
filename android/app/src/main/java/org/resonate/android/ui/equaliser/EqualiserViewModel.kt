@@ -122,9 +122,15 @@ class EqualiserViewModel(private val resonate: Resonate) : ViewModel() {
     fun fitPreamp(curve: EqualiserCurve) {
         val bounds = info.value?.bounds ?: EqualiserBounds.unread
         val rate = outputRate
-        resonate.attempt(viewModelScope) {
+        resonate.attempt(viewModelScope) { native ->
             val fitted = withContext(Dispatchers.Default) { fittedPreamp(curve, rate) }
-            commit(curve.withFittedPreamp(fitted, bounds))
+            val modelled = curve.withFittedPreamp(fitted, bounds)
+            commit(modelled)
+            val measured =
+                withContext(Dispatchers.Default) { native.fittedPreampToTheQueue(curve) }
+            if (measured != null && shown.value == modelled) {
+                commit(curve.withFittedPreamp(measured, bounds))
+            }
         }
     }
 
