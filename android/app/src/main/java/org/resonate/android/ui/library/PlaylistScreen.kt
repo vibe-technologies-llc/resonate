@@ -85,6 +85,7 @@ fun PlaylistScreen(screen: Screen.Playlist) {
     var adding by rememberSaveable { mutableStateOf(false) }
     var deleting by rememberSaveable { mutableStateOf(false) }
     val name = playlist?.name ?: screen.name
+    val search = playlist?.search
     val entries = loaded.valueOrNull().orEmpty()
     val tracks = entries.map { it.track }
     val list = rememberLazyListState()
@@ -108,7 +109,8 @@ fun PlaylistScreen(screen: Screen.Playlist) {
             actions = {
                 OverflowMenu(
                     playlistMenu(
-                        sync,
+                        sync.takeIf { search == null },
+                        fills = search != null,
                         onPlayNext = { resonate.playNext(tracks) },
                         onQueue = { resonate.addToQueue(tracks) },
                         onAdd = { adding = true },
@@ -125,13 +127,20 @@ fun PlaylistScreen(screen: Screen.Playlist) {
             item("header") {
                 CollectionHeader(
                     title = name,
-                    overline = "Playlist",
+                    overline = if (search == null) "Playlist" else "Saved search",
                     summary = collectionSummary(tracks = rows.map { it.track }),
                     onPlay = { resonate.playInOrder(rows.map { it.track }) },
                     onShuffle = { resonate.playShuffled(rows.map { it.track }) },
                     playable = rows.isNotEmpty(),
                     extra = {
-                        if (rows.isEmpty()) {
+                        if (search != null) {
+                            Text(
+                                search.text.ifBlank { "Every song" },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.testTag("saved-search-text"),
+                            )
+                        } else if (rows.isEmpty()) {
                             FilledTonalButton(onClick = { adding = true }, modifier = Modifier.testTag("add-songs-button")) {
                                 AddSongsLabel()
                             }
@@ -144,6 +153,21 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                 ) { side ->
                     PlaylistCover(playlist?.covers.orEmpty(), side, shape = MaterialTheme.shapes.extraLarge)
                 }
+            }
+            if (search != null) {
+                if (rows.isEmpty()) item("empty") { EmptyCollection(detail = "No song in your library matches this search yet.") }
+                items(rows.size, key = { rows[it].key }) { at ->
+                    val entry = rows[at]
+                    TrackRow(
+                        entry.track,
+                        onClick = { resonate.playback.play(tracks, entry.position) },
+                        playing = entry.track.id == playing,
+                        trailing = {
+                            IconButton(onClick = { sheets.song(entry.track) }) { Icon(Icons.Rounded.MoreVert, "More options") }
+                        },
+                    )
+                }
+                return@CollectionPage
             }
             if (rows.isEmpty()) item("empty") { EmptyCollection(detail = "Add songs to shape this playlist.") }
             items(reorder.shown.size, key = { reorder.shown[it].key }) { at ->
@@ -213,6 +237,7 @@ private fun AddSongsLabel() {
 
 private fun playlistMenu(
     sync: PlaylistSyncView?,
+    fills: Boolean,
     onPlayNext: () -> Unit,
     onQueue: () -> Unit,
     onAdd: () -> Unit,
@@ -227,8 +252,8 @@ private fun playlistMenu(
             MenuEntry.Action("Play next", Icons.AutoMirrored.Rounded.PlaylistPlay, run = onPlayNext),
             MenuEntry.Action("Add to queue", Icons.AutoMirrored.Rounded.QueueMusic, run = onQueue),
         ),
-        listOf(
-            MenuEntry.Action("Add songs", Icons.AutoMirrored.Rounded.PlaylistAdd, run = onAdd),
+        listOfNotNull(
+            if (fills) null else MenuEntry.Action("Add songs", Icons.AutoMirrored.Rounded.PlaylistAdd, run = onAdd),
             MenuEntry.Action("Rename", Icons.Rounded.Edit, run = onRename),
             MenuEntry.Action("Undo last edit", Icons.AutoMirrored.Rounded.Undo, run = onUndo),
         ),

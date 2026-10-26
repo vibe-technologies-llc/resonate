@@ -61,6 +61,16 @@ ALTER TABLE studies ADD COLUMN agreement TEXT;
 CREATE TRIGGER documents_forget_what_was_heard AFTER UPDATE OF size, modified ON documents WHEN old.size IS NOT new.size OR old.modified IS NOT new.modified BEGIN UPDATE studies SET agreement = NULL WHERE track = new.id; END;
 ";
 
+const PLAYLISTS_FILL_THEMSELVES_FROM_A_SAVED_SEARCH: &str = "
+CREATE TABLE playlist_queries (
+    playlist INTEGER PRIMARY KEY REFERENCES playlists(id) ON DELETE CASCADE,
+    text     TEXT,
+    sort     INTEGER NOT NULL,
+    reading  INTEGER NOT NULL,
+    max_rows INTEGER
+) STRICT;
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     LISTENS_NAME_THEIR_ORIGIN,
@@ -68,6 +78,7 @@ const MIGRATIONS: &[&str] = &[
     DOCUMENTS_KEEP_WHEN_THEY_WERE_ADDED,
     DOCUMENTS_FROM_BEFORE_DATES_TAKE_THEIR_FILES_TIME,
     STUDIES_KEEP_WHAT_WAS_HEARD,
+    PLAYLISTS_FILL_THEMSELVES_FROM_A_SAVED_SEARCH,
 ];
 
 #[cfg(test)]
@@ -285,7 +296,13 @@ CREATE TRIGGER documents_rekeyed AFTER UPDATE OF album, artist, album_artist ON 
 CREATE TRIGGER documents_art_changed AFTER UPDATE OF art_revision ON documents BEGIN UPDATE documents SET art_changed = (SELECT max(art_changed) FROM documents) + 1 WHERE id = new.id; END;
 ";
 
-const TABLES_SYNC_READS: &[&str] = &["documents", "playlists", "playlist_rows", "received"];
+const TABLES_SYNC_READS: &[&str] = &[
+    "documents",
+    "playlists",
+    "playlist_rows",
+    "playlist_queries",
+    "received",
+];
 
 pub(crate) struct Catalog(
     pub(crate) Mutex<Connection>,

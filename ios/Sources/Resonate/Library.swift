@@ -1591,6 +1591,10 @@ final class Library {
         show(message, as: .notice)
     }
 
+    func fail(_ explanation: String) {
+        show(explanation, as: .failure)
+    }
+
     func report(_ failure: any Swift.Error) {
         show(explained(failure), as: .failure)
     }

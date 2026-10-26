@@ -872,6 +872,11 @@ final class Features {
         }, then: then)
     }
 
+    func saveSearch(_ name: String, text: String, then: PlaylistEdited? = nil) {
+        let search = SavedSearch(text: text, order: .relevance, descending: false, rows: nil)
+        editPlaylist({ native in _ = try native.saveSearch(name: name, search: search) }, then: then)
+    }
+
     func addToPlaylist(_ id: UInt64, _ tracks: [Track], then: PlaylistEdited? = nil) {
         let ids = tracks.map(\.id)
         editPlaylist({ native in try native.addToPlaylist(id: id, tracks: ids) }, then: then)

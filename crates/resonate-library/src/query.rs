@@ -43,6 +43,37 @@ impl SortOrder {
         Self::PlaysThisMonth,
     ];
 
+    pub const fn code(self) -> u8 {
+        match self {
+            Self::Relevance => 0,
+            Self::AlbumThenTrack => 1,
+            Self::Title => 2,
+            Self::Artist => 3,
+            Self::DateAdded => 4,
+            Self::Duration => 5,
+            Self::Plays => 6,
+            Self::Played => 7,
+            Self::Favourited => 8,
+            Self::PlaysThisMonth => 9,
+        }
+    }
+
+    pub const fn coded(code: u8) -> Option<Self> {
+        Some(match code {
+            0 => Self::Relevance,
+            1 => Self::AlbumThenTrack,
+            2 => Self::Title,
+            3 => Self::Artist,
+            4 => Self::DateAdded,
+            5 => Self::Duration,
+            6 => Self::Plays,
+            7 => Self::Played,
+            8 => Self::Favourited,
+            9 => Self::PlaysThisMonth,
+            _ => return None,
+        })
+    }
+
     pub const fn reads(self) -> Direction {
         match self {
             Self::Relevance
@@ -209,6 +240,21 @@ pub enum Direction {
 
 impl Direction {
     pub const ALL: [Self; 2] = [Self::Ascending, Self::Descending];
+
+    pub const fn code(self) -> u8 {
+        match self {
+            Self::Ascending => 0,
+            Self::Descending => 1,
+        }
+    }
+
+    pub const fn coded(code: u8) -> Option<Self> {
+        match code {
+            0 => Some(Self::Ascending),
+            1 => Some(Self::Descending),
+            _ => None,
+        }
+    }
 
     pub const fn flipped(self) -> Self {
         match self {

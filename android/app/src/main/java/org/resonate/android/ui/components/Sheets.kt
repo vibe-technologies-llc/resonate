@@ -336,7 +336,7 @@ private fun PlaylistPicker(tracks: List<Track>, dismiss: () -> Unit) {
                     leading = { IconTile(Icons.Rounded.Add) },
                 )
             }
-            items(playlists, key = { it.id.toString() }) { playlist ->
+            items(playlists.filter { it.search == null }, key = { it.id.toString() }) { playlist ->
                 CollectionRow(
                     title = playlist.name,
                     supporting = counted(playlist.songs, "song"),
