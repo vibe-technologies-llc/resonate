@@ -255,6 +255,7 @@ pub struct GroupRelease {
     pub date: Option<String>,
     pub country: Option<String>,
     pub track_count: Option<u32>,
+    pub discs: Vec<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

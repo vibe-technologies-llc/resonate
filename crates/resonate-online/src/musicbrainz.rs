@@ -1267,6 +1267,14 @@ fn counted(media: &[TrackedMediumDoc]) -> Option<u32> {
         .reduce(u32::saturating_add)
 }
 
+fn laid_out(media: &[TrackedMediumDoc]) -> Vec<u32> {
+    media
+        .iter()
+        .map(|medium| medium.track_count)
+        .collect::<Option<Vec<u32>>>()
+        .unwrap_or_default()
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 struct Placing {
     disc: Option<u32>,
@@ -1389,6 +1397,7 @@ impl GroupReleaseDoc {
     fn into_release_of_group(self) -> Option<GroupRelease> {
         let id = mbid(Some(&self.id))?;
         let track_count = counted(&self.media);
+        let discs = laid_out(&self.media);
 
         Some(GroupRelease {
             id,
@@ -1396,6 +1405,7 @@ impl GroupReleaseDoc {
             date: present(self.date),
             country: present(self.country),
             track_count,
+            discs,
         })
     }
 }

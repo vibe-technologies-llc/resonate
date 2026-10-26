@@ -34,9 +34,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   families 2 and 3 would also need projection decoding
 
 ## Tagging
-- [S · 0.2.0] An album landed as its release group alone gets no totals, by design: a group names no
-  pressing and so no count, and a closest pressing's are withheld as a guess; only a count the
-  group's pressings agree on could be written, which `settle_group` already lands as an exact fit
 - [M · blocked: lofty] `.caf`, `.mka` and the DSD containers have no writer (lofty 0.25.4 has no
   such file type); `.oga` alone could be mapped to Vorbis by hand
 

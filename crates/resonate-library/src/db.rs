@@ -361,7 +361,7 @@ const TRACKS_TO_TAG: &str = "SELECT tracks.id, tracks.path, tracks.span_start, t
             CASE WHEN performer.answered IS NOT NULL AND performer.name = tracks.artist
                  THEN performer.sort_name END,
             artists.sort_name, a.pressing_fit IS NOT NULL,
-            tracks.sample_rate, tracks.sheet_modified
+            tracks.sample_rate, tracks.sheet_modified, a.pressing_fit
        FROM tracks
        JOIN roots ON roots.id = tracks.root_id
        LEFT JOIN albums a ON a.id = tracks.album_id
@@ -6744,6 +6744,7 @@ struct RawToTag {
     pressing_fitted: bool,
     sample_rate: i64,
     sheet_modified: Option<i64>,
+    pressing_fit: Option<i64>,
 }
 
 impl RawToTag {
@@ -6782,6 +6783,7 @@ impl RawToTag {
             pressing_fitted: row.get(30)?,
             sample_rate: row.get(31)?,
             sheet_modified: row.get(32)?,
+            pressing_fit: row.get(33)?,
         })
     }
 
@@ -6820,6 +6822,7 @@ impl RawToTag {
             catalog_number: self.catalog_number,
             barcode: self.barcode,
             pressing_fitted: self.pressing_fitted,
+            pressing_counted: enrich::Fit::counts_agreed_by_every_pressing(self.pressing_fit),
             track_total: self
                 .album
                 .and_then(|album| tracks.get(&(album, seat)).copied()),

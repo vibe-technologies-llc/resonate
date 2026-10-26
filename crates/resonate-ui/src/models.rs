@@ -2586,6 +2586,7 @@ impl LibraryModel {
                             date: found.date,
                             country: None,
                             track_count: found.track_count,
+                            discs: Vec::new(),
                         })
                         .collect::<Vec<_>>(),
                 )),
