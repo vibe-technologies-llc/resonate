@@ -15,6 +15,7 @@ use parking_lot::{Condvar, Mutex, RwLock};
 use resonate_fetch::retry_after;
 use resonate_library::LookupOp;
 use serde::de::DeserializeOwned;
+use serde_json::Value;
 use ureq::{
     Agent, Body,
     http::{
@@ -26,6 +27,7 @@ use ureq::{
 use crate::{Error, Host, Result, query::Params};
 
 pub(crate) const LARGEST_DOCUMENT: usize = 4 * 1024 * 1024;
+pub(crate) const LARGEST_CONTINUATION: usize = 16 * 1024 * 1024;
 pub(crate) const LARGEST_SONG_SEARCH: usize = 16 * 1024 * 1024;
 pub(crate) const LARGEST_PICTURE: usize = 8 * 1024 * 1024;
 
@@ -52,6 +54,7 @@ pub(crate) const LARGEST_INDEX: usize = 2 * 1024 * 1024;
 const NAME: &str = "resonate";
 const CONTENT_LANGUAGE: &str = "en_US";
 const FORM: &str = "application/x-www-form-urlencoded";
+const JSON: &str = "application/json";
 const GZIP: &str = "gzip";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -75,6 +78,15 @@ pub(crate) struct Posted {
 }
 
 impl Posted {
+    pub(crate) fn json(body: &Value) -> Self {
+        Self {
+            content_type: JSON.to_owned(),
+            encoded: Encoded::Plain,
+            bytes: body.to_string().into_bytes(),
+            authorization: None,
+        }
+    }
+
     pub(crate) fn packed_form(fields: Params) -> Self {
         let plain = fields.finish_as_form().into_bytes();
         let mut packing = GzEncoder::new(Vec::new(), Compression::best());
@@ -179,7 +191,8 @@ impl Host {
             | Self::SongLink
             | Self::LastFm
             | Self::Youtube
-            | Self::TidalEmbed => false,
+            | Self::TidalEmbed
+            | Self::Tidal => false,
         }
     }
 }
@@ -287,6 +300,7 @@ impl Host {
             | Self::SongLink
             | Self::Youtube
             | Self::TidalEmbed
+            | Self::Tidal
             | Self::Commons
             | Self::Wikidata
             | Self::Lrclib
@@ -554,7 +568,18 @@ impl Client {
         url: &str,
         body: &Posted,
     ) -> Result<Option<T>> {
-        self.answered(host, op, url, Sending::Post(body))
+        self.posted_within(host, op, url, body, LARGEST_DOCUMENT)
+    }
+
+    pub(crate) fn posted_within<T: DeserializeOwned>(
+        &self,
+        host: Host,
+        op: LookupOp,
+        url: &str,
+        body: &Posted,
+        largest: usize,
+    ) -> Result<Option<T>> {
+        self.answered(host, op, url, Sending::Post(body), largest)
     }
 
     pub(crate) fn json_as<T: DeserializeOwned>(
@@ -571,6 +596,7 @@ impl Client {
             Sending::Get {
                 authorization: Some(authorization),
             },
+            LARGEST_DOCUMENT,
         )
     }
 
@@ -580,9 +606,10 @@ impl Client {
         op: LookupOp,
         url: &str,
         sending: Sending<'_>,
+        largest: usize,
     ) -> Result<Option<T>> {
         let response = self.exchange(host, op, url, sending)?;
-        let Some(bytes) = Self::read(response, host, op, LARGEST_DOCUMENT)? else {
+        let Some(bytes) = Self::read(response, host, op, largest)? else {
             return Ok(None);
         };
         serde_json::from_slice(&bytes).map(Some).map_err(|error| {

@@ -54,9 +54,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [S · 0.2.0] A phone's `is:misnamed` holds only the songs a listener has had recognised one at a time
   (`recognise_track`), since a phone studies and recognises no song in the background as the desktop's
   enrichment pass does
-- [M · 0.2.0] A pasted Spotify, TIDAL, YouTube or Apple Music playlist link lists only the songs its public
-  page holds (TIDAL's embed page fifty, the others at most a hundred), none naming an ISRC, so each
-  song is found by the strict title and artist search
+- [M · blocked: service] A pasted Spotify, TIDAL or Apple Music playlist link lists only the songs its
+  public page holds (TIDAL's embed page fifty, the others at most a hundred), since none offers a keyless
+  route past it (their APIs want a registered client or the listener's sign-in); Spotify's and Apple
+  Music's name no ISRC either, so each of their songs is found by the strict title and artist search
 - [L · blocked: service] A lyric reaches only a row the catalog holds; no keyless service indexes
   lyric text (LRCLIB's text search finds none)
 
