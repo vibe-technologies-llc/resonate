@@ -84,7 +84,7 @@ const VARIOUS_ARTISTS_NAMED: &str = "Various Artists";
 
 pub const REFUSALS_THAT_END_A_PASS: u32 = 10;
 
-const RECOGNITIONS_REFUSED_BEFORE_GIVING_UP: u32 = 5;
+pub const RECOGNITIONS_REFUSED_BEFORE_GIVING_UP: u32 = 5;
 
 #[derive(Clone, Debug)]
 pub struct EnrichOptions {

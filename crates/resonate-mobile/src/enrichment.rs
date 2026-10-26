@@ -12,17 +12,19 @@ use std::{
 
 use crossbeam_channel::{Sender, bounded};
 use parking_lot::Mutex;
-use resonate_codec::{CoverArt, ImageFormat};
+use resonate_analysis::Watching;
+use resonate_codec::{CoverArt, ImageFormat, Sources};
 use resonate_core::{AlbumId, Isrc, Link, Mbid, SourceId, TrackId};
 use resonate_library::{
-    A_THUMBNAIL_BELOW, AlbumToAsk, BETTERED_AFTER, COVERS_ASKED_AGAIN_AFTER, Certainty, Fruitless,
-    Identified, KeptLyrics, LookupOp, LyricText, LyricsAsked, MISSED_AGAIN_AFTER,
-    PORTRAITS_ASKED_AGAIN_AFTER, REFUSALS_THAT_END_A_PASS, Recording, Reference, Release,
-    ReleaseGroup, TrackToAsk, WAITS, Wording, best_recording, best_release, betters,
-    closest_release, due_again, due_parameters, group_asked, needs_its_releases_told,
-    recording_asked, release_asked, the_strict_recording, top_group, top_release,
+    A_THUMBNAIL_BELOW, Agreement, AlbumToAsk, BETTERED_AFTER, COVERS_ASKED_AGAIN_AFTER, Certainty,
+    Fingerprints, Fruitless, Identified, KeptLyrics, LookupOp, LyricText, LyricsAsked,
+    MISSED_AGAIN_AFTER, PORTRAITS_ASKED_AGAIN_AFTER, RECOGNITIONS_REFUSED_BEFORE_GIVING_UP,
+    REFUSALS_THAT_END_A_PASS, Recording, Reference, Release, ReleaseGroup, TrackToAsk, WAITS,
+    Wording, best_recording, best_release, betters, closest_release, due_again, due_parameters,
+    group_asked, needs_its_releases_told, recording_asked, release_asked, the_strict_recording,
+    top_group, top_release,
 };
-use resonate_online::{Client, Online};
+use resonate_online::{AcoustId, Client, Online};
 use rusqlite::{OptionalExtension, params, params_from_iter, types::Value};
 
 use crate::{
@@ -30,7 +32,7 @@ use crate::{
     catalog::Catalog,
     catalog_extras::{kept_picture, unreferenced_picture_dropped},
     documents::location,
-    features::ArtistInformation,
+    features::{ArtistInformation, recognised_through},
 };
 
 const PICTURES_WAITING_AT_MOST: usize = 64;
@@ -45,10 +47,12 @@ const ARCHIVED_COVER: &str = "coverartarchive";
 
 const YEAR_DIGITS: usize = 4;
 
-#[derive(Clone, Copy, Debug, Default, uniffi::Record)]
+#[derive(Clone, Debug, Default, uniffi::Record)]
 pub struct EnrichmentOptions {
     pub refresh: bool,
     pub at_most: Option<u32>,
+    #[uniffi(default = "")]
+    pub acoustid_key: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -95,6 +99,7 @@ struct Running {
 pub(crate) struct Asking {
     reference: Arc<dyn Reference>,
     client: Arc<Client>,
+    printer: Option<Arc<dyn Fingerprints>>,
 }
 
 impl Asking {
@@ -102,6 +107,14 @@ impl Asking {
         Self {
             reference: Arc::new(Online::with_client(Arc::clone(&client))),
             client,
+            printer: None,
+        }
+    }
+
+    pub(crate) fn hearing_through(self, printer: Arc<dyn Fingerprints>) -> Self {
+        Self {
+            printer: Some(printer),
+            ..self
         }
     }
 
@@ -210,7 +223,14 @@ impl MobilePlayer {
             return false;
         }
         let yielding = Arc::new(self.services.online.client().yielding());
-        self.start_enriching(Asking::over(yielding), options)
+        let key = options.acoustid_key.trim().to_owned();
+        let asking = Asking::over(Arc::clone(&yielding));
+        let asking = if key.is_empty() {
+            asking
+        } else {
+            asking.hearing_through(Arc::new(AcoustId::new(yielding, key)))
+        };
+        self.start_enriching(asking, options)
     }
 
     pub fn stop_enrichment(&self) {
@@ -261,6 +281,7 @@ impl MobilePlayer {
         let told = Arc::new(Told::default());
         let tally = Arc::clone(&self.enriching.tally);
         let catalog = Arc::clone(&self.catalog);
+        let sources = Arc::clone(&self.sources);
         tally.began();
 
         let pass = thread::Builder::new()
@@ -268,7 +289,7 @@ impl MobilePlayer {
             .spawn({
                 let told = Arc::clone(&told);
                 let tally = Arc::clone(&tally);
-                move || run(&catalog, &asking, &told, &tally, options)
+                move || run(&catalog, &sources, &asking, &told, &tally, options)
             });
         match pass {
             Ok(pass) => {
@@ -351,6 +372,7 @@ enum Ask {
 
 fn run(
     catalog: &Arc<Catalog>,
+    sources: &Arc<Sources>,
     asking: &Asking,
     told: &Arc<Told>,
     tally: &Arc<Tally>,
@@ -375,10 +397,26 @@ fn run(
             let tally = Arc::clone(tally);
             move || sing_the_due(&catalog, &asking, &told, &tally, due, at_most)
         });
+    let hearing = thread::Builder::new().name("resonate-study".into()).spawn({
+        let catalog = Arc::clone(catalog);
+        let sources = Arc::clone(sources);
+        let asking = asking.clone();
+        let told = Arc::clone(told);
+        let tally = Arc::clone(tally);
+        move || hear_the_due(&catalog, &sources, &asking, &told, &tally, due, at_most)
+    });
     let pictures = Pictures::start(catalog, asking, told, tally);
 
     let ended = Pass::new(catalog, asking, told, tally, &pictures).run(due, at_most);
     pictures.rest();
+    match hearing {
+        Ok(hearing) => {
+            if hearing.join().is_err() {
+                tracing::warn!("the study worker ended in a panic");
+            }
+        }
+        Err(error) => tracing::warn!(%error, "the study worker could not start"),
+    }
     match lyrics {
         Ok(lyrics) => {
             if lyrics.join().is_err() {
@@ -1122,6 +1160,133 @@ fn information_of(profile: &resonate_library::ArtistProfile) -> ArtistInformatio
     }
 }
 
+struct Hearing<'a>(&'a Told);
+
+impl Watching for Hearing<'_> {
+    fn stopped(&self) -> bool {
+        self.0.is_cancelled()
+    }
+}
+
+fn hear_the_due(
+    catalog: &Catalog,
+    sources: &Sources,
+    asking: &Asking,
+    told: &Told,
+    tally: &Tally,
+    due: Due,
+    at_most: Option<usize>,
+) {
+    let Some(printer) = asking.printer.as_deref() else {
+        return;
+    };
+    let mut tracks = match catalog.tracks_to_hear(due.refresh) {
+        Ok(tracks) => tracks,
+        Err(error) => {
+            tracing::warn!(%error, "the tracks to hear could not be read");
+            return;
+        }
+    };
+    if let Some(at_most) = at_most {
+        tracks.truncate(at_most);
+    }
+    Tally::count(&tally.due, tracks.len());
+
+    let hearer = Hearer {
+        catalog,
+        sources,
+        asking,
+        printer,
+        told,
+        tally,
+        refused_in_a_row: Cell::new(0),
+    };
+    for track in tracks {
+        match hearer.hear(track) {
+            Ok(()) => Tally::count(&tally.asked, 1),
+            Err(Ended::Failed(error)) => {
+                tracing::warn!(%error, track, "a track was not heard");
+            }
+            Err(Ended::Cancelled | Ended::Offline | Ended::Refused | Ended::Unreachable(_)) => {
+                return;
+            }
+        }
+    }
+}
+
+struct Hearer<'a> {
+    catalog: &'a Catalog,
+    sources: &'a Sources,
+    asking: &'a Asking,
+    printer: &'a dyn Fingerprints,
+    told: &'a Told,
+    tally: &'a Tally,
+    refused_in_a_row: Cell<u32>,
+}
+
+impl Hearer<'_> {
+    fn hear(&self, track: u64) -> Asked<()> {
+        if self.told.is_cancelled() {
+            return Err(Ended::Cancelled);
+        }
+        if !self.asking.is_reaching() {
+            return Err(Ended::Offline);
+        }
+        let held = match self.catalog.track(track) {
+            Ok(held) => held,
+            Err(Error::UnknownTrack) => return Ok(()),
+            Err(error) => return Err(error.into()),
+        };
+
+        let studied = resonate_analysis::study(
+            self.sources,
+            &location(&held.uri)?,
+            None,
+            &Hearing(self.told),
+        );
+        let study = match studied {
+            Ok(study) => study,
+            Err(resonate_analysis::Error::Stopped) => return Err(Ended::Cancelled),
+            Err(error) => {
+                tracing::debug!(%error, track, "a track could not be studied");
+                return Ok(());
+            }
+        };
+        self.catalog.keep_studied(track, &study)?;
+        let Some(print) = study.print else {
+            self.catalog.keep_agreement(track, Agreement::Unheard)?;
+            return Ok(());
+        };
+
+        match recognised_through(self.catalog, self.printer, track, held, print) {
+            Ok(_) => {
+                self.refused_in_a_row.set(0);
+                Ok(())
+            }
+            Err(Error::Reference { op, source }) => self.weigh_a_failure(op, *source),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    fn weigh_a_failure(&self, op: LookupOp, source: resonate_library::Error) -> Asked<()> {
+        match source {
+            resonate_library::Error::Refused { .. }
+            | resonate_library::Error::Unreadable { .. } => {
+                Tally::count(&self.tally.refused, 1);
+                let refused = self.refused_in_a_row.get().saturating_add(1);
+                self.refused_in_a_row.set(refused);
+                if refused >= RECOGNITIONS_REFUSED_BEFORE_GIVING_UP {
+                    return Err(Ended::Refused);
+                }
+                Ok(())
+            }
+            resonate_library::Error::TooLarge { .. } => Ok(()),
+            _ if !self.asking.is_reaching() => Err(Ended::Offline),
+            source => Err(Ended::Unreachable(Box::new(Error::reference(op, source)))),
+        }
+    }
+}
+
 fn sing_the_due(
     catalog: &Catalog,
     asking: &Asking,
@@ -1386,6 +1551,22 @@ impl Catalog {
                 _ => None,
             })
             .collect())
+    }
+
+    fn tracks_to_hear(&self, refresh: bool) -> Result<Vec<u64>> {
+        let connection = self.0.lock();
+        let mut query = connection
+            .prepare(
+                "SELECT d.id FROM documents d LEFT JOIN studies s ON s.track = d.id
+                 WHERE d.missing = 0 AND (?1 OR s.agreement IS NULL) ORDER BY d.id",
+            )
+            .map_err(read_error)?;
+        query
+            .query_map([refresh], |row| row.get::<_, i64>(0))
+            .map_err(read_error)?
+            .map(|id| id.map(|id| id as u64))
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(read_error)
     }
 
     fn tracks_due(&self, due: Due, only: Value) -> Result<Vec<u64>> {
@@ -2282,6 +2463,7 @@ mod tests {
         Asking {
             reference: Arc::clone(fake) as Arc<dyn Reference>,
             client: Arc::new(Client::new(Identity::of_this_build())),
+            printer: None,
         }
     }
 
@@ -2330,6 +2512,7 @@ mod tests {
 
         run(
             catalog,
+            &Arc::new(Sources::local()),
             &asking(fake),
             &Arc::new(Told::default()),
             &tally,
@@ -2448,7 +2631,7 @@ mod tests {
             asking(&fake),
             EnrichmentOptions {
                 refresh: true,
-                at_most: None,
+                ..EnrichmentOptions::default()
             }
         ));
         player.stop_enriching_to_close();
@@ -2546,5 +2729,317 @@ mod tests {
             catalog.album_key_of(track.id).expect("a key"),
             keyed("Début", "Various")
         );
+    }
+
+    mod hearing {
+        use std::{fs, sync::atomic::AtomicU32};
+
+        use resonate_core::SourceId;
+        use resonate_library::{Fingerprints, Printed, Sounded};
+
+        use super::*;
+        use crate::harness::{FOLDER, Harness};
+
+        const RATE: u32 = 44_100;
+
+        const SECONDS_A_SONG: u32 = 12;
+
+        struct Printer {
+            source: SourceId,
+            calls: AtomicU32,
+            refusals_left: AtomicU32,
+            heard: &'static str,
+        }
+
+        impl Printer {
+            fn hearing(heard: &'static str) -> Arc<Self> {
+                Self::refusing(heard, 0)
+            }
+
+            fn refusing(heard: &'static str, refusals: u32) -> Arc<Self> {
+                Arc::new(Self {
+                    source: SourceId::new("fake").expect("a source"),
+                    calls: AtomicU32::new(0),
+                    refusals_left: AtomicU32::new(refusals),
+                    heard,
+                })
+            }
+
+            fn calls(&self) -> u32 {
+                self.calls.load(Ordering::SeqCst)
+            }
+        }
+
+        impl Fingerprints for Printer {
+            fn source(&self) -> &SourceId {
+                &self.source
+            }
+
+            fn recognise(&self, _sounded: &Sounded) -> resonate_library::Result<Printed> {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                let refused = self
+                    .refusals_left
+                    .try_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
+                        left.checked_sub(1)
+                    })
+                    .is_ok();
+                if refused {
+                    return Err(resonate_library::Error::Refused {
+                        op: LookupOp::Recognise,
+                        status: 503,
+                    });
+                }
+                Ok(Printed::Recognised(vec![RecordingMatch {
+                    recording: Mbid::new("1b5b8f5d-6c3f-4f8b-8d3e-2d1f0a6b9c11").expect("an mbid"),
+                    score: 100,
+                    title: self.heard.to_owned(),
+                    credit: vec![Credit {
+                        name: "Pink Floyd".to_owned(),
+                        joined_by: String::new(),
+                        mbid: None,
+                    }],
+                    length: None,
+                    isrcs: Vec::new(),
+                    releases: Vec::new(),
+                }]))
+            }
+        }
+
+        fn tones() -> Vec<u8> {
+            let frames = RATE * SECONDS_A_SONG;
+            let mut data = Vec::new();
+            for frame in 0..frames {
+                let at = f64::from(frame) / f64::from(RATE);
+                let pitch = 220.0 * (1.0 + (at * 0.7).sin().abs() * 3.0);
+                let sample = ((at * pitch * std::f64::consts::TAU).sin() * 12_000.0) as i16;
+                data.extend_from_slice(&sample.to_le_bytes());
+                data.extend_from_slice(&sample.to_le_bytes());
+            }
+
+            let mut format = Vec::new();
+            format.extend_from_slice(&1_u16.to_le_bytes());
+            format.extend_from_slice(&2_u16.to_le_bytes());
+            format.extend_from_slice(&RATE.to_le_bytes());
+            format.extend_from_slice(&(RATE * 4).to_le_bytes());
+            format.extend_from_slice(&4_u16.to_le_bytes());
+            format.extend_from_slice(&16_u16.to_le_bytes());
+
+            let mut body = b"WAVE".to_vec();
+            for (id, payload) in [(b"fmt ", &format), (b"data", &data)] {
+                body.extend_from_slice(id);
+                body.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+                body.extend_from_slice(payload);
+            }
+
+            let mut file = b"RIFF".to_vec();
+            file.extend_from_slice(&(body.len() as u32).to_le_bytes());
+            file.extend_from_slice(&body);
+            file
+        }
+
+        fn sounding_library() -> Harness {
+            let harness = Harness::new();
+            for name in ["a", "b", "c", "d"] {
+                fs::write(harness.folder.join(format!("{name}.wav")), tones()).expect("a song");
+            }
+            for (name, title, artist) in [
+                ('a', "Time", "Pink Floyd"),
+                ('b', "Money", "Pink Floyd"),
+                ('c', "Time", "Air"),
+                ('d', "d.wav", ""),
+            ] {
+                harness
+                    .player
+                    .catalog
+                    .0
+                    .lock()
+                    .execute(
+                        "UPDATE documents SET title = ?2, artist = ?3 WHERE id = ?1",
+                        params![harness.song(name).id as i64, title, artist],
+                    )
+                    .expect("a named song");
+            }
+            harness
+        }
+
+        fn passed_by(
+            harness: &Harness,
+            asking: &Asking,
+            told: &Arc<Told>,
+            options: EnrichmentOptions,
+        ) -> EnrichmentStatus {
+            let tally = Arc::new(Tally::default());
+            tally.began();
+
+            run(
+                &harness.player.catalog,
+                &harness.player.sources,
+                asking,
+                told,
+                &tally,
+                options,
+            );
+
+            tally.status()
+        }
+
+        fn hearing(harness: &Harness, printer: &Arc<Printer>) -> EnrichmentStatus {
+            let fake = Arc::new(Fake::default());
+            let asking =
+                asking(&fake).hearing_through(Arc::clone(printer) as Arc<dyn Fingerprints>);
+            passed_by(
+                harness,
+                &asking,
+                &Arc::new(Told::default()),
+                EnrichmentOptions::default(),
+            )
+        }
+
+        fn misnamed(harness: &Harness) -> Vec<String> {
+            let mut titles: Vec<_> = harness
+                .player
+                .search_library("is:misnamed".into(), 10)
+                .expect("a search")
+                .tracks
+                .into_iter()
+                .map(|track| track.title)
+                .collect();
+            titles.sort();
+            titles
+        }
+
+        fn studies(harness: &Harness) -> i64 {
+            harness
+                .player
+                .catalog
+                .0
+                .lock()
+                .query_row("SELECT count(*) FROM studies", [], |row| row.get(0))
+                .expect("a count")
+        }
+
+        #[test]
+        fn a_pass_given_a_key_studies_and_hears_every_song_so_is_misnamed_fills_unasked() {
+            let harness = sounding_library();
+            let printer = Printer::hearing("Time");
+
+            let before = misnamed(&harness);
+            let status = hearing(&harness, &printer);
+            let after = misnamed(&harness);
+
+            assert!(before.is_empty());
+            assert_eq!(printer.calls(), 4);
+            assert_eq!(studies(&harness), 4);
+            assert_eq!(after, vec!["Money".to_owned(), "Time".to_owned()]);
+            assert!(!status.running);
+        }
+
+        #[test]
+        fn a_song_heard_is_not_asked_again_unless_the_pass_refreshes() {
+            let harness = sounding_library();
+            let printer = Printer::hearing("Time");
+
+            hearing(&harness, &printer);
+            hearing(&harness, &printer);
+            let asked_twice = printer.calls();
+
+            let fake = Arc::new(Fake::default());
+            let asking =
+                asking(&fake).hearing_through(Arc::clone(&printer) as Arc<dyn Fingerprints>);
+            passed_by(
+                &harness,
+                &asking,
+                &Arc::new(Told::default()),
+                EnrichmentOptions {
+                    refresh: true,
+                    ..EnrichmentOptions::default()
+                },
+            );
+
+            assert_eq!(asked_twice, 4);
+            assert_eq!(printer.calls(), 8);
+        }
+
+        #[test]
+        fn a_pass_with_no_key_studies_and_hears_nothing() {
+            let harness = sounding_library();
+            let fake = Arc::new(Fake::default());
+
+            passed_by(
+                &harness,
+                &asking(&fake),
+                &Arc::new(Told::default()),
+                EnrichmentOptions::default(),
+            );
+
+            assert_eq!(studies(&harness), 0);
+            assert!(misnamed(&harness).is_empty());
+        }
+
+        #[test]
+        fn a_refusal_leaves_the_song_unheard_for_the_next_pass_to_ask() {
+            let harness = sounding_library();
+            let printer = Printer::refusing("Time", 2);
+
+            hearing(&harness, &printer);
+            let after_refusals = misnamed(&harness);
+            hearing(&harness, &printer);
+
+            assert_eq!(printer.calls(), 6);
+            assert!(after_refusals.len() < 2);
+            assert_eq!(
+                misnamed(&harness),
+                vec!["Money".to_owned(), "Time".to_owned()]
+            );
+        }
+
+        #[test]
+        fn recognition_is_given_up_after_a_run_of_refusals_while_the_pass_goes_on() {
+            let harness = sounding_library();
+            for name in ["e", "f", "g", "h"] {
+                fs::write(harness.folder.join(format!("{name}.wav")), tones()).expect("a song");
+                harness
+                    .player
+                    .index_document(format!("{FOLDER}{name}.wav"), format!("{name}.wav"))
+                    .expect("an indexed song");
+            }
+            let printer = Printer::refusing("Time", u32::MAX);
+
+            let status = hearing(&harness, &printer);
+
+            assert_eq!(printer.calls(), RECOGNITIONS_REFUSED_BEFORE_GIVING_UP);
+            assert_eq!(status.refused, RECOGNITIONS_REFUSED_BEFORE_GIVING_UP);
+            assert!(misnamed(&harness).is_empty());
+        }
+
+        #[test]
+        fn a_pass_told_to_stop_studies_nothing() {
+            let harness = sounding_library();
+            let printer = Printer::hearing("Time");
+            let told = Arc::new(Told::default());
+            told.cancel(Leaving::Listener);
+            let fake = Arc::new(Fake::default());
+            let asking =
+                asking(&fake).hearing_through(Arc::clone(&printer) as Arc<dyn Fingerprints>);
+
+            passed_by(&harness, &asking, &told, EnrichmentOptions::default());
+
+            assert_eq!(printer.calls(), 0);
+            assert_eq!(studies(&harness), 0);
+        }
+
+        #[test]
+        fn a_song_with_no_print_is_marked_unheard_and_not_studied_again() {
+            let harness = Harness::new();
+            let printer = Printer::hearing("Time");
+
+            hearing(&harness, &printer);
+            let once = studies(&harness);
+            hearing(&harness, &printer);
+
+            assert_eq!(once, 4);
+            assert_eq!(printer.calls(), 0);
+            assert!(misnamed(&harness).is_empty());
+        }
     }
 }

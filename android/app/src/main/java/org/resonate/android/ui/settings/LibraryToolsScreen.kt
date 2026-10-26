@@ -351,7 +351,7 @@ private fun RecognitionKey(stored: String, onSave: (String) -> Unit) {
         title = "AcoustID key",
         icon = Icons.Rounded.Fingerprint,
         supporting =
-            "With a key, Recognise in a song's analysis sends its AcoustID fingerprint. Without one, it sends a Shazam signature.",
+            "With a key, Recognise in a song's analysis sends its AcoustID fingerprint, and the library is studied and recognised in the background while online lookups run, which fills the misnamed search. Without one, Recognise sends a Shazam signature and nothing runs in the background.",
     )
     Field(
         value = draft,

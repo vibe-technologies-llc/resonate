@@ -3,6 +3,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use resonate_analysis::Study;
 use resonate_codec::MediaInfo;
 use resonate_core::Calendar;
 use resonate_library::Agreement;
@@ -17,6 +18,17 @@ use crate::{
     },
     stamp::{DocumentStamp, INDEXING_REVISION},
 };
+
+struct Figures<'a> {
+    verdict: &'a str,
+    peak: f32,
+    rms: f32,
+    true_peak: f32,
+    loudness: Option<f32>,
+    dynamic_range: Option<u32>,
+    clipped: u64,
+    bits: Option<u32>,
+}
 
 type StoredLyrics = (Option<String>, Option<String>, String);
 
@@ -341,7 +353,39 @@ impl Catalog {
     }
 
     pub(crate) fn keep_study(&self, id: u64, report: &AnalysisReport) -> Result<()> {
-        self.0.lock().execute("INSERT INTO studies(track, verdict, peak, rms, true_peak, loudness, dynamic_range, clipped, bits) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) ON CONFLICT(track) DO UPDATE SET verdict = excluded.verdict, peak = excluded.peak, rms = excluded.rms, true_peak = excluded.true_peak, loudness = excluded.loudness, dynamic_range = excluded.dynamic_range, clipped = excluded.clipped, bits = excluded.bits", params![id as i64, report.verdict, report.peak, report.rms, report.true_peak, report.loudness_lufs, report.dynamic_range, report.clipped.min(i64::MAX as u64) as i64, report.bits_in_use]).map_err(|source| Error::store(StoreOp::Write, source))?;
+        self.keep_figures(
+            id,
+            Figures {
+                verdict: &report.verdict,
+                peak: report.peak,
+                rms: report.rms,
+                true_peak: report.true_peak,
+                loudness: report.loudness_lufs,
+                dynamic_range: report.dynamic_range,
+                clipped: report.clipped,
+                bits: report.bits_in_use,
+            },
+        )
+    }
+
+    pub(crate) fn keep_studied(&self, id: u64, study: &Study) -> Result<()> {
+        self.keep_figures(
+            id,
+            Figures {
+                verdict: study.judgement.verdict.as_str(),
+                peak: study.levels.peak,
+                rms: study.levels.rms,
+                true_peak: study.loudness.true_peak,
+                loudness: study.loudness.integrated,
+                dynamic_range: study.loudness.dynamic_range.map(u32::from),
+                clipped: study.levels.clipped,
+                bits: study.levels.bits_in_use.map(u32::from),
+            },
+        )
+    }
+
+    fn keep_figures(&self, id: u64, figures: Figures<'_>) -> Result<()> {
+        self.0.lock().execute("INSERT INTO studies(track, verdict, peak, rms, true_peak, loudness, dynamic_range, clipped, bits) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) ON CONFLICT(track) DO UPDATE SET verdict = excluded.verdict, peak = excluded.peak, rms = excluded.rms, true_peak = excluded.true_peak, loudness = excluded.loudness, dynamic_range = excluded.dynamic_range, clipped = excluded.clipped, bits = excluded.bits", params![id as i64, figures.verdict, figures.peak, figures.rms, figures.true_peak, figures.loudness, figures.dynamic_range, figures.clipped.min(i64::MAX as u64) as i64, figures.bits]).map_err(|source| Error::store(StoreOp::Write, source))?;
         Ok(())
     }
 }

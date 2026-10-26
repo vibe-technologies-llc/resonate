@@ -695,10 +695,9 @@ lossy, mono, stereo, multichannel, hires, favourite. `added:` (a row's `added` s
 `studies` verdict, read apart from the index as `Studied`, stamped by the counts and id sums of its
 fake, suspect and `disagrees` rows and held beside the cached order, so a study written without moving the catalog
 revision is seen by the next search). `is:misnamed` is a `studies.agreement` of `disagrees`, written by
-`recognise_track` from the recognition's matches weighed by the library's own `agreement` against the
-song's name (a title equal to the file name is untagged, so `Unnamed`); a phone recognises a song only when
-asked, so the term holds the songs a listener has had recognised, and a song never recognised is not misnamed,
-so its denial holds. `is:hidden` holds nothing (a phone keeps no hidden songs), so its denial holds everything, as the desktop's
+`recognise_track` and by the enrichment pass (below) from the recognition's matches weighed by the library's
+own `agreement` against the song's name (a title equal to the file name is untagged, so `Unnamed`); a song not
+yet recognised is not misnamed, so its denial holds. `is:hidden` holds nothing (a phone keeps no hidden songs), so its denial holds everything, as the desktop's
 `NOT coalesce(…, 0)` does for a row unable to answer. A text reading nothing (`!!!`)
 matches nothing. A lone undenied word of three letters or more also matches inside a word, below
 every other fit.
@@ -764,6 +763,29 @@ cover, or takes that cover where it betters a thumbnail; no per-song archive cop
 `artist_information` answers the kept profile and fetches and keeps one only where none is;
 `artist_portrait(mbid)` reads the kept portrait; `ask_again_for_covers` clears `cover_asked` on
 albums still without one.
+
+**The pass studies and recognises beside it** when it is given an AcoustID key
+(`EnrichmentOptions::acoustid_key`, the key both phones keep encrypted and read at each start; a blank key
+studies and recognises nothing, so a phone with no key never decodes its library in the background, and
+saving a key starts a pass). `resonate-study` is one thread (the desktop's pool is half the cores; a phone
+keeps one) over `tracks_to_hear`: visible documents with no `studies.agreement` (every visible one under
+`refresh`), cut to `at_most`, in id order. Each is studied by `resonate_analysis::study` (one decode, the
+levels, verdict and print, stopped within a decode by `stop_enrichment` through `Hearing`), kept through
+`keep_studied`, then its print asked of `AcoustId` over the pass's yielding client through
+`recognised_through`, the one reading `recognise_track` shares: matches weighed by `agreement` and kept as
+`studies.agreement`, so a song is asked once until its file changes (`documents_forget_what_was_heard`) or a
+refresh. A song whose study has no print is kept `Unheard`, not studied again. A refusal or unreadable
+answer stamps nothing (asked again by the next pass) and `RECOGNITIONS_REFUSED_BEFORE_GIVING_UP` in a row
+ends the recognition only, the rest of the pass going on; an unreachable service or going offline ends it
+too. A file that will not decode, or one out of reach, is left unmarked and tried again by the next pass
+(unlike the desktop's `unstudied`, no step of the schema holds the failure). The study thread counts into
+`due` and `asked` and the pass is `running` until it has finished
+(`a_pass_given_a_key_studies_and_hears_every_song_so_is_misnamed_fills_unasked`,
+`a_pass_with_no_key_studies_and_hears_nothing`, `a_refusal_leaves_the_song_unheard_for_the_next_pass_to_ask`,
+`recognition_is_given_up_after_a_run_of_refusals_while_the_pass_goes_on`,
+`a_song_heard_is_not_asked_again_unless_the_pass_refreshes`, `a_pass_told_to_stop_studies_nothing`).
+The pass is gated as it is, so the study runs only where automatic lookup, online and (if chosen) an
+unmetered network permit.
 
 Android's Artwork and details section uses this same pass. Automatic lookup defaults on;
 Only on Wi-Fi defaults off and uses the unmetered-network signal. Both choices persist in
