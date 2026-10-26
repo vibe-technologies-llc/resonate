@@ -1444,10 +1444,11 @@ fn read_error(source: rusqlite::Error) -> Error {
 mod tests {
     use std::{env, path::Path};
 
+    use resonate_library::{Direction, SortOrder};
     use resonate_sync::DeviceId;
 
     use super::*;
-    use crate::{PlaybackPreferences, features::Services};
+    use crate::{PlaybackPreferences, SavedSearch, SearchOrder, features::Services};
 
     const RECORDING: &str = "b1a9c0e9-d987-4042-ae91-78d6a3267d69";
 
@@ -1729,6 +1730,60 @@ mod tests {
         documents.remove_playlist(written.at).expect("removed");
 
         assert!(documents.queries().expect("the queries").is_empty());
+        let _ = fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn a_saved_search_revised_on_the_phone_is_offered_to_the_other_devices_in_its_new_form() {
+        let folder = folder("revised-query");
+        let player = player(&folder);
+        let documents = documents_of(&player, &folder);
+        let id = player
+            .save_search(
+                "Jazz".into(),
+                SavedSearch {
+                    text: "genre:jazz".into(),
+                    ..SavedSearch::default()
+                },
+            )
+            .expect("saved");
+        let offered = documents.queries().expect("the queries");
+        let revision = documents.revision();
+
+        player
+            .revise_search(
+                id,
+                player
+                    .playlists()
+                    .expect("the playlists")
+                    .iter()
+                    .find(|playlist| playlist.id == id)
+                    .expect("the saved search")
+                    .revision,
+                "Loved jazz".into(),
+                SavedSearch {
+                    text: "genre:jazz is:favourite".into(),
+                    order: SearchOrder::Plays,
+                    descending: true,
+                    rows: Some(25),
+                },
+            )
+            .expect("revised");
+
+        let revised = documents.queries().expect("the queries");
+        assert_eq!(revised.len(), 1);
+        assert_eq!(revised[0].at, offered[0].at);
+        assert_eq!(
+            revised[0].body,
+            QueryBody {
+                name: "Loved jazz".into(),
+                text: Some("genre:jazz is:favourite".into()),
+                sort: SortOrder::Plays.code(),
+                reading: Direction::Descending.code(),
+                rows: Some(25),
+            }
+        );
+        assert!(documents.revision() > revision);
         let _ = fs::remove_dir_all(folder);
     }
 

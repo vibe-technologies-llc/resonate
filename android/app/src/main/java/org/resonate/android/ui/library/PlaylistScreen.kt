@@ -2,6 +2,7 @@ package org.resonate.android.ui.library
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
@@ -115,6 +116,14 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                         onQueue = { resonate.addToQueue(tracks) },
                         onAdd = { adding = true },
                         onRename = { sheets.name("Rename playlist", name) { model.rename(it) } },
+                        onEditSearch =
+                            search?.let { held ->
+                                {
+                                    sheets.editSearch("Edit saved search", SavedSearchDraft.of(name, held)) { renamed, revised ->
+                                        model.revise(renamed, revised)
+                                    }
+                                }
+                            },
                         onUndo = model::undo,
                         onKeep = model::keep,
                         onFetch = model::fetch,
@@ -134,12 +143,20 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                     playable = rows.isNotEmpty(),
                     extra = {
                         if (search != null) {
-                            Text(
-                                search.text.ifBlank { "Every song" },
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.testTag("saved-search-text"),
-                            )
+                            Column {
+                                Text(
+                                    search.text.ifBlank { "Every song" },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.testTag("saved-search-text"),
+                                )
+                                Text(
+                                    search.reading(),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.testTag("saved-search-reading"),
+                                )
+                            }
                         } else if (rows.isEmpty()) {
                             FilledTonalButton(onClick = { adding = true }, modifier = Modifier.testTag("add-songs-button")) {
                                 AddSongsLabel()
@@ -242,6 +259,7 @@ private fun playlistMenu(
     onQueue: () -> Unit,
     onAdd: () -> Unit,
     onRename: () -> Unit,
+    onEditSearch: (() -> Unit)?,
     onUndo: () -> Unit,
     onKeep: (Boolean) -> Unit,
     onFetch: (org.resonate.android.nativecore.SyncedDevice) -> Unit,
@@ -254,6 +272,7 @@ private fun playlistMenu(
         ),
         listOfNotNull(
             if (fills) null else MenuEntry.Action("Add songs", Icons.AutoMirrored.Rounded.PlaylistAdd, run = onAdd),
+            onEditSearch?.let { MenuEntry.Action("Edit search", Icons.Rounded.Edit, run = it) },
             MenuEntry.Action("Rename", Icons.Rounded.Edit, run = onRename),
             MenuEntry.Action("Undo last edit", Icons.AutoMirrored.Rounded.Undo, run = onUndo),
         ),

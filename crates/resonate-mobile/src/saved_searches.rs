@@ -72,7 +72,7 @@ impl SavedSearch {
             } else {
                 Direction::Ascending
             },
-            limit: self.rows.map(|rows| rows as usize),
+            limit: self.rows.filter(|rows| *rows > 0).map(|rows| rows as usize),
         }
     }
 
@@ -97,6 +97,16 @@ pub fn search_order_reads_descending(order: SearchOrder) -> bool {
 impl MobilePlayer {
     pub fn save_search(&self, name: String, search: SavedSearch) -> Result<u64> {
         self.make_saved_search(name, &search.query())
+    }
+
+    pub fn revise_search(
+        &self,
+        id: u64,
+        revision: u64,
+        name: String,
+        search: SavedSearch,
+    ) -> Result<()> {
+        self.revise_saved_search(id, revision, name, &search.query())
     }
 }
 
@@ -185,7 +195,10 @@ pub(crate) fn write_stored_query(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Track, playlists::tests::player};
+    use crate::{
+        Track,
+        playlists::{MusicPlaylist, tests::player},
+    };
 
     fn song(player: &MobilePlayer, name: &str, genre: &str, favourite: bool) -> u64 {
         let track = player
@@ -339,5 +352,154 @@ mod tests {
 
             assert_eq!(stored.query().as_ref().map(SavedSearch::of), Some(search));
         }
+    }
+
+    fn listed(player: &MobilePlayer, id: u64) -> MusicPlaylist {
+        player
+            .playlists()
+            .expect("the playlists")
+            .into_iter()
+            .find(|playlist| playlist.id == id)
+            .expect("the playlist")
+    }
+
+    #[test]
+    fn a_saved_search_is_revised_in_text_order_cap_and_name_as_one_undoable_step() {
+        let player = player();
+        song(&player, "Bravo", "Jazz", false);
+        song(&player, "Alpha", "Jazz", false);
+        song(&player, "Charlie", "Rock", false);
+        let id = player
+            .save_search(
+                "Jazz".into(),
+                SavedSearch {
+                    text: "genre:jazz".into(),
+                    order: SearchOrder::Title,
+                    ..SavedSearch::default()
+                },
+            )
+            .expect("saved");
+        let before = listed(&player, id);
+        let revised = SavedSearch {
+            text: "genre:rock or genre:jazz".into(),
+            order: SearchOrder::Title,
+            descending: true,
+            rows: Some(2),
+        };
+
+        assert_eq!(titles(&player, id), ["Alpha", "Bravo"]);
+
+        player
+            .revise_search(id, before.revision, "Everything".into(), revised.clone())
+            .expect("revised");
+
+        let after = listed(&player, id);
+        assert_eq!(after.name, "Everything");
+        assert_eq!(after.search, Some(revised));
+        assert_eq!(after.songs, 2);
+        assert!(after.revision > before.revision);
+        assert_eq!(titles(&player, id), ["Charlie", "Bravo"]);
+
+        assert!(player.undo_playlist().expect("undone"));
+
+        let undone = listed(&player, id);
+        assert_eq!(undone.name, "Jazz");
+        assert_eq!(undone.search, before.search);
+        assert_eq!(titles(&player, id), ["Alpha", "Bravo"]);
+    }
+
+    #[test]
+    fn a_revision_of_a_stale_a_taken_or_a_list_playlist_is_refused_and_changes_nothing() {
+        let player = player();
+        let one = song(&player, "One", "Jazz", false);
+        let jazz = player
+            .save_search(
+                "Jazz".into(),
+                SavedSearch {
+                    text: "genre:jazz".into(),
+                    ..SavedSearch::default()
+                },
+            )
+            .expect("saved");
+        let rock = player
+            .save_search(
+                "Rock".into(),
+                SavedSearch {
+                    text: "genre:rock".into(),
+                    ..SavedSearch::default()
+                },
+            )
+            .expect("saved");
+        let list = player.create_playlist("Mix".into()).expect("a list");
+        player.add_to_playlist(list, vec![one]).expect("added");
+        let revision = listed(&player, jazz).revision;
+        let search = SavedSearch {
+            text: "genre:blues".into(),
+            ..SavedSearch::default()
+        };
+
+        assert!(matches!(
+            player.revise_search(jazz, revision + 1, "Jazz".into(), search.clone()),
+            Err(Error::PlaylistChanged)
+        ));
+        assert!(matches!(
+            player.revise_search(jazz, revision, "rock".into(), search.clone()),
+            Err(Error::DuplicatePlaylistName)
+        ));
+        assert!(matches!(
+            player.revise_search(jazz, revision, "  ".into(), search.clone()),
+            Err(Error::InvalidPlaylistName)
+        ));
+        assert!(matches!(
+            player.revise_search(list, listed(&player, list).revision, "Mix".into(), search),
+            Err(Error::NotASavedSearch)
+        ));
+
+        let held = listed(&player, jazz);
+        assert_eq!(held.revision, revision);
+        assert_eq!(
+            held.search.map(|search| search.text),
+            Some("genre:jazz".into())
+        );
+        assert_eq!(listed(&player, rock).name, "Rock");
+        assert_eq!(titles(&player, list), ["One"]);
+    }
+
+    #[test]
+    fn a_cap_of_none_or_zero_asks_every_row() {
+        let player = player();
+        song(&player, "One", "Jazz", false);
+        song(&player, "Two", "Jazz", false);
+        let id = player
+            .save_search(
+                "Jazz".into(),
+                SavedSearch {
+                    text: "genre:jazz".into(),
+                    rows: Some(1),
+                    ..SavedSearch::default()
+                },
+            )
+            .expect("saved");
+
+        assert_eq!(titles(&player, id).len(), 1);
+
+        player
+            .revise_search(
+                id,
+                listed(&player, id).revision,
+                "Jazz".into(),
+                SavedSearch {
+                    text: "genre:jazz".into(),
+                    rows: Some(0),
+                    ..SavedSearch::default()
+                },
+            )
+            .expect("revised");
+
+        assert_eq!(titles(&player, id).len(), 2);
+        assert_eq!(
+            listed(&player, id).search.and_then(|search| search.rows),
+            None
+        );
     }
 }

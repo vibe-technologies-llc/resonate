@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import org.resonate.android.nativecore.MusicPlaylist
+import org.resonate.android.nativecore.SavedSearch
 import org.resonate.android.nativecore.SyncStanding
 import org.resonate.android.nativecore.SyncedDevice
 import org.resonate.android.nativecore.Track
@@ -68,6 +69,9 @@ class PlaylistViewModel(private val resonate: Resonate, private val id: ULong) :
         edit(revision) { native, at -> native.removeFromPlaylist(id, at, position.toUInt()) }
 
     fun rename(name: String) = edit(null) { native, at -> native.renamePlaylist(id, at, name) }
+
+    fun revise(name: String, search: SavedSearch) =
+        edit(null) { native, at -> native.reviseSearch(id, at, name, search) }
 
     fun delete() = edit(null) { native, at -> native.deletePlaylist(id, at) }
 

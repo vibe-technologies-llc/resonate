@@ -214,6 +214,8 @@ pub enum Error {
     PlaylistChanged,
     #[error("A saved search fills itself; its songs cannot be added, removed or moved")]
     NotAList,
+    #[error("A playlist of songs has no search to revise")]
+    NotASavedSearch,
     #[error("the picture is unsupported or too large")]
     InvalidPicture,
     #[error("the document URI is not supported")]

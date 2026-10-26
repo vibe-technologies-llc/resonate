@@ -8,8 +8,8 @@ use crate::{
     Error, MobilePlayer, Result, StoreOp, Track,
     catalog::read,
     saved_searches::{
-        SavedSearch, StoredQuery, refuse_a_saved_search, saved_query, stored_query,
-        write_stored_query,
+        SavedSearch, StoredQuery, is_a_saved_search, refuse_a_saved_search, saved_query,
+        stored_query, write_stored_query,
     },
 };
 
@@ -247,6 +247,29 @@ impl MobilePlayer {
 impl MobilePlayer {
     pub(crate) fn make_playlist(&self, name: String, tracks: Vec<u64>) -> Result<u64> {
         self.make(name, &tracks, None)
+    }
+
+    pub(crate) fn revise_saved_search(
+        &self,
+        id: u64,
+        revision: u64,
+        name: String,
+        query: &SavedQuery,
+    ) -> Result<()> {
+        let name = valid_name(&name)?;
+        self.edit_playlist(id, Some(revision), |connection| {
+            if !is_a_saved_search(connection, id)? {
+                return Err(Error::NotASavedSearch);
+            }
+            refuse_duplicate(connection, &name, id)?;
+            connection
+                .execute(
+                    "UPDATE playlists SET name = ?2, folded = ?3 WHERE id = ?1",
+                    params![id as i64, name, folded(&name)],
+                )
+                .map_err(write_error)?;
+            restore_query(connection, id, Some(query))
+        })
     }
 
     pub(crate) fn make_saved_search(&self, name: String, query: &SavedQuery) -> Result<u64> {

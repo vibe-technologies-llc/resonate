@@ -669,11 +669,14 @@ every route change (a pair of headphones at the same rate included), not from th
   disappears. A playlist's count is the rows its page shows (hidden songs are not counted), so a
   playlist of hidden songs reads as empty and offers *Your playlist starts here*. **A saved search**
   (`MusicPlaylist.search`, `android.md`'s *A playlist is a list or a saved search*) is the same page
-  subtitled *Saved search*, its text a line under the header and its songs plain `TrackRow`s
-  (`SavedSearchRows`): no *Add songs*, Edit, swipe or move, and no *Your devices* section in its
-  options; the playlist picker lists lists alone. The Search tab's toolbar offers *Save as playlist*
-  while it holds a library search, named in an alert (`Features.saveSearch`, relevance order, no
-  cap). The playlist
+  subtitled *Saved search*, its text and its order, direction and cap (`SavedSearch.reading`) under
+  the header and its songs plain `TrackRow`s (`SavedSearchRows`): no *Add songs*, Edit, swipe or move,
+  and no *Your devices* section in its options, which offer *Edit search* (`revise_search`, as
+  `Features.reviseSearch`); the playlist picker lists lists alone. The Search tab's toolbar offers
+  *Save as playlist* while it holds a library search, and both open `SavedSearchSheet`: a name, the
+  search text, an order picker of `SearchOrder.offered`, a *Descending* toggle and a *Limit* (blank for
+  every row, else a whole number above zero), the draft's rules being `ResonateLogic`'s
+  `SavedSearchDraft` (`SavedSearchDraftTests`). The playlist
   picker stays open until the edit has answered: it says "Added to X" and closes on success, and
   on a failure (a duplicate name in *Create and add*) shows it under the field; Now Playing's picker
   is made for the song playing when *Add to playlist* was chosen, not the one playing when a row is

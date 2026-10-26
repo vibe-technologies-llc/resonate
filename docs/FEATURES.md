@@ -40,8 +40,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Providers and network
 
 ## Device sync
-- [S · 0.2.0] A phone saves a search only in its relevance order with no row cap, and cannot revise a
-  saved search's text, order or cap once made, though a revision made on the desktop arrives
 - [L · 0.2.0] Enrichment is not shared between paired devices: each asks MusicBrainz, the Cover Art
   Archive, the lyric services and AcoustID for the same songs at the reference's paced rate and
   decodes every song for its own study, though a device holding the same recording has already
