@@ -8,7 +8,7 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use resonate_core::Recording;
+use resonate_core::{Answer, Answered, Recording};
 use resonate_sync::{
     Catalog, Held, LocalListen, LocalPlaylist, LocalPlaylistId, LocalQuery, Opened, QueryBody,
     Refused, RemoteListen, Resumed, SongTags,
@@ -34,7 +34,10 @@ pub struct Inside {
     pub dies_after_crediting: bool,
     pub resumed: Option<Resumed>,
     pub deleted_by_hand: Vec<String>,
+    pub answers: Vec<Answered>,
+    pub takes_no_answers: bool,
     next_id: i64,
+    next_answered: i64,
 }
 
 pub fn song(title: &str) -> Recording {
@@ -81,6 +84,37 @@ impl Shelf {
 
 #[allow(dead_code)]
 impl Shelf {
+    pub fn answer_here(&self, title: &str, answer: Answer) {
+        let mut inside = self.inside.lock();
+        Self::answered(&mut inside, song(title), answer);
+        drop(inside);
+        self.moved();
+    }
+
+    pub fn answers_of(&self, title: &str) -> Vec<Answer> {
+        self.inside
+            .lock()
+            .answers
+            .iter()
+            .filter(|answered| answered.recording.title == title)
+            .map(|answered| answered.answer.clone())
+            .collect()
+    }
+
+    fn answered(inside: &mut Inside, recording: Recording, answer: Answer) {
+        inside.next_answered += 1;
+        let at = inside.next_answered;
+        inside.answers.retain(|held| {
+            !(held.recording.names_the_same_song_as(&recording)
+                && held.answer.file() == answer.file())
+        });
+        inside.answers.push(Answered {
+            recording,
+            at,
+            answer,
+        });
+    }
+
     pub fn declare(&self, title: &str, tags: SongTags) {
         self.inside.lock().declared.push((song(title), tags));
     }
@@ -449,6 +483,49 @@ impl Catalog for Shelf {
             .landed_with
             .push((recording.clone(), tags.clone()));
         self.add_song(recording.clone(), bytes);
+        Ok(true)
+    }
+
+    fn takes_answers(&self) -> bool {
+        !self.inside.lock().takes_no_answers
+    }
+
+    fn answers_after(&self, mark: i64, most: usize) -> Result<Vec<Answered>, Refused> {
+        let mut answers = self
+            .inside
+            .lock()
+            .answers
+            .iter()
+            .filter(|answered| answered.at >= mark)
+            .cloned()
+            .collect::<Vec<_>>();
+        answers.sort_by_key(|answered| answered.at);
+        answers.truncate(most);
+        Ok(answers)
+    }
+
+    fn take_answer(&self, recording: &Recording, answer: &Answer) -> Result<bool, Refused> {
+        let mut inside = self.inside.lock();
+        let Some(own) = inside
+            .songs
+            .iter()
+            .find(|(held, _)| held.names_the_same_song_as(recording))
+            .map(|(held, _)| held.clone())
+        else {
+            return Ok(false);
+        };
+        let richer_here = inside.answers.iter().any(|held| {
+            held.recording.names_the_same_song_as(recording)
+                && match (&held.answer, answer) {
+                    (Answer::Lyrics(held), Answer::Lyrics(told)) => held.synced && !told.synced,
+                    (held, told) => held == told,
+                }
+        });
+        if !richer_here {
+            Self::answered(&mut inside, own, answer.clone());
+            drop(inside);
+            self.moved();
+        }
         Ok(true)
     }
 

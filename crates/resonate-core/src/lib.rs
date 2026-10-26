@@ -1,3 +1,4 @@
+mod answer;
 mod appearance;
 mod buffer;
 mod calendar;
@@ -31,6 +32,9 @@ mod volume;
 pub mod writer;
 
 pub use crate::{
+    answer::{
+        Answer, Answered, Figure, LONGEST_SHARED_LYRICS, SharedLyrics, SharedStudy, WholeFile,
+    },
     appearance::{
         Accent, Appearance, ArtistsDrawn, ScrollbarMode, Spectral, SpectrumBands, SpectrumFalls,
         SpectrumFloor, SpectrumTilt, TextSize, Theme,

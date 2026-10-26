@@ -13,7 +13,7 @@ use crossbeam_channel::{RecvTimeoutError, Sender, bounded};
 #[cfg(feature = "sync")]
 use parking_lot::Mutex;
 #[cfg(feature = "sync")]
-use resonate_core::{Frames, PlaylistId, Recording, SampleRate, SyncedSongs};
+use resonate_core::{Answer, Frames, PlaylistId, Recording, SampleRate, SyncedSongs};
 #[cfg(feature = "sync")]
 use resonate_engine::{QueueItem, Unclaimed};
 use resonate_library::Library;
@@ -704,6 +704,22 @@ impl Catalog for Catalogued {
             }
             Err(error) => Err(refused(&error)),
         }
+    }
+
+    fn takes_answers(&self) -> bool {
+        true
+    }
+
+    fn answers_after(&self, mark: i64, most: usize) -> Answered<Vec<resonate_core::Answered>> {
+        self.library
+            .answers_to_share(mark, most)
+            .map_err(|error| refused(&error))
+    }
+
+    fn take_answer(&self, recording: &Recording, answer: &Answer) -> Answered<bool> {
+        self.library
+            .take_shared_answer(recording, answer)
+            .map_err(|error| refused(&error))
     }
 
     fn revision(&self) -> u64 {

@@ -2,7 +2,7 @@ mod shelf;
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use resonate_core::{Mbid, Recording};
+use resonate_core::{Answer, Figure, Mbid, Recording, SharedLyrics, SharedStudy, WholeFile};
 use resonate_sync::{Change, Follow, Ledger, LocalListen, LocalPlaylistId, Me, Platform, SpaceId};
 
 use crate::shelf::{Shelf, song};
@@ -801,4 +801,118 @@ fn a_device_unnamed_is_called_after_its_host_and_platform_and_a_chosen_name_wins
     assert_eq!(hosted.name, "vincent (Linux)");
     assert_eq!(chosen.name, "Desk");
     assert_eq!(alone.name, "Android");
+}
+
+fn sung(text: &str, synced: bool) -> Answer {
+    Answer::Lyrics(SharedLyrics {
+        text: text.into(),
+        synced,
+    })
+}
+
+fn studied(packets: u64) -> Answer {
+    Answer::Study(SharedStudy {
+        file: WholeFile {
+            packets,
+            frames: 7_938_000,
+            rate: 44_100,
+        },
+        judged_under: 1,
+        verdict: "genuine".into(),
+        cutoff_hz: None,
+        cutoff_drop: None,
+        lossy_guess: None,
+        upsampled_from: None,
+        bits_in_use: Some(16),
+        declared_bits: Some(16),
+        peak: Figure::of(-0.5),
+        rms: Figure::of(-17.0),
+        true_peak: Figure::of(-0.2),
+        loudness: Some(Figure::of(-13.9)),
+        loudness_range: Some(Figure::of(6.5)),
+        dynamic_range: Some(9),
+        clipped: 0,
+        mono_as_stereo: false,
+        band_levels: vec![3; 29],
+    })
+}
+
+fn answers_in(changes: &[Change]) -> usize {
+    changes
+        .iter()
+        .filter(|change| matches!(change, Change::Answer(_)))
+        .count()
+}
+
+#[test]
+fn an_answer_learnt_on_one_device_lands_on_another_holding_the_song_and_is_not_sent_back() {
+    let mut desk = Device::new("Desk", &["A", "B"]);
+    let mut phone = Device::new("Phone", &["A", "B"]);
+    desk.shelf.answer_here("A", sung("[00:01.00] Words", true));
+    desk.shelf.answer_here("A", studied(42));
+    desk.shelf.answer_here("B", studied(7));
+
+    let told = desk.send();
+    phone.receive(&told);
+
+    assert_eq!(answers_in(&told), 3);
+    assert_eq!(
+        phone.shelf.answers_of("A"),
+        [sung("[00:01.00] Words", true), studied(42)]
+    );
+    assert_eq!(phone.shelf.answers_of("B"), [studied(7)]);
+    assert_eq!(answers_in(&phone.send()), 0);
+    assert_eq!(answers_in(&desk.send()), 0);
+}
+
+#[test]
+fn an_answer_for_a_song_not_held_yet_lands_once_the_song_arrives() {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut phone = Device::new("Phone", &[]);
+    desk.shelf.answer_here("A", sung("Words", false));
+    sync(&mut desk, &mut phone);
+    assert!(phone.shelf.answers_of("A").is_empty());
+
+    phone.shelf.add_song(song("A"), b"A".repeat(1000));
+    phone.ledger.settle(&phone.shelf).expect("settled");
+
+    assert_eq!(phone.shelf.answers_of("A"), [sung("Words", false)]);
+    assert_eq!(answers_in(&phone.send()), 0);
+}
+
+#[test]
+fn plainer_words_told_later_never_undo_timed_ones_and_the_timed_ones_spread() {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut phone = Device::new("Phone", &["A"]);
+    desk.shelf.answer_here("A", sung("[00:01.00] Words", true));
+    let timed = desk.send();
+    phone.shelf.answer_here("A", sung("Words", false));
+    let plain = phone.send();
+
+    desk.receive(&plain);
+    phone.receive(&timed);
+    sync(&mut phone, &mut desk);
+    sync(&mut desk, &mut phone);
+
+    assert_eq!(desk.shelf.answers_of("A"), [sung("[00:01.00] Words", true)]);
+    assert_eq!(
+        phone.shelf.answers_of("A"),
+        [sung("[00:01.00] Words", true)]
+    );
+}
+
+#[test]
+fn a_catalog_that_takes_no_answers_passes_them_on_untouched() {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut phone = Device::new("Phone", &["A"]);
+    let mut tablet = Device::new("Tablet", &["A"]);
+    phone.shelf.inside.lock().takes_no_answers = true;
+    desk.shelf.answer_here("A", sung("Words", false));
+
+    sync(&mut desk, &mut phone);
+    let snapshot = phone.ledger.snapshot().expect("a snapshot");
+    tablet.receive(&snapshot.into_iter().flatten().collect::<Vec<_>>());
+
+    assert!(phone.shelf.answers_of("A").is_empty());
+    assert_eq!(tablet.shelf.answers_of("A"), [sung("Words", false)]);
 }

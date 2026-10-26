@@ -1,6 +1,6 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use resonate_core::Recording;
+use resonate_core::{Answer, Recording};
 
 use crate::{DeviceId, Result, key::random_bytes};
 
@@ -104,6 +104,13 @@ pub struct Handoff {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AnswerNote {
+    pub recording: Recording,
+    pub stamp: Stamp,
+    pub answer: Answer,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Change {
     Device(DeviceNote),
     Forgotten(DeviceForgotten),
@@ -112,6 +119,7 @@ pub enum Change {
     Favourite(FavouriteNote),
     Listen(Listen),
     Handoff(Handoff),
+    Answer(AnswerNote),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -168,6 +176,7 @@ impl Change {
             Self::Query(note) => Some(note.stamp),
             Self::Favourite(note) => Some(note.stamp),
             Self::Handoff(handoff) => Some(handoff.stamp),
+            Self::Answer(note) => Some(note.stamp),
             Self::Listen(_) => None,
         }
     }

@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use resonate_core::Recording;
+use resonate_core::{Answer, Answered, Recording};
 
 use crate::{change::QueryBody, key::DeviceId};
 
@@ -156,6 +156,20 @@ pub trait Catalog: Send + Sync + 'static {
         extension: &str,
         staged: &Path,
     ) -> Result<bool, Refused>;
+
+    fn takes_answers(&self) -> bool {
+        false
+    }
+
+    fn answers_after(&self, mark: i64, most: usize) -> Result<Vec<Answered>, Refused> {
+        let _ = (mark, most);
+        Ok(Vec::new())
+    }
+
+    fn take_answer(&self, recording: &Recording, answer: &Answer) -> Result<bool, Refused> {
+        let _ = (recording, answer);
+        Ok(false)
+    }
 
     fn revision(&self) -> u64;
 }

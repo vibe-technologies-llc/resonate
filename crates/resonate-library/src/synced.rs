@@ -22,9 +22,9 @@ use crate::{
     store, undo, vaulted,
 };
 
-const RECORDING_COLUMNS: &str = "t.title, coalesce(t.artist, r.name, ''), coalesce(a.title, ''), t.mbid, t.duration, t.sample_rate";
+pub(crate) const RECORDING_COLUMNS: &str = "t.title, coalesce(t.artist, r.name, ''), coalesce(a.title, ''), t.mbid, t.duration, t.sample_rate";
 
-const RECORDING_JOINS: &str = "LEFT JOIN albums a ON a.id = t.album_id
+pub(crate) const RECORDING_JOINS: &str = "LEFT JOIN albums a ON a.id = t.album_id
        LEFT JOIN artists r ON r.id = t.artist_id";
 
 const LISTEN_SETTLES_AFTER: Duration = Duration::from_secs(15 * 60);
@@ -407,7 +407,7 @@ fn entries_of(connection: &Connection, id: PlaylistId) -> Result<Vec<Option<Reco
         .map_err(|source| Error::store(StoreOp::Query, source))
 }
 
-fn recording_at(row: &SqlRow<'_>, first: usize) -> rusqlite::Result<Option<Recording>> {
+pub(crate) fn recording_at(row: &SqlRow<'_>, first: usize) -> rusqlite::Result<Option<Recording>> {
     let Some(title) = row.get::<_, Option<String>>(first)? else {
         return Ok(None);
     };
@@ -571,7 +571,7 @@ pub(crate) fn remove_playlist(inner: &Inner, id: PlaylistId, created: i64) -> Re
     Ok(removed)
 }
 
-fn resolved(connection: &Connection, recording: &Recording) -> Result<Option<Cut>> {
+pub(crate) fn resolved(connection: &Connection, recording: &Recording) -> Result<Option<Cut>> {
     if let Some(mbid) = &recording.mbid {
         let held = connection
             .query_row(
@@ -653,7 +653,7 @@ pub(crate) fn note_received_at(inner: &Inner, recording: &Recording, path: &Path
     })
 }
 
-fn lasts_alike(held: Option<Duration>, wanted: Option<Duration>) -> bool {
+pub(crate) fn lasts_alike(held: Option<Duration>, wanted: Option<Duration>) -> bool {
     match (held, wanted) {
         (Some(held), Some(wanted)) => held.abs_diff(wanted) <= THE_SAME_LENGTH_WITHIN,
         _ => true,

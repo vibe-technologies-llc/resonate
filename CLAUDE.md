@@ -138,7 +138,8 @@ Invariants the layering protects (the rules files have the rest):
 - **A run of rows is one `resonate-core::Span`**, never empty; `Span::landing` is the one arithmetic
   of where a dropped span lands. `resonate-ui`'s `edit::Span` is a different type (text edits).
 - **Core carries what two mutually blind crates share**: `Resumption`, `Reordered`, `Appearance`,
-  `CivilDate`, `Calendar`, `eq`'s arithmetic, `presence`, `naming`, `titles`, `words_of_a_name`.
+  `CivilDate`, `Calendar`, `eq`'s arithmetic, `presence`, `naming`, `titles`, `words_of_a_name`,
+  `Answer` (what a lookup or study learnt, shared between devices).
 - **The sync server never reads what it keeps**: every record is sealed under keys the pairing
   code derives, songs travel device to device, and a device names itself only inside the sealed
   records (`sync.md`).

@@ -541,6 +541,9 @@ rows read via `Player::media` like any unscanned row.
   written as its text, order and reading codes and row cap** (`synced_queries`, `write_synced_query`:
   a taken name aliased like a list's, a query written over a list made anew, an unknown code
   `None`; `a_saved_query_is_read_with_its_text_and_written_on_another_catalog_to_be_asked_there`).
+  **What a lookup or study learnt is shared as an answer** (`answers.rs`, `sync.md`): kept words
+  and current studies of whole files read out in `at` order, taken back only where the recording is
+  held strictly (words) or the copy is the same file by packets digest, length and rate (a study).
   `Library::synced_revision`
   counts these writes, which `data_version` cannot see; `catalog_revision` adds every other writer.
 

@@ -4,6 +4,8 @@ paths:
   - "crates/resonate/src/sync.rs"
   - "crates/resonate-library/src/synced.rs"
   - "crates/resonate-library/tests/synced.rs"
+  - "crates/resonate-library/src/answers.rs"
+  - "crates/resonate-core/src/answer.rs"
   - "crates/resonate-ui/src/views/settings/sync.rs"
   - "crates/resonate-mobile/src/sync.rs"
   - "fuzz/fuzz_targets/sync.rs"
@@ -11,8 +13,8 @@ paths:
 
 # Device sync
 
-`resonate-sync` keeps a listener's devices in step: playlists and saved-query playlists, track favourites, listening history
-and what each device was playing travel through a server that cannot read them, or straight between
+`resonate-sync` keeps a listener's devices in step: playlists and saved-query playlists, track favourites, listening history,
+what each device was playing and what a lookup or study learnt about a song (kept lyrics, a study) travel through a server that cannot read them, or straight between
 devices on one network when the server is away; songs travel from one device to another directly, or through the server's relay where no direct path opens.
 It reaches `resonate-core` alone among workspace crates (the layering job refuses the library,
 engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) and
@@ -94,8 +96,10 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
 ## The ledger
 
 `ledger.rs` keeps `sync.sqlite` (the data folder on Linux, app-private storage on Android),
-one `V1` in a `MIGRATIONS` list that holds it alone: until the 0.1.0 release `V1` may be edited, after it
-a change appends a step and never edits `V1`; a stamp past the list is `Error::LedgerVersion`. All merging lives here, once for both
+`V1` (the 0.1.0 baseline, never edited) and a `MIGRATIONS` step after it (`ANSWERS_TRAVEL`: the
+`answers` table and `state.answers_mark`); `user_version` counts the steps laid, a change appends a
+step, and a stamp past the list is `Error::LedgerVersion`
+(`a_ledger_laid_out_at_the_first_release_is_carried_forward_with_what_it_held`). All merging lives here, once for both
 platforms; the catalog seam stays thin.
 
 - **Stamps are last-writer-wins on a hybrid clock**: `Stamp { nanos, device }` ordered by both;
@@ -155,6 +159,29 @@ platforms; the catalog seam stays thin.
   (`origin_device`, `origin_id`), so `Catalog::credit` of a listen already credited changes nothing and
   answers true; the ledger's `credited` mark may therefore lag the catalog (a crash between the two) and
   `settle` only repeats a no-op (`a_listen_credited_before_the_ledger_could_say_so_is_credited_once`).
+- **What a lookup or study learnt travels as an answer, so a paired device need not ask or decode
+  again.** `Change::Answer` (wire tag 7) is a recording, a stamp and a `resonate_core::Answer`: a
+  kind byte, then `SharedLyrics` (text up to `LONGEST_SHARED_LYRICS`, 32 KiB, and whether timed;
+  kind 0) or `SharedStudy` (kind 1: the `WholeFile` it measured, i.e. the scan's first-packets
+  digest, frame count and rate, then `JUDGED_UNDER`, verdict and its basis, levels, loudness, range,
+  DR, clipping and the 29 band levels; floats as `Figure` bits so a record reads back as itself). A
+  kind a later build adds skips the change, as an unknown tag does
+  (`an_answer_of_a_kind_a_later_build_adds_is_skipped_and_the_rest_read`). The print, recognition,
+  Lyricsfile, release, credits, links and covers do not travel (`FEATURES.md`): the server keeps
+  what is small. **The ledger's `answers` row is keyed by the recording key, the kind and the file**
+  (a study per encode), holds the encoded answer, `here`, stamp and `owed`. A look reads
+  `Catalog::answers_after(answers_mark)` (`ANSWERS_LOOKED_AT_ONCE`, 500, up to
+  `ANSWER_PAGES_A_LOOK` pages; the catalog answers `at >= mark`, the mark moves to the last `at`, and
+  a whole page of one instant steps past it) and stamps and owes only an answer whose encoding
+  differs from the row's, so an answer landed from elsewhere and listed again here is never sent
+  back. **An arrival is offered to the catalog whatever its stamp** (unless the row already holds it
+  here): the catalog keeps the richer, so plainer words told later never undo timed ones, and the
+  timed ones, re-listed by the catalog that took them, spread with a newer stamp; the row itself is
+  last writer wins (`plainer_words_told_later_never_undo_timed_ones_and_the_timed_ones_spread`). An
+  answer for a song not held is kept (`here = 0`) and `settle` offers it again whenever the catalog's
+  revision moved since the last try (`an_answer_for_a_song_not_held_yet_lands_once_the_song_arrives`).
+  A catalog that `takes_answers` false (the default; the phones) neither looks nor takes, and passes
+  every note on in its snapshot (`a_catalog_that_takes_no_answers_passes_them_on_untouched`).
 - **A snapshot is the merged state**, cut into bundles of at most `BUNDLE_BYTES`; a device compacts
   the server's log past `COMPACT_PAST_RECORDS` (512) or `COMPACT_PAST_BYTES` (4 MiB) since the last
   snapshot, and a `Compacted` from any device resets every device's count.
@@ -184,7 +211,20 @@ platforms; the catalog seam stays thin.
 read and written (`queries`, `write_query`; removal is `remove_playlist`, one id space), favourites,
 listens after a mark, a remote listen credited, the resume state, whether and how a song is held,
 opening one to send and landing one received, and a `revision` that moves with any of these.
-Failures are a `Refused` the implementation logs (errors.md: no boxed error). The binary's
+Failures are a `Refused` the implementation logs (errors.md: no boxed error). **Answers**
+(`takes_answers`, `answers_after`, `take_answer`) are the library's `answers.rs`
+(`Library::answers_to_share`, `take_shared_answer`): kept lyrics with text and studies at this
+build's `JUDGED_UNDER` with whole band levels of a whole-file row with a packets digest, in `at`
+order; **words land only where the recording is held strictly** (resolved as above, then the held
+row's MBID is the recording's, or both lengths are known and within 2 s), as a `lyrics_kept` row
+through `sung::keep` with no Lyricsfile, and never where the row keeps words as rich already; **a
+study lands only on a copy that is the same file**: every whole-file row whose `tracks.packets`,
+`duration` and `sample_rate` are the study's `WholeFile`, holding no study at this `JUDGED_UNDER`
+(never over one: it would drop a recognition), so the pass's `to_study` steps past it; a verdict or
+lossy guess this build cannot name, another `JUDGED_UNDER` or another band layout is settled and
+written nowhere
+(`a_study_and_kept_words_land_on_a_catalog_holding_the_same_file_and_read_back_as_they_went`,
+`a_study_of_another_encode_or_words_for_another_take_are_never_written`). The binary's
 `Catalogued` sits over `Library` (`resonate-library`'s `synced.rs`: `synced_playlists` reads lists
 only and `synced_queries` the saved queries, a query written over a list or the reverse made anew
 rather than overwritten; a recording resolves by MBID, else folded artist, title words and album with lengths within

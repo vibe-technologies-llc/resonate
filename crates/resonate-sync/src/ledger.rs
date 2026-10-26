@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, path::Path, time::Duration};
 
-use resonate_core::{Recording, RecordingKey};
+use resonate_core::{Answer, Answered, Recording, RecordingKey};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::{
@@ -9,19 +9,23 @@ use crate::{
         Catalog, LocalPlaylist, LocalPlaylistId, LocalQuery, Refused, RemoteListen, Resumed,
     },
     change::{
-        Change, Clock, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, Listen, Platform,
-        PlaylistBody, PlaylistKey, PlaylistNote, QueryBody, QueryNote, Stamp, wall_nanos,
+        AnswerNote, Change, Clock, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, Listen,
+        Platform, PlaylistBody, PlaylistKey, PlaylistNote, QueryBody, QueryNote, Stamp, wall_nanos,
     },
     merge::{DIGEST_BYTES, Synced, names_alike, projection_digest, query_digest, spliced},
     wire::{
-        decoded_recording, decoded_recordings, encoded_change, encoded_recording,
-        encoded_recordings,
+        decoded_answer, decoded_recording, decoded_recordings, encoded_answer, encoded_change,
+        encoded_recording, encoded_recordings,
     },
 };
 
 pub const BUNDLE_BYTES: usize = 192 * 1024;
 pub const LISTENS_LOOKED_AT_ONCE: usize = 2_000;
 pub const LISTENS_KEPT_FOR: Duration = Duration::from_secs(400 * 24 * 60 * 60);
+pub const ANSWERS_LOOKED_AT_ONCE: usize = 500;
+const ANSWER_PAGES_A_LOOK: usize = 8;
+const ANSWER_OF_LYRICS: i64 = 0;
+const ANSWER_OF_A_STUDY: i64 = 1;
 
 const V1: &str = "
 CREATE TABLE state (
@@ -111,7 +115,25 @@ CREATE TABLE queries (
 CREATE UNIQUE INDEX queries_by_local ON queries(local_id, local_created) WHERE local_id IS NOT NULL;
 ";
 
-const MIGRATIONS: &[&str] = &[V1];
+const ANSWERS_TRAVEL: &str = "
+ALTER TABLE state ADD COLUMN answers_mark INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE answers (
+    key TEXT NOT NULL,
+    kind INTEGER NOT NULL,
+    file BLOB NOT NULL,
+    recording BLOB NOT NULL,
+    answer BLOB NOT NULL,
+    here INTEGER NOT NULL DEFAULT 0,
+    nanos INTEGER NOT NULL,
+    stamped_by BLOB NOT NULL,
+    owed INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (key, kind, file)
+) STRICT;
+CREATE INDEX answers_owed ON answers(owed) WHERE owed = 1;
+CREATE INDEX answers_not_here ON answers(here) WHERE here = 0;
+";
+
+const MIGRATIONS: &[&str] = &[V1, ANSWERS_TRAVEL];
 
 const OWE_EVERYTHING: &str = "
 UPDATE devices SET owed = 1;
@@ -120,6 +142,7 @@ UPDATE queries SET owed = 1;
 UPDATE favourites SET owed = 1;
 UPDATE listens SET owed = 1;
 UPDATE handoffs SET owed = 1;
+UPDATE answers SET owed = 1;
 ";
 
 const FORGET_THE_SPACE: &str = "
@@ -129,7 +152,8 @@ DELETE FROM queries;
 DELETE FROM favourites;
 DELETE FROM listens;
 DELETE FROM handoffs;
-UPDATE state SET cursor = 0, since_snapshot = 0, bytes_since = 0, listens_mark = 0, resumed = NULL;
+DELETE FROM answers;
+UPDATE state SET cursor = 0, since_snapshot = 0, bytes_since = 0, listens_mark = 0, answers_mark = 0, resumed = NULL;
 ";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -176,6 +200,33 @@ pub struct Ledger {
     connection: Connection,
     device: DeviceId,
     clock: Clock,
+    answers_tried_at: Option<u64>,
+}
+
+struct AnswerSlot {
+    key: RecordingKey,
+    kind: i64,
+    file: Vec<u8>,
+}
+
+impl AnswerSlot {
+    fn of(recording: &Recording, answer: &Answer) -> Self {
+        let (kind, file) = match answer.file() {
+            None => (ANSWER_OF_LYRICS, Vec::new()),
+            Some(file) => {
+                let mut slot = Vec::with_capacity(20);
+                slot.extend_from_slice(&file.packets.to_le_bytes());
+                slot.extend_from_slice(&file.frames.to_le_bytes());
+                slot.extend_from_slice(&file.rate.to_le_bytes());
+                (ANSWER_OF_A_STUDY, slot)
+            }
+        };
+        Self {
+            key: recording.key(),
+            kind,
+            file,
+        }
+    }
 }
 
 fn listens_kept_since() -> i64 {
@@ -281,6 +332,7 @@ impl Ledger {
             connection,
             device,
             clock: Clock::from_last(clock),
+            answers_tried_at: None,
         })
     }
 
@@ -423,6 +475,7 @@ impl Ledger {
         self.look_at_favourites(catalog, Looking::Everything)?;
         self.look_at_listens(catalog)?;
         self.look_at_resumption(catalog)?;
+        self.look_at_answers(catalog)?;
         self.keep_the_clock()?;
         self.age_listens()?;
 
@@ -995,6 +1048,81 @@ impl Ledger {
             .map_err(|source| Error::store(StoreOp::Write, source))
     }
 
+    fn look_at_answers(&mut self, catalog: &dyn Catalog) -> Result<()> {
+        if !catalog.takes_answers() {
+            return Ok(());
+        }
+        let mut mark = self.state_number("answers_mark")?.cast_signed();
+        for _ in 0..ANSWER_PAGES_A_LOOK {
+            let answered = catalog
+                .answers_after(mark, ANSWERS_LOOKED_AT_ONCE)
+                .map_err(Error::Catalog)?;
+            let Some(last) = answered.iter().map(|answered| answered.at).max() else {
+                break;
+            };
+            let whole_page = answered.len() >= ANSWERS_LOOKED_AT_ONCE;
+
+            let transaction = self
+                .connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
+            for answered in answered.iter().filter(|answered| answered.answer.travels()) {
+                let Answered {
+                    recording, answer, ..
+                } = answered;
+                let slot = AnswerSlot::of(recording, answer);
+                let encoded = encoded_answer(answer);
+                let held: Option<Vec<u8>> = transaction
+                    .query_row(
+                        "SELECT answer FROM answers WHERE key = ?1 AND kind = ?2 AND file = ?3",
+                        params![slot.key.as_str(), slot.kind, slot.file],
+                        |row| row.get(0),
+                    )
+                    .optional()
+                    .map_err(|source| Error::store(StoreOp::Read, source))?;
+                if held.as_deref() == Some(encoded.as_slice()) {
+                    continue;
+                }
+                let stamp = self.clock.now(self.device);
+                transaction
+                    .execute(
+                        "INSERT INTO answers (key, kind, file, recording, answer, here, nanos, stamped_by, owed)
+                         VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?7, 1)
+                         ON CONFLICT (key, kind, file) DO UPDATE SET recording = ?4, answer = ?5, here = 1,
+                             nanos = ?6, stamped_by = ?7, owed = 1",
+                        params![
+                            slot.key.as_str(),
+                            slot.kind,
+                            slot.file,
+                            encoded_recording(recording),
+                            encoded,
+                            stamp.nanos,
+                            self.device.0.as_slice()
+                        ],
+                    )
+                    .map_err(|source| Error::store(StoreOp::Write, source))?;
+            }
+            mark = if whole_page && last <= mark {
+                mark.saturating_add(1)
+            } else {
+                last
+            };
+            transaction
+                .execute(
+                    "UPDATE state SET answers_mark = max(answers_mark, ?1) WHERE id = 1",
+                    params![mark],
+                )
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
+            transaction
+                .commit()
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
+            if !whole_page {
+                break;
+            }
+        }
+        Ok(())
+    }
+
     fn age_listens(&mut self) -> Result<()> {
         let horizon = listens_kept_since();
         self.connection
@@ -1013,7 +1141,8 @@ impl Ledger {
                 "SELECT (SELECT count(*) FROM devices WHERE owed = 1) + (SELECT count(*) FROM playlists WHERE owed = 1)
                       + (SELECT count(*) FROM queries WHERE owed = 1)
                       + (SELECT count(*) FROM favourites WHERE owed = 1) + (SELECT count(*) FROM listens WHERE owed = 1)
-                      + (SELECT count(*) FROM handoffs WHERE owed = 1)",
+                      + (SELECT count(*) FROM handoffs WHERE owed = 1)
+                      + (SELECT count(*) FROM answers WHERE owed = 1)",
                 [],
                 |row| row.get(0),
             )
@@ -1045,6 +1174,11 @@ impl Ledger {
                 .into_iter()
                 .map(Change::Listen),
         );
+        changes.extend(
+            self.answer_notes("owed = 1")?
+                .into_iter()
+                .map(Change::Answer),
+        );
         Ok(bundled(changes))
     }
 
@@ -1060,6 +1194,7 @@ impl Ledger {
         );
         changes.extend(self.handoffs_where("1")?.into_iter().map(Change::Handoff));
         changes.extend(self.listens_where("1")?.into_iter().map(Change::Listen));
+        changes.extend(self.answer_notes("1")?.into_iter().map(Change::Answer));
         Ok(bundled(changes))
     }
 
@@ -1099,6 +1234,20 @@ impl Ledger {
                     "UPDATE handoffs SET owed = 0 WHERE device = ?1 AND nanos = ?2",
                     params![handoff.device.0.as_slice(), handoff.stamp.nanos],
                 ),
+                Change::Answer(note) => {
+                    let slot = AnswerSlot::of(&note.recording, &note.answer);
+                    transaction.execute(
+                        "UPDATE answers SET owed = 0
+                          WHERE key = ?1 AND kind = ?2 AND file = ?3 AND nanos = ?4 AND stamped_by = ?5",
+                        params![
+                            slot.key.as_str(),
+                            slot.kind,
+                            slot.file,
+                            note.stamp.nanos,
+                            note.stamp.device.0.as_slice()
+                        ],
+                    )
+                }
             };
             cleared.map_err(|source| Error::store(StoreOp::Write, source))?;
         }
@@ -1131,6 +1280,7 @@ impl Ledger {
                     self.handoff_arrived(handoff)?;
                     false
                 }
+                Change::Answer(note) => self.answer_arrived(catalog, note)?,
             };
             applied.changed_here += usize::from(changed);
         }
@@ -1544,6 +1694,127 @@ impl Ledger {
         Ok(credited)
     }
 
+    fn answer_arrived(&mut self, catalog: &dyn Catalog, note: &AnswerNote) -> Result<bool> {
+        if !note.answer.travels() {
+            return Ok(false);
+        }
+        let slot = AnswerSlot::of(&note.recording, &note.answer);
+        let encoded = encoded_answer(&note.answer);
+        let held: Option<(Vec<u8>, i64, Vec<u8>, bool)> = self
+            .connection
+            .query_row(
+                "SELECT answer, nanos, stamped_by, here FROM answers WHERE key = ?1 AND kind = ?2 AND file = ?3",
+                params![slot.key.as_str(), slot.kind, slot.file],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .optional()
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        if held
+            .as_ref()
+            .is_some_and(|(answer, _, _, here)| *answer == encoded && *here)
+        {
+            return Ok(false);
+        }
+
+        let taken = catalog.takes_answers()
+            && catalog
+                .take_answer(&note.recording, &note.answer)
+                .map_err(Error::Catalog)?;
+        let newer = held.as_ref().is_none_or(|(_, nanos, by, _)| {
+            Stamp {
+                nanos: *nanos,
+                device: device_from(by),
+            } < note.stamp
+        });
+        if newer {
+            self.connection
+                .execute(
+                    "INSERT INTO answers (key, kind, file, recording, answer, here, nanos, stamped_by)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                     ON CONFLICT (key, kind, file) DO UPDATE SET recording = ?4, answer = ?5, here = ?6,
+                         nanos = ?7, stamped_by = ?8, owed = 0",
+                    params![
+                        slot.key.as_str(),
+                        slot.kind,
+                        slot.file,
+                        encoded_recording(&note.recording),
+                        encoded,
+                        taken,
+                        note.stamp.nanos,
+                        note.stamp.device.0.as_slice()
+                    ],
+                )
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
+        }
+        Ok(taken)
+    }
+
+    fn settle_answers(&mut self, catalog: &dyn Catalog) -> Result<usize> {
+        if !catalog.takes_answers() {
+            return Ok(0);
+        }
+        let revision = catalog.revision();
+        if self.answers_tried_at == Some(revision) {
+            return Ok(0);
+        }
+
+        let mut settled = 0;
+        for note in self.answer_notes("here = 0")? {
+            if !catalog
+                .take_answer(&note.recording, &note.answer)
+                .map_err(Error::Catalog)?
+            {
+                continue;
+            }
+            let slot = AnswerSlot::of(&note.recording, &note.answer);
+            self.connection
+                .execute(
+                    "UPDATE answers SET here = 1 WHERE key = ?1 AND kind = ?2 AND file = ?3",
+                    params![slot.key.as_str(), slot.kind, slot.file],
+                )
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
+            settled += 1;
+        }
+        self.answers_tried_at = Some(catalog.revision());
+        Ok(settled)
+    }
+
+    fn answer_notes(&self, condition: &str) -> Result<Vec<AnswerNote>> {
+        let mut statement = self
+            .connection
+            .prepare(&format!(
+                "SELECT recording, answer, nanos, stamped_by FROM answers WHERE {condition}"
+            ))
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, Vec<u8>>(0)?,
+                    row.get::<_, Vec<u8>>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, Vec<u8>>(3)?,
+                ))
+            })
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        let mut notes = Vec::new();
+        for row in rows {
+            let (recording, answer, nanos, by) =
+                row.map_err(|source| Error::store(StoreOp::Read, source))?;
+            let Some(answer) = decoded_answer(&answer)? else {
+                continue;
+            };
+            notes.push(AnswerNote {
+                recording: decoded_recording(&recording)?,
+                stamp: Stamp {
+                    nanos,
+                    device: device_from(&by),
+                },
+                answer,
+            });
+        }
+        Ok(notes)
+    }
+
     pub fn settle(&mut self, catalog: &dyn Catalog) -> Result<usize> {
         let mut settled = 0;
 
@@ -1611,6 +1882,8 @@ impl Ledger {
                 settled += 1;
             }
         }
+
+        settled += self.settle_answers(catalog)?;
         Ok(settled)
     }
 
@@ -2224,5 +2497,34 @@ const fn platform_of(tag: i64) -> Platform {
         1 => Platform::Android,
         2 => Platform::Ios,
         _ => Platform::Other,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_ledger_laid_out_at_the_first_release_is_carried_forward_with_what_it_held() {
+        let connection = Connection::open_in_memory().expect("a connection");
+        connection
+            .execute_batch(V1)
+            .expect("the first release's ledger");
+        connection
+            .execute(
+                "INSERT INTO state (id, device, listens_mark) VALUES (1, ?1, 9)",
+                params![[3_u8; 16].as_slice()],
+            )
+            .expect("a state row");
+        connection
+            .pragma_update(None, "user_version", 1)
+            .expect("stamped");
+
+        let ledger = Ledger::over(connection).expect("carried forward");
+
+        assert_eq!(ledger.device(), DeviceId([3; 16]));
+        assert_eq!(ledger.state_number("listens_mark").expect("a mark"), 9);
+        assert_eq!(ledger.state_number("answers_mark").expect("a mark"), 0);
+        assert!(ledger.answer_notes("1").expect("answers").is_empty());
     }
 }

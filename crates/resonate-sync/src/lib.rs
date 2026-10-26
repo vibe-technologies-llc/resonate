@@ -20,8 +20,8 @@ pub use crate::{
         Refused, RemoteListen, Resumed, SongTags,
     },
     change::{
-        Change, Clock, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, Listen, Platform,
-        PlaylistBody, PlaylistKey, PlaylistNote, QueryBody, QueryNote, Stamp,
+        AnswerNote, Change, Clock, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, Listen,
+        Platform, PlaylistBody, PlaylistKey, PlaylistNote, QueryBody, QueryNote, Stamp,
     },
     error::{CodeRefused, DeflateOp, Error, FileOp, Malformed, Result, StoreOp, StreamOp, TlsOp},
     key::{Derived, DeviceId, PAIRING_LINK, SpaceId, SyncKey, Token},

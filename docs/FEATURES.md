@@ -43,17 +43,14 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Providers and network
 
 ## Device sync
-- [L · 0.2.0] Enrichment is not shared between paired devices: each asks MusicBrainz, the Cover Art
-  Archive, the lyric services and AcoustID for the same songs at the reference's paced rate and
-  decodes every song for its own study, though a device holding the same recording has already
-  landed its release, credits, links, kept lyrics, cover and study (verdict, loudness, print, band
-  levels). An answer could travel as a sealed record keyed by `Recording::key()` (an MBID where
-  landed, else the folded names and length a favourite is matched by), taken by the receiving
-  catalog through the same strict rules a lookup lands with (a guess is still never written, a file's
-  own tags and pictures still win) and stamped answered so the pass steps past it; a study only
-  where the copies are one file (the packets digest or the print agree), since a study of another
-  encode is not this file's; covers and the larger answers fetched device to device as songs are,
-  not kept on the server
+- [L · 0.2.0] Only kept lyrics (text and timing) and studies travel between paired devices
+  (`Change::Answer`, `sync.md`): a release, its credits and links, a cover, a Lyricsfile, a study's
+  print and recognition are still asked for by each device at the reference's paced rate. A release
+  could travel as the answer keyed by `Recording::key()` and be landed through the strict rules
+  `land_release` lands with (a guess is still never written, a file's own tags and pictures still
+  win) and stamped answered so the pass steps past it; covers, Lyricsfiles and prints fetched device
+  to device as songs are (`ToPeer`), not kept on the server. The phones' catalogs take no answers
+  yet (`Catalog::takes_answers` false: they pass them on untouched) and send none
 
 ## Equaliser and DSP
 

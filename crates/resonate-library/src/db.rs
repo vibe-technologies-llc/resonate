@@ -43,7 +43,7 @@ use crate::{
     RowOrder, SavedQuery, ScanHandle, ScanOptions, Scrobbler, Search, SearchResults, Shape, Shared,
     SortOrder, Spellings, Statistics, StoreOp, Study, Submitted, Suggestion, Sung, TagSink, Term,
     Track, TrackQuery, TrackToAsk, Uncovered, Undoable, Unfinished, UnheldRelease, Vault, VaultKey,
-    VaultObject, Verdict, Waits, Want, Window, Word, alternatives,
+    VaultObject, Verdict, Waits, Want, Window, Word, alternatives, answers,
     copies::{self, Copies, NumberedCopy},
     deleted::{self, Deleted, Removal, Trashes},
     elsewhere, enrich, enriched,
@@ -2542,6 +2542,22 @@ impl Library {
         heard: Duration,
     ) -> Result<bool> {
         synced::credit(&self.inner, recording, origin, listen, at, heard)
+    }
+
+    pub fn answers_to_share(
+        &self,
+        after: i64,
+        most: usize,
+    ) -> Result<Vec<resonate_core::Answered>> {
+        answers::after(&self.inner, after, most)
+    }
+
+    pub fn take_shared_answer(
+        &self,
+        recording: &resonate_core::Recording,
+        answer: &resonate_core::Answer,
+    ) -> Result<bool> {
+        answers::take(&self.inner, recording, answer)
     }
 
     pub fn resolve_recording(&self, recording: &resonate_core::Recording) -> Result<Option<Cut>> {

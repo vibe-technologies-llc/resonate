@@ -3,13 +3,15 @@ use std::{
     time::Duration,
 };
 
-use resonate_core::{Mbid, Recording};
+use resonate_core::{
+    Answer, Figure, LONGEST_SHARED_LYRICS, Mbid, Recording, SharedLyrics, SharedStudy, WholeFile,
+};
 
 use crate::{
     DeviceId, Error, Malformed, Result, SpaceId, Token,
     catalog::{Held, SongTags},
     change::{
-        Change, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, Listen, Platform,
+        AnswerNote, Change, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, Listen, Platform,
         PlaylistBody, PlaylistKey, PlaylistNote, QueryBody, QueryNote, Stamp,
     },
     key::{DEVICE_BYTES, SPACE_BYTES, TOKEN_BYTES},
@@ -25,6 +27,9 @@ pub const LARGEST_BLOB: usize = LARGEST_FRAME;
 pub const LARGEST_RECORD: usize = 256 * 1024;
 pub const LARGEST_DATAGRAM: usize = 2048;
 const RECORD_AT_LEAST: usize = 2;
+const BAND_LEVELS_AT_MOST: usize = 256;
+const ANSWER_LYRICS: u8 = 0;
+const ANSWER_STUDY: u8 = 1;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ToServer {
@@ -266,6 +271,59 @@ impl Writer {
         }
     }
 
+    fn optional_byte(&mut self, value: Option<u8>) {
+        self.optional_number(value.map(u32::from));
+    }
+
+    fn figure(&mut self, figure: Figure) {
+        self.fixed(&figure.bits().to_le_bytes());
+    }
+
+    fn optional_figure(&mut self, figure: Option<Figure>) {
+        match figure {
+            Some(figure) => {
+                self.flag(true);
+                self.figure(figure);
+            }
+            None => self.flag(false),
+        }
+    }
+
+    pub fn answer(&mut self, answer: &Answer) {
+        match answer {
+            Answer::Lyrics(lyrics) => {
+                self.byte(ANSWER_LYRICS);
+                let end = lyrics.text.floor_char_boundary(LONGEST_SHARED_LYRICS);
+                self.bytes(&lyrics.text.as_bytes()[..end]);
+                self.flag(lyrics.synced);
+            }
+            Answer::Study(study) => {
+                self.byte(ANSWER_STUDY);
+                self.number(study.file.packets);
+                self.number(study.file.frames);
+                self.number(u64::from(study.file.rate));
+                self.number(u64::from(study.judged_under));
+                self.text(&study.verdict);
+                self.optional_number(study.cutoff_hz);
+                self.optional_figure(study.cutoff_drop);
+                self.optional_text(study.lossy_guess.as_deref());
+                self.optional_number(study.upsampled_from);
+                self.optional_byte(study.bits_in_use);
+                self.optional_byte(study.declared_bits);
+                self.figure(study.peak);
+                self.figure(study.rms);
+                self.figure(study.true_peak);
+                self.optional_figure(study.loudness);
+                self.optional_figure(study.loudness_range);
+                self.optional_byte(study.dynamic_range);
+                self.number(study.clipped);
+                self.flag(study.mono_as_stereo);
+                let end = study.band_levels.len().min(BAND_LEVELS_AT_MOST);
+                self.bytes(&study.band_levels[..end]);
+            }
+        }
+    }
+
     pub fn tags(&mut self, tags: &SongTags) {
         self.optional_text(tags.album_artist.as_deref());
         self.optional_text(tags.date.as_deref());
@@ -458,6 +516,67 @@ impl<'a> Reader<'a> {
             self.small().map(Some)
         } else {
             Ok(None)
+        }
+    }
+
+    fn optional_byte(&mut self) -> Result<Option<u8>> {
+        self.optional_number()?
+            .map(|value| u8::try_from(value).map_err(|_| Error::Malformed(Malformed::Number)))
+            .transpose()
+    }
+
+    fn figure(&mut self) -> Result<Figure> {
+        self.fixed::<4>()
+            .map(|bytes| Figure::from_bits(u32::from_le_bytes(bytes)))
+    }
+
+    fn optional_figure(&mut self) -> Result<Option<Figure>> {
+        if self.flag()? {
+            self.figure().map(Some)
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn answer(&mut self) -> Result<Option<Answer>> {
+        match self.byte()? {
+            ANSWER_LYRICS => {
+                let text = str::from_utf8(self.bytes(LONGEST_SHARED_LYRICS)?)
+                    .map(str::to_owned)
+                    .map_err(|_| Error::Malformed(Malformed::NotText))?;
+                Ok(Some(Answer::Lyrics(SharedLyrics {
+                    text,
+                    synced: self.flag()?,
+                })))
+            }
+            ANSWER_STUDY => {
+                let file = WholeFile {
+                    packets: self.number()?,
+                    frames: self.number()?,
+                    rate: self.small()?,
+                };
+                Ok(Some(Answer::Study(SharedStudy {
+                    file,
+                    judged_under: self.small()?,
+                    verdict: self.text()?,
+                    cutoff_hz: self.optional_number()?,
+                    cutoff_drop: self.optional_figure()?,
+                    lossy_guess: self.optional_text()?,
+                    upsampled_from: self.optional_number()?,
+                    bits_in_use: self.optional_byte()?,
+                    declared_bits: self.optional_byte()?,
+                    peak: self.figure()?,
+                    rms: self.figure()?,
+                    true_peak: self.figure()?,
+                    loudness: self.optional_figure()?,
+                    loudness_range: self.optional_figure()?,
+                    dynamic_range: self.optional_byte()?,
+                    clipped: self.number()?,
+                    mono_as_stereo: self.flag()?,
+                    band_levels: self.bytes(BAND_LEVELS_AT_MOST)?.to_vec(),
+                })))
+            }
+            _ => Ok(None),
         }
     }
 
@@ -1006,6 +1125,12 @@ pub fn encoded_change(change: &Change) -> Vec<u8> {
                 None => writer.flag(false),
             }
         }
+        Change::Answer(note) => {
+            writer.byte(7);
+            writer.recording(&note.recording);
+            writer.stamp(note.stamp);
+            writer.answer(&note.answer);
+        }
     }
     writer.finish()
 }
@@ -1116,6 +1241,18 @@ fn decoded_change(bytes: &[u8]) -> Result<Option<Change>> {
             };
             Change::Query(QueryNote { key, stamp, body })
         }
+        7 => {
+            let recording = reader.recording()?;
+            let stamp = reader.stamp()?;
+            let Some(answer) = reader.answer()? else {
+                return Ok(None);
+            };
+            Change::Answer(AnswerNote {
+                recording,
+                stamp,
+                answer,
+            })
+        }
         _ => return Ok(None),
     };
     reader.done()?;
@@ -1140,6 +1277,21 @@ pub fn decoded_recordings(bytes: &[u8]) -> Result<Vec<Recording>> {
     }
     reader.done()?;
     Ok(recordings)
+}
+
+pub fn encoded_answer(answer: &Answer) -> Vec<u8> {
+    let mut writer = Writer::new();
+    writer.answer(answer);
+    writer.finish()
+}
+
+pub fn decoded_answer(bytes: &[u8]) -> Result<Option<Answer>> {
+    let mut reader = Reader::new(bytes);
+    let answer = reader.answer()?;
+    if answer.is_some() {
+        reader.done()?;
+    }
+    Ok(answer)
 }
 
 pub fn encoded_recording(recording: &Recording) -> Vec<u8> {
@@ -1470,6 +1622,19 @@ mod tests {
                 stamp: stamp(),
                 body: None,
             }),
+            Change::Answer(AnswerNote {
+                recording: song("Echoes"),
+                stamp: stamp(),
+                answer: Answer::Lyrics(SharedLyrics {
+                    text: "[00:01.00] Overhead the albatross".into(),
+                    synced: true,
+                }),
+            }),
+            Change::Answer(AnswerNote {
+                recording: song("Echoes"),
+                stamp: stamp(),
+                answer: studied(),
+            }),
         ];
 
         let mut bundle = encoded_bundle(&changes);
@@ -1478,6 +1643,57 @@ mod tests {
         bundle[0] += 1;
         bundle.extend_from_slice(&[1, 200]);
         assert_eq!(decoded_bundle(&bundle).expect("decoded"), changes);
+    }
+
+    fn studied() -> Answer {
+        Answer::Study(SharedStudy {
+            file: WholeFile {
+                packets: u64::MAX,
+                frames: 61_871_400,
+                rate: 44_100,
+            },
+            judged_under: 1,
+            verdict: "genuine".into(),
+            cutoff_hz: Some(21_000),
+            cutoff_drop: Some(Figure::of(31.5)),
+            lossy_guess: None,
+            upsampled_from: None,
+            bits_in_use: Some(16),
+            declared_bits: Some(16),
+            peak: Figure::of(-0.3),
+            rms: Figure::of(-18.25),
+            true_peak: Figure::of(f32::NAN),
+            loudness: Some(Figure::of(-14.1)),
+            loudness_range: None,
+            dynamic_range: Some(11),
+            clipped: 3,
+            mono_as_stereo: false,
+            band_levels: vec![0, 4, 255, 9],
+        })
+    }
+
+    #[test]
+    fn an_answer_of_a_kind_a_later_build_adds_is_skipped_and_the_rest_read() {
+        let known = Change::Answer(AnswerNote {
+            recording: song("Echoes"),
+            stamp: stamp(),
+            answer: studied(),
+        });
+        let mut later = Writer::new();
+        later.byte(7);
+        later.recording(&song("Echoes"));
+        later.stamp(stamp());
+        later.byte(200);
+        later.text("a release");
+        let mut bundle = Writer::new();
+        bundle.length(2);
+        bundle.bytes(&later.finish());
+        bundle.bytes(&encoded_change(&known));
+
+        assert_eq!(
+            decoded_bundle(&bundle.finish()).expect("decoded"),
+            vec![known]
+        );
     }
 
     #[test]

@@ -11,10 +11,11 @@ use std::{
     time::Duration,
 };
 
-use resonate_core::{MediaLocation, Recording};
+use resonate_analysis::Watch;
+use resonate_core::{Answer, Answered, MediaLocation, Recording};
 use resonate_library::{
-    AlbumQuery, Cut, DeliveryFolder, Direction, HeldTags, Layout, Library, Result, SavedQuery,
-    ScanOptions, ScanStats, SongFiled, SortOrder, SyncedQueryBody, TrackQuery, Vault,
+    AlbumQuery, Cut, DeliveryFolder, Direction, HeldTags, Layout, Library, LyricText, Result,
+    SavedQuery, ScanOptions, ScanStats, SongFiled, SortOrder, SyncedQueryBody, TrackQuery, Vault,
 };
 
 const RATE: u32 = 44_100;
@@ -57,8 +58,13 @@ impl Drop for Tree {
 }
 
 fn tagged_wav(title: &str, artist: &str, album: &str) -> Vec<u8> {
+    tagged_wav_opening_on(title, artist, album, 0)
+}
+
+fn tagged_wav_opening_on(title: &str, artist: &str, album: &str, first: u8) -> Vec<u8> {
     let block_align = CHANNELS * BITS / 8;
-    let data = vec![0_u8; (RATE * SECONDS) as usize * usize::from(block_align)];
+    let mut data = vec![0_u8; (RATE * SECONDS) as usize * usize::from(block_align)];
+    data[0] = first;
 
     let mut format = Vec::new();
     format.extend_from_slice(&1_u16.to_le_bytes());
@@ -1008,5 +1014,99 @@ fn a_copy_numbered_beside_its_song_is_folded_into_it_and_one_that_differs_is_lef
         [MediaLocation::local(&original)]
     );
     assert!(library.numbered_copies()?.numbered.is_empty());
+    Ok(())
+}
+
+fn answers_of(answered: &[Answered]) -> Vec<(&str, &Answer)> {
+    let mut answers = answered
+        .iter()
+        .map(|answered| (answered.recording.title.as_str(), &answered.answer))
+        .collect::<Vec<_>>();
+    answers.sort_by_key(|(_, answer)| matches!(answer, Answer::Study(_)));
+    answers
+}
+
+#[test]
+fn a_study_and_kept_words_land_on_a_catalog_holding_the_same_file_and_read_back_as_they_went()
+-> Result<()> {
+    let tree = Tree::new();
+    let echoes = tree.song("Floyd/Meddle/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let here = Library::open_in_memory()?;
+    let there = Library::open_in_memory()?;
+    scan(&here, &tree.root)?;
+    scan(&there, &tree.root)?;
+    let location = MediaLocation::local(&echoes);
+    let track = here.track_held(&location, None)?.expect("a held track");
+    let study = resonate_analysis::study(&here.sources(), &location, None, &Watch::default())
+        .expect("a study");
+    here.note_study(track, &study)?;
+    let words = LyricText {
+        text: "[00:01.00] Overhead the albatross".into(),
+        synced: true,
+        lyricsfile: None,
+    };
+    here.keep_lyrics(&location, None, Some(&words))?;
+
+    let shared = here.answers_to_share(0, 10)?;
+    let taken = shared
+        .iter()
+        .map(|answered| there.take_shared_answer(&answered.recording, &answered.answer))
+        .collect::<Result<Vec<_>>>()?;
+    let read_back = there.answers_to_share(0, 10)?;
+
+    assert_eq!(shared.len(), 2);
+    assert_eq!(taken, [true, true]);
+    assert_eq!(answers_of(&read_back), answers_of(&shared));
+    assert!(there.study_of(&location, None)?.is_some());
+    assert_eq!(
+        there
+            .kept_lyrics(&location, None)?
+            .and_then(|kept| kept.sung)
+            .map(|sung| sung.text),
+        Some(words.text)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_study_of_another_encode_or_words_for_another_take_are_never_written() -> Result<()> {
+    let here_tree = Tree::new();
+    let there_tree = Tree::new();
+    let echoes = here_tree.song("echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let other_encode = there_tree.root.join("echoes.wav");
+    fs::write(
+        &other_encode,
+        tagged_wav_opening_on("Echoes", "Pink Floyd", "Meddle", 9),
+    )
+    .expect("a written song");
+    let here = Library::open_in_memory()?;
+    let there = Library::open_in_memory()?;
+    scan(&here, &here_tree.root)?;
+    scan(&there, &there_tree.root)?;
+    let location = MediaLocation::local(&echoes);
+    let track = here.track_held(&location, None)?.expect("a held track");
+    let study = resonate_analysis::study(&here.sources(), &location, None, &Watch::default())
+        .expect("a study");
+    here.note_study(track, &study)?;
+
+    let shared = here.answers_to_share(0, 10)?;
+    let another_take = Recording {
+        length: Some(Duration::from_secs(u64::from(SECONDS) + 30)),
+        ..song("Echoes", "Pink Floyd", "Meddle")
+    };
+    let words = Answer::Lyrics(resonate_core::SharedLyrics {
+        text: "Overhead the albatross".into(),
+        synced: false,
+    });
+
+    assert_eq!(shared.len(), 1);
+    assert!(!there.take_shared_answer(&shared[0].recording, &shared[0].answer)?);
+    assert!(!there.take_shared_answer(&another_take, &words)?);
+    assert!(
+        there
+            .study_of(&MediaLocation::local(&other_encode), None)?
+            .is_none()
+    );
+    assert!(there.answers_to_share(0, 10)?.is_empty());
     Ok(())
 }
