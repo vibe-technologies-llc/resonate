@@ -58,8 +58,9 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   not refused (`a_bundle_of_every_change_reads_back_and_an_unknown_change_is_skipped`). **A saved
   query is `Change::Query` (wire tag 6)**: key, stamp, then a body (name, optional text, sort code,
   reading code, optional row cap) or none for a tombstone; a build without it skips it as it skips any
-  later tag. The two codes are the library's `store::sort_code` and `direction_code`, which are
-  stored and so never renumbered. One cost of that tolerance: a build without tag 6 that compacts the
+  later tag. The two codes are the library's `SortOrder::code` and `Direction::code` (`coded` reads
+  them back; `store::sort_code` and `direction_code` are the same numbers), which the desktop and the
+  phones both store and so are never renumbered. One cost of that tolerance: a build without tag 6 that compacts the
   server's log writes a snapshot lacking the queries. **A device hearing a `Compacted` it did not ask
   for owes every query again** (`Ledger::owe_queries`) and pushes at once, so the records after the
   snapshot carry them to a device joining from the server alone
@@ -126,9 +127,14 @@ platforms; the catalog seam stays thin.
   there first). A list and a query of one name stay two, the catalog's free alias keeping them
   apart. A body the receiving catalog cannot read (a sort or reading code a later build added) is
   kept in the ledger and passed on, written nowhere (`Refused::Unwritable`), and tried again when a
-  newer note arrives. **A catalog that keeps no queries** (`Catalog::keeps_queries`, false by
-  default, as on the phones, which have no saved-query playlists) never looks at queries and stores
-  and forwards every note untouched, so a snapshot through it still carries them.
+  newer note arrives and at every `settle`. **A catalog that keeps no queries**
+  (`Catalog::keeps_queries`, false by default; the desktop and both phones keep them) never looks at
+  queries and stores and forwards every note untouched, so a snapshot through it still carries them.
+  **A note held but written nowhere is written by `settle`** (`settle_queries`: every query row with
+  no local id and no tombstone, once the catalog keeps queries), adopting an unmapped local query of
+  the same folded name with the synced body standing, as the first look would, so a phone that
+  passed queries on before it kept them holds them after the upgrade without waiting for an edit
+  (`a_device_that_begins_keeping_queries_takes_up_those_it_passed_on_and_adopts_its_own_namesake`).
 - **Two playlists of one folded name meeting for the first time become one** (adopted, the local
   entries the other lacks appended). An arriving name another playlist holds lands as the catalog's
   free alias (`Mix (2)`); the alias is never sent back as a rename.

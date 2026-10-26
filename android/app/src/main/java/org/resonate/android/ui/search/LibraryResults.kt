@@ -440,6 +440,19 @@ private fun LazyListScope.answered(
             onlineSection(online, onlineFound, model, act)
         }
         LibraryScope.SONGS -> {
+            item(key = "save-search") {
+                val sheets = LocalSheets.current
+                Row(Modifier.fillMaxWidth().padding(horizontal = Sizes.gutter), horizontalArrangement = Arrangement.End) {
+                    TextButton(
+                        onClick = {
+                            sheets.name("Save search as playlist", answer.query) { model.saveSearch(it, answer.query) }
+                        },
+                        modifier = Modifier.testTag("save-search"),
+                    ) {
+                        Text("Save as playlist")
+                    }
+                }
+            }
             songs(answer, found.tracks, found.tracks, playing, model, more)
             if (found.trackCount > found.tracks.size.toUInt()) {
                 item(key = "songs-capped") {

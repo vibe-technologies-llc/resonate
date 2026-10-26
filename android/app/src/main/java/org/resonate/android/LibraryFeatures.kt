@@ -42,6 +42,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import org.resonate.android.nativecore.SavedSearch
+import org.resonate.android.nativecore.SearchOrder
 import org.resonate.android.nativecore.AnalysisReport
 import org.resonate.android.nativecore.ArtistInformation
 import org.resonate.android.nativecore.AutoEqDevice
@@ -1070,6 +1072,15 @@ class LibraryFeatures(private val context: Context, private val library: Library
         if (track != null) native.addToPlaylist(id, listOf(track.id))
         playlists.value = native.playlists()
         if (openPlaylist.value == id) reloadPlaylist(native, id)
+    }
+
+    fun saveSearch(name: String, text: String) = work { native ->
+        native.saveSearch(
+            name,
+            SavedSearch(text = text, order = SearchOrder.RELEVANCE, descending = false, rows = null),
+        )
+        playlists.value = native.playlists()
+        library.notice("Saved “$name” among your playlists")
     }
 
     fun addToPlaylist(id: ULong, track: Track) = addToPlaylist(id, listOf(track))

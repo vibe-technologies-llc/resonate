@@ -28,6 +28,7 @@ mod queue_edit;
 mod resuming_tests;
 mod rewriting;
 mod room;
+mod saved_searches;
 mod search;
 mod sharing;
 mod stamp;
@@ -71,6 +72,7 @@ pub use crate::{
         SleepTimer, default_playback_preferences,
     },
     rewriting::DocumentRewriting,
+    saved_searches::{SavedSearch, SearchOrder, search_order_reads_descending},
     watching::PlayerWatch,
 };
 

@@ -289,6 +289,11 @@ class SearchViewModel(private val resonate: Resonate) : ViewModel() {
         features.keepRecentSearches(keptSearch(recent.value, query.value))
     }
 
+    fun saveSearch(name: String, text: String) {
+        keep()
+        features.saveSearch(name, text)
+    }
+
     fun forget(text: String) {
         features.keepRecentSearches(forgottenSearch(recent.value, text))
     }

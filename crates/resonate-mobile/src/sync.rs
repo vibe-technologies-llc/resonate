@@ -19,9 +19,9 @@ use resonate_core::{
 };
 use resonate_engine::Command;
 use resonate_sync::{
-    Catalog, Follow, Handoff, Held, LocalListen, LocalPlaylist, LocalPlaylistId, Me, Nearby,
-    Opened, Platform, Refused, RemoteListen, Resumed, Server, Settings, SongTags, Standing, Sync,
-    SyncDevice, SyncKey, TransferState,
+    Catalog, Follow, Handoff, Held, LocalListen, LocalPlaylist, LocalPlaylistId, LocalQuery, Me,
+    Nearby, Opened, Platform, QueryBody, Refused, RemoteListen, Resumed, Server, Settings,
+    SongTags, Standing, Sync, SyncDevice, SyncKey, TransferState,
 };
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use unicode_normalization::UnicodeNormalization;
@@ -33,6 +33,7 @@ use crate::{
     error::{ReceivedOp, SyncOp},
     features::SearchSong,
     playlists,
+    saved_searches::{StoredQuery, write_stored_query},
 };
 
 const LEDGER: &str = "sync.sqlite";
@@ -732,7 +733,7 @@ impl Catalog for DocumentCatalog {
     fn playlists(&self) -> Answered<Vec<LocalPlaylist>> {
         let connection = self.catalog.0.lock();
         let listed = connection
-            .prepare("SELECT id, created, name FROM playlists ORDER BY id")
+            .prepare("SELECT id, created, name FROM playlists WHERE id NOT IN (SELECT playlist FROM playlist_queries) ORDER BY id")
             .and_then(|mut query| {
                 query
                     .query_map([], |row| {
@@ -773,7 +774,7 @@ impl Catalog for DocumentCatalog {
         let held = match at {
             Some(at) => transaction
                 .query_row(
-                    "SELECT id FROM playlists WHERE id = ?1 AND created = ?2",
+                    "SELECT id FROM playlists WHERE id = ?1 AND created = ?2 AND id NOT IN (SELECT playlist FROM playlist_queries)",
                     params![at.id, at.created],
                     |row| row.get::<_, i64>(0),
                 )
@@ -834,6 +835,101 @@ impl Catalog for DocumentCatalog {
             self.arrived();
         }
         Ok(())
+    }
+
+    fn keeps_queries(&self) -> bool {
+        true
+    }
+
+    fn queries(&self) -> Answered<Vec<LocalQuery>> {
+        let connection = self.catalog.0.lock();
+        connection
+            .prepare(
+                "SELECT p.id, p.created, p.name, q.text, q.sort, q.reading, q.max_rows
+                   FROM playlists p JOIN playlist_queries q ON q.playlist = p.id
+                  ORDER BY p.id",
+            )
+            .and_then(|mut query| {
+                query
+                    .query_map([], |row| {
+                        Ok(LocalQuery {
+                            at: LocalPlaylistId {
+                                id: row.get(0)?,
+                                created: row.get(1)?,
+                            },
+                            body: QueryBody {
+                                name: row.get(2)?,
+                                text: row.get(3)?,
+                                sort: row.get(4)?,
+                                reading: row.get(5)?,
+                                rows: row.get(6)?,
+                            },
+                        })
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .map_err(unavailable)
+    }
+
+    fn write_query(&self, at: Option<LocalPlaylistId>, body: &QueryBody) -> Answered<LocalQuery> {
+        let stored = StoredQuery {
+            text: body.text.clone(),
+            sort: body.sort,
+            reading: body.reading,
+            rows: body.rows,
+        };
+        if stored.query().is_none() {
+            return Err(Refused::Unwritable);
+        }
+
+        let mut connection = self.catalog.0.lock();
+        let transaction = connection.transaction().map_err(unavailable)?;
+        let held = match at {
+            Some(at) => transaction
+                .query_row(
+                    "SELECT p.id FROM playlists p JOIN playlist_queries q ON q.playlist = p.id WHERE p.id = ?1 AND p.created = ?2",
+                    params![at.id, at.created],
+                    |row| row.get::<_, i64>(0),
+                )
+                .optional()
+                .map_err(unavailable)?,
+            None => None,
+        };
+        let id = match held {
+            Some(id) => id,
+            None => {
+                let named = a_free_name(&transaction, &body.name, None).map_err(unavailable)?;
+                transaction
+                    .execute(
+                        "INSERT INTO playlists(name, folded, created) VALUES (?1, ?2, ?3)",
+                        params![named, playlists::folded(&named), playlists::created_now()],
+                    )
+                    .map_err(unavailable)?;
+                transaction.last_insert_rowid()
+            }
+        };
+        let name = a_free_name(&transaction, &body.name, Some(id)).map_err(unavailable)?;
+        transaction
+            .execute(
+                "UPDATE playlists SET name = ?2, folded = ?3, revision = revision + 1 WHERE id = ?1",
+                params![id, name, playlists::folded(&name)],
+            )
+            .map_err(unavailable)?;
+        write_stored_query(&transaction, id as u64, &stored).map_err(unavailable)?;
+        let created: i64 = transaction
+            .query_row("SELECT created FROM playlists WHERE id = ?1", [id], |row| {
+                row.get(0)
+            })
+            .map_err(unavailable)?;
+        transaction.commit().map_err(unavailable)?;
+        self.arrived();
+        Ok(LocalQuery {
+            at: LocalPlaylistId { id, created },
+            body: QueryBody {
+                name,
+                ..body.clone()
+            },
+        })
     }
 
     fn favourites(&self) -> Answered<Vec<Recording>> {
@@ -1571,6 +1667,72 @@ mod tests {
     }
 
     #[test]
+    fn a_saved_query_from_another_device_is_held_as_a_saved_search_apart_from_the_lists() {
+        let folder = folder("queries");
+        let player = player(&folder);
+        let documents = documents_of(&player, &folder);
+        song(&player, "content://test/joga.flac", "Jóga", None);
+        let list = player.create_playlist("Mix".into()).expect("a list");
+        let body = |name: &str, sort: u8| QueryBody {
+            name: name.into(),
+            text: Some("artist:bjork".into()),
+            sort,
+            reading: 1,
+            rows: Some(10),
+        };
+        let list_at = LocalPlaylistId {
+            id: list as i64,
+            created: player.synced_playlist(list).expect("listed").created,
+        };
+
+        let written = documents
+            .write_query(Some(list_at), &body("Mix", 2))
+            .expect("written");
+
+        assert_ne!(written.at, list_at);
+        assert_eq!(written.body.name, "Mix (2)");
+        assert_eq!(
+            documents.queries().expect("the queries"),
+            vec![written.clone()]
+        );
+        assert_eq!(
+            documents
+                .playlists()
+                .expect("the lists")
+                .iter()
+                .map(|playlist| playlist.at)
+                .collect::<Vec<_>>(),
+            vec![list_at]
+        );
+        let shown = player.playlists().expect("the playlists");
+        let held = shown
+            .iter()
+            .find(|playlist| playlist.id == written.at.id as u64)
+            .expect("the saved search");
+        assert_eq!(held.songs, 1);
+        assert_eq!(
+            held.search.as_ref().map(|search| search.text.as_str()),
+            Some("artist:bjork")
+        );
+        assert_eq!(
+            documents.write_query(None, &body("Later", u8::MAX)),
+            Err(Refused::Unwritable)
+        );
+        assert_ne!(
+            documents
+                .write_playlist(Some(written.at), "Mix (2)", &[])
+                .expect("a list")
+                .at,
+            written.at
+        );
+
+        documents.remove_playlist(written.at).expect("removed");
+
+        assert!(documents.queries().expect("the queries").is_empty());
+        let _ = fs::remove_dir_all(folder);
+    }
+
+    #[test]
     fn a_catalog_laid_out_at_its_first_version_is_carried_forward() {
         let folder = folder("migrated");
         let path = folder.join("documents.sqlite");
@@ -1603,7 +1765,18 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("the columns");
+        let queries: i64 = opened
+            .0
+            .lock()
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE name = 'playlist_queries'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("the table");
+
         assert_eq!(columns, 2);
+        assert_eq!(queries, 1);
         let _ = fs::remove_dir_all(folder);
     }
 

@@ -7,6 +7,7 @@ struct SearchTab: View {
     @Environment(Navigation.self) private var navigation
     @State private var seeAll: SearchScope?
     @State private var actions = OnlineSongActions()
+    @State private var savingSearch = false
 
     var body: some View {
         let search = library.tabSearch
@@ -40,9 +41,28 @@ struct SearchTab: View {
         .navigationTitle("Search")
         .navigationDestination(item: $seeAll) { LibrarySearchPage(scope: $0) }
         .toolbar {
+            if !search.query.isEmpty, !OnlineAsked.isLink(search.query) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { savingSearch = true } label: { Label("Save as playlist", systemImage: "bookmark") }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { navigation.listening = true } label: { Label("Listen", systemImage: "ear") }
             }
+        }
+        .alert("Save search as playlist", isPresented: $savingSearch) {
+            PlaylistNameField(initial: search.query) { name in
+                remember(search)
+                library.features.saveSearch(name, text: search.query) { problem in
+                    if let problem {
+                        library.fail(problem)
+                    } else {
+                        library.notice("Saved \(name) among your playlists")
+                    }
+                }
+            }
+        } message: {
+            Text("The playlist fills itself with the songs this search finds.")
         }
         .onlineSongActions($actions)
         .onAppear {

@@ -49,8 +49,8 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Providers and network
 
 ## Device sync
-- [L · 0.2.0] The phones carry saved-query playlists on to other devices but hold none themselves: their
-  catalog has no saved queries and no search grammar to read one with
+- [S · 0.2.0] A phone saves a search only in its relevance order with no row cap, and cannot revise a
+  saved search's text, order or cap once made, though a revision made on the desktop arrives
 
 ## Equaliser and DSP
 

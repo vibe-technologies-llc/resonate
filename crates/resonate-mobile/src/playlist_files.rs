@@ -4,7 +4,7 @@ use resonate_core::{Locator, MediaLocation, folded_letters, text};
 use resonate_library::{Described, PlaylistFormat, SheetRow, read_sheet, written_sheet};
 use rusqlite::{Connection, params};
 
-use crate::{Error, MobilePlayer, Result, StoreOp};
+use crate::{Error, MobilePlayer, Result, StoreOp, saved_searches::saved_query};
 
 const PLAYLIST_FILE_AT_MOST: usize = 8 * 1024 * 1024;
 
@@ -102,36 +102,30 @@ impl MobilePlayer {
     }
 
     pub fn export_playlist(&self, id: u64, format: PlaylistFileFormat) -> Result<String> {
-        let connection = self.catalog.0.lock();
-        let name: String = connection
-            .query_row(
-                "SELECT name FROM playlists WHERE id = ?1",
-                [id as i64],
-                |row| row.get(0),
-            )
-            .map_err(|source| match source {
-                rusqlite::Error::QueryReturnedNoRows => Error::UnknownPlaylist,
-                source => Error::store(StoreOp::Read, source),
-            })?;
-        let mut query = connection
-            .prepare("SELECT d.uri, d.title, d.artist, d.duration_ms FROM playlist_rows p JOIN documents d ON d.id = p.track WHERE p.playlist = ?1 AND d.missing = 0 ORDER BY p.position")
-            .map_err(|source| Error::store(StoreOp::Read, source))?;
-        let rows = query
-            .query_map([id as i64], |row| {
-                let artist: String = row.get(2)?;
-                let milliseconds: i64 = row.get(3)?;
-                Ok((
-                    row.get::<_, String>(0)?,
-                    Described {
-                        seconds: (milliseconds > 0).then_some(milliseconds as u64 / 1000),
-                        artist: (!artist.is_empty()).then_some(artist),
-                        title: row.get(1)?,
-                    },
-                ))
-            })
-            .map_err(|source| Error::store(StoreOp::Read, source))?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        let (name, query) = {
+            let connection = self.catalog.0.lock();
+            let name: String = connection
+                .query_row(
+                    "SELECT name FROM playlists WHERE id = ?1",
+                    [id as i64],
+                    |row| row.get(0),
+                )
+                .map_err(|source| match source {
+                    rusqlite::Error::QueryReturnedNoRows => Error::UnknownPlaylist,
+                    source => Error::store(StoreOp::Read, source),
+                })?;
+            (name, saved_query(&connection, id)?)
+        };
+        let rows = match query {
+            Some(query) => self
+                .services
+                .searching
+                .saved_page(&self.catalog, &query, 0, ROWS_AT_MOST)?
+                .into_iter()
+                .map(|track| described(track.uri, track.title, track.artist, track.duration_ms))
+                .collect(),
+            None => self.listed_rows(id)?,
+        };
 
         let files = rows
             .iter()
@@ -156,6 +150,26 @@ impl MobilePlayer {
 }
 
 impl MobilePlayer {
+    fn listed_rows(&self, id: u64) -> Result<Vec<(String, Described)>> {
+        let connection = self.catalog.0.lock();
+        let mut query = connection
+            .prepare("SELECT d.uri, d.title, d.artist, d.duration_ms FROM playlist_rows p JOIN documents d ON d.id = p.track WHERE p.playlist = ?1 AND d.missing = 0 ORDER BY p.position")
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        query
+            .query_map([id as i64], |row| {
+                let milliseconds: i64 = row.get(3)?;
+                Ok(described(
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    milliseconds.max(0) as u64,
+                ))
+            })
+            .map_err(|source| Error::store(StoreOp::Read, source))?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|source| Error::store(StoreOp::Read, source))
+    }
+
     fn make_playlist_named_free(&self, wanted: &str, tracks: Vec<u64>) -> Result<(u64, String)> {
         let mut attempt = 1;
         loop {
@@ -253,6 +267,17 @@ fn stem_of(file_name: &str) -> &str {
         .file_stem()
         .and_then(|stem| stem.to_str())
         .unwrap_or(file_name)
+}
+
+fn described(uri: String, title: String, artist: String, milliseconds: u64) -> (String, Described) {
+    (
+        uri,
+        Described {
+            seconds: (milliseconds > 0).then_some(milliseconds / 1000),
+            artist: (!artist.is_empty()).then_some(artist),
+            title,
+        },
+    )
 }
 
 #[cfg(test)]

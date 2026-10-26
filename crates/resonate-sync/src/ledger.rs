@@ -1586,6 +1586,8 @@ impl Ledger {
             settled += 1;
         }
 
+        settled += self.settle_queries(catalog)?;
+
         for (key, recording) in self.favourites_not_here()? {
             if catalog.favour(&recording, true).map_err(Error::Catalog)? {
                 self.connection
@@ -1608,6 +1610,58 @@ impl Ledger {
                     .map_err(|source| Error::store(StoreOp::Write, source))?;
                 settled += 1;
             }
+        }
+        Ok(settled)
+    }
+
+    fn settle_queries(&mut self, catalog: &dyn Catalog) -> Result<usize> {
+        if !catalog.keeps_queries() {
+            return Ok(0);
+        }
+        let unwritten = self.stored_queries_where("local_id IS NULL AND gone = 0")?;
+        if unwritten.is_empty() {
+            return Ok(0);
+        }
+
+        let mut locals = catalog.queries().map_err(Error::Catalog)?;
+        let mut settled = 0;
+        for stored in unwritten {
+            let mut alike = None;
+            for (at, local) in locals.iter().enumerate() {
+                if names_alike(&local.body.name, &stored.body.name)
+                    && !self.maps_local_query(local.at)?
+                {
+                    alike = Some(at);
+                    break;
+                }
+            }
+            let adopted = alike.map(|at| locals.remove(at).at);
+            let wanted = QueryBody {
+                name: stored
+                    .alias
+                    .clone()
+                    .unwrap_or_else(|| stored.body.name.clone()),
+                ..stored.body.clone()
+            };
+            let written = match catalog.write_query(adopted, &wanted) {
+                Ok(written) => written,
+                Err(Refused::Unwritable) => continue,
+                Err(refused) => return Err(Error::Catalog(refused)),
+            };
+            let alias = (written.body.name != stored.body.name).then(|| written.body.name.clone());
+            self.connection
+                .execute(
+                    "UPDATE queries SET local_id = ?2, local_created = ?3, alias = ?4, seen = ?5 WHERE key = ?1",
+                    params![
+                        stored.key.0.as_slice(),
+                        written.at.id,
+                        written.at.created,
+                        alias,
+                        query_digest(&written.body).as_slice()
+                    ],
+                )
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
+            settled += 1;
         }
         Ok(settled)
     }

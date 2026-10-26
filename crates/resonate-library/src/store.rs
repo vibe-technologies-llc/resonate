@@ -500,40 +500,23 @@ pub const fn codec_code(codec: Codec) -> i64 {
 }
 
 pub const fn sort_code(sort: SortOrder) -> i64 {
-    match sort {
-        SortOrder::Relevance => 0,
-        SortOrder::AlbumThenTrack => 1,
-        SortOrder::Title => 2,
-        SortOrder::Artist => 3,
-        SortOrder::DateAdded => 4,
-        SortOrder::Duration => 5,
-        SortOrder::Plays => 6,
-        SortOrder::Played => 7,
-        SortOrder::Favourited => 8,
-        SortOrder::PlaysThisMonth => 9,
-    }
+    sort.code() as i64
 }
 
 pub const fn sort_of(playlist: PlaylistId, code: i64) -> Result<SortOrder> {
-    Ok(match code {
-        0 => SortOrder::Relevance,
-        1 => SortOrder::AlbumThenTrack,
-        2 => SortOrder::Title,
-        3 => SortOrder::Artist,
-        4 => SortOrder::DateAdded,
-        5 => SortOrder::Duration,
-        6 => SortOrder::Plays,
-        7 => SortOrder::Played,
-        8 => SortOrder::Favourited,
-        9 => SortOrder::PlaysThisMonth,
-        _ => {
-            return Err(Error::UnknownOrder {
-                playlist,
-                column: OrderedColumn::Sort,
-                code,
-            });
-        }
-    })
+    let coded = if code >= 0 && code <= u8::MAX as i64 {
+        SortOrder::coded(code as u8)
+    } else {
+        None
+    };
+    match coded {
+        Some(sort) => Ok(sort),
+        None => Err(Error::UnknownOrder {
+            playlist,
+            column: OrderedColumn::Sort,
+            code,
+        }),
+    }
 }
 
 pub const fn row_order_code(order: RowOrder) -> i64 {
@@ -562,10 +545,7 @@ pub const fn row_order_of(playlist: PlaylistId, code: i64) -> Result<RowOrder> {
 }
 
 pub const fn direction_code(direction: Direction) -> i64 {
-    match direction {
-        Direction::Ascending => 0,
-        Direction::Descending => 1,
-    }
+    direction.code() as i64
 }
 
 pub const fn direction_of(
@@ -573,10 +553,14 @@ pub const fn direction_of(
     column: OrderedColumn,
     code: i64,
 ) -> Result<Direction> {
-    match code {
-        0 => Ok(Direction::Ascending),
-        1 => Ok(Direction::Descending),
-        code => Err(Error::UnknownOrder {
+    let coded = if code >= 0 && code <= u8::MAX as i64 {
+        Direction::coded(code as u8)
+    } else {
+        None
+    };
+    match coded {
+        Some(direction) => Ok(direction),
+        None => Err(Error::UnknownOrder {
             playlist,
             column,
             code,

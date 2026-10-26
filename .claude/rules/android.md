@@ -186,7 +186,7 @@ all, a 0.1.0 file the steps after `V1`); there is no copy kept before one. A lat
 step and never edits `V1`; step 2 gave `listens` the `origin_device` and `origin_id` a remote listen
 is credited by, unique together, and step 3 rebuilt `listens` with `AUTOINCREMENT`, as the desktop's is, so a deleted
 song's listen ids are never handed to the next listen (the ledger and scrobbling read `id > mark`), seeding the
-sequence past the highest `submissions.through`; step 4 gave `documents` an `added` (Unix seconds) that the `documents_dated` trigger sets on every insert, which the search index reads for `added:`; step 5 dates the rows step 4 found undated by their file's modification time (`modified` in ms, capped at now) and, for one never stamped, by the migration's own time, so no row is undated; step 6 gave `studies` an `agreement` (what `resonate_library::agreement` said of the audio against the song's name) that the `documents_forget_what_was_heard` trigger clears when a document's `size` or `modified` moves. A version past the chain is `Error::CatalogVersion`. `V1` holds `documents` (the metadata, the lookup's clocks `asked`/`answered`
+sequence past the highest `submissions.through`; step 4 gave `documents` an `added` (Unix seconds) that the `documents_dated` trigger sets on every insert, which the search index reads for `added:`; step 5 dates the rows step 4 found undated by their file's modification time (`modified` in ms, capped at now) and, for one never stamped, by the migration's own time, so no row is undated; step 6 gave `studies` an `agreement` (what `resonate_library::agreement` said of the audio against the song's name) that the `documents_forget_what_was_heard` trigger clears when a document's `size` or `modified` moves; step 7 made `playlist_queries` (`playlist` keyed to `playlists(id)` with `ON DELETE CASCADE`, `text`, `sort`, `reading`, `max_rows`: the desktop's columns and codes), the saved search a playlist fills itself from. A version past the chain is `Error::CatalogVersion`. `V1` holds `documents` (the metadata, the lookup's clocks `asked`/`answered`
 as nanosecond stamps with `asks` and `refusals`, `release_group`, `isrc` kept from tags on index,
 `album_key`, `art_changed`, `missing`, and `size`, `modified` and `indexed_by`, the stamp a scan saw
 the file by and the `INDEXING_REVISION` that read it), `resume`, `queue`, `lyrics`, `listens`
@@ -459,6 +459,25 @@ would not outlive the process.
 The song sheet holds *Share link* (`shareLink`: `share_link(id)` on the
 IO dispatcher, then the system `ACTION_SEND` chooser with the link as text; no link is a notice) and,
 from a queue row's *More* button, *Remove from queue* by `queueId`; the swipe stays.
+
+**A playlist is a list or a saved search, as on the desktop** (`saved_searches.rs`). A saved search
+is a `playlists` row with a `playlist_queries` row beside it, holding no `playlist_rows`; the boundary's
+`SavedSearch` is its text (blank asks every song), a `SearchOrder` (the desktop's ten `SortOrder`s),
+`descending` and an optional row cap, and `MusicPlaylist.search` carries it (`None` for a list). It is
+read when asked, never stored as rows: `playlist_tracks`, `export_playlist` and the listing's `songs`
+and `covers` run it through the search index (`Searching::saved`: the grammar's every clause, then
+`SortOrder::Relevance` ranks as `search_library` does where the text has lone words and is the album
+order otherwise, the other orders read the index's columns with the desktop's tie on the title, the
+reading reverses, the cap cuts), so it answers differently once the catalog or the clock moves; a
+page's `queue_id` is the row's place in the answer. `save_search(name, search)` makes one (one undo
+step); rename, delete and undo are a list's calls (undo restores the query with the row); `add_to_playlist`,
+`remove_from_playlist` and `move_in_playlist` refuse it with `NotAList`
+(`a_saved_search_answers_from_the_catalog_in_its_order_and_under_its_cap`,
+`a_saved_search_refuses_list_edits_and_is_renamed_deleted_and_restored_whole`).
+`search_order_reads_descending(order)` is the desktop's `SortOrder::reads`. Android saves a search from
+Search's Songs scope (*Save as playlist*, named in the naming sheet, relevance order, no cap); its
+playlist page shows *Saved search* and the text, plain rows without swipe, handle or *Add songs*, and
+its menu keeps rename, undo and delete; the *Add to playlist* picker lists lists alone.
 
 Filters combine search text, folded artist/genre/album, minimum rate/depth, favourites and unplayed,
 with seven stable orders (title, album, artist, duration, added, plays and last played, the latest
@@ -958,7 +977,12 @@ reuses the code of the sync it replaces, so two starts in a row never mint two c
 A song is found by recording id, else by folded artist, title words, album when named and a length
 within 2 s, the desktop rule; the lookup reads an in-memory index rebuilt whenever the catalog
 revision moves. That revision is an update hook over `documents`, `playlists`, `playlist_rows`,
-`received` and inserted or deleted `listens`. A synced playlist write replaces its rows, takes a free
+`playlist_queries`, `received` and inserted or deleted `listens`. **The phones keep saved queries**
+(`keeps_queries`): `DocumentCatalog::playlists` lists only the playlists with no `playlist_queries`
+row and `queries` the rest, `write_query` refuses a sort or reading code `SortOrder::coded` or
+`Direction::coded` cannot read (`Refused::Unwritable`) and makes a new playlist where `at` names a
+list, as `write_playlist` does where it names a saved search
+(`a_saved_query_from_another_device_is_held_as_a_saved_search_apart_from_the_lists`). A synced playlist write replaces its rows, takes a free
 name and steps `playlists.revision`, so an undo step from before it is refused as changed. Only this
 device's counted listens are offered, the newest one only once 15 minutes old; another device's
 listen is kept with `elsewhere = 1`, counts in history and statistics and is never scrobbled.

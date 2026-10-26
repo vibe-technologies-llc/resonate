@@ -10,8 +10,8 @@ use resonate_analysis::Verdict;
 use resonate_codec::Codec;
 use resonate_core::{folded_letters, is_lettered};
 use resonate_library::{
-    Agreement, Column, Compare, Condition, Grain, Reach, Search, Shape, Spellings, Term,
-    disc_in_folder,
+    Agreement, Column, Compare, Condition, Direction, Grain, Reach, SavedQuery, Search, Shape,
+    SortOrder, Spellings, Term, disc_in_folder,
 };
 use rusqlite::{Connection, params};
 
@@ -45,6 +45,8 @@ const YEAR_DIGITS: usize = 4;
 const FIRST_DISC: u32 = 1;
 
 const PICTURED_BY_AT_MOST: usize = 4;
+
+const A_MONTH_OF_PLAYS: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 
 static NOTHING_SUNG: Name = Name { words: Vec::new() };
 
@@ -197,6 +199,11 @@ impl MobilePlayer {
     }
 }
 
+pub(crate) struct Measured {
+    pub(crate) songs: u64,
+    pub(crate) covers: Vec<u64>,
+}
+
 #[derive(Default)]
 pub(crate) struct Searching {
     held: Mutex<Option<Arc<Index>>>,
@@ -340,22 +347,77 @@ impl Searching {
             return Ok(Vec::new());
         };
 
-        let mut pictured: Vec<usize> = Vec::new();
-        for at in found.iter().copied().take(LISTED_AT_MOST as usize) {
-            if pictured.len() == PICTURED_BY_AT_MOST {
-                break;
-            }
-            let Some(album) = index.rows[at].album_group else {
-                continue;
-            };
-            if !pictured.contains(&album) && index.albums[album].has_a_picture(&index.rows) {
-                pictured.push(album);
-            }
-        }
-        Ok(pictured
-            .into_iter()
-            .map(|album| index.albums[album].artwork_track)
+        Ok(index.pictured_among(&found))
+    }
+
+    pub(crate) fn measured(&self, catalog: &Catalog, query: &SavedQuery) -> Result<Measured> {
+        let (index, found) = self.saved(catalog, query)?;
+
+        Ok(Measured {
+            songs: found.len() as u64,
+            covers: index.pictured_among(&found),
+        })
+    }
+
+    pub(crate) fn saved_page(
+        &self,
+        catalog: &Catalog,
+        query: &SavedQuery,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<Track>> {
+        let (index, found) = self.saved(catalog, query)?;
+
+        Ok(found
+            .iter()
+            .enumerate()
+            .skip(offset)
+            .take(limit)
+            .map(|(position, at)| {
+                let mut track = index.rows[*at].track.clone();
+                track.queue_id = Some(position as u64);
+                track
+            })
             .collect())
+    }
+
+    fn saved(&self, catalog: &Catalog, query: &SavedQuery) -> Result<(Arc<Index>, Vec<usize>)> {
+        let search = Search::read(query.text.as_deref().unwrap_or_default());
+        let index = self.index(catalog)?;
+        let asking = self.asking(catalog, &search)?;
+        let sung = self.sung_for(catalog, &asking)?;
+        let ranked = query.sort == SortOrder::Relevance && !asking.ranked.is_empty();
+
+        let mut found: Vec<(Standing, usize)> = index
+            .rows
+            .iter()
+            .enumerate()
+            .filter_map(|(at, row)| {
+                asking
+                    .standing(row, sung.as_deref().and_then(|sung| sung.of(row)))
+                    .map(|standing| (standing, at))
+            })
+            .collect();
+        found.sort_unstable_by(|(one_standing, one), (other_standing, other)| {
+            let (one, other) = (&index.rows[*one], &index.rows[*other]);
+            let ordered = if ranked {
+                in_ranked_order((*one_standing, one), (*other_standing, other))
+            } else {
+                in_saved_order(query.sort, one, other, asking.now)
+            };
+            let directed = match query.reading {
+                Direction::Ascending => ordered,
+                Direction::Descending => ordered.reverse(),
+            };
+            directed.then(one.track.id.cmp(&other.track.id))
+        });
+
+        let mut found: Vec<usize> = found.into_iter().map(|(_, at)| at).collect();
+        if let Some(rows) = query.limit {
+            found.truncate(rows);
+        }
+
+        Ok((index, found))
     }
 
     fn admitted_in_order(
@@ -1440,15 +1502,31 @@ impl Index {
             .collect();
         found.sort_unstable_by(|(one_standing, one), (other_standing, other)| {
             let (one, other) = (&self.rows[*one], &self.rows[*other]);
-            other_standing
-                .cmp(one_standing)
-                .then(other.track.favourite.cmp(&one.track.favourite))
-                .then(other.plays().cmp(&one.plays()))
-                .then_with(|| one.filed_title.cmp(&other.filed_title))
+            in_ranked_order((*one_standing, one), (*other_standing, other))
                 .then(one.track.id.cmp(&other.track.id))
         });
 
         found.into_iter().map(|(_, at)| at).collect()
+    }
+
+    fn pictured_among(&self, found: &[usize]) -> Vec<u64> {
+        let mut pictured: Vec<usize> = Vec::new();
+        for at in found.iter().copied().take(LISTED_AT_MOST as usize) {
+            if pictured.len() == PICTURED_BY_AT_MOST {
+                break;
+            }
+            let Some(album) = self.rows[at].album_group else {
+                continue;
+            };
+            if !pictured.contains(&album) && self.albums[album].has_a_picture(&self.rows) {
+                pictured.push(album);
+            }
+        }
+
+        pictured
+            .into_iter()
+            .map(|album| self.albums[album].artwork_track)
+            .collect()
     }
 
     fn albums_among(&self, found: &[usize], asking: &Asking, most: usize) -> Vec<AlbumHit> {
@@ -1634,6 +1712,48 @@ fn in_track_order(order: TrackOrder, one: &Row, other: &Row) -> Ordering {
         TrackOrder::Added => one.track.id.cmp(&other.track.id),
         TrackOrder::Plays => one.plays().cmp(&other.plays()),
         TrackOrder::Played => one.played().cmp(&other.played()),
+    }
+}
+
+fn in_ranked_order(one: (Standing, &Row), other: (Standing, &Row)) -> Ordering {
+    let ((one_standing, one), (other_standing, other)) = (one, other);
+
+    other_standing
+        .cmp(&one_standing)
+        .then(other.track.favourite.cmp(&one.track.favourite))
+        .then(other.plays().cmp(&one.plays()))
+        .then_with(|| one.filed_title.cmp(&other.filed_title))
+}
+
+fn in_saved_order(sort: SortOrder, one: &Row, other: &Row, now: i64) -> Ordering {
+    let titles_falling = || other.filed_title.cmp(&one.filed_title);
+
+    match sort {
+        SortOrder::Relevance | SortOrder::AlbumThenTrack => {
+            in_track_order(TrackOrder::Album, one, other)
+        }
+        SortOrder::Title => in_track_order(TrackOrder::Title, one, other),
+        SortOrder::Artist => in_track_order(TrackOrder::Artist, one, other),
+        SortOrder::DateAdded => one
+            .added
+            .cmp(&other.added)
+            .then(other.track.id.cmp(&one.track.id)),
+        SortOrder::Duration => in_track_order(TrackOrder::Duration, one, other),
+        SortOrder::Plays => one.plays().cmp(&other.plays()).then_with(titles_falling),
+        SortOrder::Played => one.played().cmp(&other.played()).then_with(titles_falling),
+        SortOrder::Favourited => one
+            .track
+            .favourite
+            .cmp(&other.track.favourite)
+            .then_with(titles_falling),
+        SortOrder::PlaysThisMonth => {
+            let since = now.saturating_sub(seconds_of(A_MONTH_OF_PLAYS));
+            let lately = |row: &Row| row.heard.iter().filter(|at| **at >= since).count();
+            lately(one)
+                .cmp(&lately(other))
+                .then(one.plays().cmp(&other.plays()))
+                .then_with(titles_falling)
+        }
     }
 }
 

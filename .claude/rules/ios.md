@@ -667,7 +667,13 @@ every route change (a pair of headphones at the same rate included), not from th
   every edit reads the playlist's latest revision inside the library's ordered lane; a refused edit, a scan, and the hiding or restoring of missing songs or a folder's songs reload the open page, and a reload lands only if it is the latest asked (`Features.playlistRequest`); its rows survive a
   page pushed over it and are dropped when it is left; the page pops itself when the playlist
   disappears. A playlist's count is the rows its page shows (hidden songs are not counted), so a
-  playlist of hidden songs reads as empty and offers *Your playlist starts here*. The playlist
+  playlist of hidden songs reads as empty and offers *Your playlist starts here*. **A saved search**
+  (`MusicPlaylist.search`, `android.md`'s *A playlist is a list or a saved search*) is the same page
+  subtitled *Saved search*, its text a line under the header and its songs plain `TrackRow`s
+  (`SavedSearchRows`): no *Add songs*, Edit, swipe or move, and no *Your devices* section in its
+  options; the playlist picker lists lists alone. The Search tab's toolbar offers *Save as playlist*
+  while it holds a library search, named in an alert (`Features.saveSearch`, relevance order, no
+  cap). The playlist
   picker stays open until the edit has answered: it says "Added to X" and closes on success, and
   on a failure (a duplicate name in *Create and add*) shows it under the field; Now Playing's picker
   is made for the song playing when *Add to playlist* was chosen, not the one playing when a row is

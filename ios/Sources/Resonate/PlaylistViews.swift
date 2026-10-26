@@ -87,33 +87,15 @@ struct PlaylistView: View {
         let playlist = features.playlists.first { $0.id == id }
         let rows = features.openPlaylist == id ? features.playlistRows : []
         let name = playlist?.name ?? "Playlist"
+        let search = playlist?.search
         List {
-            CollectionHeader(title: name, subtitle: "Playlist", tracks: rows) {
+            CollectionHeader(title: name, subtitle: search == nil ? "Playlist" : "Saved search", tracks: rows) {
                 PlaylistArtwork(playlist: playlist, corner: 20)
             }
-            if rows.isEmpty, playlist?.songs == 0 {
-                VStack(spacing: 12) {
-                    Text("Your playlist starts here. Add songs from your library to make it yours.")
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.secondary)
-                    Button("Add songs", systemImage: "plus") { adding = true }
-                        .buttonStyle(.glass)
-                }
-                .frame(maxWidth: .infinity)
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-            }
-            ForEach(entries.of(rows)) { entry in
-                PlaylistRow(entry: entry, count: rows.count, move: move, remove: remove)
-                    .equatable()
-                    .listRowBackground(Color.clear)
-            }
-            .onMove { from, to in
-                guard let start = from.first else { return }
-                move(start, to: RowMoves.playlist(from: start, destination: to))
-            }
-            .onDelete { offsets in
-                for position in offsets.sorted(by: >) { remove(position) }
+            if let search {
+                SavedSearchRows(search: search, rows: rows)
+            } else {
+                listRows(rows, empty: playlist?.songs == 0)
             }
         }
         .listStyle(.plain)
@@ -123,17 +105,19 @@ struct PlaylistView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sensoryFeedback(.selection, trigger: edited)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Add songs", systemImage: "plus") { adding = true }
+            if search == nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Add songs", systemImage: "plus") { adding = true }
+                }
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
+                ToolbarItem(placement: .topBarTrailing) { EditButton() }
             }
-            ToolbarSpacer(.fixed, placement: .topBarTrailing)
-            ToolbarItem(placement: .topBarTrailing) { EditButton() }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu("Playlist options", systemImage: "ellipsis") {
                     if !rows.isEmpty {
                         CollectionQueueActions(tracks: rows, choosingPlaylist: $choosingPlaylist, queued: $queued)
                     }
-                    PlaylistOptions(id: id, renaming: $renaming, deleting: $deleting, export: export)
+                    PlaylistOptions(id: id, fills: search != nil, renaming: $renaming, deleting: $deleting, export: export)
                 }
                 .simultaneousGesture(TapGesture().onEnded { features.loadPlaylistSync(id) })
             }
@@ -178,6 +162,34 @@ struct PlaylistView: View {
         }
         .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: rows) }
         .sensoryFeedback(.success, trigger: queued)
+    }
+
+    @ViewBuilder
+    private func listRows(_ rows: [Track], empty: Bool) -> some View {
+        if rows.isEmpty, empty {
+            VStack(spacing: 12) {
+                Text("Your playlist starts here. Add songs from your library to make it yours.")
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+                Button("Add songs", systemImage: "plus") { adding = true }
+                    .buttonStyle(.glass)
+            }
+            .frame(maxWidth: .infinity)
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+        }
+        ForEach(entries.of(rows)) { entry in
+            PlaylistRow(entry: entry, count: rows.count, move: move, remove: remove)
+                .equatable()
+                .listRowBackground(Color.clear)
+        }
+        .onMove { from, to in
+            guard let start = from.first else { return }
+            move(start, to: RowMoves.playlist(from: start, destination: to))
+        }
+        .onDelete { offsets in
+            for position in offsets.sorted(by: >) { remove(position) }
+        }
     }
 
     private func export(_ format: PlaylistFileFormat) {
@@ -229,6 +241,7 @@ struct PlaylistView: View {
 struct PlaylistOptions: View {
     @Environment(Library.self) private var library
     let id: UInt64
+    var fills = false
     @Binding var renaming: Bool
     @Binding var deleting: Bool
     let export: (PlaylistFileFormat) -> Void
@@ -249,7 +262,7 @@ struct PlaylistOptions: View {
             }
             Button("Delete playlist", systemImage: "trash", role: .destructive) { deleting = true }
         }
-        if let sync, features.syncStatus?.standing != .off {
+        if let sync, !fills, features.syncStatus?.standing != .off {
             Section("Your devices") {
                 Toggle("Keep its songs here", isOn: Binding(get: { sync.kept }, set: { features.keepSongs(id, $0) }))
                 if sync.missing > 0 {
@@ -260,6 +273,34 @@ struct PlaylistOptions: View {
                     }
                 }
             }
+        }
+    }
+}
+
+struct SavedSearchRows: View {
+    @Environment(Library.self) private var library
+    let search: SavedSearch
+    let rows: [Track]
+
+    var body: some View {
+        Text(search.text.isEmpty ? "Every song" : search.text)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+        if rows.isEmpty {
+            Text("No song in your library matches this search yet.")
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+        }
+        ForEach(Array(rows.enumerated()), id: \.offset) { position, track in
+            TrackRow(track: track) {
+                library.play(rows, at: position)
+            }
+            .listRowBackground(Color.clear)
         }
     }
 }
@@ -464,7 +505,7 @@ struct PlaylistPicker: View {
                     if let failure { Text(failure).foregroundStyle(.red) }
                 }
                 Section {
-                    ForEach(library.features.playlists, id: \.id) { playlist in
+                    ForEach(library.features.playlists.filter { $0.search == nil }, id: \.id) { playlist in
                         Button {
                             asking = true
                             library.features.addToPlaylist(playlist.id, tracks) { finished($0, playlist.name) }

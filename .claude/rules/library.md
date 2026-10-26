@@ -185,7 +185,8 @@ rows read via `Player::media` like any unscanned row.
   credit, else the credit. Pure SQL, so any SQLite keeps it; every track order and order index is
   declared on the two filed columns.
 - **A saved query's direction is its own column.** `playlist_queries.sort` = order alone
-  (`store::sort_code`/`sort_of`); `playlist_queries.reading` = direction (`direction_code`/
+  (`store::sort_code`/`sort_of`, over `SortOrder::code`/`coded`, the one table the phones' catalog
+  and the sync wire read too); `playlist_queries.reading` = direction (`direction_code`/
   `direction_of`; `OrderedColumn::Reading` names it in a refusal). It once rode in `sort` as order +
   `READ_BACKWARDS`, which an older build misread.
 - **The planner is told, and connections are sized to their job.** `schema::restate_the_statistics`

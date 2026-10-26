@@ -454,6 +454,35 @@ fn a_device_keeping_no_queries_passes_them_on_untouched() {
 }
 
 #[test]
+fn a_device_that_begins_keeping_queries_takes_up_those_it_passed_on_and_adopts_its_own_namesake() {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut pocket = Device::new("Pocket", &["A"]);
+    pocket.shelf.inside.lock().without_queries = true;
+    desk.shelf.make_query("Recent", "added:<30d");
+    desk.shelf.make_query("Unheard", "plays:0");
+    sync(&mut desk, &mut pocket);
+
+    pocket.shelf.inside.lock().without_queries = false;
+    pocket.shelf.make_query("unheard", "plays:<2");
+    let settled = pocket.ledger.settle(&pocket.shelf).expect("settled");
+
+    assert_eq!(settled, 2);
+    assert_eq!(pocket.shelf.query_names(), ["Unheard", "Recent"]);
+    assert_eq!(
+        pocket.shelf.query_named("Unheard").map(|(_, text)| text),
+        Some(Some("plays:0".to_owned()))
+    );
+    let echoed = pocket.send();
+    assert!(
+        echoed
+            .iter()
+            .all(|change| !matches!(change, Change::Query(_))),
+        "{echoed:?}"
+    );
+    assert_eq!(pocket.ledger.settle(&pocket.shelf).expect("settled"), 0);
+}
+
+#[test]
 fn a_snapshot_brings_a_new_device_its_saved_queries_and_not_the_dropped_ones() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);

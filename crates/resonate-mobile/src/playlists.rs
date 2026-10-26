@@ -1,9 +1,17 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use resonate_library::SavedQuery;
 use rusqlite::{Connection, OptionalExtension, params};
 use unicode_normalization::UnicodeNormalization;
 
-use crate::{Error, MobilePlayer, Result, StoreOp, Track, catalog::read};
+use crate::{
+    Error, MobilePlayer, Result, StoreOp, Track,
+    catalog::read,
+    saved_searches::{
+        SavedSearch, StoredQuery, refuse_a_saved_search, saved_query, stored_query,
+        write_stored_query,
+    },
+};
 
 const COVERS_AT_MOST: i64 = 4;
 
@@ -22,6 +30,8 @@ pub struct MusicPlaylist {
     pub revision: u64,
     #[uniffi(default = [])]
     pub covers: Vec<u64>,
+    #[uniffi(default = None)]
+    pub search: Option<SavedSearch>,
 }
 
 #[derive(Clone)]
@@ -30,6 +40,7 @@ struct SavedPlaylist {
     revision: u64,
     created: i64,
     rows: Vec<u64>,
+    query: Option<SavedQuery>,
 }
 
 pub(crate) struct PlaylistUndo {
@@ -41,32 +52,64 @@ pub(crate) struct PlaylistUndo {
 #[uniffi::export]
 impl MobilePlayer {
     pub fn playlists(&self) -> Result<Vec<MusicPlaylist>> {
-        let connection = self.catalog.0.lock();
-        let mut query = connection.prepare("SELECT id, name, (SELECT count(*) FROM playlist_rows r JOIN documents d ON d.id = r.track WHERE r.playlist = p.id AND d.missing = 0), revision FROM playlists p ORDER BY folded, id").map_err(read_error)?;
-        let mut covers = connection
-            .prepare(THE_COVERS_OF_A_PLAYLIST)
-            .map_err(read_error)?;
-        query
-            .query_map([], |row| {
-                let id = row.get::<_, i64>(0)?;
-                Ok(MusicPlaylist {
-                    id: id as u64,
-                    name: row.get(1)?,
-                    songs: row.get::<_, i64>(2)? as u64,
-                    revision: row.get::<_, i64>(3)? as u64,
-                    covers: covers
-                        .query_map(params![id, COVERS_AT_MOST], |cover| {
-                            Ok(cover.get::<_, i64>(0)? as u64)
-                        })?
-                        .collect::<rusqlite::Result<Vec<_>>>()?,
+        let listed = {
+            let connection = self.catalog.0.lock();
+            let mut query = connection.prepare("SELECT id, name, (SELECT count(*) FROM playlist_rows r JOIN documents d ON d.id = r.track WHERE r.playlist = p.id AND d.missing = 0), revision FROM playlists p ORDER BY folded, id").map_err(read_error)?;
+            let mut covers = connection
+                .prepare(THE_COVERS_OF_A_PLAYLIST)
+                .map_err(read_error)?;
+            let rows = query
+                .query_map([], |row| {
+                    let id = row.get::<_, i64>(0)?;
+                    Ok(MusicPlaylist {
+                        id: id as u64,
+                        name: row.get(1)?,
+                        songs: row.get::<_, i64>(2)? as u64,
+                        revision: row.get::<_, i64>(3)? as u64,
+                        covers: covers
+                            .query_map(params![id, COVERS_AT_MOST], |cover| {
+                                Ok(cover.get::<_, i64>(0)? as u64)
+                            })?
+                            .collect::<rusqlite::Result<Vec<_>>>()?,
+                        search: None,
+                    })
                 })
+                .map_err(read_error)?
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(read_error)?;
+            rows.into_iter()
+                .map(|playlist| {
+                    let query = saved_query(&connection, playlist.id)?;
+                    Ok((playlist, query))
+                })
+                .collect::<Result<Vec<_>>>()?
+        };
+
+        listed
+            .into_iter()
+            .map(|(mut playlist, query)| {
+                if let Some(query) = query {
+                    let measured = self.services.searching.measured(&self.catalog, &query)?;
+                    playlist.songs = measured.songs;
+                    playlist.covers = measured.covers;
+                    playlist.search = Some(SavedSearch::of(&query));
+                }
+                Ok(playlist)
             })
-            .map_err(read_error)?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(read_error)
+            .collect()
     }
 
     pub fn playlist_tracks(&self, id: u64, offset: u32, limit: u32) -> Result<Vec<Track>> {
+        let query = saved_query(&self.catalog.0.lock(), id)?;
+        if let Some(query) = query {
+            return self.services.searching.saved_page(
+                &self.catalog,
+                &query,
+                offset as usize,
+                limit.min(500) as usize,
+            );
+        }
+
         let connection = self.catalog.0.lock();
         let mut query = connection.prepare("SELECT d.*, p.position FROM playlist_rows p JOIN documents d ON d.id = p.track WHERE p.playlist = ?1 AND d.missing = 0 ORDER BY p.position LIMIT ?2 OFFSET ?3").map_err(read_error)?;
         query
@@ -100,6 +143,7 @@ impl MobilePlayer {
 
     pub fn add_to_playlist(&self, id: u64, tracks: Vec<u64>) -> Result<()> {
         self.edit_playlist(id, None, |connection| {
+            refuse_a_saved_search(connection, id)?;
             let first: i64 = connection
                 .query_row(
                     "SELECT coalesce(max(position) + 1, 0) FROM playlist_rows WHERE playlist = ?1",
@@ -121,6 +165,7 @@ impl MobilePlayer {
 
     pub fn remove_from_playlist(&self, id: u64, revision: u64, position: u32) -> Result<()> {
         self.edit_playlist(id, Some(revision), |connection| {
+            refuse_a_saved_search(connection, id)?;
             let mut rows = playlist_rows(connection, id)?;
             let shown = shown_positions(connection, &rows)?;
             let Some(at) = shown.get(position as usize) else {
@@ -133,6 +178,7 @@ impl MobilePlayer {
 
     pub fn move_in_playlist(&self, id: u64, revision: u64, from: u32, to: u32) -> Result<()> {
         self.edit_playlist(id, Some(revision), |connection| {
+            refuse_a_saved_search(connection, id)?;
             let mut rows = playlist_rows(connection, id)?;
             let shown = shown_positions(connection, &rows)?;
             let (Some(from), Some(to)) = (shown.get(from as usize), shown.get(to as usize)) else {
@@ -184,6 +230,7 @@ impl MobilePlayer {
                 refuse_duplicate(&transaction, &before.name, step.id)?;
                 transaction.execute("INSERT INTO playlists(id, name, folded, revision, created) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(id) DO UPDATE SET name = excluded.name, folded = excluded.folded, revision = excluded.revision, created = excluded.created", params![step.id as i64, before.name, folded(&before.name), before.revision as i64, before.created]).map_err(write_error)?;
                 replace_rows(&transaction, step.id, &before.rows)?;
+                restore_query(&transaction, step.id, before.query.as_ref())?;
             }
             None => {
                 transaction
@@ -199,6 +246,14 @@ impl MobilePlayer {
 
 impl MobilePlayer {
     pub(crate) fn make_playlist(&self, name: String, tracks: Vec<u64>) -> Result<u64> {
+        self.make(name, &tracks, None)
+    }
+
+    pub(crate) fn make_saved_search(&self, name: String, query: &SavedQuery) -> Result<u64> {
+        self.make(name, &[], Some(query))
+    }
+
+    fn make(&self, name: String, tracks: &[u64], query: Option<&SavedQuery>) -> Result<u64> {
         let name = valid_name(&name)?;
         let mut history = self.playlist_undo.lock();
         let mut connection = self.catalog.0.lock();
@@ -211,7 +266,8 @@ impl MobilePlayer {
             )
             .map_err(write_error)?;
         let id = transaction.last_insert_rowid() as u64;
-        replace_rows(&transaction, id, &tracks)?;
+        replace_rows(&transaction, id, tracks)?;
+        restore_query(&transaction, id, query)?;
         transaction.commit().map_err(write_error)?;
         remember_playlist(
             &mut history,
@@ -322,6 +378,7 @@ fn saved_playlist(connection: &Connection, id: u64) -> Result<Option<SavedPlayli
             revision: revision as u64,
             created,
             rows: playlist_rows(connection, id)?,
+            query: stored_query(connection, id)?.and_then(|stored| stored.query()),
         })
     })
     .transpose()
@@ -368,6 +425,21 @@ pub(crate) fn replace_rows(connection: &Connection, id: u64, rows: &[u64]) -> Re
             .map_err(write_error)?;
     }
     Ok(())
+}
+
+fn restore_query(connection: &Connection, id: u64, query: Option<&SavedQuery>) -> Result<()> {
+    match query {
+        Some(query) => {
+            write_stored_query(connection, id, &StoredQuery::of(query)).map_err(write_error)
+        }
+        None => connection
+            .execute(
+                "DELETE FROM playlist_queries WHERE playlist = ?1",
+                [id as i64],
+            )
+            .map(drop)
+            .map_err(write_error),
+    }
 }
 
 fn read_error(source: rusqlite::Error) -> Error {
