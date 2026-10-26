@@ -17,12 +17,15 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   `build-std`
 
 ## Playback and output
-- [M · 0.2.0] A mid-track change still reopens the PipeWire stream where it moves what the stream was
-  connected with: its rate while `force-graph-rate` pins it (on by default; moving `node.rate` needs
-  `pw_stream_update_properties`, which pipewire-rs does not wrap), the pin itself, or `NO_CONVERT`
-  (the rate policy or DoP turning the plan between converted and not); a turn of rate inside a row
-  reopens after its drain, and Oboe and RemoteIO reshape nothing
+- [M · 0.2.0] Oboe and RemoteIO reshape nothing: every rebind, renegotiation and turn of rate or
+  channels inside a row closes the phone's stream and opens another
 - [L · 0.2.0] One playback stream and one capture stream only; concurrent playback streams unsupported
+- [M · blocked: pipewire-rs] A rebind or turn inside a row that moves the rate while
+  `force-graph-rate` pins it (on by default), or switches the pin, still reopens the PipeWire stream:
+  the pin is the node's `node.rate` property, which only `pw_stream_update_properties` moves, and
+  pipewire-rs 0.10.1 (and its main branch) does not wrap it; no param, `Props` key or per-node
+  metadata reaches a node's properties, and the `settings` metadata's `clock.force-rate` would force
+  every client's graph and outlive a crash
 
 ## Formats
 - [M · blocked: ape-decoder] A 32-bit stereo Monkey's Audio, integer or float, is refused:

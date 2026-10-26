@@ -161,6 +161,7 @@ struct Graph {
     active: bool,
     played: Vec<u8>,
     opened_after: Vec<usize>,
+    reshaped_after: Vec<usize>,
     sinks: Vec<SinkInfo>,
     enumerations: usize,
     announce: Option<Sender<SinkChange>>,
@@ -364,6 +365,8 @@ fn reshaper(graph: Arc<Mutex<Graph>>, settles: bool) -> Reshaper {
         }
 
         graph.reshapes += 1;
+        let heard = graph.played.len();
+        graph.reshaped_after.push(heard);
         graph.requests.push(request.clone());
         graph.source = Some(source);
 
@@ -9248,6 +9251,75 @@ fn a_stream_turning_to_another_rate_reopens_the_output_at_the_turn_and_plays_on_
     assert!(sounds(
         &graph.played[..links[0].frames() * F32_STEREO_FRAME]
     ));
+    assert!(sounds(
+        &graph.played[links[0].frames() * F32_STEREO_FRAME..]
+    ));
+    assert!(
+        !player
+            .events()
+            .try_iter()
+            .any(|event| matches!(event, Event::Failed { .. })),
+        "the turn failed the row"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_stream_turning_to_another_rate_has_the_stream_it_drained_reshaped_rather_than_reopened()
+-> Result<()> {
+    let tree = Tree::new();
+    let links = [MONO_AT_CD_RATE, STEREO_AT_DAT_RATE];
+    let Some(path) = joined(&tree, "chained.ogg", &links, &VORBIS_IN_OGG) else {
+        return Ok(());
+    };
+    let (backend, graph) = FakeSink::with_tail(
+        vec![sink(
+            &[SampleRate::HZ_44100, SampleRate::HZ_48000],
+            &[SampleFormat::F32],
+        )],
+        0,
+        true,
+    );
+    let backend = backend.reshaping(Reshaping::Settled);
+    let player = Player::with_backend(config(), move |_| Ok(Box::new(backend)))?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+
+    let whole = (links[0].frames() + links[1].frames()) * F32_STEREO_FRAME;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * F32_STEREO_FRAME,
+        |_, graph| graph.played.len() >= whole,
+        "both links to reach the graph",
+    );
+
+    let graph = graph.lock();
+    assert_eq!(
+        graph.opens, 1,
+        "the turn reopened a stream it could reshape"
+    );
+    assert_eq!(graph.closes, 0, "the drained stream was closed");
+    assert_eq!(graph.reshapes, 1, "the turn did not reshape the stream");
+    assert_eq!(
+        graph
+            .requests
+            .iter()
+            .map(|request| (request.spec.rate, request.spec.channels))
+            .collect::<Vec<_>>(),
+        [
+            (SampleRate::HZ_44100, ChannelLayout::Stereo),
+            (SampleRate::HZ_48000, ChannelLayout::Stereo)
+        ]
+    );
+    assert_eq!(
+        graph.reshaped_after.first().copied(),
+        Some(links[0].frames() * F32_STEREO_FRAME)
+    );
+    assert_eq!(graph.played.len(), whole);
     assert!(sounds(
         &graph.played[links[0].frames() * F32_STEREO_FRAME..]
     ));

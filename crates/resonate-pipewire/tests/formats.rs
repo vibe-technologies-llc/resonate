@@ -515,6 +515,87 @@ fn a_live_stream_handed_a_new_source_and_format(folder: &Path) {
     );
 }
 
+fn a_stream_drained_or_turned_between_converted_and_not(folder: &Path) {
+    let pipewire = PipeWire::start(STREAM).expect("the hosted daemon answers");
+    let sinks = the_hosted_sinks(&pipewire);
+    let hosting = HOSTED[3];
+    let sink = named(&sinks, hosting.sink);
+    let asked = request(sink, hosting.spec);
+    let converted = StreamRequest {
+        no_convert: false,
+        ..asked.clone()
+    };
+    let pinned = StreamRequest {
+        force_graph_rate: true,
+        ..asked.clone()
+    };
+    let first = Arc::new(AtomicUsize::new(0));
+    let second = Arc::new(AtomicUsize::new(0));
+    let refused = Arc::new(AtomicUsize::new(0));
+    let after_the_drain = Arc::new(AtomicUsize::new(0));
+
+    let stream = pipewire
+        .open(
+            &asked,
+            Box::new(Counting {
+                pulled: Arc::clone(&first),
+            }),
+        )
+        .expect("the stream opens");
+    stream.set_active(true).expect("the stream activates");
+    let linked =
+        until(|| port_the_stream(folder, hosting)) && until(|| link_the_stream(folder, hosting));
+    let wanted = bytes_in_a_quarter_second(hosting);
+    let first_flowed = until(|| first.load(Ordering::Relaxed) >= wanted);
+
+    let turned = matches!(pulled_from(&stream, &converted, &second), Reshaped::Kept);
+    let turned_flowed = until(|| second.load(Ordering::Relaxed) >= wanted);
+    let pin = match pulled_from(&stream, &pinned, &refused) {
+        Reshaped::Refused { because, .. } => Some(because),
+        Reshaped::Kept | Reshaped::Lost(_) => None,
+    };
+
+    let _ = stream.events().try_iter().count();
+    stream.drain().expect("the stream takes a drain");
+    let drained = until(|| {
+        stream
+            .events()
+            .try_iter()
+            .any(|event| event == StreamEvent::Drained)
+    });
+    let revived = matches!(
+        pulled_from(&stream, &asked, &after_the_drain),
+        Reshaped::Kept
+    );
+    let flowed_after_the_drain = until(|| after_the_drain.load(Ordering::Relaxed) >= wanted);
+    let _ = stream.close();
+    let _ = pipewire.shutdown();
+
+    assert!(linked, "the stream never linked");
+    assert!(first_flowed, "the first source was never pulled");
+    assert!(
+        turned,
+        "a stream turning between converted and not was refused"
+    );
+    assert!(turned_flowed, "the source handed over was never pulled");
+    assert_eq!(
+        pin,
+        Some(Unreshapable::PinnedRateMoved),
+        "a stream took a pin it was not connected with"
+    );
+    assert_eq!(
+        refused.load(Ordering::Relaxed),
+        0,
+        "a refused source was pulled"
+    );
+    assert!(drained, "the stream never said it drained");
+    assert!(revived, "a drained stream would not take a new source");
+    assert!(
+        flowed_after_the_drain,
+        "the source handed to a drained stream was never pulled"
+    );
+}
+
 fn a_sink_leaving_under_an_open_stream(folder: &Path) {
     let pipewire = PipeWire::start(STREAM).expect("the hosted daemon answers");
     let changes = pipewire.subscribe_sinks();
@@ -680,6 +761,15 @@ fn a_live_stream_takes_a_new_source_and_a_new_rate_without_reopening() {
         "a_live_stream_takes_a_new_source_and_a_new_rate_without_reopening",
         "r",
         a_live_stream_handed_a_new_source_and_format,
+    );
+}
+
+#[test]
+fn a_live_stream_takes_a_turn_between_converted_and_not_and_a_new_source_once_drained() {
+    hosted_as(
+        "a_live_stream_takes_a_turn_between_converted_and_not_and_a_new_source_once_drained",
+        "d",
+        a_stream_drained_or_turned_between_converted_and_not,
     );
 }
 

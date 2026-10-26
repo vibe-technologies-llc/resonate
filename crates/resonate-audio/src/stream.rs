@@ -149,12 +149,13 @@ pub enum StreamEvent {
 pub enum Unreshapable {
     Unsupported,
     AnotherTarget,
-    AnotherConversion,
     AnotherPriority,
     PinnedRateMoved,
     StillHandingOver,
     NoStream,
     FormatUnwritten,
+    StillDraining,
+    DrainUnstopped,
 }
 
 #[must_use]
