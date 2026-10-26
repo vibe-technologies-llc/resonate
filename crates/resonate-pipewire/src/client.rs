@@ -1,5 +1,5 @@
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     collections::{BTreeMap, BTreeSet},
     io, iter, mem,
     rc::Rc,
@@ -39,15 +39,16 @@ use resonate_core::{Gain, SampleRate, StreamSpec};
 
 use crate::{
     AudioSink, AudioSource, CaptureRequest, CaptureStream, Capturing, CardProfile, Error,
-    LatencyRequest, MediaRole, Microphone, NodeName, PodParam, PwOp, Result, SinkChange,
+    LatencyRequest, MediaRole, Microphone, NodeName, PodParam, PwOp, Reshaped, Result, SinkChange,
     SinkFormats, SinkId, SinkInfo, SinkPort, SinkStream, StreamClock, StreamCommand, StreamEvent,
-    StreamRequest, StreamState,
+    StreamRequest, StreamState, Unreshapable,
     format::{
-        AdvertisedFormat, AdvertisedRoute, RouteChange, RouteSetting, WireWord, negotiated,
-        packs_narrower, parse_allowed_rates, parse_default_sink, parse_enum_format, parse_profile,
-        parse_rate, parse_route, route_change, running_rate, spa_format, spa_position,
+        AdvertisedFormat, AdvertisedRoute, Negotiated, RouteChange, RouteSetting, WireWord,
+        negotiated, packs_narrower, parse_allowed_rates, parse_default_sink, parse_enum_format,
+        parse_profile, parse_rate, parse_route, route_change, running_rate, spa_format,
+        spa_position,
     },
-    process::{Cycle, Hearing, Taking},
+    process::{Cycle, Fed, Feed, Handing, Hearing, Taking, fed_from},
     props::StreamLevels,
 };
 
@@ -55,8 +56,101 @@ type Pending = Rc<RefCell<Vec<(i32, Sender<()>)>>>;
 type Nodes = Rc<RefCell<BTreeMap<u32, (Node, NodeListener)>>>;
 type Devices = Rc<RefCell<BTreeMap<u32, (Device, DeviceListener)>>>;
 type Metadatas = Rc<RefCell<BTreeMap<u32, (Metadata, MetadataListener, HeldIn)>>>;
-type ActiveStream = Opened<Box<dyn AudioSource>>;
 type HeardStream = Opened<Box<dyn AudioSink>>;
+
+struct ActiveStream {
+    opened: Opened<Fed>,
+    handing: Handing,
+    asked: Rc<Cell<StreamSpec>>,
+    settled: Rc<Cell<Option<Negotiated>>>,
+    taking: Arc<Taking>,
+    clock: Arc<StreamClock>,
+    request: StreamRequest,
+}
+
+impl ActiveStream {
+    fn stream(&self) -> &StreamRc {
+        &self.opened.stream
+    }
+
+    fn refuses(&self, request: &StreamRequest) -> Option<Unreshapable> {
+        let open = &self.request;
+        let pins_the_rate = open.force_graph_rate || request.force_graph_rate;
+        if request.target != open.target {
+            Some(Unreshapable::AnotherTarget)
+        } else if request.no_convert != open.no_convert {
+            Some(Unreshapable::AnotherConversion)
+        } else if request.realtime != open.realtime || request.latency != open.latency {
+            Some(Unreshapable::AnotherPriority)
+        } else if request.force_graph_rate != open.force_graph_rate
+            || (pins_the_rate && request.spec.rate != open.spec.rate)
+        {
+            Some(Unreshapable::PinnedRateMoved)
+        } else if !self.handing.has_room() {
+            Some(Unreshapable::StillHandingOver)
+        } else {
+            None
+        }
+    }
+
+    fn reshape(&mut self, request: &StreamRequest, source: Box<dyn AudioSource>) -> Reshaped {
+        self.handing.let_go_of_the_spent();
+        if let Some(because) = self.refuses(request) {
+            return Reshaped::Refused { source, because };
+        }
+        let asked = request.spec;
+        let was = self.asked.get();
+        if asked != was {
+            let Ok(formats) = enum_formats(asked) else {
+                return Reshaped::Refused {
+                    source,
+                    because: Unreshapable::FormatUnwritten,
+                };
+            };
+            let Some(mut params) = formats
+                .iter()
+                .map(|bytes| Pod::from_bytes(bytes))
+                .collect::<Option<Vec<_>>>()
+            else {
+                return Reshaped::Refused {
+                    source,
+                    because: Unreshapable::FormatUnwritten,
+                };
+            };
+            let settled = self.settled.get().unwrap_or(Negotiated {
+                spec: was,
+                word: WireWord::Padded,
+            });
+            self.taking.store(settled.taken_against(asked));
+            self.asked.set(asked);
+            if let Err(error) = self.opened.stream.update_params(&mut params) {
+                tracing::debug!(%error, "the graph would not take the stream's new formats");
+                self.taking.store(settled.taken_against(was));
+                self.asked.set(was);
+                return Reshaped::Refused {
+                    source,
+                    because: Unreshapable::FormatUnwritten,
+                };
+            }
+        }
+
+        let cycle = Cycle::new(asked, Arc::clone(&self.taking), Arc::clone(&self.clock));
+        if let Err(feed) = self.handing.hand(Feed::new(cycle, source)) {
+            return Reshaped::Refused {
+                source: feed.into_source(),
+                because: Unreshapable::StillHandingOver,
+            };
+        }
+        self.request = request.clone();
+        Reshaped::Kept
+    }
+}
+
+struct ReshapeRequest {
+    request: StreamRequest,
+    source: Box<dyn AudioSource>,
+    reply: Sender<Reshaped>,
+}
 
 struct Opened<D> {
     stream: StreamRc,
@@ -144,6 +238,7 @@ impl Awaiting {
 enum Request {
     Sync(Sender<()>),
     Open(Box<OpenRequest>),
+    Reshape(Box<ReshapeRequest>),
     Capture(Box<CaptureOpen>),
     StopCapture,
     SetActive(bool),
@@ -495,7 +590,8 @@ impl Survey {
         }
 
         let control = self.commands.clone();
-        Ok(SinkStream::new(
+        let reshaping = self.commands.clone();
+        let stream = SinkStream::new(
             incoming,
             clock,
             Box::new(move |command| {
@@ -507,7 +603,10 @@ impl Survey {
                     })
                     .map_err(|_| resonate_audio::Error::LoopStopped)
             }),
-        ))
+        );
+        Ok(stream.reshaped_by(Box::new(move |request, source| {
+            reshape_on_the_loop(&reshaping, request, source)
+        })))
     }
 
     fn unanswered(&self) -> Error {
@@ -678,6 +777,32 @@ impl Drop for PipeWire {
     }
 }
 
+fn reshape_on_the_loop(
+    commands: &LoopSender<Request>,
+    request: &StreamRequest,
+    source: Box<dyn AudioSource>,
+) -> Reshaped {
+    let (reply, answer) = bounded(1);
+    let asked = Request::Reshape(Box::new(ReshapeRequest {
+        request: request.clone(),
+        source,
+        reply,
+    }));
+    if let Err(unsent) = commands.send(asked) {
+        let source = match unsent {
+            Request::Reshape(unsent) => unsent.source,
+            _ => return Reshaped::Lost(resonate_audio::Error::LoopStopped),
+        };
+        return Reshaped::Refused {
+            source,
+            because: Unreshapable::NoStream,
+        };
+    }
+    answer
+        .recv_timeout(STREAM_OPENED_WITHIN)
+        .unwrap_or(Reshaped::Lost(resonate_audio::Error::LoopStopped))
+}
+
 fn node_property(
     global: &GlobalObject<&libspa::utils::dict::DictRef>,
     key: &str,
@@ -769,6 +894,21 @@ fn run(
                     active.borrow_mut().take();
                 }
             }
+            Request::Reshape(reshape) => {
+                let ReshapeRequest {
+                    request,
+                    source,
+                    reply,
+                } = *reshape;
+                let reshaped = match active.borrow_mut().as_mut() {
+                    Some(playing) => playing.reshape(&request, source),
+                    None => Reshaped::Refused {
+                        source,
+                        because: Unreshapable::NoStream,
+                    },
+                };
+                let _ = reply.send(reshaped);
+            }
             Request::Capture(open) => {
                 let Some(core) = graph.borrow().as_ref().map(|held| held.core.clone()) else {
                     let _ = open.reply.send(Err(Error::Disconnected));
@@ -798,8 +938,8 @@ fn run(
                 heard.borrow_mut().take();
             }
             Request::SetActive(wanted) => {
-                if let Some(Opened { stream, .. }) = active.borrow().as_ref() {
-                    let _ = stream.set_active(wanted);
+                if let Some(playing) = active.borrow().as_ref() {
+                    let _ = playing.stream().set_active(wanted);
                 }
             }
             Request::Turn { sink, setting } => {
@@ -818,17 +958,20 @@ fn run(
                 }
             }
             Request::Drain => {
-                if let Some(Opened { stream, .. }) = active.borrow().as_ref() {
-                    let _ = stream.flush(true);
+                if let Some(playing) = active.borrow().as_ref() {
+                    let _ = playing.stream().flush(true);
                 }
             }
             Request::Close => {
-                if let Some(Opened { stream, .. }) = active.borrow().as_ref() {
-                    let _ = stream.disconnect();
+                if let Some(playing) = active.borrow().as_ref() {
+                    let _ = playing.stream().disconnect();
                 }
                 active.borrow_mut().take();
             }
             Request::Heartbeat => {
+                if let Some(playing) = active.borrow_mut().as_mut() {
+                    playing.handing.let_go_of_the_spent();
+                }
                 let Some(core) = graph.borrow().as_ref().map(|held| held.core.clone()) else {
                     beat.borrow_mut().take();
                     return;
@@ -1462,7 +1605,7 @@ fn open_stream(
         }
         Ok(abandoned) => {
             tracing::debug!("a stream opened after its asker gave up waiting is closed");
-            let _ = abandoned.stream.disconnect();
+            let _ = abandoned.stream().disconnect();
             Ok(())
         }
         Err(error) => {
@@ -1513,19 +1656,22 @@ fn build_stream(
         .map_err(|source| Error::daemon(PwOp::StreamCreate, source))?;
 
     let taking = Arc::new(Taking::default());
+    let asked = Rc::new(Cell::new(spec));
+    let settled = Rc::new(Cell::new(None));
     let cycle = Cycle::new(spec, Arc::clone(&taking), Arc::clone(clock));
+    let (fed, handing) = fed_from(Feed::new(cycle, source));
     let listener = stream
-        .add_local_listener_with_user_data(source)
-        .process(move |stream, source| cycle.run(stream, source.as_mut()))
+        .add_local_listener_with_user_data(fed)
+        .process(|stream, fed| fed.run(stream))
         .drained({
             let events = events.clone();
-            move |_stream, _source| {
+            move |_stream, _fed| {
                 let _ = events.try_send(StreamEvent::Drained);
             }
         })
         .state_changed({
             let events = events.clone();
-            move |_stream, _source, from, to| {
+            move |_stream, _fed, from, to| {
                 let from = stream_state(&from);
                 let to = stream_state(&to);
                 let _ = events.try_send(StreamEvent::StateChanged { from, to });
@@ -1534,12 +1680,16 @@ fn build_stream(
         .param_changed({
             let events = events.clone();
             let taking = Arc::clone(&taking);
+            let asked = Rc::clone(&asked);
+            let settled = Rc::clone(&settled);
             let mut levels = StreamLevels::default();
-            move |_stream, _source, id, param| match id {
+            move |_stream, _fed, id, param| match id {
                 sys::SPA_PARAM_Format => {
+                    let spec = asked.get();
                     let Some(taken) = param.and_then(|param| negotiated(param, spec)) else {
                         return;
                     };
+                    settled.set(Some(taken));
                     taking.store(taken.taken_against(spec));
                     let _ = events.try_send(taken.changed());
                 }
@@ -1554,13 +1704,9 @@ fn build_stream(
         .register()
         .map_err(|source| Error::daemon(PwOp::StreamCreate, source))?;
 
-    let narrower = packs_narrower(spec.format)
-        .then(|| format_pod(spec, WireWord::Packed, sys::SPA_PARAM_EnumFormat))
-        .transpose()?;
-    let padded = format_pod(spec, WireWord::Padded, sys::SPA_PARAM_EnumFormat)?;
-
-    let mut params = Vec::with_capacity(2);
-    for bytes in narrower.as_ref().into_iter().chain(iter::once(&padded)) {
+    let formats = enum_formats(spec)?;
+    let mut params = Vec::with_capacity(formats.len());
+    for bytes in &formats {
         params.push(Pod::from_bytes(bytes).ok_or(Error::PodUnread {
             param: PodParam::EnumFormat,
         })?);
@@ -1578,7 +1724,23 @@ fn build_stream(
         .connect(Direction::Output, None, flags, &mut params)
         .map_err(|source| Error::daemon(PwOp::StreamConnect, source))?;
 
-    Ok(Opened::new(stream, listener))
+    Ok(ActiveStream {
+        opened: Opened::new(stream, listener),
+        handing,
+        asked,
+        settled,
+        taking,
+        clock: Arc::clone(clock),
+        request: request.clone(),
+    })
+}
+
+fn enum_formats(spec: StreamSpec) -> Result<Vec<Vec<u8>>> {
+    let narrower = packs_narrower(spec.format)
+        .then(|| format_pod(spec, WireWord::Packed, sys::SPA_PARAM_EnumFormat))
+        .transpose()?;
+    let padded = format_pod(spec, WireWord::Padded, sys::SPA_PARAM_EnumFormat)?;
+    Ok(narrower.into_iter().chain(iter::once(padded)).collect())
 }
 
 fn build_capture_stream(

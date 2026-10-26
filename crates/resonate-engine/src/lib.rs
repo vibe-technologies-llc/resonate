@@ -27,9 +27,10 @@ pub use resonate_analysis::{
 };
 pub use resonate_audio::{
     AudioSource, Backend, CardProfile, Error as SinkError, GraphTime, HardwareVolume,
-    LatencyRequest, MediaRole, NodeName, Opener, Plugged, ProfileIndex, SinkChange, SinkFormats,
-    SinkId, SinkInfo, SinkPort, SinkResult, SinkStream, StreamClock, StreamCommand, StreamEvent,
-    StreamRequest, StreamState, StreamVolume, Surveyor, Words,
+    LatencyRequest, MediaRole, NodeName, Opener, Plugged, ProfileIndex, Reshaped, Reshaper,
+    SinkChange, SinkFormats, SinkId, SinkInfo, SinkPort, SinkResult, SinkStream, StreamClock,
+    StreamCommand, StreamEvent, StreamRequest, StreamState, StreamVolume, Surveyor, Unreshapable,
+    Words,
 };
 pub use resonate_codec::{
     BitRate, BoxKind, BoxLayout, Codec, Container, CoverArt, Credits, Drawing, DsdRate, Faststart,

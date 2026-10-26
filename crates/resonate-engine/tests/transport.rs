@@ -27,10 +27,10 @@ use resonate_engine::{
     GraphTime, HardwareVolume, Hinting, Impulse, Media, MediaProvider, MediaStream, NodeName,
     NoiseShaping, Opener, OutputMode, Placement, PlaybackState, Player, Plugged, Preamp,
     PreviousRestarts, Profile, Q, Quality, QueueItem, QueueRows, Reading, RepeatMode,
-    ReplayGainMode, Restoration, Result, Resumable, Resumption, SinkChange, SinkError, SinkFormats,
-    SinkId, SinkInfo, SinkPort, SinkResult, SinkStream, SkipUnderRepeat, SourceId, Sources,
-    StreamClock, StreamCommand, StreamEvent, StreamRequest, StreamState, StreamVolume, Surveyor,
-    Tapped, Until, Words, stamp_of,
+    ReplayGainMode, Reshaped, Reshaper, Restoration, Result, Resumable, Resumption, SinkChange,
+    SinkError, SinkFormats, SinkId, SinkInfo, SinkPort, SinkResult, SinkStream, SkipUnderRepeat,
+    SourceId, Sources, StreamClock, StreamCommand, StreamEvent, StreamRequest, StreamState,
+    StreamVolume, Surveyor, Tapped, Unreshapable, Until, Words, stamp_of,
 };
 
 const RATE: u32 = 44_100;
@@ -156,6 +156,7 @@ struct Graph {
     events: Option<Sender<StreamEvent>>,
     requests: Vec<StreamRequest>,
     opens: usize,
+    reshapes: usize,
     closes: usize,
     active: bool,
     played: Vec<u8>,
@@ -198,6 +199,13 @@ impl Graph {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Reshaping {
+    Refused,
+    Settled,
+    NeverSettled,
+}
+
 #[derive(Clone)]
 struct FakeSink {
     graph: Arc<Mutex<Graph>>,
@@ -205,6 +213,7 @@ struct FakeSink {
     latency: u64,
     answers_drain: bool,
     lets_go: bool,
+    reshaping: Reshaping,
 }
 
 impl FakeSink {
@@ -230,9 +239,14 @@ impl FakeSink {
                 latency,
                 answers_drain,
                 lets_go: false,
+                reshaping: Reshaping::Refused,
             },
             graph,
         )
+    }
+
+    fn reshaping(self, reshaping: Reshaping) -> Self {
+        Self { reshaping, ..self }
     }
 
     fn letting_go_of_every_ring(self) -> Self {
@@ -293,7 +307,12 @@ impl Opener for FakeSink {
         self.graph.lock().clock = Some(Arc::clone(&clock));
         let control = Arc::clone(&self.graph);
         let answers_drain = self.answers_drain;
-        Ok(SinkStream::new(
+        let reshaper = match self.reshaping {
+            Reshaping::Refused => None,
+            Reshaping::Settled => Some(reshaper(Arc::clone(&self.graph), true)),
+            Reshaping::NeverSettled => Some(reshaper(Arc::clone(&self.graph), false)),
+        };
+        let stream = SinkStream::new(
             incoming,
             clock,
             Box::new(move |command| {
@@ -314,8 +333,52 @@ impl Opener for FakeSink {
                 }
                 Ok(())
             }),
-        ))
+        );
+        Ok(match reshaper {
+            Some(reshaper) => stream.reshaped_by(reshaper),
+            None => stream,
+        })
     }
+}
+
+fn reshaper(graph: Arc<Mutex<Graph>>, settles: bool) -> Reshaper {
+    Box::new(move |request, source| {
+        let mut graph = graph.lock();
+        let Some(open) = graph.requests.last().cloned() else {
+            return Reshaped::Refused {
+                source,
+                because: Unreshapable::NoStream,
+            };
+        };
+        if graph.events.is_none() {
+            return Reshaped::Refused {
+                source,
+                because: Unreshapable::NoStream,
+            };
+        }
+        if request.target != open.target {
+            return Reshaped::Refused {
+                source,
+                because: Unreshapable::AnotherTarget,
+            };
+        }
+
+        graph.reshapes += 1;
+        graph.requests.push(request.clone());
+        graph.source = Some(source);
+
+        let settled = StreamEvent::FormatChanged {
+            spec: request.spec,
+            words: Words::offered_for(request.spec.format),
+        };
+        if settles
+            && request.spec != open.spec
+            && let Some(events) = graph.events.as_ref()
+        {
+            let _ = events.try_send(settled);
+        }
+        Reshaped::Kept
+    })
 }
 
 impl Backend for FakeSink {
@@ -453,7 +516,15 @@ fn config() -> EngineConfig {
 }
 
 fn player(sinks: Vec<SinkInfo>) -> Result<(Player, Arc<Mutex<Graph>>)> {
+    reshaping_player(sinks, Reshaping::Refused)
+}
+
+fn reshaping_player(
+    sinks: Vec<SinkInfo>,
+    reshaping: Reshaping,
+) -> Result<(Player, Arc<Mutex<Graph>>)> {
     let (backend, graph) = FakeSink::new(sinks);
+    let backend = backend.reshaping(reshaping);
     let player = Player::with_backend(config(), move |_| Ok(Box::new(backend)))?;
     Ok((player, graph))
 }
@@ -1385,12 +1456,21 @@ fn answer_with_the_other_format(graph: &Arc<Mutex<Graph>>) {
 }
 
 fn two_formats_over_a_deep_track() -> Result<(Player, Arc<Mutex<Graph>>, Tree)> {
+    two_formats_over_a_deep_track_reshaped(Reshaping::Refused)
+}
+
+fn two_formats_over_a_deep_track_reshaped(
+    reshaping: Reshaping,
+) -> Result<(Player, Arc<Mutex<Graph>>, Tree)> {
     let tree = Tree::new();
     let path = tree.write("deep.wav", &pcm(24, FRAMES).file);
-    let (player, graph) = player(vec![sink(
-        &[SampleRate::HZ_44100],
-        &[SampleFormat::S16, SampleFormat::S24],
-    )])?;
+    let (player, graph) = reshaping_player(
+        vec![sink(
+            &[SampleRate::HZ_44100],
+            &[SampleFormat::S16, SampleFormat::S24],
+        )],
+        reshaping,
+    )?;
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -1424,6 +1504,65 @@ fn a_graph_answering_another_format_has_the_stream_rebuilt_around_it() -> Result
             .any(|event| matches!(event, Event::Failed { .. })),
         "a graph's answer was billed to the row"
     );
+    Ok(())
+}
+
+#[test]
+fn a_graph_answering_another_format_has_the_stream_it_holds_reshaped_rather_than_reopened()
+-> Result<()> {
+    let (player, graph, _tree) = two_formats_over_a_deep_track_reshaped(Reshaping::Settled)?;
+    let asked = graph.lock().requests[0].spec;
+
+    answer_with_the_other_format(&graph);
+    wait_for(
+        &player,
+        |_| graph.lock().reshapes == 1,
+        "the stream to be reshaped around the format the graph chose",
+    );
+    wait_for(&player, playing, "the reshaped stream to play on");
+
+    let graph = graph.lock();
+    assert_eq!(
+        graph.opens, 1,
+        "a renegotiation reopened a stream that could be reshaped"
+    );
+    assert_eq!(graph.closes, 0, "a reshaped stream was closed");
+    assert_eq!(
+        graph.requests[1].spec.format,
+        the_other_word_of_the_two(asked.format)
+    );
+    assert!(
+        !player
+            .events()
+            .try_iter()
+            .any(|event| matches!(event, Event::Failed { .. })),
+        "a reshape was billed to the row"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_reshaped_stream_whose_format_the_graph_never_settles_is_reopened() -> Result<()> {
+    let (player, graph, _tree) = two_formats_over_a_deep_track_reshaped(Reshaping::NeverSettled)?;
+
+    answer_with_the_other_format(&graph);
+    wait_for(
+        &player,
+        |_| graph.lock().reshapes == 1,
+        "the stream to be reshaped",
+    );
+    wait_for(
+        &player,
+        |_| graph.lock().opens == 2,
+        "the stream to be reopened once the reshaped format went unanswered",
+    );
+
+    let graph = graph.lock();
+    assert_eq!(
+        graph.reshapes, 1,
+        "the unanswered stream was reshaped again"
+    );
+    assert_eq!(graph.closes, 1, "the unanswered stream was not closed");
     Ok(())
 }
 
@@ -3883,6 +4022,112 @@ fn setting_the_buffer_reopens_the_stream_around_the_new_depth() -> Result<()> {
         &player,
         playing,
         "the transport to play on once the deeper stream opened",
+    );
+    Ok(())
+}
+
+#[test]
+fn a_buffer_moved_mid_track_reshapes_the_stream_and_plays_on_from_where_it_was_heard() -> Result<()>
+{
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let path = tree.write("track.wav", &source.file);
+    let stride = frame_bytes(SampleFormat::S16);
+    let deeper = Duration::from_millis(250);
+
+    let (player, graph) = reshaping_player(
+        vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
+        Reshaping::Settled,
+    )?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * stride,
+        |_, graph| graph.played.len() >= 4 * BLOCK_FRAMES * stride,
+        "the first blocks to play",
+    );
+
+    let heard = graph.lock().played.len();
+    player
+        .request(Command::SetBuffer(deeper))?
+        .wait_for(PATIENCE)?;
+    let tail = source.stream.split_at(heard).1;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * stride,
+        |_, graph| {
+            graph.reshapes == 1
+                && graph
+                    .played
+                    .len()
+                    .checked_sub(tail.len())
+                    .is_some_and(|from| {
+                        from >= heard && heard_as_faded_in(&graph.played[from..], tail)
+                    })
+        },
+        "the reshaped stream to play the track on from where it was heard",
+    );
+
+    let graph = graph.lock();
+    assert_eq!(graph.opens, 1, "a deeper buffer reopened the stream");
+    assert_eq!(graph.closes, 0, "a deeper buffer closed the stream");
+    assert_eq!(
+        graph.requests.last().map(|request| request.spec),
+        graph.requests.first().map(|request| request.spec),
+        "a deeper buffer moved the stream's format"
+    );
+    assert_eq!(player.output_settings().buffer, deeper);
+    Ok(())
+}
+
+#[test]
+fn a_device_chosen_mid_track_opens_a_stream_on_it_rather_than_reshaping_the_one_held() -> Result<()>
+{
+    let tree = Tree::new();
+    let path = tree.write("track.wav", &pcm(16, FRAMES).file);
+
+    let (player, graph) = reshaping_player(
+        vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
+        Reshaping::Settled,
+    )?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    announce(&graph, arriving());
+    wait_for(
+        &player,
+        |player| player.sinks().len() == 2,
+        "the second device to be listed",
+    );
+
+    player
+        .request(Command::SetSink(Some(arriving().name)))?
+        .wait_for(PATIENCE)?;
+    wait_for(
+        &player,
+        |_| graph.lock().opens == 2,
+        "a stream to open on the device chosen",
+    );
+
+    let graph = graph.lock();
+    assert_eq!(
+        graph.reshapes, 0,
+        "the stream on one device was reshaped onto another"
+    );
+    assert_eq!(graph.closes, 1);
+    assert_eq!(
+        graph.requests.last().and_then(|request| request.target),
+        Some(arriving().id)
     );
     Ok(())
 }

@@ -7,6 +7,7 @@
 )]
 
 use std::{
+    mem,
     num::{NonZeroU16, NonZeroU32, NonZeroUsize},
     sync::{
         Arc,
@@ -22,6 +23,8 @@ use crate::{AudioSink, AudioSource, GraphTime, StreamClock, format::WireWord};
 
 const PADDED_WORD: usize = 4;
 const PACKED_WORD: usize = 3;
+const FEEDS_HANDED_AT_ONCE: usize = 1;
+const FEEDS_SPENT_AT_ONCE: usize = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Taken {
@@ -82,6 +85,82 @@ impl Hearing {
             sink.take(heard);
         }
     }
+}
+
+pub(crate) struct Feed {
+    cycle: Cycle,
+    source: Box<dyn AudioSource>,
+}
+
+impl Feed {
+    pub(crate) fn new(cycle: Cycle, source: Box<dyn AudioSource>) -> Self {
+        Self { cycle, source }
+    }
+
+    pub(crate) fn into_source(self) -> Box<dyn AudioSource> {
+        self.source
+    }
+}
+
+pub(crate) struct Fed {
+    feed: Feed,
+    handed: rtrb::Consumer<Feed>,
+    spent: rtrb::Producer<Feed>,
+}
+
+impl Fed {
+    pub(crate) fn run(&mut self, stream: &Stream) {
+        self.take_what_was_handed();
+        self.feed.cycle.run(stream, self.feed.source.as_mut());
+    }
+
+    fn take_what_was_handed(&mut self) {
+        if self.spent.is_full() {
+            return;
+        }
+        let Ok(handed) = self.handed.pop() else {
+            return;
+        };
+        let spent = mem::replace(&mut self.feed, handed);
+        let kept_off_this_thread = self.spent.push(spent);
+        debug_assert!(kept_off_this_thread.is_ok());
+    }
+}
+
+pub(crate) struct Handing {
+    handing: rtrb::Producer<Feed>,
+    spent: rtrb::Consumer<Feed>,
+}
+
+impl Handing {
+    pub(crate) fn has_room(&self) -> bool {
+        !self.handing.is_full()
+    }
+
+    pub(crate) fn hand(&mut self, feed: Feed) -> Result<(), Feed> {
+        self.handing
+            .push(feed)
+            .map_err(|rtrb::PushError::Full(feed)| feed)
+    }
+
+    pub(crate) fn let_go_of_the_spent(&mut self) {
+        while let Ok(spent) = self.spent.pop() {
+            drop(spent);
+        }
+    }
+}
+
+pub(crate) fn fed_from(feed: Feed) -> (Fed, Handing) {
+    let (handing, handed) = rtrb::RingBuffer::new(FEEDS_HANDED_AT_ONCE);
+    let (spending, spent) = rtrb::RingBuffer::new(FEEDS_SPENT_AT_ONCE);
+    (
+        Fed {
+            feed,
+            handed,
+            spent: spending,
+        },
+        Handing { handing, spent },
+    )
 }
 
 pub(crate) struct Cycle {

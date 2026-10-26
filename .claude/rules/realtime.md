@@ -47,7 +47,9 @@ rest on this discipline alone):
 - `resonate-engine/src/ring.rs`: what the graph pulls from; fader and trim scale in place, fade
   state from atomics, each rendered level's start from a preallocated SPSC queue.
 - `resonate-pipewire/src/process.rs`: the callback: playback `Cycle`, capture `Hearing` (reads each
-  quantum's chunk by its own offset and size, hands bytes to an `AudioSink`).
+  quantum's chunk by its own offset and size, hands bytes to an `AudioSink`). A reshape's new
+  `Feed` arrives through a preallocated `rtrb` queue and the old one leaves through another, so
+  `Fed::run` swaps sources without dropping one (it takes nothing while the way back is full).
 - `resonate-listen/src/recording.rs`: the recording's `AudioSink`: preallocated `AtomicU32` run of
   f32 bits + atomic count, `Relaxed` stores, one `Release` publish, `Acquire` reads.
 

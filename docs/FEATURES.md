@@ -17,9 +17,11 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   `build-std`
 
 ## Playback and output
-- [M · 0.2.0] Changing the graph rate mid-track reopens the stream, costing the gap a sink switch does; so
-  do the rate policy, buffer or DoP wherever the change moves the stream's format or the ring's
-  depth
+- [M · 0.2.0] A mid-track change still reopens the PipeWire stream where it moves what the stream was
+  connected with: its rate while `force-graph-rate` pins it (on by default; moving `node.rate` needs
+  `pw_stream_update_properties`, which pipewire-rs does not wrap), the pin itself, or `NO_CONVERT`
+  (the rate policy or DoP turning the plan between converted and not); a turn of rate inside a row
+  reopens after its drain, and Oboe and RemoteIO reshape nothing
 - [L · 0.2.0] Changing the equaliser is heard up to the buffer's depth later (half a second by default): the
   filters run ahead of a ring kept full; only a level can be trimmed where the graph pulls
 - [L · 0.2.0] One playback stream and one capture stream only; concurrent playback streams unsupported

@@ -8,8 +8,9 @@ mod props;
 
 pub use resonate_audio::{
     AudioSource, CardProfile, GraphTime, HardwareVolume, LatencyRequest, MediaRole, NodeName,
-    Plugged, ProfileIndex, SinkChange, SinkFormats, SinkId, SinkInfo, SinkPort, SinkStream,
-    StreamClock, StreamCommand, StreamEvent, StreamRequest, StreamState, StreamVolume, Words,
+    Plugged, ProfileIndex, Reshaped, SinkChange, SinkFormats, SinkId, SinkInfo, SinkPort,
+    SinkStream, StreamClock, StreamCommand, StreamEvent, StreamRequest, StreamState, StreamVolume,
+    Unreshapable, Words,
 };
 
 pub use crate::{

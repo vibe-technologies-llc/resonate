@@ -12,8 +12,8 @@ use std::{
 
 use resonate_core::{ChannelLayout, SampleFormat, SampleRate, StreamSpec};
 use resonate_pipewire::{
-    AudioSource, LatencyRequest, MediaRole, PipeWire, SinkChange, SinkInfo, StreamEvent,
-    StreamRequest, StreamState, StreamVolume, Words,
+    AudioSource, LatencyRequest, MediaRole, PipeWire, Reshaped, SinkChange, SinkInfo, SinkStream,
+    StreamEvent, StreamRequest, StreamState, StreamVolume, Unreshapable, Words,
 };
 
 const HOSTED_AT: &str = "RESONATE_HOSTED_PIPEWIRE";
@@ -423,6 +423,98 @@ fn frames_flow_through_every_word_and_map_once_the_stream_is_linked(folder: &Pat
     let _ = pipewire.shutdown();
 }
 
+fn pulled_from(stream: &SinkStream, asked: &StreamRequest, pulled: &Arc<AtomicUsize>) -> Reshaped {
+    stream.reshape(
+        asked,
+        Box::new(Counting {
+            pulled: Arc::clone(pulled),
+        }),
+    )
+}
+
+fn a_live_stream_handed_a_new_source_and_format(folder: &Path) {
+    let pipewire = PipeWire::start(STREAM).expect("the hosted daemon answers");
+    let sinks = the_hosted_sinks(&pipewire);
+    let hosting = HOSTED[3];
+    let sink = named(&sinks, hosting.sink);
+    let elsewhere = named(&sinks, HOSTED[0].sink);
+    let asked = request(sink, hosting.spec);
+    let first = Arc::new(AtomicUsize::new(0));
+    let second = Arc::new(AtomicUsize::new(0));
+    let third = Arc::new(AtomicUsize::new(0));
+    let slowed = Arc::new(AtomicUsize::new(0));
+    let slower = Hosting {
+        spec: StreamSpec::new(
+            SampleRate::HZ_44100,
+            hosting.spec.channels,
+            hosting.spec.format,
+        ),
+        ..hosting
+    };
+
+    let stream = pipewire
+        .open(
+            &asked,
+            Box::new(Counting {
+                pulled: Arc::clone(&first),
+            }),
+        )
+        .expect("the stream opens");
+    stream.set_active(true).expect("the stream activates");
+    let linked =
+        until(|| port_the_stream(folder, hosting)) && until(|| link_the_stream(folder, hosting));
+    let wanted = bytes_in_a_quarter_second(hosting);
+    let first_flowed = until(|| first.load(Ordering::Relaxed) >= wanted);
+
+    let refused = match pulled_from(&stream, &request(elsewhere, hosting.spec), &third) {
+        Reshaped::Refused { because, .. } => Some(because),
+        Reshaped::Kept | Reshaped::Lost(_) => None,
+    };
+    let handed_on = matches!(pulled_from(&stream, &asked, &second), Reshaped::Kept);
+    let second_flowed = until(|| second.load(Ordering::Relaxed) >= wanted);
+    let first_let_go = first.load(Ordering::Relaxed);
+    let first_still = until(|| second.load(Ordering::Relaxed) >= 2 * wanted)
+        && first.load(Ordering::Relaxed) == first_let_go;
+
+    let _ = stream.events().try_iter().count();
+    let moved = matches!(
+        pulled_from(&stream, &request(sink, slower.spec), &slowed),
+        Reshaped::Kept
+    );
+    let mut heard = Vec::new();
+    let settled = until(|| port_the_stream(folder, slower))
+        && until(|| {
+            heard.extend(stream.events().try_iter());
+            heard.contains(&StreamEvent::FormatChanged {
+                spec: slower.spec,
+                words: slower.words,
+            })
+        });
+    let _ = stream.close();
+    let _ = pipewire.shutdown();
+
+    assert!(linked, "the stream never linked");
+    assert!(first_flowed, "the first source was never pulled");
+    assert_eq!(
+        refused,
+        Some(Unreshapable::AnotherTarget),
+        "a stream was reshaped onto another device"
+    );
+    assert_eq!(
+        third.load(Ordering::Relaxed),
+        0,
+        "a refused source was pulled"
+    );
+    assert!(handed_on, "the live stream would not take a new source");
+    assert!(second_flowed, "the source handed over was never pulled");
+    assert!(first_still, "the source handed off was still pulled");
+    assert!(moved, "the live stream would not take a new rate");
+    assert!(
+        settled,
+        "the graph never settled the rate the live stream asked for: {heard:?}"
+    );
+}
+
 fn a_sink_leaving_under_an_open_stream(folder: &Path) {
     let pipewire = PipeWire::start(STREAM).expect("the hosted daemon answers");
     let changes = pipewire.subscribe_sinks();
@@ -579,6 +671,15 @@ fn frames_flow_through_a_stream_in_every_word_and_channel_map_once_it_is_linked(
         "frames_flow_through_a_stream_in_every_word_and_channel_map_once_it_is_linked",
         "f",
         frames_flow_through_every_word_and_map_once_the_stream_is_linked,
+    );
+}
+
+#[test]
+fn a_live_stream_takes_a_new_source_and_a_new_rate_without_reopening() {
+    hosted_as(
+        "a_live_stream_takes_a_new_source_and_a_new_rate_without_reopening",
+        "r",
+        a_live_stream_handed_a_new_source_and_format,
     );
 }
 
