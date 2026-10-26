@@ -589,7 +589,8 @@ is never named.
   own label. `views/spoken.rs` is the one vocabulary: `spoken::listened_to` is a thread-local written
   once a frame by `RootView::render` from `Window::is_a11y_active`, and every `Spoken` builder
   (`said_as`, `named_as`, `spoken_as`, `thrown`, `chosen`, `listed_as`, `placed`, `keyed`, `told`,
-  `read_as`, `greyed_for_a_reader`) is a no-op while it says no, so a frame with no reader formats
+  `read_as`, `greyed_for_a_reader`, `chosen_among`, `pictured_as`, `linked_as`, `read_as_typed`,
+  `focused_while`) is a no-op while it says no, so a frame with no reader formats
   and allocates nothing for one.
   - **A control is named by its hint up to the keys**: `said_as` labels it with what precedes `keyed!`'s
     em dash (`named_by`: *Play — space* is *Play*) and describes it by the whole hint where that says
@@ -609,6 +610,37 @@ is never named.
     input labelled by its placeholder, its value the text unless masked; a menu is a menu of items
     with their keys, placed, the reached one selected; a toast is an alert (`Trouble`, assertive) or a
     status (polite), keyed `("toast", serial)` so each notice is a new node and is announced.
+  - **A menu reached by key is followed by the reader.** gpui's `aria_active_descendant` is honoured
+    only where the focused node is an ancestor on the a11y stack, and a `deferred` menu is built
+    after the root's stack has unwound, so the window's focus never qualifies. While a reader
+    listens and a menu has a reached entry, `RootView::hand_the_reader_the_menu` (first thing in
+    `render`, after `listened_to`) moves keyboard focus to `menu_focus`, tracked by the menu panel;
+    the reached entry claims `focused_while(reached)`, so the reader's focus follows every step of
+    the arrows; once the menu is gone it hands focus back to `RootView::focus`. `Handing::of` is
+    the whole decision; a menu opened by pointer has no reached entry and moves nothing, and with
+    no reader listening focus never moves (`a_menu_reached_by_key_is_handed_the_reader_and_the_window_gets_it_back_once_it_closes`).
+  - **Cells, rows and links are named by what they draw.** An album cell is a list item *title,
+    artist* (`spoken::song`), an artist cell or list row *name, n albums, n tracks*
+    (`spoken::artist`), a found artist or an album not held likewise (the latter *title, not in your
+    library*), each selected where reached. A link is `pressed_to`'s `Role::Link` labelled by the
+    words it draws: its label is `impl IntoElement + Spelt`, and `listing::matched` returns a
+    `Matched` that is both the drawn element and its spelling, so a lit search match still names
+    the link whole; the bar's and inspector's links take what `cut_to_fit` left, an ellipsis
+    included. A lyric line is a list item of the *Lyrics* list (`lyric-sheet`), *n of m*, selected
+    while in play; a line held open far from the pane keeps its node (empty box, same id) so the
+    list is whole.
+  - **A choice is a radio button wherever it is drawn**: `kit::choice_row`, `dot_swatch`, the palette
+    cards and the music folders' circle go through `Spoken::chosen_among` (label, a description built
+    only while listening, toggled where chosen); a device describes how it is reached and what it
+    takes (`sink_spoken`).
+  - **A plot is an image saying what it shows** (`Spoken::pictured_as`: the wrapper div's id, a label
+    and a one-line description): bitrate graph, waveform (its hint), spectrogram and average
+    spectrum (where the sound falls away), the visualiser's mode, the equaliser curve (its range and
+    band count). Values are not exposed.
+  - **A field's caret and selection are a synthetic text run.** `Spoken::read_as_typed` gives the
+    field's node one `TextRun` child holding the text (character lengths in bytes) and sets
+    `text_selection` from `Edit::anchor` and `Edit::cursor`, converted to letter counts
+    (`Typing`); a masked field exposes none, so a secret's length and caret stay unspoken.
   - **No two nodes share a global id**: gpui panics in a debug build on a duplicate (release drops
     the node), so a role goes only on an element whose id is unique under its parents.
   - **The four `Part`s draw uncached while a reader listens**: a reused cached view replays hitboxes
@@ -619,7 +651,9 @@ is never named.
     the tree. Heard for real once over AT-SPI: a hosted `kwin_wayland --virtual`, the app on a
     private session bus with `at-spi-bus-launcher` and `at-spi2-registryd`, `org.a11y.Status
     IsEnabled` set, read with python's `Atspi` (a tab clicked through the Action interface changed
-    pane, the volume set through the Value interface moved); no screen reader (Orca) was run.
+    pane, the volume set through the Value interface moved); no screen reader (Orca) was run. The
+    cells, links, lyric lines, plots, the caret and selection and the menu hand-over were only
+    built and read back in tests.
 - **A playlist row no scan has seen draws as a queued one does.** `views/listing.rs` owns the `Row`
   the queue and playlists panes build: the scanned `Track` where the library has one, `Player::media`
   where not, the file stem only where the file cannot be read. The play count rides on the same `Row`

@@ -24,6 +24,7 @@ use crate::{
         listing,
         root::RootView,
         settings::{Choice, action, hugging, named, note, progress, rows, switch_row},
+        spoken::Spoken as _,
     },
 };
 
@@ -338,6 +339,7 @@ impl RootView {
         div()
             .id(id.clone())
             .found_as(&id)
+            .chosen_among(&folder.to_string_lossy(), String::new, chosen)
             .flex()
             .flex_1()
             .min_w(px(0.0))

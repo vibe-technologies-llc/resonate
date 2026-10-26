@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use gpui::{
     AnyElement, App, Bounds, Canvas, ClickEvent, Context, Div, ElementId, Font, FontWeight,
-    HighlightStyle, Hsla, IndentAdjustment, LineFragment, MouseMoveEvent, Pixels, Point,
+    HighlightStyle, Hsla, IndentAdjustment, LineFragment, MouseMoveEvent, Pixels, Point, Role,
     ScrollEvent, SharedString, StyledText, canvas, div, fill, linear_color_stop, linear_gradient,
     point, prelude::*, px, rgb, size,
 };
@@ -22,9 +22,12 @@ use crate::{
         menu::{self, Menu},
         root::RootView,
         scrollbar::Scrollbars,
+        spoken::{Placed, Spoken},
         transport::Playing,
     },
 };
+
+const THE_LYRICS: &str = "Lyrics";
 
 const COPY_LINE: &str = "Copy this line";
 
@@ -102,6 +105,8 @@ struct Credit {
 
 struct Line {
     index: usize,
+    of: usize,
+    sounding: bool,
     text: SharedString,
     voice: Voice,
     two_voices: bool,
@@ -360,6 +365,8 @@ impl RootView {
 
                     Line {
                         index,
+                        of: text.len(),
+                        sounding: in_play.contains(&Some(index)),
                         text: text[index].clone(),
                         voice: voices[index],
                         two_voices: has_two_voices,
@@ -419,6 +426,7 @@ impl RootView {
 
         let column = div()
             .id("lyric-sheet")
+            .named_as(Role::List, THE_LYRICS, "")
             .track_scroll(&scroll)
             .overflow_y_scroll()
             .on_scroll(cx.listener(|this, _: &ScrollEvent, _, cx| {
@@ -482,7 +490,17 @@ impl RootView {
 
     fn lyric(&self, line: Line, measures: Measures, cx: &mut Context<Self>) -> AnyElement {
         if let Some(height) = line.resting {
-            return div().flex_none().w(line.width).h(height).into_any_element();
+            return div()
+                .id(("lyric", line.index))
+                .listed_as(|| line.text.clone())
+                .placed(Placed {
+                    at: line.index,
+                    of: line.of,
+                })
+                .flex_none()
+                .w(line.width)
+                .h(height)
+                .into_any_element();
         }
         let second = line.voice == Voice::Two;
         let row = div()
@@ -508,6 +526,10 @@ impl RootView {
             .child(self.brings_into_view_when_reached(line.index, cx));
 
         let words = line.text.clone();
+        let placed = Placed {
+            at: line.index,
+            of: line.of,
+        };
         let inside = (line.width - measures.pad * 2.0).max(px(0.0));
         let share = if line.two_voices {
             A_VOICE_OF_TWO_SPANS
@@ -566,7 +588,11 @@ impl RootView {
         let Some(at) = line.at else {
             let offered = words.clone();
             let lit = self.in_the_pane_ring_for_keys_at(
-                drawn.id(("lyric", line.index)),
+                drawn
+                    .id(("lyric", line.index))
+                    .listed_as(|| words.clone())
+                    .placed(placed)
+                    .chosen(line.sounding),
                 move |this, where_at, cx| {
                     let menu = this.copies_a_lyric(where_at, &offered, cx);
                     this.open_a_menu(menu, cx);
@@ -596,6 +622,9 @@ impl RootView {
         let lit = self.in_the_pane_ring_for_keys_at(
             drawn
                 .id(("lyric", line.index))
+                .listed_as(|| words.clone())
+                .placed(placed)
+                .chosen(line.sounding)
                 .debug_selector(move || format!("lyric-{}", line.index))
                 .cursor_pointer()
                 .hover(|line| line.bg(theme::tinted(theme::text(), 0x0e)))

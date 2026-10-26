@@ -651,11 +651,17 @@ pub(crate) fn preview(dressed: Appearance) -> Div {
         )
 }
 
-pub(crate) fn dot_swatch(id: impl Into<ElementId>, colour: u32, chosen: bool) -> Stateful<Div> {
+pub(crate) fn dot_swatch(
+    id: impl Into<ElementId>,
+    label: &str,
+    colour: u32,
+    chosen: bool,
+) -> Stateful<Div> {
     let id = id.into();
     div()
         .id(id.clone())
         .found_as(&id)
+        .chosen_among(label, String::new, chosen)
         .flex()
         .flex_none()
         .items_center()
@@ -677,11 +683,17 @@ pub(crate) fn dot_swatch(id: impl Into<ElementId>, colour: u32, chosen: bool) ->
         )
 }
 
-pub(crate) fn choice_row(id: impl Into<ElementId>, chosen: bool) -> Stateful<Div> {
+pub(crate) fn choice_row(
+    id: impl Into<ElementId>,
+    label: &str,
+    saying: impl FnOnce() -> String,
+    chosen: bool,
+) -> Stateful<Div> {
     let id = id.into();
     div()
         .id(id.clone())
         .found_as(&id)
+        .chosen_among(label, saying, chosen)
         .flex()
         .items_start()
         .gap_3()
@@ -1158,6 +1170,32 @@ mod tests {
         assert_eq!(chosen.toggled(), Some(gpui::Toggled::True));
         assert_eq!(chip.label(), Some("Newest"));
         assert_eq!(chip.toggled(), Some(gpui::Toggled::False));
+    }
+
+    #[test]
+    fn a_choice_row_and_a_swatch_are_radio_buttons_naming_what_they_choose() {
+        spoken::listened_to(true);
+
+        let device = node_of(&choice_row(
+            "speakers",
+            "Built-in Audio",
+            || "Whatever PipeWire routes to. Takes 16-bit".to_owned(),
+            true,
+        ))
+        .expect("a choice row is a node");
+        let swatch =
+            node_of(&dot_swatch("mauve", "Mauve", 0xcba6f7, false)).expect("a swatch is a node");
+
+        assert_eq!(device.role(), Role::RadioButton);
+        assert_eq!(device.label(), Some("Built-in Audio"));
+        assert_eq!(
+            device.description(),
+            Some("Whatever PipeWire routes to. Takes 16-bit")
+        );
+        assert_eq!(device.toggled(), Some(gpui::Toggled::True));
+        assert_eq!(swatch.role(), Role::RadioButton);
+        assert_eq!(swatch.label(), Some("Mauve"));
+        assert_eq!(swatch.toggled(), Some(gpui::Toggled::False));
     }
 
     #[test]

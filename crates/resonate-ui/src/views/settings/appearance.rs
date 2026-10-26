@@ -11,6 +11,7 @@ use crate::{
         kit::{self, EndsInAnEllipsis as _},
         root::{Pane, RootView},
         settings::{Choice, find::Category, note, switch_row},
+        spoken::Spoken,
     },
 };
 
@@ -214,6 +215,7 @@ impl RootView {
             palette.label(),
             div()
                 .id(SharedString::new_static(palette.as_str()))
+                .chosen_among(palette.label(), String::new, chosen)
                 .flex()
                 .flex_col()
                 .flex_none()
@@ -265,7 +267,7 @@ impl RootView {
 
         self.in_the_ring(
             saying,
-            kit::dot_swatch(id, colour, worn.accent == accent)
+            kit::dot_swatch(id, saying, colour, worn.accent == accent)
                 .when(accent.is_none(), |swatch| {
                     swatch.border_1().border_color(rgb(theme::outline()))
                 })

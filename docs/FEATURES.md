@@ -66,11 +66,12 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   lowpass) still reads as lossless
 
 ## Keyboard and accessibility
-- [M · 0.2.0] A screen reader hears the bar, sidebar, track rows, search field, menus and toasts
-  but not the album and artist cells, the settings choice rows and swatches, a link inside a row,
-  the lyrics and the plots, and the search field reports its text but no caret or selection
-- [S · 0.2.0] A menu opened by key is drawn but not announced: keyboard focus stays on the window,
-  so the reached entry is not spoken until a reader walks to it
+- [S · 0.2.0] A screen reader hears a plot as an image with a one-line description (the cutoff, the
+  mode, the band count), not its values, and the Statistics chart's bars and the Missing and
+  Suggestions cards are not named; none of the cells, links, lyric
+  lines, plots, the caret and selection or the menu the reader follows has been heard over AT-SPI
+  with a reader, only built and read back in tests, since gpui's test platform never activates the
+  tree
 
 ## Later: Sources and providers
 - [M · blocked: services] The Bandcamp and Discogs links an `Identity` carries are read by nothing;

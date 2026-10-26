@@ -23,7 +23,7 @@ use crate::{
         playlists::Held,
         reorder::Shift,
         root::RootView,
-        spoken::{Placed, Spoken},
+        spoken::{self, Placed, Spoken},
     },
 };
 
@@ -150,6 +150,10 @@ impl Menu {
         self
     }
 
+    const fn is_reached(&self) -> bool {
+        self.reached.is_some()
+    }
+
     pub(crate) fn offers_anything(&self) -> bool {
         self.entries.iter().any(|entry| entry.does.is_some())
     }
@@ -187,6 +191,23 @@ impl Menu {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Handing {
+    ToTheMenu,
+    BackToTheWindow,
+    Stays,
+}
+
+impl Handing {
+    const fn of(listening: bool, menu: Option<&Menu>, held: bool) -> Self {
+        match (menu, held) {
+            (Some(menu), false) if listening && menu.is_reached() => Self::ToTheMenu,
+            (None, true) => Self::BackToTheWindow,
+            _ => Self::Stays,
+        }
+    }
+}
+
 pub(crate) struct Called {
     pub(crate) title: SharedString,
     pub(crate) artist: SharedString,
@@ -215,6 +236,16 @@ impl RootView {
                     .and_then(|info| info.tags.album.clone())
                     .map(SharedString::from)
             })
+    }
+
+    pub(crate) fn hand_the_reader_the_menu(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let held = self.menu_focus.is_focused(window);
+
+        match Handing::of(spoken::listening(), self.menu.as_ref(), held) {
+            Handing::ToTheMenu => window.focus(&self.menu_focus, cx),
+            Handing::BackToTheWindow => window.focus(&self.focus, cx),
+            Handing::Stays => {}
+        }
     }
 
     pub(crate) fn open_a_menu(&mut self, menu: Menu, cx: &mut Context<Self>) {
@@ -268,6 +299,7 @@ impl RootView {
         let mut panel = div()
             .id("menu")
             .spoken_as(Role::Menu)
+            .track_focus(&self.menu_focus)
             .flex()
             .flex_col()
             .w(theme::width(theme::menu_width()))
@@ -356,6 +388,7 @@ impl RootView {
             .keyed(entry.key.clone())
             .placed(placed)
             .chosen(reached)
+            .focused_while(reached)
             .group(MENU_GROUP)
             .flex()
             .items_center()
@@ -734,6 +767,38 @@ mod tests {
             alternatives: 0,
             delivered: false,
         }
+    }
+
+    fn two_entries() -> Menu {
+        Menu::at(point(px(0.0), px(0.0)))
+            .does(Icon::Play, "Play", |_, _, _| {})
+            .does(Icon::Queue, "Add to queue", |_, _, _| {})
+    }
+
+    #[test]
+    fn a_menu_reached_by_key_is_handed_the_reader_and_the_window_gets_it_back_once_it_closes() {
+        let mut menu = two_entries();
+
+        assert_eq!(
+            Handing::of(true, Some(&menu), false),
+            Handing::Stays,
+            "a menu opened by a pointer has no reached entry to follow"
+        );
+
+        menu.steps(1);
+
+        assert_eq!(Handing::of(true, Some(&menu), false), Handing::ToTheMenu);
+        assert_eq!(Handing::of(true, Some(&menu), true), Handing::Stays);
+        assert_eq!(Handing::of(true, None, true), Handing::BackToTheWindow);
+        assert_eq!(Handing::of(true, None, false), Handing::Stays);
+    }
+
+    #[test]
+    fn nothing_moves_the_keyboard_focus_while_no_reader_listens() {
+        let mut menu = two_entries();
+        menu.steps(1);
+
+        assert_eq!(Handing::of(false, Some(&menu), false), Handing::Stays);
     }
 
     #[test]

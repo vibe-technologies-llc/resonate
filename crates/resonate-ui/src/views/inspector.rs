@@ -21,6 +21,7 @@ use crate::{
         plot,
         root::RootView,
         scrollbar::Scrollbars,
+        spoken::Spoken as _,
         transport::{Heard, copied_on_a_right_click},
     },
 };
@@ -455,6 +456,14 @@ fn graph(digest: &StreamDigest, series: &[BitRate]) -> Div {
     card("Bitrate over time")
         .child(
             div()
+                .id("bitrate-graph")
+                .pictured_as("Bitrate over time", || {
+                    format!(
+                        "{} to {} over {WINDOW:.0}s windows",
+                        kbps(BitRate::new(floor).unwrap_or_default()),
+                        kbps(BitRate::new(top).unwrap_or_default())
+                    )
+                })
                 .h(px(GRAPH_HEIGHT))
                 .w_full()
                 .mt_2()

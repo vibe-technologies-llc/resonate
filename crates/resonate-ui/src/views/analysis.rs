@@ -24,6 +24,7 @@ use crate::{
         plot,
         root::RootView,
         scrollbar::Scrollbars,
+        spoken::Spoken as _,
         transport::Playing,
     },
 };
@@ -54,6 +55,14 @@ const NOTHING_TO_TAKE: &str = "The catalog holds no recognition of this track to
 const TAKE_THE_NAME_HINT: &str = "Write the title, the artist and the recording the audio was \
                                   heard as into the catalog in place of what the file names. The \
                                   file itself is left as it is.";
+
+const WAVEFORM: &str = "Waveform";
+
+const SPECTROGRAM: &str = "Spectrogram";
+
+const AVERAGE_SPECTRUM: &str = "Average spectrum";
+
+const NO_CUTOFF: &str = "No cutoff was found";
 
 const WAVEFORM_HINT: &str = "Press anywhere on the waveform to play from there";
 
@@ -222,9 +231,10 @@ impl RootView {
             .children(leading)
             .child(verdict_card(analysis))
             .child(
-                card("Waveform").child(
+                card(WAVEFORM).child(
                     div()
                         .id("analysis-waveform")
+                        .pictured_as(WAVEFORM, || WAVEFORM_HINT.to_owned())
                         .relative()
                         .h(px(WAVEFORM_HEIGHT + LABEL_ROOM))
                         .cursor_pointer()
@@ -508,6 +518,8 @@ fn spectrogram_card(
     let colour = verdict_colour(analysis.study.judgement.verdict);
 
     let mut plot = div()
+        .id("analysis-spectrogram")
+        .pictured_as(SPECTROGRAM, || cutoff_said(analysis))
         .relative()
         .h(px(SPECTROGRAM_HEIGHT))
         .rounded_md()
@@ -547,7 +559,17 @@ fn spectrogram_card(
         );
     }
 
-    card("Spectrogram").child(plot)
+    card(SPECTROGRAM).child(plot)
+}
+
+fn cutoff_said(analysis: &Analysis) -> String {
+    match analysis.study.judgement.cutoff {
+        Some(cutoff) => format!(
+            "The sound falls away near {:.1} kHz",
+            cutoff.hz as f32 / HZ_A_KILOHERTZ
+        ),
+        None => NO_CUTOFF.to_owned(),
+    }
 }
 
 fn spectrum_card(drawn: &Drawn) -> Div {
@@ -558,6 +580,8 @@ fn spectrum_card(drawn: &Drawn) -> Div {
     let series = Arc::clone(&drawn.spectrum);
 
     let mut plot = div()
+        .id("analysis-spectrum")
+        .pictured_as(AVERAGE_SPECTRUM, || cutoff_said(analysis))
         .relative()
         .h(px(SPECTRUM_HEIGHT + LABEL_ROOM))
         .child(
@@ -589,7 +613,7 @@ fn spectrum_card(drawn: &Drawn) -> Div {
         );
     }
 
-    card("Average spectrum").child(plot)
+    card(AVERAGE_SPECTRUM).child(plot)
 }
 
 fn spectrum_line(series: Arc<[f32]>, cutoff: Option<f32>, colour: u32) -> Canvas<()> {

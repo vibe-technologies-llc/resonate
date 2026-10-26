@@ -24,6 +24,7 @@ use crate::{
         menu::{self, Menu},
         pointed::LitUnderThePointer,
         root::RootView,
+        spoken::Spelt,
     },
 };
 
@@ -364,9 +365,32 @@ fn titled(cell: Div, title: SharedString, lit: Lit, playing: bool) -> Div {
     .child(matched(title, lit))
 }
 
-pub(crate) fn matched(text: SharedString, lit: Lit) -> AnyElement {
+pub(crate) struct Matched {
+    text: SharedString,
+    drawn: AnyElement,
+}
+
+impl IntoElement for Matched {
+    type Element = AnyElement;
+
+    fn into_element(self) -> AnyElement {
+        self.drawn
+    }
+}
+
+impl Spelt for Matched {
+    fn spelt(&self) -> SharedString {
+        self.text.clone()
+    }
+}
+
+pub(crate) fn matched(text: SharedString, lit: Lit) -> Matched {
+    let spelt = text.clone();
     if lit.is_empty() {
-        return text.into_any_element();
+        return Matched {
+            text: spelt,
+            drawn: text.into_any_element(),
+        };
     }
 
     let struck = HighlightStyle {
@@ -375,9 +399,12 @@ pub(crate) fn matched(text: SharedString, lit: Lit) -> AnyElement {
         ..HighlightStyle::default()
     };
 
-    StyledText::new(text)
-        .with_highlights(lit.into_iter().map(|run| (run, struck)))
-        .into_any_element()
+    Matched {
+        text: spelt,
+        drawn: StyledText::new(text)
+            .with_highlights(lit.into_iter().map(|run| (run, struck)))
+            .into_any_element(),
+    }
 }
 
 pub(crate) fn artist_cell(artist: impl IntoElement) -> Div {
