@@ -8,6 +8,7 @@ paths:
   - "crates/resonate-core/src/answer.rs"
   - "crates/resonate-ui/src/views/settings/sync.rs"
   - "crates/resonate-mobile/src/sync.rs"
+  - "crates/resonate-mobile/src/sync/answers.rs"
   - "fuzz/fuzz_targets/sync.rs"
 ---
 
@@ -180,7 +181,7 @@ platforms; the catalog seam stays thin.
   last writer wins (`plainer_words_told_later_never_undo_timed_ones_and_the_timed_ones_spread`). An
   answer for a song not held is kept (`here = 0`) and `settle` offers it again whenever the catalog's
   revision moved since the last try (`an_answer_for_a_song_not_held_yet_lands_once_the_song_arrives`).
-  A catalog that `takes_answers` false (the default; the phones) neither looks nor takes, and passes
+  A catalog that `takes_answers` false (the default) neither looks nor takes, and passes
   every note on in its snapshot (`a_catalog_that_takes_no_answers_passes_them_on_untouched`).
 - **A snapshot is the merged state**, cut into bundles of at most `BUNDLE_BYTES`; a device compacts
   the server's log past `COMPACT_PAST_RECORDS` (512) or `COMPACT_PAST_BYTES` (4 MiB) since the last
@@ -224,7 +225,9 @@ study lands only on a copy that is the same file**: every whole-file row whose `
 lossy guess this build cannot name, another `JUDGED_UNDER` or another band layout is settled and
 written nowhere
 (`a_study_and_kept_words_land_on_a_catalog_holding_the_same_file_and_read_back_as_they_went`,
-`a_study_of_another_encode_or_words_for_another_take_are_never_written`). The binary's
+`a_study_of_another_encode_or_words_for_another_take_are_never_written`). **The phones take and
+send the same answers under the same rules** (`resonate-mobile`'s `sync/answers.rs`, `mobile.md`'s
+*Answers from other devices*). The binary's
 `Catalogued` sits over `Library` (`resonate-library`'s `synced.rs`: `synced_playlists` reads lists
 only and `synced_queries` the saved queries, a query written over a list or the reverse made anew
 rather than overwritten; a recording resolves by MBID, else folded artist, title words and album with lengths within

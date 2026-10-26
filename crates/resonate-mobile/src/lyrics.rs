@@ -110,6 +110,10 @@ impl KeptSheets {
         Some(kept)
     }
 
+    pub(crate) fn forget(&self, id: u64) {
+        self.0.lock().retain(|(held, _)| *held != id);
+    }
+
     fn keep(&self, id: u64, kept: Kept) {
         let mut held = self.0.lock();
         held.retain(|(held, _)| *held != id);

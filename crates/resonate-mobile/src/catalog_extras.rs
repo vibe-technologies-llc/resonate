@@ -3,8 +3,10 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use resonate_analysis::{BANDS, BandGains, BandLevels, Cut, Loudest, Study};
-use resonate_codec::MediaInfo;
+use resonate_analysis::{
+    BANDS, BandGains, BandLevels, Cut, JUDGED_UNDER, LossyGuess, Loudest, Study,
+};
+use resonate_codec::{MediaInfo, Scanned};
 use resonate_core::Calendar;
 use resonate_library::Agreement;
 use rusqlite::{OptionalExtension, Transaction, params};
@@ -29,7 +31,46 @@ struct Figures<'a> {
     clipped: u64,
     bits: Option<u32>,
     band_levels: &'a [u8],
+    measured: Option<Measured>,
 }
+
+struct Measured {
+    cutoff_hz: Option<u32>,
+    cutoff_drop: Option<f32>,
+    lossy_guess: Option<&'static str>,
+    upsampled_from: Option<u32>,
+    declared_bits: Option<u8>,
+    loudness_range: Option<f32>,
+    mono_as_stereo: bool,
+}
+
+pub(crate) struct LandedStudy<'a> {
+    pub(crate) verdict: &'a str,
+    pub(crate) peak: f32,
+    pub(crate) rms: f32,
+    pub(crate) true_peak: f32,
+    pub(crate) loudness: Option<f32>,
+    pub(crate) dynamic_range: Option<u8>,
+    pub(crate) clipped: u64,
+    pub(crate) bits: Option<u8>,
+    pub(crate) band_levels: &'a [u8],
+    pub(crate) cutoff_hz: Option<u32>,
+    pub(crate) cutoff_drop: Option<f32>,
+    pub(crate) lossy_guess: Option<&'static str>,
+    pub(crate) upsampled_from: Option<u32>,
+    pub(crate) declared_bits: Option<u8>,
+    pub(crate) loudness_range: Option<f32>,
+    pub(crate) mono_as_stereo: bool,
+}
+
+const STUDY_UPSERT: &str = "INSERT INTO studies (track, verdict, peak, rms, true_peak, loudness, dynamic_range, clipped, bits, band_levels, studied, studied_under, cutoff_hz, cutoff_drop, lossy_guess, upsampled_from, declared_bits, loudness_range, mono_as_stereo)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
+     ON CONFLICT(track) DO UPDATE SET verdict = excluded.verdict, peak = excluded.peak, rms = excluded.rms, true_peak = excluded.true_peak, loudness = excluded.loudness, dynamic_range = excluded.dynamic_range, clipped = excluded.clipped, bits = excluded.bits, band_levels = excluded.band_levels, studied = excluded.studied, studied_under = excluded.studied_under, cutoff_hz = excluded.cutoff_hz, cutoff_drop = excluded.cutoff_drop, lossy_guess = excluded.lossy_guess, upsampled_from = excluded.upsampled_from, declared_bits = excluded.declared_bits, loudness_range = excluded.loudness_range, mono_as_stereo = excluded.mono_as_stereo";
+
+const LANDED_STUDY: &str = "INSERT INTO studies (track, verdict, peak, rms, true_peak, loudness, dynamic_range, clipped, bits, band_levels, studied, studied_under, cutoff_hz, cutoff_drop, lossy_guess, upsampled_from, declared_bits, loudness_range, mono_as_stereo)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
+     ON CONFLICT(track) DO UPDATE SET verdict = excluded.verdict, peak = excluded.peak, rms = excluded.rms, true_peak = excluded.true_peak, loudness = excluded.loudness, dynamic_range = excluded.dynamic_range, clipped = excluded.clipped, bits = excluded.bits, band_levels = excluded.band_levels, studied = excluded.studied, studied_under = excluded.studied_under, cutoff_hz = excluded.cutoff_hz, cutoff_drop = excluded.cutoff_drop, lossy_guess = excluded.lossy_guess, upsampled_from = excluded.upsampled_from, declared_bits = excluded.declared_bits, loudness_range = excluded.loudness_range, mono_as_stereo = excluded.mono_as_stereo, agreement = NULL
+     WHERE studies.studied_under IS NOT NULL AND studies.studied_under <> excluded.studied_under";
 
 type StoredLyrics = (Option<String>, Option<String>, String);
 
@@ -371,6 +412,7 @@ impl Catalog {
                 clipped: report.clipped,
                 bits: report.bits_in_use,
                 band_levels: levels.as_bytes(),
+                measured: None,
             },
         )
     }
@@ -388,15 +430,101 @@ impl Catalog {
                 clipped: study.levels.clipped,
                 bits: study.levels.bits_in_use.map(u32::from),
                 band_levels: BandLevels::of(&study.spectrum).as_bytes(),
+                measured: Some(Measured {
+                    cutoff_hz: study.judgement.cutoff.map(|cutoff| cutoff.hz),
+                    cutoff_drop: study.judgement.cutoff.map(|cutoff| cutoff.drop_db),
+                    lossy_guess: study.judgement.lossy_guess().map(LossyGuess::as_str),
+                    upsampled_from: study.judgement.upsampled_from(),
+                    declared_bits: study.examined.declared_bits,
+                    loudness_range: study.loudness.range,
+                    mono_as_stereo: study.levels.stereo.is_some_and(|stereo| stereo.identical),
+                }),
             },
         )
     }
 
     fn keep_figures(&self, id: u64, figures: Figures<'_>) -> Result<()> {
+        let measured = figures.measured.as_ref();
         let connection = self.0.lock();
-        connection.execute("INSERT INTO studies(track, verdict, peak, rms, true_peak, loudness, dynamic_range, clipped, bits, band_levels) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) ON CONFLICT(track) DO UPDATE SET verdict = excluded.verdict, peak = excluded.peak, rms = excluded.rms, true_peak = excluded.true_peak, loudness = excluded.loudness, dynamic_range = excluded.dynamic_range, clipped = excluded.clipped, bits = excluded.bits, band_levels = excluded.band_levels", params![id as i64, figures.verdict, figures.peak, figures.rms, figures.true_peak, figures.loudness, figures.dynamic_range, figures.clipped.min(i64::MAX as u64) as i64, figures.bits, figures.band_levels]).map_err(|source| Error::store(StoreOp::Write, source))?;
+        connection
+            .execute(
+                STUDY_UPSERT,
+                params![
+                    id as i64,
+                    figures.verdict,
+                    figures.peak,
+                    figures.rms,
+                    figures.true_peak,
+                    figures.loudness,
+                    figures.dynamic_range,
+                    figures.clipped.min(i64::MAX as u64) as i64,
+                    figures.bits,
+                    figures.band_levels,
+                    nanos_now(),
+                    measured.map(|_| i64::from(JUDGED_UNDER)),
+                    measured.and_then(|measured| measured.cutoff_hz),
+                    measured.and_then(|measured| measured.cutoff_drop),
+                    measured.and_then(|measured| measured.lossy_guess),
+                    measured.and_then(|measured| measured.upsampled_from),
+                    measured.and_then(|measured| measured.declared_bits),
+                    measured.and_then(|measured| measured.loudness_range),
+                    measured.map(|measured| measured.mono_as_stereo),
+                ],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
         connection
             .execute("DELETE FROM unstudied WHERE track = ?1", [id as i64])
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(())
+    }
+
+    pub(crate) fn land_study(&self, id: u64, study: &LandedStudy<'_>) -> Result<bool> {
+        let connection = self.0.lock();
+        let landed = connection
+            .execute(
+                LANDED_STUDY,
+                params![
+                    id as i64,
+                    study.verdict,
+                    study.peak,
+                    study.rms,
+                    study.true_peak,
+                    study.loudness,
+                    study.dynamic_range,
+                    study.clipped.min(i64::MAX as u64) as i64,
+                    study.bits,
+                    study.band_levels,
+                    nanos_now(),
+                    i64::from(JUDGED_UNDER),
+                    study.cutoff_hz,
+                    study.cutoff_drop,
+                    study.lossy_guess,
+                    study.upsampled_from,
+                    study.declared_bits,
+                    study.loudness_range,
+                    study.mono_as_stereo,
+                ],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        connection
+            .execute("DELETE FROM unstudied WHERE track = ?1", [id as i64])
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(landed > 0)
+    }
+
+    pub(crate) fn keep_identity(&self, id: u64, scanned: &Scanned) -> Result<()> {
+        let packets = scanned.packets.map(|digest| digest.0.cast_signed());
+        let frames = scanned
+            .info
+            .duration
+            .map(|frames| frames.get().cast_signed());
+        self.0
+            .lock()
+            .execute(
+                "UPDATE documents SET packets = ?2, frames = ?3
+                  WHERE id = ?1 AND (packets IS NOT ?2 OR frames IS NOT ?3)",
+                params![id as i64, packets, frames],
+            )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         Ok(())
     }
@@ -506,6 +634,14 @@ pub(crate) fn unreferenced_picture_dropped(
         [picture],
     )?;
     Ok(())
+}
+
+fn nanos_now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| {
+            i64::try_from(since.as_nanos()).unwrap_or(i64::MAX)
+        })
 }
 
 #[cfg(test)]

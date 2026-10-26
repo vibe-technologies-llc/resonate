@@ -14,8 +14,8 @@ use std::{
 use parking_lot::Mutex;
 use resonate_codec::Sources;
 use resonate_core::{
-    AUDIO_EXTENSIONS, Frames, Mbid, Recording, Resumable, Resumption, SampleRate, TrackId,
-    folded_letters, naming::named_within, title_words,
+    AUDIO_EXTENSIONS, Answer, Answered as Learnt, Frames, Mbid, Recording, Resumable, Resumption,
+    SampleRate, TrackId, folded_letters, naming::named_within, title_words,
 };
 use resonate_engine::Command;
 use resonate_sync::{
@@ -32,9 +32,12 @@ use crate::{
     downloads::{file_stem_of, fresh_destination},
     error::{ReceivedOp, SyncOp},
     features::SearchSong,
+    lyrics::KeptSheets,
     playlists,
     saved_searches::{StoredQuery, write_stored_query},
 };
+
+mod answers;
 
 const LEDGER: &str = "sync.sqlite";
 const STAGING: &str = "sync-staging";
@@ -86,6 +89,7 @@ struct DocumentCatalog {
     arrivals: Arc<AtomicU64>,
     landings: AtomicU64,
     indexed: Mutex<Option<(u64, Arc<Indexed>)>>,
+    sheets: Arc<KeptSheets>,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -550,6 +554,7 @@ impl MobilePlayer {
             arrivals: Arc::clone(&self.syncing.arrivals),
             landings: AtomicU64::new(0),
             indexed: Mutex::new(None),
+            sheets: Arc::clone(&self.services.lyrics),
         });
         let settings = Settings {
             server: if config.nearby_only {
@@ -1217,6 +1222,25 @@ impl Catalog for DocumentCatalog {
         Ok(true)
     }
 
+    fn takes_answers(&self) -> bool {
+        true
+    }
+
+    fn answers_after(&self, mark: i64, most: usize) -> Answered<Vec<Learnt>> {
+        let mut learnt = self.lyrics_to_share(mark, most)?;
+        learnt.extend(self.studies_to_share(mark, most)?);
+        learnt.sort_by_key(|learnt| learnt.at);
+        learnt.truncate(most);
+        Ok(learnt)
+    }
+
+    fn take_answer(&self, recording: &Recording, answer: &Answer) -> Answered<bool> {
+        match answer {
+            Answer::Lyrics(lyrics) => self.take_lyrics(recording, lyrics),
+            Answer::Study(study) => self.take_study(study),
+        }
+    }
+
     fn revision(&self) -> u64 {
         self.catalog.revision()
     }
@@ -1452,7 +1476,7 @@ mod tests {
 
     const RECORDING: &str = "b1a9c0e9-d987-4042-ae91-78d6a3267d69";
 
-    fn player(folder: &Path) -> MobilePlayer {
+    pub(super) fn player(folder: &Path) -> MobilePlayer {
         MobilePlayer {
             player: Mutex::new(None),
             catalog: Arc::new(catalog::Catalog::open(Path::new(":memory:")).expect("a catalog")),
@@ -1472,7 +1496,7 @@ mod tests {
         }
     }
 
-    fn documents_of(player: &MobilePlayer, folder: &Path) -> DocumentCatalog {
+    pub(super) fn documents_of(player: &MobilePlayer, folder: &Path) -> DocumentCatalog {
         DocumentCatalog {
             catalog: Arc::clone(&player.catalog),
             sources: Arc::clone(&player.sources),
@@ -1480,10 +1504,11 @@ mod tests {
             arrivals: Arc::clone(&player.syncing.arrivals),
             landings: AtomicU64::new(0),
             indexed: Mutex::new(None),
+            sheets: Arc::clone(&player.services.lyrics),
         }
     }
 
-    fn folder(name: &str) -> PathBuf {
+    pub(super) fn folder(name: &str) -> PathBuf {
         let folder = env::temp_dir().join(format!(
             "resonate-mobile-sync-{name}-{}",
             playlists::created_now()
@@ -1492,7 +1517,12 @@ mod tests {
         folder
     }
 
-    fn song(player: &MobilePlayer, uri: &str, title: &str, recording: Option<&str>) -> Track {
+    pub(super) fn song(
+        player: &MobilePlayer,
+        uri: &str,
+        title: &str,
+        recording: Option<&str>,
+    ) -> Track {
         let track = player
             .catalog
             .upsert(Track {
@@ -1514,7 +1544,7 @@ mod tests {
         track
     }
 
-    fn named(title: &str, artist: &str, seconds: u64) -> Recording {
+    pub(super) fn named(title: &str, artist: &str, seconds: u64) -> Recording {
         Recording {
             mbid: None,
             title: title.into(),
