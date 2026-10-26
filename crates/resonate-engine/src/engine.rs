@@ -9,7 +9,7 @@ use std::{
 use crossbeam_channel::{Receiver, Select, Sender, TryRecvError, TrySendError};
 use resonate_audio::{
     LatencyRequest, MediaRole, NodeName, SinkChange, SinkId, SinkInfo, SinkStream, StreamEvent,
-    StreamRequest, StreamState, StreamVolume,
+    StreamRequest, StreamState, StreamVolume, Words,
 };
 use resonate_codec::{BoxLayout, Decoder, MediaInfo, Packing, ProfileBuilder, ReplayGain, Sources};
 use resonate_core::{
@@ -32,7 +32,7 @@ use crate::{
     },
     queue::{self, Queue, QueueItem, Removal},
     ring::{Entering, FADED_OVER, Level, RingConsumer, RingMonitor, RingProducer, ring},
-    streaming::{Asked, Streamed, Streaming, close_unwanted},
+    streaming::{Asked, Came, Streamed, Streaming, close_unwanted},
     surveying::{Surveyed, Surveying},
     turns::Turns,
 };
@@ -61,6 +61,7 @@ const QUIET_WITHIN_AT_MOST: Duration = Duration::from_millis(400);
 const SLEEP_FADES_OVER: Duration = Duration::from_secs(10);
 const PULLED_WITHIN: Duration = Duration::from_millis(250);
 const OPENING_ANSWERED_WITHIN: Duration = Duration::from_millis(250);
+const RESHAPED_FORMAT_SETTLED_WITHIN: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ReadBy {
@@ -377,11 +378,39 @@ struct Output {
     sleep_lifted: Option<Instant>,
     last_pulled: Option<(u64, Instant)>,
     overs_of_retired_chains: u64,
+    handed: Option<Handed>,
+    format_owed_since: Option<Instant>,
 }
 
 struct Retiring {
     output: Output,
     since: Instant,
+    hands_on_its_stream: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Retire {
+    HandingOnItsStream,
+    ClosingItsStream,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Handed {
+    spec: StreamSpec,
+    words: Option<Words>,
+    stream_volume: StreamVolume,
+}
+
+struct Kept {
+    stream: SinkStream,
+    sink: SinkId,
+    handed: Handed,
+}
+
+impl Kept {
+    fn close(self) {
+        close_unwanted(self.stream);
+    }
 }
 
 fn heard_amplitude(plan: &OutputPlan, muted: bool) -> f32 {
@@ -502,6 +531,8 @@ impl Output {
             sleep_lifted: None,
             last_pulled: None,
             overs_of_retired_chains: 0,
+            handed: None,
+            format_owed_since: None,
         })
     }
 
@@ -708,6 +739,40 @@ impl Output {
         Instant::now() >= until
     }
 
+    fn can_hand_on_its_stream(&self) -> bool {
+        self.stream.is_some() && self.active && !self.deaf && self.tail == Tail::Unasked
+    }
+
+    fn kept(mut self) -> Option<Kept> {
+        let stream = self.stream.take()?;
+        Some(Kept {
+            stream,
+            sink: self.sink,
+            handed: Handed {
+                spec: self.plan.stream,
+                words: self.status.words,
+                stream_volume: self.status.stream_volume,
+            },
+        })
+    }
+
+    fn take_what_the_stream_was_handed(&mut self) {
+        let Some(handed) = self.handed.take() else {
+            return;
+        };
+        self.status.stream_volume = handed.stream_volume;
+        if handed.spec == self.plan.stream {
+            self.status.words = handed.words;
+            return;
+        }
+        self.format_owed_since = Some(Instant::now());
+    }
+
+    fn reshaped_format_went_unanswered(&self) -> bool {
+        self.format_owed_since
+            .is_some_and(|since| since.elapsed() >= RESHAPED_FORMAT_SETTLED_WITHIN)
+    }
+
     fn close(&mut self) {
         let Some(stream) = self.stream.take() else {
             return;
@@ -740,6 +805,7 @@ pub struct Engine {
     track: Option<Track>,
     output: Option<Output>,
     retiring: Option<Retiring>,
+    kept: Option<Kept>,
     unbound: Option<Frames>,
     rebind_owed: bool,
     graph_lost: Option<Instant>,
@@ -888,6 +954,7 @@ impl Engine {
             track: None,
             output: None,
             retiring: None,
+            kept: None,
             unbound: None,
             rebind_owed: false,
             graph_lost: None,
@@ -958,6 +1025,7 @@ impl Engine {
             output.close();
         }
         self.close_what_was_retiring();
+        self.close_what_was_kept();
         if let Some(streaming) = self.streaming.as_mut() {
             streaming.stop();
         }
@@ -1726,19 +1794,31 @@ impl Engine {
     }
 
     fn retire_the_output(&mut self) {
+        self.retire(Retire::ClosingItsStream);
+    }
+
+    fn retire(&mut self, how: Retire) {
         let Some(mut output) = self.output.take() else {
             return;
         };
         output.note_the_pulls();
         self.close_what_was_retiring();
+        self.close_what_was_kept();
+        let hands_on_its_stream =
+            how == Retire::HandingOnItsStream && output.can_hand_on_its_stream();
         if !output.is_sounding() {
-            output.close();
+            if hands_on_its_stream {
+                self.kept = output.kept();
+            } else {
+                output.close();
+            }
             return;
         }
         output.producer.fade_out(output.fade());
         self.retiring = Some(Retiring {
             output,
             since: Instant::now(),
+            hands_on_its_stream,
         });
     }
 
@@ -1748,13 +1828,32 @@ impl Engine {
         }
     }
 
+    fn close_what_was_kept(&mut self) {
+        if let Some(kept) = self.kept.take() {
+            kept.close();
+        }
+    }
+
+    fn hand_on_what_has_retired(&mut self) {
+        let Some(retiring) = self.retiring.take() else {
+            return;
+        };
+        if retiring.hands_on_its_stream {
+            self.close_what_was_kept();
+            self.kept = retiring.output.kept();
+            return;
+        }
+        let mut output = retiring.output;
+        output.close();
+    }
+
     fn finish_fading(&mut self) {
         let retired = self
             .retiring
             .as_ref()
             .is_some_and(|retiring| retiring.output.has_gone_quiet(retiring.since));
         if retired {
-            self.close_what_was_retiring();
+            self.hand_on_what_has_retired();
         }
         let Some(output) = self.output.as_mut() else {
             return;
@@ -2013,7 +2112,7 @@ impl Engine {
             ),
         }
         let at = self.position();
-        if let Err(error) = self.rebind(Some(at), None) {
+        if let Err(error) = self.rebind_on_a_new_stream(Some(at), None) {
             self.fail(error);
         }
     }
@@ -2168,11 +2267,28 @@ impl Engine {
     }
 
     fn rebind(&mut self, at: Option<Frames>, target: Option<StreamSpec>) -> Result<()> {
+        self.rebind_with(at, target, Retire::HandingOnItsStream)
+    }
+
+    fn rebind_on_a_new_stream(
+        &mut self,
+        at: Option<Frames>,
+        target: Option<StreamSpec>,
+    ) -> Result<()> {
+        self.rebind_with(at, target, Retire::ClosingItsStream)
+    }
+
+    fn rebind_with(
+        &mut self,
+        at: Option<Frames>,
+        target: Option<StreamSpec>,
+        how: Retire,
+    ) -> Result<()> {
         if self.track.is_none() {
             return Ok(());
         }
         let resumes_at = at.unwrap_or_else(|| self.position());
-        self.retire_the_output();
+        self.retire(how);
 
         let bound = self.bind(at, target);
         if bound.is_err() && self.track.is_some() {
@@ -2795,6 +2911,19 @@ impl Engine {
                 .is_some_and(|output| output.stream.is_none())
     }
 
+    fn let_go_of_a_stream_nothing_will_take(&mut self) {
+        let Some(sink) = self.kept.as_ref().map(|kept| kept.sink) else {
+            return;
+        };
+        let taken = self
+            .output
+            .as_ref()
+            .is_some_and(|output| output.stream.is_none() && output.sink == sink);
+        if !taken {
+            self.close_what_was_kept();
+        }
+    }
+
     fn promote(&mut self) {
         if let Some((made, opened)) = self.streaming.as_mut().and_then(Streaming::answered) {
             self.land_the_stream(made, opened);
@@ -2802,6 +2931,7 @@ impl Engine {
         if self.is_opening_a_stream() {
             return;
         }
+        self.let_go_of_a_stream_nothing_will_take();
         let Some(output) = self.output.as_ref() else {
             return;
         };
@@ -2835,35 +2965,35 @@ impl Engine {
         if self.playing {
             self.wake_the_link();
         }
+        let kept = self.kept.take();
+        if let Some(output) = self.output.as_mut() {
+            output.handed = kept.as_ref().map(|kept| kept.handed);
+        }
 
         let asked = Asked {
             made,
             request,
             source: Box::new(consumer),
+            kept: kept.map(|kept| Box::new(kept.stream)),
         };
         let refused = match self.streaming.as_mut() {
             Some(streaming) => streaming.ask(asked).err(),
             None => Some(asked),
         };
-        if let Some(Asked {
-            made,
-            request,
-            source,
-        }) = refused
-        {
-            let opened = self.opener.open(&request, source);
+        if let Some(asked) = refused {
+            let (made, opened) = asked.answered_by(self.opener.as_ref());
             self.land_the_stream(made, opened);
         }
     }
 
-    fn land_the_stream(&mut self, made: u64, opened: SinkResult<SinkStream>) {
+    fn land_the_stream(&mut self, made: u64, opened: SinkResult<(SinkStream, Came)>) {
         let waited_on = self
             .output
             .as_ref()
             .is_some_and(|output| output.made == made && output.stream.is_none());
-        let stream = match (opened, waited_on) {
-            (Ok(stream), true) => stream,
-            (Ok(stream), false) => {
+        let (stream, came) = match (opened, waited_on) {
+            (Ok(landed), true) => landed,
+            (Ok((stream, _)), false) => {
                 tracing::debug!("a stream opened for an output that has since gone is closed");
                 close_unwanted(stream);
                 return;
@@ -2891,6 +3021,10 @@ impl Engine {
         if let Some(output) = self.output.as_mut() {
             output.stream = Some(stream);
             output.active = active;
+            match came {
+                Came::Reshaped => output.take_what_the_stream_was_handed(),
+                Came::Opened => output.handed = None,
+            }
         }
         self.transport = if self.playing {
             TransportState::Playing
@@ -3088,6 +3222,7 @@ impl Engine {
         for event in events {
             match event {
                 StreamEvent::FormatChanged { spec, words } => {
+                    output.format_owed_since = None;
                     output.status.words = Some(words);
                     if spec != output.plan.stream {
                         renegotiated = Some(spec);
@@ -3108,6 +3243,8 @@ impl Engine {
             }
         }
 
+        let format_went_unanswered = output.reshaped_format_went_unanswered();
+
         if let Some((previous, op, status)) = refused {
             self.fail(Error::Sink(resonate_audio::Error::StreamRefused {
                 node,
@@ -3126,6 +3263,16 @@ impl Engine {
         }
         if let Some(spec) = renegotiated {
             self.downgrade(spec);
+            return;
+        }
+        if format_went_unanswered {
+            tracing::warn!(
+                "the graph never settled the format a reshaped stream asked for; it is reopened"
+            );
+            let at = self.position();
+            if let Err(error) = self.rebind_on_a_new_stream(Some(at), None) {
+                self.fail(error);
+            }
         }
     }
 

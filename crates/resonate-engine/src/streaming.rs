@@ -1,16 +1,89 @@
 use std::{sync::Arc, thread};
 
 use crossbeam_channel::{Receiver, SendError, Sender, TryRecvError, bounded};
-use resonate_audio::{AudioSource, SinkStream, StreamRequest};
+use resonate_audio::{AudioSource, Reshaped, SinkStream, StreamEvent, StreamRequest, StreamState};
 
 use crate::{Opener, SinkResult};
 
-pub(crate) type Streamed = (u64, SinkResult<SinkStream>);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Came {
+    Opened,
+    Reshaped,
+}
+
+pub(crate) type Streamed = (u64, SinkResult<(SinkStream, Came)>);
 
 pub(crate) struct Asked {
     pub(crate) made: u64,
     pub(crate) request: StreamRequest,
     pub(crate) source: Box<dyn AudioSource>,
+    pub(crate) kept: Option<Box<SinkStream>>,
+}
+
+impl Asked {
+    pub(crate) fn answered_by(self, opener: &dyn Opener) -> Streamed {
+        let Self {
+            made,
+            request,
+            source,
+            kept,
+        } = self;
+        let source = match kept {
+            Some(stream) => match reshaped(*stream, &request, source) {
+                Ok(stream) => return (made, Ok((stream, Came::Reshaped))),
+                Err(Unkept::Refused(source)) => source,
+                Err(Unkept::Lost(error)) => return (made, Err(error)),
+            },
+            None => source,
+        };
+        let opened = opener.open(&request, source);
+        (made, opened.map(|stream| (stream, Came::Opened)))
+    }
+}
+
+enum Unkept {
+    Refused(Box<dyn AudioSource>),
+    Lost(resonate_audio::Error),
+}
+
+fn reshaped(
+    stream: SinkStream,
+    request: &StreamRequest,
+    source: Box<dyn AudioSource>,
+) -> Result<SinkStream, Unkept> {
+    if !has_stood_up_to_now(&stream) {
+        tracing::debug!("a stream that failed while it was kept is closed rather than reshaped");
+        close_unwanted(stream);
+        return Err(Unkept::Refused(source));
+    }
+    match stream.reshape(request, source) {
+        Reshaped::Kept => Ok(stream),
+        Reshaped::Refused { source, because } => {
+            tracing::debug!(
+                ?because,
+                "the backend would not reshape the stream; it is reopened"
+            );
+            close_unwanted(stream);
+            Err(Unkept::Refused(source))
+        }
+        Reshaped::Lost(error) => {
+            close_unwanted(stream);
+            Err(Unkept::Lost(error))
+        }
+    }
+}
+
+fn has_stood_up_to_now(stream: &SinkStream) -> bool {
+    let failures = stream.events().try_iter().filter(|event| {
+        matches!(
+            event,
+            StreamEvent::StateChanged {
+                to: StreamState::Failed,
+                ..
+            } | StreamEvent::Refused { .. }
+        )
+    });
+    failures.count() == 0
 }
 
 pub(crate) struct Streaming {
@@ -26,14 +99,9 @@ impl Streaming {
         thread::Builder::new()
             .name("resonate-stream-open".to_owned())
             .spawn(move || {
-                for Asked {
-                    made,
-                    request,
-                    source,
-                } in asked
-                {
-                    let opened = opener.open(&request, source);
-                    if let Err(SendError((_, Ok(stream)))) = answer.send((made, opened)) {
+                for asked in asked {
+                    let streamed = asked.answered_by(opener.as_ref());
+                    if let Err(SendError((_, Ok((stream, _))))) = answer.send(streamed) {
                         close_unwanted(stream);
                         return;
                     }
@@ -86,7 +154,7 @@ impl Streaming {
     pub(crate) fn stop(&mut self) {
         self.asks = None;
         while let Ok((_, opened)) = self.answers.try_recv() {
-            if let Ok(stream) = opened {
+            if let Ok((stream, _)) = opened {
                 close_unwanted(stream);
             }
         }

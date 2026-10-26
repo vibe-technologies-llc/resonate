@@ -9,7 +9,7 @@ use std::{
 use crossbeam_channel::Receiver;
 use resonate_core::{Frames, Ratio, SampleRate, StreamSpec};
 
-use crate::{Operation, Result, SinkId, Words};
+use crate::{AudioSource, Error, Operation, Result, SinkId, Words};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct GraphTime {
@@ -145,10 +145,35 @@ pub enum StreamEvent {
     Drained,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Unreshapable {
+    Unsupported,
+    AnotherTarget,
+    AnotherConversion,
+    AnotherPriority,
+    PinnedRateMoved,
+    StillHandingOver,
+    NoStream,
+    FormatUnwritten,
+}
+
+#[must_use]
+pub enum Reshaped {
+    Kept,
+    Refused {
+        source: Box<dyn AudioSource>,
+        because: Unreshapable,
+    },
+    Lost(Error),
+}
+
+pub type Reshaper = Box<dyn Fn(&StreamRequest, Box<dyn AudioSource>) -> Reshaped + Send + Sync>;
+
 pub struct SinkStream {
     events: Receiver<StreamEvent>,
     clock: Arc<StreamClock>,
     control: Box<dyn Fn(StreamCommand) -> Result<()> + Send + Sync>,
+    reshaper: Option<Reshaper>,
 }
 
 impl SinkStream {
@@ -161,6 +186,24 @@ impl SinkStream {
             events,
             clock,
             control,
+            reshaper: None,
+        }
+    }
+
+    pub fn reshaped_by(self, reshaper: Reshaper) -> Self {
+        Self {
+            reshaper: Some(reshaper),
+            ..self
+        }
+    }
+
+    pub fn reshape(&self, request: &StreamRequest, source: Box<dyn AudioSource>) -> Reshaped {
+        match self.reshaper.as_ref() {
+            Some(reshaper) => reshaper(request, source),
+            None => Reshaped::Refused {
+                source,
+                because: Unreshapable::Unsupported,
+            },
         }
     }
 

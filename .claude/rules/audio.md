@@ -380,8 +380,40 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   on its next callback and acknowledges, the engine refills; no acknowledgement within
   `DISCARD_TIMEOUT` = stalled, stream rebuilt. A seek while paused reopens instead (a graph not
   calling `process` can never acknowledge); a pause landing after an in-place seek is the same case
-  caught late (`Unanswered::NothingPulling`, not a stall). Sink switch and renegotiation still
-  reopen.
+  caught late (`Unanswered::NothingPulling`, not a stall). A sink switch still reopens; a
+  renegotiation reshapes where the backend can (below).
+- **A rebind on the same device reshapes the stream it holds instead of reopening it, where the
+  backend can.** `rebind` retires the output `Retire::HandingOnItsStream`: the old ring fades out
+  as ever, but once quiet its stream (active, not deaf, never asked to drain) is moved into
+  `Engine::kept` rather than closed. The new output is built at the heard position as any rebind
+  builds it (decoder seeked, chain and resampler made afresh, ring at the new depth, `FadedIn`),
+  and `promote` hands the kept stream to the `resonate-stream-open` worker with the new ring's
+  consumer (`Asked::kept`); `Asked::answered_by` asks `SinkStream::reshape` and, where it answers
+  `Reshaped::Refused` (the source handed back), closes it and opens as before, so the reopen is the
+  fallback and `land_the_stream` learns which (`Came`). A kept stream nothing takes (no output,
+  another device, an output that has its stream) is closed by `let_go_of_a_stream_nothing_will_take`;
+  stop, a track change and every other retire close it. The gap is the fade and the new ring's
+  priming, not a stream's connect and negotiation. A reshaped stream keeps its published words and
+  stream volume where the format stands; where it moved, a `FormatChanged` is owed within
+  `RESHAPED_FORMAT_SETTLED_WITHIN` (1 s), else the row is rebound `rebind_on_a_new_stream`, as a
+  stalled discard is. The backend contract: `SinkStream::reshaped_by` gives a stream its
+  `Reshaper`; a stream given none refuses `Unreshapable::Unsupported`, as the phones' and the test
+  fake's default do (`a_buffer_moved_mid_track_reshapes_the_stream_and_plays_on_from_where_it_was_heard`,
+  `a_graph_answering_another_format_has_the_stream_it_holds_reshaped_rather_than_reopened`,
+  `a_reshaped_stream_whose_format_the_graph_never_settles_is_reopened`,
+  `a_device_chosen_mid_track_opens_a_stream_on_it_rather_than_reshaping_the_one_held`).
+- **PipeWire reshapes a live stream by handing its callback a new feed and offering new formats.**
+  The listener's user data is a `process::Fed`: the `Feed` (a `Cycle` for the spec and the source)
+  plus two one-way `rtrb` queues. The loop (`ActiveStream::reshape`) pushes the new `Feed`; the
+  callback swaps it in at the head of a cycle and pushes the old one back, so the old ring is freed
+  on the loop (each reshape and heartbeat, `Handing::let_go_of_the_spent`), never on the RT thread;
+  it takes nothing while the spent queue is full. Where the spec moves, the loop first stores
+  `Taken::Otherwise` against the new spec (silence until the graph settles), points the
+  `param_changed` closure's asked spec (`Rc<Cell<StreamSpec>>`) at it, and calls `update_params`
+  with the new `EnumFormat`s; the settled `Format` then hands the ring over as ever. Refused, with
+  the source handed back: another target, another `no_convert`, `realtime` or latency, a pinned rate
+  that moves or a pin switched (`node.rate` is a connect-time property here), a feed not yet taken,
+  formats the graph would not take (`a_live_stream_takes_a_new_source_and_a_new_rate_without_reopening`).
 - **Leaving/returning to unity gain and switching the equaliser reshape the chain in place.**
   `retune` builds the wanted plan against the open stream. `OutputPlan::same_shape_as`: retune the
   chain. Else `OutputPlan::becomes_on_the_same_stream` (same `stream`, `packing`, `remix`,
@@ -403,8 +435,9 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   the chain reads the setting itself when it is built (`ReadBy::reaches_into`: quality and phase under a
   resampler, the dither's kind under a dither) the plan alone cannot say, so it reopens. Choosing
   the device the stream is already on (`stays_on_the_bound_device`, by `chosen_sink`, named or
-  followed default alike) reopens nothing. Graph rate is not weighed (`clock.force-rate` pins the
-  graph and is set as the stream opens: switching it still reopens).
+  followed default alike) reopens nothing. Graph rate is not weighed (`node.rate` pins the graph and
+  is set as the stream opens: switching it still reopens, as PipeWire refuses the reshape). A
+  setting that does move the stream or the ring's depth rebinds, and the rebind reshapes (above).
 - **A renegotiation converges because the next plan asks for exactly what the graph answered.**
   `StreamEvent::FormatChanged` carries the settled spec; `downgrade` hands it to `plan_for` as
   target, written into `OutputPlan::stream` whole (writing the source's channels back made the two
