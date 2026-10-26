@@ -30,7 +30,7 @@ use crate::{
 pub(crate) struct Services {
     pub(crate) online: Online,
     pub(crate) auto_eq: resonate_online::AutoEq,
-    pub(crate) lyrics: KeptSheets,
+    pub(crate) lyrics: Arc<KeptSheets>,
     analysis: Mutex<Option<Arc<Watch>>>,
     pub(crate) fitting: Mutex<Option<Arc<Watch>>>,
     pub(crate) analyses: Mutex<BTreeMap<u64, Arc<resonate_analysis::Analysis>>>,
@@ -47,7 +47,7 @@ impl Default for Services {
         Self {
             online,
             auto_eq,
-            lyrics: KeptSheets::default(),
+            lyrics: Arc::default(),
             analysis: Mutex::new(None),
             fitting: Mutex::new(None),
             analyses: Mutex::new(BTreeMap::new()),

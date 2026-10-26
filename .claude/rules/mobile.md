@@ -194,6 +194,46 @@ frame for a sheet not kept reads it from the catalog again rather than answering
 the catalog holds no words for is kept `Wordless`, so its frames ask SQLite once, while
 `cached_lyrics` (behind `lyrics` and the keeping calls) reads the catalog again past `Wordless`.
 
+## Answers from other devices
+
+`DocumentCatalog` takes answers (`takes_answers` true) by the rules the desktop's `answers.rs`
+keeps (`sync.md`), over the document catalog, in `sync/answers.rs`.
+
+- **Words.** `lyrics_to_share` lists every `lyrics` row with text of a visible document, in `asked`
+  order (`at` is `asked` in nanoseconds), timed or not by `is_synced`, and only those `Answer::travels`
+  admits. `take_lyrics` lands only on a document the recording is held strictly by (the in-memory
+  `Indexed` resolves it, then the document's recording id is the recording's, or both lengths are
+  known and within 2 s), parsed first, as a row with no Lyricsfile and origin `SHARED_LYRICS`, and
+  never where the row keeps words as rich already (`LyricText::detail`). `SHARED_LYRICS` is due for
+  the pass's Lyricsfile retry as `FETCHED_LYRICS` is. The kept sheet is dropped from `KeptSheets`
+  (shared with the player as an `Arc`), so a pane never draws what landing replaced.
+- **A study is the file it measured.** The catalog never knew a file by its packets, so
+  `documents.packets` and `documents.frames` (the first-packets digest and frame count
+  `probe_scanned` reads, the desktop's `tracks.packets` and `tracks.duration`) are kept by the
+  study pass right after it studies (`Hearer::keep_identity`) and by landing, which probes a
+  document only when its length (`documents_by_length`: rate and `duration_ms` within a
+  millisecond) could be the study's and its identity is not yet kept; the identity goes with the
+  file (`documents_forget_which_file_they_were` clears it when `size` or `modified` moves).
+  `studies` gained `studied`, `studied_under` (`JUDGED_UNDER`) and the figures the catalog lacked
+  (`cutoff_hz`, `cutoff_drop`, `lossy_guess`, `upsampled_from`, `declared_bits`,
+  `loudness_range`, `mono_as_stereo`), all written by `keep_studied`; `keep_study` (the analysis
+  pane, which has no such figures) leaves `studied_under` null. `studies_to_share` lists a row
+  judged under this build with whole band levels (the file-change trigger clears them) on a
+  document with a kept identity; a study from before the migration is listed once its song is
+  studied again. `take_study` lands on every visible document whose rate, frame count and
+  packets digest are the study's, never over a row `studied_under` this build (a row with no
+  `studied_under` is a study from before and stays too), over one of another judgement it replaces and
+  clears its `agreement`. A verdict, lossy guess, judgement or band layout this build cannot
+  name is settled and written nowhere. The pass still decodes a landed song when it holds an
+  AcoustID key, since the study that lands carries no print and `tracks_to_hear` asks for the
+  recognition (`agreement`) the landed row lacks.
+  (`a_study_lands_on_every_copy_that_is_the_same_file_and_on_no_other_encode`,
+  `a_study_of_another_encode_another_length_or_another_rate_is_never_written`,
+  `a_study_never_lands_over_one_at_this_judgement_but_replaces_one_of_another`,
+  `words_land_only_on_a_song_held_strictly_and_never_over_as_rich_words`,
+  `landed_studies_are_listed_for_sending_exactly_as_they_arrived_beside_kept_words`,
+  `a_study_the_phone_kept_itself_is_listed_with_the_file_it_measured`).
+
 ## The equaliser
 
 The phones' curve, its bounds, the drawn response, imports and stored form are `eq.md`'s *The

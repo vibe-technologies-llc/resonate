@@ -13,7 +13,7 @@ use std::{
 use crossbeam_channel::{Sender, bounded};
 use parking_lot::Mutex;
 use resonate_analysis::Watching;
-use resonate_codec::{CoverArt, ImageFormat, Sources};
+use resonate_codec::{CoverArt, ImageFormat, Sources, probe_scanned};
 use resonate_core::{AlbumId, Isrc, Link, Mbid, SourceId, TrackId};
 use resonate_library::{
     A_THUMBNAIL_BELOW, Agreement, AlbumToAsk, BETTERED_AFTER, COVERS_ASKED_AGAIN_AFTER, Certainty,
@@ -42,6 +42,7 @@ const PERFORMERS_WEIGHED_AT_MOST: usize = 32;
 const LISTED_APART: char = '\n';
 
 pub(crate) const FETCHED_LYRICS: &str = "lrclib";
+pub(crate) const SHARED_LYRICS: &str = "shared";
 
 const ARCHIVED_COVER: &str = "coverartarchive";
 
@@ -1256,6 +1257,7 @@ impl Hearer<'_> {
             }
         };
         self.catalog.keep_studied(track, &study)?;
+        self.keep_identity(track, &held.uri);
         let Some(print) = study.print else {
             self.catalog.keep_agreement(track, Agreement::Unheard)?;
             return Ok(());
@@ -1268,6 +1270,18 @@ impl Hearer<'_> {
             }
             Err(Error::Reference { op, source }) => self.weigh_a_failure(op, *source),
             Err(error) => Err(error.into()),
+        }
+    }
+
+    fn keep_identity(&self, track: u64, uri: &str) {
+        let scanned = location(uri).and_then(|at| Ok(probe_scanned(self.sources, &at)?));
+        match scanned {
+            Ok(scanned) => {
+                if let Err(error) = self.catalog.keep_identity(track, &scanned) {
+                    tracing::debug!(%error, track, "the identity of a studied track was not kept");
+                }
+            }
+            Err(error) => tracing::debug!(%error, track, "a studied track could not be identified"),
         }
     }
 
@@ -1403,7 +1417,7 @@ fn sing(
     Ok(())
 }
 
-fn is_synced(text: &str) -> bool {
+pub(crate) fn is_synced(text: &str) -> bool {
     SourceId::new(FETCHED_LYRICS)
         .ok()
         .and_then(|source| resonate_lyrics::read_lyrics(source, text).ok().flatten())
@@ -1613,7 +1627,7 @@ impl Catalog {
                 "SELECT d.id FROM documents d LEFT JOIN lyrics l ON l.track = d.id
                  WHERE ?1 OR l.track IS NULL
                     OR (l.text IS NULL AND l.asked <= ?2)
-                    OR (l.text IS NOT NULL AND l.document IS NULL AND l.origin = ?4 AND l.asked <= ?3)
+                    OR (l.text IS NOT NULL AND l.document IS NULL AND l.origin IN (?4, ?5) AND l.asked <= ?3)
                  ORDER BY d.id",
             )
             .map_err(read_error)?;
@@ -1623,7 +1637,8 @@ impl Catalog {
                     due.refresh,
                     seconds_before(due.now, MISSED_AGAIN_AFTER),
                     seconds_before(due.now, BETTERED_AFTER),
-                    FETCHED_LYRICS
+                    FETCHED_LYRICS,
+                    SHARED_LYRICS
                 ],
                 |row| row.get::<_, i64>(0).map(|id| id as u64),
             )
@@ -2954,6 +2969,37 @@ mod tests {
             assert_eq!(measured(&harness), 4);
             assert_eq!(after, vec!["Money".to_owned(), "Time".to_owned()]);
             assert!(!status.running);
+        }
+
+        #[test]
+        fn a_song_the_pass_studied_is_known_by_its_packets_and_judged_under_this_build() {
+            let harness = sounding_library();
+            let printer = Printer::hearing("Time");
+
+            hearing(&harness, &printer);
+            let count = |sql: &str| -> i64 {
+                harness
+                    .player
+                    .catalog
+                    .0
+                    .lock()
+                    .query_row(sql, [], |row| row.get(0))
+                    .expect("a count")
+            };
+
+            assert_eq!(
+                count(
+                    "SELECT count(*) FROM documents WHERE packets IS NOT NULL AND frames IS NOT NULL"
+                ),
+                4
+            );
+            assert_eq!(
+                count(&format!(
+                    "SELECT count(*) FROM studies WHERE studied_under = {} AND studied IS NOT NULL",
+                    resonate_analysis::JUDGED_UNDER
+                )),
+                4
+            );
         }
 
         #[test]

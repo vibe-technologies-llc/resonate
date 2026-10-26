@@ -50,8 +50,7 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   could travel as the answer keyed by `Recording::key()` and be landed through the strict rules
   `land_release` lands with (a guess is still never written, a file's own tags and pictures still
   win) and stamped answered so the pass steps past it; covers, Lyricsfiles and prints fetched device
-  to device as songs are (`ToPeer`), not kept on the server. The phones' catalogs take no answers
-  yet (`Catalog::takes_answers` false: they pass them on untouched) and send none
+  to device as songs are (`ToPeer`), not kept on the server
 
 ## Equaliser and DSP
 

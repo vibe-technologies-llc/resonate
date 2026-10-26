@@ -84,6 +84,22 @@ ALTER TABLE studies ADD COLUMN band_levels BLOB;
 CREATE TRIGGER documents_forget_where_the_music_sounded AFTER UPDATE OF size, modified ON documents WHEN old.size IS NOT new.size OR old.modified IS NOT new.modified BEGIN UPDATE studies SET band_levels = NULL WHERE track = new.id; END;
 ";
 
+const ANSWERS_TRAVEL: &str = "
+ALTER TABLE documents ADD COLUMN packets INTEGER;
+ALTER TABLE documents ADD COLUMN frames INTEGER;
+CREATE INDEX documents_by_length ON documents(rate, duration_ms) WHERE missing = 0;
+CREATE TRIGGER documents_forget_which_file_they_were AFTER UPDATE OF size, modified ON documents WHEN old.size IS NOT new.size OR old.modified IS NOT new.modified BEGIN UPDATE documents SET packets = NULL, frames = NULL WHERE id = new.id; END;
+ALTER TABLE studies ADD COLUMN studied INTEGER;
+ALTER TABLE studies ADD COLUMN studied_under INTEGER;
+ALTER TABLE studies ADD COLUMN cutoff_hz INTEGER;
+ALTER TABLE studies ADD COLUMN cutoff_drop REAL;
+ALTER TABLE studies ADD COLUMN lossy_guess TEXT;
+ALTER TABLE studies ADD COLUMN upsampled_from INTEGER;
+ALTER TABLE studies ADD COLUMN declared_bits INTEGER;
+ALTER TABLE studies ADD COLUMN loudness_range REAL;
+ALTER TABLE studies ADD COLUMN mono_as_stereo INTEGER;
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     LISTENS_NAME_THEIR_ORIGIN,
@@ -94,6 +110,7 @@ const MIGRATIONS: &[&str] = &[
     PLAYLISTS_FILL_THEMSELVES_FROM_A_SAVED_SEARCH,
     DOCUMENTS_THAT_WILL_NOT_DECODE_ARE_REMEMBERED,
     STUDIES_KEEP_WHERE_THE_MUSIC_SOUNDS,
+    ANSWERS_TRAVEL,
 ];
 
 #[cfg(test)]
@@ -914,7 +931,7 @@ mod tests {
                 |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
             )
             .expect("the fold");
-        for step in &MIGRATIONS[..MIGRATIONS.len() - 2] {
+        for step in &MIGRATIONS[..MIGRATIONS.len() - 3] {
             connection.execute_batch(step).expect("an earlier version");
         }
         connection
@@ -927,7 +944,7 @@ mod tests {
             .pragma_update(
                 None,
                 "user_version",
-                u32::try_from(MIGRATIONS.len() - 2).expect("a count"),
+                u32::try_from(MIGRATIONS.len() - 3).expect("a count"),
             )
             .expect("its stamp");
         drop(connection);
@@ -950,6 +967,77 @@ mod tests {
             .expect("a touched file");
         let after_touch = marks();
 
+        assert_eq!(after_retitle, 1);
+        assert_eq!(after_touch, 0);
+        drop(held);
+        drop(opened);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn a_catalog_of_before_the_answers_gains_what_they_need_and_forgets_a_file_identity_with_the_file()
+     {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock")
+            .as_nanos();
+        let path = env::temp_dir().join(format!("resonate-mobile-answers-{unique}.sqlite"));
+        let connection = Connection::open(&path).expect("a database");
+        connection
+            .create_scalar_function(
+                "folded",
+                1,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
+            )
+            .expect("the fold");
+        for step in &MIGRATIONS[..MIGRATIONS.len() - 1] {
+            connection.execute_batch(step).expect("an earlier version");
+        }
+        connection
+            .execute_batch(
+                "INSERT INTO documents (uri, name, title, artist, album, duration_ms, rate, codec, size, modified)
+                 VALUES ('content://music/old.flac', 'old.flac', 'Old', 'A', 'B', 1000, 44100, 'flac', 10, 1700000000123);
+                 INSERT INTO studies (track, verdict, peak, rms, true_peak, clipped)
+                 SELECT id, 'genuine', -1.0, -10.0, -1.0, 0 FROM documents",
+            )
+            .expect("a document and a study of before");
+        connection
+            .pragma_update(
+                None,
+                "user_version",
+                u32::try_from(MIGRATIONS.len() - 1).expect("a count"),
+            )
+            .expect("its stamp");
+        drop(connection);
+
+        let opened = Catalog::open(&path).expect("migrated");
+        let held = opened.0.lock();
+        let identified = || -> i64 {
+            held.query_row(
+                "SELECT count(*) FROM documents WHERE packets IS NOT NULL AND frames IS NOT NULL",
+                [],
+                |row| row.get(0),
+            )
+            .expect("a count")
+        };
+        let unjudged: i64 = held
+            .query_row(
+                "SELECT count(*) FROM studies WHERE studied_under IS NULL AND studied IS NULL",
+                [],
+                |row| row.get(0),
+            )
+            .expect("a count");
+        held.execute("UPDATE documents SET packets = 7, frames = 44100", [])
+            .expect("an identity");
+        held.execute("UPDATE documents SET title = 'Older'", [])
+            .expect("a retitle");
+        let after_retitle = identified();
+        held.execute("UPDATE documents SET modified = 1700000000124", [])
+            .expect("a touched file");
+        let after_touch = identified();
+
+        assert_eq!(unjudged, 1);
         assert_eq!(after_retitle, 1);
         assert_eq!(after_touch, 0);
         drop(held);
