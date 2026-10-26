@@ -11,6 +11,11 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   a USB DAC: no device is attached here, so neither the route taking `preferredSampleRate` nor the
   gap of the RemoteIO reopen it causes has been heard
 
+- [S · blocked: hardware] Android's unmixed output (`follow-song-rate`) is proved on the host and by
+  the emulator's mixed fallback alone: no USB DAC or MMAP-capable phone is attached here, so neither
+  `setPreferredMixerAttributes` taking a format, an exclusive open at the song's rate, nor the bytes
+  reaching a DAC unaltered has been heard
+
 ## iOS
 - [S · blocked: iPhone] The RemoteIO `CoreAudio` toolbox (the unsafe `AudioComponentInstanceNew`,
   `AudioUnitSetProperty`, `AudioOutputUnitStart` and sibling calls) and `render`'s `extern "C-unwind"`

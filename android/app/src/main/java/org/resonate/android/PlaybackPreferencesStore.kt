@@ -58,6 +58,13 @@ class PlaybackPreferencesStore(private val storage: SharedPreferences) {
         if (!edit.commit()) throw IOException("Sound settings could not be saved")
     }
 
+    fun followsSongRate(): Boolean = storage.getBoolean(FOLLOW_SONG_RATE, false)
+
+    fun keepFollowsSongRate(follows: Boolean) {
+        if (!storage.edit().putBoolean(FOLLOW_SONG_RATE, follows).commit())
+            throw IOException("Whether to match the song's sample rate could not be saved")
+    }
+
     fun boundRoutes(): List<OutputRoute> =
         storage.all
             .mapNotNull { (key, value) ->
@@ -134,5 +141,6 @@ class PlaybackPreferencesStore(private val storage: SharedPreferences) {
         const val ROUTE_CURVES = "equaliser-curve-for."
         const val ROUTE_CURVE_NAMES = "equaliser-curve-name-for."
         const val ROUTE_NAMES = "equaliser-route-names."
+        const val FOLLOW_SONG_RATE = "follow-song-rate"
     }
 }

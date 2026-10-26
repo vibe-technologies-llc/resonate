@@ -4,8 +4,9 @@ Gaps: what is not built, a limit by design, an unsupported format or a behaviour
 reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Android parity
-- [L · 0.2.0] Android output is shared stereo float at 48 kHz; exclusive/bit-perfect output, per-route
-  format enumeration and DoP need capability negotiation and physical-device validation
+- [M · blocked: hardware] Android offers no DoP: a marked stream needs the USB bit-perfect mixer at a
+  32-bit word (Oboe-rs has no packed 24-bit one) and a DAC that decodes it to prove the markers
+  arrive untouched
 
 ## iOS parity
 - [M · blocked: xtool] iOS has no widget: a WidgetKit extension xtool builds is linked empty and,

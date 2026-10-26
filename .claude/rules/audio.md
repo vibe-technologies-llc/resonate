@@ -481,6 +481,15 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   followed default alike) reopens nothing. Graph rate is not weighed (`node.rate` pins the graph and
   is set as the stream opens: switching it still reopens, as PipeWire refuses the reshape). A
   setting that does move the stream or the ring's depth rebinds, and the rebind reshapes (above).
+- **A backend whose offered formats moved asks the engine to follow them** (`Command::FollowTheFormats`,
+  the phones' alone: Android's route offers or the song-rate setting, iOS's session rate). It marks
+  the sink list stale and owes a weighing (`formats_owed`); the first survey answered *after* it
+  (one already in flight when it came does not count, `stale_sinks` still standing) settles it in
+  `follow_the_formats_it_was_told_of`, which reopens as `SetBitPerfect` does where the plan the new
+  list asks for leaves the open stream (`reopen_where_the_stream_moves`) and does nothing with no
+  output. A desktop `SinkChange::Reformatted` alone still only resurveys, so another client moving
+  the graph never rebinds this stream
+  (`formats_a_device_newly_offers_are_followed_where_the_plan_moves_and_left_alone_where_not`).
 - **A renegotiation converges because the next plan asks for exactly what the graph answered.**
   `StreamEvent::FormatChanged` carries the settled spec; `downgrade` hands it to `plan_for` as
   target, written into `OutputPlan::stream` whole (writing the source's channels back made the two

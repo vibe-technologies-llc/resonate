@@ -136,8 +136,10 @@ logcat; iOS installs none yet
 
 Every export exists on every target, so bindings generated from the host library match the device
 library (`ios/build-native.py` falls back to the host build where library mode cannot read the iOS
-archive). What only one platform uses is a no-op elsewhere: `select_output`/`output_device` act on
-Android's Oboe routing; `output_route_changed(rate, latency_ms, rebind)` feeds iOS's route.
+archive). What only one platform uses is a no-op elsewhere: `select_output`/`output_device`,
+`set_follow_song_rate`, `output_offers_changed`, `output_stream` and `watch_output_mixer` act on
+Android's Oboe routing (iOS asks its session for the song's rate in Swift, so its `Routing` follows
+nothing and offers nothing); `output_route_changed(rate, latency_ms, rebind)` feeds iOS's route.
 `audio_extensions` is core's `AUDIO_EXTENSIONS`, so a front end never keeps its own list. No
 exported name is a Swift or Kotlin keyword: UniFFI backtick-escapes one in Swift and the backticks
 leak into the generated C header, which then fails to compile (hence `Documents::open_document`).
@@ -201,9 +203,19 @@ phones* (`equaliser.rs`); `playback.rs` sends it with the other sound preference
 
 `output/mod.rs` picks one backend per target behind `output::player` and one `Routing`:
 
-- **Android**: Oboe, shared stereo float at 48 kHz, power-saving and music-typed; the output thread's
-  waits and the bounded open are `output/waits.rs`, compiled on the host as well so its tests run
-  there (`android.md`).
+- **Android**: Oboe, music-typed, opened in whichever of three ways the plan's spec is offered by
+  (`android.md`'s *The route's formats*). The boundary's vocabulary is `output/formats.rs`, on every
+  target: `OutputFormat` (rate, `OutputEncoding` `Pcm16`/`Pcm32`/`Float`, one or two channels),
+  `OutputPath` (`Mixed`, `Exclusive`, `BitPerfect`), `OutputStream` (what opened and how) and the
+  `OutputMixer` callback (`prefer_bit_perfect(device, format)`, `mix_freely(device)`). What decides
+  is compiled on the host as well, so its tests run there: `output/oboe_offers.rs` (`Offers`: the
+  shared mixer's `MIXED`, 48 kHz stereo float, always, and while following the song the route's
+  bit-perfect formats and its probed exclusive one, each its own `SinkFormats` entry so no rate and
+  word are crossed; `Way` for a spec), `output/oboe_state.rs` (`Routing`: the requested and actual
+  device, the switch, the offers, the probe made once per chosen device and route, the mixer
+  preference held and given back, the stream told by a number so a late close never clears the
+  next) and `output/oboe_frames.rs` (the callback's fill, realtime). The output thread's waits and
+  the bounded open are `output/waits.rs`.
 - **iOS**: RemoteIO at the session's hardware rate, interleaved Float32 stereo; the engine resamples
   into it. **What does not touch CoreAudio is compiled on the host too, so its tests run there**:
   `output/remote_io_state.rs` holds `Routing` (the rate, latency and sink-change atomics and channels)
@@ -237,8 +249,9 @@ phones* (`equaliser.rs`); `playback.rs` sends it with the other sound preference
   `a_drain_waits_the_latency_after_the_ring_empties_and_then_settles_once`,
   `a_moved_rate_is_announced_once_and_an_unmoved_one_is_not`). Swift reports the rate and the output latency (`outputLatency + ioBufferDuration`)
   through `output_route_changed` (after asking the session for the playing song's rate, `ios.md`'s
-  `NowPlaying`); a moved rate announces `SinkChange::Reformatted` and rebinds with
-  `SetSink(None)`, as does `rebind` (a media-services reset rebuilds the unit at an unchanged rate).
+  `NowPlaying`); a moved rate announces `SinkChange::Reformatted` and sends
+  `Command::FollowTheFormats`, so the engine reopens at the new rate once the survey has read it
+  (`audio.md`), and `rebind` sends `SetSink(None)` (a media-services reset).
   A refused `AudioOutputUnitStart` or stop is a `StreamEvent::Refused` carrying the `OSStatus`, so the
   engine's failure names the operation and the status (an inactive session, an interruption not yet
   ended). The output thread sleeps until a command or a moved latency (`Routing::route_changed`) wakes it, and polls every 10 ms only while draining. The render callback writes the source's bytes straight into the system's buffer and zeroes a short

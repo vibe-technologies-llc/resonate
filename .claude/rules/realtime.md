@@ -2,6 +2,7 @@
 paths:
   - "crates/resonate-engine/**/*.rs"
   - "crates/resonate-mobile/src/output/oboe_render.rs"
+  - "crates/resonate-mobile/src/output/oboe_frames.rs"
   - "crates/resonate-mobile/src/output/remote_io_render.rs"
   - "crates/resonate-mobile/src/output/remote_io_buffers.rs"
   - "crates/resonate-mobile/src/output/remote_io_fill.rs"
@@ -32,12 +33,14 @@ In the RT modules and everything they call:
   off-thread via an SPSC queue whose atomic overflow counter surfaces as `RtFault::Dropped`. Only
   `Underrun` and `Dropped` exist (what the ring raises), so `collect_faults` matches exhaustively.
 
-Seven RT modules, each headed `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic,
+Eight RT modules, each headed `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic,
 clippy::unreachable, clippy::indexing_slicing)]` (allocation, locks, `assert!`, unguarded division
 rest on this discipline alone):
 
-- `resonate-mobile/src/output/oboe_render.rs`: preallocated ring bytes to Oboe stereo float
-  frames; short fills zero the rest and publish completion/failure through atomics.
+- `resonate-mobile/src/output/oboe_render.rs` and `oboe_frames.rs`: preallocated ring bytes to
+  Oboe frames of whichever shape the stream opened in (`f32`, `i16` or `i32`, mono or stereo:
+  `rendered` over a `Frame`, compiled on the host too); short fills zero the rest and publish
+  completion/failure through atomics.
 - `resonate-mobile/src/output/remote_io_render.rs`, `remote_io_buffers.rs` and `remote_io_fill.rs`:
   the RemoteIO render callback (`render`, which catches a panic through `guarded` and aborts) hands the system's own
   interleaved float buffer (`rendered`, reading the buffer list) to `Rendering::fill`, which fills it

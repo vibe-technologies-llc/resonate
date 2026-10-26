@@ -1,11 +1,16 @@
 use std::{
-    sync::atomic::{AtomicU32, AtomicU64, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicU32, AtomicU64, Ordering},
+    },
     time::{Duration, Instant},
 };
 
 use crossbeam_channel::{Receiver, Sender, bounded, unbounded};
 use resonate_audio::{SinkChange, SinkId};
 use resonate_core::{Frames, SampleRate};
+
+use super::formats::{OutputFormat, OutputMixer, OutputStream};
 
 pub(crate) const OUTPUT: SinkId = SinkId::new(1);
 const SHORTEST_DRAIN: Duration = Duration::from_millis(20);
@@ -57,6 +62,20 @@ impl Routing {
         moved
     }
 
+    pub(crate) fn follow_song_rate(&self, _: bool) -> bool {
+        false
+    }
+
+    pub(crate) fn offer(&self, _: i32, _: &[OutputFormat]) -> bool {
+        false
+    }
+
+    pub(crate) fn stream(&self) -> Option<OutputStream> {
+        None
+    }
+
+    pub(crate) fn watch_mixer(&self, _: Arc<dyn OutputMixer>) {}
+
     pub(crate) fn rate(&self) -> SampleRate {
         SampleRate::new(self.rate.load(Ordering::Relaxed)).unwrap_or(SampleRate::HZ_48000)
     }
@@ -107,6 +126,16 @@ impl Drain {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct Unmixed;
+
+    impl OutputMixer for Unmixed {
+        fn prefer_bit_perfect(&self, _: i32, _: OutputFormat) -> bool {
+            false
+        }
+
+        fn mix_freely(&self, _: i32) {}
+    }
 
     fn changes_waiting(routing: &Routing) -> Vec<SinkChange> {
         routing.changes.try_iter().collect()
@@ -187,6 +216,17 @@ mod tests {
         routing.route_changed(48_000, 10.0);
 
         assert!(routing.latency_moves.try_recv().is_err());
+    }
+
+    #[test]
+    fn this_route_leaves_the_songs_rate_and_its_formats_to_the_session() {
+        let routing = Routing::new();
+
+        assert!(!routing.follow_song_rate(true));
+        assert!(!routing.offer(7, &[]));
+        routing.watch_mixer(Arc::new(Unmixed));
+        assert_eq!(routing.stream(), None);
+        assert!(changes_waiting(&routing).is_empty());
     }
 
     #[test]

@@ -1190,6 +1190,64 @@ fn a_sink_that_cannot_take_the_source_rate_is_asked_for_a_converted_stream() -> 
 }
 
 #[test]
+fn formats_a_device_newly_offers_are_followed_where_the_plan_moves_and_left_alone_where_not()
+-> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES * 40);
+    let path = tree.write("track.wav", &source.file);
+
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_48000], &[SampleFormat::F32])])?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+
+    let mixed = player.state().output.expect("an output status");
+    assert_eq!(mixed.mode, OutputMode::Converted);
+
+    let surveyed = graph.lock().enumerations;
+    answered(&player, Command::FollowTheFormats)?;
+    wait_for(
+        &player,
+        |_| graph.lock().enumerations > surveyed,
+        "the device to be surveyed again",
+    );
+    thread::sleep(A_SHORT_DOZE);
+
+    assert_eq!(graph.lock().opens, 1);
+
+    graph.lock().sinks = vec![sink(
+        &[SampleRate::HZ_44100, SampleRate::HZ_48000],
+        &[SampleFormat::S16, SampleFormat::F32],
+    )];
+    answered(&player, Command::FollowTheFormats)?;
+    wait_for(
+        &player,
+        |player| {
+            player
+                .state()
+                .output
+                .is_some_and(|output| output.mode == OutputMode::BitPerfect)
+        },
+        "the stream to reopen in the song's own format",
+    );
+
+    let held = graph.lock();
+    assert_eq!(held.opens, 2);
+    assert_eq!(
+        held.requests.last().map(|request| request.spec),
+        Some(StreamSpec::new(
+            SampleRate::HZ_44100,
+            ChannelLayout::Stereo,
+            SampleFormat::S16
+        ))
+    );
+    Ok(())
+}
+
+#[test]
 fn the_published_stamp_holds_while_the_queue_holds_the_rows_it_was_loaded_with() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);

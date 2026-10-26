@@ -159,9 +159,36 @@ Native shutdown stops sync, then the enrichment pass
 playback; a failed final listen or save is answered after the player has stopped, never in its place. Long analysis, enrichment and HTTP work run on
 separate workers without holding the controller lock; request generations refuse stale results.
 
-Oboe opens a shared stereo float stream at 48 kHz in `PerformanceMode::PowerSaving` with
-`ContentType::Music` (the engine's ring is the buffer, so low latency buys nothing and costs
-power); the existing Rust engine converts into it. The output thread waits on its commands as
+**The route's formats.** By default Oboe opens a shared stereo float stream at 48 kHz in
+`PerformanceMode::PowerSaving` with `ContentType::Music` (the engine's ring is the buffer, so low
+latency buys nothing and costs power); the engine converts into it. *Match the song's sample rate*
+on the output page (`follow-song-rate` in the `playback` preferences, iOS's name; **off by default
+here**, since the only formats it adds are unmixed ones and an exclusive stream runs in low-latency
+mode) has the surveyor offer, beside that mixer format, what the route takes unmixed, so the engine's
+plan (`prefer_bit_perfect`, `best_spec_for`) picks the song's own rate and a word that holds it whole
+(a 24-bit song in a 32-bit word is `Repacked`) where one is offered, and resamples into the mixer
+where none is: **the bit-perfect mixer** (Android 14+, USB): `OutputWatch` reads the route's
+`AudioManager.getSupportedMixerAttributes` of `MIXER_BEHAVIOR_BIT_PERFECT` (`bitPerfectFormats`, PCM
+16, 32 and float, one or two channels) on every route change and hands them over with the route's
+device id (`output_offers_changed`; used only while the system default or that device is chosen);
+**the exclusive stream**: the surveyor probes the chosen device once per route with a callback-less
+exclusive, low-latency stereo stream asking nothing else and no conversion, and offers its native
+spec where Android answered exclusive. A stream opens by its `Way`: bit-perfect asks the
+`OutputMixer` (`BitPerfectMixer`: `setPreferredMixerAttributes` for media on that device with the
+matching attributes, under the install-time `MODIFY_AUDIO_SETTINGS`) and then opens shared, power-saving and unconverted on that device, falling to
+mixed where Android declines; exclusive first opens a callback-less probe at exactly the spec (the
+callback owns the engine's source, so a refused open could not be retried) and opens for real only
+where it came back exclusive in that spec, else marks the route's exclusive offer refused (offered
+no longer, announced, not probed again) and opens mixed; mixed opens shared and lets Oboe convert
+(`SampleRateConversionQuality::Best`), and gives back any bit-perfect preference
+(`clearPreferredMixerAttributes`). The callback is typed by the spec (`f32`, `i16`, `i32`, mono or
+stereo); 24-bit packed has no Oboe-rs type, so it is never offered. `output_stream()` says what is
+open (`OutputStream`), which the page shows as *Current stream* (`outputStreamWords`,
+`outputPathWords`) under *This output takes* (the route's `AudioDeviceInfo` rates, depths and channel
+counts, `outputTakes`); the switch and an offer that moved send `Command::FollowTheFormats`, so the
+playing song reopens at once where its plan moves, and every later song opens at its own rate. The
+emulator offers no exclusive stream and no bit-perfect mixer, so it proves the mixed fallback alone
+(`TESTING.md`). DoP is not offered (`FEATURES.md`). The output thread waits on its commands as
 `output/waits.rs` says: 10 ms while draining, 100 ms while streaming (the latency is read again
 each time) and 500 ms otherwise, in which a device error is still noticed. An open waits at most
 `OPEN_WITHIN` (3 s) for the stream thread, so a stalled `open_stream` on a route change is a
@@ -172,9 +199,8 @@ rebinding; system default is id zero. Device type distinguishes outputs that sha
 The pane shows the actual route in a status card and names a different requested route when one
 is pending (`pendingOutput`); asking for the system default is never pending, since Android then
 reports the device it chose. Android owns the physical route, and this is no promise of a DAC's rate or
-bit-perfect delivery. Buffer length is validated from 50 to 2000 ms at the native boundary.
-DoP, exclusive output and per-device format enumeration are not offered by this backend yet.
-The native callback is `output/oboe_render.rs`, under the realtime lint set: preallocated bytes only,
+bit-perfect delivery unless the current stream says so. Buffer length is validated from 50 to 2000 ms at the native boundary.
+The native callback is `output/oboe_render.rs` over `oboe_frames.rs`, under the realtime lint set: preallocated bytes only,
 no allocations, locks, filesystem, JNI or Kotlin calls. A short fill is padded with PCM silence.
 Drain waits for the output latency after the ring ends before reporting completion. Device errors
 are published from a worker through the existing stream events.

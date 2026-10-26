@@ -1,5 +1,6 @@
 package org.resonate.android.ui.settings
 
+import android.media.AudioFormat
 import java.time.ZoneOffset
 import java.util.Locale
 import org.junit.Assert.assertEquals
@@ -14,6 +15,10 @@ import org.resonate.android.nativecore.EnrichmentStatus
 import org.resonate.android.nativecore.EnrichmentStop
 import org.resonate.android.nativecore.ListenedOnDay
 import org.resonate.android.nativecore.MusicProvider
+import org.resonate.android.nativecore.OutputEncoding
+import org.resonate.android.nativecore.OutputFormat
+import org.resonate.android.nativecore.OutputPath
+import org.resonate.android.nativecore.OutputStream
 import org.resonate.android.nativecore.ScrobbleAccount
 import org.resonate.android.nativecore.SyncConfig
 import org.resonate.android.nativecore.SyncStanding
@@ -127,6 +132,41 @@ class SettingsWordsTest {
         assertEquals("44.1–192 kHz", outputRates(dac))
         assertEquals("48 kHz", outputRates(speaker))
         assertEquals("Android chooses for you", outputSubtitle(systemDefaultOutput))
+    }
+
+    @Test
+    fun whatAnOutputTakesIsItsRatesDepthsAndChannelsAndNothingWhereItSaysNothing() {
+        val dac =
+            AudioOutput(
+                7,
+                "FiiO K5",
+                "USB audio",
+                listOf(44_100, 192_000),
+                listOf(2, 1, 2),
+                listOf(
+                    AudioFormat.ENCODING_PCM_32BIT,
+                    AudioFormat.ENCODING_PCM_16BIT,
+                    AudioFormat.ENCODING_PCM_24BIT_PACKED,
+                    AudioFormat.ENCODING_PCM_FLOAT,
+                    AudioFormat.ENCODING_AC3,
+                ),
+            )
+
+        assertEquals("44.1–192 kHz · 16, 24, 32-bit, float · 1–2 channels", outputTakes(dac))
+        assertNull(outputTakes(systemDefaultOutput))
+    }
+
+    @Test
+    fun theOpenStreamSaysItsFormatAndWhetherAndroidMixedIt() {
+        val stream =
+            OutputStream(OutputFormat(44_100u, OutputEncoding.PCM16, 2u), OutputPath.BIT_PERFECT)
+        val mixed = OutputStream(OutputFormat(48_000u, OutputEncoding.FLOAT, 1u), OutputPath.MIXED)
+
+        assertEquals("44.1 kHz · 16-bit · stereo", outputStreamWords(stream))
+        assertEquals("48 kHz · 32-bit float · mono", outputStreamWords(mixed))
+        assertEquals("Mixed by Android", outputPathWords(OutputPath.MIXED))
+        assertTrue(outputPathWords(OutputPath.EXCLUSIVE).startsWith("Exclusive"))
+        assertTrue(outputPathWords(OutputPath.BIT_PERFECT).startsWith("Bit-perfect"))
     }
 
     @Test

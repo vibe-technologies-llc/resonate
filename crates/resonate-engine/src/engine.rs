@@ -819,6 +819,7 @@ pub struct Engine {
     opening: Option<Opening>,
     announced: Option<u64>,
     stale_sinks: bool,
+    formats_owed: bool,
     transport: TransportState,
     track: Option<Track>,
     output: Option<Output>,
@@ -968,6 +969,7 @@ impl Engine {
             opening: None,
             announced: None,
             stale_sinks,
+            formats_owed: false,
             transport: TransportState::Idle,
             track: None,
             output: None,
@@ -1494,6 +1496,11 @@ impl Engine {
                     return Ok(());
                 }
                 self.rebind_where_it_stands()
+            }
+            Command::FollowTheFormats => {
+                self.stale_sinks = true;
+                self.formats_owed = true;
+                Ok(())
             }
             Command::SetQuality(quality) => {
                 self.config.quality = quality;
@@ -2606,6 +2613,7 @@ impl Engine {
                 *self.published.sinks.write() = found.into();
                 self.follow_the_devices_volume();
                 self.follow_the_sink_it_would_choose();
+                self.follow_the_formats_it_was_told_of();
                 self.bind_the_row_waiting_for_a_device();
                 self.bind_the_row_the_graph_let_go();
             }
@@ -2738,6 +2746,19 @@ impl Engine {
         );
         let at = self.position();
         if let Err(error) = self.rebind(Some(at), None) {
+            self.fail(error);
+        }
+    }
+
+    fn follow_the_formats_it_was_told_of(&mut self) {
+        if !self.formats_owed || self.stale_sinks {
+            return;
+        }
+        self.formats_owed = false;
+        if self.output.is_none() {
+            return;
+        }
+        if let Err(error) = self.reopen_where_the_stream_moves() {
             self.fail(error);
         }
     }

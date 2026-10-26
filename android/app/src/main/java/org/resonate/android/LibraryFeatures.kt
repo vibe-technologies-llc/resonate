@@ -62,6 +62,7 @@ import org.resonate.android.nativecore.SearchAlbum
 import org.resonate.android.nativecore.SearchArtist
 import org.resonate.android.nativecore.SearchRelease
 import org.resonate.android.nativecore.SearchSong
+import org.resonate.android.nativecore.OutputStream
 import org.resonate.android.nativecore.Snapshot
 import org.resonate.android.nativecore.SyncConfig
 import org.resonate.android.nativecore.SyncStanding
@@ -144,7 +145,13 @@ class LibraryFeatures(private val context: Context, private val library: Library
     private var submitting: Job? = null
     private var missingChecked = -MISSING_CHECKED_EVERY_MS
     private var hidingFailure: String? = null
-    private val routes = OutputWatch(context) { library.outputRouteChanged(it) }
+    private val routes =
+        OutputWatch(
+            context,
+            offered = { device, formats -> library.outputOffersChanged(device, formats) },
+            changed = { library.outputRouteChanged(it) },
+        )
+    val outputStream = MutableStateFlow<OutputStream?>(null)
     val outputs = MutableStateFlow<List<AudioOutput>>(emptyList())
     val selectedOutput = MutableStateFlow(0)
     val actualOutput = MutableStateFlow(0)
@@ -1161,6 +1168,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             }
         val device = native.outputDevice()
         actualOutput.value = device
+        outputStream.value = native.outputStream()
         routes.streamOn(device)
         if (downloading.value) downloads.follow(native)
         if (analysisBusy.value) analysisProgress.value = native.analysisProgress()

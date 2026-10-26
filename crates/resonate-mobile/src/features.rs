@@ -18,9 +18,13 @@ use resonate_providers::A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY;
 use rusqlite::params;
 
 use crate::{
-    Error, MobilePlayer, Result, StoreOp, Track, catalog::Catalog,
-    catalog_extras::the_listeners_calendar, documents::location, enrichment::Asking,
+    Error, MobilePlayer, Result, StoreOp, Track,
+    catalog::Catalog,
+    catalog_extras::the_listeners_calendar,
+    documents::location,
+    enrichment::Asking,
     lyrics::KeptSheets,
+    output::{OutputFormat, OutputMixer, OutputStream},
 };
 
 pub(crate) struct Services {
@@ -273,10 +277,35 @@ impl MobilePlayer {
     }
 
     pub fn output_route_changed(&self, rate: u32, latency_ms: f64, rebind: bool) -> Result<()> {
-        if self.routing.route_changed(rate, latency_ms) || rebind {
+        if self.routing.route_changed(rate, latency_ms) {
+            self.command(resonate_engine::Command::FollowTheFormats)?;
+        }
+        if rebind {
             self.command(resonate_engine::Command::SetSink(None))?;
         }
         Ok(())
+    }
+
+    pub fn set_follow_song_rate(&self, follows: bool) -> Result<()> {
+        if self.routing.follow_song_rate(follows) {
+            self.command(resonate_engine::Command::FollowTheFormats)?;
+        }
+        Ok(())
+    }
+
+    pub fn output_offers_changed(&self, device: i32, bit_perfect: Vec<OutputFormat>) -> Result<()> {
+        if self.routing.offer(device, &bit_perfect) {
+            self.command(resonate_engine::Command::FollowTheFormats)?;
+        }
+        Ok(())
+    }
+
+    pub fn output_stream(&self) -> Option<OutputStream> {
+        self.routing.stream()
+    }
+
+    pub fn watch_output_mixer(&self, mixer: Box<dyn OutputMixer>) {
+        self.routing.watch_mixer(Arc::from(mixer));
     }
 
     pub fn configure_online(&self, enabled: bool) {

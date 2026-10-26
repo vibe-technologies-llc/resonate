@@ -32,6 +32,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.resonate.android.nativecore.Documents
 import org.resonate.android.nativecore.MobilePlayer
+import org.resonate.android.nativecore.OutputFormat
 import org.resonate.android.nativecore.PlaybackPreferences
 import org.resonate.android.nativecore.Snapshot
 import org.resonate.android.nativecore.Track
@@ -76,6 +77,7 @@ class LibraryRepository(private val context: Context) {
     private val mutableScanning = MutableStateFlow(false)
     private val mutablePreferences = MutableStateFlow<PlaybackPreferences?>(null)
     private val mutableRoute = MutableStateFlow<OutputRoute?>(null)
+    private val mutableFollowsSongRate = MutableStateFlow(false)
     private val mutableBoundRoutes = MutableStateFlow<List<OutputRoute>>(emptyList())
     private val mutableFavourites = MutableSharedFlow<Favourited>(extraBufferCapacity = 64)
     val favourites: SharedFlow<Favourited> = mutableFavourites.asSharedFlow()
@@ -86,6 +88,7 @@ class LibraryRepository(private val context: Context) {
     val scanning = mutableScanning.asStateFlow()
     val preferences = mutablePreferences.asStateFlow()
     val route = mutableRoute.asStateFlow()
+    val followsSongRate = mutableFollowsSongRate.asStateFlow()
     val boundRoutes = mutableBoundRoutes.asStateFlow()
     private var started = false
     private var owners = 0
@@ -220,6 +223,9 @@ class LibraryRepository(private val context: Context) {
                 opened = native
                 val store = preferencesStore()
                 native.rewriteDocumentsWith(DocumentRewrites(context))
+                native.watchOutputMixer(BitPerfectMixer(context))
+                mutableFollowsSongRate.value = store.followsSongRate()
+                native.setFollowSongRate(mutableFollowsSongRate.value)
                 mutableRoute.value = features.routeInUse()
                 mutableBoundRoutes.value = store.boundRoutes()
                 val preferences = store.read(mutableRoute.value)
@@ -361,6 +367,18 @@ class LibraryRepository(private val context: Context) {
             if (now == mutableRoute.value) return@request
             mutableRoute.value = now
             followRoute(native)
+        }
+    }
+
+    fun outputOffersChanged(device: Int, bitPerfect: List<OutputFormat>) {
+        request { native -> native.outputOffersChanged(device, bitPerfect) }
+    }
+
+    fun followSongRate(follows: Boolean) {
+        request { native ->
+            native.setFollowSongRate(follows)
+            preferencesStore().keepFollowsSongRate(follows)
+            mutableFollowsSongRate.value = follows
         }
     }
 

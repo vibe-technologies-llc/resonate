@@ -1,7 +1,14 @@
+mod formats;
 #[cfg(target_os = "android")]
 mod oboe;
+#[cfg(any(target_os = "android", test))]
+mod oboe_frames;
+#[cfg(any(target_os = "android", test))]
+mod oboe_offers;
 #[cfg(target_os = "android")]
 mod oboe_render;
+#[cfg(any(target_os = "android", test))]
+mod oboe_state;
 #[cfg(target_os = "ios")]
 mod remote_io;
 #[cfg(any(target_os = "ios", test))]
@@ -24,6 +31,7 @@ use std::sync::Arc;
 use resonate_codec::Sources;
 use resonate_engine::{EngineConfig, Player};
 
+pub use self::formats::{OutputFormat, OutputMixer, OutputStream};
 #[cfg(target_os = "android")]
 pub(crate) use self::oboe::Routing;
 #[cfg(target_os = "ios")]
@@ -50,6 +58,20 @@ impl Routing {
     pub(crate) fn route_changed(&self, _: u32, _: f64) -> bool {
         false
     }
+
+    pub(crate) fn follow_song_rate(&self, _: bool) -> bool {
+        false
+    }
+
+    pub(crate) fn offer(&self, _: i32, _: &[OutputFormat]) -> bool {
+        false
+    }
+
+    pub(crate) fn stream(&self) -> Option<OutputStream> {
+        None
+    }
+
+    pub(crate) fn watch_mixer(&self, _: Arc<dyn OutputMixer>) {}
 }
 
 #[cfg(target_os = "android")]

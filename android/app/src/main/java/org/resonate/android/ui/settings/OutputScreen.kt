@@ -64,6 +64,8 @@ class OutputViewModel(resonate: Resonate) : ViewModel() {
     val outputs = features.outputs
     val selected = features.selectedOutput
     val actual = features.actualOutput
+    val stream = features.outputStream
+    val followsSongRate = library.followsSongRate
 
     val clamped: StateFlow<ULong> =
         library.snapshot
@@ -74,6 +76,8 @@ class OutputViewModel(resonate: Resonate) : ViewModel() {
     fun refresh() = features.refreshOutputs()
 
     fun select(id: Int) = features.selectOutput(id)
+
+    fun followSongRate(follows: Boolean) = library.followSongRate(follows)
 }
 
 private fun iconFor(output: AudioOutput): ImageVector =
@@ -114,8 +118,11 @@ fun OutputScreen() {
     val selected by model.selected.collectAsStateWithLifecycle()
     val actual by model.actual.collectAsStateWithLifecycle()
     val clamped by model.clamped.collectAsStateWithLifecycle()
+    val stream by model.stream.collectAsStateWithLifecycle()
+    val followsSongRate by model.followsSongRate.collectAsStateWithLifecycle()
     FollowDevices(model::refresh)
     val choices = withSystemDefault(outputs)
+    val playing = choices.firstOrNull { it.id == actual }
     Page(
         "Audio output",
         actions = {
@@ -127,9 +134,37 @@ fun OutputScreen() {
         SettingsList(padding, Modifier.testTag("output-list")) {
             item(key = "status") {
                 RouteCard(
-                    playing = choices.firstOrNull { it.id == actual },
+                    playing = playing,
                     playingName = outputNamed(outputs, actual),
                     pending = pendingOutput(selected, actual)?.let { outputNamed(outputs, it) },
+                )
+            }
+            stream?.let { open ->
+                item(key = "stream") {
+                    SettingRow(
+                        title = "Current stream",
+                        supporting = outputPathWords(open.path),
+                        trailing = { Text(outputStreamWords(open)) },
+                        modifier = Modifier.testTag("output-stream"),
+                    )
+                }
+            }
+            playing?.let(::outputTakes)?.let { takes ->
+                item(key = "takes") {
+                    SettingRow(
+                        title = "This output takes",
+                        supporting = takes,
+                        modifier = Modifier.testTag("output-takes"),
+                    )
+                }
+            }
+            item(key = "follow") {
+                SwitchRow(
+                    title = "Match the song's sample rate",
+                    checked = followsSongRate,
+                    onCheckedChange = model::followSongRate,
+                    supporting = FOLLOW_SONG_RATE_NOTE,
+                    modifier = Modifier.testTag("follow-song-rate"),
                 )
             }
             clampedSamplesWords(clamped)?.let { words ->
@@ -161,7 +196,7 @@ fun OutputScreen() {
             }
             item(key = "note") {
                 Footnote(
-                    "Android owns the physical route: choosing an output asks for it, and Android may still send sound elsewhere. Resonate plays shared stereo audio, so this is no promise of a DAC's own rate or of bit-perfect delivery."
+                    "Android owns the physical route: choosing an output asks for it, and Android may still send sound elsewhere. Unless the current stream says it is exclusive or bit-perfect, Android's mixer may still convert what Resonate hands it."
                 )
             }
         }

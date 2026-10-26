@@ -1,12 +1,12 @@
 package org.resonate.android
 
 import android.content.Context
-import android.media.AudioAttributes
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
+import org.resonate.android.nativecore.OutputFormat
 
 data class OutputRoute(val id: String, val name: String)
 
@@ -65,13 +65,15 @@ fun audioOutputs(manager: AudioManager): List<AudioOutput> =
         )
     }
 
-private fun musicAttributes(): AudioAttributes =
-    AudioAttributes.Builder()
-        .setUsage(AudioAttributes.USAGE_MEDIA)
-        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-        .build()
+fun deviceInUse(outputs: List<AudioOutput>, actual: Int, expected: List<Int>): Int? =
+    outputs.firstOrNull { it.id == actual }?.id
+        ?: expected.firstOrNull { id -> outputs.any { it.id == id } }
 
-class OutputWatch(private val context: Context, private val changed: (OutputRoute?) -> Unit) {
+class OutputWatch(
+    private val context: Context,
+    private val offered: (Int, List<OutputFormat>) -> Unit,
+    private val changed: (OutputRoute?) -> Unit,
+) {
     private var registered: AudioDeviceCallback? = null
     @Volatile private var actual = 0
 
@@ -80,8 +82,19 @@ class OutputWatch(private val context: Context, private val changed: (OutputRout
 
     fun routeNow(): OutputRoute? {
         val manager = manager ?: return null
-        val expected = manager.getAudioDevicesForAttributes(musicAttributes()).map { it.id }
+        val expected = manager.getAudioDevicesForAttributes(mediaAttributes()).map { it.id }
         return routeInUse(audioOutputs(manager), actual, expected)
+    }
+
+    private fun offersNow() {
+        val manager = manager ?: return
+        val expected = manager.getAudioDevicesForAttributes(mediaAttributes()).map { it.id }
+        val device = deviceInUse(audioOutputs(manager), actual, expected)
+        val info =
+            device?.let { id ->
+                manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull { it.id == id }
+            }
+        offered(device ?: 0, info?.let { bitPerfectFormats(manager, it) }.orEmpty())
     }
 
     @Synchronized
@@ -113,5 +126,8 @@ class OutputWatch(private val context: Context, private val changed: (OutputRout
         follow()
     }
 
-    private fun follow() = changed(routeNow())
+    private fun follow() {
+        offersNow()
+        changed(routeNow())
+    }
 }
