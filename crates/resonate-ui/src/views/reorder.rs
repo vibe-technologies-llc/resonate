@@ -75,6 +75,10 @@ impl Shift {
         matches!(self, Self::Queue | Self::Playlist(_))
     }
 
+    pub(crate) const fn plays_the_chosen_rows(self) -> bool {
+        self.chooses_apart() && !matches!(self, Self::Playlist(_))
+    }
+
     pub(crate) const fn chooses_apart(self) -> bool {
         matches!(
             self,
@@ -85,7 +89,8 @@ impl Shift {
                     | Listed::Playlists
                     | Listed::Favourites
                     | Listed::Suggested
-            )
+                    | Listed::Top
+            ) | Self::Playlist(_)
         )
     }
 }
@@ -154,6 +159,35 @@ impl Chosen {
         self.0.first().map(|span| span.first())
     }
 
+    pub(crate) fn runs(&self) -> &[Span] {
+        &self.0
+    }
+
+    pub(crate) fn single(&self) -> Option<Span> {
+        match self.0.as_slice() {
+            [only] => Some(*only),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn bounds(&self) -> Option<Span> {
+        let (first, last) = (self.0.first()?, self.0.last()?);
+
+        Some(Span::between(first.first(), last.last()))
+    }
+
+    pub(crate) fn gathered_by(&self, onto: usize, held: usize) -> Option<Span> {
+        let order = Span::gathered(&self.0, held, onto)?;
+        let mut landed = order
+            .iter()
+            .enumerate()
+            .filter(|(_, row)| self.holds(**row))
+            .map(|(place, _)| place);
+        let first = landed.next()?;
+
+        Some(Span::between(first, landed.next_back().unwrap_or(first)))
+    }
+
     pub(crate) fn rows(&self) -> impl Iterator<Item = usize> + '_ {
         self.0.iter().flat_map(|span| span.range())
     }
@@ -193,7 +227,7 @@ impl Chosen {
         Self(left)
     }
 
-    fn within(self, held: usize) -> Self {
+    pub(crate) fn within(self, held: usize) -> Self {
         let Some(last) = held.checked_sub(1) else {
             return Self::default();
         };
@@ -258,6 +292,15 @@ impl Reach {
         (self.chosen && self.rows().holds(row)) || self.apart.holds(row)
     }
 
+    pub(crate) fn acted_on(&self) -> Chosen {
+        let chosen = self.selected();
+        if chosen.runs().is_empty() {
+            return Chosen::of(self.rows());
+        }
+
+        chosen
+    }
+
     pub(crate) fn is_chosen(&self) -> bool {
         self.chosen
     }
@@ -320,6 +363,17 @@ impl Reach {
         Some(Self::at(shift, if first < last { first } else { last }))
     }
 
+    pub(crate) fn after_dropping_runs(shift: Shift, runs: &[Span], held: usize) -> Option<Self> {
+        let mut held = held;
+        let mut reach = None;
+        for rows in runs.iter().rev() {
+            reach = Self::after_dropping(shift, *rows, held);
+            held = held.saturating_sub(rows.rows());
+        }
+
+        reach
+    }
+
     pub(crate) fn stepped(&self, step: Step) -> Self {
         let (anchor, row) = match step {
             Step::Above => (self.anchor.saturating_sub(1), self.row.saturating_sub(1)),
@@ -333,7 +387,7 @@ impl Reach {
 #[derive(Clone, Debug)]
 pub(crate) struct Carried {
     pub(crate) shift: Shift,
-    pub(crate) rows: Span,
+    pub(crate) rows: Chosen,
     pub(crate) title: SharedString,
 }
 
@@ -512,8 +566,8 @@ impl Render for Ghost {
     }
 }
 
-pub(crate) fn beside(rows: Span) -> Option<SharedString> {
-    match rows.rows() {
+pub(crate) fn beside(rows: &Chosen) -> Option<SharedString> {
+    match rows.count() {
         1 => None,
         held => Some(SharedString::from(format!("and {} more", held - 1))),
     }
@@ -553,14 +607,14 @@ pub(crate) fn movable(
         .on_drag(carried, |carried, under, _, cx| {
             cx.new(|_| Ghost {
                 title: carried.title.clone(),
-                beside: beside(carried.rows),
+                beside: beside(&carried.rows),
                 under,
             })
         })
         .drag_over::<Carried>(|style, _, _, _| style.bg(rgb(theme::hover())))
         .on_drop(cx.listener(move |this, carried: &Carried, _, cx| {
             if carried.shift == shift {
-                this.shift_rows(shift, carried.rows, onto, cx);
+                this.shift_chosen(shift, &carried.rows, onto, cx);
             }
         }))
         .when_some(lifted_onto(shift, onto), |row, into| {
@@ -684,8 +738,11 @@ impl RootView {
         shift: Shift,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let moving = self.acting_on(shift, row);
-        let Some(to) = step.landing(moving, held) else {
+        let moving = self.acting_on_chosen(shift, row);
+        let Some(to) = moving
+            .bounds()
+            .and_then(|bounds| step.landing(bounds, held))
+        else {
             return div()
                 .flex()
                 .flex_none()
@@ -703,7 +760,7 @@ impl RootView {
         kit::icon_button((id, row), step.glyph(), step.saying())
             .on_click(cx.listener(move |this, _, _, cx| {
                 cx.stop_propagation();
-                this.shift_rows(shift, moving, to, cx);
+                this.shift_chosen(shift, &moving, to, cx);
             }))
             .into_any_element()
     }
@@ -716,7 +773,8 @@ mod tests {
     use gpui::{Bounds, SharedString, point, px, size};
     use proptest::prelude::*;
     use resonate_core::{
-        ChannelLayout, MediaLocation, SampleFormat, SampleRate, Span, StreamSpec, TrackId,
+        ChannelLayout, MediaLocation, PlaylistId, SampleFormat, SampleRate, Span, StreamSpec,
+        TrackId,
     };
     use resonate_library::{Codec, Track};
 
@@ -981,13 +1039,46 @@ mod tests {
             Listed::Playlists,
             Listed::Favourites,
             Listed::Suggested,
+            Listed::Top,
         ] {
             assert!(Shift::Listing(listed).chooses_apart(), "{listed:?}");
         }
-        for listed in [Listed::Missing, Listed::Offered, Listed::Heard, Listed::Top] {
+        for listed in [Listed::Missing, Listed::Offered, Listed::Heard] {
             assert!(!Shift::Listing(listed).chooses_apart(), "{listed:?}");
         }
         assert!(!Shift::Queue.chooses_apart());
+        assert!(Shift::Playlist(PlaylistId::new(1).expect("a valid id")).chooses_apart());
+    }
+
+    #[test]
+    fn rows_chosen_apart_land_as_one_block_where_they_are_gathered() {
+        let apart = Chosen::of(Span::one(1)).united(Span::one(5));
+
+        assert_eq!(apart.gathered_by(3, 7), Some(Span::between(3, 4)));
+        assert_eq!(apart.gathered_by(0, 7), Some(Span::between(0, 1)));
+        assert_eq!(apart.gathered_by(6, 7), Some(Span::between(5, 6)));
+        assert_eq!(apart.gathered_by(5, 7), None);
+        assert_eq!(apart.bounds(), Some(Span::between(1, 5)));
+        assert_eq!(apart.single(), None);
+        assert_eq!(Chosen::of(Span::one(2)).single(), Some(Span::one(2)));
+    }
+
+    #[test]
+    fn dropping_rows_chosen_apart_leaves_the_reach_where_the_first_of_them_stood() {
+        let queue = Shift::Queue;
+
+        assert_eq!(
+            Reach::after_dropping_runs(queue, &[Span::one(1), Span::between(4, 5)], 8),
+            Some(Reach::at(queue, 1))
+        );
+        assert_eq!(
+            Reach::after_dropping_runs(queue, &[Span::one(0), Span::between(2, 3)], 4),
+            Some(Reach::at(queue, 0))
+        );
+        assert_eq!(
+            Reach::after_dropping_runs(queue, &[Span::one(0), Span::between(1, 3)], 4),
+            None
+        );
     }
 
     proptest! {
@@ -1098,13 +1189,13 @@ mod tests {
 
     #[test]
     fn a_ghost_says_how_many_rows_it_carries_beyond_the_first() {
-        assert_eq!(beside(Span::one(2)), None);
+        assert_eq!(beside(&Chosen::of(Span::one(2))), None);
         assert_eq!(
-            beside(Span::between(2, 3)),
+            beside(&Chosen::of(Span::between(2, 3))),
             Some(SharedString::new_static("and 1 more"))
         );
         assert_eq!(
-            beside(Span::between(2, 5)),
+            beside(&Chosen::of(Span::between(2, 5))),
             Some(SharedString::new_static("and 3 more"))
         );
     }

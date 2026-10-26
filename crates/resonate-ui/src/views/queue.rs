@@ -25,7 +25,7 @@ use crate::{
         listing::{self, Pictured},
         menu::{self, Called, Menu},
         playlists::{self, Held, ROW_GROUP},
-        reorder::{self, Carried, LiftedTo, MOVING_HINT, Shift, Step},
+        reorder::{self, Carried, Chosen, LiftedTo, MOVING_HINT, Shift, Step},
         root::{RootView, empty, row},
         scrollbar::Scrollbars,
         sorting,
@@ -677,7 +677,7 @@ impl RootView {
                                         };
                                     let carried = Carried {
                                         shift: Shift::Queue,
-                                        rows: acting_on,
+                                        rows: Chosen::of(acting_on),
                                         title: drawn.title.clone(),
                                     };
                                     let album = drawn.album;

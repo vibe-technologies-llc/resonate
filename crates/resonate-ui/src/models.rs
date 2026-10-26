@@ -3311,6 +3311,33 @@ impl LibraryModel {
         );
     }
 
+    pub fn remove_runs_from_playlist(
+        &mut self,
+        id: PlaylistId,
+        runs: Vec<Span>,
+        cx: &mut Context<Self>,
+    ) {
+        self.edit(
+            Change::Playlist,
+            move |library| library.remove_runs_from_playlist(id, &runs).map(|_| None),
+            cx,
+        );
+    }
+
+    pub fn gather_in_playlist(
+        &mut self,
+        id: PlaylistId,
+        runs: Vec<Span>,
+        onto: usize,
+        cx: &mut Context<Self>,
+    ) {
+        self.edit(
+            Change::Playlist,
+            move |library| library.gather_in_playlist(id, &runs, onto).map(|_| None),
+            cx,
+        );
+    }
+
     pub fn remove_matching(&mut self, id: PlaylistId, cx: &mut Context<Self>) {
         let Some(matching) = self.narrowing().map(ToOwned::to_owned) else {
             return;

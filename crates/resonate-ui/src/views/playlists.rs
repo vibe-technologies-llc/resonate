@@ -23,7 +23,7 @@ use crate::{
         menu::{self, Called, Menu},
         mosaic::{self, Framed, Mosaic},
         pointed::{self, LitUnderThePointer as _},
-        reorder::{self, Carried, LiftedTo, Listed, MOVING_HINT, Shift, Step},
+        reorder::{self, Carried, Chosen, LiftedTo, Listed, MOVING_HINT, Shift, Step},
         root::{Pane, RootView, empty, listed, row, somewhere_in, tall_row},
         scrollbar::Scrollbars,
         sorting,
@@ -187,14 +187,17 @@ impl Offered {
 }
 
 pub(crate) struct Reaching {
-    rows: Span,
+    rows: Chosen,
     entries: Arc<[PlaylistEntry]>,
     holding: Arc<[Cut]>,
 }
 
 impl Reaching {
-    fn of(entries: &[PlaylistEntry], rows: Span) -> Self {
-        let reached: Arc<[PlaylistEntry]> = entries.get(rows.range()).unwrap_or_default().into();
+    fn of(entries: &[PlaylistEntry], rows: Chosen) -> Self {
+        let reached: Arc<[PlaylistEntry]> = rows
+            .rows()
+            .filter_map(|row| entries.get(row).cloned())
+            .collect();
         let holding = reached.iter().map(|entry| entry.cut.clone()).collect();
 
         Self {
@@ -204,8 +207,8 @@ impl Reaching {
         }
     }
 
-    fn acting_on(reaching: Option<&Self>, rows: Span) -> Option<&Self> {
-        reaching.filter(|reaching| reaching.rows == rows)
+    fn acting_on<'a>(reaching: Option<&'a Self>, rows: &Chosen) -> Option<&'a Self> {
+        reaching.filter(|reaching| reaching.rows == *rows)
     }
 }
 
@@ -718,7 +721,7 @@ impl RootView {
         let playing = self.playing_row(opened, &entries, cx);
         let reaching = rows
             .are_reached()
-            .then(|| self.reaching(Shift::Playlist(opened)))
+            .then(|| self.reached_chosen(Shift::Playlist(opened)))
             .flatten()
             .map(|reached| Reaching::of(&entries, reached));
 
@@ -1205,24 +1208,25 @@ impl RootView {
         let reaches = rows.are_reached();
         let reached = reaches && self.reaches(shift, index);
         let acting_on = if reaches {
-            self.acting_on(shift, index)
+            self.acting_on_chosen(shift, index)
         } else {
-            Span::one(index)
+            Chosen::of(Span::one(index))
         };
+        let acts_on_one = acting_on.count() == 1;
         let position = entry.position;
         let dropping = if reaches {
-            acting_on
+            acting_on.clone()
         } else {
-            Span::one(position)
+            Chosen::of(Span::one(position))
         };
         let carried = Carried {
             shift,
-            rows: acting_on,
+            rows: acting_on.clone(),
             title: drawn.title.clone(),
         };
         let held = Arc::clone(entries);
         let last = entries.len();
-        let acted_on = Reaching::acting_on(reaching, acting_on);
+        let acted_on = Reaching::acting_on(reaching, &acting_on);
         let queueing: Arc<[PlaylistEntry]> = match acted_on {
             Some(reaching) => Arc::clone(&reaching.entries),
             None => Arc::from([entry.clone()]),
@@ -1246,6 +1250,7 @@ impl RootView {
         let entry_id = listing::keyed_by("entry", &(&entry.cut, index));
         let listed = row(current)
             .id(entry_id)
+            .debug_selector(move || format!("entry-{index}"))
             .group(ROW_GROUP)
             .cursor_pointer()
             .hover(|entry| entry.bg(rgb(theme::hover())))
@@ -1298,7 +1303,7 @@ impl RootView {
                     })
                     .child(self.add_control(
                         ("entry-to-playlist", index),
-                        if acting_on.is_one_row() {
+                        if acts_on_one {
                             ADD_HINT
                         } else {
                             ADD_REACHED_HINT
@@ -1311,7 +1316,7 @@ impl RootView {
                             kit::icon_button(
                                 ("drop-entry", index),
                                 Icon::Close,
-                                if acting_on.is_one_row() {
+                                if acts_on_one {
                                     REMOVE_HINT
                                 } else {
                                     REMOVE_REACHED_HINT
@@ -1319,20 +1324,20 @@ impl RootView {
                             ),
                             move |this, _, cx| {
                                 cx.stop_propagation();
-                                this.drop_rows(shift, dropping, cx);
+                                this.drop_chosen(shift, &dropping, cx);
                             },
                             cx,
                         ))
                     }),
             )
             .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
-                let extending = event.modifiers().shift && reaches;
                 if reaches {
-                    this.reach_at(shift, index, extending, cx);
+                    if this.reach_by_click(shift, index, event.modifiers(), cx) {
+                        return;
+                    }
+                    this.reach_at(shift, index, false, cx);
                 }
-                if !extending {
-                    this.play_playlist(opened, &held, index, !narrowed, cx);
-                }
+                this.play_playlist(opened, &held, index, !narrowed, cx);
             }));
         let edited = rows.are_edited();
         let reach = if reaches {
@@ -1350,9 +1355,9 @@ impl RootView {
                     album: this.album_named(album, &location, span, cx),
                 };
                 let taken = if reaches {
-                    this.acting_on(shift, index)
+                    this.acting_on_chosen(shift, index)
                 } else {
-                    Span::one(position)
+                    Chosen::of(Span::one(position))
                 };
                 let put = Arc::clone(&menued);
 
@@ -1377,7 +1382,7 @@ impl RootView {
                             Icon::Discard,
                             menu::REMOVE_ROW,
                             "delete",
-                            move |this, _, cx| this.drop_rows(shift, taken, cx),
+                            move |this, _, cx| this.drop_chosen(shift, &taken, cx),
                         )
                     })
             },
@@ -1387,10 +1392,13 @@ impl RootView {
         if !rows.are_edited() {
             return listed;
         }
-        if !rows.are_moved() {
-            return reorder::marked(listed, reached);
-        }
-        reorder::movable(listed, index, carried, reached, cx)
+        let cursor_only = reaches && self.stands_unchosen_on(shift, index);
+        let listed = if rows.are_moved() {
+            reorder::movable(listed, index, carried, reached, cx)
+        } else {
+            reorder::marked(listed, reached)
+        };
+        reorder::cursor_marked(listed, cursor_only)
     }
 
     pub(crate) fn playlist_picker(&self, holding: &Held, cx: &mut Context<Self>) -> AnyElement {
@@ -2326,6 +2334,7 @@ mod tests {
     use resonate_library::{Cut, Playlist, PlaylistEntry};
 
     use super::{Offered, Reaching};
+    use crate::views::reorder::Chosen;
 
     fn saved(ids: &[u64]) -> Arc<[Playlist]> {
         ids.iter()
@@ -2447,7 +2456,7 @@ mod tests {
     #[test]
     fn a_reach_is_read_off_the_list_once() {
         let entries = listed(8);
-        let reaching = Reaching::of(&entries, Span::between(2, 4));
+        let reaching = Reaching::of(&entries, Chosen::of(Span::between(2, 4)));
 
         assert_eq!(reaching.entries.len(), 3);
         assert_eq!(
@@ -2469,24 +2478,49 @@ mod tests {
     }
 
     #[test]
-    fn a_reach_past_the_end_of_the_list_holds_nothing() {
+    fn a_reach_past_the_end_of_the_list_holds_only_the_rows_the_list_has() {
         let entries = listed(3);
 
+        assert_eq!(
+            Reaching::of(&entries, Chosen::of(Span::between(2, 9)))
+                .entries
+                .len(),
+            1
+        );
         assert!(
-            Reaching::of(&entries, Span::between(2, 9))
+            Reaching::of(&entries, Chosen::of(Span::between(3, 9)))
                 .entries
                 .is_empty()
         );
     }
 
     #[test]
+    fn rows_chosen_apart_are_read_off_the_list_in_order() {
+        let entries = listed(8);
+        let apart = Chosen::of(Span::one(5)).united(Span::one(1));
+        let reaching = Reaching::of(&entries, apart.clone());
+
+        assert_eq!(
+            reaching
+                .entries
+                .iter()
+                .map(|entry| entry.position)
+                .collect::<Vec<_>>(),
+            vec![1, 5]
+        );
+        assert!(Reaching::acting_on(Some(&reaching), &apart).is_some());
+    }
+
+    #[test]
     fn only_the_rows_a_reach_was_read_for_share_it() {
         let entries = listed(8);
-        let reaching = Reaching::of(&entries, Span::between(2, 4));
+        let reaching = Reaching::of(&entries, Chosen::of(Span::between(2, 4)));
 
-        assert!(Reaching::acting_on(Some(&reaching), Span::between(2, 4)).is_some());
-        assert!(Reaching::acting_on(Some(&reaching), Span::one(3)).is_none());
-        assert!(Reaching::acting_on(None, Span::between(2, 4)).is_none());
+        let reached = Chosen::of(Span::between(2, 4));
+
+        assert!(Reaching::acting_on(Some(&reaching), &reached).is_some());
+        assert!(Reaching::acting_on(Some(&reaching), &Chosen::of(Span::one(3))).is_none());
+        assert!(Reaching::acting_on(None, &reached).is_none());
     }
 
     #[test]

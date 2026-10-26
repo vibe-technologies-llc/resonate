@@ -1205,9 +1205,10 @@ impl RootView {
                 this.play_the_row(plays, &played, index, window, cx);
             }));
         let lifted = match chooses.filter(|chooses| chooses.row == index && !in_an_album) {
-            Some(Chooses { shift, row }) => {
-                Lifted::tracks(tracks, self.acting_on_chosen(shift, row))
-            }
+            Some(Chooses { shift, row }) => Lifted::tracks(
+                tracks,
+                self.choosable(shift, self.acting_on_chosen(shift, row), cx),
+            ),
             None => Lifted::tracks(tracks, Chosen::of(Span::one(index))),
         };
         let row = reorder::liftable(row, lifted);
@@ -1217,7 +1218,7 @@ impl RootView {
             reach,
             move |this, at, cx| {
                 if let Some(Chooses { shift, row }) = chooses {
-                    let chosen = this.acting_on_chosen(shift, row);
+                    let chosen = this.choosable(shift, this.acting_on_chosen(shift, row), cx);
                     if chosen.count() > 1 {
                         let tracks = this.tracks_chosen(shift, &chosen, cx);
                         return chosen_tracks_menu(at, tracks, this, cx);

@@ -1792,7 +1792,13 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   transient collisions). `position` stays dense, so spans are weighed against the list, never cast
   to `i64`: `move_in_playlist` answers false where either span end or the drop row is past the end,
   or the drop row is inside the span; `remove_from_playlist` takes first-named to list end, refusing
-  a span starting past it.
+  a span starting past it. **Rows chosen apart are one edit.** `remove_runs_from_playlist` drops
+  every row any of several spans holds (`Going::Rows`, the pass `remove_matching` uses) and
+  `gather_in_playlist` takes the rows of several spans and sets them down together, in their order,
+  at a drop row (`Span::gathered`, core: before the drop row when it lies above the first chosen row,
+  after it otherwise, so one span lands as `Span::landing` says; answers false for a drop row that
+  is chosen or past the end, and `KeptInOrder` refuses it as it does `move_in_playlist`). Both write
+  from the first changed place on and are `Reach::Whole`, so each is one undo step.
 - **A name is one name however written.** `playlists.folded` = `playlist::folded` (`to_lowercase`,
   all alphabets unlike SQLite `NOCASE`; then NFC, not NFKC) with the `UNIQUE`: two spellings cannot
   coexist; one function for stored and asked names (`Library::playlist_named`, `HOLDS_THE_WORD`,
