@@ -116,8 +116,10 @@ class SearchViewModel(private val resonate: Resonate) : ViewModel() {
     private val mutableTrail = MutableStateFlow(OnlineTrail())
     private val fetched = MutableStateFlow<Map<OnlineRequest, Fetched>>(emptyMap())
     private val mutableMore = MutableStateFlow(false)
+    private val mutableMoreSongs = MutableStateFlow(false)
     private var chain: Job? = null
 
+    val loadingMoreSongs: StateFlow<Boolean> = mutableMoreSongs.asStateFlow()
     val scope: StateFlow<LibraryScope> = mutableScope.asStateFlow()
     val trail: StateFlow<OnlineTrail> = mutableTrail.asStateFlow()
     val typed: StateFlow<String> = query.asStateFlow()
@@ -235,24 +237,33 @@ class SearchViewModel(private val resonate: Resonate) : ViewModel() {
     fun moreSongs() {
         val current = answer.value ?: return
         if (current.found.tracks.size.toUInt() >= current.found.trackCount) return
+        if (mutableMoreSongs.value) return
+        mutableMoreSongs.value = true
         viewModelScope.launch {
-            val page =
-                resonate.read { native ->
-                    withContext(Dispatchers.IO) {
-                        native.searchTracks(
-                            current.query,
-                            current.found.tracks.size.toUInt(),
-                            LIBRARY_SONGS_AT_MOST,
-                        )
-                    }
-                }
-            page.onSuccess { tracks ->
-                val latest = answer.value
-                if (latest == null || latest.query != current.query || tracks.isEmpty()) return@onSuccess
-                val grown = latest.found.copy(tracks = latest.found.tracks + tracks)
-                val shown = withContext(Dispatchers.Default) { lighted(latest.query, grown) }
-                answer.value = latest.copy(found = grown, lit = shown)
+            try {
+                readMoreSongs(current)
+            } finally {
+                mutableMoreSongs.value = false
             }
+        }
+    }
+
+    private suspend fun readMoreSongs(current: LibraryAnswer) {
+        val from = current.found.tracks.size
+        val page =
+            resonate.read { native ->
+                withContext(Dispatchers.IO) {
+                    native.searchTracks(current.query, from.toUInt(), LIBRARY_SONGS_AT_MOST)
+                }
+            }
+
+        page.onSuccess { tracks ->
+            val latest = answer.value
+            if (latest == null || latest.query != current.query || latest.found.tracks.size != from) return@onSuccess
+            if (tracks.isEmpty()) return@onSuccess
+            val grown = latest.found.copy(tracks = (latest.found.tracks + tracks).distinctBy { it.id })
+            val shown = withContext(Dispatchers.Default) { lighted(latest.query, grown) }
+            answer.value = latest.copy(found = grown, lit = shown)
         }
     }
 
@@ -278,6 +289,7 @@ class SearchViewModel(private val resonate: Resonate) : ViewModel() {
     fun search(text: String) {
         field.setTextAndPlaceCursorAtEnd(text)
         typedText(text.trim())
+        mutableTrail.value = mutableTrail.value.rooted(text.trim())
         keep()
     }
 

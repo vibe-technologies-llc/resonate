@@ -68,6 +68,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.resonate.android.nativecore.SearchSong
+import org.resonate.android.ui.components.LocalPageBottomPadding
 import org.resonate.android.ui.components.SettingsAction
 import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.navigation.LocalNavigator
@@ -100,6 +101,7 @@ fun SearchScreen() {
             focus.clearFocus()
         }
     }
+    val footer = LocalPageBottomPadding.current
     BackHandler(enabled = trail.nested) { model.back() }
 
     Scaffold(
@@ -113,7 +115,7 @@ fun SearchScreen() {
             label = "search place",
             modifier = Modifier.fillMaxSize(),
         ) { shown ->
-            val content = PaddingValues(top = padding.calculateTopPadding(), bottom = 16.dp)
+            val content = PaddingValues(top = padding.calculateTopPadding(), bottom = footer + 16.dp)
             if (shown) {
                 OnlineResults(
                     model = model,

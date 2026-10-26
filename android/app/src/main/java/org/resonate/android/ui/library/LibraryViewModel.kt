@@ -2,12 +2,14 @@ package org.resonate.android.ui.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import org.resonate.android.nativecore.AlbumHit
@@ -58,11 +60,15 @@ class LibraryViewModel(private val resonate: Resonate) : ViewModel() {
     val playlists: StateFlow<List<MusicPlaylist>> = features.playlists
 
     val favourites: StateFlow<Int> =
-        library.allTracks.map { songs -> songs.count { it.favourite } }.stateIn(viewModelScope, shared, 0)
+        library.allTracks
+            .map { songs -> songs.count { it.favourite } }
+            .flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, shared, 0)
 
     val genres: StateFlow<List<String>> =
         library.allTracks
             .map { songs -> songs.map { it.genre.trim() }.filter { it.isNotEmpty() }.distinct().sortedBy { it.lowercase() } }
+            .flowOn(Dispatchers.Default)
             .stateIn(viewModelScope, shared, emptyList())
 
     init {

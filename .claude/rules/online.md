@@ -173,8 +173,9 @@ pin each byte.
   library's (`ArtistLink::pages`).
 - **Artist profile, genres, links: one request.** `genres` = tags with positive count, heaviest
   first. `aliases` keep each spelling once by `folded` form, dropping any folding to the billed
-  name. `links` carry every relation; `resonate_library::portrait_urls` walks the `Relation::Image`
-  ones.
+  name. `links` carry every relation's URL once, under the first relation naming it (MusicBrainz
+  lists one URL under several types; `a_url_listed_under_two_relations_is_linked_once_under_the_first`);
+  `resonate_library::portrait_urls` walks the `Relation::Image` ones.
 
 ## Covers and portraits
 

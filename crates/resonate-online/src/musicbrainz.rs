@@ -1108,14 +1108,14 @@ fn credited_as(credit: &[Credit]) -> String {
 }
 
 fn links(relations: Vec<RelationDoc>) -> Vec<Link> {
+    let mut seen = BTreeSet::new();
+
     relations
         .into_iter()
         .filter_map(|relation| {
             let resource = relation.url?.resource?;
-            Some(Link::new(
-                relation.kind.as_deref().unwrap_or_default(),
-                resource,
-            ))
+            seen.insert(resource.clone())
+                .then(|| Link::new(relation.kind.as_deref().unwrap_or_default(), resource))
         })
         .collect()
 }
@@ -1684,6 +1684,30 @@ mod tests {
                     && track.isrcs.is_empty()
                     && !track.links.is_empty())
         );
+    }
+
+    #[test]
+    fn a_url_listed_under_two_relations_is_linked_once_under_the_first() {
+        let relations: Vec<RelationDoc> = serde_json::from_str(
+            r#"[
+                {"type": "free streaming", "url": {"resource": "https://www.deezer.com/artist/1"}},
+                {"type": "official homepage", "url": {"resource": "https://example.org/"}},
+                {"type": "streaming", "url": {"resource": "https://www.deezer.com/artist/1"}},
+                {"type": "streaming"}
+            ]"#,
+        )
+        .expect("the relations parse");
+
+        let linked = links(relations);
+
+        assert_eq!(
+            linked
+                .iter()
+                .map(|link| link.url.as_str())
+                .collect::<Vec<_>>(),
+            ["https://www.deezer.com/artist/1", "https://example.org/"]
+        );
+        assert_eq!(linked[0].relation, Relation::of_type("free streaming"));
     }
 
     #[test]

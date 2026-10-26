@@ -74,11 +74,18 @@ fun rememberArtwork(song: ULong?, revision: ULong, edgePx: Int): Bitmap? {
         remember(song, revision, generation, stamp, bucket) {
             song?.let { features.cachedArtwork(it, bucket, generation, stamp) }
         }
+    val drawn = remember { DrawnSong() }
     val bitmap by
         produceState(cached, song, revision, generation, stamp, bucket) {
+            if (cached != null || song != drawn.song) value = cached
+            drawn.song = song
             value = song?.let { features.artworkBitmap(it, bucket, generation, stamp) }
         }
     return bitmap
+}
+
+private class DrawnSong {
+    var song: ULong? = null
 }
 
 @Composable

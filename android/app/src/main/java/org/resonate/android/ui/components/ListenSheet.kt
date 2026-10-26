@@ -1,6 +1,5 @@
 package org.resonate.android.ui.components
 
-import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -208,9 +207,8 @@ private fun Message(icon: ImageVector, title: String, detail: String?, action: @
 private fun Found(song: HeardSong, dismiss: () -> Unit) {
     val resonate = LocalResonate.current
     val navigator = LocalNavigator.current
-    val cover = remember(song.key, song.picture) {
-        song.picture?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }?.asImageBitmap()
-    }
+    val picture = rememberPicture(song.picture)
+    val cover = remember(picture) { picture?.asImageBitmap() }
     Spacer(Modifier.height(16.dp))
     if (cover != null) {
         Image(
@@ -246,7 +244,7 @@ private fun Found(song: HeardSong, dismiss: () -> Unit) {
         Button(
             onClick = {
                 resonate.features.searchAsked.value = "${song.title} ${song.artist}".trim()
-                navigator.select(Screen.Search)
+                navigator.selectAtRoot(Screen.Search)
                 dismiss()
             },
             modifier = Modifier.testTag("find-heard"),

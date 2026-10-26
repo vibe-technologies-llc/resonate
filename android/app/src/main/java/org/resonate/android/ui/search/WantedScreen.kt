@@ -1,5 +1,6 @@
 package org.resonate.android.ui.search
 
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,8 +25,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewModelScope
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -140,6 +143,7 @@ fun WantedScreen() {
     val navigator = LocalNavigator.current
     val sheets = LocalSheets.current
     val scope = rememberCoroutineScope()
+    val lasting = (LocalActivity.current as? LifecycleOwner)?.lifecycleScope ?: scope
     var acting by remember { mutableStateOf<WantedSong?>(null) }
     var choosing by remember { mutableStateOf<List<SearchSong>?>(null) }
     LaunchedEffect(Unit) { model.downloads.refresh() }
@@ -172,7 +176,7 @@ fun WantedScreen() {
                             Modifier.fillParentMaxHeight(0.8f).padding(bottom = 32.dp),
                             detail = "Save songs from online search and find them here to download later.",
                             action = "Search online",
-                            onAction = { navigator.select(Screen.Search) },
+                            onAction = { navigator.selectAtRoot(Screen.Search) },
                         )
                     }
                 }
@@ -199,7 +203,7 @@ fun WantedScreen() {
                     download = { model.downloads.request(listOf(wanted.song)) { choosing = listOf(wanted.song) } },
                     remove = {
                         model.remove(wanted)
-                        scope.launch {
+                        lasting.launch {
                             val answer =
                                 sheets.snackbar.showSnackbar(
                                     "Removed “${wanted.song.title}”",

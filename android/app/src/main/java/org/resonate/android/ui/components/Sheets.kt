@@ -341,7 +341,10 @@ private fun PlaylistPicker(tracks: List<Track>, dismiss: () -> Unit) {
                     title = "New playlist",
                     supporting = null,
                     onClick = {
-                        sheets.name("New playlist") { resonate.features.createPlaylist(it) }
+                        sheets.name("New playlist") { name ->
+                            resonate.features.createPlaylist(name, tracks)
+                            dismiss()
+                        }
                     },
                     leading = { IconTile(Icons.Rounded.Add) },
                 )

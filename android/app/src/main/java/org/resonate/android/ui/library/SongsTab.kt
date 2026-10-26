@@ -60,6 +60,8 @@ fun SongsTab(model: LibraryViewModel, padding: PaddingValues) {
     val filter = chosen ?: defaultTrackFilter()
     var filtering by rememberSaveable { mutableStateOf(false) }
     val list = rememberLazyListState()
+    val totalLength =
+        remember(songs) { songs.takeIf { it.isNotEmpty() }?.let { rows -> length(rows.sumOf { it.durationMs }) } }
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
             state = list,
@@ -78,7 +80,7 @@ fun SongsTab(model: LibraryViewModel, padding: PaddingValues) {
             item("chips") {
                 FilterChips(
                     title = counted(songs.size, "song"),
-                    detail = songs.takeIf { it.isNotEmpty() }?.let { rows -> length(rows.sumOf { it.durationMs }) },
+                    detail = totalLength,
                     filter = filter,
                     onOrder = { order -> model.change { it.copy(order = order) } },
                     onDescending = { descending -> model.change { it.copy(descending = descending) } },

@@ -20,7 +20,6 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
@@ -52,6 +51,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -96,10 +96,13 @@ fun OnlineResults(
 ) {
     val trail by model.trail.collectAsStateWithLifecycle()
     val shown by model.onlineShown.collectAsStateWithLifecycle()
+    val online by model.online.collectAsStateWithLifecycle()
     val sheets = LocalSheets.current
+    val levels = remember { mutableMapOf<List<OnlineView>, LazyListState>() }
+    levels.keys.retainAll { place -> trail.views.take(place.size) == place }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-        key(trail.views.size, trail.top) {
-            val state = rememberLazyListState()
+        key(trail.views) {
+            val state = levels.getOrPut(trail.views) { LazyListState() }
             SideEffect { scroll.current = state }
             LazyColumn(
                 state = state,
@@ -109,7 +112,10 @@ fun OnlineResults(
                 item(key = "download") { DownloadCard(model.downloads) }
                 val top = trail.top
                 if (trail.nested) item(key = "heading") { Heading(top, model::back) }
-                when (val current = shown) {
+                val current = shown
+                if (!online && current !is OnlineShown.Ready) {
+                    item(key = "online-off") { OnlineOffCard(model::turnOnline) }
+                } else when (current) {
                     OnlineShown.Idle -> loading()
                     OnlineShown.Loading -> loading()
                     is OnlineShown.Failed ->

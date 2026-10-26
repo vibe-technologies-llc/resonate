@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -47,8 +48,10 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.components.Artwork
 import org.resonate.android.ui.components.EmptyState
@@ -69,9 +72,12 @@ fun AddSongsSheet(
     val scope = rememberCoroutineScope()
     var query by rememberSaveable { mutableStateOf("") }
     val chosen = remember { mutableStateListOf<ULong>() }
-    val matches =
-        remember(songs, query) {
-            songs.filter { matchesWords("${it.shownTitle} ${it.shownArtist} ${it.album}", query) }
+    val matches by
+        produceState(if (query.isEmpty()) songs else emptyList(), songs, query) {
+            value =
+                withContext(Dispatchers.Default) {
+                    songs.filter { matchesWords("${it.shownTitle} ${it.shownArtist} ${it.album}", query) }
+                }
         }
     val add: () -> Unit = {
         val byId = songs.associateBy { it.id }
