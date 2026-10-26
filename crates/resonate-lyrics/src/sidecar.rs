@@ -975,6 +975,7 @@ mod tests {
             lyrics
                 .lines()
                 .iter()
+                .skip(1)
                 .all(|line| line.text.is_empty() || line.text == "über die Brücke"),
             "{:?}",
             lyrics.lines().first()

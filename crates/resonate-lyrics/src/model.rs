@@ -205,6 +205,14 @@ impl LyricLine {
         self.text.trim().is_empty()
     }
 
+    pub const fn is_untimed(&self) -> bool {
+        self.at.is_none()
+    }
+
+    pub fn can_be_lit(&self) -> bool {
+        !self.is_untimed() && !self.is_blank()
+    }
+
     pub fn sweep_at(&self, position: Duration) -> Option<Sweep> {
         if self.words.is_empty() {
             return None;
@@ -275,6 +283,7 @@ pub struct Lyrics {
     source: SourceId,
     timing: Timing,
     lines: Vec<LyricLine>,
+    stands: Vec<Duration>,
     credits: Credits,
     answered: bool,
 }
@@ -284,17 +293,18 @@ fn has_answering_voice(lines: &[LyricLine]) -> bool {
 }
 
 impl Lyrics {
-    pub fn synced(source: SourceId, mut lines: Vec<LyricLine>) -> Result<Self> {
-        if lines.iter().any(|line| line.at.is_none()) {
-            return Err(Error::LineNotTimed);
+    pub fn synced(source: SourceId, lines: Vec<LyricLine>) -> Result<Self> {
+        if lines.iter().all(LyricLine::is_untimed) {
+            return Err(Error::NoLineTimed);
         }
-        lines.sort_by_key(|line| line.at);
+        let (lines, stands) = placed(lines);
 
         Ok(Self {
             source,
             timing: Timing::Synced,
             answered: has_answering_voice(&lines),
             lines,
+            stands,
             credits: Credits::default(),
         })
     }
@@ -308,6 +318,7 @@ impl Lyrics {
                 .take(MOST_LINES)
                 .map(LyricLine::untimed)
                 .collect(),
+            stands: Vec::new(),
             credits: Credits::default(),
             answered: false,
         }
@@ -344,29 +355,31 @@ impl Lyrics {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.lines.iter().all(LyricLine::is_blank)
+        match self.timing {
+            Timing::Unsynced => self.lines.iter().all(LyricLine::is_blank),
+            Timing::Synced => self.lines.iter().all(|line| !line.can_be_lit()),
+        }
     }
 
     pub fn within(self, start: Duration, end: Option<Duration>) -> Option<Self> {
         if self.timing == Timing::Unsynced {
             return None;
         }
-        let lines: Vec<LyricLine> = self
+        let (lines, stands): (Vec<LyricLine>, Vec<Duration>) = self
             .lines
             .into_iter()
-            .filter_map(|line| {
-                let at = line.at?;
-                let inside = at >= start && end.is_none_or(|end| at < end);
-                inside.then(|| line.shifted_back(start))
-            })
-            .collect();
-        if lines.iter().all(LyricLine::is_blank) {
+            .zip(self.stands)
+            .filter(|(_, stand)| *stand >= start && end.is_none_or(|end| *stand < end))
+            .map(|(line, stand)| (line.shifted_back(start), stand.saturating_sub(start)))
+            .unzip();
+        if lines.iter().all(|line| !line.can_be_lit()) {
             return None;
         }
 
         Some(Self {
             answered: has_answering_voice(&lines),
             lines,
+            stands,
             ..self
         })
     }
@@ -375,11 +388,11 @@ impl Lyrics {
         if self.timing == Timing::Unsynced {
             return None;
         }
-        let sung = self
-            .lines
-            .partition_point(|line| line.at.is_some_and(|at| at <= position));
+        let passed = self.passed(position);
 
-        sung.checked_sub(1)
+        self.lines[..passed]
+            .iter()
+            .rposition(|line| !line.is_untimed())
     }
 
     pub fn line_in_play(&self, position: Duration) -> Option<usize> {
@@ -396,6 +409,9 @@ impl Lyrics {
         let mut seen = [false, !self.answered];
         for index in (0..passed).rev() {
             let line = &self.lines[index];
+            if line.is_untimed() {
+                continue;
+            }
             let voice = line.voice.index();
             if seen[voice] {
                 continue;
@@ -422,7 +438,7 @@ impl Lyrics {
         let next = passed
             + self.lines[passed..]
                 .iter()
-                .position(|line| !line.is_blank())?;
+                .position(LyricLine::can_be_lit)?;
         let arrives = self.lines[next].at?;
         let Some(went_out) = self.went_out_before(passed) else {
             return Some(Waiting {
@@ -466,7 +482,7 @@ impl Lyrics {
             .filter_map(|voice| {
                 self.lines[..line]
                     .iter()
-                    .rposition(|earlier| earlier.voice == voice && !earlier.is_blank())
+                    .rposition(|earlier| earlier.voice == voice && earlier.can_be_lit())
             })
             .filter_map(|sung| self.span_of(sung))
             .map(|(_, until)| until)
@@ -479,13 +495,12 @@ impl Lyrics {
         }
         let passed = self.passed(position);
 
-        self.lines[passed..].iter().all(LyricLine::is_blank)
+        self.lines[passed..].iter().all(|line| !line.can_be_lit())
             && self.line_in_play(position).is_none()
     }
 
     fn passed(&self, position: Duration) -> usize {
-        self.lines
-            .partition_point(|line| line.at.is_some_and(|at| at <= position))
+        self.stands.partition_point(|stand| *stand <= position)
     }
 
     fn span_of(&self, line: usize) -> Option<(Duration, Duration)> {
@@ -497,8 +512,8 @@ impl Lyrics {
         let later = &self.lines[line + 1..];
         let held = later
             .iter()
-            .find(|next| next.voice == this.voice)
-            .and_then(|next| next.at)
+            .filter(|next| next.voice == this.voice)
+            .find_map(|next| next.at)
             .unwrap_or(Duration::MAX);
         let sung = at.saturating_add(sung_for(&this.text));
         let answered = later
@@ -514,6 +529,29 @@ impl Lyrics {
 
         Some((at, until))
     }
+}
+
+fn placed(lines: Vec<LyricLine>) -> (Vec<LyricLine>, Vec<Duration>) {
+    let mut groups: Vec<(Duration, Vec<LyricLine>)> = vec![(Duration::ZERO, Vec::new())];
+    for line in lines {
+        match line.at {
+            Some(at) => groups.push((at, vec![line])),
+            None => groups
+                .last_mut()
+                .expect("a group always stands")
+                .1
+                .push(line),
+        }
+    }
+    groups.sort_by_key(|(at, _)| *at);
+
+    let stands = groups
+        .iter()
+        .flat_map(|(at, group)| group.iter().map(|_| *at))
+        .collect();
+    let lines = groups.into_iter().flat_map(|(_, group)| group).collect();
+
+    (lines, stands)
 }
 
 fn sung_for(text: &str) -> Duration {
@@ -576,10 +614,164 @@ mod tests {
     }
 
     #[test]
-    fn a_line_that_carries_no_moment_cannot_be_part_of_a_synced_set() {
+    fn a_set_with_no_line_carrying_a_moment_cannot_be_synced() {
         let untimed = Lyrics::synced(source(), vec![LyricLine::untimed("all that you touch")]);
 
-        assert!(matches!(untimed, Err(Error::LineNotTimed)));
+        assert!(matches!(untimed, Err(Error::NoLineTimed)));
+    }
+
+    fn with_asides() -> Lyrics {
+        Lyrics::synced(
+            source(),
+            vec![
+                LyricLine::untimed("Echoes"),
+                LyricLine::sung(at(30), "and everything under the sun is in tune"),
+                LyricLine::sung(at(0), "all that you touch"),
+                LyricLine::untimed("(Chorus)"),
+                LyricLine::untimed("everything you touch"),
+                LyricLine::sung(at(10), "all that you see"),
+            ],
+        )
+        .expect("a line is timed")
+    }
+
+    fn texts(lyrics: &Lyrics) -> Vec<&str> {
+        lyrics
+            .lines()
+            .iter()
+            .map(|line| line.text.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn an_untimed_line_stands_after_the_timed_line_written_before_it_wherever_that_is_sung() {
+        let lyrics = Lyrics::synced(
+            source(),
+            vec![
+                LyricLine::sung(at(30), "last"),
+                LyricLine::untimed("a note on the last"),
+                LyricLine::sung(at(0), "first"),
+                LyricLine::untimed("a note on the first"),
+            ],
+        )
+        .expect("a line is timed");
+
+        assert_eq!(
+            texts(&lyrics),
+            ["first", "a note on the first", "last", "a note on the last"]
+        );
+    }
+
+    #[test]
+    fn an_untimed_line_ahead_of_every_timed_one_heads_the_set() {
+        let lyrics = with_asides();
+
+        assert_eq!(lyrics.lines()[0].text, "Echoes");
+        assert_eq!(lyrics.line_at(Duration::ZERO), Some(1));
+        assert_eq!(lyrics.voices_in_play(Duration::ZERO), [Some(1), None]);
+    }
+
+    #[test]
+    fn an_untimed_line_is_never_the_line_in_play_nor_the_one_the_pane_centres_on() {
+        let lyrics = with_asides();
+
+        for second in 0..60 {
+            let position = at(second);
+            let read = lyrics.line_at(position);
+            let lit = lyrics.voices_in_play(position);
+
+            assert!(read.is_none_or(|line| !lyrics.lines()[line].is_untimed()));
+            assert!(
+                lit.into_iter()
+                    .flatten()
+                    .all(|line| !lyrics.lines()[line].is_untimed())
+            );
+        }
+        assert_eq!(lyrics.line_at(at(5)), Some(1));
+    }
+
+    #[test]
+    fn an_untimed_line_does_not_end_the_timed_line_beside_it_early() {
+        let lyrics = Lyrics::synced(
+            source(),
+            vec![
+                LyricLine::sung(at(0), "all that you touch"),
+                LyricLine::untimed("(Chorus)"),
+                LyricLine::sung(at(4), "all that you see"),
+            ],
+        )
+        .expect("a line is timed");
+
+        assert_eq!(lyrics.voices_in_play(millis(3_900)), [Some(0), None]);
+        assert_eq!(lyrics.voices_in_play(at(4)), [Some(2), None]);
+    }
+
+    #[test]
+    fn a_pause_counts_down_to_the_next_timed_line_past_an_untimed_one() {
+        let lyrics = Lyrics::synced(
+            source(),
+            vec![
+                LyricLine::sung(at(0), "all that you touch"),
+                LyricLine::untimed("(Chorus)"),
+                LyricLine::sung(at(40), "all that you see"),
+            ],
+        )
+        .expect("a line is timed");
+        let waiting = lyrics.waiting_at(at(20)).expect("a pause between lines");
+
+        assert_eq!(waiting.next, 2);
+        assert!(lyrics.breathes_before(2));
+        assert!(!lyrics.breathes_before(1));
+    }
+
+    #[test]
+    fn untimed_lines_after_the_last_timed_one_end_with_it() {
+        let lyrics = Lyrics::synced(
+            source(),
+            vec![
+                LyricLine::sung(at(0), "all that you touch"),
+                LyricLine::untimed("Written by Roger Waters"),
+            ],
+        )
+        .expect("a line is timed");
+
+        assert!(!lyrics.has_ended(at(1)));
+        assert!(lyrics.has_ended(at(30)));
+    }
+
+    #[test]
+    fn a_set_of_blank_timed_lines_and_untimed_ones_is_empty() {
+        let lyrics = Lyrics::synced(
+            source(),
+            vec![LyricLine::sung(at(0), ""), LyricLine::untimed("credits")],
+        )
+        .expect("a line is timed");
+
+        assert!(lyrics.is_empty());
+        assert!(!with_asides().is_empty());
+    }
+
+    #[test]
+    fn a_cue_row_takes_the_untimed_lines_standing_beside_its_timed_ones() {
+        let cut = Lyrics::synced(
+            source(),
+            vec![
+                LyricLine::sung(at(0), "before"),
+                LyricLine::untimed("a note before"),
+                LyricLine::sung(at(20), "inside"),
+                LyricLine::untimed("a note inside"),
+                LyricLine::sung(at(40), "after"),
+                LyricLine::untimed("a note after"),
+            ],
+        )
+        .expect("a line is timed")
+        .within(at(10), Some(at(30)))
+        .expect("a line is inside the cue row");
+
+        assert_eq!(texts(&cut), ["inside", "a note inside"]);
+        assert_eq!(cut.lines()[0].at, Some(at(10)));
+        assert_eq!(cut.lines()[1].at, None);
+        assert_eq!(cut.line_at(at(10)), Some(0));
     }
 
     #[test]
