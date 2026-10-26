@@ -51,6 +51,16 @@ struct FileStamp: Sendable {
     }
 }
 
+struct ScopedDocument {
+    let url: URL
+    let root: URL
+    let scoped: Bool
+
+    func close() {
+        if scoped { root.stopAccessingSecurityScopedResource() }
+    }
+}
+
 final class DocumentsWatch {
     private let source: any DispatchSourceFileSystemObject
 
@@ -139,9 +149,9 @@ final class Folders: Documents, @unchecked Sendable {
     }
 
     func openDocument(uri: String) -> Int32 {
-        guard let (url, scoped) = try? resolved(uri) else { return documentNotFound() }
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        let descriptor = Darwin.open(url.path, O_RDONLY | O_CLOEXEC)
+        guard let document = try? resolved(uri) else { return documentNotFound() }
+        defer { document.close() }
+        let descriptor = Darwin.open(document.url.path, O_RDONLY | O_CLOEXEC)
         if descriptor >= 0 { return descriptor }
         return errno == ENOENT ? documentNotFound() : documentRefused()
     }
@@ -278,10 +288,10 @@ final class Folders: Documents, @unchecked Sendable {
     }
 
     func companion(_ uri: String, sidecar: Bool) -> Data? {
-        guard let (url, scoped) = try? resolved(uri) else { return nil }
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let document = try? resolved(uri) else { return nil }
+        defer { document.close() }
         let limit = sidecar ? Self.sidecarLimit : Self.coverLimit
-        guard let handle = try? FileHandle(forReadingFrom: url),
+        guard let handle = try? FileHandle(forReadingFrom: document.url),
             let data = try? handle.read(upToCount: limit + 1)
         else { return nil }
         try? handle.close()
@@ -344,19 +354,20 @@ final class Folders: Documents, @unchecked Sendable {
     }
 
     func withPaths<Value>(_ uris: [String], _ body: ([SongFile]) throws -> Value) throws -> Value {
-        var opened: [(URL, Bool)] = []
-        defer { for (url, scoped) in opened where scoped { url.stopAccessingSecurityScopedResource() } }
+        var opened: [ScopedDocument] = []
+        defer { opened.forEach { $0.close() } }
         let files = try uris.map { uri in
-            let (url, scoped) = try resolved(uri)
-            opened.append((url, scoped))
-            return SongFile(uri: uri, path: url.path)
+            let document = try resolved(uri)
+            opened.append(document)
+            return SongFile(uri: uri, path: document.url.path)
         }
         return try body(files)
     }
 
     func localFile(_ uri: String) -> URL? {
-        guard Self.root(of: uri) == Self.local, let (url, _) = try? resolved(uri) else { return nil }
-        return url
+        guard Self.root(of: uri) == Self.local, let document = try? resolved(uri) else { return nil }
+        document.close()
+        return document.url
     }
 
     static func root(of uri: String) -> String? {
@@ -371,8 +382,8 @@ final class Folders: Documents, @unchecked Sendable {
         let (root, scoped) = try root(id)
         defer { if scoped { root.stopAccessingSecurityScopedResource() } }
         return FolderFiling.file(moves, in: id, at: root) { [self] uri in
-            let (url, scoped) = try resolved(uri)
-            return ResolvedDocument(url: url) { if scoped { url.stopAccessingSecurityScopedResource() } }
+            let document = try resolved(uri)
+            return ResolvedDocument(url: document.url) { document.close() }
         }
     }
 
@@ -390,16 +401,16 @@ final class Folders: Documents, @unchecked Sendable {
     }
 
     private func removed(_ uri: String, unreachableIsGone: Bool) -> Bool {
-        let resolution: (URL, Bool)
+        let document: ScopedDocument
         do {
-            resolution = try resolved(uri)
+            document = try resolved(uri)
         } catch is FolderFailure {
             return unreachableIsGone
         } catch {
             return false
         }
-        let (url, scoped) = resolution
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        defer { document.close() }
+        let url = document.url
         do {
             try FileManager.default.removeItem(at: url)
             return true
@@ -464,14 +475,15 @@ final class Folders: Documents, @unchecked Sendable {
         return (url, scoped)
     }
 
-    private func resolved(_ uri: String) throws -> (URL, Bool) {
+    private func resolved(_ uri: String) throws -> ScopedDocument {
         guard let (id, relative) = FolderURI.split(uri) else { throw FolderFailure.notAFolderUri(uri) }
         let (root, scoped) = try root(id)
+        let document = ScopedDocument(url: root, root: root, scoped: scoped)
         guard let path = FolderURI.components(of: relative) else {
-            if scoped { root.stopAccessingSecurityScopedResource() }
+            document.close()
             throw FolderFailure.notAFolderUri(uri)
         }
-        return (path.reduce(root) { $0.appendingPathComponent($1) }, scoped)
+        return ScopedDocument(url: path.reduce(root) { $0.appendingPathComponent($1) }, root: root, scoped: scoped)
     }
 
     private func persist() throws {

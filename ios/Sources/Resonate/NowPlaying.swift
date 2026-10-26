@@ -131,10 +131,11 @@ final class NowPlaying {
 
     func endListening() {
         listening = false
-        guard let native else { return }
+        let native = native
         Work.enqueueInOrder { [weak self] in
             Self.configureSession()
-            if let now = try? native.transport(), now != .playing, now != .loading {
+            let now = try? native?.transport()
+            if now != .playing, now != .loading {
                 try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
             }
             Task { @MainActor in self?.reportRoute(rebind: false) }
@@ -330,8 +331,8 @@ final class NowPlaying {
         }
     }
 
-    func update(_ snapshot: Snapshot, forced: Bool = false) {
-        releaseSessionIfDone(snapshot)
+    func update(_ snapshot: Snapshot, answered: Snapshot? = nil, forced: Bool = false) {
+        if let answered { releaseSessionIfDone(answered) }
         let center = MPNowPlayingInfoCenter.default()
         guard let track = snapshot.current else {
             guard shown != nil || center.nowPlayingInfo != nil else { return }

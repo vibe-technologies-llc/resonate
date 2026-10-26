@@ -122,7 +122,8 @@ struct OrganiseSheet: View {
             plannedFor = asked
             failedFor = nil
         } catch {
-            if !Task.isCancelled { failedFor = asked }
+            guard !Task.isCancelled else { return }
+            failedFor = asked
             library.report(error)
         }
     }

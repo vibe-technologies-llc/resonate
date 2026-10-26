@@ -5,7 +5,7 @@ import ResonateLogic
 import ResonateNative
 import UIKit
 
-typealias NativeAction = @Sendable (MobilePlayer) async -> Void
+typealias NativeAction = @Sendable (MobilePlayer?) async -> Void
 
 struct StatusMessage: Equatable {
     enum Kind {
@@ -365,8 +365,7 @@ final class Library {
 
     private func serveActions() async {
         for await action in actions {
-            guard let native = try? await player() else { continue }
-            await action(native)
+            await action(try? await player())
         }
     }
 
@@ -395,9 +394,10 @@ final class Library {
 
                 pollFailures[.snapshot] = nil
                 if steeringFresh { steered = Steered() }
-                publish(steeringFresh ? state : steered.applied(to: state))
+                let shown = steeringFresh ? state : steered.applied(to: state)
+                publish(shown)
                 listQueue(of: native, as: state)
-                nowPlaying.update(state)
+                nowPlaying.update(shown, answered: state)
                 await features.tick(native, state)
             } catch {
                 reportPolling(.snapshot, error)
@@ -516,6 +516,7 @@ final class Library {
     func request(_ action: @escaping @Sendable (MobilePlayer) throws -> Void) {
         nudgePoll()
         enqueue.yield { native in
+            guard let native else { return }
             do {
                 try await Work.inOrder { try action(native) }
             } catch {
@@ -529,6 +530,7 @@ final class Library {
         then: @escaping @MainActor @Sendable (Value) -> Void
     ) {
         enqueue.yield { native in
+            guard let native else { return }
             do {
                 let value = try await Work.inOrder { try action(native) }
                 await MainActor.run { then(value) }
@@ -543,6 +545,10 @@ final class Library {
         answered: @escaping @MainActor @Sendable ((any Swift.Error)?) -> Void
     ) {
         enqueue.yield { native in
+            guard let native else {
+                await MainActor.run { answered(self.openingFailure ?? CancellationError()) }
+                return
+            }
             do {
                 try await Work.inOrder { try action(native) }
                 await MainActor.run { answered(nil) }
@@ -1047,24 +1053,30 @@ final class Library {
             caughtUpWithCatalog()
         } catch {
             report(error)
+            resumeCatalogWaiters()
         }
     }
 
     private func caughtUpWithCatalog() {
         catalogWhole = true
+        resumeCatalogWaiters()
+    }
+
+    private func resumeCatalogWaiters() {
         let waiting = catalogWaiting
         catalogWaiting.removeAll()
         waiting.forEach { $0.resume() }
     }
 
-    func wholeCatalog() async {
-        guard !catalogWhole else { return }
+    @discardableResult
+    func wholeCatalog() async -> Bool {
+        guard !catalogWhole else { return true }
         await withCheckedContinuation { catalogWaiting.append($0) }
+        return catalogWhole
     }
 
     func gone(among destinations: [Destination]) async -> Set<Destination> {
-        guard let native = try? await player() else { return [] }
-        await wholeCatalog()
+        guard let native = try? await player(), await wholeCatalog() else { return [] }
         var gone: Set<Destination> = []
         var asked: [Destination] = []
         for destination in destinations {
@@ -1618,6 +1630,7 @@ final class Library {
 
     private func show(_ text: String, as kind: StatusMessage.Kind, offering offer: StatusMessage.Offer? = nil) {
         if kind == .notice, status?.kind == .failure { return }
+        if kind == .failure, status?.kind == .failure, status?.text == text { return }
         statusSerial += 1
         let shown = StatusMessage(text: text, kind: kind, serial: statusSerial, offer: offer)
 
@@ -1639,20 +1652,19 @@ final class Library {
     func eraseEverything() {
         guard !erasing else { return }
         erasing = true
-        let opened = native
         let documents = folders
         let holding = UIApplication.shared.beginBackgroundTask(withName: "Erasing your data")
         Task {
-            var songs: [String] = []
-            if let opened {
-                do {
-                    songs = try await Work.inOrder { try opened.songUris() }
-                } catch {
-                    erasing = false
-                    UIApplication.shared.endBackgroundTask(holding)
-                    report(error)
-                    return
-                }
+            let opened: MobilePlayer
+            var songs: [String]
+            do {
+                opened = try await player()
+                songs = try await Work.inOrder { try opened.songUris() }
+            } catch {
+                erasing = false
+                UIApplication.shared.endBackgroundTask(holding)
+                report(error)
+                return
             }
             polling?.cancel()
             queuedScans.removeAll()
@@ -1666,11 +1678,9 @@ final class Library {
                 documents.stopScanning(scanningFolder)
             }
             await features.stopForErasing()
-            if let opened {
-                let latest = try? await Work.inOrder { try opened.songUris() }
-                songs = latest ?? songs
-                _ = try? await Work.inOrder { try opened.shutdown() }
-            }
+            let latest = try? await Work.inOrder { try opened.songUris() }
+            songs = latest ?? songs
+            _ = try? await Work.inOrder { try opened.shutdown() }
             await AppearanceState.shared.resetIcon()
             let erased = songs
             let leftovers = (try? await Work.aside {

@@ -260,6 +260,12 @@ import Testing
         #expect(still.aspect == 2)
     }
 
+    @Test func theShaderSourceDeclaresNothingWithASwiftAccessLevel() {
+        let words = BackdropShader.source.split(whereSeparator: { !$0.isLetter && !$0.isNumber && $0 != "_" })
+
+        #expect(!words.contains { ["public", "private", "fileprivate", "internal", "open"].contains($0) })
+    }
+
     func shaderField() throws -> (bytes: Int, names: [String]) {
         let source = BackdropShader.source
         let opening = try #require(source.range(of: "struct Field {"))

@@ -27,15 +27,13 @@ struct SettingsView: View {
     @Environment(Navigation.self) private var navigation
     @State private var search = ""
     @State private var confirmingErase = false
-    private static let unlistedWords = [
-        "Online features internet network artwork covers lyrics enrichment music search",
-        "Artwork and details automatically portraits Wi-Fi missing covers",
-        "Download providers TIDAL Subsonic Monochrome",
-        "Scrobbling ListenBrainz Last.fm",
-        "Erase all data reset everything delete start over",
-        "Search history recent searches privacy",
-        "Appearance accent colour icon tint theme background shader wallpaper",
-    ]
+    private static let onlineWords = "Online features internet network artwork covers lyrics enrichment music search"
+    private static let enrichmentWords = "Artwork and details automatically portraits Wi-Fi missing covers"
+    private static let providerWords = "Download providers TIDAL Subsonic Monochrome"
+    private static let scrobblingWords = "Scrobbling ListenBrainz Last.fm"
+    private static let erasingWords = "Erase all data reset everything delete start over"
+    private static let historyWords = "Keep search history recent searches privacy"
+    private static let appearanceWords = "Appearance accent colour icon tint theme background shader wallpaper"
 
     var body: some View {
         let features = library.features
@@ -52,7 +50,7 @@ struct SettingsView: View {
                     ForEach(sources) { entryRow($0) }
                 }
             }
-            if shown("Appearance accent colour icon tint theme background shader wallpaper") {
+            if shown(Self.appearanceWords) {
                 Section("Appearance") {
                     NavigationLink(value: Destination.appearance) {
                         ToolRow(
@@ -72,17 +70,17 @@ struct SettingsView: View {
             }
             if connectedShown(syncEntry) {
                 Section("Connected services") {
-                    if shown("Online features", "internet") {
+                    if shown(Self.onlineWords) {
                         Toggle(isOn: Binding(get: { features.online }, set: { features.setOnline($0) })) {
                             ToolRow(title: "Online features", detail: "MusicBrainz, artwork, lyrics, AutoEq and recognition", symbol: "globe")
                         }
                     }
-                    if shown("Download providers", "TIDAL", "Subsonic", "Monochrome") {
+                    if shown(Self.providerWords) {
                         NavigationLink(value: Destination.providers) {
                             ToolRow(title: "Download providers", detail: providersDetail(features.downloadAccounts), symbol: "arrow.down.circle")
                         }
                     }
-                    if shown("Scrobbling", "ListenBrainz", "Last.fm") {
+                    if shown(Self.scrobblingWords) {
                         NavigationLink(value: Destination.scrobbling) {
                             ToolRow(title: "Scrobbling", detail: scrobblingDetail(features.scrobbleAccount), symbol: "dot.radiowaves.left.and.right")
                         }
@@ -92,13 +90,13 @@ struct SettingsView: View {
                     }
                 }
             }
-            if shown("Search history recent searches privacy") {
+            if shown(Self.historyWords) {
                 SearchHistorySection()
             }
-            if features.online, shown("Artwork and details automatically portraits Wi-Fi missing covers") {
+            if features.online, shown(Self.enrichmentWords) {
                 EnrichmentSection()
             }
-            if shown("Erase all data reset everything delete start over") {
+            if shown(Self.erasingWords) {
                 Section {
                     Button(role: .destructive) {
                         confirmingErase = true
@@ -235,12 +233,13 @@ struct SettingsView: View {
 
     private var nothingMatches: Bool {
         let listed = (soundEntries + sourceEntries + [syncEntry]).map(\.searched)
-        return !terms.isEmpty && !(listed + Self.unlistedWords).contains(where: matches)
+        let unlisted = [Self.onlineWords, Self.providerWords, Self.scrobblingWords, Self.erasingWords, Self.historyWords, Self.appearanceWords]
+            + (library.features.online ? [Self.enrichmentWords] : [])
+        return !terms.isEmpty && !(listed + unlisted).contains(where: matches)
     }
 
     private func connectedShown(_ syncEntry: SettingsEntry) -> Bool {
-        shown("Online features", "internet") || shown("Download providers", "TIDAL", "Subsonic", "Monochrome")
-            || shown("Scrobbling", "ListenBrainz", "Last.fm") || matches(syncEntry.searched)
+        shown(Self.onlineWords) || shown(Self.providerWords) || shown(Self.scrobblingWords) || matches(syncEntry.searched)
     }
 
     private func matches(_ searched: String) -> Bool {

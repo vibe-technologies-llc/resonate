@@ -51,6 +51,7 @@ extension Library {
         var folded: UInt32 = 0
         var leftTheQueue: UInt32 = 0
         var stuck = 0
+        var unfolded: (any Swift.Error)?
 
         for set in sets {
             let copies = set.copies.map { DoomedFile(id: $0.id, uri: $0.uri) }
@@ -63,12 +64,15 @@ extension Library {
                 folded += told.forgotten
                 leftTheQueue += told.leftTheQueue
             } catch {
-                report(error)
-                break
+                unfolded = unfolded ?? error
             }
         }
         await songsLeft(SongsForgotten(forgotten: folded, leftTheQueue: leftTheQueue))
-        if stuck > 0 {
+        if let unfolded, stuck > 0 {
+            report(unfolded, after: explained(DeletionFailure.filesKept(stuck)))
+        } else if let unfolded {
+            report(unfolded)
+        } else if stuck > 0 {
             report(DeletionFailure.filesKept(stuck))
         } else if folded > 0 {
             notice("Deleted \(counted(Int(folded), "identical file")); each song keeps one")

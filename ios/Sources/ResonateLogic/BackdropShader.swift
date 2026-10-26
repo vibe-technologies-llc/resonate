@@ -30,7 +30,7 @@ public enum BackdropShader {
         constant float vignetteDesaturation = 0.15;
         constant float ditherStep = 1.0 / 255.0;
 
-        public struct Field {
+        struct Field {
             float4 colours[5];
             float4 previous[5];
             float time;
@@ -43,7 +43,7 @@ public enum BackdropShader {
             float vignette;
         };
 
-        public struct Varyings {
+        struct Varyings {
             float4 position [[position]];
             float2 uv;
         };

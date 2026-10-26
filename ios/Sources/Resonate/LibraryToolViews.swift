@@ -414,6 +414,7 @@ struct FilterSheet: View {
     @State private var artists: [String] = []
     @State private var albums: [String] = []
     @State private var discarding = false
+    @State private var seeded = false
 
     var body: some View {
         NavigationStack {
@@ -452,7 +453,11 @@ struct FilterSheet: View {
                     }
                 }
             }
-            .onAppear { filter = library.filter }
+            .onAppear {
+                guard !seeded else { return }
+                seeded = true
+                filter = library.filter
+            }
             .task { await readNames() }
         }
         .keepingEditsUnlessDiscarded(filter != library.filter, asking: $discarding) { dismiss() }

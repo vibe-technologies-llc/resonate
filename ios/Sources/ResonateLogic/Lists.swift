@@ -38,9 +38,10 @@ public struct SongKeys: Sendable {
 
 public struct AlbumDisc: Identifiable, Sendable {
     public let number: UInt32
+    public let run: Int
     public var tracks: [Track]
 
-    public var id: UInt32 { number }
+    public var id: Int { run }
 
     public static func of(_ tracks: [Track]) -> [AlbumDisc] {
         var discs: [AlbumDisc] = []
@@ -49,7 +50,7 @@ public struct AlbumDisc: Identifiable, Sendable {
             if discs.last?.number == number {
                 discs[discs.count - 1].tracks.append(track)
             } else {
-                discs.append(AlbumDisc(number: number, tracks: [track]))
+                discs.append(AlbumDisc(number: number, run: discs.count, tracks: [track]))
             }
         }
         return discs

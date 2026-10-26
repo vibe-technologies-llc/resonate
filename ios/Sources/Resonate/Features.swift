@@ -73,6 +73,7 @@ final class Features {
     private(set) var statisticsDays: UInt32?
     var lyrics: LyricSheet?
     var lyricsLoading = false
+    var lyricsUnread: UInt64?
     var recognitionKey = ""
     var recognition: [RecognitionCandidate] = []
     var recognitionBusy = false
@@ -493,6 +494,14 @@ final class Features {
         await downloads.stopForErasing()
     }
 
+    func readSecretsAgain() {
+        Task { [weak self] in
+            guard let self else { return }
+            await readSecrets()
+            if syncConfig != nil { work { [weak self] native in try await self?.applySync(native) } }
+        }
+    }
+
     func wentToBackground() {
         leftAt = Date()
     }
@@ -500,13 +509,7 @@ final class Features {
     func cameForward() {
         let wasAway = leftAt != nil
         leftAt = nil
-        if secretsUnread {
-            Task { [weak self] in
-                guard let self else { return }
-                await readSecrets()
-                if syncConfig != nil { work { [weak self] native in try await self?.applySync(native) } }
-            }
-        }
+        if secretsUnread { readSecretsAgain() }
         guard wasAway else { return }
         library.openAgain()
         library.rescanUnasked(.everything)
@@ -889,17 +892,24 @@ final class Features {
     }
 
     func editPlaylist(_ action: @escaping @Sendable (MobilePlayer) throws -> Void, then: PlaylistEdited? = nil) {
-        work { [weak self] native in
+        Task { [weak self] in
+            guard let self else { return }
             do {
-                let found = try await Work.inLibrary {
-                    try action(native)
-                    return try native.playlists()
+                let native = try await library.player()
+                do {
+                    let found = try await Work.inLibrary {
+                        try action(native)
+                        return try native.playlists()
+                    }
+                    adoptPlaylists(found, native)
+                    then?(nil)
+                } catch {
+                    await reloadOpenPlaylist()
+                    throw error
                 }
-                self?.adoptPlaylists(found, native)
-                then?(nil)
+            } catch is CancellationError {
             } catch {
-                await self?.reloadOpenPlaylist()
-                guard let then else { throw error }
+                guard let then else { return library.report(error) }
                 then(explained(error))
             }
         }
@@ -1008,11 +1018,16 @@ final class Features {
         let request = lyricRequest
         if lyrics?.trackId != id { lyrics = nil }
         lyricsLoading = true
-        work { [weak self] native in
-            defer { if request == self?.lyricRequest { self?.lyricsLoading = false } }
+        lyricsUnread = nil
+        work({ [weak self] native in
             let sheet = try await Work.aside { try native.lyrics(id: id, refresh: refresh) }
-            await MainActor.run { if request == self?.lyricRequest { self?.lyrics = sheet } }
-        }
+            guard let self, request == lyricRequest else { return }
+            lyrics = sheet
+        }, finally: { [weak self] in
+            guard let self, request == lyricRequest else { return }
+            lyricsLoading = false
+            if lyrics?.trackId != id { lyricsUnread = id }
+        })
     }
 
     func keepLyricText(_ id: UInt64, _ text: String) {
@@ -1020,16 +1035,21 @@ final class Features {
         let request = lyricRequest
         let before = lyrics?.trackId == id ? lyrics : nil
         lyricsLoading = true
-        work { [weak self] native in
-            defer { if request == self?.lyricRequest { self?.lyricsLoading = false } }
+        work({ [weak self] native in
             let sheet = try await Work.aside {
                 try native.keepLyricText(id: id, text: text)
                 return try native.lyrics(id: id, refresh: false)
             }
             guard let self else { return }
-            if request == lyricRequest { lyrics = sheet }
+            if request == lyricRequest {
+                lyrics = sheet
+                lyricsUnread = nil
+            }
             library.notice(Self.told(kept: sheet, over: before))
-        }
+        }, finally: { [weak self] in
+            guard let self, request == lyricRequest else { return }
+            lyricsLoading = false
+        })
     }
 
     private static func told(kept sheet: LyricSheet?, over before: LyricSheet?) -> String {
@@ -1453,9 +1473,9 @@ final class Features {
             let (count, failure) = (outcome.saved, outcome.failure)
             await self?.refreshWanted(native)
             if let failure {
-                self?.library.report(failure, after: "Saved \(count) of \(songs.count) recordings for later")
+                self?.library.report(failure, after: "Saved \(count) of \(counted(songs.count, "recording")) for later")
             } else {
-                self?.library.notice("Saved \(count) recordings for later")
+                self?.library.notice("Saved \(counted(Int(count), "recording")) for later")
             }
         }
     }
@@ -1499,7 +1519,7 @@ final class Features {
             }
             await MainActor.run {
                 self?.playlists = found
-                self?.library.notice("Imported \(imported.matched) local songs; \(imported.missing) still missing")
+                self?.library.notice("Imported \(counted(Int(imported.matched), "local song")); \(imported.missing) still missing")
             }
         }
     }
@@ -1548,6 +1568,7 @@ final class Features {
                 }
             } catch {
                 guard request == searchRequest else { return }
+                if onlineFound.text != text { onlineFound = OnlineFound(text: text, answers: []) }
                 library.report(error)
             }
         }

@@ -32,6 +32,17 @@ struct LyricsPane: View {
                 )
             } else if let sheet, !sheet.lines.isEmpty {
                 LyricFollowing(sheet: sheet, track: track, stage: stage, visible: visible, compact: compact)
+            } else if let track, sheet == nil, !features.lyricsLoading, features.lyricsUnread == track.id {
+                ContentUnavailableView {
+                    Label("Lyrics could not be read", systemImage: "exclamationmark.bubble")
+                } actions: {
+                    Button("Try again", systemImage: "arrow.clockwise") { features.loadLyrics(track.id) }
+                        .buttonStyle(.glass)
+                    if let addLyrics {
+                        Button("Add lyrics…", systemImage: "text.badge.plus", action: addLyrics)
+                            .buttonStyle(.glass)
+                    }
+                }
             } else if features.lyricsLoading || sheet == nil {
                 looking
             } else {

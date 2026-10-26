@@ -117,6 +117,7 @@ import Testing
         let discs = AlbumDisc.of([track(1, disc: 1), track(2, disc: 2), track(3, disc: 1)])
 
         #expect(discs.map(\.number) == [1, 2, 1])
+        #expect(Set(discs.map(\.id)).count == discs.count)
     }
 
     @Test func nothingMakesNoDiscs() {

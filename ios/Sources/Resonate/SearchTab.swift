@@ -70,6 +70,7 @@ struct SearchTab: View {
             search.recallRecents()
             library.features.onlineQuery = search.text
         }
+        .onChange(of: search.text) { _, text in library.features.onlineQuery = text }
     }
 
     private func stowKeyboard() {

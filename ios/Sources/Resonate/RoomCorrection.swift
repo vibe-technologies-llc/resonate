@@ -36,7 +36,6 @@ final class RoomCorrectionState {
                     if applied == nil { gone() }
                 }
             } catch {
-                remember(on: false)
                 library.report(error)
             }
         }

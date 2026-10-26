@@ -424,6 +424,16 @@ let interactionNotAllowed: Int32 = -25308
         #expect(UserDefaults(suiteName: defaults.names[0])?.string(forKey: "sync-key") == nil)
     }
 
+    @Test func aSyncKeyTheKeychainRefusesKeepsTheSettingsAsTheyWere() throws {
+        var turnedOff = try store.readSync()
+        turnedOff.enabled = false
+        turnedOff.key = "pair-me"
+        items.script("add", interactionNotAllowed)
+
+        #expect(throws: KeychainFailure.self) { try store.writeSync(turnedOff) }
+        #expect(try store.readSync().enabled)
+    }
+
     @Test func scrobblingAndTheKeysRoundTripThroughTheKeychain() throws {
         let scrobbling = ScrobbleAccount(listenbrainzToken: "lb", lastfmKey: "k", lastfmSecret: "s", lastfmSession: "x")
 

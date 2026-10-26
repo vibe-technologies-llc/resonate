@@ -69,13 +69,14 @@ struct BackdropView: View {
     static func prepare(_ track: Track, features: Features) async {
         let key = key(of: track)
         guard PaletteMemory.recalled(key) == nil, let image = await features.artwork(track, bucket: .tile) else { return }
-        let sampled = await Backdrop.palette(of: image, accent: accentLinear())
+        let sampled = await Backdrop.palette(of: image, accent: accentLinear(shownScheme))
         PaletteMemory.remember(sampled, as: key)
     }
 
     private var paletteRequest: String {
-        guard let track else { return ":\(AppearanceState.shared.accent?.name ?? "")" }
-        return "\(Self.key(of: track)):\(library.features.artGeneration(of: track.id)):\(AppearanceState.shared.accent?.name ?? "")"
+        let accent = "\(AppearanceState.shared.accent?.name ?? ""):\(scheme == .dark ? "dark" : "light")"
+        guard let track else { return ":\(accent)" }
+        return "\(Self.key(of: track)):\(library.features.artGeneration(of: track.id)):\(accent)"
     }
 
     private static func key(of track: Track) -> String {
@@ -120,17 +121,23 @@ struct BackdropView: View {
         rendering = await BackdropPipeline.rendering()
     }
 
-    static func accentLinear() -> SIMD3<Float> {
-        let accent = Color.worn.resolve(in: EnvironmentValues())
+    static var shownScheme: ColorScheme {
+        UITraitCollection.current.userInterfaceStyle == .dark ? .dark : .light
+    }
+
+    static func accentLinear(_ scheme: ColorScheme) -> SIMD3<Float> {
+        var values = EnvironmentValues()
+        values.colorScheme = scheme
+        let accent = Color.worn.resolve(in: values)
         return SIMD3<Float>(accent.linearRed, accent.linearGreen, accent.linearBlue)
     }
 
-    static func accentPalette() -> Palette {
-        AccentPaletteMemory.palette(around: accentLinear())
+    static func accentPalette(_ scheme: ColorScheme = shownScheme) -> Palette {
+        AccentPaletteMemory.palette(around: accentLinear(scheme))
     }
 
     private func loadPalette() async {
-        let accentLinear = Self.accentLinear()
+        let accentLinear = Self.accentLinear(scheme)
 
         guard let track else {
             let shown = moving ? AccentPaletteMemory.palette(around: accentLinear) : nil
@@ -164,7 +171,7 @@ struct AppBackdrop: View {
     @State private var lowPower = ProcessInfo.processInfo.sparesFrames
 
     var body: some View {
-        let palette = BackdropView.accentPalette()
+        let palette = BackdropView.accentPalette(scheme)
         let tone = BackdropTone.ambient(scheme, strength: strength)
 
         ZStack {

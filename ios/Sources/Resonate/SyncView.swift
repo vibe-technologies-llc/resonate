@@ -60,6 +60,13 @@ struct SyncView: View {
                         }
                     }
                 }
+            } else {
+                Section {
+                    Label("Sync settings could not be read", systemImage: "exclamationmark.triangle")
+                    Button("Try again", systemImage: "arrow.clockwise") { features.readSecretsAgain() }
+                } footer: {
+                    Text("The keychain was locked when Resonate started. Unlock your iPhone and try again.")
+                }
             }
         }
         .navigationTitle("Device sync")

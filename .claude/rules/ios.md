@@ -217,7 +217,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   the player is open, an open is under way or erasing runs); each opens a fresh `MobilePlayer`
   (`Library.open`) with `openingFailure` cleared first, so `player()` callers wait for that attempt,
   and a success runs the whole start (preferences, Now Playing, `Features.initialize`, the catalog,
-  the poll). Actions sent while it is closed are dropped, as before, since the banner says why. The
+  the poll). Actions sent while it is closed are dropped, as before, since the banner says why, but each is answered with the open's failure, so its steer, queue edit or favourite settles back and the poll is not left waiting on an answer that never comes (a failure already shown is not shown again, so the banner keeps *Try again*). The
   snapshot's `waiting` (`mobile.md`) is shown as a failure when it begins and taken down when it
   ends, if still shown; meanwhile `Library.waitingForADevice` puts it in Now Playing in place of the quality
   line (`WaitingLine`), since the cover hides the banner. The
@@ -259,7 +259,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   nowhere to go never holds the app awake or keeps `cameForward` from rebuilding sync.
 - **Erase all data** (the last Settings section, confirmed) first reads every song's URI
   (`song_uris`, hidden ones included): where that fails nothing is erased and the failure is shown.
-  It then stops what could write afterwards (the poll, the scan, sync, scrobbling, Listen,
+  A catalog that would not open is such a failure: erasing waits for an open under way and refuses where it fails, since the songs in granted folders could not be found. It then stops what could write afterwards (the poll, the scan, sync, scrobbling, Listen,
   enrichment, and downloads, which are cancelled and waited for so each deletes its half-written
   document and journal entry), reads the URIs again, shuts the player down, returns the alternate
   icon to the primary, deletes each of those files through `Folders.delete` (the songs in granted
@@ -349,7 +349,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   after, never before). A folder's access is measured, not
   assumed: `FolderAccess.of` reads `isReadableFile`/`isWritableFile` and the URL's
   `isReadable`/`isWritable` while the security scope is open, so a read-only grant is never offered
-  as a destination for downloads or synced songs. A bookmark is resolved once per folder and the URL kept (`resolvedRoots`; each use opens and closes its own scope), so a missing-song pass or a scan pays no `URL(resolvingBookmarkData:)` per song; measuring a folder (`refreshed()`, a scan) resolves it again, which is how a moved or stale folder is noticed. Access is cached per folder: `folders()` resolves
+  as a destination for downloads or synced songs. A bookmark is resolved once per folder and the URL kept (`resolvedRoots`; each use opens and closes its own scope, closing it on the folder's URL it was opened on, `ScopedDocument`, never on the file's URL built from it, which leaked one scope per song read), so a missing-song pass or a scan pays no `URL(resolvingBookmarkData:)` per song; measuring a folder (`refreshed()`, a scan) resolves it again, which is how a moved or stale folder is noticed. Access is cached per folder: `folders()` resolves
   only a bookmark it has not measured, `refreshed()` re-measures every one on `Work.aside` (the
   folder and sync pages call it, and so does every hiding of missing songs, since a drive unplugged
   while the app was away still reads as readable from the cache), and a scan re-measures its own root. A folder removed hides its songs at once
@@ -393,7 +393,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   (`activate()`), so opening Resonate never stops another app's audio; it is deactivated with
   `.notifyOthersOnDeactivation` when the transport turns stopped (Stop, the queue's end) or a sleep
   timer paused it (`releaseSessionIfDone`, on the transport's lane and only if nothing plays by
-  then), so the app audio it interrupted may resume. **The session is asked for
+  then, decided from the snapshot the engine answered, never a steered one: a steered stop ran ahead of the stop itself, found the transport still playing and was never owed again; the lock screen meanwhile shows the steered snapshot the app shows), so the app audio it interrupted may resume. **The session is asked for
   the playing song's rate** (`preferRate`): on every song change and activation (a `play` or `jump` names the song it loads, `activate(loading:)`, not the one on the lock screen), while "Match the
   song's sample rate" is on (the output page; `follow-song-rate` in the `playback` suite, on by
   default), `setPreferredSampleRate(track.rate)`, `0` (no preference) while off, then the route is
@@ -592,7 +592,7 @@ every route change (a pair of headphones at the same rate included), not from th
   trailing edge and a second line only for a track artist other than the album's.
 - **A failed read is never drawn as empty.** The album and artist pages, the online artist, album
   and release pages and the tag editor show the read's failure with *Try again* (`ReadFailure`)
-  instead of "No songs…" or a blank editor (whose Save would overwrite the file's tags); a
+  instead of "No songs…" or a blank editor (whose Save would overwrite the file's tags), and so does the lyrics pane (`Features.lyricsUnread`: *Lyrics could not be read* with *Try again* and *Add lyrics…*); a
   collection's context-menu action or a mix's Play reports a thrown read rather than saying
   "Nothing in X yet"; *Save all for later* stops at the first chunk that fails and says how many
   were saved.
@@ -628,7 +628,7 @@ every route change (a pair of headphones at the same rate included), not from th
   once the player is open and the whole catalog read (`Library.wholeCatalog`): a song page whose id
   the catalog no longer holds, an album `album(key)` no longer finds, an artist with no songs or a
   playlist gone (`Library.gone`, on `Work.aside`) cuts its stack at that page, since every page above
-  it was reached through it. A failed read cuts nothing. Now Playing and the sheets are not kept.
+  it was reached through it. A failed read cuts nothing: a catalog read that fails resumes `wholeCatalog`'s waiters with nothing cut. Now Playing and the sheets are not kept.
 - **The Library tab's *All songs*** is a navigation link to the Songs page, so it carries the
   disclosure arrow its neighbours do; a simultaneous tap clears any filter or mix and shows songs.
   **Its rows' icons are one kind of tile** (`ShelfTile`: a white symbol at `.title2` centred on a
@@ -831,7 +831,7 @@ every route change (a pair of headphones at the same rate included), not from th
   that clears it. Playlists and Suggestions are reached from the Library tab (Suggestions is a row
   beside Favourites and All songs), online search from the Search tab.
 - **The Search tab is one search of the library and online** (`SearchTab.swift`), with no scope to
-  choose: typing sets `tabSearch.text` and `Features.onlineQuery` together, and the page lists *In
+  choose: `tabSearch.text` and `Features.onlineQuery` move together (`SearchTab` follows the text, so *Did you mean*, a completion and Listen's *Find it* ask online as typing does), and the page lists *In
   your library* (the completions' row, then the Songs results' Top with *See all* pushing the full
   list, or, matching nothing, *Did you mean* and one line saying so) above *Online* (the online
   Top, below), each under a heading row of its own (`SearchHeading`). With online features off

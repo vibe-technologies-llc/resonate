@@ -165,6 +165,8 @@ public struct AccountStore: Sendable {
     }
 
     public func writeSync(_ config: SyncConfig) throws {
+        try secrets.write("sync-key", config.key)
+
         let plain = plain
         plain.set(config.enabled, forKey: "sync-enabled")
         plain.set(config.nearbyOnly, forKey: "sync-nearby-only")
@@ -174,6 +176,5 @@ public struct AccountStore: Sendable {
         plain.set(config.playlists, forKey: "sync-playlists")
         plain.set(config.everything, forKey: "sync-everything")
         plain.set(config.meteredAllowed, forKey: "sync-metered-allowed")
-        try secrets.write("sync-key", config.key)
     }
 }

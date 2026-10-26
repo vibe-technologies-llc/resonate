@@ -64,15 +64,15 @@ struct MiniPlayer: View {
                 Spacer(minLength: 0)
             }
             if expanded {
-                Button("Previous", systemImage: "backward.fill") { skip(forward: false) }
-                    .labelStyle(.iconOnly)
-                    .touchTarget()
+                Button { skip(forward: false) } label: {
+                    Label("Previous", systemImage: "backward.fill").labelStyle(.iconOnly).touchTarget()
+                }
             }
             PlayButton(transport: library.transport)
             if skips {
-                Button("Next", systemImage: "forward.fill") { skip(forward: true) }
-                    .labelStyle(.iconOnly)
-                    .touchTarget()
+                Button { skip(forward: true) } label: {
+                    Label("Next", systemImage: "forward.fill").labelStyle(.iconOnly).touchTarget()
+                }
             }
         }
         .buttonStyle(.plain)
@@ -120,8 +120,8 @@ struct PlayButton: View {
                 .font(large ? .system(size: 34, weight: .semibold) : .title3)
                 .frame(width: large ? 76 : 32, height: large ? 76 : 32)
                 .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
+                .touchTarget()
         }
-        .touchTarget()
         .buttonStyle(.plain)
         .modifier(GlassWhen(enabled: large))
         .sensoryFeedback(.impact(weight: .medium), trigger: pressed)
@@ -739,32 +739,32 @@ struct TransportRow: View {
         let repeating = library.repeatMode
         GlassEffectContainer(spacing: 24) {
             HStack(spacing: 0) {
-                Button("Shuffle", systemImage: "shuffle") { library.setShuffle(!shuffled) }
+                Button { library.setShuffle(!shuffled) } label: { Label("Shuffle", systemImage: "shuffle").touchTarget() }
                     .foregroundStyle(shuffled ? Color.worn : .secondary)
                     .modeMark(shuffled)
                     .accessibilityValue(shuffled ? "On" : "Off")
-                    .touchTarget()
                     .frame(maxWidth: .infinity)
-                Button("Previous", systemImage: "backward.fill") {
+                Button {
                     skipped += 1
                     library.previous()
+                } label: {
+                    Label("Previous", systemImage: "backward.fill").touchTarget()
                 }
                 .font(.title)
-                .touchTarget()
                 .frame(maxWidth: .infinity)
                 PlayButton(transport: library.transport, large: true)
-                Button("Next", systemImage: "forward.fill") {
+                Button {
                     skipped += 1
                     library.next()
+                } label: {
+                    Label("Next", systemImage: "forward.fill").touchTarget()
                 }
                 .font(.title)
-                .touchTarget()
                 .frame(maxWidth: .infinity)
-                Button("Repeat", systemImage: repeating.symbol) { library.setRepeat(repeating.following) }
+                Button { library.setRepeat(repeating.following) } label: { Label("Repeat", systemImage: repeating.symbol).touchTarget() }
                     .foregroundStyle(repeating == .off ? .secondary : Color.worn)
                     .modeMark(repeating != .off)
                     .accessibilityValue(repeating.spoken)
-                    .touchTarget()
                     .frame(maxWidth: .infinity)
             }
             .labelStyle(.iconOnly)

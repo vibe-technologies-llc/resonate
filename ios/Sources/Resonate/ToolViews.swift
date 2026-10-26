@@ -47,6 +47,7 @@ struct LyricWriter: View {
     @Environment(Library.self) private var library
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
+    @State private var discarding = false
     let track: Track
 
     var body: some View {
@@ -73,7 +74,9 @@ struct LyricWriter: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if blank { dismiss() } else { discarding = true }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
@@ -84,7 +87,7 @@ struct LyricWriter: View {
                 }
             }
         }
-        .interactiveDismissDisabled(!blank)
+        .keepingEditsUnlessDiscarded(!blank, asking: $discarding) { dismiss() }
     }
 }
 
