@@ -3,7 +3,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use resonate_analysis::Study;
+use resonate_analysis::{BANDS, BandGains, BandLevels, Cut, Loudest, Study};
 use resonate_codec::MediaInfo;
 use resonate_core::Calendar;
 use resonate_library::Agreement;
@@ -28,6 +28,7 @@ struct Figures<'a> {
     dynamic_range: Option<u32>,
     clipped: u64,
     bits: Option<u32>,
+    band_levels: &'a [u8],
 }
 
 type StoredLyrics = (Option<String>, Option<String>, String);
@@ -352,7 +353,12 @@ impl Catalog {
         })
     }
 
-    pub(crate) fn keep_study(&self, id: u64, report: &AnalysisReport) -> Result<()> {
+    pub(crate) fn keep_study(
+        &self,
+        id: u64,
+        report: &AnalysisReport,
+        levels: &BandLevels,
+    ) -> Result<()> {
         self.keep_figures(
             id,
             Figures {
@@ -364,6 +370,7 @@ impl Catalog {
                 dynamic_range: report.dynamic_range,
                 clipped: report.clipped,
                 bits: report.bits_in_use,
+                band_levels: levels.as_bytes(),
             },
         )
     }
@@ -380,13 +387,14 @@ impl Catalog {
                 dynamic_range: study.loudness.dynamic_range.map(u32::from),
                 clipped: study.levels.clipped,
                 bits: study.levels.bits_in_use.map(u32::from),
+                band_levels: BandLevels::of(&study.spectrum).as_bytes(),
             },
         )
     }
 
     fn keep_figures(&self, id: u64, figures: Figures<'_>) -> Result<()> {
         let connection = self.0.lock();
-        connection.execute("INSERT INTO studies(track, verdict, peak, rms, true_peak, loudness, dynamic_range, clipped, bits) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) ON CONFLICT(track) DO UPDATE SET verdict = excluded.verdict, peak = excluded.peak, rms = excluded.rms, true_peak = excluded.true_peak, loudness = excluded.loudness, dynamic_range = excluded.dynamic_range, clipped = excluded.clipped, bits = excluded.bits", params![id as i64, figures.verdict, figures.peak, figures.rms, figures.true_peak, figures.loudness, figures.dynamic_range, figures.clipped.min(i64::MAX as u64) as i64, figures.bits]).map_err(|source| Error::store(StoreOp::Write, source))?;
+        connection.execute("INSERT INTO studies(track, verdict, peak, rms, true_peak, loudness, dynamic_range, clipped, bits, band_levels) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) ON CONFLICT(track) DO UPDATE SET verdict = excluded.verdict, peak = excluded.peak, rms = excluded.rms, true_peak = excluded.true_peak, loudness = excluded.loudness, dynamic_range = excluded.dynamic_range, clipped = excluded.clipped, bits = excluded.bits, band_levels = excluded.band_levels", params![id as i64, figures.verdict, figures.peak, figures.rms, figures.true_peak, figures.loudness, figures.dynamic_range, figures.clipped.min(i64::MAX as u64) as i64, figures.bits, figures.band_levels]).map_err(|source| Error::store(StoreOp::Write, source))?;
         connection
             .execute("DELETE FROM unstudied WHERE track = ?1", [id as i64])
             .map_err(|source| Error::store(StoreOp::Write, source))?;
@@ -406,6 +414,56 @@ impl Catalog {
 }
 
 impl Catalog {
+    pub(crate) fn loudest_kept(&self, gains: &BandGains) -> Result<Loudest> {
+        let connection = self.0.lock();
+        let read_error = |source| Error::store(StoreOp::Read, source);
+        let mut statement = connection
+            .prepare_cached(
+                "SELECT s.true_peak, s.band_levels FROM studies s JOIN documents d ON d.id = s.track
+                 WHERE d.missing = 0 AND length(s.band_levels) = ?1",
+            )
+            .map_err(read_error)?;
+        let rows = statement
+            .query_map([BANDS as i64], |row| {
+                Ok((row.get::<_, f64>(0)?, row.get::<_, Vec<u8>>(1)?))
+            })
+            .map_err(read_error)?;
+
+        let mut loudest = Loudest::default();
+        for row in rows {
+            let (true_peak, kept) = row.map_err(read_error)?;
+            if let Some(levels) = BandLevels::from_bytes(&kept) {
+                loudest.weigh(gains, &levels, true_peak as f32);
+            }
+        }
+        Ok(loudest)
+    }
+
+    pub(crate) fn unmeasured(&self, cuts: &[Cut]) -> Result<Vec<Cut>> {
+        let connection = self.0.lock();
+        let read_error = |source| Error::store(StoreOp::Read, source);
+        let mut statement = connection
+            .prepare_cached(
+                "SELECT EXISTS (SELECT 1 FROM studies s JOIN documents d ON d.id = s.track
+                                 WHERE d.uri = ?1 AND d.missing = 0 AND length(s.band_levels) = ?2)",
+            )
+            .map_err(read_error)?;
+
+        let mut owed = Vec::new();
+        for cut in cuts {
+            let held = cut.span.is_none()
+                && statement
+                    .query_row(params![cut.location.to_uri(), BANDS as i64], |row| {
+                        row.get::<_, bool>(0)
+                    })
+                    .map_err(read_error)?;
+            if !held {
+                owed.push(cut.clone());
+            }
+        }
+        Ok(owed)
+    }
+
     pub(crate) fn keep_agreement(&self, id: u64, agreement: Agreement) -> Result<()> {
         self.0
             .lock()

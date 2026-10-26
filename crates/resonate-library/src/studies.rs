@@ -292,8 +292,7 @@ pub(crate) fn loudest_kept(
         let Some(levels) = BandLevels::from_bytes(&kept) else {
             continue;
         };
-        loudest.peak = loudest.peak.max(gains.peak(&levels, true_peak as f32));
-        loudest.measured += 1;
+        loudest.weigh(&gains, &levels, true_peak as f32);
     }
     Ok(loudest)
 }

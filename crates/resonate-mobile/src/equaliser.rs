@@ -1,6 +1,6 @@
 use std::{f64::consts::SQRT_2, sync::Arc};
 
-use resonate_analysis::Watch;
+use resonate_analysis::{BandGains, Watch};
 use resonate_core::{
     SampleRate,
     eq::{
@@ -431,21 +431,32 @@ pub fn fitted_preamp(curve: EqualiserCurve, rate_hz: Option<u32>) -> Result<f32>
 impl MobilePlayer {
     pub fn fitted_preamp_to_the_queue(&self, curve: EqualiserCurve) -> Result<Option<f32>> {
         let profile = Arc::new(curve.profile()?);
-        let (rows, playing) = {
+        let (rows, playing, rate) = {
             let held = self.player.lock();
             let player = held.as_ref().ok_or(Error::Closed)?;
-            (player.queue(), player.state().queue_position)
+            let state = player.state();
+            (
+                player.queue(),
+                state.queue_position,
+                state
+                    .output
+                    .map_or(FITTED_AT, |output| output.negotiated.rate),
+            )
         };
 
         let watch = Arc::new(Watch::default());
         if let Some(previous) = self.services.fitting.lock().replace(Arc::clone(&watch)) {
             previous.stop();
         }
-        let cuts = resonate_engine::cuts_to_fit(&rows, playing);
-        let loudest =
-            resonate_analysis::loudest_through(&self.sources, &cuts, &profile, watch.as_ref())?;
 
-        Ok(loudest
+        let cuts = resonate_engine::cuts_to_fit(&rows, playing);
+        let kept = self.catalog.loudest_kept(&BandGains::of(&profile, rate))?;
+        let owed = self.catalog.unmeasured(&cuts)?;
+        let decoded =
+            resonate_analysis::loudest_through(&self.sources, &owed, &profile, watch.as_ref())?;
+
+        Ok(kept
+            .joined(decoded)
             .fitted_preamp()
             .map(|fitted| (fitted.decibels() as f32).max(-PREAMP_AT_MOST_DB)))
     }
@@ -613,6 +624,94 @@ mod tests {
             harness.player.fitted_preamp_to_the_queue(broken),
             Err(Error::BandGain { .. })
         ));
+    }
+
+    fn kept_sounding_at_one_kilohertz(harness: &crate::harness::Harness, name: char, peak: f64) {
+        let mut steps = [255_u8; 29];
+        steps[15] = 0;
+
+        harness
+            .player
+            .catalog
+            .0
+            .lock()
+            .execute(
+                "INSERT INTO studies (track, verdict, peak, rms, true_peak, clipped, band_levels)
+                 VALUES (?1, 'genuine', 0.5, 0.1, ?2, 0, ?3)",
+                rusqlite::params![harness.song(name).id as i64, peak, steps.to_vec()],
+            )
+            .expect("a study");
+    }
+
+    #[test]
+    fn songs_with_kept_bands_are_fitted_without_a_decode_and_the_whole_catalog_counts() {
+        use crate::harness::Harness;
+
+        let harness = Harness::new();
+        let boosted = curve(vec![peaking(1000.0, 6.0, 1.0)]);
+        kept_sounding_at_one_kilohertz(&harness, 'a', 0.5);
+        kept_sounding_at_one_kilohertz(&harness, 'c', 0.9);
+
+        harness
+            .player
+            .load(harness.ids("ab"), 0, false)
+            .expect("a queue");
+        let queued_and_kept = harness
+            .player
+            .fitted_preamp_to_the_queue(boosted.clone())
+            .expect("a fit")
+            .expect("a measure");
+
+        harness
+            .player
+            .load(vec![], 0, false)
+            .expect("an empty queue");
+        let catalog_alone = harness
+            .player
+            .fitted_preamp_to_the_queue(boosted)
+            .expect("a fit")
+            .expect("a measure");
+
+        let expected = -(20.0 * (0.9_f64 * 2.0).log10()) as f32;
+        assert!(
+            (queued_and_kept - expected).abs() < 0.05,
+            "{queued_and_kept} against {expected} dB"
+        );
+        assert_eq!(catalog_alone, queued_and_kept);
+    }
+
+    #[test]
+    fn kept_bands_are_forgotten_with_a_changed_file_and_a_cut_row_is_never_taken_as_measured() {
+        use crate::harness::Harness;
+
+        let harness = Harness::new();
+        kept_sounding_at_one_kilohertz(&harness, 'a', 0.9);
+        let cuts = |name: char, span| {
+            vec![resonate_analysis::Cut {
+                location: crate::documents::location(&harness.song(name).uri).expect("a location"),
+                span,
+            }]
+        };
+
+        let measured = harness.player.catalog.unmeasured(&cuts('a', None));
+        let another = harness.player.catalog.unmeasured(&cuts('b', None));
+        let cut = harness.player.catalog.unmeasured(&cuts(
+            'a',
+            Some(resonate_core::FrameSpan::starting(resonate_core::Frames(0))),
+        ));
+        harness
+            .player
+            .catalog
+            .0
+            .lock()
+            .execute("UPDATE documents SET modified = 5", [])
+            .expect("a touched file");
+        let touched = harness.player.catalog.unmeasured(&cuts('a', None));
+
+        assert_eq!(measured.expect("a read").len(), 0);
+        assert_eq!(another.expect("a read").len(), 1);
+        assert_eq!(cut.expect("a read").len(), 1);
+        assert_eq!(touched.expect("a read").len(), 1);
     }
 
     #[test]

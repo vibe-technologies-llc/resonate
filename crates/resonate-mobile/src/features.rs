@@ -5,7 +5,7 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use resonate_analysis::{Finding, Watch};
+use resonate_analysis::{BandLevels, Finding, Watch};
 use resonate_codec::{ImageFormat, probe};
 use resonate_core::{Chromaprint, Mbid, TrackId, folded_letters, words_of_a_name};
 use resonate_engine::{Counting, Listening, Tapped};
@@ -399,7 +399,8 @@ impl MobilePlayer {
             spectrum_step_hz: study.spectrum.bin_hz(),
             findings: study.judgement.findings.iter().map(Finding::told).collect(),
         };
-        self.catalog.keep_study(id, &report)?;
+        self.catalog
+            .keep_study(id, &report, &BandLevels::of(&study.spectrum))?;
         Ok(report)
     }
 

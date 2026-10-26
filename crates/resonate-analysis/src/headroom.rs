@@ -15,7 +15,7 @@ use resonate_core::{
 use resonate_dsp::{Equaliser, Processor, TruePeakMeter};
 
 use crate::{
-    Error, Result, Watching,
+    BandGains, BandLevels, Error, Result, Watching,
     analysis::{native_format, opened},
     conform::Walking,
 };
@@ -44,6 +44,11 @@ impl Loudest {
 
     pub fn fitted_preamp(self) -> Option<Preamp> {
         self.peak_db().map(Preamp::holding_under_full_scale)
+    }
+
+    pub fn weigh(&mut self, gains: &BandGains, levels: &BandLevels, true_peak: f32) {
+        self.peak = self.peak.max(gains.peak(levels, true_peak));
+        self.measured += 1;
     }
 
     pub fn joined(self, other: Self) -> Self {

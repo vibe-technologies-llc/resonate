@@ -2925,6 +2925,20 @@ mod tests {
                 .expect("a count")
         }
 
+        fn measured(harness: &Harness) -> i64 {
+            harness
+                .player
+                .catalog
+                .0
+                .lock()
+                .query_row(
+                    "SELECT count(*) FROM studies WHERE length(band_levels) = 29",
+                    [],
+                    |row| row.get(0),
+                )
+                .expect("a count")
+        }
+
         #[test]
         fn a_pass_given_a_key_studies_and_hears_every_song_so_is_misnamed_fills_unasked() {
             let harness = sounding_library();
@@ -2937,6 +2951,7 @@ mod tests {
             assert!(before.is_empty());
             assert_eq!(printer.calls(), 4);
             assert_eq!(studies(&harness), 4);
+            assert_eq!(measured(&harness), 4);
             assert_eq!(after, vec!["Money".to_owned(), "Time".to_owned()]);
             assert!(!status.running);
         }

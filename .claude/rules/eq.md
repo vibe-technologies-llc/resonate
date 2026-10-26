@@ -151,9 +151,11 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   `available_parallelism / 2` scoped threads sharing one counter (`Loudest`: `peak`, `measured`,
   `passed_over`; a cut that will not decode is counted and logged, `Stopped` ends the lot), joined
   with `Loudest::joined`. `Loudest::fitted_preamp` is `None` where nothing was measured or all of
-  it was silent. `Player::cuts_to_fit` and `Player::loudest_among` serve the window; none of it runs
-  on the audio thread. Room correction and the volume stage are not in the run (the convolver is
-  not part of `Equaliser`).
+  it was silent. `Loudest::weigh` is the one fold of a kept measure into the run (the library's and
+  the phones' catalog alike). `Player::cuts_to_fit` and `Player::loudest_among` serve the window;
+  none of it runs on the audio thread. Room correction and the volume stage are not in the run (the
+  convolver is not part of `Equaliser`); `Impulse::with_headroom` holds the response's loudest gain
+  to unity, so its magnitude never passes 0 dB, but the run does not model its shape.
 - **A study kept before the bands were measured is measured alone, never studied again.**
   `to_study` lists a current study whose `band_levels` is missing or of another length as
   `unmeasured`; the pool decodes it once through `resonate_analysis::band_levels` (the study's own
@@ -166,12 +168,21 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   `Fitting` (a `Watch` stopped when it is dropped, so a second press or the window going replaces
   it; an empty queue still reads the catalog) and `EqualiserModel::fit_the_preamp_to_the_music`
   lands the measured preamp only if the shown bands are the ones measured, toasting *The preamp is
-  fitted to the N songs measured*. The phones keep the decode of the queue alone:
-  `MobilePlayer::fitted_preamp_to_the_queue(curve)` answers the measured preamp in dB (`None` for
-  an empty or silent queue, held to the phone's `PREAMP_AT_MOST_DB`), stopping the fit before it
-  through `Services::fitting`; Android and iOS set the model fit, then the measured one if the
+  fitted to the N songs measured*. The phones read the same bands from their own catalog:
+  `MobilePlayer::fitted_preamp_to_the_queue(curve)` folds `Catalog::loudest_kept` (every visible
+  document whose `studies.band_levels` is 29 bytes, through `BandGains::of` at the stream rate,
+  48 kHz with none open) with a decode of `Catalog::unmeasured(cuts_to_fit)` alone, the queue's
+  songs with no kept bands (a cut, which no study covers, a document not indexed, one studied
+  before `band_levels` existed or changed since: `documents_forget_where_the_music_sounded`), and
+  answers the preamp in dB (`None` for nothing measured or all of it silent, held to the phone's
+  `PREAMP_AT_MOST_DB`), stopping the fit before it through `Services::fitting`; an empty queue
+  still reads the catalog. The pass and the analysis pane keep the bands with the study
+  (`keep_studied`, `keep_study`). Android and iOS set the model fit, then the measured one if the
   curve is still the one fitted
-  (`a_queue_of_silence_fits_nothing_and_an_empty_one_or_a_bad_curve_is_told_apart`).
+  (`a_queue_of_silence_fits_nothing_and_an_empty_one_or_a_bad_curve_is_told_apart`,
+  `songs_with_kept_bands_are_fitted_without_a_decode_and_the_whole_catalog_counts`,
+  `kept_bands_are_forgotten_with_a_changed_file_and_a_cut_row_is_never_taken_as_measured`). The
+  phones do not measure an old study's bands alone as the desktop does.
 
 ## Room correction
 

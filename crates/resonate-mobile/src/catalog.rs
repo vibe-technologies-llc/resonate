@@ -79,6 +79,11 @@ CREATE TABLE unstudied (
 CREATE TRIGGER documents_forget_what_would_not_decode AFTER UPDATE OF size, modified ON documents WHEN old.size IS NOT new.size OR old.modified IS NOT new.modified BEGIN DELETE FROM unstudied WHERE track = new.id; END;
 ";
 
+const STUDIES_KEEP_WHERE_THE_MUSIC_SOUNDS: &str = "
+ALTER TABLE studies ADD COLUMN band_levels BLOB;
+CREATE TRIGGER documents_forget_where_the_music_sounded AFTER UPDATE OF size, modified ON documents WHEN old.size IS NOT new.size OR old.modified IS NOT new.modified BEGIN UPDATE studies SET band_levels = NULL WHERE track = new.id; END;
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     LISTENS_NAME_THEIR_ORIGIN,
@@ -88,6 +93,7 @@ const MIGRATIONS: &[&str] = &[
     STUDIES_KEEP_WHAT_WAS_HEARD,
     PLAYLISTS_FILL_THEMSELVES_FROM_A_SAVED_SEARCH,
     DOCUMENTS_THAT_WILL_NOT_DECODE_ARE_REMEMBERED,
+    STUDIES_KEEP_WHERE_THE_MUSIC_SOUNDS,
 ];
 
 #[cfg(test)]
@@ -908,7 +914,7 @@ mod tests {
                 |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
             )
             .expect("the fold");
-        for step in &MIGRATIONS[..MIGRATIONS.len() - 1] {
+        for step in &MIGRATIONS[..MIGRATIONS.len() - 2] {
             connection.execute_batch(step).expect("an earlier version");
         }
         connection
@@ -921,7 +927,7 @@ mod tests {
             .pragma_update(
                 None,
                 "user_version",
-                u32::try_from(MIGRATIONS.len() - 1).expect("a count"),
+                u32::try_from(MIGRATIONS.len() - 2).expect("a count"),
             )
             .expect("its stamp");
         drop(connection);
