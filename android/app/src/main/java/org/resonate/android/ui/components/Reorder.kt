@@ -30,6 +30,7 @@ class Reorder<T>(
     private val list: LazyListState,
     private val keyOf: (T) -> Any,
     private val firstIndex: () -> Int,
+    private val anchor: () -> Int,
     private val onMove: (from: Int, to: Int) -> Unit,
 ) {
     val shown = mutableStateListOf<T>()
@@ -40,8 +41,12 @@ class Reorder<T>(
         private set
 
     private var startedAt = -1
+    private var anchoredAt = 0
+    private var latest = emptyList<T>()
+    private var followedAtStart = emptyList<T>()
 
     fun follow(items: List<T>) {
+        latest = items
         if (dragged != null) return
         shown.clear()
         shown.addAll(items)
@@ -50,6 +55,8 @@ class Reorder<T>(
     fun start(key: Any) {
         startedAt = shown.indexOfFirst { keyOf(it) == key }
         if (startedAt < 0) return
+        anchoredAt = anchor()
+        followedAtStart = latest
         dragged = key
         offset = 0f
     }
@@ -78,9 +85,11 @@ class Reorder<T>(
     fun end() {
         val key = dragged ?: return
         val finalAt = shown.indexOfFirst { keyOf(it) == key }
+        val moved = startedAt >= 0 && finalAt >= 0 && finalAt != startedAt
         dragged = null
         offset = 0f
-        if (startedAt >= 0 && finalAt >= 0 && finalAt != startedAt) onMove(startedAt, finalAt)
+        if (moved) onMove(anchoredAt + startedAt, anchoredAt + finalAt)
+        if (!moved || latest !== followedAtStart) follow(latest)
         startedAt = -1
     }
 }
@@ -91,13 +100,16 @@ fun <T> rememberReorder(
     list: LazyListState,
     keyOf: (T) -> Any,
     firstIndex: () -> Int,
+    anchor: () -> Int = { 0 },
     onMove: (from: Int, to: Int) -> Unit,
 ): Reorder<T> {
     val move by rememberUpdatedState(onMove)
     val first by rememberUpdatedState(firstIndex)
+    val anchored by rememberUpdatedState(anchor)
     val reorder =
         remember(list) {
-            Reorder(list, keyOf, { first() }) { from, to -> move(from, to) }.also { it.follow(items) }
+            Reorder(list, keyOf, { first() }, { anchored() }) { from, to -> move(from, to) }
+                .also { it.follow(items) }
         }
     LaunchedEffect(items) { reorder.follow(items) }
     return reorder

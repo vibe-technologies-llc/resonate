@@ -121,4 +121,37 @@ class DownloadPlanTest {
         assertTrue(DownloadPlan.stranded(journalled, journalled.toSet()).isEmpty())
         assertTrue(DownloadPlan.stranded(emptyList(), setOf("content://b")).isEmpty())
     }
+
+    @Test
+    fun aClaimFindsTheJobsItStartsAndASecondClaimFindsNoneOfThem() {
+        val jobs = listOf(job(1, "a", DownloadState.DOWNLOADING), job(2, "b"), job(3, "c"))
+
+        val (claimed, starting) = DownloadPlan.claimed(jobs)
+        val (again, startingAgain) = DownloadPlan.claimed(claimed)
+
+        assertEquals(listOf(2L), starting)
+        assertEquals(DownloadState.FINDING, claimed.single { it.key == 2L }.state)
+        assertEquals(DownloadState.WAITING, claimed.single { it.key == 3L }.state)
+        assertTrue(startingAgain.isEmpty())
+        assertEquals(claimed, again)
+    }
+
+    @Test
+    fun aWaitingJobCancelsAtOnceAndARunningOneIsMarkedForItsRunToStop() {
+        val jobs =
+            listOf(
+                job(1, "a"),
+                job(2, "b", DownloadState.FINDING),
+                job(3, "c", DownloadState.DONE),
+            )
+
+        val waiting = DownloadPlan.cancelled(jobs, 1)
+        val finding = DownloadPlan.cancelled(jobs, 2)
+        val done = DownloadPlan.cancelled(jobs, 3)
+
+        assertEquals(DownloadState.CANCELLED, waiting.single { it.key == 1L }.state)
+        assertEquals(DownloadState.FINDING, finding.single { it.key == 2L }.state)
+        assertTrue(finding.single { it.key == 2L }.cancelling)
+        assertEquals(jobs, done)
+    }
 }

@@ -27,6 +27,7 @@ data class DownloadJob(
     val received: ULong = 0uL,
     val name: String? = null,
     val failure: String? = null,
+    val cancelling: Boolean = false,
 )
 
 fun SearchSong.heldKey(): String = recording.ifBlank { "$title\u001f$artist" }
@@ -40,6 +41,22 @@ object DownloadPlan {
         val free = atOnce - jobs.count { it.state.inFlight }
         return jobs.filter { it.state == DownloadState.WAITING }.take(free.coerceAtLeast(0)).map { it.key }
     }
+
+    fun claimed(jobs: List<DownloadJob>, atOnce: Int = AT_ONCE): Pair<List<DownloadJob>, List<Long>> {
+        val starting = startable(jobs, atOnce).toSet()
+        val next =
+            jobs.map { if (it.key in starting) it.copy(state = DownloadState.FINDING) else it }
+        return next to starting.toList()
+    }
+
+    fun cancelled(jobs: List<DownloadJob>, key: Long): List<DownloadJob> =
+        jobs.map {
+            when {
+                it.key != key || it.state.settled -> it
+                it.state == DownloadState.WAITING -> it.copy(state = DownloadState.CANCELLED)
+                else -> it.copy(cancelling = true)
+            }
+        }
 
     fun held(jobs: List<DownloadJob>): Set<String> =
         jobs.filter { !it.state.settled }.map { it.song.heldKey() }.toSet()

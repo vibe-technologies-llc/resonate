@@ -21,6 +21,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
@@ -168,17 +169,17 @@ private class TrustedControllers(
         val resumed = SettableFuture.create<MediaSession.MediaItemsWithStartPosition>()
         scope.launch {
             try {
-                val saved =
+                val (saved, place) =
                     withTimeout(RESUMPTION_WAITS_AT_MOST_MS) {
                         library.native()
-                        library.queue.first { it.isNotEmpty() }
+                        library.queue.first { it.isNotEmpty() } to
+                            library.snapshot.filterNotNull().first()
                     }
-                val place = library.snapshot.value
                 resumed.set(
                     MediaSession.MediaItemsWithStartPosition(
                         saved.map { it.mediaItem() },
-                        (place?.queueIndex?.toInt() ?: 0).coerceIn(saved.indices),
-                        place?.positionMs?.toLong() ?: 0L,
+                        place.queueIndex.toInt().coerceIn(saved.indices),
+                        place.positionMs.toLong(),
                     )
                 )
             } catch (cancelled: CancellationException) {

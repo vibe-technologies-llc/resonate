@@ -21,9 +21,15 @@ Host binding generation reads ELF metadata and needs no PipeWire. `versionName` 
 candidate digit, 9 for a final), so a release is versioned in one place.
 
 `MainActivity` is a `ComponentActivity` that draws edge to edge and sets `ResonateApp`; it keeps
-the `MediaController` connection and implements `ui.Host` (folder and room-response pickers,
+the `MediaController` connection (made again on start where none is, or the last one failed or was
+lost) and implements `ui.Host` (folder and room-response pickers,
 Downloads with its permission, notifications, sharing, opening a link) through activity-result
-launchers. The UI calls the repository and the generated bindings directly: there is no bridge,
+launchers. **ViewModels never hold an Activity**: `ResonateApplication.resonate` is one `ui.Resonate`
+for the process, its host `CurrentActivity`, which forwards to the Activity attached in `onCreate` and
+detached in `onDestroy` (none: a confirmation answers false), and its `Playback` reads the controller
+the current Activity connected. Consent and microphone requests are asked one at a time under a
+mutex, and one still open when its Activity is destroyed answers false, so none waits for ever. The
+manifest's `configChanges` lists every change a Compose UI redraws for itself, so recreation is rare. The UI calls the repository and the generated bindings directly: there is no bridge,
 so the compiler holds the contract. `ui.Resonate` carries the repository, `Playback` (controller
 actions: play a list from a row, toggle, seek, jump, shuffle, repeat, volume) and the host, through
 `LocalResonate`; `attempt` runs a native call and says its failure on the status banner, `read`
@@ -36,7 +42,8 @@ transport actions through a short-lived Media3 controller, preserving audio focu
 service lifecycle. Metadata and the bounded session thumbnail are kept in app preferences for
 launcher refresh after process death; that fallback is paused until a live session publishes.
 Widget updates deduplicate metadata, artwork and playing state instead of sending polling ticks
-to the launcher. No widget starts a second engine or decodes the original music file.
+to the launcher; a drawing that fails (a launcher refusing the views, a cover too big for memory, the
+cover decoded at most 512 px) is logged and never ends the process. No widget starts a second engine or decodes the original music file.
 
 Each APK variant owns its native build task. Release uses Cargo's release profile, including
 optimization and thin LTO, in a separate generated directory and packages ARM64 alone without
@@ -104,8 +111,10 @@ notification and controllers the platform trusts (`ControllerInfo.isTrusted`) ma
 (`TrustedControllers`); a controller's add, move and remove become engine queue edits
 (`QueueEdits`: an append then moves, a range as moves of the rows it passes, a removal by queue id).
 A headset, Bluetooth or lock-screen play reaches a service that is gone through the manifest's
-`MediaButtonReceiver`, which starts it; `onPlaybackResumption` waits at most 8 s for the engine and the
-queue it resumed paused (`resume_saved`) and answers that queue at its row and position, so the key
+`MediaButtonReceiver`, which starts it; `onPlaybackResumption` waits at most 8 s for the engine, the
+queue it resumed paused (`resume_saved`) and its first snapshot, and answers that queue at its row and
+position (the engine's close clears both, so a service made again in a living process never answers the
+last session's queue at row 0), so the key
 plays where the listener left off (checked on the emulator by force-stopping the app and pressing
 `KEYCODE_MEDIA_PLAY`).
 **The library is browsable** (`LibraryBrowse`, the session's `onGetLibraryRoot`, `onGetChildren`,
@@ -113,7 +122,10 @@ plays where the listener left off (checked on the emulator by force-stopping the
 `albums`, `artists`, `playlists`, `album_tracks`, `artist_tracks`, `playlist_tracks` and `filtered_tracks`
 (at most 500 songs a folder). A song is listed as `<id>@<folder id>`, so one the car picks arrives with
 the folder it was listed in and `onSetMediaItems` expands it to that folder's songs at its place, as
-the app's own tap does; a plain catalog id passes through. A voice request (`requestMetadata.searchQuery`,
+the app's own tap does; a plain catalog id passes through. Every id a controller sets or adds is read
+by `BrowseIds.trackOf` (a folder song or a plain id; anything else is left out and the start index
+follows the song it named, `BrowseIds.playable`), and a song no longer in its folder (a search result
+listed under the root, a playlist past row 500) plays alone. A voice request (`requestMetadata.searchQuery`,
 or `MEDIA_PLAY_FROM_SEARCH` on `MainActivity`) plays `search_library`'s first 100 songs. Android Auto, the
 Assistant, the car-assistant and the Auto simulator connect as controllers beside the trusted ones
 (`BROWSING_HOSTS`), and `automotive_app_desc.xml` declares the media app
@@ -121,13 +133,18 @@ Assistant, the car-assistant and the Auto simulator connect as controllers besid
 Audio focus loss and noisy-output events pause playback; a transient loss resumes on regaining
 focus if the engine was playing or loading, and a duck is left to the platform
 (`setWillPauseWhenDucked(false)`). The Media3 state is invalidated only when the transport, queue
-place, repeat, shuffle, volume or song moved (the position is read live), and its playlist is
+place, repeat, shuffle, volume or song moved (the position is read live from the latest snapshot,
+so *previous* past 3 s restarts the song and the notification's bar moves), and its playlist is
 rebuilt only when the queue or the cover moved. An Activity's recreation does not own or close the
 audio engine. Playback and download services each retain the repository; the last
 release cancels its workers and saves and closes the engine off the main thread, then clears the
 published snapshot, so a service made afterwards never draws the playing state the closed engine last
 had (`PlaybackLifecycleTest`). A later service
-waits for that cleanup before opening another. The snapshot's `waiting` (`mobile.md`) becomes the status when it begins and is cleared when it
+waits for that cleanup before opening another. Closing replaces the engine's deferred with a fresh one,
+so nothing awaits a closed native player; a native library that will not load fails it with an
+`IllegalStateException` and the repository's scope logs anything else that escapes. A seek within
+the current song only seeks, and a seek to another row compares against the place read on the main
+thread when it was asked. `refresh()` reads on the IO dispatcher whoever calls it. The snapshot's `waiting` (`mobile.md`) becomes the status when it begins and is cleared when it
 ends, if still shown; the expanded player shows it in place of the format line.
 The 250 ms poll catches a failing tick (a snapshot, queue read, save or listening count refused by
 a full disk) and says it once per distinct message, so one error never ends the loop; a loop that
@@ -290,7 +307,7 @@ shows *Added to favourites* on the snackbar with *Add to playlist*; the song she
 holds the song's actions, adding Equaliser, Audio output and Visualizer when opened from the
 player, and *Remove from queue* from a queue row.
 
-**The player** is one `PlayerExpansion`, a single `Animatable` the mini-player's tap or upward drag
+**The player** is one `PlayerExpansion` (saved across recreation, reopening expanded), a single `Animatable` the mini-player's tap or upward drag
 and the system's predictive back all drive: `NowPlaying` is drawn while it is above zero, so the
 mini-player and the page beneath are never two routes with two exit animations. The mini-player is
 a `surfaceContainerHighest` capsule (16 dp corners) with 48 dp artwork inset 8 dp at the start and top, its corners the capsule's less the inset so the two curves are concentric (4 dp and 36 dp in a short window), the title, artist, previous, play and next and
@@ -300,7 +317,9 @@ app's primary), shows the cover or the lyrics, and opens the queue as a sheet. I
 Album, artist and playlist pages wear the same theme from their first cover.
 
 **The queue sheet** lists the devices that handed off (one row), History, the playing row and Up
-next; a handle drags a row (`Reorder`), sent as `queueLanding(from, to)` since the engine's
+next; a handle drags a row (`Reorder`, its rows counted from Up next's first row as it stood when the
+drag began, so a song ending mid-drag moves the row dragged; a drop over a list that changed meanwhile
+shows the engine's order), sent as `queueLanding(from, to)` since the engine's
 `move_in_queue` counts the landing row before the move, so a downward drag adds one and the end is
 the queue's length. *Save queue as playlist* and *Clear* sit in its header.
 
@@ -939,9 +958,14 @@ rows past that age.
 
 **Android runs the jobs as a queue** (`DownloadQueue`, its arithmetic `DownloadPlan`): `download(songs,
 folder)` adds a job a song at a time (a song already waiting or running is not added again) and at most
-`AT_ONCE` (2) run together, each its own `begin_download`, `find_download`, document, `download_offer`,
+`AT_ONCE` (2) run together (every change to the jobs is one `update`, and a pump claims the jobs it
+starts as *Finding* in that same update, `DownloadPlan.claimed`, so two pumps never start one job), each its own `begin_download`, `find_download`, document, `download_offer`,
 `index_download` and publish; the first to start asks for the foreground service and every job waits
-for it (10 s). A cancel stops one job, Cancel on the card all. The card, notification and `downloading`
+for it (10 s). A cancel stops one job, Cancel on the card all: a waiting job is cancelled at once and a
+running one is marked `cancelling` (`DownloadPlan.cancelled`), which its run checks after the service
+starts and right after `begin_download`. The service clears `transferServiceRunning` before it asks
+to stop with the latest start's id, so a job asking afterwards starts it again rather than trusting
+a service on its way out. The card, notification and `downloading`
 read the jobs: one says *Finding*, *Downloading* or *Downloaded name · KiB*, a batch *Downloading 2 of 3 ·
 …* and then *Downloaded 3 of 3 songs*, naming the first failure. Each created document is journalled in
 `unfinished-downloads` (a set; the old single `unfinished-download` is still recovered) until its job

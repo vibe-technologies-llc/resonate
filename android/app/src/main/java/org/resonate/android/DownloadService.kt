@@ -10,8 +10,10 @@ import android.content.pm.ServiceInfo
 import android.os.IBinder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -24,36 +26,49 @@ class DownloadService : Service() {
     private val notifications
         get() = getSystemService(NotificationManager::class.java)
 
+    private var watching: Job? = null
+    private var lastStart = 0
+
     override fun onCreate() {
         super.onCreate()
         library.retain()
-        library.features.transferServiceRunning.value = true
         notifications.createNotificationChannel(
             NotificationChannel("downloads", "Music downloads", NotificationManager.IMPORTANCE_LOW)
         )
-        startForeground(2, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        scope.launch {
-            while (
-                isActive &&
-                    (library.features.downloading.value || library.features.transferring.value)
-            ) {
-                notifications.notify(2, notification())
-                delay(1000)
-            }
-            stopSelf()
-        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStart = startId
+        startForeground(2, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        library.features.transferServiceRunning.value = true
+        if (watching?.isActive != true) watching = scope.launch { watch() }
         library.features.downloadServiceReady()
         if (intent?.action == "cancel-download") library.features.cancelDownload()
         return START_NOT_STICKY
+    }
+
+    private suspend fun watch() {
+        while (
+            currentCoroutineContext().isActive &&
+                (library.features.downloading.value || library.features.transferring.value)
+        ) {
+            notifications.notify(2, notification())
+            delay(1000)
+        }
+        finish()
+    }
+
+    private fun finish() {
+        library.features.transferServiceRunning.value = false
+        stopSelfResult(lastStart)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onTimeout(startId: Int, fgsType: Int) {
         library.features.cancelDownload()
+        watching?.cancel()
+        library.features.transferServiceRunning.value = false
         stopSelf()
     }
 

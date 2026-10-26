@@ -13,6 +13,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -50,22 +51,32 @@ class DownloadQueue(
     fun holds(song: SearchSong): Boolean = song.heldKey() in DownloadPlan.held(mutableJobs.value)
 
     fun enqueue(songs: List<SearchSong>, folder: Uri): Int {
-        val seen = DownloadPlan.held(mutableJobs.value).toMutableSet()
-        val fresh = songs.filter { seen.add(it.heldKey()) }
-        if (fresh.isEmpty()) return 0
-        if (!active) serviceReady = CompletableDeferred()
-        mutableJobs.value =
-            DownloadPlan.nextBatch(mutableJobs.value) +
-                fresh.map { DownloadJob(keys.incrementAndGet(), it, folder.toString()) }
+        val wasActive = active
+        var added = emptyList<DownloadJob>()
+
+        mutableJobs.update { jobs ->
+            val seen = DownloadPlan.held(jobs).toMutableSet()
+            added =
+                songs
+                    .filter { seen.add(it.heldKey()) }
+                    .map { DownloadJob(keys.incrementAndGet(), it, folder.toString()) }
+            if (added.isEmpty()) jobs
+            else {
+                if (!wasActive) serviceReady = CompletableDeferred()
+                DownloadPlan.nextBatch(jobs) + added
+            }
+        }
+        if (added.isEmpty()) return 0
+
         pump()
-        return fresh.size
+        return added.size
     }
 
     fun cancel(key: Long) {
-        val job = mutableJobs.value.firstOrNull { it.key == key } ?: return
-        if (job.state.settled) return
-        if (job.state == DownloadState.WAITING) change(key) { it.copy(state = DownloadState.CANCELLED) }
-        job.native?.let { id -> library.request { it.cancelDownload(id) } }
+        mutableJobs.update { DownloadPlan.cancelled(it, key) }
+
+        val job = job(key) ?: return
+        if (job.cancelling) job.native?.let { id -> library.request { it.cancelDownload(id) } }
     }
 
     fun cancelAll() {
@@ -73,7 +84,7 @@ class DownloadQueue(
     }
 
     fun clearSettled() {
-        mutableJobs.value = mutableJobs.value.filter { !it.state.settled }
+        mutableJobs.update { jobs -> jobs.filter { !it.state.settled } }
     }
 
     fun follow(native: MobilePlayer) {
@@ -138,13 +149,18 @@ class DownloadQueue(
     }
 
     private fun pump() {
-        val starting = DownloadPlan.startable(mutableJobs.value)
-        starting.forEach { key -> change(key) { it.copy(state = DownloadState.FINDING) } }
+        var starting = emptyList<Long>()
+
+        mutableJobs.update { jobs ->
+            val (next, claimed) = DownloadPlan.claimed(jobs)
+            starting = claimed
+            next
+        }
         starting.forEach { key -> scope.launch { run(key) } }
     }
 
     private fun change(key: Long, edit: (DownloadJob) -> DownloadJob) {
-        mutableJobs.value = mutableJobs.value.map { if (it.key == key) edit(it) else it }
+        mutableJobs.update { jobs -> jobs.map { if (it.key == key) edit(it) else it } }
     }
 
     private fun job(key: Long): DownloadJob? = mutableJobs.value.firstOrNull { it.key == key }
@@ -153,6 +169,10 @@ class DownloadQueue(
         var created: Uri? = null
         try {
             awaitService()
+            if (job(key)?.cancelling == true) {
+                change(key) { it.copy(state = DownloadState.CANCELLED) }
+                return
+            }
             val accounts = seams.accounts()
             check(accounts.isNotEmpty()) { "Set up a download provider first" }
             val native = library.native()
@@ -160,7 +180,7 @@ class DownloadQueue(
             val folder = Uri.parse(checkNotNull(job(key)).folder)
             val id = native.beginDownload(song)
             change(key) { it.copy(native = id) }
-            if (job(key)?.state == DownloadState.CANCELLED) native.cancelDownload(id)
+            if (job(key)?.cancelling == true) native.cancelDownload(id)
             val offer = native.findDownload(id, accounts)
             native.refreshedTidalToken()?.let(seams::renewed)
             change(key) { it.copy(state = DownloadState.DOWNLOADING, name = offer.name) }
@@ -180,7 +200,8 @@ class DownloadQueue(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
-            val said = failure is NativeException.DownloadCancelled
+            val said =
+                failure is NativeException.DownloadCancelled || job(key)?.cancelling == true
             change(key) {
                 it.copy(
                     state = if (said) DownloadState.CANCELLED else DownloadState.FAILED,

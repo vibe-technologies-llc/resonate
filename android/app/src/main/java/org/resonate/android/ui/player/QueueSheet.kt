@@ -86,7 +86,8 @@ fun QueueSheet(model: PlayerViewModel, onDismiss: () -> Unit) {
             list = list,
             keyOf = { rowKey(it) },
             firstIndex = { handoffRows + historyRows + currentRows + 1 },
-            onMove = { from, to -> model.move(queue.firstUpNext + from, queue.firstUpNext + to) },
+            anchor = { queue.firstUpNext },
+            onMove = { from, to -> model.move(from, to) },
         )
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state) {
         Row(

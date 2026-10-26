@@ -68,6 +68,16 @@ object BrowseIds {
         val parent = id.substringAfter(IN, "").takeIf { it.isNotEmpty() } ?: return null
         return track to parent
     }
+
+    fun trackOf(id: String): ULong? = songOf(id)?.first ?: id.toULongOrNull()
+
+    fun playable(ids: List<String>, start: Int): Pair<List<ULong>, Int> {
+        val read = ids.map(::trackOf)
+        val kept = read.filterNotNull()
+
+        val before = read.take(start.coerceAtLeast(0)).count { it != null }
+        return kept to before.coerceAtMost((kept.size - 1).coerceAtLeast(0))
+    }
 }
 
 @UnstableApi
@@ -112,13 +122,23 @@ class LibraryBrowse(private val context: Context, private val library: LibraryRe
             else MediaSession.MediaItemsWithStartPosition(songs.map { it.mediaItem() }, 0, 0L)
         }
         val (track, parent) = BrowseIds.songOf(first.mediaId) ?: return null
-        val (songs, at) = surroundings(parent, track) ?: return null
+        val (songs, at) =
+            surroundings(parent, track)
+                ?: return MediaSession.MediaItemsWithStartPosition(
+                    listOf(alone(first, track)),
+                    0,
+                    startPositionMs.coerceAtLeast(0L),
+                )
         return MediaSession.MediaItemsWithStartPosition(
             songs.map { it.mediaItem() },
             at,
             startPositionMs.coerceAtLeast(0L),
         )
     }
+
+    private fun alone(item: MediaItem, track: ULong): MediaItem =
+        library.findTrack(track)?.mediaItem()
+            ?: item.buildUpon().setMediaId(track.toString()).build()
 
     private suspend fun <T> reading(read: (MobilePlayer) -> T): T =
         withContext(Dispatchers.IO) { read(library.native()) }

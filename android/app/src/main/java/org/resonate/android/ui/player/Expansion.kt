@@ -4,15 +4,16 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.staticCompositionLocalOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 @Stable
-class PlayerExpansion(private val scope: CoroutineScope) {
-    val progress = Animatable(0f)
+class PlayerExpansion(private val scope: CoroutineScope, opened: Boolean = false) {
+    val progress = Animatable(if (opened) 1f else 0f)
 
     val shown: Boolean
         get() = progress.value > 0f || progress.isRunning
@@ -49,7 +50,12 @@ class PlayerExpansion(private val scope: CoroutineScope) {
 @Composable
 fun rememberPlayerExpansion(): PlayerExpansion {
     val scope = rememberCoroutineScope()
-    return remember(scope) { PlayerExpansion(scope) }
+    return rememberSaveable(
+        scope,
+        saver = Saver(save = { it.expanded }, restore = { PlayerExpansion(scope, it) }),
+    ) {
+        PlayerExpansion(scope)
+    }
 }
 
 val LocalPlayerExpansion =

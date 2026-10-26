@@ -34,7 +34,7 @@ class RustMediaPlayer(private val context: Context, private val library: Library
     SimpleBasePlayer(Looper.getMainLooper()) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val audio = context.getSystemService(AudioManager::class.java)
-    private var snapshot: Snapshot? = null
+    @Volatile private var snapshot: Snapshot? = null
     private var tracks = emptyList<Track>()
     private var artwork: ByteArray? = null
     private var artworkId: ULong? = null
@@ -198,7 +198,7 @@ class RustMediaPlayer(private val context: Context, private val library: Library
                 if (playlist.isEmpty()) C.INDEX_UNSET
                 else (value?.queueIndex?.toInt() ?: 0).coerceIn(playlist.indices)
             )
-            .setContentPositionMs { value?.positionMs?.toLong() ?: 0L }
+            .setContentPositionMs { snapshot?.positionMs?.toLong() ?: 0L }
             .setPlayWhenReady(
                 value.playsOrLoads(),
                 Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST,
@@ -234,12 +234,11 @@ class RustMediaPlayer(private val context: Context, private val library: Library
         startIndex: Int,
         startPositionMs: Long,
     ): ListenableFuture<*> {
+        val (ids, start) = BrowseIds.playable(mediaItems.map { it.mediaId }, startIndex)
+        if (ids.isEmpty()) return Futures.immediateVoidFuture()
+
         library.request {
-            it.load(
-                mediaItems.map { item -> item.mediaId.toULong() },
-                startIndex.coerceAtLeast(0).toUInt(),
-                false,
-            )
+            it.load(ids, start.toUInt(), false)
             if (startPositionMs > 0) it.seek(startPositionMs.toULong())
         }
         return Futures.immediateVoidFuture()
@@ -249,7 +248,7 @@ class RustMediaPlayer(private val context: Context, private val library: Library
         index: Int,
         mediaItems: List<MediaItem>,
     ): ListenableFuture<*> {
-        val ids = mediaItems.mapNotNull { it.mediaId.toULongOrNull() }
+        val ids = mediaItems.mapNotNull { BrowseIds.trackOf(it.mediaId) }
         val moves = QueueEdits.appendedThenMoved(tracks.size, index, ids.size)
         library.request { native ->
             native.addToQueue(ids)
@@ -281,10 +280,14 @@ class RustMediaPlayer(private val context: Context, private val library: Library
         positionMs: Long,
         seekCommand: Int,
     ): ListenableFuture<*> {
+        val playing = snapshot?.queueIndex?.toInt()
+        val moves =
+            seekCommand != Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM && mediaItemIndex != playing
+        val position = positionMs.coerceAtLeast(0).toULong()
+
         library.request {
-            if (mediaItemIndex != snapshot?.queueIndex?.toInt())
-                it.jumpTo(mediaItemIndex.coerceAtLeast(0).toUInt())
-            it.seek(positionMs.coerceAtLeast(0).toULong())
+            if (moves) it.jumpTo(mediaItemIndex.coerceAtLeast(0).toUInt())
+            it.seek(position)
         }
         return Futures.immediateVoidFuture()
     }

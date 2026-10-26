@@ -28,11 +28,11 @@ import java.util.concurrent.ExecutionException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.Host
-import org.resonate.android.ui.Playback
-import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.ResonateApp
 
 private const val PAIRING_SCHEME = "resonate"
@@ -40,10 +40,17 @@ private const val PAIRING_SCHEME = "resonate"
 @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
 class MainActivity : ComponentActivity(), Host {
     private var controller: MediaController? = null
+    private var connecting: ListenableFuture<MediaController>? = null
     private var waitingToPlay: (suspend () -> List<Track>)? = null
-    private val playback by lazy { Playback(library) { controller } }
+    private val asking = Mutex()
+    private val resonateApplication
+        get() = application as ResonateApplication
+
     private val library
-        get() = (application as ResonateApplication).library
+        get() = resonateApplication.library
+
+    private val playback
+        get() = resonateApplication.resonate.playback
 
     private val folderChooser =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult(), ::folderChosen)
@@ -62,11 +69,13 @@ class MainActivity : ComponentActivity(), Host {
     private val mediaConsent =
         registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
             consentAnswer?.complete(result.resultCode == RESULT_OK)
+            consentAnswer = null
         }
     private var microphoneAnswer: CompletableDeferred<Boolean>? = null
     private val microphonePermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             microphoneAnswer?.complete(granted)
+            microphoneAnswer = null
         }
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
@@ -74,22 +83,45 @@ class MainActivity : ComponentActivity(), Host {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        resonateApplication.current.attach(this)
         startService(Intent(this, PlaybackService::class.java))
+        connect()
+
+        val resonate = resonateApplication.resonate
+        setContent { ResonateApp(resonate) }
+        if (savedInstanceState == null) opening(intent)
+    }
+
+    private fun connect() {
+        if (controller != null || connecting != null) return
         val pending =
             MediaController.Builder(
                     this,
                     SessionToken(this, ComponentName(this, PlaybackService::class.java)),
                 )
+                .setListener(
+                    object : MediaController.Listener {
+                        override fun onDisconnected(lost: MediaController) {
+                            disconnected(lost)
+                        }
+                    }
+                )
                 .buildAsync()
+        connecting = pending
         pending.addListener(
             {
+                if (connecting === pending) connecting = null
                 if (isDestroyed) MediaController.releaseFuture(pending) else connected(pending)
             },
             ContextCompat.getMainExecutor(this),
         )
-        val resonate = Resonate(library, playback, this)
-        setContent { ResonateApp(resonate) }
-        if (savedInstanceState == null) opening(intent)
+    }
+
+    private fun disconnected(lost: MediaController) {
+        if (controller !== lost) return
+        resonateApplication.current.disconnected(lost)
+        lost.release()
+        controller = null
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -136,7 +168,9 @@ class MainActivity : ComponentActivity(), Host {
 
     private fun connected(pending: ListenableFuture<MediaController>) {
         try {
-            controller = pending.get()
+            val connection = pending.get()
+            controller = connection
+            resonateApplication.current.connected(connection)
             playWhatWasOpened()
         } catch (failure: ExecutionException) {
             Log.w("Resonate", "Playback controls could not connect", failure)
@@ -194,21 +228,38 @@ class MainActivity : ComponentActivity(), Host {
     override suspend fun confirmWrite(uris: List<Uri>): Boolean =
         consented(MediaStore.createWriteRequest(contentResolver, uris))
 
-    private suspend fun consented(request: PendingIntent): Boolean {
-        val answer = CompletableDeferred<Boolean>()
-        consentAnswer = answer
-        val asked = IntentSenderRequest.Builder(request.intentSender).build()
-        withContext(Dispatchers.Main) { mediaConsent.launch(asked) }
-        return answer.await()
-    }
+    private suspend fun consented(request: PendingIntent): Boolean =
+        asking.withLock {
+            val answer = CompletableDeferred<Boolean>()
+            val asked = IntentSenderRequest.Builder(request.intentSender).build()
+
+            withContext(Dispatchers.Main) {
+                if (isDestroyed) {
+                    answer.complete(false)
+                } else {
+                    consentAnswer = answer
+                    mediaConsent.launch(asked)
+                }
+            }
+            answer.await()
+        }
 
     override suspend fun allowMicrophone(): Boolean {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
             return true
-        val answer = CompletableDeferred<Boolean>()
-        microphoneAnswer = answer
-        withContext(Dispatchers.Main) { microphonePermission.launch(Manifest.permission.RECORD_AUDIO) }
-        return answer.await()
+        return asking.withLock {
+            val answer = CompletableDeferred<Boolean>()
+
+            withContext(Dispatchers.Main) {
+                if (isDestroyed) {
+                    answer.complete(false)
+                } else {
+                    microphoneAnswer = answer
+                    microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            }
+            answer.await()
+        }
     }
 
     override fun openAppSettings() {
@@ -270,6 +321,7 @@ class MainActivity : ComponentActivity(), Host {
 
     override fun onStart() {
         super.onStart()
+        connect()
         library.features.foreground(true)
     }
 
@@ -280,7 +332,17 @@ class MainActivity : ComponentActivity(), Host {
     }
 
     override fun onDestroy() {
-        controller?.release()
+        resonateApplication.current.detach(this)
+        consentAnswer?.complete(false)
+        consentAnswer = null
+        microphoneAnswer?.complete(false)
+        microphoneAnswer = null
+        connecting?.let(MediaController::releaseFuture)
+        connecting = null
+        controller?.let {
+            resonateApplication.current.disconnected(it)
+            it.release()
+        }
         controller = null
         super.onDestroy()
     }

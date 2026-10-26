@@ -9,6 +9,7 @@ import android.util.Log
 import java.io.FileNotFoundException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -40,17 +41,29 @@ import org.resonate.android.nativecore.audioExtensions
 import org.resonate.android.nativecore.defaultTrackFilter
 import org.resonate.android.nativecore.documentNotFound
 import org.resonate.android.nativecore.documentRefused
+import org.resonate.android.ui.Playback
+import org.resonate.android.ui.Resonate
 
 data class Favourited(val id: ULong, val enabled: Boolean)
 
 class ResonateApplication : Application() {
     val library by lazy { LibraryRepository(this) }
+    val current by lazy { CurrentActivity() }
+    val resonate by lazy { Resonate(library, Playback(library) { current.controller }, current) }
 }
 
 @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
 class LibraryRepository(private val context: Context) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var engine = CompletableDeferred<MobilePlayer>()
+    private val scope =
+        CoroutineScope(
+            SupervisorJob() +
+                Dispatchers.IO +
+                CoroutineExceptionHandler { _, failure ->
+                    Log.e("Resonate", "A library task failed", failure)
+                    mutableStatus.value = "The player could not complete that action"
+                }
+        )
+    @Volatile private var engine = CompletableDeferred<MobilePlayer>()
     private val actions = Channel<(MobilePlayer) -> Unit>(Channel.UNLIMITED)
     private val access = Mutex()
     private val scanAccess = Mutex()
@@ -115,11 +128,12 @@ class LibraryRepository(private val context: Context) {
             ?: mutableSnapshot.value?.current?.takeIf { it.id == id }
     }
 
-    internal suspend fun refresh() {
-        val native = engine.await()
-        mutableAllTracks.value = pagedTracks(native, defaultTrackFilter()) { true }
-        reload()
-    }
+    internal suspend fun refresh() =
+        withContext(Dispatchers.IO) {
+            val native = engine.await()
+            mutableAllTracks.value = pagedTracks(native, defaultTrackFilter()) { true }
+            reload()
+        }
 
     private suspend fun pagedTracks(
         native: MobilePlayer,
@@ -176,7 +190,7 @@ class LibraryRepository(private val context: Context) {
         started = true
         documentScope = CoroutineScope(SupervisorJob(scope.coroutineContext[Job]) + Dispatchers.IO)
         val previous = playbackJob
-        val ready = CompletableDeferred<MobilePlayer>()
+        val ready = engine.takeUnless { it.isCompleted } ?: CompletableDeferred<MobilePlayer>()
         engine = ready
         playbackJob = scope.launch {
             previous?.join()
@@ -228,7 +242,9 @@ class LibraryRepository(private val context: Context) {
                 ready.completeExceptionally(failure)
                 report(failure)
             } catch (failure: LinkageError) {
-                ready.completeExceptionally(failure)
+                ready.completeExceptionally(
+                    IllegalStateException("The audio library could not be loaded", failure)
+                )
                 Log.e("Resonate", "Native audio library could not be loaded", failure)
                 mutableStatus.value = "The audio library could not be loaded"
             } finally {
@@ -244,6 +260,7 @@ class LibraryRepository(private val context: Context) {
                         }
                     }
                     mutableSnapshot.value = null
+                    mutableQueue.value = emptyList()
                 }
                 ended(currentCoroutineContext()[Job])
             }
@@ -597,6 +614,7 @@ class LibraryRepository(private val context: Context) {
         documentScope?.cancel()
         documentScope = null
         playbackJob?.cancel()
+        engine = CompletableDeferred()
     }
 
     private fun scanSummary(indexed: Int, failed: Int): String =

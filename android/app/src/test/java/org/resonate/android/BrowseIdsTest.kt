@@ -28,4 +28,23 @@ class BrowseIdsTest {
         assertNull(BrowseIds.songOf("12"))
         assertNull(BrowseIds.songOf("x@albums"))
     }
+
+    @Test
+    fun aSongIdFromAnyFolderOrAPlainIdNamesItsTrack() {
+        assertEquals(12uL, BrowseIds.trackOf(BrowseIds.song(12uL, BrowseIds.ROOT)))
+        assertEquals(12uL, BrowseIds.trackOf(BrowseIds.song(12uL, BrowseIds.playlist(3uL))))
+        assertEquals(12uL, BrowseIds.trackOf("12"))
+        assertNull(BrowseIds.trackOf(BrowseIds.ALBUMS))
+        assertNull(BrowseIds.trackOf("x@root"))
+    }
+
+    @Test
+    fun anUnreadableIdIsLeftOutAndTheStartFollowsTheSongItNamed() {
+        val ids = listOf("albums", "4@root", "nothing", "7", "9@favourites")
+
+        assertEquals(listOf(4uL, 7uL, 9uL) to 1, BrowseIds.playable(ids, 3))
+        assertEquals(listOf(4uL, 7uL, 9uL) to 0, BrowseIds.playable(ids, 0))
+        assertEquals(listOf(4uL, 7uL, 9uL) to 2, BrowseIds.playable(ids, 9))
+        assertEquals(emptyList<ULong>() to 0, BrowseIds.playable(listOf("albums"), 0))
+    }
 }

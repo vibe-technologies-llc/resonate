@@ -23,6 +23,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -68,7 +69,15 @@ object ResonateWidgets {
     const val PREVIOUS = "org.resonate.android.widget.PREVIOUS"
     const val NEXT = "org.resonate.android.widget.NEXT"
     val actions = setOf(TOGGLE, PREVIOUS, NEXT)
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private const val ARTWORK_EDGE_AT_MOST = 512
+    private val scope =
+        CoroutineScope(
+            SupervisorJob() +
+                Dispatchers.Main.immediate +
+                CoroutineExceptionHandler { _, failure ->
+                    Log.w("ResonateWidgets", "A widget update failed", failure)
+                }
+        )
     private val io = Dispatchers.IO.limitedParallelism(1)
     @Volatile private var latest: WidgetSong? = null
     private var publishing: Job? = null
@@ -189,6 +198,16 @@ object ResonateWidgets {
     }
 
     private fun render(context: Context, song: WidgetSong) {
+        try {
+            drawn(context, song)
+        } catch (failure: Exception) {
+            Log.w("ResonateWidgets", "The widgets could not be drawn", failure)
+        } catch (failure: OutOfMemoryError) {
+            Log.w("ResonateWidgets", "The widget artwork did not fit in memory", failure)
+        }
+    }
+
+    private fun drawn(context: Context, song: WidgetSong) {
         val manager = AppWidgetManager.getInstance(context)
         val layouts =
             listOf(
@@ -202,7 +221,7 @@ object ResonateWidgets {
                 }
                 .filter { it.first.isNotEmpty() }
         if (installed.isEmpty()) return
-        val art = song.artwork?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+        val art = song.artwork?.let(::decoded)
         val background = backdrop(art)
         for ((ids, layout) in installed) {
             val views = RemoteViews(context.packageName, layout)
@@ -250,6 +269,17 @@ object ResonateWidgets {
             }
             manager.updateAppWidget(ids, views)
         }
+    }
+
+    private fun decoded(bytes: ByteArray): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= ARTWORK_EDGE_AT_MOST)
+            sample *= 2
+        val options = BitmapFactory.Options().apply { inSampleSize = sample }
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
     }
 
     private fun backdrop(art: Bitmap?): Bitmap {
