@@ -5,6 +5,7 @@ use std::{
 
 use resonate_codec::MediaInfo;
 use resonate_core::Calendar;
+use resonate_library::Agreement;
 use rusqlite::{OptionalExtension, Transaction, params};
 
 use crate::{
@@ -341,6 +342,19 @@ impl Catalog {
 
     pub(crate) fn keep_study(&self, id: u64, report: &AnalysisReport) -> Result<()> {
         self.0.lock().execute("INSERT INTO studies(track, verdict, peak, rms, true_peak, loudness, dynamic_range, clipped, bits) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) ON CONFLICT(track) DO UPDATE SET verdict = excluded.verdict, peak = excluded.peak, rms = excluded.rms, true_peak = excluded.true_peak, loudness = excluded.loudness, dynamic_range = excluded.dynamic_range, clipped = excluded.clipped, bits = excluded.bits", params![id as i64, report.verdict, report.peak, report.rms, report.true_peak, report.loudness_lufs, report.dynamic_range, report.clipped.min(i64::MAX as u64) as i64, report.bits_in_use]).map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(())
+    }
+}
+
+impl Catalog {
+    pub(crate) fn keep_agreement(&self, id: u64, agreement: Agreement) -> Result<()> {
+        self.0
+            .lock()
+            .execute(
+                "UPDATE studies SET agreement = ?2 WHERE track = ?1",
+                params![id as i64, agreement.as_str()],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
         Ok(())
     }
 }

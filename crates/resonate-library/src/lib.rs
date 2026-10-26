@@ -88,9 +88,9 @@ pub use crate::{
     enrich::{
         Certainty, EnrichOptions, EnrichProgress, EnrichStats, EnrichSummary, Fit, Fruitless,
         Identified, REFRESH_AFTER, REFRESH_SPREAD, REFUSALS_THAT_END_A_PASS, REFUSED_AGAIN_AFTER,
-        RETRY_AFTER, Sought, WAITS, Waits, best_recording, best_release, closest_release,
-        group_asked, needs_its_releases_told, recording_asked, release_asked, the_strict_recording,
-        top_group, top_release,
+        RETRY_AFTER, Sought, WAITS, Waits, agreement, best_recording, best_release,
+        closest_release, group_asked, needs_its_releases_told, recording_asked, release_asked,
+        the_strict_recording, top_group, top_release,
     },
     enriched::{COVERS_ASKED_AGAIN_AFTER, PORTRAITS_ASKED_AGAIN_AFTER, due_again, due_parameters},
     error::{

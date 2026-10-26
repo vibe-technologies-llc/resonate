@@ -1373,7 +1373,7 @@ pub(crate) fn top_heard(found: &[RecordingMatch]) -> Option<&RecordingMatch> {
         .max_by_key(|found| found.score)
 }
 
-pub(crate) fn agreement(found: &[RecordingMatch], track: &TrackToAsk) -> Agreement {
+pub fn agreement(found: &[RecordingMatch], track: &TrackToAsk) -> Agreement {
     let heard: Vec<&RecordingMatch> = found
         .iter()
         .filter(|found| found.score >= HEARD_AT_LEAST)

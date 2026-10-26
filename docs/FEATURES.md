@@ -56,8 +56,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Equaliser and DSP
 
 ## Search
-- [S · 0.2.0] A phone's search holds nothing for `is:misnamed` (a phone keeps no agreement of a song's name
-  with its audio), and a song indexed before 0.2.0 has no added time, so `added:` skips it
+- [S · 0.2.0] A phone's `is:misnamed` holds only the songs a listener has had recognised one at a time
+  (`recognise_track`), since a phone studies and recognises no song in the background as the desktop's
+  enrichment pass does
 - [M · 0.2.0] A pasted Spotify, TIDAL, YouTube or Apple Music playlist link lists only the songs its public
   page holds (TIDAL's embed page fifty, the others at most a hundred), none naming an ISRC, so each
   song is found by the strict title and artist search

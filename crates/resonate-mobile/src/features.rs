@@ -7,11 +7,11 @@ use std::{
 use parking_lot::Mutex;
 use resonate_analysis::{Finding, Watch};
 use resonate_codec::{ImageFormat, probe};
-use resonate_core::{Mbid, folded_letters, words_of_a_name};
+use resonate_core::{Mbid, TrackId, folded_letters, words_of_a_name};
 use resonate_engine::{Counting, Listening, Tapped};
 use resonate_library::{
     Fingerprints, LookupOp, Printed, RecordingAsked, RecordingMatch, RecordingRelease, Reference,
-    SongLink, Sounded, Wording, in_the_order_worth_offering,
+    SongLink, Sounded, TrackToAsk, Wording, agreement, in_the_order_worth_offering,
 };
 use resonate_online::{Identity, Online};
 use resonate_providers::A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY;
@@ -201,6 +201,32 @@ pub struct ArtistInformation {
 #[uniffi::export]
 pub fn default_track_filter() -> TrackFilter {
     TrackFilter::default()
+}
+
+fn named_on_the_phone(id: u64, track: &Track) -> Result<TrackToAsk> {
+    let said = |text: &str| Some(text.trim().to_owned()).filter(|text| !text.is_empty());
+    let tagged_title = said(&track.title).filter(|title| title != &track.name);
+    let artist = said(&track.artist);
+    let mbid = |id: &Option<String>| id.as_deref().and_then(|id| Mbid::new(id).ok());
+
+    Ok(TrackToAsk {
+        id: TrackId::new(id).map_err(|_| Error::UnknownTrack)?,
+        title: track.title.clone(),
+        tagged_title,
+        tagged_artist: artist.clone(),
+        artist,
+        artist_mbid: mbid(&track.artist_mbid),
+        album: None,
+        album_title: None,
+        album_answered: false,
+        owner: said(&track.album_artist),
+        owner_mbid: None,
+        location: location(&track.uri)?,
+        span: None,
+        length: Some(Duration::from_millis(track.duration_ms)),
+        mbid: mbid(&track.recording),
+        isrc: None,
+    })
 }
 
 #[uniffi::export]
@@ -473,6 +499,7 @@ impl MobilePlayer {
         let Some(print) = analysis.and_then(|analysis| analysis.study.print.clone()) else {
             return Ok(Vec::new());
         };
+        let named = named_on_the_phone(id, &track)?;
         let sounded = Sounded {
             location: location(&track.uri)?,
             span: None,
@@ -496,6 +523,11 @@ impl MobilePlayer {
         let recognised = printer
             .recognise(&sounded)
             .map_err(|source| Error::reference(LookupOp::Recognise, source))?;
+        let heard = match &recognised {
+            Printed::Nothing => &[][..],
+            Printed::Recognised(songs) => songs.as_slice(),
+        };
+        self.catalog.keep_agreement(id, agreement(heard, &named))?;
         Ok(match recognised {
             Printed::Nothing => Vec::new(),
             Printed::Recognised(songs) => songs
@@ -735,9 +767,21 @@ fn identity_held(song: &SearchSong) -> (usize, usize) {
 
 #[cfg(test)]
 mod tests {
-    use resonate_library::{Credit, Issued};
+    use resonate_library::{Agreement, Credit, Issued};
 
     use super::*;
+
+    fn filed(title: &str, artist: &str) -> Track {
+        Track {
+            id: 1,
+            uri: "content://music/a.flac".into(),
+            name: "a.flac".into(),
+            title: title.into(),
+            artist: artist.into(),
+            duration_ms: 305_000,
+            ..Track::default()
+        }
+    }
 
     fn pressed(id: &str, title: &str, kind: &str, position: u32) -> RecordingRelease {
         RecordingRelease {
@@ -752,6 +796,38 @@ mod tests {
                 status: Some("Official".to_owned()),
             },
         }
+    }
+
+    #[test]
+    fn a_song_is_misnamed_only_where_audio_heard_as_another_song_meets_a_name_the_file_gave() {
+        let heard = [joga()];
+
+        let same = agreement(
+            &heard,
+            &named_on_the_phone(1, &filed("Jóga", "Björk")).unwrap(),
+        );
+        let other = agreement(
+            &heard,
+            &named_on_the_phone(1, &filed("Army of Me", "Björk")).unwrap(),
+        );
+        let by_another = agreement(
+            &heard,
+            &named_on_the_phone(1, &filed("Jóga", "Air")).unwrap(),
+        );
+        let untagged = agreement(
+            &heard,
+            &named_on_the_phone(1, &filed("a.flac", "")).unwrap(),
+        );
+        let unheard = agreement(
+            &[],
+            &named_on_the_phone(1, &filed("Jóga", "Björk")).unwrap(),
+        );
+
+        assert_eq!(same, Agreement::Agrees);
+        assert_eq!(other, Agreement::Disagrees);
+        assert_eq!(by_another, Agreement::Disagrees);
+        assert_eq!(untagged, Agreement::Unnamed);
+        assert_eq!(unheard, Agreement::Unheard);
     }
 
     fn joga() -> RecordingMatch {

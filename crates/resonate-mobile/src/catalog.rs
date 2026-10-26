@@ -52,11 +52,22 @@ ALTER TABLE documents ADD COLUMN added INTEGER;
 CREATE TRIGGER documents_dated AFTER INSERT ON documents BEGIN UPDATE documents SET added = unixepoch() WHERE id = new.id AND new.added IS NULL; END;
 ";
 
+const DOCUMENTS_FROM_BEFORE_DATES_TAKE_THEIR_FILES_TIME: &str = "
+UPDATE documents SET added = CASE WHEN modified > 0 THEN min(modified / 1000, unixepoch()) ELSE unixepoch() END WHERE added IS NULL;
+";
+
+const STUDIES_KEEP_WHAT_WAS_HEARD: &str = "
+ALTER TABLE studies ADD COLUMN agreement TEXT;
+CREATE TRIGGER documents_forget_what_was_heard AFTER UPDATE OF size, modified ON documents WHEN old.size IS NOT new.size OR old.modified IS NOT new.modified BEGIN UPDATE studies SET agreement = NULL WHERE track = new.id; END;
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     LISTENS_NAME_THEIR_ORIGIN,
     LISTENS_NEVER_REUSE_AN_ID,
     DOCUMENTS_KEEP_WHEN_THEY_WERE_ADDED,
+    DOCUMENTS_FROM_BEFORE_DATES_TAKE_THEIR_FILES_TIME,
+    STUDIES_KEEP_WHAT_WAS_HEARD,
 ];
 
 #[cfg(test)]
@@ -766,7 +777,8 @@ mod tests {
     }
 
     #[test]
-    fn a_catalog_of_before_dates_added_knows_none_of_its_rows_and_dates_the_next() {
+    fn a_catalog_of_before_dates_added_dates_its_rows_by_their_files_and_forgets_a_hearing_with_the_file()
+     {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("a clock")
@@ -786,10 +798,14 @@ mod tests {
         }
         connection
             .execute_batch(
-                "INSERT INTO documents (uri, name, title, artist, album, duration_ms, rate, codec)
-                 VALUES ('content://music/old.flac', 'old.flac', 'Old', 'A', 'B', 1000, 44100, 'flac')",
+                "INSERT INTO documents (uri, name, title, artist, album, duration_ms, rate, codec, size, modified)
+                 VALUES ('content://music/old.flac', 'old.flac', 'Old', 'A', 'B', 1000, 44100, 'flac', 10, 1700000000123);
+                 INSERT INTO documents (uri, name, title, artist, album, duration_ms, rate, codec)
+                 VALUES ('content://music/unstamped.flac', 'unstamped.flac', 'Unstamped', 'A', 'B', 1000, 44100, 'flac');
+                 INSERT INTO documents (uri, name, title, artist, album, duration_ms, rate, codec, size, modified)
+                 VALUES ('content://music/future.flac', 'future.flac', 'Future', 'A', 'B', 1000, 44100, 'flac', 10, 99999999999999)",
             )
-            .expect("a document of before");
+            .expect("documents of before");
         connection
             .pragma_update(None, "user_version", 3)
             .expect("its stamp");
@@ -811,9 +827,40 @@ mod tests {
             })
             .expect("a document")
         };
+        let now: i64 = held
+            .query_row("SELECT unixepoch()", [], |row| row.get(0))
+            .expect("a clock");
 
-        assert_eq!(added("content://music/old.flac"), None);
+        assert_eq!(added("content://music/old.flac"), Some(1_700_000_000));
+        assert!(added("content://music/unstamped.flac").is_some_and(|at| at > 1_700_000_000));
+        assert!(added("content://music/future.flac").is_some_and(|at| at <= now));
         assert!(added("content://music/new.flac").is_some_and(|at| at > 0));
+
+        held.execute_batch(
+            "INSERT INTO studies (track, verdict, peak, rms, true_peak, clipped, agreement)
+             SELECT id, 'genuine', 0.5, 0.1, 0.5, 0, 'disagrees' FROM documents WHERE name = 'old.flac'",
+        )
+        .expect("a hearing");
+        let heard = || -> Option<String> {
+            held.query_row(
+                "SELECT agreement FROM studies WHERE track = (SELECT id FROM documents WHERE name = 'old.flac')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("a study")
+        };
+        held.execute(
+            "UPDATE documents SET title = 'Older' WHERE name = 'old.flac'",
+            [],
+        )
+        .expect("a retitle");
+        let after_retitle = heard();
+        held.execute("UPDATE documents SET size = 11 WHERE name = 'old.flac'", [])
+            .expect("a changed file");
+        let after_change = heard();
+
+        assert_eq!(after_retitle.as_deref(), Some("disagrees"));
+        assert_eq!(after_change, None);
         drop(held);
         drop(opened);
         let _ = fs::remove_file(path);

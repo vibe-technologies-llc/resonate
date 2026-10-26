@@ -10,7 +10,8 @@ use resonate_analysis::Verdict;
 use resonate_codec::Codec;
 use resonate_core::{folded_letters, is_lettered};
 use resonate_library::{
-    Column, Compare, Condition, Grain, Reach, Search, Shape, Spellings, Term, disc_in_folder,
+    Agreement, Column, Compare, Condition, Grain, Reach, Search, Shape, Spellings, Term,
+    disc_in_folder,
 };
 use rusqlite::{Connection, params};
 
@@ -978,7 +979,10 @@ impl Alternative {
 }
 
 fn is_studied(term: Term) -> bool {
-    matches!(term, Term::Shape(Shape::Fake | Shape::Suspect))
+    matches!(
+        term,
+        Term::Shape(Shape::Fake | Shape::Suspect | Shape::Misnamed)
+    )
 }
 
 fn term_holds(term: Term, row: &Row, now: i64, studied: Option<&Studied>) -> bool {
@@ -1036,7 +1040,8 @@ fn shaped(shape: Shape, row: &Row, studied: Option<&Studied>) -> bool {
         Shape::Favourite => track.favourite,
         Shape::Fake => studied.is_some_and(|studied| studied.fake.contains(&track.id)),
         Shape::Suspect => studied.is_some_and(|studied| studied.suspect.contains(&track.id)),
-        Shape::Hidden | Shape::Misnamed => false,
+        Shape::Misnamed => studied.is_some_and(|studied| studied.misnamed.contains(&track.id)),
+        Shape::Hidden => false,
     }
 }
 
@@ -1493,16 +1498,21 @@ struct Studied {
     stamp: StudiedStamp,
     fake: HashSet<u64>,
     suspect: HashSet<u64>,
+    misnamed: HashSet<u64>,
 }
 
-type StudiedStamp = (i64, i64, i64);
+type StudiedStamp = (i64, i64, i64, i64);
 
 impl Studied {
     fn stamp_of(connection: &Connection) -> rusqlite::Result<StudiedStamp> {
         connection.query_row(
-            "SELECT count(*), coalesce(sum(CASE verdict WHEN ?1 THEN track ELSE 0 END), 0), coalesce(sum(CASE verdict WHEN ?2 THEN track ELSE 0 END), 0) FROM studies",
-            params![Verdict::Fake.as_str(), Verdict::Suspect.as_str()],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            "SELECT count(*), coalesce(sum(CASE verdict WHEN ?1 THEN track ELSE 0 END), 0), coalesce(sum(CASE verdict WHEN ?2 THEN track ELSE 0 END), 0), coalesce(sum(CASE agreement WHEN ?3 THEN track ELSE 0 END), 0) FROM studies",
+            params![
+                Verdict::Fake.as_str(),
+                Verdict::Suspect.as_str(),
+                Agreement::Disagrees.as_str()
+            ],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
     }
 
@@ -1515,6 +1525,12 @@ impl Studied {
                 |row| Ok((row.get::<_, i64>(0)? as u64, row.get::<_, String>(1)?)),
             )?
             .collect::<rusqlite::Result<Vec<_>>>()?;
+        let misnamed = connection
+            .prepare("SELECT track FROM studies WHERE agreement = ?1")?
+            .query_map([Agreement::Disagrees.as_str()], |row| {
+                Ok(row.get::<_, i64>(0)? as u64)
+            })?
+            .collect::<rusqlite::Result<HashSet<_>>>()?;
         let held = |verdict: Verdict| {
             judged
                 .iter()
@@ -1527,6 +1543,7 @@ impl Studied {
             stamp,
             fake: held(Verdict::Fake),
             suspect: held(Verdict::Suspect),
+            misnamed,
         })
     }
 }
@@ -2201,12 +2218,12 @@ mod tests {
     fn a_term_the_documents_cannot_answer_holds_nothing_and_its_denial_everything() {
         let catalog = library();
 
-        let misnamed = searched(&catalog, "is:misnamed");
-        let not_misnamed = searched(&catalog, "-is:misnamed");
+        let hidden = searched(&catalog, "is:hidden");
+        let not_hidden = searched(&catalog, "-is:hidden");
         let measured = searched(&catalog, "is:lossless codec:flac rate:44.1 length:3:20");
 
-        assert_eq!(misnamed.track_count, 0);
-        assert_eq!(not_misnamed.track_count, 9);
+        assert_eq!(hidden.track_count, 0);
+        assert_eq!(not_hidden.track_count, 9);
         assert_eq!(measured.track_count, 9);
     }
 
@@ -2273,6 +2290,54 @@ mod tests {
         assert_eq!(titles(&suspect.tracks), vec!["Money"]);
         assert_eq!(not_fake.track_count, 8);
         assert_eq!(titles(&fake_again.tracks), vec!["Jóga"]);
+    }
+
+    #[test]
+    fn songs_whose_audio_was_heard_as_another_song_are_misnamed_and_a_new_hearing_is_seen_at_once()
+    {
+        let catalog = library();
+        let studying = |title: &str| {
+            catalog
+                .0
+                .lock()
+                .execute(
+                    "INSERT INTO studies (track, verdict, peak, rms, true_peak, clipped)
+                     SELECT id, ?2, 0.5, 0.1, 0.5, 0 FROM documents WHERE title = ?1",
+                    params![title, Verdict::Genuine.as_str()],
+                )
+                .expect("a study");
+        };
+        let hearing = |title: &str, agreement: Agreement| {
+            let id: i64 = catalog
+                .0
+                .lock()
+                .query_row(
+                    "SELECT id FROM documents WHERE title = ?1",
+                    [title],
+                    |row| row.get(0),
+                )
+                .expect("a document");
+            catalog
+                .keep_agreement(id as u64, agreement)
+                .expect("an agreement");
+        };
+        let searching = Searching::default();
+        let searched = |text: &str| searching.search(&catalog, text, 100).expect("a search");
+        studying("Time");
+        studying("Money");
+        studying("Jóga");
+        hearing("Time", Agreement::Disagrees);
+        hearing("Money", Agreement::Agrees);
+        hearing("Jóga", Agreement::Unheard);
+
+        let misnamed = searched("is:misnamed");
+        let not_misnamed = searched("-is:misnamed");
+        hearing("Money", Agreement::Disagrees);
+        let misnamed_again = searched("is:misnamed");
+
+        assert_eq!(titles(&misnamed.tracks), vec!["Time"]);
+        assert_eq!(not_misnamed.track_count, 8);
+        assert_eq!(titles(&misnamed_again.tracks), vec!["Money", "Time"]);
     }
 
     #[test]
