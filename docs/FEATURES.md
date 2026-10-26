@@ -18,8 +18,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   `build-std`
 
 ## Playback and output
-- [M · 0.2.0] Oboe and RemoteIO reshape nothing: every rebind, renegotiation and turn of rate or
-  channels inside a row closes the phone's stream and opens another
 - [L · 0.2.0] One playback stream and one capture stream only; concurrent playback streams unsupported
 - [M · blocked: pipewire-rs] A rebind or turn inside a row that moves the rate while
   `force-graph-rate` pins it (on by default), or switches the pin, still reopens the PipeWire stream:
@@ -27,6 +25,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   pipewire-rs 0.10.1 (and its main branch) does not wrap it; no param, `Props` key or per-node
   metadata reaches a node's properties, and the `settings` metadata's `clock.force-rate` would force
   every client's graph and outlive a crash
+- [M · blocked: Oboe] A turn of rate, word or channel count inside a row (the song's own rate while
+  *Match the song's sample rate* is on, or a route moving between mixed, exclusive and bit-perfect)
+  still closes the Oboe stream and opens another: an open stream's rate, format and channel count
+  are fixed, and the callback is typed by them
 
 ## Formats
 - [M · blocked: ape-decoder] A 32-bit stereo Monkey's Audio, integer or float, is refused:

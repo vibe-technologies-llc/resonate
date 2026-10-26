@@ -13,14 +13,26 @@ use std::sync::{
 
 use resonate_audio::AudioSource;
 
+use super::handover::{Fed, Handing, fed_from};
+
 pub(crate) struct Rendering {
-    pub(crate) source: Box<dyn AudioSource>,
+    fed: Fed,
     pub(crate) empty: Arc<AtomicBool>,
 }
 
 impl Rendering {
+    pub(crate) fn fed_by(source: Box<dyn AudioSource>, empty: Arc<AtomicBool>) -> (Self, Handing) {
+        let (fed, handing) = fed_from(source);
+        (Self { fed, empty }, handing)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn source(&mut self) -> &mut dyn AudioSource {
+        self.fed.source()
+    }
+
     pub(crate) fn fill(&mut self, bytes: &mut [u8]) {
-        let filled = self.source.fill(bytes);
+        let filled = self.fed.source().fill(bytes);
         self.empty.store(filled == 0, Ordering::Release);
         if let Some(unfilled) = bytes.get_mut(filled..) {
             unfilled.fill(0);
@@ -48,10 +60,7 @@ mod tests {
 
     fn rendering(left: usize) -> (Rendering, Arc<AtomicBool>) {
         let empty = Arc::new(AtomicBool::new(false));
-        let rendering = Rendering {
-            source: Box::new(Supply { left }),
-            empty: Arc::clone(&empty),
-        };
+        let (rendering, _) = Rendering::fed_by(Box::new(Supply { left }), Arc::clone(&empty));
         (rendering, empty)
     }
 
@@ -101,13 +110,15 @@ mod tests {
 
     #[test]
     fn the_flag_falls_again_once_the_source_has_more() {
-        let (mut rendering, empty) = rendering(0);
+        let empty = Arc::new(AtomicBool::new(false));
+        let (mut rendering, mut handing) =
+            Rendering::fed_by(Box::new(Supply { left: 0 }), Arc::clone(&empty));
         let mut bytes = [0_u8; 4];
 
         rendering.fill(&mut bytes);
         assert!(empty.load(Ordering::Acquire));
 
-        rendering.source = Box::new(Supply { left: 4 });
+        assert!(handing.hand(Box::new(Supply { left: 4 })).is_ok());
         rendering.fill(&mut bytes);
         assert!(!empty.load(Ordering::Acquire));
     }

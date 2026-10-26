@@ -430,8 +430,8 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   stream volume where the format stands; where it moved, a `FormatChanged` is owed within
   `RESHAPED_FORMAT_SETTLED_WITHIN` (1 s), else the row is rebound `rebind_on_a_new_stream`, as a
   stalled discard is. The backend contract: `SinkStream::reshaped_by` gives a stream its
-  `Reshaper`; a stream given none refuses `Unreshapable::Unsupported`, as the phones' and the test
-  fake's default do (`a_buffer_moved_mid_track_reshapes_the_stream_and_plays_on_from_where_it_was_heard`,
+  `Reshaper`; a stream given none refuses `Unreshapable::Unsupported`, as the test fake's default does;
+  the phones' streams are given one, below (`a_buffer_moved_mid_track_reshapes_the_stream_and_plays_on_from_where_it_was_heard`,
   `a_graph_answering_another_format_has_the_stream_it_holds_reshaped_rather_than_reopened`,
   `a_reshaped_stream_whose_format_the_graph_never_settles_is_reopened`,
   `a_device_chosen_mid_track_opens_a_stream_on_it_rather_than_reshaping_the_one_held`).
@@ -456,6 +456,22 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `FEATURES.md`), a feed not yet taken, formats the graph would not take
   (`a_live_stream_takes_a_new_source_and_a_new_rate_without_reopening`,
   `a_live_stream_takes_a_turn_between_converted_and_not_and_a_new_source_once_drained`).
+- **The phones reshape by handing their callback a new source** (`mobile.md`'s *Output*;
+  `output/handover.rs`, realtime). Neither OS lets the engine's ring be moved into an open stream, so
+  `Fed` takes the new source through a preallocated queue and gives the old one back, as PipeWire's
+  `Fed` does. **RemoteIO** runs one shape (the route's rate, stereo, `F32`), so a reshape is the new
+  source, a drain called off (`Drain::new()`: a request standing from before would stop the unit under
+  the new source while it primes) and, where the route has taken another rate since the unit opened,
+  `Hardware::reformat` (stop, uninitialize, set the format, initialize: the same unit, the same render
+  callback), told as `FormatChanged` so the engine's owed format clears; a request in any other shape
+  refuses `AnotherFormat`, a refused reformat `FormatUnwritten`. **Oboe** keeps its stream while the
+  request is the shape it opened in, on the device it opened on and by the `Way` an open would choose
+  now (`Opened::refuses`: `AnotherFormat`, `AnotherTarget`, `AnotherPath`); a chosen device, a route
+  that began offering the song a bit-perfect or exclusive way, or any other rate, word or channel
+  count reopens, since an Oboe stream's shape is fixed at open and its callback is typed by it
+  (`FEATURES.md`). Both refuse `StillHandingOver` while the last source is untaken, `NoStream`
+  where the output thread has ended, and a drained stream is restarted by the `set_active(true)` the
+  engine sends after any reshape.
 - **Leaving/returning to unity gain and switching the equaliser reshape the chain in place**
   where no splice can be made (above).
   `retune` builds the wanted plan against the open stream. `OutputPlan::same_shape_as`: retune the

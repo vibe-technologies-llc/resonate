@@ -5871,6 +5871,7 @@ dependencies = [
  "resonate-subsonic",
  "resonate-sync",
  "resonate-tidal",
+ "rtrb",
  "rusqlite",
  "thiserror 2.0.21",
  "tracing",

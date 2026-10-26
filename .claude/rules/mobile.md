@@ -257,7 +257,16 @@ phones* (`equaliser.rs`); `playback.rs` sends it with the other sound preference
   device, the switch, the offers, the probe made once per chosen device and route, the mixer
   preference held and given back, the stream told by a number so a late close never clears the
   next) and `output/oboe_frames.rs` (the callback's fill, realtime). The output thread's waits and
-  the bounded open are `output/waits.rs`.
+  the bounded open are `output/waits.rs`. **The stream is kept across a rebind** (`audio.md`):
+  `output/oboe_reshape.rs` holds `Order` (what the output thread is sent: a `StreamCommand`, or
+  `Reshaped`, which calls off a drain standing from before), `Opened` (the spec, the effective `Way`
+  after the open's fallbacks and the device asked, sent back with the open) and `reshaper`, which
+  keeps the stream only where the request is `Opened`'s spec, `Routing::requested` is its device and
+  `Routing::way_for` its `Way`, handing the callback the new source through `output/handover.rs`;
+  anything else is refused (`AnotherFormat`, `AnotherTarget`, `AnotherPath`) and the engine reopens
+  (`a_stream_asked_for_the_shape_it_holds_is_given_the_new_source_and_kept`,
+  `a_device_chosen_since_the_stream_opened_is_refused_so_the_stream_opens_on_it`,
+  `a_route_that_now_offers_the_song_its_own_way_is_refused_so_the_stream_opens_that_way`).
 - **iOS**: RemoteIO at the session's hardware rate, interleaved Float32 stereo; the engine resamples
   into it. **What does not touch CoreAudio is compiled on the host too, so its tests run there**:
   `output/remote_io_state.rs` holds `Routing` (the rate, latency and sink-change atomics and channels)
@@ -278,8 +287,23 @@ phones* (`equaliser.rs`); `playback.rs` sends it with the other sound preference
   format check, the open thread, the `UNIT_WITHIN`-bounded wait for the unit, the close that waits
   for disposal) and `serve` (the commands, a refused start or stop told as `StreamEvent::Refused`
   with the status, the drain, the moved latency). Their tests drive a fake `Toolbox` and a fake
-  `Hardware`
-  (`a_step_refused_after_the_instance_took_the_unit_down_and_frees_the_source_once`,
+  `Hardware`. **The unit is kept across a rebind and a turn of the route's rate**: `Hardware` also
+  has `reformat(rate)` (`Unit`: stop, uninitialize, set the format, initialize, stopping at the
+  first step the system refuses and returning its status), and `launch` gives the stream a
+  `Reshaper` that sends the output thread `Order::Reshape { rate }` (the route's rate now), waits at
+  most `UNIT_WITHIN` for its status and only then hands the source to the render callback through
+  `handover.rs`, so a refused reformat hands the source back and the engine closes the stream and
+  opens another; the thread calls off a drain standing from before, reformats only where the rate
+  moved and then announces `FormatChanged` (and the pause the reformat made)
+  (`a_stream_asked_for_the_shape_it_holds_takes_the_new_source_and_the_unit_is_left_alone`,
+  `a_drain_asked_before_a_reshape_is_called_off_so_the_new_source_is_not_drained`,
+  `a_stream_that_drained_is_reshaped_and_started_again_rather_than_reopened`,
+  `a_rate_the_route_took_since_the_unit_opened_reformats_the_unit_and_says_so`,
+  `a_reformat_the_system_refuses_hands_the_source_back_and_announces_nothing`,
+  `a_unit_reformatted_is_stopped_uninitialised_set_and_initialised_again_at_the_new_rate`; a unit
+  reformatted on a device is not proved, below). The shape is still the route's alone
+  (`a_shape_other_than_the_routes_is_refused_before_the_unit_is_touched`).
+  Their other tests (`a_step_refused_after_the_instance_took_the_unit_down_and_frees_the_source_once`,
   `a_refused_start_is_told_with_its_status_and_leaves_the_stream_failed`,
   `an_open_that_never_answers_times_out_and_the_late_unit_is_disposed_by_its_own_thread`,
   `closing_returns_only_once_the_unit_is_disposed`). `remote_io_buffers::guarded` is the callback's

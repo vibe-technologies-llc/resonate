@@ -397,7 +397,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   the playing song's rate** (`preferRate`): on every song change and activation (a `play` or `jump` names the song it loads, `activate(loading:)`, not the one on the lock screen), while "Match the
   song's sample rate" is on (the output page; `follow-song-rate` in the `playback` suite, on by
   default), `setPreferredSampleRate(track.rate)`, `0` (no preference) while off, then the route is
-  reported again, so a rate the route took moves `route_changed` and reopens RemoteIO at it; a route
+  reported again, so a rate the route took moves `route_changed` and reformats the RemoteIO unit at it (reopening it only if the system refuses the reformat, `mobile.md`); a route
   that keeps its own rate (the speaker, Bluetooth) changes nothing. A rate-only change posts no
   route notification, so the rate is read again 0.25, 1 and 3 s after asking and reported where it
   moved from the one last reported; the ask is once per song (`ratedTrack`), so a favourite flip or

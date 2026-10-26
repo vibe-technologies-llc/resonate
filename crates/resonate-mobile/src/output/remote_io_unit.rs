@@ -123,6 +123,21 @@ impl<T: Toolbox> Hardware for Unit<T> {
     fn stop(&self) -> i32 {
         self.toolbox.stop(self.unit)
     }
+
+    fn reformat(&self, rate: SampleRate) -> i32 {
+        let format = stream_format(rate);
+        let steps: [&dyn Fn() -> i32; 4] = [
+            &|| self.toolbox.stop(self.unit),
+            &|| self.toolbox.uninitialize(self.unit),
+            &|| self.toolbox.set_format(self.unit, &format),
+            &|| self.toolbox.initialize(self.unit),
+        ];
+        steps
+            .into_iter()
+            .map(|step| step())
+            .find(|status| *status != 0)
+            .unwrap_or(0)
+    }
 }
 
 impl<T: Toolbox> Drop for Unit<T> {
@@ -270,14 +285,12 @@ mod tests {
     fn rendering() -> (Box<Rendering>, Held) {
         let dropped = Arc::new(AtomicUsize::new(0));
         let given = Arc::new(AtomicBool::new(false));
-        let rendering = Box::new(Rendering {
-            source: Box::new(Supply {
-                dropped: Arc::clone(&dropped),
-                given: Arc::clone(&given),
-            }),
-            empty: Arc::new(AtomicBool::new(false)),
-        });
-        (rendering, Held { dropped, given })
+        let supply = Supply {
+            dropped: Arc::clone(&dropped),
+            given: Arc::clone(&given),
+        };
+        let (rendering, _) = Rendering::fed_by(Box::new(supply), Arc::new(AtomicBool::new(false)));
+        (Box::new(rendering), Held { dropped, given })
     }
 
     fn status_of(error: &Error) -> Option<String> {
@@ -418,6 +431,54 @@ mod tests {
             [Call::Stop, Call::Uninitialize, Call::Dispose]
         );
         assert_eq!(held.dropped.load(Ordering::Acquire), 1);
+    }
+
+    #[test]
+    fn a_unit_reformatted_is_stopped_uninitialised_set_and_initialised_again_at_the_new_rate() {
+        let fake = Fake::new();
+        let (rendering, _) = rendering();
+        let unit = Unit::opened(fake.clone(), SampleRate::HZ_48000, rendering).expect("a unit");
+
+        assert_eq!(unit.reformat(SampleRate::HZ_44100), 0);
+
+        assert_eq!(
+            fake.calls()[4..],
+            [
+                Call::Stop,
+                Call::Uninitialize,
+                Call::SetFormat,
+                Call::Initialize
+            ]
+        );
+        let format = fake.format.lock().expect("a format was set");
+        assert_eq!(format.mSampleRate, 44_100.0);
+        assert_eq!(format.mChannelsPerFrame, 2);
+        assert_eq!(format.mFormatFlags, kAudioFormatFlagsNativeFloatPacked);
+    }
+
+    #[test]
+    fn a_reformat_stops_at_the_step_the_system_refused_and_hands_back_its_status() {
+        for (refused, after) in [
+            (Call::Stop, 1),
+            (Call::Uninitialize, 2),
+            (Call::SetFormat, 3),
+            (Call::Initialize, 4),
+        ] {
+            let fake = Fake::new();
+            let (rendering, _) = rendering();
+            let mut unit =
+                Unit::opened(fake.clone(), SampleRate::HZ_48000, rendering).expect("a unit");
+            unit.toolbox.refusing = Some((refused, 561_145_187));
+            let before = fake.calls().len();
+
+            assert_eq!(
+                unit.reformat(SampleRate::HZ_44100),
+                561_145_187,
+                "after {refused:?}"
+            );
+
+            assert_eq!(fake.calls().len() - before, after, "after {refused:?}");
+        }
     }
 
     #[test]

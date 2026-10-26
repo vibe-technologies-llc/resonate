@@ -10,13 +10,15 @@ use std::{
 };
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, bounded, select, unbounded};
+use parking_lot::Mutex;
 use resonate_audio::{
-    AudioSource, Error, GraphTime, Operation, Result, SinkStream, StreamClock, StreamCommand,
-    StreamEvent, StreamRequest, StreamState, Words,
+    AudioSource, Error, GraphTime, Operation, Reshaped, Reshaper, Result, SinkStream, StreamClock,
+    StreamCommand, StreamEvent, StreamRequest, StreamState, Unreshapable, Words,
 };
 use resonate_core::{ChannelLayout, Frames, Ratio, SampleFormat, SampleRate, StreamSpec};
 
 use super::{
+    handover::Handing,
     remote_io_fill::Rendering,
     remote_io_state::{Drain, Routing},
 };
@@ -27,6 +29,74 @@ const QUIET_WAIT: Duration = Duration::from_secs(24 * 60 * 60);
 pub(crate) trait Hardware {
     fn start(&self) -> i32;
     fn stop(&self) -> i32;
+    fn reformat(&self, rate: SampleRate) -> i32;
+}
+
+enum Order {
+    Command(StreamCommand),
+    Reshape {
+        rate: SampleRate,
+        answer: Sender<i32>,
+    },
+}
+
+fn shape_of(rate: SampleRate) -> StreamSpec {
+    StreamSpec::new(rate, ChannelLayout::Stereo, SampleFormat::F32)
+}
+
+fn reshaper(
+    routing: Arc<Routing>,
+    orders: Sender<Order>,
+    handing: Handing,
+    within: Duration,
+) -> Reshaper {
+    let handing = Mutex::new(handing);
+    Box::new(move |request, source| {
+        let mut handing = handing.lock();
+        handing.let_go_of_the_spent();
+        let rate = routing.rate();
+        if request.spec != shape_of(rate) {
+            return Reshaped::Refused {
+                source,
+                because: Unreshapable::AnotherFormat,
+            };
+        }
+        if !handing.has_room() {
+            return Reshaped::Refused {
+                source,
+                because: Unreshapable::StillHandingOver,
+            };
+        }
+        let (answer, answered) = bounded(1);
+        if orders.send(Order::Reshape { rate, answer }).is_err() {
+            return Reshaped::Refused {
+                source,
+                because: Unreshapable::NoStream,
+            };
+        }
+        match answered.recv_timeout(within) {
+            Ok(0) => {}
+            Ok(_) => {
+                return Reshaped::Refused {
+                    source,
+                    because: Unreshapable::FormatUnwritten,
+                };
+            }
+            Err(_) => {
+                return Reshaped::Refused {
+                    source,
+                    because: Unreshapable::NoStream,
+                };
+            }
+        }
+        match handing.hand(source) {
+            Ok(()) => Reshaped::Kept,
+            Err(source) => Reshaped::Refused {
+                source,
+                because: Unreshapable::StillHandingOver,
+            },
+        }
+    })
 }
 
 pub(crate) fn launch<H, M>(
@@ -41,7 +111,7 @@ where
     M: FnOnce(SampleRate, Box<Rendering>) -> Result<H> + Send + 'static,
 {
     let rate = routing.rate();
-    let spec = StreamSpec::new(rate, ChannelLayout::Stereo, SampleFormat::F32);
+    let spec = shape_of(rate);
     if request.spec != spec {
         return Err(Error::FormatRefused);
     }
@@ -51,15 +121,14 @@ where
     let (disposed, closed) = bounded(1);
     let clock = Arc::new(StreamClock::behind_by(Frames::ZERO));
     let empty = Arc::new(AtomicBool::new(false));
+    let (rendering, handing) = Rendering::fed_by(source, Arc::clone(&empty));
     let thread_clock = Arc::clone(&clock);
     let routing = Arc::clone(routing);
+    let reshape = reshaper(Arc::clone(&routing), commands.clone(), handing, within);
     thread::Builder::new()
         .name("resonate-mobile-output".into())
         .spawn(move || {
-            let rendering = Box::new(Rendering {
-                source,
-                empty: Arc::clone(&empty),
-            });
+            let rendering = Box::new(rendering);
             let hardware = match make(rate, rendering) {
                 Ok(hardware) => hardware,
                 Err(refused) => {
@@ -103,7 +172,9 @@ where
         clock,
         Box::new(move |command| {
             let closing = matches!(command, StreamCommand::Close);
-            commands.send(command).map_err(|_| Error::Disconnected)?;
+            commands
+                .send(Order::Command(command))
+                .map_err(|_| Error::Disconnected)?;
             if closing {
                 closed.recv_timeout(within).map_err(|_| Error::Backend {
                     op: Operation::Close,
@@ -112,7 +183,8 @@ where
             }
             Ok(())
         }),
-    ))
+    )
+    .reshaped_by(reshape))
 }
 
 fn serve<H: Hardware>(
@@ -121,13 +193,11 @@ fn serve<H: Hardware>(
     routing: &Routing,
     clock: &StreamClock,
     empty: &AtomicBool,
-    asked: &Receiver<StreamCommand>,
+    asked: &Receiver<Order>,
     announced: &Sender<StreamEvent>,
 ) {
-    let tick = Ratio {
-        numer: NonZeroU32::MIN,
-        denom: NonZeroU32::new(rate.hz()).unwrap_or(NonZeroU32::MIN),
-    };
+    let mut rate = rate;
+    let mut tick = tick_of(rate);
     let mut state = StreamState::Paused;
     let mut drain = Drain::new();
     loop {
@@ -156,9 +226,36 @@ fn serve<H: Hardware>(
             default(wait) => None,
         };
         match command {
-            Some(Ok(StreamCommand::Close) | Err(_)) => break,
-            Some(Ok(StreamCommand::Drain)) => drain.request(),
-            Some(Ok(StreamCommand::SetActive(active))) => {
+            Some(Ok(Order::Command(StreamCommand::Close)) | Err(_)) => break,
+            Some(Ok(Order::Command(StreamCommand::Drain))) => drain.request(),
+            Some(Ok(Order::Reshape {
+                rate: wanted,
+                answer,
+            })) => {
+                drain = Drain::new();
+                let status = if wanted == rate {
+                    0
+                } else {
+                    hardware.reformat(wanted)
+                };
+                if status == 0 && wanted != rate {
+                    rate = wanted;
+                    tick = tick_of(rate);
+                    let _ = announced.send(StreamEvent::FormatChanged {
+                        spec: shape_of(rate),
+                        words: Words::Whole,
+                    });
+                    if state != StreamState::Paused {
+                        let _ = announced.send(StreamEvent::StateChanged {
+                            from: state,
+                            to: StreamState::Paused,
+                        });
+                        state = StreamState::Paused;
+                    }
+                }
+                let _ = answer.send(status);
+            }
+            Some(Ok(Order::Command(StreamCommand::SetActive(active)))) => {
                 let status = if active {
                     hardware.start()
                 } else {
@@ -194,6 +291,13 @@ fn serve<H: Hardware>(
     }
 }
 
+fn tick_of(rate: SampleRate) -> Ratio {
+    Ratio {
+        numer: NonZeroU32::MIN,
+        denom: NonZeroU32::new(rate.hz()).unwrap_or(NonZeroU32::MIN),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::AtomicUsize;
@@ -210,6 +314,16 @@ mod tests {
     enum Call {
         Start,
         Stop,
+        Reformat(SampleRate),
+    }
+
+    struct Marked(u8);
+
+    impl AudioSource for Marked {
+        fn fill(&mut self, dst: &mut [u8]) -> usize {
+            dst.fill(self.0);
+            dst.len()
+        }
     }
 
     struct Silent;
@@ -224,7 +338,7 @@ mod tests {
         calls: Arc<Mutex<Vec<Call>>>,
         refusing: Option<(Call, i32)>,
         disposed: Arc<AtomicUsize>,
-        _rendering: Box<Rendering>,
+        _rendering: Arc<Mutex<Box<Rendering>>>,
     }
 
     impl Hardware for Fake {
@@ -234,6 +348,10 @@ mod tests {
 
         fn stop(&self) -> i32 {
             self.answer(Call::Stop)
+        }
+
+        fn reformat(&self, rate: SampleRate) -> i32 {
+            self.answer(Call::Reformat(rate))
         }
     }
 
@@ -258,6 +376,7 @@ mod tests {
         calls: Arc<Mutex<Vec<Call>>>,
         disposed: Arc<AtomicUsize>,
         empty: Arc<AtomicBool>,
+        rendering: Arc<Mutex<Box<Rendering>>>,
     }
 
     fn request(routing: &Routing) -> StreamRequest {
@@ -282,7 +401,8 @@ mod tests {
             let calls = Arc::clone(&calls);
             let disposed = Arc::clone(&disposed);
             move |_, rendering| {
-                let _ = flag.send(Arc::clone(&rendering.empty));
+                let rendering = Arc::new(Mutex::new(rendering));
+                let _ = flag.send(Arc::clone(&rendering));
                 Ok(Fake {
                     calls,
                     refusing,
@@ -292,13 +412,15 @@ mod tests {
             }
         })
         .expect("a stream");
-        let empty = flagged.recv_timeout(WAIT).expect("the rendering's flag");
+        let rendering = flagged.recv_timeout(WAIT).expect("the rendering");
+        let empty = Arc::clone(&rendering.lock().empty);
         Opened {
             stream,
             routing,
             calls,
             disposed,
             empty,
+            rendering,
         }
     }
 
@@ -398,7 +520,7 @@ mod tests {
                     calls: Arc::default(),
                     refusing: None,
                     disposed: late,
-                    _rendering: rendering,
+                    _rendering: Arc::new(Mutex::new(rendering)),
                 })
             },
         );
@@ -585,5 +707,206 @@ mod tests {
             thread::sleep(Duration::from_millis(10));
         }
         assert_eq!(disposed.load(Ordering::Acquire), 1);
+    }
+
+    fn mark_heard(opened: &Opened) -> u8 {
+        let mut bytes = [0_u8; 4];
+        opened.rendering.lock().fill(&mut bytes);
+        bytes[0]
+    }
+
+    fn refused_for(reshaped: Reshaped) -> Option<Unreshapable> {
+        match reshaped {
+            Reshaped::Refused { because, .. } => Some(because),
+            Reshaped::Kept | Reshaped::Lost(_) => None,
+        }
+    }
+
+    #[test]
+    fn a_stream_asked_for_the_shape_it_holds_takes_the_new_source_and_the_unit_is_left_alone() {
+        let opened = opened();
+        event(&opened);
+
+        let reshaped = opened
+            .stream
+            .reshape(&request(&opened.routing), Box::new(Marked(7)));
+
+        assert!(matches!(reshaped, Reshaped::Kept));
+        assert_eq!(mark_heard(&opened), 7);
+        assert_eq!(*opened.calls.lock(), []);
+        quiet(&opened);
+    }
+
+    #[test]
+    fn a_drain_asked_before_a_reshape_is_called_off_so_the_new_source_is_not_drained() {
+        let opened = opened();
+        event(&opened);
+        opened.routing.route_changed(48_000, 100.0);
+        opened.empty.store(true, Ordering::Release);
+
+        opened.stream.drain().expect("a command");
+        let reshaped = opened
+            .stream
+            .reshape(&request(&opened.routing), Box::new(Marked(7)));
+
+        assert!(matches!(reshaped, Reshaped::Kept));
+        quiet(&opened);
+        assert_eq!(*opened.calls.lock(), []);
+    }
+
+    #[test]
+    fn a_stream_that_drained_is_reshaped_and_started_again_rather_than_reopened() {
+        let opened = opened();
+        event(&opened);
+        opened.empty.store(true, Ordering::Release);
+        opened.stream.drain().expect("a command");
+        assert_eq!(event(&opened), StreamEvent::Drained);
+
+        let reshaped = opened
+            .stream
+            .reshape(&request(&opened.routing), Box::new(Marked(7)));
+        opened.stream.set_active(true).expect("a command");
+
+        assert!(matches!(reshaped, Reshaped::Kept));
+        assert_eq!(
+            event(&opened),
+            StreamEvent::StateChanged {
+                from: StreamState::Paused,
+                to: StreamState::Streaming
+            }
+        );
+        assert_eq!(*opened.calls.lock(), [Call::Stop, Call::Start]);
+        assert_eq!(mark_heard(&opened), 7);
+    }
+
+    #[test]
+    fn a_rate_the_route_took_since_the_unit_opened_reformats_the_unit_and_says_so() {
+        let opened = opened();
+        event(&opened);
+        opened.stream.set_active(true).expect("a command");
+        event(&opened);
+        opened.routing.route_changed(44_100, 0.0);
+
+        let reshaped = opened
+            .stream
+            .reshape(&request(&opened.routing), Box::new(Marked(7)));
+
+        assert!(matches!(reshaped, Reshaped::Kept));
+        assert_eq!(
+            event(&opened),
+            StreamEvent::FormatChanged {
+                spec: StreamSpec::new(
+                    SampleRate::HZ_44100,
+                    ChannelLayout::Stereo,
+                    SampleFormat::F32
+                ),
+                words: Words::Whole,
+            }
+        );
+        assert_eq!(
+            event(&opened),
+            StreamEvent::StateChanged {
+                from: StreamState::Streaming,
+                to: StreamState::Paused
+            }
+        );
+        assert_eq!(
+            *opened.calls.lock(),
+            [Call::Start, Call::Reformat(SampleRate::HZ_44100)]
+        );
+        assert_eq!(mark_heard(&opened), 7);
+
+        opened.stream.set_active(true).expect("a command");
+        assert_eq!(
+            event(&opened),
+            StreamEvent::StateChanged {
+                from: StreamState::Paused,
+                to: StreamState::Streaming
+            }
+        );
+    }
+
+    #[test]
+    fn a_rate_already_held_is_not_reformatted_again() {
+        let opened = opened();
+        event(&opened);
+        opened.routing.route_changed(44_100, 0.0);
+        let again = request(&opened.routing);
+
+        assert!(matches!(
+            opened.stream.reshape(&again, Box::new(Marked(7))),
+            Reshaped::Kept
+        ));
+        event(&opened);
+        assert_eq!(mark_heard(&opened), 7);
+        assert!(matches!(
+            opened.stream.reshape(&again, Box::new(Marked(8))),
+            Reshaped::Kept
+        ));
+
+        quiet(&opened);
+        assert_eq!(*opened.calls.lock(), [Call::Reformat(SampleRate::HZ_44100)]);
+        assert_eq!(mark_heard(&opened), 8);
+    }
+
+    #[test]
+    fn a_reformat_the_system_refuses_hands_the_source_back_and_announces_nothing() {
+        let opened = opened_refusing(Some((Call::Reformat(SampleRate::HZ_44100), -50)));
+        event(&opened);
+        opened.routing.route_changed(44_100, 0.0);
+
+        let reshaped = opened
+            .stream
+            .reshape(&request(&opened.routing), Box::new(Marked(7)));
+
+        let Reshaped::Refused {
+            mut source,
+            because,
+        } = reshaped
+        else {
+            panic!("a unit the system would not reformat was kept");
+        };
+        let mut bytes = [0_u8; 2];
+        source.fill(&mut bytes);
+        assert_eq!(because, Unreshapable::FormatUnwritten);
+        assert_eq!(bytes, [7, 7]);
+        quiet(&opened);
+    }
+
+    #[test]
+    fn a_shape_other_than_the_routes_is_refused_before_the_unit_is_touched() {
+        let opened = opened();
+        event(&opened);
+        let asked = request(&opened.routing);
+
+        for spec in [
+            StreamSpec::new(
+                SampleRate::HZ_44100,
+                ChannelLayout::Stereo,
+                SampleFormat::F32,
+            ),
+            StreamSpec::new(
+                opened.routing.rate(),
+                ChannelLayout::Mono,
+                SampleFormat::F32,
+            ),
+            StreamSpec::new(
+                opened.routing.rate(),
+                ChannelLayout::Stereo,
+                SampleFormat::S16,
+            ),
+        ] {
+            let reshaped = opened.stream.reshape(
+                &StreamRequest {
+                    spec,
+                    ..asked.clone()
+                },
+                Box::new(Marked(7)),
+            );
+            assert_eq!(refused_for(reshaped), Some(Unreshapable::AnotherFormat));
+        }
+
+        assert_eq!(*opened.calls.lock(), []);
+        quiet(&opened);
     }
 }

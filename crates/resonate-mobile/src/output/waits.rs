@@ -18,7 +18,7 @@ pub(crate) fn between_commands(state: StreamState, draining: bool) -> Duration {
     }
 }
 
-pub(crate) fn opened_within(started: &Receiver<Result<()>>, within: Duration) -> Result<()> {
+pub(crate) fn opened_within<T>(started: &Receiver<Result<T>>, within: Duration) -> Result<T> {
     match started.recv_timeout(within) {
         Ok(opened) => opened,
         Err(RecvTimeoutError::Timeout) => Err(Error::Backend {

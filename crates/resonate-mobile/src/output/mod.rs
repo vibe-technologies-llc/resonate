@@ -1,4 +1,6 @@
 mod formats;
+#[cfg(any(target_os = "android", target_os = "ios", test))]
+mod handover;
 #[cfg(target_os = "android")]
 mod oboe;
 #[cfg(any(target_os = "android", test))]
@@ -7,6 +9,8 @@ mod oboe_frames;
 mod oboe_offers;
 #[cfg(target_os = "android")]
 mod oboe_render;
+#[cfg(any(target_os = "android", test))]
+mod oboe_reshape;
 #[cfg(any(target_os = "android", test))]
 mod oboe_state;
 #[cfg(target_os = "ios")]

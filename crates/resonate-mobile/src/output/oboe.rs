@@ -26,9 +26,11 @@ use resonate_core::{ChannelLayout, Frames, Gain, Ratio, SampleFormat, SampleRate
 pub(crate) use super::oboe_state::Routing;
 use super::{
     formats::{OutputFormat, OutputStream},
+    handover::{Fed, fed_from},
     oboe_frames::{Frame, RENDER_BYTES},
     oboe_offers::{MIXED, Way, sink_formats},
     oboe_render::Rendering,
+    oboe_reshape::{Opened, Order, controlled_by, reshaper},
     oboe_state::OUTPUT,
     waits::{OPEN_WITHIN, between_commands, opened_within},
 };
@@ -113,9 +115,9 @@ struct Opening {
     spec: StreamSpec,
     way: Way,
     routing: Arc<Routing>,
-    source: Box<dyn AudioSource>,
-    ready: Sender<Result<()>>,
-    commands: Receiver<StreamCommand>,
+    fed: Fed,
+    ready: Sender<Result<Opened>>,
+    commands: Receiver<Order>,
     announced: Sender<StreamEvent>,
     clock: Arc<StreamClock>,
 }
@@ -196,7 +198,7 @@ where
         spec,
         mut way,
         routing,
-        source,
+        fed,
         ready,
         commands,
         announced,
@@ -219,7 +221,7 @@ where
     let empty = Arc::new(AtomicBool::new(false));
     let failed = Arc::new(AtomicBool::new(false));
     let rendering = Rendering::<(T, C)> {
-        source,
+        fed,
         empty: Arc::clone(&empty),
         failed: Arc::clone(&failed),
         bytes: vec![0; RENDER_BYTES].into_boxed_slice(),
@@ -257,7 +259,11 @@ where
         spec,
         words: Words::Whole,
     });
-    let _ = ready.send(Ok(()));
+    let _ = ready.send(Ok(Opened {
+        spec,
+        way,
+        requested,
+    }));
 
     serve(
         &mut stream,
@@ -277,7 +283,7 @@ where
 fn serve(
     stream: &mut impl AudioOutputStream,
     rate: SampleRate,
-    commands: &Receiver<StreamCommand>,
+    commands: &Receiver<Order>,
     announced: &Sender<StreamEvent>,
     clock: &StreamClock,
     empty: &AtomicBool,
@@ -324,9 +330,15 @@ fn serve(
             drain_after = None;
         }
         match commands.recv_timeout(between_commands(state, draining)) {
-            Ok(StreamCommand::Close) | Err(RecvTimeoutError::Disconnected) => return,
-            Ok(StreamCommand::Drain) => draining = true,
-            Ok(StreamCommand::SetActive(active)) => {
+            Ok(Order::Command(StreamCommand::Close)) | Err(RecvTimeoutError::Disconnected) => {
+                return;
+            }
+            Ok(Order::Command(StreamCommand::Drain)) => draining = true,
+            Ok(Order::Reshaped) => {
+                draining = false;
+                drain_after = None;
+            }
+            Ok(Order::Command(StreamCommand::SetActive(active))) => {
                 let result = if active {
                     stream.request_start()
                 } else {
@@ -365,12 +377,13 @@ impl Opener for Device {
         let (commands, asked) = unbounded();
         let (announced, events) = unbounded();
         let (ready, started) = bounded(1);
+        let (fed, handing) = fed_from(source);
         let clock = Arc::new(StreamClock::behind_by(Frames::ZERO));
         let opening = Opening {
             spec,
             way: self.0.way_for(spec),
             routing: Arc::clone(&self.0),
-            source,
+            fed,
             ready,
             commands: asked,
             announced,
@@ -383,12 +396,9 @@ impl Opener for Device {
                 op: Operation::Open,
                 source,
             })?;
-        opened_within(&started, OPEN_WITHIN)?;
-        Ok(SinkStream::new(
-            events,
-            clock,
-            Box::new(move |command| commands.send(command).map_err(|_| Error::Disconnected)),
-        ))
+        let opened = opened_within(&started, OPEN_WITHIN)?;
+        let reshape = reshaper(opened, Arc::clone(&self.0), handing, commands.clone());
+        Ok(SinkStream::new(events, clock, controlled_by(commands)).reshaped_by(reshape))
     }
 }
 
