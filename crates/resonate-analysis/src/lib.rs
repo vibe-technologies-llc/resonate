@@ -10,6 +10,7 @@ mod reduce;
 mod signature;
 mod spectrogram;
 mod spectrum;
+mod steps;
 mod verdict;
 mod watch;
 
@@ -29,6 +30,7 @@ pub use crate::{
     signature::{Signature, signature_of},
     spectrogram::{Ramp, SPECTROGRAM_COLUMNS, SPECTROGRAM_FLOOR_DB, SPECTROGRAM_ROWS, Spectrogram},
     spectrum::{FLOOR_DB, Spectrum},
+    steps::Steps,
     verdict::{Cutoff, Finding, JUDGED_UNDER, Judgement, LossyGuess, Verdict},
     watch::{Watch, Watching},
 };

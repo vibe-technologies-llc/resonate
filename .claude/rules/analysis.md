@@ -76,7 +76,7 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
 named by FNV-1a of path, span, size, mtime; where only a vault object serves the row, path and span
 (`NO_FILE_STANDS`). `Player::analyse` asks it before decoding and keeps what it decoded. Another
 `JUDGED_UNDER` stamp reads as nothing; judgement is unwritten (`read` runs `judged` over the kept
-spectrum and levels). Reader trusts no shape: envelope with no lanes, over `ENVELOPE_LANES`, or
+spectrum, levels and `Steps`). Reader trusts no shape: envelope with no lanes, over `ENVELOPE_LANES`, or
 columns of no frames → nothing. Unreadable files are deleted; writes staged (`<pid>-<n>.staged`,
 under `writer::Held`) + renamed; `trim` sweeps what a dead writer staged, counts what a living one is
 writing, and drops least lately used past `KEPT_BYTES_AT_MOST`
@@ -85,7 +85,7 @@ record + decode. Headless commands keep nothing.
 
 ## The verdict
 
-`verdict.rs` is pure: `Weighed` (codec, rate, declared depth, float flag, spectrum, levels) →
+`verdict.rs` is pure: `Weighed` (codec, rate, declared depth, float flag, spectrum, levels, steps) →
 `Judgement`: `Verdict` (`Genuine`, `Suspect`, `Fake`, `Lossy`, `NotJudged`) + typed `Finding`s.
 `JUDGED_UNDER` names the heuristic and starts at 1 with 0.1.0 (as the kept analysis's `WRITTEN_AS`
 and the library's baseline do); once released, bump it by hand when its answer or a stored measure
@@ -115,9 +115,41 @@ could change (stored studies and kept analyses are weighed against it).
   DSD: `NotJudged` (decimator draws its own wall). Under `HEARD_AT_LEAST` (5 s) of loud audio:
   nothing judged. Padding judged without the spectrum → `Fake`. Identical channels, clipped runs, DC
   offset: findings only.
-- **Walls and padding only.** AAC 256+ has no findable lowpass and no other statistic tried (band
-  levels, holes, side channel, MDCT counts) separated it from its source. Opus lowpasses at 20 kHz at
-  any bitrate: an Opus transcode is `Suspect`.
+- **A decode of AAC lands on AAC's quantiser steps** (`steps.rs`, `Stepping`, `Finding::AacSteps`
+  → `Fake`). AAC stores each MDCT coefficient as `sign · q^(4/3) · 2^(sf/4)`, and an MDCT taken on
+  the encoder's own 1 024-sample frames with its own window gives back exactly the coefficients the
+  decoder summed (time-domain aliasing cancels), rounding to 16 bits aside. So `4 · log2|c|` taken
+  modulo one sits at one phase for every `q = 1` coefficient whatever its band's scale factor,
+  where a recording's coefficients spread over the circle; the mean of `e^(2πi·4·log2|c|)` (the
+  *lattice*) measures it. Only the mantissa matters, so the phase is a table lookup on its top
+  `MANTISSA_BITS`. Weighed over 4..16 kHz (`STEPS_FROM_HZ`, `STEPS_TO_HZ`) in L, R, mid and side
+  (a band may be coded either way), counting coefficients over `ABOVE_THE_ROUNDING_FLOOR` (8
+  sixteen-bit steps, orthonormal), first two channels, lossless codecs at up to 96 kHz only.
+  Neither the frame offset nor the window is known (a decoder trims its priming, a cut starts
+  anywhere), so the search tries all 1 024 offsets under the sine and the Kaiser-Bessel (α 4)
+  window over `FRAMES_A_SEARCH` frames at `SEARCHES` busy places `SEARCHED_EVERY_SECONDS` apart
+  (a place with under `BUSY_SHARE` of its coefficients counted is skipped, at most
+  `SEARCHES_AT_MOST` tried), ranks by `|Σ|²/n`, then confirms the best `CANDIDATES` over the next
+  `CONFIRMED_FRAMES` frames together with a *control* half a frame off the same grid. `Steps`
+  (lattice, control, coefficients counted) is kept in the study and the kept analysis; the
+  verdict takes it at `LATTICE_AT_LEAST` (0.03), `LATTICE_OVER_ITS_CONTROL_AT_LEAST` (4) times its
+  control and `STEPPED_COEFFICIENTS_AT_LEAST` (100 000): a periodic or synthetic signal that
+  happens to cluster does so at every offset, which the control refuses. A decode resampled,
+  dithered or turned mid-stream loses the steps and is not called. `track_studies` stores only the
+  verdict for it (no basis column). Cost: about 0.12 s a track
+  (`coefficients_on_the_quantiser_steps_are_found_at_any_frame_offset_and_free_ones_are_not`,
+  `ffmpegs_aac_at_256_and_320_kbps_decoded_back_to_flac_lands_on_its_quantiser_steps_and_the_source_does_not`).
+- **What the steps were measured on.** 39 CD and hi-res sources (44.1 to 88.2 kHz, 16 and 24
+  bits), 40 s each, through ffmpeg's AAC at 256 and 320 kbps and back to 16-bit (and 24-bit, and
+  cut 1 000 samples in): every one of the 140 decodes found, lattice 0.10 to 0.42 at 256 kbps and
+  0.043 to 0.39 at 320 kbps, control under 0.016, all on the Kaiser-Bessel grid. faac at 160 kbps
+  (sine window): 18 of 31 over the threshold, the rest under it (no false call, a miss). Every
+  source read 0.0023 at most; the whole library, 450 tracks studied whole, read 0.0034 at most
+  but two YouTube rips at 0.13 and 0.14, both already `Fake` by their walls. The statistics tried
+  before (band levels, 100 Hz holes, the side channel, the top octave's swing, coefficients at the
+  16-bit floor on AAC's grid) separated nothing; the floor count failed because a 16-bit decode
+  fills every zeroed coefficient with rounding noise. No Apple, FhG or fdk encode weighed. Opus
+  lowpasses at 20 kHz at any bitrate: an Opus transcode is `Suspect`.
 
 ## Studies in the catalog
 

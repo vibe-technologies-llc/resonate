@@ -6,7 +6,7 @@ use resonate_core::{
 };
 
 use crate::{
-    AnalysisOp, Envelope, Error, Judgement, Levels, Loudness, Result, Spectrogram, Spectrum,
+    AnalysisOp, Envelope, Error, Judgement, Levels, Loudness, Result, Spectrogram, Spectrum, Steps,
     Watching,
     conform::Walking,
     envelope::Enveloping,
@@ -15,6 +15,7 @@ use crate::{
     print::Printing,
     spectrogram::Spectrographing,
     spectrum::{Transforming, heard_channels},
+    steps::Stepping,
     verdict::{Weighed, judged},
 };
 
@@ -38,6 +39,7 @@ pub struct Study {
     pub levels: Levels,
     pub loudness: Loudness,
     pub spectrum: Spectrum,
+    pub steps: Option<Steps>,
     pub judgement: Judgement,
     pub print: Option<Chromaprint>,
 }
@@ -249,6 +251,11 @@ fn walked<D: Drawing>(
     let mut leveling = Leveling::new(channels, format);
     let mut metering = Metering::new(&placements, rate);
     let mut printing = Printing::new(rate.hz(), channels);
+    let mut stepping = if codec.is_lossless() && codec != Codec::Dsd {
+        Stepping::new(rate.hz(), channels)
+    } else {
+        Stepping::unweighed()
+    };
 
     let mut walking = Walking::new(StreamSpec::new(rate, info.spec.channels, format));
     let mut frames = 0_u64;
@@ -264,6 +271,7 @@ fn walked<D: Drawing>(
         metering.note(heard.samples);
         printing.note(heard.samples);
         drawn.note_block(heard.samples);
+        stepping.note(heard.samples);
         transforming.note(heard.samples, |powers| drawn.note_transform(powers));
 
         frames += (heard.samples.len() / channels) as u64;
@@ -273,6 +281,7 @@ fn walked<D: Drawing>(
     examined.length = Frames(frames).to_duration(rate);
     let spectrum = transforming.finished();
     let levels = leveling.finished();
+    let steps = stepping.finished();
     let judgement = judged(Weighed {
         codec,
         rate: rate.hz(),
@@ -280,6 +289,7 @@ fn walked<D: Drawing>(
         float: format.is_float(),
         spectrum: &spectrum,
         levels: &levels,
+        steps,
     });
 
     Ok((
@@ -288,6 +298,7 @@ fn walked<D: Drawing>(
             levels,
             loudness: metering.finished(),
             spectrum,
+            steps,
             judgement,
             print: printing.finished(examined.length),
         },

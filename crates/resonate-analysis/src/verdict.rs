@@ -2,11 +2,10 @@ use std::time::Duration;
 
 use resonate_codec::Codec;
 
-use crate::{Levels, Spectrum};
+use crate::{Levels, Spectrum, Steps, spectrum::BAND_HZ};
 
-pub const JUDGED_UNDER: u32 = 1;
+pub const JUDGED_UNDER: u32 = 2;
 
-use crate::spectrum::BAND_HZ;
 const WALL_DB: f32 = 30.0;
 const WALL_FLOOR_SLACK_DB: f32 = 15.0;
 const BELOW_WALL_FROM_HZ: f32 = 1_000.0;
@@ -29,6 +28,9 @@ const DC_OFFSET_FROM: f32 = 0.01;
 const LOWEST_FULL_BAND_RATE: u32 = 44_100;
 const ANTI_ALIAS_EDGE: f32 = 0.9;
 const BITS_A_FLOAT_CARRIES: u8 = 24;
+const LATTICE_AT_LEAST: f32 = 0.03;
+const LATTICE_OVER_ITS_CONTROL_AT_LEAST: f32 = 4.0;
+const STEPPED_COEFFICIENTS_AT_LEAST: u64 = 100_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Verdict {
@@ -174,6 +176,9 @@ pub enum Finding {
     DcOffset {
         level: f32,
     },
+    AacSteps {
+        lattice: f32,
+    },
 }
 
 const HZ_A_KILOHERTZ: f32 = 1_000.0;
@@ -237,6 +242,10 @@ impl Finding {
                 "The signal sits off centre by {:.1} dBFS",
                 20.0 * level.max(f32::MIN_POSITIVE).log10()
             ),
+            Self::AacSteps { lattice } => format!(
+                "Its transform on AAC's own frames lands on AAC's quantiser steps ({:.0}% aligned), so it was decoded from AAC",
+                lattice * 100.0
+            ),
         }
     }
 }
@@ -283,6 +292,7 @@ pub(crate) struct Weighed<'a> {
     pub(crate) float: bool,
     pub(crate) spectrum: &'a Spectrum,
     pub(crate) levels: &'a Levels,
+    pub(crate) steps: Option<Steps>,
 }
 
 pub(crate) fn judged(weighed: Weighed<'_>) -> Judgement {
@@ -311,6 +321,11 @@ pub(crate) fn judged(weighed: Weighed<'_>) -> Judgement {
     let upsampled = cutoff.and_then(|cutoff| upsampled_from(cutoff.hz, weighed.rate));
     findings.extend(upsampled.map(|from_hz| Finding::Upsampled { from_hz }));
 
+    let stepped = weighed.steps.filter(on_aac_steps);
+    findings.extend(stepped.map(|steps| Finding::AacSteps {
+        lattice: steps.lattice,
+    }));
+
     let padded = padding(weighed);
     findings.extend(padded);
     findings.extend(incidentals(weighed.levels));
@@ -328,7 +343,10 @@ pub(crate) fn judged(weighed: Weighed<'_>) -> Judgement {
         Verdict::NotJudged
     } else if !weighed.codec.is_lossless() {
         Verdict::Lossy
-    } else if padded.is_some() || (heard_enough && (lossy_wall.is_some() || upsampled.is_some())) {
+    } else if padded.is_some()
+        || stepped.is_some()
+        || (heard_enough && (lossy_wall.is_some() || upsampled.is_some()))
+    {
         Verdict::Fake
     } else if !heard_enough {
         Verdict::NotJudged
@@ -342,6 +360,12 @@ pub(crate) fn judged(weighed: Weighed<'_>) -> Judgement {
         extent_hz,
         findings,
     }
+}
+
+fn on_aac_steps(steps: &Steps) -> bool {
+    steps.coefficients >= STEPPED_COEFFICIENTS_AT_LEAST
+        && steps.lattice >= LATTICE_AT_LEAST
+        && steps.lattice >= steps.control * LATTICE_OVER_ITS_CONTROL_AT_LEAST
 }
 
 fn anti_aliased_from(rate: u32) -> Option<u32> {
@@ -523,6 +547,7 @@ mod tests {
             float: false,
             spectrum,
             levels,
+            steps: None,
         })
     }
 
@@ -558,6 +583,7 @@ mod tests {
                     bits_in_use: Some(bits),
                     ..QUIET
                 },
+                steps: None,
             })
         };
 
@@ -656,6 +682,7 @@ mod tests {
             float: false,
             spectrum: &spectrum,
             levels: &levels,
+            steps: None,
         });
         assert_eq!(judgement.verdict, Verdict::Fake);
         assert_eq!(judgement.padded(), Some((16, 24)));
@@ -672,6 +699,56 @@ mod tests {
         let judgement = judged_as(Codec::Flac, 44_100, &spectrum, &QUIET);
         assert_eq!(judgement.verdict, Verdict::NotJudged);
         assert!(judgement.findings.contains(&Finding::TooLittleHeard));
+    }
+
+    #[test]
+    fn a_flac_on_aacs_quantiser_steps_is_fake_only_where_the_steps_stand_alone_and_counted() {
+        let spectrum = spectrum_of(44_100, music_up_to(21_600.0));
+        let weighed = |steps| {
+            judged(Weighed {
+                codec: Codec::Flac,
+                rate: 44_100,
+                declared_bits: Some(16),
+                float: false,
+                spectrum: &spectrum,
+                levels: &QUIET,
+                steps: Some(steps),
+            })
+        };
+        let stepped = Steps {
+            lattice: 0.15,
+            control: 0.004,
+            coefficients: 900_000,
+        };
+
+        let judgement = weighed(stepped);
+        assert_eq!(judgement.verdict, Verdict::Fake);
+        assert!(
+            judgement
+                .findings
+                .contains(&Finding::AacSteps { lattice: 0.15 })
+        );
+
+        let everywhere = weighed(Steps {
+            control: 0.1,
+            ..stepped
+        });
+        assert_eq!(everywhere.verdict, Verdict::Genuine);
+        let few = weighed(Steps {
+            coefficients: 50_000,
+            ..stepped
+        });
+        assert_eq!(few.verdict, Verdict::Genuine);
+        let loose = weighed(Steps {
+            lattice: 0.003,
+            control: 0.0005,
+            ..stepped
+        });
+        assert_eq!(loose.verdict, Verdict::Genuine);
+        assert_eq!(
+            judged_as(Codec::Aac, 44_100, &spectrum, &QUIET).verdict,
+            Verdict::Lossy
+        );
     }
 
     #[test]
@@ -726,6 +803,7 @@ mod tests {
                 runs: 3,
             },
             Finding::DcOffset { level: 0.1 },
+            Finding::AacSteps { lattice: 0.3 },
         ];
         assert!(findings.iter().all(|finding| !finding.told().is_empty()));
         assert_eq!(

@@ -14,7 +14,7 @@ use resonate_core::{
 };
 
 use crate::{
-    Analysis, Envelope, Examined, Levels, Loudness, Spectrogram, Spectrum, Stereo, Study,
+    Analysis, Envelope, Examined, Levels, Loudness, Spectrogram, Spectrum, Steps, Stereo, Study,
     envelope::ENVELOPE_LANES,
     spectrogram::SPECTROGRAM_ROWS,
     verdict::{JUDGED_UNDER, Weighed, judged},
@@ -22,7 +22,7 @@ use crate::{
 
 const MAGIC: &[u8; 4] = b"RSAN";
 
-const WRITTEN_AS: u8 = 1;
+const WRITTEN_AS: u8 = 2;
 
 const KEPT_AS: &str = "analysis";
 
@@ -320,6 +320,11 @@ fn written(analysis: &Analysis) -> Vec<u8> {
     writer.levels(spectrum.levels());
     writer.levels(spectrum.typical());
     writer.duration(spectrum.heard());
+    writer.maybe(study.steps, |writer, steps| {
+        writer.f32(steps.lattice);
+        writer.f32(steps.control);
+        writer.u64(steps.coefficients);
+    });
 
     writer.maybe(study.print.as_ref(), |writer, print| {
         writer.bytes(print.encoded().as_bytes());
@@ -399,6 +404,13 @@ pub(crate) fn read(bytes: &[u8]) -> Option<Analysis> {
     let spectrum_levels = reader.levels()?;
     let typical = reader.levels()?;
     let spectrum = Spectrum::new(bin_hz, spectrum_levels, reader.duration()?).with_typical(typical);
+    let steps = reader.maybe(|reader| {
+        Some(Steps {
+            lattice: reader.f32()?,
+            control: reader.f32()?,
+            coefficients: reader.u64()?,
+        })
+    })?;
     let reaches_hz = spectrum.nyquist_hz();
     if !reaches_hz.is_finite() || reaches_hz > examined.rate.hz() as f32 {
         return None;
@@ -464,6 +476,7 @@ pub(crate) fn read(bytes: &[u8]) -> Option<Analysis> {
         float: examined.format.is_float(),
         spectrum: &spectrum,
         levels: &levels,
+        steps,
     });
 
     Some(Analysis {
@@ -472,6 +485,7 @@ pub(crate) fn read(bytes: &[u8]) -> Option<Analysis> {
             levels,
             loudness,
             spectrum,
+            steps,
             judgement,
             print,
         },
@@ -546,6 +560,11 @@ mod tests {
             declared_bits: Some(16),
             length: Duration::from_millis(12_345),
         };
+        let steps = Some(Steps {
+            lattice: 0.42,
+            control: 0.01,
+            coefficients: 1_500_000,
+        });
         Analysis {
             study: Study {
                 judgement: judged(Weighed {
@@ -555,6 +574,7 @@ mod tests {
                     float: false,
                     spectrum: &spectrum,
                     levels: &levels,
+                    steps,
                 }),
                 examined,
                 levels,
@@ -567,6 +587,7 @@ mod tests {
                     true_peak: 0.95,
                 },
                 spectrum,
+                steps,
                 print: Chromaprint::new("AQAA", Duration::from_secs(12)).ok(),
             },
             envelope: Envelope {
