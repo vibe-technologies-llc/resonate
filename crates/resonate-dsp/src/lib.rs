@@ -8,12 +8,13 @@ mod gain;
 mod overs;
 mod peak;
 mod phase;
+mod recall;
 mod remix;
 mod resample;
 mod restore;
 
 pub use crate::{
-    chain::{Chain, ChainBuilder, Front},
+    chain::{Back, Chain, ChainBuilder, Front},
     convolve::{Convolver, Impulse, partition_frames_at},
     dither::{Dither, DitherKind, NoiseShaping},
     eq::{Easing, Equaliser},
@@ -22,6 +23,7 @@ pub use crate::{
     overs::Overs,
     peak::{TruePeak, TruePeakMeter},
     phase::FilterPhase,
+    recall::Recall,
     remix::Remix,
     resample::{Quality, Resampler, ResamplerConfig, SincParams},
     restore::{Restoration, Restore, RestoreConfig, Tuning},

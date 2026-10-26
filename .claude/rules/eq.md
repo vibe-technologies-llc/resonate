@@ -88,6 +88,11 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   should attenuate a boost.
 - **In force it makes the plan `Converted`.** **A DoP-packed stream refuses it**: `untouched` writes
   `equalisation: None`, `dop_survives` gates on `eq_config`.
+- **A change on a stream already playing is spliced into what the ring holds** (`audio.md`): a
+  fresh back from the new plan is run again over the frames the front handed on and blended in
+  over `SPLICE_BLENDED_OVER`, so a change is heard a few pulls after it is asked for whatever the
+  buffer. The fresh stage starts settled wet; its own easing and the retune below are the
+  fallback where no splice can be made.
 - **First band added / last removed reshape the chain, not reopen the stream.** `retune` swaps in a
   chain from the new plan wherever `OutputPlan::becomes_on_the_same_stream` allows (`audio.md`),
   carrying a running resampler or convolver. The stage crossfades itself: *entering* a playing

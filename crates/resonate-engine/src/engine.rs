@@ -16,9 +16,10 @@ use resonate_core::{
     AppliedGain, AudioBuffer, FrameSpan, Frames, Gain, MeasuredGain, MediaLocation, RtFault,
     SampleRate, Span, StreamSpec, TrackHints, TrackId, Volume,
 };
-use resonate_dsp::{Chain, Easing};
+use resonate_dsp::{Chain, Easing, Recall};
 use smallvec::SmallVec;
 
+use self::splicing::{Splicing, recall_for};
 use crate::{
     Backend, Command, CommandKind, EngineConfig, Error, Event, Opener, OutputMode, OutputPlan,
     OutputSettings, OutputStatus, PlaybackState, PlayerState, Published, RepeatMode,
@@ -36,6 +37,8 @@ use crate::{
     surveying::{Surveyed, Surveying},
     turns::Turns,
 };
+
+mod splicing;
 
 const SINK_TIMEOUT: Duration = Duration::from_secs(2);
 const SHORTEST_TICK: Duration = Duration::from_millis(4);
@@ -341,6 +344,12 @@ enum Tail {
     Played,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Retuning {
+    Level,
+    Equaliser,
+}
+
 fn carried_samples(chain: &Chain, stream: StreamSpec) -> usize {
     chain.max_output_frames() * stream.channel_count().get() as usize
 }
@@ -380,6 +389,8 @@ struct Output {
     overs_of_retired_chains: u64,
     handed: Option<Handed>,
     format_owed_since: Option<Instant>,
+    recall: Recall,
+    splice_owed: bool,
 }
 
 struct Retiring {
@@ -473,6 +484,7 @@ impl Output {
             ring(plan.stream, capacity, plan.silence(), fade, entering, level);
 
         let widened = vec![0.0; CHAIN_BLOCK * source.channel_count().get() as usize];
+        let recall = recall_for(plan.stream, capacity);
         let carrier = vec![0.0; carried_samples(&chain, plan.stream)];
         let staged = AudioBuffer::silence(plan.stream, chain.max_output_frames());
         let tapping = match plan.packing {
@@ -533,6 +545,8 @@ impl Output {
             overs_of_retired_chains: 0,
             handed: None,
             format_owed_since: None,
+            recall,
+            splice_owed: false,
         })
     }
 
@@ -641,7 +655,10 @@ impl Output {
         if self.chain.max_flush_frames() == 0 {
             return;
         }
-        let frames = match self.chain.flush(&mut self.carrier) {
+        let frames = match self
+            .chain
+            .flush_recalled(&mut self.carrier, &mut self.recall)
+        {
             Ok(frames) => frames,
             Err(error) => {
                 tracing::error!(%error, "the chain's held frames did not fit the carrier; they were dropped");
@@ -667,7 +684,7 @@ impl Output {
     }
 
     fn buffered(&self) -> usize {
-        self.capacity.saturating_sub(self.producer.free_frames())
+        self.producer.held_frames()
     }
 
     fn tapped(&self) -> Tapped {
@@ -680,7 +697,8 @@ impl Output {
         let Some(tapping) = self.tapping.as_ref() else {
             return;
         };
-        let downstream = (self.buffered() as u64).saturating_add(self.latency().get());
+        let downstream = (self.producer.written_ahead_of_the_graph() as u64)
+            .saturating_add(self.latency().get());
         tapping.hear(downstream, moving && self.stream.is_some());
     }
 
@@ -1000,6 +1018,7 @@ impl Engine {
                 self.take_what_was_decoded();
                 self.pump();
                 self.finish_reshaping();
+                self.splice_what_is_owed();
                 self.finish_fading();
                 self.promote();
                 self.collect_faults();
@@ -1084,6 +1103,16 @@ impl Engine {
 
         let budget = if self.is_fading() {
             budget.min(FADED_OVER)
+        } else {
+            budget
+        };
+        let budget = if self.playing
+            && self
+                .output
+                .as_ref()
+                .is_some_and(|output| output.splice_owed)
+        {
+            budget.min(SHORTEST_TICK)
         } else {
             budget
         };
@@ -1509,7 +1538,7 @@ impl Engine {
             }
             Command::SetEqualisation(equalisation) => {
                 self.config.equaliser = equalisation;
-                self.retune()
+                self.retune_for(Retuning::Equaliser)
             }
             Command::SetBitPerfect(prefer) => {
                 self.config.prefer_bit_perfect = prefer;
@@ -2090,6 +2119,7 @@ impl Engine {
 
         if let Some(output) = self.output.as_mut() {
             output.chain.reset();
+            output.recall.forget();
             output.producer.discard_buffered();
             output.discarding_since = Some(Instant::now());
             if let Some(tapping) = output.tapping.as_ref() {
@@ -2362,6 +2392,33 @@ impl Engine {
     }
 
     fn retune(&mut self) -> Result<()> {
+        self.retune_for(Retuning::Level)
+    }
+
+    fn splice_the_back(&mut self, wanted: OutputPlan) -> Result<Splicing> {
+        let (Some(track), Some(output)) = (self.track.as_mut(), self.output.as_mut()) else {
+            return Ok(Splicing::Unspliceable);
+        };
+        output.splice_the_back(track, wanted, &self.config)
+    }
+
+    fn splice_what_is_owed(&mut self) {
+        let owed = self
+            .output
+            .as_ref()
+            .is_some_and(|output| output.splice_owed && !output.producer.is_splicing());
+        if !owed {
+            return;
+        }
+        if let Some(output) = self.output.as_mut() {
+            output.splice_owed = false;
+        }
+        if let Err(error) = self.retune_for(Retuning::Equaliser) {
+            tracing::warn!(%error, "the equaliser owed to what the ring held could not be rendered");
+        }
+    }
+
+    fn retune_for(&mut self, retuning: Retuning) -> Result<()> {
         self.weigh_whose_volume_it_is();
         let (Some(track), Some(output)) = (self.track.as_ref(), self.output.as_mut()) else {
             return Ok(());
@@ -2399,6 +2456,19 @@ impl Engine {
             .producer
             .hear_at(heard_amplitude(&wanted, self.muted));
 
+        if retuning == Retuning::Equaliser && wanted.equalisation != output.plan.equalisation {
+            match self.splice_the_back(wanted.clone())? {
+                Splicing::Spliced(status) => {
+                    self.emit(Event::OutputChanged(status));
+                    return Ok(());
+                }
+                Splicing::Owed => return Ok(()),
+                Splicing::Unspliceable => {}
+            }
+        }
+        let Some(output) = self.output.as_mut() else {
+            return Ok(());
+        };
         if wanted.same_shape_as(&output.plan) {
             output.chain.set_gain(
                 output.attenuator.leaves(self.config.volume),
@@ -2814,6 +2884,7 @@ impl Engine {
                 if written == 0 {
                     return Ok(Filled::AsFarAsItGoes);
                 }
+                output.recall_written(&track.decoded, track.decoded_at, written);
                 if let Some(tapping) = output.tapping.as_mut() {
                     tapping.rendered_at(output.producer.rendering());
                     tapping.record(&track.decoded, track.decoded_at, written);
@@ -2846,7 +2917,9 @@ impl Engine {
             return false;
         };
 
-        let count = output.chain.process(input, &mut output.carrier);
+        let count = output
+            .chain
+            .process_recalled(input, &mut output.carrier, &mut output.recall);
 
         track.decoded_at = track
             .decoded_at
@@ -2866,7 +2939,10 @@ impl Engine {
             output.end();
             return;
         }
-        let frames = match output.chain.flush(&mut output.carrier) {
+        let frames = match output
+            .chain
+            .flush_recalled(&mut output.carrier, &mut output.recall)
+        {
             Ok(frames) => frames,
             Err(error) => {
                 tracing::error!(%error, "the chain's tail did not fit the carrier; it was dropped");

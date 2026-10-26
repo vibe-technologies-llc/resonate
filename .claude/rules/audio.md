@@ -370,6 +370,36 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   amplitude, `ahead` = rendered but not yet in the ring, so the boundary lands on the exact frame.
   The heard level walks to the wanted one over `FADED_OVER`; a frame rendered at the heard level is
   untouched. The gain stage steps; the ring is the only ramp. The DoP ring is never trimmed.
+- **An equaliser change is heard within a few pulls, not a ring later: what the ring holds is
+  rendered again from the frames that made it and spliced in.** Not on the pull side: the ring
+  carries sink words after dither, so the callback would run biquads, guard, dither and the
+  narrowing. The chain's *back* (equaliser, gain, guard or `Overs`, dither; `then_the_back` marks
+  where `backed` starts, `Chain::back` names it) is fed by its front (remix, restoration, resampler,
+  convolver), and every frame entering the back is kept in a `Recall` (`resonate-dsp`, f64 at the
+  sink rate, two rings, `ROLLED_IN_BEFORE_A_SPLICE` and a block deep, at most `LARGEST_RING` bytes;
+  `process_recalled`/`flush_recalled`, and the transparent path widens what it writes). On
+  `SetEqualisation` (`Retuning::Equaliser`) over the same front (`OutputPlan::fronts_alike`),
+  `Output::splice_the_back` takes a point (`RingProducer::splice_point`: the graph's read position
+  plus `SPLICED_AHEAD_AT_LEAST` or two of its last pulls, whichever is more), builds a fresh back
+  from the wanted plan (`OutputPlan::build_the_back`, sized by the old `Back`), runs it over the
+  recall from `ROLLED_IN_BEFORE_A_SPLICE` (100 ms) before the point so its filters settle, blends
+  the first `SPLICE_BLENDED_OVER` (20 ms) linearly from the words already written (the producer
+  mirrors what it pushed, `widen_what_was_written`), writes the rest behind everything the ring
+  holds (`write_spliced`) and publishes `splice(at, to)`: the consumer plays to `at`, passes over
+  the stale frames to `to` and plays on from the new ones; reaching it late, it passes over as many
+  new frames as it played past `at`, so time is kept. The front is rejoined to the new back
+  (`Chain::rejoined`): no resampler or convolver is rebuilt and the decoder never seeks. **The ring
+  keeps room for it:** rtrb is `1 + RINGS_OF_ROOM_A_SPLICE_MAY_TAKE` rings deep, `free_frames`
+  still fills to one; `held_frames` (to be heard, stale excluded) is what positions, priming and the
+  run loop read, the tap reads `written_ahead_of_the_graph`, and the recall counts heard frames
+  (`heard_as` takes off what splices passed over). **One splice at a time:** a change asked while
+  one waits for the graph is owed (`Output::splice_owed`, the loop ticking at `SHORTEST_TICK`) and
+  made from the config once the graph has passed it. Where none can be made (DoP, a draining tail,
+  a ring holding less than the blend past the point, a discard in flight) the chain is retuned or
+  reshaped as below and heard a ring later. Overs in the re-rendered stretch are counted again
+  (`an_equaliser_change_is_heard_within_a_few_pulls_rather_than_a_buffer_later_and_keeps_the_music_in_time`,
+  `equaliser_changes_asked_for_faster_than_the_graph_reaches_them_end_on_the_last`,
+  `a_splice_the_graph_reached_late_keeps_time_rather_than_playing_frames_again`).
 - **A mute is the ring's, not the chain's.** `Command::SetVolume(Volume::MUTE)` over a volume above
   it sets `Engine::muted` and leaves `EngineConfig::volume`, so the chain keeps rendering at the
   volume that comes back. The PCM ring ramps to zeros; the DoP ring feeds marked silence; the stream
@@ -414,7 +444,8 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   the source handed back: another target, another `no_convert`, `realtime` or latency, a pinned rate
   that moves or a pin switched (`node.rate` is a connect-time property here), a feed not yet taken,
   formats the graph would not take (`a_live_stream_takes_a_new_source_and_a_new_rate_without_reopening`).
-- **Leaving/returning to unity gain and switching the equaliser reshape the chain in place.**
+- **Leaving/returning to unity gain and switching the equaliser reshape the chain in place**
+  where no splice can be made (above).
   `retune` builds the wanted plan against the open stream. `OutputPlan::same_shape_as`: retune the
   chain. Else `OutputPlan::becomes_on_the_same_stream` (same `stream`, `packing`, `remix`,
   `resample`, convolution by `Arc<Impulse>` pointer, and under a resampler or convolver the same

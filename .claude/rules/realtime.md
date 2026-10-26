@@ -45,7 +45,10 @@ rest on this discipline alone):
   nothing and touches no lock. The buffer handling and the fill are on the host as well, so their
   tests run there.
 - `resonate-engine/src/ring.rs`: what the graph pulls from; fader and trim scale in place, fade
-  state from atomics, each rendered level's start from a preallocated SPSC queue.
+  state from atomics, each rendered level's start from a preallocated SPSC queue. A splice (an
+  equaliser change, `audio.md`) arrives as two atomics behind a `Release`d count; the consumer pops
+  to its point, commits the stale frames unread and stores the count back, all within the ring's
+  own preallocated bytes.
 - `resonate-pipewire/src/process.rs`: the callback: playback `Cycle`, capture `Hearing` (reads each
   quantum's chunk by its own offset and size, hands bytes to an `AudioSink`). A reshape's new
   `Feed` arrives through a preallocated `rtrb` queue and the old one leaves through another, so

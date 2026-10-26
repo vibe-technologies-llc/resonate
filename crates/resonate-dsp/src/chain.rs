@@ -2,7 +2,7 @@ use std::{mem, sync::Arc};
 
 use resonate_core::{AppliedGain, StreamSpec, Volume, eq::Profile};
 
-use crate::{Easing, Error, ProcessCount, Processor, Result};
+use crate::{Easing, Error, ProcessCount, Processor, Recall, Result};
 
 pub struct Chain {
     stages: Vec<Box<dyn Processor>>,
@@ -16,6 +16,15 @@ pub struct Chain {
     max_output_frames: usize,
     max_flush_frames: usize,
     latency: f64,
+    back: Back,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Back {
+    pub from: usize,
+    pub spec: StreamSpec,
+    pub frames_in: usize,
+    pub draining_in: usize,
 }
 
 pub struct Front {
@@ -37,6 +46,8 @@ impl Chain {
             front: None,
             stages: Vec::new(),
             max_frames_in: 0,
+            draining_in: 0,
+            back_from: None,
         }
     }
 
@@ -46,7 +57,18 @@ impl Chain {
             front: Some(front),
             stages: Vec::new(),
             max_frames_in: 0,
+            draining_in: 0,
+            back_from: None,
         }
+    }
+
+    pub fn rejoined(front: Front, back: Self, max_frames_in: usize) -> Self {
+        let back_from = front.stages.len();
+        let mut stages = front.stages;
+        let mut specs = front.specs;
+        stages.extend(back.stages);
+        specs.extend(back.specs);
+        assembled(front.input, stages, specs, max_frames_in, 0, back_from)
     }
 
     fn front_len(&self) -> Option<usize> {
@@ -63,6 +85,15 @@ impl Chain {
 
     pub fn take_the_front(&mut self) -> Option<Front> {
         let taken = self.front_len()?;
+        Some(self.take_the_first(taken))
+    }
+
+    pub fn take_what_comes_before_the_back(&mut self) -> Front {
+        self.take_the_first(self.back.from)
+    }
+
+    fn take_the_first(&mut self, taken: usize) -> Front {
+        let taken = taken.min(self.stages.len());
         let front = Front {
             stages: self.stages.drain(..taken).collect(),
             specs: self.specs.drain(..taken).collect(),
@@ -73,7 +104,8 @@ impl Chain {
         self.input_channels = self.input.channel_count().get() as usize;
         self.max_flush_frames = flushed_through(&self.stages);
         self.latency = 0.0;
-        Some(front)
+        self.back.from = self.back.from.saturating_sub(taken);
+        front
     }
 
     #[cfg(test)]
@@ -99,6 +131,10 @@ impl Chain {
 
     pub const fn max_flush_frames(&self) -> usize {
         self.max_flush_frames
+    }
+
+    pub const fn back(&self) -> Back {
+        self.back
     }
 
     pub fn reset(&mut self) {
@@ -163,11 +199,34 @@ impl Chain {
     }
 
     pub fn process(&mut self, input: &[f64], output: &mut [f64]) -> ProcessCount {
+        self.processed(input, output, None)
+    }
+
+    pub fn process_recalled(
+        &mut self,
+        input: &[f64],
+        output: &mut [f64],
+        recall: &mut Recall,
+    ) -> ProcessCount {
+        self.processed(input, output, Some(recall))
+    }
+
+    fn processed(
+        &mut self,
+        input: &[f64],
+        output: &mut [f64],
+        mut recall: Option<&mut Recall>,
+    ) -> ProcessCount {
         let widths = &self.widths;
+        let back_from = self.back.from;
+        let output_channels = self.output_channels;
         let [front, back] = &mut self.scratch;
 
         let Some((last, leading)) = self.stages.split_last_mut() else {
             let frames = Self::copy(input, output) / self.input_channels;
+            if let Some(recall) = recall {
+                recall.enter(output.get(..frames * output_channels).unwrap_or_default());
+            }
             return ProcessCount {
                 frames_in: frames,
                 frames_out: frames,
@@ -180,12 +239,17 @@ impl Chain {
         let mut frames = 0;
         let mut channels = self.input_channels;
 
-        for (stage, width) in leading.iter_mut().zip(widths) {
+        for (at, (stage, width)) in leading.iter_mut().zip(widths).enumerate() {
             let taken = match frames_in {
                 None => input,
                 Some(_) => source.get(..frames * channels).unwrap_or_default(),
             };
             let count = stage.process(taken, destination);
+            if at == back_from
+                && let Some(recall) = recall.as_deref_mut()
+            {
+                recall.enter(taken.get(..count.frames_in * channels).unwrap_or_default());
+            }
             frames_in.get_or_insert(count.frames_in);
             frames = count.frames_out;
             channels = *width;
@@ -197,6 +261,17 @@ impl Chain {
             Some(_) => source.get(..frames * channels).unwrap_or_default(),
         };
         let count = last.process(taken, output);
+        if let Some(recall) = recall {
+            if back_from == leading.len() {
+                recall.enter(taken.get(..count.frames_in * channels).unwrap_or_default());
+            } else if back_from > leading.len() {
+                recall.enter(
+                    output
+                        .get(..count.frames_out * output_channels)
+                        .unwrap_or_default(),
+                );
+            }
+        }
 
         ProcessCount {
             frames_in: frames_in.unwrap_or(count.frames_in),
@@ -205,6 +280,14 @@ impl Chain {
     }
 
     pub fn flush(&mut self, output: &mut [f64]) -> Result<usize> {
+        self.flushed(output, None)
+    }
+
+    pub fn flush_recalled(&mut self, output: &mut [f64], recall: &mut Recall) -> Result<usize> {
+        self.flushed(output, Some(recall))
+    }
+
+    fn flushed(&mut self, output: &mut [f64], recall: Option<&mut Recall>) -> Result<usize> {
         let capacity = output.len() / self.output_channels;
         if capacity < self.max_flush_frames {
             return Err(Error::OutputTooSmall {
@@ -212,18 +295,27 @@ impl Chain {
                 required: self.max_flush_frames,
             });
         }
-        Ok(self.drained_into(output))
+        Ok(self.drained_into(output, recall))
     }
 
-    fn drained_into(&mut self, output: &mut [f64]) -> usize {
+    fn drained_into(&mut self, output: &mut [f64], mut recall: Option<&mut Recall>) -> usize {
         let widths = &self.widths;
+        let back_from = self.back.from;
+        let output_channels = self.output_channels;
+        let stage_count = self.stages.len();
         let [front, back] = &mut self.scratch;
 
         let Some((last, leading)) = self.stages.split_last_mut() else {
             return 0;
         };
         let Some((first, middle)) = leading.split_first_mut() else {
-            return last.flush(output);
+            let drained = last.flush(output);
+            if back_from >= stage_count
+                && let Some(recall) = recall
+            {
+                recall.enter(output.get(..drained * output_channels).unwrap_or_default());
+            }
+            return drained;
         };
 
         let mut source = front.as_mut_slice();
@@ -233,16 +325,32 @@ impl Chain {
         let mut channels = widths.first().copied().unwrap_or(self.input_channels);
         mem::swap(&mut source, &mut destination);
 
-        for (stage, width) in middle.iter_mut().zip(widths.iter().skip(1)) {
+        for (at, (stage, width)) in middle.iter_mut().zip(widths.iter().skip(1)).enumerate() {
             let taken = source.get(..frames * channels).unwrap_or_default();
+            if at + 1 == back_from
+                && let Some(recall) = recall.as_deref_mut()
+            {
+                recall.enter(taken);
+            }
             frames = Self::drained_through(stage.as_mut(), taken, destination, *width);
             channels = *width;
             mem::swap(&mut source, &mut destination);
         }
 
         let taken = source.get(..frames * channels).unwrap_or_default();
+        if back_from + 1 == stage_count
+            && let Some(recall) = recall.as_deref_mut()
+        {
+            recall.enter(taken);
+        }
         let width = widths.last().copied().unwrap_or(channels);
-        Self::drained_through(last.as_mut(), taken, output, width)
+        let drained = Self::drained_through(last.as_mut(), taken, output, width);
+        if back_from >= stage_count
+            && let Some(recall) = recall
+        {
+            recall.enter(output.get(..drained * output_channels).unwrap_or_default());
+        }
+        drained
     }
 
     fn drained_through(
@@ -272,6 +380,8 @@ pub struct ChainBuilder {
     front: Option<Front>,
     stages: Vec<Box<dyn Processor>>,
     max_frames_in: usize,
+    draining_in: usize,
+    back_from: Option<usize>,
 }
 
 struct Measure {
@@ -283,6 +393,17 @@ struct Measure {
 }
 
 impl Measure {
+    fn from(input: StreamSpec, frames: usize, draining: usize) -> Self {
+        let channels = input.channel_count().get() as usize;
+        Self {
+            spec: input,
+            frames,
+            draining,
+            samples: frames.max(draining).saturating_mul(channels),
+            latency: 0.0,
+        }
+    }
+
     fn through(&mut self, stage: &dyn Processor, next: StreamSpec) {
         self.draining = stage
             .max_output_frames(self.draining)
@@ -295,6 +416,54 @@ impl Measure {
         self.latency = self.latency * f64::from(next.rate.hz()) / f64::from(self.spec.rate.hz())
             + stage.latency_frames();
         self.spec = next;
+    }
+
+    const fn back_from_here(&self, from: usize) -> Back {
+        Back {
+            from,
+            spec: self.spec,
+            frames_in: self.frames,
+            draining_in: self.draining,
+        }
+    }
+}
+
+fn assembled(
+    input: StreamSpec,
+    stages: Vec<Box<dyn Processor>>,
+    specs: Vec<StreamSpec>,
+    max_frames_in: usize,
+    draining_in: usize,
+    back_from: usize,
+) -> Chain {
+    let input_channels = input.channel_count().get() as usize;
+    let mut measure = Measure::from(input, max_frames_in, draining_in);
+    let mut back = None;
+    for (at, (stage, next)) in stages.iter().zip(&specs).enumerate() {
+        if at == back_from {
+            back = Some(measure.back_from_here(at));
+        }
+        measure.through(stage.as_ref(), *next);
+    }
+    let back = back.unwrap_or_else(|| measure.back_from_here(stages.len()));
+
+    let widths: Vec<usize> = specs
+        .iter()
+        .map(|spec| spec.channel_count().get() as usize)
+        .collect();
+    Chain {
+        output_channels: widths.last().copied().unwrap_or(input_channels),
+        stages,
+        specs,
+        widths,
+        scratch: [vec![0.0; measure.samples], vec![0.0; measure.samples]],
+        input,
+        input_channels,
+        max_process_frames: measure.frames,
+        max_output_frames: measure.frames.max(measure.draining),
+        max_flush_frames: measure.draining,
+        latency: measure.latency,
+        back,
     }
 }
 
@@ -311,19 +480,24 @@ impl ChainBuilder {
         self
     }
 
+    #[must_use]
+    pub const fn draining_in(mut self, frames: usize) -> Self {
+        self.draining_in = frames;
+        self
+    }
+
+    #[must_use]
+    pub fn then_the_back(mut self) -> Self {
+        self.back_from = Some(self.stages.len());
+        self
+    }
+
     pub const fn input(&self) -> StreamSpec {
         self.input
     }
 
     pub fn build(self) -> Result<Chain> {
-        let input_channels = self.input.channel_count().get() as usize;
-        let mut measure = Measure {
-            spec: self.input,
-            frames: self.max_frames_in,
-            draining: 0,
-            samples: self.max_frames_in.saturating_mul(input_channels),
-            latency: 0.0,
-        };
+        let mut measure = Measure::from(self.input, self.max_frames_in, self.draining_in);
         let mut stages: Vec<Box<dyn Processor>> = Vec::new();
         let mut specs: Vec<StreamSpec> = Vec::new();
 
@@ -334,7 +508,11 @@ impl ChainBuilder {
                 specs.push(next);
             }
         }
-        for mut stage in self.stages {
+        let mut back_from = None;
+        for (at, mut stage) in self.stages.into_iter().enumerate() {
+            if self.back_from == Some(at) {
+                back_from = Some(stages.len());
+            }
             if stage.is_transparent() {
                 continue;
             }
@@ -344,24 +522,16 @@ impl ChainBuilder {
             stages.push(stage);
             specs.push(next);
         }
+        let back_from = back_from.unwrap_or(stages.len());
 
-        let widths: Vec<usize> = specs
-            .iter()
-            .map(|spec| spec.channel_count().get() as usize)
-            .collect();
-        Ok(Chain {
-            output_channels: widths.last().copied().unwrap_or(input_channels),
+        Ok(assembled(
+            self.input,
             stages,
             specs,
-            widths,
-            scratch: [vec![0.0; measure.samples], vec![0.0; measure.samples]],
-            input: self.input,
-            input_channels,
-            max_process_frames: measure.frames,
-            max_output_frames: measure.frames.max(measure.draining),
-            max_flush_frames: measure.draining,
-            latency: measure.latency,
-        })
+            self.max_frames_in,
+            self.draining_in,
+            back_from,
+        ))
     }
 }
 
@@ -455,6 +625,85 @@ mod tests {
             after,
             straight[before.len()..],
             "the carried resampler did not pick up where it left off"
+        );
+    }
+
+    #[test]
+    fn a_back_run_again_over_what_entered_it_renders_what_the_chain_did_and_joins_its_front() {
+        const BLOCKS: usize = 8;
+        let input: Vec<f64> = (0..BLOCK * BLOCKS * 2)
+            .map(|sample| (sample as f64 * 0.01).sin() * 0.8)
+            .collect();
+        let blocks: Vec<&[f64]> = input.chunks(BLOCK * 2).collect();
+        let fronted = || {
+            Chain::builder(spec(SampleRate::HZ_44100))
+                .max_frames_in(BLOCK)
+                .push(resampler(SampleRate::HZ_44100, SampleRate::HZ_48000))
+                .then_the_back()
+        };
+        let backed = |builder: ChainBuilder| {
+            builder
+                .push(attenuator())
+                .push(Box::new(TruePeak::new()))
+                .build()
+                .expect("a resampler, a gain and a guard build")
+        };
+        let mut whole = backed(fronted());
+        let mut recall = Recall::new(
+            std::num::NonZeroUsize::new(2).expect("two channels"),
+            BLOCK * BLOCKS * 4,
+        );
+        let mut output = vec![0.0; whole.max_output_frames() * 2];
+        let mut straight = Vec::new();
+        for block in &blocks[..BLOCKS / 2] {
+            let count = whole.process_recalled(block, &mut output, &mut recall);
+            straight.extend_from_slice(&output[..count.frames_out * 2]);
+        }
+
+        let edge = whole.back();
+        assert_eq!(edge.from, 1);
+        assert_eq!(edge.spec.rate, SampleRate::HZ_48000);
+        let mut again = backed(
+            Chain::builder(edge.spec)
+                .max_frames_in(edge.frames_in)
+                .draining_in(edge.draining_in)
+                .then_the_back(),
+        );
+        let mut entering = vec![0.0; edge.frames_in * 2];
+        let mut rendered = vec![0.0; again.max_output_frames() * 2];
+        let mut heard_again = Vec::new();
+        let mut next = 0;
+        while next < recall.entered() {
+            let frames = recall.recalled(next, &mut entering);
+            next += frames as u64;
+            let count = again.process(&entering[..frames * 2], &mut rendered);
+            heard_again.extend_from_slice(&rendered[..count.frames_out * 2]);
+        }
+        assert_eq!(
+            heard_again, straight,
+            "the back run again over what entered it rendered something else"
+        );
+
+        let front = whole.take_what_comes_before_the_back();
+        let mut joined = Chain::rejoined(front, again, BLOCK);
+        let mut reference = backed(fronted());
+        let mut expected = Vec::new();
+        let mut output = vec![0.0; reference.max_output_frames() * 2];
+        for block in &blocks {
+            let count = reference.process(block, &mut output);
+            expected.extend_from_slice(&output[..count.frames_out * 2]);
+        }
+        let mut output = vec![0.0; joined.max_output_frames() * 2];
+        for block in &blocks[BLOCKS / 2..] {
+            let count = joined.process_recalled(block, &mut output, &mut recall);
+            heard_again.extend_from_slice(&output[..count.frames_out * 2]);
+        }
+
+        assert_eq!(joined.back().from, 1);
+        assert_eq!(joined.max_output_frames(), reference.max_output_frames());
+        assert_eq!(
+            heard_again, expected,
+            "the joined chain did not go on where the front and the back each left off"
         );
     }
 

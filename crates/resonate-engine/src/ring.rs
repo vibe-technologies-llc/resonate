@@ -20,6 +20,7 @@ use resonate_core::{AudioBuffer, Frames, RtFault, SampleFormat, Silence, StreamS
 
 const FAULT_SLOTS: usize = 64;
 const RENDERED_SLOTS: usize = 1024;
+const RINGS_OF_ROOM_A_SPLICE_MAY_TAKE: usize = 1;
 
 pub const FADED_OVER: Duration = Duration::from_millis(10);
 
@@ -59,13 +60,15 @@ pub fn ring(
 ) -> (RingProducer, RingConsumer, RingMonitor) {
     let bytes_per_frame = spec.bytes_per_frame();
     let bytes = spec.frames_to_bytes(capacity) as usize;
-    let (producer, consumer) = rtrb::RingBuffer::new(bytes);
+    let room = bytes.saturating_mul(1 + RINGS_OF_ROOM_A_SPLICE_MAY_TAKE);
+    let (producer, consumer) = rtrb::RingBuffer::new(room);
     let (faults, drained) = rtrb::RingBuffer::new(FAULT_SLOTS);
     let (announcing, announced) = rtrb::RingBuffer::new(RENDERED_SLOTS);
     let heard = Arc::new(AtomicU32::new(level.heard.to_bits()));
     let dropped = Arc::new(AtomicU32::new(0));
     let starved = Arc::new(AtomicU64::new(0));
     let discard = Discard::default();
+    let splice = Splice::default();
     let hold = Hold::default();
     let fader = Fader::default();
     fader.over.store(fade.get().max(1), Ordering::Release);
@@ -80,6 +83,13 @@ pub fn ring(
         RingProducer {
             inner: producer,
             bytes_per_frame,
+            format: spec.format,
+            capacity: capacity.get() as usize,
+            mirror: vec![0; room],
+            splice: splice.clone(),
+            splices_asked: 0,
+            splicing: None,
+            spliced_away: 0,
             discard: discard.clone(),
             hold: hold.clone(),
             fader: fader.clone(),
@@ -94,6 +104,9 @@ pub fn ring(
             inner: consumer,
             bytes_per_frame,
             discard,
+            splice,
+            splices_seen: 0,
+            pending: None,
             hold,
             fader,
             format: spec.format,
@@ -132,6 +145,27 @@ struct Discard {
 }
 
 #[derive(Clone, Default)]
+struct Splice {
+    asked: Arc<AtomicU64>,
+    at: Arc<AtomicU64>,
+    to: Arc<AtomicU64>,
+    taken: Arc<AtomicU64>,
+    pulled: Arc<AtomicU64>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Spliced {
+    at: u64,
+    to: u64,
+}
+
+impl Spliced {
+    const fn stale(self) -> u64 {
+        self.to.saturating_sub(self.at)
+    }
+}
+
+#[derive(Clone, Default)]
 struct Hold {
     lead_in: Arc<AtomicU64>,
 }
@@ -152,6 +186,13 @@ const S24_GREATEST: f64 = 8_388_607.0;
 pub struct RingProducer {
     inner: rtrb::Producer<u8>,
     bytes_per_frame: NonZeroU32,
+    format: SampleFormat,
+    capacity: usize,
+    mirror: Vec<u8>,
+    splice: Splice,
+    splices_asked: u64,
+    splicing: Option<Spliced>,
+    spliced_away: u64,
     discard: Discard,
     hold: Hold,
     fader: Fader,
@@ -198,6 +239,8 @@ impl RingProducer {
             .fetch_add(1, Ordering::AcqRel)
             .saturating_add(1);
         self.written = 0;
+        self.splicing = None;
+        self.spliced_away = 0;
         self.owed = Some(Rendered {
             epoch: self.requested,
             from: 0,
@@ -262,17 +305,147 @@ impl RingProducer {
             return 0;
         };
         let frames = (tail.len() / stride).min(self.free_frames());
+        self.push(tail, frames)
+    }
+
+    fn push(&mut self, tail: &[u8], frames: usize) -> usize {
+        let stride = self.bytes_per_frame.get() as usize;
         let Some(whole) = tail.get(..frames.saturating_mul(stride)) else {
             return 0;
         };
         let (pushed, _) = self.inner.push_partial_slice(whole);
         let frames = pushed.len() / stride;
+        if let Some(laid) = whole.get(..frames * stride) {
+            self.remember(laid);
+        }
         self.written = self.written.saturating_add(frames as u64);
         frames
     }
 
-    pub fn free_frames(&self) -> usize {
+    fn remember(&mut self, laid: &[u8]) {
+        let room = self.mirror.len();
+        if room == 0 {
+            return;
+        }
+        let stride = self.bytes_per_frame.get() as usize;
+        let mut at = (self.written.saturating_mul(stride as u64) % room as u64) as usize;
+        let mut from = laid;
+        while !from.is_empty() {
+            let run = from.len().min(room - at);
+            if let (Some(into), Some(taken)) = (self.mirror.get_mut(at..at + run), from.get(..run))
+            {
+                into.copy_from_slice(taken);
+            }
+            from = from.get(run..).unwrap_or_default();
+            at = 0;
+        }
+    }
+
+    fn room_frames(&self) -> usize {
         self.inner.slots() / self.bytes_per_frame.get() as usize
+    }
+
+    fn occupied_frames(&self) -> usize {
+        self.inner
+            .buffer()
+            .capacity()
+            .saturating_sub(self.inner.slots())
+            / self.bytes_per_frame.get() as usize
+    }
+
+    pub fn is_splicing(&self) -> bool {
+        self.splicing.is_some() && self.splice.taken.load(Ordering::Acquire) != self.splices_asked
+    }
+
+    fn stale_frames(&self) -> usize {
+        match self.splicing {
+            Some(spliced) if self.is_splicing() => spliced.stale() as usize,
+            Some(_) | None => 0,
+        }
+    }
+
+    pub fn held_frames(&self) -> usize {
+        self.occupied_frames().saturating_sub(self.stale_frames())
+    }
+
+    pub fn free_frames(&self) -> usize {
+        self.capacity
+            .saturating_sub(self.held_frames())
+            .min(self.room_frames())
+    }
+
+    pub fn written_ahead_of_the_graph(&self) -> usize {
+        self.occupied_frames()
+    }
+
+    pub fn splice_point(&self, ahead: Frames, blended: Frames) -> Option<u64> {
+        if self.is_discarding() || self.is_splicing() {
+            return None;
+        }
+        let read = self.written.saturating_sub(self.occupied_frames() as u64);
+        let pulled = self.splice.pulled.load(Ordering::Relaxed).saturating_mul(2);
+        let at = read.saturating_add(ahead.get().max(pulled));
+        let mirrored = (self.mirror.len() / self.bytes_per_frame.get() as usize) as u64;
+        let remembered = self.written.saturating_sub(mirrored);
+        (at >= remembered && at.saturating_add(blended.get()) <= self.written).then_some(at)
+    }
+
+    pub const fn written(&self) -> u64 {
+        self.written
+    }
+
+    pub const fn heard_as(&self, at: u64) -> u64 {
+        at.saturating_sub(self.spliced_away)
+    }
+
+    pub fn room_to_splice(&self) -> usize {
+        self.room_frames()
+    }
+
+    pub fn widen_what_was_written(&self, at: u64, into: &mut [f64]) -> usize {
+        let stride = self.bytes_per_frame.get() as usize;
+        let room = self.mirror.len();
+        let mirrored = (room / stride) as u64;
+        if room == 0 || at < self.written.saturating_sub(mirrored) || at >= self.written {
+            return 0;
+        }
+        let width = usize::from(self.format.bytes_per_sample().get());
+        let samples_a_frame = (stride / width).max(1);
+        let frames = (into.len() / samples_a_frame).min((self.written - at) as usize);
+        let first = (at.saturating_mul(stride as u64) % room as u64) as usize;
+        for (index, slot) in into.iter_mut().take(frames * samples_a_frame).enumerate() {
+            let byte = (first + index * width) % room;
+            let mut word = [0_u8; SampleFormat::MAX_BYTES];
+            for (offset, held) in word.iter_mut().take(width).enumerate() {
+                *held = self
+                    .mirror
+                    .get((byte + offset) % room)
+                    .copied()
+                    .unwrap_or(0);
+            }
+            *slot = widened(self.format, word);
+        }
+        frames
+    }
+
+    pub fn write_spliced(&mut self, buffer: &AudioBuffer) -> usize {
+        self.hand_over_what_is_owed();
+        let stride = self.bytes_per_frame.get() as usize;
+        let bytes = buffer.as_bytes();
+        let frames = (bytes.len() / stride).min(self.room_frames());
+        self.push(bytes, frames)
+    }
+
+    pub fn splice(&mut self, at: u64, to: u64) {
+        let spliced = Spliced { at, to };
+        self.splice.at.store(at, Ordering::Relaxed);
+        self.splice.to.store(to, Ordering::Relaxed);
+        self.splices_asked = self.splices_asked.wrapping_add(1);
+        self.splice
+            .asked
+            .store(self.splices_asked, Ordering::Release);
+        self.splicing = Some(spliced);
+        self.spliced_away = self.spliced_away.saturating_add(spliced.stale());
     }
 
     pub fn is_abandoned(&self) -> bool {
@@ -284,6 +457,9 @@ pub struct RingConsumer {
     inner: rtrb::Consumer<u8>,
     bytes_per_frame: NonZeroU32,
     discard: Discard,
+    splice: Splice,
+    splices_seen: u64,
+    pending: Option<Spliced>,
     hold: Hold,
     fader: Fader,
     format: SampleFormat,
@@ -306,7 +482,68 @@ pub struct RingConsumer {
 
 impl RingConsumer {
     pub fn available_frames(&self) -> usize {
-        self.inner.slots() / self.bytes_per_frame.get() as usize
+        let stale = self.pending.map_or(0, Spliced::stale) as usize;
+        (self.inner.slots() / self.bytes_per_frame.get() as usize).saturating_sub(stale)
+    }
+
+    fn look_for_a_splice(&mut self) {
+        let asked = self.splice.asked.load(Ordering::Acquire);
+        if asked == self.splices_seen {
+            return;
+        }
+        self.splices_seen = asked;
+        self.pending = Some(Spliced {
+            at: self.splice.at.load(Ordering::Relaxed),
+            to: self.splice.to.load(Ordering::Relaxed),
+        });
+    }
+
+    fn pass_over_what_was_spliced_away(&mut self) {
+        let Some(spliced) = self.pending else {
+            return;
+        };
+        if self.read < spliced.at {
+            return;
+        }
+        let stride = self.stride();
+        let stale = (spliced.stale() as usize).min(self.inner.slots() / stride);
+        if let Ok(passed) = self.inner.read_chunk(stale.saturating_mul(stride)) {
+            passed.commit_all();
+        }
+        self.read = self.read.saturating_add(stale as u64);
+        self.pending = None;
+        self.splice
+            .taken
+            .store(self.splices_seen, Ordering::Release);
+    }
+
+    fn frames_before_the_splice(&self, room: usize) -> usize {
+        self.pending.map_or(room, |spliced| {
+            (spliced.at.saturating_sub(self.read) as usize).min(room)
+        })
+    }
+
+    fn take_into(&mut self, into: &mut [u8], target: f64) -> usize {
+        let stride = self.stride();
+        let mut filled = 0;
+        loop {
+            self.pass_over_what_was_spliced_away();
+            let room = into.len().saturating_sub(filled) / stride;
+            let frames = self.frames_before_the_splice(room);
+            if frames == 0 {
+                return filled;
+            }
+            let Some(part) = into.get_mut(filled..filled.saturating_add(frames * stride)) else {
+                return filled;
+            };
+            let (popped, _) = self.inner.pop_partial_slice(part);
+            let taken = popped.len();
+            self.shape(popped, target);
+            filled = filled.saturating_add(taken);
+            if taken < frames * stride {
+                return filled;
+            }
+        }
     }
 
     fn discard_is_asked(&self) -> bool {
@@ -333,6 +570,11 @@ impl RingConsumer {
         }
         self.read = 0;
         self.heard_now = self.wanted();
+        self.splices_seen = self.splice.asked.load(Ordering::Acquire);
+        self.pending = None;
+        self.splice
+            .taken
+            .store(self.splices_seen, Ordering::Release);
         self.discard.applied.store(requested, Ordering::Release);
     }
 
@@ -412,6 +654,10 @@ impl RingConsumer {
 impl AudioSource for RingConsumer {
     fn fill(&mut self, dst: &mut [u8]) -> usize {
         self.fader.pulls.fetch_add(1, Ordering::Relaxed);
+        self.splice
+            .pulled
+            .store((dst.len() / self.stride()) as u64, Ordering::Relaxed);
+        self.look_for_a_splice();
         if self.discard_is_asked() && self.fades_before_the_discard() {
             return self.fade_into_the_discard(dst);
         }
@@ -445,15 +691,13 @@ impl AudioSource for RingConsumer {
             return spliced;
         };
 
-        let (popped, _) = self.inner.pop_partial_slice(whole);
         let target = if silenced { SILENT } else { WHOLE };
-        self.shape(popped, target);
-        let taken = popped.len() / stride;
-        let filled = spliced.saturating_add(popped.len());
+        let popped = self.take_into(whole, target);
+        let taken = popped / stride;
+        let filled = spliced.saturating_add(popped);
         if let Some(last) = popped
-            .len()
             .checked_sub(stride)
-            .and_then(|from| popped.get(from..))
+            .and_then(|from| whole.get(from..popped))
         {
             self.silence.follows(last);
         }
@@ -498,11 +742,7 @@ impl RingConsumer {
             .min(self.available_frames())
             .min(self.frames_until_silent());
         let faded = match dst.get_mut(..frames.saturating_mul(stride)) {
-            Some(whole) => {
-                let (popped, _) = self.inner.pop_partial_slice(whole);
-                self.shape(popped, SILENT);
-                popped.len()
-            }
+            Some(whole) => self.take_into(whole, SILENT),
             None => 0,
         };
         if self.level <= SILENT || self.available_frames() == 0 {
@@ -582,6 +822,18 @@ impl RingConsumer {
                 scale(frame, self.format, factor);
             }
         }
+    }
+}
+
+fn widened(format: SampleFormat, word: [u8; SampleFormat::MAX_BYTES]) -> f64 {
+    let [first, second, third, fourth] = word;
+    let full_scale = f64::from(format.full_scale());
+    match format {
+        SampleFormat::S16 => f64::from(i16::from_ne_bytes([first, second])) / full_scale,
+        SampleFormat::S24 | SampleFormat::S32 => {
+            f64::from(i32::from_ne_bytes([first, second, third, fourth])) / full_scale
+        }
+        SampleFormat::F32 => f64::from(f32::from_ne_bytes([first, second, third, fourth])),
     }
 }
 
@@ -955,6 +1207,115 @@ mod tests {
         let mut sunk = vec![0_u8; 128 * 4];
         assert_eq!(consumer.fill(&mut sunk), sunk.len());
         assert_eq!(sunk, fresh.as_bytes());
+    }
+
+    fn counted(from: i16, frames: usize) -> AudioBuffer {
+        let mut buffer = AudioBuffer::silence(spec(SampleFormat::S16), frames);
+        if let SampleData::S16(store) = buffer.data_mut() {
+            for (index, frame) in store.as_chunks_mut::<2>().0.iter_mut().enumerate() {
+                frame.fill(from + index as i16);
+            }
+        }
+        buffer
+    }
+
+    fn whole_ring(frames: u64) -> (RingProducer, RingConsumer, RingMonitor) {
+        ring(
+            spec(SampleFormat::S16),
+            Frames(frames),
+            Silence::Unmarked,
+            UNFADED,
+            Entering::Whole,
+            Level::WHOLE,
+        )
+    }
+
+    #[test]
+    fn a_splice_plays_up_to_its_point_and_then_what_was_written_for_it_past_the_stale_frames() {
+        let (mut producer, mut consumer, _) = whole_ring(64);
+        producer.write(&counted(0, 48));
+        let mut sunk = vec![0_u8; 10 * 4];
+        consumer.fill(&mut sunk);
+
+        let at = producer
+            .splice_point(Frames(8), Frames(4))
+            .expect("a full ring has room to splice ahead of the graph");
+        assert_eq!(
+            at, 30,
+            "a splice was offered closer than two of the graph's pulls"
+        );
+        let stale = producer.written();
+        assert_eq!(producer.write_spliced(&counted(1_000, 40)), 40);
+        producer.splice(at, stale);
+        assert!(producer.is_splicing());
+        assert_eq!(producer.held_frames(), 20 + 40);
+        assert!(
+            producer.splice_point(Frames(8), Frames(4)).is_none(),
+            "a second splice was offered over one the graph had not reached"
+        );
+
+        let mut sunk = vec![0_u8; 24 * 4];
+        assert_eq!(consumer.fill(&mut sunk), sunk.len());
+        assert_eq!(consumer.available_frames(), 36);
+
+        let mut heard: Vec<i16> = (10..30).collect();
+        heard.extend(1_000..1_004);
+        assert_eq!(left_of(&sunk), heard);
+        assert!(!producer.is_splicing());
+        assert_eq!(producer.held_frames(), 36);
+        assert_eq!(producer.heard_as(producer.written()), 48 + 40 - 18);
+    }
+
+    #[test]
+    fn a_splice_the_graph_reached_late_keeps_time_rather_than_playing_frames_again() {
+        let (mut producer, mut consumer, _) = whole_ring(64);
+        producer.write(&counted(0, 48));
+        let mut sunk = vec![0_u8; 10 * 4];
+        consumer.fill(&mut sunk);
+
+        let stale = producer.written();
+        producer.write_spliced(&counted(1_005, 43));
+        producer.splice(5, stale);
+
+        let mut sunk = vec![0_u8; 4 * 4];
+        consumer.fill(&mut sunk);
+        assert_eq!(left_of(&sunk), vec![1_010, 1_011, 1_012, 1_013]);
+    }
+
+    #[test]
+    fn a_discard_lets_go_of_a_splice_the_graph_had_not_reached() {
+        let (mut producer, mut consumer, _) = whole_ring(64);
+        producer.write(&counted(0, 48));
+        let stale = producer.written();
+        producer.write_spliced(&counted(1_000, 40));
+        producer.splice(30, stale);
+        producer.discard_buffered();
+
+        let mut sunk = vec![0_u8; 4];
+        consumer.fill(&mut sunk);
+        assert!(!producer.is_splicing());
+        assert!(!producer.is_discarding());
+        assert_eq!(producer.held_frames(), 0);
+        assert_eq!(producer.heard_as(10), 10);
+    }
+
+    #[test]
+    fn what_was_written_is_widened_back_from_where_a_splice_would_blend_it() {
+        let (mut producer, mut consumer, _) = whole_ring(16);
+        let mut sunk = vec![0_u8; 12 * 4];
+        for _ in 0..3 {
+            producer.write(&counted(100, 12));
+            consumer.fill(&mut sunk);
+        }
+
+        let mut widened = vec![0.0; 2 * 3];
+        assert_eq!(producer.widen_what_was_written(30, &mut widened), 3);
+        let full_scale = f64::from(SampleFormat::S16.full_scale());
+        assert_eq!(
+            widened,
+            [106.0, 106.0, 107.0, 107.0, 108.0, 108.0].map(|word| word / full_scale)
+        );
+        assert_eq!(producer.widen_what_was_written(36, &mut widened), 0);
     }
 
     #[test]

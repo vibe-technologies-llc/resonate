@@ -22,8 +22,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   `pw_stream_update_properties`, which pipewire-rs does not wrap), the pin itself, or `NO_CONVERT`
   (the rate policy or DoP turning the plan between converted and not); a turn of rate inside a row
   reopens after its drain, and Oboe and RemoteIO reshape nothing
-- [L · 0.2.0] Changing the equaliser is heard up to the buffer's depth later (half a second by default): the
-  filters run ahead of a ring kept full; only a level can be trimmed where the graph pulls
 - [L · 0.2.0] One playback stream and one capture stream only; concurrent playback streams unsupported
 
 ## Formats
