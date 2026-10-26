@@ -15,8 +15,8 @@ use gpui::{
     AnimationElement, AnyElement, App, BoxShadow, Canvas, Context, Div, DragMoveEvent, ElementId,
     Entity, ExternalPaths, FocusHandle, Focusable, KeyDownEvent, Modifiers, MouseButton,
     MouseDownEvent, MouseExitEvent, MouseMoveEvent, NavigationDirection, ObjectFit, Pixels, Point,
-    Render, ScrollHandle, ScrollStrategy, SharedString, Stateful, Task, UniformListScrollHandle,
-    Window, canvas, div, hsla, img, point, prelude::*, px, rgb, rgba,
+    Render, Role, ScrollHandle, ScrollStrategy, SharedString, Stateful, Task,
+    UniformListScrollHandle, Window, canvas, div, hsla, img, point, prelude::*, px, rgb, rgba,
 };
 use resonate_core::{
     AlbumId, ArtistsDrawn, Frames, MediaLocation, PlaylistId, QueueStamp, Span, TrackId, Volume,
@@ -78,6 +78,7 @@ use crate::{
             SigningIn, TidalAccount,
         },
         slider::{Grab, Rail},
+        spoken::{self, Spoken},
         transport::{Handovers, Resolved, ShownCover},
         typing::{self, TypeAhead, jumped},
         visualiser::Visualiser,
@@ -151,6 +152,8 @@ const JUMPED_TO: &str = "JUMP TO";
 const JUMPED_NOWHERE: &str = "NO MATCH";
 
 const CLEAR_SEARCH_HINT: &str = keyed!("Clear the search", key!(leave));
+
+const SIDEBAR: &str = "Library";
 
 const PINNED_HINT: &str = "Open this pinned playlist";
 
@@ -858,8 +861,11 @@ impl RootView {
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
 
-        let search =
-            cx.new(|cx| Field::new(SEARCH_PLACEHOLDER, window, cx).catching(is_a_followed_link));
+        let search = cx.new(|cx| {
+            Field::new(SEARCH_PLACEHOLDER, window, cx)
+                .catching(is_a_followed_link)
+                .searching()
+        });
         cx.observe(&search, |this, search, cx| {
             let typed_anew = {
                 let typed = search.read(cx).text();
@@ -2405,14 +2411,15 @@ impl RootView {
         }
     }
 
-    pub(crate) fn marked_where_reached<E: Styled + FluentBuilder>(
+    pub(crate) fn marked_where_reached<E: Styled + FluentBuilder + Spoken>(
         &self,
         shift: Shift,
         row: usize,
         listed: E,
     ) -> E {
+        let reached = self.reaches(shift, row);
         reorder::cursor_marked(
-            reorder::marked(listed, self.reaches(shift, row)),
+            reorder::marked(listed.chosen(reached), reached),
             self.stands_unchosen_on(shift, row),
         )
     }
@@ -4596,7 +4603,7 @@ impl RootView {
             ))
     }
 
-    fn sidebar(&self, cx: &mut Context<Self>) -> Div {
+    fn sidebar(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let library = self.library.read(cx);
         let albums = library.albums_counted() as usize;
         let artists = library.artists_counted() as usize;
@@ -4667,6 +4674,8 @@ impl RootView {
             .child(self.pane_row(Pane::Settings, None, cx));
 
         div()
+            .id("sidebar")
+            .named_as(Role::Navigation, SIDEBAR, "")
             .flex()
             .flex_none()
             .flex_col()
@@ -4737,6 +4746,7 @@ impl RootView {
                         row.font_weight(gpui::FontWeight::MEDIUM)
                     })
                     .hover(|row| row.bg(rgb(theme::hover())))
+                    .named_as(Role::Link, &playlist.name, PINNED_HINT)
                     .names(PINNED_HINT)
                     .child(
                         div()
@@ -5291,6 +5301,8 @@ impl RootView {
                     .ends_in_an_ellipsis()
                     .child(pane.label()),
             )
+            .named_as(Role::Tab, pane.label(), pane.about())
+            .chosen(chosen)
             .names(pane.about())
             .when_some(count, |row, count| {
                 row.child(kit::figure(count.to_string()).text_color(rgb(theme::faint())))
@@ -5499,6 +5511,7 @@ impl RootView {
 
 impl Render for RootView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        spoken::listened_to(window.is_a11y_active());
         let moved = self.moved_under_a_still_pointer(window, cx);
         hint::asking(self.hints_are_wanted(cx) && !moved);
         let opened = menu::Opened(self.menu.as_ref().and_then(|menu| menu.owner().cloned()));

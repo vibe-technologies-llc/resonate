@@ -1,7 +1,7 @@
 use std::{cell::Cell, rc::Rc};
 
 use gpui::{
-    AnyElement, App, Div, ElementId, Font, FontWeight, Pixels, ScrollHandle, SharedString,
+    AnyElement, App, Div, ElementId, Font, FontWeight, Pixels, Role, ScrollHandle, SharedString,
     Stateful, TruncateFrom, canvas, div, point, prelude::*, px, rgb,
 };
 use resonate_core::{Appearance, StreamSpec};
@@ -11,7 +11,7 @@ use crate::{
     format,
     icons::{self, Icon},
     motion, theme,
-    views::{hint::Names, listing, pointed::LitUnderThePointer},
+    views::{hint::Names, listing, pointed::LitUnderThePointer, spoken::Spoken},
 };
 
 const BUTTON_GROUP: &str = "button";
@@ -189,10 +189,14 @@ pub(crate) fn button_when(
     };
 
     let id = id.into();
+    let label = label.into();
+    let saying = saying.into();
 
     div()
         .id(id.clone())
         .found_as(&id)
+        .named_as(Role::Button, &label, &saying)
+        .when(!press.takes(), Spoken::greyed_for_a_reader)
         .group(BUTTON_GROUP)
         .flex()
         .flex_none()
@@ -234,7 +238,7 @@ pub(crate) fn button_when(
                 }
             })
         })
-        .child(label.into())
+        .child(label)
 }
 
 const fn fill_alpha(tone: Tone) -> u8 {
@@ -308,6 +312,7 @@ pub(crate) fn star(
         motion::starred(drawn, which, favoured),
         saying,
     )
+    .thrown(favoured)
 }
 
 fn marked(
@@ -317,9 +322,12 @@ fn marked(
     saying: impl Into<SharedString>,
 ) -> Stateful<Div> {
     let id = id.into();
+    let saying = saying.into();
     div()
         .id(id.clone())
         .found_as(&id)
+        .said_as(Role::Button, &saying)
+        .when(!press.takes(), Spoken::greyed_for_a_reader)
         .group(BUTTON_GROUP)
         .flex()
         .flex_none()
@@ -345,7 +353,11 @@ pub(crate) fn chip(
     label: impl Into<SharedString>,
     selected: bool,
 ) -> Stateful<Div> {
-    pill(id, theme::accent(), selected).child(label.into())
+    let label = label.into();
+    pill(id, theme::accent(), selected)
+        .named_as(Role::Button, &label, "")
+        .thrown(selected)
+        .child(label)
 }
 
 fn pill(id: impl Into<ElementId>, colour: u32, selected: bool) -> Stateful<Div> {
@@ -514,10 +526,13 @@ pub(crate) fn segment(
     chosen: bool,
 ) -> Stateful<Div> {
     let id = id.into();
+    let label = label.into();
 
     div()
         .id(id.clone())
         .found_as(&id)
+        .named_as(Role::RadioButton, &label, "")
+        .thrown(chosen)
         .flex()
         .flex_none()
         .items_center()
@@ -551,7 +566,7 @@ pub(crate) fn segment(
                     .lit_under_the_pointer(id, |option| option.text_color(rgb(theme::text())))
             },
         )
-        .child(label.into())
+        .child(label)
 }
 
 pub(crate) fn switch(id: impl Into<ElementId>, on: bool) -> Stateful<Div> {
@@ -1107,6 +1122,40 @@ impl<E: InteractiveElement> Found for E {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::views::spoken::{self, node_of};
+
+    #[test]
+    fn every_kit_control_says_what_it_is_and_what_state_it_stands_in() {
+        spoken::listened_to(true);
+
+        let labelled = node_of(&button(
+            "play-all",
+            Some(Icon::Play),
+            "Play",
+            "Play every track listed, in order",
+            Tone::Primary,
+        ))
+        .expect("a button is a node");
+        let marked = node_of(&icon_button("more", Icon::More, "More — shift-f10"))
+            .expect("a mark is a node");
+        let starred =
+            node_of(&star("starred", true, "a".into(), "Unfavourite")).expect("a star is a node");
+        let chosen = node_of(&segment("grid", "Grid", true)).expect("a segment is a node");
+        let chip = node_of(&chip("newest", "Newest", false)).expect("a chip is a node");
+
+        assert_eq!(labelled.role(), Role::Button);
+        assert_eq!(labelled.label(), Some("Play"));
+        assert_eq!(
+            labelled.description(),
+            Some("Play every track listed, in order")
+        );
+        assert_eq!(marked.label(), Some("More"));
+        assert_eq!(starred.toggled(), Some(gpui::Toggled::True));
+        assert_eq!(chosen.role(), Role::RadioButton);
+        assert_eq!(chosen.toggled(), Some(gpui::Toggled::True));
+        assert_eq!(chip.label(), Some("Newest"));
+        assert_eq!(chip.toggled(), Some(gpui::Toggled::False));
+    }
 
     #[test]
     fn a_grid_is_as_wide_as_the_window_now_less_what_it_was_narrower_by() {

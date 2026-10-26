@@ -19,7 +19,7 @@ use std::{cell::Cell, rc::Rc, sync::atomic::Ordering};
 
 use gpui::{
     AnyElement, ClickEvent, Context, Div, FocusHandle, FontWeight, MouseButton, Pixels, Point,
-    SharedString, Stateful, Window, canvas, div, prelude::*, px, relative, rgb,
+    Role, SharedString, Stateful, Window, canvas, div, prelude::*, px, relative, rgb,
 };
 use resonate_core::Appearance;
 use resonate_library::DEFAULT_LAYOUT;
@@ -49,6 +49,7 @@ use crate::{
             defaults::{Standing, can_be_put_back, differs, puts_back},
             find::Narrowing,
         },
+        spoken::Spoken,
     },
 };
 
@@ -1032,8 +1033,12 @@ fn switch_row(
     id: impl Into<SharedString>,
 ) -> Stateful<Div> {
     let id = id.into();
+    let label = label.into();
+    let under = under.into();
     div()
         .id(id.clone())
+        .named_as(Role::Switch, &label, &under)
+        .thrown(on)
         .flex()
         .items_center()
         .justify_between()

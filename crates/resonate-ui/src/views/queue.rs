@@ -29,6 +29,7 @@ use crate::{
         root::{RootView, empty, row},
         scrollbar::Scrollbars,
         sorting,
+        spoken::{self, Placed, Spoken},
     },
 };
 
@@ -694,6 +695,14 @@ impl RootView {
                                     let listed = row(current)
                                         .id(("queued", queued_as))
                                         .debug_selector(move || format!("queued-{queued_as}"))
+                                        .listed_as(|| {
+                                            spoken::song(&drawn.title, Some(&drawn.artist))
+                                        })
+                                        .placed(Placed {
+                                            at: index,
+                                            of: queue.len(),
+                                        })
+                                        .chosen(reached)
                                         .group(ROW_GROUP)
                                         .cursor_pointer()
                                         .when(heard, |entry| entry.opacity(HEARD_FADED))

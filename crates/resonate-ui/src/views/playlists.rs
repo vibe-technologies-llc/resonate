@@ -27,6 +27,7 @@ use crate::{
         root::{Pane, RootView, empty, listed, row, somewhere_in, tall_row},
         scrollbar::Scrollbars,
         sorting,
+        spoken::{self, Placed, Spoken},
     },
 };
 
@@ -1251,6 +1252,12 @@ impl RootView {
         let listed = row(current)
             .id(entry_id)
             .debug_selector(move || format!("entry-{index}"))
+            .listed_as(|| spoken::song(&title, Some(&artist)))
+            .placed(Placed {
+                at: index,
+                of: last,
+            })
+            .chosen(reached)
             .group(ROW_GROUP)
             .cursor_pointer()
             .hover(|entry| entry.bg(rgb(theme::hover())))

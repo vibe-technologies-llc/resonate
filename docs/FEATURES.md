@@ -71,8 +71,11 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [S · 0.2.0] The Favourites shelves (strips no reach key walks) take a plain click alone: a choice
   apart cannot be made or extended there by key, so Control-click is left out until the shelves
   join the reach
-- [L · 0.2.0] Nothing is exposed to a screen reader: gpui now carries AccessKit, which the views
-  do not yet use
+- [M · 0.2.0] A screen reader hears the bar, sidebar, track rows, search field, menus and toasts
+  but not the album and artist cells, the settings choice rows and swatches, a link inside a row,
+  the lyrics and the plots, and the search field reports its text but no caret or selection
+- [S · 0.2.0] A menu opened by key is drawn but not announced: keyboard focus stays on the window,
+  so the reached entry is not spoken until a reader walks to it
 
 ## Later: Sources and providers
 - [M · blocked: services] The Bandcamp and Discogs links an `Identity` carries are read by nothing;

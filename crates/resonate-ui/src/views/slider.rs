@@ -1,9 +1,9 @@
 use std::{cell::Cell, rc::Rc};
 
 use gpui::{
-    AnyElement, Bounds, Context, Div, KeyContext, Length, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, Pixels, Point, SharedString, canvas, div, prelude::*, px,
-    relative, rgb,
+    AccessibleAction, AnyElement, Bounds, Context, Div, KeyContext, Length, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, SharedString, canvas, div,
+    prelude::*, px, relative, rgb,
 };
 use resonate_core::TrackId;
 
@@ -11,7 +11,11 @@ use crate::{
     RootView,
     app::{CONTROL_CONTEXT, RAIL_CONTEXT, RailBack, RailOn, seek_step},
     theme,
-    views::{kit, root::VOLUME_STEP},
+    views::{
+        kit,
+        root::VOLUME_STEP,
+        spoken::{self, Reading, Spoken},
+    },
 };
 
 const RAIL_GROUP: &str = "rail";
@@ -34,6 +38,13 @@ impl Handle {
         match self {
             Self::Seek => relative(1.0).into(),
             Self::Volume => theme::width(theme::volume_width()).into(),
+        }
+    }
+
+    const fn spoken(self) -> &'static str {
+        match self {
+            Self::Seek => "Position",
+            Self::Volume => "Volume",
         }
     }
 
@@ -184,6 +195,14 @@ impl RootView {
         }
     }
 
+    fn set_by_a_reader(&mut self, handle: Handle, share: f32, cx: &mut Context<Self>) {
+        match handle {
+            Handle::Seek => self.seek_to(share, cx),
+            Handle::Volume => self.set_volume(share, cx),
+        }
+        cx.notify();
+    }
+
     fn step_the_rail(&mut self, handle: Handle, toward: Toward, cx: &mut Context<Self>) {
         let sign = match toward {
             Toward::On => 1,
@@ -206,6 +225,7 @@ impl RootView {
         handle: Handle,
         filled: f32,
         pointed: Option<Pointed>,
+        reading: Option<Reading>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let painted = self.rail_of(handle).painted.clone();
@@ -224,6 +244,27 @@ impl RootView {
             .on_action(cx.listener(move |this, _: &RailBack, _, cx| {
                 this.step_the_rail(handle, Toward::Back, cx);
             }))
+            .when_some(reading, |rail, reading| {
+                let on = cx.entity().downgrade();
+                let back = on.clone();
+                let set = on.clone();
+                rail.read_as(handle.spoken(), reading)
+                    .on_a11y_action(AccessibleAction::SetValue, move |asked, _, cx| {
+                        let Some(share) = spoken::share_asked(asked) else {
+                            return;
+                        };
+                        set.update(cx, |this, cx| this.set_by_a_reader(handle, share, cx))
+                            .ok();
+                    })
+                    .on_a11y_action(AccessibleAction::Increment, move |_, _, cx| {
+                        on.update(cx, |this, cx| this.step_the_rail(handle, Toward::On, cx))
+                            .ok();
+                    })
+                    .on_a11y_action(AccessibleAction::Decrement, move |_, _, cx| {
+                        back.update(cx, |this, cx| this.step_the_rail(handle, Toward::Back, cx))
+                            .ok();
+                    })
+            })
             .rounded_md()
             .focus(|rail| rail.bg(theme::tinted(theme::accent(), 0x14)))
             .group(RAIL_GROUP)

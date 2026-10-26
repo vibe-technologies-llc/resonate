@@ -18,7 +18,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `library.md` | library, mpris, the playlist panes, the binary's `playlists.rs` | schema, scan, enrichment, tag writing, deleting, organise, search, playlists, undo, sheets, statistics, suggestions, share |
 | `lyrics.md` | resonate-lyrics, the lyrics model and pane, `sylt.rs`, `lrclib.rs`, `sung.rs`, the phones' `lyrics.rs` | the vocabulary, the provider seam, the LRC reader |
 | `eq.md` | resonate-eq, `core::eq`, the DSP stage and convolver, `impulse.rs`, `autoeq.rs`, the equaliser panes, the phones' `equaliser.rs`, `room.rs` and graph | the vocabulary, the biquads, the per-sink binding, the formats, AutoEq, the phones' curve and room correction |
-| `ui.md` | resonate-ui | chrome, input, drawing, the palettes, panes |
+| `ui.md` | resonate-ui | chrome, input, drawing, the palettes, what a screen reader hears, panes |
 | `motion.md` | resonate-ui | the motion vocabulary, what arrives and flips, the song handover, the scrollbar fade |
 | `vault.md` | resonate-vault, `Library::import`, `vaulted.rs`, `supply.rs`, the Vault group | the forms, the keys, validation, what the catalog holds |
 | `online.md` | resonate-online, the binary's `online.rs` | the paced client, the identity, what each service is asked and how its answer is read |

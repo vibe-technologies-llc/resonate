@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use gpui::{
-    BoxShadow, Context, Div, FontWeight, ObjectFit, SharedString, Stateful, Window, div, hsla, img,
-    point, prelude::*, px, relative, rgb, rgba,
+    BoxShadow, Context, Div, FontWeight, ObjectFit, Role, SharedString, Stateful, Window, div,
+    hsla, img, point, prelude::*, px, relative, rgb, rgba,
 };
 use resonate_engine::NodeName;
 use resonate_listen::Listening;
@@ -16,6 +16,7 @@ use crate::{
         hint::Names,
         kit::{self, Tone},
         root::RootView,
+        spoken::Spoken,
     },
 };
 
@@ -27,6 +28,8 @@ const FIND_HINT: &str =
 const OPEN_HINT: &str = "Open the page the service keeps for it";
 const DESKTOP_HINT: &str = "Hear what the desktop is playing";
 const MICROPHONE_HINT: &str = "Hear a microphone";
+const KEEP_LISTENING: &str = "Keep listening";
+
 const KEEP_LISTENING_HINT: &str = "Once a song is named, listen again every little while and \
                                    name the next song that plays, until stopped";
 const OFFLINE: &str = "Online is off in the settings, so nothing can name what is heard.";
@@ -248,6 +251,8 @@ impl RootView {
     fn keeps_listening_row(&self, keeps: bool, cx: &mut Context<Self>) -> Stateful<Div> {
         div()
             .id("listen-keep")
+            .named_as(Role::Switch, KEEP_LISTENING, KEEP_LISTENING_HINT)
+            .thrown(keeps)
             .flex()
             .items_center()
             .justify_between()
@@ -257,7 +262,7 @@ impl RootView {
                 div()
                     .text_size(px(theme::text_sm()))
                     .text_color(rgb(theme::text()))
-                    .child("Keep listening"),
+                    .child(KEEP_LISTENING),
             )
             .child(kit::switch("listen-keep-track", keeps))
             .names(KEEP_LISTENING_HINT)

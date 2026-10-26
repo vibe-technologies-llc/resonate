@@ -10,7 +10,10 @@ use crate::{
     icons::{self, Icon},
     models::{Notice, Tone},
     theme,
-    views::RootView,
+    views::{
+        RootView,
+        spoken::{Spoken, Urgency},
+    },
 };
 
 const LINGER_AT_LEAST: Duration = Duration::from_secs(6);
@@ -194,11 +197,12 @@ fn withdraw(cx: &mut App) {
 
 pub(crate) fn drawn(lifted: bool, cx: &mut Context<RootView>) -> Option<AnimationElement<Div>> {
     let toast = cx.try_global::<Toaster>()?.showing.clone()?;
-    let (icon, ink) = match toast.notice.tone() {
-        Tone::Trouble => (Icon::Alert, theme::failure()),
-        Tone::Done => (Icon::Check, theme::done()),
-        Tone::Noted => (Icon::Info, theme::accent()),
+    let (icon, ink, urgency) = match toast.notice.tone() {
+        Tone::Trouble => (Icon::Alert, theme::failure(), Urgency::Warned),
+        Tone::Done => (Icon::Check, theme::done(), Urgency::Told),
+        Tone::Noted => (Icon::Info, theme::accent(), Urgency::Told),
     };
+    let said = SharedString::from(said_with_its_count(&toast.notice, toast.times));
     let lift = if lifted { ABOVE_ANOTHER_PILL } else { 0.0 };
     let resting = px(theme::transport_height() + theme::type_ahead_lift() + lift);
 
@@ -210,7 +214,8 @@ pub(crate) fn drawn(lifted: bool, cx: &mut Context<RootView>) -> Option<Animatio
         .justify_center()
         .child(
             div()
-                .id("toast")
+                .id(("toast", toast.serial as usize))
+                .told(said.clone(), urgency)
                 .flex()
                 .items_center()
                 .gap_2()
@@ -236,10 +241,7 @@ pub(crate) fn drawn(lifted: bool, cx: &mut Context<RootView>) -> Option<Animatio
                         .min_w(px(0.0))
                         .text_size(px(theme::text_sm()))
                         .text_color(rgb(theme::text()))
-                        .child(SharedString::from(said_with_its_count(
-                            &toast.notice,
-                            toast.times,
-                        ))),
+                        .child(said),
                 ),
         );
 

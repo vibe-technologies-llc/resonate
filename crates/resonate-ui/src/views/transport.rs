@@ -6,7 +6,7 @@ use std::{
 
 use gpui::{
     Animation, AnimationElement, AnimationExt as _, AnyElement, App, Context, Corners, Div,
-    ElementId, FontWeight, MouseButton, ObjectFit, Pixels, Point, ScrollEvent, SharedString,
+    ElementId, FontWeight, MouseButton, ObjectFit, Pixels, Point, Role, ScrollEvent, SharedString,
     Stateful, Svg, Window, div, img, prelude::*, px, rgb,
 };
 use resonate_core::{
@@ -37,6 +37,7 @@ use crate::{
         reorder::{self, LiftedTo},
         root::Magnified,
         slider::{Handle, Pointed},
+        spoken::{self, Reading, Spoken},
     },
 };
 
@@ -120,6 +121,18 @@ const SLEEP_OFF: &str = "Turn the sleep timer off";
 const END_OF_TRACK_READING: &str = "track";
 
 const END_OF_QUEUE_READING: &str = "queue";
+
+const PLAYBACK: &str = "Playback";
+
+const NOW_PLAYING: &str = "Now playing";
+
+const SHUFFLE: &str = "Shuffle";
+
+const REPEAT: &str = "Repeat";
+
+const QUEUE: &str = "Queue";
+
+const MUTE: &str = "Mute";
 
 const INSPECT_HINT: &str = "See the whole signal path in the inspector";
 
@@ -350,6 +363,8 @@ impl RootView {
         );
 
         div()
+            .id("playback-bar")
+            .named_as(Role::Group, PLAYBACK, "")
             .flex()
             .flex_col()
             .flex_none()
@@ -437,7 +452,13 @@ impl RootView {
             .when(kept.shuffle, |cluster| {
                 cluster.child(self.in_the_standing_ring(
                     "shuffle",
-                    self.toggle("shuffle", Icon::Shuffle, shuffling(shuffle), shuffle),
+                    self.toggle(
+                        "shuffle",
+                        SHUFFLE,
+                        Icon::Shuffle,
+                        shuffling(shuffle),
+                        shuffle,
+                    ),
                     move |this, _, cx| this.send(Command::SetShuffle(!shuffle), cx),
                     cx,
                 ))
@@ -447,6 +468,7 @@ impl RootView {
                     "repeat",
                     self.toggle(
                         "repeat",
+                        REPEAT,
                         repeat,
                         repeating(state.repeat),
                         state.repeat != RepeatMode::Off,
@@ -489,6 +511,7 @@ impl RootView {
                         .text_color(rgb(theme::accent())),
                 )
             })
+            .said_as(Role::Button, sleeping_says(sleeping))
             .names(sleeping_says(sleeping));
 
         let control = self.in_the_standing_ring_at(
@@ -518,7 +541,7 @@ impl RootView {
         digest: Option<&StreamDigest>,
         sink: Option<SharedString>,
         cx: &mut Context<Self>,
-    ) -> Div {
+    ) -> Stateful<Div> {
         let playing = self.playing(state, digest, cx);
         let now = Instant::now();
         let cover = self.now_playing_cover(&playing.cover, now, cx);
@@ -565,7 +588,18 @@ impl RootView {
                 motion::arriving_opacity,
             ));
 
+        let spoken_as = spoken::listening().then(|| {
+            SharedString::from(format!(
+                "{NOW_PLAYING}: {}",
+                spoken::song(&playing.title, (!idle).then_some(&*playing.artist))
+            ))
+        });
+
         div()
+            .id("now-playing")
+            .when_some(spoken_as, |panel, said| {
+                panel.named_as(Role::Group, &said, "")
+            })
             .flex()
             .flex_1()
             .flex_basis(px(0.0))
@@ -1150,6 +1184,8 @@ impl RootView {
                             "glyph",
                             muted,
                         ))
+                        .named_as(Role::Button, MUTE, if muted { UNMUTE_HINT } else { hint })
+                        .thrown(muted)
                         .names(if muted { UNMUTE_HINT } else { hint }),
                     |this, _, cx| {
                         cx.stop_propagation();
@@ -1159,17 +1195,22 @@ impl RootView {
                 ),
             )
             .when(rail, |bar| {
-                bar.child(self.rail(Handle::Volume, level, None, cx))
+                bar.child(self.rail(
+                    Handle::Volume,
+                    level,
+                    None,
+                    spoken::listening().then(|| Reading {
+                        share: level,
+                        said: volume_reading(level, muted),
+                    }),
+                    cx,
+                ))
             })
             .when(reading, |bar| {
                 bar.child(
-                    kit::readout(if muted {
-                        "muted".to_owned()
-                    } else {
-                        format!("{:.0}%", level * 100.0)
-                    })
-                    .w(px(theme::volume_reading()))
-                    .text_right(),
+                    kit::readout(volume_reading(level, muted))
+                        .w(px(theme::volume_reading()))
+                        .text_right(),
                 )
             })
     }
@@ -1204,6 +1245,11 @@ impl RootView {
             None => "–:––".to_owned(),
         };
 
+        let reading = spoken::listening().then(|| Reading {
+            share: format::progress(position, duration),
+            said: spoken_position(&elapsed, duration.map(|whole| format::clock(whole, rate))),
+        });
+
         div()
             .flex()
             .w_full()
@@ -1214,6 +1260,7 @@ impl RootView {
                 Handle::Seek,
                 format::progress(position, duration),
                 self.pointed_on_the_seek_rail(duration, rate),
+                reading,
                 cx,
             ))
             .child(
@@ -1221,6 +1268,14 @@ impl RootView {
                     .id("seek-far-end")
                     .when(duration.is_some(), |end| {
                         end.cursor_pointer()
+                            .said_as(
+                                Role::Button,
+                                if showing_left {
+                                    SHOW_LENGTH_HINT
+                                } else {
+                                    SHOW_TIME_LEFT_HINT
+                                },
+                            )
                             .names(if showing_left {
                                 SHOW_LENGTH_HINT
                             } else {
@@ -1258,6 +1313,7 @@ impl RootView {
                 icons::icon(glyph, theme::transport_step_icon(), theme::muted()),
                 CONTROL_GROUP,
             ))
+            .said_as(Role::Button, saying)
             .names(saying);
         self.in_the_standing_ring(
             id,
@@ -1286,6 +1342,7 @@ impl RootView {
                 "glyph",
                 playing,
             ))
+            .said_as(Role::Button, if playing { PAUSE_HINT } else { PLAY_HINT })
             .names(if playing { PAUSE_HINT } else { PLAY_HINT });
         self.in_the_standing_ring(
             "play",
@@ -1300,6 +1357,7 @@ impl RootView {
 
         let toggle = self.toggle(
             "queue",
+            QUEUE,
             Icon::Queue,
             if open { QUEUE_OPEN_HINT } else { QUEUE_HINT },
             open,
@@ -1311,6 +1369,7 @@ impl RootView {
     fn toggle(
         &self,
         id: &'static str,
+        named: &'static str,
         glyph: Icon,
         saying: &'static str,
         active: bool,
@@ -1348,7 +1407,23 @@ impl RootView {
                 "glyph",
                 (glyph, active),
             ))
+            .named_as(Role::Button, named, saying)
+            .thrown(active)
             .names(saying)
+    }
+}
+
+fn volume_reading(level: f32, muted: bool) -> SharedString {
+    if muted {
+        return SharedString::new_static("muted");
+    }
+    SharedString::from(format!("{:.0}%", level * 100.0))
+}
+
+fn spoken_position(elapsed: &str, length: Option<String>) -> SharedString {
+    match length {
+        Some(length) => SharedString::from(format!("{elapsed} of {length}")),
+        None => SharedString::from(elapsed.to_owned()),
     }
 }
 
@@ -1538,7 +1613,73 @@ pub(crate) fn copied_on_a_right_click(named: Stateful<Div>, name: SharedString) 
 
 #[cfg(test)]
 mod tests {
+    use gpui::TestAppContext;
+    use resonate_library::Library;
+
     use super::*;
+    use crate::{driven::Driven, views::spoken::node_of};
+
+    #[gpui::test]
+    fn the_playback_bar_names_its_buttons_and_says_which_are_on_to_a_reader(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::open(
+            cx,
+            Arc::new(Library::open_in_memory().expect("a catalog in memory")),
+        );
+        let root = driven.root.clone();
+
+        let spoken = driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| {
+                spoken::listened_to(true);
+                [
+                    node_of(&root.step(
+                        "previous",
+                        Icon::Previous,
+                        PREVIOUS_HINT,
+                        Command::Previous,
+                        cx,
+                    )),
+                    node_of(&root.play_button(false, cx)),
+                    node_of(&root.play_button(true, cx)),
+                    node_of(&root.step("next", Icon::Next, NEXT_HINT, Command::Next, cx)),
+                    node_of(&root.toggle("shuffle", SHUFFLE, Icon::Shuffle, shuffling(true), true)),
+                    node_of(&root.queue_button(cx)),
+                    node_of(&root.sleep_button(None, cx)),
+                ]
+            })
+        });
+        let named: Vec<_> = spoken
+            .iter()
+            .map(|node| {
+                let node = node.as_ref().expect("every bar control is a node");
+                assert_eq!(node.role(), Role::Button);
+                node.label().map(str::to_owned)
+            })
+            .collect();
+
+        assert_eq!(
+            named,
+            [
+                "Previous track",
+                "Play",
+                "Pause",
+                "Next track",
+                "Shuffle",
+                "Queue",
+                "Set a sleep timer"
+            ]
+            .map(|label| Some(label.to_owned()))
+        );
+        assert_eq!(
+            spoken[4].as_ref().and_then(|shuffle| shuffle.toggled()),
+            Some(gpui::Toggled::True)
+        );
+        assert_eq!(
+            spoken[5].as_ref().and_then(|queue| queue.toggled()),
+            Some(gpui::Toggled::False)
+        );
+    }
 
     #[test]
     fn the_window_is_titled_by_what_plays_and_by_the_app_where_nothing_does() {

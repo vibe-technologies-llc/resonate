@@ -27,6 +27,7 @@ mod search;
 pub(crate) mod settings;
 mod slider;
 pub(crate) mod sorting;
+pub(crate) mod spoken;
 pub(crate) mod statistics;
 mod suggestions;
 pub(crate) mod transport;
