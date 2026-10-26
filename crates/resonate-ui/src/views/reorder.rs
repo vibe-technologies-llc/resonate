@@ -82,6 +82,7 @@ impl Shift {
                 Listed::Tracks
                     | Listed::Albums
                     | Listed::Artists
+                    | Listed::Playlists
                     | Listed::Favourites
                     | Listed::Suggested
             )
@@ -977,18 +978,13 @@ mod tests {
             Listed::Tracks,
             Listed::Albums,
             Listed::Artists,
+            Listed::Playlists,
             Listed::Favourites,
             Listed::Suggested,
         ] {
             assert!(Shift::Listing(listed).chooses_apart(), "{listed:?}");
         }
-        for listed in [
-            Listed::Playlists,
-            Listed::Missing,
-            Listed::Offered,
-            Listed::Heard,
-            Listed::Top,
-        ] {
+        for listed in [Listed::Missing, Listed::Offered, Listed::Heard, Listed::Top] {
             assert!(!Shift::Listing(listed).chooses_apart(), "{listed:?}");
         }
         assert!(!Shift::Queue.chooses_apart());

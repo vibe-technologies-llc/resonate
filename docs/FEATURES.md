@@ -70,9 +70,8 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   weighed
 
 ## Keyboard and accessibility
-- [S · 0.2.0] *Top results* (songs, artists and albums in one run), the Favourites shelves and the
-  playlist panes take Shift alone, and a choice of several tracks offers no Share or Show in the file
-  manager (a share link names one recording, the portal reveals one file)
+- [M · 0.2.0] *Top results* (songs, artists and albums in one run), the Favourites shelves (strips no
+  reach key walks) and an opened playlist (a reach there moves and drops as one run) take Shift alone
 - [L · 0.2.0] Nothing is exposed to a screen reader: gpui now carries AccessKit, which the views
   do not yet use
 

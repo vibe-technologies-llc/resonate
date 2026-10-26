@@ -107,6 +107,7 @@ const TAKEN_BACK: &str = concat!(" · ", keyed!("Put it back", key!(undo)));
 
 const NOTHING_TO_SHARE: &str = "That track isn't in the library, so there's no link to share";
 const NO_LINK_TO_SHARE: &str = "There's no link for that track";
+const NO_LINK_TO_SHARE_ANY: &str = "There's no link for any of those tracks";
 const FORGOT_THE_MATCH: &str = "Forgot that release — the next lookup won't take it again";
 const TOOK_THE_PRESSING: &str = "Took that pressing for this album";
 const PLACED_ON: &str = "Placed the track on that release";
@@ -2772,6 +2773,10 @@ impl LibraryModel {
     }
 
     pub fn share(&mut self, track: TrackId, cx: &mut Context<Self>) {
+        self.share_each(vec![track], cx);
+    }
+
+    pub fn share_each(&mut self, tracks: Vec<TrackId>, cx: &mut Context<Self>) {
         let library = Arc::clone(&self.library);
         let reference = self.reference.clone().filter(|_| self.online);
 
@@ -2779,34 +2784,28 @@ impl LibraryModel {
             let read = cx
                 .background_executor()
                 .spawn(async move {
-                    library.shareable(track).map(|shared| {
-                        shared.map(|shared| match &reference {
-                            Some(reference) => shared.streamed_where_asked(reference.as_ref()),
-                            None => shared,
+                    tracks
+                        .into_iter()
+                        .map(|track| {
+                            library.shareable(track).map(|shared| {
+                                shared.map(|shared| match &reference {
+                                    Some(reference) => {
+                                        shared.streamed_where_asked(reference.as_ref())
+                                    }
+                                    None => shared,
+                                })
+                            })
                         })
-                    })
+                        .collect::<Vec<_>>()
                 })
                 .await;
 
             let outcome = this.update(cx, |_, cx| {
-                toast::tell(
-                    match read {
-                        Err(error) => {
-                            tracing::error!(%error, "a track could not be shared");
-                            toast::could_not("share that track", &error)
-                        }
-                        Ok(None) => Notice::Noted(NOTHING_TO_SHARE.to_owned()),
-                        Ok(Some(shared)) => match shared.written() {
-                            Some(link) => {
-                                let said = on_the_clipboard(&shared);
-                                clipboard::copy(link, cx);
-                                Notice::Done(said)
-                            }
-                            None => Notice::Noted(NO_LINK_TO_SHARE.to_owned()),
-                        },
-                    },
-                    cx,
-                );
+                let Sharing { link, notice } = sharing_told(read);
+                if let Some(link) = link {
+                    clipboard::copy(link, cx);
+                }
+                toast::tell(notice, cx);
                 cx.notify();
             });
             let _ = outcome;
@@ -2941,6 +2940,12 @@ impl LibraryModel {
     pub fn albums_at(&self, rows: impl IntoIterator<Item = usize>) -> Vec<AlbumId> {
         rows.into_iter()
             .filter_map(|row| self.albums.get(row).map(|album| album.id))
+            .collect()
+    }
+
+    pub fn playlists_at(&self, rows: impl IntoIterator<Item = usize>) -> Vec<PlaylistId> {
+        rows.into_iter()
+            .filter_map(|row| self.playlists.get(row).map(|playlist| playlist.id))
             .collect()
     }
 
@@ -5798,6 +5803,64 @@ fn looked_up(summary: &EnrichSummary) -> Notice {
     }
 }
 
+struct Sharing {
+    link: Option<String>,
+    notice: Notice,
+}
+
+fn sharing_told(read: Vec<resonate_library::Result<Option<Shared>>>) -> Sharing {
+    let asked = read.len();
+    let mut links = Vec::new();
+    let mut said = None;
+    let mut failure = None;
+    let mut absent = 0;
+
+    for shared in read {
+        match shared {
+            Err(error) => {
+                tracing::error!(%error, "a track could not be shared");
+                failure.get_or_insert(error);
+            }
+            Ok(None) => absent += 1,
+            Ok(Some(shared)) => {
+                if let Some(link) = shared.written() {
+                    said.get_or_insert_with(|| on_the_clipboard(&shared));
+                    links.push(link);
+                }
+            }
+        }
+    }
+
+    let nothing = |notice| Sharing { link: None, notice };
+
+    if links.is_empty() {
+        return nothing(match (failure, asked, absent) {
+            (Some(error), 1, _) => toast::could_not("share that track", &error),
+            (Some(error), _, _) => toast::could_not("share those tracks", &error),
+            (None, 1, 1) => Notice::Noted(NOTHING_TO_SHARE.to_owned()),
+            (None, 1, _) => Notice::Noted(NO_LINK_TO_SHARE.to_owned()),
+            (None, _, _) => Notice::Noted(NO_LINK_TO_SHARE_ANY.to_owned()),
+        });
+    }
+
+    let notice = match (asked, links.len()) {
+        (1, _) => Notice::Done(said.unwrap_or_default()),
+        (asked, held) if held == asked => Notice::Done(format!(
+            "{} are on the clipboard",
+            format::counted(held, "link", "links")
+        )),
+        (asked, held) => Notice::Done(format!(
+            "{held} of {} are on the clipboard",
+            format::counted(asked, "link", "links")
+        )),
+    };
+
+    Sharing {
+        link: Some(links.join("\n")),
+        notice,
+    }
+}
+
 fn on_the_clipboard(shared: &Shared) -> String {
     match shared.artist.as_deref() {
         Some(artist) => format!("{artist} — {} is on the clipboard", shared.title),
@@ -6933,10 +6996,11 @@ mod tests {
 
     use super::{
         Arranging, Beyond, Change, Favourited, Followed, ListedRow, MissingRow,
-        POLLS_PER_REREAD_WHILE_ASKING, Pass, Planned, Reaching, Shared, Wanted,
-        albums_kept_before_the_rest, arranged, beyond_the_listing, elsewhere_standing,
-        headed_by_disc, held_at, held_in, kept_before_the_rest, landed_since, missing_track_rows,
-        on_the_clipboard, renewed, retried_after, unheld_release_rows,
+        NO_LINK_TO_SHARE_ANY, Notice, POLLS_PER_REREAD_WHILE_ASKING, Pass, Planned, Reaching,
+        Shared, Wanted, albums_kept_before_the_rest, arranged, beyond_the_listing,
+        elsewhere_standing, headed_by_disc, held_at, held_in, kept_before_the_rest, landed_since,
+        missing_track_rows, on_the_clipboard, renewed, retried_after, sharing_told,
+        unheld_release_rows,
     };
 
     #[test]
@@ -7635,6 +7699,63 @@ mod tests {
         };
 
         assert_eq!(on_the_clipboard(&shared), "Track 07 is on the clipboard");
+    }
+
+    fn linked(title: &str, recording: &str) -> Shared {
+        Shared {
+            title: title.to_owned(),
+            recording: Some(Mbid::new(recording).expect("a well-formed mbid")),
+            ..Shared::default()
+        }
+    }
+
+    const ECHOES: &str = "6bcb2fc4-38b2-4b2c-b8ee-5d7dbf9a4a1b";
+    const MONEY: &str = "0d1d8d7e-72f6-4e72-9b0c-3a3b6c2f0e1a";
+
+    #[test]
+    fn several_shared_links_are_copied_one_to_a_line_and_counted() {
+        let sharing = sharing_told(vec![
+            Ok(Some(linked("Echoes", ECHOES))),
+            Ok(Some(linked("Money", MONEY))),
+        ]);
+
+        assert_eq!(
+            sharing.link.as_deref().map(|link| link.lines().count()),
+            Some(2)
+        );
+        assert_eq!(
+            sharing.notice,
+            Notice::Done("2 links are on the clipboard".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_choice_where_one_track_has_no_link_says_how_many_were_copied() {
+        let sharing = sharing_told(vec![
+            Ok(Some(linked("Echoes", ECHOES))),
+            Ok(None),
+            Ok(Some(Shared::default())),
+        ]);
+
+        assert_eq!(
+            sharing.link.as_deref().map(|link| link.lines().count()),
+            Some(1)
+        );
+        assert_eq!(
+            sharing.notice,
+            Notice::Done("1 of 3 links are on the clipboard".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_choice_with_no_link_among_it_copies_nothing_and_says_so() {
+        let sharing = sharing_told(vec![Ok(None), Ok(Some(Shared::default()))]);
+
+        assert_eq!(sharing.link, None);
+        assert_eq!(
+            sharing.notice,
+            Notice::Noted(NO_LINK_TO_SHARE_ANY.to_owned())
+        );
     }
 
     #[test]
