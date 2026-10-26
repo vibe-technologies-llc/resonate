@@ -91,8 +91,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   convolver is not part of the stage the decode runs); the estimate from kept bands is not a
   bound, a song whose peaks gather in one band can still pass the fit
 - [L] AutoEq is the only correction source, fetched one device at a time
-- [L] Lossy restoration was tuned on a few MP3s and synthetic walls, misses a hole shorter than its
-  1 024-frame window, leaves the first second and a half of an unstudied track unextended
+- [M] Lossy restoration was tuned on a few MP3s, ffmpeg's own MP3, AAC and Vorbis encodes of
+  synthetic tones and synthetic walls, not on a breadth of real music per codec and bitrate; a hole
+  shorter than two of its 256-frame slices (an AAC short block's) may be missed, and the wall it
+  settles on in the first second and a half is not followed past it
 - [M · blocked: symphonia] A downmix folds by position, or unplaced channels in turn: a stream's own
   downmix coefficients are not read, because the only decoded stream that could carry them is a
   multichannel AAC whose program config element (`matrix_mixdown_idx`, `pseudo_surround`)

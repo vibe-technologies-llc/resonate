@@ -183,7 +183,8 @@ Invariants the layering protects (the rules files have the rest):
   `formats`), `resonate-listen` (`capture`, `reconnect`, `microphone`), the reconnect, `formats` and
   `microphone` tests need `pw-cli` and host their own daemon; `resonate-mpris --test bus` (session
   bus; notification and headset presses run under `dbus-run-session`); `resonate-codec --test
-  encoded` (ffmpeg, `metaflac`, `wavpack`, `mac`, `lame`); `resonate-library --test library`
+  encoded` (ffmpeg, `metaflac`, `wavpack`, `mac`, `lame`); `resonate-dsp --test restoration`
+  (ffmpeg); `resonate-library --test library`
   (ffmpeg); `resonate-analysis --test references` (ffmpeg, `fpcalc`); `resonate-online --test live` (`RESONATE_ONLINE_TESTS`); `resonate --test terminal`
   (`setsid`, a pseudo-terminal); `resonate --test dragging` (`RESONATE_DRAG_TESTS`, a hosted KWin, GTK 4
   in python3, `spectacle`); `resonate-mpris --test trash` (`xdg-desktop-portal`, and `bwrap` with `xdg-dbus-proxy` for the
