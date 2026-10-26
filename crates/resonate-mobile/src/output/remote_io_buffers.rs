@@ -65,11 +65,8 @@ mod tests {
 
     fn rendering(left: usize) -> (Box<Rendering>, Arc<AtomicBool>) {
         let empty = Arc::new(AtomicBool::new(false));
-        let rendering = Box::new(Rendering {
-            source: Box::new(Supply { left }),
-            empty: Arc::clone(&empty),
-        });
-        (rendering, empty)
+        let (rendering, _) = Rendering::fed_by(Box::new(Supply { left }), Arc::clone(&empty));
+        (Box::new(rendering), empty)
     }
 
     fn list_over(data: *mut c_void, bytes: u32) -> AudioBufferList {
@@ -133,7 +130,7 @@ mod tests {
         let answer = unsafe { rendered(handed(&mut rendering), std::ptr::null_mut()) };
 
         assert_eq!(answer, RENDERED);
-        assert_eq!(rendering.source.fill(&mut [0; 4]), 4);
+        assert_eq!(rendering.source().fill(&mut [0; 4]), 4);
         assert!(!empty.load(Ordering::Acquire));
     }
 
@@ -145,7 +142,7 @@ mod tests {
         let answer = unsafe { rendered(handed(&mut rendering), &mut list) };
 
         assert_eq!(answer, RENDERED);
-        assert_eq!(rendering.source.fill(&mut [0; 16]), 16);
+        assert_eq!(rendering.source().fill(&mut [0; 16]), 16);
         assert!(!empty.load(Ordering::Acquire));
     }
 

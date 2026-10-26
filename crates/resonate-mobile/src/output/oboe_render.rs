@@ -18,12 +18,14 @@ use oboe::{
     AudioOutputCallback, AudioOutputStreamSafe, DataCallbackResult, IsChannelCount, IsFormat,
     IsFrameType,
 };
-use resonate_audio::AudioSource;
 
-use super::oboe_frames::{Frame, rendered};
+use super::{
+    handover::Fed,
+    oboe_frames::{Frame, rendered},
+};
 
 pub(crate) struct Rendering<S> {
-    pub(crate) source: Box<dyn AudioSource>,
+    pub(crate) fed: Fed,
     pub(crate) empty: Arc<AtomicBool>,
     pub(crate) failed: Arc<AtomicBool>,
     pub(crate) bytes: Box<[u8]>,
@@ -44,7 +46,7 @@ where
         _: &mut dyn AudioOutputStreamSafe,
         frames: &mut [<(T, C) as IsFrameType>::Type],
     ) -> DataCallbackResult {
-        if rendered(&mut *self.source, &mut self.bytes, &self.empty, frames) {
+        if rendered(self.fed.source(), &mut self.bytes, &self.empty, frames) {
             DataCallbackResult::Continue
         } else {
             DataCallbackResult::Stop

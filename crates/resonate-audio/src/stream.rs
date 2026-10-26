@@ -149,6 +149,8 @@ pub enum StreamEvent {
 pub enum Unreshapable {
     Unsupported,
     AnotherTarget,
+    AnotherFormat,
+    AnotherPath,
     AnotherPriority,
     PinnedRateMoved,
     StillHandingOver,
