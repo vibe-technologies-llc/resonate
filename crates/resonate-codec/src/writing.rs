@@ -956,12 +956,21 @@ impl Taken {
 }
 
 impl Saving<'_> {
+    fn options(&self) -> WriteOptions {
+        match self.kind {
+            FileType::Opus | FileType::Vorbis | FileType::Speex => {
+                self.options.preferred_padding(0)
+            }
+            _ => self.options,
+        }
+    }
+
     fn written_into<F: FileLike>(
         &self,
         file: &mut F,
     ) -> std::result::Result<(), FileEncodingError> {
         file.rewind()?;
-        saved(self.tag, self.counting, self.unkeyed, file, self.options)?;
+        saved(self.tag, self.counting, self.unkeyed, file, self.options())?;
         self.others_written_into(file)
     }
 
@@ -971,7 +980,7 @@ impl Saving<'_> {
     ) -> std::result::Result<(), FileEncodingError> {
         for other in self.others {
             file.rewind()?;
-            other.save_to(file, self.options)?;
+            other.save_to(file, self.options())?;
         }
         Ok(())
     }
@@ -999,7 +1008,7 @@ impl Saving<'_> {
             self.counting,
             self.unkeyed,
             &mut copy,
-            self.options,
+            self.options(),
         )?;
         let written = copy.into_inner();
         Ok(written.strip_suffix(past.as_slice()).map(<[u8]>::to_vec))

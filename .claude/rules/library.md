@@ -1081,7 +1081,10 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   length in the same number of pages and the audio's sequence numbers and CRCs stay true. OpusTags
   may be followed by padding (RFC 7845), and a Vorbis comment packet is padded after its framing
   bit, which libvorbis, ffmpeg and symphonia read past
-  (`an_ogg_comment_grown_and_shrunk_keeps_its_audio_and_lands_in_place_once_it_has_room`). A head
+  (`an_ogg_comment_grown_and_shrunk_keeps_its_audio_and_lands_in_place_once_it_has_room`). **lofty pads no
+  Ogg comment** (`Saving::options` writes Opus, Vorbis and Speex under `preferred_padding(0)`):
+  from 0.25.5 its default 1 KiB of padding is rounded up to whole pages inside the packet, which
+  left no `Blocks` length a grown comment could be laid out in; the head lays every padding itself. A head
   another muxer laid out differently (a comment sharing a page with the setup header) is not
   `Held`: the first write is a copy that lays it out as lofty does, with padding.
   **A head that outgrew its room is lengthened where the filesystem can insert a range.** After

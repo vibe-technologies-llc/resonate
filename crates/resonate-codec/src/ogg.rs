@@ -559,7 +559,7 @@ mod tests {
         let mut tag = Tag::new(TagType::VorbisComments);
         tag.insert_text(ItemKey::TrackTitle, title.to_owned());
         let mut cursor = Cursor::new(head.to_vec());
-        tag.save_to(&mut cursor, WriteOptions::default())
+        tag.save_to(&mut cursor, WriteOptions::default().preferred_padding(0))
             .expect("lofty writes the head");
         cursor.into_inner()
     }
