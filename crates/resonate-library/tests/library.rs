@@ -39,10 +39,10 @@ use resonate_library::{
     RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference,
     Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack,
     Removal, Result, RetagOptions, RetagSummary, RowOrder, SUBMITTED_AT_ONCE, SavedQuery,
-    ScanOptions, ScanStats, Scrobble, Scrobbler, Search, Service, Sidecar, SongLink, SongsAsked,
-    SortOrder, Sought, Sources, StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField,
-    TagSet, TagSink, TagSource, TextEncoding, TokenHeld, Track, TrackQuery, Trashes, UnheldRelease,
-    Unwritten, Vault, Waits, Window, Wording, Written,
+    ScanOptions, ScanStats, Scrobble, Scrobbler, Search, Service, SheetEdit, SheetField,
+    SheetScope, Sidecar, SongLink, SongsAsked, SortOrder, Sought, Sources, StreamAsked, Suggestion,
+    TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource, TextEncoding, TokenHeld,
+    Track, TrackQuery, Trashes, UnheldRelease, Unwritten, Vault, Waits, Window, Wording, Written,
 };
 use resonate_providers::{
     Delivery, Error as ProvidedError, Extension, Identity, Obtained, Opened, Opening, Provider,
@@ -19086,10 +19086,10 @@ fn a_format_this_build_would_not_read_its_own_write_back_from_is_passed_over() -
 }
 
 #[test]
-fn a_row_cut_out_of_a_file_it_shares_is_never_written_to() -> Result<()> {
+fn a_row_cut_out_of_a_file_it_shares_never_has_its_names_written_into_the_file() -> Result<()> {
     let tree = Tree::new();
     let file = tree.write("Meddle.aiff", &Aiff::new().frames(44_100).build());
-    tree.write("Meddle.cue", MEDDLE_AIFF_SHEET.as_bytes());
+    let sheet = tree.write("Meddle.cue", MEDDLE_AIFF_SHEET.as_bytes());
     let library = Library::open_in_memory()?;
     scan(&library, &options(&tree))?;
     assert_eq!(
@@ -19098,17 +19098,253 @@ fn a_row_cut_out_of_a_file_it_shares_is_never_written_to() -> Result<()> {
         "the sheet did not cut the file into rows"
     );
 
-    let held = fs::metadata(&file).expect("the cut file is there").len();
+    let held = fs::read(&file).expect("the cut file is there");
     let summary = retagged(&library, true)?;
 
     assert!(summary.retagging.writes.is_empty());
-    assert_eq!(why_passed_over(&summary), vec![Unwritten::Cut]);
+    assert!(
+        summary.retagging.sheets.is_empty(),
+        "a guess was written into the sheet"
+    );
+    assert!(why_passed_over(&summary).is_empty(), "{summary:?}");
     assert_eq!(
-        fs::metadata(&file)
-            .expect("the cut file is still there")
-            .len(),
+        fs::read(&file).expect("the cut file is still there"),
         held,
         "a file a sheet cuts was written to"
+    );
+    assert_eq!(
+        fs::read_to_string(&sheet).expect("the sheet is still there"),
+        MEDDLE_AIFF_SHEET
+    );
+    Ok(())
+}
+
+fn answer_the_cut(database: &Path, file: &Path, second: bool, title: &str, artist: &str) {
+    let written = beside(database)
+        .execute(
+            "UPDATE tracks
+                SET title = ?1, artist = ?2, asked = ?3, answered = ?4
+              WHERE path = ?5 AND (span_start > 0) = ?6",
+            rusqlite::params![title, artist, ASKED, ANSWERED, settled(file), second],
+        )
+        .expect("the row the enrichment answers for is writable");
+    assert_eq!(written, 1, "one cut row was expected to be answered for");
+}
+
+fn titles_held(library: &Library) -> Result<Vec<String>> {
+    let mut titles: Vec<String> = library
+        .tracks(&TrackQuery::default())?
+        .into_iter()
+        .map(|track| track.title)
+        .collect();
+    titles.sort();
+    Ok(titles)
+}
+
+#[test]
+fn a_name_answered_for_a_cue_cut_row_is_written_into_its_track_of_the_sheet() -> Result<()> {
+    let tree = Tree::new();
+    let file = tree.write("Meddle.aiff", &Aiff::new().frames(44_100).build());
+    let sheet = tree.write("Meddle.cue", MEDDLE_AIFF_SHEET.as_bytes());
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    answer_the_cut(&database, &file, true, "Echoes (Live)", "Pink Floyd");
+    let held = fs::read(&file).expect("the cut file is there");
+
+    let preview = retagged(&library, false)?;
+    assert!(preview.retagging.writes.is_empty(), "{preview:?}");
+    assert_eq!(preview.retagging.sheets.len(), 1, "{preview:?}");
+    assert_eq!(
+        preview.retagging.sheets[0].edits,
+        vec![SheetEdit {
+            scope: SheetScope::Track(2),
+            field: SheetField::Title,
+            value: Some("Echoes (Live)".to_owned()),
+        }],
+        "the artist the sheet already bills by its performer was offered as well"
+    );
+    assert_eq!(
+        fs::read_to_string(&sheet).expect("the sheet is there"),
+        MEDDLE_AIFF_SHEET,
+        "a preview changed the sheet"
+    );
+
+    let applied = retagged(&library, true)?;
+    assert!(why_passed_over(&applied).is_empty(), "{applied:?}");
+    assert_eq!(applied.stats.written, 1);
+    assert_eq!(applied.stats.fields, 1);
+    assert_eq!(
+        fs::read_to_string(&sheet).expect("the sheet is still there"),
+        MEDDLE_AIFF_SHEET.replace("TITLE \"Echoes\"", "TITLE \"Echoes (Live)\""),
+        "more of the sheet moved than the one title"
+    );
+    assert_eq!(
+        fs::read(&file).expect("the cut file is still there"),
+        held,
+        "the audio the sheet cuts was written to"
+    );
+
+    let left: Vec<String> = fs::read_dir(tree.path())
+        .expect("the folder lists")
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.contains(".resonate-"))
+        .collect();
+    assert!(
+        left.is_empty(),
+        "the staged sheet was left behind: {left:?}"
+    );
+
+    let again = retagged(&library, false)?;
+    assert!(again.retagging.sheets.is_empty(), "{again:?}");
+
+    scan(&library, &options(&tree))?;
+    assert_eq!(
+        titles_held(&library)?,
+        vec!["Echoes (Live)".to_owned(), "One of These Days".to_owned()],
+        "the rescan did not read the sheet as the catalog had followed it"
+    );
+    let unasked: i64 = beside(&database)
+        .query_row(
+            "SELECT count(*) FROM tracks WHERE answered IS NULL AND span_start > 0",
+            [],
+            |row| row.get(0),
+        )
+        .expect("the rows are readable");
+    assert_eq!(
+        unasked, 0,
+        "the rescan read the written sheet as retagged by hand"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_sheet_edited_since_the_scan_read_it_is_not_written_over() -> Result<()> {
+    let tree = Tree::new();
+    let file = tree.write("Meddle.aiff", &Aiff::new().frames(44_100).build());
+    let sheet = tree.write("Meddle.cue", MEDDLE_AIFF_SHEET.as_bytes());
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    answer_the_cut(&database, &file, true, "Echoes (Live)", "Pink Floyd");
+
+    let edited = MEDDLE_AIFF_SHEET.replace("Meddle\"\nFILE", "Meddle (Remastered)\"\nFILE");
+    fs::write(&sheet, &edited).expect("the sheet is writable");
+    fs::File::options()
+        .write(true)
+        .open(&sheet)
+        .and_then(|held| held.set_modified(SystemTime::now() + Duration::from_secs(5)))
+        .expect("the sheet takes a later stamp");
+    let summary = retagged(&library, true)?;
+
+    assert_eq!(why_passed_over(&summary), vec![Unwritten::SheetChanged]);
+    assert_eq!(
+        fs::read_to_string(&sheet).expect("the sheet is there"),
+        edited,
+        "an edit the scan never read was written over"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_tag_run_written_into_a_sheet_is_put_back_byte_for_byte() -> Result<()> {
+    let tree = Tree::new();
+    let file = tree.write("Meddle.aiff", &Aiff::new().frames(44_100).build());
+    let sheet = tree.write("Meddle.cue", MEDDLE_AIFF_SHEET.as_bytes());
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    answer_the_cut(&database, &file, false, "One of These Days", "Ada");
+    answer_the_cut(&database, &file, true, "Echoes (Live)", "Ada");
+
+    let applied = retagged(&library, true)?;
+    assert!(why_passed_over(&applied).is_empty(), "{applied:?}");
+    let written = fs::read_to_string(&sheet).expect("the sheet is there");
+    assert!(
+        written
+            .contains("    TITLE \"Echoes (Live)\"\n    PERFORMER \"Ada\"\n    INDEX 01 00:00:20"),
+        "{written}"
+    );
+    assert!(
+        library.retag_walks_back()?,
+        "the run kept no note of the sheet"
+    );
+
+    let preview = walked_back(&library, false)?;
+    assert_eq!(preview.retagging.sheets.len(), 1, "{preview:?}");
+    assert_eq!(
+        fs::read_to_string(&sheet).expect("the sheet is there"),
+        written,
+        "a preview of the walk back changed the sheet"
+    );
+
+    let put_back = walked_back(&library, true)?;
+    assert!(why_passed_over(&put_back).is_empty(), "{put_back:?}");
+    assert_eq!(
+        fs::read_to_string(&sheet).expect("the sheet is there"),
+        MEDDLE_AIFF_SHEET,
+        "the walk back did not give the sheet back as it was"
+    );
+
+    let again = walked_back(&library, true)?;
+    assert!(why_passed_over(&again).is_empty(), "{again:?}");
+    assert_eq!(
+        fs::read_to_string(&sheet).expect("the sheet is there"),
+        written,
+        "walking the walk back back did not write the run again"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_sheet_in_a_code_page_is_written_in_it_and_a_name_it_cannot_spell_is_refused() -> Result<()> {
+    let latin = |text: &str| {
+        text.chars()
+            .map(|letter| u8::try_from(u32::from(letter)).expect("a Latin-1 letter"))
+            .collect::<Vec<u8>>()
+    };
+    let sheet_text = "PERFORMER \"Ad\u{e9}la\u{ef}de\"\nTITLE \"Caf\u{e9} cr\u{e8}me\"\nFILE \"Meddle.aiff\" AIFF\n  TRACK 01 AUDIO\n    TITLE \"Entr\u{e9}e\"\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    TITLE \"Fl\u{e2}nerie\"\n    INDEX 01 00:00:20\n";
+    let tree = Tree::new();
+    let file = tree.write("Meddle.aiff", &Aiff::new().frames(44_100).build());
+    let sheet = tree.write("Meddle.cue", &latin(sheet_text));
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    assert!(
+        titles_held(&library)?.contains(&"Fl\u{e2}nerie".to_owned()),
+        "the sheet was not read in its code page"
+    );
+
+    answer_the_cut(
+        &database,
+        &file,
+        true,
+        "Fl\u{e2}nerie \u{e0} l'aube",
+        "Ad\u{e9}la\u{ef}de",
+    );
+    let applied = retagged(&library, true)?;
+    assert!(why_passed_over(&applied).is_empty(), "{applied:?}");
+    assert_eq!(
+        fs::read(&sheet).expect("the sheet is there"),
+        latin(&sheet_text.replace("Fl\u{e2}nerie", "Fl\u{e2}nerie \u{e0} l'aube")),
+        "the sheet was not written back in the code page it was read in"
+    );
+
+    let standing = fs::read(&sheet).expect("the sheet is there");
+    answer_the_cut(
+        &database,
+        &file,
+        false,
+        "\u{6771}\u{4eac}",
+        "Ad\u{e9}la\u{ef}de",
+    );
+    let refused = retagged(&library, true)?;
+    assert_eq!(why_passed_over(&refused), vec![Unwritten::Refused]);
+    assert_eq!(
+        fs::read(&sheet).expect("the sheet is there"),
+        standing,
+        "a sheet whose code page lacks a letter was written to"
     );
     Ok(())
 }

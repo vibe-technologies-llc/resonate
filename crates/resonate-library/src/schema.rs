@@ -8,6 +8,7 @@ const MIGRATIONS: &[&str] = &[
     LISTENS_NAME_THEIR_ORIGIN,
     SONGS_RECEIVED_NAME_THEIR_RECORDING,
     SONGS_LEARNT_UNTIMED_ARE_LEARNT_AGAIN,
+    A_RUN_KEEPS_THE_SHEET_LINES_IT_REPLACED,
 ];
 
 const STAMPS: [SchemaFingerprint; MIGRATIONS.len() + 1] = stamps();
@@ -38,6 +39,18 @@ DELETE FROM discography_songs_read WHERE release_group IN (
      GROUP BY release_group
     HAVING count(length_ms) = 0
 );
+";
+
+const A_RUN_KEEPS_THE_SHEET_LINES_IT_REPLACED: &str = "
+CREATE TABLE retagged_sheets (
+    sheet TEXT NOT NULL,
+    file  TEXT NOT NULL,
+    scope INTEGER NOT NULL,
+    field TEXT NOT NULL,
+    was   TEXT,
+    wrote TEXT,
+    PRIMARY KEY (sheet, scope, field)
+) STRICT, WITHOUT ROWID;
 ";
 
 const V1: &str = "

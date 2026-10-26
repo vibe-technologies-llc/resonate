@@ -21,8 +21,10 @@ use rusqlite::{OptionalExtension as _, Transaction, params};
 use crate::{
     Library, StoreOp,
     error::{Error, Result},
+    organise,
     paged::{Paging, ROWS_A_PAGE},
     pass::{Cancelling, PassHandle, PassKind, RetagHandle},
+    sheeted::{self, KeptSheet, SheetWrite},
     store,
 };
 
@@ -34,6 +36,7 @@ pub enum Unwritten {
     Unreadable,
     Refused,
     Unconfirmed,
+    SheetChanged,
 }
 
 impl Unwritten {
@@ -49,6 +52,7 @@ impl Unwritten {
             Self::Unreadable => "its tags could not be read",
             Self::Refused => "its tags could not be written",
             Self::Unconfirmed => "what was written did not read back",
+            Self::SheetChanged => "its cue sheet changed since the scan read it",
         }
     }
 }
@@ -106,6 +110,7 @@ impl Written {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Retagging {
     pub writes: Vec<Written>,
+    pub sheets: Vec<SheetWrite>,
     pub passed_over: Vec<PassedOver>,
 }
 
@@ -223,20 +228,39 @@ fn run(
         }
     }
 
+    if options.apply {
+        organise::sweep_what_a_dead_writer_staged(library);
+    }
+
     let mut noted = Noted::default();
     if options.undo {
         let kept = library.last_retag()?;
+        let kept_sheets = library.last_resheet()?;
         let mut retagging = undone(library, &kept, tags, progress)?;
+        let (sheets, unread) = sheeted::undone(&kept_sheets);
+        progress
+            .walked
+            .fetch_add(kept_sheets.len() as u64, Ordering::Relaxed);
+        retagging.sheets = sheets;
+        for (sheet, why) in unread {
+            retagging.pass_over(&sheet, why, progress);
+        }
         noted.walking_back = Some(
             kept.into_iter()
                 .map(|kept| (kept.path.clone(), kept))
                 .collect(),
         );
+        noted.walking_back_sheets = Some(
+            kept_sheets
+                .into_iter()
+                .map(|kept| (kept.sheet.clone(), kept))
+                .collect(),
+        );
         noted.begun = true;
         if options.apply {
-            let written = apply(library, tags, &mut retagging, progress, &mut noted)?;
+            let landed = apply(library, tags, &mut retagging, progress, &mut noted)?;
             let finished = retagging.passed_over.is_empty() && !progress.is_cancelled();
-            library.retag_walked_back(&written, finished)?;
+            library.retag_walked_back(&landed.files, &landed.sheets, finished)?;
         }
         return Ok(RetagSummary {
             stats: progress.snapshot(),
@@ -266,6 +290,7 @@ fn run(
             write.was.picture = None;
         }
         retagging.writes.append(&mut planned.writes);
+        retagging.sheets.append(&mut planned.sheets);
         retagging.passed_over.append(&mut planned.passed_over);
     }
 
@@ -309,6 +334,9 @@ pub(crate) struct TrackToTag {
     pub track_total: Option<u32>,
     pub disc_total: Option<u32>,
     pub popularity: Popularity,
+    pub span_start: u64,
+    pub rate: u32,
+    pub sheet_modified: Option<i64>,
 }
 
 #[derive(Default)]
@@ -351,13 +379,18 @@ fn planned(
         }
 
         RetagProgress::step(&progress.walked);
+        if group.iter().any(|row| row.vaulted) {
+            retagging.pass_over(&group[0].path, Unwritten::Vaulted, progress);
+            continue;
+        }
+
         let [row] = group else {
-            retagging.pass_over(&group[0].path, Unwritten::Cut, progress);
+            sheet_planned(&mut retagging, group, progress);
             continue;
         };
 
         if row.cut {
-            retagging.pass_over(&row.path, Unwritten::Cut, progress);
+            sheet_planned(&mut retagging, group, progress);
             continue;
         }
 
@@ -426,6 +459,14 @@ fn planned(
     retagging
 }
 
+fn sheet_planned(retagging: &mut Retagging, rows: &[TrackToTag], progress: &RetagProgress) {
+    match sheeted::planned(rows) {
+        sheeted::Planned::Write(write) => retagging.sheets.push(write),
+        sheeted::Planned::Unchanged => RetagProgress::step(&progress.unchanged),
+        sheeted::Planned::PassedOver(why) => retagging.pass_over(&rows[0].path, why, progress),
+    }
+}
+
 fn rated_otherwise(
     held: resonate_codec::Result<Rated>,
     location: &MediaLocation,
@@ -474,7 +515,7 @@ fn wanted(row: &TrackToTag, held: &TagSet) -> Vec<TagEdit> {
         .collect()
 }
 
-fn offered(row: &TrackToTag) -> Vec<(TagField, String)> {
+pub(crate) fn offered(row: &TrackToTag) -> Vec<(TagField, String)> {
     let mut offered = Vec::new();
     if row.answered {
         offer(&mut offered, TagField::Title, Some(&row.title));
@@ -626,11 +667,29 @@ pub(crate) struct Noted {
     begun: bool,
     pictures: KeptPictures,
     walking_back: Option<AHashMap<PathBuf, KeptRetag>>,
+    walking_back_sheets: Option<AHashMap<PathBuf, KeptSheet>>,
+}
+
+#[derive(Default)]
+pub(crate) struct Landed {
+    files: Vec<PathBuf>,
+    sheets: Vec<PathBuf>,
 }
 
 impl Noted {
     fn keeps_a_note_of(&self, why: Unwritten) -> bool {
         self.walking_back.is_none() && why == Unwritten::Unconfirmed
+    }
+
+    fn sheets_noted_before(&self, unwritten: &[PathBuf]) -> Option<Vec<KeptSheet>> {
+        let kept = self.walking_back_sheets.as_ref()?;
+
+        Some(
+            unwritten
+                .iter()
+                .filter_map(|sheet| kept.get(sheet).cloned())
+                .collect(),
+        )
     }
 
     fn noted_before(&self, unwritten: &[PathBuf]) -> Option<Vec<KeptRetag>> {
@@ -678,15 +737,17 @@ fn apply(
     retagging: &mut Retagging,
     progress: &RetagProgress,
     noted: &mut Noted,
-) -> Result<Vec<PathBuf>> {
+) -> Result<Landed> {
     let planned = mem::take(&mut retagging.writes);
-    if planned.is_empty() || progress.is_cancelled() {
+    let sheets = mem::take(&mut retagging.sheets);
+    if (planned.is_empty() && sheets.is_empty()) || progress.is_cancelled() {
         retagging.writes = planned;
-        return Ok(Vec::new());
+        retagging.sheets = sheets;
+        return Ok(Landed::default());
     }
     let undoing: Vec<Undoing> = planned.iter().map(Undoing::of).collect();
     let begins = !noted.begun;
-    library.retag_to_be_written(&undoing, begins, &mut noted.pictures)?;
+    library.retag_to_be_written(&undoing, &sheets, begins, &mut noted.pictures)?;
     noted.begun = true;
 
     let mut followed = Vec::with_capacity(planned.len());
@@ -737,6 +798,52 @@ fn apply(
         },
         noted_again.as_deref(),
     )?;
+
+    let sheets = sheets_written(library, sheets, retagging, progress, noted)?;
+    Ok(Landed {
+        files: landed,
+        sheets,
+    })
+}
+
+fn sheets_written(
+    library: &Library,
+    sheets: Vec<SheetWrite>,
+    retagging: &mut Retagging,
+    progress: &RetagProgress,
+    noted: &Noted,
+) -> Result<Vec<PathBuf>> {
+    let mut followed = Vec::with_capacity(sheets.len());
+    let mut landed = Vec::with_capacity(sheets.len());
+    let mut unwritten = Vec::new();
+    for write in sheets {
+        if progress.is_cancelled() {
+            unwritten.push(write.sheet.clone());
+            retagging.sheets.push(write);
+            continue;
+        }
+
+        match sheeted::written(library, &write) {
+            Ok(follow) => {
+                RetagProgress::step(&progress.written);
+                progress
+                    .fields
+                    .fetch_add(write.edits.len() as u64, Ordering::Relaxed);
+                followed.push(follow);
+                landed.push(write.sheet.clone());
+                retagging.sheets.push(write);
+            }
+            Err(why) => {
+                if !noted.keeps_a_note_of(why) {
+                    unwritten.push(write.sheet.clone());
+                }
+                retagging.pass_over(&write.sheet, why, progress);
+            }
+        }
+    }
+
+    let noted_again = noted.sheets_noted_before(&unwritten);
+    library.sheets_retagged(&followed, &unwritten, noted_again.as_deref())?;
     Ok(landed)
 }
 
@@ -1017,9 +1124,15 @@ impl<'t> KeptAcross<'t> {
     }
 }
 
-pub(crate) fn walked_back(tx: &Transaction<'_>, written: &[PathBuf], finished: bool) -> Result<()> {
+pub(crate) fn walked_back(
+    tx: &Transaction<'_>,
+    written: &[PathBuf],
+    sheets: &[PathBuf],
+    finished: bool,
+) -> Result<()> {
     if !finished {
         forget_the_notes_of(tx, written)?;
+        sheeted::forget_the_notes_of(tx, sheets)?;
     }
     sweep_pictures_nothing_names(tx)
 }
@@ -1108,12 +1221,14 @@ fn rating_read(kept: Option<i64>) -> Option<Popularity> {
 pub(crate) fn note_what_was_there(
     tx: &Transaction<'_>,
     undoing: &[Undoing],
+    sheets: &[SheetWrite],
     begins: bool,
     pictures: &mut KeptPictures,
 ) -> Result<()> {
     if begins {
         tx.execute_batch(
-            "DELETE FROM retagged; DELETE FROM retagged_fields; DELETE FROM retagged_pictures;",
+            "DELETE FROM retagged; DELETE FROM retagged_fields; DELETE FROM retagged_pictures;
+             DELETE FROM retagged_sheets;",
         )
         .map_err(|source| Error::store(StoreOp::Delete, source))?;
         pictures.recent.clear();
@@ -1148,7 +1263,7 @@ pub(crate) fn note_what_was_there(
             .map_err(|source| Error::store(StoreOp::Insert, source))?;
         }
     }
-    Ok(())
+    sheeted::note_what_was_there(tx, sheets)
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -1385,6 +1500,9 @@ mod tests {
             track_total: Some(6),
             disc_total: Some(1),
             popularity: Popularity::default(),
+            span_start: 0,
+            rate: 44_100,
+            sheet_modified: None,
         }
     }
 

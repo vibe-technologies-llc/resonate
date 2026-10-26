@@ -80,8 +80,9 @@ use resonate_library::{
     Failures, FileTags, HistoryKept, Kept, Layout, Library, Listen, ListeningService, LookupOp,
     Missing, MissingTrack, Move, OrganiseOptions, OrganiseSummary, PassHandle, PassKind, Playing,
     Playlist, PlaylistFormat, PlaylistName, PlaylistOrder, PollOptions, Refusal, Refused,
-    RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, Search, SortOrder, StudyFilter,
-    TRIES_BEFORE_GIVING_UP, UnheldRelease, Vault, VaultFiles, Want, cuts_listed_in, folded_letters,
+    RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, Search, SheetScope, SortOrder,
+    StudyFilter, TRIES_BEFORE_GIVING_UP, UnheldRelease, Vault, VaultFiles, Want, cuts_listed_in,
+    folded_letters,
 };
 use resonate_mpris::{PlayerName, Queueing, Reloadable, Running, Standing};
 use resonate_pipewire::{
@@ -1236,12 +1237,15 @@ fn rated(popularity: Popularity) -> String {
 
 fn tagged(summary: &RetagSummary, roots: &[PathBuf], apply: bool) -> String {
     let retagging = &summary.retagging;
-    if retagging.writes.is_empty() && retagging.passed_over.is_empty() {
+    if retagging.writes.is_empty()
+        && retagging.sheets.is_empty()
+        && retagging.passed_over.is_empty()
+    {
         return "nothing to tag\n".to_owned();
     }
 
     let mut told = String::new();
-    if !retagging.writes.is_empty() {
+    if !retagging.writes.is_empty() || !retagging.sheets.is_empty() {
         let mut table = Table::new(vec!["FILE", "FIELD", "VALUE"]);
         for write in &retagging.writes {
             let mut named = under_its_root(&write.path, roots);
@@ -1281,6 +1285,20 @@ fn tagged(summary: &RetagSummary, roots: &[PathBuf], apply: bool) -> String {
                 ]);
             }
         }
+        for write in &retagging.sheets {
+            let mut named = under_its_root(&write.sheet, roots);
+            for edit in &write.edits {
+                let field = match edit.scope {
+                    SheetScope::Disc => edit.field.to_string(),
+                    SheetScope::Track(number) => format!("track {number:02} {}", edit.field),
+                };
+                table.push(vec![
+                    mem::take(&mut named),
+                    field,
+                    edit.value.clone().unwrap_or_else(|| TAKEN_AWAY.to_owned()),
+                ]);
+            }
+        }
         told.push_str(&table.render());
     }
 
@@ -1301,11 +1319,12 @@ fn tagged(summary: &RetagSummary, roots: &[PathBuf], apply: bool) -> String {
     } else {
         format!(
             "would write {} | fields {} | pictures {} | ratings {}",
-            retagging.writes.len(),
+            retagging.writes.len() + retagging.sheets.len(),
             retagging
                 .writes
                 .iter()
                 .map(|write| write.edits.len() + write.taken.len())
+                .chain(retagging.sheets.iter().map(|write| write.edits.len()))
                 .sum::<usize>(),
             retagging
                 .writes

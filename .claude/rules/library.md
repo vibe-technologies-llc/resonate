@@ -17,7 +17,7 @@ rows read via `Player::media` like any unscanned row.
 - **Schema = one `V1`, the baseline of 0.1.0, and a `MIGRATIONS` chain after it.** `V1` is the first
   release's schema as one SQL batch and is never edited, since a stamped catalog of a release would be
   stranded; a change appends a step to `MIGRATIONS` (`listens` naming the device and listen a remote
-  listen came from is the first, `songs_received` the second, forgetting the read stamp of every learnt group whose songs carry no length the third). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
+  listen came from is the first, `songs_received` the second, forgetting the read stamp of every learnt group whose songs carry no length the third, `retagged_sheets` the fourth). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
   `fingerprint_of(V1)` (the stamp 0.1.0 wrote) and `STAMPS[n + 1]` hashes `STAMPS[n]` over step `n`'s
   text, in a `const fn`; `SCHEMA_FINGERPRINT` is the last. `lay_out`: `UNSTAMPED` writes `V1` and
   every step; this build's stamp opens; a stamp that is an earlier `STAMPS` entry runs the steps after
@@ -1121,8 +1121,54 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   track or the scan of its folder, never swept as left over, and only over a track still between the
   two (`Stood::standing`): `Mended::WrittenBack`, `Finished`, `ChangedSince` (a page neither:
   another program's edit, copy dropped), `Unreadable` (record failing its check writes nothing).
-- **A row cut out of a shared file is never written to.** A path with more than one row, or one row
-  carrying a span, is `Unwritten::Cut`, passed over whole.
+- **A row cut out of a shared file is written into the sheet that cuts it, never into the file.**
+  A path with more than one row, or one row carrying a span, is planned by `sheeted.rs` as one
+  `SheetWrite` (`Retagging::sheets`): a cut a file embeds (no `sheet_modified`) or whose sheet is not
+  found stays `Unwritten::Cut`; a sheet whose mtime is not the rows' `sheet_modified` is
+  `Unwritten::SheetChanged` (a scan has not read it). `sheeted::cutting` finds the sheet as the scan
+  claims it: the two folders above first, farthest first, then the file's own, sheets in name order,
+  each `FILE` resolved through `the_folder_a_cue_names` and `scan::claimed_beside`. A row is its
+  sheet track by `CueFile::cut_at` (span start, sample rate). `offered` is weighed against the
+  track's settled `TagSet` and mapped by `SheetField::of`: title, artist (`PERFORMER`), composer
+  (`SONGWRITER`), ISRC, comment on the track; album (`TITLE`), album artist (`PERFORMER`), barcode
+  (`CATALOG`) on the disc; date, genre, disc number and total (`REM`) on the track where its block
+  says one already, else on the disc. A disc field the rows disagree on goes to each track where
+  the field may (`Placing::Either`) and nowhere where it may not. MusicBrainz ids, sort names,
+  numbers and totals have no line and are not written.
+- **A sheet is edited line by line, in its own encoding, every other byte kept.**
+  `resonate_codec::SheetText` splits the bytes into lines in encoding units (a UTF-16 sheet in pairs,
+  the mark left), scopes each line as `cue::read` does (a `FILE` line ends a track that has said no
+  `INDEX 01`, else it is the disc's) and answers `own(scope, field)`, the last line saying it.
+  `edited` replaces the value after the command (and `REM` name), keeping the line's own bytes up to
+  it and its quoting; a field the scope lacks becomes a new line, a track's after its `TRACK` line's
+  run before its first `INDEX`, indented as the block is, the disc's ahead of the first `FILE` or
+  `TRACK`; `None` removes every line saying it. New text goes through `text::encoded` in the sheet's
+  own encoding and line ending: a letter the code page lacks is `codec::Error::SheetUnspellable`
+  (refused, never carried into UTF-8 as a renamed `FILE` line is), a value with a line break
+  `SheetValueUnwritable`, a track named twice or not at all `SheetTrackNotNamedOnce`.
+- **A sheet lands as a held staged copy, checked, renamed over, read back.** `sheeted::written`
+  re-reads the sheet and refuses it where any line no longer says what the plan read (`was`);
+  `landed` writes `.<name>.<pid>.resonate-staging` beside where a link points, noted in
+  `staged_writes` and `Held` from creation, `sync_all`s it, carries owner, mode and xattrs, weighs
+  the sheet's bytes once more against those it edited (`ChangedWhileWritten`), renames it over and
+  syncs the folder; `retag::run` under `--apply` sweeps a dead writer's staging first
+  (`organise::sweep_what_a_dead_writer_staged`). **Read back from the sheet**: every edited line
+  must say its value and every offered field read back off the track `cut_at` names, else
+  `Unwritten::Unconfirmed`. The catalog follows (`sheets_retagged`): every row of the file takes the
+  new `sheet_modified` and the `tagged_title`/`tagged_artist` its track now reads as (`titled`), so
+  the next scan reads it unchanged and keeps `answered`
+  (`a_name_answered_for_a_cue_cut_row_is_written_into_its_track_of_the_sheet`,
+  `a_sheet_in_a_code_page_is_written_in_it_and_a_name_it_cannot_spell_is_refused`,
+  `a_sheet_edited_since_the_scan_read_it_is_not_written_over`).
+- **A sheet write is on the same undo as the files.** `retagged_sheets` (the fourth migration step)
+  keeps `(sheet, scope, field)` (scope `-1` the disc, else the track number), the audio file it cuts,
+  the line's own value before (`was`, `None` where the scope said none) and what was written,
+  noted in the transaction `retag_to_be_written` notes the files in and cleared with them when a
+  run begins; a sheet that failed loses its notes, or has the old ones put back on a walk back.
+  `sheeted::undone` plans each sheet from them, keeping only lines still saying what was written,
+  so an untouched sheet comes back byte for byte and walking the walk back writes the run again
+  (`a_tag_run_written_into_a_sheet_is_put_back_byte_for_byte`); `retag_walks_back` asks both
+  tables. The notes are keyed by the sheet's path and do not yet follow an organise.
 - **The catalog follows the file, which the next scan reads.** A write changes size and mtime, so
   `files_retagged` writes both back (next walk: row unchanged) and `tagged_title`, `tagged_artist`,
   `title_sort`, `artist_sort`, only for fields it wrote (an unrecorded corrected title would read as

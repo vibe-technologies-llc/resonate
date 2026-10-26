@@ -39,6 +39,7 @@ mod scrobble;
 mod search;
 mod share;
 mod sheet;
+mod sheeted;
 mod songs;
 mod spelling;
 mod statistics;
@@ -61,8 +62,8 @@ mod xspf;
 pub use resonate_analysis::{Cutoff, LossyGuess, Study, Verdict};
 pub use resonate_codec::{
     Codec, CoverArt, Drawing, FileTags, Hinting, ImageFormat, Pictured, Picturing, Popularity,
-    Raster, Rated, Sources, StandIn, Standing, StoodIn, TagEdit, TagField, TagSet, TagSink,
-    TagSource, Tagged,
+    Raster, Rated, SheetEdit, SheetField, SheetScope, Sources, StandIn, Standing, StoodIn, TagEdit,
+    TagField, TagSet, TagSink, TagSource, Tagged,
 };
 pub use resonate_core::{Chromaprint, Isrc, Link, Mbid, Relation, Service, TextEncoding};
 pub use resonate_vault::{
@@ -160,6 +161,7 @@ pub use crate::{
     sheet::{
         Described, Listed, Sheet, SheetRow, Timed, parse as read_sheet, text_of as written_sheet,
     },
+    sheeted::{SheetWanted, SheetWrite},
     songs::AlbumNotHeld,
     spelling::{Spellings, spelt_alike},
     statistics::{Day, Listened, MostListened, Statistics, Window},

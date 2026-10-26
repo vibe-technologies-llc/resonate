@@ -54,7 +54,7 @@ const SHEET_EXTENSION: &str = "cue";
 const HIDDEN_BEGINS: char = '.';
 const SYSTEM_FOLDERS: [&str; 3] = ["$RECYCLE.BIN", "System Volume Information", "lost+found"];
 
-const LARGEST_SHEET_ON_DISC: u64 = 1 << 20;
+pub(crate) const LARGEST_SHEET_ON_DISC: u64 = 1 << 20;
 
 pub(crate) use resonate_core::AUDIO_EXTENSIONS;
 
@@ -116,6 +116,9 @@ impl Failure {
             Codec::Io { .. }
             | Codec::Symphonia { .. }
             | Codec::SheetTooLarge { .. }
+            | Codec::SheetUnspellable { .. }
+            | Codec::SheetTrackNotNamedOnce { .. }
+            | Codec::SheetValueUnwritable { .. }
             | Codec::NoSuchSource { .. }
             | Codec::OpenTookTooLong { .. }
             | Codec::LocatorNotUsable { .. }

@@ -1,7 +1,7 @@
 use std::{fmt, io, result};
 
 use lofty::error::{FileEncodingError, FileParseError};
-use resonate_core::{ChannelCount, Frames, MediaLocation, StreamSpec};
+use resonate_core::{ChannelCount, Frames, MediaLocation, StreamSpec, TextEncoding};
 use symphonia::core::{
     codecs::audio::AudioCodecId,
     errors::{self, SeekErrorKind},
@@ -11,6 +11,7 @@ use thiserror::Error;
 use crate::{
     Container,
     dsd::{DsdChunk, DsdField},
+    sheet::SheetField,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -232,6 +233,23 @@ pub enum Error {
     #[error("{location} is addressed in a way its source cannot open")]
     LocatorNotUsable { location: MediaLocation },
 
+    #[error(
+        "{location} is a sheet in {encoding}, which cannot spell what was to be written into it"
+    )]
+    SheetUnspellable {
+        location: MediaLocation,
+        encoding: TextEncoding,
+    },
+
+    #[error("{location} does not name track {track} exactly once")]
+    SheetTrackNotNamedOnce { location: MediaLocation, track: u32 },
+
+    #[error("{location} cannot hold a {field} that runs over more than one line")]
+    SheetValueUnwritable {
+        location: MediaLocation,
+        field: SheetField,
+    },
+
     #[error("{location} is in a format this build does not write tags to")]
     Unwritable { location: MediaLocation },
 
@@ -294,6 +312,9 @@ impl Error {
             | Self::DsdFieldNotUsable { location, .. }
             | Self::DsdCompressed { location, .. }
             | Self::SheetTooLarge { location, .. }
+            | Self::SheetUnspellable { location, .. }
+            | Self::SheetTrackNotNamedOnce { location, .. }
+            | Self::SheetValueUnwritable { location, .. }
             | Self::NoSuchSource { location }
             | Self::OpenTookTooLong { location, .. }
             | Self::LocatorNotUsable { location }

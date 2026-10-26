@@ -62,7 +62,7 @@ use crate::{
     renamed::{ADDED, NamesMoved, RENAMED_TRIGGERS, RETITLED, Renamed},
     resumed,
     retag::{self, Followed, TrackToTag},
-    scan, schema, scrobble, search, share, sheet, songs, spelling, statistics, store,
+    scan, schema, scrobble, search, share, sheet, sheeted, songs, spelling, statistics, store,
     studies::{self, Agreement, Heard, HeardAs, Studied, StudiedTrack, StudyFilter, ToStudy},
     suggest, sung, supply,
     synced::{
@@ -360,7 +360,8 @@ const TRACKS_TO_TAG: &str = "SELECT tracks.id, tracks.path, tracks.span_start, t
             tracks.vault_key IS NOT NULL, tracks.favourite IS NOT NULL, tracks.plays,
             CASE WHEN performer.answered IS NOT NULL AND performer.name = tracks.artist
                  THEN performer.sort_name END,
-            artists.sort_name, a.pressing_fit IS NOT NULL
+            artists.sort_name, a.pressing_fit IS NOT NULL,
+            tracks.sample_rate, tracks.sheet_modified
        FROM tracks
        JOIN roots ON roots.id = tracks.root_id
        LEFT JOIN albums a ON a.id = tracks.album_id
@@ -2767,11 +2768,33 @@ impl Library {
     pub(crate) fn retag_to_be_written(
         &self,
         undoing: &[retag::Undoing],
+        sheets: &[sheeted::SheetWrite],
         begins: bool,
         pictures: &mut retag::KeptPictures,
     ) -> Result<()> {
+        self.inner.write(|transaction| {
+            retag::note_what_was_there(transaction, undoing, sheets, begins, pictures)
+        })
+    }
+
+    pub(crate) fn sheets_retagged(
+        &self,
+        followed: &[sheeted::SheetFollowed],
+        unwritten: &[PathBuf],
+        noted_again: Option<&[sheeted::KeptSheet]>,
+    ) -> Result<()> {
+        self.inner.write(|transaction| {
+            sheeted::sheets_retagged(transaction, followed, unwritten, noted_again)
+        })
+    }
+
+    pub(crate) fn last_resheet(&self) -> Result<Vec<sheeted::KeptSheet>> {
+        self.inner.read(sheeted::last_resheet)
+    }
+
+    pub(crate) fn rows_cut_from(&self, file: &Path) -> Result<Vec<(TrackId, u64, u32)>> {
         self.inner
-            .write(|transaction| retag::note_what_was_there(transaction, undoing, begins, pictures))
+            .read(|connection| sheeted::rows_cut_from(connection, file))
     }
 
     pub(crate) fn retagged_picture(&self, id: i64) -> Result<Option<CoverArt>> {
@@ -2790,9 +2813,14 @@ impl Library {
         })
     }
 
-    pub(crate) fn retag_walked_back(&self, written: &[PathBuf], finished: bool) -> Result<()> {
+    pub(crate) fn retag_walked_back(
+        &self,
+        written: &[PathBuf],
+        sheets: &[PathBuf],
+        finished: bool,
+    ) -> Result<()> {
         self.inner
-            .write(|transaction| retag::walked_back(transaction, written, finished))
+            .write(|transaction| retag::walked_back(transaction, written, sheets, finished))
     }
 
     pub(crate) fn last_retag(&self) -> Result<Vec<retag::KeptRetag>> {
@@ -2802,7 +2830,7 @@ impl Library {
     pub fn retag_walks_back(&self) -> Result<bool> {
         self.inner.read(|connection| {
             connection
-                .query_row("SELECT EXISTS (SELECT 1 FROM retagged)", [], |row| {
+                .query_row("SELECT EXISTS (SELECT 1 FROM retagged) OR EXISTS (SELECT 1 FROM retagged_sheets)", [], |row| {
                     row.get(0)
                 })
                 .map_err(|source| Error::store(StoreOp::Query, source))
@@ -6692,6 +6720,8 @@ struct RawToTag {
     artist_sort: Option<String>,
     album_artist_sort: Option<String>,
     pressing_fitted: bool,
+    sample_rate: i64,
+    sheet_modified: Option<i64>,
 }
 
 impl RawToTag {
@@ -6728,6 +6758,8 @@ impl RawToTag {
             artist_sort: row.get(28)?,
             album_artist_sort: row.get(29)?,
             pressing_fitted: row.get(30)?,
+            sample_rate: row.get(31)?,
+            sheet_modified: row.get(32)?,
         })
     }
 
@@ -6774,6 +6806,9 @@ impl RawToTag {
                 favourite: self.favourite,
                 plays: u64::try_from(self.plays).unwrap_or(0),
             },
+            span_start: u64::try_from(self.span_start).unwrap_or(0),
+            rate: u32::try_from(self.sample_rate).unwrap_or(0),
+            sheet_modified: self.sheet_modified,
         })
     }
 }
