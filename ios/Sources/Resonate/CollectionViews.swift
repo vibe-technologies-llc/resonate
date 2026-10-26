@@ -225,7 +225,7 @@ struct LibraryView: View {
     }
 }
 
-struct PinnedFavouritesRow: View {
+struct FavouritesRow: View {
     @ScaledMetric(relativeTo: .body) private var artworkEdge: CGFloat = 56
     let count: Int
 
@@ -235,23 +235,11 @@ struct PinnedFavouritesRow: View {
                 .frame(width: artworkEdge, height: artworkEdge)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Favourites").font(.body.weight(.medium))
-                Label("Pinned · \(counted(count, "song"))", systemImage: "pin.fill")
-                    .labelStyle(PinnedLabelStyle())
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                Text(counted(count, "song")).font(.subheadline).foregroundStyle(.secondary)
             }
         }
         .contentShape(.rect)
         .accessibilityElement(children: .combine)
-    }
-}
-
-struct PinnedLabelStyle: LabelStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 4) {
-            configuration.icon.font(.caption2).foregroundStyle(.tint)
-            configuration.title
-        }
     }
 }
 
@@ -1056,7 +1044,7 @@ private struct FavouritesCountRow: View {
     @Environment(Library.self) private var library
 
     var body: some View {
-        PinnedFavouritesRow(count: library.favouriteTracks.count)
+        FavouritesRow(count: library.favouriteTracks.count)
     }
 }
 
