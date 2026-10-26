@@ -15,6 +15,8 @@ use crate::{
 
 const LINGER_AT_LEAST: Duration = Duration::from_secs(6);
 
+const TROUBLE_LINGERS_AT_LEAST: Duration = Duration::from_secs(10);
+
 const LINGER_IN_A_BURST_AT_LEAST: Duration = Duration::from_secs(2);
 
 const READING_A_WORD: Duration = Duration::from_millis(500);
@@ -125,12 +127,12 @@ fn reading_time(text: &str) -> Duration {
     READING_A_WORD * u32::try_from(text.split_whitespace().count()).unwrap_or(u32::MAX)
 }
 
-fn lingers(notice: &Notice, others_wait: bool) -> Option<Duration> {
+fn lingers(notice: &Notice, others_wait: bool) -> Duration {
     let reading = reading_time(notice.text());
     match (notice.tone(), others_wait) {
-        (Tone::Trouble, false) => None,
-        (_, false) => Some(LINGER_AT_LEAST.max(reading)),
-        (_, true) => Some(LINGER_IN_A_BURST_AT_LEAST.max(reading)),
+        (Tone::Trouble, false) => TROUBLE_LINGERS_AT_LEAST.max(reading),
+        (_, false) => LINGER_AT_LEAST.max(reading),
+        (_, true) => LINGER_IN_A_BURST_AT_LEAST.max(reading),
     }
 }
 
@@ -146,12 +148,11 @@ pub(crate) fn is_showing(cx: &App) -> bool {
 
 fn show(Waiting { notice, times }: Waiting, cx: &mut App) {
     let others_wait = !cx.default_global::<Toaster>().waiting.is_empty();
-    let fading = lingers(&notice, others_wait).map(|lingers| {
-        cx.spawn(async move |cx| {
-            cx.background_executor().timer(lingers).await;
-            cx.update(withdraw);
-        })
-    });
+    let lingers = lingers(&notice, others_wait);
+    let fading = Some(cx.spawn(async move |cx| {
+        cx.background_executor().timer(lingers).await;
+        cx.update(withdraw);
+    }));
 
     let toaster = cx.default_global::<Toaster>();
     toaster.told += 1;
@@ -476,19 +477,20 @@ mod tests {
     }
 
     #[test]
-    fn a_trouble_stays_until_it_is_dismissed_unless_others_are_waiting() {
+    fn a_trouble_lingers_longer_than_a_plain_notice_yet_never_stays() {
         let failed = trouble("Couldn't read a cover");
 
-        assert_eq!(lingers(&failed, false), None);
-        assert_eq!(lingers(&failed, true), Some(LINGER_IN_A_BURST_AT_LEAST));
+        assert_eq!(lingers(&failed, false), TROUBLE_LINGERS_AT_LEAST);
+        assert!(TROUBLE_LINGERS_AT_LEAST > LINGER_AT_LEAST);
+        assert_eq!(lingers(&failed, true), LINGER_IN_A_BURST_AT_LEAST);
     }
 
     #[test]
     fn a_plain_notice_lingers_a_while_and_less_in_a_burst() {
         let short = noted("Scan finished");
 
-        assert_eq!(lingers(&short, false), Some(LINGER_AT_LEAST));
-        assert_eq!(lingers(&short, true), Some(LINGER_IN_A_BURST_AT_LEAST));
+        assert_eq!(lingers(&short, false), LINGER_AT_LEAST);
+        assert_eq!(lingers(&short, true), LINGER_IN_A_BURST_AT_LEAST);
     }
 
     #[test]
@@ -499,9 +501,9 @@ mod tests {
         );
         let words = long.text().split_whitespace().count() as u32;
 
-        assert_eq!(lingers(&long, false), Some(READING_A_WORD * words));
+        assert_eq!(lingers(&long, false), READING_A_WORD * words);
         assert!(READING_A_WORD * words > LINGER_AT_LEAST);
-        assert_eq!(lingers(&long, true), Some(READING_A_WORD * words));
+        assert_eq!(lingers(&long, true), READING_A_WORD * words);
     }
 
     #[test]

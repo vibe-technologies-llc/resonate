@@ -3919,10 +3919,6 @@ impl LibraryModel {
                 Ok(art) => (art, answered),
                 Err(error) => {
                     tracing::warn!(%error, "a found song's cover could not be fetched");
-                    let told = this.update(cx, |_, cx| {
-                        toast::tell(toast::could_not("fetch a song's cover", &error), cx);
-                    });
-                    let _ = told;
                     (None, false)
                 }
             };

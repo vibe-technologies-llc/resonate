@@ -631,9 +631,11 @@ is never named.
   every gesture tell it alike (`toast::tell(notice, cx)`). One pill at a time, `type_ahead_lift` above
   the bar; rises `RISE` (10 px), fades in over `ARRIVAL` (220 ms), lingers `LINGER_AT_LEAST` (6 s;
   `LINGER_IN_A_BURST_AT_LEAST` 2 s where more wait; a notice is read for `READING_A_WORD` (500 ms) a
-  word where that is longer than its floor (`reading_time`, `lingers`); **a `Trouble` with nothing
-  waiting stays until a click or escape takes it**, since a failure unread is lost
-  (`a_trouble_stays_until_it_is_dismissed_unless_others_are_waiting`); at most `WAITING_AT_MOST` (4) waiting, never the same words
+  word where that is longer than its floor (`reading_time`, `lingers`); **no toast stands indefinitely**:
+  a `Trouble` with nothing waiting lingers `TROUBLE_LINGERS_AT_LEAST` (10 s), longer than a plain
+  notice, then goes (`a_trouble_lingers_longer_than_a_plain_notice_yet_never_stays`); a failure the
+  listener did not ask for and cannot act on (a found song's cover not fetched) is traced, never
+  toasted; at most `WAITING_AT_MOST` (4) waiting, never the same words
   twice (a `Trouble` told again while the same one shows or waits is counted on it, *… (×3)*, and a
   repeat of any other tone is dropped); a full line gives up its oldest non-`Trouble` for a newer notice, turns a plain one away where
   only troubles wait, and keeps every `Trouble`, so troubles alone may pass four), fades out over `WITHDRAWAL`; a click or escape takes it early. A `Notice` is `Trouble`,
