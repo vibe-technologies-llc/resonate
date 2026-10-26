@@ -36,8 +36,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   families 2 and 3 would also need projection decoding
 
 ## Tagging
-- [S · 0.2.0] A tag run's notes of a sheet it wrote (`retagged_sheets`) are keyed by the sheet's
-  path and do not follow an organise or a hand move the scan pairs, as `retagged` does for a file
 - [S · 0.2.0] An album landed as its release group alone gets no totals, by design: a group names no
   pressing and so no count, and a closest pressing's are withheld as a guess; only a count the
   group's pressings agree on could be written, which `settle_group` already lands as an exact fit

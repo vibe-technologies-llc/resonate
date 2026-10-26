@@ -572,6 +572,77 @@ pub(crate) fn forget_the_notes_of(tx: &Transaction<'_>, sheets: &[PathBuf]) -> R
     Ok(())
 }
 
+pub(crate) fn notes_follow_the_file(tx: &Transaction<'_>, from: &Path, to: &Path) -> Result<()> {
+    tx.prepare_cached("UPDATE retagged_sheets SET file = ?2 WHERE file = ?1")
+        .and_then(|mut statement| {
+            statement.execute(params![store::path_text(from), store::path_text(to)])
+        })
+        .map_err(|source| Error::store(StoreOp::Update, source))?;
+    Ok(())
+}
+
+pub(crate) fn notes_follow_the_sheet(tx: &Transaction<'_>, from: &Path, to: &Path) -> Result<()> {
+    let from = store::path_text(from);
+    let to = store::path_text(to);
+
+    tx.prepare_cached("DELETE FROM retagged_sheets WHERE sheet = ?1")
+        .and_then(|mut statement| statement.execute(params![to]))
+        .map_err(|source| Error::store(StoreOp::Delete, source))?;
+    tx.prepare_cached("UPDATE retagged_sheets SET sheet = ?2 WHERE sheet = ?1")
+        .and_then(|mut statement| statement.execute(params![from, to]))
+        .map_err(|source| Error::store(StoreOp::Update, source))?;
+    Ok(())
+}
+
+pub(crate) fn notes_follow_a_sheet_moved_beside(
+    tx: &Transaction<'_>,
+    from: &Path,
+    to: &Path,
+) -> Result<()> {
+    let sheets = tx
+        .prepare_cached("SELECT DISTINCT sheet FROM retagged_sheets WHERE file = ?1")
+        .and_then(|mut statement| {
+            statement
+                .query_map(params![store::path_text(to)], |row| row.get::<_, String>(0))
+                .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
+        })
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+    for sheet in sheets.iter().map(|sheet| store::path_of(sheet)) {
+        let arrived = sheet_moved_with(&sheet, from, to);
+        if let Some(arrived) = arrived.filter(|arrived| is_a_file(arrived) && !is_there(&sheet)) {
+            notes_follow_the_sheet(tx, &sheet, &arrived)?;
+        }
+    }
+    Ok(())
+}
+
+fn is_there(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok()
+}
+
+fn is_a_file(path: &Path) -> bool {
+    fs::metadata(path).is_ok_and(|found| found.is_file())
+}
+
+fn sheet_moved_with(sheet: &Path, from: &Path, to: &Path) -> Option<PathBuf> {
+    let mut stood: Vec<_> = from.parent()?.components().collect();
+    let mut stands: Vec<_> = to.parent()?.components().collect();
+    while stood.last().is_some() && stood.last() == stands.last() {
+        stood.pop();
+        stands.pop();
+    }
+
+    let left: PathBuf = stood.into_iter().collect();
+    let landed: PathBuf = stands.into_iter().collect();
+    if left == landed {
+        return None;
+    }
+
+    let within = sheet.strip_prefix(&left).ok()?;
+    Some(landed.join(within))
+}
+
 pub(crate) fn sheets_retagged(
     tx: &Transaction<'_>,
     followed: &[SheetFollowed],

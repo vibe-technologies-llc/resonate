@@ -10,7 +10,7 @@ use crate::{
     enriched,
     error::{Error, Result, StoreOp},
     organise::{self, Move},
-    store,
+    sheeted, store,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -456,6 +456,9 @@ fn follow(tx: &Transaction<'_>, paired: &[Paired], generation: i64) -> Result<()
         }
     }
     organise::files_moved(tx, &moves)?;
+    for moved in &moves {
+        sheeted::notes_follow_a_sheet_moved_beside(tx, &moved.from, &moved.to)?;
+    }
 
     for pair in paired {
         tx.execute(
