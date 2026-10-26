@@ -871,7 +871,26 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `is_lossless`, which calls `Unknown` lossy too) and the lowpass wall, off `TrackHints`, else found
   as the music plays. Lossless sources never get it; one that does makes the plan `Converted`.
   **Repair** lifts the droop under the wall, fills holes with noise; **Extend** also rebuilds the
-  wall to 97 % of Nyquist, never louder than 3 dB under its source.
+  wall to 97 % of Nyquist, never louder than 3 dB under its source. The reshaping runs on a
+  1 024-frame window (at 48 kHz) a quarter hop apart. **Holes are found a hop at a time, not a
+  window:** each newest hop is a *slice* read through its own Hann FFT against the median of the
+  last `HOLE_MEMORY_SLICES` slices per bin; a run of `HOLE_RUN_HZ` or wider, `deeper_than_db` under
+  that median bin by bin and `A_RUN_DEEPER_THAN_ITS_BINS_DB` more summed, within
+  `HOLES_WITHIN_DB_OF_THE_LOUDEST` of the loudest bin, while the slice as a whole holds, is
+  hollow. The fill is noise at the steady level less `filled_below_db`, synthesised per hollow
+  slice and laid only over that slice (the window's own output is untouched), reaching half a
+  slice into a neighbour that is not hollow and crossfading into one that is, so a hole as short as
+  two slices (an MP3 granule) is filled where it falls, not smeared across the window. A dropout an
+  encoder smeared shallower than the tuning's depth (ffmpeg's AAC around a granule-long gap) is
+  left alone. **An unstudied track is extended from its first quarter second:** the long-term
+  spectrum is a running mean until it has heard `LONG_TERM_SECONDS`, the wall is looked for every
+  `LOOK_FOR_A_WALL_EVERY_SECONDS` from `LOOK_FOR_A_WALL_AFTER_SECONDS` and held provisionally,
+  locking at `WALL_LOCKS_AFTER_SECONDS`. Everything the wall drives (droop lift and patch) is scaled
+  by a *presence* walked over `RESTORATION_FADES_OVER_SECONDS`, so the extension fades in rather
+  than stepping; a provisional wall moving past `WALL_MOVES_PAST_HZ` fades out, moves, fades back
+  in. A studied wall starts present (`a_hole_one_granule_long_is_filled_where_it_falls_and_nowhere_else`,
+  `the_extension_rises_and_settles_without_a_step`; `resonate-dsp --test restoration` runs ffmpeg's
+  MP3, AAC and Vorbis encodes through it, skipping without ffmpeg).
 - **A `Chain` carries a channel width per stage** (`Remix` changes frame width mid-chain). **One
   flush drains a chain; a flush with less room is refused:** `Chain::max_flush_frames` sums what
   every stage can still hand on and `Chain::flush` answers `Error::OutputTooSmall` for a shorter
