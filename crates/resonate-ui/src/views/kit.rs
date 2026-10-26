@@ -925,11 +925,11 @@ pub(crate) fn measures_its_height(measured: Rc<Cell<Pixels>>) -> impl IntoElemen
 }
 
 pub(crate) fn brought_into_view(scroll: ScrollHandle, asked: Rc<Cell<bool>>) -> impl IntoElement {
-    brought_into_view_within(scroll, None, asked)
+    brought_into_view_within(Some(scroll), None, asked)
 }
 
 pub(crate) fn brought_into_view_within(
-    down: ScrollHandle,
+    down: Option<ScrollHandle>,
     across: Option<ScrollHandle>,
     asked: Rc<Cell<bool>>,
 ) -> impl IntoElement {
@@ -938,14 +938,17 @@ pub(crate) fn brought_into_view_within(
             if !asked.replace(false) {
                 return;
             }
-            let seen = down.bounds();
-            let lowered = moved_into(bounds.top(), bounds.bottom(), seen.top(), seen.bottom());
+            let lowered = down.as_ref().and_then(|down| {
+                let seen = down.bounds();
+                moved_into(bounds.top(), bounds.bottom(), seen.top(), seen.bottom())
+                    .map(|moved| (down, moved))
+            });
             let slid = across.as_ref().and_then(|across| {
                 let seen = across.bounds();
                 moved_into(bounds.left(), bounds.right(), seen.left(), seen.right())
                     .map(|moved| (across, moved))
             });
-            if let Some(moved) = lowered {
+            if let Some((down, moved)) = lowered {
                 let offset = down.offset();
                 down.set_offset(point(offset.x, offset.y + moved));
             }

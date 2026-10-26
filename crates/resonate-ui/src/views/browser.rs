@@ -1,6 +1,7 @@
 use std::{
     cmp::Reverse,
     path::{Path, PathBuf},
+    rc::Rc,
     slice,
     sync::Arc,
     time::{Duration, SystemTime},
@@ -166,7 +167,7 @@ pub(crate) fn controls_width(controls: usize) -> f32 {
 
 const CELL_GROUP: &str = "album-cell";
 
-const SHELF_AT_MOST: usize = 48;
+pub(crate) const SHELF_AT_MOST: usize = 48;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Rowed {
@@ -2759,6 +2760,29 @@ impl RootView {
         .detach();
     }
 
+    fn slid_into_view(
+        &self,
+        cell: Stateful<Div>,
+        listed: Listed,
+        at: usize,
+        scroll: &gpui::ScrollHandle,
+    ) -> AnyElement {
+        if !self.reaches(Shift::Listing(listed), at) {
+            return cell.into_any_element();
+        }
+
+        div()
+            .relative()
+            .flex_none()
+            .child(cell)
+            .child(kit::brought_into_view_within(
+                None,
+                Some(scroll.clone()),
+                Rc::clone(&self.reached_unseen),
+            ))
+            .into_any_element()
+    }
+
     pub(crate) fn album_shelf(
         &self,
         id: &'static str,
@@ -2767,25 +2791,23 @@ impl RootView {
         listed: Listed,
         cx: &mut Context<Self>,
     ) -> Div {
-        let mut cells = Vec::new();
-        for (at, album) in albums.iter().take(SHELF_AT_MOST).enumerate() {
-            cells.push(
-                self.album_cell_at(
-                    album,
-                    theme::shelf_cover(),
-                    Some(Chooses::among(listed, at)),
-                    cx,
-                )
-                .into_any_element(),
-            );
-        }
-
         let scroll = self
             .shelf_scrolls
             .borrow_mut()
             .entry(id)
             .or_default()
             .clone();
+        let mut cells = Vec::new();
+        for (at, album) in albums.iter().take(SHELF_AT_MOST).enumerate() {
+            let cell = self.album_cell_at(
+                album,
+                theme::shelf_cover(),
+                Some(Chooses::among(listed, at)),
+                cx,
+            );
+            cells.push(self.slid_into_view(cell, listed, at, &scroll));
+        }
+
         shelf(id, named, albums.len(), cells, scroll, Scrollbars::of(cx))
     }
 
@@ -2797,25 +2819,23 @@ impl RootView {
         listed: Listed,
         cx: &mut Context<Self>,
     ) -> Div {
-        let mut cells = Vec::new();
-        for (at, artist) in artists.iter().take(SHELF_AT_MOST).enumerate() {
-            cells.push(
-                self.artist_cell_at(
-                    artist,
-                    theme::shelf_cover(),
-                    Some(Chooses::among(listed, at)),
-                    cx,
-                )
-                .into_any_element(),
-            );
-        }
-
         let scroll = self
             .shelf_scrolls
             .borrow_mut()
             .entry(id)
             .or_default()
             .clone();
+        let mut cells = Vec::new();
+        for (at, artist) in artists.iter().take(SHELF_AT_MOST).enumerate() {
+            let cell = self.artist_cell_at(
+                artist,
+                theme::shelf_cover(),
+                Some(Chooses::among(listed, at)),
+                cx,
+            );
+            cells.push(self.slid_into_view(cell, listed, at, &scroll));
+        }
+
         shelf(id, named, artists.len(), cells, scroll, Scrollbars::of(cx))
     }
 
@@ -2901,8 +2921,11 @@ impl RootView {
                 this.opened(Selection::Artist(id), cx);
             }));
 
-        menu::opens_a_menu(
+        let reach = chooses.and_then(|at| self.at_the_reach(at.shift, at.row));
+
+        menu::opens_a_reachable_menu(
             cell,
+            reach,
             move |this, at, cx| match chooses {
                 Some(chooses) => artist_menu_among(at, id, favourite, chooses, this, cx),
                 None => artist_menu(at, id).favours(Favoured::Artist(id), favourite),

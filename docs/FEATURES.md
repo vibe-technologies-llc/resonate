@@ -66,9 +66,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   lowpass) still reads as lossless
 
 ## Keyboard and accessibility
-- [M · 0.2.0] No reach key walks the Favourites shelves: a choice apart there is made by
-  Control-click and Shift-click alone, the arrows and `ctrl-space` reaching only the tracks under
-  them, until the strips join the pane's reach as Top results' do
 - [M · 0.2.0] A screen reader hears the bar, sidebar, track rows, search field, menus and toasts
   but not the album and artist cells, the settings choice rows and swatches, a link inside a row,
   the lyrics and the plots, and the search field reports its text but no caret or selection

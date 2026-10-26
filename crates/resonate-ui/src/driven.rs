@@ -3189,24 +3189,218 @@ mod tests {
         assert!(chosen_rows(&mut driven).is_empty());
     }
 
+    fn reached_at(driven: &mut Driven) -> Option<(Shift, usize)> {
+        driven.read(|root, _| root.reached().map(|reach| (reach.shift, reach.row)))
+    }
+
     #[gpui::test]
-    fn a_key_in_the_favourites_walks_the_tracks_and_gives_up_the_choice_on_a_shelf(
+    fn the_arrows_walk_the_favourites_from_the_tracks_up_into_the_shelves_and_back_down(
         cx: &mut TestAppContext,
     ) {
+        let folder = Folder::new();
+        let (mut driven, _library) = favourites_with_shelves(cx, &folder);
+        let tracks = Shift::Listing(Listed::Favourites);
+        let albums = Shift::Listing(Listed::FavouriteAlbums);
+        let artists = Shift::Listing(Listed::FavouriteArtists);
+
+        driven.cx.simulate_keystrokes("down");
+        assert_eq!(reached_at(&mut driven), Some((tracks, 0)));
+
+        driven.cx.simulate_keystrokes("up");
+        assert_eq!(reached_at(&mut driven), Some((albums, 0)));
+
+        driven.cx.simulate_keystrokes("up");
+        assert_eq!(reached_at(&mut driven), Some((artists, 0)));
+
+        driven.cx.simulate_keystrokes("up");
+        assert_eq!(reached_at(&mut driven), Some((artists, 0)));
+
+        driven.cx.simulate_keystrokes("right right right");
+        assert_eq!(reached_at(&mut driven), Some((artists, 2)));
+
+        driven.cx.simulate_keystrokes("left");
+        assert_eq!(reached_at(&mut driven), Some((artists, 1)));
+
+        driven.cx.simulate_keystrokes("down");
+        assert_eq!(reached_at(&mut driven), Some((albums, 0)));
+
+        driven.cx.simulate_keystrokes("down");
+        assert_eq!(reached_at(&mut driven), Some((tracks, 0)));
+
+        driven.cx.simulate_keystrokes("down down down");
+        assert_eq!(reached_at(&mut driven), Some((tracks, 2)));
+    }
+
+    #[gpui::test]
+    fn the_arrows_in_the_favourites_pass_over_a_shelf_that_is_empty(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let library = three_records_all_favourite(&folder);
+        for album in library
+            .albums(&resonate_library::AlbumQuery::default())
+            .expect("the scanned albums")
+        {
+            library
+                .favour(resonate_library::Favoured::Album(album.id), false)
+                .expect("a favourite taken back");
+        }
+        let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+        driven.click("tab-favourites");
+        driven.until(|root, cx| {
+            let held = root.library.read(cx).favourited();
+            held.artists == 3 && held.albums == 0
+        });
+
+        driven.cx.simulate_keystrokes("down up");
+
+        assert_eq!(
+            reached_at(&mut driven),
+            Some((Shift::Listing(Listed::FavouriteArtists), 0))
+        );
+    }
+
+    #[gpui::test]
+    fn a_shelf_alone_is_walked_by_the_arrows_where_no_song_is_a_favourite(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let library = three_records_all_favourite(&folder);
+        for track in library
+            .tracks(&resonate_library::TrackQuery::default())
+            .expect("the scanned tracks")
+        {
+            library
+                .favour(resonate_library::Favoured::Track(track.id), false)
+                .expect("a favourite taken back");
+        }
+        let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+        driven.click("tab-favourites");
+        driven.until(|root, cx| {
+            let held = root.library.read(cx).favourited();
+            held.artists == 3 && held.albums == 3 && held.tracks == 0
+        });
+
+        driven.cx.simulate_keystrokes("down down");
+
+        assert_eq!(
+            reached_at(&mut driven),
+            Some((Shift::Listing(Listed::FavouriteAlbums), 0))
+        );
+    }
+
+    #[gpui::test]
+    fn ctrl_space_chooses_favourite_artists_apart_and_enter_queues_each_in_turn(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, library) = favourites_with_shelves(cx, &folder);
+        let artists = driven.read(|root, cx| root.library.read(cx).favourite_artists());
+
+        driven
+            .cx
+            .simulate_keystrokes("down up up ctrl-shift-down ctrl-shift-down ctrl-space");
+
+        assert_eq!(chosen_rows(&mut driven), [0, 2]);
+        assert_eq!(
+            driven.read(|root, _| root.reached().map(|reach| reach.shift)),
+            Some(Shift::Listing(Listed::FavouriteArtists))
+        );
+
+        driven.cx.simulate_keystrokes("ctrl-space");
+
+        assert_eq!(chosen_rows(&mut driven), [0]);
+
+        driven.cx.simulate_keystrokes("ctrl-space enter");
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
+
+        assert_eq!(
+            driven.queue(),
+            [
+                the_tracks_of_an_artist(&library, artists[0].id),
+                the_tracks_of_an_artist(&library, artists[2].id)
+            ]
+        );
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Favourites);
+    }
+
+    #[gpui::test]
+    fn the_menu_key_on_favourite_albums_chosen_apart_plays_each_in_turn(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let (mut driven, library) = favourites_with_shelves(cx, &folder);
+        let albums = driven.read(|root, cx| root.library.read(cx).favourite_albums());
+
+        driven
+            .cx
+            .simulate_keystrokes("down up ctrl-shift-down ctrl-space menu");
+        driven.settle();
+
+        assert_eq!(chosen_rows(&mut driven), [0, 1]);
+        assert!(driven.read(|root, _| root.menu.is_some()));
+
+        driven.cx.simulate_keystrokes("enter");
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
+
+        assert_eq!(
+            driven.queue(),
+            [
+                the_tracks_of_an_album(&library, albums[0].id),
+                the_tracks_of_an_album(&library, albums[1].id)
+            ]
+        );
+    }
+
+    #[gpui::test]
+    fn the_menu_key_on_one_favourite_artist_offers_that_artists_menu(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let (mut driven, _library) = favourites_with_shelves(cx, &folder);
+
+        driven.cx.simulate_keystrokes("down up up menu");
+        driven.settle();
+
+        assert_eq!(
+            menu_labels(&mut driven)[..3],
+            [menu::PLAY, menu::PLAY_NEXT, menu::ADD_TO_QUEUE]
+        );
+    }
+
+    #[gpui::test]
+    fn enter_on_one_favourite_artist_opens_it(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let (mut driven, _library) = favourites_with_shelves(cx, &folder);
+        let artists = driven.read(|root, cx| root.library.read(cx).favourite_artists());
+
+        driven.cx.simulate_keystrokes("down up up right enter");
+        driven.settle();
+
+        assert_eq!(
+            driven.read(|root, cx| root.library.read(cx).selection()),
+            Selection::Artist(artists[1].id)
+        );
+    }
+
+    #[gpui::test]
+    fn enter_on_one_favourite_album_opens_it(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let (mut driven, _library) = favourites_with_shelves(cx, &folder);
+        let albums = driven.read(|root, cx| root.library.read(cx).favourite_albums());
+
+        driven.cx.simulate_keystrokes("down up right right enter");
+        driven.settle();
+
+        assert_eq!(
+            driven.read(|root, cx| root.library.read(cx).selection()),
+            Selection::Album(albums[2].id)
+        );
+    }
+
+    #[gpui::test]
+    fn an_arrow_gives_up_the_artists_chosen_apart_on_a_shelf(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let (mut driven, _library) = favourites_with_shelves(cx, &folder);
         let artists = driven.read(|root, cx| root.library.read(cx).favourite_artists());
 
         driven.click_with(named("artist", artists[0].id.get()), CONTROL);
         driven.click_with(named("artist", artists[1].id.get()), CONTROL);
-        driven.cx.simulate_keystrokes("down");
-        driven.settle();
+        driven.cx.simulate_keystrokes("right");
 
-        assert_eq!(
-            driven.read(|root, _| root.reached().map(|reach| reach.shift)),
-            Some(Shift::Listing(Listed::Favourites))
-        );
-        assert_eq!(chosen_rows(&mut driven), [0]);
+        assert_eq!(chosen_rows(&mut driven), [2]);
     }
 
     #[gpui::test]

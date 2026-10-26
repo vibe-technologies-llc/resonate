@@ -5,13 +5,13 @@ use resonate_core::TrackId;
 use resonate_library::{Album, Artist, Track};
 
 use crate::{
-    Favourited, format,
+    Favourited, LibraryModel, format,
     icons::Icon,
     theme,
     views::{
-        browser::{Chooses, Plays, Rowed, TRACK_CONTROLS},
+        browser::{Chooses, Plays, Rowed, SHELF_AT_MOST, TRACK_CONTROLS},
         kit, listing,
-        reorder::{Listed, Shift},
+        reorder::{Listed, Shift, Step},
         root::{RootView, empty},
         scrollbar::Scrollbars,
         sorting,
@@ -23,6 +23,73 @@ const NOTHING_FAVOURITE: &str = "Nothing is a favourite yet.";
 const NOTHING_MATCHES: &str = "No favourite matches.";
 
 const HOW_TO_FAVOUR: &str = "Press the star on a track, an album or an artist to keep it here.";
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Shelved {
+    artists: usize,
+    albums: usize,
+    tracks: usize,
+}
+
+impl Shelved {
+    const DRAWN: [Listed; 3] = [
+        Listed::FavouriteArtists,
+        Listed::FavouriteAlbums,
+        Listed::Favourites,
+    ];
+
+    pub(crate) fn of(library: &LibraryModel) -> Self {
+        Self {
+            artists: library.favourite_artists().len().min(SHELF_AT_MOST),
+            albums: library.favourite_albums().len().min(SHELF_AT_MOST),
+            tracks: library.favourite_tracks().len(),
+        }
+    }
+
+    pub(crate) const fn rows_of(self, listed: Listed) -> usize {
+        match listed {
+            Listed::FavouriteArtists => self.artists,
+            Listed::FavouriteAlbums => self.albums,
+            Listed::Favourites => self.tracks,
+            _ => 0,
+        }
+    }
+
+    pub(crate) fn opening(self) -> Option<Listed> {
+        Self::DRAWN
+            .into_iter()
+            .rev()
+            .find(|listed| self.rows_of(*listed) > 0)
+    }
+
+    pub(crate) fn beyond(self, from: Listed, step: Step) -> Option<Listed> {
+        let at = Self::DRAWN.iter().position(|listed| *listed == from)?;
+        let held = |listed: &Listed| self.rows_of(*listed) > 0;
+        match step {
+            Step::Above => Self::DRAWN[..at].iter().rev().copied().find(held),
+            Step::Below => Self::DRAWN[at + 1..].iter().copied().find(held),
+        }
+    }
+
+    pub(crate) const fn is_a_strip(listed: Listed) -> bool {
+        matches!(listed, Listed::FavouriteArtists | Listed::FavouriteAlbums)
+    }
+
+    pub(crate) fn along_the_strip(
+        self,
+        listed: Listed,
+        row: usize,
+        step: Step,
+    ) -> Option<Option<usize>> {
+        if !Self::is_a_strip(listed) {
+            return None;
+        }
+        Some(match step {
+            Step::Below => (row + 1 < self.rows_of(listed)).then_some(row + 1),
+            Step::Above => row.checked_sub(1),
+        })
+    }
+}
 
 impl RootView {
     pub(crate) fn favourites_pane(&mut self, cx: &mut Context<Self>) -> AnyElement {
@@ -166,4 +233,78 @@ fn favourites_heading(held: Favourited, reads: &[String]) -> Div {
         .when(!reads.is_empty(), |heading| {
             heading.child(listing::reads(reads))
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Shelved;
+    use crate::views::reorder::{Listed, Step};
+
+    fn shelved(artists: usize, albums: usize, tracks: usize) -> Shelved {
+        Shelved {
+            artists,
+            albums,
+            tracks,
+        }
+    }
+
+    #[test]
+    fn the_keys_open_on_the_songs_and_fall_back_to_the_shelves_nearest_them() {
+        assert_eq!(shelved(2, 3, 4).opening(), Some(Listed::Favourites));
+        assert_eq!(shelved(2, 3, 0).opening(), Some(Listed::FavouriteAlbums));
+        assert_eq!(shelved(2, 0, 0).opening(), Some(Listed::FavouriteArtists));
+        assert_eq!(shelved(0, 0, 0).opening(), None);
+    }
+
+    #[test]
+    fn a_step_leaves_a_section_for_the_nearest_one_drawn_with_something_in_it() {
+        let all = shelved(2, 3, 4);
+        let no_albums = shelved(2, 0, 4);
+
+        assert_eq!(
+            all.beyond(Listed::FavouriteArtists, Step::Below),
+            Some(Listed::FavouriteAlbums)
+        );
+        assert_eq!(
+            all.beyond(Listed::Favourites, Step::Above),
+            Some(Listed::FavouriteAlbums)
+        );
+        assert_eq!(
+            no_albums.beyond(Listed::FavouriteArtists, Step::Below),
+            Some(Listed::Favourites)
+        );
+        assert_eq!(
+            no_albums.beyond(Listed::Favourites, Step::Above),
+            Some(Listed::FavouriteArtists)
+        );
+        assert_eq!(all.beyond(Listed::FavouriteArtists, Step::Above), None);
+        assert_eq!(all.beyond(Listed::Favourites, Step::Below), None);
+        assert_eq!(all.beyond(Listed::Albums, Step::Below), None);
+    }
+
+    #[test]
+    fn the_cells_of_a_shelf_are_stepped_along_and_the_songs_are_not_one() {
+        let run = shelved(3, 2, 4);
+
+        assert_eq!(
+            run.along_the_strip(Listed::FavouriteArtists, 0, Step::Below),
+            Some(Some(1))
+        );
+        assert_eq!(
+            run.along_the_strip(Listed::FavouriteArtists, 2, Step::Below),
+            Some(None)
+        );
+        assert_eq!(
+            run.along_the_strip(Listed::FavouriteAlbums, 0, Step::Above),
+            Some(None)
+        );
+        assert_eq!(
+            run.along_the_strip(Listed::FavouriteAlbums, 1, Step::Above),
+            Some(Some(0))
+        );
+        assert_eq!(
+            run.along_the_strip(Listed::Favourites, 1, Step::Below),
+            None
+        );
+    }
 }

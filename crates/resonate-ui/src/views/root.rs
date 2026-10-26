@@ -59,6 +59,7 @@ use crate::{
         browser::{self, ArtistShows, OpenedRecord},
         chrome,
         dropping::{FolderStanding, Incoming, TakingIn},
+        favourites::Shelved,
         field::{Blurred, Caught, Composing, Field, Submitted},
         focus::Controls,
         hint::{self, Names},
@@ -2584,6 +2585,9 @@ impl RootView {
         let Some((shift, held)) = self.reachable(cx) else {
             return;
         };
+        if self.reach_across_the_favourites(shift, held, step, cx) {
+            return;
+        }
         let row = match self.reach_in(shift, held) {
             Some(reach) => self.line_beyond(shift, reach, step, held, cx),
             None => self.opening_row(shift, held, cx),
@@ -2592,6 +2596,39 @@ impl RootView {
         self.reach = Some(Reach::at(shift, row));
         self.show_row(shift, row, cx);
         cx.notify();
+    }
+
+    fn reach_across_the_favourites(
+        &mut self,
+        shift: Shift,
+        held: usize,
+        step: Step,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Shift::Listing(from) = shift else {
+            return false;
+        };
+        let Some(reach) = self.reach_in(shift, held) else {
+            return false;
+        };
+        let shelved = Shelved::of(self.library.read(cx));
+        if shelved.rows_of(from) == 0 {
+            return false;
+        }
+        let leaves =
+            Shelved::is_a_strip(from) || (step == Step::Above && step.end(reach.rows()) == 0);
+        if !leaves {
+            return false;
+        }
+
+        if let Some(into) = shelved.beyond(from, step) {
+            let shift = Shift::Listing(into);
+            self.reach = Some(Reach::at(shift, 0));
+            self.show_row(shift, 0, cx);
+            cx.notify();
+        }
+
+        true
     }
 
     fn line_beyond(&self, shift: Shift, reach: Reach, step: Step, held: usize, cx: &App) -> usize {
@@ -2608,14 +2645,18 @@ impl RootView {
         if self.something_stands_over_the_pane() {
             return false;
         }
-        let Some((shift @ Shift::Listing(Listed::Top), held)) = self.reachable(cx) else {
+        let Some((shift @ Shift::Listing(listed), held)) = self.reachable(cx) else {
             return false;
         };
         let Some(reach) = self.reach_in(shift, held) else {
             return false;
         };
         let at = step.end(reach.rows());
-        let Some(along) = TopRun::of(self.library.read(cx)).along_the_strip(at, step) else {
+        let along = match listed {
+            Listed::Top => TopRun::of(self.library.read(cx)).along_the_strip(at, step),
+            _ => Shelved::of(self.library.read(cx)).along_the_strip(listed, at, step),
+        };
+        let Some(along) = along else {
             return false;
         };
         if let Some(row) = along {
@@ -2859,7 +2900,30 @@ impl RootView {
                 let tracks = self.library.read(cx).favourite_tracks();
                 self.play(&tracks, row, cx);
             }
-            Shift::Listing(Listed::FavouriteArtists | Listed::FavouriteAlbums) => {}
+            Shift::Listing(Listed::FavouriteArtists) => {
+                let Some(artist) = self
+                    .library
+                    .read(cx)
+                    .favourite_artists()
+                    .get(row)
+                    .map(|held| held.id)
+                else {
+                    return;
+                };
+                self.opened(Selection::Artist(artist), cx);
+            }
+            Shift::Listing(Listed::FavouriteAlbums) => {
+                let Some(album) = self
+                    .library
+                    .read(cx)
+                    .favourite_albums()
+                    .get(row)
+                    .map(|held| held.id)
+                else {
+                    return;
+                };
+                self.opened(Selection::Album(album), cx);
+            }
             Shift::Listing(Listed::Missing) => self.open_what_is_missing_at(row, cx),
             Shift::Listing(Listed::Top) => self.press_at_the_top(row, window, cx),
             Shift::Listing(Listed::Suggested) => {
@@ -2891,7 +2955,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         match shift {
-            Shift::Listing(Listed::Albums) => {
+            Shift::Listing(Listed::Albums | Listed::FavouriteAlbums) => {
                 let albums = self.albums_chosen(shift, chosen, cx);
                 self.plays_everything_in_each(
                     albums.into_iter().map(Selection::Album).collect(),
@@ -2901,7 +2965,7 @@ impl RootView {
                     cx,
                 );
             }
-            Shift::Listing(Listed::Artists) => {
+            Shift::Listing(Listed::Artists | Listed::FavouriteArtists) => {
                 let artists = self.artists_chosen(shift, chosen, cx);
                 self.plays_everything_in_each(
                     artists.into_iter().map(Selection::Artist).collect(),
@@ -3257,9 +3321,14 @@ impl RootView {
                 (rows > 0).then_some((Shift::Listing(Listed::Albums), rows))
             }
             Pane::Favourites => {
-                let rows = self.library.read(cx).favourite_tracks().len();
+                let shelved = Shelved::of(self.library.read(cx));
+                let reached = self.reach.as_ref().and_then(|reach| match reach.shift {
+                    Shift::Listing(listed) if shelved.rows_of(listed) > 0 => Some(listed),
+                    _ => None,
+                });
+                let listed = reached.or_else(|| shelved.opening())?;
 
-                (rows > 0).then_some((Shift::Listing(Listed::Favourites), rows))
+                Some((Shift::Listing(listed), shelved.rows_of(listed)))
             }
             Pane::Missing => {
                 let rows = self.missing_rows_shown(cx).len();
@@ -3345,7 +3414,9 @@ impl RootView {
                 self.favourite_rows
                     .scroll_to_item(row, ScrollStrategy::Center);
             }
-            Shift::Listing(Listed::FavouriteArtists | Listed::FavouriteAlbums) => {}
+            Shift::Listing(Listed::FavouriteArtists | Listed::FavouriteAlbums) => {
+                self.reached_unseen.set(true);
+            }
             Shift::Listing(Listed::Missing) => {
                 self.missing_rows
                     .scroll_to_item(row, ScrollStrategy::Center);

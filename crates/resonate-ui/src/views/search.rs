@@ -1106,7 +1106,7 @@ impl RootView {
                 .clone()
         });
         kit::brought_into_view_within(
-            self.search_scroll.clone(),
+            Some(self.search_scroll.clone()),
             across,
             Rc::clone(&self.reached_unseen),
         )
