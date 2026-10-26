@@ -19,6 +19,7 @@ class ArtworkEnrichment(
     private val library: LibraryRepository,
     private val settings: SharedPreferences,
     private val scope: CoroutineScope,
+    private val recognitionKey: () -> String,
     private val artworkChanged: (List<ULong>) -> Unit,
 ) {
     val automatic = MutableStateFlow(settings.getBoolean("enrich-automatically", true))
@@ -123,7 +124,9 @@ class ArtworkEnrichment(
 
     private suspend fun start(native: MobilePlayer, refresh: Boolean, stopFirst: Boolean) {
         if (stopFirst) native.stopEnrichment()
-        native.startEnrichment(EnrichmentOptions(refresh = refresh, atMost = null))
+        native.startEnrichment(
+            EnrichmentOptions(refresh = refresh, atMost = null, acoustidKey = recognitionKey())
+        )
         library.snapshot.value?.current?.id?.let(native::seekEnrichment)
         update(native)
         if (status.value?.running == true) watch(native)

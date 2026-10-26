@@ -257,7 +257,7 @@ struct RecognitionSection: View {
         } header: {
             Text("Identify this recording")
         } footer: {
-            Text("Recognition sends an audio signature to Shazam. With your AcoustID key it sends the whole-song fingerprint to AcoustID instead.")
+            Text("Recognition sends an audio signature to Shazam. With your AcoustID key it sends the whole-song fingerprint to AcoustID instead, and the library is studied and recognised in the background while online lookups run, which fills the misnamed search.")
         }
         .onChange(of: features.recognitionKey, initial: true) { _, saved in key = saved }
     }

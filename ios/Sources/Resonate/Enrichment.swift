@@ -10,8 +10,6 @@ final class Enrichment {
     private static let pollEvery: Duration = .seconds(2)
     private static let automaticKey = "enrich-automatically"
     private static let unmeteredKey = "enrich-unmetered"
-    private static let everything = EnrichmentOptions(refresh: false, atMost: nil)
-    private static let refreshing = EnrichmentOptions(refresh: true, atMost: nil)
 
     var status: EnrichmentStatus?
     var coversAskedAgain: UInt32?
@@ -51,6 +49,14 @@ final class Enrichment {
 
     var running: Bool { status?.running == true }
 
+    private var everything: EnrichmentOptions {
+        EnrichmentOptions(refresh: false, atMost: nil, acoustidKey: library.features.recognitionKey)
+    }
+
+    private var refreshing: EnrichmentOptions {
+        EnrichmentOptions(refresh: true, atMost: nil, acoustidKey: library.features.recognitionKey)
+    }
+
     var line: String { Self.line(of: status) }
 
     private var mayAsk: Bool {
@@ -60,11 +66,11 @@ final class Enrichment {
 
     func begin() {
         guard mayAsk else { return }
-        start(Self.everything, stoppingFirst: false, seeking: library.snapshot?.current?.id)
+        start(everything, stoppingFirst: false, seeking: library.snapshot?.current?.id)
     }
 
     func refresh() {
-        start(Self.refreshing, stoppingFirst: true, seeking: library.snapshot?.current?.id)
+        start(refreshing, stoppingFirst: true, seeking: library.snapshot?.current?.id)
     }
 
     func networkChanged(free: Bool) {
@@ -80,7 +86,7 @@ final class Enrichment {
             seek(track)
             return
         }
-        start(Self.everything, stoppingFirst: false, seeking: track)
+        start(everything, stoppingFirst: false, seeking: track)
     }
 
     func lookAgainForCovers() {
@@ -89,7 +95,7 @@ final class Enrichment {
                 let native = try await library.player()
                 let albums = try await Work.aside { try native.askAgainForCovers() }
                 coversAskedAgain = albums
-                start(Self.everything, stoppingFirst: true, seeking: library.snapshot?.current?.id)
+                start(everything, stoppingFirst: true, seeking: library.snapshot?.current?.id)
             } catch {
                 library.report(error)
             }

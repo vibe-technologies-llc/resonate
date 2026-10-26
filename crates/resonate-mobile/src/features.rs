@@ -7,7 +7,7 @@ use std::{
 use parking_lot::Mutex;
 use resonate_analysis::{Finding, Watch};
 use resonate_codec::{ImageFormat, probe};
-use resonate_core::{Mbid, TrackId, folded_letters, words_of_a_name};
+use resonate_core::{Chromaprint, Mbid, TrackId, folded_letters, words_of_a_name};
 use resonate_engine::{Counting, Listening, Tapped};
 use resonate_library::{
     Fingerprints, LookupOp, Printed, RecordingAsked, RecordingMatch, RecordingRelease, Reference,
@@ -18,8 +18,9 @@ use resonate_providers::A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY;
 use rusqlite::params;
 
 use crate::{
-    Error, MobilePlayer, Result, StoreOp, Track, catalog_extras::the_listeners_calendar,
-    documents::location, enrichment::Asking, lyrics::KeptSheets,
+    Error, MobilePlayer, Result, StoreOp, Track, catalog::Catalog,
+    catalog_extras::the_listeners_calendar, documents::location, enrichment::Asking,
+    lyrics::KeptSheets,
 };
 
 pub(crate) struct Services {
@@ -203,6 +204,33 @@ pub struct ArtistInformation {
 #[uniffi::export]
 pub fn default_track_filter() -> TrackFilter {
     TrackFilter::default()
+}
+
+pub(crate) fn recognised_through(
+    catalog: &Catalog,
+    printer: &dyn Fingerprints,
+    id: u64,
+    track: Track,
+    print: Chromaprint,
+) -> Result<Printed> {
+    let named = named_on_the_phone(id, &track)?;
+    let sounded = Sounded {
+        location: location(&track.uri)?,
+        span: None,
+        length: Some(Duration::from_millis(track.duration_ms)),
+        title: Some(track.title),
+        artist: Some(track.artist),
+        print,
+    };
+    let recognised = printer
+        .recognise(&sounded)
+        .map_err(|source| Error::reference(LookupOp::Recognise, source))?;
+    let heard = match &recognised {
+        Printed::Nothing => &[][..],
+        Printed::Recognised(songs) => songs.as_slice(),
+    };
+    catalog.keep_agreement(id, agreement(heard, &named))?;
+    Ok(recognised)
 }
 
 fn named_on_the_phone(id: u64, track: &Track) -> Result<TrackToAsk> {
@@ -501,15 +529,6 @@ impl MobilePlayer {
         let Some(print) = analysis.and_then(|analysis| analysis.study.print.clone()) else {
             return Ok(Vec::new());
         };
-        let named = named_on_the_phone(id, &track)?;
-        let sounded = Sounded {
-            location: location(&track.uri)?,
-            span: None,
-            length: Some(Duration::from_millis(track.duration_ms)),
-            title: Some(track.title),
-            artist: Some(track.artist),
-            print,
-        };
         let printer: Box<dyn Fingerprints> = if acoustid_key.trim().is_empty() {
             Box::new(resonate_online::ByEar::new(
                 Arc::clone(self.services.online.client()),
@@ -522,14 +541,7 @@ impl MobilePlayer {
                 acoustid_key,
             ))
         };
-        let recognised = printer
-            .recognise(&sounded)
-            .map_err(|source| Error::reference(LookupOp::Recognise, source))?;
-        let heard = match &recognised {
-            Printed::Nothing => &[][..],
-            Printed::Recognised(songs) => songs.as_slice(),
-        };
-        self.catalog.keep_agreement(id, agreement(heard, &named))?;
+        let recognised = recognised_through(&self.catalog, printer.as_ref(), id, track, print)?;
         Ok(match recognised {
             Printed::Nothing => Vec::new(),
             Printed::Recognised(songs) => songs

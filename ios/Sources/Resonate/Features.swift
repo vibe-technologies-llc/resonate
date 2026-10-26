@@ -1150,6 +1150,7 @@ final class Features {
             do {
                 try await Work.inSecrets { try store.writeRecognitionKey(value) }
                 recognitionKey = value
+                enrichment.begin()
             } catch {
                 library.report(error)
             }

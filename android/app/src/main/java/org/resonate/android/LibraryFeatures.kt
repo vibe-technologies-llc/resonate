@@ -231,7 +231,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val artworkGeneration = MutableStateFlow(0)
     private val mutableArtChanges = MutableSharedFlow<List<ULong>>(extraBufferCapacity = 16)
     val artChanges: SharedFlow<List<ULong>> = mutableArtChanges.asSharedFlow()
-    val enrichment = ArtworkEnrichment(library, settings, scope, ::artworkChangedFor)
+    val enrichment =
+        ArtworkEnrichment(library, settings, scope, { recognitionKey.value }, ::artworkChangedFor)
     val room = RoomCorrectionState(context, library, scope, context.contentResolver)
     private val lyricRequest = AtomicLong()
     private val searchRequest = AtomicLong()
@@ -1195,6 +1196,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     fun saveRecognitionKey(value: String) = work {
         accounts.writeRecognitionKey(value)
         recognitionKey.value = value
+        enrichment.begin()
     }
 
     fun recognise(id: ULong) {
