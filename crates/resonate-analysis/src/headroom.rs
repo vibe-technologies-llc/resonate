@@ -46,7 +46,7 @@ impl Loudest {
         self.peak_db().map(Preamp::holding_under_full_scale)
     }
 
-    fn joined(self, other: Self) -> Self {
+    pub fn joined(self, other: Self) -> Self {
         Self {
             peak: self.peak.max(other.peak),
             measured: self.measured + other.measured,

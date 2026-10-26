@@ -18457,6 +18457,93 @@ fn a_tag_run_keeps_the_study_of_every_file_it_wrote() -> Result<()> {
     Ok(())
 }
 
+fn flat_curve() -> Arc<resonate_core::eq::Profile> {
+    Arc::new(resonate_core::eq::Profile::flat())
+}
+
+fn whole_cut(location: &MediaLocation) -> resonate_analysis::Cut {
+    resonate_analysis::Cut {
+        location: location.clone(),
+        span: None,
+    }
+}
+
+#[test]
+fn a_study_the_enrichment_keeps_holds_the_bands_its_music_sounds_in() -> Result<()> {
+    let tree = Tree::new();
+    let file = tree.write("1.wav", &Wav::new().frames(4 * RATE as usize).build());
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    enrich(&library, &Arc::new(Fake::new(Canned::default())), false)?;
+    let location = MediaLocation::local(&file);
+
+    let loudest = library.loudest_kept(&flat_curve(), resonate_core::SampleRate::HZ_44100)?;
+
+    assert_eq!(loudest.measured, 1);
+    assert!(loudest.peak > 0.5, "{}", loudest.peak);
+    assert_eq!(library.unmeasured(&[whole_cut(&location)])?, vec![]);
+    Ok(())
+}
+
+#[test]
+fn a_study_kept_without_its_bands_is_measured_alone_and_keeps_everything_else_it_held() -> Result<()>
+{
+    let tree = Tree::new();
+    let file = tree.write("1.wav", &Wav::new().frames(4 * RATE as usize).build());
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    enrich(&library, &Arc::new(Fake::new(Canned::default())), false)?;
+    let location = MediaLocation::local(&file);
+    let studied = library
+        .study_of(&location, None)?
+        .expect("the enrichment studied the file");
+    beside(&database)
+        .execute("UPDATE track_studies SET band_levels = NULL", [])
+        .expect("the study reads as one kept before its bands were measured");
+
+    assert_eq!(
+        library.unmeasured(&[whole_cut(&location)])?,
+        vec![whole_cut(&location)]
+    );
+    assert_eq!(
+        library
+            .loudest_kept(&flat_curve(), resonate_core::SampleRate::HZ_44100)?
+            .measured,
+        0
+    );
+
+    enrich(&library, &Arc::new(Fake::new(Canned::default())), false)?;
+
+    assert_eq!(library.unmeasured(&[whole_cut(&location)])?, vec![]);
+    assert_eq!(
+        library.study_of(&location, None)?,
+        Some(studied),
+        "measuring the bands studied the file again"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_song_no_study_holds_is_left_to_be_decoded_and_one_it_does_is_not() -> Result<()> {
+    let tree = Tree::new();
+    let studied = tree.write("1.wav", &Wav::new().frames(4 * RATE as usize).build());
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    enrich(&library, &Arc::new(Fake::new(Canned::default())), false)?;
+    let unscanned = MediaLocation::local(tree.path().join("elsewhere.wav"));
+
+    let owed = library.unmeasured(&[
+        whole_cut(&MediaLocation::local(&studied)),
+        whole_cut(&unscanned),
+    ])?;
+
+    assert_eq!(owed, vec![whole_cut(&unscanned)]);
+    Ok(())
+}
+
 #[test]
 fn a_tag_run_keeps_the_words_kept_for_every_file_it_wrote_and_asks_again_after_a_new_name()
 -> Result<()> {

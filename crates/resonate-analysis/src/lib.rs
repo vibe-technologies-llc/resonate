@@ -1,4 +1,5 @@
 mod analysis;
+mod bands;
 mod conform;
 mod envelope;
 mod error;
@@ -22,6 +23,7 @@ pub fn read_a_kept_analysis(bytes: &[u8]) {
 
 pub use crate::{
     analysis::{Analysis, Examined, Excerpt, Study, analyse, excerpt, print, study},
+    bands::{BANDS, BandGains, BandLevels, band_levels},
     envelope::{ENVELOPE_COLUMNS, ENVELOPE_LANES, Envelope, Reach},
     error::{AnalysisOp, Error, Result},
     headroom::{CUTS_AT_MOST, Cut, Loudest, loudest_through, peak_through},

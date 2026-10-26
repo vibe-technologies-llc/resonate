@@ -7,10 +7,13 @@ use gpui::{
 };
 use resonate_core::{
     MediaLocation, SampleRate,
-    eq::{Band, BandKind, Preamp, Traced, TracedOn},
+    eq::{Band, BandKind, Preamp, Profile, Traced, TracedOn},
 };
-use resonate_engine::{AnalysisError, Command, NodeName, Sources, Watch, read_impulse};
+use resonate_engine::{
+    AnalysisError, Command, Loudest, NodeName, Player, Sources, Watch, Watching, read_impulse,
+};
 use resonate_eq::{Binding, Device, MEASURERS_BEST_FIRST, ProfileName};
+use resonate_library::Library;
 
 use crate::{
     Bindings, Measurers, Notice, ResonateApp, Setting,
@@ -1457,19 +1460,17 @@ impl RootView {
         let Some(shown) = self.equaliser.read(cx).shown().cloned() else {
             return;
         };
-        let player = self.player.read(cx);
-        if player.queued().rows.is_empty() {
-            return;
-        }
+        let rate = self.curve_rate(cx);
+        let engine = self.player.read(cx).engine();
+        let library = self.library.read(cx).catalog();
 
-        let engine = player.engine();
         let watch = Arc::new(Watch::default());
         let measuring = Arc::clone(&watch);
         let profile = Arc::new(shown);
         let measured_for = Arc::clone(&profile);
-        let measured = cx
-            .background_executor()
-            .spawn(async move { engine.loudest_through(&profile, measuring.as_ref()) });
+        let measured = cx.background_executor().spawn(async move {
+            loudest_kept_and_queued(&library, &engine, &profile, rate, measuring.as_ref())
+        });
         let landing = cx.spawn(async move |this, cx| {
             let measured = measured.await;
             let _ = this.update(cx, |this, cx| match measured {
@@ -1787,10 +1788,30 @@ impl Drop for Fitting {
     }
 }
 
+fn loudest_kept_and_queued(
+    library: &Library,
+    engine: &Player,
+    profile: &Arc<Profile>,
+    rate: SampleRate,
+    watch: &dyn Watching,
+) -> Result<Loudest, AnalysisError> {
+    let cuts = engine.cuts_to_fit();
+    let kept = library.loudest_kept(profile, rate).unwrap_or_else(|error| {
+        tracing::warn!(%error, "the catalog's measured songs could not be read for the preamp");
+        Loudest::default()
+    });
+    let owed = library.unmeasured(&cuts).unwrap_or_else(|error| {
+        tracing::warn!(%error, "the catalog's measured songs could not be weighed against the queue");
+        cuts
+    });
+    let decoded = engine.loudest_among(&owed, profile, watch)?;
+    Ok(kept.joined(decoded))
+}
+
 fn fitted_to(songs: usize) -> String {
     match songs {
-        1 => "The preamp is fitted to the song in the queue".to_owned(),
-        songs => format!("The preamp is fitted to the {songs} songs in the queue"),
+        1 => "The preamp is fitted to the one song measured".to_owned(),
+        songs => format!("The preamp is fitted to the {songs} songs measured"),
     }
 }
 

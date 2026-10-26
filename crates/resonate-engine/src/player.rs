@@ -244,13 +244,17 @@ impl Player {
         Ok(analysis)
     }
 
-    pub fn loudest_through(
+    pub fn cuts_to_fit(&self) -> Vec<Cut> {
+        cuts_to_fit(&self.queue(), self.state().queue_position)
+    }
+
+    pub fn loudest_among(
         &self,
+        cuts: &[Cut],
         profile: &Arc<Profile>,
         watch: &dyn Watching,
     ) -> resonate_analysis::Result<Loudest> {
-        let cuts = cuts_to_fit(&self.queue(), self.state().queue_position);
-        resonate_analysis::loudest_through(&self.sources, &cuts, profile, watch)
+        resonate_analysis::loudest_through(&self.sources, cuts, profile, watch)
     }
 
     pub fn keeping_analyses(mut self, kept: KeptAnalyses) -> Self {

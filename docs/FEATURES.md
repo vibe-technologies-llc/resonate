@@ -83,9 +83,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   is never a FLAC
 
 ## Later: Equaliser and DSP extras
-- [M] *Fit the preamp* measures the queue's first 32 songs by decoding them on the press: a fit over
-  the whole catalog would need a per-band measure kept in `track_studies`, and room correction and
-  the volume stage stand outside what it runs
+- [M] *Fit the preamp* on the phones still decodes the queue's first 32 songs on the press (the
+  desktop reads the bands every study keeps), and on both room correction and the volume stage
+  stand outside what it runs; the desktop's estimate from kept bands is not a bound, a song whose
+  peaks gather in one band can still pass the fit
 - [L] AutoEq is the only correction source, fetched one device at a time
 - [L] Lossy restoration was tuned on a few MP3s and synthetic walls, misses a hole shorter than its
   1 024-frame window, leaves the first second and a half of an unstudied track unextended

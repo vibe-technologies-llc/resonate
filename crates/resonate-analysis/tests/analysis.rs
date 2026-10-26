@@ -10,8 +10,8 @@ use std::{
 };
 
 use resonate_analysis::{
-    Cut, Error, Finding, LossyGuess, Ramp, Verdict, Watch, Watching, analyse, loudest_through,
-    peak_through, print, study,
+    BandGains, BandLevels, Cut, Error, Finding, LossyGuess, Ramp, Verdict, Watch, Watching,
+    analyse, band_levels, loudest_through, peak_through, print, study,
 };
 use resonate_codec::Sources;
 use resonate_core::{
@@ -469,4 +469,71 @@ fn a_stopped_watch_ends_the_fit_and_nothing_measured_fits_nothing() {
     let nothing =
         loudest_through(&Sources::local(), &[], &profile, &Watch::default()).expect("an empty set");
     assert_eq!(nothing.fitted_preamp(), None);
+}
+
+fn peak_db_estimated_from_the_kept_bands(profile: &Arc<Profile>, location: &MediaLocation) -> f64 {
+    let studied = study(&Sources::local(), location, None, &Watch::default()).expect("a study");
+    let gains = BandGains::of(profile, SampleRate::HZ_44100);
+    let peak = gains.peak(
+        &BandLevels::of(&studied.spectrum),
+        studied.loudness.true_peak,
+    );
+    20.0 * peak.log10()
+}
+
+#[test]
+fn the_bands_measured_alone_are_the_bands_a_study_keeps() {
+    let tree = Tree::new();
+    let music = tree.wave("music.wav", RATE, 16, &tone(BOOSTED_AT_HZ, 0.8));
+
+    let alone = band_levels(&Sources::local(), &music, None, &Watch::default())
+        .expect("bands measured alone");
+    let studied = study(&Sources::local(), &music, None, &Watch::default()).expect("a study");
+
+    assert_eq!(alone, BandLevels::of(&studied.spectrum));
+    assert!(!alone.is_silent());
+}
+
+#[test]
+fn a_stopped_watch_ends_the_measure_of_the_bands() {
+    let tree = Tree::new();
+    let music = tree.wave("music.wav", RATE, 16, &tone(BOOSTED_AT_HZ, 0.8));
+    let stopped = Watch::default();
+    stopped.stop();
+
+    assert!(matches!(
+        band_levels(&Sources::local(), &music, None, &stopped),
+        Err(Error::Stopped)
+    ));
+}
+
+#[test]
+fn music_sounding_on_the_boost_is_estimated_from_its_bands_as_the_decode_measures_it() {
+    let tree = Tree::new();
+    let profile = boosting_the_bass();
+    let on_the_boost = tree.wave("on-the-boost.wav", RATE, 16, &tone(BOOSTED_AT_HZ, 0.8));
+
+    let estimated = peak_db_estimated_from_the_kept_bands(&profile, &on_the_boost);
+    let decoded = peak_db_through(&profile, &on_the_boost);
+
+    assert!(
+        (estimated - decoded).abs() < WITHIN_DB,
+        "{estimated} against {decoded}"
+    );
+}
+
+#[test]
+fn music_sounding_away_from_the_boost_is_estimated_from_its_bands_as_the_decode_measures_it() {
+    let tree = Tree::new();
+    let profile = boosting_the_bass();
+    let elsewhere = tree.wave("elsewhere.wav", RATE, 16, &tone(SOUNDED_ELSEWHERE_HZ, 0.8));
+
+    let estimated = peak_db_estimated_from_the_kept_bands(&profile, &elsewhere);
+    let decoded = peak_db_through(&profile, &elsewhere);
+
+    assert!(
+        (estimated - decoded).abs() < WITHIN_DB,
+        "{estimated} against {decoded}"
+    );
+    assert!(estimated < 0.0, "{estimated}");
 }

@@ -5613,6 +5613,32 @@ impl Library {
             .write(|transaction| studies::write_study(transaction, track, study, SystemTime::now()))
     }
 
+    pub(crate) fn note_band_levels(
+        &self,
+        track: TrackId,
+        levels: &resonate_analysis::BandLevels,
+    ) -> Result<bool> {
+        self.inner
+            .write(|transaction| studies::write_band_levels(transaction, track, levels))
+    }
+
+    pub fn loudest_kept(
+        &self,
+        profile: &Arc<resonate_core::eq::Profile>,
+        rate: SampleRate,
+    ) -> Result<resonate_analysis::Loudest> {
+        self.inner
+            .read(|connection| studies::loudest_kept(connection, profile, rate))
+    }
+
+    pub fn unmeasured(
+        &self,
+        cuts: &[resonate_analysis::Cut],
+    ) -> Result<Vec<resonate_analysis::Cut>> {
+        self.inner
+            .read(|connection| studies::unmeasured(connection, cuts))
+    }
+
     pub(crate) fn note_unstudied(&self, track: TrackId) -> Result<()> {
         self.inner
             .write(|transaction| studies::write_unstudied(transaction, track))

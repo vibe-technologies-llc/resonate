@@ -10,6 +10,7 @@ const MIGRATIONS: &[&str] = &[
     SONGS_LEARNT_UNTIMED_ARE_LEARNT_AGAIN,
     A_RUN_KEEPS_THE_SHEET_LINES_IT_REPLACED,
     A_MODELS_EDITS_ARE_OFFERED_TO_THE_WINDOW,
+    A_STUDY_KEEPS_WHERE_THE_MUSIC_SOUNDS,
 ];
 
 const STAMPS: [SchemaFingerprint; MIGRATIONS.len() + 1] = stamps();
@@ -89,6 +90,10 @@ CREATE TABLE offered_step_rows (
     span_frames INTEGER,
     PRIMARY KEY (step, position)
 ) STRICT, WITHOUT ROWID;
+";
+
+const A_STUDY_KEEPS_WHERE_THE_MUSIC_SOUNDS: &str = "
+ALTER TABLE track_studies ADD COLUMN band_levels BLOB;
 ";
 
 const V1: &str = "
@@ -1244,11 +1249,26 @@ mod tests {
             .expect("the columns");
         assert!(columns.contains(&"origin_device".to_owned()));
         assert!(columns.contains(&"origin_id".to_owned()));
+        assert!(
+            studies_hold_their_bands(&connection),
+            "a study kept at the first release was not given a place for its bands"
+        );
         assert_eq!(
             stamped(&connection).expect("the stamp reads back"),
             Some(SCHEMA_FINGERPRINT)
         );
         assert!(lay_out(&connection).is_ok());
+    }
+
+    fn studies_hold_their_bands(connection: &Connection) -> bool {
+        connection
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('track_studies') WHERE name = 'band_levels'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("the columns")
+            == 1
     }
 
     #[test]

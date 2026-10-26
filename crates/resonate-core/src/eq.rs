@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering,
     fmt,
     hash::{Hash, Hasher},
     sync::{Arc, OnceLock},
@@ -828,6 +829,31 @@ impl Profile {
             })
     }
 
+    pub fn peak_db_between(&self, from_hz: f64, to_hz: f64, rate: SampleRate) -> f64 {
+        let nyquist = f64::from(rate.hz()) / 2.0;
+        let to_hz = to_hz.min(nyquist);
+        if from_hz.partial_cmp(&to_hz) != Some(Ordering::Less) {
+            return f64::NEG_INFINITY;
+        }
+
+        let heard = self.heard_apart(rate);
+        let last = (POINTS_ACROSS_A_SPAN - 1) as f64;
+        let ratio = to_hz / from_hz;
+        let centres: Vec<f64> = self
+            .bands()
+            .iter()
+            .filter(|band| band.applies_at(rate))
+            .map(|band| band.frequency.hertz())
+            .filter(|hertz| (from_hz..=to_hz).contains(hertz))
+            .collect();
+        (0..POINTS_ACROSS_A_SPAN)
+            .map(|point| from_hz * ratio.powf(point as f64 / last))
+            .chain(centres)
+            .fold(f64::NEG_INFINITY, |highest, hertz| {
+                highest.max(loudest_db(&heard, hertz, rate))
+            })
+    }
+
     pub fn fitted_preamp(&self, rate: SampleRate) -> Preamp {
         Preamp::holding_under_full_scale(self.peak_db(rate))
     }
@@ -870,6 +896,8 @@ fn shaped_db(sections: &[Biquad], hertz: f64, rate: SampleRate) -> f64 {
 }
 
 pub const RESPONSE_POINTS: usize = 256;
+
+const POINTS_ACROSS_A_SPAN: usize = 24;
 
 pub const FITTED_AT: SampleRate = SampleRate::HZ_48000;
 pub const TARGET_POINTS_AT_LEAST: usize = 2;
@@ -1385,6 +1413,30 @@ mod tests {
         }
 
         assert_eq!(Profile::flat().fitted_preamp(rate), Preamp::NONE);
+    }
+
+    #[test]
+    fn the_loudest_point_of_a_span_is_where_a_boost_inside_it_peaks_and_a_span_beside_it_is_flat() {
+        let rate = SampleRate::HZ_48000;
+        let boosting = Profile::new(
+            Preamp::from_decibels(-4.0).expect("in range"),
+            vec![band(BandKind::Peaking, 100.0, 6.0, 2.0)],
+        )
+        .expect("one band");
+
+        let across = boosting.peak_db_between(80.0, 125.0, rate);
+        let above = boosting.peak_db_between(1_000.0, 2_000.0, rate);
+
+        assert!((across - 6.0).abs() < 0.05, "{across}");
+        assert!(above.abs() < 0.2, "{above}");
+        assert_eq!(
+            boosting.peak_db_between(30_000.0, 40_000.0, rate),
+            f64::NEG_INFINITY
+        );
+        assert_eq!(
+            boosting.peak_db_between(200.0, 100.0, rate),
+            f64::NEG_INFINITY
+        );
     }
 
     #[test]

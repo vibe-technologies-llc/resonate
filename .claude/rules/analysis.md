@@ -40,7 +40,18 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
   `a_study_of_a_stream_that_turns_covers_every_link_in_the_shape_it_opened_in`).
 - **`peak_through` is a decode of its own, not part of a study.** It walks like `print` and `excerpt`
   (`Walking`, `follow_format_changes`) but runs the equaliser stage and a true-peak meter instead of
-  the builders, stores nothing and is asked on a press (`eq.md`, *Fit the preamp to the music*).
+  the builders, stores nothing and is asked on a press for the songs no study has measured
+  (`eq.md`, *Fit the preamp to the music*).
+- **A study keeps where the music sounds, per band.** `BandLevels::of(&spectrum)` sums the study's
+  per-bin mean power into 29 third-octave bands (`BANDS`; edges at 25 Hz times `2^(n/3)`, band 0
+  taking everything under 31.5 Hz and the last everything above its edge, a bin read at its own
+  frequency and DC left out) and keeps each as a byte, half-dB steps below the loudest band
+  (`SILENT` where the band held nothing above `FLOOR_DB`, so a silent song is all `SILENT`). It is
+  derived from the spectrum, so a kept analysis, a study and `band_levels(sources, location, span,
+  watch)` (one decode with only the transform, for a study kept without it) agree
+  (`the_bands_measured_alone_are_the_bands_a_study_keeps`); `track_studies.band_levels` holds the 29
+  bytes and a row of any other length reads as unmeasured, so a later layout re-measures instead
+  of misreading. The edges are absolute hertz, so a measure is good at any stream rate.
 - **Non-number samples are silence**: `normalised` maps float NaN/infinity to 0 before any builder
   (one would ride the K-weighting history to track end). Bit reading keeps native samples.
 - **`Watching` stops a pass.** `Watch` is the window's; `EnrichProgress` implements it, so cancelling
@@ -157,7 +168,7 @@ could change (stored studies and kept analyses are weighed against it).
 ## Studies in the catalog
 
 - **`track_studies`: one row per track, trigger-forgotten on a changed file.** Holds verdict +
-  basis, levels, loudness, print, recognition (`recognised`, `heard_as`, score, title, artist,
+  basis, levels, loudness, `band_levels` (above), print, recognition (`recognised`, `heard_as`, score, title, artist,
   `Agreement`). `track_studies_forget_a_changed_file` deletes the row when an update moves size,
   mtime or span (a trigger, not an upsert clause: covers every writer). Tag runs are the one writer
   known not to touch audio: `files_retagged` holds a written file's `track_studies` and `unstudied`
@@ -170,7 +181,8 @@ could change (stored studies and kept analyses are weighed against it).
   `available_parallelism` (min 1, capped at the work asked) threads named `resonate-study-<n>`, one
   shared counter, started before the pass, joined after the pictures. `to_study` = no study, older
   `JUDGED_UNDER`, or unrecognised print (only where something can recognise; `refresh` re-asks from
-  the kept print, no second decode). The list says only *whether* a print is kept
+  the kept print, no second decode), or a current study with no `band_levels`, which is measured
+  alone (`ToStudy::unmeasured`) and never studied again for it. The list says only *whether* a print is kept
   (`ToStudy::print_held`); the worker reads it on taking the row (`Library::print_held`), so prints
   are never all in memory. `EnrichOptions::studies` (`study` key) leaves the pool unstarted; the
   fingerprint route still studies the one track it recognises.

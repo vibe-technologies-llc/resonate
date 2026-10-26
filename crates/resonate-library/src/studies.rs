@@ -9,9 +9,12 @@ use std::{
 
 use ahash::AHashSet;
 use parking_lot::{Condvar, Mutex};
-use resonate_analysis::{Cutoff, JUDGED_UNDER, LossyGuess, Study, Verdict, Watching};
+use resonate_analysis::{
+    BANDS, BandGains, BandLevels, Cut, Cutoff, JUDGED_UNDER, LossyGuess, Loudest, Study, Verdict,
+    Watching,
+};
 use resonate_codec::Sources;
-use resonate_core::{Chromaprint, FrameSpan, MediaLocation, TrackId};
+use resonate_core::{Chromaprint, FrameSpan, MediaLocation, SampleRate, TrackId, eq::Profile};
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 
 use crate::{
@@ -130,6 +133,8 @@ pub(crate) struct ToStudy {
     pub(crate) location: MediaLocation,
     pub(crate) span: Option<FrameSpan>,
     pub(crate) print_held: bool,
+    pub(crate) unmeasured: bool,
+    pub(crate) recognition_owed: bool,
 }
 
 const STUDIED_COLUMNS: &str = "s.studied, s.verdict, s.cutoff_hz, s.cutoff_drop, s.lossy_guess,
@@ -207,10 +212,10 @@ pub(crate) fn write_study(
         "INSERT OR REPLACE INTO track_studies (
              track_id, studied, studied_under, verdict, cutoff_hz, cutoff_drop, lossy_guess,
              upsampled_from, bits_in_use, declared_bits, peak, rms, loudness, dynamic_range,
-             clipped, mono_as_stereo, print, print_length, true_peak, loudness_range
+             clipped, mono_as_stereo, print, print_length, true_peak, loudness_range, band_levels
          ) VALUES (
              ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19,
-             ?20
+             ?20, ?21
          )",
         params![
             track.get() as i64,
@@ -236,6 +241,7 @@ pub(crate) fn write_study(
                 .map(|print| print.length().as_secs() as i64),
             f64::from(study.loudness.true_peak),
             study.loudness.range.map(f64::from),
+            BandLevels::of(&study.spectrum).as_bytes(),
         ],
     )
     .map_err(|source| Error::store(StoreOp::Insert, source))?;
@@ -243,6 +249,85 @@ pub(crate) fn write_study(
         .and_then(|mut statement| statement.execute(params![track.get() as i64]))
         .map_err(|source| Error::store(StoreOp::Delete, source))?;
     Ok(())
+}
+
+pub(crate) fn write_band_levels(
+    tx: &Transaction<'_>,
+    track: TrackId,
+    levels: &BandLevels,
+) -> Result<bool> {
+    let changed = tx
+        .execute(
+            "UPDATE track_studies SET band_levels = ?1 WHERE track_id = ?2 AND studied_under = ?3",
+            params![
+                levels.as_bytes(),
+                track.get() as i64,
+                i64::from(JUDGED_UNDER)
+            ],
+        )
+        .map_err(|source| Error::store(StoreOp::Update, source))?;
+    Ok(changed > 0)
+}
+
+pub(crate) fn loudest_kept(
+    connection: &Connection,
+    profile: &Arc<Profile>,
+    rate: SampleRate,
+) -> Result<Loudest> {
+    let gains = BandGains::of(profile, rate);
+    let mut statement = connection
+        .prepare_cached(
+            "SELECT true_peak, band_levels FROM track_studies WHERE length(band_levels) = ?1",
+        )
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    let rows = statement
+        .query_map(params![BANDS as i64], |row| {
+            Ok((row.get::<_, f64>(0)?, row.get::<_, Vec<u8>>(1)?))
+        })
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+    let mut loudest = Loudest::default();
+    for row in rows {
+        let (true_peak, kept) = row.map_err(|source| Error::store(StoreOp::Query, source))?;
+        let Some(levels) = BandLevels::from_bytes(&kept) else {
+            continue;
+        };
+        loudest.peak = loudest.peak.max(gains.peak(&levels, true_peak as f32));
+        loudest.measured += 1;
+    }
+    Ok(loudest)
+}
+
+pub(crate) fn unmeasured(connection: &Connection, cuts: &[Cut]) -> Result<Vec<Cut>> {
+    let mut statement = connection
+        .prepare_cached(
+            "SELECT EXISTS (SELECT 1
+                              FROM tracks t JOIN track_studies s ON s.track_id = t.id
+                             WHERE t.path = ?1 AND t.span_start = ?2
+                               AND length(s.band_levels) = ?3)",
+        )
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
+    let mut owed = Vec::new();
+    for cut in cuts {
+        let held = match cut.location.as_path() {
+            Some(path) => statement
+                .query_row(
+                    params![
+                        store::path_text(path),
+                        store::span_columns(cut.span).0,
+                        BANDS as i64
+                    ],
+                    |row| row.get::<_, bool>(0),
+                )
+                .map_err(|source| Error::store(StoreOp::Query, source))?,
+            None => false,
+        };
+        if !held {
+            owed.push(cut.clone());
+        }
+    }
+    Ok(owed)
 }
 
 pub(crate) fn write_unstudied(tx: &Transaction<'_>, track: TrackId) -> Result<()> {
@@ -440,10 +525,15 @@ pub(crate) fn to_study(connection: &Connection, again: bool) -> Result<Vec<ToStu
     let mut statement = connection
         .prepare(
             "SELECT t.id, t.path, t.span_start, t.span_frames,
-                    s.track_id IS NOT NULL AND s.studied_under = ?1 AND s.print IS NOT NULL
+                    s.track_id IS NOT NULL AND s.studied_under = ?1 AND s.print IS NOT NULL,
+                    s.track_id IS NOT NULL AND s.studied_under = ?1
+                        AND coalesce(length(s.band_levels), 0) != ?3,
+                    s.track_id IS NOT NULL AND s.studied_under = ?1
+                        AND s.print IS NOT NULL AND (s.recognised IS NULL OR ?2)
                FROM tracks t LEFT JOIN track_studies s ON s.track_id = t.id
               WHERE (s.track_id IS NULL
                      OR s.studied_under != ?1
+                     OR coalesce(length(s.band_levels), 0) != ?3
                      OR (s.print IS NOT NULL AND (s.recognised IS NULL OR ?2)))
                 AND (?2 OR NOT EXISTS (SELECT 1 FROM unstudied u
                                         WHERE u.track_id = t.id AND u.under = ?1))
@@ -451,27 +541,36 @@ pub(crate) fn to_study(connection: &Connection, again: bool) -> Result<Vec<ToStu
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
     let rows = statement
-        .query_map(params![i64::from(JUDGED_UNDER), again], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, i64>(2)?,
-                row.get::<_, Option<i64>>(3)?,
-                row.get::<_, bool>(4)?,
-            ))
-        })
+        .query_map(
+            params![i64::from(JUDGED_UNDER), again, BANDS as i64],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, Option<i64>>(3)?,
+                    row.get::<_, bool>(4)?,
+                    row.get::<_, bool>(5)?,
+                    row.get::<_, bool>(6)?,
+                ))
+            },
+        )
         .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
     rows.into_iter()
-        .map(|(id, path, span_start, span_frames, print_held)| {
-            Ok(ToStudy {
-                id: TrackId::new(id as u64)?,
-                location: MediaLocation::local(store::path_of(&path)),
-                span: store::span(span_start, span_frames),
-                print_held,
-            })
-        })
+        .map(
+            |(id, path, span_start, span_frames, print_held, unmeasured, recognition_owed)| {
+                Ok(ToStudy {
+                    id: TrackId::new(id as u64)?,
+                    location: MediaLocation::local(store::path_of(&path)),
+                    span: store::span(span_start, span_frames),
+                    print_held,
+                    unmeasured,
+                    recognition_owed,
+                })
+            },
+        )
         .collect()
 }
 
@@ -558,7 +657,7 @@ impl Studies {
         let recognising = fingerprinters.has_a_source();
         let asked: Arc<[ToStudy]> = asked
             .into_iter()
-            .filter(|asked| !asked.print_held || recognising)
+            .filter(|asked| !asked.print_held || recognising || asked.unmeasured)
             .collect();
         let next = Arc::new(AtomicUsize::new(0));
         let workers = (0..workers_for(asked.len()))
@@ -613,6 +712,12 @@ fn study_one(
     progress: &EnrichProgress,
     asked: &ToStudy,
 ) {
+    if asked.unmeasured {
+        measured_now(library, sources, progress, asked);
+        if !asked.recognition_owed || !fingerprinters.has_a_source() {
+            return;
+        }
+    }
     let held = if asked.print_held {
         library.print_held(asked.id).unwrap_or_else(|error| {
             tracing::warn!(%error, track = %asked.id, "a kept print could not be read, so the track is studied again");
@@ -636,6 +741,25 @@ fn study_one(
         && !progress.recognition_is_given_up()
     {
         recognised_and_noted(library, fingerprinters, progress, asked.id, print);
+    }
+}
+
+fn measured_now(library: &Library, sources: &Sources, progress: &EnrichProgress, asked: &ToStudy) {
+    let levels = match resonate_analysis::band_levels(
+        sources,
+        &asked.location,
+        asked.span,
+        progress,
+    ) {
+        Ok(levels) => levels,
+        Err(resonate_analysis::Error::Stopped) => return,
+        Err(error) => {
+            tracing::debug!(%error, location = %asked.location, "a study's bands could not be measured, so they are measured another time");
+            return;
+        }
+    };
+    if let Err(error) = library.note_band_levels(asked.id, &levels) {
+        tracing::warn!(%error, track = %asked.id, "a study's bands were not kept");
     }
 }
 
