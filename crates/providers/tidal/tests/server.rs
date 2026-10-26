@@ -22,6 +22,7 @@ use resonate_providers::{
 use resonate_tidal::{Account, Endpoints, HifiApi, Hosting, MediaHosts, Tidal, TidalSignIn};
 
 const TONE: &[u8] = include_bytes!("fixtures/tone.mp4");
+const SEARCH_RESULTS: &str = include_str!("fixtures/search_results.json");
 const ECHOES_ISRC: &str = "GBN9Y1100089";
 const HEROES_TONIGHT_ISRC: &str = "GB2LD0902006";
 const TRACK: u64 = 55_391_743;
@@ -299,6 +300,16 @@ fn listed(isrc: &str) -> Canned {
     ))
 }
 
+fn is_a_text_search(path: &str) -> bool {
+    path.starts_with("/openapi/searchResults/")
+}
+
+fn nothing_searched() -> Canned {
+    Canned::json(
+        r#"{"data":{"id":"echoes","type":"searchResults","relationships":{"tracks":{"data":[]}}}}"#,
+    )
+}
+
 fn segment(path: &str) -> Option<usize> {
     path.strip_prefix("/media/")?
         .strip_suffix(".mp4")?
@@ -326,6 +337,7 @@ fn tidal_server(
         match asked.path.as_str() {
             "/auth/token" => granted(),
             "/openapi/tracks" => listed(ECHOES_ISRC),
+            path if is_a_text_search(path) => Canned::json(SEARCH_RESULTS),
             "/api/tracks/55391743/playbackinfopostpaywall" => {
                 playback(presentation, &dash(&media_at(own), count))
             }
@@ -451,6 +463,149 @@ fn every_code_of_the_want_is_asked_for_until_one_names_the_track() {
     assert!(searched[1].contains(&format!("filter%5Bisrc%5D={ECHOES_ISRC}")));
 }
 
+fn echoes_by_name() -> Identity {
+    Identity {
+        artist: Some("Pink Floyd".to_owned()),
+        length: Some(Duration::from_secs(1397)),
+        ..Identity::named("Echoes")
+    }
+}
+
+fn text_searches(fake: &Fake) -> Vec<Asked> {
+    fake.heard()
+        .into_iter()
+        .filter(|asked| is_a_text_search(&asked.path))
+        .collect()
+}
+
+#[test]
+fn a_want_with_no_code_is_searched_by_its_name_and_only_the_track_named_alike_is_taken() {
+    let fake = tidal_server("FULL", on_itself, whole_segment);
+
+    let (key, extension, bytes) =
+        streamed(fake.tidal().find(&echoes_by_name()).expect("an answer")).expect("a delivery");
+
+    assert_eq!(key, format!("track/{TRACK}"));
+    assert_eq!(extension, "flac");
+    assert_native_flac(&bytes);
+
+    let searched = text_searches(&fake);
+    assert_eq!(searched.len(), 1);
+    assert_eq!(
+        searched[0].path,
+        "/openapi/searchResults/Echoes%20Pink%20Floyd"
+    );
+    assert!(searched[0].query.contains("countryCode=GB"));
+    assert!(
+        searched[0]
+            .query
+            .contains("include=tracks%2Ctracks.artists")
+    );
+    assert_eq!(searched[0].authorization.as_deref(), Some(BEARER));
+    assert!(!fake.paths().iter().any(|path| path == "/openapi/tracks"));
+    assert!(
+        fake.paths()
+            .iter()
+            .all(|path| path != "/api/tracks/1000002/playbackinfopostpaywall")
+    );
+}
+
+#[test]
+fn a_want_whose_code_tidal_lists_nothing_under_is_searched_by_its_name() {
+    let fake = tidal_server("FULL", on_itself, whole_segment);
+    let reissued = Identity {
+        isrcs: vec![Isrc::new("USXYZ1234567").expect("an isrc")],
+        ..echoes_by_name()
+    };
+
+    let (key, ..) = streamed(fake.tidal().find(&reissued).expect("an answer")).expect("a delivery");
+
+    assert_eq!(key, format!("track/{TRACK}"));
+    let paths = fake.paths();
+    let coded = paths
+        .iter()
+        .position(|path| path == "/openapi/tracks")
+        .expect("the code was asked first");
+    let named = paths
+        .iter()
+        .position(|path| is_a_text_search(path))
+        .expect("the name was asked after");
+    assert!(coded < named);
+}
+
+#[test]
+fn a_track_tidal_lists_under_another_artist_or_another_length_is_never_taken_by_its_name() {
+    for wanted in [
+        Identity {
+            artist: Some("Nobody At All".to_owned()),
+            ..echoes_by_name()
+        },
+        Identity {
+            length: Some(Duration::from_secs(1390)),
+            ..echoes_by_name()
+        },
+    ] {
+        let fake = tidal_server("FULL", on_itself, whole_segment);
+
+        assert!(matches!(fake.tidal().find(&wanted), Ok(Obtained::Nothing)));
+        assert!(
+            !fake
+                .paths()
+                .iter()
+                .any(|path| path.contains("playbackinfo")),
+            "{:?}",
+            fake.paths()
+        );
+        assert!(text_searches(&fake).len() > 1);
+    }
+}
+
+#[test]
+fn a_name_search_tidal_does_not_hold_is_nothing_and_is_not_asked_without_an_artist() {
+    let fake = Fake::serving(|asked, _, _| match asked.path.as_str() {
+        "/auth/token" => granted(),
+        _ => Canned::refused(404, "{}"),
+    });
+
+    assert!(matches!(
+        fake.tidal().find(&echoes_by_name()),
+        Ok(Obtained::Nothing)
+    ));
+    assert!(!text_searches(&fake).is_empty());
+
+    let silent = Fake::serving(|_, _, _| Canned::refused(500, "{}"));
+
+    assert!(matches!(
+        silent.tidal().find(&Identity::named("Echoes")),
+        Ok(Obtained::Nothing)
+    ));
+    assert!(silent.heard().is_empty());
+}
+
+#[test]
+fn a_search_result_that_does_not_read_is_passed_over_and_the_rest_taken() {
+    let odd = SEARCH_RESULTS.replace(
+        r#"{ "id": "1000001", "type": "tracks" },"#,
+        r#"{ "id": "not-a-number", "type": "tracks" }, { "type": "tracks" }, 7,"#,
+    );
+    let fake = Fake::serving(move |asked, _, own| match asked.path.as_str() {
+        "/auth/token" => granted(),
+        path if is_a_text_search(path) => Canned::json(&odd),
+        "/api/tracks/55391743/playbackinfopostpaywall" => {
+            playback("FULL", &dash(&on_itself(own), segmented().len() - 1))
+        }
+        path => segment(path).map_or_else(
+            || Canned::refused(404, "{}"),
+            |nth| whole_segment(asked, nth, &[]),
+        ),
+    });
+
+    let (key, ..) =
+        streamed(fake.tidal().find(&echoes_by_name()).expect("an answer")).expect("a delivery");
+
+    assert_eq!(key, format!("track/{TRACK}"));
+}
+
 #[test]
 fn a_search_is_answered_without_the_download_being_asked_for() {
     let fake = tidal_server("FULL", on_itself, whole_segment);
@@ -492,6 +647,7 @@ fn a_track_whose_isrc_is_not_the_wanted_one_is_never_taken() {
     let fake = Fake::serving(|asked, _, _| match asked.path.as_str() {
         "/auth/token" => granted(),
         "/openapi/tracks" => listed("USUM71703861"),
+        path if is_a_text_search(path) => nothing_searched(),
         _ => Canned::refused(500, "{}"),
     });
 
@@ -708,6 +864,7 @@ fn a_session_that_lapsed_signs_in_again_once() {
             )
         }
         "/openapi/tracks" => Canned::json(r#"{"data":[]}"#),
+        path if is_a_text_search(path) => nothing_searched(),
         _ => Canned::refused(500, "{}"),
     });
 
@@ -722,6 +879,9 @@ fn a_session_that_lapsed_signs_in_again_once() {
             "/openapi/tracks".to_owned(),
             "/auth/token".to_owned(),
             "/openapi/tracks".to_owned(),
+            "/openapi/searchResults/Echoes%20Pink%20Floyd".to_owned(),
+            "/openapi/searchResults/Pink%20Floyd%20Echoes".to_owned(),
+            "/openapi/searchResults/Echoes".to_owned(),
         ]
     );
 }
@@ -759,6 +919,7 @@ fn a_refresh_token_tidal_rotates_is_handed_back_once_and_signed_in_with_from_the
             Canned::refused(401, r#"{"status":401,"subStatus":11002}"#)
         }
         "/openapi/tracks" => Canned::json(r#"{"data":[]}"#),
+        path if is_a_text_search(path) => nothing_searched(),
         _ => Canned::refused(500, "{}"),
     });
     let told = Arc::new(Mutex::new(Vec::new()));
@@ -787,6 +948,7 @@ fn a_refresh_token_tidal_keeps_is_never_handed_back() {
             r#"{"access_token":"fresh-access","refresh_token":"sesame","expires_in":604800,"user":{"countryCode":"GB"}}"#,
         ),
         "/openapi/tracks" => Canned::json(r#"{"data":[]}"#),
+        path if is_a_text_search(path) => nothing_searched(),
         _ => Canned::refused(500, "{}"),
     });
     let told = Arc::new(Mutex::new(Vec::new()));

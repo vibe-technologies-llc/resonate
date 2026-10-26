@@ -1,0 +1,98 @@
+{
+  "data": {
+    "id": "Echoes Pink Floyd",
+    "type": "searchResults",
+    "attributes": {
+      "trackingId": "5896a4d2-d1b7-4b4a-9d5b-0f1a3a2c9e11"
+    },
+    "relationships": {
+      "tracks": {
+        "data": [
+          { "id": "1000001", "type": "tracks" },
+          { "id": "1000002", "type": "tracks" },
+          { "id": "55391743", "type": "tracks" },
+          { "id": "1000004", "type": "tracks" }
+        ],
+        "links": {
+          "self": "/searchResults/Echoes%20Pink%20Floyd/relationships/tracks?countryCode=GB&include=tracks%2Ctracks.artists"
+        }
+      }
+    },
+    "links": {
+      "self": "/searchResults/Echoes%20Pink%20Floyd?countryCode=GB&include=tracks%2Ctracks.artists"
+    }
+  },
+  "included": [
+    {
+      "id": "1000001",
+      "type": "tracks",
+      "attributes": {
+        "title": "Echoes",
+        "version": "Live",
+        "isrc": "GBN9Y1100099",
+        "duration": "PT25M2S",
+        "explicit": false,
+        "popularity": 0.41
+      },
+      "relationships": {
+        "artists": { "data": [{ "id": "3921", "type": "artists" }] }
+      }
+    },
+    {
+      "id": "1000002",
+      "type": "tracks",
+      "attributes": {
+        "title": "Echoes",
+        "isrc": "USXYZ1700001",
+        "duration": "PT23M16S",
+        "explicit": false,
+        "popularity": 0.2
+      },
+      "relationships": {
+        "artists": { "data": [{ "id": "7777", "type": "artists" }] }
+      }
+    },
+    {
+      "id": "55391743",
+      "type": "tracks",
+      "attributes": {
+        "title": "Echoes",
+        "isrc": "GBN9Y1100089",
+        "duration": "PT23M17S",
+        "explicit": false,
+        "popularity": 0.63
+      },
+      "relationships": {
+        "artists": { "data": [{ "id": "3921", "type": "artists" }] }
+      }
+    },
+    {
+      "id": "1000004",
+      "type": "tracks",
+      "attributes": {
+        "title": "Echoes",
+        "version": "Remastered",
+        "isrc": "GBN9Y1100089",
+        "duration": "PT23M45S",
+        "explicit": false,
+        "popularity": 0.3
+      },
+      "relationships": {
+        "artists": { "data": [{ "id": "3921", "type": "artists" }] }
+      }
+    },
+    {
+      "id": "3921",
+      "type": "artists",
+      "attributes": { "name": "Pink Floyd", "popularity": 0.92 }
+    },
+    {
+      "id": "7777",
+      "type": "artists",
+      "attributes": { "name": "Echoes Tribute Band", "popularity": 0.01 }
+    }
+  ],
+  "links": {
+    "self": "/searchResults/Echoes%20Pink%20Floyd?countryCode=GB&include=tracks%2Ctracks.artists"
+  }
+}

@@ -351,11 +351,22 @@ given and `online` is on.
 and Subsonic only where client id and refresh token are given and `online` is on. A delivery is
 fetched whole and lands as a track row.
 
-- **Asked by link and code, never a name.** The linked TIDAL track (`Identity::track_on`) is asked
+- **Asked by link, then code, then name.** The linked TIDAL track (`Identity::track_on`) is asked
   first; failing that, the OpenAPI is asked for each of the want's codes (up to
   `CODES_ASKED_AT_MOST`) and a listing taken only where its own `isrc` is that code, at most
-  `TRACKS_TRIED_AT_MOST` in all (the endpoint has no text search). Neither: `Nothing`, no request,
-  no sign-in.
+  `TRACKS_TRIED_AT_MOST` in all (`tracks?filter[isrc]` has no text search). **Where no code lists
+  anything, or the want has none, the want is searched by its words** (`searchResults/{words}` with
+  `include=tracks,tracks.artists`, JSON:API, each of `Identity::wordings` until one holds a taken
+  listing, `LISTED_AT_MOST` read from each) through a `Choosing`, as hifi-api does, since a
+  re-release's codes are often not the ones MusicBrainz holds. `searched.rs` reads the document: the
+  tracks relationship in TIDAL's order, each resolved in `included` with its artists' names and its
+  ISO 8601 `duration` (`PT23M16S`; one that does not read is no length, so only a coded listing can
+  be taken); an identifier or resource that does not read is passed over
+  (`a_want_with_no_code_is_searched_by_its_name_and_only_the_track_named_alike_is_taken`,
+  `a_want_whose_code_tidal_lists_nothing_under_is_searched_by_its_name`,
+  `a_track_tidal_lists_under_another_artist_or_another_length_is_never_taken_by_its_name`,
+  `a_search_result_that_does_not_read_is_passed_over_and_the_rest_taken`). Not `may_be_listed`:
+  `Nothing`, no request, no sign-in.
 - **It signs in with the listener's refresh token alone.** No client id or secret is built in. 400/401
   at the token endpoint is `Error::Unwelcome` under `ProviderOp::SignIn` (away). **A rotated token is
   handed back**: the provider signs in with the new one and calls what `Tidal::telling` registered,

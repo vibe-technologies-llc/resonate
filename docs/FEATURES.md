@@ -45,9 +45,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   such file type); `.oga` alone could be mapped to Vorbis by hand
 
 ## Providers and network
-- [M · 0.2.0] A TIDAL account is asked by link and code alone: its OpenAPI filter has no text search here,
-  so a song TIDAL holds under a code MusicBrainz never lists is found by hifi-api and Monochrome
-  only
 
 ## Device sync
 - [L · 0.2.0] The phones carry saved-query playlists on to other devices but hold none themselves: their

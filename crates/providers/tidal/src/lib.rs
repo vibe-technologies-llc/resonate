@@ -5,14 +5,16 @@ mod hifi;
 mod manifest;
 mod played;
 mod remux;
+mod searched;
 mod sign_in;
 
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use resonate_core::{Isrc, SourceId};
+use resonate_fetch::escaped;
 use resonate_providers::{
-    Delivery, Error, Identity, Obtained, Provider, ProviderOp, RefreshToken, Result,
+    Choosing, Delivery, Error, Identity, Obtained, Provider, ProviderOp, RefreshToken, Result,
 };
 use serde::Deserialize;
 use ureq::{
@@ -35,6 +37,7 @@ pub use crate::{
 use crate::{
     asker::{Asker, Sent, media_agent},
     played::{Finds, Playback, Player, TrackId, named_by},
+    searched::Searched,
 };
 
 const TIDAL: &str = "tidal";
@@ -49,6 +52,7 @@ const ASKED_QUALITY: &str = "HI_RES_LOSSLESS";
 const JSON_API: &str = "application/vnd.api+json";
 const TRACKS_TRIED_AT_MOST: usize = 5;
 const CODES_ASKED_AT_MOST: usize = 4;
+const LISTED_AT_MOST: usize = 25;
 
 #[derive(Clone)]
 struct Session {
@@ -322,6 +326,9 @@ impl Finds for Tidal {
                 }
             }
         }
+        if tracks.is_empty() {
+            return self.tracks_named(identity);
+        }
         tracks.truncate(TRACKS_TRIED_AT_MOST);
         Ok(tracks)
     }
@@ -364,6 +371,60 @@ impl Tidal {
             .filter_map(|listing| listing.id.trim().parse().ok().map(TrackId))
             .take(TRACKS_TRIED_AT_MOST)
             .collect())
+    }
+
+    fn tracks_named(&self, identity: &Identity) -> Result<Vec<TrackId>> {
+        let mut choosing = Choosing::default();
+        let wordings = identity.wordings();
+        for words in &wordings {
+            for track in self.tracks_worded(words)? {
+                choosing.weigh(identity, &track.weighed(), track.id);
+            }
+            if choosing.holds_a_taken_listing() {
+                break;
+            }
+        }
+        let seen = choosing.seen();
+        let ranked: Vec<TrackId> = choosing
+            .ranked()
+            .into_iter()
+            .map(|(track, taken)| {
+                tracing::debug!(track = track.0, ?taken, "TIDAL lists the song by its name");
+                track
+            })
+            .take(TRACKS_TRIED_AT_MOST)
+            .collect();
+        if ranked.is_empty() {
+            tracing::debug!(
+                title = identity.title,
+                asked = wordings.len(),
+                seen,
+                "TIDAL lists nothing coded or named as the song"
+            );
+        }
+        Ok(ranked)
+    }
+
+    fn tracks_worded(&self, words: &str) -> Result<Vec<searched::Track>> {
+        let op = ProviderOp::Search;
+        let asked = self.asked(
+            op,
+            |country| {
+                format!(
+                    "{}searchResults/{}?countryCode={country}&include=tracks%2Ctracks.artists",
+                    self.endpoints.openapi,
+                    escaped(words)
+                )
+            },
+            Some(JSON_API),
+        )?;
+        let Asked::Answered(bytes) = asked else {
+            return Ok(Vec::new());
+        };
+        let searched: Searched = self.asker.parsed(op, &bytes)?;
+        let mut tracks = searched.tracks();
+        tracks.truncate(LISTED_AT_MOST);
+        Ok(tracks)
     }
 
     fn delivery(&self, track: TrackId) -> Result<Option<Delivery>> {

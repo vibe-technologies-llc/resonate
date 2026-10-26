@@ -118,7 +118,7 @@ impl WebListing {
     }
 }
 
-fn listings_readable<'de, D: Deserializer<'de>, T: serde::de::DeserializeOwned>(
+pub(crate) fn listings_readable<'de, D: Deserializer<'de>, T: serde::de::DeserializeOwned>(
     deserializer: D,
 ) -> std::result::Result<Vec<T>, D::Error> {
     let listed = Option::<Vec<Value>>::deserialize(deserializer)?.unwrap_or_default();
@@ -134,7 +134,9 @@ fn listings_readable<'de, D: Deserializer<'de>, T: serde::de::DeserializeOwned>(
         .collect())
 }
 
-fn id_spelt<'de, D: Deserializer<'de>>(deserializer: D) -> std::result::Result<u64, D::Error> {
+pub(crate) fn id_spelt<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<u64, D::Error> {
     match Value::deserialize(deserializer)? {
         Value::Number(id) => id
             .as_u64()
