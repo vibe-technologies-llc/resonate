@@ -800,6 +800,14 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   either side): channel *i* to output *i* mod the output count at the one gain
   `1 / ceil(inputs / outputs)` (`in_turn`). Each row sums to at most one gain: no downmix clips a
   full-scale source.
+  **No decoded stream carries downmix coefficients a reader could take**, so the matrix never
+  reads one: FLAC, ALAC, WAVE, AIFF, CAF, DSF and DSDIFF, WavPack, Monkey's Audio and Matroska name
+  a layout and nothing more; Vorbis and Opus family 0 and 1 (Vorbis order, a mapping table, no
+  coefficients) likewise, Opus's only gain being the header's output gain; MP3 is stereo (no MPEG-2
+  multichannel extension); AC-3, E-AC-3 and DTS (`cmixlev`, `surmixlev`) are not decoded; MP4's
+  `dmix` box is written by no encoder for a codec decoded here. AAC's PCE `matrix_mixdown_idx` and
+  `pseudo_surround` are the one real source, and symphonia's AAC decoder refuses a PCE and more
+  than two channels, so none arrives; a reader waits on symphonia (`FEATURES.md`).
 - **The chain is f64 from decoded word to sink word.** `Processor::process`/`flush` take `f64`
   slices; the engine widens exactly into `Output::widened` and narrows once, into the sink's word, in
   `Output::stage` (an f32 carrier's 24-bit mantissa lost a 32-bit integer source's low byte).

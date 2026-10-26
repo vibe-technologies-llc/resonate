@@ -92,10 +92,13 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   the whole catalog would need a per-band measure kept in `track_studies`, and room correction and
   the volume stage stand outside what it runs
 - [L] AutoEq is the only correction source, fetched one device at a time
-- [M] A downmix folds by position, or unplaced channels in turn: a stream's own downmix coefficients
-  are not read
 - [L] Lossy restoration was tuned on a few MP3s and synthetic walls, misses a hole shorter than its
   1 024-frame window, leaves the first second and a half of an unstudied track unextended
+- [M · blocked: symphonia] A downmix folds by position, or unplaced channels in turn: a stream's own
+  downmix coefficients are not read, because the only decoded stream that could carry them is a
+  multichannel AAC whose program config element (`matrix_mixdown_idx`, `pseudo_surround`)
+  symphonia-codec-aac 0.6.1 refuses (`aac: program config`, and more than two channels is `aac too
+  complex`)
 
 ## Later: Lyrics
 - [L · blocked: gpui] The sung line cannot grow as it lights: gpui 0.2.2 on Linux draws a glyph on a
