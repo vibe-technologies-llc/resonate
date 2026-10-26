@@ -159,7 +159,7 @@ private fun EqualiserContent(
                         curve = editable(curve, info.frequencies),
                         bounds = info.bounds,
                         onCommit = { index, gain ->
-                            model.commit(editable(curve, info.frequencies).withGain(index, gain, info.bounds), enable = true)
+                            model.commit(editable(curve, info.frequencies).withGain(index, gain, info.bounds))
                         },
                         onEdit = { index ->
                             advanced = true
@@ -195,9 +195,10 @@ private fun EqualiserContent(
                 )
                 AnimatedVisibility(importing, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
                     ImportProfile { name, text ->
-                        model.importProfile(name, text)
-                        selected = null
-                        importing = false
+                        model.importProfile(name, text) {
+                            selected = null
+                            importing = false
+                        }
                     }
                 }
             }
@@ -254,10 +255,11 @@ private fun LazyListScope.advancedItems(
                     selected = chosen,
                     onSelect = select,
                     onEdit = model::hold,
+                    onRelease = model::release,
                     onCommit = { model.commit(it) },
                     onAdd = { hertz, gain ->
                         curve.withAddedBand(hertz, gain, info.bounds)?.let {
-                            model.commit(it, enable = true)
+                            model.commit(it)
                             select(it.bands.lastIndex)
                         }
                     },
@@ -288,7 +290,7 @@ private fun LazyListScope.advancedItems(
             FilledTonalButton(
                 onClick = {
                     curve.withAddedBand(1000f, 0f, info.bounds)?.let {
-                        model.commit(it, enable = true)
+                        model.commit(it)
                         select(it.bands.lastIndex)
                     }
                 },

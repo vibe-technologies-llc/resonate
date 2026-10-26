@@ -27,6 +27,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -50,7 +51,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.resonate.android.ProviderAccountBook
@@ -79,11 +79,11 @@ class ProviderAccountViewModel(
             .stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val authorization = features.tidalAuthorization
     val busy = features.tidalBusy
-    private val mutableDraft =
-        MutableStateFlow<DownloadAccount?>(
+    var draft by
+        mutableStateOf<DownloadAccount?>(
             if (id == ProviderAccountBook.UNSAVED) emptyAccount(provider) else null
         )
-    val draft = mutableDraft.asStateFlow()
+        private set
     private var identity: String? = null
 
     init {
@@ -93,24 +93,24 @@ class ProviderAccountViewModel(
                 val seen = accountIdentity(account)
                 if (seen != identity) {
                     identity = seen
-                    mutableDraft.value = account
+                    draft = account
                 }
             }
         }
     }
 
     fun edit(change: (DownloadAccount) -> DownloadAccount) {
-        mutableDraft.update { it?.let(change) }
+        draft = draft?.let(change)
     }
 
     fun save() {
-        draft.value?.let { features.saveProviderAccount(keptId.value, it.trimmed()) }
+        draft?.let { features.saveProviderAccount(keptId.value, it.trimmed()) }
     }
 
     fun remove() = features.removeProviderAccount(keptId.value)
 
     fun signIn() {
-        val account = draft.value?.trimmed() ?: return
+        val account = draft?.trimmed() ?: return
         resonate.attempt(viewModelScope) {
             val key =
                 withContext(Dispatchers.IO) { features.keepProviderAccount(keptId.value, account) }
@@ -161,15 +161,19 @@ private val secretFields =
 
 @Composable
 fun ProviderAccountScreen(screen: Screen.ProviderAccount) {
-    val provider = MusicProvider.entries.first { it.name == screen.provider }
+    val navigator = LocalNavigator.current
+    val provider = MusicProvider.entries.firstOrNull { it.name == screen.provider }
+    if (provider == null) {
+        LaunchedEffect(Unit) { navigator.back() }
+        return
+    }
     val model =
         resonateViewModel(key = "provider-account-${screen.id}-${screen.provider}") {
             ProviderAccountViewModel(it, screen.id, provider)
         }
-    val navigator = LocalNavigator.current
     val stored by model.stored.collectAsStateWithLifecycle()
     val kept by model.kept.collectAsStateWithLifecycle()
-    val draft by model.draft.collectAsStateWithLifecycle()
+    val draft = model.draft
     val authorization by model.authorization.collectAsStateWithLifecycle()
     val busy by model.busy.collectAsStateWithLifecycle()
     val copy = rememberCopy()

@@ -17,7 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -100,7 +100,9 @@ class AnalysisViewModel(resonate: Resonate, private val id: ULong) : ViewModel()
             .map { it?.takeIf { found -> found.trackId == id } }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    val busy: StateFlow<Boolean> = features.analysisBusy
+    val busy: StateFlow<Boolean> =
+        combine(features.analysisBusy, features.analysisTrack) { busy, track -> busy && track == id }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
     val progress: StateFlow<Float?> = features.analysisProgress
     val online: StateFlow<Boolean> = features.online
     val key: StateFlow<String> = features.recognitionKey
@@ -224,7 +226,7 @@ private fun LazyListScope.reportItems(report: AnalysisReport) {
     }
     if (report.findings.isNotEmpty()) {
         item(key = "findings") { SectionHeader("Findings") }
-        items(report.findings, key = { "finding-$it" }) { finding ->
+        itemsIndexed(report.findings, key = { index, _ -> "finding-$index" }) { _, finding ->
             ListItem(
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 leadingContent = { Icon(Icons.Outlined.Info, null) },
@@ -395,7 +397,7 @@ private fun Recognition(model: AnalysisViewModel) {
                         model.saveKey(typed)
                     }),
                 trailingIcon = {
-                    if (typed != key) TextButton(onClick = { model.saveKey(typed) }) { Text("Save") }
+                    if (typed.trim() != key) TextButton(onClick = { model.saveKey(typed) }) { Text("Save") }
                 },
                 modifier = Modifier.fillMaxWidth(),
             )

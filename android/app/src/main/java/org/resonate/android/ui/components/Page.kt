@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -25,11 +27,20 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.findRootCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 
@@ -65,12 +76,25 @@ fun Page(
             }
         }
     }
+    val density = LocalDensity.current
+    var belowPage by remember { mutableIntStateOf(0) }
+    val keyboard = WindowInsets.ime.getBottom(density)
+    val covered = with(density) { (keyboard - belowPage).coerceAtLeast(0).toDp() }
     Scaffold(
-        modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        modifier =
+            modifier
+                .onGloballyPositioned { page ->
+                    val window = page.findRootCoordinates().size.height
+                    belowPage = (window - page.boundsInRoot().bottom).roundToInt().coerceAtLeast(0)
+                }
+                .padding(bottom = covered)
+                .nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = MaterialTheme.colorScheme.surface,
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
         floatingActionButton = floatingActionButton,
-        bottomBar = { Spacer(Modifier.height(LocalPageBottomPadding.current)) },
+        bottomBar = {
+            Spacer(Modifier.height((LocalPageBottomPadding.current - covered).coerceAtLeast(0.dp)))
+        },
         topBar = {
             PageBar(title, subtitle, size, scrollBehavior, navigation, actions)
         },

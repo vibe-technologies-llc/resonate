@@ -35,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -50,6 +51,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -72,10 +74,14 @@ private const val TYPING_SETTLES_MS = 350L
 @OptIn(FlowPreview::class)
 class HeadphoneCorrectionViewModel(private val resonate: Resonate) : ViewModel() {
     private val features = resonate.features
-    val query = MutableStateFlow("")
+    private var searchedFor: String? = null
+    var query by mutableStateOf("")
+        private set
     val searched = MutableStateFlow(false)
     val results: StateFlow<List<AutoEqDevice>> = features.corrections
-    val busy: StateFlow<Boolean> = features.correctionBusy
+    val busy: StateFlow<Boolean> =
+        combine(features.correctionBusy, features.correctionApplying) { searching, applying -> searching || applying }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
     val online: StateFlow<Boolean> = features.online
 
     val current: StateFlow<CurrentCurve?> =
@@ -85,29 +91,46 @@ class HeadphoneCorrectionViewModel(private val resonate: Resonate) : ViewModel()
 
     init {
         viewModelScope.launch {
-            query.drop(1).debounce(TYPING_SETTLES_MS).map { it.trim() }.distinctUntilChanged().collect { text ->
+            snapshotFlow { query }.drop(1).debounce(TYPING_SETTLES_MS).map { it.trim() }.distinctUntilChanged().collect { text ->
                 searchNow(text)
             }
         }
     }
 
     fun type(text: String) {
-        query.value = text
+        query = text
+        if (text.isBlank()) clear()
     }
 
-    fun searchNow(text: String = query.value.trim()) {
-        if (text.isEmpty()) return
+    fun submit() {
+        searchedFor = null
+        searchNow(query.trim())
+    }
+
+    private fun searchNow(text: String) {
+        if (text.isEmpty()) {
+            clear()
+            return
+        }
+        if (text == searchedFor) return
+        searchedFor = text
         searched.value = true
         features.searchCorrections(text)
     }
 
-    fun apply(device: AutoEqDevice) = features.applyCorrection(device.id)
+    private fun clear() {
+        searchedFor = null
+        searched.value = false
+        features.clearCorrections()
+    }
+
+    fun apply(device: AutoEqDevice) = features.applyCorrection(device.id, measured(device.name).headphone)
 }
 
 @Composable
 fun HeadphoneCorrectionScreen() {
     val model = resonateViewModel { HeadphoneCorrectionViewModel(it) }
-    val query by model.query.collectAsStateWithLifecycle()
+    val query = model.query
     val results by model.results.collectAsStateWithLifecycle()
     val busy by model.busy.collectAsStateWithLifecycle()
     val online by model.online.collectAsStateWithLifecycle()
@@ -143,7 +166,7 @@ fun HeadphoneCorrectionScreen() {
                             keyboardActions =
                                 KeyboardActions(onSearch = {
                                     focus.clearFocus()
-                                    model.searchNow()
+                                    model.submit()
                                 }),
                             colors = OutlinedTextFieldDefaults.colors(),
                             modifier = Modifier.fillMaxWidth().testTag("correction-search"),

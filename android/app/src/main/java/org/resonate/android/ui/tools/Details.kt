@@ -3,6 +3,7 @@ package org.resonate.android.ui.tools
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.net.Uri
+import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +34,7 @@ import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,10 +51,13 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.resonate.android.nativecore.ArtistInformation
 import org.resonate.android.nativecore.Inspector
 import org.resonate.android.nativecore.Track
@@ -65,20 +70,39 @@ import org.resonate.android.ui.resonateViewModel
 import org.resonate.android.ui.shownArtist
 import org.resonate.android.ui.shownTitle
 
+sealed interface InspectorState {
+    data object Reading : InspectorState
+
+    data object Failed : InspectorState
+
+    data class Read(val inspector: Inspector) : InspectorState
+}
+
 class DetailsViewModel(private val resonate: Resonate, private val id: ULong) : ViewModel() {
     private val features = resonate.features
+    private val mutableInspector = MutableStateFlow<InspectorState>(InspectorState.Reading)
+    private var reading: Job? = null
 
-    val inspector: StateFlow<Inspector?> =
-        features.inspector
-            .map { it?.takeIf { found -> found.track.id == id } }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    val inspector: StateFlow<InspectorState> = mutableInspector.asStateFlow()
 
     val artist: StateFlow<ArtistInformation?> = features.artist
     val online: StateFlow<Boolean> = features.online
     val enriching: StateFlow<Boolean> = features.enriching
 
     init {
-        features.loadInspector(id)
+        features.artist.value = null
+        read()
+    }
+
+    fun read() {
+        reading?.cancel()
+        mutableInspector.value = InspectorState.Reading
+        reading =
+            viewModelScope.launch {
+                val found = resonate.read { native -> withContext(Dispatchers.IO) { native.inspector(id) } }
+                found.onFailure { Log.w("Resonate", "The song could not be inspected", it) }
+                mutableInspector.value = found.fold({ InspectorState.Read(it) }, { InspectorState.Failed })
+            }
     }
 
     fun enrich(track: Track) = features.enrich(listOf(track))
@@ -92,7 +116,8 @@ class DetailsViewModel(private val resonate: Resonate, private val id: ULong) : 
 fun DetailsScreen(track: ULong) {
     val song = rememberSong(track)
     val model = resonateViewModel(key = "details-$track") { DetailsViewModel(it, track) }
-    val inspector by model.inspector.collectAsStateWithLifecycle()
+    val reading by model.inspector.collectAsStateWithLifecycle()
+    val inspector = (reading as? InspectorState.Read)?.inspector
     val artist by model.artist.collectAsStateWithLifecycle()
     val online by model.online.collectAsStateWithLifecycle()
     val enriching by model.enriching.collectAsStateWithLifecycle()
@@ -139,12 +164,22 @@ fun DetailsScreen(track: ULong) {
                     }
                 }
                 item(key = "audio") { SectionHeader("Audio") }
-                if (inspector == null) {
-                    item(key = "reading") {
-                        Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                            LoadingIndicator()
+                when (reading) {
+                    InspectorState.Reading ->
+                        item(key = "reading") {
+                            Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                                LoadingIndicator()
+                            }
                         }
-                    }
+                    InspectorState.Failed ->
+                        item(key = "unread") {
+                            ListItem(
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                supportingContent = { Text("Showing what the library knows of it.") },
+                                trailingContent = { TextButton(onClick = model::read) { Text("Try again") } },
+                            ) { Text("The file could not be read") }
+                        }
+                    is InspectorState.Read -> Unit
                 }
                 details(technicalDetails(song, inspector), "audio")
                 item(key = "tags") { SectionHeader("Tags") }
@@ -222,7 +257,7 @@ private fun LazyListScope.artistItems(artist: ArtistInformation, open: (String) 
             )
             .filter { it.value.isNotBlank() }
     details(rows, "artist")
-    items(artist.links, key = { "link-$it" }) { link ->
+    items(artist.links.distinct(), key = { "link-$it" }) { link ->
         ListItem(
             onClick = { open(link) },
             colors = ListItemDefaults.colors(containerColor = Color.Transparent),

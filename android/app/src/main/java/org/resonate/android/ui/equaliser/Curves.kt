@@ -202,8 +202,8 @@ fun EqualiserCurve.withFittedPreamp(decibels: Float, bounds: EqualiserBounds): E
 fun PlaybackPreferences.withPreset(preset: EqualiserPreset): PlaybackPreferences =
     copy(equaliserEnabled = true, equaliser = preset.curve)
 
-fun PlaybackPreferences.withCurve(curve: EqualiserCurve, enable: Boolean): PlaybackPreferences =
-    copy(equaliserEnabled = equaliserEnabled || enable, equaliser = curve)
+fun PlaybackPreferences.withCurve(curve: EqualiserCurve): PlaybackPreferences =
+    copy(equaliserEnabled = true, equaliser = curve)
 
 fun PlaybackPreferences.reset(): PlaybackPreferences = copy(equaliser = flatCurve)
 

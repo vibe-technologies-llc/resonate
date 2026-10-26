@@ -77,6 +77,7 @@ import org.resonate.android.nativecore.SyncStanding
 import org.resonate.android.nativecore.SyncStatus
 import org.resonate.android.nativecore.SyncedDevice
 import org.resonate.android.ui.Resonate
+import org.resonate.android.ui.SYNC_ASKED_SHOWS_FOR_MS
 import org.resonate.android.ui.SyncActivity
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.SectionHeader
@@ -161,17 +162,10 @@ fun SyncScreen() {
     val notice by model.notice.collectAsStateWithLifecycle()
     val online by model.online.collectAsStateWithLifecycle()
     val askedAt by model.askedAt.collectAsStateWithLifecycle()
-    val now by
-        produceState(SystemClock.elapsedRealtime(), askedAt) {
-            while (true) {
-                value = SystemClock.elapsedRealtime()
-                delay(1000)
-            }
-        }
     var showCode by remember { mutableStateOf(false) }
     var asking by rememberSaveable { mutableStateOf<Asking?>(null) }
     var forgetting by rememberSaveable { mutableStateOf<String?>(null) }
-    var joinCode by remember { mutableStateOf("") }
+    var joinCode by rememberSaveable { mutableStateOf("") }
     val copy = rememberCopy()
     LaunchedEffect(Unit) { model.refreshFolders() }
     Page("Devices") { padding ->
@@ -184,7 +178,6 @@ fun SyncScreen() {
         var server by rememberSaveable(config.server) { mutableStateOf(config.server) }
         LaunchedEffect(config.key) { showCode = false }
         val code = status?.code?.ifEmpty { null } ?: config.key
-        val activity = syncActivity(status, askedAt, now)
         val devices = orderedDevices(status?.devices.orEmpty())
         val transfers = status?.transfers.orEmpty()
         val destination = destinationOf(folders, chosen)
@@ -198,7 +191,7 @@ fun SyncScreen() {
                 )
             }
             item(key = "status") {
-                StatusRow(config, status, online, activity, onSyncNow = model::syncNow) {
+                StatusRow(config, status, online, askedAt, onSyncNow = model::syncNow) {
                     model.change { it.copy(nearbyOnly = true) }
                 }
             }
@@ -485,10 +478,21 @@ private fun StatusRow(
     config: SyncConfig,
     status: SyncStatus?,
     online: Boolean,
-    activity: SyncActivity?,
+    askedAt: Long?,
     onSyncNow: () -> Unit,
     onNearbyOnly: () -> Unit,
 ) {
+    val now by
+        produceState(SystemClock.elapsedRealtime(), askedAt) {
+            value = SystemClock.elapsedRealtime()
+            val asked = askedAt ?: return@produceState
+            val left = asked + SYNC_ASKED_SHOWS_FOR_MS - value
+            if (left > 0) {
+                delay(left)
+                value = SystemClock.elapsedRealtime()
+            }
+        }
+    val activity = syncActivity(status, askedAt, now)
     val waitingForOnline = config.enabled && !online && !config.nearbyOnly
     SettingRow(
         title = syncHeadline(status, config, online),
