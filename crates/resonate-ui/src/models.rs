@@ -27,15 +27,16 @@ use resonate_library::{
     Day, Deleted, DeliveryFolder, Direction, Drawing, Edit, EnrichOptions, EnrichProgress,
     EnrichSummary, Favoured, FileTags, Fingerprinters, Found, GroupRelease, HeldReleaseTrack,
     HistoryKept, ImportOptions, ImportProgress, ImportStats, ImportSummary, Imported, Issued, Kept,
-    Layout, Learning, Library, Listen, Mbid, Meant, Measured, Missing, MissingTrack, MostListened,
-    NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary, Performer,
-    Playing, Playlist, PlaylistEntry, PlaylistOrder, PollOptions, PollProgress, PollStats,
-    PollSummary, Raster, Recording, RecordingMatch, RecordingRelease, Reference, ReleaseAsked,
-    ReleaseDetail, ReleaseMatch, RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch,
-    RowOrder, SavedQuery, ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search,
-    Shared, SongsAsked, SortOrder, Sought, Sources, Statistics, Suggestion, Sung, Track,
-    TrackQuery, Undoable, UnheldRelease, Window, Wording, albums_still_answering,
-    artists_still_answering, folded_letters, songs_asked, still_answering, weighed_for,
+    Layout, Learning, Library, Listen, Maker, Mbid, Meant, Measured, Missing, MissingTrack,
+    MostListened, NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary,
+    Performer, Playing, Playlist, PlaylistEntry, PlaylistOrder, PollOptions, PollProgress,
+    PollStats, PollSummary, Raster, Recording, RecordingMatch, RecordingRelease, Reference,
+    ReleaseAsked, ReleaseDetail, ReleaseMatch, RetagOptions, RetagProgress, RetagStats,
+    RetagSummary, RootsWatch, RowOrder, SavedQuery, ScanHandle, ScanOptions, ScanProgress,
+    ScanStats, ScanSummary, Search, Shared, SongsAsked, SortOrder, Sought, Sources, Statistics,
+    Suggestion, Sung, Track, TrackQuery, Undoable, UnheldRelease, Window, Wording,
+    albums_still_answering, artists_still_answering, folded_letters, songs_asked, still_answering,
+    weighed_for,
 };
 use resonate_providers::Providers;
 
@@ -845,6 +846,7 @@ pub struct LibraryModel {
     asks_from: Instant,
     next_try: Option<SystemTime>,
     _watching: Task<()>,
+    _taking_offers: Task<()>,
     _watching_roots: Task<()>,
     _watching_inbox: Task<()>,
     _retag: Task<()>,
@@ -1064,6 +1066,7 @@ impl LibraryModel {
             asks_from: Instant::now() + FIRST_ASKED_AFTER,
             next_try: None,
             _watching: Task::ready(()),
+            _taking_offers: Task::ready(()),
             _watching_roots: Task::ready(()),
             _watching_inbox: Task::ready(()),
             _retag: Task::ready(()),
@@ -1222,7 +1225,30 @@ impl LibraryModel {
         });
     }
 
+    pub(crate) fn take_what_a_model_offered(&mut self, cx: &mut Context<Self>) {
+        let library = Arc::clone(&self.library);
+        let before = mem::replace(&mut self._taking_offers, Task::ready(()));
+
+        self._taking_offers = cx.spawn(async move |this, cx| {
+            before.await;
+            let taken = cx
+                .background_executor()
+                .spawn(async move { library.take_what_a_model_offered() })
+                .await;
+            match taken {
+                Ok(0) => {}
+                Ok(_) => {
+                    this.update(cx, |_, cx| cx.notify()).ok();
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "the edits a model made were not taken onto Undo");
+                }
+            }
+        });
+    }
+
     fn watch_for_writes_elsewhere(&mut self, cx: &mut Context<Self>) {
+        self.take_what_a_model_offered(cx);
         let library = Arc::clone(&self.library);
         self._watching = cx.spawn(async move |this, cx| {
             let mut loaded = library.written_elsewhere();
@@ -1243,7 +1269,11 @@ impl LibraryModel {
                     continue;
                 }
                 loaded = Some(now);
-                if this.update(cx, |this, cx| this.reload(cx)).is_err() {
+                let followed = this.update(cx, |this, cx| {
+                    this.take_what_a_model_offered(cx);
+                    this.reload(cx);
+                });
+                if followed.is_err() {
                     return;
                 }
             }
@@ -5595,6 +5625,21 @@ impl LibraryModel {
 }
 
 fn put_back_as(put_back: &Undoable) -> String {
+    made_by_saying(put_back.made_by, edit_put_back_as(put_back))
+}
+
+fn done_again_as(done_again: &Undoable) -> String {
+    made_by_saying(done_again.made_by, edit_done_again_as(done_again))
+}
+
+fn made_by_saying(made_by: Maker, saying: String) -> String {
+    match made_by {
+        Maker::ThisRun => saying,
+        Maker::AModel => format!("The model's edit: {saying}"),
+    }
+}
+
+fn edit_put_back_as(put_back: &Undoable) -> String {
     let name = &put_back.name;
 
     match put_back.edit {
@@ -5614,7 +5659,7 @@ fn put_back_as(put_back: &Undoable) -> String {
     }
 }
 
-fn done_again_as(done_again: &Undoable) -> String {
+fn edit_done_again_as(done_again: &Undoable) -> String {
     let name = &done_again.name;
 
     match done_again.edit {

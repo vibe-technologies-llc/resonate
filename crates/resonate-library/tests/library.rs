@@ -33,7 +33,7 @@ use resonate_library::{
     GroupAsked, GroupMatch, GroupRelease, HeldMedium, HistoryKept, ImageFormat, ImportOptions,
     ImportSummary, Isrc, Issued, Kept, Layout, Learning, Library, LifeSpan, Link, LinkNames,
     Linked, LinkedPlaylist, ListedSong, ListeningService, LookupOp, Love, Loved, LovedNames,
-    LovesTold, LyricText, LyricsAhead, LyricsAsked, Mbid, Medium, Missing, MissingTrack,
+    LovesTold, LyricText, LyricsAhead, LyricsAsked, Maker, Mbid, Medium, Missing, MissingTrack,
     NamesMoved, OrganiseOptions, OrganiseSummary, Performer, Picturing, Playing, PlaylistFormat,
     PlaylistLink, PlaylistOrder, PollHandle, PollOptions, PollProgress, Popularity, Pruned,
     RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference,
@@ -19776,6 +19776,102 @@ fn rows_put_into_a_playlist_at_a_place_land_there_and_one_undo_takes_them_out() 
         .undo()?
         .expect("the insert at a place is there to take back");
     assert_eq!(names(&library)?, ["a.wav", "b.wav"]);
+    Ok(())
+}
+
+fn offered_playlist_tree() -> (Tree, PathBuf) {
+    let tree = Tree::new();
+    for (file, title) in [("a.wav", "Echoes"), ("b.wav", "Dogs"), ("c.wav", "Sheep")] {
+        tree.write(file, &Wav::new().text(TITLE, title).build());
+    }
+
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database).expect("a catalog on disc");
+    scan(&library, &options(&tree)).expect("a scan of three files");
+    (tree, database)
+}
+
+#[test]
+fn an_edit_a_model_made_is_taken_onto_the_windows_undo_and_walked_back_there() -> Result<()> {
+    let (tree, database) = offered_playlist_tree();
+    let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
+    let model = Library::open(&database)?;
+    let window = Library::open(&database)?;
+    model.offer_edits_as_a_model();
+
+    let evening = model.start_playlist("Evening", &[file("a.wav"), file("b.wav")])?;
+    assert!(model.remove_from_playlist(evening, Span::one(0))?);
+    model.rename_playlist(evening, "Night")?;
+
+    assert_eq!(model.take_what_a_model_offered()?, 0);
+    assert!(window.undoable().is_none());
+    assert_eq!(window.take_what_a_model_offered()?, 3);
+    assert_eq!(
+        window.take_what_a_model_offered()?,
+        0,
+        "an edit taken once was offered again"
+    );
+
+    let offered = window
+        .undoable()
+        .expect("the rename is on the window's undo");
+    assert_eq!(offered.edit, Edit::Renamed);
+    assert_eq!(offered.made_by, Maker::AModel);
+    assert_eq!(offered.behind, 2);
+
+    window.undo()?.expect("the rename is put back");
+    assert_eq!(
+        window.redoable().map(|redone| redone.made_by),
+        Some(Maker::AModel),
+        "the redo of a model's edit was not said to be the model's"
+    );
+    window.undo()?.expect("the dropped row is put back");
+    let named = window.playlist(evening)?.expect("the playlist stands");
+    assert_eq!(named.name, "Evening");
+    assert_eq!(named.entries, 2);
+
+    window
+        .undo()?
+        .expect("the playlist the model started is taken away");
+    assert!(window.playlist(evening)?.is_none());
+    assert!(
+        matches!(model.undo(), Err(Error::PlaylistChanged(id)) if id == evening),
+        "the model walked back an edit the window had already walked back"
+    );
+    Ok(())
+}
+
+#[test]
+fn an_edit_a_model_undid_or_another_process_wrote_over_is_not_taken() -> Result<()> {
+    let (tree, database) = offered_playlist_tree();
+    let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
+    let model = Library::open(&database)?;
+    let window = Library::open(&database)?;
+    let command_line = Library::open(&database)?;
+    model.offer_edits_as_a_model();
+
+    let evening = model.start_playlist("Evening", &[file("a.wav")])?;
+    assert_eq!(model.add_to_playlist(evening, &[file("b.wav")])?, 1);
+    model.undo()?.expect("the model takes back its own add");
+    model.rename_playlist(evening, "Night")?;
+    model.undo()?.expect("the model takes back its rename");
+    model.redo()?.expect("the model makes its rename again");
+
+    assert_eq!(window.take_what_a_model_offered()?, 2);
+    let offered = window
+        .undoable()
+        .expect("the rename made again is on the window's undo");
+    assert_eq!(offered.edit, Edit::Renamed);
+    assert_eq!(offered.behind, 1, "the add the model took back was offered");
+
+    assert_eq!(model.add_to_playlist(evening, &[file("c.wav")])?, 1);
+    assert_eq!(command_line.add_to_playlist(evening, &[file("b.wav")])?, 1);
+    assert_eq!(
+        window.take_what_a_model_offered()?,
+        0,
+        "an edit another process wrote over was taken"
+    );
+    assert_eq!(window.undoable().map(|step| step.edit), Some(Edit::Renamed));
     Ok(())
 }
 

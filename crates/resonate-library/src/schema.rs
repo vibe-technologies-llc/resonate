@@ -9,6 +9,7 @@ const MIGRATIONS: &[&str] = &[
     SONGS_RECEIVED_NAME_THEIR_RECORDING,
     SONGS_LEARNT_UNTIMED_ARE_LEARNT_AGAIN,
     A_RUN_KEEPS_THE_SHEET_LINES_IT_REPLACED,
+    A_MODELS_EDITS_ARE_OFFERED_TO_THE_WINDOW,
 ];
 
 const STAMPS: [SchemaFingerprint; MIGRATIONS.len() + 1] = stamps();
@@ -50,6 +51,43 @@ CREATE TABLE retagged_sheets (
     was   TEXT,
     wrote TEXT,
     PRIMARY KEY (sheet, scope, field)
+) STRICT, WITHOUT ROWID;
+";
+
+const A_MODELS_EDITS_ARE_OFFERED_TO_THE_WINDOW: &str = "
+CREATE TABLE offered_steps (
+    id             INTEGER PRIMARY KEY,
+    edit           INTEGER NOT NULL,
+    playlist_id    INTEGER NOT NULL,
+    reached        INTEGER NOT NULL,
+    first          INTEGER NOT NULL,
+    holds          INTEGER NOT NULL,
+    leaves         INTEGER NOT NULL,
+    left_at        INTEGER,
+    name           TEXT NOT NULL,
+    was_held       INTEGER NOT NULL,
+    created        INTEGER NOT NULL,
+    modified       INTEGER NOT NULL,
+    played         INTEGER,
+    plays          INTEGER NOT NULL,
+    pinned         INTEGER,
+    kept_order     INTEGER,
+    kept_reading   INTEGER,
+    queried        INTEGER NOT NULL,
+    query_text     TEXT,
+    query_sort     INTEGER,
+    query_reading  INTEGER,
+    query_max_rows INTEGER,
+    rows_held      INTEGER NOT NULL,
+    row_count      INTEGER NOT NULL
+) STRICT;
+CREATE TABLE offered_step_rows (
+    step        INTEGER NOT NULL REFERENCES offered_steps(id) ON DELETE CASCADE,
+    position    INTEGER NOT NULL,
+    path        TEXT NOT NULL,
+    span_start  INTEGER NOT NULL,
+    span_frames INTEGER,
+    PRIMARY KEY (step, position)
 ) STRICT, WITHOUT ROWID;
 ";
 

@@ -2,11 +2,13 @@ use parking_lot::Mutex;
 use resonate_core::{PlaylistId, Span};
 use rusqlite::{OptionalExtension as _, Transaction, params};
 
-use crate::{Error, Kept, PlaylistName, Result, SavedQuery, StoreOp, db::Inner, playlist, store};
+use crate::{
+    Error, Kept, PlaylistName, Result, SavedQuery, StoreOp, db::Inner, offered, playlist, store,
+};
 
-const STEPS_HELD: usize = 32;
+pub(crate) const STEPS_HELD: usize = 32;
 
-const ROWS_HELD: usize = 50_000;
+pub(crate) const ROWS_HELD: usize = 50_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Edit {
@@ -24,6 +26,41 @@ pub enum Edit {
     Moved,
     Ordered,
     Kept,
+}
+
+impl Edit {
+    const ALL: [Self; 14] = [
+        Self::Started,
+        Self::Renamed,
+        Self::Revised,
+        Self::Discarded,
+        Self::Added,
+        Self::Copied,
+        Self::Imported,
+        Self::Removed,
+        Self::Dropped,
+        Self::Tidied,
+        Self::Folded,
+        Self::Moved,
+        Self::Ordered,
+        Self::Kept,
+    ];
+
+    pub(crate) const fn code(self) -> i64 {
+        self as i64
+    }
+
+    pub(crate) fn coded(code: i64) -> Option<Self> {
+        usize::try_from(code)
+            .ok()
+            .and_then(|at| Self::ALL.get(at).copied())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Maker {
+    ThisRun,
+    AModel,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -80,7 +117,7 @@ fn clipped(span: Span, tail: i64) -> (i64, i64) {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Reached {
+pub(crate) enum Reached {
     Unmoved,
     Whole,
     From(i64),
@@ -110,25 +147,28 @@ pub struct Undoable {
     pub playlist: PlaylistId,
     pub name: String,
     pub behind: usize,
+    pub made_by: Maker,
 }
 
 pub(crate) struct Step {
-    edit: Edit,
-    playlist: PlaylistId,
-    reached: Reached,
-    standing: Standing,
-    left_at: Option<i64>,
+    pub(crate) edit: Edit,
+    pub(crate) playlist: PlaylistId,
+    pub(crate) reached: Reached,
+    pub(crate) standing: Standing,
+    pub(crate) left_at: Option<i64>,
+    pub(crate) made_by: Maker,
+    pub(crate) offered: Option<i64>,
 }
 
 impl Step {
-    fn rows(&self) -> usize {
+    pub(crate) fn rows(&self) -> usize {
         match &self.standing {
             Standing::Was(held) => held.rows.as_ref().map_or(0, Vec::len),
             Standing::Fresh(_) => 0,
         }
     }
 
-    fn named(&self) -> &str {
+    pub(crate) fn named(&self) -> &str {
         match &self.standing {
             Standing::Was(held) => &held.name,
             Standing::Fresh(name) => name,
@@ -141,25 +181,33 @@ impl Step {
             playlist: self.playlist,
             name: self.named().to_owned(),
             behind,
+            made_by: self.made_by,
+        }
+    }
+
+    const fn left_before(&self) -> Option<i64> {
+        match &self.standing {
+            Standing::Was(held) => Some(held.modified),
+            Standing::Fresh(_) => None,
         }
     }
 }
 
-enum Standing {
+pub(crate) enum Standing {
     Was(Held),
     Fresh(String),
 }
 
-struct Held {
-    name: String,
-    created: i64,
-    modified: i64,
-    played: Option<i64>,
-    plays: i64,
-    pinned: Option<i64>,
-    kept: Option<Kept>,
-    query: Option<SavedQuery>,
-    rows: Option<Vec<playlist::Row>>,
+pub(crate) struct Held {
+    pub(crate) name: String,
+    pub(crate) created: i64,
+    pub(crate) modified: i64,
+    pub(crate) played: Option<i64>,
+    pub(crate) plays: i64,
+    pub(crate) pinned: Option<i64>,
+    pub(crate) kept: Option<Kept>,
+    pub(crate) query: Option<SavedQuery>,
+    pub(crate) rows: Option<Vec<playlist::Row>>,
 }
 
 pub(crate) fn overtaken(inner: &Inner, playlists: &[PlaylistId], names: &[String]) {
@@ -185,30 +233,38 @@ pub(crate) fn edited<T>(
     reach: Reach,
     change: impl FnOnce(&Transaction<'_>) -> Result<Change<T>>,
 ) -> Result<T> {
-    let (value, held) = inner.write(|transaction| {
+    let (value, step) = inner.write(|transaction| {
         let reached = reach.settled(transaction, id)?;
         let before = held_in(transaction, id, reached)?;
 
         Ok(match change(transaction)? {
             Change::Made(value) => {
                 let left_at = modified_in(transaction, id)?;
-                (value, before.map(|held| (reached, held, left_at)))
+                let step = before
+                    .map(|held| {
+                        offered::offered_if_asked(
+                            inner,
+                            transaction,
+                            Step {
+                                edit,
+                                playlist: id,
+                                reached,
+                                standing: Standing::Was(held),
+                                left_at,
+                                made_by: Maker::ThisRun,
+                                offered: None,
+                            },
+                        )
+                    })
+                    .transpose()?;
+                (value, step)
             }
             Change::Nothing(value) => (value, None),
         })
     })?;
 
-    if let Some((reached, held, left_at)) = held {
-        note(
-            inner,
-            Step {
-                edit,
-                playlist: id,
-                reached,
-                standing: Standing::Was(held),
-                left_at,
-            },
-        );
+    if let Some(step) = step {
+        note(inner, step);
     }
     Ok(value)
 }
@@ -230,22 +286,26 @@ pub(crate) fn started_under_a_name_found<T>(
     edit: Edit,
     change: impl FnOnce(&Transaction<'_>) -> Result<(PlaylistId, PlaylistName, T)>,
 ) -> Result<T> {
-    let (id, name, value, left_at) = inner.write(|transaction| {
+    let (step, value) = inner.write(|transaction| {
         let (id, name, value) = change(transaction)?;
         let left_at = modified_in(transaction, id)?;
-        Ok((id, name, value, left_at))
+        let step = offered::offered_if_asked(
+            inner,
+            transaction,
+            Step {
+                edit,
+                playlist: id,
+                reached: Reached::Whole,
+                standing: Standing::Fresh(name.as_str().to_owned()),
+                left_at,
+                made_by: Maker::ThisRun,
+                offered: None,
+            },
+        )?;
+        Ok((step, value))
     })?;
 
-    note(
-        inner,
-        Step {
-            edit,
-            playlist: id,
-            reached: Reached::Whole,
-            standing: Standing::Fresh(name.as_str().to_owned()),
-            left_at,
-        },
-    );
+    note(inner, step);
     Ok(value)
 }
 
@@ -264,17 +324,73 @@ fn topmost(steps: &[Step]) -> Option<Undoable> {
 }
 
 pub(crate) fn undo(inner: &Inner) -> Result<Option<Undoable>> {
-    walk(inner, inner.steps(), inner.walked())
+    walk(inner, inner.steps(), inner.walked(), Walking::Back)
 }
 
 pub(crate) fn redo(inner: &Inner) -> Result<Option<Undoable>> {
-    walk(inner, inner.walked(), inner.steps())
+    walk(inner, inner.walked(), inner.steps(), Walking::Again)
+}
+
+pub(crate) fn take_offered(inner: &Inner) -> Result<usize> {
+    if inner.offers() {
+        return Ok(0);
+    }
+
+    let taken = inner.write(|transaction| {
+        let offered = offered::taken(transaction)?;
+        still_standing(transaction, offered)
+    })?;
+
+    let count = taken.len();
+    for step in taken {
+        note(inner, step);
+    }
+    Ok(count)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Expected {
+    At(Option<i64>),
+    Broken,
+}
+
+fn still_standing(transaction: &Transaction<'_>, newest_first: Vec<Step>) -> Result<Vec<Step>> {
+    let mut expected: Vec<(PlaylistId, Expected)> = Vec::new();
+    let mut kept = Vec::new();
+
+    for step in newest_first {
+        let at = match expected.iter().position(|(id, _)| *id == step.playlist) {
+            Some(at) => at,
+            None => {
+                let standing = modified_in(transaction, step.playlist)?;
+                expected.push((step.playlist, Expected::At(standing)));
+                expected.len() - 1
+            }
+        };
+
+        if expected[at].1 == Expected::At(step.left_at) {
+            expected[at].1 = Expected::At(step.left_before());
+            kept.push(step);
+        } else {
+            expected[at].1 = Expected::Broken;
+        }
+    }
+
+    kept.reverse();
+    Ok(kept)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Walking {
+    Back,
+    Again,
 }
 
 fn walk(
     inner: &Inner,
     from: &Mutex<Vec<Step>>,
     onto: &Mutex<Vec<Step>>,
+    walking: Walking,
 ) -> Result<Option<Undoable>> {
     let (step, behind) = {
         let mut steps = from.lock();
@@ -298,17 +414,24 @@ fn walk(
             Standing::Fresh(_) => discarded(transaction, id)?,
         }
 
-        let left_at = match &step.standing {
-            Standing::Was(held) => Some(held.modified),
-            Standing::Fresh(_) => None,
-        };
-        Ok(Step {
+        let inverse = Step {
             edit: step.edit,
             playlist: id,
             reached: back,
             standing,
-            left_at,
-        })
+            left_at: step.left_before(),
+            made_by: step.made_by,
+            offered: None,
+        };
+        match walking {
+            Walking::Back => {
+                if let Some(offer) = step.offered {
+                    offered::withdrawn(transaction, offer)?;
+                }
+                Ok(inverse)
+            }
+            Walking::Again => offered::offered_if_asked(inner, transaction, inverse),
+        }
     });
     let inverse = match put_back {
         Ok(inverse) => inverse,

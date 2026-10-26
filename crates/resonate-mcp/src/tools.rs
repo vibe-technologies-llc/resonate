@@ -229,8 +229,9 @@ impl Tool {
             Self::UndoEdit => "Put back the playlist edit this session made last, or with redo \
                                make again what undo put back. Reaches only this session's own \
                                edits, and is refused for a playlist something else changed since. \
-                               Answers what it walked, or null where nothing is left. Needs no \
-                               player."
+                               A Resonate window open on the same catalog takes each playlist \
+                               edit onto its own Undo as well. Answers what it walked, or null \
+                               where nothing is left. Needs no player."
                 .to_owned(),
             Self::WantTracks => "Mark missing tracks as wanted, by the release_track_id \
                                  list_missing gives them, so the library's providers look for \

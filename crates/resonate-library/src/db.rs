@@ -690,6 +690,7 @@ pub(crate) struct Inner {
     playing: Mutex<Option<Playing>>,
     steps: Mutex<Vec<Step>>,
     walked: Mutex<Vec<Step>>,
+    offering: AtomicBool,
     delivering_into: Mutex<Option<DeliveryFolder>>,
     trash_home: Mutex<Option<PathBuf>>,
     trashes: Mutex<Option<Arc<dyn Trashes>>>,
@@ -952,6 +953,10 @@ impl Inner {
 
     pub(crate) const fn walked(&self) -> &Mutex<Vec<Step>> {
         &self.walked
+    }
+
+    pub(crate) fn offers(&self) -> bool {
+        self.offering.load(Ordering::Acquire)
     }
 
     pub(crate) fn playing(&self) -> Option<Playing> {
@@ -1544,6 +1549,7 @@ impl Library {
                 playing: Mutex::new(None),
                 steps: Mutex::new(Vec::new()),
                 walked: Mutex::new(Vec::new()),
+                offering: AtomicBool::new(false),
                 delivering_into: Mutex::new(None),
                 trash_home: Mutex::new(None),
                 trashes: Mutex::new(None),
@@ -2472,6 +2478,14 @@ impl Library {
 
     pub fn redoable(&self) -> Option<Undoable> {
         undo::redoable(&self.inner)
+    }
+
+    pub fn offer_edits_as_a_model(&self) {
+        self.inner.offering.store(true, Ordering::Release);
+    }
+
+    pub fn take_what_a_model_offered(&self) -> Result<usize> {
+        undo::take_offered(&self.inner)
     }
 
     pub fn synced_playlists(&self) -> Result<Vec<SyncedPlaylist>> {
