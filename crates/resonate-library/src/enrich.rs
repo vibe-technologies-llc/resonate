@@ -72,7 +72,7 @@ struct Refusals(u32);
 
 const STRICT_SCORE: u8 = 95;
 
-const EXACT_SCORE: u8 = 100;
+pub(crate) const EXACT_SCORE: u8 = 100;
 
 const RECORDING_MAY_DIFFER_BY: Duration = Duration::from_secs(5);
 
@@ -1012,6 +1012,10 @@ fn matches_strictly(found: &ReleaseMatch, album: &AlbumToAsk) -> Option<Spelling
     count_fits(found, album)
         .then(|| agreed_owner(found, album))
         .flatten()
+}
+
+pub(crate) fn takes_strictly(found: &ReleaseMatch, album: &AlbumToAsk) -> bool {
+    matches_strictly(found, album).is_some()
 }
 
 fn weighed_release(found: &ReleaseMatch, album: &AlbumToAsk) -> ReleaseWeight {

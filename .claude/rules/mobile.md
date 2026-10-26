@@ -197,7 +197,9 @@ the catalog holds no words for is kept `Wordless`, so its frames ask SQLite once
 ## Answers from other devices
 
 `DocumentCatalog` takes answers (`takes_answers` true) by the rules the desktop's `answers.rs`
-keeps (`sync.md`), over the document catalog, in `sync/answers.rs`.
+keeps (`sync.md`), over the document catalog, in `sync/answers.rs`. A release (`Answer::Release`)
+is settled and written nowhere, since the document catalog keeps no release a strict landing could
+weigh; the ledger still passes it on in its snapshot.
 
 - **Words.** `lyrics_to_share` lists every `lyrics` row with text of a visible document, in `asked`
   order (`at` is `asked` in nanoseconds), timed or not by `is_synced`, and only those `Answer::travels`

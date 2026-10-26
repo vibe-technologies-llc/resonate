@@ -2,7 +2,10 @@ mod shelf;
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use resonate_core::{Answer, Figure, Mbid, Recording, SharedLyrics, SharedStudy, WholeFile};
+use resonate_core::{
+    Answer, Figure, Link, Mbid, Recording, SharedCredit, SharedLyrics, SharedMedium, SharedRelease,
+    SharedStudy, SharedTrack, WholeFile,
+};
 use resonate_sync::{Change, Follow, Ledger, LocalListen, LocalPlaylistId, Me, Platform, SpaceId};
 
 use crate::shelf::{Shelf, song};
@@ -915,4 +918,78 @@ fn a_catalog_that_takes_no_answers_passes_them_on_untouched() {
 
     assert!(phone.shelf.answers_of("A").is_empty());
     assert_eq!(tablet.shelf.answers_of("A"), [sung("Words", false)]);
+}
+
+fn released(title: &str) -> Answer {
+    Answer::Release(Box::new(SharedRelease {
+        id: Mbid::new("b84ee12a-09ef-421b-82de-0441a926375b").expect("an mbid"),
+        group: None,
+        title: title.into(),
+        credit: vec![SharedCredit {
+            name: "Pink Floyd".into(),
+            joined_by: String::new(),
+            mbid: None,
+        }],
+        date: Some("1971".into()),
+        country: None,
+        label: None,
+        catalog_number: None,
+        barcode: None,
+        kind: None,
+        disambiguation: None,
+        has_front_cover: false,
+        links: vec![Link::new(
+            "discogs",
+            "https://www.discogs.com/release/1".into(),
+        )],
+        media: vec![SharedMedium {
+            position: 1,
+            format: None,
+            title: None,
+            tracks: vec![SharedTrack {
+                position: 1,
+                number: "1".into(),
+                title: "A".into(),
+                artist: None,
+                recording: None,
+                track: None,
+                length_ms: Some(1_000),
+                isrcs: Vec::new(),
+                links: Vec::new(),
+            }],
+        }],
+    }))
+}
+
+#[test]
+fn a_release_travels_beside_the_words_of_its_song_and_is_not_sent_back() {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut phone = Device::new("Phone", &["A"]);
+    desk.shelf.answer_here("A", sung("Words", false));
+    desk.shelf.answer_here("A", released("Meddle"));
+
+    let told = desk.send();
+    phone.receive(&told);
+
+    assert_eq!(answers_in(&told), 2);
+    assert_eq!(
+        phone.shelf.answers_of("A"),
+        [sung("Words", false), released("Meddle")]
+    );
+    assert_eq!(answers_in(&phone.send()), 0);
+    assert_eq!(answers_in(&desk.send()), 0);
+}
+
+#[test]
+fn a_release_heavier_than_the_server_keeps_stays_home() {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut phone = Device::new("Phone", &["A"]);
+    desk.shelf
+        .answer_here("A", released(&"Meddle ".repeat(10_000)));
+
+    let told = desk.send();
+    phone.receive(&told);
+
+    assert_eq!(answers_in(&told), 0);
+    assert!(phone.shelf.answers_of("A").is_empty());
 }

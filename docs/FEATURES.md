@@ -44,13 +44,13 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Providers and network
 
 ## Device sync
-- [L · 0.2.0] Only kept lyrics (text and timing) and studies travel between paired devices
-  (`Change::Answer`, `sync.md`): a release, its credits and links, a cover, a Lyricsfile, a study's
-  print and recognition are still asked for by each device at the reference's paced rate. A release
-  could travel as the answer keyed by `Recording::key()` and be landed through the strict rules
-  `land_release` lands with (a guess is still never written, a file's own tags and pictures still
-  win) and stamped answered so the pass steps past it; covers, Lyricsfiles and prints fetched device
-  to device as songs are (`ToPeer`), not kept on the server
+- [M · 0.2.0] A cover, a Lyricsfile, a study's print and recognition are still asked for by each
+  device at the reference's paced rate (`Change::Answer` carries kept lyrics, studies and releases,
+  `sync.md`): they could be fetched device to device as songs are (`ToPeer`), not kept on the
+  server. A release travels keyed by an album's first paired track, so a device holding the album
+  without that track and without recording ids still asks MusicBrainz; an album landed before
+  `release_credits` is shared only once its release is landed again. The phones take and send kept
+  lyrics and studies but no release (their catalog keeps no release a strict landing could weigh)
 
 ## Equaliser and DSP
 

@@ -12,10 +12,11 @@ use std::{
 };
 
 use resonate_analysis::Watch;
-use resonate_core::{Answer, Answered, MediaLocation, Recording};
+use resonate_core::{Answer, Answered, Link, Mbid, MediaLocation, Recording};
 use resonate_library::{
-    AlbumQuery, Cut, DeliveryFolder, Direction, HeldTags, Layout, Library, LyricText, Result,
-    SavedQuery, ScanOptions, ScanStats, SongFiled, SortOrder, SyncedQueryBody, TrackQuery, Vault,
+    Album, AlbumQuery, Credit, Cut, DeliveryFolder, Direction, HeldTags, Layout, Library,
+    LyricText, Medium, Release, ReleaseTrack, Result, SavedQuery, ScanOptions, ScanStats,
+    SongFiled, SortOrder, SyncedQueryBody, TrackQuery, Vault, WAITS,
 };
 
 const RATE: u32 = 44_100;
@@ -1107,6 +1108,145 @@ fn a_study_of_another_encode_or_words_for_another_take_are_never_written() -> Re
             .study_of(&MediaLocation::local(&other_encode), None)?
             .is_none()
     );
+    assert!(there.answers_to_share(0, 10)?.is_empty());
+    Ok(())
+}
+
+fn meddle(titles: &[&str]) -> Release {
+    Release {
+        id: Mbid::new("b84ee12a-09ef-421b-82de-0441a926375b").expect("an mbid"),
+        group: Some(Mbid::new("a5bdf1b3-0cd8-3a1e-9e3a-0a4b1a4c4f0e").expect("an mbid")),
+        title: "Meddle".into(),
+        credit: vec![Credit {
+            name: "Pink Floyd".into(),
+            joined_by: String::new(),
+            mbid: Some(Mbid::new("83d91898-7763-47d7-b03b-b92132375c47").expect("an mbid")),
+        }],
+        date: Some("1971-10-30".into()),
+        country: Some("GB".into()),
+        label: Some("Harvest".into()),
+        catalog_number: Some("SHVL 795".into()),
+        barcode: None,
+        kind: Some("Album".into()),
+        disambiguation: None,
+        has_front_cover: false,
+        links: vec![Link::new(
+            "discogs",
+            "https://www.discogs.com/release/1".into(),
+        )],
+        media: vec![Medium {
+            position: 1,
+            format: Some("Vinyl".into()),
+            title: None,
+            tracks: titles
+                .iter()
+                .zip(1..)
+                .map(|(title, position)| ReleaseTrack {
+                    position,
+                    number: position.to_string(),
+                    title: (*title).into(),
+                    artist: None,
+                    recording: None,
+                    track: None,
+                    length: Some(Duration::from_secs(u64::from(SECONDS))),
+                    isrcs: vec![format!("GBN9Y110000{position}")],
+                    links: Vec::new(),
+                })
+                .collect(),
+        }],
+    }
+}
+
+fn album_of(library: &Library) -> Result<Album> {
+    Ok(library
+        .albums(&AlbumQuery::default())?
+        .into_iter()
+        .next()
+        .expect("an album"))
+}
+
+#[test]
+fn a_release_landed_on_one_catalog_lands_on_another_holding_the_album_and_is_not_asked_again()
+-> Result<()> {
+    let tree = Tree::new();
+    tree.song(
+        "Meddle/one.wav",
+        "One of These Days",
+        "Pink Floyd",
+        "Meddle",
+    );
+    tree.song("Meddle/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let here = Library::open_in_memory()?;
+    let there = Library::open_in_memory()?;
+    scan(&here, &tree.root)?;
+    scan(&there, &tree.root)?;
+    let release = meddle(&["One of These Days", "Echoes"]);
+    let album = album_of(&here)?.id;
+    here.land_release(album, &release)?;
+    here.rematch(album)?;
+
+    let shared = here.answers_to_share(0, 10)?;
+    let taken = shared
+        .iter()
+        .map(|answered| there.take_shared_answer(&answered.recording, &answered.answer))
+        .collect::<Result<Vec<_>>>()?;
+    let read_back = there.answers_to_share(0, 10)?;
+    let landed = album_of(&there)?;
+    let floyd = there
+        .artist_named("Pink Floyd")?
+        .and_then(|artist| there.artist_detail(artist).transpose())
+        .transpose()?
+        .expect("an artist");
+
+    assert_eq!(shared.len(), 1);
+    assert!(matches!(&shared[0].answer, Answer::Release(_)));
+    assert_eq!(taken, [true]);
+    assert_eq!(landed.mbid, Some(release.id.clone()));
+    assert_eq!(answers_of(&read_back), answers_of(&shared));
+    assert_eq!(floyd.mbid, release.credit[0].mbid);
+    assert!(there.albums_to_ask(WAITS, false)?.is_empty());
+    assert!(there.tracks_to_ask(WAITS, false)?.is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_release_the_album_held_there_does_not_strictly_match_is_never_written() -> Result<()> {
+    let here_tree = Tree::new();
+    let there_tree = Tree::new();
+    let shorter_tree = Tree::new();
+    for tree in [&here_tree, &there_tree] {
+        tree.song(
+            "Meddle/one.wav",
+            "One of These Days",
+            "Pink Floyd",
+            "Meddle",
+        );
+        tree.song("Meddle/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    }
+    there_tree.song("Meddle/fearless.wav", "Fearless", "Pink Floyd", "Meddle");
+    shorter_tree.song("Meddle/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let here = Library::open_in_memory()?;
+    let there = Library::open_in_memory()?;
+    let shorter = Library::open_in_memory()?;
+    scan(&here, &here_tree.root)?;
+    scan(&there, &there_tree.root)?;
+    scan(&shorter, &shorter_tree.root)?;
+    let album = album_of(&here)?.id;
+    here.land_release(album, &meddle(&["One of These Days", "Echoes"]))?;
+    here.rematch(album)?;
+
+    let shared = here.answers_to_share(0, 10)?;
+    let another_band = Recording {
+        artist: "Pink Fluid".into(),
+        ..shared[0].recording.clone()
+    };
+
+    assert_eq!(shared.len(), 1);
+    assert!(there.take_shared_answer(&shared[0].recording, &shared[0].answer)?);
+    assert!(!shorter.take_shared_answer(&shared[0].recording, &shared[0].answer)?);
+    assert!(!there.take_shared_answer(&another_band, &shared[0].answer)?);
+    assert_eq!(album_of(&there)?.mbid, None);
+    assert_eq!(album_of(&shorter)?.mbid, None);
     assert!(there.answers_to_share(0, 10)?.is_empty());
     Ok(())
 }

@@ -33,7 +33,9 @@ pub mod writer;
 
 pub use crate::{
     answer::{
-        Answer, Answered, Figure, LONGEST_SHARED_LYRICS, SharedLyrics, SharedStudy, WholeFile,
+        Answer, Answered, CODES_SHARED_AT_MOST, Figure, HEAVIEST_SHARED_RELEASE,
+        LINKS_SHARED_AT_MOST, LONGEST_SHARED_LYRICS, SharedCredit, SharedLyrics, SharedMedium,
+        SharedRelease, SharedStudy, SharedTrack, WholeFile,
     },
     appearance::{
         Accent, Appearance, ArtistsDrawn, ScrollbarMode, Spectral, SpectrumBands, SpectrumFalls,

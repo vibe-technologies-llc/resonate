@@ -11,6 +11,7 @@ const MIGRATIONS: &[&str] = &[
     A_RUN_KEEPS_THE_SHEET_LINES_IT_REPLACED,
     A_MODELS_EDITS_ARE_OFFERED_TO_THE_WINDOW,
     A_STUDY_KEEPS_WHERE_THE_MUSIC_SOUNDS,
+    A_RELEASE_KEEPS_ITS_CREDIT,
 ];
 
 const STAMPS: [SchemaFingerprint; MIGRATIONS.len() + 1] = stamps();
@@ -94,6 +95,17 @@ CREATE TABLE offered_step_rows (
 
 const A_STUDY_KEEPS_WHERE_THE_MUSIC_SOUNDS: &str = "
 ALTER TABLE track_studies ADD COLUMN band_levels BLOB;
+";
+
+const A_RELEASE_KEEPS_ITS_CREDIT: &str = "
+CREATE TABLE release_credits (
+    album_id  INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+    position  INTEGER NOT NULL,
+    name      TEXT NOT NULL,
+    joined_by TEXT NOT NULL,
+    mbid      TEXT,
+    PRIMARY KEY (album_id, position)
+) STRICT, WITHOUT ROWID;
 ";
 
 const V1: &str = "

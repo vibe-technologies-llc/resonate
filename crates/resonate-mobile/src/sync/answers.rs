@@ -487,7 +487,7 @@ mod tests {
                     lyrics.synced,
                     learnt.recording.mbid.is_some(),
                 ),
-                Answer::Study(_) => panic!("a study among the words"),
+                Answer::Study(_) | Answer::Release(_) => panic!("not words among the words"),
             })
             .collect();
         told.sort();
@@ -691,7 +691,7 @@ mod tests {
             .iter()
             .filter_map(|learnt| match &learnt.answer {
                 Answer::Study(study) => Some(study.clone()),
-                Answer::Lyrics(_) => None,
+                Answer::Lyrics(_) | Answer::Release(_) => None,
             })
             .collect();
         let words = listed

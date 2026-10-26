@@ -7,8 +7,9 @@ use rusqlite::{
 
 use crate::{
     Agreement, AlbumToAsk, ArtistProfile, ArtistRelease, ArtistToAsk, Certainty, CoverArt,
-    CoverSource, Error, Fruitless, HeardAs, Isrc, Link, Mbid, Medium, Recording, RecordingRelease,
-    Release, ReleaseGroup, ReleaseTrack, Result, StoreOp, TrackToAsk, Unfinished, VaultKey, Waits,
+    CoverSource, Credit, Error, Fruitless, HeardAs, Isrc, Link, Mbid, Medium, Recording,
+    RecordingRelease, Release, ReleaseGroup, ReleaseTrack, Result, StoreOp, TrackToAsk, Unfinished,
+    VaultKey, Waits,
     enrich::Pressing,
     model::{CoverFrom, CoverWanted},
     store,
@@ -263,6 +264,7 @@ pub(crate) fn land_release(
         .map_err(|source| Error::store(StoreOp::Delete, source))?;
     write_links(tx, "album_links", "album_id", id, &release.links)?;
     write_media(tx, id, &release.media)?;
+    write_credit(tx, id, &release.credit)?;
 
     let mut insert = tx
         .prepare(
@@ -388,6 +390,7 @@ pub(crate) fn forget_the_match(tx: &Transaction<'_>, album: AlbumId) -> Result<b
         "DELETE FROM release_tracks WHERE album_id = ?1",
         "DELETE FROM release_media WHERE album_id = ?1",
         "DELETE FROM album_links WHERE album_id = ?1",
+        "DELETE FROM release_credits WHERE album_id = ?1",
     ] {
         tx.execute(taken, params![id])
             .map_err(|source| Error::store(StoreOp::Delete, source))?;
@@ -455,9 +458,41 @@ pub(crate) fn land_release_group(
         return Err(Error::UnknownAlbum(album));
     }
 
-    tx.execute("DELETE FROM album_links WHERE album_id = ?1", params![id])
-        .map_err(|source| Error::store(StoreOp::Delete, source))?;
+    for taken in [
+        "DELETE FROM album_links WHERE album_id = ?1",
+        "DELETE FROM release_credits WHERE album_id = ?1",
+    ] {
+        tx.execute(taken, params![id])
+            .map_err(|source| Error::store(StoreOp::Delete, source))?;
+    }
     write_links(tx, "album_links", "album_id", id, &group.links)
+}
+
+fn write_credit(tx: &Transaction<'_>, album: i64, credit: &[Credit]) -> Result<()> {
+    tx.execute(
+        "DELETE FROM release_credits WHERE album_id = ?1",
+        params![album],
+    )
+    .map_err(|source| Error::store(StoreOp::Delete, source))?;
+
+    let mut insert = tx
+        .prepare_cached(
+            "INSERT INTO release_credits (album_id, position, name, joined_by, mbid)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+        )
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    for (position, credited) in credit.iter().enumerate() {
+        insert
+            .execute(params![
+                album,
+                i64::try_from(position).unwrap_or(i64::MAX),
+                credited.name,
+                credited.joined_by,
+                credited.mbid.as_ref().map(Mbid::as_str),
+            ])
+            .map_err(|source| Error::store(StoreOp::Insert, source))?;
+    }
+    Ok(())
 }
 
 fn write_media(tx: &Transaction<'_>, album: i64, media: &[Medium]) -> Result<()> {

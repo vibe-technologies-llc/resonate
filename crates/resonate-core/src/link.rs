@@ -51,6 +51,13 @@ impl Relation {
             .find(|(named, _)| *named == kind)
             .map_or(Self::Other, |(_, relation)| relation)
     }
+
+    pub fn spelled(self) -> &'static str {
+        Self::TYPES
+            .into_iter()
+            .find(|(_, relation)| *relation == self)
+            .map_or("", |(named, _)| named)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

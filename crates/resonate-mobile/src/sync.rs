@@ -1238,6 +1238,7 @@ impl Catalog for DocumentCatalog {
         match answer {
             Answer::Lyrics(lyrics) => self.take_lyrics(recording, lyrics),
             Answer::Study(study) => self.take_study(study),
+            Answer::Release(_) => Ok(true),
         }
     }
 
