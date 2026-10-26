@@ -97,7 +97,7 @@ image = {
 
 png = { version = "0.18.1", default-features = false }
 
-realfft = { version = "3.5.0", default-features = false, features = ["avx", "sse", "neon"] }
+realfft = { version = "3.5.1", default-features = false, features = ["avx", "sse", "neon"] }
 rustfft = { version = "6.4.1", default-features = false, features = ["avx", "sse", "neon"] }
 rusty-chromaprint = { version = "0.3.0", default-features = false }
 
