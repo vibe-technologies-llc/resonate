@@ -4,7 +4,7 @@ use std::{
 };
 
 use gpui::{
-    AnyElement, App, Context, Div, SharedString, Stateful, div, prelude::*, px, relative, rgb,
+    AnyElement, App, Context, Div, Role, SharedString, Stateful, div, prelude::*, px, relative, rgb,
 };
 use resonate_core::{AlbumId, ArtistId, Calendar, CivilDate};
 use resonate_library::{Day, Listened, Lit, MostListened, Statistics, Window};
@@ -20,6 +20,7 @@ use crate::{
         root::{RootView, empty, row},
         scrollbar::Scrollbars,
         sorting,
+        spoken::{Placed, Spoken as _},
     },
 };
 
@@ -36,6 +37,8 @@ const WINDOW_HINT: &str = "How far back every reading on this pane reaches";
 const OPEN_ALBUM_HINT: &str = "Show this album";
 
 const OPEN_ARTIST_HINT: &str = "Show this artist";
+
+const LISTENING_BY_DAY: &str = "Listening by day";
 
 pub(crate) const BARS_AT_MOST: usize = 120;
 
@@ -468,8 +471,10 @@ fn tile(named: &'static str, reading: String) -> Div {
         )
 }
 
-fn charted(chart: &Chart) -> Div {
+fn listed_days(chart: &Chart) -> Stateful<Div> {
     let mut bars = div()
+        .id("listening-by-day")
+        .named_as(Role::List, LISTENING_BY_DAY, "")
         .flex()
         .w_full()
         .flex_none()
@@ -477,8 +482,14 @@ fn charted(chart: &Chart) -> Div {
         .h(px(theme::chart_height()))
         .gap(px(theme::CHART_BAR_GAP));
     for (index, bar) in chart.bars.iter().copied().enumerate() {
-        bars = bars.child(drawn_bar(index, bar));
+        bars = bars.child(drawn_bar(index, bar, chart.bars.len()));
     }
+
+    bars
+}
+
+fn charted(chart: &Chart) -> Div {
+    let bars = listed_days(chart);
 
     let axis = chart.axis().map(|(from, to)| {
         div()
@@ -501,7 +512,7 @@ fn charted(chart: &Chart) -> Div {
         .child(kit::section_body().gap_2().child(bars).children(axis))
 }
 
-fn drawn_bar(index: usize, bar: Bar) -> Stateful<Div> {
+fn drawn_bar(index: usize, bar: Bar, of: usize) -> Stateful<Div> {
     let colour = if bar.plays == 0 {
         theme::outline()
     } else {
@@ -510,6 +521,8 @@ fn drawn_bar(index: usize, bar: Bar) -> Stateful<Div> {
 
     div()
         .id(("listening-day", index))
+        .listed_as(|| SharedString::from(said(bar)))
+        .placed(Placed { at: index, of })
         .flex()
         .flex_1()
         .flex_col()
@@ -534,6 +547,7 @@ mod tests {
     use std::time::UNIX_EPOCH;
 
     use super::*;
+    use crate::views::spoken::{self, node_of};
 
     const SECONDS_A_DAY: u64 = 24 * 60 * 60;
     const TODAY: u64 = 20_000;
@@ -683,6 +697,35 @@ mod tests {
             }),
             "today · nothing played"
         );
+    }
+
+    #[test]
+    fn a_reader_hears_each_bar_as_a_place_in_the_list_of_days_saying_what_was_played() {
+        spoken::listened_to(true);
+
+        let days = [
+            a_day(1, 3, Duration::from_secs(3_600)),
+            a_day(0, 0, Duration::ZERO),
+        ];
+        let chart = Chart::in_calendar(&days, now(), &Calendar::utc(), BARS_AT_MOST);
+
+        let list = node_of(&listed_days(&chart)).expect("a heard list is a node");
+        let yesterday =
+            node_of(&drawn_bar(0, chart.bars[0], chart.bars.len())).expect("a heard bar is a node");
+        let today =
+            node_of(&drawn_bar(1, chart.bars[1], chart.bars.len())).expect("a heard bar is a node");
+
+        assert_eq!(list.role(), Role::List);
+        assert_eq!(list.label(), Some("Listening by day"));
+        assert_eq!(yesterday.role(), Role::ListItem);
+        assert_eq!(
+            yesterday.label(),
+            Some("yesterday · 3 plays · 1h 0m listened")
+        );
+        assert_eq!(yesterday.position_in_set(), Some(1));
+        assert_eq!(yesterday.size_of_set(), Some(2));
+        assert_eq!(today.label(), Some("today · nothing played"));
+        assert_eq!(today.position_in_set(), Some(2));
     }
 
     #[test]

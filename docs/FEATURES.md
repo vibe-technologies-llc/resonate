@@ -68,15 +68,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   lossy decode with neither a wall nor AAC's frames (a resampled AAC, an MP3 or Vorbis with no
   lowpass) still reads as lossless
 
-## Keyboard and accessibility
-- [S · 0.2.0] A screen reader hears a plot as an image with a one-line description (the cutoff, the
-  mode, the band count), not its values, and the Statistics chart's bars and the Missing and
-  Suggestions cards are not named; a link `kit::cut_to_fit` shortened (the bar's, the inspector's) is
-  named by its cut text (*Echo…*); none of the cells, links, lyric
-  lines, plots, the caret and selection or the menu the reader follows has been heard over AT-SPI
-  with a reader, only built and read back in tests, since gpui's test platform never activates the
-  tree
-
 ## Later: Sources and providers
 - [M · blocked: services] The Bandcamp and Discogs links an `Identity` carries are read by nothing;
   no provider asks either

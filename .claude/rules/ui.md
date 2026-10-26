@@ -625,18 +625,33 @@ is never named.
     library*), each selected where reached. A link is `pressed_to`'s `Role::Link` labelled by the
     words it draws: its label is `impl IntoElement + Spelt`, and `listing::matched` returns a
     `Matched` that is both the drawn element and its spelling, so a lit search match still names
-    the link whole; the bar's and inspector's links take what `cut_to_fit` left, an ellipsis
-    included. A lyric line is a list item of the *Lyrics* list (`lyric-sheet`), *n of m*, selected
-    while in play; a line held open far from the pane keeps its node (empty box, same id) so the
-    list is whole.
+    the link whole; the bar's and inspector's links draw what `cut_to_fit` left, an ellipsis
+    included, and are named whole: it returns a `kit::Cut` (the drawn text, the whole spelt), the
+    same pair as `Matched`. A lyric line is a list item of the *Lyrics* list (`lyric-sheet`),
+    *n of m*, selected while in play; a line held open far from the pane keeps its node (empty box,
+    same id) so the list is whole.
   - **A choice is a radio button wherever it is drawn**: `kit::choice_row`, `dot_swatch`, the palette
     cards and the music folders' circle go through `Spoken::chosen_among` (label, a description built
     only while listening, toggled where chosen); a device describes how it is reached and what it
     takes (`sink_spoken`).
   - **A plot is an image saying what it shows** (`Spoken::pictured_as`: the wrapper div's id, a label
-    and a one-line description): bitrate graph, waveform (its hint), spectrogram and average
-    spectrum (where the sound falls away), the visualiser's mode, the equaliser curve (its range and
-    band count). Values are not exposed.
+    and a description built only while listening), and the description carries the values the eye
+    reads: the equaliser curve its range and each band (*n, peak at 2.5 kHz, -3.0 dB*, `off` where
+    switched off; `curve_said`), the waveform its hint with the peak, loudness and dynamic range
+    (`waveform_said`), the spectrogram and average spectrum the cutoff with its drop and the
+    verdict, the spectrogram how far up and how long it reaches, the spectrum its mean level under
+    1 kHz, to 4, to 10 and above (`spectrogram_said`, `spectrum_said`, over `cutoff_said`), the
+    bitrate graph its floor and ceiling. The visualiser says its mode alone: its values move every
+    frame and would be re-announced.
+  - **A chart, a card and a run of missing rows are named by what they say.** The Statistics chart
+    is the list *Listening by day* (`statistics::listed_days`), each bar a list item placed *n of m*
+    labelled by what the hover names (*yesterday · 3 plays · 1h 0m listened*). A Suggestions card is
+    a list item (`("suggestion-card", index)`) of *name, reason, tracks · length* (`said_of`),
+    selected where reached. The Missing pane's rows are list items: an album heading *title, owner,
+    n missing*, a disc *Disc n*, a track `browser::unheld_said` (*title, artist, not in your
+    library*, the one every unheld row, on an album or in a search, takes), an artist heading
+    *name, n releases*, a release *title, kind, year*. `spoken::joined` makes the comma list and
+    drops an empty part.
   - **A field's caret and selection are a synthetic text run.** `Spoken::read_as_typed` gives the
     field's node one `TextRun` child holding the text (character lengths in bytes) and sets
     `text_selection` from `Edit::anchor` and `Edit::cursor`, converted to letter counts
@@ -652,8 +667,8 @@ is never named.
     private session bus with `at-spi-bus-launcher` and `at-spi2-registryd`, `org.a11y.Status
     IsEnabled` set, read with python's `Atspi` (a tab clicked through the Action interface changed
     pane, the volume set through the Value interface moved); no screen reader (Orca) was run. The
-    cells, links, lyric lines, plots, the caret and selection and the menu hand-over were only
-    built and read back in tests.
+    cells, links, lyric lines, plots, bars, cards, the caret and selection and the menu hand-over
+    were only built and read back in tests (`docs/TESTING.md`).
 - **A playlist row no scan has seen draws as a queued one does.** `views/listing.rs` owns the `Row`
   the queue and playlists panes build: the scanned `Track` where the library has one, `Player::media`
   where not, the file stem only where the file cannot be read. The play count rides on the same `Row`

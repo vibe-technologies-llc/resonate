@@ -50,6 +50,9 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   datagram path alone; the link local multicast group and a peer dialled by a link local address with
   its scope have not crossed a real interface (nor an IPv6-only network)
 - [M · blocked: hardware] A microphone recording not proved against real sound reaching a microphone
+- [S · blocked: screen reader] None of the cells, links, lyric lines, plots, bars, cards, the caret and
+  selection or the menu a reader follows has been heard over AT-SPI with a screen reader (Orca), only
+  built and read back in tests, since gpui's test platform never activates the tree
 
 ## Later: Packaging
 - [S · blocked: tooling] The sync server's RPM spec has never run: no `rpmbuild` here, and its
