@@ -758,7 +758,7 @@ impl Output {
     }
 
     fn can_hand_on_its_stream(&self) -> bool {
-        self.stream.is_some() && self.active && !self.deaf && self.tail == Tail::Unasked
+        self.stream.is_some() && self.active && !self.deaf
     }
 
     fn kept(mut self) -> Option<Kept> {
@@ -2841,7 +2841,9 @@ impl Engine {
     }
 
     fn reopen_at_the_change(&mut self) -> Result<()> {
-        tracing::debug!("the source changed its rate or channels; the stream is reopened for it");
+        tracing::debug!(
+            "the source changed its rate or channels; the stream is reshaped or reopened for it"
+        );
         self.rebind(None, None)
     }
 

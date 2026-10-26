@@ -66,6 +66,8 @@ struct ActiveStream {
     taking: Arc<Taking>,
     clock: Arc<StreamClock>,
     request: StreamRequest,
+    drain_asked: bool,
+    drained: Rc<Cell<bool>>,
 }
 
 impl ActiveStream {
@@ -78,8 +80,6 @@ impl ActiveStream {
         let pins_the_rate = open.force_graph_rate || request.force_graph_rate;
         if request.target != open.target {
             Some(Unreshapable::AnotherTarget)
-        } else if request.no_convert != open.no_convert {
-            Some(Unreshapable::AnotherConversion)
         } else if request.realtime != open.realtime || request.latency != open.latency {
             Some(Unreshapable::AnotherPriority)
         } else if request.force_graph_rate != open.force_graph_rate
@@ -97,6 +97,23 @@ impl ActiveStream {
         self.handing.let_go_of_the_spent();
         if let Some(because) = self.refuses(request) {
             return Reshaped::Refused { source, because };
+        }
+        if self.drain_asked {
+            if !self.drained.get() {
+                return Reshaped::Refused {
+                    source,
+                    because: Unreshapable::StillDraining,
+                };
+            }
+            if let Err(error) = self.opened.stream.set_active(true) {
+                tracing::debug!(%error, "the graph would not stop the stream's drain");
+                return Reshaped::Refused {
+                    source,
+                    because: Unreshapable::DrainUnstopped,
+                };
+            }
+            self.drain_asked = false;
+            self.drained.set(false);
         }
         let asked = request.spec;
         let was = self.asked.get();
@@ -958,8 +975,10 @@ fn run(
                 }
             }
             Request::Drain => {
-                if let Some(playing) = active.borrow().as_ref() {
+                if let Some(playing) = active.borrow_mut().as_mut() {
                     let _ = playing.stream().flush(true);
+                    playing.drain_asked = true;
+                    playing.drained.set(false);
                 }
             }
             Request::Close => {
@@ -1658,6 +1677,7 @@ fn build_stream(
     let taking = Arc::new(Taking::default());
     let asked = Rc::new(Cell::new(spec));
     let settled = Rc::new(Cell::new(None));
+    let drained = Rc::new(Cell::new(false));
     let cycle = Cycle::new(spec, Arc::clone(&taking), Arc::clone(clock));
     let (fed, handing) = fed_from(Feed::new(cycle, source));
     let listener = stream
@@ -1665,7 +1685,9 @@ fn build_stream(
         .process(|stream, fed| fed.run(stream))
         .drained({
             let events = events.clone();
+            let drained = Rc::clone(&drained);
             move |_stream, _fed| {
+                drained.set(true);
                 let _ = events.try_send(StreamEvent::Drained);
             }
         })
@@ -1732,6 +1754,8 @@ fn build_stream(
         taking,
         clock: Arc::clone(clock),
         request: request.clone(),
+        drain_asked: false,
+        drained,
     })
 }
 

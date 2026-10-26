@@ -340,7 +340,9 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   opens (a mono MP3 turning stereo on a stereo stream). Otherwise bit-perfect wins as it does
   between tracks: the old chain is flushed, the ring drains and the graph is asked to drain
   (`Output::ends_at_a_change`), then `settle` rebinds where the decoder stands, with no seek,
-  opening the new stream `Entering::Whole` (`Track::at_a_change`). Converting the new shape into
+  building the new output `Entering::Whole` (`Track::at_a_change`) and handing it the drained
+  stream to reshape, so a reopen is only the fallback (below;
+  `a_stream_turning_to_another_rate_has_the_stream_it_drained_reshaped_rather_than_reopened`). Converting the new shape into
   the old stream was not chosen: the new section would lose bit-perfection for the rest of the
   track. A turn before anything was heard rebinds at once. A seek landing in a section of
   another shape turns the same way on its first block
@@ -414,7 +416,8 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   renegotiation reshapes where the backend can (below).
 - **A rebind on the same device reshapes the stream it holds instead of reopening it, where the
   backend can.** `rebind` retires the output `Retire::HandingOnItsStream`: the old ring fades out
-  as ever, but once quiet its stream (active, not deaf, never asked to drain) is moved into
+  as ever, but once quiet its stream (active, not deaf; drained or asked to drain included, which
+  the backend revives or refuses) is moved into
   `Engine::kept` rather than closed. The new output is built at the heard position as any rebind
   builds it (decoder seeked, chain and resampler made afresh, ring at the new depth, `FadedIn`),
   and `promote` hands the kept stream to the `resonate-stream-open` worker with the new ring's
@@ -440,10 +443,19 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   it takes nothing while the spent queue is full. Where the spec moves, the loop first stores
   `Taken::Otherwise` against the new spec (silence until the graph settles), points the
   `param_changed` closure's asked spec (`Rc<Cell<StreamSpec>>`) at it, and calls `update_params`
-  with the new `EnumFormat`s; the settled `Format` then hands the ring over as ever. Refused, with
-  the source handed back: another target, another `no_convert`, `realtime` or latency, a pinned rate
-  that moves or a pin switched (`node.rate` is a connect-time property here), a feed not yet taken,
-  formats the graph would not take (`a_live_stream_takes_a_new_source_and_a_new_rate_without_reopening`).
+  with the new `EnumFormat`s; the settled `Format` then hands the ring over as ever. **A drained
+  stream is revived, not reopened:** the loop marks `ActiveStream::drain_asked` on `Drain` and the
+  `drained` callback sets `drained`; a reshape after it calls `set_active(true)`, which clears the
+  stream's drain state in every libpipewire from 0.3.50 (on an active node nothing else moves). One
+  asked to drain and not yet drained refuses `Unreshapable::StillDraining`, since before 1.x that
+  call stops only a finished drain. **`NO_CONVERT` is not weighed:** libpipewire's `stream.c` has
+  never read the flag from 0.3.50 on (the adapter wraps every audio stream), so a plan turning
+  between converted and not reshapes. Refused, with the source handed back: another target,
+  `realtime` or latency (both connect-time), a pinned rate that moves or a pin switched (`node.rate`
+  is a node property only `pw_stream_update_properties` moves, unwrapped by pipewire-rs;
+  `FEATURES.md`), a feed not yet taken, formats the graph would not take
+  (`a_live_stream_takes_a_new_source_and_a_new_rate_without_reopening`,
+  `a_live_stream_takes_a_turn_between_converted_and_not_and_a_new_source_once_drained`).
 - **Leaving/returning to unity gain and switching the equaliser reshape the chain in place**
   where no splice can be made (above).
   `retune` builds the wanted plan against the open stream. `OutputPlan::same_shape_as`: retune the
