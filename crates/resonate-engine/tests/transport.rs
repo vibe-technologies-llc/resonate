@@ -6511,6 +6511,229 @@ fn switching_the_equaliser_on_and_off_mid_track_glides_rather_than_steps() -> Re
     Ok(())
 }
 
+const SINE_PERIOD_FRAMES: usize = 100;
+const SINE_PEAK: f64 = 16_000.0;
+const DEEP_RING: Duration = Duration::from_millis(500);
+const AN_EQUALISER_HEARD_WITHIN: Duration = Duration::from_millis(60);
+
+fn sine_at(frame: usize) -> f64 {
+    SINE_PEAK * (std::f64::consts::TAU * frame as f64 / SINE_PERIOD_FRAMES as f64).sin()
+}
+
+fn sine(frames: usize) -> Vec<u8> {
+    let data: Vec<u8> = (0..frames)
+        .flat_map(|frame| {
+            let sample = sine_at(frame).round() as i16;
+            [sample, sample]
+        })
+        .flat_map(i16::to_le_bytes)
+        .collect();
+    wave(16, CHANNELS, &data)
+}
+
+fn preamped(decibels: f64) -> Arc<Equalisation> {
+    Arc::new(Equalisation {
+        enabled: true,
+        bound: BTreeMap::new(),
+        fallback: Some(Arc::new(
+            Profile::new(
+                Preamp::from_decibels(decibels).expect("in range"),
+                Vec::new(),
+            )
+            .expect("a profile of a preamp alone"),
+        )),
+    })
+}
+
+fn left_of_the_graph(played: &[u8]) -> Vec<f64> {
+    played
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|frame| f64::from(i16::from_le_bytes([frame[0], frame[1]])))
+        .collect()
+}
+
+fn levels_against_the_sine(left: &[f64]) -> Vec<(usize, f64)> {
+    left.iter()
+        .enumerate()
+        .filter(|(frame, _)| sine_at(*frame).abs() > LOUD_ENOUGH_TO_READ_A_LEVEL)
+        .map(|(frame, sample)| (frame, sample / sine_at(frame)))
+        .collect()
+}
+
+fn amplitude_of(decibels: f64) -> f64 {
+    10_f64.powf(decibels / 20.0)
+}
+
+fn steepest_step(left: &[f64]) -> f64 {
+    left.windows(2)
+        .map(|pair| (pair[1] - pair[0]).abs())
+        .fold(0.0, f64::max)
+}
+
+fn steepest_the_sine_climbs() -> f64 {
+    SINE_PEAK * std::f64::consts::TAU / SINE_PERIOD_FRAMES as f64
+}
+
+fn sine_over_a_deep_ring(seconds: usize) -> Result<(Player, Arc<Mutex<Graph>>, Tree)> {
+    let tree = Tree::new();
+    let path = tree.write("sine.wav", &sine(RATE as usize * seconds));
+    let (backend, graph) = FakeSink::new(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
+    let player = Player::with_backend(
+        EngineConfig {
+            buffer: DEEP_RING,
+            ..config()
+        },
+        move |_| Ok(Box::new(backend)),
+    )?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    Ok((player, graph, tree))
+}
+
+#[test]
+fn an_equaliser_change_is_heard_within_a_few_pulls_rather_than_a_buffer_later_and_keeps_the_music_in_time()
+-> Result<()> {
+    let (player, graph, _tree) = sine_over_a_deep_ring(3)?;
+    let frame = frame_bytes(SampleFormat::S16);
+    let pulled_past =
+        |frames: usize| move |_: &Player, graph: &Graph| graph.played.len() >= frames * frame;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES,
+        pulled_past(8_192),
+        "the sine to play",
+    );
+
+    let asked_at = graph.lock().played.len() / frame;
+    player
+        .request(Command::SetEqualisation(preamped(-6.0)))?
+        .wait_for(PATIENCE)?;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES,
+        pulled_past(asked_at + RATE as usize),
+        "the equaliser to be heard",
+    );
+
+    let graph = graph.lock();
+    let left = left_of_the_graph(&graph.played);
+    let levels = levels_against_the_sine(&left);
+    let halved = amplitude_of(-6.0);
+    let changed_at = levels
+        .iter()
+        .find(|(_, level)| *level < 0.97)
+        .map(|(frame, _)| *frame)
+        .expect("the equaliser was never heard");
+    let within = Frames::from_duration(AN_EQUALISER_HEARD_WITHIN, SampleRate::HZ_44100).get();
+    let blended = Frames::from_duration(Duration::from_millis(40), SampleRate::HZ_44100).get();
+
+    assert!(
+        levels
+            .iter()
+            .take_while(|(frame, _)| *frame < asked_at)
+            .all(|(_, level)| (level - 1.0).abs() < 1e-3),
+        "the sine was not played as the file holds it before the equaliser"
+    );
+    assert!(
+        (changed_at - asked_at) as u64 <= within,
+        "the equaliser was heard {} frames after it was asked for under a {} ms ring",
+        changed_at - asked_at,
+        DEEP_RING.as_millis()
+    );
+    assert!(
+        levels
+            .iter()
+            .filter(|(frame, _)| *frame as u64 >= changed_at as u64 + blended)
+            .all(|(_, level)| (level - halved).abs() < 2e-3),
+        "past the blend the sine was not the file's own, halved, at the same frames: \
+         a frame was dropped or played twice"
+    );
+    assert!(
+        steepest_step(&left) < steepest_the_sine_climbs() * 1.05,
+        "the sine stepped by {} where the equaliser came in",
+        steepest_step(&left)
+    );
+    assert_eq!(graph.opens, 1, "the equaliser reopened the stream");
+    assert_eq!(graph.reshapes, 0, "the equaliser reshaped the stream");
+    Ok(())
+}
+
+#[test]
+fn equaliser_changes_asked_for_faster_than_the_graph_reaches_them_end_on_the_last() -> Result<()> {
+    let (player, graph, _tree) = sine_over_a_deep_ring(4)?;
+    let frame = frame_bytes(SampleFormat::S16);
+    let pulled_past =
+        |frames: usize| move |_: &Player, graph: &Graph| graph.played.len() >= frames * frame;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES,
+        pulled_past(8_192),
+        "the sine to play",
+    );
+
+    let asked_at = graph.lock().played.len() / frame;
+    for decibels in [-6.0, -12.0, -9.0, -3.0] {
+        player
+            .request(Command::SetEqualisation(preamped(decibels)))?
+            .wait_for(PATIENCE)?;
+    }
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES,
+        pulled_past(asked_at + RATE as usize),
+        "the last equaliser to be heard",
+    );
+    player
+        .request(Command::SetEqualisation(Arc::new(Equalisation::default())))?
+        .wait_for(PATIENCE)?;
+    let off_at = graph.lock().played.len() / frame;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES,
+        pulled_past(off_at + RATE as usize / 2),
+        "the equaliser to let go",
+    );
+
+    let graph = graph.lock();
+    let left = left_of_the_graph(&graph.played);
+    let levels = levels_against_the_sine(&left);
+    let settled_by = asked_at + RATE as usize / 5;
+    let last = amplitude_of(-3.0);
+
+    assert!(
+        levels
+            .iter()
+            .filter(|(frame, _)| (settled_by..off_at).contains(frame))
+            .all(|(_, level)| (level - last).abs() < 2e-3),
+        "the last of the changes asked for together was not what played a fifth of a second on"
+    );
+    assert!(
+        levels
+            .iter()
+            .filter(|(frame, _)| *frame >= off_at + RATE as usize / 5)
+            .all(|(_, level)| (level - 1.0).abs() < 1e-3),
+        "the sine did not come back as the file holds it once the equaliser let go"
+    );
+    assert!(
+        steepest_step(&left) < steepest_the_sine_climbs() * 1.05,
+        "the sine stepped by {} where the equaliser moved",
+        steepest_step(&left)
+    );
+    assert_eq!(graph.opens, 1, "the equaliser reopened the stream");
+    Ok(())
+}
+
 fn correcting_the_room(seconds_of_response: f64) -> EngineConfig {
     let mut taps = vec![0.0; (f64::from(RATE) * seconds_of_response) as usize];
     taps[0] = 1.0;

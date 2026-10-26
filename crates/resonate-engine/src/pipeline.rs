@@ -8,8 +8,8 @@ use resonate_core::{
     eq::{Frequency, Profile},
 };
 use resonate_dsp::{
-    Chain, ChainBuilder, Convolver, Dither, DitherKind, Equaliser, FilterPhase, Front, GainConfig,
-    GainStage, Impulse, NoiseShaping, Overs, Quality, Remix, ReplayGainMode, Resampler,
+    Back, Chain, ChainBuilder, Convolver, Dither, DitherKind, Equaliser, FilterPhase, Front,
+    GainConfig, GainStage, Impulse, NoiseShaping, Overs, Quality, Remix, ReplayGainMode, Resampler,
     ResamplerConfig, Restoration, Restore, RestoreConfig, Result, TruePeak, Tuning,
 };
 
@@ -319,7 +319,7 @@ impl OutputPlan {
     ) -> Result<Chain> {
         let carrier = StreamSpec::new(source.rate, source.channels, SampleFormat::F32);
         let builder = self.fronted(Chain::builder(carrier).max_frames_in(block), config, block)?;
-        self.backed(builder, config).build()
+        self.backed(builder.then_the_back(), config).build()
     }
 
     pub fn build_chain_after(
@@ -328,8 +328,33 @@ impl OutputPlan {
         config: &EngineConfig,
         block: usize,
     ) -> Result<Chain> {
-        self.backed(Chain::builder_after(front).max_frames_in(block), config)
-            .build()
+        self.backed(
+            Chain::builder_after(front)
+                .max_frames_in(block)
+                .then_the_back(),
+            config,
+        )
+        .build()
+    }
+
+    pub fn build_the_back(&self, edge: Back, config: &EngineConfig) -> Result<Chain> {
+        self.backed(
+            Chain::builder(edge.spec)
+                .max_frames_in(edge.frames_in)
+                .draining_in(edge.draining_in)
+                .then_the_back(),
+            config,
+        )
+        .build()
+    }
+
+    pub fn fronts_alike(&self, other: &Self) -> bool {
+        self.stream == other.stream
+            && self.packing == other.packing
+            && self.remix == other.remix
+            && self.restoration == other.restoration
+            && self.resample == other.resample
+            && convolves_alike(self.convolution.as_ref(), other.convolution.as_ref())
     }
 
     fn fronted(
