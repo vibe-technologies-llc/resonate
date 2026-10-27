@@ -548,7 +548,9 @@ rows read via `Player::media` like any unscanned row.
   copy is the same file by packets digest, length and rate (a study). **A cover is shared by release
   id, device to device** (`covers_wanted`, `cover_to_share`, `take_shared_cover`): it lands as an
   archive cover (`CoverSource::Archive`, through `land_archive_cover`, so never over a held picture
-  and a file's later replaces it) on every album of that id holding none.
+  and a file's later replaces it) on every album of that id holding none. **A Lyricsfile is shared by
+  recording, device to device** (`lyricsfiles_wanted`, `lyricsfile_to_share`, `take_shared_lyricsfile`):
+  it lands through `sung::keep` on the copy holding the recording strictly, never over a Lyricsfile.
   `Library::synced_revision`
   counts these writes, which `data_version` cannot see; `catalog_revision` adds every other writer.
 

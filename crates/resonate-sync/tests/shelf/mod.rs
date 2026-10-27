@@ -8,7 +8,7 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use resonate_core::{Answer, Answered, Mbid, Recording};
+use resonate_core::{Answer, Answered, Mbid, Recording, SharedLyricsfile};
 use resonate_sync::{
     Catalog, Held, LocalListen, LocalPlaylist, LocalPlaylistId, LocalQuery, Opened, QueryBody,
     Refused, RemoteListen, Resumed, SongTags,
@@ -38,6 +38,8 @@ pub struct Inside {
     pub takes_no_answers: bool,
     pub covers: BTreeMap<String, Vec<u8>>,
     pub uncovered: Vec<Mbid>,
+    pub lyricsfiles: Vec<(Recording, SharedLyricsfile)>,
+    pub lacking_lyricsfiles: Vec<Recording>,
     next_id: i64,
     next_answered: i64,
 }
@@ -555,6 +557,56 @@ impl Catalog for Shelf {
         inside
             .covers
             .insert(release.as_str().to_owned(), picture.to_vec());
+        Ok(true)
+    }
+
+    fn lyricsfiles_wanted(&self, skip: usize, most: usize) -> Result<Vec<Recording>, Refused> {
+        let inside = self.inside.lock();
+        Ok(inside
+            .lacking_lyricsfiles
+            .iter()
+            .filter(|recording| {
+                !inside
+                    .lyricsfiles
+                    .iter()
+                    .any(|(held, _)| held.names_the_same_song_as(recording))
+            })
+            .skip(skip)
+            .take(most)
+            .cloned()
+            .collect())
+    }
+
+    fn lyricsfile(&self, recording: &Recording) -> Result<Option<SharedLyricsfile>, Refused> {
+        Ok(self
+            .inside
+            .lock()
+            .lyricsfiles
+            .iter()
+            .find(|(held, _)| held.names_the_same_song_as(recording))
+            .map(|(_, lyricsfile)| lyricsfile.clone()))
+    }
+
+    fn take_lyricsfile(
+        &self,
+        recording: &Recording,
+        lyricsfile: &SharedLyricsfile,
+    ) -> Result<bool, Refused> {
+        let mut inside = self.inside.lock();
+        let lacking = inside
+            .lacking_lyricsfiles
+            .iter()
+            .any(|held| held.names_the_same_song_as(recording));
+        let held = inside
+            .lyricsfiles
+            .iter()
+            .any(|(held, _)| held.names_the_same_song_as(recording));
+        if !lacking || held {
+            return Ok(false);
+        }
+        inside
+            .lyricsfiles
+            .push((recording.clone(), lyricsfile.clone()));
         Ok(true)
     }
 

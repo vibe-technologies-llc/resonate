@@ -87,7 +87,12 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   recording; answered `Tagged`, a `SongTags`) and `Covers` (`ToPeer` tag 5: release ids, at most
   `COVERS_ASKED_AT_MOST`, 512, the reader refusing more; answered a `Covered` frame, a release id and
   the picture's bytes of at most `LARGEST_SHARED_COVER`, 16 MiB, for each one held, then
-  `CoversEnd`; a build without the request drops the stream, which reads as no covers). **What a song's file no longer carries travels beside
+  `CoversEnd`; a build without the request drops the stream, which reads as no covers) and
+  `Lyricsfiles` (`ToPeer` tag 6: recordings, at most `LYRICSFILES_ASKED_AT_MOST`, 512, the reader
+  refusing more; answered a `Documented` frame, the recording and a `SharedLyricsfile` (its words of
+  at most `LONGEST_SHARED_LYRICS`, whether timed, and the document of at most
+  `LARGEST_SHARED_LYRICSFILE`, 1 MiB) for each one the sender keeps a Lyricsfile for, then
+  `LyricsfilesEnd`; an older build drops the stream, which reads as none). **What a song's file no longer carries travels beside
   it, not in it**: a `Recording` is never extended (every earlier build reads each frame to its end
   and refuses a trailing byte), so the album artist, date, track and disc numbers and totals and
   the compilation flag go in a request of their own, asked after a fetch lands (`peer::tags_from`)
@@ -181,8 +186,8 @@ platforms; the catalog seam stays thin.
   the release and on each track, `CODES_SHARED_AT_MOST` (8) codes a track and a
   `SharedRelease::weight` (its text plus 16 bytes an item) of at most `HEAVIEST_SHARED_RELEASE`
   (64 KiB); the reader refuses longer lists
-  (`a_release_heavier_than_the_server_keeps_stays_home`). Covers travel device to device, never
-  through the server (*Peers*); the print, recognition and Lyricsfile do not travel (`FEATURES.md`). **The ledger's `answers` row is keyed by the recording key,
+  (`a_release_heavier_than_the_server_keeps_stays_home`). Covers and Lyricsfiles travel device to device, never
+  through the server (*Peers*); the print and recognition do not travel (`FEATURES.md`). **The ledger's `answers` row is keyed by the recording key,
   the kind and the file** (a study per encode; lyrics kind 0 and a release kind 2 with no file, so
   the words and the release of one song are two rows,
   `a_release_travels_beside_the_words_of_its_song_and_is_not_sent_back`), holds the encoded answer, `here`, stamp and `owed`. A look reads
@@ -238,6 +243,16 @@ picture is not the file's own) and `take_shared_cover` (sniffed as an image, els
 through `land_archive_cover` on every album of that id holding no picture, so a file's picture
 later replaces it as it would the archive's;
 `a_cover_one_catalog_holds_for_a_release_lands_on_another_holding_it_without_one`);
+**Lyricsfiles** (`lyricsfiles_wanted`, `lyricsfile`, `take_lyricsfile`; default none) are the
+library's `Library::lyricsfiles_wanted(skip, most)` (the recordings of rows keeping words with no
+Lyricsfile, hidden copies left out, the most lately kept first, `skip` rows past the first),
+`lyricsfile_to_share` (the kept Lyricsfile or TTML of the copy holding the recording strictly, with
+its words) and `take_shared_lyricsfile` (a document and words that do not `travel` are refused; it lands
+only where the recording is held strictly, as a `lyrics_kept` row through `sung::keep` with the
+document, and never over a Lyricsfile already kept, so lines or plain words are bettered and a
+Lyricsfile is not undone; the document is kept as told, an unreadable one falling back to its lines
+where it is read;
+`a_lyricsfile_one_catalog_keeps_lands_on_another_holding_the_song_with_plainer_words_and_never_over_richer`);
 **words land only where the recording is held strictly** (resolved as above, then the held
 row's MBID is the recording's, or both lengths are known and within 2 s), as a `lyrics_kept` row
 through `sung::keep` with no Lyricsfile, and never where the row keeps words as rich already; **a
@@ -491,11 +506,23 @@ will not open is left out of the holdings.
   or through the relay as QUIC), never kept on the server
   (`a_cover_one_device_holds_reaches_another_lacking_it_and_one_neither_holds_stays_missing`). The
   phones' catalogs neither ask nor answer (the seam's defaults).
+- **Lyricsfiles are asked of every device a connection stands to, at most every
+  `LYRICSFILES_ASKED_OF_A_DEVICE_EVERY` (30 min) a device**, beside covers (`ask_for_lyricsfiles`,
+  *Sync now* forgets the times): `lyricsfiles_wanted(skip, LYRICSFILES_ASKED_AT_MOST)` goes as one
+  `Lyricsfiles` request (`peer::lyricsfiles_from`), each `Documented` answer handed to
+  `take_lyricsfile` as it arrives. Far more rows keep words than lack a picture, so the ask walks the
+  list: `Running::lyricsfiles_skipped` keeps, a device at a time, how many rows the last asks passed
+  and a short answer turns it to none, so each meeting asks the next five hundred and the list comes
+  round (a row that landed meanwhile only shifts it; a restart begins again). The sender reads each
+  recording with `lyricsfile` and sends only what is kept and `SharedLyricsfile::travels`. It crosses
+  end to end, never kept on the server
+  (`a_lyricsfile_one_device_holds_reaches_another_lacking_it_and_one_neither_holds_stays_missing`).
+  The phones' catalogs neither ask nor answer.
 - **Android and iOS send and fetch songs only on an unmetered network** unless mobile data is allowed
   (`allow_transfers`); incoming peers are refused meanwhile, a run under way stops before its next
   song as a cut-short run does, and a `Fetch` asked meanwhile is answered `Missing`
-  (`Answering::transfers_allowed`, the flag the service holds); covers are neither asked nor
-  answered meanwhile.
+  (`Answering::transfers_allowed`, the flag the service holds); covers and Lyricsfiles are neither
+  asked nor answered meanwhile.
 
 ## Nearby
 

@@ -1070,6 +1070,76 @@ fn a_study_and_kept_words_land_on_a_catalog_holding_the_same_file_and_read_back_
 }
 
 #[test]
+fn a_lyricsfile_one_catalog_keeps_lands_on_another_holding_the_song_with_plainer_words_and_never_over_richer()
+-> Result<()> {
+    let tree = Tree::new();
+    let echoes = tree.song("Floyd/Meddle/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let here = Library::open_in_memory()?;
+    let there = Library::open_in_memory()?;
+    let richer = Library::open_in_memory()?;
+    for library in [&here, &there, &richer] {
+        scan(library, &tree.root)?;
+    }
+    let location = MediaLocation::local(&echoes);
+    let lines = LyricText {
+        text: "[00:01.00] Overhead the albatross".into(),
+        synced: true,
+        lyricsfile: None,
+    };
+    let document = LyricText {
+        lyricsfile: Some("version: '1.0'".into()),
+        ..lines.clone()
+    };
+    let own = LyricText {
+        lyricsfile: Some("version: '1.1'".into()),
+        ..lines.clone()
+    };
+    here.keep_lyrics(&location, None, Some(&document))?;
+    there.keep_lyrics(&location, None, Some(&lines))?;
+    richer.keep_lyrics(&location, None, Some(&own))?;
+
+    let wanted = there.lyricsfiles_wanted(0, 10)?;
+    let shared = here
+        .lyricsfile_to_share(&wanted[0])?
+        .expect("a lyricsfile to share");
+    let nothing_to_share = there.lyricsfile_to_share(&wanted[0])?;
+    let other_song = Recording {
+        title: "Fearless".into(),
+        ..wanted[0].clone()
+    };
+    let strangers = there.take_shared_lyricsfile(&other_song, &shared)?;
+    let over_richer = richer.take_shared_lyricsfile(&wanted[0], &shared)?;
+    let taken = there.take_shared_lyricsfile(&wanted[0], &shared)?;
+    let again = there.take_shared_lyricsfile(&wanted[0], &shared)?;
+
+    assert_eq!(wanted.len(), 1);
+    assert_eq!(wanted[0].title, "Echoes");
+    assert!(here.lyricsfiles_wanted(0, 10)?.is_empty());
+    assert!(richer.lyricsfiles_wanted(0, 10)?.is_empty());
+    assert!(there.lyricsfiles_wanted(1, 10)?.is_empty());
+    assert_eq!(shared.document, "version: '1.0'");
+    assert_eq!(nothing_to_share, None);
+    assert!(!strangers);
+    assert!(!over_richer);
+    assert!(taken);
+    assert!(!again);
+    assert_eq!(
+        there
+            .kept_lyrics(&location, None)?
+            .and_then(|kept| kept.sung),
+        Some(document)
+    );
+    assert_eq!(
+        richer
+            .kept_lyrics(&location, None)?
+            .and_then(|kept| kept.sung),
+        Some(own)
+    );
+    assert!(there.lyricsfiles_wanted(0, 10)?.is_empty());
+    Ok(())
+}
+
+#[test]
 fn a_study_of_another_encode_or_words_for_another_take_are_never_written() -> Result<()> {
     let here_tree = Tree::new();
     let there_tree = Tree::new();
