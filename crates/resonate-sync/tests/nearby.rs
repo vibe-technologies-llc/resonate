@@ -9,7 +9,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use resonate_core::{Mbid, SharedLyricsfile};
+use resonate_core::{
+    Chromaprint, Mbid, SharedHeard, SharedLyricsfile, SharedPrint, SharedRecognition, WholeFile,
+};
 use resonate_sync::{
     Broadcast, Follow, Me, Nearby, Platform, Server, Settings, Standing, Sync, SyncKey,
 };
@@ -346,6 +348,67 @@ fn a_lyricsfile_one_device_holds_reaches_another_lacking_it_and_one_neither_hold
             .any(|(recording, _)| recording.title == lacking.title)
     );
     assert_eq!(desk_shelf.inside.lock().lyricsfiles.len(), 1);
+
+    drop(phone);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_print_and_its_recognition_one_device_holds_reach_another_lacking_them_and_one_neither_holds_stays_missing()
+ {
+    let folder = scratch("prints");
+    let key = SyncKey::minted().expect("a key");
+    let held = WholeFile {
+        packets: 0xfeed,
+        frames: 8_000_000,
+        rate: 44_100,
+    };
+    let lacking = WholeFile {
+        packets: 0xbeef,
+        frames: 9_000_000,
+        rate: 48_000,
+    };
+    let print = SharedPrint {
+        print: Chromaprint::new("AQADtEmSJEmSJEmS", Duration::from_secs(181)).expect("a print"),
+        recognition: Some(SharedRecognition::Heard(SharedHeard {
+            recording: Mbid::new("b84ee12a-09ef-421b-82de-0441a926375b").expect("mbid"),
+            score: 96,
+            title: "Echoes".into(),
+            artist: Some("Pink Floyd".into()),
+        })),
+    };
+    let desk_shelf = Arc::new(Shelf::holding(&["Echoes"]));
+    let phone_shelf = Arc::new(Shelf::holding(&["Echoes"]));
+    desk_shelf.inside.lock().prints.push((held, print.clone()));
+    phone_shelf.inside.lock().lacking_prints = vec![held, lacking];
+
+    let desk = device(&folder, &key, "Desk", Arc::clone(&desk_shelf), None);
+    let phone = device(
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        Some(&desk),
+    );
+
+    eventually("the print reaching the phone", || {
+        phone_shelf
+            .inside
+            .lock()
+            .prints
+            .iter()
+            .any(|(file, told)| *file == held && *told == print)
+    });
+    assert!(
+        !phone_shelf
+            .inside
+            .lock()
+            .prints
+            .iter()
+            .any(|(file, _)| *file == lacking)
+    );
+    assert_eq!(desk_shelf.inside.lock().prints.len(), 1);
 
     drop(phone);
     drop(desk);

@@ -40,7 +40,7 @@ use crate::{
     },
     peer::{
         Answering, Heard, blocking, covers_from, dialled, dialled_within, fetch, holdings_of,
-        lyricsfiles_from, meet, serve, tell,
+        lyricsfiles_from, meet, prints_from, serve, tell,
     },
     quic::{KEEP_THE_SERVER_EVERY, PeerIdentity, to_the_server, trusted_roots},
     seal::{opened, sealed},
@@ -48,8 +48,8 @@ use crate::{
     web::{Incoming, Outgoing, connect, to_the_web, web_address},
     wire::{
         Beacon, COVERS_ASKED_AT_MOST, FromServer, LARGEST_FRAME, LARGEST_RECORD,
-        LYRICSFILES_ASKED_AT_MOST, PROTOCOL_VERSION, Refusal, ToServer, decoded_bundle,
-        decoded_candidates, encoded_bundle, encoded_candidates, encoded_change,
+        LYRICSFILES_ASKED_AT_MOST, PRINTS_ASKED_AT_MOST, PROTOCOL_VERSION, Refusal, ToServer,
+        decoded_bundle, decoded_candidates, encoded_bundle, encoded_candidates, encoded_change,
     },
 };
 
@@ -70,6 +70,7 @@ const BLOBS_PER_APPEND: usize = 32;
 const FOLLOW_A_DEVICE_EVERY: Duration = Duration::from_secs(30 * 60);
 const COVERS_ASKED_OF_A_DEVICE_EVERY: Duration = Duration::from_secs(30 * 60);
 const LYRICSFILES_ASKED_OF_A_DEVICE_EVERY: Duration = Duration::from_secs(30 * 60);
+const PRINTS_ASKED_OF_A_DEVICE_EVERY: Duration = Duration::from_secs(30 * 60);
 pub const A_FAILED_SONG_WAITS: Duration = Duration::from_secs(30 * 60);
 const LEAVE_WITHIN: Duration = Duration::from_secs(2);
 const SNAPSHOT_FRAME_SHARE: usize = LARGEST_FRAME / 2;
@@ -230,6 +231,7 @@ struct Running {
     fetching: Mutex<AHashSet<RecordingKey>>,
     failed_lately: Mutex<AHashMap<RecordingKey, Instant>>,
     lyricsfiles_skipped: Mutex<BTreeMap<DeviceId, usize>>,
+    prints_skipped: Mutex<BTreeMap<DeviceId, usize>>,
 }
 
 enum Work {
@@ -346,6 +348,7 @@ struct Syncing {
     followed: BTreeMap<DeviceId, Instant>,
     covers_asked: BTreeMap<DeviceId, Instant>,
     lyricsfiles_asked: BTreeMap<DeviceId, Instant>,
+    prints_asked: BTreeMap<DeviceId, Instant>,
     follow_again_at: Option<Instant>,
     followed_again_at: Option<Instant>,
     look_at: Option<Instant>,
@@ -465,6 +468,7 @@ impl Sync {
             fetching: Mutex::new(AHashSet::new()),
             failed_lately: Mutex::new(AHashMap::new()),
             lyricsfiles_skipped: Mutex::new(BTreeMap::new()),
+            prints_skipped: Mutex::new(BTreeMap::new()),
         });
 
         let (commands, received) = mpsc::unbounded_channel();
@@ -1181,6 +1185,7 @@ impl Syncing {
             followed: BTreeMap::new(),
             covers_asked: BTreeMap::new(),
             lyricsfiles_asked: BTreeMap::new(),
+            prints_asked: BTreeMap::new(),
             follow_again_at: None,
             followed_again_at: None,
             look_at: None,
@@ -1297,6 +1302,7 @@ impl Syncing {
                 }
                 self.ask_for_covers(device, &connection);
                 self.ask_for_lyricsfiles(device, &connection);
+                self.ask_for_prints(device, &connection);
                 self.peers.insert(device, connection);
             }
             Event::Punched(device, None) => self.relayed_or_unreached(device),
@@ -1826,6 +1832,22 @@ impl Syncing {
         spawn_lyricsfiles(Arc::clone(&self.running), device, connection.clone());
     }
 
+    fn ask_for_prints(&mut self, device: DeviceId, connection: &Connection) {
+        if device == self.running.device || !self.running.transfers_allowed() {
+            return;
+        }
+        let now = Instant::now();
+        if self
+            .prints_asked
+            .get(&device)
+            .is_some_and(|at| now.duration_since(*at) < PRINTS_ASKED_OF_A_DEVICE_EVERY)
+        {
+            return;
+        }
+        self.prints_asked.insert(device, now);
+        spawn_prints(Arc::clone(&self.running), device, connection.clone());
+    }
+
     async fn want(&mut self, device: DeviceId, work: Work) -> Result<()> {
         if let Work::Fetch(recordings) = &work {
             for recording in recordings {
@@ -2198,6 +2220,7 @@ impl Syncing {
         self.followed.clear();
         self.covers_asked.clear();
         self.lyricsfiles_asked.clear();
+        self.prints_asked.clear();
         self.dialled_at.clear();
         match self.server.take() {
             Some(link) => {
@@ -2246,6 +2269,7 @@ impl Syncing {
         }
         self.ask_for_covers(device, &connection);
         self.ask_for_lyricsfiles(device, &connection);
+        self.ask_for_prints(device, &connection);
         self.peers.insert(device, connection.clone());
         if records {
             let (changes, told) = self.whole().await?;
@@ -2347,6 +2371,45 @@ fn spawn_lyricsfiles(running: Arc<Running>, device: DeviceId, connection: Connec
             Ok(0) => {}
             Ok(landed) => tracing::info!(landed, "lyricsfiles arrived from another device"),
             Err(error) => tracing::debug!(%error, "a device was not asked for its lyricsfiles"),
+        }
+    });
+}
+
+fn spawn_prints(running: Arc<Running>, device: DeviceId, connection: Connection) {
+    tokio::spawn(async move {
+        let skip = running
+            .prints_skipped
+            .lock()
+            .get(&device)
+            .copied()
+            .unwrap_or(0);
+        let catalog = Arc::clone(&running.catalog);
+        let wanted = blocking(move || {
+            catalog
+                .prints_wanted(skip, PRINTS_ASKED_AT_MOST)
+                .map_err(Error::Catalog)
+        })
+        .await;
+        let wanted = match wanted {
+            Ok(wanted) => wanted,
+            Err(error) => {
+                tracing::debug!(%error, "the prints this catalog lacks could not be read");
+                return;
+            }
+        };
+        let next = if wanted.len() < PRINTS_ASKED_AT_MOST {
+            0
+        } else {
+            skip + wanted.len()
+        };
+        running.prints_skipped.lock().insert(device, next);
+        if wanted.is_empty() {
+            return;
+        }
+        match prints_from(&connection, wanted, Arc::clone(&running.catalog)).await {
+            Ok(0) => {}
+            Ok(landed) => tracing::info!(landed, "prints arrived from another device"),
+            Err(error) => tracing::debug!(%error, "a device was not asked for its prints"),
         }
     });
 }

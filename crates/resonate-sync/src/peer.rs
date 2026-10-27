@@ -11,7 +11,7 @@ use std::{
 
 use parking_lot::Mutex;
 use quinn::{ClientConfig, Connection, Endpoint, RecvStream, SendStream};
-use resonate_core::{Mbid, Recording, SharedLyricsfile};
+use resonate_core::{Mbid, Recording, SharedLyricsfile, SharedPrint, WholeFile};
 use tokio::{
     fs,
     io::AsyncWriteExt,
@@ -189,6 +189,12 @@ async fn answer(mut send: SendStream, mut recv: RecvStream, asked: Asked) -> Res
             }
             send_frame(&mut send, &FromPeer::LyricsfilesEnd.encoded()).await?;
         }
+        ToPeer::Prints { files } => {
+            if asked.answering.transfers_allowed.load(Ordering::Relaxed) {
+                send_prints(&mut send, catalog, files).await?;
+            }
+            send_frame(&mut send, &FromPeer::PrintsEnd.encoded()).await?;
+        }
         ToPeer::Fetch { recording, offset } => {
             if asked.answering.transfers_allowed.load(Ordering::Relaxed) {
                 send_song(&mut send, catalog, recording, offset).await?;
@@ -301,7 +307,78 @@ pub async fn lyricsfiles_from(
             | FromPeer::Taken
             | FromPeer::Tagged { .. }
             | FromPeer::Covered { .. }
-            | FromPeer::CoversEnd => {}
+            | FromPeer::CoversEnd
+            | FromPeer::Printed { .. }
+            | FromPeer::PrintsEnd => {}
+        }
+    }
+    Ok(landed)
+}
+
+async fn send_prints(
+    send: &mut SendStream,
+    catalog: Arc<dyn Catalog>,
+    files: Vec<WholeFile>,
+) -> Result<()> {
+    for file in files {
+        let reading = Arc::clone(&catalog);
+        let kept = match blocking(move || reading.print(file).map_err(Error::Catalog)).await {
+            Ok(kept) => kept,
+            Err(error) => {
+                tracing::debug!(%error, "a print could not be read to send");
+                None
+            }
+        };
+        let Some(print) = kept.filter(SharedPrint::travels) else {
+            continue;
+        };
+        send_frame(send, &FromPeer::Printed { file, print }.encoded()).await?;
+    }
+    Ok(())
+}
+
+pub async fn prints_from(
+    connection: &Connection,
+    files: Vec<WholeFile>,
+    catalog: Arc<dyn Catalog>,
+) -> Result<usize> {
+    let (mut send, mut recv) = quietly_short(async {
+        connection
+            .open_bi()
+            .await
+            .map_err(|source| Error::Connection(Box::new(source)))
+    })
+    .await?;
+    send_frame(&mut send, &ToPeer::Prints { files }.encoded()).await?;
+    send.finish().map_err(|_| Error::StreamClosed)?;
+
+    let mut landed = 0;
+    while let Some(frame) = quietly_short(read_frame(&mut recv)).await? {
+        match FromPeer::decoded(&frame)? {
+            FromPeer::Printed { file, print } => {
+                let taking = Arc::clone(&catalog);
+                let taken =
+                    blocking(move || taking.take_print(file, &print).map_err(Error::Catalog)).await;
+                match taken {
+                    Ok(true) => landed += 1,
+                    Ok(false) => {}
+                    Err(error) => {
+                        tracing::debug!(%error, "a print from another device was refused")
+                    }
+                }
+            }
+            FromPeer::PrintsEnd => break,
+            FromPeer::Held { .. }
+            | FromPeer::HeldEnd
+            | FromPeer::Sending { .. }
+            | FromPeer::Missing
+            | FromPeer::Met { .. }
+            | FromPeer::Taken
+            | FromPeer::Tagged { .. }
+            | FromPeer::Covered { .. }
+            | FromPeer::CoversEnd
+            | FromPeer::Documented { .. }
+            | FromPeer::LyricsfilesEnd => {}
         }
     }
     Ok(landed)
@@ -354,7 +431,9 @@ pub async fn covers_from(
             | FromPeer::Taken
             | FromPeer::Tagged { .. }
             | FromPeer::Documented { .. }
-            | FromPeer::LyricsfilesEnd => {}
+            | FromPeer::LyricsfilesEnd
+            | FromPeer::Printed { .. }
+            | FromPeer::PrintsEnd => {}
         }
     }
     Ok(landed)
@@ -430,7 +509,9 @@ pub async fn holdings_of(connection: &Connection) -> Result<Vec<Held>> {
             | FromPeer::Covered { .. }
             | FromPeer::CoversEnd
             | FromPeer::Documented { .. }
-            | FromPeer::LyricsfilesEnd => {}
+            | FromPeer::LyricsfilesEnd
+            | FromPeer::Printed { .. }
+            | FromPeer::PrintsEnd => {}
         }
     }
     Ok(holdings)
@@ -457,7 +538,9 @@ pub async fn meet(connection: &Connection, device: DeviceId, records: bool) -> R
         | FromPeer::Covered { .. }
         | FromPeer::CoversEnd
         | FromPeer::Documented { .. }
-        | FromPeer::LyricsfilesEnd => Err(Error::Unmet),
+        | FromPeer::LyricsfilesEnd
+        | FromPeer::Printed { .. }
+        | FromPeer::PrintsEnd => Err(Error::Unmet),
     }
 }
 
@@ -610,7 +693,9 @@ async fn fetched_from(
         | FromPeer::Covered { .. }
         | FromPeer::CoversEnd
         | FromPeer::Documented { .. }
-        | FromPeer::LyricsfilesEnd => {
+        | FromPeer::LyricsfilesEnd
+        | FromPeer::Printed { .. }
+        | FromPeer::PrintsEnd => {
             return Err(Error::Missing(device));
         }
     };

@@ -18,8 +18,8 @@ use resonate_core::{Chromaprint, FrameSpan, MediaLocation, SampleRate, TrackId, 
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 
 use crate::{
-    EnrichProgress, Error, Fingerprinters, Library, Mbid, RecordingMatch, Result, Sounded, StoreOp,
-    TrackToAsk, enrich, reference::credited_as, store,
+    Credit, EnrichProgress, Error, Fingerprinters, Library, Mbid, RecordingMatch, Result, Sounded,
+    StoreOp, TrackToAsk, enrich, reference::credited_as, store,
 };
 
 pub const HEARD_AT_LEAST: u8 = 80;
@@ -79,7 +79,15 @@ impl HeardAs {
             recording: self.recording.clone(),
             score: self.score,
             title: self.title.clone(),
-            credit: Vec::new(),
+            credit: self
+                .artist
+                .iter()
+                .map(|artist| Credit {
+                    name: artist.clone(),
+                    joined_by: String::new(),
+                    mbid: None,
+                })
+                .collect(),
             length: None,
             isrcs: Vec::new(),
             releases: Vec::new(),
@@ -346,6 +354,26 @@ pub(crate) fn will_not_study(connection: &Connection, track: TrackId) -> Result<
             |row| row.get(0),
         )
         .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
+pub(crate) fn write_print(
+    tx: &Transaction<'_>,
+    track: TrackId,
+    print: &Chromaprint,
+) -> Result<bool> {
+    let changed = tx
+        .execute(
+            "UPDATE track_studies SET print = ?1, print_length = ?2
+             WHERE track_id = ?3 AND studied_under = ?4 AND print IS NULL",
+            params![
+                print.encoded(),
+                print.length().as_secs() as i64,
+                track.get() as i64,
+                i64::from(JUDGED_UNDER),
+            ],
+        )
+        .map_err(|source| Error::store(StoreOp::Update, source))?;
+    Ok(changed > 0)
 }
 
 pub(crate) fn write_recognition(

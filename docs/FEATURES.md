@@ -46,17 +46,13 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Providers and network
 
 ## Device sync
-- [M · 0.3.0] A study's acoustic print (Chromaprint) and its recognition are still asked for by each
-  device itself (`Change::Answer` carries kept lyrics, studies and releases; covers and Lyricsfiles go
-  device to device, `sync.md`): a print is decoded again on every device and AcoustID asked again at
-  the reference's paced rate. They could be asked of a connected device as covers and Lyricsfiles are
-  (`ToPeer`), keyed by the `WholeFile` a study already names and landing only on a copy that is the
-  same file with a study at this `JUDGED_UNDER`; a recognition also wants its agreement weighed
-  again against the receiving row's own name (`enrich::agreement`), since a shared one was weighed
-  against the sender's. Covers and Lyricsfiles are asked only of a device a connection already
-  stands to, never punched for, and an album known only as its release group asks the archive. The
-  phones take and send kept lyrics and studies but no release (their catalog keeps no release a
-  strict landing could weigh) and neither ask nor answer covers or Lyricsfiles
+- [M · 0.3.0] The phones keep no acoustic print (`studies` holds none), so they neither ask nor
+  answer a device for a study's print and recognition as the desktop does (`Prints`, `sync.md`): a
+  study landed on a phone carries no print, and the pass decodes the song again whenever an AcoustID
+  key is set. A phone could keep the print beside the study, take a recognition re-weighed by its own
+  `agreement` against the row's name, and ask and answer them keyed by the `WholeFile` its documents
+  already keep. Prints, covers and Lyricsfiles are asked only of a device a connection already
+  stands to, never punched for, and an album known only as its release group asks the archive
 
 ## Equaliser and DSP
 

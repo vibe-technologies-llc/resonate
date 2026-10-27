@@ -8,7 +8,7 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use resonate_core::{Answer, Answered, Mbid, Recording, SharedLyricsfile};
+use resonate_core::{Answer, Answered, Mbid, Recording, SharedLyricsfile, SharedPrint, WholeFile};
 use resonate_sync::{
     Catalog, Held, LocalListen, LocalPlaylist, LocalPlaylistId, LocalQuery, Opened, QueryBody,
     Refused, RemoteListen, Resumed, SongTags,
@@ -40,6 +40,8 @@ pub struct Inside {
     pub uncovered: Vec<Mbid>,
     pub lyricsfiles: Vec<(Recording, SharedLyricsfile)>,
     pub lacking_lyricsfiles: Vec<Recording>,
+    pub prints: Vec<(WholeFile, SharedPrint)>,
+    pub lacking_prints: Vec<WholeFile>,
     next_id: i64,
     next_answered: i64,
 }
@@ -607,6 +609,39 @@ impl Catalog for Shelf {
         inside
             .lyricsfiles
             .push((recording.clone(), lyricsfile.clone()));
+        Ok(true)
+    }
+
+    fn prints_wanted(&self, skip: usize, most: usize) -> Result<Vec<WholeFile>, Refused> {
+        let inside = self.inside.lock();
+        Ok(inside
+            .lacking_prints
+            .iter()
+            .filter(|file| !inside.prints.iter().any(|(held, _)| held == *file))
+            .skip(skip)
+            .take(most)
+            .copied()
+            .collect())
+    }
+
+    fn print(&self, file: WholeFile) -> Result<Option<SharedPrint>, Refused> {
+        Ok(self
+            .inside
+            .lock()
+            .prints
+            .iter()
+            .find(|(held, _)| *held == file)
+            .map(|(_, print)| print.clone()))
+    }
+
+    fn take_print(&self, file: WholeFile, print: &SharedPrint) -> Result<bool, Refused> {
+        let mut inside = self.inside.lock();
+        let lacking = inside.lacking_prints.contains(&file);
+        let held = inside.prints.iter().any(|(held, _)| *held == file);
+        if !lacking || held {
+            return Ok(false);
+        }
+        inside.prints.push((file, print.clone()));
         Ok(true)
     }
 

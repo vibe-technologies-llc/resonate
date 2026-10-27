@@ -34,8 +34,9 @@ pub mod writer;
 pub use crate::{
     answer::{
         Answer, Answered, CODES_SHARED_AT_MOST, Figure, HEAVIEST_SHARED_RELEASE,
-        LARGEST_SHARED_LYRICSFILE, LINKS_SHARED_AT_MOST, LONGEST_SHARED_LYRICS, SharedCredit,
-        SharedLyrics, SharedLyricsfile, SharedMedium, SharedRelease, SharedStudy, SharedTrack,
+        LARGEST_SHARED_LYRICSFILE, LINKS_SHARED_AT_MOST, LONGEST_SHARED_LYRICS,
+        LONGEST_SHARED_PRINT, SharedCredit, SharedHeard, SharedLyrics, SharedLyricsfile,
+        SharedMedium, SharedPrint, SharedRecognition, SharedRelease, SharedStudy, SharedTrack,
         WholeFile,
     },
     appearance::{

@@ -4,9 +4,10 @@ use std::{
 };
 
 use resonate_core::{
-    Answer, CODES_SHARED_AT_MOST, Figure, LARGEST_SHARED_LYRICSFILE, LINKS_SHARED_AT_MOST,
-    LONGEST_SHARED_LYRICS, Link, Mbid, Recording, SharedCredit, SharedLyrics, SharedLyricsfile,
-    SharedMedium, SharedRelease, SharedStudy, SharedTrack, WholeFile,
+    Answer, CODES_SHARED_AT_MOST, Chromaprint, Figure, LARGEST_SHARED_LYRICSFILE,
+    LINKS_SHARED_AT_MOST, LONGEST_SHARED_LYRICS, LONGEST_SHARED_PRINT, Link, Mbid, Recording,
+    SharedCredit, SharedHeard, SharedLyrics, SharedLyricsfile, SharedMedium, SharedPrint,
+    SharedRecognition, SharedRelease, SharedStudy, SharedTrack, WholeFile,
 };
 
 use crate::{
@@ -41,8 +42,12 @@ const LINK_AT_LEAST: usize = 2;
 const CODE_AT_LEAST: usize = 1;
 const MBID_AT_LEAST: usize = 37;
 const RECORDING_AT_LEAST: usize = 5;
+const WHOLE_FILE_AT_LEAST: usize = 3;
+const RECOGNITION_UNHEARD: u8 = 0;
+const RECOGNITION_HEARD: u8 = 1;
 pub const COVERS_ASKED_AT_MOST: usize = 512;
 pub const LYRICSFILES_ASKED_AT_MOST: usize = 512;
+pub const PRINTS_ASKED_AT_MOST: usize = 512;
 pub const LARGEST_SHARED_COVER: usize = 16 * 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -138,6 +143,7 @@ pub enum ToPeer {
     Tags { recording: Recording },
     Covers { releases: Vec<Mbid> },
     Lyricsfiles { recordings: Vec<Recording> },
+    Prints { files: Vec<WholeFile> },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -168,6 +174,11 @@ pub enum FromPeer {
         lyricsfile: SharedLyricsfile,
     },
     LyricsfilesEnd,
+    Printed {
+        file: WholeFile,
+        print: SharedPrint,
+    },
+    PrintsEnd,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -324,6 +335,39 @@ impl Writer {
         }
     }
 
+    pub fn whole_file(&mut self, file: WholeFile) {
+        self.number(file.packets);
+        self.number(file.frames);
+        self.number(u64::from(file.rate));
+    }
+
+    pub fn print(&mut self, shared: &SharedPrint) {
+        let encoded = shared.print.encoded();
+        let end = encoded.len().min(LONGEST_SHARED_PRINT);
+        self.bytes(&encoded.as_bytes()[..end]);
+        self.number(shared.print.length().as_secs());
+        match &shared.recognition {
+            None => self.flag(false),
+            Some(recognition) => {
+                self.flag(true);
+                self.recognition(recognition);
+            }
+        }
+    }
+
+    fn recognition(&mut self, recognition: &SharedRecognition) {
+        match recognition {
+            SharedRecognition::Unheard => self.byte(RECOGNITION_UNHEARD),
+            SharedRecognition::Heard(heard) => {
+                self.byte(RECOGNITION_HEARD);
+                self.text(heard.recording.as_str());
+                self.byte(heard.score);
+                self.text(&heard.title);
+                self.optional_text(heard.artist.as_deref());
+            }
+        }
+    }
+
     pub fn lyricsfile(&mut self, lyricsfile: &SharedLyricsfile) {
         let end = lyricsfile.text.floor_char_boundary(LONGEST_SHARED_LYRICS);
         self.bytes(&lyricsfile.text.as_bytes()[..end]);
@@ -344,9 +388,7 @@ impl Writer {
             }
             Answer::Study(study) => {
                 self.byte(ANSWER_STUDY);
-                self.number(study.file.packets);
-                self.number(study.file.frames);
-                self.number(u64::from(study.file.rate));
+                self.whole_file(study.file);
                 self.number(u64::from(study.judged_under));
                 self.text(&study.verdict);
                 self.optional_number(study.cutoff_hz);
@@ -592,6 +634,41 @@ impl<'a> Reader<'a> {
         Ok(Stamp { nanos, device })
     }
 
+    pub fn whole_file(&mut self) -> Result<WholeFile> {
+        Ok(WholeFile {
+            packets: self.number()?,
+            frames: self.number()?,
+            rate: self.small()?,
+        })
+    }
+
+    pub fn print(&mut self) -> Result<SharedPrint> {
+        let encoded = str::from_utf8(self.bytes(LONGEST_SHARED_PRINT)?)
+            .map_err(|_| Error::Malformed(Malformed::NotText))?;
+        let length = Duration::from_secs(self.number()?);
+        let print = Chromaprint::new(encoded, length)
+            .map_err(|_| Error::Malformed(Malformed::NotAPrint))?;
+        let recognition = if self.flag()? {
+            Some(self.recognition()?)
+        } else {
+            None
+        };
+        Ok(SharedPrint { print, recognition })
+    }
+
+    fn recognition(&mut self) -> Result<SharedRecognition> {
+        match self.byte()? {
+            RECOGNITION_UNHEARD => Ok(SharedRecognition::Unheard),
+            RECOGNITION_HEARD => Ok(SharedRecognition::Heard(SharedHeard {
+                recording: self.mbid()?,
+                score: self.byte()?,
+                title: self.text()?,
+                artist: self.optional_text()?,
+            })),
+            tag => Err(Error::Malformed(Malformed::Tag { tag })),
+        }
+    }
+
     pub fn lyricsfile(&mut self) -> Result<SharedLyricsfile> {
         let text = str::from_utf8(self.bytes(LONGEST_SHARED_LYRICS)?)
             .map(str::to_owned)
@@ -686,11 +763,7 @@ impl<'a> Reader<'a> {
                 })))
             }
             ANSWER_STUDY => {
-                let file = WholeFile {
-                    packets: self.number()?,
-                    frames: self.number()?,
-                    rate: self.small()?,
-                };
+                let file = self.whole_file()?;
                 Ok(Some(Answer::Study(SharedStudy {
                     file,
                     judged_under: self.small()?,
@@ -1136,6 +1209,13 @@ impl ToPeer {
                     writer.recording(recording);
                 }
             }
+            Self::Prints { files } => {
+                writer.byte(7);
+                writer.length(files.len());
+                for file in files {
+                    writer.whole_file(*file);
+                }
+            }
         }
         writer.finish()
     }
@@ -1180,6 +1260,17 @@ impl ToPeer {
                     recordings.push(reader.recording()?);
                 }
                 Self::Lyricsfiles { recordings }
+            }
+            7 => {
+                let count = reader.count_of(WHOLE_FILE_AT_LEAST)?;
+                if count > PRINTS_ASKED_AT_MOST {
+                    return Err(Error::Malformed(Malformed::Overlong { length: count }));
+                }
+                let mut files = Vec::with_capacity(count);
+                for _ in 0..count {
+                    files.push(reader.whole_file()?);
+                }
+                Self::Prints { files }
             }
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
@@ -1232,6 +1323,12 @@ impl FromPeer {
                 writer.lyricsfile(lyricsfile);
             }
             Self::LyricsfilesEnd => writer.byte(10),
+            Self::Printed { file, print } => {
+                writer.byte(11);
+                writer.whole_file(*file);
+                writer.print(print);
+            }
+            Self::PrintsEnd => writer.byte(12),
         }
         writer.finish()
     }
@@ -1274,6 +1371,11 @@ impl FromPeer {
                 lyricsfile: reader.lyricsfile()?,
             },
             10 => Self::LyricsfilesEnd,
+            11 => Self::Printed {
+                file: reader.whole_file()?,
+                print: reader.print()?,
+            },
+            12 => Self::PrintsEnd,
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
         reader.done()?;
@@ -1934,6 +2036,114 @@ mod tests {
         assert!(matches!(
             ToPeer::decoded(&too_many.encoded()),
             Err(Error::Malformed(Malformed::Overlong { .. }))
+        ));
+    }
+
+    fn printed_file() -> WholeFile {
+        WholeFile {
+            packets: 0xfeed,
+            frames: 8_000_000,
+            rate: 44_100,
+        }
+    }
+
+    fn shared_print(recognition: Option<SharedRecognition>) -> SharedPrint {
+        SharedPrint {
+            print: Chromaprint::new("AQADtEmSJEmSJEmS", Duration::from_secs(181)).expect("a print"),
+            recognition,
+        }
+    }
+
+    #[test]
+    fn prints_asked_of_a_device_read_back_and_too_many_asked_at_once_are_refused() {
+        let asked = ToPeer::Prints {
+            files: vec![printed_file(); 3],
+        };
+        let too_many = ToPeer::Prints {
+            files: vec![printed_file(); PRINTS_ASKED_AT_MOST + 1],
+        };
+
+        assert_eq!(ToPeer::decoded(&asked.encoded()).expect("decoded"), asked);
+        assert_eq!(asked.encoded()[0], 7);
+        assert!(matches!(
+            ToPeer::decoded(&too_many.encoded()),
+            Err(Error::Malformed(Malformed::Overlong { .. }))
+        ));
+        assert_eq!(
+            FromPeer::decoded(&FromPeer::PrintsEnd.encoded()).expect("decoded"),
+            FromPeer::PrintsEnd
+        );
+    }
+
+    #[test]
+    fn a_print_reads_back_with_the_recognition_it_carries_or_none() {
+        let heard = |artist: Option<&str>| {
+            SharedRecognition::Heard(SharedHeard {
+                recording: Mbid::new("b84ee12a-09ef-421b-82de-0441a926375b").expect("mbid"),
+                score: 96,
+                title: "Echoes".into(),
+                artist: artist.map(str::to_owned),
+            })
+        };
+        for recognition in [
+            None,
+            Some(SharedRecognition::Unheard),
+            Some(heard(Some("Pink Floyd"))),
+            Some(heard(None)),
+        ] {
+            let printed = FromPeer::Printed {
+                file: printed_file(),
+                print: shared_print(recognition),
+            };
+
+            assert_eq!(
+                FromPeer::decoded(&printed.encoded()).expect("decoded"),
+                printed
+            );
+        }
+    }
+
+    #[test]
+    fn a_print_that_is_not_one_or_a_recognition_of_a_kind_unknown_is_refused() {
+        let printed = FromPeer::Printed {
+            file: printed_file(),
+            print: shared_print(Some(SharedRecognition::Unheard)),
+        }
+        .encoded();
+        let mut not_a_print = printed.clone();
+        let at = not_a_print
+            .iter()
+            .position(|byte| *byte == b'A')
+            .expect("the print");
+        not_a_print[at] = b'+';
+        let mut unknown_kind = printed;
+        let last = unknown_kind.len() - 1;
+        unknown_kind[last] = 9;
+
+        assert!(matches!(
+            FromPeer::decoded(&not_a_print),
+            Err(Error::Malformed(Malformed::NotAPrint))
+        ));
+        assert!(matches!(
+            FromPeer::decoded(&unknown_kind),
+            Err(Error::Malformed(Malformed::Tag { tag: 9 }))
+        ));
+    }
+
+    #[test]
+    fn the_seeds_of_a_print_asked_and_given_decode() {
+        let asked = include_bytes!("../../../fuzz/seeds/sync/prints");
+        let given = include_bytes!("../../../fuzz/seeds/sync/printed");
+
+        assert!(matches!(
+            ToPeer::decoded(asked),
+            Ok(ToPeer::Prints { files }) if files.len() == 2
+        ));
+        assert!(matches!(
+            FromPeer::decoded(given),
+            Ok(FromPeer::Printed { file, print })
+                if file == printed_file()
+                    && matches!(print.recognition, Some(SharedRecognition::Heard(_)))
         ));
     }
 

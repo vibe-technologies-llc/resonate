@@ -252,6 +252,11 @@ could change (stored studies and kept analyses are weighed against it).
   `same_credit` `Agrees`; else `Disagrees`. A refused lookup stamps nothing (re-asked), but
   `RECOGNITIONS_REFUSED_BEFORE_GIVING_UP` in a row (`EnrichProgress`, across workers, reset by any
   answer) ends print asking; studying continues.
+- **A recognition made on another device is weighed again here.** A study landed by sync carries no
+  print, so `prints_wanted` asks a connected device for it by the `WholeFile`; the print lands on a
+  copy at this `JUDGED_UNDER` that holds none, and a recognition with it is re-weighed by
+  `enrich::agreement` against the receiving row's own title and credit (`sync.md`), then stamped as
+  recognised so `to_study` no longer asks AcoustID for it. A print with no recognition leaves one owed.
 - **`Route::Fingerprint` reads the stored recognition first**, studying via the same claim if none
   is kept; a strict-score match = `Certainty::Nearly`: audio fills a name the file never gave, never
   overwrites one it did.
