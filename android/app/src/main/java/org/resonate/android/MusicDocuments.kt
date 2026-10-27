@@ -11,6 +11,7 @@ import android.util.Log
 import android.webkit.MimeTypeMap
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import org.resonate.android.nativecore.StandingDocument
 
 object MusicDocuments {
     const val TREE_DEPTH_AT_MOST = 32
@@ -99,6 +100,37 @@ object MusicDocuments {
                     }
                 } catch (failure: Exception) {
                     Log.w("Resonate", "A folder could not be listed", failure)
+                }
+            }
+        }
+    }
+
+    fun standing(context: Context, folder: Uri, name: String): List<StandingDocument> {
+        val stem = name.substringBeforeLast('.')
+        if (folder == downloads) {
+            return downloadedAudio(context)
+                .filter { it.name.startsWith(stem) }
+                .map { StandingDocument(it.uri.toString(), it.name) }
+        }
+        val children =
+            DocumentsContract.buildChildDocumentsUriUsingTree(
+                folder,
+                DocumentsContract.getTreeDocumentId(folder),
+            )
+        val columns =
+            arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE,
+            )
+        return buildList {
+            context.contentResolver.query(children, columns, null, null, null)?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    val child = cursor.getString(1) ?: continue
+                    if (cursor.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR) continue
+                    if (!child.startsWith(stem)) continue
+                    val uri = DocumentsContract.buildDocumentUriUsingTree(folder, cursor.getString(0))
+                    add(StandingDocument(uri.toString(), child))
                 }
             }
         }

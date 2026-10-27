@@ -1,5 +1,5 @@
 use resonate_analysis::{BANDS, JUDGED_UNDER, LossyGuess, Verdict};
-use resonate_codec::probe_scanned;
+use resonate_codec::{Sources, probe_scanned};
 use resonate_core::{Answer, Figure, Recording, SharedLyrics, SharedStudy, SourceId, WholeFile};
 use resonate_library::LyricText;
 use resonate_lyrics::read_lyrics;
@@ -10,6 +10,7 @@ use super::{
     recording_at, unavailable,
 };
 use crate::{
+    catalog::Catalog,
     catalog_extras::LandedStudy,
     documents::location,
     enrichment::{SHARED_LYRICS, is_synced},
@@ -154,17 +155,11 @@ impl DocumentCatalog {
         }
 
         let mut same_file = false;
-        for copy in self.copies_of(study.file)? {
-            let Some(identity) = self.identity_of(&copy) else {
-                continue;
-            };
-            if identity != (study.file.packets, study.file.frames) {
-                continue;
-            }
+        for copy in the_same_file(&self.catalog, &self.sources, study.file)? {
             same_file = true;
             self.catalog
                 .land_study(
-                    copy.id,
+                    copy,
                     &LandedStudy {
                         verdict: verdict.as_str(),
                         peak: study.peak.value(),
@@ -212,54 +207,65 @@ impl DocumentCatalog {
             && lasts_alike(held.length, recording.length);
         Ok((one_recording || one_length).then_some(id))
     }
+}
 
-    fn copies_of(&self, file: WholeFile) -> Answered<Vec<Alike>> {
-        let milliseconds =
-            i64::try_from(u128::from(file.frames) * 1000 / u128::from(file.rate.max(1)))
-                .unwrap_or(i64::MAX);
-        let connection = self.catalog.0.lock();
-        let mut query = connection
-            .prepare_cached(
-                "SELECT d.id, d.uri, d.packets, d.frames
-                   FROM documents d
-                  WHERE d.missing = 0 AND d.rate = ?1 AND d.duration_ms BETWEEN ?2 AND ?3
-                  ORDER BY d.id",
-            )
-            .map_err(unavailable)?;
-        query
-            .query_map(
-                params![
-                    file.rate,
-                    milliseconds.saturating_sub(NEARLY_THE_SAME_MILLISECOND),
-                    milliseconds.saturating_add(NEARLY_THE_SAME_MILLISECOND),
-                ],
-                |row| {
-                    Ok(Alike {
-                        id: row.get::<_, i64>(0)?.cast_unsigned(),
-                        uri: row.get(1)?,
-                        packets: row.get(2)?,
-                        frames: row.get(3)?,
-                    })
-                },
-            )
-            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
-            .map_err(unavailable)
-    }
+pub(super) fn the_same_file(
+    catalog: &Catalog,
+    sources: &Sources,
+    file: WholeFile,
+) -> Answered<Vec<u64>> {
+    Ok(copies_of(catalog, file)?
+        .into_iter()
+        .filter(|copy| identity_of(catalog, sources, copy) == Some((file.packets, file.frames)))
+        .map(|copy| copy.id)
+        .collect())
+}
 
-    fn identity_of(&self, copy: &Alike) -> Option<(u64, u64)> {
-        if let (Some(packets), Some(frames)) = (copy.packets, copy.frames) {
-            return Some((packets.cast_unsigned(), frames.cast_unsigned()));
-        }
-        let scanned = location(&copy.uri)
-            .ok()
-            .and_then(|at| probe_scanned(&self.sources, &at).ok())?;
-        if let Err(error) = self.catalog.keep_identity(copy.id, &scanned) {
-            tracing::warn!(%error, "the identity of a document could not be kept");
-        }
-        let packets = scanned.packets?.0;
-        let frames = scanned.info.duration?.get();
-        Some((packets, frames))
+fn copies_of(catalog: &Catalog, file: WholeFile) -> Answered<Vec<Alike>> {
+    let milliseconds = i64::try_from(u128::from(file.frames) * 1000 / u128::from(file.rate.max(1)))
+        .unwrap_or(i64::MAX);
+    let connection = catalog.0.lock();
+    let mut query = connection
+        .prepare_cached(
+            "SELECT d.id, d.uri, d.packets, d.frames
+               FROM documents d
+              WHERE d.missing = 0 AND d.rate = ?1 AND d.duration_ms BETWEEN ?2 AND ?3
+              ORDER BY d.id",
+        )
+        .map_err(unavailable)?;
+    query
+        .query_map(
+            params![
+                file.rate,
+                milliseconds.saturating_sub(NEARLY_THE_SAME_MILLISECOND),
+                milliseconds.saturating_add(NEARLY_THE_SAME_MILLISECOND),
+            ],
+            |row| {
+                Ok(Alike {
+                    id: row.get::<_, i64>(0)?.cast_unsigned(),
+                    uri: row.get(1)?,
+                    packets: row.get(2)?,
+                    frames: row.get(3)?,
+                })
+            },
+        )
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(unavailable)
+}
+
+fn identity_of(catalog: &Catalog, sources: &Sources, copy: &Alike) -> Option<(u64, u64)> {
+    if let (Some(packets), Some(frames)) = (copy.packets, copy.frames) {
+        return Some((packets.cast_unsigned(), frames.cast_unsigned()));
     }
+    let scanned = location(&copy.uri)
+        .ok()
+        .and_then(|at| probe_scanned(sources, &at).ok())?;
+    if let Err(error) = catalog.keep_identity(copy.id, &scanned) {
+        tracing::warn!(%error, "the identity of a document could not be kept");
+    }
+    let packets = scanned.packets?.0;
+    let frames = scanned.info.duration?.get();
+    Some((packets, frames))
 }
 
 fn failed(error: crate::Error) -> resonate_sync::Refused {

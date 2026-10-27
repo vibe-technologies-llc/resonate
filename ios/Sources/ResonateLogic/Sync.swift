@@ -135,6 +135,27 @@ public enum SyncAnswer: Equatable {
     }
 }
 
+public enum LandingDestination: Equatable {
+    case into(MusicFolder)
+    case away
+    case nowhere
+
+    public static let awayText = "The folder songs from your devices go to cannot be reached; they wait until it can"
+    public static let nowhereText = "Add a music folder with write access to keep songs from your devices"
+
+    public static func of(_ folders: [MusicFolder], chosen: String?) -> LandingDestination {
+        guard let folder = folders.first(where: { $0.id == chosen && $0.writable }) ?? folders.first(where: \.writable) else {
+            return .nowhere
+        }
+        return folder.readable ? .into(folder) : .away
+    }
+
+    public var folder: MusicFolder? {
+        if case .into(let folder) = self { return folder }
+        return nil
+    }
+}
+
 public struct LandingBackoff {
     public static let pause: TimeInterval = 60
     public static let triesAtMost = 3

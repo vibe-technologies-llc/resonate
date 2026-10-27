@@ -161,7 +161,8 @@ included, is `InvalidUri`. A negative descriptor says why: `document_not_found()
 document: Android's `FileNotFoundException`, iOS's unresolvable bookmark or `ENOENT`) reads as
 `NotFound`, `document_refused()` (any other failure) as `PermissionDenied`, and
 `hide_missing_songs` hides only a `NotFound`, so a provider's transient error leaves a song visible
-(`only_a_document_that_is_not_found_reads_as_not_found`). `hide_unlisted_songs(prefixes, listed)` is
+(`only_a_document_that_is_not_found_reads_as_not_found`), and the sync catalog's `holds` reads only a
+`NotFound` as not held, the same rule (`android.md`'s *Device sync*). `hide_unlisted_songs(prefixes, listed)` is
 the same pass given the URIs the front end saw listed: those are taken to exist and never opened
 (`a_document_the_listing_shows_is_not_opened_and_the_rest_are`); `hide_missing_songs` is it with
 none listed.

@@ -431,8 +431,9 @@ will not open is left out of the holdings.
   dialling and on following a device, dials every device heard, tells each neighbour the whole
   snapshot again and looks at once.
 - **A song deleted by hand is not held.** `Catalog::holds` is false for a row whose file is gone
-  (the desktop stats the path; the phones open the document), so the next follow or force fetches
-  it again. `Ledger::wanted` therefore asks `holds` of every entry of a followed playlist and every
+  (the desktop stats the path; the phones open the document, and only a `NotFound` is gone: a
+  document refused or out of reach, or a row hidden because its folder was withdrawn, is held,
+  `android.md`), so the next follow or force fetches it again. `Ledger::wanted` therefore asks `holds` of every entry of a followed playlist and every
   favoured song, never trusting `here`, which only says the catalog listed the song at the last look
   (`a_song_deleted_by_hand_is_wanted_again_while_its_playlist_and_favourite_stay`).
 - **`Shown.transfers` keeps at most `TRANSFERS_SHOWN_AT_MOST` (200)**, the oldest landed or
