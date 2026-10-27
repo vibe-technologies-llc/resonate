@@ -117,6 +117,7 @@ private const val MISSING_CHECKED_EVERY_MS = 300000L
 private const val DEVICE_NAME_SETTING = "device_name"
 private const val RECENT_SEARCHES_KEY = "recent-searches"
 private const val REMEMBER_SEARCHES_KEY = "remember-searches"
+private const val TELL_FINDINGS_KEY = "tell-findings"
 private const val RECENT_SEARCHES_KEPT = 10
 
 class LibraryFeatures(private val context: Context, private val library: LibraryRepository) {
@@ -206,6 +207,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val auddToken = MutableStateFlow("")
     val searchAsked = MutableStateFlow<String?>(null)
     val rememberSearches = MutableStateFlow(settings.getBoolean(REMEMBER_SEARCHES_KEY, true))
+    val tellsFindings = MutableStateFlow(settings.getBoolean(TELL_FINDINGS_KEY, false))
     val recentSearches = MutableStateFlow(if (rememberSearches.value) readRecentSearches() else emptyList())
     val recognition =
         MutableStateFlow<List<org.resonate.android.nativecore.RecognitionCandidate>>(emptyList())
@@ -458,6 +460,15 @@ class LibraryFeatures(private val context: Context, private val library: Library
             emptyList()
         }
 
+    fun setTellsFindings(enabled: Boolean) {
+        tellsFindings.value = enabled
+        settings.edit().putBoolean(TELL_FINDINGS_KEY, enabled).apply()
+    }
+
+    private fun tellFinding(message: String) {
+        FindingNotices.shown(tellsFindings.value, message)?.let(library::notice)
+    }
+
     fun setRememberSearches(enabled: Boolean) {
         rememberSearches.value = enabled
         settings.edit().putBoolean(REMEMBER_SEARCHES_KEY, enabled).apply()
@@ -686,7 +697,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             refreshWanted(native)
             refreshArtwork()
             enrichment.begin()
-            library.notice("Kept $landed ${if (landed == 1) "song" else "songs"} from your devices")
+            tellFinding(FindingNotices.kept(landed))
         }
     }
 
@@ -864,10 +875,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             val fetching =
                 syncConfig.value?.let { it.enabled && (it.everything || it.favourites || it.playlists) }
                     ?: false
-            val gone =
-                if (changed.hidden == 1u) "1 song whose file is gone was hidden"
-                else "${changed.hidden} songs whose files are gone were hidden"
-            library.notice(gone + if (fetching) " · fetching from your devices" else "")
+            tellFinding(FindingNotices.hidden(changed.hidden, fetching))
         }
     }
 

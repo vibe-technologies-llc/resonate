@@ -66,6 +66,7 @@ class LibraryToolsViewModel(private val resonate: Resonate) : ViewModel() {
     val recognitionKey = features.recognitionKey
     val auddToken = features.auddToken
     val rememberSearches = features.rememberSearches
+    val tellsFindings = features.tellsFindings
     val tagsUndoable = features.tags.undoable
     val scanning = library.scanning
     val songs = library.allTracks
@@ -107,6 +108,8 @@ class LibraryToolsViewModel(private val resonate: Resonate) : ViewModel() {
     fun saveAuddToken(value: String) = features.saveAuddToken(value)
 
     fun setRememberSearches(enabled: Boolean) = features.setRememberSearches(enabled)
+
+    fun setTellsFindings(enabled: Boolean) = features.setTellsFindings(enabled)
 }
 
 private fun stoppedIcon(status: EnrichmentStatus?): ImageVector =
@@ -131,6 +134,7 @@ fun LibraryToolsScreen() {
     val storedKey by model.recognitionKey.collectAsStateWithLifecycle()
     val auddToken by model.auddToken.collectAsStateWithLifecycle()
     val rememberSearches by model.rememberSearches.collectAsStateWithLifecycle()
+    val tellsFindings by model.tellsFindings.collectAsStateWithLifecycle()
     val scanning by model.scanning.collectAsStateWithLifecycle()
     val songs by model.songs.collectAsStateWithLifecycle()
     val organiseUndo by model.organiseUndo.collectAsStateWithLifecycle()
@@ -206,6 +210,16 @@ fun LibraryToolsScreen() {
                     enabled = !scanning,
                     onClick = model::rescan,
                     trailing = if (scanning) ({ SmallLoading() }) else null,
+                )
+            }
+            item(key = "tell-findings") {
+                SwitchRow(
+                    title = "Tell me what the library finds by itself",
+                    checked = tellsFindings,
+                    onCheckedChange = model::setTellsFindings,
+                    icon = Icons.Rounded.Info,
+                    supporting = "Songs hidden because their files are gone, and songs kept from your devices",
+                    modifier = Modifier.testTag("tell-findings"),
                 )
             }
             item(key = "folders") {
