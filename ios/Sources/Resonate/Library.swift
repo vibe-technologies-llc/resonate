@@ -1464,7 +1464,7 @@ final class Library {
         if scanStopped {
             notice(tally.stoppedSummary)
         } else if tally.count > 0 {
-            notice(tally.foundSummary)
+            noticeUnasked(tally.foundSummary)
         }
     }
 
@@ -1594,13 +1594,21 @@ final class Library {
         if changed.hidden > 0 {
             let fetching = features.syncConfig.map { $0.enabled && ($0.everything || $0.favourites || $0.playlists) } ?? false
             let gone = changed.hidden == 1 ? "1 song whose file is gone was hidden" : "\(changed.hidden) songs whose files are gone were hidden"
-            notice(gone + (fetching ? " · fetching from your devices" : ""))
+            noticeUnasked(gone + (fetching ? " · fetching from your devices" : ""))
         }
         return changed
     }
 
+    static let unaskedNoticesKey = "unasked-notices"
+    static let unaskedNoticeSettings = UserDefaults(suiteName: "library-features") ?? .standard
+
     func notice(_ message: String) {
         show(message, as: .notice)
+    }
+
+    func noticeUnasked(_ message: String) {
+        guard Self.unaskedNoticeSettings.bool(forKey: Self.unaskedNoticesKey) else { return }
+        notice(message)
     }
 
     func fail(_ explanation: String) {

@@ -192,6 +192,11 @@ struct NowPlayingView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Close", systemImage: "chevron.down") { dismiss() }
                 }
+                if let track {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        ShareSongButton(track: track)
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     PlayerMoreMenu(
                         track: track,
@@ -211,6 +216,7 @@ struct NowPlayingView: View {
                 Text("Songs up next and in your history are removed. The playing song keeps playing.")
             }
             .modifier(DeleteSongsConfirmation(insidePlayer: true))
+            .modifier(SharingSheet(presenting: true))
         }
     }
 
@@ -1053,6 +1059,7 @@ struct PlayerMoreMenu: View {
             if let track {
                 Section {
                     Button("Add to playlist", systemImage: "text.badge.plus") { addToPlaylist(track) }
+                    ShareSongButton(track: track)
                     Button("Song details", systemImage: "info.circle") { navigation.open(.inspector(track)) }
                     Button("Analyse", systemImage: "waveform.path.ecg") { navigation.open(.analysis(track)) }
                 }

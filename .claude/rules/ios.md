@@ -228,7 +228,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   live line ("Reading music folder… N songs", the count posted at most every 200 ms) with Stop (`stopScanning`, `Folders.stopScanning`);
   its error is reported, never replaced by the tally, and removing a folder drops its queued scan.
   Sync reports once as well: songs landing from other devices are counted and told in one notice
-  when the transfers stop, a landing failure is told once per distinct text, and a failing sync
+  when the transfers stop (an unasked notice, below), a landing failure is told once per distinct text, and a failing sync
   poll once until it recovers.
   A pass that fails (`hide_songs_under`, `hide_missing_songs`) is reported, once per distinct text for the pass that repeats at every foregrounding. A song whose file has gone is hidden, never deleted (`hide_missing_songs`, given the readable
   folders' prefixes; `documents.missing`) at launch, whenever the scene comes forward again after
@@ -373,7 +373,12 @@ sync seals its records and talks QUIC (TLS) of its own.
   each answer with the catalog shown (`KnownDocuments`, built on `Work.aside`): an unchanged song
   keeps no cover or lyrics sheet again and counts for nothing, so a pass that finds nothing new shows
   no line, reads no catalog and tells nothing; the live line appears with the first new or changed
-  song and a notice counts them (*Found N new or changed songs*). It never runs the missing-song pass,
+  song and an unasked notice counts them (*Found N new or changed songs*). **What the library learns
+  by itself is told only where asked**: `Library.noticeUnasked` drops the notice unless
+  `unasked-notices` (suite `library-features`, off by default; Settings' *Notices* section,
+  `UnaskedNoticesSection`) is on. It carries an unasked scan's count, the songs hidden as gone and
+  the songs kept from other devices; a listener's own scan, a stopped scan and every failure are told
+  whatever it says. It never runs the missing-song pass,
   which coming forward already runs; a failing root is told once per distinct text. A listener's scan
   asked for a folder an unasked one holds turns that one into the listener's (queued), or queues
   behind it (running), so a rescan always keeps covers and sheets afresh.
@@ -714,10 +719,12 @@ every route change (a pair of headphones at the same rate included), not from th
 
 ## Sharing
 
-- **A song is shared as a link, never a file** (`Features.share`, `Sharing.swift`): *Share link* in a
-  song's menu (`TrackMenu`) and in Now Playing's song menu (`SongDestinations`) asks `share_link(id)` on
+- **A song is shared as a link, never a file** (`Features.share`, `Sharing.swift`): *Share link*
+  (`ShareSongButton`) in a song's menu (`TrackMenu`), in Now Playing's song menu (`SongDestinations`),
+  in its *More* menu and as its own toolbar button beside *More* asks `share_link(id)` on
   `Work.aside`, then `Features.sharing` presents the system activity sheet (`ActivitySheet`, medium and
-  large) from the root view with the URL alone. The latest ask wins (`shareRequest`); a song with no
+  large) with the URL alone, through `SharingSheet`: from Now Playing while it is open, else from the
+  root view, since the root cannot present over the full-screen cover. The latest ask wins (`shareRequest`); a song with no
   link says so in a notice. The link is the library's (`library.md`'s *A share is the link alone*),
   built from the row's recording id and ISRC; online asks the reference where the song streams only
   while it is on, else the MusicBrainz recording link is the answer.

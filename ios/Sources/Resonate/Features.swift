@@ -665,7 +665,7 @@ final class Features {
                     }
                 }
                 if landedSongs > 0, !transferring, landing == nil {
-                    library.notice("Kept \(counted(landedSongs, "song")) from your devices")
+                    library.noticeUnasked("Kept \(counted(landedSongs, "song")) from your devices")
                     landedSongs = 0
                 }
                 if syncHandoffs != handoffs { syncHandoffs = handoffs }

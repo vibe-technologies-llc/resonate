@@ -33,6 +33,7 @@ struct SettingsView: View {
     private static let scrobblingWords = "Scrobbling ListenBrainz Last.fm"
     private static let erasingWords = "Erase all data reset everything delete start over"
     private static let historyWords = "Keep search history recent searches privacy"
+    private static let noticeWords = "Notices found new songs hidden kept from your devices notifications popups"
     private static let appearanceWords = "Appearance accent colour icon tint theme background shader wallpaper"
 
     var body: some View {
@@ -92,6 +93,9 @@ struct SettingsView: View {
             }
             if shown(Self.historyWords) {
                 SearchHistorySection()
+            }
+            if shown(Self.noticeWords) {
+                UnaskedNoticesSection()
             }
             if features.online, shown(Self.enrichmentWords) {
                 EnrichmentSection()
@@ -233,7 +237,7 @@ struct SettingsView: View {
 
     private var nothingMatches: Bool {
         let listed = (soundEntries + sourceEntries + [syncEntry]).map(\.searched)
-        let unlisted = [Self.onlineWords, Self.providerWords, Self.scrobblingWords, Self.erasingWords, Self.historyWords, Self.appearanceWords]
+        let unlisted = [Self.onlineWords, Self.providerWords, Self.scrobblingWords, Self.erasingWords, Self.historyWords, Self.noticeWords, Self.appearanceWords]
             + (library.features.online ? [Self.enrichmentWords] : [])
         return !terms.isEmpty && !(listed + unlisted).contains(where: matches)
     }
@@ -977,6 +981,26 @@ struct ScrobblingView: View {
         .navigationTitle("Scrobbling")
         .onAppear { if let saved = features.scrobbleAccount { account = saved } }
         .onChange(of: features.scrobbleAccount) { _, saved in if let saved { account = saved } }
+    }
+}
+
+struct UnaskedNoticesSection: View {
+    @AppStorage(Library.unaskedNoticesKey, store: Library.unaskedNoticeSettings) private var told = false
+
+    var body: some View {
+        Section {
+            Toggle(isOn: $told) {
+                ToolRow(
+                    title: "Tell me what the library finds by itself",
+                    detail: "New songs a background scan found, songs hidden as gone and songs kept from your devices",
+                    symbol: "bell.badge"
+                )
+            }
+        } header: {
+            Text("Notices")
+        } footer: {
+            Text("A scan you start and every failure are always told.")
+        }
     }
 }
 
