@@ -59,6 +59,41 @@ public struct DownloadJob: Identifiable, Equatable {
     }
 }
 
+extension SearchSong: Identifiable {
+    public var id: String { recording.isEmpty ? "\(title)\u{1F}\(artist)\u{1F}\(album)" : recording }
+}
+
+public enum DownloadStanding: Equatable {
+    case available
+    case waiting
+    case running(Double?)
+    case held
+    case failed(String)
+    case cancelled
+
+    public static func of(_ song: SearchSong, in jobs: [DownloadJob], starting: Bool) -> DownloadStanding {
+        let latest = jobs.last { $0.song.id == song.id }
+        switch latest?.state {
+        case .waiting: return .waiting
+        case .finding, .validating: return .running(nil)
+        case .downloading: return .running(latest?.fraction)
+        case .done: return .held
+        case .failed(let reason) where !song.held: return .failed(reason)
+        case .cancelled where !song.held: return .cancelled
+        default: break
+        }
+        if song.held { return .held }
+        return starting ? .waiting : .available
+    }
+
+    public var startsOnTap: Bool {
+        switch self {
+        case .available, .failed, .cancelled: true
+        case .waiting, .running, .held: false
+        }
+    }
+}
+
 public enum ProviderReadiness: Equatable {
     case ready
     case missingServer

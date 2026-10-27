@@ -85,6 +85,14 @@ final class DownloadQueue {
         held.contains(song.id)
     }
 
+    func standing(of song: SearchSong) -> DownloadStanding {
+        DownloadStanding.of(song, in: jobs, starting: held.contains(song.id))
+    }
+
+    func cancel(_ song: SearchSong) {
+        for job in jobs where job.song.id == song.id && !job.state.settled { cancel(job.id) }
+    }
+
     private func findHeld() {
         let found = beginning.union(jobs.lazy.filter { !$0.state.settled }.map(\.song.id))
         if found != held { held = found }

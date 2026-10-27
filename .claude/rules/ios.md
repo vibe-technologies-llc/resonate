@@ -1189,7 +1189,15 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
 - **Saved for later queues into the same jobs**: "Download all missing" enqueues every want not
   held, each row leads with a placeholder tile, keeps title and artist · album to a line each and
   ends in a Download icon (Remove is its swipe), a held row reads "In your library", and pulling to
-  refresh reads the matches again. Online search's song rows enqueue one song.
+  refresh reads the matches again.
+- **An online song row downloads on a tap** (`OnlineSongRow`): the whole row is the button, which
+  stows the keyboard and enqueues the one song, and its trailing `DownloadBadge` and caption read
+  `DownloadStanding.of` (the latest job of the song by `SearchSong.id`, or the library holding it):
+  a download icon to start, a ring with a stop square while it finds or downloads (a tap cancels,
+  the caption saying "Finding a match" or the percentage), a check and "In your library" once held,
+  and a red retry glyph with the reason after a failure or cancel, where a tap starts it again.
+  *Save for later* is the row's swipe and context menu entry beside *Download*
+  (`DownloadStandingTests`).
 - **Wants are asked on their own while the scene is active** (`DownloadQueue.askForWants`): the loop
   reads `next_wanted_due`, sleeps until then held to 30 s at least and 30 min at most (the
   desktop's `RETRIES_ASKED_AT_LEAST` and `ASKED_EVERY`), then enqueues `poll_wanted_due`'s songs into

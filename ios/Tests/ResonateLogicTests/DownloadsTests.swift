@@ -199,3 +199,63 @@ let folder = MusicFolder(id: "local", name: "On this iPhone", path: "/music", re
         #expect(defaults.first.object(forKey: DownloadJournal.key) == nil)
     }
 }
+
+@Suite struct DownloadStandingTests {
+    func job(_ id: UInt64, _ song: SearchSong, _ state: DownloadState, received: UInt64 = 0, total: UInt64? = nil) -> DownloadJob {
+        var job = DownloadJob(id: id, song: song, folder: folder)
+        job.state = state
+        job.received = received
+        job.total = total
+        return job
+    }
+
+    @Test func aSongNobodyAskedForIsAvailableAndStartsOnATap() {
+        let standing = DownloadStanding.of(searchSong(), in: [], starting: false)
+
+        #expect(standing == .available)
+        #expect(standing.startsOnTap)
+    }
+
+    @Test func aSongBeingBegunWaitsBeforeItsJobExists() {
+        let standing = DownloadStanding.of(searchSong(), in: [], starting: true)
+
+        #expect(standing == .waiting)
+        #expect(!standing.startsOnTap)
+    }
+
+    @Test func aRunningJobShowsItsFractionOnlyWhileDownloading() {
+        let song = searchSong()
+
+        #expect(DownloadStanding.of(song, in: [job(1, song, .finding)], starting: true) == .running(nil))
+        #expect(DownloadStanding.of(song, in: [job(1, song, .downloading, received: 250, total: 1_000)], starting: true) == .running(0.25))
+        #expect(DownloadStanding.of(song, in: [job(1, song, .validating, received: 1_000, total: 1_000)], starting: true) == .running(nil))
+    }
+
+    @Test func aFinishedDownloadIsHeldAndAFailedOneStartsAgainOnATap() {
+        let song = searchSong()
+        let failed = DownloadStanding.of(song, in: [job(1, song, .failed("No match"))], starting: false)
+        let cancelled = DownloadStanding.of(song, in: [job(1, song, .cancelled)], starting: false)
+
+        #expect(failed == .failed("No match"))
+        #expect(cancelled == .cancelled)
+        #expect(failed.startsOnTap && cancelled.startsOnTap)
+    }
+
+    @Test func theLatestJobOfASongDecidesAndOtherSongsAreIgnored() {
+        let song = searchSong()
+        let other = searchSong("Fearless")
+        let jobs = [job(1, song, .failed("No match")), job(2, other, .downloading), job(3, song, .waiting)]
+
+        #expect(DownloadStanding.of(song, in: jobs, starting: false) == .waiting)
+        #expect(DownloadStanding.of(searchSong("Seamus"), in: jobs, starting: false) == .available)
+    }
+
+    @Test func aSongTheLibraryHoldsIsHeldWhateverAnEarlierJobSaid() {
+        var song = searchSong()
+        song.held = true
+
+        #expect(DownloadStanding.of(song, in: [], starting: false) == .held)
+        #expect(DownloadStanding.of(song, in: [job(1, song, .failed("No match"))], starting: false) == .held)
+        #expect(!DownloadStanding.held.startsOnTap)
+    }
+}

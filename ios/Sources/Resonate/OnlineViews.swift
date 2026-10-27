@@ -85,7 +85,7 @@ struct OnlineTopSections: View {
             let shown = Array(songs.prefix(Self.topSongs))
             Section {
                 ForEach(shown.indices, id: \.self) { index in
-                    OnlineSongRow(song: shown[index]) { library.features.downloads.enqueue([shown[index]]) }
+                    OnlineSongRow(song: shown[index])
                 }
             } header: {
                 SeeAllLink(title: "Songs", more: songs.count > Self.topSongs) { OnlineSongsPage(songs: songs) }
@@ -253,7 +253,7 @@ struct OnlineSongsSection: View {
                 }
             }
             ForEach(songs.indices, id: \.self) { index in
-                OnlineSongRow(song: songs[index]) { features.downloads.enqueue([songs[index]]) }
+                OnlineSongRow(song: songs[index])
             }
         } header: {
             if !heading.isEmpty { Text(heading) }
@@ -280,39 +280,119 @@ struct OnlinePlaceholder: View {
 struct OnlineSongRow: View {
     @Environment(Library.self) private var library
     let song: SearchSong
-    let download: () -> Void
 
     var body: some View {
         let features = library.features
-        HStack(spacing: 12) {
-            OnlinePlaceholder(symbol: "music.note")
-            VStack(alignment: .leading, spacing: 2) {
-                Text(song.title).font(.body.weight(.medium)).lineLimit(1)
-                Text([song.artist, song.album].filter { !$0.isEmpty }.joined(separator: " · "))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                HStack(spacing: 6) {
-                    if let duration = song.durationMs {
-                        Text(clock(duration)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                    }
-                    if song.held {
-                        Label("In your library", systemImage: "checkmark.circle.fill")
-                            .font(.caption)
-                            .foregroundStyle(.tint)
-                    }
+        let downloads = features.downloads
+        let standing = downloads.standing(of: song)
+        Button {
+            guard standing.startsOnTap else { return }
+            Keyboard.stow()
+            downloads.enqueue([song])
+        } label: {
+            HStack(spacing: 12) {
+                OnlinePlaceholder(symbol: "music.note")
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(song.title).font(.body.weight(.medium)).lineLimit(1)
+                    Text([song.artist, song.album].filter { !$0.isEmpty }.joined(separator: " · "))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    OnlineSongCaption(song: song, standing: standing)
                 }
+                Spacer(minLength: 0)
+                DownloadBadge(standing: standing) { downloads.cancel(song) }
             }
-            Spacer(minLength: 0)
-            Menu {
-                Button("Download", systemImage: "arrow.down.circle", action: download)
-                    .disabled(song.held || features.downloads.holds(song))
-                Button("Save for later", systemImage: "bookmark") { features.saveWanted([song]) }
-            } label: {
-                Image(systemName: "ellipsis.circle").font(.title3).touchTarget()
-            }
-            .accessibilityLabel("Song actions")
+            .contentShape(.rect)
         }
+        .buttonStyle(.plain)
+        .swipeActions(edge: .trailing) {
+            Button("Save for later", systemImage: "bookmark") { features.saveWanted([song]) }
+                .tint(.indigo)
+        }
+        .contextMenu {
+            Button("Download", systemImage: "arrow.down.circle") { downloads.enqueue([song]) }
+                .disabled(!standing.startsOnTap)
+            Button("Save for later", systemImage: "bookmark") { features.saveWanted([song]) }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(standing.startsOnTap ? "Downloads the song" : "")
+        .sensoryFeedback(.success, trigger: standing == .held)
+    }
+}
+
+struct OnlineSongCaption: View {
+    let song: SearchSong
+    let standing: DownloadStanding
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if let duration = song.durationMs {
+                Text(clock(duration)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            }
+            switch standing {
+            case .available:
+                EmptyView()
+            case .waiting:
+                Text("Waiting").font(.caption).foregroundStyle(.secondary)
+            case .running(let fraction):
+                if let fraction {
+                    Text(fraction.formatted(.percent.precision(.fractionLength(0))))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Finding a match").font(.caption).foregroundStyle(.secondary)
+                }
+            case .held:
+                Label("In your library", systemImage: "checkmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.tint)
+            case .failed(let reason):
+                Text(reason).font(.caption).foregroundStyle(.red).lineLimit(1)
+            case .cancelled:
+                Text("Cancelled").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+struct DownloadBadge: View {
+    let standing: DownloadStanding
+    let stop: () -> Void
+
+    var body: some View {
+        switch standing {
+        case .available:
+            glyph("arrow.down.circle").foregroundStyle(.tint)
+        case .waiting:
+            Button(action: stop) {
+                ProgressView().touchTarget()
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Cancel download")
+        case .running(let fraction):
+            Button(action: stop) {
+                ZStack {
+                    if let fraction {
+                        ProgressView(value: fraction).progressViewStyle(.circular)
+                    } else {
+                        ProgressView()
+                    }
+                    Image(systemName: "stop.fill").font(.system(size: 8)).foregroundStyle(.secondary)
+                }
+                .touchTarget()
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Cancel download")
+        case .held:
+            glyph("checkmark.circle.fill").foregroundStyle(.tint)
+        case .failed, .cancelled:
+            glyph("arrow.clockwise.circle").foregroundStyle(.red)
+        }
+    }
+
+    private func glyph(_ name: String) -> some View {
+        Image(systemName: name).font(.title2).touchTarget().accessibilityHidden(true)
     }
 }
 
@@ -519,8 +599,4 @@ struct OnlineReleasePage: View {
         songs = found
         read = true
     }
-}
-
-extension SearchSong: Identifiable {
-    public var id: String { recording.isEmpty ? "\(title)\u{1F}\(artist)\u{1F}\(album)" : recording }
 }
