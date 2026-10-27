@@ -5649,6 +5649,7 @@ dependencies = [
 name = "resonate-analysis"
 version = "0.1.1"
 dependencies = [
+ "ahash",
  "resonate-codec",
  "resonate-core",
  "resonate-dsp",

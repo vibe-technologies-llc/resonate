@@ -3,6 +3,7 @@ mod bands;
 mod conform;
 mod envelope;
 mod error;
+mod granules;
 mod headroom;
 mod kept;
 mod levels;
@@ -15,6 +16,7 @@ mod spectrum;
 mod steps;
 mod verdict;
 mod watch;
+mod weighing;
 
 #[cfg(fuzzing)]
 pub fn read_a_kept_analysis(bytes: &[u8]) {
@@ -34,7 +36,7 @@ pub use crate::{
     signature::{Signature, signature_of},
     spectrogram::{Ramp, SPECTROGRAM_COLUMNS, SPECTROGRAM_FLOOR_DB, SPECTROGRAM_ROWS, Spectrogram},
     spectrum::{FLOOR_DB, Spectrum},
-    steps::Steps,
+    steps::{Coding, Steps},
     verdict::{Cutoff, Finding, JUDGED_UNDER, Judgement, LossyGuess, Verdict},
     watch::{Watch, Watching},
 };

@@ -69,10 +69,11 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   lyric text (LRCLIB's text search finds none)
 
 ## Identification
-- [M · 0.2.0] AAC's quantiser steps were weighed only on ffmpeg's encoder (every decode at 256 and
-  320 kbps found) and faac's (18 of 31 at 160 kbps): no Apple, FhG or fdk encode weighed, and a
-  lossy decode with neither a wall nor AAC's frames (a resampled AAC, an MP3 or Vorbis with no
-  lowpass) still reads as lossless
+- [M · 0.2.0] The quantiser steps were weighed only on the encoders this machine has (ffmpeg's AAC,
+  faac, LAME, libvorbis and ffmpeg's Vorbis): no Apple, FhG or fdk AAC, no FhG or other MP3
+  encoder and no aoTuV Vorbis weighed, faac at 160 kbps is found in 9 of 22, a lossy decode
+  dithered or resampled to a rate other than the other CD rate with no wall still reads as
+  lossless, and an Opus decode is only `Suspect` (its bands sit on no lattice)
 
 ## Later: Sources and providers
 - [M · blocked: services] The Bandcamp and Discogs links an `Identity` carries are read by nothing;
