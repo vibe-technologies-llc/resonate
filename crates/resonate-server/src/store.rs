@@ -1,6 +1,7 @@
 use std::{path::Path, time::Duration};
 
 use resonate_sync::{DeviceId, SpaceId};
+use ring::digest::{Digest, SHA256, digest};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 
 use crate::{Error, Result, StoreOp};
@@ -30,7 +31,12 @@ CREATE TABLE snapshots (
 ) STRICT, WITHOUT ROWID;
 ";
 
-const MIGRATIONS: &[&str] = &[V1];
+const RECORDS_ARE_KNOWN_BY_THEIR_DIGEST: &str = "
+ALTER TABLE records ADD COLUMN digest BLOB;
+CREATE INDEX records_by_digest ON records(space, device, digest) WHERE digest IS NOT NULL;
+";
+
+const MIGRATIONS: &[&str] = &[V1, RECORDS_ARE_KNOWN_BY_THEIR_DIGEST];
 
 pub struct Store {
     connection: Connection,
@@ -232,7 +238,26 @@ impl Store {
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .map_err(|source| Error::store(StoreOp::Read, source))?;
-        let adding = blobs.iter().map(Vec::len).sum::<usize>();
+        let mut fresh: Vec<(Digest, &Vec<u8>)> = Vec::with_capacity(blobs.len());
+        for blob in blobs {
+            let known = digest(&SHA256, blob);
+            let held = transaction
+                .query_row(
+                    "SELECT 1 FROM records WHERE space = ?1 AND device = ?2 AND digest = ?3",
+                    params![space.0.as_slice(), device.0.as_slice(), known.as_ref()],
+                    |_| Ok(()),
+                )
+                .optional()
+                .map_err(|source| Error::store(StoreOp::Read, source))?
+                .is_some();
+            let repeated = fresh
+                .iter()
+                .any(|(seen, _)| seen.as_ref() == known.as_ref());
+            if !held && !repeated {
+                fresh.push((known, blob));
+            }
+        }
+        let adding = fresh.iter().map(|(_, blob)| blob.len()).sum::<usize>();
         let adding = i64::try_from(adding).unwrap_or(i64::MAX);
         if bytes.saturating_add(adding).cast_unsigned() > space_bytes {
             return Ok(Appended::Full);
@@ -242,12 +267,12 @@ impl Store {
             return Ok(Appended::Full);
         }
         let mut seq = head;
-        for blob in blobs {
+        for (known, blob) in fresh {
             seq += 1;
             transaction
                 .execute(
-                    "INSERT INTO records (space, seq, device, blob) VALUES (?1, ?2, ?3, ?4)",
-                    params![space.0.as_slice(), seq, device.0.as_slice(), blob],
+                    "INSERT INTO records (space, seq, device, blob, digest) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![space.0.as_slice(), seq, device.0.as_slice(), blob, known.as_ref()],
                 )
                 .map_err(|source| Error::store(StoreOp::Write, source))?;
         }
@@ -515,10 +540,71 @@ mod tests {
         );
         assert_eq!(
             store
-                .append(SPACE, DESK, &[vec![0; 10]], 15)
+                .append(SPACE, DESK, &[vec![1; 10]], 15)
                 .expect("refused"),
             Appended::Full
         );
+    }
+
+    #[test]
+    fn a_record_sent_again_by_the_device_that_sent_it_is_kept_once() {
+        let mut store = claimed();
+        let phone = DeviceId([9; 16]);
+
+        let first = store
+            .append(SPACE, DESK, &[vec![1; 40], vec![2; 40]], 1 << 20)
+            .expect("appended");
+        let again = store
+            .append(
+                SPACE,
+                DESK,
+                &[vec![1; 40], vec![2; 40], vec![3; 40]],
+                1 << 20,
+            )
+            .expect("appended again");
+        let elsewhere = store
+            .append(SPACE, phone, &[vec![1; 40]], 1 << 20)
+            .expect("appended elsewhere");
+        let kept = store.records_after(SPACE, 0, 10, 1 << 20).expect("read");
+
+        assert_eq!(first, Appended::Through(2));
+        assert_eq!(again, Appended::Through(3));
+        assert_eq!(elsewhere, Appended::Through(4));
+        assert_eq!(
+            kept.iter().map(|record| record.blob[0]).collect::<Vec<_>>(),
+            [1, 2, 3, 1]
+        );
+    }
+
+    #[test]
+    fn a_store_of_the_first_release_is_carried_forward_with_its_records() {
+        let connection = Connection::open_in_memory().expect("a connection");
+        connection
+            .execute_batch(V1)
+            .expect("the first release's store");
+        connection
+            .execute(
+                "INSERT INTO spaces (id, token, created, touched, head, bytes) VALUES (?1, ?2, 1, 1, 1, 3)",
+                params![SPACE.0.as_slice(), [3_u8; 32].as_slice()],
+            )
+            .expect("a space");
+        connection
+            .execute(
+                "INSERT INTO records (space, seq, device, blob) VALUES (?1, 1, ?2, ?3)",
+                params![SPACE.0.as_slice(), DESK.0.as_slice(), [7_u8; 3].as_slice()],
+            )
+            .expect("a record");
+        connection
+            .pragma_update(None, "user_version", 1)
+            .expect("stamped");
+
+        let mut store = Store::over(connection).expect("carried forward");
+        let appended = store
+            .append(SPACE, DESK, &[vec![7; 3]], 1 << 20)
+            .expect("appended");
+
+        assert_eq!(appended, Appended::Through(2));
+        assert_eq!(store.head(SPACE).expect("head"), (2, 0));
     }
 
     #[test]

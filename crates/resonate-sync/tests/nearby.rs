@@ -13,7 +13,8 @@ use resonate_core::{
     Chromaprint, Mbid, SharedHeard, SharedLyricsfile, SharedPrint, SharedRecognition, WholeFile,
 };
 use resonate_sync::{
-    Broadcast, Follow, Me, Nearby, Platform, Server, Settings, Standing, Sync, SyncKey,
+    Broadcast, DeviceId, Follow, Me, Nearby, Platform, Server, Settings, Standing, Sync, SyncKey,
+    TransferState,
 };
 
 use crate::shelf::{Shelf, song};
@@ -86,6 +87,49 @@ fn device_through(
         follow,
         server,
     )
+}
+
+fn device_told(
+    folder: &Path,
+    key: &SyncKey,
+    name: &str,
+    shelf: Arc<Shelf>,
+    told: &[&Sync],
+    follow: Follow,
+) -> Sync {
+    let told = told
+        .iter()
+        .filter_map(|sync| sync.nearby_port())
+        .map(|port| SocketAddr::from((Ipv4Addr::LOCALHOST, port)))
+        .collect();
+    started_through(
+        folder,
+        key,
+        name,
+        shelf,
+        Nearby {
+            broadcast: Some(Broadcast { port: 0, told }),
+            bonjour: false,
+        },
+        follow,
+        Server::At(NO_SERVER_HERE.into()),
+    )
+}
+
+fn following_favourites() -> Follow {
+    Follow {
+        favourites: true,
+        ..Follow::default()
+    }
+}
+
+fn rows_from(sync: &Sync, from: DeviceId) -> Vec<(String, TransferState)> {
+    sync.shown()
+        .transfers
+        .into_iter()
+        .filter(|transfer| transfer.from == from)
+        .map(|transfer| (transfer.recording.title, transfer.state))
+        .collect()
 }
 
 fn device_over_ipv6(
@@ -715,6 +759,205 @@ fn two_devices_told_of_each_other_over_ipv6_alone_meet_and_sync() {
     eventually("the song arriving over IPv6", || {
         holds_title(&phone_shelf, "B")
     });
+
+    drop(phone);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_device_is_followed_by_one_run_at_a_time_however_many_records_arrive_meanwhile() {
+    let folder = scratch("one-follow");
+    let key = SyncKey::minted().expect("a key");
+    let desk_shelf = Arc::new(Shelf::holding(&["A"]));
+    let phone_shelf = Arc::new(Shelf::holding(&[]));
+    desk_shelf.favour_here("A", true);
+    desk_shelf.opening.shut();
+
+    let desk = device(&folder, &key, "Desk", Arc::clone(&desk_shelf), None);
+    let phone = device_following(
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        Some(&desk),
+        following_favourites(),
+    );
+    eventually("the phone asking the desk for the favoured song", || {
+        desk_shelf.inside.lock().opened > 0
+    });
+    for name in ["One", "Two", "Three"] {
+        desk_shelf.make_playlist(name, &["A"]);
+        eventually("the playlist reaching the phone", || {
+            phone_shelf.playlist_named(name).is_some()
+        });
+    }
+    thread::sleep(Duration::from_millis(1500));
+    let listed_meanwhile = desk_shelf.inside.lock().listed;
+    desk_shelf.opening.open();
+
+    assert_eq!(listed_meanwhile, 1);
+    eventually("the favoured song reaching the phone", || {
+        holds_title(&phone_shelf, "A")
+    });
+
+    drop(phone);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_song_another_device_landed_meanwhile_leaves_no_row_for_the_device_that_sent_nothing() {
+    let folder = scratch("landed-meanwhile");
+    let key = SyncKey::minted().expect("a key");
+    let desk_shelf = Arc::new(Shelf::holding(&["A"]));
+    let laptop_shelf = Arc::new(Shelf::holding(&["A", "B"]));
+    let phone_shelf = Arc::new(Shelf::holding(&[]));
+    desk_shelf.favour_here("A", true);
+    desk_shelf.favour_here("B", true);
+    desk_shelf.opening.shut();
+    laptop_shelf.listing.shut();
+
+    let desk = device(&folder, &key, "Desk", Arc::clone(&desk_shelf), None);
+    let phone = device_following(
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        Some(&desk),
+        following_favourites(),
+    );
+    eventually("the phone asking the desk for the favoured song", || {
+        desk_shelf.inside.lock().opened > 0
+    });
+    let laptop = device_told(
+        &folder,
+        &key,
+        "Laptop",
+        Arc::clone(&laptop_shelf),
+        &[&desk, &phone],
+        Follow::default(),
+    );
+    eventually("the phone asking what the laptop holds", || {
+        laptop_shelf.inside.lock().listed > 0
+    });
+    desk_shelf.opening.open();
+    eventually("the song reaching the phone from the desk", || {
+        holds_title(&phone_shelf, "A")
+    });
+    laptop_shelf.listing.open();
+    eventually("the other song reaching the phone from the laptop", || {
+        holds_title(&phone_shelf, "B")
+    });
+
+    assert_eq!(
+        rows_from(&phone, laptop.device()),
+        [("B".to_owned(), TransferState::Landed)]
+    );
+    assert_eq!(
+        rows_from(&phone, desk.device()),
+        [("A".to_owned(), TransferState::Landed)]
+    );
+
+    drop(laptop);
+    drop(phone);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_song_passed_over_while_another_device_fetched_it_is_fetched_once_that_one_fails() {
+    let folder = scratch("passed-over");
+    let key = SyncKey::minted().expect("a key");
+    let desk_shelf = Arc::new(Shelf::holding(&["A"]));
+    let laptop_shelf = Arc::new(Shelf::holding(&["A", "B"]));
+    let phone_shelf = Arc::new(Shelf::holding(&[]));
+    desk_shelf.opening.shut();
+
+    let desk = device(&folder, &key, "Desk", Arc::clone(&desk_shelf), None);
+    let laptop = device(
+        &folder,
+        &key,
+        "Laptop",
+        Arc::clone(&laptop_shelf),
+        Some(&desk),
+    );
+    let phone = device_told(
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        &[&desk, &laptop],
+        Follow::default(),
+    );
+    eventually("the phone meeting both", || {
+        nearby_of(&phone, "Desk") && nearby_of(&phone, "Laptop")
+    });
+    phone.fetch(vec![song("A")], desk.device());
+    eventually("the desk asked for the song", || {
+        desk_shelf.inside.lock().opened > 0
+    });
+    phone.fetch(vec![song("A"), song("B")], laptop.device());
+    eventually("the laptop's other song reaching the phone", || {
+        holds_title(&phone_shelf, "B")
+    });
+    desk_shelf.inside.lock().refuses_opening = true;
+    desk_shelf.opening.open();
+
+    eventually(
+        "the song passed over reaching the phone from the laptop",
+        || holds_title(&phone_shelf, "A"),
+    );
+    assert!(rows_from(&phone, laptop.device()).contains(&("A".to_owned(), TransferState::Landed)));
+
+    drop(phone);
+    drop(laptop);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_song_refused_at_landing_is_not_fetched_again_after_a_restart() {
+    let folder = scratch("refused-kept");
+    let key = SyncKey::minted().expect("a key");
+    let desk_shelf = Arc::new(Shelf::holding(&["A"]));
+    let phone_shelf = Arc::new(Shelf::holding(&[]));
+    desk_shelf.favour_here("A", true);
+    phone_shelf.inside.lock().refuses_landing = true;
+
+    let desk = device(&folder, &key, "Desk", Arc::clone(&desk_shelf), None);
+    let phone = device_following(
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        Some(&desk),
+        following_favourites(),
+    );
+    eventually("the landing refused", || {
+        rows_from(&phone, desk.device()) == [("A".to_owned(), TransferState::Failed)]
+    });
+    drop(phone);
+    let (opened, listed) = {
+        let inside = desk_shelf.inside.lock();
+        (inside.opened, inside.listed)
+    };
+
+    let phone = device_following(
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        Some(&desk),
+        following_favourites(),
+    );
+    eventually("the phone following the desk again", || {
+        desk_shelf.inside.lock().listed > listed
+    });
+    thread::sleep(Duration::from_secs(1));
+
+    assert_eq!(desk_shelf.inside.lock().opened, opened);
+    assert!(phone.shown().transfers.is_empty());
 
     drop(phone);
     drop(desk);

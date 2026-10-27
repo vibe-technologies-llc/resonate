@@ -305,6 +305,49 @@ fn a_song_deleted_by_hand_is_wanted_again_while_its_playlist_and_favourite_stay(
 }
 
 #[test]
+fn a_song_known_by_its_mbid_in_a_playlist_and_by_its_tags_as_a_favourite_is_wanted_once() {
+    let mut desk = Device::new("Desk", &[]);
+    let mut phone = Device::new("Phone", &[]);
+    desk.shelf.add_song(identified("A"), b"A".repeat(1000));
+    let id = desk.shelf.make_playlist("Summer", &[]);
+    desk.shelf
+        .inside
+        .lock()
+        .playlists
+        .get_mut(&id)
+        .expect("a playlist")
+        .2 = vec![identified("A")];
+    desk.shelf.inside.lock().favourites.push(song("A"));
+    desk.shelf.moved();
+    sync(&mut desk, &mut phone);
+    let (on_phone, _) = phone.shelf.playlist_named("Summer").expect("arrived");
+    phone
+        .ledger
+        .keep_songs_of(
+            LocalPlaylistId {
+                id: on_phone,
+                created: on_phone * 1000,
+            },
+            true,
+        )
+        .expect("kept");
+
+    let wanted = phone
+        .ledger
+        .wanted(
+            Follow {
+                favourites: true,
+                playlists: true,
+                everything: false,
+            },
+            &phone.shelf,
+        )
+        .expect("wanted");
+
+    assert_eq!(wanted, [identified("A")]);
+}
+
+#[test]
 fn a_playlist_removed_on_one_device_is_removed_on_the_other() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);

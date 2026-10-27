@@ -12,9 +12,17 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
 
 ## What it keeps
 
-- **SQLite, three tables** (`store.rs`, one `V1` in `MIGRATIONS`: editable until the 0.1.0 release, a step appended after it): `spaces` (id, the SHA-256 of
+- **SQLite, three tables** (`store.rs`, `V1` in `MIGRATIONS`, the 0.1.0 baseline never edited, and
+  the steps after it): `spaces` (id, the SHA-256 of
   the token, created, touched, bytes, head, snapshot through), `records` (space, seq, device,
-  blob), `snapshots` (space, part, blob). Every store call runs on `spawn_blocking` behind one lock.
+  blob, and the blob's SHA-256 `digest` the second step `RECORDS_ARE_KNOWN_BY_THEIR_DIGEST` added,
+  NULL for a record stored before it), `snapshots` (space, part, blob). Every store call runs on `spawn_blocking` behind one lock.
+- **A record a device sends again is kept once.** `Store::append` passes over a blob whose digest
+  that device already has stored in the space (and a repeat inside one append), counting neither its
+  bytes nor a seq, and the append is answered `Appended` as if stored: a device resends the very
+  bytes of an append whose `Appended` it lost (`sync.md`), and only a resend can match, since every
+  seal takes a fresh nonce (`a_record_sent_again_by_the_device_that_sent_it_is_kept_once`,
+  `a_store_of_the_first_release_is_carried_forward_with_its_records`).
 - **The first token claims a space; any other is refused** (`Claim::Refused` → `Refusal::Token`).
   The digest is compared as stored: a digest of a 32-byte random token leaks nothing by timing.
 - **A compaction replaces what it covers and only moves forward**: `through` must be past the

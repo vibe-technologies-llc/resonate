@@ -1,9 +1,35 @@
-use resonate_core::{Recording, folded_letters};
+use std::collections::BTreeSet;
+
+use resonate_core::{Recording, RecordingKey, folded_letters};
 use ring::digest::{SHA256, digest};
 
 use crate::{change::QueryBody, wire::Writer};
 
 pub const DIGEST_BYTES: usize = 32;
+
+pub fn one_recording_a_song(recordings: impl IntoIterator<Item = Recording>) -> Vec<Recording> {
+    let mut identified = BTreeSet::new();
+    let mut named = BTreeSet::new();
+    let mut kept: Vec<Recording> = Vec::new();
+    for recording in recordings {
+        if recording.mbid.is_some() {
+            if identified.insert(recording.key()) {
+                kept.push(recording);
+            }
+        } else if named.insert(recording.named_key()) {
+            kept.push(recording);
+        }
+    }
+    let named_by_an_mbid = kept
+        .iter()
+        .filter(|recording| recording.mbid.is_some())
+        .map(Recording::named_key)
+        .collect::<BTreeSet<RecordingKey>>();
+    kept.retain(|recording| {
+        recording.mbid.is_some() || !named_by_an_mbid.contains(&recording.named_key())
+    });
+    kept
+}
 
 pub struct Synced<'a> {
     pub recording: &'a Recording,

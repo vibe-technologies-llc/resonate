@@ -12,7 +12,10 @@ use crate::{
         AnswerNote, Change, Clock, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, Listen,
         Platform, PlaylistBody, PlaylistKey, PlaylistNote, QueryBody, QueryNote, Stamp, wall_nanos,
     },
-    merge::{DIGEST_BYTES, Synced, names_alike, projection_digest, query_digest, spliced},
+    merge::{
+        DIGEST_BYTES, Synced, names_alike, one_recording_a_song, projection_digest, query_digest,
+        spliced,
+    },
     wire::{
         decoded_answer, decoded_recording, decoded_recordings, encoded_answer, encoded_change,
         encoded_recording, encoded_recordings,
@@ -134,7 +137,14 @@ CREATE INDEX answers_owed ON answers(owed) WHERE owed = 1;
 CREATE INDEX answers_not_here ON answers(here) WHERE here = 0;
 ";
 
-const MIGRATIONS: &[&str] = &[V1, ANSWERS_TRAVEL];
+const SONGS_REFUSED_ARE_REMEMBERED: &str = "
+CREATE TABLE refusals (
+    key TEXT PRIMARY KEY,
+    refused INTEGER NOT NULL
+) STRICT;
+";
+
+const MIGRATIONS: &[&str] = &[V1, ANSWERS_TRAVEL, SONGS_REFUSED_ARE_REMEMBERED];
 
 const OWE_EVERYTHING: &str = "
 UPDATE devices SET owed = 1;
@@ -2027,12 +2037,75 @@ impl Ledger {
             }
         }
         let mut still_wanted = Vec::with_capacity(wanted.len());
-        for recording in wanted.into_values() {
+        for recording in one_recording_a_song(wanted.into_values()) {
             if !catalog.holds(&recording).map_err(Error::Catalog)? {
                 still_wanted.push(recording);
             }
         }
         Ok(still_wanted)
+    }
+
+    pub fn refused(&mut self, recording: &Recording) -> Result<()> {
+        let now = wall_nanos();
+        for key in [recording.key(), recording.named_key()] {
+            self.connection
+                .execute(
+                    "INSERT INTO refusals (key, refused) VALUES (?1, ?2)
+                     ON CONFLICT (key) DO UPDATE SET refused = ?2",
+                    params![key.as_str(), now],
+                )
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
+        }
+        Ok(())
+    }
+
+    pub fn asked_again(&mut self, recordings: &[Recording]) -> Result<()> {
+        for recording in recordings {
+            for key in [recording.key(), recording.named_key()] {
+                self.connection
+                    .execute("DELETE FROM refusals WHERE key = ?1", params![key.as_str()])
+                    .map_err(|source| Error::store(StoreOp::Write, source))?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn forget_refusals(&mut self) -> Result<()> {
+        self.connection
+            .execute("DELETE FROM refusals", [])
+            .map(drop)
+            .map_err(|source| Error::store(StoreOp::Write, source))
+    }
+
+    pub fn not_refused_within(
+        &mut self,
+        recordings: Vec<Recording>,
+        waits: Duration,
+    ) -> Result<Vec<Recording>> {
+        let waited = i64::try_from(waits.as_nanos()).unwrap_or(i64::MAX);
+        self.connection
+            .execute(
+                "DELETE FROM refusals WHERE refused <= ?1",
+                params![wall_nanos().saturating_sub(waited)],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        let mut refused = self
+            .connection
+            .prepare_cached("SELECT 1 FROM refusals WHERE key = ?1")
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        let mut kept = Vec::with_capacity(recordings.len());
+        for recording in recordings {
+            let mut held_back = false;
+            for key in [recording.key(), recording.named_key()] {
+                held_back |= refused
+                    .exists(params![key.as_str()])
+                    .map_err(|source| Error::store(StoreOp::Read, source))?;
+            }
+            if !held_back {
+                kept.push(recording);
+            }
+        }
+        Ok(kept)
     }
 
     fn keeps_songs(&self, key: PlaylistKey) -> Result<bool> {
@@ -2528,5 +2601,35 @@ mod tests {
         assert_eq!(ledger.state_number("listens_mark").expect("a mark"), 9);
         assert_eq!(ledger.state_number("answers_mark").expect("a mark"), 0);
         assert!(ledger.answer_notes("1").expect("answers").is_empty());
+    }
+
+    #[test]
+    fn a_ledger_of_before_refusals_were_kept_gains_them_and_forgets_one_once_it_has_waited() {
+        let connection = Connection::open_in_memory().expect("a connection");
+        connection
+            .execute_batch(&format!("{V1}{ANSWERS_TRAVEL}"))
+            .expect("the ledger of before");
+        connection
+            .pragma_update(None, "user_version", 2)
+            .expect("stamped");
+        let song = Recording {
+            mbid: None,
+            title: "Hunter".into(),
+            artist: "Björk".into(),
+            album: "Homogenic".into(),
+            length: None,
+        };
+
+        let mut ledger = Ledger::over(connection).expect("carried forward");
+        ledger.refused(&song).expect("refused");
+        let waiting = ledger
+            .not_refused_within(vec![song.clone()], Duration::from_secs(60))
+            .expect("read");
+        let forgotten = ledger
+            .not_refused_within(vec![song.clone()], Duration::ZERO)
+            .expect("read");
+
+        assert!(waiting.is_empty());
+        assert_eq!(forgotten, [song]);
     }
 }

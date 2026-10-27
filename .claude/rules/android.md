@@ -1130,11 +1130,12 @@ waiting song as held so it is not asked for twice; a song `land` finds already h
 waiting) is answered landed and its staged copy dropped, never queued a second time. **A song landed is held by what was asked for, never fetched again**: `sync_receive` notes each key of the recording the sender announced against the document it indexed (`note_received_as`), and `holds` and `open` look a recording up by name first, then through `songs_received` (`DocumentCatalog::candidates`), so a file whose own tags name the song otherwise than the sender's catalog does (a corrected title, a missing album) is neither fetched on every follow nor refused as `Missing` when that sender asks for it back (`a_song_landed_under_the_names_of_its_own_file_is_held_by_what_was_asked_for`). A document made for a landing, a download or a sync is created under the mime type the platform maps its name's extension to (`MusicDocuments.mimeOfName`), since a provider given another type for the same extension appends its own (`song.flac.flac`). Kotlin polls `sync_received`, creates a document in
 the chosen writable music folder (the first one unless chosen), journals its URI as
 `unfinished-sync-landing`, and hands the fresh descriptor to `sync_receive`, which copies the bytes,
-validates and indexes the document as a download is, and forgets the waiting song whether or not that
-succeeded, telling the sync service of a failure (`Sync::refused`) so the song is not fetched again at
-once. **A failed landing holds back that song alone**: it deletes only the new document and waits a
+validates and indexes the document as a download is, and forgets the waiting song once it landed; a
+failure leaves it waiting (`a_song_that_fails_to_land_waits_for_the_front_end_to_try_again_or_give_it_up`).
+**A failed landing holds back that song alone**: it deletes only the new document and waits a
 minute before that song is tried again, the rest landing meanwhile; a song refused
-`LANDING_TRIES_AT_MOST` (3) times in a row is dropped with `sync_refuse_received`. A received song's
+`LANDING_TRIES_AT_MOST` (3) times in a row is dropped with `sync_refuse_received`, which tells the
+sync service (`Sync::refused`) so the song is not fetched again at once. A received song's
 file name drops `/ \ ? : * " < > |` and control characters, so a FAT, exFAT or SMB folder takes it. A
 download's file name does too (`downloads::file_stem_of`, the one stem both use).
 `SyncedDevice.id` names a device (the hex `DeviceId`; names repeat after a reinstall), which

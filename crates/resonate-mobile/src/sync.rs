@@ -400,18 +400,14 @@ impl MobilePlayer {
             drop(output);
             self.indexed_download(uri, received.name, &received.song)
         });
-        if let Ok(track) = &landed
-            && let Err(error) = self.note_received_as(&received.song, track.id)
-        {
+        let track = landed?;
+        if let Err(error) = self.note_received_as(&received.song, track.id) {
             tracing::warn!(%error, "a landed song from another device is not noted as the one asked for");
         }
         if let Err(error) = self.forget_received(id, &path) {
             tracing::warn!(%error, "a landed song from another device is still listed as waiting");
         }
-        if landed.is_err() {
-            self.refused_to_land(&received.song);
-        }
-        landed
+        Ok(track)
     }
 
     pub fn sync_refuse_received(&self, id: u64) -> Result<()> {
@@ -1986,6 +1982,41 @@ mod tests {
             File::open(self.0.join(name))
                 .map_or(crate::documents::DOCUMENT_NOT_FOUND, IntoRawFd::into_raw_fd)
         }
+    }
+
+    #[test]
+    fn a_song_that_fails_to_land_waits_for_the_front_end_to_try_again_or_give_it_up() {
+        use std::os::fd::IntoRawFd;
+
+        let folder = folder("unlanded");
+        let player = player(&folder);
+        let documents = documents_of(&player, &folder);
+        let staged = folder.join("staged.part");
+        fs::write(&staged, b"fLaC").expect("a damaged song");
+        let hunter = named("Hunter", "Björk", 255);
+        documents
+            .land(&hunter, &SongTags::default(), "flac", &staged)
+            .expect("a landing");
+        let waiting = player.sync_received().expect("the waiting songs");
+        let descriptor = File::create(folder.join("unlanded.flac"))
+            .expect("a destination")
+            .into_raw_fd();
+
+        let landed = player.sync_receive(
+            waiting[0].id,
+            descriptor,
+            "content://test/unlanded.flac".into(),
+        );
+        let still = player.sync_received().expect("the waiting songs");
+
+        assert!(landed.is_err());
+        assert_eq!(still.len(), 1);
+        assert!(documents.holds(&hunter).expect("a waiting song"));
+
+        player.sync_refuse_received(still[0].id).expect("given up");
+
+        assert!(player.sync_received().expect("none waiting").is_empty());
+        let _ = fs::remove_dir_all(folder);
     }
 
     #[test]
