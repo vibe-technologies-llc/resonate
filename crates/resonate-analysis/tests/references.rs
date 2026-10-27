@@ -1,12 +1,14 @@
 use std::{
-    env, fs,
+    env,
+    ffi::{OsStr, OsString},
+    fs,
     path::{Path, PathBuf},
     process::{self, Command},
     sync::atomic::{AtomicU32, Ordering},
     time::Duration,
 };
 
-use resonate_analysis::{Finding, Loudness, Verdict, Watch, study};
+use resonate_analysis::{Coding, Finding, Loudness, Verdict, Watch, study};
 use resonate_codec::Sources;
 use resonate_core::MediaLocation;
 
@@ -39,6 +41,11 @@ const MUSIC_SECONDS: u32 = 30;
 const AAC_BITRATES: [&str; 2] = ["256k", "320k"];
 const FRAMES_CUT_FROM_THE_DECODE: u32 = 1_000;
 const SOURCE_LATTICE_BELOW: f32 = 0.01;
+const MP3_ENCODES: [(&str, &[&str]); 2] = [
+    ("320-open", &["-b", "320", "--lowpass", "-1"]),
+    ("v0", &["-V0"]),
+];
+const VORBIS_QUALITIES: [&str; 2] = ["6", "10"];
 
 static NEXT: AtomicU32 = AtomicU32::new(0);
 
@@ -391,7 +398,7 @@ fn wideband_music(rate: u32, seconds: u32) -> Vec<f32> {
         .collect()
 }
 
-fn ffmpeg(arguments: &[&std::ffi::OsStr]) -> Option<()> {
+fn ffmpeg(arguments: &[&OsStr]) -> Option<()> {
     let status = Command::new("ffmpeg")
         .args(["-v", "error", "-y"])
         .args(arguments)
@@ -400,46 +407,104 @@ fn ffmpeg(arguments: &[&std::ffi::OsStr]) -> Option<()> {
     status.success().then_some(())
 }
 
-fn on_aac_steps(study: &resonate_analysis::Study) -> bool {
+fn lame(arguments: &[&OsStr]) -> Option<()> {
+    let status = Command::new("lame")
+        .arg("--quiet")
+        .args(arguments)
+        .status()
+        .ok()?;
+    status.success().then_some(())
+}
+
+fn as_flac(from: &Path, to: &Path, filter: Option<String>) -> Option<()> {
+    let mut arguments = vec![OsStr::new("-i"), from.as_os_str()];
+    let filter = filter.map(OsString::from);
+    if let Some(filter) = &filter {
+        arguments.extend([OsStr::new("-af"), filter.as_os_str()]);
+    }
+    arguments.extend(["-sample_fmt", "s16", "-c:a", "flac"].map(OsStr::new));
+    arguments.push(to.as_os_str());
+    ffmpeg(&arguments)
+}
+
+fn as_wave(from: &Path, to: &Path) -> Option<()> {
+    ffmpeg(&[
+        "-i".as_ref(),
+        from.as_os_str(),
+        "-sample_fmt".as_ref(),
+        "s16".as_ref(),
+        to.as_os_str(),
+    ])
+}
+
+fn quantiser_steps_of(study: &resonate_analysis::Study) -> Option<(Coding, Option<u32>)> {
     study
         .judgement
         .findings
         .iter()
-        .any(|finding| matches!(finding, Finding::AacSteps { .. }))
+        .find_map(|finding| match finding {
+            Finding::QuantiserSteps {
+                coding,
+                resampled_from,
+                ..
+            } => Some((*coding, *resampled_from)),
+            _ => None,
+        })
+}
+
+fn assert_a_genuine_source(path: &Path) {
+    let study = studied(path);
+
+    assert_eq!(quantiser_steps_of(&study), None, "{study:?}");
+    assert_ne!(study.judgement.verdict, Verdict::Fake, "{study:?}");
+    assert!(!study.steps.is_empty(), "a lossless source is weighed");
+    for steps in &study.steps {
+        assert!(steps.lattice < SOURCE_LATTICE_BELOW, "{steps:?}");
+    }
+}
+
+fn assert_decoded_from(path: &Path, coding: Coding, resampled_from: Option<u32>, what: &str) {
+    let study = studied(path);
+
+    assert_eq!(
+        quantiser_steps_of(&study),
+        Some((coding, resampled_from)),
+        "{what}: {:?}",
+        study.steps
+    );
+    assert_eq!(study.judgement.verdict, Verdict::Fake, "{what}");
+}
+
+struct Sourced {
+    tree: Tree,
+    source: PathBuf,
+    wave: PathBuf,
+}
+
+fn music_source(rate: u32) -> Option<Sourced> {
+    let tree = Tree::new();
+    let made = tree.wave(
+        "music.wav",
+        rate,
+        STEREO,
+        &wideband_music(rate, MUSIC_SECONDS),
+    );
+    let source = tree.root.join("source.flac");
+    let wave = tree.root.join("source.wav");
+    as_flac(&made, &source, None)?;
+    as_wave(&source, &wave)?;
+    Some(Sourced { tree, source, wave })
 }
 
 #[test]
 fn ffmpegs_aac_at_256_and_320_kbps_decoded_back_to_flac_lands_on_its_quantiser_steps_and_the_source_does_not()
  {
-    let tree = Tree::new();
-    let wave = tree.wave(
-        "music.wav",
-        MUSIC_RATE,
-        STEREO,
-        &wideband_music(MUSIC_RATE, MUSIC_SECONDS),
-    );
-    let source = tree.root.join("source.flac");
-    let as_flac = |from: &Path, to: &Path, filter: Option<String>| {
-        let mut arguments = vec![std::ffi::OsStr::new("-i"), from.as_os_str()];
-        let filter = filter.map(std::ffi::OsString::from);
-        if let Some(filter) = &filter {
-            arguments.extend([std::ffi::OsStr::new("-af"), filter.as_os_str()]);
-        }
-        arguments.extend(["-sample_fmt", "s16", "-c:a", "flac"].map(std::ffi::OsStr::new));
-        arguments.push(to.as_os_str());
-        ffmpeg(&arguments)
-    };
-    if as_flac(&wave, &source, None).is_none() {
+    let Some(Sourced { tree, source, .. }) = music_source(MUSIC_RATE) else {
         eprintln!("skipped: no ffmpeg to encode AAC with");
         return;
-    }
+    };
 
-    let studied_source = studied(&source);
-
-    assert!(!on_aac_steps(&studied_source), "{studied_source:?}");
-    assert_ne!(studied_source.judgement.verdict, Verdict::Fake);
-    let steps = studied_source.steps.expect("a lossless source is weighed");
-    assert!(steps.lattice < SOURCE_LATTICE_BELOW, "{steps:?}");
+    assert_a_genuine_source(&source);
 
     for bitrate in AAC_BITRATES {
         let encoded = tree.root.join(format!("{bitrate}.m4a"));
@@ -464,10 +529,157 @@ fn ffmpegs_aac_at_256_and_320_kbps_decoded_back_to_flac_lands_on_its_quantiser_s
         .expect("a cut decode");
 
         for decoded in [&whole, &cut] {
-            let study = studied(decoded);
+            assert_decoded_from(decoded, Coding::Aac, None, bitrate);
+        }
+    }
+}
 
-            assert!(on_aac_steps(&study), "{bitrate}: {study:?}");
-            assert_eq!(study.judgement.verdict, Verdict::Fake, "{bitrate}");
+#[test]
+fn an_aac_decode_resampled_to_the_other_cd_rate_lands_on_aacs_steps_once_brought_back() {
+    for (rate, other) in [(MUSIC_RATE, 48_000), (48_000, MUSIC_RATE)] {
+        let Some(Sourced { tree, source, .. }) = music_source(rate) else {
+            eprintln!("skipped: no ffmpeg to encode AAC with");
+            return;
+        };
+        let resampled_source = tree.root.join("resampled-source.flac");
+        as_flac(
+            &source,
+            &resampled_source,
+            Some(format!("aresample={other}")),
+        )
+        .expect("a resampled source");
+
+        assert_a_genuine_source(&resampled_source);
+
+        let encoded = tree.root.join("256k.m4a");
+        ffmpeg(&[
+            "-i".as_ref(),
+            source.as_os_str(),
+            "-c:a".as_ref(),
+            "aac".as_ref(),
+            "-b:a".as_ref(),
+            "256k".as_ref(),
+            encoded.as_os_str(),
+        ])
+        .expect("an AAC encode");
+        let resampled = tree.root.join("resampled.flac");
+        as_flac(&encoded, &resampled, Some(format!("aresample={other}"))).expect("a decode");
+
+        assert_decoded_from(&resampled, Coding::Aac, Some(rate), "resampled AAC");
+    }
+}
+
+#[test]
+fn lames_mp3_with_no_lowpass_decoded_back_to_flac_lands_on_its_granules_and_the_source_does_not() {
+    let Some(Sourced { tree, source, wave }) = music_source(MUSIC_RATE) else {
+        eprintln!("skipped: no ffmpeg to encode MP3 with");
+        return;
+    };
+    let probe = tree.root.join("probe.mp3");
+    if lame(&[
+        "-b".as_ref(),
+        "128".as_ref(),
+        wave.as_os_str(),
+        probe.as_os_str(),
+    ])
+    .is_none()
+    {
+        eprintln!("skipped: no lame to encode MP3 with");
+        return;
+    }
+
+    assert_a_genuine_source(&source);
+
+    for (name, flags) in MP3_ENCODES {
+        let encoded = tree.root.join(format!("{name}.mp3"));
+        let mut arguments: Vec<&OsStr> = flags.iter().map(OsStr::new).collect();
+        arguments.extend([wave.as_os_str(), encoded.as_os_str()]);
+        lame(&arguments).expect("an MP3 encode");
+        let whole = tree.root.join(format!("{name}.flac"));
+        let cut = tree.root.join(format!("{name}-cut.flac"));
+        let resampled = tree.root.join(format!("{name}-resampled.flac"));
+        as_flac(&encoded, &whole, None).expect("a decode");
+        as_flac(
+            &encoded,
+            &cut,
+            Some(format!("atrim=start_sample={FRAMES_CUT_FROM_THE_DECODE}")),
+        )
+        .expect("a cut decode");
+        as_flac(&encoded, &resampled, Some("aresample=48000".to_owned())).expect("a decode");
+
+        for decoded in [&whole, &cut] {
+            assert_decoded_from(decoded, Coding::Mp3, None, name);
+        }
+        assert_decoded_from(&resampled, Coding::Mp3, Some(MUSIC_RATE), name);
+    }
+}
+
+#[test]
+fn libvorbis_with_no_lowpass_decoded_back_to_flac_lands_on_its_floor_and_the_source_does_not() {
+    let Some(Sourced { tree, source, wave }) = music_source(MUSIC_RATE) else {
+        eprintln!("skipped: no ffmpeg to encode Vorbis with");
+        return;
+    };
+
+    assert_a_genuine_source(&source);
+
+    for quality in VORBIS_QUALITIES {
+        let encoded = tree.root.join(format!("q{quality}.ogg"));
+        if ffmpeg(&[
+            "-i".as_ref(),
+            wave.as_os_str(),
+            "-c:a".as_ref(),
+            "libvorbis".as_ref(),
+            "-q:a".as_ref(),
+            quality.as_ref(),
+            encoded.as_os_str(),
+        ])
+        .is_none()
+        {
+            eprintln!("skipped: no libvorbis in ffmpeg");
+            return;
+        }
+        let whole = tree.root.join(format!("q{quality}.flac"));
+        let cut = tree.root.join(format!("q{quality}-cut.flac"));
+        as_flac(&encoded, &whole, None).expect("a decode");
+        as_flac(
+            &encoded,
+            &cut,
+            Some(format!("atrim=start_sample={FRAMES_CUT_FROM_THE_DECODE}")),
+        )
+        .expect("a cut decode");
+
+        for decoded in [&whole, &cut] {
+            assert_decoded_from(decoded, Coding::Vorbis, None, quality);
+        }
+    }
+}
+
+#[test]
+fn loud_noise_and_dense_music_at_every_cd_rate_land_on_no_codecs_steps() {
+    for rate in [MUSIC_RATE, 48_000] {
+        let tree = Tree::new();
+        let mut noise = Noise(0x5eed_cafe);
+        let loud: Vec<f32> = (0..(rate * MUSIC_SECONDS * 2) as usize)
+            .map(|_| 0.7 * noise.next())
+            .collect();
+        let made = [
+            tree.wave("noise.wav", rate, STEREO, &loud),
+            tree.wave(
+                "music.wav",
+                rate,
+                STEREO,
+                &wideband_music(rate, MUSIC_SECONDS),
+            ),
+        ];
+        for made in made {
+            let flac = made.with_extension("flac");
+            if as_flac(&made, &flac, None).is_none() {
+                eprintln!("skipped: no ffmpeg to write FLAC with");
+                return;
+            }
+
+            assert_a_genuine_source(&flac);
         }
     }
 }

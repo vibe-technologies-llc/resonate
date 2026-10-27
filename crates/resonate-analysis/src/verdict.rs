@@ -2,9 +2,9 @@ use std::time::Duration;
 
 use resonate_codec::Codec;
 
-use crate::{Levels, Spectrum, Steps, spectrum::BAND_HZ};
+use crate::{Coding, Levels, Spectrum, Steps, spectrum::BAND_HZ};
 
-pub const JUDGED_UNDER: u32 = 2;
+pub const JUDGED_UNDER: u32 = 3;
 
 const WALL_DB: f32 = 30.0;
 const WALL_FLOOR_SLACK_DB: f32 = 15.0;
@@ -28,7 +28,9 @@ const DC_OFFSET_FROM: f32 = 0.01;
 const LOWEST_FULL_BAND_RATE: u32 = 44_100;
 const ANTI_ALIAS_EDGE: f32 = 0.9;
 const BITS_A_FLOAT_CARRIES: u8 = 24;
-const LATTICE_AT_LEAST: f32 = 0.03;
+const AAC_LATTICE_AT_LEAST: f32 = 0.03;
+const MP3_LATTICE_AT_LEAST: f32 = 0.02;
+const VORBIS_LATTICE_AT_LEAST: f32 = 0.012;
 const LATTICE_OVER_ITS_CONTROL_AT_LEAST: f32 = 4.0;
 const STEPPED_COEFFICIENTS_AT_LEAST: u64 = 100_000;
 
@@ -176,7 +178,9 @@ pub enum Finding {
     DcOffset {
         level: f32,
     },
-    AacSteps {
+    QuantiserSteps {
+        coding: Coding,
+        resampled_from: Option<u32>,
         lattice: f32,
     },
 }
@@ -242,9 +246,24 @@ impl Finding {
                 "The signal sits off centre by {:.1} dBFS",
                 20.0 * level.max(f32::MIN_POSITIVE).log10()
             ),
-            Self::AacSteps { lattice } => format!(
-                "Its transform on AAC's own frames lands on AAC's quantiser steps ({:.0}% aligned), so it was decoded from AAC",
-                lattice * 100.0
+            Self::QuantiserSteps {
+                coding,
+                resampled_from: None,
+                lattice,
+            } => format!(
+                "Its transform on {coding}'s own frames lands on {coding}'s quantiser steps ({:.0}% aligned), so it was decoded from {coding}",
+                lattice * 100.0,
+                coding = coding.as_str()
+            ),
+            Self::QuantiserSteps {
+                coding,
+                resampled_from: Some(hz),
+                lattice,
+            } => format!(
+                "Brought back to {:.1} kHz, its transform on {coding}'s own frames lands on {coding}'s quantiser steps ({:.0}% aligned), so it was decoded from {coding} at that rate and resampled",
+                kilohertz(*hz),
+                lattice * 100.0,
+                coding = coding.as_str()
             ),
         }
     }
@@ -292,7 +311,7 @@ pub(crate) struct Weighed<'a> {
     pub(crate) float: bool,
     pub(crate) spectrum: &'a Spectrum,
     pub(crate) levels: &'a Levels,
-    pub(crate) steps: Option<Steps>,
+    pub(crate) steps: &'a [Steps],
 }
 
 pub(crate) fn judged(weighed: Weighed<'_>) -> Judgement {
@@ -321,10 +340,18 @@ pub(crate) fn judged(weighed: Weighed<'_>) -> Judgement {
     let upsampled = cutoff.and_then(|cutoff| upsampled_from(cutoff.hz, weighed.rate));
     findings.extend(upsampled.map(|from_hz| Finding::Upsampled { from_hz }));
 
-    let stepped = weighed.steps.filter(on_aac_steps);
-    findings.extend(stepped.map(|steps| Finding::AacSteps {
-        lattice: steps.lattice,
-    }));
+    let stepped: Vec<Finding> = weighed
+        .steps
+        .iter()
+        .filter(|steps| on_quantiser_steps(steps))
+        .map(|steps| Finding::QuantiserSteps {
+            coding: steps.coding,
+            resampled_from: (steps.rate != weighed.rate).then_some(steps.rate),
+            lattice: steps.lattice,
+        })
+        .collect();
+    let on_steps = !stepped.is_empty();
+    findings.extend(stepped);
 
     let padded = padding(weighed);
     findings.extend(padded);
@@ -344,7 +371,7 @@ pub(crate) fn judged(weighed: Weighed<'_>) -> Judgement {
     } else if !weighed.codec.is_lossless() {
         Verdict::Lossy
     } else if padded.is_some()
-        || stepped.is_some()
+        || on_steps
         || (heard_enough && (lossy_wall.is_some() || upsampled.is_some()))
     {
         Verdict::Fake
@@ -362,9 +389,14 @@ pub(crate) fn judged(weighed: Weighed<'_>) -> Judgement {
     }
 }
 
-fn on_aac_steps(steps: &Steps) -> bool {
+fn on_quantiser_steps(steps: &Steps) -> bool {
+    let lattice_at_least = match steps.coding {
+        Coding::Aac => AAC_LATTICE_AT_LEAST,
+        Coding::Mp3 => MP3_LATTICE_AT_LEAST,
+        Coding::Vorbis => VORBIS_LATTICE_AT_LEAST,
+    };
     steps.coefficients >= STEPPED_COEFFICIENTS_AT_LEAST
-        && steps.lattice >= LATTICE_AT_LEAST
+        && steps.lattice >= lattice_at_least
         && steps.lattice >= steps.control * LATTICE_OVER_ITS_CONTROL_AT_LEAST
 }
 
@@ -547,7 +579,7 @@ mod tests {
             float: false,
             spectrum,
             levels,
-            steps: None,
+            steps: &[],
         })
     }
 
@@ -583,7 +615,7 @@ mod tests {
                     bits_in_use: Some(bits),
                     ..QUIET
                 },
-                steps: None,
+                steps: &[],
             })
         };
 
@@ -682,7 +714,7 @@ mod tests {
             float: false,
             spectrum: &spectrum,
             levels: &levels,
-            steps: None,
+            steps: &[],
         });
         assert_eq!(judgement.verdict, Verdict::Fake);
         assert_eq!(judgement.padded(), Some((16, 24)));
@@ -712,10 +744,12 @@ mod tests {
                 float: false,
                 spectrum: &spectrum,
                 levels: &QUIET,
-                steps: Some(steps),
+                steps: &[steps],
             })
         };
         let stepped = Steps {
+            coding: Coding::Aac,
+            rate: 44_100,
             lattice: 0.15,
             control: 0.004,
             coefficients: 900_000,
@@ -723,11 +757,11 @@ mod tests {
 
         let judgement = weighed(stepped);
         assert_eq!(judgement.verdict, Verdict::Fake);
-        assert!(
-            judgement
-                .findings
-                .contains(&Finding::AacSteps { lattice: 0.15 })
-        );
+        assert!(judgement.findings.contains(&Finding::QuantiserSteps {
+            coding: Coding::Aac,
+            resampled_from: None,
+            lattice: 0.15
+        }));
 
         let everywhere = weighed(Steps {
             control: 0.1,
@@ -803,7 +837,16 @@ mod tests {
                 runs: 3,
             },
             Finding::DcOffset { level: 0.1 },
-            Finding::AacSteps { lattice: 0.3 },
+            Finding::QuantiserSteps {
+                coding: Coding::Mp3,
+                resampled_from: None,
+                lattice: 0.3,
+            },
+            Finding::QuantiserSteps {
+                coding: Coding::Aac,
+                resampled_from: Some(44_100),
+                lattice: 0.3,
+            },
         ];
         assert!(findings.iter().all(|finding| !finding.told().is_empty()));
         assert_eq!(
