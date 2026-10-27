@@ -861,6 +861,73 @@ fn deleting_a_track_takes_its_lyrics_and_the_sheet_that_cuts_it_alone_and_the_fo
 }
 
 #[test]
+fn a_track_deleted_and_restored_gets_back_its_listens_as_they_were_and_tells_none_of_them_again()
+-> Result<()> {
+    const ORIGIN: [u8; 16] = [9; 16];
+    let tree = Tree::new();
+    let data = Tree::new();
+    let cold = tree.write(
+        "cold.wav",
+        &Wav::new()
+            .text(TITLE, "Cold")
+            .text(ARTIST, "Ada")
+            .text(ALBUM, "Winter")
+            .build(),
+    );
+    let recording = resonate_core::Recording {
+        mbid: None,
+        title: "Cold".into(),
+        artist: "Ada".into(),
+        album: "Winter".into(),
+        length: Some(Duration::from_millis(100)),
+    };
+    let library = Library::open_in_memory()?;
+    library.trash_into(Some(data.path().to_path_buf()));
+    scan(&library, &options(&tree))?;
+    let told = Told::default();
+    library.submit_listens(&told)?;
+
+    for _ in 0..2 {
+        let counted = library
+            .track_played(&MediaLocation::local(&cold), None, Duration::from_secs(2))?
+            .expect("a counted play");
+        library.listened(counted.listen, Duration::from_secs(2))?;
+    }
+    let synced = library.listens_to_sync(0, 10)?;
+    let mark = synced.last().expect("the listens to sync").id;
+    assert!(library.credit_listen_elsewhere(
+        &recording,
+        &ORIGIN,
+        7,
+        1_000,
+        Duration::from_secs(60)
+    )?);
+    assert_eq!(library.submit_listens(&told)?.submitted, 2);
+    let before = library.statistics(Window::Everything)?;
+    let held = library.track_at(&cold, None)?.expect("held");
+
+    library.delete_tracks(&[held.id])?;
+    fs::rename(data.path().join("Trash/files/cold.wav"), &cold).expect("a restored file");
+    scan(&library, &options(&tree))?;
+
+    assert_eq!(synced.len(), 2);
+    assert_eq!(library.listens_to_sync(mark, 10)?, []);
+    assert_eq!(library.track_at(&cold, None)?.expect("held again").plays, 3);
+    assert!(library.credit_listen_elsewhere(
+        &recording,
+        &ORIGIN,
+        7,
+        1_000,
+        Duration::from_secs(60)
+    )?);
+    assert_eq!(library.track_at(&cold, None)?.expect("held again").plays, 3);
+    assert_eq!(library.submit_listens(&told)?.submitted, 0);
+    assert_eq!(told.titles(), vec![vec!["Cold", "Cold"]]);
+    assert_eq!(library.statistics(Window::Everything)?, before);
+    Ok(())
+}
+
+#[test]
 fn deleting_two_files_of_one_name_keeps_both_in_the_trash() -> Result<()> {
     let tree = Tree::new();
     let data = Tree::new();

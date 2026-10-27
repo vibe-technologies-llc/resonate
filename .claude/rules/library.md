@@ -17,7 +17,7 @@ rows read via `Player::media` like any unscanned row.
 - **Schema = one `V1`, the baseline of 0.1.0, and a `MIGRATIONS` chain after it.** `V1` is the first
   release's schema as one SQL batch and is never edited, since a stamped catalog of a release would be
   stranded; a change appends a step to `MIGRATIONS` (`listens` naming the device and listen a remote
-  listen came from is the first, `songs_received` the second, forgetting the read stamp of every learnt group whose songs carry no length the third, `retagged_sheets` the fourth, `offered_steps` the fifth, `track_studies.band_levels` the sixth, `release_credits` the seventh, an album whose release landed exactly before that table made due again by setting its `answered` to 1, so the next lookup lands its credit and the release is shared, the eighth: `a_release_landed_before_its_credit_was_kept_is_asked_again_and_one_with_its_credit_is_not`). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
+  listen came from is the first, `songs_received` the second, forgetting the read stamp of every learnt group whose songs carry no length the third, `retagged_sheets` the fourth, `offered_steps` the fifth, `track_studies.band_levels` the sixth, `release_credits` the seventh, an album whose release landed exactly before that table made due again by setting its `answered` to 1, so the next lookup lands its credit and the release is shared, the eighth: `a_release_landed_before_its_credit_was_kept_is_asked_again_and_one_with_its_credit_is_not`; `unheld_listens` keeping the listen's own id, `elsewhere` and origin the ninth). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
   `fingerprint_of(V1)` (the stamp 0.1.0 wrote) and `STAMPS[n + 1]` hashes `STAMPS[n]` over step `n`'s
   text, in a `const fn`; `SCHEMA_FINGERPRINT` is the last. `lay_out`: `UNSTAMPED` writes `V1` and
   every step; this build's stamp opens; a stamp that is an earlier `STAMPS` entry runs the steps after
@@ -522,9 +522,13 @@ rows read via `Player::media` like any unscanned row.
 - **The count is the catalog's; a rescan leaves it.** `tracks.plays`, `tracks.played` are absent
   from the upsert's `DO UPDATE SET`. `Library::track_played` answers `None` where a non-local
   location has no row, **but the play is kept against the path.** `unheld_listens` holds path, span
-  start, moment, time heard; `history::credit_the_unheld` runs after the prune of every scan a row
-  arrived in: a play whose path and start now name a row becomes a `listens` row stamped when heard,
-  the row's `plays`, `played` follow. `Counted` carries a `Listen` (`Held` or `Unheld`);
+  start, moment, time heard, and for a listen a deletion took off its row what it was (`listen_id`,
+  `elsewhere`, `origin_device`, `origin_id`; NULL, 0 for a play counted with no row);
+  `history::credit_the_unheld` runs after the prune of every scan a row arrived in: a play whose
+  path and start now name a row becomes a `listens` row stamped when heard, **under its own id where
+  that is free and with its origin**, so a listen already told to devices and services stays at or
+  behind their marks and one credited from elsewhere stays `elsewhere` (one whose origin a credit
+  meanwhile landed again is dropped, not counted twice); the row's `plays`, `played` follow. `Counted` carries a `Listen` (`Held` or `Unheld`);
   `Library::listened` spends either; the history span ages unheld plays too. `plays:`, `played:`
   narrow on the two columns; `SortOrder::Plays`, `Played` order on them, so *Top 25 most played* is
   a saved query.
@@ -1283,7 +1287,9 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   its tracks fill or offering the path (else the next poll refetches it), **copy the path's
   `listens` into `unheld_listens`** (so `Statistics` plays and time stay; tracks, albums and
   artists heard and the most-heard lists read `listens` alone and shrink; a file restored from the
-  trash and rescanned is credited again by `history::credit_the_unheld`), drop every `tracks`
+  trash and rescanned is credited again by `history::credit_the_unheld`, as the listens it was,
+  told to nobody twice:
+  `a_track_deleted_and_restored_gets_back_its_listens_as_they_were_and_tells_none_of_them_again`), drop every `tracks`
   row at it (plays, listens, studies cascade), then `store::sweep_orphans` and
   `alternatives::settle`. A vault object no row names leaves the vault; one that will not go
   waits for `prune_the_vault`. The window asks first (`ui.md`).
