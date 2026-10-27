@@ -1914,7 +1914,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "resonate-analysis"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "resonate-codec",
  "resonate-core",
@@ -1928,7 +1928,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-audio"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "crossbeam-channel",
  "resonate-core",
@@ -1937,7 +1937,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-codec"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "ape-decoder",
  "image",
@@ -1954,7 +1954,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "bytemuck",
  "chardetng",
@@ -1966,7 +1966,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-dsp"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "parking_lot",
  "realfft",
@@ -1977,7 +1977,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-engine"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "ahash",
  "crossbeam-channel",
@@ -1997,7 +1997,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-eq"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "resonate-core",
  "thiserror",
@@ -2006,7 +2006,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-fetch"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "resonate-core",
  "resonate-providers",
@@ -2037,7 +2037,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-library"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "ahash",
  "crossbeam-channel",
@@ -2058,7 +2058,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-listen"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "crossbeam-channel",
  "resonate-core",
@@ -2069,7 +2069,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-lyrics"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "parking_lot",
  "resonate-core",
@@ -2082,7 +2082,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-mcp"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "ahash",
  "resonate-core",
@@ -2098,7 +2098,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-mpris"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "ahash",
  "crossbeam-channel",
@@ -2113,7 +2113,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-online"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "flate2",
  "md-5 0.11.0",
@@ -2136,7 +2136,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-pipewire"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "crossbeam-channel",
  "libspa",
@@ -2152,7 +2152,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-providers"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "parking_lot",
  "resonate-core",
@@ -2162,7 +2162,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-sync"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "ahash",
  "flate2",
@@ -2189,7 +2189,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-tidal"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "base64",
  "parking_lot",
@@ -2205,7 +2205,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-vault"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "flacenc",
  "image",

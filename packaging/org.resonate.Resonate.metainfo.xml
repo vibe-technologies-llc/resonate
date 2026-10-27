@@ -73,6 +73,7 @@
   </keywords>
 
   <releases>
+    <release version="0.2.1" date="2026-10-27" type="stable"/>
     <release version="0.2.0" date="2026-10-27" type="stable"/>
     <release version="0.1.1" date="2026-10-25" type="stable"/>
     <release version="0.1.0" date="2026-10-24" type="stable"/>
