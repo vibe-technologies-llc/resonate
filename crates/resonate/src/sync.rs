@@ -13,7 +13,9 @@ use crossbeam_channel::{RecvTimeoutError, Sender, bounded};
 #[cfg(feature = "sync")]
 use parking_lot::Mutex;
 #[cfg(feature = "sync")]
-use resonate_core::{Answer, Frames, Mbid, PlaylistId, Recording, SampleRate, SyncedSongs};
+use resonate_core::{
+    Answer, Frames, Mbid, PlaylistId, Recording, SampleRate, SharedLyricsfile, SyncedSongs,
+};
 #[cfg(feature = "sync")]
 use resonate_engine::{QueueItem, Unclaimed};
 use resonate_library::Library;
@@ -738,6 +740,28 @@ impl Catalog for Catalogued {
     fn take_cover(&self, release: &Mbid, picture: &[u8]) -> Answered<bool> {
         self.library
             .take_shared_cover(release, picture)
+            .map_err(|error| refused(&error))
+    }
+
+    fn lyricsfiles_wanted(&self, skip: usize, most: usize) -> Answered<Vec<Recording>> {
+        self.library
+            .lyricsfiles_wanted(skip, most)
+            .map_err(|error| refused(&error))
+    }
+
+    fn lyricsfile(&self, recording: &Recording) -> Answered<Option<SharedLyricsfile>> {
+        self.library
+            .lyricsfile_to_share(recording)
+            .map_err(|error| refused(&error))
+    }
+
+    fn take_lyricsfile(
+        &self,
+        recording: &Recording,
+        lyricsfile: &SharedLyricsfile,
+    ) -> Answered<bool> {
+        self.library
+            .take_shared_lyricsfile(recording, lyricsfile)
             .map_err(|error| refused(&error))
     }
 

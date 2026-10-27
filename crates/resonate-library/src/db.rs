@@ -2586,6 +2586,29 @@ impl Library {
         Ok(landed)
     }
 
+    pub fn lyricsfiles_wanted(
+        &self,
+        skip: usize,
+        most: usize,
+    ) -> Result<Vec<resonate_core::Recording>> {
+        answers::lyricsfiles_wanted(&self.inner, skip, most)
+    }
+
+    pub fn lyricsfile_to_share(
+        &self,
+        recording: &resonate_core::Recording,
+    ) -> Result<Option<resonate_core::SharedLyricsfile>> {
+        answers::lyricsfile_to_share(&self.inner, recording)
+    }
+
+    pub fn take_shared_lyricsfile(
+        &self,
+        recording: &resonate_core::Recording,
+        lyricsfile: &resonate_core::SharedLyricsfile,
+    ) -> Result<bool> {
+        answers::take_lyricsfile(&self.inner, recording, lyricsfile)
+    }
+
     pub fn resolve_recording(&self, recording: &resonate_core::Recording) -> Result<Option<Cut>> {
         synced::resolve(&self.inner, recording)
     }

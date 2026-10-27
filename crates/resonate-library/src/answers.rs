@@ -6,7 +6,7 @@ use std::{
 use resonate_analysis::{BANDS, JUDGED_UNDER, LossyGuess, Verdict};
 use resonate_core::{
     AlbumId, Answer, Answered, Figure, Link, Mbid, Recording, SharedCredit, SharedLyrics,
-    SharedMedium, SharedRelease, SharedStudy, SharedTrack, TrackId, WholeFile,
+    SharedLyricsfile, SharedMedium, SharedRelease, SharedStudy, SharedTrack, TrackId, WholeFile,
 };
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 
@@ -816,4 +816,90 @@ pub(crate) fn albums_uncovered(inner: &Inner, release: &Mbid) -> Result<Vec<Albu
         .into_iter()
         .map(|album| Ok(AlbumId::new(album.cast_unsigned())?))
         .collect()
+}
+
+pub(crate) fn lyricsfiles_wanted(
+    inner: &Inner,
+    skip: usize,
+    most: usize,
+) -> Result<Vec<Recording>> {
+    let skip = i64::try_from(skip).unwrap_or(i64::MAX);
+    let most = i64::try_from(most).unwrap_or(i64::MAX);
+    inner.read(|connection| {
+        let mut statement = connection
+            .prepare_cached(&format!(
+                "SELECT {RECORDING_COLUMNS}
+                   FROM lyrics_kept k JOIN tracks t ON t.path = k.path AND t.span_start = k.span_start
+                   {RECORDING_JOINS}
+                  WHERE k.text IS NOT NULL AND k.lyricsfile IS NULL AND t.hidden = 0
+                  ORDER BY k.taken DESC, t.id LIMIT ?1 OFFSET ?2"
+            ))
+            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+        let wanted = statement
+            .query_map(params![most, skip], |row| recording_at(row, 0))
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+        Ok(wanted.into_iter().flatten().collect())
+    })
+}
+
+pub(crate) fn lyricsfile_to_share(
+    inner: &Inner,
+    recording: &Recording,
+) -> Result<Option<SharedLyricsfile>> {
+    inner.read(|connection| {
+        let Some((path, span_start)) = held_row(connection, recording)? else {
+            return Ok(None);
+        };
+        let kept = sung::kept(connection, &path, span_start)?.and_then(|kept| kept.sung);
+        Ok(kept.and_then(|kept| {
+            Some(SharedLyricsfile {
+                text: kept.text,
+                synced: kept.synced,
+                document: kept.lyricsfile?,
+            })
+        }))
+    })
+}
+
+pub(crate) fn take_lyricsfile(
+    inner: &Inner,
+    recording: &Recording,
+    shared: &SharedLyricsfile,
+) -> Result<bool> {
+    if !shared.travels() {
+        return Ok(false);
+    }
+    inner.write(|transaction| {
+        let Some((path, span_start)) = held_row(transaction, recording)? else {
+            return Ok(false);
+        };
+        let told = LyricText {
+            text: shared.text.clone(),
+            synced: shared.synced,
+            lyricsfile: Some(shared.document.clone()),
+        };
+        let held = sung::kept(transaction, &path, span_start)?.and_then(|kept| kept.sung);
+        if held.is_some_and(|held| held.detail() >= told.detail()) {
+            return Ok(false);
+        }
+        sung::keep(
+            transaction,
+            &path,
+            span_start,
+            Some(&told),
+            SystemTime::now(),
+        )
+    })
+}
+
+fn held_row(connection: &Connection, recording: &Recording) -> Result<Option<(String, i64)>> {
+    let Some(cut) = held_strictly(connection, recording)? else {
+        return Ok(None);
+    };
+    let Some(path) = cut.location.as_path() else {
+        return Ok(None);
+    };
+    let (span_start, _) = store::span_columns(cut.span);
+    Ok(Some((store::path_text(path).into_owned(), span_start)))
 }

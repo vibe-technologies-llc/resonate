@@ -9,7 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use resonate_core::Mbid;
+use resonate_core::{Mbid, SharedLyricsfile};
 use resonate_sync::{
     Broadcast, Follow, Me, Nearby, Platform, Server, Settings, Standing, Sync, SyncKey,
 };
@@ -294,6 +294,58 @@ fn a_cover_one_device_holds_reaches_another_lacking_it_and_one_neither_holds_sta
             .covers
             .contains_key(lacking.as_str())
     );
+
+    drop(phone);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_lyricsfile_one_device_holds_reaches_another_lacking_it_and_one_neither_holds_stays_missing() {
+    let folder = scratch("lyricsfiles");
+    let key = SyncKey::minted().expect("a key");
+    let held = song("Echoes");
+    let lacking = song("Time");
+    let lyricsfile = SharedLyricsfile {
+        text: "[00:01.00]Overhead the albatross".into(),
+        synced: true,
+        document: "version: '1.0'".into(),
+    };
+    let desk_shelf = Arc::new(Shelf::holding(&["Echoes", "Time"]));
+    let phone_shelf = Arc::new(Shelf::holding(&["Echoes", "Time"]));
+    desk_shelf
+        .inside
+        .lock()
+        .lyricsfiles
+        .push((held.clone(), lyricsfile.clone()));
+    phone_shelf.inside.lock().lacking_lyricsfiles = vec![held.clone(), lacking.clone()];
+
+    let desk = device(&folder, &key, "Desk", Arc::clone(&desk_shelf), None);
+    let phone = device(
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        Some(&desk),
+    );
+
+    eventually("the lyricsfile reaching the phone", || {
+        phone_shelf
+            .inside
+            .lock()
+            .lyricsfiles
+            .iter()
+            .any(|(recording, told)| recording.title == held.title && *told == lyricsfile)
+    });
+    assert!(
+        !phone_shelf
+            .inside
+            .lock()
+            .lyricsfiles
+            .iter()
+            .any(|(recording, _)| recording.title == lacking.title)
+    );
+    assert_eq!(desk_shelf.inside.lock().lyricsfiles.len(), 1);
 
     drop(phone);
     drop(desk);

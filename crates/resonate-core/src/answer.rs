@@ -1,6 +1,7 @@
 use crate::{Link, Mbid, Recording};
 
 pub const LONGEST_SHARED_LYRICS: usize = 32 * 1024;
+pub const LARGEST_SHARED_LYRICSFILE: usize = 1024 * 1024;
 pub const HEAVIEST_SHARED_RELEASE: usize = 64 * 1024;
 pub const LINKS_SHARED_AT_MOST: usize = 32;
 pub const CODES_SHARED_AT_MOST: usize = 8;
@@ -31,6 +32,22 @@ impl Figure {
 pub struct SharedLyrics {
     pub text: String,
     pub synced: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SharedLyricsfile {
+    pub text: String,
+    pub synced: bool,
+    pub document: String,
+}
+
+impl SharedLyricsfile {
+    pub fn travels(&self) -> bool {
+        !self.text.trim().is_empty()
+            && self.text.len() <= LONGEST_SHARED_LYRICS
+            && !self.document.trim().is_empty()
+            && self.document.len() <= LARGEST_SHARED_LYRICSFILE
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -232,6 +249,27 @@ mod tests {
         assert!(lyrics("A line".into()).travels());
         assert!(!lyrics("  ".into()).travels());
         assert!(!lyrics("a".repeat(LONGEST_SHARED_LYRICS + 1)).travels());
+    }
+
+    #[test]
+    fn a_lyricsfile_travels_with_its_words_and_stays_home_empty_or_too_heavy() {
+        let lyricsfile = |text: &str, document: String| SharedLyricsfile {
+            text: text.into(),
+            synced: true,
+            document,
+        };
+
+        assert!(lyricsfile("A line", "version: '1.0'".into()).travels());
+        assert!(!lyricsfile("  ", "version: '1.0'".into()).travels());
+        assert!(!lyricsfile("A line", " ".into()).travels());
+        assert!(
+            !lyricsfile(
+                &"a".repeat(LONGEST_SHARED_LYRICS + 1),
+                "version: '1.0'".into()
+            )
+            .travels()
+        );
+        assert!(!lyricsfile("A line", "a".repeat(LARGEST_SHARED_LYRICSFILE + 1)).travels());
     }
 
     fn track(title: &str) -> SharedTrack {

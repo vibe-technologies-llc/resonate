@@ -4,9 +4,9 @@ use std::{
 };
 
 use resonate_core::{
-    Answer, CODES_SHARED_AT_MOST, Figure, LINKS_SHARED_AT_MOST, LONGEST_SHARED_LYRICS, Link, Mbid,
-    Recording, SharedCredit, SharedLyrics, SharedMedium, SharedRelease, SharedStudy, SharedTrack,
-    WholeFile,
+    Answer, CODES_SHARED_AT_MOST, Figure, LARGEST_SHARED_LYRICSFILE, LINKS_SHARED_AT_MOST,
+    LONGEST_SHARED_LYRICS, Link, Mbid, Recording, SharedCredit, SharedLyrics, SharedLyricsfile,
+    SharedMedium, SharedRelease, SharedStudy, SharedTrack, WholeFile,
 };
 
 use crate::{
@@ -40,7 +40,9 @@ const CREDIT_AT_LEAST: usize = 3;
 const LINK_AT_LEAST: usize = 2;
 const CODE_AT_LEAST: usize = 1;
 const MBID_AT_LEAST: usize = 37;
+const RECORDING_AT_LEAST: usize = 5;
 pub const COVERS_ASKED_AT_MOST: usize = 512;
+pub const LYRICSFILES_ASKED_AT_MOST: usize = 512;
 pub const LARGEST_SHARED_COVER: usize = 16 * 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -135,19 +137,37 @@ pub enum ToPeer {
     Changes { whole: bool, changes: Vec<Change> },
     Tags { recording: Recording },
     Covers { releases: Vec<Mbid> },
+    Lyricsfiles { recordings: Vec<Recording> },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FromPeer {
-    Held { items: Vec<Held> },
+    Held {
+        items: Vec<Held>,
+    },
     HeldEnd,
-    Sending { size: u64, extension: String },
+    Sending {
+        size: u64,
+        extension: String,
+    },
     Missing,
-    Met { device: DeviceId },
+    Met {
+        device: DeviceId,
+    },
     Taken,
-    Tagged { tags: SongTags },
-    Covered { release: Mbid, picture: Vec<u8> },
+    Tagged {
+        tags: SongTags,
+    },
+    Covered {
+        release: Mbid,
+        picture: Vec<u8>,
+    },
     CoversEnd,
+    Documented {
+        recording: Recording,
+        lyricsfile: SharedLyricsfile,
+    },
+    LyricsfilesEnd,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -302,6 +322,16 @@ impl Writer {
             }
             None => self.flag(false),
         }
+    }
+
+    pub fn lyricsfile(&mut self, lyricsfile: &SharedLyricsfile) {
+        let end = lyricsfile.text.floor_char_boundary(LONGEST_SHARED_LYRICS);
+        self.bytes(&lyricsfile.text.as_bytes()[..end]);
+        self.flag(lyricsfile.synced);
+        let end = lyricsfile
+            .document
+            .floor_char_boundary(LARGEST_SHARED_LYRICSFILE);
+        self.bytes(&lyricsfile.document.as_bytes()[..end]);
     }
 
     pub fn answer(&mut self, answer: &Answer) {
@@ -560,6 +590,21 @@ impl<'a> Reader<'a> {
         let nanos = self.signed()?;
         let device = self.device()?;
         Ok(Stamp { nanos, device })
+    }
+
+    pub fn lyricsfile(&mut self) -> Result<SharedLyricsfile> {
+        let text = str::from_utf8(self.bytes(LONGEST_SHARED_LYRICS)?)
+            .map(str::to_owned)
+            .map_err(|_| Error::Malformed(Malformed::NotText))?;
+        let synced = self.flag()?;
+        let document = str::from_utf8(self.bytes(LARGEST_SHARED_LYRICSFILE)?)
+            .map(str::to_owned)
+            .map_err(|_| Error::Malformed(Malformed::NotText))?;
+        Ok(SharedLyricsfile {
+            text,
+            synced,
+            document,
+        })
     }
 
     pub fn recording(&mut self) -> Result<Recording> {
@@ -1084,6 +1129,13 @@ impl ToPeer {
                     writer.text(release.as_str());
                 }
             }
+            Self::Lyricsfiles { recordings } => {
+                writer.byte(6);
+                writer.length(recordings.len());
+                for recording in recordings {
+                    writer.recording(recording);
+                }
+            }
         }
         writer.finish()
     }
@@ -1117,6 +1169,17 @@ impl ToPeer {
                     releases.push(reader.mbid()?);
                 }
                 Self::Covers { releases }
+            }
+            6 => {
+                let count = reader.count_of(RECORDING_AT_LEAST)?;
+                if count > LYRICSFILES_ASKED_AT_MOST {
+                    return Err(Error::Malformed(Malformed::Overlong { length: count }));
+                }
+                let mut recordings = Vec::with_capacity(count);
+                for _ in 0..count {
+                    recordings.push(reader.recording()?);
+                }
+                Self::Lyricsfiles { recordings }
             }
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
@@ -1160,6 +1223,15 @@ impl FromPeer {
                 writer.bytes(picture);
             }
             Self::CoversEnd => writer.byte(8),
+            Self::Documented {
+                recording,
+                lyricsfile,
+            } => {
+                writer.byte(9);
+                writer.recording(recording);
+                writer.lyricsfile(lyricsfile);
+            }
+            Self::LyricsfilesEnd => writer.byte(10),
         }
         writer.finish()
     }
@@ -1197,6 +1269,11 @@ impl FromPeer {
                 picture: reader.bytes(LARGEST_SHARED_COVER)?.to_vec(),
             },
             8 => Self::CoversEnd,
+            9 => Self::Documented {
+                recording: reader.recording()?,
+                lyricsfile: reader.lyricsfile()?,
+            },
+            10 => Self::LyricsfilesEnd,
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
         reader.done()?;
@@ -1814,6 +1891,46 @@ mod tests {
             FromPeer::CoversEnd
         );
         assert_eq!(asked.encoded()[0], 5);
+        assert!(matches!(
+            ToPeer::decoded(&too_many.encoded()),
+            Err(Error::Malformed(Malformed::Overlong { .. }))
+        ));
+    }
+
+    #[test]
+    fn lyricsfiles_asked_of_a_device_read_back_and_too_many_asked_at_once_are_refused() {
+        let recording = Recording {
+            mbid: Some(Mbid::new("b84ee12a-09ef-421b-82de-0441a926375b").expect("mbid")),
+            title: "Echoes".into(),
+            artist: "Pink Floyd".into(),
+            album: "Meddle".into(),
+            length: Some(Duration::from_secs(1_400)),
+        };
+        let asked = ToPeer::Lyricsfiles {
+            recordings: vec![recording.clone(); 3],
+        };
+        let documented = FromPeer::Documented {
+            recording: recording.clone(),
+            lyricsfile: SharedLyricsfile {
+                text: "[00:01.00]Overhead".into(),
+                synced: true,
+                document: "version: '1.0'".into(),
+            },
+        };
+        let too_many = ToPeer::Lyricsfiles {
+            recordings: vec![recording; LYRICSFILES_ASKED_AT_MOST + 1],
+        };
+
+        assert_eq!(ToPeer::decoded(&asked.encoded()).expect("decoded"), asked);
+        assert_eq!(
+            FromPeer::decoded(&documented.encoded()).expect("decoded"),
+            documented
+        );
+        assert_eq!(
+            FromPeer::decoded(&FromPeer::LyricsfilesEnd.encoded()).expect("decoded"),
+            FromPeer::LyricsfilesEnd
+        );
+        assert_eq!(asked.encoded()[0], 6);
         assert!(matches!(
             ToPeer::decoded(&too_many.encoded()),
             Err(Error::Malformed(Malformed::Overlong { .. }))

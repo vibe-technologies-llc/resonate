@@ -11,7 +11,7 @@ use std::{
 
 use parking_lot::Mutex;
 use quinn::{ClientConfig, Connection, Endpoint, RecvStream, SendStream};
-use resonate_core::{Mbid, Recording};
+use resonate_core::{Mbid, Recording, SharedLyricsfile};
 use tokio::{
     fs,
     io::AsyncWriteExt,
@@ -183,6 +183,12 @@ async fn answer(mut send: SendStream, mut recv: RecvStream, asked: Asked) -> Res
             }
             send_frame(&mut send, &FromPeer::CoversEnd.encoded()).await?;
         }
+        ToPeer::Lyricsfiles { recordings } => {
+            if asked.answering.transfers_allowed.load(Ordering::Relaxed) {
+                send_lyricsfiles(&mut send, catalog, recordings).await?;
+            }
+            send_frame(&mut send, &FromPeer::LyricsfilesEnd.encoded()).await?;
+        }
         ToPeer::Fetch { recording, offset } => {
             if asked.answering.transfers_allowed.load(Ordering::Relaxed) {
                 send_song(&mut send, catalog, recording, offset).await?;
@@ -215,6 +221,90 @@ async fn send_covers(
         send_frame(send, &FromPeer::Covered { release, picture }.encoded()).await?;
     }
     Ok(())
+}
+
+async fn send_lyricsfiles(
+    send: &mut SendStream,
+    catalog: Arc<dyn Catalog>,
+    recordings: Vec<Recording>,
+) -> Result<()> {
+    for recording in recordings {
+        let reading = Arc::clone(&catalog);
+        let asked = recording.clone();
+        let kept = match blocking(move || reading.lyricsfile(&asked).map_err(Error::Catalog)).await
+        {
+            Ok(kept) => kept,
+            Err(error) => {
+                tracing::debug!(%error, "a lyricsfile could not be read to send");
+                None
+            }
+        };
+        let Some(lyricsfile) = kept.filter(SharedLyricsfile::travels) else {
+            continue;
+        };
+        send_frame(
+            send,
+            &FromPeer::Documented {
+                recording,
+                lyricsfile,
+            }
+            .encoded(),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+pub async fn lyricsfiles_from(
+    connection: &Connection,
+    recordings: Vec<Recording>,
+    catalog: Arc<dyn Catalog>,
+) -> Result<usize> {
+    let (mut send, mut recv) = quietly_short(async {
+        connection
+            .open_bi()
+            .await
+            .map_err(|source| Error::Connection(Box::new(source)))
+    })
+    .await?;
+    send_frame(&mut send, &ToPeer::Lyricsfiles { recordings }.encoded()).await?;
+    send.finish().map_err(|_| Error::StreamClosed)?;
+
+    let mut landed = 0;
+    while let Some(frame) = quietly_short(read_frame(&mut recv)).await? {
+        match FromPeer::decoded(&frame)? {
+            FromPeer::Documented {
+                recording,
+                lyricsfile,
+            } => {
+                let taking = Arc::clone(&catalog);
+                let taken = blocking(move || {
+                    taking
+                        .take_lyricsfile(&recording, &lyricsfile)
+                        .map_err(Error::Catalog)
+                })
+                .await;
+                match taken {
+                    Ok(true) => landed += 1,
+                    Ok(false) => {}
+                    Err(error) => {
+                        tracing::debug!(%error, "a lyricsfile from another device was refused")
+                    }
+                }
+            }
+            FromPeer::LyricsfilesEnd => break,
+            FromPeer::Held { .. }
+            | FromPeer::HeldEnd
+            | FromPeer::Sending { .. }
+            | FromPeer::Missing
+            | FromPeer::Met { .. }
+            | FromPeer::Taken
+            | FromPeer::Tagged { .. }
+            | FromPeer::Covered { .. }
+            | FromPeer::CoversEnd => {}
+        }
+    }
+    Ok(landed)
 }
 
 fn sendable_cover(picture: &[u8]) -> bool {
@@ -262,7 +352,9 @@ pub async fn covers_from(
             | FromPeer::Missing
             | FromPeer::Met { .. }
             | FromPeer::Taken
-            | FromPeer::Tagged { .. } => {}
+            | FromPeer::Tagged { .. }
+            | FromPeer::Documented { .. }
+            | FromPeer::LyricsfilesEnd => {}
         }
     }
     Ok(landed)
@@ -336,7 +428,9 @@ pub async fn holdings_of(connection: &Connection) -> Result<Vec<Held>> {
             | FromPeer::Taken
             | FromPeer::Tagged { .. }
             | FromPeer::Covered { .. }
-            | FromPeer::CoversEnd => {}
+            | FromPeer::CoversEnd
+            | FromPeer::Documented { .. }
+            | FromPeer::LyricsfilesEnd => {}
         }
     }
     Ok(holdings)
@@ -361,7 +455,9 @@ pub async fn meet(connection: &Connection, device: DeviceId, records: bool) -> R
         | FromPeer::Taken
         | FromPeer::Tagged { .. }
         | FromPeer::Covered { .. }
-        | FromPeer::CoversEnd => Err(Error::Unmet),
+        | FromPeer::CoversEnd
+        | FromPeer::Documented { .. }
+        | FromPeer::LyricsfilesEnd => Err(Error::Unmet),
     }
 }
 
@@ -512,7 +608,9 @@ async fn fetched_from(
         | FromPeer::Taken
         | FromPeer::Tagged { .. }
         | FromPeer::Covered { .. }
-        | FromPeer::CoversEnd => {
+        | FromPeer::CoversEnd
+        | FromPeer::Documented { .. }
+        | FromPeer::LyricsfilesEnd => {
             return Err(Error::Missing(device));
         }
     };

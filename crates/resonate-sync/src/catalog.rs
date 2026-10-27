@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use resonate_core::{Answer, Answered, Mbid, Recording};
+use resonate_core::{Answer, Answered, Mbid, Recording, SharedLyricsfile};
 
 use crate::{change::QueryBody, key::DeviceId};
 
@@ -183,6 +183,25 @@ pub trait Catalog: Send + Sync + 'static {
 
     fn take_cover(&self, release: &Mbid, picture: &[u8]) -> Result<bool, Refused> {
         let _ = (release, picture);
+        Ok(false)
+    }
+
+    fn lyricsfiles_wanted(&self, skip: usize, most: usize) -> Result<Vec<Recording>, Refused> {
+        let _ = (skip, most);
+        Ok(Vec::new())
+    }
+
+    fn lyricsfile(&self, recording: &Recording) -> Result<Option<SharedLyricsfile>, Refused> {
+        let _ = recording;
+        Ok(None)
+    }
+
+    fn take_lyricsfile(
+        &self,
+        recording: &Recording,
+        lyricsfile: &SharedLyricsfile,
+    ) -> Result<bool, Refused> {
+        let _ = (recording, lyricsfile);
         Ok(false)
     }
 
