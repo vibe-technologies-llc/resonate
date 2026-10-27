@@ -8,6 +8,7 @@ import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
+import android.webkit.MimeTypeMap
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
@@ -103,7 +104,8 @@ object MusicDocuments {
         }
     }
 
-    fun create(context: Context, folder: Uri, mime: String, name: String): Uri {
+    fun create(context: Context, folder: Uri, offered: String, name: String): Uri {
+        val mime = mimeOfName(name) ?: offered
         if (folder == downloads) {
             val values =
                 ContentValues().apply {
@@ -130,6 +132,10 @@ object MusicDocuments {
             DocumentsContract.createDocument(context.contentResolver, parent, mime, name)
         )
     }
+
+    private fun mimeOfName(name: String): String? =
+        MimeTypeMap.getSingleton()
+            .getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase())
 
     fun publish(context: Context, uri: Uri) {
         if (uri.authority != MediaStore.AUTHORITY) return

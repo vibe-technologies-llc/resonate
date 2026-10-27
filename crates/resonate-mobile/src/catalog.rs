@@ -100,6 +100,14 @@ ALTER TABLE studies ADD COLUMN loudness_range REAL;
 ALTER TABLE studies ADD COLUMN mono_as_stereo INTEGER;
 ";
 
+const SONGS_RECEIVED_ARE_HELD_BY_WHAT_WAS_ASKED: &str = "
+CREATE TABLE songs_received (
+    recording TEXT PRIMARY KEY,
+    track     INTEGER NOT NULL REFERENCES documents(id)
+) STRICT;
+CREATE INDEX songs_received_by_track ON songs_received(track);
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     LISTENS_NAME_THEIR_ORIGIN,
@@ -111,6 +119,7 @@ const MIGRATIONS: &[&str] = &[
     DOCUMENTS_THAT_WILL_NOT_DECODE_ARE_REMEMBERED,
     STUDIES_KEEP_WHERE_THE_MUSIC_SOUNDS,
     ANSWERS_TRAVEL,
+    SONGS_RECEIVED_ARE_HELD_BY_WHAT_WAS_ASKED,
 ];
 
 #[cfg(test)]
@@ -931,7 +940,7 @@ mod tests {
                 |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
             )
             .expect("the fold");
-        for step in &MIGRATIONS[..MIGRATIONS.len() - 3] {
+        for step in &MIGRATIONS[..MIGRATIONS.len() - 4] {
             connection.execute_batch(step).expect("an earlier version");
         }
         connection
@@ -944,7 +953,7 @@ mod tests {
             .pragma_update(
                 None,
                 "user_version",
-                u32::try_from(MIGRATIONS.len() - 3).expect("a count"),
+                u32::try_from(MIGRATIONS.len() - 4).expect("a count"),
             )
             .expect("its stamp");
         drop(connection);
@@ -991,7 +1000,7 @@ mod tests {
                 |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
             )
             .expect("the fold");
-        for step in &MIGRATIONS[..MIGRATIONS.len() - 1] {
+        for step in &MIGRATIONS[..MIGRATIONS.len() - 2] {
             connection.execute_batch(step).expect("an earlier version");
         }
         connection
@@ -1006,7 +1015,7 @@ mod tests {
             .pragma_update(
                 None,
                 "user_version",
-                u32::try_from(MIGRATIONS.len() - 1).expect("a count"),
+                u32::try_from(MIGRATIONS.len() - 2).expect("a count"),
             )
             .expect("its stamp");
         drop(connection);
