@@ -546,7 +546,11 @@ async fn unsatisfiable<S: AsyncWrite + Unpin>(stream: &mut S, total: u64) -> io:
     .await
 }
 
-fn pump(mut source: Source, window: Span, sender: mpsc::Sender<io::Result<Vec<u8>>>) {
+fn pump(source: Source, window: Span, sender: mpsc::Sender<io::Result<Vec<u8>>>) {
+    pump_source(source, window, &sender);
+}
+
+fn pump_source(mut source: Source, window: Span, sender: &mpsc::Sender<io::Result<Vec<u8>>>) {
     let mut at = source.begins_at;
     let mut attached = true;
     loop {

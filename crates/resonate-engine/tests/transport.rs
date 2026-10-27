@@ -1230,6 +1230,7 @@ fn formats_a_device_newly_offers_are_followed_where_the_plan_moves_and_left_alon
                 .state()
                 .output
                 .is_some_and(|output| output.mode == OutputMode::BitPerfect)
+                && graph.lock().opens == 2
         },
         "the stream to reopen in the song's own format",
     );
@@ -6660,6 +6661,7 @@ const SINE_PERIOD_FRAMES: usize = 100;
 const SINE_PEAK: f64 = 16_000.0;
 const DEEP_RING: Duration = Duration::from_millis(500);
 const AN_EQUALISER_HEARD_WITHIN: Duration = Duration::from_millis(60);
+const THE_ENGINE_IS_WAITED_FOR: Duration = Duration::from_millis(40);
 
 fn sine_at(frame: usize) -> f64 {
     SINE_PEAK * (std::f64::consts::TAU * frame as f64 / SINE_PERIOD_FRAMES as f64).sin()
@@ -6815,58 +6817,68 @@ fn an_equaliser_change_is_heard_within_a_few_pulls_rather_than_a_buffer_later_an
 fn equaliser_changes_asked_for_faster_than_the_graph_reaches_them_end_on_the_last() -> Result<()> {
     let (player, graph, _tree) = sine_over_a_deep_ring(4)?;
     let frame = frame_bytes(SampleFormat::S16);
-    let pulled_past =
-        |frames: usize| move |_: &Player, graph: &Graph| graph.played.len() >= frames * frame;
     play_until(
         &player,
         &graph,
         BLOCK_FRAMES,
-        pulled_past(8_192),
+        |_, graph| graph.played.len() >= 8_192 * frame,
         "the sine to play",
     );
 
-    let asked_at = graph.lock().played.len() / frame;
+    player.events().try_iter().for_each(drop);
     for decibels in [-6.0, -12.0, -9.0, -3.0] {
         player
             .request(Command::SetEqualisation(preamped(decibels)))?
             .wait_for(PATIENCE)?;
     }
-    play_until(
+    let landed_at = play_waiting_on_the_engine(
         &player,
         &graph,
-        BLOCK_FRAMES,
-        pulled_past(asked_at + RATE as usize),
+        |_, changes| changes >= 2,
+        "the last equaliser to be spliced in",
+    );
+    let settled_at = landed_at + RATE as usize;
+    play_waiting_on_the_engine(
+        &player,
+        &graph,
+        |frames, _| frames >= settled_at,
         "the last equaliser to be heard",
     );
+
+    player.events().try_iter().for_each(drop);
+    let off_at = graph.lock().played.len() / frame;
     player
         .request(Command::SetEqualisation(Arc::new(Equalisation::default())))?
         .wait_for(PATIENCE)?;
-    let off_at = graph.lock().played.len() / frame;
-    play_until(
+    let let_go_at = play_waiting_on_the_engine(
         &player,
         &graph,
-        BLOCK_FRAMES,
-        pulled_past(off_at + RATE as usize / 2),
-        "the equaliser to let go",
+        |_, changes| changes >= 1,
+        "the equaliser to be let go",
+    );
+    play_waiting_on_the_engine(
+        &player,
+        &graph,
+        |frames, _| frames >= let_go_at + RATE as usize / 2,
+        "the sine to play on without the equaliser",
     );
 
     let graph = graph.lock();
     let left = left_of_the_graph(&graph.played);
     let levels = levels_against_the_sine(&left);
-    let settled_by = asked_at + RATE as usize / 5;
     let last = amplitude_of(-3.0);
 
     assert!(
         levels
             .iter()
-            .filter(|(frame, _)| (settled_by..off_at).contains(frame))
+            .filter(|(frame, _)| (landed_at + RATE as usize / 5..off_at).contains(frame))
             .all(|(_, level)| (level - last).abs() < 2e-3),
-        "the last of the changes asked for together was not what played a fifth of a second on"
+        "the last of the changes asked for together was not what played a fifth of a second after it was spliced in"
     );
     assert!(
         levels
             .iter()
-            .filter(|(frame, _)| *frame >= off_at + RATE as usize / 5)
+            .filter(|(frame, _)| *frame >= let_go_at + RATE as usize / 5)
             .all(|(_, level)| (level - 1.0).abs() < 1e-3),
         "the sine did not come back as the file holds it once the equaliser let go"
     );
@@ -6877,6 +6889,40 @@ fn equaliser_changes_asked_for_faster_than_the_graph_reaches_them_end_on_the_las
     );
     assert_eq!(graph.opens, 1, "the equaliser reopened the stream");
     Ok(())
+}
+
+fn play_waiting_on_the_engine(
+    player: &Player,
+    graph: &Arc<Mutex<Graph>>,
+    mut done: impl FnMut(usize, usize) -> bool,
+    what: &str,
+) -> usize {
+    let frame = frame_bytes(SampleFormat::S16);
+    let changed = |event: &Event| matches!(event, Event::OutputChanged(_));
+    let deadline = Instant::now() + PATIENCE;
+    let mut changes = 0;
+    while Instant::now() < deadline {
+        let frames = {
+            let mut held = graph.lock();
+            held.pull(BLOCK_FRAMES * frame);
+            held.played.len() / frame
+        };
+        changes += player
+            .events()
+            .recv_timeout(THE_ENGINE_IS_WAITED_FOR)
+            .iter()
+            .filter(|event| changed(event))
+            .count();
+        changes += player.events().try_iter().filter(changed).count();
+        if done(frames, changes) {
+            return frames;
+        }
+    }
+    panic!(
+        "timed out waiting for {what}; {}, {}",
+        transport(player),
+        pulls(&graph.lock())
+    );
 }
 
 fn correcting_the_room(seconds_of_response: f64) -> EngineConfig {
@@ -7793,8 +7839,15 @@ fn largest_step(samples: &[i32]) -> i32 {
 }
 
 fn a_steady_level_playing(level: i16) -> Result<(Player, Arc<Mutex<Graph>>, Tree)> {
+    a_steady_level_playing_for(level, 6)
+}
+
+fn a_steady_level_playing_for(
+    level: i16,
+    seconds: usize,
+) -> Result<(Player, Arc<Mutex<Graph>>, Tree)> {
     let tree = Tree::new();
-    let path = tree.write("steady.wav", &steady(level, RATE as usize * 6));
+    let path = tree.write("steady.wav", &steady(level, RATE as usize * seconds));
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
     player.send(Command::Load {
         items: vec![track(&path, 1)],
@@ -7917,42 +7970,38 @@ fn a_sleep_timer_fades_the_music_out_before_it_pauses() -> Result<()> {
 #[test]
 fn a_seek_back_under_an_end_of_track_timer_lifts_the_fade_it_had_begun() -> Result<()> {
     let level = 16_000_i32;
-    let (player, graph, _tree) = a_steady_level_playing(16_000)?;
+    let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
+    let (player, graph, _tree) = a_steady_level_playing_for(16_000, 14)?;
     player
         .request(Command::SleepUntil(Some(Until::EndOfTrack)))?
         .wait_for(PATIENCE)?;
-    let half_way = RATE as usize * 3 * frame_bytes(SampleFormat::S16);
     play_until(
         &player,
         &graph,
-        BLOCK_FRAMES * frame_bytes(SampleFormat::S16),
-        |_, graph| graph.played.len() >= half_way,
-        "the fade toward sleep to be half way",
+        block,
+        |_, graph| {
+            left_channel(&graph.played[graph.played.len().saturating_sub(4)..])
+                .last()
+                .is_some_and(|sample| *sample < level * 3 / 4)
+        },
+        "the fade toward sleep to begin",
     );
-    let faded = left_channel(&graph.lock().played)
-        .last()
-        .copied()
-        .unwrap_or_default();
-    assert!(faded < level * 3 / 4, "the fade never began: {faded}");
 
     player
         .request(Command::Seek(Frames(0)))?
         .wait_for(PATIENCE)?;
     let sought_at = graph.lock().played.len();
-    let a_moment = RATE as usize / 4 * frame_bytes(SampleFormat::S16);
+    let lifted = level * 9 / 10;
     play_until(
         &player,
         &graph,
-        BLOCK_FRAMES * frame_bytes(SampleFormat::S16),
-        |_, graph| graph.played.len() >= sought_at + a_moment,
-        "a moment after the seek to play",
-    );
-
-    let after = left_channel(&graph.lock().played[sought_at..]);
-    let loudest = after.iter().copied().max().unwrap_or_default();
-    assert!(
-        loudest > level * 9 / 10,
-        "the fade went on from where it stood: {loudest}"
+        block,
+        |_, graph| {
+            left_channel(&graph.played[sought_at..])
+                .iter()
+                .any(|sample| *sample > lifted)
+        },
+        "the fade to be lifted by the seek",
     );
     Ok(())
 }

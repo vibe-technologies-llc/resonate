@@ -1158,6 +1158,15 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   a ring dry mid-track pads the quantum with silence into what the graph played, so a graph drinking
   a 200 ms ring faster than the engine's 4 ms tick refills it turned a late tick on a loaded machine
   into dropped or padded frames in the byte-exact tests.
+- **A test that asserts what the engine does after a command waits for the engine, not for audio
+  time.** The graph's pulled frames are a clock the engine's wall time does not follow, so a
+  window of pulled frames closes before a starved engine thread has acted. Waiting is on a
+  condition: the level heard (`a_seek_back_under_an_end_of_track_timer_lifts_the_fade_it_had_begun`
+  pulls until the fade is lifted), or an `Event::OutputChanged` for a splice made once the graph
+  has passed the last (`play_waiting_on_the_engine` pulls a block, then waits
+  `THE_ENGINE_IS_WAITED_FOR` on the event channel, so the graph does not pass a splice point
+  before the engine has published it:
+  `equaliser_changes_asked_for_faster_than_the_graph_reaches_them_end_on_the_last`).
 - **A test asserting which row plays pauses the transport first** (`stand_still`): a decode failing
   on a loaded machine reaches `Engine::fail`, which skips.
 - **Real-file fixtures are built by ffmpeg at test time; the suite skips without it.**
