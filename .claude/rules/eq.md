@@ -177,12 +177,22 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   answers the preamp in dB (`None` for nothing measured or all of it silent, held to the phone's
   `PREAMP_AT_MOST_DB`), stopping the fit before it through `Services::fitting`; an empty queue
   still reads the catalog. The pass and the analysis pane keep the bands with the study
-  (`keep_studied`, `keep_study`). Android and iOS set the model fit, then the measured one if the
+  (`keep_studied`, `keep_study`). **A study kept before the bands is measured alone, as on the
+  desktop**: `enrichment::measure_the_unmeasured` runs first in the pass's study thread, key or none
+  (it asks no service and decodes only studies already kept), over `Catalog::studies_without_bands`
+  (every visible document whose study has no 29-byte `band_levels`), decoding each once through
+  `resonate_analysis::band_levels` and writing that one column through `Catalog::keep_bands`, which
+  leaves the verdict, true peak, print and agreement where they stood and never overwrites bands
+  already kept; a stopped pass ends it, a document that will not open is left owed for the next pass
+  (and decoded on a press as before). The next fit reads it without a decode
+  (`a_study_kept_without_its_bands_is_measured_by_a_pass_with_no_key_and_keeps_all_else`,
+  `a_song_measured_by_the_pass_is_no_longer_owed_a_decode_when_the_preamp_is_fitted`,
+  `bands_already_kept_are_not_measured_again_and_a_song_without_a_study_gains_none`,
+  `a_pass_told_to_stop_measures_nothing_and_a_file_that_will_not_open_stays_owed`). Android and iOS set the model fit, then the measured one if the
   curve is still the one fitted
   (`a_queue_of_silence_fits_nothing_and_an_empty_one_or_a_bad_curve_is_told_apart`,
   `songs_with_kept_bands_are_fitted_without_a_decode_and_the_whole_catalog_counts`,
-  `kept_bands_are_forgotten_with_a_changed_file_and_a_cut_row_is_never_taken_as_measured`). The
-  phones do not measure an old study's bands alone as the desktop does.
+  `kept_bands_are_forgotten_with_a_changed_file_and_a_cut_row_is_never_taken_as_measured`).
 
 ## Room correction
 

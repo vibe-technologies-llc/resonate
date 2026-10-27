@@ -85,12 +85,12 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   is never a FLAC
 
 ## Later: Equaliser and DSP extras
-- [M] *Fit the preamp* on the phones reads the bands every study keeps, but a song studied before
-  step 9 of the document catalog has none and is decoded on the press when it is queued
-  (the desktop measures it alone and keeps the bands); on both, room correction and the volume
-  stage stand outside what it runs (the phones hold no applied response the fit could read, and the
-  convolver is not part of the stage the decode runs); the estimate from kept bands is not a
-  bound, a song whose peaks gather in one band can still pass the fit
+- [M] *Fit the preamp* on both desktop and phones leaves room correction and the volume stage
+  outside what it runs (the phones hold no applied response the fit could read, and the convolver
+  is not part of the stage the decode runs); the estimate from kept bands is not a bound, a song
+  whose peaks gather in one band can still pass the fit, and a bound needs each band's own peak
+  kept beside its level (a new `band_levels`-style column and migration step on both catalogs, and
+  an analysis pass that splits the signal into the 29 bands)
 - [L] AutoEq is the only correction source, fetched one device at a time
 - [M] Lossy restoration was tuned on a few MP3s, ffmpeg's own MP3, AAC and Vorbis encodes of
   synthetic tones and synthetic walls, not on a breadth of real music per codec and bitrate; a hole

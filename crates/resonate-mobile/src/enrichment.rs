@@ -12,7 +12,7 @@ use std::{
 
 use crossbeam_channel::{Sender, bounded};
 use parking_lot::Mutex;
-use resonate_analysis::Watching;
+use resonate_analysis::{Watching, band_levels};
 use resonate_codec::{CoverArt, ImageFormat, Sources, probe_scanned};
 use resonate_core::{AlbumId, Isrc, Link, Mbid, SourceId, TrackId};
 use resonate_library::{
@@ -1169,6 +1169,48 @@ impl Watching for Hearing<'_> {
     }
 }
 
+fn measure_the_unmeasured(
+    catalog: &Catalog,
+    sources: &Sources,
+    told: &Told,
+    at_most: Option<usize>,
+) {
+    let mut owed = match catalog.studies_without_bands() {
+        Ok(owed) => owed,
+        Err(error) => {
+            tracing::warn!(%error, "the studies owed their bands could not be read");
+            return;
+        }
+    };
+    if let Some(at_most) = at_most {
+        owed.truncate(at_most);
+    }
+
+    for (track, uri) in owed {
+        if told.is_cancelled() {
+            return;
+        }
+        let at = match location(&uri) {
+            Ok(at) => at,
+            Err(error) => {
+                tracing::debug!(%error, track, "a study's document has no location to measure");
+                continue;
+            }
+        };
+        match band_levels(sources, &at, None, &Hearing(told)) {
+            Ok(levels) => {
+                if let Err(error) = catalog.keep_bands(track, &levels) {
+                    tracing::warn!(%error, track, "a study's bands were not kept");
+                }
+            }
+            Err(resonate_analysis::Error::Stopped) => return,
+            Err(error) => {
+                tracing::debug!(%error, track, "a study's bands could not be measured, so they are measured another time");
+            }
+        }
+    }
+}
+
 fn hear_the_due(
     catalog: &Catalog,
     sources: &Sources,
@@ -1178,6 +1220,7 @@ fn hear_the_due(
     due: Due,
     at_most: Option<usize>,
 ) {
+    measure_the_unmeasured(catalog, sources, told, at_most);
     let Some(printer) = asking.printer.as_deref() else {
         return;
     };
@@ -3042,6 +3085,118 @@ mod tests {
 
             assert_eq!(studies(&harness), 0);
             assert!(misnamed(&harness).is_empty());
+        }
+
+        fn studied_before_the_bands(harness: &Harness, names: &str) {
+            for name in names.chars() {
+                harness
+                    .player
+                    .catalog
+                    .0
+                    .lock()
+                    .execute(
+                        "INSERT INTO studies (track, verdict, peak, rms, true_peak, clipped)
+                         VALUES (?1, 'genuine', 0.5, 0.1, 0.6, 0)",
+                        [harness.song(name).id as i64],
+                    )
+                    .expect("a study");
+            }
+        }
+
+        fn bands_of(harness: &Harness, name: char) -> Option<Vec<u8>> {
+            harness
+                .player
+                .catalog
+                .0
+                .lock()
+                .query_row(
+                    "SELECT band_levels FROM studies WHERE track = ?1",
+                    [harness.song(name).id as i64],
+                    |row| row.get(0),
+                )
+                .expect("a study")
+        }
+
+        fn passing_with_no_key(harness: &Harness, told: &Arc<Told>) {
+            let fake = Arc::new(Fake::default());
+            passed_by(harness, &asking(&fake), told, EnrichmentOptions::default());
+        }
+
+        #[test]
+        fn a_study_kept_without_its_bands_is_measured_by_a_pass_with_no_key_and_keeps_all_else() {
+            let harness = sounding_library();
+            studied_before_the_bands(&harness, "ab");
+
+            passing_with_no_key(&harness, &Arc::new(Told::default()));
+
+            assert_eq!(bands_of(&harness, 'a').map(|bands| bands.len()), Some(29));
+            assert_eq!(bands_of(&harness, 'b').map(|bands| bands.len()), Some(29));
+            assert_eq!(studies(&harness), 2);
+            assert_eq!(measured(&harness), 2);
+            let figures: (String, f64) = harness
+                .player
+                .catalog
+                .0
+                .lock()
+                .query_row(
+                    "SELECT verdict, true_peak FROM studies WHERE track = ?1",
+                    [harness.song('a').id as i64],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .expect("the figures");
+            assert_eq!(figures, ("genuine".to_owned(), 0.6));
+        }
+
+        #[test]
+        fn a_song_measured_by_the_pass_is_no_longer_owed_a_decode_when_the_preamp_is_fitted() {
+            let harness = sounding_library();
+            studied_before_the_bands(&harness, "a");
+            let cuts = vec![resonate_analysis::Cut {
+                location: location(&harness.song('a').uri).expect("a location"),
+                span: None,
+            }];
+
+            let before = harness.player.catalog.unmeasured(&cuts).expect("a read");
+            passing_with_no_key(&harness, &Arc::new(Told::default()));
+            let after = harness.player.catalog.unmeasured(&cuts).expect("a read");
+
+            assert_eq!(before.len(), 1);
+            assert!(after.is_empty());
+        }
+
+        #[test]
+        fn bands_already_kept_are_not_measured_again_and_a_song_without_a_study_gains_none() {
+            let harness = sounding_library();
+            studied_before_the_bands(&harness, "a");
+            harness
+                .player
+                .catalog
+                .0
+                .lock()
+                .execute("UPDATE studies SET band_levels = ?1", [vec![7_u8; 29]])
+                .expect("kept bands");
+
+            passing_with_no_key(&harness, &Arc::new(Told::default()));
+
+            assert_eq!(bands_of(&harness, 'a'), Some(vec![7_u8; 29]));
+            assert_eq!(studies(&harness), 1);
+        }
+
+        #[test]
+        fn a_pass_told_to_stop_measures_nothing_and_a_file_that_will_not_open_stays_owed() {
+            let harness = sounding_library();
+            studied_before_the_bands(&harness, "ab");
+            let told = Arc::new(Told::default());
+            told.cancel(Leaving::Listener);
+
+            passing_with_no_key(&harness, &told);
+            let stopped = measured(&harness);
+            fs::remove_file(harness.folder.join("a.wav")).expect("a file gone");
+            passing_with_no_key(&harness, &Arc::new(Told::default()));
+
+            assert_eq!(stopped, 0);
+            assert_eq!(bands_of(&harness, 'a'), None);
+            assert_eq!(bands_of(&harness, 'b').map(|bands| bands.len()), Some(29));
         }
 
         #[test]

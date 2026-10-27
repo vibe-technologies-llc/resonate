@@ -529,6 +529,37 @@ impl Catalog {
         Ok(())
     }
 
+    pub(crate) fn studies_without_bands(&self) -> Result<Vec<(u64, String)>> {
+        let connection = self.0.lock();
+        let read_error = |source| Error::store(StoreOp::Read, source);
+        let mut statement = connection
+            .prepare_cached(
+                "SELECT d.id, d.uri FROM documents d JOIN studies s ON s.track = d.id
+                 WHERE d.missing = 0 AND coalesce(length(s.band_levels), 0) != ?1
+                 ORDER BY d.id",
+            )
+            .map_err(read_error)?;
+        statement
+            .query_map([BANDS as i64], |row| {
+                Ok((row.get::<_, i64>(0)? as u64, row.get::<_, String>(1)?))
+            })
+            .map_err(read_error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(read_error)
+    }
+
+    pub(crate) fn keep_bands(&self, id: u64, levels: &BandLevels) -> Result<()> {
+        self.0
+            .lock()
+            .execute(
+                "UPDATE studies SET band_levels = ?2
+                 WHERE track = ?1 AND coalesce(length(band_levels), 0) != ?3",
+                params![id as i64, levels.as_bytes(), BANDS as i64],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(())
+    }
+
     pub(crate) fn note_unstudied(&self, id: u64) -> Result<()> {
         self.0
             .lock()
