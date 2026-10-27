@@ -17,7 +17,7 @@ rows read via `Player::media` like any unscanned row.
 - **Schema = one `V1`, the baseline of 0.1.0, and a `MIGRATIONS` chain after it.** `V1` is the first
   release's schema as one SQL batch and is never edited, since a stamped catalog of a release would be
   stranded; a change appends a step to `MIGRATIONS` (`listens` naming the device and listen a remote
-  listen came from is the first, `songs_received` the second, forgetting the read stamp of every learnt group whose songs carry no length the third, `retagged_sheets` the fourth, `offered_steps` the fifth, `track_studies.band_levels` the sixth, `release_credits` the seventh, an album whose release landed exactly before that table made due again by setting its `answered` to 1, so the next lookup lands its credit and the release is shared, the eighth: `a_release_landed_before_its_credit_was_kept_is_asked_again_and_one_with_its_credit_is_not`; `unheld_listens` keeping the listen's own id, `elsewhere` and origin the ninth). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
+  listen came from is the first, `songs_received` the second, forgetting the read stamp of every learnt group whose songs carry no length the third, `retagged_sheets` the fourth, `offered_steps` the fifth, `track_studies.band_levels` the sixth, `release_credits` the seventh, an album whose release landed exactly before that table made due again by setting its `answered` to 1, so the next lookup lands its credit and the release is shared, the eighth: `a_release_landed_before_its_credit_was_kept_is_asked_again_and_one_with_its_credit_is_not`; `unheld_listens` keeping the listen's own id, `elsewhere` and origin the ninth; the `songs_received_go_with_their_file` trigger, dropping a path's `songs_received` rows once its last `tracks` row goes, the tenth: `sync.md`). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
   `fingerprint_of(V1)` (the stamp 0.1.0 wrote) and `STAMPS[n + 1]` hashes `STAMPS[n]` over step `n`'s
   text, in a `const fn`; `SCHEMA_FINGERPRINT` is the last. `lay_out`: `UNSTAMPED` writes `V1` and
   every step; this build's stamp opens; a stamp that is an earlier `STAMPS` entry runs the steps after
@@ -1373,7 +1373,7 @@ guard and re-keys a sleeve-keyed album after moves land.
   destination now taken: stays; the track moves without. `Library::files_moved`, one transaction,
   rewrites `tracks.path`, `playlist_entries.path` (touching those playlists' `modified`),
   `lyrics_kept.path`, `lyrics_ahead.path`, `lyrics_refused.path`, `resume_rows.uri`, after first
-  deleting any `tracks` or lyric row at the destination (path-keyed). The open queue follows: the
+  deleting any `tracks`, lyric or `songs_received` row at the destination (path-keyed). The open queue follows: the
   window sends `Command::Relocate`, `resonate organise --apply` reaches every bus player via
   `org.resonate.Player1`'s `Relocate` (`mpris.md`); `Queue::relocate` follows each row through the
   moves in landing order (`queue::landed_at`). A failing rename puts back only its own move's steps,

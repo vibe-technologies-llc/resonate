@@ -14,6 +14,7 @@ const MIGRATIONS: &[&str] = &[
     A_RELEASE_KEEPS_ITS_CREDIT,
     RELEASES_LANDED_WITHOUT_THEIR_CREDIT_ARE_ASKED_AGAIN,
     AN_UNHELD_LISTEN_KEEPS_WHAT_IT_WAS,
+    A_SONG_RECEIVED_GOES_WITH_ITS_FILE,
 ];
 
 const STAMPS: [SchemaFingerprint; MIGRATIONS.len() + 1] = stamps();
@@ -122,6 +123,14 @@ ALTER TABLE unheld_listens ADD COLUMN listen_id INTEGER;
 ALTER TABLE unheld_listens ADD COLUMN elsewhere INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE unheld_listens ADD COLUMN origin_device BLOB;
 ALTER TABLE unheld_listens ADD COLUMN origin_id INTEGER;
+";
+
+const A_SONG_RECEIVED_GOES_WITH_ITS_FILE: &str = "
+CREATE TRIGGER songs_received_go_with_their_file AFTER DELETE ON tracks
+WHEN NOT EXISTS (SELECT 1 FROM tracks WHERE path = old.path)
+BEGIN
+    DELETE FROM songs_received WHERE path = old.path;
+END;
 ";
 
 const V1: &str = "

@@ -11,7 +11,9 @@ use std::{
 use resonate_codec::{
     DecodeStatus, Decoder, FileTags, Sources, TagEdit, TagField, TagSink as _, Writing,
 };
-use resonate_core::{AudioBuffer, Frames, Isrc, MediaLocation, SampleRate, naming, writer::Held};
+use resonate_core::{
+    AudioBuffer, Frames, Isrc, MediaLocation, SampleRate, WholeFile, naming, writer::Held,
+};
 
 use crate::{
     Error, Library, Want,
@@ -123,11 +125,19 @@ pub(crate) fn filed(
     Ok(Filed { path, root })
 }
 
+pub(crate) enum Beside {
+    Standing(PathBuf),
+    Placed {
+        path: PathBuf,
+        file: Option<WholeFile>,
+    },
+}
+
 pub(crate) fn landed_beside(
     library: &Library,
     whole: &Path,
     reader: &mut dyn Read,
-) -> std::result::Result<PathBuf, Unfiled> {
+) -> std::result::Result<Beside, Unfiled> {
     let parent = whole.parent().ok_or(Unfiled::Unnamed)?;
     fs::create_dir_all(parent)?;
     let staged = staged_beside(whole);
@@ -136,13 +146,23 @@ pub(crate) fn landed_beside(
         staged_from(reader, &staged).and_then(|_held| placed(&staged, whole, Standing::Weighed));
     staged_away(library, &staged);
     match landed? {
-        Landed::Standing(path) => Ok(path),
+        Landed::Standing(path) => Ok(Beside::Standing(path)),
         Landed::Placed(path) => {
-            if resonate_codec::probe(&Sources::local(), &MediaLocation::local(&path)).is_err() {
+            let Ok(scanned) =
+                resonate_codec::probe_scanned(&Sources::local(), &MediaLocation::local(&path))
+            else {
                 let _ = fs::remove_file(&path);
                 return Err(Unfiled::Undecodable);
-            }
-            Ok(path)
+            };
+            let file = scanned
+                .packets
+                .zip(scanned.info.duration)
+                .map(|(packets, frames)| WholeFile {
+                    packets: packets.0,
+                    frames: frames.get(),
+                    rate: scanned.info.spec.rate.hz(),
+                });
+            Ok(Beside::Placed { path, file })
         }
     }
 }

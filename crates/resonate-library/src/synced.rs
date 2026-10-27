@@ -1,5 +1,5 @@
 use std::{
-    fs::File,
+    fs::{self, File},
     io::{self, Read, Seek, SeekFrom},
     num::NonZeroUsize,
     path::{Path, PathBuf},
@@ -8,18 +8,20 @@ use std::{
 };
 
 use resonate_codec::TagSet;
-use resonate_core::{FrameSpan, Mbid, MediaLocation, PlaylistId, Recording, folded_letters};
+use resonate_core::{
+    FrameSpan, Mbid, MediaLocation, PlaylistId, Recording, WholeFile, folded_letters,
+};
 use resonate_providers::Extension;
-use resonate_vault::{Keeping, Offered};
+use resonate_vault::{Keeping, Kept, Offered, Vault};
 use rusqlite::{Connection, OptionalExtension as _, Row as SqlRow, Transaction, params};
 
 use crate::{
     Cut, Error, Library, OrderedColumn, PassHandle, Result, SavedQuery, ScanOptions, StoreOp,
     db::Inner,
-    filed::{self, Unfiled},
+    filed::{self, Beside, Unfiled},
     organise::{Named, Naming},
     playlist::{self, Row},
-    store, undo, vaulted,
+    store, undo, vaulted, volumes,
 };
 
 pub(crate) const RECORDING_COLUMNS: &str = "t.title, coalesce(t.artist, r.name, ''), coalesce(a.title, ''), t.mbid, t.duration, t.sample_rate";
@@ -590,34 +592,184 @@ pub(crate) fn resolved(connection: &Connection, recording: &Recording) -> Result
     if let Some(received) = received_as(connection, recording)? {
         return Ok(Some(received));
     }
+    Ok(named_alike(connection, recording, Among::Shown)?
+        .into_iter()
+        .next()
+        .map(|(cut, _)| cut))
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Among {
+    Shown,
+    HiddenToo,
+}
+
+impl Among {
+    fn clause(self) -> &'static str {
+        match self {
+            Self::Shown => "AND t.hidden = 0",
+            Self::HiddenToo => "",
+        }
+    }
+}
+
+fn named_alike(
+    connection: &Connection,
+    recording: &Recording,
+    among: Among,
+) -> Result<Vec<(Cut, Option<String>)>> {
     let words = resonate_core::title_words(&recording.title);
     if words.is_empty() {
-        return Ok(None);
+        return Ok(Vec::new());
     }
     let mut statement = connection
         .prepare_cached(&format!(
-            "SELECT t.path, t.span_start, t.span_frames, {RECORDING_COLUMNS}
+            "SELECT t.path, t.span_start, t.span_frames, t.vault_path, {RECORDING_COLUMNS}
                FROM tracks t {RECORDING_JOINS}
-              WHERE t.title_words = ?1 AND t.hidden = 0
-              ORDER BY t.alternative_of IS NOT NULL, t.id"
+              WHERE t.title_words = ?1 {}
+              ORDER BY t.alternative_of IS NOT NULL, t.id",
+            among.clause()
         ))
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
     let candidates = statement
         .query_map(params![words], |row| {
-            Ok((cut_at(row)?, recording_at(row, 3)?))
+            Ok((
+                cut_at(row)?,
+                row.get::<_, Option<String>>(3)?,
+                recording_at(row, 4)?,
+            ))
         })
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
         .map_err(|source| Error::store(StoreOp::Query, source))?;
     let artist = folded_letters(recording.artist.trim());
     let album = folded_letters(recording.album.trim());
-    let mut alike = candidates.into_iter().filter(|(_, held)| {
-        held.as_ref().is_some_and(|held| {
-            folded_letters(held.artist.trim()) == artist
-                && (album.is_empty() || folded_letters(held.album.trim()) == album)
-                && lasts_alike(held.length, recording.length)
+    Ok(candidates
+        .into_iter()
+        .filter(|(_, _, held)| {
+            held.as_ref().is_some_and(|held| {
+                folded_letters(held.artist.trim()) == artist
+                    && (album.is_empty() || folded_letters(held.album.trim()) == album)
+                    && lasts_alike(held.length, recording.length)
+            })
         })
-    });
-    Ok(alike.next().map(|(cut, _)| cut))
+        .map(|(cut, within, _)| (cut, within))
+        .collect())
+}
+
+struct HeldRow {
+    path: PathBuf,
+    within_the_vault: Option<PathBuf>,
+}
+
+impl HeldRow {
+    fn of(path: &str, within_the_vault: Option<&str>) -> Self {
+        Self {
+            path: store::path_of(path),
+            within_the_vault: within_the_vault.map(store::path_of),
+        }
+    }
+
+    fn read(row: &SqlRow<'_>) -> rusqlite::Result<Self> {
+        Ok(Self::of(
+            &row.get::<_, String>(0)?,
+            row.get::<_, Option<String>>(1)?.as_deref(),
+        ))
+    }
+
+    fn stands(&self, vault: Option<&Vault>) -> bool {
+        self.path.exists()
+            || self.within_the_vault.as_deref().is_some_and(|within| {
+                vault.is_none_or(|vault| vault.at(within).is_ok_and(|object| object.exists()))
+            })
+    }
+}
+
+fn every_row_holding(connection: &Connection, recording: &Recording) -> Result<Vec<HeldRow>> {
+    let key = recording.key();
+    let named = recording.named_key();
+    let mut rows = Vec::new();
+    if let Some(mbid) = &recording.mbid {
+        let mut statement = connection
+            .prepare_cached("SELECT path, vault_path FROM tracks WHERE mbid = ?1")
+            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+        let held = statement
+            .query_map(params![mbid.as_str()], HeldRow::read)
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+        rows.extend(held);
+    }
+    let mut statement = connection
+        .prepare_cached(
+            "SELECT s.path, t.vault_path
+               FROM songs_received s LEFT JOIN tracks t ON t.path = s.path
+              WHERE s.recording IN (?1, ?2)",
+        )
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    let received = statement
+        .query_map(params![key.as_str(), named.as_str()], HeldRow::read)
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    rows.extend(received);
+    for (cut, within) in named_alike(connection, recording, Among::HiddenToo)? {
+        if let Some(path) = cut.location.as_path() {
+            rows.push(HeldRow {
+                path: path.to_path_buf(),
+                within_the_vault: within.as_deref().map(store::path_of),
+            });
+        }
+    }
+    Ok(rows)
+}
+
+pub(crate) fn holds(inner: &Inner, vault: Option<&Vault>, recording: &Recording) -> Result<bool> {
+    inner.read(|connection| {
+        let rows = every_row_holding(connection, recording)?;
+        if rows.iter().any(|row| row.stands(vault)) {
+            return Ok(true);
+        }
+        if rows.is_empty() {
+            return Ok(false);
+        }
+        let away = volumes::absent(connection)?;
+        Ok(rows
+            .iter()
+            .any(|row| volumes::is_on_an_absent_one(&row.path, &away)))
+    })
+}
+
+pub(crate) fn same_file_held(
+    inner: &Inner,
+    vault: Option<&Vault>,
+    file: WholeFile,
+    landed: &Path,
+) -> Result<Option<PathBuf>> {
+    let landed = store::path_text(landed).into_owned();
+    let rows = inner.read(|connection| {
+        let mut statement = connection
+            .prepare_cached(
+                "SELECT path, vault_path FROM tracks
+                  WHERE packets = ?1 AND duration = ?2 AND sample_rate = ?3
+                    AND span_start = 0 AND span_frames IS NULL AND path <> ?4
+                  ORDER BY alternative_of IS NOT NULL, id",
+            )
+            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+        statement
+            .query_map(
+                params![
+                    file.packets.cast_signed(),
+                    file.frames.cast_signed(),
+                    file.rate,
+                    landed
+                ],
+                HeldRow::read,
+            )
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .map_err(|source| Error::store(StoreOp::Query, source))
+    })?;
+    Ok(rows
+        .into_iter()
+        .find(|row| row.stands(vault))
+        .map(|row| row.path))
 }
 
 fn received_as(connection: &Connection, recording: &Recording) -> Result<Option<Cut>> {
@@ -636,10 +788,26 @@ fn received_as(connection: &Connection, recording: &Recording) -> Result<Option<
         .map_err(|source| Error::store(StoreOp::Query, source))
 }
 
-pub(crate) fn note_received_at(inner: &Inner, recording: &Recording, path: &Path) -> Result<()> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReceivedAt {
+    NewlyPlaced,
+    AlreadyHeld,
+}
+
+pub(crate) fn note_received_at(
+    inner: &Inner,
+    recording: &Recording,
+    path: &Path,
+    at: ReceivedAt,
+) -> Result<()> {
     let text = store::path_text(path).into_owned();
     let keys = [recording.key(), recording.named_key()];
     inner.write(|transaction| {
+        if at == ReceivedAt::NewlyPlaced {
+            transaction
+                .execute("DELETE FROM songs_received WHERE path = ?1", params![text])
+                .map_err(|source| Error::store(StoreOp::Delete, source))?;
+        }
         for key in &keys {
             transaction
                 .execute(
@@ -945,8 +1113,24 @@ pub(crate) fn file_song(
     };
     let whole = folder.join(relative);
     match filed::landed_beside(library, &whole, reader) {
-        Ok(path) => {
-            library.note_song_received_at(recording, &path)?;
+        Ok(Beside::Standing(path)) => {
+            library.note_song_received_at(recording, &path, ReceivedAt::AlreadyHeld)?;
+            scanned_once_free(library, root);
+            Ok(SongFiled::Filed(path))
+        }
+        Ok(Beside::Placed { path, file }) => {
+            let held = match file {
+                Some(file) => library.same_file_held(file, &path)?,
+                None => None,
+            };
+            if let Some(held) = held {
+                if let Err(error) = fs::remove_file(&path) {
+                    tracing::warn!(%error, path = %path.display(), "a song from another device already held could not be taken away again");
+                }
+                library.note_song_received_at(recording, &held, ReceivedAt::AlreadyHeld)?;
+                return Ok(SongFiled::Filed(held));
+            }
+            library.note_song_received_at(recording, &path, ReceivedAt::NewlyPlaced)?;
             scanned_once_free(library, root);
             Ok(SongFiled::Filed(path))
         }
@@ -988,17 +1172,37 @@ fn vaulted(
             return Ok(SongFiled::Refused);
         }
     };
+    if let Some(held) = library.vaulted_already(&kept)? {
+        library.note_song_received_at(recording, &held, ReceivedAt::AlreadyHeld)?;
+        return Ok(SongFiled::Vaulted(kept.path));
+    }
     tags.fill(&mut kept.declared);
     let taken_from = format!("{DEVICES}:{}", recording.key());
-    if library
-        .note_received(recording, &kept, &taken_from)?
-        .is_none()
-    {
-        tracing::warn!(path = %kept.path.display(), "a song from another device is the audio of a song already held");
-        return Ok(SongFiled::Refused);
-    }
+    let at = match library.note_received(recording, &kept, &taken_from)? {
+        Some(_) => ReceivedAt::NewlyPlaced,
+        None => ReceivedAt::AlreadyHeld,
+    };
+    library.note_song_received_at(recording, &kept.path, at)?;
 
     Ok(SongFiled::Vaulted(kept.path))
+}
+
+pub(crate) fn vaulted_already(inner: &Inner, kept: &Kept) -> Result<Option<PathBuf>> {
+    let key = kept.key.to_string();
+    let path = store::path_text(&kept.path).into_owned();
+    inner.read(|connection| {
+        connection
+            .query_row(
+                "SELECT path FROM tracks
+                  WHERE (vault_key = ?1 OR path = ?2) AND span_start = 0
+                  ORDER BY path = ?2 DESC, root_id IS NULL DESC, id LIMIT 1",
+                params![key, path],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map(|held| held.map(|held| store::path_of(&held)))
+            .map_err(|source| Error::store(StoreOp::Query, source))
+    })
 }
 
 fn scanned_once_free(library: &Library, root: PathBuf) {
@@ -1028,5 +1232,148 @@ fn scanning(root: PathBuf) -> ScanOptions {
         follow_symlinks: false,
         extract_cover_art: true,
         workers: thread::available_parallelism().unwrap_or(NonZeroUsize::MIN),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{env, fs, process};
+
+    use super::*;
+
+    const RATE: u32 = 8_000;
+
+    struct Scratch {
+        path: PathBuf,
+    }
+
+    impl Scratch {
+        fn new(named: &str) -> Self {
+            let path = env::temp_dir().join(format!("resonate-synced-{}-{named}", process::id()));
+            let _ = fs::remove_dir_all(&path);
+            fs::create_dir_all(&path).expect("a writable temporary directory");
+            Self {
+                path: path.canonicalize().expect("a canonical path"),
+            }
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn chunk(into: &mut Vec<u8>, id: &[u8; 4], payload: &[u8]) {
+        into.extend_from_slice(id);
+        into.extend_from_slice(
+            &u32::try_from(payload.len())
+                .unwrap_or(u32::MAX)
+                .to_le_bytes(),
+        );
+        into.extend_from_slice(payload);
+        if payload.len() % 2 == 1 {
+            into.push(0);
+        }
+    }
+
+    fn named_wav(title: &str) -> Vec<u8> {
+        let mut format = Vec::new();
+        format.extend_from_slice(&1_u16.to_le_bytes());
+        format.extend_from_slice(&1_u16.to_le_bytes());
+        format.extend_from_slice(&RATE.to_le_bytes());
+        format.extend_from_slice(&(RATE * 2).to_le_bytes());
+        format.extend_from_slice(&2_u16.to_le_bytes());
+        format.extend_from_slice(&16_u16.to_le_bytes());
+
+        let mut info = b"INFO".to_vec();
+        for (id, value) in [
+            (b"INAM", title),
+            (b"IART", "Pink Floyd"),
+            (b"IPRD", "Meddle"),
+        ] {
+            let mut text = value.as_bytes().to_vec();
+            text.push(0);
+            chunk(&mut info, id, &text);
+        }
+
+        let mut body = b"WAVE".to_vec();
+        chunk(&mut body, b"fmt ", &format);
+        chunk(&mut body, b"LIST", &info);
+        chunk(&mut body, b"data", &vec![0; RATE as usize * 2]);
+
+        let mut file = b"RIFF".to_vec();
+        file.extend_from_slice(&u32::try_from(body.len()).unwrap_or(u32::MAX).to_le_bytes());
+        file.extend_from_slice(&body);
+        file
+    }
+
+    fn song(title: &str) -> Recording {
+        Recording {
+            mbid: None,
+            title: title.into(),
+            artist: "Pink Floyd".into(),
+            album: "Meddle".into(),
+            length: Some(Duration::from_secs(1)),
+        }
+    }
+
+    #[test]
+    fn a_song_filed_but_not_yet_catalogued_is_held_while_its_file_stands() {
+        let scratch = Scratch::new("filed-unscanned");
+        let path = scratch.path.join("San Tropez.wav");
+        fs::write(&path, named_wav("San Tropez")).expect("a written song");
+        let library = Library::open_in_memory().expect("a catalog");
+        let asked = song("San Tropez (2011 Remaster)");
+
+        library
+            .note_song_received_at(&asked, &path, ReceivedAt::NewlyPlaced)
+            .expect("noted");
+        let held = library.holds_recording(&asked).expect("asked");
+        fs::remove_file(&path).expect("the song goes");
+        let gone = library.holds_recording(&asked).expect("asked");
+
+        assert!(held);
+        assert!(!gone);
+    }
+
+    #[test]
+    fn a_song_on_a_volume_that_is_away_is_still_held() {
+        let scratch = Scratch::new("volume-away");
+        let drive = scratch.path.join("drive");
+        fs::create_dir_all(&drive).expect("a folder");
+        fs::write(drive.join("echoes.wav"), named_wav("Echoes")).expect("a written song");
+        let library = Library::open_in_memory().expect("a catalog");
+        library
+            .scan(ScanOptions {
+                roots: vec![drive.clone()],
+                incremental: true,
+                follow_symlinks: false,
+                extract_cover_art: false,
+                workers: NonZeroUsize::MIN,
+            })
+            .and_then(PassHandle::join)
+            .expect("a scan");
+        let echoes = song("Echoes");
+        assert!(library.holds_recording(&echoes).expect("asked"));
+
+        fs::rename(&drive, scratch.path.join("elsewhere")).expect("the drive goes");
+        let unremembered = library.holds_recording(&echoes).expect("asked");
+        library
+            .inner()
+            .write(|transaction| {
+                transaction
+                    .execute(
+                        "INSERT INTO volumes (path) VALUES (?1)",
+                        params![store::path_text(&drive)],
+                    )
+                    .map(drop)
+                    .map_err(|source| Error::store(StoreOp::Insert, source))
+            })
+            .expect("a remembered volume");
+        let remembered = library.holds_recording(&echoes).expect("asked");
+
+        assert!(!unremembered);
+        assert!(remembered);
     }
 }
