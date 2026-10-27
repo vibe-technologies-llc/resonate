@@ -71,7 +71,8 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Identification
 - [M · 0.2.0] The quantiser steps were weighed only on the encoders this machine has (ffmpeg's AAC,
   faac, LAME, libvorbis and ffmpeg's Vorbis): no Apple, FhG or fdk AAC, no FhG or other MP3
-  encoder and no aoTuV Vorbis weighed, faac at 160 kbps is found in 9 of 22, a lossy decode
+  encoder and no aoTuV Vorbis weighed, faac at 160 kbps is found in 9 of 22, one wall-less MP3 rip
+  in the library the 8-step floor found reads 0.0014 under the shipped count, a lossy decode
   dithered or resampled to a rate other than the other CD rate with no wall still reads as
   lossless, and an Opus decode is only `Suspect` (its bands sit on no lattice)
 

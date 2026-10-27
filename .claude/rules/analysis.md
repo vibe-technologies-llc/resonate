@@ -212,9 +212,10 @@ could change (stored studies and kept analyses are weighed against it).
   0.015 at most. Every MP3 and Vorbis miss but two is one quiet ambient source; faac's misses read
   under the threshold, as before (a miss, never a false call). No source was called: every grid on every source
   read 0.0030 at most. The whole library, 461 tracks studied whole, read at most 0.0039 (AAC),
-  0.0038 (MP3, either rate) and 0.0023 (Vorbis) on every track not already `Fake`; six were called:
-  two AAC and two MP3 rips already walled, and two MP3 rips with no wall (`Genuine` before, both
-  FLACs made from MP3s in the listener's own downloads). The statistics tried before (band levels,
+  0.0038 (MP3, either rate) and 0.0023 (Vorbis) on every track not already `Fake`; five were called:
+  two AAC and two MP3 rips already walled, and one MP3 rip with no wall (`Genuine` before, lattice
+  0.186). A second wall-less MP3 rip read 0.041 to 0.069 under the earlier floor of 8 steps and
+  0.0014 once every coefficient counts: a miss of the shipped grid. The statistics tried before (band levels,
   100 Hz holes, the side channel, the top octave's swing, coefficients at the 16-bit floor on AAC's
   grid) separated nothing. No Apple, FhG or fdk encode weighed (none on this machine). Opus
   lowpasses at 20 kHz at any bitrate and its CELT bands are not on a lattice: an Opus transcode is

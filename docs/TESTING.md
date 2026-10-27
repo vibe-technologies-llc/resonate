@@ -44,6 +44,13 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   nothing here has run
 
 ## Testing
+- [S · 0.1.1] Timing tests flake under a loaded machine: `resonate-server --test hifi`'s
+  `an_empty_answer_for_a_track_is_never_kept` failed once in a whole-workspace run (the second
+  request's status, likely the one-download-at-a-time 503 before the first frees its slot), and
+  `resonate-engine --test transport`'s
+  `a_seek_back_under_an_end_of_track_timer_lifts_the_fade_it_had_begun` and
+  `equaliser_changes_asked_for_faster_than_the_graph_reaches_them_end_on_the_last` failed once while
+  other builds ran; each passes alone and on rerun
 - [S · blocked: a second compositor] The drag test has run on KWin alone: no other compositor
   (`sway`, `weston`, `mutter`, `cage`, `labwc`) is installed here, so another's data-device and
   drag-icon behaviour is untried
