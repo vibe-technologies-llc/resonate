@@ -2632,6 +2632,10 @@ impl Library {
         synced::resolve(&self.inner, recording)
     }
 
+    pub fn holds_recording(&self, recording: &resonate_core::Recording) -> Result<bool> {
+        synced::holds(&self.inner, self.vault().map(AsRef::as_ref), recording)
+    }
+
     pub fn held_as(
         &self,
         recording: &resonate_core::Recording,
@@ -2663,8 +2667,21 @@ impl Library {
         &self,
         recording: &resonate_core::Recording,
         path: &Path,
+        at: synced::ReceivedAt,
     ) -> Result<()> {
-        synced::note_received_at(&self.inner, recording, path)
+        synced::note_received_at(&self.inner, recording, path, at)
+    }
+
+    pub(crate) fn same_file_held(
+        &self,
+        file: resonate_core::WholeFile,
+        landed: &Path,
+    ) -> Result<Option<PathBuf>> {
+        synced::same_file_held(&self.inner, self.vault().map(AsRef::as_ref), file, landed)
+    }
+
+    pub(crate) fn vaulted_already(&self, kept: &VaultKept) -> Result<Option<PathBuf>> {
+        synced::vaulted_already(&self.inner, kept)
     }
 
     pub fn file_song_from_elsewhere(

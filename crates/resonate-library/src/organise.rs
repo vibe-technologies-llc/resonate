@@ -2782,6 +2782,7 @@ pub(crate) fn files_moved(tx: &Transaction<'_>, landed: &[Move]) -> Result<()> {
     let mut stale_tracks = prepared(tx, "DELETE FROM tracks WHERE path = ?1")?;
     let mut stale_retags = prepared(tx, "DELETE FROM retagged WHERE path = ?1")?;
     let mut stale_retagged_fields = prepared(tx, "DELETE FROM retagged_fields WHERE path = ?1")?;
+    let mut stale_received = prepared(tx, "DELETE FROM songs_received WHERE path = ?1")?;
     let mut lyrics = prepared(tx, "UPDATE lyrics_kept SET path = ?2 WHERE path = ?1")?;
     let mut offsets = prepared(tx, "UPDATE lyrics_ahead SET path = ?2 WHERE path = ?1")?;
     let mut refusals = prepared(tx, "UPDATE lyrics_refused SET path = ?2 WHERE path = ?1")?;
@@ -2809,6 +2810,7 @@ pub(crate) fn files_moved(tx: &Transaction<'_>, landed: &[Move]) -> Result<()> {
             &mut stale_tracks,
             &mut stale_retags,
             &mut stale_retagged_fields,
+            &mut stale_received,
         ] {
             statement
                 .execute(params![to])

@@ -607,10 +607,7 @@ impl Catalog for Catalogued {
 
     fn holds(&self, recording: &Recording) -> Answered<bool> {
         self.library
-            .resolve_recording(recording)
-            .map(|cut| {
-                cut.is_some_and(|cut| cut.location.as_path().is_none_or(|path| path.exists()))
-            })
+            .holds_recording(recording)
             .map_err(|error| refused(&error))
     }
 
@@ -1526,6 +1523,28 @@ mod tests {
         let _ = fs::remove_dir_all(&folder);
         assert!(nothing.0.is_empty());
         assert_eq!(nothing.1, Frames(0));
+    }
+
+    #[test]
+    fn a_hidden_song_is_held_so_no_follow_fetches_it_again_and_one_deleted_by_hand_is_not() {
+        let (folder, library) = held_song();
+        let path = folder.join("held.wav");
+        let track = library
+            .track_at(&path, None)
+            .expect("read")
+            .expect("catalogued");
+        library.hide_track(track.id, true).expect("hidden");
+        let catalog = Catalogued {
+            library: Arc::new(library),
+        };
+
+        let hidden = catalog.holds(&heard("Held")).expect("asked");
+        fs::remove_file(&path).expect("the song goes");
+        let deleted = catalog.holds(&heard("Held")).expect("asked");
+
+        let _ = fs::remove_dir_all(&folder);
+        assert!(hidden);
+        assert!(!deleted);
     }
 
     fn kept_songs(titles: &[&str]) -> (PathBuf, Library, Vec<resonate_core::MediaLocation>) {

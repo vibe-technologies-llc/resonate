@@ -365,7 +365,15 @@ compilation flag), `Catalog::tags` hands it over the wire, and the receiver's `H
 lays it under what the delivered file declares itself (a declared tag wins), so a third device
 groups the song as the first did
 (`songs_passed_on_by_a_vaulted_device_keep_the_album_artist_year_and_totals_the_vault_dropped`).
-An unvaulted sender says nothing, its file carrying the tags. Audio the vault holds already under another recording is `Refused`. With no vault, a song is
+An unvaulted sender says nothing, its file carrying the tags. **Audio the vault holds already is
+the song, whatever it is called**: where `keep_delivered` answers an object a row already names
+(the rootless row at its path, or a rooted row an import vaulted under the same `vault_key`,
+`synced::vaulted_already`), nothing is inserted, the asked keys go into `songs_received` against
+that row's path and the landing is `Vaulted`, so a sender that retagged it, a catalog that renamed
+or hid the row, or a second sender naming it otherwise is never refused and fetched again
+(`a_song_whose_audio_the_vault_already_holds_under_another_recording_is_held_under_both`,
+`a_song_whose_audio_a_vault_import_keeps_is_held_though_its_file_is_gone_and_never_vaulted_beside_it`);
+every vault landing notes `songs_received` as a filing does. With no vault, a song is
 filed in the music folder under `organise-as` like a delivery (`filed::landed_beside`) and its
 root scanned. **A song filed is held by what was asked for, never landed twice**: the catalog's
 `songs_received` keeps each recording key a song was filed for (`key` and `named_key`) against its
@@ -375,10 +383,23 @@ catalog names the song otherwise than its file does is not fetched again on ever
 favourites, `a_song_from_another_device_named_otherwise_is_written_into_its_playlist_and_favoured_as_its_file_names_it`,
 the binary's `a_song_from_another_device_named_otherwise_stays_in_its_playlist_and_favourites_and_settles_once`); a file
 of the same bytes already standing at the name (or a numbered one) is the song
-(`filed::Landed::Standing`), not a ` (2)` beside it; the scan after filing waits out another pass
+(`filed::Landed::Standing`), not a ` (2)` beside it; **a file placed anew that is the audio of a
+whole-file row held already is that song**: `filed::landed_beside` probes it as the scan does
+(`probe_scanned`'s packets digest, frames and rate, a `WholeFile`), and where `same_file_held`
+finds a row of that file whose file stands, the placed copy is taken away again and the asked keys
+noted against the row's path, so a sender that renamed a song after sending it is never given a
+second copy (`a_song_its_sender_renamed_after_sending_it_is_known_by_its_audio_and_never_filed_again`);
+the scan after filing waits out another pass
 (`scanned_once_free`: `SCANS_TRIED_AT_MOST` tries `SCAN_TRIED_AGAIN_AFTER` apart) rather than leave
-the song uncatalogued to be fetched again
-(`a_song_from_another_device_is_held_by_what_was_asked_and_never_filed_twice`). The phones do the same in their own catalog (`songs_received`, `android.md`), and every resolution there (`DocumentCatalog::resolved_in`: playlists written, favours, credits, kept words, `held_as`) asks it as `holds` does. Copies such a
+the song uncatalogued to be fetched again, and a song it never caught is held while its file stands
+at the noted path
+(`a_song_from_another_device_is_held_by_what_was_asked_and_never_filed_twice`,
+`a_song_filed_but_not_yet_catalogued_is_held_while_its_file_stands`). **A `songs_received` row goes
+with its file**: placing a song anew at a path first drops every row noted there, the library's
+tenth migration step drops a path's rows when its last `tracks` row goes
+(`songs_received_go_with_their_file`), and `organise::files_moved` drops them at a destination before
+rekeying, so a recording never reads as held by another file that later lands where its file was
+(`a_received_song_whose_file_is_forgotten_names_no_other_file_landing_where_it_was`). The phones do the same in their own catalog (`songs_received`, `android.md`), and every resolution there (`DocumentCatalog::resolved_in`: playlists written, favours, credits, kept words, `held_as`) asks it as `holds` does. Copies such a
 fetch left are folded by `resonate dedupe` (`library.md`). With neither it is refused (`SongFiled::Nowhere`), and one that does not probe (or the
 vault refuses) is deleted and answered `false` (`SongFiled::Refused`), so a damaged file is never
 filed to be fetched again. **A vaulted song is offered onward**: `Library::held_songs` lists the
@@ -432,7 +453,15 @@ will not open is left out of the holdings.
   snapshot again and looks at once.
 - **A song deleted by hand is not held.** `Catalog::holds` is false for a row whose file is gone
   (the desktop stats the path; the phones open the document), so the next follow or force fetches
-  it again. `Ledger::wanted` therefore asks `holds` of every entry of a followed playlist and every
+  it again. **The desktop weighs every row the recording resolves to, hidden ones too**
+  (`Library::holds_recording`, `synced::every_row_holding`: the MBID, `songs_received`, the tag
+  match, without the listings' `hidden = 0`), and a row is held where its file stands, its vault
+  object stands (or the vault is not open to look), or it sits on a remembered volume that is away
+  (`volumes::absent`), so a hidden favourite, a vaulted song whose original was deleted and a song
+  on an unplugged drive are never fetched into the music folder again
+  (`a_hidden_song_is_still_held_so_another_device_never_sends_it_again`,
+  `a_song_on_a_volume_that_is_away_is_still_held`, the binary's
+  `a_hidden_song_is_held_so_no_follow_fetches_it_again_and_one_deleted_by_hand_is_not`). `Ledger::wanted` therefore asks `holds` of every entry of a followed playlist and every
   favoured song, never trusting `here`, which only says the catalog listed the song at the last look
   (`a_song_deleted_by_hand_is_wanted_again_while_its_playlist_and_favourite_stay`).
 - **`Shown.transfers` keeps at most `TRANSFERS_SHOWN_AT_MOST` (200)**, the oldest landed or
