@@ -1,4 +1,4 @@
-use std::{f64::consts::PI, sync::Arc};
+use std::{f64::consts::PI, ops::Range, sync::Arc};
 
 use resonate_core::{StreamSpec, eq::Frequency};
 use rustfft::{Fft, FftPlanner, num_complex::Complex};
@@ -133,6 +133,43 @@ const SLOPE_TO_WALLS: f64 = 0.95;
 const EDGE_FROM_WALLS: f64 = 0.9;
 const EDGE_TO_WALLS: f64 = 0.97;
 const SILENT_POWER: f64 = 1e-30;
+const STRIDES_A_HOP: usize = 8;
+const SHORT_WINDOW_IS_A_HOP_DIVIDED_BY: usize = 2;
+const SHORT_MEMORY_STRIDES: usize = 17;
+const SHORT_STEADY_REFRESHED_EVERY_STRIDES: usize = 2;
+const SHORT_HOLE_RUN_HZ: f64 = 1_000.0;
+const SHORT_HOLES_WITHIN_DB_OF_THE_LOUDEST: f64 = 40.0;
+const SHORT_HOLES_ONLY_WHILE_THE_WINDOW_HOLDS_DB: f64 = 12.0;
+const SHORT_HOLE_RETURNS_WITHIN_DB: f64 = 10.0;
+const HANN_POWER: f64 = 3.0 / 8.0;
+const SHORT_FILL_COMPENSATES_THE_OVERLAP: f64 = 2.0;
+const RECENT_SECONDS: f64 = 0.5;
+const WALL_FOLLOWED_AFTER_LOOKS: u32 = 8;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Short {
+    Clear,
+    Candidate,
+    Fresh,
+    Confirmed,
+}
+
+#[derive(Clone, Copy)]
+enum Heard {
+    LongTerm,
+    Recent,
+}
+
+#[derive(Clone, Copy)]
+struct Search {
+    from: usize,
+    below: usize,
+    run: usize,
+    deeper: f64,
+    deepest: f64,
+    within_db_of_the_loudest: f64,
+    while_it_holds_db: f64,
+}
 
 struct Voice {
     history: Vec<f64>,
@@ -143,6 +180,11 @@ struct Voice {
     hollow: Vec<bool>,
     hollow_at: usize,
     holds_a_hole: [bool; SLICES_REMEMBERED],
+    short_heard: Vec<f64>,
+    short_heard_at: usize,
+    short_steady: Vec<f64>,
+    short_levels: Vec<f64>,
+    short_states: [Short; SLICES_REMEMBERED * STRIDES_A_HOP],
 }
 
 impl Voice {
@@ -157,6 +199,26 @@ impl Voice {
         }
         let (_, middle, _) = kept.select_nth_unstable_by(HOLE_MEMORY_SLICES / 2, f64::total_cmp);
         *middle
+    }
+
+    fn short_steady_of(&self, bin: usize, bins: usize) -> f64 {
+        let mut kept = [0.0; SHORT_MEMORY_STRIDES];
+        for (stride, slot) in kept.iter_mut().enumerate() {
+            *slot = self
+                .short_heard
+                .get(stride * bins + bin)
+                .copied()
+                .unwrap_or_default();
+        }
+        let (_, middle, _) = kept.select_nth_unstable_by(SHORT_MEMORY_STRIDES / 2, f64::total_cmp);
+        *middle
+    }
+
+    fn short_at(&self, age: usize, stride: usize) -> Short {
+        self.short_states
+            .get(self.row_aged(age) * STRIDES_A_HOP + stride)
+            .copied()
+            .unwrap_or(Short::Clear)
     }
 
     fn row_aged(&self, age: usize) -> usize {
@@ -179,6 +241,11 @@ impl Voice {
         self.hollow.fill(false);
         self.hollow_at = 0;
         self.holds_a_hole = [false; SLICES_REMEMBERED];
+        self.short_heard.fill(0.0);
+        self.short_heard_at = 0;
+        self.short_steady.fill(0.0);
+        self.short_levels.fill(0.0);
+        self.short_states = [Short::Clear; SLICES_REMEMBERED * STRIDES_A_HOP];
     }
 }
 
@@ -198,11 +265,17 @@ pub struct Restore {
     forward: Option<Arc<dyn Fft<f64>>>,
     inverse: Option<Arc<dyn Fft<f64>>>,
     slicing: Option<Slicing>,
+    short: usize,
+    stride: usize,
+    short_slicing: Option<Slicing>,
+    short_inverse: Option<Arc<dyn Fft<f64>>>,
+    short_fill: Vec<Complex<f64>>,
     spectrum: Vec<Complex<f64>>,
     fill: Vec<Complex<f64>>,
     scratch: Vec<Complex<f64>>,
     voices: Vec<Voice>,
     long_term: Vec<f64>,
+    recent: Vec<f64>,
     heard_this_hop: Vec<f64>,
     bands: Vec<f64>,
     envelope: Vec<f64>,
@@ -211,6 +284,7 @@ pub struct Restore {
     wall_bin: Option<usize>,
     moving_to: Option<usize>,
     wall_locked: bool,
+    following: Option<(usize, u32)>,
     presence: f64,
     presence_step: f64,
     noise: u64,
@@ -218,6 +292,7 @@ pub struct Restore {
     emitted: u64,
     preroll: u64,
     long_term_step: f64,
+    recent_step: f64,
     silence: Vec<f64>,
 }
 
@@ -233,11 +308,17 @@ impl Restore {
             forward: None,
             inverse: None,
             slicing: None,
+            short: 0,
+            stride: 0,
+            short_slicing: None,
+            short_inverse: None,
+            short_fill: Vec::new(),
             spectrum: Vec::new(),
             fill: Vec::new(),
             scratch: Vec::new(),
             voices: Vec::new(),
             long_term: Vec::new(),
+            recent: Vec::new(),
             heard_this_hop: Vec::new(),
             bands: Vec::new(),
             envelope: Vec::new(),
@@ -246,6 +327,7 @@ impl Restore {
             wall_bin: None,
             moving_to: None,
             wall_locked: false,
+            following: None,
             presence: 0.0,
             presence_step: 1.0,
             noise: 0x9E37_79B9_7F4A_7C15,
@@ -253,6 +335,7 @@ impl Restore {
             emitted: 0,
             preroll: 0,
             long_term_step: 1.0,
+            recent_step: 1.0,
             silence: Vec::new(),
         }
     }
@@ -279,6 +362,14 @@ impl Restore {
         self.hop / 2 + 1
     }
 
+    fn short_bin_of(&self, hertz: f64) -> usize {
+        (hertz * self.short as f64 / self.rate).round().max(0.0) as usize
+    }
+
+    fn short_bins(&self) -> usize {
+        self.short / 2 + 1
+    }
+
     fn highest_bin(&self) -> usize {
         self.bin_of(HIGHEST_FILLED_NYQUISTS * self.rate / 2.0)
             .min(self.size / 2)
@@ -303,8 +394,11 @@ impl Restore {
         self.heard_this_hop.fill(0.0);
         for channel in 0..self.channels {
             self.look_for_holes(channel);
+            self.look_for_short_holes(channel);
+            self.confirm_short_holes(channel);
             self.reshape(channel);
             self.fill_the_holes(channel);
+            self.fill_the_short_holes(channel);
         }
         self.note();
         self.look_for_a_wall();
@@ -351,14 +445,18 @@ impl Restore {
 
     fn note(&mut self) {
         let step = self.long_term_step.max((self.hops.max(1) as f64).recip());
+        let recent_step = self.recent_step.max((self.hops.max(1) as f64).recip());
         let share = (self.channels as f64).recip();
         for (long, heard) in self.long_term.iter_mut().zip(&self.heard_this_hop) {
             *long += (heard * share - *long) * step;
         }
+        for (recent, heard) in self.recent.iter_mut().zip(&self.heard_this_hop) {
+            *recent += (heard * share - *recent) * recent_step;
+        }
     }
 
     fn look_for_a_wall(&mut self) {
-        if self.wall_locked || self.config.restoration == Restoration::Off {
+        if self.config.restoration == Restoration::Off {
             return;
         }
         let heard = self.hops as f64 * self.hop as f64 / self.rate;
@@ -366,7 +464,11 @@ impl Restore {
         if heard < LOOK_FOR_A_WALL_AFTER_SECONDS || !self.hops.is_multiple_of(every) {
             return;
         }
-        let Some(found) = self.wall_in_what_was_heard() else {
+        if self.wall_locked {
+            self.follow_the_wall();
+            return;
+        }
+        let Some(found) = self.wall_in_what_was_heard(Heard::LongTerm) else {
             return;
         };
         let held = self.moving_to.or(self.wall_bin);
@@ -382,14 +484,46 @@ impl Restore {
         self.wall_locked = heard >= WALL_LOCKS_AFTER_SECONDS;
     }
 
-    fn wall_in_what_was_heard(&mut self) -> Option<usize> {
+    fn follow_the_wall(&mut self) {
+        let held = self.moving_to.or(self.wall_bin);
+        let found = self.wall_in_what_was_heard(Heard::Recent);
+        let moved = found.filter(|found| {
+            held.is_some_and(|held| {
+                (self.hertz_of(held) - self.hertz_of(*found)).abs() > WALL_MOVES_PAST_HZ
+            })
+        });
+        let Some(moved) = moved else {
+            self.following = None;
+            return;
+        };
+        let looks = match self.following {
+            Some((candidate, looks))
+                if (self.hertz_of(candidate) - self.hertz_of(moved)).abs()
+                    <= WALL_MOVES_PAST_HZ =>
+            {
+                looks + 1
+            }
+            _ => 1,
+        };
+        if looks >= WALL_FOLLOWED_AFTER_LOOKS {
+            self.moving_to = Some(moved);
+            self.following = None;
+        } else {
+            self.following = Some((moved, looks));
+        }
+    }
+
+    fn wall_in_what_was_heard(&mut self, heard: Heard) -> Option<usize> {
+        let spectrum = match heard {
+            Heard::LongTerm => &self.long_term,
+            Heard::Recent => &self.recent,
+        };
         let band_bins = self.bin_of(BAND_HZ).max(1);
         let top = self.highest_bin();
         self.bands.clear();
         let mut start = 0;
         while start + band_bins <= top {
-            let power: f64 = self
-                .long_term
+            let power: f64 = spectrum
                 .get(start..start + band_bins)
                 .unwrap_or_default()
                 .iter()
@@ -573,57 +707,22 @@ impl Restore {
         if let Some(cleared) = voice.hollow.get_mut(row..row + bins) {
             cleared.fill(false);
         }
+        let search = Search {
+            from,
+            below,
+            run,
+            deeper,
+            deepest,
+            within_db_of_the_loudest: HOLES_WITHIN_DB_OF_THE_LOUDEST,
+            while_it_holds_db: HOLES_ONLY_WHILE_THE_SLICE_HOLDS_DB,
+        };
         let mut holds_a_hole = false;
-        let heard: f64 = slicing
-            .spectrum
-            .get(from..below)
-            .unwrap_or_default()
-            .iter()
-            .map(|bin| bin.norm_sqr())
-            .sum();
-        let steady = voice.steady.get(from..below).unwrap_or_default();
-        let expected: f64 = steady.iter().sum();
-        let audible =
-            steady.iter().copied().fold(0.0, f64::max) * power_of(-HOLES_WITHIN_DB_OF_THE_LOUDEST);
-        if heard >= expected * power_of(-HOLES_ONLY_WHILE_THE_SLICE_HOLDS_DB) {
-            let mut run_from = None;
-            for bin in from..=below {
-                let hollow = bin < below && {
-                    let now = slicing.spectrum.get(bin).map_or(0.0, |bin| bin.norm_sqr());
-                    let steady = voice.steady.get(bin).copied().unwrap_or_default();
-                    steady > SILENT_POWER.max(audible) && now < steady * deeper
-                };
-                match (hollow, run_from) {
-                    (true, None) => run_from = Some(bin),
-                    (false, Some(start)) => {
-                        run_from = None;
-                        let now: f64 = slicing
-                            .spectrum
-                            .get(start..bin)
-                            .unwrap_or_default()
-                            .iter()
-                            .map(|bin| bin.norm_sqr())
-                            .sum();
-                        let steady: f64 = voice
-                            .steady
-                            .get(start..bin)
-                            .unwrap_or_default()
-                            .iter()
-                            .sum();
-                        let widened = start.saturating_sub(1).max(from)..(bin + 1).min(below);
-                        if bin - start >= run
-                            && now < steady * deepest
-                            && let Some(marked) =
-                                voice.hollow.get_mut(row + widened.start..row + widened.end)
-                        {
-                            marked.fill(true);
-                            holds_a_hole = true;
-                        }
-                    }
-                    _ => {}
-                }
+        hollow_runs(&slicing.spectrum, &voice.steady, search, |widened| {
+            if let Some(marked) = voice.hollow.get_mut(row + widened.start..row + widened.end) {
+                marked.fill(true);
+                holds_a_hole = true;
             }
-        }
+        });
         if let Some(held) = voice.holds_a_hole.get_mut(voice.hollow_at) {
             *held = holds_a_hole;
         }
@@ -639,6 +738,215 @@ impl Restore {
             *slot = bin.norm_sqr();
         }
         voice.heard_at = (voice.heard_at + 1) % HOLE_MEMORY_SLICES;
+    }
+
+    fn short_holes_below(&self) -> usize {
+        let top = self.highest_bin();
+        self.short_bin_of(self.hertz_of(self.wall_bin.unwrap_or(top).min(top)))
+            .min(self.short_bins())
+    }
+
+    fn look_for_short_holes(&mut self, channel: usize) {
+        let bins = self.short_bins();
+        let search = Search {
+            from: self.short_bin_of(HOLES_FROM_HZ),
+            below: self.short_holes_below(),
+            run: (SHORT_HOLE_RUN_HZ * self.short as f64 / self.rate)
+                .ceil()
+                .max(1.0) as usize,
+            deeper: power_of(-self.config.tuning.holes().deeper_than_db),
+            deepest: power_of(
+                -self.config.tuning.holes().deeper_than_db - A_RUN_DEEPER_THAN_ITS_BINS_DB,
+            ),
+            within_db_of_the_loudest: SHORT_HOLES_WITHIN_DB_OF_THE_LOUDEST,
+            while_it_holds_db: SHORT_HOLES_ONLY_WHILE_THE_WINDOW_HOLDS_DB,
+        };
+        let (size, hop, short, stride) = (self.size, self.hop, self.short, self.stride);
+        let (Some(slicing), Some(voice)) =
+            (self.short_slicing.as_mut(), self.voices.get_mut(channel))
+        else {
+            return;
+        };
+
+        let row = voice.hollow_at * STRIDES_A_HOP;
+        if let Some(states) = voice.short_states.get_mut(row..row + STRIDES_A_HOP) {
+            states.fill(Short::Clear);
+        }
+        if let Some(levels) = voice
+            .short_levels
+            .get_mut(row * bins..(row + STRIDES_A_HOP) * bins)
+        {
+            levels.fill(0.0);
+        }
+
+        for in_the_hop in 0..STRIDES_A_HOP {
+            let end = size - hop + stride * (in_the_hop + 1);
+            let newest = voice.history.get(end - short..end).unwrap_or_default();
+            for ((bin, sample), weight) in
+                slicing.spectrum.iter_mut().zip(newest).zip(&slicing.window)
+            {
+                *bin = Complex::new(sample * weight, 0.0);
+            }
+            slicing
+                .forward
+                .process_with_scratch(&mut slicing.spectrum, &mut self.scratch);
+
+            if in_the_hop.is_multiple_of(SHORT_STEADY_REFRESHED_EVERY_STRIDES) {
+                for bin in search.from..search.below {
+                    let steady = voice.short_steady_of(bin, bins);
+                    if let Some(slot) = voice.short_steady.get_mut(bin) {
+                        *slot = steady;
+                    }
+                }
+            }
+            let at = (row + in_the_hop) * bins;
+            let mut holds_a_hole = false;
+            hollow_runs(&slicing.spectrum, &voice.short_steady, search, |widened| {
+                if let Some(levels) = voice
+                    .short_levels
+                    .get_mut(at + widened.start..at + widened.end)
+                    && let Some(steady) = voice.short_steady.get(widened)
+                {
+                    levels.copy_from_slice(steady);
+                    holds_a_hole = true;
+                }
+            });
+            if holds_a_hole && let Some(state) = voice.short_states.get_mut(row + in_the_hop) {
+                *state = Short::Candidate;
+            }
+
+            let kept = voice.short_heard_at * bins;
+            for (slot, bin) in voice
+                .short_heard
+                .get_mut(kept..kept + bins)
+                .unwrap_or_default()
+                .iter_mut()
+                .zip(&slicing.spectrum)
+            {
+                *slot = bin.norm_sqr();
+            }
+            voice.short_heard_at = (voice.short_heard_at + 1) % SHORT_MEMORY_STRIDES;
+        }
+    }
+
+    fn confirm_short_holes(&mut self, channel: usize) {
+        let bins = self.short_bins();
+        if self.short_slicing.is_none() {
+            return;
+        }
+        let returns = power_of(-SHORT_HOLE_RETURNS_WITHIN_DB);
+        let strides_a_window = self.short / self.stride;
+        let Some(voice) = self.voices.get_mut(channel) else {
+            return;
+        };
+        let row = voice.row_aged(1) * STRIDES_A_HOP;
+        for in_the_hop in 0..STRIDES_A_HOP {
+            if voice.short_states.get(row + in_the_hop) != Some(&Short::Candidate) {
+                continue;
+            }
+            let after = in_the_hop + strides_a_window;
+            let behind_the_newest = 2 * STRIDES_A_HOP - 1 - after;
+            let heard_at = (voice.short_heard_at + SHORT_MEMORY_STRIDES - 1 - behind_the_newest)
+                % SHORT_MEMORY_STRIDES;
+            let levels = voice
+                .short_levels
+                .get((row + in_the_hop) * bins..(row + in_the_hop + 1) * bins)
+                .unwrap_or_default();
+            let heard = voice
+                .short_heard
+                .get(heard_at * bins..(heard_at + 1) * bins)
+                .unwrap_or_default();
+            let (expected, now) = levels
+                .iter()
+                .zip(heard)
+                .filter(|(level, _)| **level > 0.0)
+                .fold((0.0, 0.0), |(expected, now), (level, heard)| {
+                    (expected + level, now + heard)
+                });
+            let settled = if now >= expected * returns {
+                Short::Fresh
+            } else {
+                Short::Clear
+            };
+            if let Some(state) = voice.short_states.get_mut(row + in_the_hop) {
+                *state = settled;
+            }
+        }
+    }
+
+    fn fill_the_short_holes(&mut self, channel: usize) {
+        if self.short_slicing.is_none() {
+            return;
+        }
+        for age in 1..HOPS_A_FRAME {
+            for in_the_hop in 0..STRIDES_A_HOP {
+                let Some(voice) = self.voices.get(channel) else {
+                    return;
+                };
+                let state = voice.short_at(age, in_the_hop);
+                if matches!(state, Short::Clear | Short::Candidate) || voice.holds_a_hole_aged(age)
+                {
+                    continue;
+                }
+                let windows = if state == Short::Fresh {
+                    0..HOPS_A_FRAME
+                } else {
+                    0..1
+                };
+                for window in windows {
+                    self.fill_a_short_hole(channel, age, in_the_hop, window);
+                }
+                if let Some(voice) = self.voices.get_mut(channel) {
+                    let at = voice.row_aged(age) * STRIDES_A_HOP + in_the_hop;
+                    if let Some(settled) = voice.short_states.get_mut(at) {
+                        *settled = Short::Confirmed;
+                    }
+                }
+            }
+        }
+    }
+
+    fn fill_a_short_hole(&mut self, channel: usize, age: usize, in_the_hop: usize, window: usize) {
+        let filled = gain_of(-self.config.tuning.holes().filled_below_db);
+        let bins = self.short_bins();
+        let (size, hop, short, stride) = (self.size, self.hop, self.short, self.stride);
+        let Some(voice) = self.voices.get_mut(channel) else {
+            return;
+        };
+        let at = (voice.row_aged(age) * STRIDES_A_HOP + in_the_hop) * bins;
+        let levels = voice.short_levels.get(at..at + bins).unwrap_or_default();
+
+        self.short_fill.fill(Complex::new(0.0, 0.0));
+        for (bin, level) in levels.iter().enumerate().take(bins - 1).skip(1) {
+            if *level > 0.0 {
+                let amplitude =
+                    filled * (level * SHORT_FILL_COMPENSATES_THE_OVERLAP / HANN_POWER).sqrt();
+                let angle = 2.0 * PI * drawn(&mut self.noise);
+                if let Some(slot) = self.short_fill.get_mut(bin) {
+                    *slot = Complex::from_polar(amplitude, angle);
+                }
+            }
+        }
+        mirror(&mut self.short_fill);
+        if let Some(inverse) = self.short_inverse.as_ref() {
+            inverse.process_with_scratch(&mut self.short_fill, &mut self.scratch);
+        }
+
+        let unscaled = SYNTHESIS_GAIN / short as f64;
+        let end = (size - (age + 1) * hop + stride * (in_the_hop + 1)) as isize;
+        let start = end - short as isize;
+        for (offset, noise) in self.short_fill.iter().enumerate() {
+            let held = start + offset as isize;
+            let weighed = held + (window * hop) as isize;
+            let (Ok(held), Ok(weighed)) = (usize::try_from(held), usize::try_from(weighed)) else {
+                continue;
+            };
+            let cell = (PI * (offset as f64 + 0.5) / short as f64).sin();
+            let weight = self.window.get(weighed).copied().unwrap_or_default();
+            if let Some(slot) = voice.accumulated.get_mut(held) {
+                *slot += noise.re * cell * weight * unscaled;
+            }
+        }
     }
 
     fn reshape(&mut self, channel: usize) {
@@ -801,6 +1109,61 @@ impl Restore {
     }
 }
 
+fn hollow_runs(
+    spectrum: &[Complex<f64>],
+    steady: &[f64],
+    search: Search,
+    mut marked: impl FnMut(Range<usize>),
+) {
+    let Search {
+        from,
+        below,
+        run,
+        deeper,
+        deepest,
+        within_db_of_the_loudest,
+        while_it_holds_db,
+    } = search;
+    let heard: f64 = spectrum
+        .get(from..below)
+        .unwrap_or_default()
+        .iter()
+        .map(|bin| bin.norm_sqr())
+        .sum();
+    let held = steady.get(from..below).unwrap_or_default();
+    let expected: f64 = held.iter().sum();
+    let audible = held.iter().copied().fold(0.0, f64::max) * power_of(-within_db_of_the_loudest);
+    if heard < expected * power_of(-while_it_holds_db) {
+        return;
+    }
+
+    let mut run_from = None;
+    for bin in from..=below {
+        let hollow = bin < below && {
+            let now = spectrum.get(bin).map_or(0.0, |bin| bin.norm_sqr());
+            let expected = steady.get(bin).copied().unwrap_or_default();
+            expected > SILENT_POWER.max(audible) && now < expected * deeper
+        };
+        match (hollow, run_from) {
+            (true, None) => run_from = Some(bin),
+            (false, Some(start)) => {
+                run_from = None;
+                let now: f64 = spectrum
+                    .get(start..bin)
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|bin| bin.norm_sqr())
+                    .sum();
+                let expected: f64 = steady.get(start..bin).unwrap_or_default().iter().sum();
+                if bin - start >= run && now < expected * deepest {
+                    marked(start.saturating_sub(1).max(from)..(bin + 1).min(below));
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 fn mirror(spectrum: &mut [Complex<f64>]) {
     let size = spectrum.len();
     for bin in 1..size / 2 {
@@ -855,10 +1218,17 @@ impl Processor for Restore {
         let forward = planner.plan_fft_forward(size);
         let inverse = planner.plan_fft_inverse(size);
         let slice_forward = planner.plan_fft_forward(hop);
+        let short = hop / SHORT_WINDOW_IS_A_HOP_DIVIDED_BY;
+        let short_forward = planner.plan_fft_forward(short);
+        let short_inverse = planner.plan_fft_inverse(short);
         let scratch = forward
             .get_inplace_scratch_len()
             .max(inverse.get_inplace_scratch_len())
-            .max(slice_forward.get_inplace_scratch_len());
+            .max(slice_forward.get_inplace_scratch_len())
+            .max(short_forward.get_inplace_scratch_len())
+            .max(short_inverse.get_inplace_scratch_len());
+        let strided = size >= STRIDES_A_HOP * HOPS_A_FRAME;
+        let short_bins = short / 2 + 1;
         let bins = size / 2 + 1;
         let slice_bins = hop / 2 + 1;
 
@@ -874,6 +1244,15 @@ impl Processor for Restore {
             window: hann_window(hop),
             spectrum: vec![Complex::new(0.0, 0.0); hop],
         });
+        self.short = short;
+        self.stride = (hop / STRIDES_A_HOP).max(1);
+        self.short_slicing = strided.then(|| Slicing {
+            forward: short_forward,
+            window: hann_window(short),
+            spectrum: vec![Complex::new(0.0, 0.0); short],
+        });
+        self.short_inverse = strided.then_some(short_inverse);
+        self.short_fill = vec![Complex::new(0.0, 0.0); short];
         self.spectrum = vec![Complex::new(0.0, 0.0); size];
         self.fill = vec![Complex::new(0.0, 0.0); size];
         self.scratch = vec![Complex::new(0.0, 0.0); scratch];
@@ -887,15 +1266,22 @@ impl Processor for Restore {
                 hollow: vec![false; SLICES_REMEMBERED * slice_bins],
                 hollow_at: 0,
                 holds_a_hole: [false; SLICES_REMEMBERED],
+                short_heard: vec![0.0; SHORT_MEMORY_STRIDES * short_bins],
+                short_heard_at: 0,
+                short_steady: vec![0.0; short_bins],
+                short_levels: vec![0.0; SLICES_REMEMBERED * STRIDES_A_HOP * short_bins],
+                short_states: [Short::Clear; SLICES_REMEMBERED * STRIDES_A_HOP],
             })
             .collect();
         self.long_term = vec![0.0; bins];
+        self.recent = vec![0.0; bins];
         self.heard_this_hop = vec![0.0; bins];
         self.bands = Vec::with_capacity(bins);
         self.envelope = vec![0.0; bins];
         self.silence = vec![0.0; channels];
         let hops_a_second = rate / hop as f64;
         self.long_term_step = 1.0 - (-1.0 / (LONG_TERM_SECONDS * hops_a_second)).exp();
+        self.recent_step = 1.0 - (-1.0 / (RECENT_SECONDS * hops_a_second)).exp();
         self.presence_step = (RESTORATION_FADES_OVER_SECONDS * hops_a_second)
             .max(1.0)
             .recip();
@@ -916,7 +1302,9 @@ impl Processor for Restore {
             voice.clear();
         }
         self.long_term.fill(0.0);
+        self.recent.fill(0.0);
         self.envelope.fill(0.0);
+        self.following = None;
         self.filled = 0;
         self.hops = 0;
         self.wall_bin = self.config.wall.and_then(|wall| {
@@ -987,6 +1375,19 @@ mod tests {
     const STEPPED_EVERY: usize = 1_024;
     const STEPPED_OVER: usize = 4_096;
     const STEPPED_BY_AT_MOST: f64 = 0.2;
+    const SHORT_BLOCK_FRAMES: usize = 128;
+    const NOISE_LEVEL: f64 = 0.5;
+    const RENORMALISED_EVERY_FRAMES: usize = 4_096;
+    const WALL_MOVES_AT_SECONDS: f64 = 20.0;
+    const SWITCH_OVER_SECONDS: f64 = 0.02;
+    const AFTER_THE_SWITCH_SECONDS: f64 = 20.2;
+    const ABOVE_BOTH_WALLS_FROM_HZ: f64 = 19_600.0;
+    const ABOVE_BOTH_WALLS_TO_HZ: f64 = 21_100.0;
+    const LOWER_WALL_HZ: Range<f64> = 15_500.0..16_400.0;
+    const UPPER_WALL_HZ: Range<f64> = 18_400.0..19_400.0;
+    const BRIEF_DIPS: [(f64, f64); 2] = [(20.0, 0.6), (24.0, 2.0)];
+    const SHORT_FILL_SPILLS_AT_MOST: usize = 48;
+    const SHORT_HOLE_OFFSETS: [usize; 6] = [0, 13, 29, 47, 64, 101];
 
     fn restored(restoration: Restoration) -> RestoreConfig {
         RestoreConfig {
@@ -1295,5 +1696,358 @@ mod tests {
             worst < STEPPED_BY_AT_MOST,
             "the extension stepped by {worst:.2} of its settled level between neighbouring windows"
         );
+    }
+
+    fn tuned(restoration: Restoration, tuning: Tuning) -> RestoreConfig {
+        RestoreConfig {
+            tuning,
+            ..restored(restoration)
+        }
+    }
+
+    fn touched_frames(output: &[f64], input: &[f64]) -> Vec<usize> {
+        output
+            .iter()
+            .zip(input)
+            .enumerate()
+            .filter(|(_, (made, taken))| (*made - *taken).abs() > 1e-12)
+            .map(|(at, _)| at / 2)
+            .collect()
+    }
+
+    #[test]
+    fn a_hole_one_short_block_long_is_filled_wherever_it_falls_and_nowhere_else() {
+        let frames = 3 * 44_100;
+        for tuning in [Tuning::Mp3, Tuning::Aac, Tuning::Vorbis] {
+            for offset in SHORT_HOLE_OFFSETS {
+                let start = 2 * 44_100 + offset;
+                let gap = start..start + SHORT_BLOCK_FRAMES;
+                let input = with_a_band_zeroed(frames, &gap);
+                let (output, _) = through(tuned(Restoration::Repair, tuning), &input);
+
+                let before = band_db(
+                    &output,
+                    gap.start - MEASURED - 2_048,
+                    8_100.0,
+                    8_900.0,
+                    MEASURED,
+                );
+                let taken =
+                    band_db(&input, gap.start, 8_100.0, 8_900.0, SHORT_BLOCK_FRAMES) - before;
+                let heard =
+                    band_db(&output, gap.start, 8_100.0, 8_900.0, SHORT_BLOCK_FRAMES) - before;
+                assert!(
+                    taken < -60.0,
+                    "{tuning:?} at {offset}: the gap in the input reads {taken:.1} dB"
+                );
+                assert!(
+                    heard > -35.0,
+                    "{tuning:?} at {offset}: a hole one short block long was left at {heard:.1} dB"
+                );
+
+                let touched = touched_frames(&output, &input);
+                let first = touched.first().copied().expect("something was filled");
+                let last = touched.last().copied().expect("something was filled");
+                assert!(
+                    first + SHORT_FILL_SPILLS_AT_MOST >= gap.start
+                        && last <= gap.end + SHORT_FILL_SPILLS_AT_MOST,
+                    "{tuning:?} at {offset}: the fill reached from frame {first} to {last} around a hole from {} to {}",
+                    gap.start,
+                    gap.end
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn silence_and_a_strike_one_short_block_long_are_not_taken_for_holes() {
+        let mut input = tones(3 * 44_100, 100.0, 21_900.0, 200);
+        let silent = 2 * 44_100..2 * 44_100 + SHORT_BLOCK_FRAMES;
+        for frame in silent.clone() {
+            input[frame * 2] = 0.0;
+            input[frame * 2 + 1] = 0.0;
+        }
+        let struck = 2 * 44_100 + 4_096;
+        for frame in struck..struck + SHORT_BLOCK_FRAMES {
+            let swing = if frame % 2 == 0 { 0.7 } else { -0.7 };
+            input[frame * 2] += swing;
+            input[frame * 2 + 1] += swing;
+        }
+        for tuning in [Tuning::Mp3, Tuning::Aac, Tuning::Vorbis] {
+            let (output, _) = through(tuned(Restoration::Repair, tuning), &input);
+            let touched = touched_frames(&output, &input);
+            assert!(
+                touched.is_empty(),
+                "{tuning:?}: {} frames were filled, from {:?}",
+                touched.len(),
+                touched.first()
+            );
+        }
+    }
+
+    fn noise(frames: usize, seed: u64) -> Vec<f64> {
+        let mut state = seed;
+        (0..frames)
+            .flat_map(|_| {
+                let sample = (drawn(&mut state) - 0.5) * NOISE_LEVEL;
+                [sample, sample]
+            })
+            .collect()
+    }
+
+    #[test]
+    fn steady_material_is_left_exactly_as_it_came() {
+        let frames = 4 * 44_100;
+        let steady = [
+            with_a_band_zeroed(frames, &(0..0)),
+            noise(frames, 0x1234_5678_9ABC_DEF1),
+            tones(frames, 100.0, 21_900.0, 200),
+        ];
+        for tuning in [Tuning::Mp3, Tuning::Aac, Tuning::Vorbis] {
+            for input in &steady {
+                let (output, _) = through(tuned(Restoration::Repair, tuning), input);
+                let touched = touched_frames(&output, input);
+                assert!(
+                    touched.is_empty(),
+                    "{tuning:?}: {} frames of steady material were filled, from {:?}",
+                    touched.len(),
+                    touched.first()
+                );
+            }
+        }
+    }
+
+    struct Band {
+        lowest: f64,
+        highest: f64,
+        count: usize,
+    }
+
+    fn banded(frames: usize, bands: &[Band], gain: impl Fn(usize, f64) -> f64) -> Vec<f64> {
+        let mut seed: u64 = 0x5265_736F_6E61_7465;
+        let mut draw = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed >> 11) as f64 / (1_u64 << 53) as f64
+        };
+        let mut phasors: Vec<Vec<(Complex<f64>, Complex<f64>)>> = bands
+            .iter()
+            .map(|band| {
+                (0..band.count)
+                    .map(|_| {
+                        let hertz = band.lowest + draw() * (band.highest - band.lowest);
+                        let phase = draw() * 2.0 * PI;
+                        let step = 2.0 * PI * hertz / RATE;
+                        (
+                            Complex::from_polar(1.0, phase),
+                            Complex::from_polar(1.0, step),
+                        )
+                    })
+                    .collect()
+            })
+            .collect();
+        let level = 0.5 / (bands.iter().map(|band| band.count).sum::<usize>() as f64).sqrt();
+        let mut output = Vec::with_capacity(frames * 2);
+        for frame in 0..frames {
+            let seconds = frame as f64 / RATE;
+            let mut sample = 0.0;
+            for (index, tones) in phasors.iter_mut().enumerate() {
+                let mut sum = 0.0;
+                for (phasor, step) in tones.iter_mut() {
+                    sum += phasor.im;
+                    *phasor *= *step;
+                }
+                sample += sum * gain(index, seconds);
+            }
+            if frame % RENORMALISED_EVERY_FRAMES == 0 {
+                for (phasor, _) in phasors.iter_mut().flatten() {
+                    *phasor /= phasor.norm();
+                }
+            }
+            let heard = sample * level;
+            output.push(heard);
+            output.push(heard);
+        }
+        output
+    }
+
+    fn ramp(seconds: f64, from: f64, over: f64) -> f64 {
+        ((seconds - from) / over).clamp(0.0, 1.0)
+    }
+
+    fn walls_heard(config: RestoreConfig, input: &[f64]) -> (Vec<f64>, Vec<(f64, Option<f64>)>) {
+        let mut stage = Restore::new(config);
+        let most = stage
+            .prepare(
+                StreamSpec::new(
+                    SampleRate::HZ_44100,
+                    ChannelLayout::Stereo,
+                    SampleFormat::F32,
+                ),
+                BLOCK,
+            )
+            .expect("the stage prepares");
+        let mut scratch = vec![0.0; most * 2];
+        let mut output = Vec::new();
+        let mut walls = Vec::new();
+        for (index, block) in input.chunks(BLOCK * 2).enumerate() {
+            let count = stage.process(block, &mut scratch);
+            output.extend_from_slice(&scratch[..count.frames_out * 2]);
+            let seconds = (index * BLOCK) as f64 / RATE;
+            let wall = stage
+                .wall()
+                .map(|wall| f64::from(wall.centihertz()) / 100.0);
+            walls.push((seconds, wall));
+        }
+        (output, walls)
+    }
+
+    fn walls_between(
+        walls: &[(f64, Option<f64>)],
+        from: f64,
+        to: f64,
+    ) -> impl Iterator<Item = Option<f64>> {
+        walls
+            .iter()
+            .filter(move |(seconds, _)| (from..to).contains(seconds))
+            .map(|(_, wall)| *wall)
+    }
+
+    fn above_both_walls(samples: &[f64], seconds: f64) -> f64 {
+        band_db(
+            samples,
+            (seconds * RATE) as usize,
+            ABOVE_BOTH_WALLS_FROM_HZ,
+            ABOVE_BOTH_WALLS_TO_HZ,
+            STEPPED_OVER,
+        )
+    }
+
+    fn worst_step_against(samples: &[f64], from: f64, to: f64, against: f64) -> f64 {
+        let steps = ((to - from) * RATE) as usize / STEPPED_EVERY;
+        let shares: Vec<f64> = (0..steps)
+            .map(|step| {
+                let seconds = from + (step * STEPPED_EVERY) as f64 / RATE;
+                gain_of(above_both_walls(samples, seconds) - against)
+            })
+            .collect();
+        shares
+            .windows(2)
+            .map(|pair| (pair[1] - pair[0]).abs())
+            .fold(0.0, f64::max)
+    }
+
+    const LOWER: Band = Band {
+        lowest: 100.0,
+        highest: 16_000.0,
+        count: 120,
+    };
+    const UPPER: Band = Band {
+        lowest: 16_300.0,
+        highest: 19_000.0,
+        count: 40,
+    };
+
+    #[test]
+    fn a_wall_that_moves_up_late_in_a_song_is_followed_without_a_step() {
+        let frames = 26 * 44_100;
+        let input = banded(frames, &[LOWER, UPPER], |band, seconds| {
+            if band == 0 {
+                1.0
+            } else {
+                ramp(seconds, WALL_MOVES_AT_SECONDS, SWITCH_OVER_SECONDS)
+            }
+        });
+        let (output, walls) = walls_heard(restored(Restoration::Extend), &input);
+
+        let before = walls_between(&walls, 3.0, WALL_MOVES_AT_SECONDS);
+        for wall in before {
+            let wall = wall.expect("a wall");
+            assert!(
+                LOWER_WALL_HZ.contains(&wall),
+                "the wall strayed to {wall} Hz before it moved"
+            );
+        }
+        let after = walls_between(&walls, 24.0, 26.0);
+        for wall in after {
+            let wall = wall.expect("a wall");
+            assert!(
+                UPPER_WALL_HZ.contains(&wall),
+                "the wall was followed only to {wall} Hz"
+            );
+        }
+
+        let settled = above_both_walls(&output, 24.0);
+        let worst = worst_step_against(&output, AFTER_THE_SWITCH_SECONDS, 25.0, settled);
+        assert!(
+            worst < STEPPED_BY_AT_MOST,
+            "the extension stepped by {worst:.2} of its settled level while the wall moved"
+        );
+    }
+
+    #[test]
+    fn a_wall_that_moves_down_late_in_a_song_is_followed_without_a_step() {
+        let frames = 32 * 44_100;
+        let input = banded(frames, &[LOWER, UPPER], |band, seconds| {
+            if band == 0 {
+                1.0
+            } else {
+                1.0 - ramp(seconds, WALL_MOVES_AT_SECONDS, SWITCH_OVER_SECONDS)
+            }
+        });
+        let (output, walls) = walls_heard(restored(Restoration::Extend), &input);
+
+        for wall in walls_between(&walls, 3.0, WALL_MOVES_AT_SECONDS) {
+            let wall = wall.expect("a wall");
+            assert!(
+                UPPER_WALL_HZ.contains(&wall),
+                "the wall strayed to {wall} Hz before it moved"
+            );
+        }
+        for wall in walls_between(&walls, 30.0, 32.0) {
+            let wall = wall.expect("a wall");
+            assert!(
+                LOWER_WALL_HZ.contains(&wall),
+                "the wall was followed only to {wall} Hz"
+            );
+        }
+
+        let settled = above_both_walls(&output, 30.0);
+        let worst = worst_step_against(&output, AFTER_THE_SWITCH_SECONDS, 31.0, settled);
+        assert!(
+            worst < STEPPED_BY_AT_MOST,
+            "the extension stepped by {worst:.2} of its settled level while the wall moved"
+        );
+    }
+
+    #[test]
+    fn a_steady_wall_with_the_high_frequencies_gone_for_a_moment_is_not_moved() {
+        let frames = 30 * 44_100;
+        let lower = Band {
+            highest: 12_000.0,
+            count: 90,
+            ..LOWER
+        };
+        let upper = Band {
+            lowest: 12_100.0,
+            highest: 16_000.0,
+            count: 40,
+        };
+        let input = banded(frames, &[lower, upper], |band, seconds| {
+            let gone = BRIEF_DIPS
+                .iter()
+                .any(|(from, length)| (*from..from + length).contains(&seconds));
+            if band == 1 && gone { 0.0 } else { 1.0 }
+        });
+        let (_, walls) = walls_heard(restored(Restoration::Extend), &input);
+
+        for wall in walls_between(&walls, 3.0, 30.0) {
+            let wall = wall.expect("a wall");
+            assert!(
+                LOWER_WALL_HZ.contains(&wall),
+                "the wall was moved to {wall} Hz by a dip"
+            );
+        }
     }
 }
