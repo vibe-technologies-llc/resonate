@@ -898,15 +898,44 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   slice into a neighbour that is not hollow and crossfading into one that is, so a hole as short as
   two slices (an MP3 granule) is filled where it falls, not smeared across the window. A dropout an
   encoder smeared shallower than the tuning's depth (ffmpeg's AAC around a granule-long gap) is
-  left alone. **An unstudied track is extended from its first quarter second:** the long-term
+  left alone. **A hole shorter than two slices (down to an AAC short block, half a slice) is found
+  by a second reader over a window of half a slice at `STRIDES_A_HOP` (eight) strides a hop**, so
+  a hole at any offset falls within a few frames of a window's edge: against the median of the
+  last `SHORT_MEMORY_STRIDES` windows (refreshed every `SHORT_STEADY_REFRESHED_EVERY_STRIDES`
+  strides), `hollow_runs` (the one reader of both) wants a run of `SHORT_HOLE_RUN_HZ`, within
+  `SHORT_HOLES_WITHIN_DB_OF_THE_LOUDEST` of the loudest bin (a short Hann window's sidelobes
+  make the slice reader's sixty a source of false runs beside a tonal band) and while the window
+  as a whole holds to `SHORT_HOLES_ONLY_WHILE_THE_WINDOW_HOLDS_DB`. **A candidate is filled only
+  once the band is heard again:** the window starting where the candidate's ends, read a hop
+  later, must have the marked bins back within `SHORT_HOLE_RETURNS_WITHIN_DB` of the steady level
+  (`Short::Candidate` becomes `Fresh`, else `Clear`), which rules out a note ending, a decay or
+  silence, none of which returns. The fill is a sine-windowed noise cell of the window's length laid into the output as
+  the slice fill is; a freshly confirmed cell is also laid into the three earlier windows' share
+  of the overlap-add buffer, so it is not a hop short, and a cell in a slice that already holds
+  a slice-level hole is skipped. Neither reader fills steady material, white noise or a strike
+  (`steady_material_is_left_exactly_as_it_came`,
+  `silence_and_a_strike_one_short_block_long_are_not_taken_for_holes`).
+  **An unstudied track is extended from its first quarter second:** the long-term
   spectrum is a running mean until it has heard `LONG_TERM_SECONDS`, the wall is looked for every
   `LOOK_FOR_A_WALL_EVERY_SECONDS` from `LOOK_FOR_A_WALL_AFTER_SECONDS` and held provisionally,
   locking at `WALL_LOCKS_AFTER_SECONDS`. Everything the wall drives (droop lift and patch) is scaled
   by a *presence* walked over `RESTORATION_FADES_OVER_SECONDS`, so the extension fades in rather
-  than stepping; a provisional wall moving past `WALL_MOVES_PAST_HZ` fades out, moves, fades back
-  in. A studied wall starts present (`a_hole_one_granule_long_is_filled_where_it_falls_and_nowhere_else`,
-  `the_extension_rises_and_settles_without_a_step`; `resonate-dsp --test restoration` runs ffmpeg's
-  MP3, AAC and Vorbis encodes through it, skipping without ffmpeg).
+  than stepping; a wall moving past `WALL_MOVES_PAST_HZ` fades out, moves, fades back in. A studied
+  wall starts present. **The wall is followed past its lock:** a second running spectrum
+  (`recent`, `RECENT_SECONDS`) is read for a wall every `LOOK_FOR_A_WALL_EVERY_SECONDS`, and one
+  past `WALL_MOVES_PAST_HZ` of the held wall that the last `WALL_FOLLOWED_AFTER_LOOKS` looks
+  agree on (`follow_the_wall`; one look disagreeing, or none found, starts the count again) takes
+  the same fade-out, move and fade-in. The short memory finds a wall that rose within a fraction
+  of a second and one that fell after seconds (thirty decibels at a half-second time constant), and
+  a dip that comes back within the count, or fades the high frequencies by less than a cliff, is
+  never followed (`a_wall_that_moves_up_late_in_a_song_is_followed_without_a_step`,
+  `a_wall_that_moves_down_late_in_a_song_is_followed_without_a_step`,
+  `a_steady_wall_with_the_high_frequencies_gone_for_a_moment_is_not_moved`). The patch is taken
+  from the music itself, so an input band that ends takes the extension built from it with it; only
+  the stage's own move is faded. `resonate-dsp --test restoration` runs ffmpeg's MP3, AAC and
+  Vorbis encodes through it at several bitrates each, built from synthetic music (notes,
+  strikes), and a transient-rich AAC encode at 32 kbit/s whose short-block holes it must fill;
+  it skips without ffmpeg.
 - **A `Chain` carries a channel width per stage** (`Remix` changes frame width mid-chain). **One
   flush drains a chain; a flush with less room is refused:** `Chain::max_flush_frames` sums what
   every stage can still hand on and `Chain::flush` answers `Error::OutputTooSmall` for a shorter

@@ -92,10 +92,11 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   kept beside its level (a new `band_levels`-style column and migration step on both catalogs, and
   an analysis pass that splits the signal into the 29 bands)
 - [L] AutoEq is the only correction source, fetched one device at a time
-- [M] Lossy restoration was tuned on a few MP3s, ffmpeg's own MP3, AAC and Vorbis encodes of
-  synthetic tones and synthetic walls, not on a breadth of real music per codec and bitrate; a hole
-  shorter than two of its 256-frame slices (an AAC short block's) may be missed, and the wall it
-  settles on in the first second and a half is not followed past it
+- [M] Lossy restoration was tuned and tested on ffmpeg's own MP3, AAC and Vorbis encodes of
+  synthetic tones, walls and music-like notes at several bitrates, not on a breadth of real music
+  per codec and bitrate and not on other encoders (Fraunhofer, Apple, Nero, libfdk); the thresholds
+  of its short-hole reader and of the wall it follows were set on those encodes and need a corpus
+  of real files to be trusted
 - [M · blocked: symphonia] A downmix folds by position, or unplaced channels in turn: a stream's own
   downmix coefficients are not read, because the only decoded stream that could carry them is a
   multichannel AAC whose program config element (`matrix_mixdown_idx`, `pseudo_surround`)
