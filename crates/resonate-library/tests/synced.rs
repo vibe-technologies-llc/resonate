@@ -963,6 +963,53 @@ fn a_song_from_another_device_is_held_by_what_was_asked_and_never_filed_twice() 
 }
 
 #[test]
+fn a_song_from_another_device_named_otherwise_is_written_into_its_playlist_and_favoured_as_its_file_names_it()
+-> Result<()> {
+    let tree = Tree::new();
+    let library = Library::open_in_memory()?;
+    library.deliver_into(Some(DeliveryFolder {
+        path: tree.root.clone(),
+        layout: Layout::default(),
+    }));
+    let asked = song(
+        "San Tropez (2011 Remaster)",
+        "Pink Floyd",
+        "Meddle (Remastered)",
+    );
+    let SongFiled::Filed(_) = library.file_song_from_elsewhere(
+        &asked,
+        &HeldTags::default(),
+        "wav",
+        &mut Cursor::new(tagged_wav("San Tropez", "Pink Floyd", "Meddle")),
+    )?
+    else {
+        panic!("filed");
+    };
+
+    let held_as = library.held_as(&asked)?;
+    let written = library.write_synced_playlist(None, "Mix", std::slice::from_ref(&asked))?;
+    let favoured = library.favour_recording(&asked, true)?;
+
+    assert_eq!(
+        held_as
+            .as_ref()
+            .map(|own| (own.title.as_str(), own.album.as_str())),
+        Some(("San Tropez", "Meddle"))
+    );
+    assert_eq!(written.entries, std::slice::from_ref(&held_as));
+    assert!(favoured);
+    assert_eq!(
+        library.favoured_recordings()?,
+        held_as.into_iter().collect::<Vec<_>>()
+    );
+    assert_eq!(
+        library.held_as(&song("Echoes", "Pink Floyd", "Meddle"))?,
+        None
+    );
+    Ok(())
+}
+
+#[test]
 fn a_copy_numbered_beside_its_song_is_folded_into_it_and_one_that_differs_is_left() -> Result<()> {
     let tree = Tree::new();
     let trash = Tree::new();

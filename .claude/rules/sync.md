@@ -139,6 +139,21 @@ platforms; the catalog seam stays thin.
   it is held here; `merge::spliced` puts unheld entries back after the nearest earlier held one the
   edit kept (or where it stood, or at the head). A song arriving later is written in place by
   `settle`.
+- **Held is what the catalog resolved, never a second comparison of names.** A catalog resolves a
+  recording more loosely than `names_the_same_song_as` (a received song by what was asked for, an
+  empty album, MBIDs never compared) and lists the song under its own file's names, so
+  `Catalog::held_as` answers the recording it lists for the song it resolves one to. `paired`
+  matches an entry to a listed song by name first, then through `held_as`: `held_in` (after a write
+  or a settle) marks an entry held by it, a look's `as_synced` reads a listed song back as the entry
+  it was written for before splicing, and adoption pairs the same way. So a playlist naming a song
+  the catalog holds otherwise is written once, not rewritten by every settle, and an edit keeps the
+  song once under the name it travels by
+  (`a_song_a_playlist_names_and_the_catalog_holds_under_other_names_is_written_once_and_settled_no_more`,
+  `an_edit_to_a_playlist_holding_a_song_under_other_names_keeps_it_once_under_the_name_it_travels_by`).
+  **`settle` never writes over an edit the look has not read**: a playlist whose local copy no longer
+  has the digest last seen (or is gone) is left to the next look, which splices the edit, and the
+  settle after it writes the song in
+  (`a_listeners_edit_made_before_a_song_lands_is_kept_by_the_settle_that_follows`).
 - **A saved query travels as its text, evaluated by each device against its own catalog.** Its own
   `queries` table beside `playlists`, same key type, stamp, alias and tombstone rules, looked at
   the same way: a digest of the body (`merge::query_digest`) moved means an edit, stamped and owed; a
@@ -163,10 +178,17 @@ platforms; the catalog seam stays thin.
   a device is its own.
 - **A favourite is one song however each device names it.** Rows are keyed by `Recording::key()`
   (`mbid:` or `named:`), but a look matches the catalog's favourites to held rows by
-  `names_the_same_song_as` (the exact key first, then the named key): a copy with an MBID on one
-  device and without on another is one favourite, and a held row is tombstoned only where no
-  favourite here names its song
-  (`a_favourite_on_a_copy_known_by_its_mbid_and_one_known_by_its_tags_stays_favoured`).
+  `names_the_same_song_as` (the exact key first, then the named key) and, for a held row here that no
+  favourite names, by what `held_as` says the catalog lists it as: a copy with an MBID on one
+  device and without on another is one favourite, a favourite on a song held under other names stays
+  under the row it arrived as, and a held row is tombstoned only where no favourite here names its
+  song (`a_favourite_on_a_copy_known_by_its_mbid_and_one_known_by_its_tags_stays_favoured`,
+  `a_favourite_on_a_song_held_under_other_names_stays_one_favourite_under_the_name_it_travels_by`).
+  **A song's favourite is the newest word across every row naming it** (`WeighedFavourites`): an
+  arriving note older than another row of the same song saying the opposite is kept but not applied,
+  and `settle` and `wanted` take only favoured rows no newer alike row unfavours, so an old `mbid:`
+  tombstone never unfavours a song a newer `named:` row favours
+  (`an_older_tombstone_under_one_key_never_unfavours_a_song_a_newer_favourite_under_another_keeps`).
 - **Remote listens are credited where the song is held** (`Catalog::credit`), else kept and
   credited when it arrives; they are never sent on to a scrobbling service (the library's
   `listens.elsewhere`, Android's likewise). The ledger ages listens past `LISTENS_KEPT_FOR`, and a
@@ -238,8 +260,10 @@ platforms; the catalog seam stays thin.
 
 `Catalog` is what a platform implements: playlists read and written (no undo step), saved queries
 read and written (`queries`, `write_query`; removal is `remove_playlist`, one id space), favourites,
-listens after a mark, a remote listen credited, the resume state, whether and how a song is held,
-opening one to send and landing one received, and a `revision` that moves with any of these.
+listens after a mark, a remote listen credited, the resume state, whether and how a song is held
+(`held_as`: the recording the catalog lists for the song it resolves one to; default none, so the
+ledger pairs by name alone), opening one to send and landing one received, and a `revision` that
+moves with any of these.
 Failures are a `Refused` the implementation logs (errors.md: no boxed error). **Answers**
 (`takes_answers`, `answers_after`, `take_answer`) are the library's `answers.rs`
 (`Library::answers_to_share`, `take_shared_answer`): kept lyrics with text and studies at this
@@ -340,12 +364,15 @@ filed in the music folder under `organise-as` like a delivery (`filed::landed_be
 root scanned. **A song filed is held by what was asked for, never landed twice**: the catalog's
 `songs_received` keeps each recording key a song was filed for (`key` and `named_key`) against its
 path, and `synced::resolved` asks it after the MBID and before the tag match, so a sender whose
-catalog names the song otherwise than its file does is not fetched again on every follow; a file
+catalog names the song otherwise than its file does is not fetched again on every follow
+(`Library::held_as` answers the file's names for it, so the ledger holds it in its playlists and
+favourites, `a_song_from_another_device_named_otherwise_is_written_into_its_playlist_and_favoured_as_its_file_names_it`,
+the binary's `a_song_from_another_device_named_otherwise_stays_in_its_playlist_and_favourites_and_settles_once`); a file
 of the same bytes already standing at the name (or a numbered one) is the song
 (`filed::Landed::Standing`), not a ` (2)` beside it; the scan after filing waits out another pass
 (`scanned_once_free`: `SCANS_TRIED_AT_MOST` tries `SCAN_TRIED_AGAIN_AFTER` apart) rather than leave
 the song uncatalogued to be fetched again
-(`a_song_from_another_device_is_held_by_what_was_asked_and_never_filed_twice`). The phones do the same in their own catalog (`songs_received`, `android.md`). Copies such a
+(`a_song_from_another_device_is_held_by_what_was_asked_and_never_filed_twice`). The phones do the same in their own catalog (`songs_received`, `android.md`), and every resolution there (`DocumentCatalog::resolved_in`: playlists written, favours, credits, kept words, `held_as`) asks it as `holds` does. Copies such a
 fetch left are folded by `resonate dedupe` (`library.md`). With neither it is refused (`SongFiled::Nowhere`), and one that does not probe (or the
 vault refuses) is deleted and answered `false` (`SongFiled::Refused`), so a damaged file is never
 filed to be fetched again. **A vaulted song is offered onward**: `Library::held_songs` lists the

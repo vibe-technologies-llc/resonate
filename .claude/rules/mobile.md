@@ -211,7 +211,7 @@ weigh; the ledger still passes it on in its snapshot.
 - **Words.** `lyrics_to_share` lists every `lyrics` row with text of a visible document, in `asked`
   order (`at` is `asked` in nanoseconds), timed or not by `is_synced`, and only those `Answer::travels`
   admits. `take_lyrics` lands only on a document the recording is held strictly by (the in-memory
-  `Indexed` resolves it, then the document's recording id is the recording's, or both lengths are
+  `Indexed` resolves it, else `songs_received` does, through `resolved_in`, then the document's recording id is the recording's, or both lengths are
   known and within 2 s), parsed first, as a row with no Lyricsfile and origin `SHARED_LYRICS`, and
   never where the row keeps words as rich already (`LyricText::detail`). `SHARED_LYRICS` is due for
   the pass's Lyricsfile retry as `FETCHED_LYRICS` is. The kept sheet is dropped from `KeptSheets`

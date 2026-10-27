@@ -23,6 +23,7 @@ pub struct Shelf {
 #[derive(Default)]
 pub struct Inside {
     pub songs: Vec<(Recording, Vec<u8>)>,
+    pub received_as: Vec<(Recording, Recording)>,
     pub declared: Vec<(Recording, SongTags)>,
     pub landed_with: Vec<(Recording, SongTags)>,
     pub playlists: BTreeMap<i64, (i64, String, Vec<Recording>)>,
@@ -90,6 +91,12 @@ impl Shelf {
 
 #[allow(dead_code)]
 impl Shelf {
+    pub fn receive_named_otherwise(&self, asked: Recording, own: Recording) {
+        let bytes = own.title.as_bytes().repeat(1000);
+        self.inside.lock().received_as.push((asked, own.clone()));
+        self.add_song(own, bytes);
+    }
+
     pub fn answer_here(&self, title: &str, answer: Answer) {
         let mut inside = self.inside.lock();
         Self::answered(&mut inside, song(title), answer);
@@ -240,10 +247,22 @@ impl Shelf {
     }
 
     fn holds_song(inside: &Inside, recording: &Recording) -> bool {
-        inside
+        Self::own_of(inside, recording).is_some()
+    }
+
+    fn own_of(inside: &Inside, recording: &Recording) -> Option<Recording> {
+        if inside
             .songs
             .iter()
             .any(|(held, _)| held.names_the_same_song_as(recording))
+        {
+            return Some(recording.clone());
+        }
+        inside
+            .received_as
+            .iter()
+            .find(|(asked, _)| asked.names_the_same_song_as(recording))
+            .map(|(_, own)| own.clone())
     }
 }
 
@@ -273,8 +292,7 @@ impl Catalog for Shelf {
         let mut inside = self.inside.lock();
         let held = entries
             .iter()
-            .filter(|entry| Self::holds_song(&inside, entry))
-            .cloned()
+            .filter_map(|entry| Self::own_of(&inside, entry))
             .collect::<Vec<_>>();
         let taken = |inside: &Inside, candidate: &str| {
             inside
@@ -385,14 +403,14 @@ impl Catalog for Shelf {
 
     fn favour(&self, recording: &Recording, favoured: bool) -> Result<bool, Refused> {
         let mut inside = self.inside.lock();
-        if !Self::holds_song(&inside, recording) {
+        let Some(own) = Self::own_of(&inside, recording) else {
             return Ok(false);
-        }
+        };
         inside
             .favourites
-            .retain(|held| !held.names_the_same_song_as(recording));
+            .retain(|held| !held.names_the_same_song_as(&own));
         if favoured {
-            inside.favourites.push(recording.clone());
+            inside.favourites.push(own);
         }
         drop(inside);
         self.moved();
@@ -437,6 +455,10 @@ impl Catalog for Shelf {
         let inside = self.inside.lock();
         Ok(Self::holds_song(&inside, recording)
             && !inside.deleted_by_hand.contains(&recording.title))
+    }
+
+    fn held_as(&self, recording: &Recording) -> Result<Option<Recording>, Refused> {
+        Ok(Self::own_of(&self.inside.lock(), recording))
     }
 
     fn holdings(&self) -> Result<Vec<Held>, Refused> {

@@ -191,11 +191,7 @@ impl DocumentCatalog {
 
     fn held_strictly(&self, recording: &Recording) -> Answered<Option<u64>> {
         let connection = self.catalog.0.lock();
-        let Some(id) = self
-            .indexed(&connection)
-            .map_err(unavailable)?
-            .resolved(recording)
-        else {
+        let Some(id) = self.resolved_in(&connection, recording)? else {
             return Ok(None);
         };
         let held = connection
