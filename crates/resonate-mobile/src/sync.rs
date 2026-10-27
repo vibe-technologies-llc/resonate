@@ -2,7 +2,7 @@ use std::{
     collections::BTreeMap,
     ffi::OsStr,
     fs::{self, File},
-    io::{self, Write},
+    io::{self, Read, Write},
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -12,10 +12,11 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use resonate_codec::Sources;
+use resonate_codec::{Sources, probe_scanned};
 use resonate_core::{
-    AUDIO_EXTENSIONS, Answer, Answered as Learnt, Frames, Mbid, Recording, Resumable, Resumption,
-    SampleRate, TrackId, folded_letters, naming::named_within, title_words,
+    AUDIO_EXTENSIONS, Answer, Answered as Learnt, Frames, Mbid, MediaLocation, Recording,
+    Resumable, Resumption, SampleRate, TrackId, WholeFile, folded_letters, naming::named_within,
+    title_words,
 };
 use resonate_engine::Command;
 use resonate_sync::{
@@ -35,9 +36,12 @@ use crate::{
     lyrics::KeptSheets,
     playlists,
     saved_searches::{StoredQuery, write_stored_query},
+    vanished::is_vanished,
 };
 
 mod answers;
+
+use answers::the_same_file;
 
 const LEDGER: &str = "sync.sqlite";
 const STAGING: &str = "sync-staging";
@@ -55,6 +59,7 @@ const THE_SAME_LENGTH_WITHIN: Duration = Duration::from_secs(2);
 const PLAYLIST_NAME_BYTES_AT_MOST: usize = 255;
 const UNNAMED_PLAYLIST: &str = "Synced";
 const NANOS_A_SECOND: i64 = 1_000_000_000;
+const COMPARED_AT_ONCE: usize = 64 * 1024;
 pub(crate) const RECORDING_COLUMNS: &str = "d.title, d.artist, d.album, d.recording, d.duration_ms";
 
 type Answered<T> = std::result::Result<T, Refused>;
@@ -171,6 +176,24 @@ pub struct ReceivedSong {
     pub name: String,
     pub extension: String,
     pub song: SearchSong,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct StandingDocument {
+    pub uri: String,
+    pub name: String,
+}
+
+struct Waiting {
+    received: ReceivedSong,
+    path: PathBuf,
+    file: Option<WholeFile>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Found {
+    Visible(u64),
+    Withdrawn(u64),
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -359,66 +382,61 @@ impl MobilePlayer {
     }
 
     pub fn sync_received(&self) -> Result<Vec<ReceivedSong>> {
-        let connection = self.catalog.0.lock();
-        let mut query = connection
-            .prepare("SELECT id, extension, title, artist, album, recording, duration_ms FROM received ORDER BY id")
-            .map_err(read_error)?;
-        query
-            .query_map([], |row| {
-                let extension: String = row.get(1)?;
-                let song = SearchSong {
-                    title: row.get(2)?,
-                    artist: row.get(3)?,
-                    album: row.get(4)?,
-                    recording: row.get::<_, Option<String>>(5)?.unwrap_or_default(),
-                    duration_ms: row
-                        .get::<_, Option<i64>>(6)?
-                        .map(|duration| duration.max(0) as u64),
-                    ..SearchSong::default()
-                };
-                Ok(ReceivedSong {
-                    id: row.get::<_, i64>(0)? as u64,
-                    name: file_name_for(&song, &extension),
-                    extension,
-                    song,
-                })
-            })
-            .map_err(read_error)?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(read_error)
+        let waiting = self.waiting_songs()?;
+        let mut still = Vec::with_capacity(waiting.len());
+        for song in waiting {
+            match self.held_already(&song) {
+                Ok(Some(track)) => self.settled(&song, track),
+                Ok(None) => still.push(song.received),
+                Err(error) => {
+                    tracing::debug!(%error, "a waiting song could not be looked for among the songs held");
+                    still.push(song.received);
+                }
+            }
+        }
+        Ok(still)
     }
 
     pub fn sync_receive(&self, id: u64, descriptor: i32, uri: String) -> Result<Track> {
         let mut output = fresh_destination(descriptor)?;
-        let received = self
-            .sync_received()?
-            .into_iter()
-            .find(|received| received.id == id)
-            .ok_or(Error::UnknownReceivedSong)?;
-        let path = self.waiting_path(id)?.ok_or(Error::UnknownReceivedSong)?;
-        let landed = copied(&path, &mut output).and_then(|_| {
+        let waiting = self.waiting_song(id)?;
+        let landed = copied(&waiting.path, &mut output).and_then(|_| {
             drop(output);
-            self.indexed_download(uri, received.name, &received.song)
+            self.indexed_download(uri, waiting.received.name.clone(), &waiting.received.song)
         });
         let track = landed?;
-        if let Err(error) = self.note_received_as(&received.song, track.id) {
-            tracing::warn!(%error, "a landed song from another device is not noted as the one asked for");
-        }
-        if let Err(error) = self.forget_received(id, &path) {
-            tracing::warn!(%error, "a landed song from another device is still listed as waiting");
-        }
+        self.settled(&waiting, track.id);
         Ok(track)
     }
 
+    pub fn sync_receive_standing(
+        &self,
+        id: u64,
+        standing: Vec<StandingDocument>,
+    ) -> Result<Option<Track>> {
+        let waiting = self.waiting_song(id)?;
+        for document in standing
+            .iter()
+            .filter(|document| named_alike(&waiting.received.name, &document.name))
+        {
+            if !self.holds_the_same_bytes(&document.uri, &waiting.path) {
+                continue;
+            }
+            let track = self.indexed_download(
+                document.uri.clone(),
+                document.name.clone(),
+                &waiting.received.song,
+            )?;
+            self.settled(&waiting, track.id);
+            return Ok(Some(track));
+        }
+        Ok(None)
+    }
+
     pub fn sync_refuse_received(&self, id: u64) -> Result<()> {
-        let received = self
-            .sync_received()?
-            .into_iter()
-            .find(|received| received.id == id)
-            .ok_or(Error::UnknownReceivedSong)?;
-        let path = self.waiting_path(id)?.ok_or(Error::UnknownReceivedSong)?;
-        self.forget_received(id, &path)?;
-        self.refused_to_land(&received.song);
+        let waiting = self.waiting_song(id)?;
+        self.forget_received(id, &waiting.path)?;
+        self.refused_to_land(&waiting.received.song);
         Ok(())
     }
 
@@ -606,32 +624,154 @@ impl MobilePlayer {
         })
     }
 
+    #[cfg(test)]
     fn note_received_as(&self, song: &SearchSong, track: u64) -> Result<()> {
-        let connection = self.catalog.0.lock();
-        for key in keys_of(&recording_of(song)) {
-            connection
-                .execute(
-                    "INSERT INTO songs_received (recording, track) VALUES (?1, ?2)
-                     ON CONFLICT (recording) DO UPDATE SET track = excluded.track",
-                    params![key, track as i64],
-                )
-                .map_err(|source| Error::store(StoreOp::Write, source))?;
-        }
-        Ok(())
+        note_received(&self.catalog.0.lock(), &keys_of(&recording_of(song)), track)
+            .map_err(|source| Error::store(StoreOp::Write, source))
     }
 
-    fn waiting_path(&self, id: u64) -> Result<Option<PathBuf>> {
-        self.catalog
-            .0
-            .lock()
-            .query_row(
-                "SELECT path FROM received WHERE id = ?1",
-                [id as i64],
-                |row| row.get::<_, String>(0),
+    fn waiting_songs(&self) -> Result<Vec<Waiting>> {
+        let connection = self.catalog.0.lock();
+        let mut query = connection
+            .prepare(
+                "SELECT id, extension, title, artist, album, recording, duration_ms, path, packets, frames, rate
+                   FROM received ORDER BY id",
             )
-            .optional()
-            .map(|path| path.map(PathBuf::from))
+            .map_err(read_error)?;
+        query
+            .query_map([], |row| {
+                let extension: String = row.get(1)?;
+                let song = SearchSong {
+                    title: row.get(2)?,
+                    artist: row.get(3)?,
+                    album: row.get(4)?,
+                    recording: row.get::<_, Option<String>>(5)?.unwrap_or_default(),
+                    duration_ms: row
+                        .get::<_, Option<i64>>(6)?
+                        .map(|duration| duration.max(0) as u64),
+                    ..SearchSong::default()
+                };
+                let file = match (
+                    row.get::<_, Option<i64>>(8)?,
+                    row.get::<_, Option<i64>>(9)?,
+                    row.get::<_, Option<u32>>(10)?,
+                ) {
+                    (Some(packets), Some(frames), Some(rate)) => Some(WholeFile {
+                        packets: packets.cast_unsigned(),
+                        frames: frames.cast_unsigned(),
+                        rate,
+                    }),
+                    _ => None,
+                };
+                Ok(Waiting {
+                    received: ReceivedSong {
+                        id: row.get::<_, i64>(0)? as u64,
+                        name: file_name_for(&song, &extension),
+                        extension,
+                        song,
+                    },
+                    path: PathBuf::from(row.get::<_, String>(7)?),
+                    file,
+                })
+            })
+            .map_err(read_error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(read_error)
+    }
+
+    fn waiting_song(&self, id: u64) -> Result<Waiting> {
+        self.waiting_songs()?
+            .into_iter()
+            .find(|waiting| waiting.received.id == id)
+            .ok_or(Error::UnknownReceivedSong)
+    }
+
+    fn held_already(&self, waiting: &Waiting) -> Result<Option<u64>> {
+        let keys = self.keys_waiting(&waiting.received)?;
+        let mut held = Vec::new();
+        {
+            let connection = self.catalog.0.lock();
+            for key in &keys {
+                held.extend(received_under(&connection, key, false).map_err(read_error)?);
+            }
+        }
+        if let Some(file) = waiting.file {
+            held.extend(the_same_file(&self.catalog, &self.sources, file).unwrap_or_default());
+        }
+        for id in held {
+            if not_gone(&self.catalog, &self.sources, id).map_err(read_error)? {
+                return Ok(Some(id));
+            }
+        }
+        Ok(None)
+    }
+
+    fn keys_waiting(&self, received: &ReceivedSong) -> Result<Vec<String>> {
+        let mut keys = keys_of(&recording_of(&received.song));
+        let connection = self.catalog.0.lock();
+        let mut query = connection
+            .prepare_cached(
+                "SELECT recording FROM received_also WHERE received = ?1 ORDER BY recording",
+            )
+            .map_err(read_error)?;
+        let also = query
+            .query_map([received.id as i64], |row| row.get::<_, String>(0))
+            .map_err(read_error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(read_error)?;
+        for key in also {
+            if !keys.contains(&key) {
+                keys.push(key);
+            }
+        }
+        Ok(keys)
+    }
+
+    fn settled(&self, waiting: &Waiting, track: u64) {
+        if let Err(error) = self.landed(waiting, track) {
+            tracing::warn!(%error, "a landed song from another device is still listed as waiting");
+        }
+    }
+
+    fn landed(&self, waiting: &Waiting, track: u64) -> Result<()> {
+        let keys = self.keys_waiting(&waiting.received)?;
+        {
+            let mut connection = self.catalog.0.lock();
+            let transaction = connection
+                .transaction()
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
+            note_received(&transaction, &keys, track)
+                .and_then(|()| {
+                    transaction.execute(
+                        "DELETE FROM received WHERE id = ?1",
+                        [waiting.received.id as i64],
+                    )
+                })
+                .and_then(|_| transaction.commit())
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
+        }
+        removed(&waiting.path)
+    }
+
+    fn holds_the_same_bytes(&self, uri: &str, path: &Path) -> bool {
+        let Ok(at) = location(uri) else {
+            return false;
+        };
+        let Ok(media) = self.sources.open(&at) else {
+            return false;
+        };
+        let Ok(file) = File::open(path) else {
+            return false;
+        };
+        let size = file.metadata().map(|metadata| metadata.len()).ok();
+        if media
+            .stream
+            .byte_len()
+            .is_some_and(|held| Some(held) != size)
+        {
+            return false;
+        }
+        bytes_alike(media.stream, file).unwrap_or(false)
     }
 
     fn forget_received(&self, id: u64, path: &Path) -> Result<()> {
@@ -640,14 +780,7 @@ impl MobilePlayer {
             .lock()
             .execute("DELETE FROM received WHERE id = ?1", [id as i64])
             .map_err(|source| Error::store(StoreOp::Write, source))?;
-        match fs::remove_file(path) {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-            Err(source) => Err(Error::Received {
-                op: ReceivedOp::Finish,
-                source,
-            }),
-        }
+        removed(path)
     }
 
     fn continue_from(&self, handoff: &Handoff) -> Result<u32> {
@@ -657,7 +790,7 @@ impl MobilePlayer {
         {
             let indexed = Indexed::read(&self.catalog.0.lock()).map_err(read_error)?;
             for (row, recording) in handoff.rows.iter().enumerate().skip(first) {
-                if let Some(id) = indexed.resolved(recording) {
+                if let Some(id) = indexed.visible.resolved(recording).first().copied() {
                     handed_row_held |= row == first;
                     tracks.push(id);
                 }
@@ -717,17 +850,27 @@ impl DocumentCatalog {
         Ok(indexed)
     }
 
-    fn candidates(&self, recording: &Recording) -> Answered<Vec<u64>> {
+    fn candidates(&self, recording: &Recording) -> Answered<Vec<Found>> {
         let connection = self.catalog.0.lock();
+        let indexed = self.indexed(&connection).map_err(unavailable)?;
         let mut found = Vec::new();
-        if let Some(id) = self
-            .indexed(&connection)
-            .map_err(unavailable)?
-            .resolved(recording)
-        {
-            found.push(id);
+        let mut add = |held: Found| {
+            if !found.contains(&held) {
+                found.push(held);
+            }
+        };
+        for id in indexed.visible.resolved(recording) {
+            add(Found::Visible(id));
         }
-        found.extend(received_as(&connection, recording).map_err(unavailable)?);
+        for id in received_as(&connection, recording, false).map_err(unavailable)? {
+            add(Found::Visible(id));
+        }
+        for id in indexed.withdrawn.resolved(recording) {
+            add(Found::Withdrawn(id));
+        }
+        for id in received_as(&connection, recording, true).map_err(unavailable)? {
+            add(Found::Withdrawn(id));
+        }
         Ok(found)
     }
 
@@ -739,11 +882,13 @@ impl DocumentCatalog {
         if let Some(id) = self
             .indexed(connection)
             .map_err(unavailable)?
+            .visible
             .resolved(recording)
+            .first()
         {
-            return Ok(Some(id));
+            return Ok(Some(*id));
         }
-        Ok(received_as(connection, recording)
+        Ok(received_as(connection, recording, false)
             .map_err(unavailable)?
             .first()
             .copied())
@@ -784,29 +929,69 @@ impl DocumentCatalog {
         }))
     }
 
-    fn readable(&self, id: u64) -> Answered<bool> {
-        let uri = self
-            .catalog
-            .0
-            .lock()
-            .query_row(
-                "SELECT uri FROM documents WHERE id = ?1",
-                [id as i64],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()
-            .map_err(unavailable)?;
-        let Some(at) = uri.and_then(|uri| location(&uri).ok()) else {
-            return Ok(false);
-        };
-        Ok(self.sources.open(&at).is_ok())
+    fn not_gone(&self, id: u64) -> Answered<bool> {
+        not_gone(&self.catalog, &self.sources, id).map_err(unavailable)
     }
 
-    fn waiting(&self, connection: &Connection) -> rusqlite::Result<Vec<Recording>> {
+    fn waiting_as(&self, connection: &Connection, recording: &Recording) -> rusqlite::Result<bool> {
         let mut query = connection.prepare_cached(
             "SELECT title, artist, album, recording, duration_ms FROM received ORDER BY id",
         )?;
-        query.query_map([], |row| recording_at(row, 0))?.collect()
+        let named = query
+            .query_map([], |row| recording_at(row, 0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+            .iter()
+            .any(|waiting| waiting.names_the_same_song_as(recording));
+        if named {
+            return Ok(true);
+        }
+        let mut also = connection
+            .prepare_cached("SELECT EXISTS(SELECT 1 FROM received_also WHERE recording = ?1)")?;
+        for key in keys_of(recording) {
+            if also.query_row([key], |row| row.get::<_, bool>(0))? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn held_as_the_same_file(&self, file: WholeFile) -> Answered<Option<u64>> {
+        for id in the_same_file(&self.catalog, &self.sources, file)? {
+            if self.not_gone(id)? {
+                return Ok(Some(id));
+            }
+        }
+        Ok(None)
+    }
+
+    fn waiting_as_the_same_file(&self, file: WholeFile) -> Answered<Option<i64>> {
+        self.catalog
+            .0
+            .lock()
+            .query_row(
+                "SELECT id FROM received WHERE packets = ?1 AND frames = ?2 AND rate = ?3 ORDER BY id",
+                params![
+                    file.packets.cast_signed(),
+                    file.frames.cast_signed(),
+                    file.rate
+                ],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()
+            .map_err(unavailable)
+    }
+
+    fn folded_into_the_waiting(&self, waiting: i64, recording: &Recording) -> Answered<()> {
+        let connection = self.catalog.0.lock();
+        for key in keys_of(recording) {
+            connection
+                .execute(
+                    "INSERT OR IGNORE INTO received_also (received, recording) VALUES (?1, ?2)",
+                    params![waiting, key],
+                )
+                .map_err(unavailable)?;
+        }
+        Ok(())
     }
 
     fn landed_name(&self, extension: &str) -> PathBuf {
@@ -1173,17 +1358,18 @@ impl Catalog for DocumentCatalog {
     }
 
     fn holds(&self, recording: &Recording) -> Answered<bool> {
-        for id in self.candidates(recording)? {
-            if self.readable(id)? {
-                return Ok(true);
+        for found in self.candidates(recording)? {
+            match found {
+                Found::Withdrawn(_) => return Ok(true),
+                Found::Visible(id) => {
+                    if self.not_gone(id)? {
+                        return Ok(true);
+                    }
+                }
             }
         }
         let connection = self.catalog.0.lock();
-        Ok(self
-            .waiting(&connection)
-            .map_err(unavailable)?
-            .iter()
-            .any(|waiting| waiting.names_the_same_song_as(recording)))
+        self.waiting_as(&connection, recording).map_err(unavailable)
     }
 
     fn held_as(&self, recording: &Recording) -> Answered<Option<Recording>> {
@@ -1222,8 +1408,10 @@ impl Catalog for DocumentCatalog {
     }
 
     fn open(&self, recording: &Recording) -> Answered<Option<Opened>> {
-        for id in self.candidates(recording)? {
-            if let Some(opened) = self.opened(id)? {
+        for found in self.candidates(recording)? {
+            if let Found::Visible(id) = found
+                && let Some(opened) = self.opened(id)?
+            {
                 return Ok(Some(opened));
             }
         }
@@ -1249,8 +1437,23 @@ impl Catalog for DocumentCatalog {
         let path = self.landed_name(&extension);
         let text = path.to_str().ok_or(Refused::Unwritable)?.to_owned();
         fs::rename(staged, &path).map_err(|_| Refused::Unwritable)?;
+        let file = file_of(&self.sources, &path);
+        if let Some(file) = file {
+            if let Some(track) = self.held_as_the_same_file(file)? {
+                note_received(&self.catalog.0.lock(), &keys_of(recording), track)
+                    .map_err(unavailable)?;
+                let _ = fs::remove_file(&path);
+                self.arrived();
+                return Ok(true);
+            }
+            if let Some(waiting) = self.waiting_as_the_same_file(file)? {
+                self.folded_into_the_waiting(waiting, recording)?;
+                let _ = fs::remove_file(&path);
+                return Ok(true);
+            }
+        }
         let kept = self.catalog.0.lock().execute(
-            "INSERT INTO received(path, extension, title, artist, album, recording, duration_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO received(path, extension, title, artist, album, recording, duration_ms, packets, frames, rate) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 text,
                 extension,
@@ -1260,7 +1463,10 @@ impl Catalog for DocumentCatalog {
                 recording.mbid.as_ref().map(ToString::to_string),
                 recording
                     .length
-                    .map(|length| i64::try_from(length.as_millis()).unwrap_or(i64::MAX))
+                    .map(|length| i64::try_from(length.as_millis()).unwrap_or(i64::MAX)),
+                file.map(|file| file.packets.cast_signed()),
+                file.map(|file| file.frames.cast_signed()),
+                file.map(|file| file.rate),
             ],
         );
         if let Err(error) = kept {
@@ -1296,7 +1502,7 @@ impl Catalog for DocumentCatalog {
     }
 }
 
-struct Candidate {
+struct Entry {
     id: u64,
     words: String,
     album: String,
@@ -1304,25 +1510,37 @@ struct Candidate {
 }
 
 #[derive(Default)]
+struct Index {
+    recordings: BTreeMap<String, Vec<u64>>,
+    artists: BTreeMap<String, Vec<Entry>>,
+}
+
+#[derive(Default)]
 struct Indexed {
-    recordings: BTreeMap<String, u64>,
-    artists: BTreeMap<String, Vec<Candidate>>,
+    visible: Index,
+    withdrawn: Index,
 }
 
 impl Indexed {
     fn read(connection: &Connection) -> rusqlite::Result<Self> {
         let mut query = connection.prepare_cached(
-            "SELECT id, recording, title, artist, album, duration_ms FROM documents WHERE missing = 0 ORDER BY id",
+            "SELECT id, recording, title, artist, album, duration_ms, withdrawn FROM documents
+              WHERE missing = 0 OR withdrawn = 1 ORDER BY id",
         )?;
         let mut rows = query.query([])?;
         let mut indexed = Self::default();
         while let Some(row) = rows.next()? {
+            let index = if row.get::<_, bool>(6)? {
+                &mut indexed.withdrawn
+            } else {
+                &mut indexed.visible
+            };
             let id = row.get::<_, i64>(0)? as u64;
             if let Some(recording) = row.get::<_, Option<String>>(1)? {
-                indexed.recordings.entry(recording).or_insert(id);
+                index.recordings.entry(recording).or_default().push(id);
             }
             let artist = folded_letters(row.get::<_, String>(3)?.trim());
-            indexed.artists.entry(artist).or_default().push(Candidate {
+            index.artists.entry(artist).or_default().push(Entry {
                 id,
                 words: title_words(&row.get::<_, String>(2)?),
                 album: folded_letters(row.get::<_, String>(4)?.trim()),
@@ -1331,29 +1549,37 @@ impl Indexed {
         }
         Ok(indexed)
     }
+}
 
-    fn resolved(&self, recording: &Recording) -> Option<u64> {
-        if let Some(id) = recording
+impl Index {
+    fn resolved(&self, recording: &Recording) -> Vec<u64> {
+        let mut found = recording
             .mbid
             .as_ref()
             .and_then(|mbid| self.recordings.get(mbid.as_str()))
-        {
-            return Some(*id);
-        }
+            .cloned()
+            .unwrap_or_default();
         let words = title_words(&recording.title);
         if words.is_empty() {
-            return None;
+            return found;
         }
         let album = folded_letters(recording.album.trim());
-        self.artists
-            .get(&folded_letters(recording.artist.trim()))?
-            .iter()
-            .find(|held| {
+        let named = self
+            .artists
+            .get(&folded_letters(recording.artist.trim()))
+            .into_iter()
+            .flatten()
+            .filter(|held| {
                 held.words == words
                     && (album.is_empty() || held.album == album)
                     && lasts_alike(held.length, recording.length)
-            })
-            .map(|held| held.id)
+            });
+        for held in named {
+            if !found.contains(&held.id) {
+                found.push(held.id);
+            }
+        }
+        found
     }
 }
 
@@ -1450,19 +1676,138 @@ fn file_name_for(song: &SearchSong, extension: &str) -> String {
         .into_owned()
 }
 
-fn received_as(connection: &Connection, recording: &Recording) -> rusqlite::Result<Vec<u64>> {
-    let mut query = connection.prepare_cached(
-        "SELECT s.track FROM songs_received s JOIN documents d ON d.id = s.track
-          WHERE s.recording = ?1 AND d.missing = 0 ORDER BY d.id",
-    )?;
+fn received_as(
+    connection: &Connection,
+    recording: &Recording,
+    withdrawn: bool,
+) -> rusqlite::Result<Vec<u64>> {
     let mut found = Vec::new();
     for key in keys_of(recording) {
-        let asked = query
-            .query_map([key], |row| row.get::<_, i64>(0))?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        found.extend(asked.into_iter().map(|id| id as u64));
+        for id in received_under(connection, &key, withdrawn)? {
+            if !found.contains(&id) {
+                found.push(id);
+            }
+        }
     }
     Ok(found)
+}
+
+fn received_under(
+    connection: &Connection,
+    key: &str,
+    withdrawn: bool,
+) -> rusqlite::Result<Vec<u64>> {
+    let mut query = connection.prepare_cached(
+        "SELECT s.track FROM songs_received s JOIN documents d ON d.id = s.track
+          WHERE s.recording = ?1 AND d.missing = ?2 AND d.withdrawn = ?2 ORDER BY d.id",
+    )?;
+    query
+        .query_map(params![key, withdrawn], |row| {
+            row.get::<_, i64>(0).map(|id| id as u64)
+        })?
+        .collect()
+}
+
+fn not_gone(catalog: &catalog::Catalog, sources: &Sources, id: u64) -> rusqlite::Result<bool> {
+    let uri = catalog
+        .0
+        .lock()
+        .query_row(
+            "SELECT uri FROM documents WHERE id = ?1",
+            [id as i64],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    let Some(at) = uri.and_then(|uri| location(&uri).ok()) else {
+        return Ok(false);
+    };
+    match sources.open(&at) {
+        Ok(_) => Ok(true),
+        Err(error) if is_vanished(&error) => Ok(false),
+        Err(error) => {
+            tracing::debug!(%error, "a song held here is out of reach for now and counts as held");
+            Ok(true)
+        }
+    }
+}
+
+fn note_received(connection: &Connection, keys: &[String], track: u64) -> rusqlite::Result<()> {
+    for key in keys {
+        connection.execute(
+            "INSERT INTO songs_received (recording, track) VALUES (?1, ?2)
+             ON CONFLICT (recording) DO UPDATE SET track = excluded.track",
+            params![key, track as i64],
+        )?;
+    }
+    Ok(())
+}
+
+fn file_of(sources: &Sources, path: &Path) -> Option<WholeFile> {
+    let scanned = probe_scanned(sources, &MediaLocation::local(path.to_path_buf())).ok()?;
+    Some(WholeFile {
+        packets: scanned.packets?.0,
+        frames: scanned.info.duration?.get(),
+        rate: scanned.info.spec.rate.hz(),
+    })
+}
+
+fn named_alike(name: &str, candidate: &str) -> bool {
+    if candidate == name {
+        return true;
+    }
+    let path = Path::new(name);
+    let Some(stem) = path.file_stem().and_then(OsStr::to_str) else {
+        return false;
+    };
+    let numbered = match path.extension().and_then(OsStr::to_str) {
+        Some(extension) => candidate
+            .strip_suffix(extension)
+            .and_then(|rest| rest.strip_suffix('.')),
+        None => Some(candidate),
+    };
+    numbered
+        .and_then(|rest| rest.strip_prefix(stem))
+        .and_then(|rest| rest.strip_prefix(" ("))
+        .and_then(|rest| rest.strip_suffix(')'))
+        .is_some_and(|nth| !nth.is_empty() && nth.bytes().all(|byte| byte.is_ascii_digit()))
+}
+
+fn bytes_alike(mut held: impl Read, mut received: impl Read) -> io::Result<bool> {
+    let mut ours = vec![0_u8; COMPARED_AT_ONCE];
+    let mut theirs = vec![0_u8; COMPARED_AT_ONCE];
+    loop {
+        let read = filled(&mut held, &mut ours)?;
+        if filled(&mut received, &mut theirs)? != read || ours[..read] != theirs[..read] {
+            return Ok(false);
+        }
+        if read == 0 {
+            return Ok(true);
+        }
+    }
+}
+
+fn filled(from: &mut impl Read, buffer: &mut [u8]) -> io::Result<usize> {
+    let mut read = 0;
+    while read < buffer.len() {
+        match from.read(&mut buffer[read..]) {
+            Ok(0) => break,
+            Ok(more) => read += more,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(read)
+}
+
+fn removed(path: &Path) -> Result<()> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(Error::Received {
+            op: ReceivedOp::Finish,
+            source,
+        }),
+    }
 }
 
 fn keys_of(recording: &Recording) -> Vec<String> {
@@ -1974,9 +2319,9 @@ mod tests {
         assert_eq!(waiting[0].song.duration_ms, Some(255_000));
         assert!(
             player
-                .waiting_path(waiting[0].id)
+                .waiting_song(waiting[0].id)
                 .expect("its file")
-                .expect("a kept file")
+                .path
                 .exists()
         );
         assert!(matches!(
@@ -2275,14 +2620,401 @@ mod tests {
             let connection = player.catalog.0.lock();
             Indexed::read(&connection)
                 .expect("an index")
+                .visible
                 .resolved(&hunter)
         };
 
-        assert_eq!(by_name, None);
+        assert!(by_name.is_empty());
         assert!(player.sync_received().expect("none waiting").is_empty());
         assert!(documents.holds(&hunter).expect("held once landed"));
         assert!(documents.open(&hunter).expect("an answer").is_some());
         let _ = fs::remove_dir_all(folder);
+    }
+
+    fn granted(folder: &Path) -> (MobilePlayer, DocumentCatalog) {
+        let sources = Arc::new(
+            Sources::local().and(Arc::new(
+                crate::documents::GrantedFiles::new(
+                    Arc::new(Here(folder.to_path_buf())),
+                    "content",
+                )
+                .expect("a granted provider"),
+            )),
+        );
+        let player = MobilePlayer {
+            sources: Arc::clone(&sources),
+            ..player(folder)
+        };
+        let documents = DocumentCatalog {
+            sources,
+            ..documents_of(&player, folder)
+        };
+        (player, documents)
+    }
+
+    fn landed_waiting(documents: &DocumentCatalog, folder: &Path, recording: &Recording) {
+        let staged = folder.join(format!("{}.part", recording.title));
+        fs::write(&staged, crate::harness::silence()).expect("a staged song");
+        assert!(
+            documents
+                .land(recording, &SongTags::default(), "wav", &staged)
+                .expect("a landing")
+        );
+    }
+
+    fn two_seconds_of(title: &str) -> Recording {
+        Recording {
+            album: "Homogenic".into(),
+            ..named(title, "Björk", 2)
+        }
+    }
+
+    #[test]
+    fn a_landing_name_is_alike_only_to_itself_and_its_numbered_copies() {
+        let name = "Björk - Hunter.flac";
+
+        assert!(named_alike(name, "Björk - Hunter.flac"));
+        assert!(named_alike(name, "Björk - Hunter (1).flac"));
+        assert!(named_alike(name, "Björk - Hunter (12).flac"));
+        assert!(!named_alike(name, "Björk - Hunter ().flac"));
+        assert!(!named_alike(name, "Björk - Hunter (one).flac"));
+        assert!(!named_alike(name, "Björk - Hunter (1).wav"));
+        assert!(!named_alike(name, "Björk - Hunter Live.flac"));
+        assert!(!named_alike(name, "Björk - Jóga.flac"));
+    }
+
+    #[test]
+    fn a_song_whose_bytes_stand_at_its_name_already_is_taken_as_that_file_and_not_copied_again() {
+        let folder = folder("standing");
+        let (player, documents) = granted(&folder);
+        let hunter = two_seconds_of("Hunter");
+        landed_waiting(&documents, &folder, &hunter);
+        let waiting = player.sync_received().expect("the waiting songs");
+        let name = waiting[0].name.clone();
+        let numbered = name.replace(".wav", " (1).wav");
+        fs::write(folder.join(&name), b"RIFF of another song").expect("another file");
+        fs::write(folder.join(&numbered), crate::harness::silence()).expect("the same bytes");
+        fs::write(folder.join("Elsewhere.wav"), crate::harness::silence()).expect("a copy");
+        let standing = |names: &[&str]| {
+            names
+                .iter()
+                .map(|name| StandingDocument {
+                    uri: format!("content://test/{name}"),
+                    name: (*name).to_owned(),
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let unlike = player
+            .sync_receive_standing(waiting[0].id, standing(&[&name, "Elsewhere.wav"]))
+            .expect("compared");
+        let still = player.sync_received().expect("the waiting songs");
+        let taken = player
+            .sync_receive_standing(waiting[0].id, standing(&[&name, &numbered]))
+            .expect("compared")
+            .expect("the standing file");
+        let held = documents.holds(&hunter).expect("held once taken");
+
+        let _ = fs::remove_dir_all(&folder);
+        assert!(unlike.is_none());
+        assert_eq!(still.len(), 1);
+        assert_eq!(taken.uri, format!("content://test/{numbered}"));
+        assert!(player.sync_received().expect("none waiting").is_empty());
+        assert!(held);
+        assert_eq!(player.song_uris().expect("the songs").len(), 1);
+    }
+
+    #[test]
+    fn a_song_out_of_reach_for_now_is_held_and_only_one_not_found_is_fetched_again() {
+        let folder = folder("away");
+        let (player, documents) = granted(&folder);
+        song(
+            &player,
+            "content://card/hunter.flac",
+            "Hunter",
+            Some(RECORDING),
+        );
+        song(&player, "content://test/joga.flac", "Jóga", None);
+        let hunter = Recording {
+            mbid: Mbid::new(RECORDING).ok(),
+            ..named("Hunter", "Björk", 305)
+        };
+        let joga = Recording {
+            album: "Homogenic".into(),
+            ..named("Jóga", "Björk", 305)
+        };
+
+        let away = documents.holds(&hunter).expect("an answer");
+        let gone = documents.holds(&joga).expect("an answer");
+
+        let _ = fs::remove_dir_all(&folder);
+        assert!(away);
+        assert!(!gone);
+    }
+
+    fn tagged_silence(at: &Path) {
+        use resonate_codec::{FileTags, TagEdit, TagField, TagSink, Writing};
+
+        fs::create_dir_all(at.parent().expect("a folder")).expect("a folder");
+        fs::write(at, crate::harness::silence()).expect("a song");
+        let edits = [
+            (TagField::Title, "Hunter"),
+            (TagField::Artist, "Björk"),
+            (TagField::Album, "Homogenic"),
+        ]
+        .map(|(field, value)| TagEdit {
+            field,
+            value: value.into(),
+        });
+        FileTags::default()
+            .write(
+                &MediaLocation::local(at.to_path_buf()),
+                Writing {
+                    edits: &edits,
+                    taken: &[],
+                    picture: None,
+                    unpictured: false,
+                    popularity: None,
+                },
+            )
+            .expect("a tagged file");
+    }
+
+    #[test]
+    fn a_song_of_a_withdrawn_folder_stays_held_and_only_a_scan_of_another_folder_takes_its_place() {
+        let folder = folder("withdrawn");
+        let (player, documents) = granted(&folder);
+        for place in ["a/hunter.wav", "b/hunter.wav", "landed/hunter.wav"] {
+            tagged_silence(&folder.join(place));
+        }
+        let held = player
+            .index_document("content://test/a/hunter.wav".into(), "hunter.wav".into())
+            .expect("a scanned song");
+        player.favourite(held.id, true).expect("a favourite");
+        let hunter = two_seconds_of("Hunter");
+        let asked = SearchSong {
+            title: "Hunter".into(),
+            artist: "Björk".into(),
+            album: "Homogenic".into(),
+            duration_ms: Some(2_000),
+            ..SearchSong::default()
+        };
+        let still_withdrawn = |player: &MobilePlayer| -> Option<bool> {
+            player
+                .catalog
+                .0
+                .lock()
+                .query_row(
+                    "SELECT withdrawn FROM documents WHERE id = ?1",
+                    [held.id as i64],
+                    |row| row.get(0),
+                )
+                .optional()
+                .expect("a row read")
+        };
+
+        player
+            .hide_songs_under("content://test/a/".into())
+            .expect("withdrawn");
+        let withdrawn_held = documents.holds(&hunter).expect("an answer");
+        let landed = player
+            .indexed_download(
+                "content://test/landed/hunter.wav".into(),
+                "hunter.wav".into(),
+                &asked,
+            )
+            .expect("a landing");
+        let after_landing = still_withdrawn(&player);
+        let scanned = player
+            .index_document("content://test/b/hunter.wav".into(), "hunter.wav".into())
+            .expect("a scan of another folder");
+        let after_scan = still_withdrawn(&player);
+        let favoured = (
+            player
+                .catalog
+                .track(landed.id)
+                .expect("the landed song")
+                .favourite,
+            player
+                .catalog
+                .track(scanned.id)
+                .expect("the scanned song")
+                .favourite,
+        );
+
+        let _ = fs::remove_dir_all(&folder);
+        assert!(withdrawn_held);
+        assert_eq!(after_landing, Some(true));
+        assert_eq!(after_scan, None);
+        assert_eq!(favoured, (false, true));
+    }
+
+    #[test]
+    fn a_folder_granted_again_restores_its_withdrawn_rows_with_their_history() {
+        let folder = folder("regranted");
+        let player = player(&folder);
+        let held = song(
+            &player,
+            "content://test/tree/document/hunter.flac",
+            "Hunter",
+            None,
+        );
+        player.favourite(held.id, true).expect("a favourite");
+
+        player
+            .hide_songs_under("content://test/tree/document/".into())
+            .expect("withdrawn");
+        let regranted = song(
+            &player,
+            "content://test/tree/document/hunter.flac",
+            "Hunter",
+            None,
+        );
+        let withdrawn: bool = player
+            .catalog
+            .0
+            .lock()
+            .query_row(
+                "SELECT withdrawn FROM documents WHERE id = ?1",
+                [held.id as i64],
+                |row| row.get(0),
+            )
+            .expect("the row");
+
+        let _ = fs::remove_dir_all(&folder);
+        assert_eq!(regranted.id, held.id);
+        assert!(player.catalog.track(held.id).expect("the song").favourite);
+        assert!(!withdrawn);
+    }
+
+    #[test]
+    fn every_copy_a_song_resolves_to_is_tried_so_an_unreadable_one_hides_no_readable_one() {
+        let folder = folder("copies");
+        let (player, documents) = granted(&folder);
+        song(
+            &player,
+            "content://test/gone.flac",
+            "Hunter",
+            Some(RECORDING),
+        );
+        song(
+            &player,
+            "content://test/kept.flac",
+            "Hunter",
+            Some(RECORDING),
+        );
+        song(&player, "content://test/gone-joga.flac", "Jóga", None);
+        song(&player, "content://test/kept-joga.flac", "Jóga", None);
+        fs::write(folder.join("kept.flac"), b"fLaC").expect("a kept file");
+        fs::write(folder.join("kept-joga.flac"), b"fLaC").expect("a kept file");
+        let hunter = Recording {
+            mbid: Mbid::new(RECORDING).ok(),
+            ..named("Hunter", "Björk", 305)
+        };
+        let joga = Recording {
+            album: "Homogenic".into(),
+            ..named("Jóga", "Björk", 305)
+        };
+
+        let held = (
+            documents.holds(&hunter).expect("an answer"),
+            documents.holds(&joga).expect("an answer"),
+        );
+        let opened = (
+            documents.open(&hunter).expect("an answer").is_some(),
+            documents.open(&joga).expect("an answer").is_some(),
+        );
+
+        let _ = fs::remove_dir_all(&folder);
+        assert_eq!(held, (true, true));
+        assert_eq!(opened, (true, true));
+    }
+
+    #[test]
+    fn a_song_asked_for_under_another_spelling_is_known_by_its_file_and_not_landed_again() {
+        use std::os::fd::IntoRawFd;
+
+        let first = folder("spelling");
+        let second = folder("spelling-waiting");
+        let (player, documents) = granted(&first);
+        let hunter = two_seconds_of("Hunter");
+        let renamed = two_seconds_of("Hunter (Remastered)");
+        let elsewhere = two_seconds_of("Hunter (Live at Shepherd's Bush)");
+        landed_waiting(&documents, &first, &hunter);
+        let waiting = player.sync_received().expect("the waiting songs");
+        let descriptor = File::create(first.join("landed.wav"))
+            .expect("a destination")
+            .into_raw_fd();
+        player
+            .sync_receive(
+                waiting[0].id,
+                descriptor,
+                "content://test/landed.wav".into(),
+            )
+            .expect("a landed song");
+
+        let unheld_before = documents.holds(&renamed).expect("an answer");
+        landed_waiting(&documents, &first, &renamed);
+        let after_renamed = player.sync_received().expect("the waiting songs").len();
+        let held_renamed = documents.holds(&renamed).expect("an answer");
+
+        let (waiting_player, waiting_documents) = granted(&second);
+        landed_waiting(&waiting_documents, &second, &hunter);
+        landed_waiting(&waiting_documents, &second, &elsewhere);
+        let folded = waiting_player.sync_received().expect("the waiting songs");
+        let held_while_waiting = waiting_documents.holds(&elsewhere).expect("an answer");
+        let descriptor = File::create(second.join("landed.wav"))
+            .expect("a destination")
+            .into_raw_fd();
+        waiting_player
+            .sync_receive(folded[0].id, descriptor, "content://test/landed.wav".into())
+            .expect("a landed song");
+        let held_once_landed = (
+            waiting_documents.holds(&hunter).expect("an answer"),
+            waiting_documents.holds(&elsewhere).expect("an answer"),
+        );
+
+        let _ = fs::remove_dir_all(&first);
+        let _ = fs::remove_dir_all(&second);
+        assert!(!unheld_before);
+        assert_eq!(after_renamed, 0);
+        assert!(held_renamed);
+        assert_eq!(player.song_uris().expect("the songs").len(), 1);
+        assert_eq!(folded.len(), 1);
+        assert!(held_while_waiting);
+        assert_eq!(held_once_landed, (true, true));
+        assert!(
+            waiting_player
+                .sync_received()
+                .expect("none waiting")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_song_indexed_before_its_waiting_row_was_forgotten_is_not_landed_twice() {
+        let folder = folder("killed");
+        let (player, documents) = granted(&folder);
+        let hunter = two_seconds_of("Hunter");
+        landed_waiting(&documents, &folder, &hunter);
+        let waiting = player.sync_received().expect("the waiting songs");
+        let kept = player.waiting_song(waiting[0].id).expect("its file").path;
+        fs::copy(&kept, folder.join("landed.wav")).expect("the bytes copied");
+        player
+            .indexed_download(
+                "content://test/landed.wav".into(),
+                waiting[0].name.clone(),
+                &waiting[0].song,
+            )
+            .expect("indexed");
+
+        let still = player.sync_received().expect("the waiting songs");
+        let held = documents.holds(&hunter).expect("an answer");
+
+        let _ = fs::remove_dir_all(&folder);
+        assert!(still.is_empty());
+        assert!(!kept.exists());
+        assert!(held);
     }
 
     #[test]

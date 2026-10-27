@@ -241,7 +241,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   is mapped to the stored row (`shown_positions`). Indexing the file again or finding it readable
   restores it; a document indexed under another name that names the same song
   (`Recording::names_the_same_song_as`: a song fetched back from a device or a download) takes the
-  hidden row's place (`take_the_place_of_missing`): its playlist rows, favourite, listens, lyrics,
+  place of a row hidden as gone (a song landed from a device or downloaded never takes the place of one hidden because its folder was removed, though a scan does, `android.md`) (`take_the_place_of_missing`): its playlist rows, favourite, listens, lyrics,
   artwork and studies move over, the playlists' revisions step, and the hidden row is deleted.
   Coming forward with songs newly hidden while sync runs forces a sync, so they are fetched back.
 - **Sync shows what it is doing.** `SyncStatus` carries `settled` (the service's `Shown.settled`)
@@ -292,7 +292,12 @@ sync seals its records and talks QUIC (TLS) of its own.
   reinstalled phone keeps its name, and a transfer's row by the sending device, artist and title
   (`SyncTransfers.keyed`, a repeat numbered), so one landing never re-binds the rows below it to other songs.
   The Inspector's artist portrait is decoded once off the main thread, at the 768 px page bucket, when it arrives. Landing a received song backs off per song
-  (`landingRefused`), never pausing the rest (`android.md`).
+  (`landingRefused`), never pausing the rest (`android.md`). Each landing first hands
+  `sync_receive_standing` the files of the folder's root whose names begin with the song's stem
+  (`Folders.standing`), so a file of the same bytes standing at the name is taken rather than a
+  `name (n)` made beside it; the folder is `LandingDestination.of` (`ResonateLogic`, the chosen
+  writable folder, else the first writable one), and one that is not readable holds the songs back
+  with a notice rather than sending them to another folder (`LandingDestinationTests`).
 - **A sync setting is kept before sync restarts.** `saveSync` writes the keychain and defaults and
   assigns `syncConfig` on the main actor at once, then restarts on `Work.inSync`, so a second switch
   flipped straight after builds on the first; `applySync` puts a minted code into the *current*

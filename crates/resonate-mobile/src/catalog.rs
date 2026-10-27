@@ -112,6 +112,22 @@ const DOCUMENTS_REMEMBER_WHEN_THEY_WERE_DOWNLOADED: &str = "
 ALTER TABLE documents ADD COLUMN downloaded INTEGER;
 ";
 
+const SONGS_OF_A_WITHDRAWN_FOLDER_STAY_HELD: &str = "
+ALTER TABLE documents ADD COLUMN withdrawn INTEGER NOT NULL DEFAULT 0;
+CREATE TRIGGER documents_return_from_a_withdrawn_folder AFTER UPDATE OF missing ON documents WHEN new.missing = 0 AND new.withdrawn != 0 BEGIN UPDATE documents SET withdrawn = 0 WHERE id = new.id; END;
+";
+
+const SONGS_WAITING_KNOW_THEIR_FILE: &str = "
+ALTER TABLE received ADD COLUMN packets INTEGER;
+ALTER TABLE received ADD COLUMN frames INTEGER;
+ALTER TABLE received ADD COLUMN rate INTEGER;
+CREATE TABLE received_also (
+    received  INTEGER NOT NULL REFERENCES received(id) ON DELETE CASCADE,
+    recording TEXT NOT NULL,
+    PRIMARY KEY (received, recording)
+) STRICT;
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     LISTENS_NAME_THEIR_ORIGIN,
@@ -125,6 +141,8 @@ const MIGRATIONS: &[&str] = &[
     ANSWERS_TRAVEL,
     SONGS_RECEIVED_ARE_HELD_BY_WHAT_WAS_ASKED,
     DOCUMENTS_REMEMBER_WHEN_THEY_WERE_DOWNLOADED,
+    SONGS_OF_A_WITHDRAWN_FOLDER_STAY_HELD,
+    SONGS_WAITING_KNOW_THEIR_FILE,
 ];
 
 #[cfg(test)]

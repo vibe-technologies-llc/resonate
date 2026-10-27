@@ -270,6 +270,28 @@ func config(enabled: Bool = true, nearbyOnly: Bool = false, server: String = "")
     }
 }
 
+@Suite struct LandingDestinationTests {
+    let music = MusicFolder(id: "music", name: "Music", path: "/music", readable: true, writable: true)
+    let drive = MusicFolder(id: "drive", name: "Drive", path: "/drive", readable: false, writable: true)
+    let shared = MusicFolder(id: "shared", name: "Shared", path: "/shared", readable: true, writable: false)
+
+    @Test func aFolderOutOfReachHoldsTheSongsBackRatherThanSendingThemElsewhere() {
+        #expect(LandingDestination.of([drive, music], chosen: "drive") == .away)
+        #expect(LandingDestination.of([drive, music], chosen: nil) == .away)
+    }
+
+    @Test func theChosenFolderIsTakenElseTheFirstWritableOne() {
+        #expect(LandingDestination.of([music, drive], chosen: nil) == .into(music))
+        #expect(LandingDestination.of([shared, music], chosen: "shared") == .into(music))
+        #expect(LandingDestination.of([music, drive], chosen: "gone") == .into(music))
+    }
+
+    @Test func noWritableFolderLeavesNowhereToLand() {
+        #expect(LandingDestination.of([shared], chosen: nil) == .nowhere)
+        #expect(LandingDestination.of([], chosen: "music") == .nowhere)
+    }
+}
+
 @Suite struct LandingBackoffTests {
     func received(_ id: UInt64) -> ReceivedSong {
         ReceivedSong(id: id, name: "\(id).flac", extension: "flac", song: searchSong("\(id)"))

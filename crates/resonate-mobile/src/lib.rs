@@ -56,6 +56,7 @@ use crate::{
     catalog::Catalog,
     documents::{GRANTED_SCHEMES, GrantedFiles, document_uri, location},
     stamp::DocumentStamp,
+    vanished::Absorbing,
 };
 pub use crate::{
     documents::{Documents, audio_extensions, document_not_found, document_refused},
@@ -260,7 +261,7 @@ impl MobilePlayer {
     }
 
     pub fn index_document(&self, uri: String, name: String) -> Result<Track> {
-        self.indexed(uri, name, None)
+        self.indexed(uri, name, None, Absorbing::EveryHidden)
     }
 
     pub fn scan_document(
@@ -276,12 +277,18 @@ impl MobilePlayer {
         {
             return Ok(known);
         }
-        self.indexed(uri, name, stamp)
+        self.indexed(uri, name, stamp, Absorbing::EveryHidden)
     }
 }
 
 impl MobilePlayer {
-    fn indexed(&self, uri: String, name: String, stamp: Option<DocumentStamp>) -> Result<Track> {
+    fn indexed(
+        &self,
+        uri: String,
+        name: String,
+        stamp: Option<DocumentStamp>,
+        absorbing: Absorbing,
+    ) -> Result<Track> {
         let (info, picture) = probe_pictured(&self.sources, &location(&uri)?, Picturing::Copied)?;
         let duration_ms = info.duration.map_or(0, |frames| {
             frames
@@ -313,7 +320,7 @@ impl MobilePlayer {
         {
             tracing::debug!(%error, "embedded lyrics could not be read");
         }
-        self.take_the_place_of_missing(track.id)?;
+        self.take_the_place_of_missing(track.id, absorbing)?;
         self.catalog.track(track.id)
     }
 }

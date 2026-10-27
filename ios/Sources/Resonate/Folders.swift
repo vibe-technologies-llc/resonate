@@ -326,6 +326,16 @@ final class Folders: Documents, @unchecked Sendable {
         return nil
     }
 
+    func standing(in id: String, named name: String) -> [StandingDocument] {
+        guard let (root, scoped) = try? root(id) else { return [] }
+        defer { if scoped { root.stopAccessingSecurityScopedResource() } }
+        let stem = (name as NSString).deletingPathExtension
+        let listed = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
+        return listed
+            .filter { $0.hasPrefix(stem) }
+            .map { StandingDocument(uri: uri(root: id, relative: $0), name: $0) }
+    }
+
     func fresh(in id: String, named name: String) throws -> (uri: String, descriptor: Int32) {
         let (root, scoped) = try root(id)
         defer { if scoped { root.stopAccessingSecurityScopedResource() } }

@@ -452,8 +452,9 @@ will not open is left out of the holdings.
   dialling and on following a device, dials every device heard, tells each neighbour the whole
   snapshot again and looks at once.
 - **A song deleted by hand is not held.** `Catalog::holds` is false for a row whose file is gone
-  (the desktop stats the path; the phones open the document), so the next follow or force fetches
-  it again. **The desktop weighs every row the recording resolves to, hidden ones too**
+  (the desktop stats the path; the phones open the document, and only a `NotFound` is gone: a
+  document refused or out of reach, or a row hidden because its folder was withdrawn, is held,
+  `android.md`), so the next follow or force fetches it again. **The desktop weighs every row the recording resolves to, hidden ones too**
   (`Library::holds_recording`, `synced::every_row_holding`: the MBID, `songs_received`, the tag
   match, without the listings' `hidden = 0`), and a row is held where its file stands, its vault
   object stands (or the vault is not open to look), or it sits on a remembered volume that is away

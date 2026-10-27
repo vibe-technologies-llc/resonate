@@ -639,15 +639,28 @@ class LibraryFeatures(private val context: Context, private val library: Library
     }
 
     private suspend fun landReceived(native: MobilePlayer, waiting: List<ReceivedSong>) {
-        val destinations = folders.value.filter { it.readable && it.writable }
+        val known = folders.value
+        val landing =
+            known.map {
+                LandingFolder(
+                    it.uri.toString(),
+                    it.readable,
+                    it.writable,
+                    it.uri == MusicDocuments.downloads,
+                )
+            }
         val folder =
-            destinations.find { it.uri.toString() == syncFolder.value }
-                ?: destinations.firstOrNull { it.uri != MusicDocuments.downloads }
-        if (folder == null) {
-            syncNotice.value =
-                "Add a music folder with write access to keep songs from your devices"
-            return
-        }
+            when (val destination = SyncLanding.destination(landing, syncFolder.value)) {
+                is LandingDestination.Into -> known.first { it.uri.toString() == destination.id }
+                LandingDestination.Away -> {
+                    syncNotice.value = SyncLanding.AWAY
+                    return
+                }
+                LandingDestination.Nowhere -> {
+                    syncNotice.value = SyncLanding.NOWHERE
+                    return
+                }
+            }
         val now = System.currentTimeMillis()
         landingRefused.keys.retainAll(waiting.map { it.id }.toSet())
         val due = waiting.filter { (landingRefused[it.id]?.until ?: 0L) <= now }
@@ -656,6 +669,15 @@ class LibraryFeatures(private val context: Context, private val library: Library
             currentCoroutineContext().ensureActive()
             var created: Uri? = null
             try {
+                val standing = MusicDocuments.standing(context, folder.uri, received.name)
+                if (
+                    standing.isNotEmpty() &&
+                        native.syncReceiveStanding(received.id, standing) != null
+                ) {
+                    landingRefused.remove(received.id)
+                    landed++
+                    continue
+                }
                 val uri =
                     MusicDocuments.create(
                         context,

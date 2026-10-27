@@ -16,6 +16,7 @@ use crate::{
     downloads::{DownloadPhase, Tried},
     features::{Listing, SearchSong, distinct_takes, search_song},
     online_tools::{SearchArtist, SearchRelease},
+    vanished::Absorbing,
 };
 
 const WANTED_READ_AT_MOST: usize = 500;
@@ -244,7 +245,7 @@ impl MobilePlayer {
         song: &SearchSong,
     ) -> Result<crate::Track> {
         self.validate_download(uri.clone(), song.duration_ms)?;
-        let track = self.index_document(uri, name)?;
+        let track = self.indexed(uri, name, None, Absorbing::FoundGone)?;
         let identified = |id: &str| Mbid::new(id).ok().map(|id| id.to_string());
         let connection = self.catalog.0.lock();
         connection.execute("UPDATE documents SET title = CASE WHEN title = name THEN ?2 ELSE title END, artist = coalesce(nullif(artist, ''), ?3), album = coalesce(nullif(album, ''), ?4), recording = coalesce(recording, ?5), release = coalesce(release, ?6), artist_mbid = coalesce(artist_mbid, ?7), track_number = coalesce(track_number, ?8), disc_number = coalesce(disc_number, ?9) WHERE id = ?1", params![track.id as i64, song.title, song.artist, song.album, identified(&song.recording), identified(&song.release), identified(&song.artist_id), song.position, song.disc]).map_err(write_error)?;
@@ -255,7 +256,7 @@ impl MobilePlayer {
             )
             .map_err(write_error)?;
         drop(connection);
-        self.take_the_place_of_missing(track.id)?;
+        self.take_the_place_of_missing(track.id, Absorbing::FoundGone)?;
         self.catalog.track(track.id)
     }
 }

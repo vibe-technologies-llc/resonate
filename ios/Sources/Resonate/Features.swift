@@ -697,18 +697,24 @@ final class Features {
     }
 
     private func landable(_ waiting: [ReceivedSong]) -> [ReceivedSong] {
-        guard writableFolder(syncFolder) != nil else { return [] }
+        guard landingDestination.folder != nil else { return [] }
         return landingBackoff.landable(waiting, now: Date())
     }
 
-    private func writableFolder(_ preferred: String?) -> MusicFolder? {
-        let destinations = library.folderList.filter { $0.readable && $0.writable }
-        return destinations.first { $0.id == preferred } ?? destinations.first
+    private var landingDestination: LandingDestination {
+        LandingDestination.of(library.folderList, chosen: syncFolder)
     }
 
     private func landReceived(_ native: MobilePlayer, _ waiting: [ReceivedSong]) async -> Int {
-        guard let folder = writableFolder(syncFolder) else {
-            syncNotice = "Add a music folder with write access to keep songs from your devices"
+        let folder: MusicFolder
+        switch landingDestination {
+        case .into(let chosen):
+            folder = chosen
+        case .away:
+            syncNotice = LandingDestination.awayText
+            return 0
+        case .nowhere:
+            syncNotice = LandingDestination.nowhereText
             return 0
         }
         let folders = library.folders
@@ -723,6 +729,15 @@ final class Features {
             let name = received.name
             var created: String?
             do {
+                let standing = try await Work.aside { folders.standing(in: folder.id, named: name) }
+                if !standing.isEmpty,
+                    try await Work.aside({ try native.syncReceiveStanding(id: received.id, standing: standing) }) != nil
+                {
+                    landed += 1
+                    landingBackoff.landed(received.id)
+                    syncLanding = max(syncLanding - 1, 0)
+                    continue
+                }
                 let (uri, descriptor) = try await Work.aside {
                     let made = try folders.fresh(in: folder.id, named: name)
                     Backup.leaveOutLanded(made.uri, from: folders)
