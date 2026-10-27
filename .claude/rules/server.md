@@ -94,7 +94,9 @@ hex) and prints it with the digest to list: the file never holds a secret.
   so a slow client holds the download back. **One download at a time** (`DOWNLOADS_AT_ONCE`): a
   request finding the turn taken is answered `503` with `Retry-After` (`BUSY_RETRY_AFTER_SECONDS`) at
   once, never held, and the turn travels into the blocking open and then the pump, so it is kept until
-  the last upstream read ends even if the client has left
+  the last upstream read ends even if the client has left, and is released before the pump drops
+  its end of the channel, so a client that has read a whole answer and asks again never finds the
+  turn still taken (`pump_source` owns the source; `an_empty_answer_for_a_track_is_never_kept`)
   (`a_second_download_asked_for_while_one_runs_is_told_to_come_back_and_is_never_started`). At most 1 GiB
   a track, 60 s for any one write. A failure after the head is sent drops the connection, so a short
   body is never taken for a whole file; a track the hifi-api lacks is 404, an upstream failure 502. The
