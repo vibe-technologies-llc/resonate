@@ -18,7 +18,7 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   `build-std`
 
 ## Playback and output
-- [L · 0.2.0] One playback stream and one capture stream only; concurrent playback streams unsupported
+- [L · 0.3.0] One playback stream and one capture stream only; concurrent playback streams unsupported
 - [M · blocked: pipewire-rs] A rebind or turn inside a row that moves the rate while
   `force-graph-rate` pins it (on by default), or switches the pin, still reopens the PipeWire stream:
   the pin is the node's `node.rate` property, which only `pw_stream_update_properties` moves, and
@@ -46,7 +46,7 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Providers and network
 
 ## Device sync
-- [M · 0.2.0] A study's acoustic print (Chromaprint) and its recognition are still asked for by each
+- [M · 0.3.0] A study's acoustic print (Chromaprint) and its recognition are still asked for by each
   device itself (`Change::Answer` carries kept lyrics, studies and releases; covers and Lyricsfiles go
   device to device, `sync.md`): a print is decoded again on every device and AcoustID asked again at
   the reference's paced rate. They could be asked of a connected device as covers and Lyricsfiles are
@@ -69,7 +69,7 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   lyric text (LRCLIB's text search finds none)
 
 ## Identification
-- [M · 0.2.0] The quantiser steps were weighed only on the encoders this machine has (ffmpeg's AAC,
+- [M · 0.3.0] The quantiser steps were weighed only on the encoders this machine has (ffmpeg's AAC,
   faac, LAME, libvorbis and ffmpeg's Vorbis): no Apple, FhG or fdk AAC, no FhG or other MP3
   encoder and no aoTuV Vorbis weighed, faac at 160 kbps is found in 9 of 22, one wall-less MP3 rip
   in the library the 8-step floor found reads 0.0014 under the shipped count, a lossy decode

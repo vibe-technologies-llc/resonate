@@ -44,7 +44,7 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   nothing here has run
 
 ## Testing
-- [S · 0.1.1] Timing tests flake under a loaded machine: `resonate-server --test hifi`'s
+- [S · 0.2.1] Timing tests flake under a loaded machine: `resonate-server --test hifi`'s
   `an_empty_answer_for_a_track_is_never_kept` failed once in a whole-workspace run (the second
   request's status, likely the one-download-at-a-time 503 before the first frees its slot), and
   `resonate-engine --test transport`'s
