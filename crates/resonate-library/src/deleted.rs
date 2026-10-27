@@ -15,9 +15,10 @@ use crate::{Error, Result, StoreOp, TrashOp, alternatives, scan, store, trash};
 
 const LYRICS_EXTENSION: &str = "lrc";
 
-const LISTENS_KEPT_AS_UNHELD: &str =
-    "INSERT INTO unheld_listens (path, span_start, at, began, heard)
-     SELECT t.path, t.span_start, l.at, l.began, l.heard
+const LISTENS_KEPT_AS_UNHELD: &str = "INSERT INTO unheld_listens
+            (path, span_start, at, began, heard, listen_id, elsewhere, origin_device, origin_id)
+     SELECT t.path, t.span_start, l.at, l.began, l.heard, l.id, l.elsewhere, l.origin_device,
+            l.origin_id
        FROM listens l JOIN tracks t ON t.id = l.track_id
       WHERE t.path = ?1";
 

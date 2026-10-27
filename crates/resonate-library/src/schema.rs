@@ -13,6 +13,7 @@ const MIGRATIONS: &[&str] = &[
     A_STUDY_KEEPS_WHERE_THE_MUSIC_SOUNDS,
     A_RELEASE_KEEPS_ITS_CREDIT,
     RELEASES_LANDED_WITHOUT_THEIR_CREDIT_ARE_ASKED_AGAIN,
+    AN_UNHELD_LISTEN_KEEPS_WHAT_IT_WAS,
 ];
 
 const STAMPS: [SchemaFingerprint; MIGRATIONS.len() + 1] = stamps();
@@ -114,6 +115,13 @@ UPDATE albums SET answered = 1
  WHERE answered IS NOT NULL AND mbid IS NOT NULL AND release_title IS NOT NULL
    AND pressing_fit IS NULL
    AND NOT EXISTS (SELECT 1 FROM release_credits c WHERE c.album_id = albums.id);
+";
+
+const AN_UNHELD_LISTEN_KEEPS_WHAT_IT_WAS: &str = "
+ALTER TABLE unheld_listens ADD COLUMN listen_id INTEGER;
+ALTER TABLE unheld_listens ADD COLUMN elsewhere INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE unheld_listens ADD COLUMN origin_device BLOB;
+ALTER TABLE unheld_listens ADD COLUMN origin_id INTEGER;
 ";
 
 const V1: &str = "
@@ -1269,6 +1277,20 @@ mod tests {
             .expect("the columns");
         assert!(columns.contains(&"origin_device".to_owned()));
         assert!(columns.contains(&"origin_id".to_owned()));
+        let kept: Vec<String> = connection
+            .prepare("SELECT name FROM pragma_table_info('unheld_listens')")
+            .and_then(|mut query| {
+                query
+                    .query_map([], |row| row.get::<_, String>(0))
+                    .and_then(Iterator::collect)
+            })
+            .expect("the columns");
+        for column in ["listen_id", "elsewhere", "origin_device", "origin_id"] {
+            assert!(
+                kept.contains(&column.to_owned()),
+                "an unheld listen keeps no {column}"
+            );
+        }
         assert!(
             studies_hold_their_bands(&connection),
             "a study kept at the first release was not given a place for its bands"
@@ -1294,7 +1316,10 @@ mod tests {
     #[test]
     fn a_release_landed_before_its_credit_was_kept_is_asked_again_and_one_with_its_credit_is_not() {
         let connection = opened();
-        let before = MIGRATIONS.len() - 1;
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == RELEASES_LANDED_WITHOUT_THEIR_CREDIT_ARE_ASKED_AGAIN)
+            .expect("the step that asks again");
         connection
             .execute_batch(V1)
             .expect("the first release's schema");

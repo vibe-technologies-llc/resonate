@@ -176,6 +176,9 @@ platforms; the catalog seam stays thin.
   (`origin_device`, `origin_id`), so `Catalog::credit` of a listen already credited changes nothing and
   answers true; the ledger's `credited` mark may therefore lag the catalog (a crash between the two) and
   `settle` only repeats a no-op (`a_listen_credited_before_the_ledger_could_say_so_is_credited_once`).
+  **A song deleted and found again keeps its listens as they were**: the library's `unheld_listens`
+  holds each listen's id, `elsewhere` and origin, and `credit_the_unheld` writes it back under them,
+  so `listens_after` owes none of them again (`library.md`).
 - **What a lookup or study learnt travels as an answer, so a paired device need not ask or decode
   again.** `Change::Answer` (wire tag 7) is a recording, a stamp and a `resonate_core::Answer`: a
   kind byte, then `SharedLyrics` (text up to `LONGEST_SHARED_LYRICS`, 32 KiB, and whether timed;

@@ -23,8 +23,16 @@ const FORGET_THE_UNHELD: &str = "DELETE FROM unheld_listens WHERE at < ?1";
 
 const FORGET_THE_PLAYLIST_PLAYS: &str = "DELETE FROM playlist_plays WHERE at < ?1";
 
-const CREDIT_THE_UNHELD: &str = "INSERT INTO listens (track_id, at, began, heard)
-     SELECT t.id, u.at, u.began, u.heard FROM unheld_listens u
+const CREDIT_THE_UNHELD: &str = "DELETE FROM unheld_listens
+      WHERE origin_device IS NOT NULL
+        AND EXISTS (SELECT 1 FROM listens l
+                     WHERE l.origin_device = unheld_listens.origin_device
+                       AND l.origin_id = unheld_listens.origin_id);
+     INSERT INTO listens (id, track_id, at, began, heard, elsewhere, origin_device, origin_id)
+     SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM listens l WHERE l.id = u.listen_id)
+                 THEN u.listen_id END,
+            t.id, u.at, u.began, u.heard, u.elsewhere, u.origin_device, u.origin_id
+       FROM unheld_listens u
        JOIN tracks t ON t.path = u.path AND t.span_start = u.span_start
       ORDER BY u.at;
      UPDATE tracks
