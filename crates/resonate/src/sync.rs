@@ -614,6 +614,12 @@ impl Catalog for Catalogued {
             .map_err(|error| refused(&error))
     }
 
+    fn held_as(&self, recording: &Recording) -> Answered<Option<Recording>> {
+        self.library
+            .held_as(recording)
+            .map_err(|error| refused(&error))
+    }
+
     fn holdings(&self) -> Answered<Vec<Held>> {
         self.library
             .held_songs()
@@ -1539,6 +1545,112 @@ mod tests {
             .map(|title| resonate_core::MediaLocation::local(folder.join(format!("{title}.wav"))))
             .collect();
         (folder, library, locations)
+    }
+
+    fn named(entries: &[Option<Recording>]) -> Vec<Option<&str>> {
+        entries
+            .iter()
+            .map(|entry| entry.as_ref().map(|recording| recording.title.as_str()))
+            .collect()
+    }
+
+    #[test]
+    fn a_song_from_another_device_named_otherwise_stays_in_its_playlist_and_favourites_and_settles_once()
+     {
+        use std::io::Cursor;
+
+        use resonate_library::{DeliveryFolder, Layout};
+        use resonate_sync::{Change, Ledger, SpaceId};
+
+        use crate::fixtures::{ALBUM, ARTIST, TITLE, tagged_wave};
+
+        let (folder, there, locations) = kept_songs(&["San Tropez (2011 Remaster)"]);
+        there
+            .start_playlist("Mix", &[Cut::whole(locations[0].clone())])
+            .expect("a playlist");
+        let sender = Catalogued {
+            library: Arc::new(there),
+        };
+        let asked = sender.playlists().expect("the playlists")[0].entries[0]
+            .clone()
+            .expect("a named song");
+        sender.favour(&asked, true).expect("a favourite");
+        let received = folder.join("received");
+        fs::create_dir_all(&received).expect("a music folder");
+        let here = Library::open_in_memory().expect("a catalog");
+        here.deliver_into(Some(DeliveryFolder {
+            path: received,
+            layout: Layout::default(),
+        }));
+        let filed = here
+            .file_song_from_elsewhere(
+                &asked,
+                &HeldTags::default(),
+                "wav",
+                &mut Cursor::new(tagged_wave(&[
+                    (TITLE, "San Tropez"),
+                    (ARTIST, "Artist"),
+                    (ALBUM, "Album"),
+                ])),
+            )
+            .expect("a song filed");
+        let receiver = Catalogued {
+            library: Arc::new(here),
+        };
+        let me = |name: &str| Me {
+            name: name.into(),
+            platform: Platform::Linux,
+        };
+        let ledger = || {
+            let mut ledger = Ledger::in_memory().expect("a ledger");
+            ledger.enter_space(SpaceId([7; 16])).expect("a space");
+            ledger
+        };
+        let mut sending = ledger();
+        let mut receiving = ledger();
+
+        sending.look(&sender, &me("Desk")).expect("a look");
+        let told = sending
+            .owed()
+            .expect("owed")
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        receiving.arrived(&receiver, &told).expect("arrived");
+        let written_at = receiver.revision();
+        let settled = receiving.settle(&receiver).expect("settled");
+        receiving.look(&receiver, &me("Laptop")).expect("a look");
+        let echoed = receiving
+            .owed()
+            .expect("owed")
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        let settled_again = receiving.settle(&receiver).expect("settled");
+
+        let _ = fs::remove_dir_all(&folder);
+        assert!(matches!(filed, SongFiled::Filed(_)), "{filed:?}");
+        assert_eq!((settled, settled_again), (0, 0));
+        assert_eq!(receiver.revision(), written_at);
+        assert_eq!(
+            named(&receiver.playlists().expect("the playlists")[0].entries),
+            [Some("San Tropez")]
+        );
+        assert_eq!(
+            receiver
+                .favourites()
+                .expect("the favourites")
+                .iter()
+                .map(|recording| recording.title.as_str())
+                .collect::<Vec<_>>(),
+            ["San Tropez"]
+        );
+        assert!(
+            !echoed
+                .iter()
+                .any(|change| matches!(change, Change::Playlist(_) | Change::Favourite(_))),
+            "{echoed:?}"
+        );
     }
 
     fn handed_titles(resumed: &Resumed) -> Vec<&str> {

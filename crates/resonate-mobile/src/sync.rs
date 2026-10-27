@@ -727,21 +727,26 @@ impl DocumentCatalog {
         {
             found.push(id);
         }
-
-        let mut query = connection
-            .prepare_cached(
-                "SELECT s.track FROM songs_received s JOIN documents d ON d.id = s.track
-                  WHERE s.recording = ?1 AND d.missing = 0 ORDER BY d.id",
-            )
-            .map_err(unavailable)?;
-        for key in keys_of(recording) {
-            let asked = query
-                .query_map([key], |row| row.get::<_, i64>(0))
-                .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
-                .map_err(unavailable)?;
-            found.extend(asked.into_iter().map(|id| id as u64));
-        }
+        found.extend(received_as(&connection, recording).map_err(unavailable)?);
         Ok(found)
+    }
+
+    pub(super) fn resolved_in(
+        &self,
+        connection: &Connection,
+        recording: &Recording,
+    ) -> Answered<Option<u64>> {
+        if let Some(id) = self
+            .indexed(connection)
+            .map_err(unavailable)?
+            .resolved(recording)
+        {
+            return Ok(Some(id));
+        }
+        Ok(received_as(connection, recording)
+            .map_err(unavailable)?
+            .first()
+            .copied())
     }
 
     fn opened(&self, id: u64) -> Answered<Option<Opened>> {
@@ -848,11 +853,10 @@ impl Catalog for DocumentCatalog {
     ) -> Answered<LocalPlaylist> {
         let mut connection = self.catalog.0.lock();
         let transaction = connection.transaction().map_err(unavailable)?;
-        let indexed = self.indexed(&transaction).map_err(unavailable)?;
-        let rows = entries
-            .iter()
-            .filter_map(|entry| indexed.resolved(entry))
-            .collect::<Vec<_>>();
+        let mut rows = Vec::with_capacity(entries.len());
+        for entry in entries {
+            rows.extend(self.resolved_in(&transaction, entry)?);
+        }
         let held = match at {
             Some(at) => transaction
                 .query_row(
@@ -1030,11 +1034,7 @@ impl Catalog for DocumentCatalog {
 
     fn favour(&self, recording: &Recording, favoured: bool) -> Answered<bool> {
         let connection = self.catalog.0.lock();
-        let Some(id) = self
-            .indexed(&connection)
-            .map_err(unavailable)?
-            .resolved(recording)
-        else {
+        let Some(id) = self.resolved_in(&connection, recording)? else {
             return Ok(false);
         };
         let changed = connection
@@ -1102,11 +1102,7 @@ impl Catalog for DocumentCatalog {
 
     fn credit(&self, listen: &RemoteListen) -> Answered<bool> {
         let connection = self.catalog.0.lock();
-        let Some(id) = self
-            .indexed(&connection)
-            .map_err(unavailable)?
-            .resolved(&listen.recording)
-        else {
+        let Some(id) = self.resolved_in(&connection, &listen.recording)? else {
             return Ok(false);
         };
         let inserted = connection
@@ -1188,6 +1184,21 @@ impl Catalog for DocumentCatalog {
             .map_err(unavailable)?
             .iter()
             .any(|waiting| waiting.names_the_same_song_as(recording)))
+    }
+
+    fn held_as(&self, recording: &Recording) -> Answered<Option<Recording>> {
+        let connection = self.catalog.0.lock();
+        let Some(id) = self.resolved_in(&connection, recording)? else {
+            return Ok(None);
+        };
+        connection
+            .query_row(
+                &format!("SELECT {RECORDING_COLUMNS} FROM documents d WHERE d.id = ?1"),
+                [id as i64],
+                |row| recording_at(row, 0),
+            )
+            .optional()
+            .map_err(unavailable)
     }
 
     fn holdings(&self) -> Answered<Vec<Held>> {
@@ -1437,6 +1448,21 @@ fn file_name_for(song: &SearchSong, extension: &str) -> String {
     named_within("", OsStr::new(&file_stem_of(song)), format!(".{extension}"))
         .to_string_lossy()
         .into_owned()
+}
+
+fn received_as(connection: &Connection, recording: &Recording) -> rusqlite::Result<Vec<u64>> {
+    let mut query = connection.prepare_cached(
+        "SELECT s.track FROM songs_received s JOIN documents d ON d.id = s.track
+          WHERE s.recording = ?1 AND d.missing = 0 ORDER BY d.id",
+    )?;
+    let mut found = Vec::new();
+    for key in keys_of(recording) {
+        let asked = query
+            .query_map([key], |row| row.get::<_, i64>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        found.extend(asked.into_iter().map(|id| id as u64));
+    }
+    Ok(found)
 }
 
 fn keys_of(recording: &Recording) -> Vec<String> {
@@ -2066,6 +2092,111 @@ mod tests {
 
         assert!(!documents.holds(&hunter).expect("once the file is gone"));
         let _ = fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn a_song_landed_under_the_names_of_its_own_file_stays_in_its_playlist_and_favourites_and_settles_once()
+     {
+        use resonate_sync::{Change, Ledger, Me, Platform, SpaceId};
+
+        let there = folder("sender");
+        let sender = player(&there);
+        let hunter = song(&sender, "content://test/hunter.flac", "Hunter", None);
+        sender
+            .make_playlist("Evening".into(), vec![hunter.id])
+            .expect("a playlist");
+        sender.favourite(hunter.id, true).expect("a favourite");
+        let sending_documents = documents_of(&sender, &there);
+
+        let here = folder("receiver");
+        let receiver = player(&here);
+        let documents = DocumentCatalog {
+            sources: Arc::new(
+                Sources::local().and(Arc::new(
+                    crate::documents::GrantedFiles::new(Arc::new(Here(here.clone())), "content")
+                        .expect("a granted provider"),
+                )),
+            ),
+            ..documents_of(&receiver, &here)
+        };
+        fs::write(here.join("landed.flac"), b"fLaC").expect("a landed file");
+        let landed = song(
+            &receiver,
+            "content://test/landed.flac",
+            "Hunter (2015 Remaster)",
+            None,
+        );
+        receiver
+            .note_received_as(
+                &SearchSong {
+                    title: "Hunter".into(),
+                    artist: "Björk".into(),
+                    album: "Homogenic".into(),
+                    duration_ms: Some(305_000),
+                    ..SearchSong::default()
+                },
+                landed.id,
+            )
+            .expect("noted as the one asked for");
+        let me = |name: &str| Me {
+            name: name.into(),
+            platform: Platform::Android,
+        };
+        let ledger = || {
+            let mut ledger = Ledger::in_memory().expect("a ledger");
+            ledger.enter_space(SpaceId([9; 16])).expect("a space");
+            ledger
+        };
+        let mut sending = ledger();
+        let mut receiving = ledger();
+
+        sending
+            .look(&sending_documents, &me("Phone"))
+            .expect("a look");
+        let told = sending
+            .owed()
+            .expect("owed")
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        receiving.arrived(&documents, &told).expect("arrived");
+        let written_at = documents.revision();
+        let settled = receiving.settle(&documents).expect("settled");
+        receiving.look(&documents, &me("Tablet")).expect("a look");
+        let echoed = receiving
+            .owed()
+            .expect("owed")
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        let settled_again = receiving.settle(&documents).expect("settled");
+        let evening = receiver.playlists().expect("the playlists");
+        let rows = receiver
+            .playlist_tracks(evening[0].id, 0, 10)
+            .expect("the rows")
+            .iter()
+            .map(|track| track.id)
+            .collect::<Vec<_>>();
+        let favourites = documents.favourites().expect("the favourites");
+
+        let _ = fs::remove_dir_all(there);
+        let _ = fs::remove_dir_all(here);
+        assert_eq!(rows, [landed.id]);
+        assert_eq!((settled, settled_again), (0, 0));
+        assert_eq!(documents.revision(), written_at);
+        assert_eq!(
+            favourites
+                .iter()
+                .map(|recording| recording.title.as_str())
+                .collect::<Vec<_>>(),
+            ["Hunter (2015 Remaster)"]
+        );
+        assert!(
+            !echoed
+                .iter()
+                .any(|change| matches!(change, Change::Playlist(_) | Change::Favourite(_))),
+            "{echoed:?}"
+        );
     }
 
     #[test]

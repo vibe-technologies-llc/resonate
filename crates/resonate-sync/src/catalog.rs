@@ -140,6 +140,11 @@ pub trait Catalog: Send + Sync + 'static {
 
     fn holds(&self, recording: &Recording) -> Result<bool, Refused>;
 
+    fn held_as(&self, recording: &Recording) -> Result<Option<Recording>, Refused> {
+        let _ = recording;
+        Ok(None)
+    }
+
     fn holdings(&self) -> Result<Vec<Held>, Refused>;
 
     fn open(&self, recording: &Recording) -> Result<Option<Opened>, Refused>;

@@ -2632,6 +2632,13 @@ impl Library {
         synced::resolve(&self.inner, recording)
     }
 
+    pub fn held_as(
+        &self,
+        recording: &resonate_core::Recording,
+    ) -> Result<Option<resonate_core::Recording>> {
+        synced::held_as(&self.inner, recording)
+    }
+
     pub fn recording_at(
         &self,
         location: &MediaLocation,

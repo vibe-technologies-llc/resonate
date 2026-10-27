@@ -676,25 +676,38 @@ pub(crate) fn recording_of(
     location: &MediaLocation,
     span: Option<FrameSpan>,
 ) -> Result<Option<Recording>> {
+    inner.read(|connection| recording_in(connection, location, span))
+}
+
+pub(crate) fn held_as(inner: &Inner, recording: &Recording) -> Result<Option<Recording>> {
+    inner.read(|connection| match resolved(connection, recording)? {
+        Some(cut) => recording_in(connection, &cut.location, cut.span),
+        None => Ok(None),
+    })
+}
+
+fn recording_in(
+    connection: &Connection,
+    location: &MediaLocation,
+    span: Option<FrameSpan>,
+) -> Result<Option<Recording>> {
     let Some(path) = location.as_path() else {
         return Ok(None);
     };
     let text = store::path_text(path).into_owned();
     let (start, _) = store::span_columns(span);
-    inner.read(|connection| {
-        connection
-            .query_row(
-                &format!(
-                    "SELECT {RECORDING_COLUMNS} FROM tracks t {RECORDING_JOINS}
-                      WHERE t.path = ?1 AND t.span_start = ?2"
-                ),
-                params![text, start],
-                |row| recording_at(row, 0),
-            )
-            .optional()
-            .map(Option::flatten)
-            .map_err(|source| Error::store(StoreOp::Query, source))
-    })
+    connection
+        .query_row(
+            &format!(
+                "SELECT {RECORDING_COLUMNS} FROM tracks t {RECORDING_JOINS}
+                  WHERE t.path = ?1 AND t.span_start = ?2"
+            ),
+            params![text, start],
+            |row| recording_at(row, 0),
+        )
+        .optional()
+        .map(Option::flatten)
+        .map_err(|source| Error::store(StoreOp::Query, source))
 }
 
 pub(crate) fn favourites(inner: &Inner) -> Result<Vec<Recording>> {

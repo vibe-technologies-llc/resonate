@@ -245,6 +245,76 @@ fn listens_kept_since() -> i64 {
     wall_nanos().saturating_sub(i64::try_from(LISTENS_KEPT_FOR.as_nanos()).unwrap_or(i64::MAX))
 }
 
+struct WeighedFavourite {
+    key: String,
+    recording: Recording,
+    favoured: bool,
+    here: bool,
+    stamp: Stamp,
+}
+
+#[derive(Default)]
+struct WeighedFavourites {
+    rows: Vec<WeighedFavourite>,
+    by_key: BTreeMap<String, usize>,
+    by_name: BTreeMap<RecordingKey, Vec<usize>>,
+}
+
+impl WeighedFavourites {
+    fn of(rows: Vec<WeighedFavourite>) -> Self {
+        let mut weighed = Self::default();
+        for row in rows {
+            weighed.noted(row);
+        }
+        weighed
+    }
+
+    fn noted(&mut self, row: WeighedFavourite) {
+        let named = row.recording.named_key();
+        let at = match self.by_key.get(&row.key) {
+            Some(&at) => {
+                self.rows[at] = row;
+                at
+            }
+            None => {
+                self.by_key.insert(row.key.clone(), self.rows.len());
+                self.rows.push(row);
+                self.rows.len() - 1
+            }
+        };
+        let alike = self.by_name.entry(named).or_default();
+        if !alike.contains(&at) {
+            alike.push(at);
+        }
+    }
+
+    fn newest_alike(&self, recording: &Recording, except: &str) -> Option<&WeighedFavourite> {
+        let by_mbid = recording
+            .mbid
+            .as_ref()
+            .and_then(|_| self.by_key.get(recording.key().as_str()));
+        self.by_name
+            .get(&recording.named_key())
+            .into_iter()
+            .flatten()
+            .chain(by_mbid)
+            .map(|at| &self.rows[*at])
+            .filter(|row| row.key != except && row.recording.names_the_same_song_as(recording))
+            .max_by_key(|row| row.stamp)
+    }
+
+    fn outranks(&self, recording: &Recording, key: &str, favoured: bool, stamp: Stamp) -> bool {
+        self.newest_alike(recording, key)
+            .is_some_and(|row| row.stamp > stamp && row.favoured != favoured)
+    }
+
+    fn standing(&self) -> impl Iterator<Item = &WeighedFavourite> {
+        self.rows.iter().filter(|row| {
+            row.favoured && !self.outranks(&row.recording, &row.key, row.favoured, row.stamp)
+        })
+    }
+}
+
 struct HeldFavourite {
     key: String,
     recording: Option<Recording>,
@@ -548,7 +618,7 @@ impl Ledger {
                     if synced.seen.as_deref() == Some(digest.as_slice()) {
                         continue;
                     }
-                    self.edited_here(synced, local, &digest)?;
+                    self.edited_here(catalog, synced, local, &digest)?;
                 }
                 None if looking == Looking::AtWhatIsHeld => {}
                 None => {
@@ -559,7 +629,7 @@ impl Ledger {
                             && names_alike(&synced.name, &local.name)
                     }) {
                         still_here[adopted.0] = true;
-                        self.adopted_here(adopted.1, local, &digest)?;
+                        self.adopted_here(catalog, adopted.1, local, &digest)?;
                         continue;
                     }
                     self.made_here(local, &digest)?;
@@ -608,24 +678,22 @@ impl Ledger {
 
     fn adopted_here(
         &mut self,
+        catalog: &dyn Catalog,
         synced: &StoredPlaylist,
         local: &LocalPlaylist,
         digest: &[u8; DIGEST_BYTES],
     ) -> Result<()> {
+        let listed = local.entries.iter().flatten().collect::<Vec<_>>();
+        let pairs = paired(catalog, &synced.entries.iter().collect::<Vec<_>>(), &listed)?;
         let mut entries = synced.entries.clone();
-        let mut here = vec![false; entries.len()];
-        for recording in local.entries.iter().flatten() {
-            match entries
-                .iter()
-                .zip(here.iter_mut())
-                .find(|(entry, held)| !**held && entry.names_the_same_song_as(recording))
-            {
-                Some((_, held)) => *held = true,
-                None => {
-                    entries.push(recording.clone());
-                    here.push(true);
-                }
-            }
+        let mut here = pairs.iter().map(Option::is_some).collect::<Vec<_>>();
+        for (recording, _) in listed
+            .iter()
+            .zip(unpaired(&pairs, listed.len()))
+            .filter(|(_, unpaired)| *unpaired)
+        {
+            entries.push((*recording).clone());
+            here.push(true);
         }
         let stamp = self.clock.now(self.device);
         self.connection
@@ -648,10 +716,12 @@ impl Ledger {
 
     fn edited_here(
         &mut self,
+        catalog: &dyn Catalog,
         synced: &StoredPlaylist,
         local: &LocalPlaylist,
         digest: &[u8; DIGEST_BYTES],
     ) -> Result<()> {
+        let local_entries = as_synced(catalog, synced, local)?;
         let held = synced
             .entries
             .iter()
@@ -661,7 +731,6 @@ impl Ledger {
                 here: *here,
             })
             .collect::<Vec<_>>();
-        let local_entries = local.entries.iter().flatten().cloned().collect::<Vec<_>>();
         let entries = spliced(&local_entries, &held);
         let mut here = vec![false; entries.len()];
         let mut unmatched = local_entries.iter().collect::<Vec<_>>();
@@ -865,6 +934,46 @@ impl Ledger {
                 .or_default()
                 .push(recording);
         }
+        let named_alike = |recording: &Recording| {
+            favoured_by_name
+                .get(&recording.named_key())
+                .is_some_and(|alike| {
+                    alike
+                        .iter()
+                        .any(|favoured| favoured.names_the_same_song_as(recording))
+                })
+        };
+        let unmatched = favourites.iter().any(|recording| {
+            !held_by_key.contains_key(recording.key().as_str())
+                && !held_by_name
+                    .get(&recording.named_key())
+                    .into_iter()
+                    .flatten()
+                    .any(|at| {
+                        held[*at]
+                            .recording
+                            .as_ref()
+                            .is_some_and(|held| held.names_the_same_song_as(recording))
+                    })
+        });
+        let mut held_as = BTreeMap::new();
+        if unmatched {
+            for (at, row) in held.iter().enumerate() {
+                let Some(recording) = row.recording.as_ref().filter(|recording| {
+                    row.here && !favoured_by_key.contains_key(&row.key) && !named_alike(recording)
+                }) else {
+                    continue;
+                };
+                if let Some(own) = catalog.held_as(recording).map_err(Error::Catalog)? {
+                    held_as.insert(at, own);
+                }
+            }
+        }
+        let held_as_one = |at: &usize, recording: &Recording| {
+            held_as
+                .get(at)
+                .is_some_and(|own| own == recording || own.names_the_same_song_as(recording))
+        };
 
         let transaction = self
             .connection
@@ -887,6 +996,12 @@ impl Ledger {
                                 .as_ref()
                                 .is_some_and(|held| held.names_the_same_song_as(recording))
                         }),
+                )
+                .chain(
+                    held_as
+                        .keys()
+                        .filter(|at| held_as_one(at, recording))
+                        .copied(),
                 )
                 .collect::<Vec<_>>();
             if alike.iter().any(|at| held[*at].here) {
@@ -921,19 +1036,12 @@ impl Ledger {
                 }
             }
         }
-        for row in &held {
+        for (at, row) in held.iter().enumerate() {
             if !row.here || favoured_by_key.contains_key(&row.key) {
                 continue;
             }
-            let still_favoured = row.recording.as_ref().is_some_and(|recording| {
-                favoured_by_name
-                    .get(&recording.named_key())
-                    .is_some_and(|alike| {
-                        alike
-                            .iter()
-                            .any(|favoured| favoured.names_the_same_song_as(recording))
-                    })
-            });
+            let still_favoured = row.recording.as_ref().is_some_and(named_alike)
+                || favourites.iter().any(|favoured| held_as_one(&at, favoured));
             if still_favoured {
                 continue;
             }
@@ -1271,6 +1379,7 @@ impl Ledger {
     pub fn arrived(&mut self, catalog: &dyn Catalog, changes: &[Change]) -> Result<Applied> {
         self.look_at_what_is_held(catalog)?;
         let mut applied = Applied::default();
+        let mut weighed = None;
         for change in changes {
             if let Some(stamp) = change.stamp() {
                 self.clock.saw(stamp);
@@ -1286,7 +1395,7 @@ impl Ledger {
                 }
                 Change::Playlist(note) => self.playlist_arrived(catalog, note)?,
                 Change::Query(note) => self.query_arrived(catalog, note)?,
-                Change::Favourite(note) => self.favourite_arrived(catalog, note)?,
+                Change::Favourite(note) => self.favourite_arrived(catalog, note, &mut weighed)?,
                 Change::Listen(listen) => self.listen_arrived(catalog, listen)?,
                 Change::Handoff(handoff) => {
                     self.handoff_arrived(handoff)?;
@@ -1454,13 +1563,15 @@ impl Ledger {
                 .find(|playlist| !self.maps_local(playlist.at).unwrap_or(true));
             if let Some(unmapped) = unmapped {
                 local = Some(unmapped.at);
-                for recording in unmapped.entries.iter().flatten() {
-                    if !entries
-                        .iter()
-                        .any(|entry| entry.names_the_same_song_as(recording))
-                    {
-                        entries.push(recording.clone());
-                    }
+                let listed = unmapped.entries.iter().flatten().collect::<Vec<_>>();
+                let pairs = paired(catalog, &body.entries.iter().collect::<Vec<_>>(), &listed)?;
+                let left = unpaired(&pairs, listed.len());
+                for (recording, _) in listed
+                    .into_iter()
+                    .zip(left)
+                    .filter(|(_, unpaired)| *unpaired)
+                {
+                    entries.push(recording.clone());
                 }
             }
         }
@@ -1479,7 +1590,7 @@ impl Ledger {
         let written = catalog
             .write_playlist(local, &wanted_name, &entries)
             .map_err(Error::Catalog)?;
-        let here = held_in(&entries, &written);
+        let here = held_in(catalog, &entries, &written)?;
         let alias = (written.name != body.name).then(|| written.name.clone());
         let digest = projection_digest(&written.name, &written.entries);
         let (nanos, by, owed) = if merged_locally {
@@ -1620,7 +1731,12 @@ impl Ledger {
             .map_err(|source| Error::store(StoreOp::Read, source))
     }
 
-    fn favourite_arrived(&mut self, catalog: &dyn Catalog, note: &FavouriteNote) -> Result<bool> {
+    fn favourite_arrived(
+        &mut self,
+        catalog: &dyn Catalog,
+        note: &FavouriteNote,
+        weighed: &mut Option<WeighedFavourites>,
+    ) -> Result<bool> {
         let key = note.recording.key();
         let held: Option<(i64, Vec<u8>, bool)> = self
             .connection
@@ -1640,8 +1756,13 @@ impl Ledger {
             return Ok(false);
         }
 
+        let weighed = match weighed {
+            Some(weighed) => weighed,
+            None => weighed.insert(self.weighed_favourites()?),
+        };
+        let outranked = weighed.outranks(&note.recording, key.as_str(), note.favoured, note.stamp);
         let first_meeting = held.is_none();
-        let here = if note.favoured || !first_meeting {
+        let here = if !outranked && (note.favoured || !first_meeting) {
             catalog
                 .favour(&note.recording, note.favoured)
                 .map_err(Error::Catalog)?
@@ -1663,7 +1784,52 @@ impl Ledger {
                 ],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
-        Ok(here || !note.favoured)
+        weighed.noted(WeighedFavourite {
+            key: key.as_str().to_owned(),
+            recording: note.recording.clone(),
+            favoured: note.favoured,
+            here,
+            stamp: note.stamp,
+        });
+        Ok(!outranked && (here || !note.favoured))
+    }
+
+    fn weighed_favourites(&self) -> Result<WeighedFavourites> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT key, recording, favoured, here, nanos, stamped_by FROM favourites")
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Vec<u8>>(1)?,
+                    row.get::<_, bool>(2)?,
+                    row.get::<_, bool>(3)?,
+                    row.get::<_, i64>(4)?,
+                    row.get::<_, Vec<u8>>(5)?,
+                ))
+            })
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        let mut weighed = Vec::new();
+        for row in rows {
+            let (key, recording, favoured, here, nanos, by) =
+                row.map_err(|source| Error::store(StoreOp::Read, source))?;
+            let Ok(recording) = decoded_recording(&recording) else {
+                continue;
+            };
+            weighed.push(WeighedFavourite {
+                key,
+                recording,
+                favoured,
+                here,
+                stamp: Stamp {
+                    nanos,
+                    device: device_from(&by),
+                },
+            });
+        }
+        Ok(WeighedFavourites::of(weighed))
     }
 
     fn listen_arrived(&mut self, catalog: &dyn Catalog, listen: &Listen) -> Result<bool> {
@@ -1830,6 +1996,7 @@ impl Ledger {
     pub fn settle(&mut self, catalog: &dyn Catalog) -> Result<usize> {
         let mut settled = 0;
 
+        let mut locals = None;
         for stored in self.stored_playlists()? {
             let Some(local) = stored.local else {
                 continue;
@@ -1848,11 +2015,25 @@ impl Ledger {
             if !newly.iter().any(|held| *held) {
                 continue;
             }
+            if locals.is_none() {
+                locals = Some(catalog.playlists().map_err(Error::Catalog)?);
+            }
+            let unlooked = locals
+                .iter()
+                .flatten()
+                .find(|playlist| playlist.at == local)
+                .is_none_or(|playlist| {
+                    stored.seen.as_deref()
+                        != Some(projection_digest(&playlist.name, &playlist.entries).as_slice())
+                });
+            if unlooked {
+                continue;
+            }
             let name = stored.alias.clone().unwrap_or_else(|| stored.name.clone());
             let written = catalog
                 .write_playlist(Some(local), &name, &stored.entries)
                 .map_err(Error::Catalog)?;
-            let here = held_in(&stored.entries, &written);
+            let here = held_in(catalog, &stored.entries, &written)?;
             let digest = projection_digest(&written.name, &written.entries);
             self.connection
                 .execute(
@@ -1953,34 +2134,19 @@ impl Ledger {
 
     fn favoured(&self) -> Result<Vec<Recording>> {
         Ok(self
-            .favourites_where("favoured = 1")?
-            .into_iter()
-            .map(|(_, recording)| recording)
+            .weighed_favourites()?
+            .standing()
+            .map(|row| row.recording.clone())
             .collect())
     }
 
     fn favourites_not_here(&self) -> Result<Vec<(String, Recording)>> {
-        self.favourites_where("favoured = 1 AND here = 0")
-    }
-
-    fn favourites_where(&self, condition: &str) -> Result<Vec<(String, Recording)>> {
-        let mut statement = self
-            .connection
-            .prepare(&format!(
-                "SELECT key, recording FROM favourites WHERE {condition}"
-            ))
-            .map_err(|source| Error::store(StoreOp::Read, source))?;
-        let rows = statement
-            .query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
-            })
-            .map_err(|source| Error::store(StoreOp::Read, source))?;
-        let mut favourites = Vec::new();
-        for row in rows {
-            let (key, recording) = row.map_err(|source| Error::store(StoreOp::Read, source))?;
-            favourites.push((key, decoded_recording(&recording)?));
-        }
-        Ok(favourites)
+        Ok(self
+            .weighed_favourites()?
+            .standing()
+            .filter(|row| !row.here)
+            .map(|row| (row.key.clone(), row.recording.clone()))
+            .collect())
     }
 
     fn uncredited_listens(&self) -> Result<Vec<(Vec<u8>, i64, RemoteListen)>> {
@@ -2486,23 +2652,84 @@ impl Ledger {
     }
 }
 
-fn held_in(entries: &[Recording], written: &LocalPlaylist) -> Vec<bool> {
-    let mut unmatched = written.entries.iter().flatten().collect::<Vec<_>>();
-    entries
+fn held_in(
+    catalog: &dyn Catalog,
+    entries: &[Recording],
+    written: &LocalPlaylist,
+) -> Result<Vec<bool>> {
+    let listed = written.entries.iter().flatten().collect::<Vec<_>>();
+    Ok(
+        paired(catalog, &entries.iter().collect::<Vec<_>>(), &listed)?
+            .into_iter()
+            .map(|pair| pair.is_some())
+            .collect(),
+    )
+}
+
+fn as_synced(
+    catalog: &dyn Catalog,
+    synced: &StoredPlaylist,
+    local: &LocalPlaylist,
+) -> Result<Vec<Recording>> {
+    let held = synced
+        .entries
         .iter()
-        .map(|entry| {
-            match unmatched
-                .iter()
-                .position(|local| local.names_the_same_song_as(entry))
-            {
-                Some(at) => {
-                    unmatched.remove(at);
-                    true
-                }
-                None => false,
-            }
-        })
-        .collect()
+        .zip(&synced.here)
+        .filter(|(_, here)| **here)
+        .map(|(recording, _)| recording)
+        .collect::<Vec<_>>();
+    let listed = local.entries.iter().flatten().collect::<Vec<_>>();
+    let mut entries = listed
+        .iter()
+        .map(|recording| (*recording).clone())
+        .collect::<Vec<_>>();
+    for (recording, pair) in held.iter().zip(paired(catalog, &held, &listed)?) {
+        if let Some(at) = pair {
+            entries[at] = (*recording).clone();
+        }
+    }
+    Ok(entries)
+}
+
+fn unpaired(pairs: &[Option<usize>], listed: usize) -> Vec<bool> {
+    let mut unpaired = vec![true; listed];
+    for at in pairs.iter().flatten() {
+        unpaired[*at] = false;
+    }
+    unpaired
+}
+
+fn paired(
+    catalog: &dyn Catalog,
+    asked: &[&Recording],
+    listed: &[&Recording],
+) -> Result<Vec<Option<usize>>> {
+    let mut taken = vec![false; listed.len()];
+    let mut pairs = Vec::with_capacity(asked.len());
+    for entry in asked {
+        let pair =
+            (0..listed.len()).find(|at| !taken[*at] && listed[*at].names_the_same_song_as(entry));
+        if let Some(at) = pair {
+            taken[at] = true;
+        }
+        pairs.push(pair);
+    }
+
+    for (entry, pair) in asked.iter().zip(pairs.iter_mut()) {
+        if pair.is_some() || taken.iter().all(|taken| *taken) {
+            continue;
+        }
+        let Some(own) = catalog.held_as(entry).map_err(Error::Catalog)? else {
+            continue;
+        };
+        *pair = (0..listed.len()).find(|at| {
+            !taken[*at] && (*listed[*at] == own || listed[*at].names_the_same_song_as(&own))
+        });
+        if let Some(at) = *pair {
+            taken[at] = true;
+        }
+    }
+    Ok(pairs)
 }
 
 fn bundled(changes: Vec<Change>) -> Vec<Vec<Change>> {
