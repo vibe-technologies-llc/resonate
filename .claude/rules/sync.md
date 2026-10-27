@@ -345,7 +345,7 @@ of the same bytes already standing at the name (or a numbered one) is the song
 (`filed::Landed::Standing`), not a ` (2)` beside it; the scan after filing waits out another pass
 (`scanned_once_free`: `SCANS_TRIED_AT_MOST` tries `SCAN_TRIED_AGAIN_AFTER` apart) rather than leave
 the song uncatalogued to be fetched again
-(`a_song_from_another_device_is_held_by_what_was_asked_and_never_filed_twice`). Copies such a
+(`a_song_from_another_device_is_held_by_what_was_asked_and_never_filed_twice`). The phones do the same in their own catalog (`songs_received`, `android.md`). Copies such a
 fetch left are folded by `resonate dedupe` (`library.md`). With neither it is refused (`SongFiled::Nowhere`), and one that does not probe (or the
 vault refuses) is deleted and answered `false` (`SongFiled::Refused`), so a damaged file is never
 filed to be fetched again. **A vaulted song is offered onward**: `Library::held_songs` lists the
