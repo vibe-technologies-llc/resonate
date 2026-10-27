@@ -5,13 +5,14 @@ use std::{
 
 use resonate_analysis::{BANDS, JUDGED_UNDER, LossyGuess, Verdict};
 use resonate_core::{
-    AlbumId, Answer, Answered, Figure, Link, Recording, SharedCredit, SharedLyrics, SharedMedium,
-    SharedRelease, SharedStudy, SharedTrack, TrackId, WholeFile,
+    AlbumId, Answer, Answered, Figure, Link, Mbid, Recording, SharedCredit, SharedLyrics,
+    SharedMedium, SharedRelease, SharedStudy, SharedTrack, TrackId, WholeFile,
 };
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 
 use crate::{
-    Credit, Cut, Error, LyricText, Medium, Release, ReleaseMatch, ReleaseTrack, Result, StoreOp,
+    CoverSource, Credit, Cut, Error, LyricText, Medium, Release, ReleaseMatch, ReleaseTrack,
+    Result, StoreOp,
     db::Inner,
     enrich::{EXACT_SCORE, Fit, Pressing, takes_strictly},
     enriched, store, sung,
@@ -602,12 +603,13 @@ fn take_release(
     recording: &Recording,
     shared: &SharedRelease,
 ) -> Result<bool> {
-    let albums = albums_holding(transaction, recording, shared)?;
+    let (albums, held_as_keyed) = albums_holding(transaction, recording, shared)?;
     if albums.is_empty() {
         return Ok(false);
     }
 
     let release = as_release(shared);
+    let mut landed = false;
     for album in albums {
         let Some(pressing) = landing_on(transaction, album, &release)? else {
             continue;
@@ -615,52 +617,86 @@ fn take_release(
         enriched::land_release(transaction, album, &release, pressing, SystemTime::now())?;
         enriched::rematch_release_tracks(transaction, album)?;
         identify_the_credited(transaction, &release.credit)?;
+        landed = true;
     }
-    Ok(true)
+    Ok(landed || held_as_keyed)
 }
 
 fn albums_holding(
     connection: &Connection,
     recording: &Recording,
     release: &SharedRelease,
-) -> Result<BTreeSet<AlbumId>> {
+) -> Result<(BTreeSet<AlbumId>, bool)> {
     let mut albums = BTreeSet::new();
-    if let Some(cut) = held_strictly(connection, recording)?
-        && let Some(path) = cut.location.as_path()
-    {
-        let (span_start, _) = store::span_columns(cut.span);
-        let album = connection
-            .query_row(
-                "SELECT album_id FROM tracks WHERE path = ?1 AND span_start = ?2",
-                params![store::path_text(path), span_start],
-                |row| row.get::<_, Option<i64>>(0),
-            )
-            .optional()
-            .map_err(|source| Error::store(StoreOp::Query, source))?
-            .flatten();
-        albums.extend(album);
-    }
+    albums.extend(album_holding_strictly(connection, recording)?);
     if albums.is_empty() {
-        let mut statement = connection
-            .prepare_cached(
-                "SELECT DISTINCT album_id FROM tracks WHERE mbid = ?1 AND album_id IS NOT NULL",
-            )
-            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
-        for recorded in release
-            .tracks()
-            .filter_map(|track| track.recording.as_ref())
-        {
-            let held = statement
-                .query_map(params![recorded.as_str()], |row| row.get::<_, i64>(0))
-                .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
-                .map_err(|source| Error::store(StoreOp::Query, source))?;
-            albums.extend(held);
+        albums.extend(albums_holding_its_recordings(connection, release)?);
+    }
+    let held_as_keyed = !albums.is_empty();
+    if !held_as_keyed {
+        for track in release.tracks() {
+            let named = Recording {
+                mbid: track.recording.clone(),
+                title: track.title.clone(),
+                artist: track
+                    .artist
+                    .clone()
+                    .unwrap_or_else(|| recording.artist.clone()),
+                album: recording.album.clone(),
+                length: track
+                    .length_ms
+                    .map(|length| Duration::from_millis(u64::from(length))),
+            };
+            albums.extend(album_holding_strictly(connection, &named)?);
         }
     }
-    albums
+    let albums = albums
         .into_iter()
         .map(|album| Ok(AlbumId::new(album.cast_unsigned())?))
-        .collect()
+        .collect::<Result<_>>()?;
+    Ok((albums, held_as_keyed))
+}
+
+fn album_holding_strictly(connection: &Connection, recording: &Recording) -> Result<Option<i64>> {
+    let Some(cut) = held_strictly(connection, recording)? else {
+        return Ok(None);
+    };
+    let Some(path) = cut.location.as_path() else {
+        return Ok(None);
+    };
+    let (span_start, _) = store::span_columns(cut.span);
+    connection
+        .query_row(
+            "SELECT album_id FROM tracks WHERE path = ?1 AND span_start = ?2",
+            params![store::path_text(path), span_start],
+            |row| row.get::<_, Option<i64>>(0),
+        )
+        .optional()
+        .map(Option::flatten)
+        .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
+fn albums_holding_its_recordings(
+    connection: &Connection,
+    release: &SharedRelease,
+) -> Result<BTreeSet<i64>> {
+    let mut albums = BTreeSet::new();
+    let mut statement = connection
+        .prepare_cached(
+            "SELECT DISTINCT album_id FROM tracks WHERE mbid = ?1 AND album_id IS NOT NULL",
+        )
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    for recorded in release
+        .tracks()
+        .filter_map(|track| track.recording.as_ref())
+    {
+        let held = statement
+            .query_map(params![recorded.as_str()], |row| row.get::<_, i64>(0))
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+        albums.extend(held);
+    }
+    Ok(albums)
 }
 
 fn landing_on(
@@ -717,4 +753,67 @@ fn identify_the_credited(transaction: &Transaction<'_>, credit: &[Credit]) -> Re
             .map_err(|source| Error::store(StoreOp::Update, source))?;
     }
     Ok(())
+}
+
+const PICTURED: &str = "(cover_art IS NOT NULL OR cover_path IS NOT NULL)";
+
+pub(crate) fn covers_wanted(inner: &Inner, most: usize) -> Result<Vec<Mbid>> {
+    let most = i64::try_from(most).unwrap_or(i64::MAX);
+    let ids = inner.read(|connection| {
+        let mut statement = connection
+            .prepare_cached(&format!(
+                "SELECT mbid FROM albums WHERE mbid IS NOT NULL AND NOT {PICTURED}
+                  GROUP BY mbid ORDER BY max(id) DESC LIMIT ?1"
+            ))
+            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+        statement
+            .query_map(params![most], |row| row.get::<_, String>(0))
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .map_err(|source| Error::store(StoreOp::Query, source))
+    })?;
+    Ok(ids
+        .iter()
+        .filter_map(|id| store::mbid_in(Some(id)))
+        .collect())
+}
+
+pub(crate) fn album_covering(inner: &Inner, release: &Mbid) -> Result<Option<AlbumId>> {
+    let album = inner.read(|connection| {
+        connection
+            .query_row(
+                &format!(
+                    "SELECT id FROM albums WHERE mbid = ?1 AND {PICTURED}
+                       AND (pressing_fit IS NULL OR cover_source IS NOT ?2)
+                     ORDER BY id LIMIT 1"
+                ),
+                params![
+                    release.as_str(),
+                    store::cover_source_code(CoverSource::File)
+                ],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()
+            .map_err(|source| Error::store(StoreOp::Query, source))
+    })?;
+    album
+        .map(|album| Ok(AlbumId::new(album.cast_unsigned())?))
+        .transpose()
+}
+
+pub(crate) fn albums_uncovered(inner: &Inner, release: &Mbid) -> Result<Vec<AlbumId>> {
+    let albums = inner.read(|connection| {
+        let mut statement = connection
+            .prepare_cached(&format!(
+                "SELECT id FROM albums WHERE mbid = ?1 AND NOT {PICTURED} ORDER BY id"
+            ))
+            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+        statement
+            .query_map(params![release.as_str()], |row| row.get::<_, i64>(0))
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .map_err(|source| Error::store(StoreOp::Query, source))
+    })?;
+    albums
+        .into_iter()
+        .map(|album| Ok(AlbumId::new(album.cast_unsigned())?))
+        .collect()
 }

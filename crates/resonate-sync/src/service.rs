@@ -39,15 +39,17 @@ use crate::{
         global_addresses_here, record_of, told_over_ipv6,
     },
     peer::{
-        Answering, Heard, blocking, dialled, dialled_within, fetch, holdings_of, meet, serve, tell,
+        Answering, Heard, blocking, covers_from, dialled, dialled_within, fetch, holdings_of, meet,
+        serve, tell,
     },
     quic::{KEEP_THE_SERVER_EVERY, PeerIdentity, to_the_server, trusted_roots},
     seal::{opened, sealed},
     stun::{Reflector, STUN_PORT},
     web::{Incoming, Outgoing, connect, to_the_web, web_address},
     wire::{
-        Beacon, FromServer, LARGEST_FRAME, LARGEST_RECORD, PROTOCOL_VERSION, Refusal, ToServer,
-        decoded_bundle, decoded_candidates, encoded_bundle, encoded_candidates, encoded_change,
+        Beacon, COVERS_ASKED_AT_MOST, FromServer, LARGEST_FRAME, LARGEST_RECORD, PROTOCOL_VERSION,
+        Refusal, ToServer, decoded_bundle, decoded_candidates, encoded_bundle, encoded_candidates,
+        encoded_change,
     },
 };
 
@@ -66,6 +68,7 @@ const COMPACT_PAST_RECORDS: u64 = 512;
 const COMPACT_PAST_BYTES: u64 = 4 * 1024 * 1024;
 const BLOBS_PER_APPEND: usize = 32;
 const FOLLOW_A_DEVICE_EVERY: Duration = Duration::from_secs(30 * 60);
+const COVERS_ASKED_OF_A_DEVICE_EVERY: Duration = Duration::from_secs(30 * 60);
 pub const A_FAILED_SONG_WAITS: Duration = Duration::from_secs(30 * 60);
 const LEAVE_WITHIN: Duration = Duration::from_secs(2);
 const SNAPSHOT_FRAME_SHARE: usize = LARGEST_FRAME / 2;
@@ -339,6 +342,7 @@ struct Syncing {
     punched_back: BTreeMap<DeviceId, Instant>,
     waiting: BTreeMap<DeviceId, Vec<Work>>,
     followed: BTreeMap<DeviceId, Instant>,
+    covers_asked: BTreeMap<DeviceId, Instant>,
     follow_again_at: Option<Instant>,
     followed_again_at: Option<Instant>,
     look_at: Option<Instant>,
@@ -1171,6 +1175,7 @@ impl Syncing {
             punched_back: BTreeMap::new(),
             waiting: BTreeMap::new(),
             followed: BTreeMap::new(),
+            covers_asked: BTreeMap::new(),
             follow_again_at: None,
             followed_again_at: None,
             look_at: None,
@@ -1285,6 +1290,7 @@ impl Syncing {
                 for work in self.waiting.remove(&device).unwrap_or_default() {
                     spawn_work(Arc::clone(&self.running), device, connection.clone(), work);
                 }
+                self.ask_for_covers(device, &connection);
                 self.peers.insert(device, connection);
             }
             Event::Punched(device, None) => self.relayed_or_unreached(device),
@@ -1782,6 +1788,22 @@ impl Syncing {
         self.want(device, Work::Follow).await
     }
 
+    fn ask_for_covers(&mut self, device: DeviceId, connection: &Connection) {
+        if device == self.running.device || !self.running.transfers_allowed() {
+            return;
+        }
+        let now = Instant::now();
+        if self
+            .covers_asked
+            .get(&device)
+            .is_some_and(|at| now.duration_since(*at) < COVERS_ASKED_OF_A_DEVICE_EVERY)
+        {
+            return;
+        }
+        self.covers_asked.insert(device, now);
+        spawn_covers(Arc::clone(&self.running), connection.clone());
+    }
+
     async fn want(&mut self, device: DeviceId, work: Work) -> Result<()> {
         if let Work::Fetch(recordings) = &work {
             for recording in recordings {
@@ -2152,6 +2174,7 @@ impl Syncing {
         self.running.failed_lately.lock().clear();
         self.wait = FIRST_RETRY;
         self.followed.clear();
+        self.covers_asked.clear();
         self.dialled_at.clear();
         match self.server.take() {
             Some(link) => {
@@ -2198,6 +2221,7 @@ impl Syncing {
         for work in self.waiting.remove(&device).unwrap_or_default() {
             spawn_work(Arc::clone(&self.running), device, connection.clone(), work);
         }
+        self.ask_for_covers(device, &connection);
         self.peers.insert(device, connection.clone());
         if records {
             let (changes, told) = self.whole().await?;
@@ -2235,6 +2259,31 @@ fn spawn_tell(device: DeviceId, connection: Connection, whole: bool, changes: Ve
     tokio::spawn(async move {
         if let Err(error) = tell(&connection, device, whole, changes).await {
             tracing::debug!(%error, "changes could not be told to a device on this network");
+        }
+    });
+}
+
+fn spawn_covers(running: Arc<Running>, connection: Connection) {
+    tokio::spawn(async move {
+        let catalog = Arc::clone(&running.catalog);
+        let wanted = blocking(move || {
+            catalog
+                .covers_wanted(COVERS_ASKED_AT_MOST)
+                .map_err(Error::Catalog)
+        })
+        .await;
+        let wanted = match wanted {
+            Ok(wanted) if wanted.is_empty() => return,
+            Ok(wanted) => wanted,
+            Err(error) => {
+                tracing::debug!(%error, "the covers this catalog lacks could not be read");
+                return;
+            }
+        };
+        match covers_from(&connection, wanted, Arc::clone(&running.catalog)).await {
+            Ok(0) => {}
+            Ok(landed) => tracing::info!(landed, "covers arrived from another device"),
+            Err(error) => tracing::debug!(%error, "a device was not asked for its covers"),
         }
     });
 }

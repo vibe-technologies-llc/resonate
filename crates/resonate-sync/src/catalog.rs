@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use resonate_core::{Answer, Answered, Recording};
+use resonate_core::{Answer, Answered, Mbid, Recording};
 
 use crate::{change::QueryBody, key::DeviceId};
 
@@ -168,6 +168,21 @@ pub trait Catalog: Send + Sync + 'static {
 
     fn take_answer(&self, recording: &Recording, answer: &Answer) -> Result<bool, Refused> {
         let _ = (recording, answer);
+        Ok(false)
+    }
+
+    fn covers_wanted(&self, most: usize) -> Result<Vec<Mbid>, Refused> {
+        let _ = most;
+        Ok(Vec::new())
+    }
+
+    fn cover(&self, release: &Mbid) -> Result<Option<Vec<u8>>, Refused> {
+        let _ = release;
+        Ok(None)
+    }
+
+    fn take_cover(&self, release: &Mbid, picture: &[u8]) -> Result<bool, Refused> {
+        let _ = (release, picture);
         Ok(false)
     }
 

@@ -83,8 +83,11 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   `resonate-peer/1` between devices.
 - **Between devices**, one request per stream: `Holdings` (answered `Held`… `HeldEnd`), `Fetch`
   (`Sending` then the bytes, or `Missing`), `Meet` (device, whether records travel; answered `Met`
-  with the other's device), `Changes` (whether whole, a bundle; answered `Taken`) and `Tags` (a
-  recording; answered `Tagged`, a `SongTags`). **What a song's file no longer carries travels beside
+  with the other's device), `Changes` (whether whole, a bundle; answered `Taken`), `Tags` (a
+  recording; answered `Tagged`, a `SongTags`) and `Covers` (`ToPeer` tag 5: release ids, at most
+  `COVERS_ASKED_AT_MOST`, 512, the reader refusing more; answered a `Covered` frame, a release id and
+  the picture's bytes of at most `LARGEST_SHARED_COVER`, 16 MiB, for each one held, then
+  `CoversEnd`; a build without the request drops the stream, which reads as no covers). **What a song's file no longer carries travels beside
   it, not in it**: a `Recording` is never extended (every earlier build reads each frame to its end
   and refuses a trailing byte), so the album artist, date, track and disc numbers and totals and
   the compilation flag go in a request of their own, asked after a fetch lands (`peer::tags_from`)
@@ -178,8 +181,8 @@ platforms; the catalog seam stays thin.
   the release and on each track, `CODES_SHARED_AT_MOST` (8) codes a track and a
   `SharedRelease::weight` (its text plus 16 bytes an item) of at most `HEAVIEST_SHARED_RELEASE`
   (64 KiB); the reader refuses longer lists
-  (`a_release_heavier_than_the_server_keeps_stays_home`). The print, recognition, Lyricsfile and
-  covers do not travel (`FEATURES.md`). **The ledger's `answers` row is keyed by the recording key,
+  (`a_release_heavier_than_the_server_keeps_stays_home`). Covers travel device to device, never
+  through the server (*Peers*); the print, recognition and Lyricsfile do not travel (`FEATURES.md`). **The ledger's `answers` row is keyed by the recording key,
   the kind and the file** (a study per encode; lyrics kind 0 and a release kind 2 with no file, so
   the words and the release of one song are two rows,
   `a_release_travels_beside_the_words_of_its_song_and_is_not_sent_back`), holds the encoded answer, `here`, stamp and `owed`. A look reads
@@ -228,7 +231,14 @@ Failures are a `Refused` the implementation logs (errors.md: no boxed error). **
 (`takes_answers`, `answers_after`, `take_answer`) are the library's `answers.rs`
 (`Library::answers_to_share`, `take_shared_answer`): kept lyrics with text and studies at this
 build's `JUDGED_UNDER` with whole band levels of a whole-file row with a packets digest, in `at`
-order; **words land only where the recording is held strictly** (resolved as above, then the held
+order; **covers** (`covers_wanted`, `cover`, `take_cover`; default none) are the library's
+`Library::covers_wanted` (the release ids of albums holding no picture, newest album first),
+`cover_to_share` (the picture of an album of that release id, a closest pressing's only where the
+picture is not the file's own) and `take_shared_cover` (sniffed as an image, else refused, and landed
+through `land_archive_cover` on every album of that id holding no picture, so a file's picture
+later replaces it as it would the archive's;
+`a_cover_one_catalog_holds_for_a_release_lands_on_another_holding_it_without_one`);
+**words land only where the recording is held strictly** (resolved as above, then the held
 row's MBID is the recording's, or both lengths are known and within 2 s), as a `lyrics_kept` row
 through `sung::keep` with no Lyricsfile, and never where the row keeps words as rich already; **a
 study lands only on a copy that is the same file**: every whole-file row whose `tracks.packets`,
@@ -238,14 +248,19 @@ lossy guess this build cannot name, another `JUDGED_UNDER` or another band layou
 written nowhere
 (`a_study_and_kept_words_land_on_a_catalog_holding_the_same_file_and_read_back_as_they_went`,
 `a_study_of_another_encode_or_words_for_another_take_are_never_written`). **A release travels once
-an album, keyed by the album's first paired track** (lowest disc and position), and only where the
+an album, its ledger row keyed by the album's first paired track** (lowest disc and position), and only where the
 album's own landing was a release matched exactly: `albums.mbid` and `release_title` set,
 `pressing_fit` NULL (a closest pressing is a guess for this album, never another's answer), its
-credit kept in `release_credits` (an album landed before that table is shared once its release is
-landed again) and a release row paired with a track; `at` is `albums.answered`. **It lands only
+credit kept in `release_credits` (an album landed before that table is made due again by the
+library's eighth step, so the next lookup lands its credit and it is shared) and a release row paired with a track; `at` is `albums.answered`. **It lands only
 through the rules `land_release` lands with**: the album is that of the copy holding the recording
 strictly (as words do), else every album holding a track whose recording id one of the release's
-tracks names; an album the listener refused the release for, one whose files or own answer name
+tracks names, else every album holding strictly any of the release's tracks named as the release
+names it (its title, its artist or the keyed recording's, the keyed recording's album, its length),
+so a catalog naming the keyed track otherwise, or lacking it, still finds the album
+(`a_release_shared_by_a_track_held_under_another_name_lands_through_any_other_track_it_holds`); an
+album found only that way that the release does not land on is not settled, and is offered again as
+the catalog moves; an album the listener refused the release for, one whose files or own answer name
 another release (`albums.mbid`; the same id, never answered, lands as `Pressing::AsHeld`) or
 another release group is passed over; otherwise the release is weighed as a strict search answer
 (`enrich::takes_strictly`: the credit agrees with the owner or the performers, the track count is
@@ -467,10 +482,20 @@ will not open is left out of the holdings.
   on the song**: it never enters `failed_lately`, and a run whose connection closes stops there
   (the songs it had not reached are not failed one by one) and sends `Event::CutShort`, which lets
   the next meeting with that device follow at once rather than after `FOLLOW_A_DEVICE_EVERY`.
+- **Covers are asked of every device a connection stands to, at most every
+  `COVERS_ASKED_OF_A_DEVICE_EVERY` (30 min) a device** (`ask_for_covers`, on meeting a neighbour and
+  on a punched or relayed connection; *Sync now* forgets the times): the catalog's
+  `covers_wanted(COVERS_ASKED_AT_MOST)` goes as one `Covers` request (`peer::covers_from`), and each
+  `Covered` answer is handed to `take_cover` as it arrives. The sender reads each with `cover` and
+  sends only what is held and within `LARGEST_SHARED_COVER`. So a cover crosses end to end (directly
+  or through the relay as QUIC), never kept on the server
+  (`a_cover_one_device_holds_reaches_another_lacking_it_and_one_neither_holds_stays_missing`). The
+  phones' catalogs neither ask nor answer (the seam's defaults).
 - **Android and iOS send and fetch songs only on an unmetered network** unless mobile data is allowed
   (`allow_transfers`); incoming peers are refused meanwhile, a run under way stops before its next
   song as a cut-short run does, and a `Fetch` asked meanwhile is answered `Missing`
-  (`Answering::transfers_allowed`, the flag the service holds).
+  (`Answering::transfers_allowed`, the flag the service holds); covers are neither asked nor
+  answered meanwhile.
 
 ## Nearby
 
