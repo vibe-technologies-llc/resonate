@@ -12,11 +12,12 @@ use std::{
 };
 
 use resonate_analysis::Watch;
-use resonate_core::{Answer, Answered, Link, Mbid, MediaLocation, Recording};
+use resonate_core::{Answer, Answered, Chromaprint, Link, Mbid, MediaLocation, Recording};
 use resonate_library::{
-    Album, AlbumQuery, CoverArt, Credit, Cut, DeliveryFolder, Direction, HeldTags, ImageFormat,
-    Layout, Library, LyricText, Medium, Release, ReleaseTrack, Result, SavedQuery, ScanOptions,
-    ScanStats, SongFiled, SortOrder, SyncedQueryBody, TrackQuery, Vault, WAITS,
+    Agreement, Album, AlbumQuery, CoverArt, Credit, Cut, DeliveryFolder, Direction, HeardAs,
+    HeldTags, ImageFormat, Layout, Library, LyricText, Medium, Release, ReleaseTrack, Result,
+    SavedQuery, ScanOptions, ScanStats, SongFiled, SortOrder, SyncedQueryBody, TrackQuery, Vault,
+    WAITS,
 };
 
 const RATE: u32 = 44_100;
@@ -1179,6 +1180,143 @@ fn a_study_of_another_encode_or_words_for_another_take_are_never_written() -> Re
             .is_none()
     );
     assert!(there.answers_to_share(0, 10)?.is_empty());
+    Ok(())
+}
+
+fn studied_with_a_print(library: &Library, location: &MediaLocation) -> Result<Chromaprint> {
+    let track = library.track_held(location, None)?.expect("a held track");
+    let mut study = resonate_analysis::study(&library.sources(), location, None, &Watch::default())
+        .expect("a study");
+    let print = Chromaprint::new("AQADtEmSJEmSJEmS", Duration::from_secs(181)).expect("a print");
+    study.print = Some(print.clone());
+    library.note_study(track, &study)?;
+    Ok(print)
+}
+
+#[test]
+fn a_print_and_its_recognition_land_on_a_copy_that_is_the_same_file_and_are_weighed_against_its_own_name()
+-> Result<()> {
+    let tree = Tree::new();
+    let renamed_tree = Tree::new();
+    let other_tree = Tree::new();
+    let echoes = tree.song("echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let renamed = renamed_tree.song("time.wav", "Brain Damage", "Roger Waters", "The Wall");
+    let another_encode = other_tree.root.join("echoes.wav");
+    fs::write(
+        &another_encode,
+        tagged_wav_opening_on("Echoes", "Pink Floyd", "Meddle", 9),
+    )
+    .expect("a written song");
+    let here = Library::open_in_memory()?;
+    let agreeing = Library::open_in_memory()?;
+    let disagreeing = Library::open_in_memory()?;
+    let unstudied = Library::open_in_memory()?;
+    let elsewhere = Library::open_in_memory()?;
+    scan(&here, &tree.root)?;
+    scan(&agreeing, &tree.root)?;
+    scan(&disagreeing, &renamed_tree.root)?;
+    scan(&unstudied, &tree.root)?;
+    scan(&elsewhere, &other_tree.root)?;
+    let location = MediaLocation::local(&echoes);
+    let print = studied_with_a_print(&here, &location)?;
+    let track = here.track_held(&location, None)?.expect("a held track");
+    let heard = HeardAs {
+        recording: Mbid::new("b84ee12a-09ef-421b-82de-0441a926375b").expect("mbid"),
+        score: 96,
+        title: "Echoes".into(),
+        artist: Some("Pink Floyd".into()),
+    };
+    here.note_recognition(track, Some(&heard), Agreement::Agrees)?;
+    let elsewhere_at = MediaLocation::local(&another_encode);
+    let elsewhere_track = elsewhere
+        .track_held(&elsewhere_at, None)?
+        .expect("a held track");
+    let elsewhere_study =
+        resonate_analysis::study(&elsewhere.sources(), &elsewhere_at, None, &Watch::default())
+            .expect("a study");
+    elsewhere.note_study(elsewhere_track, &elsewhere_study)?;
+    for answered in here.answers_to_share(0, 10)? {
+        for library in [&agreeing, &disagreeing] {
+            library.take_shared_answer(&answered.recording, &answered.answer)?;
+        }
+    }
+
+    let wanted = agreeing.prints_wanted(0, 10)?;
+    let shared = here.print_to_share(wanted[0])?.expect("a print to share");
+    let nothing_to_share = agreeing.print_to_share(wanted[0])?;
+    let not_studied = unstudied.take_shared_print(wanted[0], &shared)?;
+    let another_file = elsewhere.take_shared_print(wanted[0], &shared)?;
+    let taken = agreeing.take_shared_print(wanted[0], &shared)?;
+    let named_otherwise = disagreeing.take_shared_print(wanted[0], &shared)?;
+    let again = agreeing.take_shared_print(wanted[0], &shared)?;
+
+    let (_, agreeing_study) = agreeing.study_of(&location, None)?.expect("a study");
+    let (_, disagreeing_study) = disagreeing
+        .study_of(&MediaLocation::local(&renamed), None)?
+        .expect("a study");
+    assert_eq!(wanted.len(), 1);
+    assert!(here.prints_wanted(0, 10)?.is_empty());
+    assert_eq!(shared.print, print);
+    assert_eq!(nothing_to_share, None);
+    assert!(!not_studied);
+    assert!(!another_file);
+    assert!(taken);
+    assert!(named_otherwise);
+    assert!(!again);
+    assert_eq!(agreeing_study.print, Some(print.clone()));
+    assert_eq!(agreeing_study.heard_as, Some(heard.clone()));
+    assert_eq!(agreeing_study.agreement, Some(Agreement::Agrees));
+    assert!(agreeing_study.recognised.is_some());
+    assert_eq!(disagreeing_study.print, Some(print));
+    assert_eq!(disagreeing_study.heard_as, Some(heard));
+    assert_eq!(disagreeing_study.agreement, Some(Agreement::Disagrees));
+    assert!(agreeing.prints_wanted(0, 10)?.is_empty());
+    assert!(elsewhere.print_to_share(wanted[0])?.is_none());
+    Ok(())
+}
+
+#[test]
+fn a_recognition_that_heard_nothing_travels_as_nothing_and_a_print_alone_leaves_the_recognition_owed()
+-> Result<()> {
+    let tree = Tree::new();
+    let echoes = tree.song("echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let here = Library::open_in_memory()?;
+    let there = Library::open_in_memory()?;
+    scan(&here, &tree.root)?;
+    scan(&there, &tree.root)?;
+    let location = MediaLocation::local(&echoes);
+    studied_with_a_print(&here, &location)?;
+    let track = here.track_held(&location, None)?.expect("a held track");
+    let study = resonate_analysis::study(&there.sources(), &location, None, &Watch::default())
+        .expect("a study");
+    there.note_study(
+        there.track_held(&location, None)?.expect("a held track"),
+        &study,
+    )?;
+    let file = there.prints_wanted(0, 10)?[0];
+
+    let printed_only = here.print_to_share(file)?.expect("a print to share");
+    here.note_recognition(track, None, Agreement::Unheard)?;
+    let heard_nothing = here.print_to_share(file)?.expect("a print to share");
+    there.take_shared_print(file, &printed_only)?;
+    let (_, owed) = there.study_of(&location, None)?.expect("a study");
+
+    assert_eq!(printed_only.recognition, None);
+    assert_eq!(
+        heard_nothing.recognition,
+        Some(resonate_core::SharedRecognition::Unheard)
+    );
+    assert!(owed.print.is_some());
+    assert_eq!(owed.recognised, None);
+    assert_eq!(there.prints_wanted(0, 10)?, [file]);
+
+    there.take_shared_print(file, &heard_nothing)?;
+    let (_, settled) = there.study_of(&location, None)?.expect("a study");
+
+    assert_eq!(settled.heard_as, None);
+    assert_eq!(settled.agreement, Some(Agreement::Unheard));
+    assert!(settled.recognised.is_some());
+    assert!(there.prints_wanted(0, 10)?.is_empty());
     Ok(())
 }
 

@@ -2609,6 +2609,25 @@ impl Library {
         answers::take_lyricsfile(&self.inner, recording, lyricsfile)
     }
 
+    pub fn prints_wanted(&self, skip: usize, most: usize) -> Result<Vec<resonate_core::WholeFile>> {
+        answers::prints_wanted(&self.inner, skip, most)
+    }
+
+    pub fn print_to_share(
+        &self,
+        file: resonate_core::WholeFile,
+    ) -> Result<Option<resonate_core::SharedPrint>> {
+        answers::print_to_share(&self.inner, file)
+    }
+
+    pub fn take_shared_print(
+        &self,
+        file: resonate_core::WholeFile,
+        print: &resonate_core::SharedPrint,
+    ) -> Result<bool> {
+        answers::take_print(&self.inner, file, print)
+    }
+
     pub fn resolve_recording(&self, recording: &resonate_core::Recording) -> Result<Option<Cut>> {
         synced::resolve(&self.inner, recording)
     }

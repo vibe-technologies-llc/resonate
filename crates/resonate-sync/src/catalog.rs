@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use resonate_core::{Answer, Answered, Mbid, Recording, SharedLyricsfile};
+use resonate_core::{Answer, Answered, Mbid, Recording, SharedLyricsfile, SharedPrint, WholeFile};
 
 use crate::{change::QueryBody, key::DeviceId};
 
@@ -202,6 +202,21 @@ pub trait Catalog: Send + Sync + 'static {
         lyricsfile: &SharedLyricsfile,
     ) -> Result<bool, Refused> {
         let _ = (recording, lyricsfile);
+        Ok(false)
+    }
+
+    fn prints_wanted(&self, skip: usize, most: usize) -> Result<Vec<WholeFile>, Refused> {
+        let _ = (skip, most);
+        Ok(Vec::new())
+    }
+
+    fn print(&self, file: WholeFile) -> Result<Option<SharedPrint>, Refused> {
+        let _ = file;
+        Ok(None)
+    }
+
+    fn take_print(&self, file: WholeFile, print: &SharedPrint) -> Result<bool, Refused> {
+        let _ = (file, print);
         Ok(false)
     }
 

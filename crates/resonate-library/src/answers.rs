@@ -5,17 +5,18 @@ use std::{
 
 use resonate_analysis::{BANDS, JUDGED_UNDER, LossyGuess, Verdict};
 use resonate_core::{
-    AlbumId, Answer, Answered, Figure, Link, Mbid, Recording, SharedCredit, SharedLyrics,
-    SharedLyricsfile, SharedMedium, SharedRelease, SharedStudy, SharedTrack, TrackId, WholeFile,
+    AlbumId, Answer, Answered, Chromaprint, Figure, Link, Mbid, Recording, SharedCredit,
+    SharedHeard, SharedLyrics, SharedLyricsfile, SharedMedium, SharedPrint, SharedRecognition,
+    SharedRelease, SharedStudy, SharedTrack, TrackId, WholeFile,
 };
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 
 use crate::{
-    CoverSource, Credit, Cut, Error, LyricText, Medium, Release, ReleaseMatch, ReleaseTrack,
-    Result, StoreOp,
+    CoverSource, Credit, Cut, Error, HeardAs, LyricText, Medium, RecordingMatch, Release,
+    ReleaseMatch, ReleaseTrack, Result, StoreOp,
     db::Inner,
-    enrich::{EXACT_SCORE, Fit, Pressing, takes_strictly},
-    enriched, store, sung,
+    enrich::{EXACT_SCORE, Fit, Pressing, agreement, takes_strictly},
+    enriched, store, studies, sung,
     synced::{RECORDING_COLUMNS, RECORDING_JOINS, lasts_alike, recording_at, resolved},
 };
 
@@ -891,6 +892,170 @@ pub(crate) fn take_lyricsfile(
             SystemTime::now(),
         )
     })
+}
+
+fn file_at(row: &Row<'_>, from: usize) -> rusqlite::Result<WholeFile> {
+    Ok(WholeFile {
+        packets: row.get::<_, i64>(from)?.cast_unsigned(),
+        frames: row.get::<_, i64>(from + 1)?.max(0).cast_unsigned(),
+        rate: row.get(from + 2)?,
+    })
+}
+
+pub(crate) fn prints_wanted(inner: &Inner, skip: usize, most: usize) -> Result<Vec<WholeFile>> {
+    let skip = i64::try_from(skip).unwrap_or(i64::MAX);
+    let most = i64::try_from(most).unwrap_or(i64::MAX);
+    inner.read(|connection| {
+        let mut statement = connection
+            .prepare_cached(&format!(
+                "SELECT t.packets, t.duration, t.sample_rate
+                   FROM tracks t JOIN track_studies s ON s.track_id = t.id
+                  WHERE s.studied_under = ?1 AND (s.print IS NULL OR s.recognised IS NULL)
+                    AND t.packets IS NOT NULL AND t.duration IS NOT NULL AND {WHOLE_FILE}
+                  GROUP BY t.packets, t.duration, t.sample_rate
+                  ORDER BY max(s.studied) DESC, min(t.id) LIMIT ?2 OFFSET ?3"
+            ))
+            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+        statement
+            .query_map(params![i64::from(JUDGED_UNDER), most, skip], |row| {
+                file_at(row, 0)
+            })
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .map_err(|source| Error::store(StoreOp::Query, source))
+    })
+}
+
+pub(crate) fn print_to_share(inner: &Inner, file: WholeFile) -> Result<Option<SharedPrint>> {
+    inner.read(|connection| {
+        let kept = connection
+            .query_row(
+                &format!(
+                    "SELECT s.print, s.print_length, s.recognised IS NOT NULL, s.heard_as,
+                            s.heard_score, s.heard_title, s.heard_artist
+                       FROM tracks t JOIN track_studies s ON s.track_id = t.id
+                      WHERE t.packets = ?1 AND t.duration = ?2 AND t.sample_rate = ?3
+                        AND {WHOLE_FILE} AND s.studied_under = ?4 AND s.print IS NOT NULL
+                      ORDER BY s.recognised IS NOT NULL DESC, s.studied DESC LIMIT 1"
+                ),
+                params![
+                    file.packets.cast_signed(),
+                    file.frames.cast_signed(),
+                    file.rate,
+                    i64::from(JUDGED_UNDER)
+                ],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, Option<i64>>(1)?,
+                        row.get::<_, bool>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                        row.get::<_, Option<i64>>(4)?,
+                        row.get::<_, Option<String>>(5)?,
+                        row.get::<_, Option<String>>(6)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+        let Some((encoded, length, recognised, heard_as, score, title, artist)) = kept else {
+            return Ok(None);
+        };
+
+        let length = Duration::from_secs(length.unwrap_or_default().max(0).cast_unsigned());
+        let Ok(print) = Chromaprint::new(&encoded, length) else {
+            return Ok(None);
+        };
+        let recognition = match (recognised, heard_as, title) {
+            (false, _, _) => None,
+            (true, None, _) => Some(SharedRecognition::Unheard),
+            (true, Some(heard_as), Some(title)) => {
+                store::mbid_in(Some(&heard_as)).map(|recording| {
+                    SharedRecognition::Heard(SharedHeard {
+                        recording,
+                        score: score.map_or(0, |score| score.clamp(0, i64::from(u8::MAX)) as u8),
+                        title,
+                        artist,
+                    })
+                })
+            }
+            (true, Some(_), None) => None,
+        };
+        Ok(Some(SharedPrint { print, recognition }))
+    })
+}
+
+pub(crate) fn take_print(inner: &Inner, file: WholeFile, shared: &SharedPrint) -> Result<bool> {
+    if !shared.travels() {
+        return Ok(false);
+    }
+    inner.write(|transaction| {
+        let mut statement = transaction
+            .prepare_cached(&format!(
+                "SELECT t.id, s.print IS NULL, s.recognised IS NULL
+                   FROM tracks t JOIN track_studies s ON s.track_id = t.id
+                  WHERE t.packets = ?1 AND t.duration = ?2 AND t.sample_rate = ?3
+                    AND {WHOLE_FILE} AND s.studied_under = ?4"
+            ))
+            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+        let copies = statement
+            .query_map(
+                params![
+                    file.packets.cast_signed(),
+                    file.frames.cast_signed(),
+                    file.rate,
+                    i64::from(JUDGED_UNDER)
+                ],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, bool>(1)?,
+                        row.get::<_, bool>(2)?,
+                    ))
+                },
+            )
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+        let mut landed = false;
+        for (id, unprinted, unrecognised) in copies {
+            let track = TrackId::new(id.cast_unsigned())?;
+            if unprinted {
+                landed |= studies::write_print(transaction, track, &shared.print)?;
+            }
+            if let (true, Some(recognition)) = (unrecognised, &shared.recognition) {
+                landed |= take_recognition(transaction, track, recognition)?;
+            }
+        }
+        Ok(landed)
+    })
+}
+
+fn take_recognition(
+    transaction: &Transaction<'_>,
+    track: TrackId,
+    recognition: &SharedRecognition,
+) -> Result<bool> {
+    let Some(named) = enriched::track_as_heard(transaction, track)? else {
+        return Ok(false);
+    };
+    let heard = match recognition {
+        SharedRecognition::Unheard => None,
+        SharedRecognition::Heard(heard) => Some(HeardAs {
+            recording: heard.recording.clone(),
+            score: heard.score,
+            title: heard.title.clone(),
+            artist: heard.artist.clone(),
+        }),
+    };
+    let found: Vec<RecordingMatch> = heard.iter().map(HeardAs::as_a_match).collect();
+    let weighed = agreement(&found, &named);
+    studies::write_recognition(
+        transaction,
+        track,
+        heard.as_ref(),
+        weighed,
+        SystemTime::now(),
+    )
 }
 
 fn held_row(connection: &Connection, recording: &Recording) -> Result<Option<(String, i64)>> {

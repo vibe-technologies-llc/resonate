@@ -235,7 +235,8 @@ weigh; the ledger still passes it on in its snapshot.
   clears its `agreement`. A verdict, lossy guess, judgement or band layout this build cannot
   name is settled and written nowhere. The pass still decodes a landed song when it holds an
   AcoustID key, since the study that lands carries no print and `tracks_to_hear` asks for the
-  recognition (`agreement`) the landed row lacks.
+  recognition (`agreement`) the landed row lacks; the phones keep no print, so they neither ask nor
+  answer the desktop's `Prints` request (`sync.md`).
   (`a_study_lands_on_every_copy_that_is_the_same_file_and_on_no_other_encode`,
   `a_study_of_another_encode_another_length_or_another_rate_is_never_written`,
   `a_study_never_lands_over_one_at_this_judgement_but_replaces_one_of_another`,

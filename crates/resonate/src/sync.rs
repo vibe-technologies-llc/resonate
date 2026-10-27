@@ -14,7 +14,8 @@ use crossbeam_channel::{RecvTimeoutError, Sender, bounded};
 use parking_lot::Mutex;
 #[cfg(feature = "sync")]
 use resonate_core::{
-    Answer, Frames, Mbid, PlaylistId, Recording, SampleRate, SharedLyricsfile, SyncedSongs,
+    Answer, Frames, Mbid, PlaylistId, Recording, SampleRate, SharedLyricsfile, SharedPrint,
+    SyncedSongs, WholeFile,
 };
 #[cfg(feature = "sync")]
 use resonate_engine::{QueueItem, Unclaimed};
@@ -766,6 +767,24 @@ impl Catalog for Catalogued {
     ) -> Answered<bool> {
         self.library
             .take_shared_lyricsfile(recording, lyricsfile)
+            .map_err(|error| refused(&error))
+    }
+
+    fn prints_wanted(&self, skip: usize, most: usize) -> Answered<Vec<WholeFile>> {
+        self.library
+            .prints_wanted(skip, most)
+            .map_err(|error| refused(&error))
+    }
+
+    fn print(&self, file: WholeFile) -> Answered<Option<SharedPrint>> {
+        self.library
+            .print_to_share(file)
+            .map_err(|error| refused(&error))
+    }
+
+    fn take_print(&self, file: WholeFile, print: &SharedPrint) -> Answered<bool> {
+        self.library
+            .take_shared_print(file, print)
             .map_err(|error| refused(&error))
     }
 

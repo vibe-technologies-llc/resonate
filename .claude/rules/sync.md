@@ -92,7 +92,15 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   refusing more; answered a `Documented` frame, the recording and a `SharedLyricsfile` (its words of
   at most `LONGEST_SHARED_LYRICS`, whether timed, and the document of at most
   `LARGEST_SHARED_LYRICSFILE`, 1 MiB) for each one the sender keeps a Lyricsfile for, then
-  `LyricsfilesEnd`; an older build drops the stream, which reads as none). **What a song's file no longer carries travels beside
+  `LyricsfilesEnd`; an older build drops the stream, which reads as none) and
+`Prints` (`ToPeer` tag 7: `WholeFile`s, at most `PRINTS_ASKED_AT_MOST`, 512, the reader refusing
+more; answered a `Printed` frame, tag 11, the `WholeFile` and a `SharedPrint` for each one the sender
+keeps a print for, then `PrintsEnd`, tag 12: the Chromaprint's encoded text of at most
+`LONGEST_SHARED_PRINT`, 64 KiB, which must read as a `Chromaprint` or the frame is
+`Malformed::NotAPrint`, its length in seconds, and a recognition if the sender made one: a kind
+byte, `Unheard` or `Heard` with the recording, score, title and billed artist; an older build
+drops the stream, which reads as none). `fuzz/seeds/sync/prints` and `printed` seed the fuzz target
+and `the_seeds_of_a_print_asked_and_given_decode` holds them to the wire. **What a song's file no longer carries travels beside
   it, not in it**: a `Recording` is never extended (every earlier build reads each frame to its end
   and refuses a trailing byte), so the album artist, date, track and disc numbers and totals and
   the compilation flag go in a request of their own, asked after a fetch lands (`peer::tags_from`)
@@ -187,7 +195,7 @@ platforms; the catalog seam stays thin.
   `SharedRelease::weight` (its text plus 16 bytes an item) of at most `HEAVIEST_SHARED_RELEASE`
   (64 KiB); the reader refuses longer lists
   (`a_release_heavier_than_the_server_keeps_stays_home`). Covers and Lyricsfiles travel device to device, never
-  through the server (*Peers*); the print and recognition do not travel (`FEATURES.md`). **The ledger's `answers` row is keyed by the recording key,
+  through the server (*Peers*), and so do a study's print and recognition, which no record carries. **The ledger's `answers` row is keyed by the recording key,
   the kind and the file** (a study per encode; lyrics kind 0 and a release kind 2 with no file, so
   the words and the release of one song are two rows,
   `a_release_travels_beside_the_words_of_its_song_and_is_not_sent_back`), holds the encoded answer, `here`, stamp and `owed`. A look reads
@@ -253,6 +261,25 @@ document, and never over a Lyricsfile already kept, so lines or plain words are 
 Lyricsfile is not undone; the document is kept as told, an unreadable one falling back to its lines
 where it is read;
 `a_lyricsfile_one_catalog_keeps_lands_on_another_holding_the_song_with_plainer_words_and_never_over_richer`);
+**a print and its recognition are asked of a device, not told**
+(`prints_wanted(skip, most)`, `print(file)`, `take_print(file, print)`; default none) are the library's
+`Library::prints_wanted` (the `WholeFile`s of whole-file rows with a study at this `JUDGED_UNDER` whose
+`print` or `recognised` is NULL, one entry for the copies of a file, the most lately studied first,
+`skip` files past the first), `print_to_share` (a copy of that file with a study at this
+`JUDGED_UNDER` and a print, one that was recognised first: the print, and the recognition as
+`Unheard` where `recognised` is set with no `heard_as`, as `Heard` with its recording, score, title and
+billed artist otherwise, and none where `recognised` is NULL, so a print alone is told as a print) and `take_shared_print` (**it lands only on a copy that is the same file with a study at this
+`JUDGED_UNDER`**: the print on each such copy whose `print` is NULL, never over one, and the recognition
+on each whose `recognised` is NULL; **the agreement is weighed again against the receiving row's own name**:
+`enrich::agreement` over the heard match, whose credit is the billed artist as one `Credit`
+(`HeardAs::as_a_match`) and the row as `track_as_heard` reads it, so a shared recognition that agreed
+with the sender's name can `Disagrees` with a copy named otherwise, and a shared `Unheard` writes
+`Unheard`, then `write_recognition` stamps `recognised` now; a print with no recognition leaves the
+recognition owed, so `to_study` asks AcoustID for it where something can recognise; a copy with no study
+at this `JUDGED_UNDER`, or the file of another encode, takes nothing, and the study itself still lands
+only through `Change::Answer`)
+(`a_print_and_its_recognition_land_on_a_copy_that_is_the_same_file_and_are_weighed_against_its_own_name`,
+`a_recognition_that_heard_nothing_travels_as_nothing_and_a_print_alone_leaves_the_recognition_owed`);
 **words land only where the recording is held strictly** (resolved as above, then the held
 row's MBID is the recording's, or both lengths are known and within 2 s), as a `lyrics_kept` row
 through `sung::keep` with no Lyricsfile, and never where the row keeps words as rich already; **a
@@ -285,7 +312,7 @@ artist the catalog holds by its folded name, unidentified, takes the credit's MB
 then answered and its tracks paired, so the pass asks neither again
 (`a_release_landed_on_one_catalog_lands_on_another_holding_the_album_and_is_not_asked_again`,
 `a_release_the_album_held_there_does_not_strictly_match_is_never_written`). **The phones take and
-send kept lyrics and studies under the same rules, never a release** (`resonate-mobile`'s
+send kept lyrics and studies under the same rules, never a release, and neither ask nor answer a print** (`resonate-mobile`'s
 `sync/answers.rs`, `mobile.md`'s *Answers from other devices*). The binary's
 `Catalogued` sits over `Library` (`resonate-library`'s `synced.rs`: `synced_playlists` reads lists
 only and `synced_queries` the saved queries, a query written over a list or the reverse made anew
@@ -519,11 +546,21 @@ will not open is left out of the holdings.
   end to end, never kept on the server
   (`a_lyricsfile_one_device_holds_reaches_another_lacking_it_and_one_neither_holds_stays_missing`).
   The phones' catalogs neither ask nor answer.
+- **Prints are asked of every device a connection stands to, at most every
+  `PRINTS_ASKED_OF_A_DEVICE_EVERY` (30 min) a device**, beside covers and Lyricsfiles
+  (`ask_for_prints`, *Sync now* forgets the times): `prints_wanted(skip, PRINTS_ASKED_AT_MOST)` goes as
+  one `Prints` request (`peer::prints_from`), each `Printed` answer handed to `take_print` as it
+  arrives. The ask walks the list as Lyricsfiles do (`Running::prints_skipped`, a short answer turning
+  it to none), since a file whose study carries no print (a printer refused it) or whose recognition
+  nobody made stays wanted. The sender reads each file with `print` and sends only what it keeps within
+  `SharedPrint::travels`. It crosses end to end, never kept on the server
+  (`a_print_and_its_recognition_one_device_holds_reach_another_lacking_them_and_one_neither_holds_stays_missing`).
+  The phones' catalogs keep no print and neither ask nor answer.
 - **Android and iOS send and fetch songs only on an unmetered network** unless mobile data is allowed
   (`allow_transfers`); incoming peers are refused meanwhile, a run under way stops before its next
   song as a cut-short run does, and a `Fetch` asked meanwhile is answered `Missing`
-  (`Answering::transfers_allowed`, the flag the service holds); covers and Lyricsfiles are neither
-  asked nor answered meanwhile.
+  (`Answering::transfers_allowed`, the flag the service holds); covers, Lyricsfiles and prints are
+  neither asked nor answered meanwhile.
 
 ## Nearby
 

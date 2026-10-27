@@ -1,7 +1,8 @@
-use crate::{Link, Mbid, Recording};
+use crate::{Chromaprint, Link, Mbid, Recording};
 
 pub const LONGEST_SHARED_LYRICS: usize = 32 * 1024;
 pub const LARGEST_SHARED_LYRICSFILE: usize = 1024 * 1024;
+pub const LONGEST_SHARED_PRINT: usize = 64 * 1024;
 pub const HEAVIEST_SHARED_RELEASE: usize = 64 * 1024;
 pub const LINKS_SHARED_AT_MOST: usize = 32;
 pub const CODES_SHARED_AT_MOST: usize = 8;
@@ -47,6 +48,32 @@ impl SharedLyricsfile {
             && self.text.len() <= LONGEST_SHARED_LYRICS
             && !self.document.trim().is_empty()
             && self.document.len() <= LARGEST_SHARED_LYRICSFILE
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SharedHeard {
+    pub recording: Mbid,
+    pub score: u8,
+    pub title: String,
+    pub artist: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SharedRecognition {
+    Unheard,
+    Heard(SharedHeard),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SharedPrint {
+    pub print: Chromaprint,
+    pub recognition: Option<SharedRecognition>,
+}
+
+impl SharedPrint {
+    pub fn travels(&self) -> bool {
+        self.print.encoded().len() <= LONGEST_SHARED_PRINT
     }
 }
 
@@ -270,6 +297,17 @@ mod tests {
             .travels()
         );
         assert!(!lyricsfile("A line", "a".repeat(LARGEST_SHARED_LYRICSFILE + 1)).travels());
+    }
+
+    #[test]
+    fn a_print_travels_unless_it_is_heavier_than_a_print_can_be() {
+        let printed = |encoded: &str| SharedPrint {
+            print: Chromaprint::new(encoded, std::time::Duration::from_secs(200)).expect("a print"),
+            recognition: Some(SharedRecognition::Unheard),
+        };
+
+        assert!(printed("AQADtEmSJEmSJEmS").travels());
+        assert!(!printed(&"A".repeat(LONGEST_SHARED_PRINT + 1)).travels());
     }
 
     fn track(title: &str) -> SharedTrack {
