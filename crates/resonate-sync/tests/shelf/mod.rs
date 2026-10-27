@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use parking_lot::Mutex;
+use parking_lot::{Condvar, Mutex};
 use resonate_core::{Answer, Answered, Mbid, Recording, SharedLyricsfile, SharedPrint, WholeFile};
 use resonate_sync::{
     Catalog, Held, LocalListen, LocalPlaylist, LocalPlaylistId, LocalQuery, Opened, QueryBody,
@@ -17,7 +17,34 @@ use resonate_sync::{
 #[derive(Default)]
 pub struct Shelf {
     pub inside: Mutex<Inside>,
+    pub opening: Gate,
+    pub listing: Gate,
     revision: AtomicU64,
+}
+
+#[derive(Default)]
+pub struct Gate {
+    shut: Mutex<bool>,
+    moved: Condvar,
+}
+
+#[allow(dead_code)]
+impl Gate {
+    pub fn shut(&self) {
+        *self.shut.lock() = true;
+    }
+
+    pub fn open(&self) {
+        *self.shut.lock() = false;
+        self.moved.notify_all();
+    }
+
+    fn pass(&self) {
+        let mut shut = self.shut.lock();
+        while *shut {
+            self.moved.wait(&mut shut);
+        }
+    }
 }
 
 #[derive(Default)]
@@ -42,6 +69,10 @@ pub struct Inside {
     pub lacking_lyricsfiles: Vec<Recording>,
     pub prints: Vec<(WholeFile, SharedPrint)>,
     pub lacking_prints: Vec<WholeFile>,
+    pub opened: usize,
+    pub listed: usize,
+    pub refuses_landing: bool,
+    pub refuses_opening: bool,
     next_id: i64,
     next_answered: i64,
 }
@@ -440,6 +471,8 @@ impl Catalog for Shelf {
     }
 
     fn holdings(&self) -> Result<Vec<Held>, Refused> {
+        self.inside.lock().listed += 1;
+        self.listing.pass();
         Ok(self
             .inside
             .lock()
@@ -454,7 +487,12 @@ impl Catalog for Shelf {
     }
 
     fn open(&self, recording: &Recording) -> Result<Option<Opened>, Refused> {
+        self.inside.lock().opened += 1;
+        self.opening.pass();
         let inside = self.inside.lock();
+        if inside.refuses_opening {
+            return Ok(None);
+        }
         Ok(inside
             .songs
             .iter()
@@ -485,6 +523,9 @@ impl Catalog for Shelf {
         staged: &Path,
     ) -> Result<bool, Refused> {
         let bytes = fs::read(staged).map_err(|_| Refused::Unwritable)?;
+        if self.inside.lock().refuses_landing {
+            return Ok(false);
+        }
         self.inside
             .lock()
             .landed_with

@@ -4,16 +4,16 @@ use std::{
     future::{Future, pending},
     mem,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     thread,
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashSet;
 use parking_lot::{Mutex, RwLock};
 use quinn::{
     AsyncUdpSocket, ClientConfig, Connection, Endpoint, EndpointConfig, Runtime as _, TokioRuntime,
@@ -33,6 +33,7 @@ use crate::{
     Catalog, Change, DeviceId, Error, Handoff, Ledger, LocalPlaylistId, Platform, Result, SyncKey,
     key::{Derived, PAIRING_LINK, hex, random_bytes},
     ledger::{Follow, Me},
+    merge::one_recording_a_song,
     nearby::{
         BEACON_EVERY, Bonjour, Found, LARGEST_BEACON, Nearby, addresses_here,
         beacon_addresses_here, beacon_bytes, beacon_of, beacon_recorded, bound, bound_v6,
@@ -72,6 +73,7 @@ const COVERS_ASKED_OF_A_DEVICE_EVERY: Duration = Duration::from_secs(30 * 60);
 const LYRICSFILES_ASKED_OF_A_DEVICE_EVERY: Duration = Duration::from_secs(30 * 60);
 const PRINTS_ASKED_OF_A_DEVICE_EVERY: Duration = Duration::from_secs(30 * 60);
 pub const A_FAILED_SONG_WAITS: Duration = Duration::from_secs(30 * 60);
+pub const A_PARTIAL_IS_SWEPT_AFTER: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const LEAVE_WITHIN: Duration = Duration::from_secs(2);
 const SNAPSHOT_FRAME_SHARE: usize = LARGEST_FRAME / 2;
 const FIRST_REDIAL: Duration = Duration::from_secs(1);
@@ -177,6 +179,73 @@ impl Shown {
             .filter(|transfer| transfer.state == state)
             .count()
     }
+
+    fn listed_waiting_as(&mut self, recording: &Recording, from: DeviceId, state: TransferState) {
+        if let Some(listed) = self.transfers.iter_mut().find(|transfer| {
+            transfer.names(recording, from) && transfer.state == TransferState::Waiting
+        }) {
+            listed.state = state;
+        }
+    }
+
+    fn unlisted_waiting(&mut self, recording: &Recording, from: DeviceId) {
+        self.transfers.retain(|transfer| {
+            !(transfer.names(recording, from) && transfer.state == TransferState::Waiting)
+        });
+    }
+
+    fn queued(&mut self, recording: &Recording, from: DeviceId) {
+        self.transfer(recording, from, |transfer| {
+            if matches!(
+                transfer.state,
+                TransferState::Landed | TransferState::Failed
+            ) {
+                transfer.state = TransferState::Waiting;
+                transfer.received = 0;
+                transfer.size = 0;
+            }
+        });
+    }
+
+    fn transfer(
+        &mut self,
+        recording: &Recording,
+        from: DeviceId,
+        change: impl FnOnce(&mut Transfer),
+    ) {
+        let at = self
+            .transfers
+            .iter()
+            .position(|transfer| transfer.names(recording, from));
+        let at = at.unwrap_or_else(|| {
+            self.transfers.push(Transfer {
+                recording: recording.clone(),
+                from,
+                received: 0,
+                size: 0,
+                state: TransferState::Waiting,
+            });
+            self.transfers.len() - 1
+        });
+        change(&mut self.transfers[at]);
+        while self.transfers.len() > TRANSFERS_SHOWN_AT_MOST {
+            let Some(oldest) = self.transfers.iter().position(|transfer| {
+                matches!(
+                    transfer.state,
+                    TransferState::Landed | TransferState::Failed
+                )
+            }) else {
+                break;
+            };
+            self.transfers.remove(oldest);
+        }
+    }
+}
+
+impl Transfer {
+    fn names(&self, recording: &Recording, from: DeviceId) -> bool {
+        self.from == from && self.recording.names_the_same_song_as(recording)
+    }
 }
 
 enum Command {
@@ -228,15 +297,45 @@ struct Running {
     record: Mutex<Option<(Beacon, String)>>,
     events: UnboundedSender<Event>,
     answering: Arc<Answering>,
-    fetching: Mutex<AHashSet<RecordingKey>>,
-    failed_lately: Mutex<AHashMap<RecordingKey, Instant>>,
+    fetching: Claims,
+    passed_over: Mutex<Vec<PassedOver>>,
     lyricsfiles_skipped: Mutex<BTreeMap<DeviceId, usize>>,
     prints_skipped: Mutex<BTreeMap<DeviceId, usize>>,
 }
 
 enum Work {
-    Fetch(Vec<Recording>),
+    Fetch {
+        recordings: Vec<Recording>,
+        asked: bool,
+    },
     Follow,
+}
+
+#[derive(Default)]
+struct Claims(Mutex<AHashSet<RecordingKey>>);
+
+impl Claims {
+    fn claim(&self, recording: &Recording) -> bool {
+        let keys = [recording.key(), recording.named_key()];
+        let mut claimed = self.0.lock();
+        if keys.iter().any(|key| claimed.contains(key)) {
+            return false;
+        }
+        claimed.extend(keys);
+        true
+    }
+
+    fn release(&self, recording: &Recording) {
+        let mut claimed = self.0.lock();
+        claimed.remove(&recording.key());
+        claimed.remove(&recording.named_key());
+    }
+}
+
+struct PassedOver {
+    device: DeviceId,
+    recording: Recording,
+    asked: bool,
 }
 
 enum Event {
@@ -248,6 +347,8 @@ enum Event {
     Redial(DeviceId),
     Gone(DeviceId, usize),
     CutShort(DeviceId),
+    Followed(DeviceId),
+    Unclaimed(Vec<PassedOver>),
     Dropped(usize, Error),
 }
 
@@ -295,7 +396,7 @@ struct Link {
     head: u64,
     caught_up: bool,
     in_flight: VecDeque<Vec<Pushed>>,
-    compacting: bool,
+    compacting: Option<u64>,
 }
 
 impl Link {
@@ -324,6 +425,37 @@ struct Neighbour {
     told: AHashSet<ToldDigest>,
 }
 
+#[derive(Default)]
+struct Unanswered(Vec<(ToldDigest, Vec<u8>)>);
+
+impl Unanswered {
+    fn sealed_as(&self, plain: &[u8]) -> Option<&Vec<u8>> {
+        let asked = plain_digest(plain);
+        self.0
+            .iter()
+            .find(|(digest, _)| *digest == asked)
+            .map(|(_, blob)| blob)
+    }
+}
+
+fn plain_digest(plain: &[u8]) -> ToldDigest {
+    let mut told = [0; SHA256_OUTPUT_LEN];
+    told.copy_from_slice(digest(&SHA256, plain).as_ref());
+    told
+}
+
+fn compacted_by_another(asked: &mut Option<u64>, through: u64) -> bool {
+    if *asked == Some(through) {
+        *asked = None;
+        return false;
+    }
+    true
+}
+
+fn the_connection_kept(this: DeviceId, other: DeviceId, dialled_here: bool) -> bool {
+    dialled_here == (this < other)
+}
+
 #[derive(Clone, Copy)]
 struct Redial {
     at: Instant,
@@ -346,6 +478,9 @@ struct Syncing {
     punched_back: BTreeMap<DeviceId, Instant>,
     waiting: BTreeMap<DeviceId, Vec<Work>>,
     followed: BTreeMap<DeviceId, Instant>,
+    following: BTreeSet<DeviceId>,
+    follow_owed: BTreeSet<DeviceId>,
+    unanswered: Unanswered,
     covers_asked: BTreeMap<DeviceId, Instant>,
     lyricsfiles_asked: BTreeMap<DeviceId, Instant>,
     prints_asked: BTreeMap<DeviceId, Instant>,
@@ -367,6 +502,7 @@ impl Sync {
         let to_peers = identity.dialling()?;
         let serving = identity.serving()?;
 
+        swept(&settings.staging, A_PARTIAL_IS_SWEPT_AFTER);
         let server = settings.server.address();
         let mut ledger = Ledger::open(&settings.ledger)?;
         ledger.enter_space(derived.space)?;
@@ -465,8 +601,8 @@ impl Sync {
             record: Mutex::new(None),
             events,
             answering,
-            fetching: Mutex::new(AHashSet::new()),
-            failed_lately: Mutex::new(AHashMap::new()),
+            fetching: Claims::default(),
+            passed_over: Mutex::new(Vec::new()),
             lyricsfiles_skipped: Mutex::new(BTreeMap::new()),
             prints_skipped: Mutex::new(BTreeMap::new()),
         });
@@ -538,7 +674,9 @@ impl Sync {
     }
 
     pub fn refused(&self, recording: &Recording) {
-        self.running.failed(recording);
+        if let Err(error) = self.ledger.lock().refused(recording) {
+            tracing::warn!(%error, "a song refused here could not be remembered");
+        }
     }
 
     pub fn allow_transfers(&self, allowed: bool) {
@@ -595,26 +733,51 @@ impl Drop for Sync {
 }
 
 impl Running {
-    fn failed(&self, recording: &Recording) {
-        self.failed_lately
-            .lock()
-            .insert(recording.key(), Instant::now());
-    }
-
-    fn asked_again(&self, recordings: &[Recording]) {
-        let mut failed = self.failed_lately.lock();
-        for recording in recordings {
-            failed.remove(&recording.key());
+    async fn failed(&self, recording: &Recording) {
+        let ledger = Arc::clone(&self.ledger);
+        let refused = recording.clone();
+        if let Err(error) = blocking(move || ledger.lock().refused(&refused)).await {
+            tracing::warn!(%error, "a song refused here could not be remembered");
         }
     }
 
-    fn not_failed_lately(&self, recordings: Vec<Recording>) -> Vec<Recording> {
-        let mut failed = self.failed_lately.lock();
-        failed.retain(|_, at| at.elapsed() < A_FAILED_SONG_WAITS);
-        recordings
+    async fn asked_again(&self, recordings: &[Recording]) {
+        let ledger = Arc::clone(&self.ledger);
+        let asked = recordings.to_vec();
+        if let Err(error) = blocking(move || ledger.lock().asked_again(&asked)).await {
+            tracing::warn!(%error, "the songs asked for again could not be forgiven");
+        }
+    }
+
+    async fn not_failed_lately(&self, recordings: Vec<Recording>) -> Vec<Recording> {
+        let ledger = Arc::clone(&self.ledger);
+        blocking(move || {
+            ledger
+                .lock()
+                .not_refused_within(recordings, A_FAILED_SONG_WAITS)
+        })
+        .await
+        .unwrap_or_else(|error| {
+            tracing::warn!(%error, "the songs refused lately could not be read");
+            Vec::new()
+        })
+    }
+
+    fn passed_over(&self, device: DeviceId, recording: Recording, asked: bool) {
+        self.passed_over.lock().push(PassedOver {
+            device,
+            recording,
+            asked,
+        });
+    }
+
+    fn unpassed(&self, recording: &Recording) -> Vec<PassedOver> {
+        let mut passed = self.passed_over.lock();
+        let (again, kept) = mem::take(&mut *passed)
             .into_iter()
-            .filter(|recording| !failed.contains_key(&recording.key()))
-            .collect()
+            .partition(|passed| passed.recording.names_the_same_song_as(recording));
+        *passed = kept;
+        again
     }
 
     fn stand(&self, standing: Standing) {
@@ -670,64 +833,42 @@ impl Running {
     }
 
     fn listed_waiting_as(&self, recording: &Recording, from: DeviceId, state: TransferState) {
-        let mut shown = self.shown.write();
-        if let Some(listed) = shown.transfers.iter_mut().find(|transfer| {
-            transfer.from == from
-                && transfer.recording == *recording
-                && transfer.state == TransferState::Waiting
-        }) {
-            listed.state = state;
-        }
+        self.shown.write().listed_waiting_as(recording, from, state);
     }
 
     fn unlisted_waiting(&self, recording: &Recording, from: DeviceId) {
-        self.shown.write().transfers.retain(|transfer| {
-            !(transfer.from == from
-                && transfer.recording == *recording
-                && transfer.state == TransferState::Waiting)
-        });
+        self.shown.write().unlisted_waiting(recording, from);
     }
 
     fn queued(&self, recording: &Recording, from: DeviceId) {
-        self.transfer(recording, from, |transfer| {
-            if matches!(
-                transfer.state,
-                TransferState::Landed | TransferState::Failed
-            ) {
-                transfer.state = TransferState::Waiting;
-                transfer.received = 0;
-                transfer.size = 0;
-            }
-        });
+        self.shown.write().queued(recording, from);
     }
 
     fn transfer(&self, recording: &Recording, from: DeviceId, change: impl FnOnce(&mut Transfer)) {
-        let mut shown = self.shown.write();
-        let at = shown
-            .transfers
-            .iter()
-            .position(|transfer| transfer.from == from && transfer.recording == *recording);
-        let at = at.unwrap_or_else(|| {
-            shown.transfers.push(Transfer {
-                recording: recording.clone(),
-                from,
-                received: 0,
-                size: 0,
-                state: TransferState::Waiting,
-            });
-            shown.transfers.len() - 1
-        });
-        change(&mut shown.transfers[at]);
-        while shown.transfers.len() > TRANSFERS_SHOWN_AT_MOST {
-            let Some(oldest) = shown.transfers.iter().position(|transfer| {
-                matches!(
-                    transfer.state,
-                    TransferState::Landed | TransferState::Failed
-                )
-            }) else {
-                break;
-            };
-            shown.transfers.remove(oldest);
+        self.shown.write().transfer(recording, from, change);
+    }
+}
+
+fn swept(staging: &Path, untouched_for: Duration) {
+    let Ok(entries) = std::fs::read_dir(staging) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let partial = path
+            .extension()
+            .is_some_and(|extension| extension == "part" || extension == "from");
+        let untouched = entry
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .ok()
+            .and_then(|modified| SystemTime::now().duration_since(modified).ok())
+            .is_some_and(|since| since >= untouched_for);
+        if partial
+            && untouched
+            && let Err(error) = std::fs::remove_file(&path)
+        {
+            tracing::debug!(%error, path = %path.display(), "a stale partial could not be swept");
         }
     }
 }
@@ -792,7 +933,7 @@ async fn run(running: Arc<Running>, mut inbound: Inbound) {
                     syncing.forgot();
                     Ok(())
                 }
-                Some(Command::Fetch { recordings, from }) => syncing.want(from, Work::Fetch(recordings)).await,
+                Some(Command::Fetch { recordings, from }) => syncing.want(from, Work::Fetch { recordings, asked: true }).await,
             },
             Some(event) = inbound.events.recv() => syncing.event(event).await,
             Some(heard) = inbound.heard.recv() => syncing.heard_from_peer(heard).await,
@@ -1081,7 +1222,7 @@ async fn linked(running: Arc<Running>, server: String) -> Result<Link> {
         head,
         caught_up: cursor >= head,
         in_flight: VecDeque::new(),
-        compacting: false,
+        compacting: None,
     })
 }
 
@@ -1183,6 +1324,9 @@ impl Syncing {
             punched_back: BTreeMap::new(),
             waiting: BTreeMap::new(),
             followed: BTreeMap::new(),
+            following: BTreeSet::new(),
+            follow_owed: BTreeSet::new(),
+            unanswered: Unanswered::default(),
             covers_asked: BTreeMap::new(),
             lyricsfiles_asked: BTreeMap::new(),
             prints_asked: BTreeMap::new(),
@@ -1295,10 +1439,13 @@ impl Syncing {
         match event {
             Event::Linked(Ok(link)) => self.link(link).await?,
             Event::Linked(Err(error)) => self.unlinked(Some(error)),
+            Event::Relayed(device, Some(connection)) if self.reached(device) => {
+                connection.close(0_u32.into(), b"reached directly");
+            }
             Event::Punched(device, Some(connection)) | Event::Relayed(device, Some(connection)) => {
                 self.watch_closing(device, &connection);
                 for work in self.waiting.remove(&device).unwrap_or_default() {
-                    spawn_work(Arc::clone(&self.running), device, connection.clone(), work);
+                    self.spawn(device, connection.clone(), work);
                 }
                 self.ask_for_covers(device, &connection);
                 self.ask_for_lyricsfiles(device, &connection);
@@ -1310,6 +1457,25 @@ impl Syncing {
             Event::CutShort(device) => {
                 self.followed.remove(&device);
             }
+            Event::Followed(device) => {
+                self.following.remove(&device);
+                if self.follow_owed.remove(&device) {
+                    self.followed.remove(&device);
+                    self.follow(device).await?;
+                }
+            }
+            Event::Unclaimed(passed) => {
+                let mut again: BTreeMap<(DeviceId, bool), Vec<Recording>> = BTreeMap::new();
+                for passed in passed {
+                    again
+                        .entry((passed.device, passed.asked))
+                        .or_default()
+                        .push(passed.recording);
+                }
+                for ((device, asked), recordings) in again {
+                    self.want(device, Work::Fetch { recordings, asked }).await?;
+                }
+            }
             Event::Unmet(device) => {
                 self.unreached(device);
                 self.redial_later(device);
@@ -1320,7 +1486,7 @@ impl Syncing {
                     self.dial_neighbour(device);
                 }
             }
-            Event::Met(device, connection) => self.met(device, connection, true).await?,
+            Event::Met(device, connection) => self.met(device, connection, true, true).await?,
             Event::Dropped(id, error) => {
                 if self
                     .server
@@ -1359,7 +1525,7 @@ impl Syncing {
                 device,
                 connection,
                 records,
-            } => self.met(device, connection, records).await,
+            } => self.met(device, connection, records, false).await,
             Heard::Told { whole } => {
                 if whole && !self.neighbour_caught_up {
                     self.neighbour_caught_up = true;
@@ -1395,6 +1561,7 @@ impl Syncing {
                 self.compact().await?;
             }
             FromServer::Appended { .. } => {
+                self.unanswered = Unanswered::default();
                 let sent = self
                     .server
                     .as_mut()
@@ -1430,7 +1597,7 @@ impl Syncing {
                 let by_another = self
                     .server
                     .as_mut()
-                    .is_some_and(|link| !mem::replace(&mut link.compacting, false));
+                    .is_some_and(|link| compacted_by_another(&mut link.compacting, through));
                 let ledger = Arc::clone(&self.running.ledger);
                 blocking(move || {
                     let mut ledger = ledger.lock();
@@ -1447,10 +1614,11 @@ impl Syncing {
             }
             FromServer::Refused(Refusal::Stale) => {
                 if let Some(link) = self.server.as_mut() {
-                    link.compacting = false;
+                    link.compacting = None;
                 }
             }
             FromServer::Refused(Refusal::TooLarge) => {
+                self.unanswered = Unanswered::default();
                 let refused = self
                     .server
                     .as_mut()
@@ -1521,6 +1689,7 @@ impl Syncing {
     }
 
     async fn apply(&mut self, blobs: Vec<Option<Vec<u8>>>, seqs: Option<Vec<u64>>) -> Result<()> {
+        let from_elsewhere = blobs.iter().any(Option::is_some);
         let running = Arc::clone(&self.running);
         blocking(move || {
             let mut ledger = running.ledger.lock();
@@ -1545,7 +1714,9 @@ impl Syncing {
             Ok(())
         })
         .await?;
-        self.follow_again_soon();
+        if from_elsewhere {
+            self.follow_again_soon();
+        }
         self.publish_devices();
         Ok(())
     }
@@ -1667,6 +1838,7 @@ impl Syncing {
             return Ok(());
         }
         let running = Arc::clone(&self.running);
+        let unanswered = mem::take(&mut self.unanswered);
         let bundles = blocking(move || {
             let mut ledger = running.ledger.lock();
             let owed = ledger.owed()?;
@@ -1675,11 +1847,11 @@ impl Syncing {
                 if sealed_bundles.len() == BLOBS_PER_APPEND {
                     break;
                 }
-                let blob = sealed(
-                    &running.derived.sealer,
-                    running.derived.space,
-                    &encoded_bundle(&changes),
-                )?;
+                let plain = encoded_bundle(&changes);
+                let blob = match unanswered.sealed_as(&plain) {
+                    Some(blob) => blob.clone(),
+                    None => sealed(&running.derived.sealer, running.derived.space, &plain)?,
+                };
                 if blob.len() > LARGEST_RECORD {
                     tracing::warn!(
                         bytes = blob.len(),
@@ -1688,11 +1860,17 @@ impl Syncing {
                     ledger.sent(&changes)?;
                     continue;
                 }
-                sealed_bundles.push((changes, blob));
+                sealed_bundles.push((changes, plain_digest(&plain), blob));
             }
             Ok(sealed_bundles)
         })
         .await?;
+        self.unanswered = Unanswered(
+            bundles
+                .iter()
+                .map(|(_, plain, blob)| (*plain, blob.clone()))
+                .collect(),
+        );
         let Some(link) = self.server.as_mut() else {
             return Ok(());
         };
@@ -1701,7 +1879,7 @@ impl Syncing {
         }
         let (pushed, blobs): (Vec<_>, Vec<_>) = bundles
             .into_iter()
-            .map(|(changes, blob)| {
+            .map(|(changes, _, blob)| {
                 (
                     Pushed {
                         changes,
@@ -1739,7 +1917,7 @@ impl Syncing {
         if self
             .server
             .as_ref()
-            .is_none_or(|link| !link.caught_up || link.compacting)
+            .is_none_or(|link| !link.caught_up || link.compacting.is_some())
         {
             return Ok(());
         }
@@ -1775,7 +1953,7 @@ impl Syncing {
         if let Some((through, parts)) = snapshot
             && let Some(link) = self.server.as_mut()
         {
-            link.compacting = true;
+            link.compacting = Some(through);
             link.say(&ToServer::Compact { through, parts })?;
         }
         Ok(())
@@ -1849,26 +2027,51 @@ impl Syncing {
     }
 
     async fn want(&mut self, device: DeviceId, work: Work) -> Result<()> {
-        if let Work::Fetch(recordings) = &work {
-            for recording in recordings {
-                self.running.transfer(recording, device, |_| {});
+        match &work {
+            Work::Fetch { recordings, .. } => {
+                for recording in recordings {
+                    self.running.queued(recording, device);
+                }
             }
+            Work::Follow if self.following.contains(&device) => {
+                self.follow_owed.insert(device);
+                return Ok(());
+            }
+            Work::Follow => {}
         }
         if let Some(connection) = self
             .peers
             .get(&device)
             .filter(|connection| connection.close_reason().is_none())
+            .cloned()
             && self.running.transfers_allowed()
         {
-            spawn_work(Arc::clone(&self.running), device, connection.clone(), work);
+            self.spawn(device, connection, work);
             return Ok(());
         }
         let first = !self.waiting.contains_key(&device);
-        self.waiting.entry(device).or_default().push(work);
+        let queued = self.waiting.entry(device).or_default();
+        if matches!(work, Work::Follow) && queued.iter().any(|work| matches!(work, Work::Follow)) {
+            return Ok(());
+        }
+        queued.push(work);
         if first && self.running.transfers_allowed() {
             self.reach(device).await?;
         }
         Ok(())
+    }
+
+    fn spawn(&mut self, device: DeviceId, connection: Connection, work: Work) {
+        if matches!(work, Work::Follow) {
+            self.following.insert(device);
+        }
+        spawn_work(Arc::clone(&self.running), device, connection, work);
+    }
+
+    fn reached(&self, device: DeviceId) -> bool {
+        self.peers
+            .get(&device)
+            .is_some_and(|connection| connection.close_reason().is_none())
     }
 
     async fn start_waiting(&mut self) -> Result<()> {
@@ -1924,7 +2127,7 @@ impl Syncing {
             return;
         }
         for work in self.waiting.remove(&device).unwrap_or_default() {
-            if let Work::Fetch(recordings) = work {
+            if let Work::Fetch { recordings, .. } = work {
                 for recording in &recordings {
                     self.running.transfer(recording, device, |transfer| {
                         transfer.state = TransferState::Failed;
@@ -2215,7 +2418,8 @@ impl Syncing {
     }
 
     async fn forced(&mut self) -> Result<()> {
-        self.running.failed_lately.lock().clear();
+        let ledger = Arc::clone(&self.running.ledger);
+        blocking(move || ledger.lock().forget_refusals()).await?;
         self.wait = FIRST_RETRY;
         self.followed.clear();
         self.covers_asked.clear();
@@ -2259,13 +2463,30 @@ impl Syncing {
         Ok(())
     }
 
-    async fn met(&mut self, device: DeviceId, connection: Connection, records: bool) -> Result<()> {
+    async fn met(
+        &mut self,
+        device: DeviceId,
+        connection: Connection,
+        records: bool,
+        dialled_here: bool,
+    ) -> Result<()> {
         if device == self.running.device {
             return Ok(());
         }
+        if records
+            && let Some(standing) = self.neighbours.get(&device)
+            && standing.connection.stable_id() != connection.stable_id()
+            && standing.connection.close_reason().is_none()
+        {
+            if !the_connection_kept(self.running.device, device, dialled_here) {
+                connection.close(0_u32.into(), b"met already");
+                return Ok(());
+            }
+            standing.connection.close(0_u32.into(), b"met already");
+        }
         self.watch_closing(device, &connection);
         for work in self.waiting.remove(&device).unwrap_or_default() {
-            spawn_work(Arc::clone(&self.running), device, connection.clone(), work);
+            self.spawn(device, connection.clone(), work);
         }
         self.ask_for_covers(device, &connection);
         self.ask_for_lyricsfiles(device, &connection);
@@ -2416,38 +2637,61 @@ fn spawn_prints(running: Arc<Running>, device: DeviceId, connection: Connection)
 
 fn spawn_work(running: Arc<Running>, device: DeviceId, connection: Connection, work: Work) {
     tokio::spawn(async move {
-        let recordings = match work {
-            Work::Fetch(recordings) => {
-                running.asked_again(&recordings);
-                recordings
-            }
-            Work::Follow => match followed_songs(&running, &connection).await {
-                Ok(recordings) => {
-                    let recordings = running.not_failed_lately(recordings);
-                    for recording in &recordings {
-                        running.queued(recording, device);
-                    }
-                    recordings
-                }
-                Err(error) => {
-                    tracing::debug!(%error, "a device's songs could not be listed");
-                    return;
-                }
-            },
-        };
-        let mut left = recordings.into_iter();
-        while let Some(recording) = left.next() {
-            if connection.close_reason().is_some() || !running.transfers_allowed() {
-                running.listed_waiting_as(&recording, device, TransferState::Failed);
-                for unasked in left.by_ref() {
-                    running.listed_waiting_as(&unasked, device, TransferState::Failed);
-                }
-                let _ = running.events.send(Event::CutShort(device));
-                return;
-            }
-            fetch_one(&running, device, &connection, recording).await;
+        let following = matches!(work, Work::Follow);
+        worked(&running, device, &connection, work).await;
+        if following {
+            let _ = running.events.send(Event::Followed(device));
         }
     });
+}
+
+async fn worked(running: &Arc<Running>, device: DeviceId, connection: &Connection, work: Work) {
+    let (recordings, asked) = match work {
+        Work::Fetch {
+            recordings,
+            asked: true,
+        } => {
+            running.asked_again(&recordings).await;
+            (recordings, true)
+        }
+        Work::Fetch {
+            recordings,
+            asked: false,
+        } => {
+            let wanted = running.not_failed_lately(recordings.clone()).await;
+            for recording in &recordings {
+                if !wanted.contains(recording) {
+                    running.unlisted_waiting(recording, device);
+                }
+            }
+            (wanted, false)
+        }
+        Work::Follow => match followed_songs(running, connection).await {
+            Ok(recordings) => {
+                let recordings = running.not_failed_lately(recordings).await;
+                for recording in &recordings {
+                    running.queued(recording, device);
+                }
+                (recordings, false)
+            }
+            Err(error) => {
+                tracing::debug!(%error, "a device's songs could not be listed");
+                return;
+            }
+        },
+    };
+    let mut left = recordings.into_iter();
+    while let Some(recording) = left.next() {
+        if connection.close_reason().is_some() || !running.transfers_allowed() {
+            running.listed_waiting_as(&recording, device, TransferState::Failed);
+            for unasked in left.by_ref() {
+                running.listed_waiting_as(&unasked, device, TransferState::Failed);
+            }
+            let _ = running.events.send(Event::CutShort(device));
+            return;
+        }
+        fetch_one(running, device, connection, recording, asked).await;
+    }
 }
 
 async fn followed_songs(running: &Arc<Running>, connection: &Connection) -> Result<Vec<Recording>> {
@@ -2474,9 +2718,9 @@ async fn followed_songs(running: &Arc<Running>, connection: &Connection) -> Resu
         let catalog = held_running.catalog.as_ref();
         if follow.everything {
             let mut missing = Vec::new();
-            for held in holdings {
-                if !catalog.holds(&held.recording).map_err(Error::Catalog)? {
-                    missing.push(held.recording);
+            for recording in one_recording_a_song(holdings.into_iter().map(|held| held.recording)) {
+                if !catalog.holds(&recording).map_err(Error::Catalog)? {
+                    missing.push(recording);
                 }
             }
             return Ok(missing);
@@ -2499,18 +2743,24 @@ async fn fetch_one(
     device: DeviceId,
     connection: &Connection,
     recording: Recording,
+    asked: bool,
 ) {
-    let key = recording.key();
-    if !running.fetching.lock().insert(key.clone()) {
+    if !running.fetching.claim(&recording) {
         running.unlisted_waiting(&recording, device);
+        running.passed_over(device, recording, asked);
         return;
     }
-    if held_already(running, &recording).await {
-        running.listed_waiting_as(&recording, device, TransferState::Landed);
+    let held = if held_already(running, &recording).await {
+        running.unlisted_waiting(&recording, device);
+        true
     } else {
-        fetch_claimed(running, device, connection, recording).await;
+        fetch_claimed(running, device, connection, &recording).await
+    };
+    running.fetching.release(&recording);
+    let again = running.unpassed(&recording);
+    if !held && !again.is_empty() {
+        let _ = running.events.send(Event::Unclaimed(again));
     }
-    running.fetching.lock().remove(&key);
 }
 
 async fn held_already(running: &Arc<Running>, recording: &Recording) -> bool {
@@ -2528,9 +2778,9 @@ async fn fetch_claimed(
     running: &Arc<Running>,
     device: DeviceId,
     connection: &Connection,
-    recording: Recording,
-) {
-    running.transfer(&recording, device, |transfer| {
+    recording: &Recording,
+) -> bool {
+    running.transfer(recording, device, |transfer| {
         transfer.state = TransferState::Moving;
     });
     let staged = running.staging.join(format!(
@@ -2545,7 +2795,7 @@ async fn fetch_claimed(
     let fetched = fetch(
         connection,
         device,
-        &recording,
+        recording,
         &staged,
         move |received, size| {
             progress.transfer(&progress_recording, device, |transfer| {
@@ -2582,9 +2832,10 @@ async fn fetch_claimed(
         }
     };
     if refused_here {
-        running.failed(&recording);
+        running.failed(recording).await;
     }
-    running.transfer(&recording, device, |transfer| transfer.state = state);
+    running.transfer(recording, device, |transfer| transfer.state = state);
+    state == TransferState::Landed
 }
 
 async fn accept_peers(running: Arc<Running>) {
@@ -2605,7 +2856,113 @@ async fn accept_peers(running: Arc<Running>) {
 
 #[cfg(test)]
 mod tests {
+    use std::{env, fs::File, process};
+
+    use resonate_core::Mbid;
+
     use super::*;
+
+    const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
+
+    fn named(title: &str) -> Recording {
+        Recording {
+            mbid: None,
+            title: title.into(),
+            artist: "Pink Floyd".into(),
+            album: "Meddle".into(),
+            length: None,
+        }
+    }
+
+    fn identified(title: &str) -> Recording {
+        Recording {
+            mbid: Some(Mbid::new(ECHOES).expect("an mbid")),
+            ..named(title)
+        }
+    }
+
+    #[test]
+    fn a_song_claimed_by_its_mbid_is_claimed_by_its_tags_too_until_released() {
+        let claims = Claims::default();
+
+        assert!(claims.claim(&identified("Echoes")));
+        assert!(!claims.claim(&named("Echoes")));
+        assert!(!claims.claim(&identified("Echoes")));
+        assert!(claims.claim(&named("Time")));
+
+        claims.release(&identified("Echoes"));
+
+        assert!(claims.claim(&named("Echoes")));
+    }
+
+    #[test]
+    fn a_row_is_one_song_however_keyed_and_a_failed_song_asked_again_waits_again() {
+        let device = DeviceId([1; 16]);
+        let mut shown = Shown::default();
+
+        shown.transfer(&identified("Echoes"), device, |transfer| {
+            transfer.state = TransferState::Failed;
+        });
+        shown.queued(&named("Echoes"), device);
+
+        assert_eq!(shown.transfers.len(), 1);
+        assert_eq!(shown.transfers[0].state, TransferState::Waiting);
+
+        shown.unlisted_waiting(&named("Echoes"), device);
+
+        assert!(shown.transfers.is_empty());
+    }
+
+    #[test]
+    fn a_bundle_still_unanswered_is_sent_again_as_the_same_bytes_and_a_changed_one_is_not() {
+        let unanswered = Unanswered(vec![(plain_digest(b"bundle"), vec![7, 7, 7])]);
+
+        assert_eq!(unanswered.sealed_as(b"bundle"), Some(&vec![7, 7, 7]));
+        assert_eq!(unanswered.sealed_as(b"another bundle"), None);
+    }
+
+    #[test]
+    fn a_compaction_told_while_this_device_waits_on_its_own_is_another_devices_unless_it_is_the_one_asked()
+     {
+        let mut asked = Some(40);
+
+        assert!(compacted_by_another(&mut asked, 35));
+        assert_eq!(asked, Some(40));
+        assert!(!compacted_by_another(&mut asked, 40));
+        assert_eq!(asked, None);
+        assert!(compacted_by_another(&mut asked, 50));
+    }
+
+    #[test]
+    fn of_two_connections_between_two_devices_both_keep_the_one_the_lower_dialled() {
+        let lower = DeviceId([1; 16]);
+        let higher = DeviceId([2; 16]);
+
+        assert!(the_connection_kept(lower, higher, true));
+        assert!(!the_connection_kept(lower, higher, false));
+        assert!(the_connection_kept(higher, lower, false));
+        assert!(!the_connection_kept(higher, lower, true));
+    }
+
+    #[test]
+    fn a_partial_untouched_for_long_is_swept_and_a_fresh_one_or_another_file_stays() {
+        let staging = env::temp_dir().join(format!("resonate-staging-{}", process::id()));
+        std::fs::create_dir_all(&staging).expect("a staging folder");
+        let old = SystemTime::now() - A_PARTIAL_IS_SWEPT_AFTER - Duration::from_secs(60);
+        for name in ["old.part", "old.from", "old.flac"] {
+            let file = File::create(staging.join(name)).expect("a file");
+            file.set_modified(old).expect("aged");
+        }
+        File::create(staging.join("fresh.part")).expect("a file");
+
+        swept(&staging, A_PARTIAL_IS_SWEPT_AFTER);
+
+        assert!(!staging.join("old.part").exists());
+        assert!(!staging.join("old.from").exists());
+        assert!(staging.join("old.flac").exists());
+        assert!(staging.join("fresh.part").exists());
+        let _ = std::fs::remove_dir_all(&staging);
+    }
 
     fn transfer_in(state: TransferState, title: &str) -> Transfer {
         Transfer {

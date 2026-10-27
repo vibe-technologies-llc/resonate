@@ -67,7 +67,9 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   server's log writes a snapshot lacking the queries. **A device hearing a `Compacted` it did not ask
   for owes every query again** (`Ledger::owe_queries`) and pushes at once, so the records after the
   snapshot carry them to a device joining from the server alone
-  (`saved_queries_compacted_away_by_a_build_without_them_are_told_to_the_server_again`).
+  (`saved_queries_compacted_away_by_a_build_without_them_are_told_to_the_server_again`). Its own is
+  the `Compacted` whose `through` is the one it asked (`Link::compacting`, `compacted_by_another`):
+  another device's arriving while its own waits is another's, and its own still waits.
 - **A server address of `ws://` or `wss://` runs the same frames over a WebSocket** (`web.rs`: TCP,
   TLS through `tokio-rustls` for `wss`, one binary message a frame, at most `LARGEST_FRAME`),
   for a server behind a proxy that carries no UDP (`server.md`). Any other address is QUIC. The
@@ -113,8 +115,9 @@ and `the_seeds_of_a_print_asked_and_given_decode` holds them to the wire. **What
 ## The ledger
 
 `ledger.rs` keeps `sync.sqlite` (the data folder on Linux, app-private storage on Android),
-`V1` (the 0.1.0 baseline, never edited) and a `MIGRATIONS` step after it (`ANSWERS_TRAVEL`: the
-`answers` table and `state.answers_mark`); `user_version` counts the steps laid, a change appends a
+`V1` (the 0.1.0 baseline, never edited) and the `MIGRATIONS` steps after it (`ANSWERS_TRAVEL`: the
+`answers` table and `state.answers_mark`; `SONGS_REFUSED_ARE_REMEMBERED`: the `refusals` table, a
+recording key and when the catalog refused the song, *The service* below); `user_version` counts the steps laid, a change appends a
 step, and a stamp past the list is `Error::LedgerVersion`
 (`a_ledger_laid_out_at_the_first_release_is_carried_forward_with_what_it_held`). All merging lives here, once for both
 platforms; the catalog seam stays thin.
@@ -376,6 +379,13 @@ will not open is left out of the holdings.
   (256 KiB, the server's default `--record-bytes`) is marked sent with a warning and reaches devices
   on the network in the snapshot; a `TooLarge` refusal from a server with a lower limit marks the
   largest bundle of that append sent and pushes again, so one large playlist never holds up the rest.
+- **An append whose `Appended` was lost is sent again as the same bytes.** The server may commit an
+  append and lose the connection before its `Appended` arrives; the bundles stay owed and the next
+  link pushes them again. `Syncing::unanswered` keeps the sealed blob of each bundle of the append in
+  flight by the SHA-256 of its plain encoding, across a lost link, and `push` reuses a blob whose
+  bundle encodes the same (a fresh nonce would make it another record), so a server that knows its
+  records by digest (`server.md`) keeps it once. `Appended` or a `TooLarge` clears them. An older
+  server stores the second copy, as it always did, and receivers apply it as a no-op.
 - **A look runs `LOOK_AFTER` (300 ms) after the catalog's revision moves, watched every
   `WATCH_EVERY` (500 ms), and every five minutes regardless**, and at once whenever one falls due (a
   neighbour's whole snapshot, a link caught up, *force*): the loop sleeps until the next look or
@@ -399,8 +409,10 @@ will not open is left out of the holdings.
   favoured song, never trusting `here`, which only says the catalog listed the song at the last look
   (`a_song_deleted_by_hand_is_wanted_again_while_its_playlist_and_favourite_stay`).
 - **`Shown.transfers` keeps at most `TRANSFERS_SHOWN_AT_MOST` (200)**, the oldest landed or
-  failed dropped first. **A follow lists every song it will fetch as `Waiting` at once**
-  (`Running::queued`, a finished or failed row of the same song becoming `Waiting` again), not as
+  failed dropped first. A row is one song from one device however either side keys it
+  (`Transfer::names`, `names_the_same_song_as`). **A follow lists every song it will fetch as `Waiting` at once**
+  (`Shown::queued`, a finished or failed row of the same song becoming `Waiting` again, as an asked
+  fetch's rows do), not as
   each one is reached, so `Shown::waiting` is how many are queued and `Shown::downloading` how many
   move; the apps say both (`SyncStatus::downloading`, `waiting`). A connection that closes turns the
   rest to `Failed`, as before.
@@ -505,26 +517,49 @@ will not open is left out of the holdings.
   listener marked *Keep its songs here*, `everything`) when a device arrives, at most every 30
   minutes per device, **and again `FOLLOW_AGAIN_AFTER` (250 ms) after records arrive** from the
   server or a neighbour, since a device meeting another asks before that one's favourites and
-  playlists have reached it (`a_favourite_learned_after_meeting_is_fetched_without_a_restart`). A
-  look follows again too, at most every 60 s. Following again asks only connected devices, works out
+  playlists have reached it (`a_favourite_learned_after_meeting_is_fetched_without_a_restart`); only
+  records carrying another device's blobs count, never the server's seq-only echo of this device's
+  own append. A look follows again too, at most every 60 s. Following again asks only connected devices, works out
   what is wanted here before listing the other's holdings (nothing wanted, nothing asked), and under
-  `everything` runs at most every 10 s, since that lists the whole of the other's holdings. A song is
-  fetched by one transfer at a time (`Running::fetching`), whichever device and follow asked, and
+  `everything` runs at most every 10 s, since that lists the whole of the other's holdings. **A
+  device is followed by one run at a time** (`Syncing::following`): a follow asked while one runs is
+  owed (`follow_owed`) and run once when it ends (`Event::Followed`), and a device waiting to be
+  reached holds one follow at most
+  (`a_device_is_followed_by_one_run_at_a_time_however_many_records_arrive_meanwhile`). **What is
+  wanted is one recording a song** (`merge::one_recording_a_song`, over `Ledger::wanted` and an
+  `everything` sender's holdings): a song kept by its MBID in a playlist and favoured by its tags
+  on a device that lacks the MBID is fetched once
+  (`a_song_known_by_its_mbid_in_a_playlist_and_by_its_tags_as_a_favourite_is_wanted_once`). A song is
+  fetched by one transfer at a time (`Running::fetching`, a `Claims` of both `key` and `named_key`, so
+  two spellings of a song claim each other), whichever device and follow asked, and
   **asks `Catalog::holds` again once claimed**: follows overlap, each listing what was wanted when
   it began, so a song an earlier follow landed meanwhile is passed over (`held_already`), never
-  fetched twice (on a phone a second landing took `Name (1)` beside the first); the passed-over run's
+  fetched twice (on a phone a second landing took `Name (1)` beside the first), and that run's
   `Waiting` row is taken off the list (`Running::unlisted_waiting`), the claiming one reporting the
-  song. Only whole-file songs are offered (a rooted file, or a vaulted object as `Vault::offer` gives it). A transfer is staged under
+  song (`a_song_another_device_landed_meanwhile_leaves_no_row_for_the_device_that_sent_nothing`).
+  **A song passed over because another transfer held it is asked again if that one lets go of it
+  unheld**: the run notes the device and song (`Running::passed_over`, and whether it was asked), and
+  a transfer that releases its claim without the song held sends them back as `Event::Unclaimed`,
+  each fetched again from the device it was asked of
+  (`a_song_passed_over_while_another_device_fetched_it_is_fetched_once_that_one_fails`). Only whole-file songs are offered (a rooted file, or a vaulted object as `Vault::offer` gives it). A transfer is staged under
   `sync-staging` and resumes from what it holds; the catalog lands it once whole.
 - **One broken song never holds the others up.** Every wait of a fetch (the stream, the header, each
   chunk) gives up after `A_FETCH_GOES_QUIET_AFTER` (30 s), so a sender stuck on an evicted file fails
   that song and the run goes on to the next. **A partial is resumed only from the file it began as**:
   a `.from` note beside it names the sending device and the size it announced; another device, or a
-  size the header no longer names, starts the song over (`peer::resumable`, `fetched_from`). **A song
-  the catalog refused waits before a follow asks for it again**: a landing answered `false` or
-  refused, and a phone's refused landing (`Sync::refused`), go into `Running::failed_lately`, and
-  follows pass the song over for `A_FAILED_SONG_WAITS` (30 min); an asked fetch (`Work::Fetch`)
-  tries it at once and *Sync now* forgets them all. **A fetch cut off by the network is no verdict
+  size the header no longer names, starts the song over (`peer::resumable`, `fetched_from`). The
+  header carries no version of the file, so a file replaced at the same size by the same device is
+  not told apart; carrying one would change `Sending`, which an older build reads to its end. A
+  `.part` or `.from` untouched for `A_PARTIAL_IS_SWEPT_AFTER` (7 days) is swept when the service
+  starts (`service::swept`), so a partial of a song never asked again does not stay. **A song
+  the catalog refused waits before a follow asks for it again, across restarts**: a landing answered `false` or
+  refused, and a phone's refused landing (`Sync::refused`), go into the ledger's `refusals`
+  (`Ledger::refused`, its `key` and `named_key` with the time), and follows pass the song over for
+  `A_FAILED_SONG_WAITS` (30 min, `Ledger::not_refused_within`, which drops older rows), however often
+  the service starts again (iOS starts it at every return to the foreground)
+  (`a_song_refused_at_landing_is_not_fetched_again_after_a_restart`); an asked fetch (`Work::Fetch`
+  with `asked`) tries it at once (`Ledger::asked_again`) and *Sync now* forgets them all
+  (`forget_refusals`). **A fetch cut off by the network is no verdict
   on the song**: it never enters `failed_lately`, and a run whose connection closes stops there
   (the songs it had not reached are not failed one by one) and sends `Event::CutShort`, which lets
   the next meeting with that device follow at once rather than after `FOLLOW_A_DEVICE_EVERY`.
@@ -617,7 +652,10 @@ announce a device, both carrying the same sealed beacon, and either finds the ot
   nothing of which device is there. Both sides then serve the connection (fetch either way), call it
   nearby (`SyncDevice::nearby`, also `online`), and each sends its whole `Ledger::snapshot` as one
   `Changes { whole }`; the other applies it through `arrived`, as a server snapshot. A punched
-  connection does not meet and carries no records.
+  connection does not meet and carries no records. **Two devices that dial each other at once keep
+  one connection**: both keep the one the lower `DeviceId` dialled (`the_connection_kept`) and close
+  the other, a redundant meeting telling no snapshot; a connection through the relay that arrives
+  while a direct one stands is closed, the direct one kept.
 - **After every look, what is owed goes to each neighbour**, less what it was told on this
   connection (`told`: SHA-256 of each encoded change). `owed` is cleared only by the server's
   `Appended`, so the server still gets all of it once back. Nothing is relayed: what came from the
