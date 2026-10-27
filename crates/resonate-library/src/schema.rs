@@ -12,6 +12,7 @@ const MIGRATIONS: &[&str] = &[
     A_MODELS_EDITS_ARE_OFFERED_TO_THE_WINDOW,
     A_STUDY_KEEPS_WHERE_THE_MUSIC_SOUNDS,
     A_RELEASE_KEEPS_ITS_CREDIT,
+    RELEASES_LANDED_WITHOUT_THEIR_CREDIT_ARE_ASKED_AGAIN,
 ];
 
 const STAMPS: [SchemaFingerprint; MIGRATIONS.len() + 1] = stamps();
@@ -106,6 +107,13 @@ CREATE TABLE release_credits (
     mbid      TEXT,
     PRIMARY KEY (album_id, position)
 ) STRICT, WITHOUT ROWID;
+";
+
+const RELEASES_LANDED_WITHOUT_THEIR_CREDIT_ARE_ASKED_AGAIN: &str = "
+UPDATE albums SET answered = 1
+ WHERE answered IS NOT NULL AND mbid IS NOT NULL AND release_title IS NOT NULL
+   AND pressing_fit IS NULL
+   AND NOT EXISTS (SELECT 1 FROM release_credits c WHERE c.album_id = albums.id);
 ";
 
 const V1: &str = "
@@ -1281,6 +1289,44 @@ mod tests {
             )
             .expect("the columns")
             == 1
+    }
+
+    #[test]
+    fn a_release_landed_before_its_credit_was_kept_is_asked_again_and_one_with_its_credit_is_not() {
+        let connection = opened();
+        let before = MIGRATIONS.len() - 1;
+        connection
+            .execute_batch(V1)
+            .expect("the first release's schema");
+        for step in &MIGRATIONS[..before] {
+            connection.execute_batch(step).expect("an earlier step");
+        }
+        connection
+            .pragma_update(None, "user_version", as_signed(STAMPS[before].0))
+            .expect("the earlier stamp");
+        connection
+            .execute_batch(
+                "INSERT INTO albums (id, title, mbid, release_title, answered)
+                 VALUES (1, 'Uncredited', 'b84ee12a-09ef-421b-82de-0441a926375b', 'Meddle', 500),
+                        (2, 'Credited', 'a5bdf1b3-0cd8-3a1e-9e3a-0a4b1a4c4f0e', 'Animals', 500),
+                        (3, 'Never answered', NULL, NULL, NULL);
+                 INSERT INTO release_credits (album_id, position, name, joined_by)
+                 VALUES (2, 0, 'Pink Floyd', '');",
+            )
+            .expect("albums landed earlier");
+
+        lay_out(&connection).expect("the catalog is carried forward");
+
+        let answered = |id: i64| -> Option<i64> {
+            connection
+                .query_row("SELECT answered FROM albums WHERE id = ?1", [id], |row| {
+                    row.get(0)
+                })
+                .expect("an album")
+        };
+        assert_eq!(answered(1), Some(1));
+        assert_eq!(answered(2), Some(500));
+        assert_eq!(answered(3), None);
     }
 
     #[test]

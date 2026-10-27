@@ -14,9 +14,9 @@ use std::{
 use resonate_analysis::Watch;
 use resonate_core::{Answer, Answered, Link, Mbid, MediaLocation, Recording};
 use resonate_library::{
-    Album, AlbumQuery, Credit, Cut, DeliveryFolder, Direction, HeldTags, Layout, Library,
-    LyricText, Medium, Release, ReleaseTrack, Result, SavedQuery, ScanOptions, ScanStats,
-    SongFiled, SortOrder, SyncedQueryBody, TrackQuery, Vault, WAITS,
+    Album, AlbumQuery, CoverArt, Credit, Cut, DeliveryFolder, Direction, HeldTags, ImageFormat,
+    Layout, Library, LyricText, Medium, Release, ReleaseTrack, Result, SavedQuery, ScanOptions,
+    ScanStats, SongFiled, SortOrder, SyncedQueryBody, TrackQuery, Vault, WAITS,
 };
 
 const RATE: u32 = 44_100;
@@ -1248,5 +1248,80 @@ fn a_release_the_album_held_there_does_not_strictly_match_is_never_written() -> 
     assert_eq!(album_of(&there)?.mbid, None);
     assert_eq!(album_of(&shorter)?.mbid, None);
     assert!(there.answers_to_share(0, 10)?.is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_release_shared_by_a_track_held_under_another_name_lands_through_any_other_track_it_holds()
+-> Result<()> {
+    let here_tree = Tree::new();
+    let there_tree = Tree::new();
+    here_tree.song(
+        "Meddle/one.wav",
+        "One of These Days",
+        "Pink Floyd",
+        "Meddle",
+    );
+    there_tree.song("Meddle/one.wav", "Un de ces jours", "Pink Floyd", "Meddle");
+    for tree in [&here_tree, &there_tree] {
+        tree.song("Meddle/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    }
+    let here = Library::open_in_memory()?;
+    let there = Library::open_in_memory()?;
+    scan(&here, &here_tree.root)?;
+    scan(&there, &there_tree.root)?;
+    let release = meddle(&["One of These Days", "Echoes"]);
+    let album = album_of(&here)?.id;
+    here.land_release(album, &release)?;
+    here.rematch(album)?;
+
+    let shared = here.answers_to_share(0, 10)?;
+    let taken = there.take_shared_answer(&shared[0].recording, &shared[0].answer)?;
+
+    assert_eq!(shared.len(), 1);
+    assert_eq!(shared[0].recording.title, "One of These Days");
+    assert!(taken);
+    assert_eq!(album_of(&there)?.mbid, Some(release.id));
+    Ok(())
+}
+
+#[test]
+fn a_cover_one_catalog_holds_for_a_release_lands_on_another_holding_it_without_one() -> Result<()> {
+    let tree = Tree::new();
+    tree.song("Meddle/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let here = Library::open_in_memory()?;
+    let there = Library::open_in_memory()?;
+    scan(&here, &tree.root)?;
+    scan(&there, &tree.root)?;
+    let release = meddle(&["Echoes"]);
+    let picture = [b"\x89PNG\r\n\x1a\n".as_slice(), &[7; 64]].concat();
+    for library in [&here, &there] {
+        let album = album_of(library)?.id;
+        library.land_release(album, &release)?;
+    }
+    let covered = album_of(&here)?.id;
+    here.land_archive_cover(
+        covered,
+        &CoverArt {
+            format: ImageFormat::Png,
+            bytes: picture.clone(),
+        },
+    )?;
+
+    let wanted = there.covers_wanted(10)?;
+    let offered = here.cover_to_share(&release.id)?.expect("a cover to share");
+    let not_a_picture = there.take_shared_cover(&release.id, b"not a picture")?;
+    let taken = there.take_shared_cover(&release.id, &offered.bytes)?;
+    let landed = there
+        .cover_art(album_of(&there)?.id)?
+        .expect("a cover landed");
+
+    assert_eq!(wanted, std::slice::from_ref(&release.id));
+    assert!(here.covers_wanted(10)?.is_empty());
+    assert!(!not_a_picture);
+    assert!(taken);
+    assert_eq!(landed.bytes, picture);
+    assert!(there.covers_wanted(10)?.is_empty());
+    assert!(!there.take_shared_cover(&release.id, &offered.bytes)?);
     Ok(())
 }

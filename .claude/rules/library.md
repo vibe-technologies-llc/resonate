@@ -17,7 +17,7 @@ rows read via `Player::media` like any unscanned row.
 - **Schema = one `V1`, the baseline of 0.1.0, and a `MIGRATIONS` chain after it.** `V1` is the first
   release's schema as one SQL batch and is never edited, since a stamped catalog of a release would be
   stranded; a change appends a step to `MIGRATIONS` (`listens` naming the device and listen a remote
-  listen came from is the first, `songs_received` the second, forgetting the read stamp of every learnt group whose songs carry no length the third, `retagged_sheets` the fourth, `offered_steps` the fifth, `track_studies.band_levels` the sixth, `release_credits` the seventh). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
+  listen came from is the first, `songs_received` the second, forgetting the read stamp of every learnt group whose songs carry no length the third, `retagged_sheets` the fourth, `offered_steps` the fifth, `track_studies.band_levels` the sixth, `release_credits` the seventh, an album whose release landed exactly before that table made due again by setting its `answered` to 1, so the next lookup lands its credit and the release is shared, the eighth: `a_release_landed_before_its_credit_was_kept_is_asked_again_and_one_with_its_credit_is_not`). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
   `fingerprint_of(V1)` (the stamp 0.1.0 wrote) and `STAMPS[n + 1]` hashes `STAMPS[n]` over step `n`'s
   text, in a `const fn`; `SCHEMA_FINGERPRINT` is the last. `lay_out`: `UNSTAMPED` writes `V1` and
   every step; this build's stamp opens; a stamp that is an earlier `STAMPS` entry runs the steps after
@@ -544,8 +544,11 @@ rows read via `Player::media` like any unscanned row.
   **What a lookup or study learnt is shared as an answer** (`answers.rs`, `sync.md`): kept words
   and current studies of whole files read out in `at` order, and releases landed exactly, taken back
   only where the recording is held strictly (words, a release: weighed again by the strict rule and
-  landed through `land_release`) or the copy is the same file by packets digest, length and rate (a
-  study).
+  landed through `land_release`; a release is found through any of its tracks held strictly) or the
+  copy is the same file by packets digest, length and rate (a study). **A cover is shared by release
+  id, device to device** (`covers_wanted`, `cover_to_share`, `take_shared_cover`): it lands as an
+  archive cover (`CoverSource::Archive`, through `land_archive_cover`, so never over a held picture
+  and a file's later replaces it) on every album of that id holding none.
   `Library::synced_revision`
   counts these writes, which `data_version` cannot see; `catalog_revision` adds every other writer.
 

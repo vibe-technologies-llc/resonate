@@ -8,7 +8,7 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use resonate_core::{Answer, Answered, Recording};
+use resonate_core::{Answer, Answered, Mbid, Recording};
 use resonate_sync::{
     Catalog, Held, LocalListen, LocalPlaylist, LocalPlaylistId, LocalQuery, Opened, QueryBody,
     Refused, RemoteListen, Resumed, SongTags,
@@ -36,6 +36,8 @@ pub struct Inside {
     pub deleted_by_hand: Vec<String>,
     pub answers: Vec<Answered>,
     pub takes_no_answers: bool,
+    pub covers: BTreeMap<String, Vec<u8>>,
+    pub uncovered: Vec<Mbid>,
     next_id: i64,
     next_answered: i64,
 }
@@ -527,6 +529,32 @@ impl Catalog for Shelf {
             drop(inside);
             self.moved();
         }
+        Ok(true)
+    }
+
+    fn covers_wanted(&self, most: usize) -> Result<Vec<Mbid>, Refused> {
+        let inside = self.inside.lock();
+        Ok(inside
+            .uncovered
+            .iter()
+            .filter(|release| !inside.covers.contains_key(release.as_str()))
+            .take(most)
+            .cloned()
+            .collect())
+    }
+
+    fn cover(&self, release: &Mbid) -> Result<Option<Vec<u8>>, Refused> {
+        Ok(self.inside.lock().covers.get(release.as_str()).cloned())
+    }
+
+    fn take_cover(&self, release: &Mbid, picture: &[u8]) -> Result<bool, Refused> {
+        let mut inside = self.inside.lock();
+        if !inside.uncovered.contains(release) || inside.covers.contains_key(release.as_str()) {
+            return Ok(false);
+        }
+        inside
+            .covers
+            .insert(release.as_str().to_owned(), picture.to_vec());
         Ok(true)
     }
 

@@ -11,7 +11,7 @@ use std::{
 
 use parking_lot::Mutex;
 use quinn::{ClientConfig, Connection, Endpoint, RecvStream, SendStream};
-use resonate_core::Recording;
+use resonate_core::{Mbid, Recording};
 use tokio::{
     fs,
     io::AsyncWriteExt,
@@ -23,7 +23,7 @@ use tokio::{
 use crate::{
     Catalog, Change, DeviceId, Error, FileOp, Held, Ledger, Result, SongTags, StreamOp,
     quic::{PEER_NAME, read_frame, send_frame},
-    wire::{FromPeer, ToPeer},
+    wire::{FromPeer, LARGEST_SHARED_COVER, ToPeer},
 };
 
 pub const DIAL_WITHIN: Duration = Duration::from_secs(8);
@@ -177,6 +177,12 @@ async fn answer(mut send: SendStream, mut recv: RecvStream, asked: Asked) -> Res
             };
             send_frame(&mut send, &answer.encoded()).await?;
         }
+        ToPeer::Covers { releases } => {
+            if asked.answering.transfers_allowed.load(Ordering::Relaxed) {
+                send_covers(&mut send, catalog, releases).await?;
+            }
+            send_frame(&mut send, &FromPeer::CoversEnd.encoded()).await?;
+        }
         ToPeer::Fetch { recording, offset } => {
             if asked.answering.transfers_allowed.load(Ordering::Relaxed) {
                 send_song(&mut send, catalog, recording, offset).await?;
@@ -186,6 +192,80 @@ async fn answer(mut send: SendStream, mut recv: RecvStream, asked: Asked) -> Res
         }
     }
     send.finish().map_err(|_| Error::StreamClosed)
+}
+
+async fn send_covers(
+    send: &mut SendStream,
+    catalog: Arc<dyn Catalog>,
+    releases: Vec<Mbid>,
+) -> Result<()> {
+    for release in releases {
+        let reading = Arc::clone(&catalog);
+        let asked = release.clone();
+        let picture = match blocking(move || reading.cover(&asked).map_err(Error::Catalog)).await {
+            Ok(picture) => picture,
+            Err(error) => {
+                tracing::debug!(%error, "a cover could not be read to send");
+                None
+            }
+        };
+        let Some(picture) = picture.filter(|picture| sendable_cover(picture)) else {
+            continue;
+        };
+        send_frame(send, &FromPeer::Covered { release, picture }.encoded()).await?;
+    }
+    Ok(())
+}
+
+fn sendable_cover(picture: &[u8]) -> bool {
+    !picture.is_empty() && picture.len() <= LARGEST_SHARED_COVER
+}
+
+pub async fn covers_from(
+    connection: &Connection,
+    releases: Vec<Mbid>,
+    catalog: Arc<dyn Catalog>,
+) -> Result<usize> {
+    let (mut send, mut recv) = quietly_short(async {
+        connection
+            .open_bi()
+            .await
+            .map_err(|source| Error::Connection(Box::new(source)))
+    })
+    .await?;
+    send_frame(&mut send, &ToPeer::Covers { releases }.encoded()).await?;
+    send.finish().map_err(|_| Error::StreamClosed)?;
+
+    let mut landed = 0;
+    while let Some(frame) = quietly_short(read_frame(&mut recv)).await? {
+        match FromPeer::decoded(&frame)? {
+            FromPeer::Covered { release, picture } => {
+                let taking = Arc::clone(&catalog);
+                let taken = blocking(move || {
+                    taking
+                        .take_cover(&release, &picture)
+                        .map_err(Error::Catalog)
+                })
+                .await;
+                match taken {
+                    Ok(true) => landed += 1,
+                    Ok(false) => {}
+                    Err(error) => {
+                        tracing::debug!(%error, "a cover from another device was refused")
+                    }
+                }
+            }
+            FromPeer::CoversEnd => break,
+            FromPeer::Held { .. }
+            | FromPeer::HeldEnd
+            | FromPeer::Sending { .. }
+            | FromPeer::Missing
+            | FromPeer::Met { .. }
+            | FromPeer::Taken
+            | FromPeer::Tagged { .. } => {}
+        }
+    }
+    Ok(landed)
 }
 
 async fn send_song(
@@ -254,7 +334,9 @@ pub async fn holdings_of(connection: &Connection) -> Result<Vec<Held>> {
             | FromPeer::Missing
             | FromPeer::Met { .. }
             | FromPeer::Taken
-            | FromPeer::Tagged { .. } => {}
+            | FromPeer::Tagged { .. }
+            | FromPeer::Covered { .. }
+            | FromPeer::CoversEnd => {}
         }
     }
     Ok(holdings)
@@ -277,7 +359,9 @@ pub async fn meet(connection: &Connection, device: DeviceId, records: bool) -> R
         | FromPeer::Sending { .. }
         | FromPeer::Missing
         | FromPeer::Taken
-        | FromPeer::Tagged { .. } => Err(Error::Unmet),
+        | FromPeer::Tagged { .. }
+        | FromPeer::Covered { .. }
+        | FromPeer::CoversEnd => Err(Error::Unmet),
     }
 }
 
@@ -426,7 +510,9 @@ async fn fetched_from(
         | FromPeer::HeldEnd
         | FromPeer::Met { .. }
         | FromPeer::Taken
-        | FromPeer::Tagged { .. } => {
+        | FromPeer::Tagged { .. }
+        | FromPeer::Covered { .. }
+        | FromPeer::CoversEnd => {
             return Err(Error::Missing(device));
         }
     };

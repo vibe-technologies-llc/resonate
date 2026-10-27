@@ -9,6 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use resonate_core::Mbid;
 use resonate_sync::{
     Broadcast, Follow, Me, Nearby, Platform, Server, Settings, Standing, Sync, SyncKey,
 };
@@ -245,6 +246,54 @@ fn two_devices_of_one_key_on_one_network_sync_without_a_server() {
     eventually("the rename reaching the desk", || {
         desk_shelf.playlist_named("Summer days").is_some()
     });
+
+    drop(phone);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_cover_one_device_holds_reaches_another_lacking_it_and_one_neither_holds_stays_missing() {
+    let folder = scratch("covers");
+    let key = SyncKey::minted().expect("a key");
+    let held = Mbid::new("b84ee12a-09ef-421b-82de-0441a926375b").expect("mbid");
+    let lacking = Mbid::new("a5bdf1b3-0cd8-3a1e-9e3a-0a4b1a4c4f0e").expect("mbid");
+    let picture = vec![0xff, 0xd8, 0xff, 0xe0, 7, 7, 7];
+    let desk_shelf = Arc::new(Shelf::holding(&["A"]));
+    let phone_shelf = Arc::new(Shelf::holding(&["A"]));
+    desk_shelf
+        .inside
+        .lock()
+        .covers
+        .insert(held.as_str().to_owned(), picture.clone());
+    phone_shelf.inside.lock().uncovered = vec![held.clone(), lacking.clone()];
+
+    let desk = device(&folder, &key, "Desk", Arc::clone(&desk_shelf), None);
+    let phone = device(
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        Some(&desk),
+    );
+
+    eventually("the cover reaching the phone", || {
+        phone_shelf.inside.lock().covers.get(held.as_str()) == Some(&picture)
+    });
+    assert!(
+        !phone_shelf
+            .inside
+            .lock()
+            .covers
+            .contains_key(lacking.as_str())
+    );
+    assert!(
+        !desk_shelf
+            .inside
+            .lock()
+            .covers
+            .contains_key(lacking.as_str())
+    );
 
     drop(phone);
     drop(desk);

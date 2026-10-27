@@ -2560,6 +2560,32 @@ impl Library {
         answers::take(&self.inner, recording, answer)
     }
 
+    pub fn covers_wanted(&self, most: usize) -> Result<Vec<Mbid>> {
+        answers::covers_wanted(&self.inner, most)
+    }
+
+    pub fn cover_to_share(&self, release: &Mbid) -> Result<Option<CoverArt>> {
+        let Some(album) = answers::album_covering(&self.inner, release)? else {
+            return Ok(None);
+        };
+        self.cover_art(album)
+    }
+
+    pub fn take_shared_cover(&self, release: &Mbid, picture: &[u8]) -> Result<bool> {
+        let Some(format) = ImageFormat::sniff(picture) else {
+            return Ok(false);
+        };
+        let art = CoverArt {
+            format,
+            bytes: picture.to_vec(),
+        };
+        let mut landed = false;
+        for album in answers::albums_uncovered(&self.inner, release)? {
+            landed |= self.land_archive_cover(album, &art)?;
+        }
+        Ok(landed)
+    }
+
     pub fn resolve_recording(&self, recording: &resonate_core::Recording) -> Result<Option<Cut>> {
         synced::resolve(&self.inner, recording)
     }

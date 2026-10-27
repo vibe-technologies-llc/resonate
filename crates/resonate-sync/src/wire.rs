@@ -39,6 +39,9 @@ const TRACK_AT_LEAST: usize = 9;
 const CREDIT_AT_LEAST: usize = 3;
 const LINK_AT_LEAST: usize = 2;
 const CODE_AT_LEAST: usize = 1;
+const MBID_AT_LEAST: usize = 37;
+pub const COVERS_ASKED_AT_MOST: usize = 512;
+pub const LARGEST_SHARED_COVER: usize = 16 * 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ToServer {
@@ -131,6 +134,7 @@ pub enum ToPeer {
     Meet { device: DeviceId, records: bool },
     Changes { whole: bool, changes: Vec<Change> },
     Tags { recording: Recording },
+    Covers { releases: Vec<Mbid> },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -142,6 +146,8 @@ pub enum FromPeer {
     Met { device: DeviceId },
     Taken,
     Tagged { tags: SongTags },
+    Covered { release: Mbid, picture: Vec<u8> },
+    CoversEnd,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1071,6 +1077,13 @@ impl ToPeer {
                 writer.byte(4);
                 writer.recording(recording);
             }
+            Self::Covers { releases } => {
+                writer.byte(5);
+                writer.length(releases.len());
+                for release in releases {
+                    writer.text(release.as_str());
+                }
+            }
         }
         writer.finish()
     }
@@ -1094,6 +1107,17 @@ impl ToPeer {
             4 => Self::Tags {
                 recording: reader.recording()?,
             },
+            5 => {
+                let count = reader.count_of(MBID_AT_LEAST)?;
+                if count > COVERS_ASKED_AT_MOST {
+                    return Err(Error::Malformed(Malformed::Overlong { length: count }));
+                }
+                let mut releases = Vec::with_capacity(count);
+                for _ in 0..count {
+                    releases.push(reader.mbid()?);
+                }
+                Self::Covers { releases }
+            }
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
         reader.done()?;
@@ -1130,6 +1154,12 @@ impl FromPeer {
                 writer.byte(6);
                 writer.tags(tags);
             }
+            Self::Covered { release, picture } => {
+                writer.byte(7);
+                writer.text(release.as_str());
+                writer.bytes(picture);
+            }
+            Self::CoversEnd => writer.byte(8),
         }
         writer.finish()
     }
@@ -1162,6 +1192,11 @@ impl FromPeer {
             6 => Self::Tagged {
                 tags: reader.tags()?,
             },
+            7 => Self::Covered {
+                release: reader.mbid()?,
+                picture: reader.bytes(LARGEST_SHARED_COVER)?.to_vec(),
+            },
+            8 => Self::CoversEnd,
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
         reader.done()?;
@@ -1753,6 +1788,36 @@ mod tests {
         assert_eq!(tagged[0], 6);
         assert_eq!(fetch[0], 1);
         assert_eq!(sending, [2, 9, 4, b'f', b'l', b'a', b'c']);
+    }
+
+    #[test]
+    fn covers_asked_of_a_device_read_back_and_too_many_asked_at_once_are_refused() {
+        let release = Mbid::new("b84ee12a-09ef-421b-82de-0441a926375b").expect("mbid");
+        let asked = ToPeer::Covers {
+            releases: vec![release.clone(); 3],
+        };
+        let covered = FromPeer::Covered {
+            release: release.clone(),
+            picture: vec![0xff, 0xd8, 0xff, 0xe0],
+        };
+        let too_many = ToPeer::Covers {
+            releases: vec![release; COVERS_ASKED_AT_MOST + 1],
+        };
+
+        assert_eq!(ToPeer::decoded(&asked.encoded()).expect("decoded"), asked);
+        assert_eq!(
+            FromPeer::decoded(&covered.encoded()).expect("decoded"),
+            covered
+        );
+        assert_eq!(
+            FromPeer::decoded(&FromPeer::CoversEnd.encoded()).expect("decoded"),
+            FromPeer::CoversEnd
+        );
+        assert_eq!(asked.encoded()[0], 5);
+        assert!(matches!(
+            ToPeer::decoded(&too_many.encoded()),
+            Err(Error::Malformed(Malformed::Overlong { .. }))
+        ));
     }
 
     #[test]
