@@ -122,8 +122,13 @@ struct SearchResults: View {
         TrackRow(track: track, query: query) {
             chosen()
             search.remember()
-            if library.snapshot?.shuffle == true, !library.allTracks.isEmpty {
-                library.play(library.allTracks, at: library.allTracks.firstIndex { $0.id == track.id } ?? 0, shuffle: true)
+            if library.snapshot?.shuffle == true {
+                let everything = library.allTracks
+                if let place = everything.firstIndex(where: { $0.id == track.id }) {
+                    library.play(everything, at: place, shuffle: true)
+                } else {
+                    library.play(tracks, at: tracks.firstIndex { $0.id == track.id } ?? 0, shuffle: true)
+                }
             } else {
                 library.play(tracks, selected: track)
             }

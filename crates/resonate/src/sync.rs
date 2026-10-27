@@ -562,7 +562,8 @@ impl Catalog for Catalogued {
         let order = resumption.in_play_order();
         let window = Resumed::window_around(playing, order.len());
         let mut rows = Vec::new();
-        let mut at = 0;
+        let mut at = None;
+        let mut playing_named = false;
         for place in window {
             let Some(resumable) = order
                 .get(place)
@@ -575,12 +576,14 @@ impl Catalog for Catalogued {
                 .recording_at(&resumable.location, resumable.span)
                 .map_err(|error| refused(&error))?;
             if let Some(recording) = recording {
-                if place <= playing {
-                    at = rows.len();
+                if place >= playing && at.is_none() {
+                    at = Some(rows.len());
+                    playing_named = place == playing;
                 }
                 rows.push(recording);
             }
         }
+        let at = at.unwrap_or(rows.len());
         let heard = order
             .get(playing)
             .and_then(|loaded| resumption.rows.get(*loaded));
@@ -590,6 +593,7 @@ impl Catalog for Catalogued {
                 let span = heard.and_then(|row| row.span);
                 self.library.track_at(&path, span).ok().flatten()
             })
+            .filter(|_| playing_named)
             .map(|track| resumption.at.to_duration(track.spec.rate))
             .unwrap_or_default();
         Ok(Some(Resumed {
@@ -1556,5 +1560,42 @@ mod tests {
         assert_eq!(handed_titles(&resumed), ["C", "A", "B"]);
         assert_eq!(resumed.at, 1);
         assert_eq!(resumed.position, Duration::from_secs(3));
+    }
+
+    #[test]
+    fn a_song_heard_that_the_catalog_cannot_name_hands_off_the_next_one_named_from_its_start() {
+        let (folder, library, locations) = kept_songs(&["A", "C"]);
+        let unscanned = resonate_core::MediaLocation::local(folder.join("B.wav"));
+        let rows = [locations[0].clone(), unscanned, locations[1].clone()]
+            .into_iter()
+            .map(|location| resonate_core::Resumable {
+                location,
+                span: None,
+                held: None,
+            })
+            .collect();
+        library
+            .keep_resumption(&resonate_core::Resumption {
+                rows,
+                order: vec![0, 1, 2],
+                row: 1,
+                at: Frames(3 * 44_100),
+                shuffle: false,
+                next: None,
+            })
+            .expect("a resumption kept");
+        let catalogued = Catalogued {
+            library: Arc::new(library),
+        };
+
+        let resumed = catalogued
+            .resumption()
+            .expect("answered")
+            .expect("a resumption");
+
+        let _ = fs::remove_dir_all(&folder);
+        assert_eq!(handed_titles(&resumed), ["A", "C"]);
+        assert_eq!(resumed.at, 1);
+        assert_eq!(resumed.position, Duration::ZERO);
     }
 }

@@ -109,8 +109,8 @@ fun Resonate.playInOrder(tracks: List<Track>, index: Int = 0) {
 
 fun Resonate.playShuffled(tracks: List<Track>) {
     if (tracks.isEmpty()) return
-    playback.shuffle(true)
     playback.play(tracks, Random.nextInt(tracks.size))
+    playback.shuffle(true)
 }
 
 fun Resonate.playNext(tracks: List<Track>) {

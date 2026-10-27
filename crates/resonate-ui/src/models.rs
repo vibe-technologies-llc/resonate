@@ -711,6 +711,7 @@ impl Learning for PageLearning {
 pub struct LibraryModel {
     first_read: Option<FirstRead>,
     unreadable: bool,
+    listed_for: String,
     library: Arc<Library>,
     reference: Option<Arc<dyn Reference>>,
     for_the_pass: Consulted,
@@ -931,6 +932,7 @@ impl LibraryModel {
         let mut model = Self {
             first_read,
             unreadable: false,
+            listed_for: String::new(),
             library,
             reference,
             for_the_pass,
@@ -2910,6 +2912,10 @@ impl LibraryModel {
         !self.query.is_empty()
     }
 
+    pub(crate) fn is_searching_the_whole_library(&self) -> bool {
+        self.is_searching() && self.selection == Selection::Everything
+    }
+
     pub(crate) fn rows_of(&self, query: &SavedQuery) -> (Arc<Library>, TrackQuery) {
         (Arc::clone(&self.library), TrackQuery::from(query))
     }
@@ -4338,6 +4344,7 @@ impl LibraryModel {
         self.in_flight = Some(wanted);
         let library = Arc::clone(&self.library);
         let asked = self.asked();
+        let asked_for = self.query.clone();
         let read_ahead = self.first_read.take().filter(|first| {
             wanted == Wanted::Everything && settling.is_zero() && first.asked == asked
         });
@@ -4345,7 +4352,7 @@ impl LibraryModel {
             && let Ok(read) = first.read.try_recv()
         {
             self.in_flight = None;
-            self.landed(read, cx);
+            self.landed(read, asked_for, cx);
             return;
         }
 
@@ -4364,16 +4371,24 @@ impl LibraryModel {
 
             let outcome = this.update(cx, |this, cx| {
                 this.in_flight = None;
-                this.landed(loaded, cx);
+                this.landed(loaded, asked_for, cx);
             });
             let _ = outcome;
         });
     }
 
-    fn landed(&mut self, loaded: resonate_library::Result<Loaded>, cx: &mut Context<Self>) {
+    fn landed(
+        &mut self,
+        loaded: resonate_library::Result<Loaded>,
+        asked_for: String,
+        cx: &mut Context<Self>,
+    ) {
         match loaded {
             Ok(loaded) => {
                 self.unreadable = false;
+                if loaded.browsed.is_some() {
+                    self.listed_for = asked_for;
+                }
                 let shelved = loaded.shelves.is_some();
                 let gone = loaded.browsed.as_ref().and_then(|browsed| browsed.gone);
                 if self.take(loaded) == Grew::Moved {
@@ -4396,6 +4411,10 @@ impl LibraryModel {
             Err(error) => {
                 tracing::error!(%error, "the library could not be read");
                 self.unreadable = true;
+                if self.listed_for != asked_for {
+                    self.forget_the_listing();
+                    self.listed_for = asked_for;
+                }
                 toast::tell(toast::could_not("read the library", &error), cx);
             }
         }
@@ -4498,6 +4517,19 @@ impl LibraryModel {
             self.page_moved = false;
         }
         grew
+    }
+
+    fn forget_the_listing(&mut self) {
+        self.albums = Arc::default();
+        self.artists = Arc::default();
+        self.tracks = Arc::default();
+        self.scoped = Arc::default();
+        self.albums_counted = 0;
+        self.artists_counted = 0;
+        self.tracks_measured = Measured::default();
+        self.scoped_measured = Measured::default();
+        self.index_the_albums();
+        self.restate_the_listing();
     }
 
     fn take_the_page(&mut self, paged: Paged) {

@@ -416,10 +416,10 @@ private fun DaysChart(days: List<ListenedOnDay>) {
         colors = CardDefaults.cardColors(containerColor = scheme.surfaceContainerLow),
     ) {
         Column(Modifier.padding(16.dp)) {
-            Text("Listening by day", style = MaterialTheme.typography.titleSmall)
+            Text("Listening by day · last ${days.size} days", style = MaterialTheme.typography.titleSmall)
             busiest?.let {
                 Text(
-                    "Most on ${dayLabel(it.starts)} · ${listenedLine(it.plays, it.listenedMs)}",
+                    "Busiest of these days: ${dayLabel(it.starts)} · ${listenedLine(it.plays, it.listenedMs)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = scheme.onSurfaceVariant,
                 )

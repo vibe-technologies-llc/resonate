@@ -485,7 +485,7 @@ while Now Playing zooms back into it, so the artist showed only once the zoom en
 hardware rate and latency from `Library.routeReading`, which `NowPlaying.reportRoute` reads again on
 every route change (a pair of headphones at the same rate included), not from the session in its body.
 
-- **With shuffle on, a song pressed in the Search tab's results plays `Library.allTracks` shuffled from that song**, not the results alone; with it off the results are the queue.
+- **With shuffle on, a song pressed in the Search tab's results plays `Library.allTracks` shuffled from that song**, not the results alone (the results from that song, shuffle on, where it has left the catalog); with it off the results are the queue.
 - **Now Playing** is a full-screen cover zoomed out of the mini player's artwork
   (`matchedTransitionSource`, `.zoom`), dismissed by dragging down. Its slider (like the volume row's) commits one seek on
   release, clears a drag the system cancelled through a `@GestureState` flag, and holds the scrubbed value, bar and times, until the clock comes within 1.5 s of it or four seconds pass (a pause and play straight after a seek keep the engine's lane busy and its snapshots late, and a shorter hold let the bar and times fall back to the old position and then jump to the new), the bar's flowed value set to it as the seek is sent and not moved by a reading that has not reached it.

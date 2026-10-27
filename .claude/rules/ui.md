@@ -361,7 +361,7 @@ is never named.
     as is and queues what Play would (`RootView::play_the_listing_from`: held rows where they are the
     whole listing, else `with_everything_listed`;
     `a_row_played_from_a_listing_read_in_part_queues_the_whole_listing_from_that_row`).
-    **With shuffle on, a row pressed in a search plays the whole library from that song** (`with_the_whole_library`), shuffle left on, so a search picks where the shuffle starts and does not narrow it. `RootView::play` clears the playing-playlist mark that only `play_playlist` sets.
+    **With shuffle on, a row pressed in a search of the whole library (nothing scoped) plays the whole library from that song** (`with_the_whole_library`), shuffle left on, so a search picks where the shuffle starts and does not narrow it; a row on an album or artist page the box still narrows plays that page's listing, and a pressed song the library read does not hold (`is:hidden`) falls to the listing drawn (`play_from_the_listing_read_whole`). `RootView::play` clears the playing-playlist mark that only `play_playlist` sets.
   - An album adds the info mark (and the download mark, *Get the rest* on its hint, where tracks are missing); an artist adds one where
     it has genres, and the Albums/Tracks choice at the row's right. Play next, Add to queue, Add to
     playlist are not on the page. The row does not wrap (taffy sizes a wrapping flex item at
@@ -1047,7 +1047,7 @@ is never named.
   `db::cuts_matching` into an opened playlist's rows, while the playlists index narrows on `words_of`
   alone. A lone word draws no chip. A pane with nothing left says "No albums match." where a search is
   in force, "No albums yet." where none is, and "The library couldn't be read." (with a toast)
-  where the last read failed (`LibraryModel::unreadable`).
+  where the last read failed (`LibraryModel::unreadable`, checked before the narrowed wording). A failed read for a query other than the one the lists were read for empties them (`listed_for`, `forget_the_listing`); a failed refresh of the same query keeps its rows.
 - **The window keeps the queue for the next run; the switch stopping it discards what was kept.**
   `RootView` holds a `Keeping` (field `resuming`) off the `PlayerModel` observer, keeping what
   `resonate play` keeps (`audio.md`). `Stored::resume` is a `config.toml` key; the *Resuming* card is a

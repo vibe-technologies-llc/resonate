@@ -301,10 +301,10 @@ impl RootView {
             self.nothing_beyond(cx).unwrap_or_else(|| {
                 self.nothing_matched(
                     Icon::Albums,
-                    if narrowed {
-                        "No albums match."
-                    } else if unreadable {
+                    if unreadable {
                         LIBRARY_UNREADABLE
+                    } else if narrowed {
+                        "No albums match."
                     } else {
                         "No albums yet."
                     },
@@ -724,10 +724,10 @@ impl RootView {
             self.nothing_beyond(cx).unwrap_or_else(|| {
                 self.nothing_matched(
                     Icon::Artists,
-                    if narrowed {
-                        "No artists match."
-                    } else if unreadable {
+                    if unreadable {
                         LIBRARY_UNREADABLE
+                    } else if narrowed {
+                        "No artists match."
                     } else {
                         "No artists yet."
                     },
@@ -909,9 +909,16 @@ impl RootView {
         let playing = self.playing_now(cx).track;
         let rows = self.library.read(cx).rows();
         let nothing = tracks.is_empty() && rows.is_empty();
+        let unreadable = self.library.read(cx).unreadable();
         let found_nothing = nothing.then(|| {
-            self.nothing_beyond(cx)
-                .unwrap_or_else(|| self.nothing_matched(Icon::Tracks, "No tracks match.", None, cx))
+            self.nothing_beyond(cx).unwrap_or_else(|| {
+                let said = if unreadable {
+                    LIBRARY_UNREADABLE
+                } else {
+                    "No tracks match."
+                };
+                self.nothing_matched(Icon::Tracks, said, None, cx)
+            })
         });
         let heading = self.heading(cx);
         let in_an_album = matches!(self.library.read(cx).selection(), Selection::Album(_));

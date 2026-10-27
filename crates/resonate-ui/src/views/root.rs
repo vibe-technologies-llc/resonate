@@ -3106,12 +3106,14 @@ impl RootView {
     ) {
         let pressed = held.get(start).map(|track| track.id);
         let shuffled = self.player.read(cx).state().shuffle;
-        if shuffled && self.library.read(cx).is_searching() {
-            self.with_the_whole_library(window, cx, move |this, library, _, cx| {
-                let start = pressed
-                    .and_then(|pressed| library.iter().position(|track| track.id == pressed))
-                    .unwrap_or(0);
-                this.play(&library, start, cx);
+        if shuffled && self.library.read(cx).is_searching_the_whole_library() {
+            self.with_the_whole_library(window, cx, move |this, library, window, cx| {
+                let found = pressed
+                    .and_then(|pressed| library.iter().position(|track| track.id == pressed));
+                match found {
+                    Some(start) => this.play(&library, start, cx),
+                    None => this.play_from_the_listing_read_whole(pressed, start, window, cx),
+                }
             });
             return;
         }
@@ -3119,6 +3121,16 @@ impl RootView {
             self.play(held, start, cx);
             return;
         }
+        self.play_from_the_listing_read_whole(pressed, start, window, cx);
+    }
+
+    fn play_from_the_listing_read_whole(
+        &mut self,
+        pressed: Option<TrackId>,
+        start: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.with_everything_listed(window, cx, move |this, listing, _, cx| {
             let found = match pressed {
                 Some(pressed) => listing.iter().position(|track| track.id == pressed),

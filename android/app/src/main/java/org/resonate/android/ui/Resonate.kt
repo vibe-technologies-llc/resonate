@@ -61,7 +61,9 @@ class Playback(
         val chosen = found.getOrNull(index) ?: return
         val everything = library.allTracks.value
         val place = everything.indexOfFirst { it.id == chosen.id }
-        if (remote()?.shuffleModeEnabled == true && place >= 0) play(everything, place) else play(found, index)
+        if (remote()?.shuffleModeEnabled != true) return play(found, index)
+        if (place >= 0) play(everything, place) else play(found, index)
+        shuffle(true)
     }
 
     fun play(tracks: List<Track>, index: Int = 0) {

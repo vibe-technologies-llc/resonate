@@ -393,6 +393,7 @@ will not open is left out of the holdings.
   send `Command::Seek(at)`, which the engine keeps as the place to open at; a seek that fails
   is logged and the song plays from its start. The phones do the same through `Command::Resume`
   (`resonate-mobile`'s `continue_from`).
+- **A handoff's `at` is the first row the catalog can name at or after the playhead**, and `position` rides only when that row is the one playing (`Catalogued::resumption`); with every later row unnamed `at` is past the end and the receiver plays nothing (`a_song_heard_that_the_catalog_cannot_name_hands_off_the_next_one_named_from_its_start`).
 - **A handoff is cut from the play order, in a window holding the row heard.** Both devices
   hand off the rows as they play (the desktop's load order mapped through `Resumption::in_play_order`,
   the phones' queue as saved), at most `HANDED_OFF_AT_MOST` (500) of them, chosen by
