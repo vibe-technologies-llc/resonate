@@ -1094,7 +1094,9 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   constrained, for a song landing from a download or another device as for any other start; a
   metered network then stops the pass. Both keys live in the `library-features`
   suite. Each start also seeks the playing song, and `Features.tick` hands every song change to
-  `Enrichment.playing`, which calls `seek_enrichment` while a pass runs.
+  `Enrichment.playing`, which calls `seek_enrichment` while a pass runs. A song a download landed
+  (`Enrichment.landed`) is looked up before the rest by the boundary itself, in a running pass
+  and in every later one (`android.md`'s *A download is looked up first*).
 - **The status is polled every 2 s while a pass runs and the scene is active**: going inactive
   cancels the poll (the pass goes on in Rust), coming back reads the status once and resumes it.
   The line reads "Finding artwork and details · N of M", "Artwork and details up to date" or the

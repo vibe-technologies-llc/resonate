@@ -191,6 +191,11 @@ impl MobilePlayer {
         }
         let track = job.settled(indexed)?;
         job.done();
+
+        if let Err(error) = self.catalog.note_downloaded(track.id) {
+            tracing::warn!(%error, "a download was not marked to be looked up first");
+        }
+        self.seek_enrichment(track.id);
         Ok(track)
     }
 

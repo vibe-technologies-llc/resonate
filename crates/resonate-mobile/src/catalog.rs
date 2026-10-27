@@ -108,6 +108,10 @@ CREATE TABLE songs_received (
 CREATE INDEX songs_received_by_track ON songs_received(track);
 ";
 
+const DOCUMENTS_REMEMBER_WHEN_THEY_WERE_DOWNLOADED: &str = "
+ALTER TABLE documents ADD COLUMN downloaded INTEGER;
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     LISTENS_NAME_THEIR_ORIGIN,
@@ -120,6 +124,7 @@ const MIGRATIONS: &[&str] = &[
     STUDIES_KEEP_WHERE_THE_MUSIC_SOUNDS,
     ANSWERS_TRAVEL,
     SONGS_RECEIVED_ARE_HELD_BY_WHAT_WAS_ASKED,
+    DOCUMENTS_REMEMBER_WHEN_THEY_WERE_DOWNLOADED,
 ];
 
 #[cfg(test)]
@@ -700,6 +705,13 @@ mod tests {
 
     use super::*;
 
+    fn laid_before(step: &str) -> usize {
+        MIGRATIONS
+            .iter()
+            .position(|laid| *laid == step)
+            .expect("a step of the chain")
+    }
+
     #[test]
     fn rescanning_and_reopening_keep_identity_favourites_and_the_saved_place() {
         let unique = SystemTime::now()
@@ -940,7 +952,7 @@ mod tests {
                 |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
             )
             .expect("the fold");
-        for step in &MIGRATIONS[..MIGRATIONS.len() - 4] {
+        for step in &MIGRATIONS[..laid_before(DOCUMENTS_THAT_WILL_NOT_DECODE_ARE_REMEMBERED)] {
             connection.execute_batch(step).expect("an earlier version");
         }
         connection
@@ -953,7 +965,8 @@ mod tests {
             .pragma_update(
                 None,
                 "user_version",
-                u32::try_from(MIGRATIONS.len() - 4).expect("a count"),
+                u32::try_from(laid_before(DOCUMENTS_THAT_WILL_NOT_DECODE_ARE_REMEMBERED))
+                    .expect("a count"),
             )
             .expect("its stamp");
         drop(connection);
@@ -1000,7 +1013,7 @@ mod tests {
                 |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
             )
             .expect("the fold");
-        for step in &MIGRATIONS[..MIGRATIONS.len() - 2] {
+        for step in &MIGRATIONS[..laid_before(ANSWERS_TRAVEL)] {
             connection.execute_batch(step).expect("an earlier version");
         }
         connection
@@ -1015,7 +1028,7 @@ mod tests {
             .pragma_update(
                 None,
                 "user_version",
-                u32::try_from(MIGRATIONS.len() - 2).expect("a count"),
+                u32::try_from(laid_before(ANSWERS_TRAVEL)).expect("a count"),
             )
             .expect("its stamp");
         drop(connection);

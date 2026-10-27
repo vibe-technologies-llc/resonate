@@ -131,10 +131,26 @@ enum Leaving {
 }
 
 #[derive(Default)]
+struct Sought(Mutex<Vec<u64>>);
+
+impl Sought {
+    fn seek(&self, track: u64) {
+        let mut sought = self.0.lock();
+        sought.retain(|held| *held != track);
+        sought.push(track);
+    }
+
+    fn taken(&self) -> Vec<u64> {
+        std::mem::take(&mut *self.0.lock())
+    }
+}
+
+#[derive(Default)]
 struct Told {
     cancelled: AtomicBool,
     closing: AtomicBool,
-    sought: Mutex<Vec<u64>>,
+    asked_first: Sought,
+    sung_first: Sought,
 }
 
 impl Told {
@@ -153,13 +169,8 @@ impl Told {
     }
 
     fn seek(&self, track: u64) {
-        let mut sought = self.sought.lock();
-        sought.retain(|held| *held != track);
-        sought.push(track);
-    }
-
-    fn taken(&self) -> Vec<u64> {
-        std::mem::take(&mut *self.sought.lock())
+        self.asked_first.seek(track);
+        self.sung_first.seek(track);
     }
 }
 
@@ -610,6 +621,8 @@ struct Pass<'a> {
     refused_in_a_row: Cell<u32>,
     covered: RefCell<BTreeSet<String>>,
     pictured: RefCell<BTreeSet<String>>,
+    first: RefCell<BTreeSet<Ask>>,
+    pictured_at_once: Cell<bool>,
 }
 
 impl<'a> Pass<'a> {
@@ -630,6 +643,8 @@ impl<'a> Pass<'a> {
             refused_in_a_row: Cell::new(0),
             covered: RefCell::new(BTreeSet::new()),
             pictured: RefCell::new(BTreeSet::new()),
+            first: RefCell::new(BTreeSet::new()),
+            pictured_at_once: Cell::new(false),
         }
     }
 
@@ -654,7 +669,8 @@ impl<'a> Pass<'a> {
                 .map(Ask::Track)
                 .collect(),
         );
-        let mut queue: VecDeque<Ask> = albums.into_iter().chain(tracks).collect();
+        let queue: VecDeque<Ask> = albums.into_iter().chain(tracks).collect();
+        let mut queue = self.downloads_first(queue)?;
         let mut spent = BTreeSet::new();
         Tally::count(&self.tally.due, queue.len());
 
@@ -682,6 +698,29 @@ impl<'a> Pass<'a> {
         }
     }
 
+    fn downloads_first(&self, queue: VecDeque<Ask>) -> Asked<VecDeque<Ask>> {
+        let due: BTreeSet<&Ask> = queue.iter().collect();
+        let mut first = Vec::new();
+        let mut taken = BTreeSet::new();
+        for (track, album) in self.catalog.downloaded()? {
+            for ask in [album.map(Ask::Album), Some(Ask::Track(track))]
+                .into_iter()
+                .flatten()
+            {
+                if due.contains(&ask) && taken.insert(ask.clone()) {
+                    first.push(ask);
+                }
+            }
+        }
+        drop(due);
+
+        self.first.borrow_mut().extend(taken.iter().cloned());
+        Ok(first
+            .into_iter()
+            .chain(queue.into_iter().filter(|ask| !taken.contains(ask)))
+            .collect())
+    }
+
     fn walk(&self, queue: &mut VecDeque<Ask>, spent: &mut BTreeSet<Ask>, due: Due) -> Asked<()> {
         loop {
             self.go_on()?;
@@ -692,6 +731,8 @@ impl<'a> Pass<'a> {
             if !spent.insert(ask.clone()) {
                 continue;
             }
+            self.pictured_at_once
+                .set(self.first.borrow_mut().remove(&ask));
             match &ask {
                 Ask::Album(key) => self.album(key)?,
                 Ask::Track(id) => self.track(*id)?,
@@ -702,7 +743,7 @@ impl<'a> Pass<'a> {
     }
 
     fn lift(&self, queue: &mut VecDeque<Ask>, spent: &BTreeSet<Ask>, due: Due) -> Asked<()> {
-        for sought in self.told.taken() {
+        for sought in self.told.asked_first.taken() {
             let track = match self.catalog.track(sought) {
                 Ok(track) => track,
                 Err(Error::UnknownTrack) => continue,
@@ -720,11 +761,13 @@ impl<'a> Pass<'a> {
                 }
                 if let Some(at) = queue.iter().position(|queued| *queued == ask) {
                     queue.remove(at);
-                    queue.push_front(ask);
                 } else if self.is_due(&ask, due)? {
                     Tally::count(&self.tally.due, 1);
-                    queue.push_front(ask);
+                } else {
+                    continue;
                 }
+                self.first.borrow_mut().insert(ask.clone());
+                queue.push_front(ask);
             }
         }
         Ok(())
@@ -973,8 +1016,12 @@ impl<'a> Pass<'a> {
                 self.pictured.borrow_mut().insert(artist.clone());
             }
         }
-        self.pictures
-            .want(self.catalog, self.asking, self.tally, picture);
+        if self.pictured_at_once.get() {
+            fetch(self.catalog, self.asking, self.tally, picture);
+        } else {
+            self.pictures
+                .want(self.catalog, self.asking, self.tally, picture);
+        }
     }
 
     fn look_again_for_covers(&self, now: SystemTime) -> Asked<()> {
@@ -1355,20 +1402,31 @@ fn sing_the_due(
     due: Due,
     at_most: Option<usize>,
 ) {
-    let mut tracks = match catalog.lyrics_due(due) {
+    let tracks = match catalog.lyrics_due(due, None) {
         Ok(tracks) => tracks,
         Err(error) => {
             tracing::warn!(%error, "the lyrics due could not be read");
             return;
         }
     };
+    let mut tracks = VecDeque::from(tracks);
     if let Some(at_most) = at_most {
         tracks.truncate(at_most);
     }
     Tally::count(&tally.due, tracks.len());
 
     let refused_in_a_row = Cell::new(0);
-    for track in tracks {
+    let mut sung = BTreeSet::new();
+    loop {
+        if let Err(error) = sing_the_sought_first(catalog, told, tally, due, &mut tracks, &sung) {
+            tracing::warn!(%error, "the lyrics of a song sought could not be read");
+        }
+        let Some(track) = tracks.pop_front() else {
+            return;
+        };
+        if !sung.insert(track) {
+            continue;
+        }
         match sing(catalog, asking, told, tally, track, &refused_in_a_row) {
             Ok(()) => Tally::count(&tally.asked, 1),
             Err(Ended::Failed(error)) => {
@@ -1379,6 +1437,30 @@ fn sing_the_due(
             }
         }
     }
+}
+
+fn sing_the_sought_first(
+    catalog: &Catalog,
+    told: &Told,
+    tally: &Tally,
+    due: Due,
+    tracks: &mut VecDeque<u64>,
+    sung: &BTreeSet<u64>,
+) -> Result<()> {
+    for sought in told.sung_first.taken() {
+        if sung.contains(&sought) {
+            continue;
+        }
+        if let Some(at) = tracks.iter().position(|queued| *queued == sought) {
+            tracks.remove(at);
+        } else if catalog.lyrics_due(due, Some(sought))?.is_empty() {
+            continue;
+        } else {
+            Tally::count(&tally.due, 1);
+        }
+        tracks.push_front(sought);
+    }
+    Ok(())
 }
 
 fn sing(
@@ -1620,7 +1702,7 @@ impl Catalog {
                 "SELECT d.id FROM documents d LEFT JOIN studies s ON s.track = d.id
                  WHERE d.missing = 0 AND (?1 OR (s.agreement IS NULL AND NOT EXISTS (
                     SELECT 1 FROM unstudied u WHERE u.track = d.id AND u.under = ?2)))
-                 ORDER BY d.id",
+                 ORDER BY d.downloaded IS NULL, d.downloaded DESC, d.id",
             )
             .map_err(read_error)?;
         query
@@ -1631,6 +1713,32 @@ impl Catalog {
             .map(|id| id.map(|id| id as u64))
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(read_error)
+    }
+
+    fn downloaded(&self) -> Result<Vec<(u64, Option<String>)>> {
+        let connection = self.0.lock();
+        let mut query = connection
+            .prepare(
+                "SELECT id, album_key FROM documents WHERE downloaded IS NOT NULL AND missing = 0
+                 ORDER BY downloaded DESC, id DESC",
+            )
+            .map_err(read_error)?;
+        query
+            .query_map([], |row| Ok((row.get::<_, i64>(0)? as u64, row.get(1)?)))
+            .map_err(read_error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(read_error)
+    }
+
+    pub(crate) fn note_downloaded(&self, track: u64) -> Result<()> {
+        self.0
+            .lock()
+            .execute(
+                "UPDATE documents SET downloaded = unixepoch() WHERE id = ?1",
+                [track as i64],
+            )
+            .map_err(write_error)?;
+        Ok(())
     }
 
     fn tracks_due(&self, due: Due, only: Value) -> Result<Vec<u64>> {
@@ -1650,7 +1758,11 @@ impl Catalog {
 
     fn artists_due(&self, due: Due, only: Value) -> Result<Vec<String>> {
         let sql = format!(
-            "SELECT a.mbid FROM artists a WHERE {} AND (?7 IS NULL OR a.mbid = ?7) ORDER BY a.rowid",
+            "SELECT a.mbid FROM artists a
+             LEFT JOIN (SELECT artist_mbid, max(downloaded) AS downloaded FROM documents
+                WHERE downloaded IS NOT NULL GROUP BY artist_mbid) w ON w.artist_mbid = a.mbid
+             WHERE {} AND (?7 IS NULL OR a.mbid = ?7)
+             ORDER BY w.downloaded IS NULL, w.downloaded DESC, a.rowid",
             due_where("a")
         );
         Ok(self
@@ -1663,15 +1775,16 @@ impl Catalog {
             .collect())
     }
 
-    fn lyrics_due(&self, due: Due) -> Result<Vec<u64>> {
+    fn lyrics_due(&self, due: Due, only: Option<u64>) -> Result<Vec<u64>> {
         let connection = self.0.lock();
         let mut query = connection
             .prepare(
                 "SELECT d.id FROM documents d LEFT JOIN lyrics l ON l.track = d.id
-                 WHERE ?1 OR l.track IS NULL
+                 WHERE (?1 OR l.track IS NULL
                     OR (l.text IS NULL AND l.asked <= ?2)
-                    OR (l.text IS NOT NULL AND l.document IS NULL AND l.origin IN (?4, ?5) AND l.asked <= ?3)
-                 ORDER BY d.id",
+                    OR (l.text IS NOT NULL AND l.document IS NULL AND l.origin IN (?4, ?5) AND l.asked <= ?3))
+                    AND (?6 IS NULL OR d.id = ?6)
+                 ORDER BY d.downloaded IS NULL, d.downloaded DESC, d.id",
             )
             .map_err(read_error)?;
         query
@@ -1681,7 +1794,8 @@ impl Catalog {
                     seconds_before(due.now, MISSED_AGAIN_AFTER),
                     seconds_before(due.now, BETTERED_AFTER),
                     FETCHED_LYRICS,
-                    SHARED_LYRICS
+                    SHARED_LYRICS,
+                    only.map(|id| id as i64)
                 ],
                 |row| row.get::<_, i64>(0).map(|id| id as u64),
             )
@@ -2340,6 +2454,7 @@ mod tests {
         calls: AtomicUsize,
         covers: AtomicUsize,
         each_takes: Duration,
+        asked: Mutex<Vec<String>>,
     }
 
     impl Fake {
@@ -2347,6 +2462,17 @@ mod tests {
             self.calls.fetch_add(1, Ordering::SeqCst);
             thread::sleep(self.each_takes);
             Ok(answer)
+        }
+
+        fn noted(&self, asked: String) {
+            self.asked.lock().push(asked);
+        }
+
+        fn first_asked(&self, kind: &str) -> Option<String> {
+            self.asked
+                .lock()
+                .iter()
+                .find_map(|asked| asked.strip_prefix(kind).map(str::to_owned))
         }
 
         fn credit() -> Vec<Credit> {
@@ -2386,6 +2512,7 @@ mod tests {
             &self,
             asked: &ReleaseAsked,
         ) -> resonate_library::Result<Vec<ReleaseMatch>> {
+            self.noted(format!("album {}", asked.title));
             self.answered(
                 (asked.title == "Album")
                     .then(|| ReleaseMatch {
@@ -2496,7 +2623,8 @@ mod tests {
             self.answered(None)
         }
 
-        fn lyrics(&self, _asked: &LyricsAsked) -> resonate_library::Result<Option<LyricText>> {
+        fn lyrics(&self, asked: &LyricsAsked) -> resonate_library::Result<Option<LyricText>> {
+            self.noted(format!("words {}", asked.title));
             self.answered(None)
         }
 
@@ -2572,6 +2700,14 @@ mod tests {
     }
 
     fn passed(catalog: &Arc<Catalog>, fake: &Arc<Fake>) -> EnrichmentStatus {
+        passed_as_told(catalog, fake, &Arc::new(Told::default()))
+    }
+
+    fn passed_as_told(
+        catalog: &Arc<Catalog>,
+        fake: &Arc<Fake>,
+        told: &Arc<Told>,
+    ) -> EnrichmentStatus {
         let tally = Arc::new(Tally::default());
         tally.began();
 
@@ -2579,12 +2715,32 @@ mod tests {
             catalog,
             &Arc::new(Sources::local()),
             &asking(fake),
-            &Arc::new(Told::default()),
+            told,
             &tally,
             EnrichmentOptions::default(),
         );
 
         tally.status()
+    }
+
+    fn albums_of_one_song(catalog: &Catalog, albums: &[&str]) -> Vec<u64> {
+        albums
+            .iter()
+            .map(|album| {
+                catalog
+                    .upsert(Track {
+                        uri: format!("content://test/{album}.flac"),
+                        name: format!("{album}.flac"),
+                        title: format!("{album} song"),
+                        artist: "Artist".into(),
+                        album: (*album).into(),
+                        duration_ms: 180_000,
+                        ..Track::default()
+                    })
+                    .expect("an indexed song")
+                    .id
+            })
+            .collect()
     }
 
     fn marks(catalog: &Catalog) -> i64 {
@@ -2627,6 +2783,55 @@ mod tests {
                 Some(RELEASE)
             );
         }
+    }
+
+    #[test]
+    fn a_downloaded_song_is_looked_up_before_the_songs_held_before_it() {
+        let catalog = Arc::new(Catalog::open(Path::new(":memory:")).expect("a catalog"));
+        let fake = Arc::new(Fake::default());
+
+        albums_of_one_song(&catalog, &["Older", "Old"]);
+        let fetched = albums_of_one_song(&catalog, &["Fetched", "Newest"]);
+        albums_of_one_song(&catalog, &["Scanned after"]);
+        for track in &fetched {
+            catalog.note_downloaded(*track).expect("a download noted");
+        }
+        catalog
+            .0
+            .lock()
+            .execute(
+                "UPDATE documents SET downloaded = downloaded - 60 WHERE id = ?1",
+                [fetched[0] as i64],
+            )
+            .expect("an earlier download");
+        let status = passed(&catalog, &fake);
+
+        assert_eq!(status.stopped, Some(EnrichmentStop::Finished));
+        assert_eq!(fake.first_asked("album ").as_deref(), Some("Newest"));
+        assert_eq!(fake.first_asked("words ").as_deref(), Some("Newest song"));
+        let mut albums: Vec<String> = fake
+            .asked
+            .lock()
+            .iter()
+            .filter_map(|asked| asked.strip_prefix("album ").map(str::to_owned))
+            .collect();
+        albums.dedup();
+        assert_eq!(albums.iter().position(|album| album == "Fetched"), Some(1));
+    }
+
+    #[test]
+    fn a_song_sought_has_its_album_and_words_asked_before_the_rest() {
+        let catalog = Arc::new(Catalog::open(Path::new(":memory:")).expect("a catalog"));
+        let fake = Arc::new(Fake::default());
+        let told = Arc::new(Told::default());
+
+        let tracks = albums_of_one_song(&catalog, &["First", "Second", "Sought"]);
+        told.seek(tracks[2]);
+        let status = passed_as_told(&catalog, &fake, &told);
+
+        assert_eq!(status.stopped, Some(EnrichmentStop::Finished));
+        assert_eq!(fake.first_asked("album ").as_deref(), Some("Sought"));
+        assert_eq!(fake.first_asked("words ").as_deref(), Some("Sought song"));
     }
 
     #[test]
