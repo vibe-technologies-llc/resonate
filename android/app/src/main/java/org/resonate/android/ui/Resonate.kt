@@ -57,6 +57,13 @@ class Playback(
     private fun remote(): MediaController? =
         controller().also { if (it == null) library.notice("Playback is still connecting") }
 
+    fun playFromSearch(found: List<Track>, index: Int) {
+        val chosen = found.getOrNull(index) ?: return
+        val everything = library.allTracks.value
+        val place = everything.indexOfFirst { it.id == chosen.id }
+        if (remote()?.shuffleModeEnabled == true && place >= 0) play(everything, place) else play(found, index)
+    }
+
     fun play(tracks: List<Track>, index: Int = 0) {
         val remote = remote() ?: return
         if (tracks.isEmpty()) return

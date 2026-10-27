@@ -209,6 +209,8 @@ NDK libc++ is packaged beside the Rust library. Native linking rejects undefined
 sets a 16 KB maximum page size; APK native libraries are uncompressed and aligned by AGP.
 The emulator's native playback test must load and play audio, not merely install the APK.
 
+With shuffle on, a song pressed in the Search tab's library results plays the whole catalog (`Playback.playFromSearch`) from that song, shuffle left on; with it off the results are the queue.
+
 ## Documents and catalog
 
 The user chooses folders through the Storage Access Framework or enables Downloads through

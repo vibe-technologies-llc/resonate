@@ -325,7 +325,7 @@ class SearchViewModel(private val resonate: Resonate) : ViewModel() {
 
     fun play(tracks: List<Track>, index: Int) {
         keep()
-        resonate.playback.play(tracks, index)
+        resonate.playback.playFromSearch(tracks, index)
     }
 
     fun open(view: OnlineView) {

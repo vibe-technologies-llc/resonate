@@ -2891,6 +2891,25 @@ impl LibraryModel {
         )
     }
 
+    pub(crate) fn whole_library(&self) -> (Arc<Library>, TrackQuery) {
+        (
+            Arc::clone(&self.library),
+            TrackQuery {
+                album: None,
+                artist: None,
+                text: None,
+                sort: self.sorting.tracks,
+                reading: self.sorting.tracks_read,
+                limit: None,
+                offset: 0,
+            },
+        )
+    }
+
+    pub(crate) fn is_searching(&self) -> bool {
+        !self.query.is_empty()
+    }
+
     pub(crate) fn rows_of(&self, query: &SavedQuery) -> (Arc<Library>, TrackQuery) {
         (Arc::clone(&self.library), TrackQuery::from(query))
     }

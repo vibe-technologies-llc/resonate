@@ -468,7 +468,7 @@ Now Playing's Up next, neither a tab**: *All songs*, Favourites' and the
 empty states' *Browse songs* push `Destination.songs` onto the Library stack alone
 (`Navigation.showSongs`, which closes Now Playing and sets the grouping to songs). The mini
 player sits in the tab bar's bottom accessory (`tabViewBottomAccessory(isEnabled:)` from 26.1, enabled by `Library.loaded`, stored and flipped only when something is or stops being loaded so a song change never rebuilds the root view,
-so no empty capsule shows with nothing loaded), with previous/play/next and a horizontal swipe to
+so no empty capsule shows with nothing loaded), with previous/play/next (play alone inline) and a horizontal swipe to
 skip; it shows no progress (a bar along the accessory's bottom ran through the title and artist,
 since the system fixes the accessory's height, and a ring around the play button was dropped) and no
 heart (the song's heart is Now Playing's). Opening Now Playing the first time in a launch built an
@@ -476,15 +476,16 @@ heart (the song's heart is Now Playing's). Opening Now Playing the first time in
 `PlayerWarmup` builds one of each 2 s after launch and drops them, and the first opening costs no
 more than the next. Inline (the
 tab bar minimised on scroll) it measures itself and keeps what fits, the width read as one of three fits (`InlineFit`) so the accessory's animated resizing redraws the player only as a threshold is crossed, never every frame: a 28 pt cover and the play
-button always, the title from 150 pt, next from 200 pt (a minimised capsule beside the search
-button is about 220 pt, and without next the title trailed into empty glass), tighter spacing and a
+button always, the title with the artist beneath it from 150 pt, as Apple Music's minimised player draws them, and no next (the capsule beside the search
+button is about 220 pt, and the artist line fills what next held), tighter spacing and a
 12 pt inset each side, so the square cover clears the capsule's rounded end; the title stays the
-accessibility label. **What the placement or the fit changes appears at once** (`transaction(value:)` with no animation on both): the system animates the accessory itself as the Search tab's field widens and the bar collapses, and the contents (artist line, previous, cover size) animating inside it as well made that animation judder. Expanded, the artist line is `Color.primary` at 60 % opacity, never the
+accessibility label. **What the placement or the fit changes appears at once** (`transaction(value:)` with no animation on both): the system animates the accessory itself as the Search tab's field widens and the bar collapses, and the contents (artist line, previous, cover size) animating inside it as well made that animation judder. The artist line, expanded or inline, is `Color.primary` at 60 % opacity, never the
 hierarchical `.secondary`: that is drawn vibrant against the accessory's glass, which is not drawn
 while Now Playing zooms back into it, so the artist showed only once the zoom ended. The output page holds `AVRoutePickerView`, since iOS owns the route, and draws the session's route,
 hardware rate and latency from `Library.routeReading`, which `NowPlaying.reportRoute` reads again on
 every route change (a pair of headphones at the same rate included), not from the session in its body.
 
+- **With shuffle on, a song pressed in the Search tab's results plays `Library.allTracks` shuffled from that song**, not the results alone; with it off the results are the queue.
 - **Now Playing** is a full-screen cover zoomed out of the mini player's artwork
   (`matchedTransitionSource`, `.zoom`), dismissed by dragging down. Its slider (like the volume row's) commits one seek on
   release, clears a drag the system cancelled through a `@GestureState` flag, and holds the scrubbed value, bar and times, until the clock comes within 1.5 s of it or four seconds pass (a pause and play straight after a seek keep the engine's lane busy and its snapshots late, and a shorter hold let the bar and times fall back to the old position and then jump to the new), the bar's flowed value set to it as the seek is sent and not moved by a reading that has not reached it.

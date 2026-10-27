@@ -21,18 +21,13 @@ struct MiniPlayer: View {
 
     private enum InlineFit {
         private static let titledFrom: CGFloat = 150
-        private static let skipsFrom: CGFloat = 200
 
         case unmeasured
         case coverAndPlay
         case titled
-        case skipping
 
         init(width: CGFloat) {
-            self =
-                width >= Self.skipsFrom ? .skipping
-                : width >= Self.titledFrom ? .titled
-                : .coverAndPlay
+            self = width >= Self.titledFrom ? .titled : .coverAndPlay
         }
     }
 
@@ -40,7 +35,6 @@ struct MiniPlayer: View {
         let track = library.playingTrack
         let expanded = placement != .inline
         let titled = expanded || fit != .coverAndPlay
-        let skips = expanded || fit == .skipping
         HStack(spacing: expanded ? 12 : 8) {
             ArtworkView(track: track, corner: expanded ? 8 : 7, handsOver: true)
                 .frame(width: expanded ? artworkEdge : inlineArtworkEdge, height: expanded ? artworkEdge : inlineArtworkEdge)
@@ -50,12 +44,10 @@ struct MiniPlayer: View {
                     Text(track?.shownTitle ?? "")
                         .font(expanded ? .subheadline.weight(.semibold) : .footnote.weight(.semibold))
                         .lineLimit(1)
-                    if expanded {
-                        Text(track?.shownArtist ?? "")
-                            .font(.caption)
-                            .foregroundStyle(Color.primary.opacity(Self.artistOpacity))
-                            .lineLimit(1)
-                    }
+                    Text(track?.shownArtist ?? "")
+                        .font(expanded ? .caption : .caption2)
+                        .foregroundStyle(Color.primary.opacity(Self.artistOpacity))
+                        .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentTransition(reduceMotion ? .identity : .opacity)
@@ -69,7 +61,7 @@ struct MiniPlayer: View {
                 }
             }
             PlayButton(transport: library.transport)
-            if skips {
+            if expanded {
                 Button { skip(forward: true) } label: {
                     Label("Next", systemImage: "forward.fill").labelStyle(.iconOnly).touchTarget()
                 }

@@ -3072,6 +3072,31 @@ impl RootView {
         });
     }
 
+    fn with_the_whole_library(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        then: impl FnOnce(&mut Self, Arc<[Track]>, &mut Window, &mut Context<Self>) + 'static,
+    ) {
+        let (library, asked) = self.library.read(cx).whole_library();
+
+        self.listing_whole = cx.spawn_in(window, async move |this, cx| {
+            let read = cx
+                .background_executor()
+                .spawn(async move { library.tracks(&asked) })
+                .await;
+
+            let outcome = this.update_in(cx, |this, window, cx| match read {
+                Ok(tracks) => then(this, tracks.into(), window, cx),
+                Err(error) => {
+                    tracing::error!(%error, "the whole library could not be read");
+                    toast::tell(toast::could_not("read the library", &error), cx);
+                }
+            });
+            let _ = outcome;
+        });
+    }
+
     pub(crate) fn play_the_listing_from(
         &mut self,
         held: &[Track],
@@ -3079,11 +3104,21 @@ impl RootView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let pressed = held.get(start).map(|track| track.id);
+        let shuffled = self.player.read(cx).state().shuffle;
+        if shuffled && self.library.read(cx).is_searching() {
+            self.with_the_whole_library(window, cx, move |this, library, _, cx| {
+                let start = pressed
+                    .and_then(|pressed| library.iter().position(|track| track.id == pressed))
+                    .unwrap_or(0);
+                this.play(&library, start, cx);
+            });
+            return;
+        }
         if self.library.read(cx).is_the_whole_listing(held) {
             self.play(held, start, cx);
             return;
         }
-        let pressed = held.get(start).map(|track| track.id);
         self.with_everything_listed(window, cx, move |this, listing, _, cx| {
             let found = match pressed {
                 Some(pressed) => listing.iter().position(|track| track.id == pressed),
