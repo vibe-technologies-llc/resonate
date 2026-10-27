@@ -1,9 +1,12 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use resonate_core::{Recording, RecordingKey, folded_letters};
 use ring::digest::{SHA256, digest};
 
-use crate::{change::QueryBody, wire::Writer};
+use crate::{
+    change::{PlaylistKey, QueryBody},
+    wire::Writer,
+};
 
 pub const DIGEST_BYTES: usize = 32;
 
@@ -139,9 +142,103 @@ pub fn names_alike(first: &str, second: &str) -> bool {
     folded_letters(first.trim()) == folded_letters(second.trim())
 }
 
+pub fn named_as_a_free_alias_of(name: &str, written: &str) -> bool {
+    let Some(numbered) = written.strip_prefix(name.trim()) else {
+        return written == name;
+    };
+    if numbered.is_empty() {
+        return true;
+    }
+    numbered
+        .strip_prefix(" (")
+        .and_then(|numbered| numbered.strip_suffix(')'))
+        .is_some_and(|number| {
+            !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
+        })
+}
+
+pub fn absorbed(kept: &[Recording], folded: &[Recording]) -> Vec<Recording> {
+    let mut taken = vec![false; kept.len()];
+    let mut entries = kept.to_vec();
+    for entry in folded {
+        match (0..kept.len()).find(|at| !taken[*at] && kept[*at].names_the_same_song_as(entry)) {
+            Some(at) => taken[at] = true,
+            None => entries.push(entry.clone()),
+        }
+    }
+    entries
+}
+
+#[derive(Default)]
+pub struct Folds {
+    folded: BTreeSet<PlaylistKey>,
+    beside: BTreeMap<PlaylistKey, Vec<PlaylistKey>>,
+}
+
+impl Folds {
+    pub fn of(pairs: impl IntoIterator<Item = (PlaylistKey, PlaylistKey)>) -> Self {
+        let mut folds = Self::default();
+        for (folded, into) in pairs {
+            folds.folded.insert(folded);
+            folds.beside.entry(folded).or_default().push(into);
+            folds.beside.entry(into).or_default().push(folded);
+        }
+        folds
+    }
+
+    pub fn survivor_of(&self, key: PlaylistKey) -> Option<PlaylistKey> {
+        if !self.beside.contains_key(&key) {
+            return None;
+        }
+        let mut class = BTreeSet::from([key]);
+        let mut reached = vec![key];
+        while let Some(at) = reached.pop() {
+            for next in self.beside.get(&at).into_iter().flatten() {
+                if class.insert(*next) {
+                    reached.push(*next);
+                }
+            }
+        }
+        class
+            .iter()
+            .find(|member| !self.folded.contains(member))
+            .or_else(|| class.first())
+            .copied()
+    }
+
+    pub fn folds_away(&self, key: PlaylistKey) -> Option<PlaylistKey> {
+        self.survivor_of(key).filter(|survivor| *survivor != key)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_class_of_folds_survives_as_its_one_unfolded_key_and_a_cycle_as_its_lowest() {
+        let [a, b, c, d] = [1, 2, 3, 4].map(|byte| PlaylistKey([byte; 16]));
+        let chained = Folds::of([(c, b), (b, a)]);
+        let crossed = Folds::of([(c, a), (c, b)]);
+        let cycled = Folds::of([(a, d), (d, a)]);
+
+        assert_eq!(chained.survivor_of(c), Some(a));
+        assert_eq!(chained.folds_away(a), None);
+        assert_eq!(chained.folds_away(b), Some(a));
+        assert_eq!(crossed.survivor_of(b), Some(a));
+        assert_eq!(cycled.survivor_of(d), Some(a));
+        assert_eq!(chained.survivor_of(d), None);
+    }
+
+    #[test]
+    fn a_free_alias_is_the_name_or_the_name_numbered() {
+        assert!(named_as_a_free_alias_of("Mix", "Mix"));
+        assert!(named_as_a_free_alias_of("Mix", "Mix (2)"));
+        assert!(named_as_a_free_alias_of("Mix", "Mix (12)"));
+        assert!(!named_as_a_free_alias_of("Mix", "Mix (two)"));
+        assert!(!named_as_a_free_alias_of("Mix", "Mixed"));
+        assert!(!named_as_a_free_alias_of("Mix", "Mix ()"));
+    }
 
     fn song(title: &str) -> Recording {
         Recording {

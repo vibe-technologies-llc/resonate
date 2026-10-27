@@ -74,6 +74,8 @@ pub struct Inside {
     pub listed: usize,
     pub refuses_landing: bool,
     pub refuses_opening: bool,
+    pub refuses_resolving: bool,
+    pub unwritable_sorts_from: Option<u8>,
     next_id: i64,
     next_answered: i64,
 }
@@ -395,6 +397,12 @@ impl Catalog for Shelf {
         body: &QueryBody,
     ) -> Result<LocalQuery, Refused> {
         let mut inside = self.inside.lock();
+        if inside
+            .unwritable_sorts_from
+            .is_some_and(|unwritable| body.sort >= unwritable)
+        {
+            return Err(Refused::Unwritable);
+        }
         let taken = |inside: &Inside, candidate: &str| {
             inside
                 .queries
@@ -489,7 +497,11 @@ impl Catalog for Shelf {
     }
 
     fn held_as(&self, recording: &Recording) -> Result<Option<Recording>, Refused> {
-        Ok(Self::own_of(&self.inside.lock(), recording))
+        let inside = self.inside.lock();
+        if inside.refuses_resolving {
+            return Err(Refused::Unavailable);
+        }
+        Ok(Self::own_of(&inside, recording))
     }
 
     fn holdings(&self) -> Result<Vec<Held>, Refused> {

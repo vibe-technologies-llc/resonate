@@ -1179,3 +1179,250 @@ fn a_release_heavier_than_the_server_keeps_stays_home() {
     assert_eq!(answers_in(&told), 0);
     assert!(phone.shelf.answers_of("A").is_empty());
 }
+
+fn sorted_names(device: &Device) -> Vec<String> {
+    let mut names = device.shelf.playlist_names();
+    names.sort();
+    names
+}
+
+fn playlist_bodies_told(changes: &[Change]) -> usize {
+    told(
+        changes,
+        |change| matches!(change, Change::Playlist(note) if note.body.is_some()),
+    )
+}
+
+#[test]
+fn playlists_of_one_name_made_apart_after_both_devices_looked_become_one_whichever_arrives_first() {
+    for desk_first in [true, false] {
+        let mut desk = Device::new("Desk", &["A", "B", "C"]);
+        let mut phone = Device::new("Phone", &["A", "B", "C"]);
+        sync(&mut desk, &mut phone);
+        sync(&mut phone, &mut desk);
+
+        desk.shelf.make_playlist("Mix", &["A", "B"]);
+        desk.look();
+        phone.shelf.make_playlist("mix", &["B", "C"]);
+        phone.look();
+        if desk_first {
+            sync(&mut desk, &mut phone);
+            sync(&mut phone, &mut desk);
+        } else {
+            sync(&mut phone, &mut desk);
+            sync(&mut desk, &mut phone);
+            sync(&mut phone, &mut desk);
+        }
+        sync(&mut desk, &mut phone);
+
+        assert_eq!(sorted_names(&desk), ["Mix"], "desk first: {desk_first}");
+        assert_eq!(sorted_names(&phone), ["Mix"], "desk first: {desk_first}");
+        assert_eq!(titles(&desk, "Mix"), ["A", "B", "C"]);
+        assert_eq!(titles(&phone, "Mix"), ["A", "B", "C"]);
+        assert_eq!(playlist_bodies_told(&desk.send()), 0);
+        assert_eq!(playlist_bodies_told(&phone.send()), 0);
+    }
+}
+
+struct Log {
+    records: Vec<(usize, Vec<Change>)>,
+    read: Vec<usize>,
+}
+
+impl Log {
+    fn pushed(&mut self, devices: &mut [Device], from: usize) {
+        let changes = devices[from].send();
+        if !changes.is_empty() {
+            self.records.push((from, changes));
+        }
+    }
+
+    fn pulled(&mut self, devices: &mut [Device], to: usize) {
+        for (from, changes) in &self.records[self.read[to]..] {
+            if *from != to {
+                devices[to].receive(changes);
+            }
+        }
+        self.read[to] = self.records.len();
+    }
+}
+
+#[test]
+fn three_devices_each_making_one_name_apart_converge_on_one_playlist_whatever_the_order() {
+    let orders = [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ];
+    for pushing in orders {
+        for pulling in orders {
+            let mut devices =
+                ["Desk", "Phone", "Tablet"].map(|name| Device::new(name, &["A", "B", "C", "D"]));
+            let mut log = Log {
+                records: Vec::new(),
+                read: vec![0; devices.len()],
+            };
+            for at in 0..devices.len() {
+                log.pushed(&mut devices, at);
+            }
+            for at in 0..devices.len() {
+                log.pulled(&mut devices, at);
+            }
+
+            devices[0].shelf.make_playlist("Mix", &["A"]);
+            devices[0].look();
+            devices[1].shelf.make_playlist("Mix", &["A", "B", "C"]);
+            devices[1].look();
+            devices[2].shelf.make_playlist("MIX", &["D", "A"]);
+            devices[2].look();
+            for _ in 0..4 {
+                for at in pushing {
+                    log.pushed(&mut devices, at);
+                }
+                for at in pulling {
+                    log.pulled(&mut devices, at);
+                }
+            }
+
+            let first = titles(&devices[0], "Mix");
+            let mut held = first.clone();
+            held.sort();
+            assert_eq!(held, ["A", "B", "C", "D"], "{pushing:?} {pulling:?}");
+            for device in &devices {
+                assert_eq!(sorted_names(device), ["Mix"], "{pushing:?} {pulling:?}");
+                assert_eq!(titles(device, "Mix"), first, "{pushing:?} {pulling:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn a_playlist_made_beside_a_namesake_already_known_stays_apart_as_an_alias() {
+    let mut desk = Device::new("Desk", &["A", "B"]);
+    let mut phone = Device::new("Phone", &["A", "B"]);
+    desk.shelf.make_playlist("Mix", &["A"]);
+    sync(&mut desk, &mut phone);
+
+    phone.shelf.make_playlist("Mix", &["B"]);
+    sync(&mut phone, &mut desk);
+    sync(&mut desk, &mut phone);
+    desk.shelf.make_playlist("Mix", &["A", "B"]);
+    sync(&mut desk, &mut phone);
+    sync(&mut phone, &mut desk);
+
+    assert_eq!(sorted_names(&desk), ["Mix", "Mix", "Mix (2)"]);
+    assert_eq!(sorted_names(&phone), ["Mix", "Mix", "Mix (2)"]);
+}
+
+#[test]
+fn an_aliased_arrival_cut_off_between_the_catalog_and_the_ledger_is_taken_up_and_not_minted_again()
+{
+    let mut desk = Device::new("Desk", &["A", "Z"]);
+    let mut phone = Device::new("Phone", &["A"]);
+    phone.shelf.receive_named_otherwise(song("Z"), song("Zed"));
+    desk.shelf.make_playlist("Mix", &["A"]);
+    sync(&mut desk, &mut phone);
+    desk.shelf.make_playlist("Mix", &["A", "Z"]);
+    let told = desk.send();
+
+    phone.shelf.inside.lock().refuses_resolving = true;
+    assert!(phone.ledger.arrived(&phone.shelf, &told).is_err());
+    phone.shelf.inside.lock().refuses_resolving = false;
+    phone.receive(&told);
+    let echoed = phone.send();
+
+    assert_eq!(sorted_names(&phone), ["Mix", "Mix (2)"]);
+    assert_eq!(titles(&phone, "Mix (2)"), ["A", "Zed"]);
+    assert_eq!(playlist_bodies_told(&echoed), 0);
+}
+
+#[test]
+fn a_saved_query_once_unwritable_here_folds_the_namesake_made_meanwhile_into_it() {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut phone = Device::new("Phone", &["A"]);
+    let top = desk.shelf.make_query("Top", "plays:>5");
+    desk.shelf
+        .inside
+        .lock()
+        .queries
+        .get_mut(&top)
+        .expect("a query")
+        .1
+        .sort = 9;
+    desk.look();
+    phone.shelf.inside.lock().unwritable_sorts_from = Some(9);
+    phone.shelf.make_query("Top", "plays:>1");
+    phone.look();
+    sync(&mut desk, &mut phone);
+    sync(&mut phone, &mut desk);
+    assert_eq!(phone.shelf.query_names(), ["Top"]);
+
+    phone.shelf.inside.lock().unwritable_sorts_from = None;
+    phone.ledger.settle(&phone.shelf).expect("settled");
+    sync(&mut phone, &mut desk);
+    sync(&mut desk, &mut phone);
+
+    assert_eq!(phone.shelf.query_names(), ["Top"]);
+    assert_eq!(desk.shelf.query_names(), ["Top"]);
+    assert_eq!(
+        phone.shelf.query_named("Top").map(|(_, text)| text),
+        Some(Some("plays:>5".to_owned()))
+    );
+}
+
+#[test]
+fn saved_queries_of_one_name_made_apart_after_both_devices_looked_become_one() {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut phone = Device::new("Phone", &["A"]);
+    sync(&mut desk, &mut phone);
+    sync(&mut phone, &mut desk);
+
+    desk.shelf.make_query("Recent", "added:<30d");
+    desk.look();
+    phone.shelf.make_query("Recent", "plays:0");
+    phone.look();
+    sync(&mut phone, &mut desk);
+    sync(&mut desk, &mut phone);
+    sync(&mut phone, &mut desk);
+
+    assert_eq!(desk.shelf.query_names(), ["Recent"]);
+    assert_eq!(phone.shelf.query_names(), ["Recent"]);
+    assert_eq!(
+        phone.shelf.query_named("Recent").map(|(_, text)| text),
+        Some(Some("added:<30d".to_owned()))
+    );
+}
+
+#[test]
+fn a_playlist_deleted_and_put_back_after_its_look_keeps_its_key_and_its_songs_kept_here() {
+    let mut desk = Device::new("Desk", &["A", "B"]);
+    let mut phone = Device::new("Phone", &["A", "B"]);
+    let mix = desk.shelf.make_playlist("Mix", &["A"]);
+    sync(&mut desk, &mut phone);
+    let at = LocalPlaylistId {
+        id: mix,
+        created: mix * 1000,
+    };
+    assert!(desk.ledger.keep_songs_of(at, true).expect("kept"));
+
+    desk.shelf.drop_playlist(mix);
+    desk.look();
+    desk.shelf
+        .inside
+        .lock()
+        .playlists
+        .insert(mix, (mix * 1000, "Mix".into(), vec![song("A")]));
+    desk.look();
+    let (on_phone, _) = phone.shelf.playlist_named("Mix").expect("arrived");
+    phone.shelf.edit_playlist(on_phone, &["A", "B"]);
+    sync(&mut phone, &mut desk);
+    sync(&mut desk, &mut phone);
+
+    assert_eq!(desk.shelf.playlist_names(), ["Mix"]);
+    assert_eq!(phone.shelf.playlist_names(), ["Mix"]);
+    assert_eq!(titles(&desk, "Mix"), ["A", "B"]);
+    assert!(desk.ledger.kept_songs_of(at).expect("read"));
+}

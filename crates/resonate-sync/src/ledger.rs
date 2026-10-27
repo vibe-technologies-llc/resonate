@@ -10,11 +10,12 @@ use crate::{
     },
     change::{
         AnswerNote, Change, Clock, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, Listen,
-        Platform, PlaylistBody, PlaylistKey, PlaylistNote, QueryBody, QueryNote, Stamp, wall_nanos,
+        Platform, PlaylistBody, PlaylistFolded, PlaylistKey, PlaylistNote, QueryBody, QueryFolded,
+        QueryNote, Stamp, wall_nanos,
     },
     merge::{
-        DIGEST_BYTES, Synced, names_alike, one_recording_a_song, projection_digest, query_digest,
-        spliced,
+        DIGEST_BYTES, Folds, Synced, absorbed, named_as_a_free_alias_of, names_alike,
+        one_recording_a_song, projection_digest, query_digest, spliced,
     },
     wire::{
         decoded_answer, decoded_recording, decoded_recordings, encoded_answer, encoded_change,
@@ -144,7 +145,37 @@ CREATE TABLE refusals (
 ) STRICT;
 ";
 
-const MIGRATIONS: &[&str] = &[V1, ANSWERS_TRAVEL, SONGS_REFUSED_ARE_REMEMBERED];
+const NAMESAKES_MADE_APART_BECOME_ONE: &str = "
+ALTER TABLE playlists ADD COLUMN minted_here INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE playlists ADD COLUMN gone_id INTEGER;
+ALTER TABLE playlists ADD COLUMN gone_created INTEGER;
+ALTER TABLE queries ADD COLUMN minted_here INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE queries ADD COLUMN gone_id INTEGER;
+ALTER TABLE queries ADD COLUMN gone_created INTEGER;
+UPDATE playlists SET minted_here = 1 WHERE stamped_by = (SELECT device FROM state WHERE id = 1);
+UPDATE queries SET minted_here = 1 WHERE stamped_by = (SELECT device FROM state WHERE id = 1);
+CREATE TABLE playlist_folds (
+    folded BLOB NOT NULL,
+    kept BLOB NOT NULL,
+    entries BLOB NOT NULL,
+    absorbed INTEGER NOT NULL DEFAULT 0,
+    owed INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (folded, kept)
+) STRICT;
+CREATE TABLE query_folds (
+    folded BLOB NOT NULL,
+    kept BLOB NOT NULL,
+    owed INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (folded, kept)
+) STRICT;
+";
+
+const MIGRATIONS: &[&str] = &[
+    V1,
+    ANSWERS_TRAVEL,
+    SONGS_REFUSED_ARE_REMEMBERED,
+    NAMESAKES_MADE_APART_BECOME_ONE,
+];
 
 const OWE_EVERYTHING: &str = "
 UPDATE devices SET owed = 1;
@@ -154,6 +185,8 @@ UPDATE favourites SET owed = 1;
 UPDATE listens SET owed = 1;
 UPDATE handoffs SET owed = 1;
 UPDATE answers SET owed = 1;
+UPDATE playlist_folds SET owed = 1;
+UPDATE query_folds SET owed = 1;
 ";
 
 const FORGET_THE_SPACE: &str = "
@@ -164,6 +197,8 @@ DELETE FROM favourites;
 DELETE FROM listens;
 DELETE FROM handoffs;
 DELETE FROM answers;
+DELETE FROM playlist_folds;
+DELETE FROM query_folds;
 UPDATE state SET cursor = 0, since_snapshot = 0, bytes_since = 0, listens_mark = 0, answers_mark = 0, resumed = NULL;
 ";
 
@@ -322,6 +357,7 @@ struct HeldFavourite {
     here: bool,
 }
 
+#[derive(Clone)]
 struct StoredPlaylist {
     key: PlaylistKey,
     local: Option<LocalPlaylistId>,
@@ -332,8 +368,12 @@ struct StoredPlaylist {
     gone: bool,
     stamp: Stamp,
     seen: Option<Vec<u8>>,
+    minted_here: bool,
+    gone_from: Option<LocalPlaylistId>,
+    keep_songs: bool,
 }
 
+#[derive(Clone)]
 struct StoredQuery {
     key: PlaylistKey,
     local: Option<LocalPlaylistId>,
@@ -342,6 +382,14 @@ struct StoredQuery {
     gone: bool,
     stamp: Stamp,
     seen: Option<Vec<u8>>,
+    minted_here: bool,
+    gone_from: Option<LocalPlaylistId>,
+}
+
+struct PlaylistFold {
+    folded: PlaylistKey,
+    into: PlaylistKey,
+    entries: Vec<Recording>,
 }
 
 impl Ledger {
@@ -470,6 +518,9 @@ impl Ledger {
     }
 
     pub fn owe_queries(&mut self) -> Result<usize> {
+        self.connection
+            .execute("UPDATE query_folds SET owed = 1", [])
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
         self.connection
             .execute("UPDATE queries SET owed = 1", [])
             .map_err(|source| Error::store(StoreOp::Write, source))
@@ -622,14 +673,26 @@ impl Ledger {
                 }
                 None if looking == Looking::AtWhatIsHeld => {}
                 None => {
-                    if let Some(adopted) = stored.iter().enumerate().find(|(at, synced)| {
-                        synced.local.is_none()
+                    if let Some(at) = self.revivable(catalog, &stored, &still_here, local)? {
+                        still_here[at] = true;
+                        self.revived_here(catalog, &stored[at], local, &digest)?;
+                        continue;
+                    }
+                    let mut adoptable = None;
+                    for (at, synced) in stored.iter().enumerate() {
+                        if synced.local.is_none()
                             && !synced.gone
-                            && !still_here[*at]
-                            && names_alike(&synced.name, &local.name)
-                    }) {
-                        still_here[adopted.0] = true;
-                        self.adopted_here(catalog, adopted.1, local, &digest)?;
+                            && !still_here[at]
+                            && (names_alike(&synced.name, &local.name)
+                                || orphaned_by_a_write(catalog, synced, local)?)
+                        {
+                            adoptable = Some(at);
+                            break;
+                        }
+                    }
+                    if let Some(at) = adoptable {
+                        still_here[at] = true;
+                        self.adopted_here(catalog, &stored[at], local, &digest)?;
                         continue;
                     }
                     self.made_here(local, &digest)?;
@@ -640,26 +703,141 @@ impl Ledger {
         for (at, synced) in stored.iter().enumerate() {
             if synced.local.is_some() && !synced.gone && !still_here[at] {
                 let stamp = self.clock.now(self.device);
+                let gone_from = synced.local;
                 self.connection
                     .execute(
-                        "UPDATE playlists SET gone = 1, local_id = NULL, local_created = NULL, nanos = ?2, stamped_by = ?3, owed = 1, seen = NULL WHERE key = ?1",
-                        params![synced.key.0.as_slice(), stamp.nanos, self.device.0.as_slice()],
+                        "UPDATE playlists SET gone = 1, local_id = NULL, local_created = NULL, nanos = ?2, stamped_by = ?3, owed = 1, seen = NULL,
+                             gone_id = ?4, gone_created = ?5 WHERE key = ?1",
+                        params![
+                            synced.key.0.as_slice(),
+                            stamp.nanos,
+                            self.device.0.as_slice(),
+                            gone_from.map(|at| at.id),
+                            gone_from.map(|at| at.created)
+                        ],
                     )
                     .map_err(|source| Error::store(StoreOp::Write, source))?;
+            }
+        }
+
+        if looking == Looking::Everything {
+            for (at, synced) in stored.iter().enumerate() {
+                if synced.local.is_none() && !synced.gone && !still_here[at] {
+                    self.unfinished_write_finished(catalog, synced)?;
+                }
             }
         }
         Ok(())
     }
 
+    fn revivable(
+        &self,
+        catalog: &dyn Catalog,
+        stored: &[StoredPlaylist],
+        still_here: &[bool],
+        local: &LocalPlaylist,
+    ) -> Result<Option<usize>> {
+        if let Some(at) = stored.iter().enumerate().position(|(at, synced)| {
+            synced.gone && !still_here[at] && synced.gone_from == Some(local.at)
+        }) {
+            return Ok(Some(at));
+        }
+        let folds = self.playlist_folds()?;
+        let listed = local.entries.iter().flatten().collect::<Vec<_>>();
+        for (at, synced) in stored.iter().enumerate() {
+            if !synced.gone
+                || still_here[at]
+                || synced.gone_from.is_some()
+                || synced.stamp.device != self.device
+                || synced.name != local.name
+                || folds.folds_away(synced.key).is_some()
+                || synced.here.iter().filter(|here| **here).count() != listed.len()
+            {
+                continue;
+            }
+            let held = synced
+                .entries
+                .iter()
+                .zip(&synced.here)
+                .filter(|(_, here)| **here)
+                .map(|(recording, _)| recording)
+                .collect::<Vec<_>>();
+            if paired(catalog, &held, &listed)?.iter().all(Option::is_some) {
+                return Ok(Some(at));
+            }
+        }
+        Ok(None)
+    }
+
+    fn revived_here(
+        &mut self,
+        catalog: &dyn Catalog,
+        synced: &StoredPlaylist,
+        local: &LocalPlaylist,
+        digest: &[u8; DIGEST_BYTES],
+    ) -> Result<()> {
+        self.connection
+            .execute(
+                "UPDATE playlists SET gone = 0, local_id = ?2, local_created = ?3, gone_id = NULL, gone_created = NULL WHERE key = ?1",
+                params![synced.key.0.as_slice(), local.at.id, local.at.created],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        let revived = StoredPlaylist {
+            local: Some(local.at),
+            gone: false,
+            seen: None,
+            ..synced.clone()
+        };
+        self.edited_here(catalog, &revived, local, digest)
+    }
+
+    fn unfinished_write_finished(
+        &mut self,
+        catalog: &dyn Catalog,
+        synced: &StoredPlaylist,
+    ) -> Result<()> {
+        let name = synced.alias.clone().unwrap_or_else(|| synced.name.clone());
+        let written = catalog
+            .write_playlist(None, &name, &synced.entries)
+            .map_err(Error::Catalog)?;
+        self.playlist_written(catalog, synced, &synced.entries, &written)
+    }
+
+    fn playlist_written(
+        &mut self,
+        catalog: &dyn Catalog,
+        synced: &StoredPlaylist,
+        entries: &[Recording],
+        written: &LocalPlaylist,
+    ) -> Result<()> {
+        let here = held_in(catalog, entries, written)?;
+        let alias = (written.name != synced.name).then(|| written.name.clone());
+        self.connection
+            .execute(
+                "UPDATE playlists SET local_id = ?2, local_created = ?3, alias = ?4, entries = ?5, here = ?6, seen = ?7 WHERE key = ?1",
+                params![
+                    synced.key.0.as_slice(),
+                    written.at.id,
+                    written.at.created,
+                    alias,
+                    encoded_recordings(entries),
+                    flags(&here),
+                    projection_digest(&written.name, &written.entries).as_slice()
+                ],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(())
+    }
+
     fn made_here(&mut self, local: &LocalPlaylist, digest: &[u8; DIGEST_BYTES]) -> Result<()> {
-        let key = PlaylistKey::minted()?;
         let entries = local.entries.iter().flatten().cloned().collect::<Vec<_>>();
         let here = vec![true; entries.len()];
         let stamp = self.clock.now(self.device);
+        let key = PlaylistKey::minted_at(stamp)?;
         self.connection
             .execute(
-                "INSERT INTO playlists (key, local_id, local_created, name, entries, here, nanos, stamped_by, owed, seen)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9)",
+                "INSERT INTO playlists (key, local_id, local_created, name, entries, here, nanos, stamped_by, owed, seen, minted_here)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, 1)",
                 params![
                     key.0.as_slice(),
                     local.at.id,
@@ -694,6 +872,23 @@ impl Ledger {
         {
             entries.push((*recording).clone());
             here.push(true);
+        }
+        if entries.len() == synced.entries.len() {
+            let alias = (local.name != synced.name).then(|| local.name.clone());
+            self.connection
+                .execute(
+                    "UPDATE playlists SET local_id = ?2, local_created = ?3, alias = ?4, here = ?5, seen = ?6 WHERE key = ?1",
+                    params![
+                        synced.key.0.as_slice(),
+                        local.at.id,
+                        local.at.created,
+                        alias,
+                        flags(&here),
+                        digest.as_slice()
+                    ],
+                )
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
+            return Ok(());
         }
         let stamp = self.clock.now(self.device);
         self.connection
@@ -794,11 +989,19 @@ impl Ledger {
                 }
                 None if looking == Looking::AtWhatIsHeld => {}
                 None => {
+                    if let Some(at) = stored.iter().enumerate().position(|(at, synced)| {
+                        synced.gone && !still_here[at] && synced.gone_from == Some(local.at)
+                    }) {
+                        still_here[at] = true;
+                        self.query_revived_here(&stored[at], local, &digest)?;
+                        continue;
+                    }
                     if let Some((at, synced)) = stored.iter().enumerate().find(|(at, synced)| {
                         synced.local.is_none()
                             && !synced.gone
                             && !still_here[*at]
-                            && names_alike(&synced.body.name, &local.body.name)
+                            && (names_alike(&synced.body.name, &local.body.name)
+                                || orphaned_by_a_query_write(synced, local))
                     }) {
                         still_here[at] = true;
                         self.query_adopted_here(catalog, synced, local)?;
@@ -812,10 +1015,18 @@ impl Ledger {
         for (at, synced) in stored.iter().enumerate() {
             if synced.local.is_some() && !synced.gone && !still_here[at] {
                 let stamp = self.clock.now(self.device);
+                let gone_from = synced.local;
                 self.connection
                     .execute(
-                        "UPDATE queries SET gone = 1, local_id = NULL, local_created = NULL, nanos = ?2, stamped_by = ?3, owed = 1, seen = NULL WHERE key = ?1",
-                        params![synced.key.0.as_slice(), stamp.nanos, self.device.0.as_slice()],
+                        "UPDATE queries SET gone = 1, local_id = NULL, local_created = NULL, nanos = ?2, stamped_by = ?3, owed = 1, seen = NULL,
+                             gone_id = ?4, gone_created = ?5 WHERE key = ?1",
+                        params![
+                            synced.key.0.as_slice(),
+                            stamp.nanos,
+                            self.device.0.as_slice(),
+                            gone_from.map(|at| at.id),
+                            gone_from.map(|at| at.created)
+                        ],
                     )
                     .map_err(|source| Error::store(StoreOp::Write, source))?;
             }
@@ -823,13 +1034,28 @@ impl Ledger {
         Ok(())
     }
 
-    fn query_made_here(&mut self, local: &LocalQuery, digest: &[u8; DIGEST_BYTES]) -> Result<()> {
-        let key = PlaylistKey::minted()?;
-        let stamp = self.clock.now(self.device);
+    fn query_revived_here(
+        &mut self,
+        synced: &StoredQuery,
+        local: &LocalQuery,
+        digest: &[u8; DIGEST_BYTES],
+    ) -> Result<()> {
         self.connection
             .execute(
-                "INSERT INTO queries (key, local_id, local_created, name, text, sort, reading, max_rows, nanos, stamped_by, owed, seen)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 1, ?11)",
+                "UPDATE queries SET gone = 0, local_id = ?2, local_created = ?3, gone_id = NULL, gone_created = NULL WHERE key = ?1",
+                params![synced.key.0.as_slice(), local.at.id, local.at.created],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        self.query_edited_here(synced, local, digest)
+    }
+
+    fn query_made_here(&mut self, local: &LocalQuery, digest: &[u8; DIGEST_BYTES]) -> Result<()> {
+        let stamp = self.clock.now(self.device);
+        let key = PlaylistKey::minted_at(stamp)?;
+        self.connection
+            .execute(
+                "INSERT INTO queries (key, local_id, local_created, name, text, sort, reading, max_rows, nanos, stamped_by, owed, seen, minted_here)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 1, ?11, 1)",
                 params![
                     key.0.as_slice(),
                     local.at.id,
@@ -1262,7 +1488,9 @@ impl Ledger {
                       + (SELECT count(*) FROM queries WHERE owed = 1)
                       + (SELECT count(*) FROM favourites WHERE owed = 1) + (SELECT count(*) FROM listens WHERE owed = 1)
                       + (SELECT count(*) FROM handoffs WHERE owed = 1)
-                      + (SELECT count(*) FROM answers WHERE owed = 1)",
+                      + (SELECT count(*) FROM answers WHERE owed = 1)
+                      + (SELECT count(*) FROM playlist_folds WHERE owed = 1)
+                      + (SELECT count(*) FROM query_folds WHERE owed = 1)",
                 [],
                 |row| row.get(0),
             )
@@ -1271,7 +1499,7 @@ impl Ledger {
     }
 
     pub fn owed(&self) -> Result<Vec<Vec<Change>>> {
-        let mut changes = Vec::new();
+        let mut changes = self.fold_changes_where("owed = 1")?;
         changes.extend(self.device_changes_where("owed = 1")?);
         changes.extend(
             self.playlist_notes("owed = 1")?
@@ -1303,7 +1531,7 @@ impl Ledger {
     }
 
     pub fn snapshot(&self) -> Result<Vec<Vec<Change>>> {
-        let mut changes = Vec::new();
+        let mut changes = self.fold_changes_where("1")?;
         changes.extend(self.device_changes_where("1")?);
         changes.extend(self.playlist_notes("1")?.into_iter().map(Change::Playlist));
         changes.extend(self.query_notes("1")?.into_iter().map(Change::Query));
@@ -1354,6 +1582,14 @@ impl Ledger {
                     "UPDATE handoffs SET owed = 0 WHERE device = ?1 AND nanos = ?2",
                     params![handoff.device.0.as_slice(), handoff.stamp.nanos],
                 ),
+                Change::PlaylistFolded(folded) => transaction.execute(
+                    "UPDATE playlist_folds SET owed = 0 WHERE folded = ?1 AND kept = ?2",
+                    params![folded.folded.0.as_slice(), folded.into.0.as_slice()],
+                ),
+                Change::QueryFolded(folded) => transaction.execute(
+                    "UPDATE query_folds SET owed = 0 WHERE folded = ?1 AND kept = ?2",
+                    params![folded.folded.0.as_slice(), folded.into.0.as_slice()],
+                ),
                 Change::Answer(note) => {
                     let slot = AnswerSlot::of(&note.recording, &note.answer);
                     transaction.execute(
@@ -1402,9 +1638,19 @@ impl Ledger {
                     false
                 }
                 Change::Answer(note) => self.answer_arrived(catalog, note)?,
+                Change::PlaylistFolded(folded) => {
+                    self.playlist_folded(folded)?;
+                    false
+                }
+                Change::QueryFolded(folded) => {
+                    self.query_folded(folded, false)?;
+                    false
+                }
             };
             applied.changed_here += usize::from(changed);
         }
+        applied.changed_here += self.fold_playlists(catalog)?;
+        applied.changed_here += self.fold_queries(catalog)?;
         self.keep_the_clock()?;
         Ok(applied)
     }
@@ -1530,6 +1776,12 @@ impl Ledger {
         {
             return Ok(false);
         }
+        if let Some(survivor) = self.playlist_folds()?.folds_away(note.key)
+            && stored.as_ref().is_none_or(|stored| stored.gone)
+            && self.stored_playlist(survivor)?.is_some()
+        {
+            return self.folded_note_arrived(catalog, note, survivor);
+        }
 
         let mut local = stored.as_ref().and_then(|stored| stored.local);
         let Some(body) = &note.body else {
@@ -1540,7 +1792,7 @@ impl Ledger {
                 .execute(
                     "INSERT INTO playlists (key, name, entries, here, gone, nanos, stamped_by) VALUES (?1, '', ?2, ?3, 1, ?4, ?5)
                      ON CONFLICT (key) DO UPDATE SET local_id = NULL, local_created = NULL, alias = NULL, entries = ?2, here = ?3,
-                         gone = 1, nanos = ?4, stamped_by = ?5, owed = 0, seen = NULL",
+                         gone = 1, nanos = ?4, stamped_by = ?5, owed = 0, seen = NULL, gone_id = NULL, gone_created = NULL",
                     params![
                         note.key.0.as_slice(),
                         encoded_recordings(&[]),
@@ -1554,24 +1806,44 @@ impl Ledger {
         };
 
         let mut entries = body.entries.clone();
+        let mut namesake = None;
         if local.is_none() {
-            let unmapped = catalog
-                .playlists()
-                .map_err(Error::Catalog)?
-                .into_iter()
-                .filter(|playlist| names_alike(&playlist.name, &body.name))
-                .find(|playlist| !self.maps_local(playlist.at).unwrap_or(true));
-            if let Some(unmapped) = unmapped {
-                local = Some(unmapped.at);
-                let listed = unmapped.entries.iter().flatten().collect::<Vec<_>>();
-                let pairs = paired(catalog, &body.entries.iter().collect::<Vec<_>>(), &listed)?;
-                let left = unpaired(&pairs, listed.len());
-                for (recording, _) in listed
-                    .into_iter()
-                    .zip(left)
-                    .filter(|(_, unpaired)| *unpaired)
-                {
-                    entries.push(recording.clone());
+            if stored.is_none() {
+                self.fold_a_namesake_made_apart(note.key, body)?;
+            }
+            namesake = self.namesake_folded_into(note.key)?;
+            if let Some(namesake) = &namesake {
+                self.fold_tombstoned(namesake)?;
+                local = namesake.local;
+                entries = absorbed(&body.entries, &namesake.entries);
+            } else {
+                let pending = stored
+                    .as_ref()
+                    .filter(|stored| !stored.gone && stored.local.is_none());
+                let mut unmapped = None;
+                for playlist in catalog.playlists().map_err(Error::Catalog)? {
+                    let alike = names_alike(&playlist.name, &body.name)
+                        || match pending {
+                            Some(pending) => orphaned_by_a_write(catalog, pending, &playlist)?,
+                            None => false,
+                        };
+                    if alike && !self.maps_local(playlist.at)? {
+                        unmapped = Some(playlist);
+                        break;
+                    }
+                }
+                if let Some(unmapped) = unmapped {
+                    local = Some(unmapped.at);
+                    let listed = unmapped.entries.iter().flatten().collect::<Vec<_>>();
+                    let pairs = paired(catalog, &body.entries.iter().collect::<Vec<_>>(), &listed)?;
+                    let left = unpaired(&pairs, listed.len());
+                    for (recording, _) in listed
+                        .into_iter()
+                        .zip(left)
+                        .filter(|(_, unpaired)| *unpaired)
+                    {
+                        entries.push(recording.clone());
+                    }
                 }
             }
         }
@@ -1587,6 +1859,23 @@ impl Ledger {
             }
             _ => body.name.clone(),
         };
+        if local.is_none() {
+            self.connection
+                .execute(
+                    "INSERT INTO playlists (key, name, entries, here, gone, nanos, stamped_by) VALUES (?1, ?2, ?3, ?4, 0, ?5, ?6)
+                     ON CONFLICT (key) DO UPDATE SET local_id = NULL, local_created = NULL, name = ?2, alias = NULL, entries = ?3,
+                         here = ?4, gone = 0, nanos = ?5, stamped_by = ?6, owed = 0, seen = NULL, gone_id = NULL, gone_created = NULL",
+                    params![
+                        note.key.0.as_slice(),
+                        body.name,
+                        encoded_recordings(&entries),
+                        flags(&vec![false; entries.len()]),
+                        note.stamp.nanos,
+                        note.stamp.device.0.as_slice()
+                    ],
+                )
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
+        }
         let written = catalog
             .write_playlist(local, &wanted_name, &entries)
             .map_err(Error::Catalog)?;
@@ -1604,7 +1893,7 @@ impl Ledger {
                 "INSERT INTO playlists (key, local_id, local_created, name, alias, entries, here, gone, nanos, stamped_by, owed, seen)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8, ?9, ?10, ?11)
                  ON CONFLICT (key) DO UPDATE SET local_id = ?2, local_created = ?3, name = ?4, alias = ?5, entries = ?6, here = ?7,
-                     gone = 0, nanos = ?8, stamped_by = ?9, owed = ?10, seen = ?11",
+                     gone = 0, nanos = ?8, stamped_by = ?9, owed = ?10, seen = ?11, gone_id = NULL, gone_created = NULL",
                 params![
                     note.key.0.as_slice(),
                     written.at.id,
@@ -1620,7 +1909,360 @@ impl Ledger {
                 ],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
+        if namesake.is_some_and(|namesake| namesake.keep_songs) {
+            self.songs_kept_for(note.key)?;
+        }
         Ok(true)
+    }
+
+    fn fold_a_namesake_made_apart(&mut self, key: PlaylistKey, body: &PlaylistBody) -> Result<()> {
+        let folds = self.playlist_folds()?;
+        let made_apart = self
+            .stored_playlists_where("gone = 0 AND local_id IS NOT NULL")?
+            .into_iter()
+            .find(|made| {
+                made.minted_here
+                    && made.key != key
+                    && names_alike(&made.name, &body.name)
+                    && made.key.minted_after(&key)
+                    && folds.folds_away(made.key).is_none()
+            });
+        if let Some(made) = made_apart {
+            self.playlist_folded(&PlaylistFolded {
+                folded: made.key,
+                into: key,
+                entries: made.entries,
+            })?;
+            self.connection
+                .execute(
+                    "UPDATE playlist_folds SET absorbed = 1, owed = 1 WHERE folded = ?1 AND kept = ?2",
+                    params![made.key.0.as_slice(), key.0.as_slice()],
+                )
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
+        }
+        Ok(())
+    }
+
+    fn namesake_folded_into(&self, key: PlaylistKey) -> Result<Option<StoredPlaylist>> {
+        let folds = self.playlist_folds()?;
+        Ok(self
+            .stored_playlists_where("gone = 0 AND local_id IS NOT NULL")?
+            .into_iter()
+            .find(|namesake| folds.folds_away(namesake.key) == Some(key)))
+    }
+
+    fn folded_note_arrived(
+        &mut self,
+        catalog: &dyn Catalog,
+        note: &PlaylistNote,
+        survivor: PlaylistKey,
+    ) -> Result<bool> {
+        let changed = match &note.body {
+            Some(body) => self.absorbed_into(catalog, survivor, &body.entries)?,
+            None => false,
+        };
+        let (name, entries) = note
+            .body
+            .as_ref()
+            .map_or((String::new(), Vec::new()), |body| {
+                (body.name.clone(), body.entries.clone())
+            });
+        self.connection
+            .execute(
+                "INSERT INTO playlists (key, name, entries, here, gone, nanos, stamped_by) VALUES (?1, ?2, ?3, ?4, 1, ?5, ?6)
+                 ON CONFLICT (key) DO UPDATE SET nanos = ?5, stamped_by = ?6, owed = 0",
+                params![
+                    note.key.0.as_slice(),
+                    name,
+                    encoded_recordings(&entries),
+                    flags(&vec![false; entries.len()]),
+                    note.stamp.nanos,
+                    note.stamp.device.0.as_slice()
+                ],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(changed)
+    }
+
+    fn fold_playlists(&mut self, catalog: &dyn Catalog) -> Result<usize> {
+        let folds = self.playlist_folds()?;
+        let mut changed = 0;
+        for folded in self.stored_playlists_where("gone = 0")? {
+            let Some(survivor) = folds.folds_away(folded.key) else {
+                continue;
+            };
+            let Some(survivor) = self.stored_playlist(survivor)? else {
+                continue;
+            };
+            self.folded_into(catalog, &folded, &survivor)?;
+            changed += 1;
+        }
+        for fold in self.unabsorbed_playlist_folds()? {
+            let survivor = folds.survivor_of(fold.into).unwrap_or(fold.into);
+            if self.stored_playlist(survivor)?.is_none() {
+                continue;
+            }
+            changed += usize::from(self.absorbed_into(catalog, survivor, &fold.entries)?);
+            self.connection
+                .execute(
+                    "UPDATE playlist_folds SET absorbed = 1 WHERE folded = ?1 AND kept = ?2",
+                    params![fold.folded.0.as_slice(), fold.into.0.as_slice()],
+                )
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
+        }
+        Ok(changed)
+    }
+
+    fn folded_into(
+        &mut self,
+        catalog: &dyn Catalog,
+        folded: &StoredPlaylist,
+        survivor: &StoredPlaylist,
+    ) -> Result<()> {
+        if survivor.gone {
+            if let Some(at) = folded.local {
+                catalog.remove_playlist(at).map_err(Error::Catalog)?;
+            }
+            return self.fold_tombstoned(folded);
+        }
+        let entries = absorbed(&survivor.entries, &folded.entries);
+        let grew = entries.len() > survivor.entries.len();
+        let keeps_the_folded = folded.local.is_some()
+            && (survivor.local.is_none() || (survivor.alias.is_some() && folded.alias.is_none()));
+        self.fold_tombstoned(folded)?;
+        let written_into = if keeps_the_folded {
+            if let Some(at) = survivor.local {
+                catalog.remove_playlist(at).map_err(Error::Catalog)?;
+            }
+            folded.local
+        } else {
+            if let Some(at) = folded.local {
+                catalog.remove_playlist(at).map_err(Error::Catalog)?;
+            }
+            survivor.local.filter(|_| grew)
+        };
+        if grew || written_into.is_some() {
+            self.survivor_rewritten(catalog, survivor, written_into, &entries, grew)?;
+        }
+        if folded.keep_songs {
+            self.songs_kept_for(survivor.key)?;
+        }
+        Ok(())
+    }
+
+    fn absorbed_into(
+        &mut self,
+        catalog: &dyn Catalog,
+        survivor: PlaylistKey,
+        extra: &[Recording],
+    ) -> Result<bool> {
+        let Some(survivor) = self.stored_playlist(survivor)?.filter(|kept| !kept.gone) else {
+            return Ok(false);
+        };
+        let entries = absorbed(&survivor.entries, extra);
+        if entries.len() == survivor.entries.len() {
+            return Ok(false);
+        }
+        self.survivor_rewritten(catalog, &survivor, survivor.local, &entries, true)?;
+        Ok(true)
+    }
+
+    fn survivor_rewritten(
+        &mut self,
+        catalog: &dyn Catalog,
+        survivor: &StoredPlaylist,
+        written_into: Option<LocalPlaylistId>,
+        entries: &[Recording],
+        restamped: bool,
+    ) -> Result<()> {
+        let (local, alias, here, seen) = match written_into {
+            Some(at) => {
+                let name = match &survivor.alias {
+                    Some(alias) if survivor.local == Some(at) => alias.clone(),
+                    _ => survivor.name.clone(),
+                };
+                let written = catalog
+                    .write_playlist(Some(at), &name, entries)
+                    .map_err(Error::Catalog)?;
+                (
+                    Some(written.at),
+                    (written.name != survivor.name).then(|| written.name.clone()),
+                    held_in(catalog, entries, &written)?,
+                    Some(projection_digest(&written.name, &written.entries).to_vec()),
+                )
+            }
+            None => {
+                let mut here = survivor.here.clone();
+                here.resize(entries.len(), false);
+                (
+                    survivor.local,
+                    survivor.alias.clone(),
+                    here,
+                    survivor.seen.clone(),
+                )
+            }
+        };
+        let stamp = restamped.then(|| self.clock.now(self.device));
+        self.connection
+            .execute(
+                "UPDATE playlists SET local_id = ?2, local_created = ?3, alias = ?4, entries = ?5, here = ?6, seen = ?7,
+                     nanos = coalesce(?8, nanos), stamped_by = coalesce(?9, stamped_by), owed = max(owed, ?10) WHERE key = ?1",
+                params![
+                    survivor.key.0.as_slice(),
+                    local.map(|at| at.id),
+                    local.map(|at| at.created),
+                    alias,
+                    encoded_recordings(entries),
+                    flags(&here),
+                    seen,
+                    stamp.map(|stamp| stamp.nanos),
+                    stamp.map(|stamp| stamp.device.0.to_vec()),
+                    restamped
+                ],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(())
+    }
+
+    fn fold_tombstoned(&mut self, folded: &StoredPlaylist) -> Result<()> {
+        self.connection
+            .execute(
+                "UPDATE playlists SET gone = 1, local_id = NULL, local_created = NULL, alias = NULL, seen = NULL,
+                     gone_id = NULL, gone_created = NULL, nanos = ?2, stamped_by = ?3, owed = 1 WHERE key = ?1",
+                params![
+                    folded.key.0.as_slice(),
+                    folded.stamp.nanos.saturating_add(1),
+                    self.device.0.as_slice()
+                ],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(())
+    }
+
+    fn songs_kept_for(&mut self, key: PlaylistKey) -> Result<()> {
+        self.connection
+            .execute(
+                "UPDATE playlists SET keep_songs = 1 WHERE key = ?1",
+                params![key.0.as_slice()],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(())
+    }
+
+    fn playlist_folded(&mut self, folded: &PlaylistFolded) -> Result<()> {
+        self.connection
+            .execute(
+                "INSERT INTO playlist_folds (folded, kept, entries) VALUES (?1, ?2, ?3) ON CONFLICT (folded, kept) DO NOTHING",
+                params![
+                    folded.folded.0.as_slice(),
+                    folded.into.0.as_slice(),
+                    encoded_recordings(&folded.entries)
+                ],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(())
+    }
+
+    fn query_folded(&mut self, folded: &QueryFolded, owed: bool) -> Result<()> {
+        self.connection
+            .execute(
+                "INSERT INTO query_folds (folded, kept, owed) VALUES (?1, ?2, ?3) ON CONFLICT (folded, kept) DO NOTHING",
+                params![folded.folded.0.as_slice(), folded.into.0.as_slice(), owed],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(())
+    }
+
+    fn playlist_folds(&self) -> Result<Folds> {
+        Ok(Folds::of(
+            self.playlist_folds_where("1")?
+                .into_iter()
+                .map(|fold| (fold.folded, fold.into)),
+        ))
+    }
+
+    fn unabsorbed_playlist_folds(&self) -> Result<Vec<PlaylistFold>> {
+        self.playlist_folds_where("absorbed = 0")
+    }
+
+    fn playlist_folds_where(&self, condition: &str) -> Result<Vec<PlaylistFold>> {
+        let mut statement = self
+            .connection
+            .prepare(&format!(
+                "SELECT folded, kept, entries FROM playlist_folds WHERE {condition}"
+            ))
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, Vec<u8>>(0)?,
+                    row.get::<_, Vec<u8>>(1)?,
+                    row.get::<_, Vec<u8>>(2)?,
+                ))
+            })
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        let mut folds = Vec::new();
+        for row in rows {
+            let (folded, into, entries) =
+                row.map_err(|source| Error::store(StoreOp::Read, source))?;
+            folds.push(PlaylistFold {
+                folded: playlist_key_from(&folded),
+                into: playlist_key_from(&into),
+                entries: decoded_recordings(&entries)?,
+            });
+        }
+        Ok(folds)
+    }
+
+    fn query_folds(&self) -> Result<Folds> {
+        Ok(Folds::of(
+            self.query_folds_where("1")?
+                .into_iter()
+                .map(|fold| (fold.folded, fold.into)),
+        ))
+    }
+
+    fn query_folds_where(&self, condition: &str) -> Result<Vec<QueryFolded>> {
+        let mut statement = self
+            .connection
+            .prepare(&format!(
+                "SELECT folded, kept FROM query_folds WHERE {condition}"
+            ))
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?))
+            })
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        let mut folds = Vec::new();
+        for row in rows {
+            let (folded, into) = row.map_err(|source| Error::store(StoreOp::Read, source))?;
+            folds.push(QueryFolded {
+                folded: playlist_key_from(&folded),
+                into: playlist_key_from(&into),
+            });
+        }
+        Ok(folds)
+    }
+
+    fn fold_changes_where(&self, condition: &str) -> Result<Vec<Change>> {
+        let mut changes = self
+            .playlist_folds_where(condition)?
+            .into_iter()
+            .map(|fold| {
+                Change::PlaylistFolded(PlaylistFolded {
+                    folded: fold.folded,
+                    into: fold.into,
+                    entries: fold.entries,
+                })
+            })
+            .collect::<Vec<_>>();
+        changes.extend(
+            self.query_folds_where(condition)?
+                .into_iter()
+                .map(Change::QueryFolded),
+        );
+        Ok(changes)
     }
 
     fn query_arrived(&mut self, catalog: &dyn Catalog, note: &QueryNote) -> Result<bool> {
@@ -1629,6 +2271,22 @@ impl Ledger {
             .as_ref()
             .is_some_and(|stored| stored.stamp >= note.stamp)
         {
+            return Ok(false);
+        }
+        if self.query_folds()?.folds_away(note.key).is_some()
+            && stored.as_ref().is_none_or(|stored| stored.gone)
+        {
+            self.connection
+                .execute(
+                    "INSERT INTO queries (key, name, gone, nanos, stamped_by) VALUES (?1, '', 1, ?2, ?3)
+                     ON CONFLICT (key) DO UPDATE SET nanos = ?2, stamped_by = ?3, owed = 0",
+                    params![
+                        note.key.0.as_slice(),
+                        note.stamp.nanos,
+                        note.stamp.device.0.as_slice()
+                    ],
+                )
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
             return Ok(false);
         }
 
@@ -1641,7 +2299,7 @@ impl Ledger {
                 .execute(
                     "INSERT INTO queries (key, name, gone, nanos, stamped_by) VALUES (?1, '', 1, ?2, ?3)
                      ON CONFLICT (key) DO UPDATE SET local_id = NULL, local_created = NULL, alias = NULL, text = NULL,
-                         gone = 1, nanos = ?2, stamped_by = ?3, owed = 0, seen = NULL",
+                         gone = 1, nanos = ?2, stamped_by = ?3, owed = 0, seen = NULL, gone_id = NULL, gone_created = NULL",
                     params![
                         note.key.0.as_slice(),
                         note.stamp.nanos,
@@ -1654,14 +2312,36 @@ impl Ledger {
 
         let mut written = None;
         if catalog.keeps_queries() {
+            let mut folding = None;
             if local.is_none() {
-                local = catalog
-                    .queries()
-                    .map_err(Error::Catalog)?
-                    .into_iter()
-                    .filter(|query| names_alike(&query.body.name, &body.name))
-                    .find(|query| !self.maps_local_query(query.at).unwrap_or(true))
-                    .map(|query| query.at);
+                if stored.is_none() {
+                    folding = self.query_namesake_made_apart(note.key, body)?;
+                }
+                if folding.is_none() {
+                    folding = self
+                        .query_namesake_folded_into(note.key)?
+                        .map(|namesake| (namesake, false));
+                }
+                local = match &folding {
+                    Some((namesake, _)) => namesake.local,
+                    None => {
+                        let pending = stored
+                            .as_ref()
+                            .filter(|stored| !stored.gone && stored.local.is_none());
+                        let mut unmapped = None;
+                        for query in catalog.queries().map_err(Error::Catalog)? {
+                            let alike = names_alike(&query.body.name, &body.name)
+                                || pending.is_some_and(|pending| {
+                                    orphaned_by_a_query_write(pending, &query)
+                                });
+                            if alike && !self.maps_local_query(query.at)? {
+                                unmapped = Some(query.at);
+                                break;
+                            }
+                        }
+                        unmapped
+                    }
+                };
             }
             let aliased = stored
                 .as_ref()
@@ -1674,11 +2354,28 @@ impl Ledger {
                 },
                 None => body.clone(),
             };
+            if local.is_none() {
+                self.query_pending(note, body)?;
+            }
             written = match catalog.write_query(local, &wanted) {
                 Ok(written) => Some(written),
                 Err(Refused::Unwritable) => None,
                 Err(refused) => return Err(Error::Catalog(refused)),
             };
+            if written.is_some()
+                && let Some((namesake, made_apart)) = folding
+            {
+                if made_apart {
+                    self.query_folded(
+                        &QueryFolded {
+                            folded: namesake.key,
+                            into: note.key,
+                        },
+                        true,
+                    )?;
+                }
+                self.query_fold_tombstoned(&namesake)?;
+            }
         }
 
         let alias = written
@@ -1691,7 +2388,8 @@ impl Ledger {
                 "INSERT INTO queries (key, local_id, local_created, name, alias, text, sort, reading, max_rows, gone, nanos, stamped_by, owed, seen)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, ?10, ?11, 0, ?12)
                  ON CONFLICT (key) DO UPDATE SET local_id = ?2, local_created = ?3, name = ?4, alias = ?5, text = ?6, sort = ?7,
-                     reading = ?8, max_rows = ?9, gone = 0, nanos = ?10, stamped_by = ?11, owed = 0, seen = ?12",
+                     reading = ?8, max_rows = ?9, gone = 0, nanos = ?10, stamped_by = ?11, owed = 0, seen = ?12,
+                     gone_id = NULL, gone_created = NULL",
                 params![
                     note.key.0.as_slice(),
                     written.as_ref().map(|written| written.at.id),
@@ -1709,6 +2407,126 @@ impl Ledger {
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         Ok(written.is_some())
+    }
+
+    fn query_pending(&mut self, note: &QueryNote, body: &QueryBody) -> Result<()> {
+        self.connection
+            .execute(
+                "INSERT INTO queries (key, name, text, sort, reading, max_rows, gone, nanos, stamped_by) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, ?8)
+                 ON CONFLICT (key) DO UPDATE SET local_id = NULL, local_created = NULL, name = ?2, alias = NULL, text = ?3, sort = ?4,
+                     reading = ?5, max_rows = ?6, gone = 0, nanos = ?7, stamped_by = ?8, owed = 0, seen = NULL,
+                     gone_id = NULL, gone_created = NULL",
+                params![
+                    note.key.0.as_slice(),
+                    body.name,
+                    body.text,
+                    body.sort,
+                    body.reading,
+                    body.rows,
+                    note.stamp.nanos,
+                    note.stamp.device.0.as_slice()
+                ],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(())
+    }
+
+    fn query_namesake_made_apart(
+        &self,
+        key: PlaylistKey,
+        body: &QueryBody,
+    ) -> Result<Option<(StoredQuery, bool)>> {
+        let folds = self.query_folds()?;
+        Ok(self
+            .stored_queries_where("gone = 0 AND local_id IS NOT NULL")?
+            .into_iter()
+            .find(|made| {
+                made.minted_here
+                    && made.key != key
+                    && names_alike(&made.body.name, &body.name)
+                    && made.key.minted_after(&key)
+                    && folds.folds_away(made.key).is_none()
+            })
+            .map(|made| (made, true)))
+    }
+
+    fn query_namesake_folded_into(&self, key: PlaylistKey) -> Result<Option<StoredQuery>> {
+        let folds = self.query_folds()?;
+        Ok(self
+            .stored_queries_where("gone = 0 AND local_id IS NOT NULL")?
+            .into_iter()
+            .find(|namesake| folds.folds_away(namesake.key) == Some(key)))
+    }
+
+    fn fold_queries(&mut self, catalog: &dyn Catalog) -> Result<usize> {
+        if !catalog.keeps_queries() {
+            return Ok(0);
+        }
+        let folds = self.query_folds()?;
+        let mut changed = 0;
+        for folded in self.stored_queries_where("gone = 0")? {
+            let Some(survivor) = folds.folds_away(folded.key) else {
+                continue;
+            };
+            let Some(survivor) = self.stored_query(survivor)? else {
+                continue;
+            };
+            let keeps_the_folded = !survivor.gone
+                && folded.local.is_some()
+                && (survivor.local.is_none()
+                    || (survivor.alias.is_some() && folded.alias.is_none()));
+            if keeps_the_folded {
+                if let Some(at) = survivor.local {
+                    catalog.remove_playlist(at).map_err(Error::Catalog)?;
+                }
+                let written = match catalog.write_query(folded.local, &survivor.body) {
+                    Ok(written) => written,
+                    Err(Refused::Unwritable) => continue,
+                    Err(refused) => return Err(Error::Catalog(refused)),
+                };
+                self.query_fold_tombstoned(&folded)?;
+                self.query_written(&survivor, &written)?;
+            } else {
+                if let Some(at) = folded.local {
+                    catalog.remove_playlist(at).map_err(Error::Catalog)?;
+                }
+                self.query_fold_tombstoned(&folded)?;
+            }
+            changed += 1;
+        }
+        Ok(changed)
+    }
+
+    fn query_written(&mut self, synced: &StoredQuery, written: &LocalQuery) -> Result<()> {
+        let alias = (written.body.name != synced.body.name).then(|| written.body.name.clone());
+        self.connection
+            .execute(
+                "UPDATE queries SET local_id = ?2, local_created = ?3, alias = ?4, seen = ?5 WHERE key = ?1",
+                params![
+                    synced.key.0.as_slice(),
+                    written.at.id,
+                    written.at.created,
+                    alias,
+                    query_digest(&written.body).as_slice()
+                ],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(())
+    }
+
+    fn query_fold_tombstoned(&mut self, folded: &StoredQuery) -> Result<()> {
+        self.connection
+            .execute(
+                "UPDATE queries SET gone = 1, local_id = NULL, local_created = NULL, alias = NULL, seen = NULL,
+                     gone_id = NULL, gone_created = NULL, nanos = ?2, stamped_by = ?3, owed = 1 WHERE key = ?1",
+                params![
+                    folded.key.0.as_slice(),
+                    folded.stamp.nanos.saturating_add(1),
+                    self.device.0.as_slice()
+                ],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(())
     }
 
     fn maps_local_query(&self, at: LocalPlaylistId) -> Result<bool> {
@@ -2084,24 +2902,36 @@ impl Ledger {
         if !catalog.keeps_queries() {
             return Ok(0);
         }
+        let mut settled = self.fold_queries(catalog)?;
         let unwritten = self.stored_queries_where("local_id IS NULL AND gone = 0")?;
         if unwritten.is_empty() {
-            return Ok(0);
+            return Ok(settled);
         }
 
+        let folds = self.query_folds()?;
         let mut locals = catalog.queries().map_err(Error::Catalog)?;
-        let mut settled = 0;
         for stored in unwritten {
+            if folds.folds_away(stored.key).is_some() {
+                continue;
+            }
             let mut alike = None;
             for (at, local) in locals.iter().enumerate() {
-                if names_alike(&local.body.name, &stored.body.name)
+                if (names_alike(&local.body.name, &stored.body.name)
+                    || orphaned_by_a_query_write(&stored, local))
                     && !self.maps_local_query(local.at)?
                 {
                     alike = Some(at);
                     break;
                 }
             }
-            let adopted = alike.map(|at| locals.remove(at).at);
+            let mut adopted = alike.map(|at| locals.remove(at).at);
+            let made_unseen = match adopted {
+                Some(_) => None,
+                None => self.made_beside_an_unwritten(&stored, &folds)?,
+            };
+            if let Some(made) = &made_unseen {
+                adopted = made.local;
+            }
             let wanted = QueryBody {
                 name: stored
                     .alias
@@ -2114,22 +2944,36 @@ impl Ledger {
                 Err(Refused::Unwritable) => continue,
                 Err(refused) => return Err(Error::Catalog(refused)),
             };
-            let alias = (written.body.name != stored.body.name).then(|| written.body.name.clone());
-            self.connection
-                .execute(
-                    "UPDATE queries SET local_id = ?2, local_created = ?3, alias = ?4, seen = ?5 WHERE key = ?1",
-                    params![
-                        stored.key.0.as_slice(),
-                        written.at.id,
-                        written.at.created,
-                        alias,
-                        query_digest(&written.body).as_slice()
-                    ],
-                )
-                .map_err(|source| Error::store(StoreOp::Write, source))?;
+            if let Some(made) = &made_unseen {
+                self.query_folded(
+                    &QueryFolded {
+                        folded: made.key,
+                        into: stored.key,
+                    },
+                    true,
+                )?;
+                self.query_fold_tombstoned(made)?;
+            }
+            self.query_written(&stored, &written)?;
             settled += 1;
         }
         Ok(settled)
+    }
+
+    fn made_beside_an_unwritten(
+        &self,
+        unwritten: &StoredQuery,
+        folds: &Folds,
+    ) -> Result<Option<StoredQuery>> {
+        Ok(self
+            .stored_queries_where("gone = 0 AND local_id IS NOT NULL")?
+            .into_iter()
+            .find(|made| {
+                made.minted_here
+                    && made.key != unwritten.key
+                    && names_alike(&made.body.name, &unwritten.body.name)
+                    && folds.survivor_of(made.key).is_none()
+            }))
     }
 
     fn favoured(&self) -> Result<Vec<Recording>> {
@@ -2461,7 +3305,8 @@ impl Ledger {
         let mut statement = self
             .connection
             .prepare(&format!(
-                "SELECT key, local_id, local_created, name, alias, text, sort, reading, max_rows, gone, nanos, stamped_by, seen
+                "SELECT key, local_id, local_created, name, alias, text, sort, reading, max_rows, gone, nanos, stamped_by, seen,
+                        minted_here, gone_id, gone_created
                  FROM queries WHERE {condition}"
             ))
             .map_err(|source| Error::store(StoreOp::Read, source))?;
@@ -2481,13 +3326,32 @@ impl Ledger {
                     row.get::<_, i64>(10)?,
                     row.get::<_, Vec<u8>>(11)?,
                     row.get::<_, Option<Vec<u8>>>(12)?,
+                    row.get::<_, bool>(13)?,
+                    row.get::<_, Option<i64>>(14)?,
+                    row.get::<_, Option<i64>>(15)?,
                 ))
             })
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let mut queries = Vec::new();
         for row in rows {
-            let (key, id, created, name, alias, text, sort, reading, rows, gone, nanos, by, seen) =
-                row.map_err(|source| Error::store(StoreOp::Read, source))?;
+            let (
+                key,
+                id,
+                created,
+                name,
+                alias,
+                text,
+                sort,
+                reading,
+                rows,
+                gone,
+                nanos,
+                by,
+                seen,
+                minted_here,
+                gone_id,
+                gone_created,
+            ) = row.map_err(|source| Error::store(StoreOp::Read, source))?;
             queries.push(StoredQuery {
                 key: playlist_key_from(&key),
                 local: id
@@ -2507,6 +3371,8 @@ impl Ledger {
                     device: device_from(&by),
                 },
                 seen,
+                minted_here,
+                gone_from: local_of(gone_id, gone_created),
             });
         }
         Ok(queries)
@@ -2603,7 +3469,8 @@ impl Ledger {
         let mut statement = self
             .connection
             .prepare(&format!(
-                "SELECT key, local_id, local_created, name, alias, entries, here, gone, nanos, stamped_by, seen
+                "SELECT key, local_id, local_created, name, alias, entries, here, gone, nanos, stamped_by, seen,
+                        minted_here, gone_id, gone_created, keep_songs
                  FROM playlists WHERE {condition}"
             ))
             .map_err(|source| Error::store(StoreOp::Read, source))?;
@@ -2621,13 +3488,32 @@ impl Ledger {
                     row.get::<_, i64>(8)?,
                     row.get::<_, Vec<u8>>(9)?,
                     row.get::<_, Option<Vec<u8>>>(10)?,
+                    row.get::<_, bool>(11)?,
+                    row.get::<_, Option<i64>>(12)?,
+                    row.get::<_, Option<i64>>(13)?,
+                    row.get::<_, bool>(14)?,
                 ))
             })
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let mut playlists = Vec::new();
         for row in rows {
-            let (key, id, created, name, alias, entries, here, gone, nanos, by, seen) =
-                row.map_err(|source| Error::store(StoreOp::Read, source))?;
+            let (
+                key,
+                id,
+                created,
+                name,
+                alias,
+                entries,
+                here,
+                gone,
+                nanos,
+                by,
+                seen,
+                minted_here,
+                gone_id,
+                gone_created,
+                keep_songs,
+            ) = row.map_err(|source| Error::store(StoreOp::Read, source))?;
             let entries = decoded_recordings(&entries)?;
             let mut here = here.into_iter().map(|held| held != 0).collect::<Vec<_>>();
             here.resize(entries.len(), false);
@@ -2646,6 +3532,9 @@ impl Ledger {
                     device: device_from(&by),
                 },
                 seen,
+                minted_here,
+                gone_from: local_of(gone_id, gone_created),
+                keep_songs,
             });
         }
         Ok(playlists)
@@ -2691,6 +3580,31 @@ fn as_synced(
     Ok(entries)
 }
 
+fn orphaned_by_a_write(
+    catalog: &dyn Catalog,
+    synced: &StoredPlaylist,
+    local: &LocalPlaylist,
+) -> Result<bool> {
+    let wanted = synced.alias.as_deref().unwrap_or(&synced.name);
+    if !named_as_a_free_alias_of(wanted, &local.name) {
+        return Ok(false);
+    }
+    let listed = local.entries.iter().flatten().collect::<Vec<_>>();
+    let pairs = paired(catalog, &synced.entries.iter().collect::<Vec<_>>(), &listed)?;
+    Ok(unpaired(&pairs, listed.len())
+        .iter()
+        .all(|unpaired| !unpaired))
+}
+
+fn orphaned_by_a_query_write(synced: &StoredQuery, local: &LocalQuery) -> bool {
+    let wanted = synced.alias.as_deref().unwrap_or(&synced.body.name);
+    named_as_a_free_alias_of(wanted, &local.body.name)
+        && QueryBody {
+            name: local.body.name.clone(),
+            ..synced.body.clone()
+        } == local.body
+}
+
 fn unpaired(pairs: &[Option<usize>], listed: usize) -> Vec<bool> {
     let mut unpaired = vec![true; listed];
     for at in pairs.iter().flatten() {
@@ -2730,6 +3644,11 @@ fn paired(
         }
     }
     Ok(pairs)
+}
+
+fn local_of(id: Option<i64>, created: Option<i64>) -> Option<LocalPlaylistId> {
+    id.zip(created)
+        .map(|(id, created)| LocalPlaylistId { id, created })
 }
 
 fn bundled(changes: Vec<Change>) -> Vec<Vec<Change>> {
@@ -2858,5 +3777,45 @@ mod tests {
 
         assert!(waiting.is_empty());
         assert_eq!(forgotten, [song]);
+    }
+
+    #[test]
+    fn a_ledger_of_before_namesakes_were_folded_gains_the_folds_and_takes_what_it_stamped_as_made_here()
+     {
+        let connection = Connection::open_in_memory().expect("a connection");
+        connection
+            .execute_batch(&format!(
+                "{V1}{ANSWERS_TRAVEL}{SONGS_REFUSED_ARE_REMEMBERED}"
+            ))
+            .expect("the ledger of before");
+        connection
+            .execute(
+                "INSERT INTO state (id, device) VALUES (1, ?1)",
+                params![[3_u8; 16].as_slice()],
+            )
+            .expect("a state row");
+        for (key, by) in [([1_u8; 16], [3_u8; 16]), ([2_u8; 16], [4_u8; 16])] {
+            connection
+                .execute(
+                    "INSERT INTO queries (key, name, nanos, stamped_by) VALUES (?1, 'Top', 1, ?2)",
+                    params![key.as_slice(), by.as_slice()],
+                )
+                .expect("a query row");
+        }
+        connection
+            .pragma_update(None, "user_version", 3)
+            .expect("stamped");
+
+        let ledger = Ledger::over(connection).expect("carried forward");
+        let made_here = ledger
+            .stored_queries()
+            .expect("queries")
+            .into_iter()
+            .filter(|query| query.minted_here)
+            .map(|query| query.key)
+            .collect::<Vec<_>>();
+
+        assert_eq!(made_here, [PlaylistKey([1; 16])]);
+        assert!(ledger.fold_changes_where("1").expect("folds").is_empty());
     }
 }
