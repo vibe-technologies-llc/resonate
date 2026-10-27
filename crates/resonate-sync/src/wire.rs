@@ -15,7 +15,8 @@ use crate::{
     catalog::{Held, SongTags},
     change::{
         AnswerNote, Change, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, Listen, Platform,
-        PlaylistBody, PlaylistKey, PlaylistNote, QueryBody, QueryNote, Stamp,
+        PlaylistBody, PlaylistFolded, PlaylistKey, PlaylistNote, QueryBody, QueryFolded, QueryNote,
+        Stamp,
     },
     key::{DEVICE_BYTES, SPACE_BYTES, TOKEN_BYTES},
     seal::SEALED_AT_LEAST,
@@ -1547,6 +1548,20 @@ pub fn encoded_change(change: &Change) -> Vec<u8> {
             writer.stamp(note.stamp);
             writer.answer(&note.answer);
         }
+        Change::PlaylistFolded(folded) => {
+            writer.byte(8);
+            writer.fixed(&folded.folded.0);
+            writer.fixed(&folded.into.0);
+            writer.length(folded.entries.len());
+            for entry in &folded.entries {
+                writer.recording(entry);
+            }
+        }
+        Change::QueryFolded(folded) => {
+            writer.byte(9);
+            writer.fixed(&folded.folded.0);
+            writer.fixed(&folded.into.0);
+        }
     }
     writer.finish()
 }
@@ -1673,6 +1688,24 @@ fn decoded_change(bytes: &[u8], answers: &[u8]) -> Result<Option<Change>> {
                 answer,
             })
         }
+        8 => {
+            let folded = PlaylistKey(reader.fixed()?);
+            let into = PlaylistKey(reader.fixed()?);
+            let count = reader.count()?;
+            let mut entries = Vec::with_capacity(count);
+            for _ in 0..count {
+                entries.push(reader.recording()?);
+            }
+            Change::PlaylistFolded(PlaylistFolded {
+                folded,
+                into,
+                entries,
+            })
+        }
+        9 => Change::QueryFolded(QueryFolded {
+            folded: PlaylistKey(reader.fixed()?),
+            into: PlaylistKey(reader.fixed()?),
+        }),
         _ => return Ok(None),
     };
     reader.done()?;
@@ -2232,6 +2265,15 @@ mod tests {
                 recording: song("Echoes"),
                 stamp: stamp(),
                 answer: studied(),
+            }),
+            Change::PlaylistFolded(PlaylistFolded {
+                folded: PlaylistKey([8; 16]),
+                into: PlaylistKey([2; 16]),
+                entries: vec![song("Fearless")],
+            }),
+            Change::QueryFolded(QueryFolded {
+                folded: PlaylistKey([9; 16]),
+                into: PlaylistKey([5; 16]),
             }),
         ];
 

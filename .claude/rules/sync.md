@@ -69,7 +69,11 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   snapshot carry them to a device joining from the server alone
   (`saved_queries_compacted_away_by_a_build_without_them_are_told_to_the_server_again`). Its own is
   the `Compacted` whose `through` is the one it asked (`Link::compacting`, `compacted_by_another`):
-  another device's arriving while its own waits is another's, and its own still waits.
+  another device's arriving while its own waits is another's, and its own still waits. **Two
+  namesakes made apart folding into one is a change of its own**: `Change::PlaylistFolded` (wire
+  tag 8: the folded key, the key it went into, the folded playlist's entries) and
+  `Change::QueryFolded` (tag 9: the two keys); a build without them skips them and still reads the
+  folded key's tombstone and the merged survivor beside them.
 - **A server address of `ws://` or `wss://` runs the same frames over a WebSocket** (`web.rs`: TCP,
   TLS through `tokio-rustls` for `wss`, one binary message a frame, at most `LARGEST_FRAME`),
   for a server behind a proxy that carries no UDP (`server.md`). Any other address is QUIC. The
@@ -117,7 +121,10 @@ and `the_seeds_of_a_print_asked_and_given_decode` holds them to the wire. **What
 `ledger.rs` keeps `sync.sqlite` (the data folder on Linux, app-private storage on Android),
 `V1` (the 0.1.0 baseline, never edited) and the `MIGRATIONS` steps after it (`ANSWERS_TRAVEL`: the
 `answers` table and `state.answers_mark`; `SONGS_REFUSED_ARE_REMEMBERED`: the `refusals` table, a
-recording key and when the catalog refused the song, *The service* below); `user_version` counts the steps laid, a change appends a
+recording key and when the catalog refused the song, *The service* below;
+`NAMESAKES_MADE_APART_BECOME_ONE`: `minted_here`, `gone_id` and `gone_created` on `playlists` and
+`queries`, a row this ledger stamped last taken as made here, and the `playlist_folds` and
+`query_folds` tables, below); `user_version` counts the steps laid, a change appends a
 step, and a stamp past the list is `Error::LedgerVersion`
 (`a_ledger_laid_out_at_the_first_release_is_carried_forward_with_what_it_held`). All merging lives here, once for both
 platforms; the catalog seam stays thin.
@@ -131,7 +138,23 @@ platforms; the catalog seam stays thin.
   edit, stamped and owed; a mapped playlist gone locally is a tombstone. Favourites: `here` notes
   what the catalog showed at the last look or apply, so a change there is the listener's. Listens:
   past a mark, this device's own alone. The resume state: a digest of rows, place and position to
-  the ten seconds.
+  the ten seconds. **A playlist or query put back after its look keeps its key**: the tombstone a
+  look writes keeps the local `(id, created)` it was mapped to (`gone_id`, `gone_created`), and a
+  local one under that pair (undo re-inserts it), or for a playlist tombstoned before the column a
+  playlist this device tombstoned of the same name holding the same held songs (`revivable`), takes
+  the row back with a fresh stamp rather than minting, so its `keep_songs` stays and an edit of the
+  old key elsewhere lands on it, not beside it
+  (`a_playlist_deleted_and_put_back_after_its_look_keeps_its_key_and_its_songs_kept_here`).
+- **An arrival's catalog write is noted before it is made.** `sync.sqlite` and the catalog are two
+  databases, so a playlist (or a query the catalog keeps) arriving with no local counterpart is
+  first stored mapped to nothing, at the note's stamp, then written. Cut off between the two (a
+  crash, a failing `held_as`), the note arriving again is passed over as known, and the look takes
+  up the playlist the write left: an unmapped local named as the catalog's free alias of the row's
+  name (`merge::named_as_a_free_alias_of`: the name, or it and ` (N)`) whose every song pairs with
+  the row's, mapped with that alias and stamped nothing (`orphaned_by_a_write`; for a query, the
+  same body under such a name, `orphaned_by_a_query_write`, by the look and by `settle_queries`).
+  A row the write never reached is written by the look (`unfinished_write_finished`)
+  (`an_aliased_arrival_cut_off_between_the_catalog_and_the_ledger_is_taken_up_and_not_minted_again`).
 - **An arrival first looks at what the ledger already holds.** `arrived` begins with a look limited
   to rows with a stored counterpart (`Looking::AtWhatIsHeld`: a mapped playlist or query edited or
   gone, a favourite changed), before the clock has seen any arriving stamp, so an edit made while
@@ -164,9 +187,15 @@ platforms; the catalog seam stays thin.
   to splice or fetch. Two queries of one folded name meeting for the first time become one with the
   **synced body standing** (the local text is replaced, not stamped: the account's definition was
   there first). A list and a query of one name stay two, the catalog's free alias keeping them
-  apart. A body the receiving catalog cannot read (a sort or reading code a later build added) is
+  apart. Two queries of one name made apart fold as two playlists do (below), the survivor's body
+  standing (`saved_queries_of_one_name_made_apart_after_both_devices_looked_become_one`). A body the receiving catalog cannot read (a sort or reading code a later build added) is
   kept in the ledger and passed on, written nowhere (`Refused::Unwritable`), and tried again when a
-  newer note arrives and at every `settle`. **A catalog that keeps no queries**
+  newer note arrives and at every `settle`. **A query made here beside a held note this device could
+  not write folds into that note** once it can be written: `settle_queries` writes an unwritten,
+  unfolded row with no unmapped namesake over a mapped query of its folded name made here
+  (`made_beside_an_unwritten`) and folds that one into it (`QueryFolded`), since the listener here
+  never saw the note when making theirs
+  (`a_saved_query_once_unwritable_here_folds_the_namesake_made_meanwhile_into_it`). **A catalog that keeps no queries**
   (`Catalog::keeps_queries`, false by default; the desktop and both phones keep them) never looks at
   queries and stores and forwards every note untouched, so a snapshot through it still carries them.
   **A note held but written nowhere is written by `settle`** (`settle_queries`: every query row with
@@ -177,6 +206,35 @@ platforms; the catalog seam stays thin.
 - **Two playlists of one folded name meeting for the first time become one** (adopted, the local
   entries the other lacks appended). An arriving name another playlist holds lands as the catalog's
   free alias (`Mix (2)`); the alias is never sent back as a rename.
+- **Two playlists of one folded name made apart become one, though both devices had looked.** A key
+  is minted at a stamp (`PlaylistKey::minted_at`: `RSK1`, the stamp's nanoseconds big-endian, four
+  random bytes; `minted_nanos` reads it back, a key of before reads as none). A note arriving under
+  a key this ledger has never held, of the folded name of a live, mapped row made here
+  (`minted_here`) whose key was minted after the note's (`minted_after`), proves both were made
+  apart: this device had not seen the note when it minted, and the other could not have seen this
+  row, since any stamp after seeing it is above its mint. Only the later maker can prove it, so it
+  folds its own into the earlier (`fold_a_namesake_made_apart`): a `playlist_folds` row (the folded
+  key, the kept one, the folded entries) is owed, the earlier takes over its local playlist with its
+  songs appended (`merge::absorbed`, as adoption appends) and is restamped, and the folded key is
+  tombstoned just past its own stamp (`fold_tombstoned`). A playlist made knowing a namesake was
+  minted after it and is never folded: it stays the alias it is today
+  (`a_playlist_made_beside_a_namesake_already_known_stays_apart_as_an_alias`). **Every device
+  follows the folds it holds**, the folder's and those that arrived, the same way
+  (`merge::Folds`: a class of keys joined by folds survives as its one member no fold folds, the
+  lowest where several or none are): `fold_playlists`, after every arrival, folds each live
+  non-survivor into its survivor once that is held (one local kept, the survivor's unless only the
+  folded one holds the plain name; the other's songs appended; the folded key tombstoned; a
+  survivor gone takes the folded one with it), and absorbs each arrived fold's entries once into the
+  survivor; a note under a folded key held gone or not at all is absorbed into the survivor, never
+  written (`folded_note_arrived`); an arriving survivor takes over a live folded namesake's local
+  (`namesake_folded_into`). Absorbing once a device, from the fold's own entries, keeps a song a
+  later device's newer survivor note lacked: the next device to learn the fold appends it again and
+  restamps, so devices converge however the records cross
+  (`playlists_of_one_name_made_apart_after_both_devices_looked_become_one_whichever_arrives_first`,
+  `three_devices_each_making_one_name_apart_converge_on_one_playlist_whatever_the_order`). Folds
+  lead `owed` and the snapshot, are owed again with everything, and are forgotten with the space.
+  Queries fold alike through `query_folds` (`fold_queries`, `query_namesake_made_apart`), the
+  survivor's body standing; a body the catalog cannot write folds nothing until it can.
 - **A tombstone never takes a favourite the ledger had not met**: the first word of a favourite on
   a device is its own.
 - **A favourite is one song however each device names it.** Rows are keyed by `Recording::key()`

@@ -5,6 +5,9 @@ use resonate_core::{Answer, Recording};
 use crate::{DeviceId, Result, key::random_bytes};
 
 pub const PLAYLIST_KEY_BYTES: usize = 16;
+const MINTED_KEY_MARK: [u8; 4] = *b"RSK1";
+const MINTED_NANOS_FROM: usize = MINTED_KEY_MARK.len();
+const MINTED_NANOS_TO: usize = MINTED_NANOS_FROM + 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Stamp {
@@ -78,6 +81,19 @@ pub struct QueryNote {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlaylistFolded {
+    pub folded: PlaylistKey,
+    pub into: PlaylistKey,
+    pub entries: Vec<Recording>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QueryFolded {
+    pub folded: PlaylistKey,
+    pub into: PlaylistKey,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FavouriteNote {
     pub recording: Recording,
     pub favoured: bool,
@@ -120,6 +136,8 @@ pub enum Change {
     Listen(Listen),
     Handoff(Handoff),
     Answer(AnswerNote),
+    PlaylistFolded(PlaylistFolded),
+    QueryFolded(QueryFolded),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -128,8 +146,26 @@ pub struct Clock {
 }
 
 impl PlaylistKey {
-    pub fn minted() -> Result<Self> {
-        random_bytes().map(Self)
+    pub fn minted_at(stamp: Stamp) -> Result<Self> {
+        let mut key: [u8; PLAYLIST_KEY_BYTES] = random_bytes()?;
+        key[..MINTED_NANOS_FROM].copy_from_slice(&MINTED_KEY_MARK);
+        key[MINTED_NANOS_FROM..MINTED_NANOS_TO].copy_from_slice(&stamp.nanos.to_be_bytes());
+        Ok(Self(key))
+    }
+
+    pub fn minted_nanos(&self) -> Option<i64> {
+        if self.0[..MINTED_NANOS_FROM] != MINTED_KEY_MARK {
+            return None;
+        }
+        let mut nanos = [0; 8];
+        nanos.copy_from_slice(&self.0[MINTED_NANOS_FROM..MINTED_NANOS_TO]);
+        Some(i64::from_be_bytes(nanos)).filter(|nanos| *nanos > 0)
+    }
+
+    pub fn minted_after(&self, other: &PlaylistKey) -> bool {
+        self.minted_nanos()
+            .zip(other.minted_nanos())
+            .is_some_and(|(mine, theirs)| mine > theirs)
     }
 }
 
@@ -177,7 +213,7 @@ impl Change {
             Self::Favourite(note) => Some(note.stamp),
             Self::Handoff(handoff) => Some(handoff.stamp),
             Self::Answer(note) => Some(note.stamp),
-            Self::Listen(_) => None,
+            Self::Listen(_) | Self::PlaylistFolded(_) | Self::QueryFolded(_) => None,
         }
     }
 }
@@ -202,6 +238,22 @@ mod tests {
         assert!(second.nanos > ahead.nanos);
         assert!(second > first);
         assert!(clock.after(0, device) > second);
+    }
+
+    #[test]
+    fn a_key_minted_at_a_stamp_says_when_and_a_random_one_says_nothing() {
+        let device = DeviceId([1; 16]);
+        let mut clock = Clock::from_last(0);
+        let earlier = PlaylistKey::minted_at(clock.now(device)).expect("minted");
+        let later = PlaylistKey::minted_at(clock.now(device)).expect("minted");
+        let random = PlaylistKey([7; PLAYLIST_KEY_BYTES]);
+
+        assert!(later.minted_after(&earlier));
+        assert!(!earlier.minted_after(&later));
+        assert!(earlier < later);
+        assert_eq!(random.minted_nanos(), None);
+        assert!(!later.minted_after(&random));
+        assert!(!random.minted_after(&earlier));
     }
 
     #[test]

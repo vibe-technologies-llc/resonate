@@ -21,7 +21,8 @@ pub use crate::{
     },
     change::{
         AnswerNote, Change, Clock, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, Listen,
-        Platform, PlaylistBody, PlaylistKey, PlaylistNote, QueryBody, QueryNote, Stamp,
+        Platform, PlaylistBody, PlaylistFolded, PlaylistKey, PlaylistNote, QueryBody, QueryFolded,
+        QueryNote, Stamp,
     },
     error::{CodeRefused, DeflateOp, Error, FileOp, Malformed, Result, StoreOp, StreamOp, TlsOp},
     key::{Derived, DeviceId, PAIRING_LINK, SpaceId, SyncKey, Token},
