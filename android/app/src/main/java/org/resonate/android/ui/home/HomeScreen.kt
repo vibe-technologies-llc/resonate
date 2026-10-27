@@ -82,6 +82,7 @@ import org.resonate.android.ui.library.Loading
 import org.resonate.android.ui.library.PlaylistCard
 import org.resonate.android.ui.library.Shelf
 import org.resonate.android.ui.library.Shelves
+import org.resonate.android.ui.library.Unreadable
 import org.resonate.android.ui.library.Welcome
 import org.resonate.android.ui.library.greeting
 import org.resonate.android.ui.library.listenedHours
@@ -99,6 +100,7 @@ fun HomeScreen() {
     val model = resonateViewModel { HomeViewModel(it) }
     val ready by model.ready.collectAsStateWithLifecycle()
     val songs by model.songs.collectAsStateWithLifecycle()
+    val unread by model.unread.collectAsStateWithLifecycle()
     var hour by remember { mutableIntStateOf(LocalTime.now().hour) }
     val title = greeting(hour)
     LifecycleResumeEffect(model) {
@@ -109,6 +111,7 @@ fun HomeScreen() {
     Page(title, size = TitleSize.LARGE, back = false, actions = { SettingsAction() }) { padding ->
         when {
             !ready -> Loading(Modifier.padding(padding))
+            songs.isEmpty() && unread -> Unreadable(model::reread, Modifier.padding(padding))
             songs.isEmpty() -> Box(Modifier.fillMaxSize().padding(padding)) { Welcome() }
             else -> HomeFeed(model, padding)
         }

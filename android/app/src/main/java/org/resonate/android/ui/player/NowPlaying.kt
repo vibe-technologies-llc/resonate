@@ -59,10 +59,12 @@ import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.FilledTonalToggleButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -381,17 +383,21 @@ private fun ColumnScope.Controls(
 private fun Scrubber(model: PlayerViewModel, playing: Playing?) {
     val position by model.position.collectAsStateWithLifecycle()
     val duration = playing?.durationMs ?: 0L
-    var draft by remember { mutableStateOf<Float?>(null) }
+    val song = playing?.track?.queueId ?: playing?.track?.id
+    val heard by rememberUpdatedState(song)
+    var draft by remember(song) { mutableStateOf<Float?>(null) }
     val shown = (draft ?: position.toFloat()).coerceIn(0f, duration.coerceAtLeast(1L).toFloat())
-    CommitSlider(
-        value = shown,
-        onCommit = { model.seek(it.toLong()) },
-        onDraft = { draft = it },
-        range = 0f..duration.coerceAtLeast(1L).toFloat(),
-        enabled = duration > 0,
-        modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Song progress" },
-        trackHeight = 4.dp,
-    )
+    key(song) {
+        CommitSlider(
+            value = shown,
+            onCommit = { if (song == heard) model.seek(it.toLong()) },
+            onDraft = { draft = it },
+            range = 0f..duration.coerceAtLeast(1L).toFloat(),
+            enabled = duration > 0,
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Song progress" },
+            trackHeight = 4.dp,
+        )
+    }
     val times = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum")
     Row(verticalAlignment = Alignment.Top) {
         Text(clock(shown.toLong()), style = times, color = MaterialTheme.colorScheme.onSurfaceVariant)

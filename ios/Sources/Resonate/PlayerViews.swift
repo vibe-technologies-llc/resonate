@@ -209,6 +209,8 @@ struct NowPlayingView: View {
             }
             .modifier(DeleteSongsConfirmation(insidePlayer: true))
             .modifier(SharingSheet(presenting: true))
+            .modifier(SleepTimerPresentation(presenting: true))
+            .modifier(PairingOffer(presenting: true))
         }
     }
 
@@ -1312,6 +1314,20 @@ struct HandoffRows: View {
                     systemImage: "arrow.triangle.2.circlepath"
                 )
             }
+        }
+    }
+}
+
+struct SleepTimerPresentation: ViewModifier {
+    @Environment(Navigation.self) private var navigation
+    let presenting: Bool
+
+    func body(content: Content) -> some View {
+        content.sheet(isPresented: Binding(
+            get: { presenting && navigation.sleepTimer },
+            set: { navigation.sleepTimer = $0 }
+        )) {
+            SleepTimerSheet().presentationDetents([.medium, .large])
         }
     }
 }

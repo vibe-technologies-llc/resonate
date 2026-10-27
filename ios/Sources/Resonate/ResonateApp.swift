@@ -292,9 +292,7 @@ struct RootView: View {
                 .environment(navigation)
         }
         .modifier(DeleteSongsConfirmation(insidePlayer: false))
-        .sheet(isPresented: $navigation.sleepTimer) {
-            SleepTimerSheet().presentationDetents([.medium, .large])
-        }
+        .modifier(SleepTimerPresentation(presenting: !navigation.nowPlaying))
         .sheet(isPresented: $navigation.filters) {
             FilterSheet()
         }
@@ -302,27 +300,7 @@ struct RootView: View {
             TagEditorSheet(tracks: editing.tracks)
         }
         .modifier(SharingSheet(presenting: !navigation.nowPlaying))
-        .alert(
-            "Join these devices?",
-            isPresented: Binding(
-                get: { library.features.pairingOffered != nil },
-                set: { shown in if !shown { library.features.pairingOffered = nil } }
-            ),
-            presenting: library.features.pairingOffered
-        ) { code in
-            Button("Join") {
-                library.features.joinSync(code)
-                library.features.pairingOffered = nil
-                navigation.nowPlaying = false
-                navigation.tab = .settings
-                navigation.paths[.settings] = [.sync]
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: { code in
-            Text(library.features.syncConfig?.key.isEmpty == false
-                ? "A link asks this iPhone to leave the devices it syncs with now and sync with the devices of the code \(code). Join only if that is your code or one you were given."
-                : "A link asks this iPhone to share its playlists, favourites and history with the devices of the code \(code). Join only if that is your code or one you were given.")
-        }
+        .modifier(PairingOffer(presenting: !navigation.nowPlaying))
         .onChange(of: library.features.playlistToShow) { _, shown in
             guard let shown else { return }
             library.features.playlistToShow = nil
@@ -359,6 +337,36 @@ struct RootView: View {
             content()
                 .modifier(ThemedPage())
                 .navigationDestination(for: Destination.self) { DestinationView(destination: $0).modifier(ThemedPage()) }
+        }
+    }
+}
+
+struct PairingOffer: ViewModifier {
+    @Environment(Library.self) private var library
+    @Environment(Navigation.self) private var navigation
+    let presenting: Bool
+
+    func body(content: Content) -> some View {
+        content.alert(
+            "Join these devices?",
+            isPresented: Binding(
+                get: { presenting && library.features.pairingOffered != nil },
+                set: { shown in if !shown { library.features.pairingOffered = nil } }
+            ),
+            presenting: library.features.pairingOffered
+        ) { code in
+            Button("Join") {
+                library.features.joinSync(code)
+                library.features.pairingOffered = nil
+                navigation.nowPlaying = false
+                navigation.tab = .settings
+                navigation.paths[.settings] = [.sync]
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { code in
+            Text(library.features.syncConfig?.key.isEmpty == false
+                ? "A link asks this iPhone to leave the devices it syncs with now and sync with the devices of the code \(code). Join only if that is your code or one you were given."
+                : "A link asks this iPhone to share its playlists, favourites and history with the devices of the code \(code). Join only if that is your code or one you were given.")
         }
     }
 }

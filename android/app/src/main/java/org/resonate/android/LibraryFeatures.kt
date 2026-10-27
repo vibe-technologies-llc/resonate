@@ -112,6 +112,7 @@ data class PlaylistSync(val playlist: ULong, val missing: UInt, val kept: Boolea
 data class RefusedLanding(val until: Long, val tries: Int)
 
 private const val LANDING_PAUSE_MS = 60000L
+private const val LYRIC_FRAME_EVERY_MS = 33L
 private const val LANDING_TRIES_AT_MOST = 3
 private const val MISSING_CHECKED_EVERY_MS = 300000L
 private const val DEVICE_NAME_SETTING = "device_name"
@@ -203,6 +204,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val lyrics = MutableStateFlow<LyricSheet?>(null)
     val lyricFrame = MutableStateFlow<LyricFrame?>(null)
     val lyricsLoading = MutableStateFlow(false)
+    val lyricsUnread = MutableStateFlow<ULong?>(null)
     val recognitionKey = MutableStateFlow("")
     val auddToken = MutableStateFlow("")
     val searchAsked = MutableStateFlow<String?>(null)
@@ -225,6 +227,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val playlistRows = MutableStateFlow<List<Track>>(emptyList())
     val openPlaylist = MutableStateFlow<ULong?>(null)
     val playlistLoading = MutableStateFlow(false)
+    val playlistUnread = MutableStateFlow<ULong?>(null)
     val onlineAlbums = MutableStateFlow<List<SearchAlbum>>(emptyList())
     val onlineArtists = MutableStateFlow<List<SearchArtist>>(emptyList())
     val onlineReleases = MutableStateFlow<List<SearchRelease>>(emptyList())
@@ -1070,12 +1073,18 @@ class LibraryFeatures(private val context: Context, private val library: Library
         openPlaylist.value = id
         playlistRows.value = emptyList()
         playlistLoading.value = id != null
+        playlistUnread.value = null
         if (id != null)
             work { native ->
+                var read = false
                 try {
                     reloadPlaylist(native, id)
+                    read = true
                 } finally {
-                    if (openPlaylist.value == id) playlistLoading.value = false
+                    if (openPlaylist.value == id) {
+                        if (!read) playlistUnread.value = id
+                        playlistLoading.value = false
+                    }
                 }
             }
     }
@@ -1144,15 +1153,23 @@ class LibraryFeatures(private val context: Context, private val library: Library
 
     fun loadLyrics(id: ULong, refresh: Boolean = false) {
         val request = lyricRequest.incrementAndGet()
-        lyrics.value = null
-        lyricFrame.value = null
+        if (lyrics.value?.trackId != id) {
+            lyrics.value = null
+            lyricFrame.value = null
+        }
+        lyricsUnread.value = null
         lyricsLoading.value = true
         work { native ->
+            var read = false
             try {
                 val sheet = native.lyrics(id, refresh)
+                read = true
                 if (request == lyricRequest.get()) lyrics.value = sheet
             } finally {
-                if (request == lyricRequest.get()) lyricsLoading.value = false
+                if (request == lyricRequest.get()) {
+                    if (!read) lyricsUnread.value = id
+                    lyricsLoading.value = false
+                }
             }
         }
     }
@@ -1167,13 +1184,30 @@ class LibraryFeatures(private val context: Context, private val library: Library
         lyricWatchers = 0
     }
 
+    suspend fun followLyrics(native: MobilePlayer, place: StateFlow<Place?>) {
+        var failing: String? = null
+        while (currentCoroutineContext().isActive) {
+            delay(LYRIC_FRAME_EVERY_MS)
+            if (lyricWatchers == 0 || !foreground) continue
+            try {
+                val sheet = lyrics.value ?: continue
+                val at = place.value?.takeIf { it.track == sheet.trackId } ?: continue
+                val position = at.now().toULong()
+                lyricFrame.value =
+                    native.keptLyricFrame(sheet.trackId, position)
+                        ?: native.lyricFrame(sheet.trackId, position)
+                failing = null
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                if (failure.message != failing) library.report(failure)
+                failing = failure.message
+            }
+        }
+    }
+
     fun tick(native: MobilePlayer, snapshot: Snapshot) {
         enrichment.playing(snapshot.current?.id)
-        if (lyricWatchers > 0 && foreground)
-            lyrics.value?.let { sheet ->
-                if (snapshot.current?.id == sheet.trackId)
-                    lyricFrame.value = native.lyricFrame(sheet.trackId, snapshot.positionMs)
-            }
         val device = native.outputDevice()
         actualOutput.value = device
         outputStream.value = native.outputStream()
@@ -1598,6 +1632,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         searchRequest.incrementAndGet()
         analysisBusy.value = false
         lyricsLoading.value = false
+        lyricsUnread.value = null
         searching.value = false
         enriching.value = false
         tidalBusy.value = false

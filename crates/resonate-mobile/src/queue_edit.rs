@@ -136,7 +136,7 @@ mod tests {
     };
 
     use crossbeam_channel::unbounded;
-    use resonate_core::Frames;
+    use resonate_core::{Frames, SampleRate};
     use resonate_engine::{Event, PlaybackState, PlayerState};
 
     use super::*;
@@ -234,6 +234,71 @@ mod tests {
                 &rows
             ),
             None
+        );
+    }
+
+    #[test]
+    fn a_seek_in_a_row_still_opening_is_sent_at_that_rows_rate() {
+        let harness = Harness::new();
+        harness.resumed("abc", 0, 0);
+        harness.settled(|snapshot| snapshot.current.is_some());
+
+        let rows = harness
+            .player
+            .player
+            .lock()
+            .as_ref()
+            .expect("an open player")
+            .queued()
+            .rows;
+        let opening = PlayerState {
+            playback: PlaybackState::Buffering,
+            queue_position: Some(1),
+            ..PlayerState::default()
+        };
+        let stopped = PlayerState {
+            playback: PlaybackState::Stopped,
+            queue_position: Some(1),
+            ..PlayerState::default()
+        };
+
+        assert_eq!(
+            harness.player.rate_to_seek_in(&opening, &rows),
+            SampleRate::new(harness.song('b').rate).ok()
+        );
+        assert_eq!(harness.player.rate_to_seek_in(&stopped, &rows), None);
+    }
+
+    #[test]
+    fn a_save_waits_for_the_row_opening_to_publish_its_place() {
+        let harness = Harness::new();
+        harness.resumed("abc", 0, 0);
+        harness.settled(|snapshot| snapshot.current.is_some());
+
+        let queue = harness
+            .player
+            .player
+            .lock()
+            .as_ref()
+            .expect("an open player")
+            .queued();
+        let state = |playback| PlayerState {
+            playback,
+            queue_position: Some(1),
+            ..PlayerState::default()
+        };
+
+        assert!(
+            crate::place_to_save(
+                &state(PlaybackState::Buffering),
+                &queue.rows,
+                queue.revision
+            )
+            .is_none()
+        );
+        assert!(
+            crate::place_to_save(&state(PlaybackState::Stopped), &queue.rows, queue.revision)
+                .is_some_and(|place| place.row == 1 && place.position_ms == 0)
         );
     }
 

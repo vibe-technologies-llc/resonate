@@ -26,6 +26,19 @@ import Testing
         #expect(draft.search == search)
     }
 
+    @Test func aDraftIsEditedOnlyWhileItDiffersFromTheOneTheSheetOpenedWith() {
+        let opened = SavedSearchDraft.starting(name: "Jazz", text: "genre:jazz")
+        var draft = opened
+
+        #expect(draft == opened)
+
+        draft.text = "genre:blues"
+        #expect(draft != opened)
+
+        draft.text = "genre:jazz"
+        #expect(draft == opened)
+    }
+
     @Test func aDraftTrimsItsTextAndIsNotSavableWithABadCapOrNoName() {
         var draft = SavedSearchDraft(name: " Jazz ", text: "  genre:jazz ", order: .title, descending: false, cap: "")
 

@@ -1390,11 +1390,18 @@ else `install.py`'s kept AppImage), strips the compiler's styling and fails on a
 
 ## A sheet holding edits is not swiped away
 
-The tag editor, *Add songs* and the filter sheet apply what they hold only on their confirm button, so
-`keepingEditsUnlessDiscarded(edited, asking:discard:)` (`ToolViews.swift`) disables the swipe-down
-while they hold an edit (changed tag fields, chosen songs, a filter unlike the applied one) and their
-Close button asks *Discard your changes?* instead of dropping them; with nothing edited Close
-dismisses at once.
+The tag editor, *Add songs*, the filter sheet and the saved-search sheet apply what they hold only on
+their confirm button, so `keepingEditsUnlessDiscarded(edited, asking:discard:)` (`ToolViews.swift`)
+disables the swipe-down while they hold an edit (changed tag fields, chosen songs, a filter unlike the
+applied one, a `SavedSearchDraft` unlike the one the sheet opened with) and their Close or Cancel
+button asks *Discard your changes?* instead of dropping them; with nothing edited it dismisses at once.
+
+**A sheet or alert the root view raises is raised again inside Now Playing**, since the root cannot
+present over the full-screen cover: the sleep timer sheet (`SleepTimerPresentation`) and the *Join
+these devices?* alert (`PairingOffer`) are modifiers on the root with `presenting: !navigation.nowPlaying`
+and on `NowPlayingView` with `presenting: true`, as `SharingSheet` is, so the countdown chip, *More >
+Sleep timer* and a `resonate://pair/` link arriving over the cover each show. `joinSync` still runs only
+on *Join*.
 
 ## Removing a queue row can be undone
 

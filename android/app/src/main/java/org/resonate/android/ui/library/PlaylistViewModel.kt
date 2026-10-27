@@ -29,8 +29,17 @@ class PlaylistViewModel(private val resonate: Resonate, private val id: ULong) :
             .stateIn(viewModelScope, shared, features.playlists.value.firstOrNull { it.id == id })
 
     val rows: StateFlow<Loaded<List<PlaylistEntry>>> =
-        combine(features.openPlaylist, features.playlistRows, features.playlistLoading) { open, rows, loading ->
-                if (open != id || loading) Loaded.Loading else Loaded.Ready(playlistEntries(rows))
+        combine(
+                features.openPlaylist,
+                features.playlistRows,
+                features.playlistLoading,
+                features.playlistUnread,
+            ) { open, rows, loading, unread ->
+                when {
+                    open != id || loading -> Loaded.Loading
+                    unread == id -> Loaded.Failed
+                    else -> Loaded.Ready(playlistEntries(rows))
+                }
             }
             .stateIn(viewModelScope, shared, Loaded.Loading)
 
@@ -51,7 +60,7 @@ class PlaylistViewModel(private val resonate: Resonate, private val id: ULong) :
     val catalog: StateFlow<List<Track>> = resonate.library.allTracks
 
     fun open() {
-        if (features.openPlaylist.value != id) features.selectPlaylist(id)
+        if (features.openPlaylist.value != id || features.playlistUnread.value == id) features.selectPlaylist(id)
         features.loadPlaylistSync(id)
     }
 

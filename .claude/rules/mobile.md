@@ -101,7 +101,12 @@ publishes no `current` meanwhile (`audio.md`'s *Every track opens off the engine
 poll landing in a skip read no song and the phones drew an empty player, then the next song with
 nothing to animate from. Where the engine names no track while buffering or paused, `current` is the
 queue row at `queue_position` (`row_being_opened`), at position 0 with the catalog's length, until
-the opening lands (`a_row_still_opening_is_the_song_a_snapshot_names`).
+the opening lands (`a_row_still_opening_is_the_song_a_snapshot_names`). **A seek in that window is kept**:
+`seek` sends `Command::Seek` at the opening row's catalog rate (`rate_to_seek_in`), which the engine holds as the
+place the opening lands at (`a_seek_in_a_row_still_opening_is_sent_at_that_rows_rate`). **A save in that window
+writes nothing** (`place_to_save`): a place of 0 would rewrite the queue over the place the previous song
+reached, and the previous place stays true until the new row publishes
+(`a_save_waits_for_the_row_opening_to_publish_its_place`).
 
 ## The catalog does not hold the transport
 
@@ -192,7 +197,9 @@ The kept sheets are least recently *read* first out (`KeptSheets`; a frame reads
 sheet is never the one dropped: `a_sheet_read_lately_outlasts_the_sheets_remembered_after_it`). A
 frame for a sheet not kept reads it from the catalog again rather than answering nothing; a song
 the catalog holds no words for is kept `Wordless`, so its frames ask SQLite once, while
-`cached_lyrics` (behind `lyrics` and the keeping calls) reads the catalog again past `Wordless`.
+`cached_lyrics` (behind `lyrics` and the keeping calls) reads the catalog again past `Wordless`. A catalog read that
+fails is not kept: the frame is unlit for that call and the next frame asks again
+(`a_failed_reread_is_asked_again_by_the_next_frame`).
 
 ## Answers from other devices
 

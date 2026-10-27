@@ -124,6 +124,19 @@ fn row_being_opened(state: &PlayerState, rows: &QueueRows) -> Option<TrackId> {
         .map(|item| item.id)
 }
 
+fn place_to_save(state: &PlayerState, rows: &QueueRows, revision: u64) -> Option<SavedPlace> {
+    if state.current.is_none() && row_being_opened(state, rows).is_some() {
+        return None;
+    }
+    Some(SavedPlace {
+        revision,
+        row: state.queue_position.unwrap_or(0) as u32,
+        position_ms: state.current.map_or(0, |track| {
+            track.position.to_duration(track.source.rate).as_millis() as u64
+        }),
+    })
+}
+
 const fn transport_of(playback: PlaybackState) -> Transport {
     match playback {
         PlaybackState::Idle | PlaybackState::Stopped => Transport::Stopped,
@@ -417,12 +430,15 @@ impl MobilePlayer {
     }
 
     pub fn seek(&self, position_ms: u64) -> Result<()> {
-        let held = self.player.lock();
-        let player = held.as_ref().ok_or(Error::Closed)?;
-        if let Some(track) = player.state().current {
-            player.send(Command::Seek(Frames::from_duration(
+        let (state, queue) = {
+            let held = self.player.lock();
+            let player = held.as_ref().ok_or(Error::Closed)?;
+            (player.state(), player.queued())
+        };
+        if let Some(rate) = self.rate_to_seek_in(&state, &queue.rows) {
+            self.command(Command::Seek(Frames::from_duration(
                 Duration::from_millis(position_ms),
-                track.source.rate,
+                rate,
             )))?;
         }
         Ok(())
@@ -447,21 +463,7 @@ impl MobilePlayer {
             .current
             .map(|track| track.id)
             .or_else(|| row_being_opened(&state, &queue.rows));
-        let current = heard.and_then(|id| {
-            queue
-                .rows
-                .iter()
-                .find(|item| item.id == id)
-                .and_then(|item| {
-                    document_uri(&item.location)
-                        .ok()
-                        .and_then(|uri| self.catalog.kept_track_uri(&uri).ok())
-                        .map(|mut track| {
-                            track.queue_id = Some(item.id.get());
-                            track
-                        })
-                })
-        });
+        let current = heard.and_then(|id| self.queue_track(&queue.rows, id));
         let duration_ms = state
             .current
             .and_then(|track| {
@@ -514,12 +516,8 @@ impl MobilePlayer {
             let player = held.as_ref().ok_or(Error::Closed)?;
             let state = player.state();
             let queue = player.queued();
-            let place = SavedPlace {
-                revision: queue.revision,
-                row: state.queue_position.unwrap_or(0) as u32,
-                position_ms: state.current.map_or(0, |track| {
-                    track.position.to_duration(track.source.rate).as_millis() as u64
-                }),
+            let Some(place) = place_to_save(&state, &queue.rows, queue.revision) else {
+                return Ok(());
             };
             (place, queue.rows)
         };
@@ -588,6 +586,23 @@ impl MobilePlayer {
             }))?;
         }
         Ok(())
+    }
+
+    fn queue_track(&self, rows: &QueueRows, id: TrackId) -> Option<Track> {
+        let item = rows.iter().find(|item| item.id == id)?;
+        let uri = document_uri(&item.location).ok()?;
+        let mut track = self.catalog.kept_track_uri(&uri).ok()?;
+        track.queue_id = Some(item.id.get());
+        Some(track)
+    }
+
+    fn rate_to_seek_in(&self, state: &PlayerState, rows: &QueueRows) -> Option<SampleRate> {
+        match state.current {
+            Some(track) => Some(track.source.rate),
+            None => row_being_opened(state, rows)
+                .and_then(|id| self.queue_track(rows, id))
+                .and_then(|track| SampleRate::new(track.rate).ok()),
+        }
     }
 
     fn command(&self, command: Command) -> Result<()> {

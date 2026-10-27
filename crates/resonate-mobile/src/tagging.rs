@@ -221,9 +221,11 @@ impl MobilePlayer {
             return Ok(TagsWritten::default());
         };
         let mut told = TagsWritten::default();
+        let mut unfinished = Vec::new();
         for undone in step {
             let Some(song) = songs.iter().find(|song| song.uri == undone.uri) else {
                 told.failed += 1;
+                unfinished.push(undone);
                 continue;
             };
             match self.retag(song, &undone.before) {
@@ -232,9 +234,11 @@ impl MobilePlayer {
                 Err(error) => {
                     told.failed += 1;
                     told.failure.get_or_insert_with(|| error.to_string());
+                    unfinished.push(undone);
                 }
             }
         }
+        self.tagging.keep(unfinished);
         Ok(told)
     }
 }
@@ -576,6 +580,36 @@ mod tests {
         assert_eq!(restored.title, "song.wav");
         assert!(restored.artist.is_empty());
         assert_eq!(restored.track_number, None);
+    }
+
+    #[test]
+    fn an_undo_that_leaves_a_song_out_keeps_its_tags_for_the_next_undo() {
+        let player = player();
+        let path = wave("left-out");
+        let track = held(&player);
+        let song = SongFile {
+            uri: URI.into(),
+            path: path.to_string_lossy().into_owned(),
+        };
+        let change = SongTags {
+            title: Some("Echoes".into()),
+            ..SongTags::default()
+        };
+
+        player
+            .edit_tags(vec![song.clone()], change)
+            .expect("an edit");
+        let skipped = player.undo_tags(Vec::new()).expect("an undo of nothing");
+
+        assert_eq!(skipped.failed, 1);
+        assert_eq!(player.tags_to_undo(), vec![URI.to_owned()]);
+
+        let undone = player.undo_tags(vec![song]).expect("an undo");
+        let restored = player.catalog.track(track.id).expect("the song");
+
+        assert_eq!(undone.written, 1);
+        assert_eq!(restored.title, "song.wav");
+        assert!(player.tags_to_undo().is_empty());
     }
 
     #[test]

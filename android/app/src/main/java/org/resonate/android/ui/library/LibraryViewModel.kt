@@ -34,6 +34,10 @@ class LibraryViewModel(private val resonate: Resonate) : ViewModel() {
 
     val ready: StateFlow<Boolean> = resonate.catalogReady().stateIn(viewModelScope, shared, false)
 
+    val unread: StateFlow<Boolean> = library.unread
+
+    fun reread() = library.reread()
+
     val catalogEmpty: StateFlow<Boolean> =
         library.allTracks.map { it.isEmpty() }.stateIn(viewModelScope, shared, false)
 

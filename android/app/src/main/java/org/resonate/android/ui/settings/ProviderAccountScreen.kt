@@ -85,6 +85,7 @@ class ProviderAccountViewModel(
         )
         private set
     private var identity: String? = null
+    private var followed: DownloadAccount? = null
 
     init {
         viewModelScope.launch {
@@ -93,8 +94,12 @@ class ProviderAccountViewModel(
                 val seen = accountIdentity(account)
                 if (seen != identity) {
                     identity = seen
-                    draft = account
+                    val typed = draft
+                    draft =
+                        if (typed == null || typed == followed) account
+                        else typed.copy(refreshToken = account.refreshToken)
                 }
+                followed = account
             }
         }
     }

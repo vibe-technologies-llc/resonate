@@ -21,6 +21,7 @@ import androidx.compose.material.icons.rounded.Devices
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.TimerOff
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -48,6 +49,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.resonate.android.nativecore.SleepTimer
@@ -76,6 +78,7 @@ fun QueueSheet(model: PlayerViewModel, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
     val state = rememberBottomSheetState(SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
     var devicesOpen by rememberSaveable { mutableStateOf(false) }
+    var clearing by rememberSaveable { mutableStateOf(false) }
     val handoffRows = if (queue.handoffs.isNotEmpty()) 1 else 0
     val historyRows = if (queue.history.isNotEmpty()) 1 + queue.history.size else 0
     val list = rememberLazyListState()
@@ -112,7 +115,7 @@ fun QueueSheet(model: PlayerViewModel, onDismiss: () -> Unit) {
                 ) {
                     Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, "Save queue as playlist")
                 }
-                TextButton(onClick = model::clear) { Text("Clear") }
+                TextButton(onClick = { clearing = true }) { Text("Clear") }
             }
         }
         if (queue.size == 0) {
@@ -185,6 +188,24 @@ fun QueueSheet(model: PlayerViewModel, onDismiss: () -> Unit) {
             item("end") { Spacer(Modifier.height(24.dp)) }
         }
     }
+    if (clearing) {
+        AlertDialog(
+            onDismissRequest = { clearing = false },
+            title = { Text("Clear the queue?") },
+            text = { Text("Songs up next and in your history are removed. The playing song keeps playing.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        clearing = false
+                        model.clear()
+                    }
+                ) {
+                    Text("Clear queue", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { clearing = false }) { Text("Cancel") } },
+        )
+    }
     if (devicesOpen) {
         ModalBottomSheet(onDismissRequest = { devicesOpen = false }) {
             Text(
@@ -210,6 +231,8 @@ fun QueueSheet(model: PlayerViewModel, onDismiss: () -> Unit) {
     }
 }
 
+private const val UNREMOVED_AFTER_MS = 2_000L
+
 private fun rowKey(track: Track): String = "q${track.queueId ?: track.id}"
 
 @Composable
@@ -222,7 +245,11 @@ private fun QueueRow(
 ) {
     val dismiss = rememberSwipeToDismissBoxState()
     LaunchedEffect(dismiss.currentValue) {
-        if (dismiss.currentValue == SwipeToDismissBoxValue.EndToStart) model.remove(track)
+        if (dismiss.currentValue == SwipeToDismissBoxValue.EndToStart) {
+            model.remove(track)
+            delay(UNREMOVED_AFTER_MS)
+            dismiss.reset()
+        }
     }
     SwipeToDismissBox(
         state = dismiss,

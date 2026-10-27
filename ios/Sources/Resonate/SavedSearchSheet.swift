@@ -6,11 +6,14 @@ struct SavedSearchSheet: View {
     @Environment(\.dismiss) private var dismiss
     let title: String
     let save: (String, SavedSearch) -> Void
+    private let initial: SavedSearchDraft
     @State private var draft: SavedSearchDraft
+    @State private var discarding = false
 
     init(title: String, draft: SavedSearchDraft, save: @escaping (String, SavedSearch) -> Void) {
         self.title = title
         self.save = save
+        initial = draft
         _draft = State(initialValue: draft)
     }
 
@@ -53,7 +56,9 @@ struct SavedSearchSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if draft == initial { dismiss() } else { discarding = true }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
@@ -65,6 +70,7 @@ struct SavedSearchSheet: View {
                 }
             }
         }
+        .keepingEditsUnlessDiscarded(draft != initial, asking: $discarding) { dismiss() }
         .presentationDetents([.large])
     }
 }

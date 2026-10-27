@@ -148,6 +148,7 @@ so nothing awaits a closed native player; a native library that will not load fa
 the current song only seeks, and a seek to another row compares against the place read on the main
 thread when it was asked. `refresh()` reads on the IO dispatcher whoever calls it. The snapshot's `waiting` (`mobile.md`) becomes the status when it begins and is cleared when it
 ends, if still shown; the expanded player shows it in place of the format line.
+`LibraryRepository.place` is the position the poll last read with the time it was read at; the player's position (`PlayerViewModel.position`: scrubber, mini-player progress) runs from it every 50 ms while the transport plays, clamped to the duration, and is corrected by the next poll at a seek, a skip or a pause. The scrubber's draft and drag are keyed on the playing queue row and a release commits only for the song it began on.
 The 250 ms poll catches a failing tick (a snapshot, queue read, save or listening count refused by
 a full disk) and says it once per distinct message, so one error never ends the loop; a loop that
 ends for any other reason clears `started`, so the next retain reopens the engine. The queue is read
@@ -359,7 +360,7 @@ next; a handle drags a row (`Reorder`, its rows counted from Up next's first row
 drag began, so a song ending mid-drag moves the row dragged; a drop over a list that changed meanwhile
 shows the engine's order), sent as `queueLanding(from, to)` since the engine's
 `move_in_queue` counts the landing row before the move, so a downward drag adds one and the end is
-the queue's length. *Save queue as playlist* and *Clear* sit in its header.
+the queue's length. *Save queue as playlist* and *Clear* sit in its header; *Clear* asks first (history and up next go, the playing song stays), and a swipe the engine refuses puts its row back after `UNREMOVED_AFTER_MS`, as a playlist row does.
 
 **Library** is a pager of Songs, Albums, Artists and Playlists under a tab row (scrollable past a
 font scale of 1.3), *New playlist* a floating button on Playlists (the heading carries no second one), Songs opening on full-width *Play* and *Shuffle* with the count at the start and sort and filters at the end of one row, as Albums and Artists put their sort, the active filters on a row beneath, *More* the folder, rescan and
@@ -368,7 +369,9 @@ keeps its rows, and the Albums and Artists tabs keep their scroll across a reloa
 song browser's filtered page. A completed favourite write updates the catalog, the browser, the
 queue, the snapshot and the open playlist in place (`setFavourite`) before the catalog is read
 again. A playlist is a spinner until its rows arrive (`playlistLoading`; selecting one clears the
-previous rows at once).
+previous rows at once); a read that throws is `Loaded.Failed` with *Try again* (`playlistUnread`), never an
+empty playlist offering *Add songs*. Likewise a catalog whose first `refresh()` failed (`LibraryRepository.unread`)
+draws Home and Library as unreadable with *Try again* (`reread`), and *Welcome* only once a read has succeeded with no songs.
 
 **Search is one page of the library and online**, as iOS's: the library's answer (songs, albums and
 artists, `search_library`, at most 500, the *Songs* chip saying how many it lists, *Show more* reading on,
@@ -600,7 +603,12 @@ The inspector probes the original document and displays both technical and tagge
 Details page reads its own (`InspectorState`), offering *Try again* where the file could not be read.
 The analysis pane shows the pass running only for the song it was started on (`analysisTrack`), and
 the lyrics view keeps the sheet it was given for its song, asking again only where the shared sheet
-moved to another song before it saw one.
+moved to another song before it saw one. **A lookup that throws is not asked again by itself**:
+`lyricsUnread` holds the song's id, the pane says *Lyrics could not be read* with *Try again*, and a refresh
+of a song that already has its sheet keeps that sheet. The lyric frame is not computed in the poll's
+`access` lock: `followLyrics` (a child of the playback job, every 33 ms while a pane is open and the
+Activity is forward) asks `keptLyricFrame` and only on a miss `lyricFrame`, at the position the
+`Place` clock reads.
 
 **Tags are written through the desktop's writer, on a copy of the document, then the document is replaced** (`tagging.rs`, `rewriting.rs`).
 `FileTags` writes by path alone (staged copy, journal, read back: `library.md`'s *Writing the catalog
@@ -654,7 +662,7 @@ clear, else the value; a number must be a whole number above zero (`TagNumber`).
 differing from what the file holds are written (`planned`). Formats `FileTags::writes` refuses are
 `TagsUnwritable` (`tags_writable(name)` asks first). Each call is one undo step of what every written
 field held before, the last `UNDO_STEPS_KEPT` (16) kept for the session; `tags_to_undo` names its URIs
-and `undo_tags(songs)` writes them back through the same route. `song_tags(id)` reads a song's fields
+and `undo_tags(songs)` writes them back through the same route; a song the call left out or could not write goes back on the stack as a step of its own, so a later undo retries it (`an_undo_that_leaves_a_song_out_keeps_its_tags_for_the_next_undo`). `song_tags(id)` reads a song's fields
 through the document provider. `TagsWritten` counts written, unchanged and failed songs with the
 first failure's sentence
 (`tags_written_to_a_document_reach_it_through_a_staged_copy_and_one_undo_puts_them_back`,
@@ -985,7 +993,7 @@ stays empty (`ProviderAccountRecordsTest`, `ProviderAccountStoreTest`). Every ch
 renewed token's. Settings › Download sources lists the accounts with their switches and what each
 needs (`accountSummary`) and offers *Add a source* per kind; an account opens in its own page
 (`Screen.ProviderAccount`: an id, or none for a new one that is stored only on *Add*) with its
-fields, TIDAL sign-in and *Remove* (confirmed). *Ask the hosted services* stays one switch for all.
+fields, TIDAL sign-in and *Remove* (confirmed). *Ask the hosted services* stays one switch for all. A renewed refresh token reaches an open account page as that field alone once the listener has typed into the draft; a draft still equal to the stored account follows it whole.
 
 **A download is a job** (`downloads.rs`), several at once: `begin_download(song)` answers its
 number, `find_download(job, accounts)` races every account it is given through `Providers::first` (registration

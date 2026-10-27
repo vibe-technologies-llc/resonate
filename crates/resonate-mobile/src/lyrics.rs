@@ -225,7 +225,6 @@ impl MobilePlayer {
             Some(Kept::Wordless) => None,
             None => self.lyrics_from_the_catalog(id).unwrap_or_else(|error| {
                 tracing::debug!(%error, "kept lyrics could not be read again");
-                self.services.lyrics.keep(id, Kept::Wordless);
                 None
             }),
         };
@@ -518,6 +517,27 @@ mod tests {
         assert!(matches!(embedded, Err(Error::LyricsTooLarge { .. })));
         assert!(matches!(sidecar, Err(Error::LyricsTooLarge { .. })));
         assert!(player.cached_lyrics(id).expect("a read").is_none());
+    }
+
+    #[test]
+    fn a_failed_reread_is_asked_again_by_the_next_frame() {
+        let player = player();
+        let id = song(&player, "unread");
+        let unreadable = "[00:01.00]la\n".repeat(60_000);
+        player
+            .catalog
+            .keep_lyrics(id, Some(&unreadable), None, "embedded")
+            .expect("a stored text");
+
+        let refused = player.lyric_frame(id, 1_500);
+        player
+            .catalog
+            .keep_lyrics(id, Some("[00:01.00]la"), None, "embedded")
+            .expect("a stored text");
+        let again = player.lyric_frame(id, 1_500);
+
+        assert_eq!(refused, unlit());
+        assert_eq!(again.read_at, Some(0));
     }
 
     #[test]

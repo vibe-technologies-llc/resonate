@@ -33,6 +33,10 @@ class HomeViewModel(private val resonate: Resonate) : ViewModel() {
 
     val songs: StateFlow<List<Track>> = resonate.library.allTracks
 
+    val unread: StateFlow<Boolean> = resonate.library.unread
+
+    fun reread() = resonate.library.reread()
+
     val favourites: StateFlow<List<Track>> =
         resonate.library.allTracks
             .map { songs -> songs.filter { it.favourite } }

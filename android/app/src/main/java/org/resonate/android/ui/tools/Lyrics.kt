@@ -94,6 +94,7 @@ fun LyricsView(track: Track, style: TextStyle, modifier: Modifier = Modifier) {
     val features = resonate.features
     val sheet by features.lyrics.collectAsStateWithLifecycle()
     val loading by features.lyricsLoading.collectAsStateWithLifecycle()
+    val unread by features.lyricsUnread.collectAsStateWithLifecycle()
     val online by features.online.collectAsStateWithLifecycle()
     var held by remember(track.id) { mutableStateOf<LyricSheet?>(null) }
     val current = sheet?.takeIf { it.trackId == track.id }
@@ -101,8 +102,9 @@ fun LyricsView(track: Track, style: TextStyle, modifier: Modifier = Modifier) {
     LaunchedEffect(current) {
         if (current != null) held = current
     }
-    LaunchedEffect(track.id, sheet?.trackId, loading) {
-        if (!loading && mine == null && features.lyrics.value?.trackId != track.id) features.loadLyrics(track.id)
+    LaunchedEffect(track.id, sheet?.trackId, loading, unread) {
+        if (!loading && mine == null && unread != track.id && features.lyrics.value?.trackId != track.id)
+            features.loadLyrics(track.id)
     }
     DisposableEffect(Unit) {
         features.watchLyrics(true)
@@ -112,6 +114,14 @@ fun LyricsView(track: Track, style: TextStyle, modifier: Modifier = Modifier) {
     Box(modifier.testTag("lyrics"), contentAlignment = Alignment.Center) {
         when {
             loading && shown == null -> LoadingIndicator()
+            shown == null && unread == track.id ->
+                EmptyState(
+                    Icons.Rounded.Lyrics,
+                    "Lyrics could not be read",
+                    detail = "Try again to ask for them once more.",
+                    action = "Try again",
+                    onAction = { features.loadLyrics(track.id, refresh = true) },
+                )
             shown == null ->
                 EmptyState(
                     Icons.Rounded.Lyrics,

@@ -3,10 +3,15 @@ package org.resonate.android.ui.player
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
@@ -65,6 +70,7 @@ private fun Snapshot.playing() =
         queueIndex = queueIndex.toInt(),
     )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class PlayerViewModel(private val resonate: Resonate) : ViewModel() {
     private val library = resonate.library
 
@@ -75,8 +81,20 @@ class PlayerViewModel(private val resonate: Resonate) : ViewModel() {
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val position: StateFlow<Long> =
-        library.snapshot
-            .map { it?.positionMs?.toLong() ?: 0L }
+        library.place
+            .flatMapLatest { place ->
+                when {
+                    place == null -> flowOf(0L)
+                    !place.moving -> flowOf(place.positionMs)
+                    else ->
+                        flow {
+                            while (true) {
+                                emit(place.now())
+                                delay(POSITION_EVERY_MS)
+                            }
+                        }
+                }
+            }
             .distinctUntilChanged()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0L)
 
@@ -155,3 +173,5 @@ class PlayerViewModel(private val resonate: Resonate) : ViewModel() {
         }
     }
 }
+
+private const val POSITION_EVERY_MS = 50L

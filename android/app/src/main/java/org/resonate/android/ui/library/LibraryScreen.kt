@@ -60,6 +60,7 @@ fun LibraryScreen() {
     val pager = rememberPagerState { Shelf.entries.size }
     val ready by model.ready.collectAsStateWithLifecycle()
     val empty by model.catalogEmpty.collectAsStateWithLifecycle()
+    val unread by model.unread.collectAsStateWithLifecycle()
     val onPlaylists = pager.currentPage == Shelf.PLAYLISTS.ordinal
     val newPlaylist = { sheets.name("New playlist") { model.createPlaylist(it) } }
     Page(
@@ -111,6 +112,7 @@ fun LibraryScreen() {
             )
         when {
             !ready -> Loading(Modifier.padding(padding))
+            empty && unread -> Unreadable(model::reread, Modifier.padding(padding))
             empty -> Box(Modifier.fillMaxSize().padding(padding)) { Welcome() }
             else ->
                 Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {

@@ -35,6 +35,7 @@ import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.OutputFormat
 import org.resonate.android.nativecore.PlaybackPreferences
 import org.resonate.android.nativecore.Snapshot
+import org.resonate.android.nativecore.Transport
 import org.resonate.android.nativecore.Track
 import org.resonate.android.nativecore.TrackFilter
 import org.resonate.android.nativecore.TrackOrder
@@ -51,6 +52,20 @@ class ResonateApplication : Application() {
     val library by lazy { LibraryRepository(this) }
     val current by lazy { CurrentActivity() }
     val resonate by lazy { Resonate(library, Playback(library) { current.controller }, current) }
+}
+
+data class Place(
+    val track: ULong?,
+    val positionMs: Long,
+    val durationMs: Long,
+    val moving: Boolean,
+    val readAt: Long,
+) {
+    fun now(): Long {
+        if (!moving) return positionMs
+        val reached = positionMs + (SystemClock.elapsedRealtime() - readAt)
+        return if (durationMs > 0) reached.coerceAtMost(durationMs) else reached
+    }
 }
 
 @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
@@ -70,9 +85,13 @@ class LibraryRepository(private val context: Context) {
     private val scanAccess = Mutex()
     private val mutableAllTracks = MutableStateFlow<List<Track>>(emptyList())
     val allTracks = mutableAllTracks.asStateFlow()
+    private val mutableUnread = MutableStateFlow(false)
+    val unread = mutableUnread.asStateFlow()
     private val mutableTracks = MutableStateFlow<List<Track>>(emptyList())
     private val mutableQueue = MutableStateFlow<List<Track>>(emptyList())
     private val mutableSnapshot = MutableStateFlow<Snapshot?>(null)
+    private val mutablePlace = MutableStateFlow<Place?>(null)
+    val place = mutablePlace.asStateFlow()
     private val mutableStatus = MutableStateFlow<String?>(null)
     private val mutableScanning = MutableStateFlow(false)
     private val mutablePreferences = MutableStateFlow<PlaybackPreferences?>(null)
@@ -133,10 +152,30 @@ class LibraryRepository(private val context: Context) {
 
     internal suspend fun refresh() =
         withContext(Dispatchers.IO) {
-            val native = engine.await()
-            mutableAllTracks.value = pagedTracks(native, defaultTrackFilter()) { true }
-            reload()
+            try {
+                val native = engine.await()
+                mutableAllTracks.value = pagedTracks(native, defaultTrackFilter()) { true }
+                reload()
+                mutableUnread.value = false
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                mutableUnread.value = true
+                throw failure
+            }
         }
+
+    fun reread() {
+        scope.launch {
+            try {
+                refresh()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                report(failure)
+            }
+        }
+    }
 
     private suspend fun pagedTracks(
         native: MobilePlayer,
@@ -240,7 +279,12 @@ class LibraryRepository(private val context: Context) {
                 } catch (failure: Exception) {
                     report(failure)
                 }
-                poll(native)
+                val lyricClock = launch { features.followLyrics(native, mutablePlace) }
+                try {
+                    poll(native)
+                } finally {
+                    lyricClock.cancel()
+                }
             } catch (cancelled: CancellationException) {
                 ready.cancel(cancelled)
                 throw cancelled
@@ -284,6 +328,14 @@ class LibraryRepository(private val context: Context) {
                     val state = native.snapshot()
                     features.tick(native, state)
                     mutableSnapshot.value = state
+                    mutablePlace.value =
+                        Place(
+                            track = state.current?.id,
+                            positionMs = state.positionMs.toLong(),
+                            durationMs = state.durationMs.toLong(),
+                            moving = state.transport == Transport.PLAYING,
+                            readAt = SystemClock.elapsedRealtime(),
+                        )
                     state.failure?.let { mutableStatus.value = it }
                     if (state.waiting != waiting) {
                         if (waiting != null && mutableStatus.value == waiting) {
