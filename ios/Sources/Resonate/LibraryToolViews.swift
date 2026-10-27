@@ -34,7 +34,7 @@ struct LibraryToolsView: View {
                     ToolRow(title: "Suggestions", detail: "Rediscover music from your library", symbol: "sparkles")
                 }
                 NavigationLink(value: Destination.statistics) {
-                    ToolRow(title: "Statistics", detail: "Your listening history and most played music", symbol: "chart.bar")
+                    ToolRow(title: "Statistics", detail: "Your listening in numbers", symbol: "chart.bar")
                 }
                 NavigationLink(value: Destination.identicalSongs) {
                     ToolRow(title: "Identical songs", detail: "Find files held twice and keep one of each", symbol: "square.on.square")

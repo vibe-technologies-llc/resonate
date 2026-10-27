@@ -316,7 +316,7 @@ struct StatisticsRow: View {
                 .frame(width: artworkEdge, height: artworkEdge)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Statistics").font(.body.weight(.medium))
-                Text("Your listening and library in numbers").font(.subheadline).foregroundStyle(.secondary)
+                Text("Your listening in numbers").font(.subheadline).foregroundStyle(.secondary)
             }
         }
         .contentShape(.rect)
