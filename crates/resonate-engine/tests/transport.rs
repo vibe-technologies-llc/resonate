@@ -8006,6 +8006,46 @@ fn a_seek_back_under_an_end_of_track_timer_lifts_the_fade_it_had_begun() -> Resu
     Ok(())
 }
 
+const A_GRAPH_THAT_STALLS: Duration = Duration::from_millis(120);
+
+#[test]
+fn a_seek_back_inside_the_sleep_fade_never_hushes_a_ring_the_graph_has_not_heard() -> Result<()> {
+    let level = 16_000_i32;
+    let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
+    let (player, graph, _tree) = a_steady_level_playing_for(16_000, 6)?;
+    player
+        .request(Command::SleepUntil(Some(Until::EndOfTrack)))?
+        .wait_for(PATIENCE)?;
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, graph| {
+            left_channel(&graph.played[graph.played.len().saturating_sub(4)..])
+                .last()
+                .is_some_and(|sample| *sample < level * 3 / 4)
+        },
+        "the fade toward sleep to begin",
+    );
+
+    player
+        .request(Command::Seek(Frames(0)))?
+        .wait_for(PATIENCE)?;
+    thread::sleep(A_GRAPH_THAT_STALLS);
+    player
+        .request(Command::SleepUntil(Some(Until::EndOfTrack)))?
+        .wait_for(PATIENCE)?;
+
+    play_until(
+        &player,
+        &graph,
+        block,
+        |player, _| !playing(player),
+        "the timer to end the track after the seek back",
+    );
+    Ok(())
+}
+
 #[test]
 fn a_sleep_timer_set_to_the_end_of_a_track_leaves_the_queue_on_the_next_row() -> Result<()> {
     let tree = Tree::new();

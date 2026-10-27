@@ -728,7 +728,7 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   reads the two fields `advance` decides it from, and the fade treats a wrap as the end of the queue
   like the last row of a non-repeating one. Every `QueueFinished` (`Engine::finish_the_queue`: end of
   `skip`, `remove`, `fail`) disarms an end-of-queue timer, so the next load is not paused unasked. **Fades out over the last `SLEEP_FADES_OVER`**;
-  cancel or push-back mid-fade restores the level, a seek or in-place restart lifts it. **A DoP
+  cancel or push-back mid-fade restores the level, a seek or in-place restart lifts it. **The fade begins only on a ring that is audible** (`RingProducer::is_audible`: the consumer's `Fader::whole`, stored after every pull once its level is whole, cleared when a discard is applied, and no discard pending), since a fade-out meeting a consumer at `SILENT` after a seek's discard hushes without taking frames, so the position freezes short of the end and the timer never fires; a seek back inside the window lifts the fade and it begins again only once the new ring has been heard (`a_seek_back_inside_the_sleep_fade_never_hushes_a_ring_the_graph_has_not_heard`). **A DoP
   stream is not faded toward sleep** (`Output::can_fade`): its ring cannot ramp and goes quiet at
   once without draining, so the position froze short of the end the timer waited for; it plays to
   the edge and pauses there. Outlives

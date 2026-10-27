@@ -1639,7 +1639,12 @@ impl Engine {
         let lifting = output
             .sleep_lifted
             .is_some_and(|lifted| lifted.elapsed() < output.quiet_within());
-        if !playing || output.sleep_fading || lifting || !output.is_sounding() || !output.can_fade()
+        if !playing
+            || output.sleep_fading
+            || lifting
+            || !output.is_sounding()
+            || !output.producer.is_audible()
+            || !output.can_fade()
         {
             return;
         }

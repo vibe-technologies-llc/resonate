@@ -175,6 +175,7 @@ struct Fader {
     silenced: Arc<AtomicBool>,
     over: Arc<AtomicU64>,
     quiet: Arc<AtomicBool>,
+    whole: Arc<AtomicBool>,
     pulls: Arc<AtomicU64>,
 }
 
@@ -222,6 +223,10 @@ impl RingProducer {
 
     pub fn is_quiet(&self) -> bool {
         self.fader.quiet.load(Ordering::Acquire)
+    }
+
+    pub fn is_audible(&self) -> bool {
+        self.fader.whole.load(Ordering::Acquire) && !self.is_discarding()
     }
 
     pub fn pulls(&self) -> u64 {
@@ -575,6 +580,7 @@ impl RingConsumer {
         self.splice
             .taken
             .store(self.splices_seen, Ordering::Release);
+        self.fader.whole.store(false, Ordering::Release);
         self.discard.applied.store(requested, Ordering::Release);
     }
 
@@ -653,6 +659,16 @@ impl RingConsumer {
 
 impl AudioSource for RingConsumer {
     fn fill(&mut self, dst: &mut [u8]) -> usize {
+        let filled = self.pulled(dst);
+        self.fader
+            .whole
+            .store(self.level >= WHOLE, Ordering::Release);
+        filled
+    }
+}
+
+impl RingConsumer {
+    fn pulled(&mut self, dst: &mut [u8]) -> usize {
         self.fader.pulls.fetch_add(1, Ordering::Relaxed);
         self.splice
             .pulled
