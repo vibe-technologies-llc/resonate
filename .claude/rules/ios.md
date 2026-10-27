@@ -241,7 +241,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   is mapped to the stored row (`shown_positions`). Indexing the file again or finding it readable
   restores it; a document indexed under another name that names the same song
   (`Recording::names_the_same_song_as`: a song fetched back from a device or a download) takes the
-  place of a row hidden as gone, never one hidden because its folder was removed (`android.md`) (`take_the_place_of_missing`): its playlist rows, favourite, listens, lyrics,
+  place of a row hidden as gone (a song landed from a device or downloaded never takes the place of one hidden because its folder was removed, though a scan does, `android.md`) (`take_the_place_of_missing`): its playlist rows, favourite, listens, lyrics,
   artwork and studies move over, the playlists' revisions step, and the hidden row is deleted.
   Coming forward with songs newly hidden while sync runs forces a sync, so they are fetched back.
 - **Sync shows what it is doing.** `SyncStatus` carries `settled` (the service's `Shown.settled`)

@@ -273,10 +273,14 @@ index with it) and an unknown size and time (both 0) always indexes; the folder'
 lyrics are still offered for the known row. A file changed from outside, a hidden row, a row with no stamp
 and a bump of `INDEXING_REVISION` all index again, and `index_document` (no stamp) clears the stamp.
 `take_the_place_of_missing` reads the hidden rows only where one exists (`any_missing`, a covering
-partial index), so a scan is not quadratic in the library, and never takes the place of a row hidden
-because its folder was withdrawn: granting the folder again restores that row with its history,
-so a song landed or downloaded meanwhile under another name stays a row of its own
-(`a_song_of_a_withdrawn_folder_stays_held_and_is_never_taken_over_by_a_landing`).
+partial index), so a scan is not quadratic in the library. **What it may take the place of depends on
+who indexed** (`vanished::Absorbing`): a scan (`index_document`, `scan_document`) takes any hidden
+row's place, a withdrawn folder's included, so a listener who removes one folder and adds another
+holding the same songs keeps their favourites, playlists and history; a delivery (`indexed_download`:
+a sync landing or a download) takes only the place of a row found gone, so a song landed while its
+folder is withdrawn stays a row of its own and granting the folder again restores the withdrawn row
+with its history (`a_song_of_a_withdrawn_folder_stays_held_and_only_a_scan_of_another_folder_takes_its_place`,
+`a_folder_granted_again_restores_its_withdrawn_rows_with_their_history`).
 Queries page at most 500 rows at a time. Folder traversal stops at depth 32 and admits the same
 extensions as core. The queue resumes paused through the engine's `Resumption` command, so the
 saved position is applied during opening rather than racing a subsequent seek. A newly prepared

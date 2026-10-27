@@ -2752,10 +2752,107 @@ mod tests {
         assert!(!gone);
     }
 
+    fn tagged_silence(at: &Path) {
+        use resonate_codec::{FileTags, TagEdit, TagField, TagSink, Writing};
+
+        fs::create_dir_all(at.parent().expect("a folder")).expect("a folder");
+        fs::write(at, crate::harness::silence()).expect("a song");
+        let edits = [
+            (TagField::Title, "Hunter"),
+            (TagField::Artist, "Björk"),
+            (TagField::Album, "Homogenic"),
+        ]
+        .map(|(field, value)| TagEdit {
+            field,
+            value: value.into(),
+        });
+        FileTags::default()
+            .write(
+                &MediaLocation::local(at.to_path_buf()),
+                Writing {
+                    edits: &edits,
+                    taken: &[],
+                    picture: None,
+                    unpictured: false,
+                    popularity: None,
+                },
+            )
+            .expect("a tagged file");
+    }
+
     #[test]
-    fn a_song_of_a_withdrawn_folder_stays_held_and_is_never_taken_over_by_a_landing() {
+    fn a_song_of_a_withdrawn_folder_stays_held_and_only_a_scan_of_another_folder_takes_its_place() {
         let folder = folder("withdrawn");
         let (player, documents) = granted(&folder);
+        for place in ["a/hunter.wav", "b/hunter.wav", "landed/hunter.wav"] {
+            tagged_silence(&folder.join(place));
+        }
+        let held = player
+            .index_document("content://test/a/hunter.wav".into(), "hunter.wav".into())
+            .expect("a scanned song");
+        player.favourite(held.id, true).expect("a favourite");
+        let hunter = two_seconds_of("Hunter");
+        let asked = SearchSong {
+            title: "Hunter".into(),
+            artist: "Björk".into(),
+            album: "Homogenic".into(),
+            duration_ms: Some(2_000),
+            ..SearchSong::default()
+        };
+        let still_withdrawn = |player: &MobilePlayer| -> Option<bool> {
+            player
+                .catalog
+                .0
+                .lock()
+                .query_row(
+                    "SELECT withdrawn FROM documents WHERE id = ?1",
+                    [held.id as i64],
+                    |row| row.get(0),
+                )
+                .optional()
+                .expect("a row read")
+        };
+
+        player
+            .hide_songs_under("content://test/a/".into())
+            .expect("withdrawn");
+        let withdrawn_held = documents.holds(&hunter).expect("an answer");
+        let landed = player
+            .indexed_download(
+                "content://test/landed/hunter.wav".into(),
+                "hunter.wav".into(),
+                &asked,
+            )
+            .expect("a landing");
+        let after_landing = still_withdrawn(&player);
+        let scanned = player
+            .index_document("content://test/b/hunter.wav".into(), "hunter.wav".into())
+            .expect("a scan of another folder");
+        let after_scan = still_withdrawn(&player);
+        let favoured = (
+            player
+                .catalog
+                .track(landed.id)
+                .expect("the landed song")
+                .favourite,
+            player
+                .catalog
+                .track(scanned.id)
+                .expect("the scanned song")
+                .favourite,
+        );
+
+        let _ = fs::remove_dir_all(&folder);
+        assert!(withdrawn_held);
+        assert_eq!(after_landing, Some(true));
+        assert_eq!(after_scan, None);
+        assert_eq!(favoured, (false, true));
+    }
+
+    #[test]
+    fn a_folder_granted_again_restores_its_withdrawn_rows_with_their_history() {
+        let folder = folder("regranted");
+        let player = player(&folder);
         let held = song(
             &player,
             "content://test/tree/document/hunter.flac",
@@ -2763,32 +2860,17 @@ mod tests {
             None,
         );
         player.favourite(held.id, true).expect("a favourite");
-        let hunter = Recording {
-            album: "Homogenic".into(),
-            ..named("Hunter", "Björk", 305)
-        };
 
         player
             .hide_songs_under("content://test/tree/document/".into())
             .expect("withdrawn");
-        let withdrawn_held = documents.holds(&hunter).expect("an answer");
-        let landed = song(
-            &player,
-            "content://test/elsewhere/hunter.flac",
-            "Hunter",
-            None,
-        );
-        player
-            .take_the_place_of_missing(landed.id)
-            .expect("a landing");
-        let rows_after_landing = player.song_uris().expect("the songs").len();
         let regranted = song(
             &player,
             "content://test/tree/document/hunter.flac",
             "Hunter",
             None,
         );
-        let withdrawn_after_regrant: bool = player
+        let withdrawn: bool = player
             .catalog
             .0
             .lock()
@@ -2800,11 +2882,9 @@ mod tests {
             .expect("the row");
 
         let _ = fs::remove_dir_all(&folder);
-        assert!(withdrawn_held);
-        assert_eq!(rows_after_landing, 2);
         assert_eq!(regranted.id, held.id);
         assert!(player.catalog.track(held.id).expect("the song").favourite);
-        assert!(!withdrawn_after_regrant);
+        assert!(!withdrawn);
     }
 
     #[test]

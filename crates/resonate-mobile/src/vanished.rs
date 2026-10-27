@@ -30,6 +30,12 @@ fn write_error(source: rusqlite::Error) -> Error {
     Error::store(StoreOp::Write, source)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Absorbing {
+    EveryHidden,
+    FoundGone,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, uniffi::Record)]
 pub struct MissingSongs {
     pub hidden: u32,
@@ -142,8 +148,8 @@ impl MobilePlayer {
         dropped
     }
 
-    pub(crate) fn take_the_place_of_missing(&self, id: u64) -> Result<()> {
-        let replaced = self.catalog.take_the_place_of_missing(id)?;
+    pub(crate) fn take_the_place_of_missing(&self, id: u64, absorbing: Absorbing) -> Result<()> {
+        let replaced = self.catalog.take_the_place_of_missing(id, absorbing)?;
         let mut analyses = self.services.analyses.lock();
         for old in replaced {
             analyses.remove(&old);
@@ -187,7 +193,11 @@ impl Catalog {
             .map_err(read_error)
     }
 
-    pub(crate) fn take_the_place_of_missing(&self, id: u64) -> Result<Vec<u64>> {
+    pub(crate) fn take_the_place_of_missing(
+        &self,
+        id: u64,
+        absorbing: Absorbing,
+    ) -> Result<Vec<u64>> {
         let mut connection = self.0.lock();
         if !any_missing(&connection)? {
             return Ok(Vec::new());
@@ -195,7 +205,7 @@ impl Catalog {
         let Some(arrived) = recording_of(&connection, id as i64)? else {
             return Ok(Vec::new());
         };
-        let twins = missing_recordings(&connection)?
+        let twins = missing_recordings(&connection, absorbing)?
             .into_iter()
             .filter(|(_, recording)| recording.names_the_same_song_as(&arrived))
             .map(|(old, _)| old)
@@ -330,10 +340,17 @@ fn any_missing(connection: &Connection) -> Result<bool> {
         .map_err(read_error)
 }
 
-fn missing_recordings(connection: &Connection) -> Result<Vec<(i64, Recording)>> {
+fn missing_recordings(
+    connection: &Connection,
+    absorbing: Absorbing,
+) -> Result<Vec<(i64, Recording)>> {
+    let withdrawn = match absorbing {
+        Absorbing::EveryHidden => "",
+        Absorbing::FoundGone => "AND d.withdrawn = 0",
+    };
     let mut query = connection
         .prepare(&format!(
-            "SELECT d.id, {} FROM documents d WHERE d.missing = 1 AND d.withdrawn = 0 ORDER BY d.id",
+            "SELECT d.id, {} FROM documents d WHERE d.missing = 1 {withdrawn} ORDER BY d.id",
             crate::sync::RECORDING_COLUMNS
         ))
         .map_err(read_error)?;
@@ -456,7 +473,7 @@ mod tests {
 
         let back = song(&catalog, "Hunter (1).flac", "Hunter");
         let replaced = catalog
-            .take_the_place_of_missing(back.id)
+            .take_the_place_of_missing(back.id, Absorbing::EveryHidden)
             .expect("taken over");
 
         assert_eq!(replaced, [lost.id]);
