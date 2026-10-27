@@ -338,7 +338,7 @@ arriving on a first scan never squeeze its buttons.
 **Banners** are three, all `LiveRegion`s: *Reading music folder*, *Syncing with your devices* or
 *Fetching songs from your devices* (progress; a fixed label with the changing count and the bar
 cleared from the semantics, so a count is never read again at every step) and the notice, which
-says a failure or a status and stays until dismissed, whatever call succeeds after it. A liked song
+says a failure or a status and stays until dismissed, whatever call succeeds after it. **What the library finds by itself is silent by default**: *Tell me what the library finds by itself* in Library tools (`tell-findings` in `library-features`, off by default, `LibraryFeatures.tellsFindings`) gates the two notices the app raises with nobody asking, the songs hidden because their files are gone and the songs a sync landing kept, through `FindingNotices.shown` (`FindingNoticesTest`). Everything the listener asked for (a scan's *Read N songs*, filing, tags, deletion) and every failure is shown whatever the switch says, as is the live *Reading music folder* progress; the app starts no scan of its own. A liked song
 shows *Added to favourites* on the snackbar with *Add to playlist*; the song sheet (`SongSheet`)
 holds the song's actions, adding Equaliser, Audio output and Visualizer when opened from the
 player, and *Remove from queue* from a queue row.
@@ -506,7 +506,7 @@ root answers a query, and MediaStore's Files collection while Downloads is on), 
 grant never hides its songs, and the documents those folders list (`MusicDocuments.listed`: one
 query a directory, not one open a song): only a song the listing does not show is opened, so
 `NotFound` still decides, and a listing that fails part-way costs opens, never a wrong hiding. A pass that hid songs reads the catalog again, reloads the open
-playlist and says *N songs whose files are gone were hidden*; one that fails is reported once per
+playlist and, only when *Tell me what the library finds by itself* is on, says *N songs whose files are gone were hidden*; one that fails is reported once per
 distinct text. The queue drops hidden rows through the boundary's own `left_the_queue`.
 
 **A file opened from elsewhere is played at once** (`OpenedFiles`): `MainActivity` takes `ACTION_VIEW` of
@@ -1133,7 +1133,7 @@ move only on an unmetered network unless mobile data is allowed. While sync runs
 repository closes), so beacons and Bonjour from devices on the same network are heard (`sync.md`'s *Nearby*); the status text counts them when the server is away and a
 playlist's menu offers fetching from a nearby device whatever the server's standing. Kotlin polls the status every two
 seconds while the Activity is started (30 s otherwise), refreshes the library and playlists when
-`SyncStatus.arrivals` moves, and keeps the data-sync foreground service while songs move or wait.
+`SyncStatus.arrivals` moves, and keeps the data-sync foreground service while songs move or wait. A landing that kept songs says *Kept N songs from your devices* only when that same switch is on.
 Playlist menus offer fetching their missing songs from each online device and keeping their songs
 here; the queue offers continuing what another device was playing, starting it through the Media3
 controller when that device was playing.
