@@ -1407,6 +1407,90 @@ fn pausing_stops_the_graph_and_playing_starts_it_again() -> Result<()> {
 }
 
 #[test]
+fn two_players_in_one_process_play_at_once_each_on_its_own_sink_and_steered_alone() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let other_source = pcm(16, FRAMES / 2);
+    let path = tree.write("track.wav", &source.file);
+    let other_path = tree.write("other.wav", &other_source.file);
+    let usb = SinkInfo {
+        id: SinkId::new(2),
+        name: NodeName::new("alsa_output.usb"),
+        is_default: false,
+        ..sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])
+    };
+
+    let (one, one_graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    let (other, other_graph) = player(vec![usb])?;
+    one.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    other.send(Command::Load {
+        items: vec![track(&other_path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&one, playing, "the first player to play");
+    wait_for(&other, playing, "the second player to play");
+    let both_pulling = one_graph.lock().active && other_graph.lock().active;
+
+    one.request(Command::Pause)?.wait_for(PATIENCE)?;
+    let paused_alone = !one_graph.lock().active && other_graph.lock().active;
+    one.request(Command::Play)?.wait_for(PATIENCE)?;
+
+    let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
+    let deadline = Instant::now() + PATIENCE;
+    let whole =
+        |graph: &Arc<Mutex<Graph>>, wanted: &Pcm| graph.lock().played.len() >= wanted.stream.len();
+    while !(whole(&one_graph, &source) && whole(&other_graph, &other_source))
+        && Instant::now() < deadline
+    {
+        one_graph.lock().pull(block);
+        other_graph.lock().pull(block);
+        thread::sleep(SHORTEST_PAUSE_BETWEEN_PULLS);
+    }
+
+    let one_graph = one_graph.lock();
+    let other_graph = other_graph.lock();
+
+    assert!(both_pulling, "two players were not pulled at once");
+    assert!(paused_alone, "pausing one player stood the other down");
+    assert!(
+        heard_as_faded_in(&one_graph.played, &source.stream)
+            && one_graph.played.len() >= source.stream.len(),
+        "the first player's track did not reach its own graph whole: {}",
+        pulls(&one_graph)
+    );
+    assert_eq!(
+        other_graph.played.get(..other_source.stream.len()),
+        Some(other_source.stream.as_slice()),
+        "the second player's track did not reach its own graph byte for byte: {}",
+        pulls(&other_graph)
+    );
+    assert_eq!(
+        one_graph
+            .requests
+            .iter()
+            .map(|request| request.target)
+            .collect::<Vec<_>>(),
+        vec![Some(SinkId::new(1))],
+        "the first player opened beyond its own sink"
+    );
+    assert_eq!(
+        other_graph
+            .requests
+            .iter()
+            .map(|request| request.target)
+            .collect::<Vec<_>>(),
+        vec![Some(SinkId::new(2))],
+        "the second player opened beyond its own sink"
+    );
+    Ok(())
+}
+
+#[test]
 fn what_a_starved_graph_went_without_is_published_in_frames() -> Result<()> {
     const A_SECOND: usize = RATE as usize;
 

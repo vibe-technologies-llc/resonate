@@ -5,7 +5,7 @@ use std::{
     rc::Rc,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
@@ -57,6 +57,39 @@ type Nodes = Rc<RefCell<BTreeMap<u32, (Node, NodeListener)>>>;
 type Devices = Rc<RefCell<BTreeMap<u32, (Device, DeviceListener)>>>;
 type Metadatas = Rc<RefCell<BTreeMap<u32, (Metadata, MetadataListener, HeldIn)>>>;
 type HeardStream = Opened<Box<dyn AudioSink>>;
+type Playing = Rc<RefCell<BTreeMap<StreamKey, ActiveStream>>>;
+type Hearings = Rc<RefCell<BTreeMap<StreamKey, HeardStream>>>;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct StreamKey(u64);
+
+#[derive(Clone, Default)]
+struct StreamKeys(Arc<AtomicU64>);
+
+impl StreamKeys {
+    fn next(&self) -> StreamKey {
+        StreamKey(self.0.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
+struct Steering {
+    stream: StreamKey,
+    commands: LoopSender<Request>,
+}
+
+impl Steering {
+    fn send(&self, request: Request) -> resonate_audio::Result<()> {
+        self.commands
+            .send(request)
+            .map_err(|_| resonate_audio::Error::LoopStopped)
+    }
+}
+
+impl Drop for Steering {
+    fn drop(&mut self) {
+        let _ = self.commands.send(Request::Close(self.stream));
+    }
+}
 
 struct ActiveStream {
     opened: Opened<Fed>,
@@ -164,6 +197,7 @@ impl ActiveStream {
 }
 
 struct ReshapeRequest {
+    stream: StreamKey,
     request: StreamRequest,
     source: Box<dyn AudioSource>,
     reply: Sender<Reshaped>,
@@ -210,6 +244,7 @@ struct StreamSlots {
 }
 
 struct CaptureOpen {
+    stream: StreamKey,
     request: CaptureRequest,
     sink: Box<dyn AudioSink>,
     events: Sender<StreamEvent>,
@@ -217,6 +252,7 @@ struct CaptureOpen {
 }
 
 struct OpenRequest {
+    stream: StreamKey,
     request: StreamRequest,
     target: Option<NodeName>,
     source: Box<dyn AudioSource>,
@@ -257,11 +293,11 @@ enum Request {
     Open(Box<OpenRequest>),
     Reshape(Box<ReshapeRequest>),
     Capture(Box<CaptureOpen>),
-    StopCapture,
-    SetActive(bool),
+    StopCapture(StreamKey),
+    SetActive { stream: StreamKey, active: bool },
     Turn { sink: SinkId, setting: RouteSetting },
-    Drain,
-    Close,
+    Drain(StreamKey),
+    Close(StreamKey),
     Heartbeat,
     Lost,
     Reconnect,
@@ -547,6 +583,7 @@ pub struct PipeWire {
 #[derive(Clone)]
 pub struct Survey {
     commands: LoopSender<Request>,
+    keys: StreamKeys,
     shared: Arc<Mutex<Discovered>>,
     connected: Arc<AtomicBool>,
 }
@@ -582,9 +619,11 @@ impl Survey {
         let clock = Arc::new(StreamClock::default());
         let (reply, outcome) = bounded(1);
         let awaiting = Awaiting::default();
+        let stream = self.keys.next();
 
         self.commands
             .send(Request::Open(Box::new(OpenRequest {
+                stream,
                 request: request.clone(),
                 target,
                 source,
@@ -606,23 +645,27 @@ impl Survey {
             Err(RecvTimeoutError::Timeout) => outcome.recv().map_err(|_| Error::LoopStopped)??,
         }
 
-        let control = self.commands.clone();
+        let steering = Steering {
+            stream,
+            commands: self.commands.clone(),
+        };
         let reshaping = self.commands.clone();
-        let stream = SinkStream::new(
+        let opened = SinkStream::new(
             incoming,
             clock,
             Box::new(move |command| {
-                control
-                    .send(match command {
-                        StreamCommand::SetActive(active) => Request::SetActive(active),
-                        StreamCommand::Drain => Request::Drain,
-                        StreamCommand::Close => Request::Close,
-                    })
-                    .map_err(|_| resonate_audio::Error::LoopStopped)
+                steering.send(match command {
+                    StreamCommand::SetActive(active) => Request::SetActive {
+                        stream: steering.stream,
+                        active,
+                    },
+                    StreamCommand::Drain => Request::Drain(steering.stream),
+                    StreamCommand::Close => Request::Close(steering.stream),
+                })
             }),
         );
-        Ok(stream.reshaped_by(Box::new(move |request, source| {
-            reshape_on_the_loop(&reshaping, request, source)
+        Ok(opened.reshaped_by(Box::new(move |request, source| {
+            reshape_on_the_loop(&reshaping, stream, request, source)
         })))
     }
 
@@ -685,6 +728,7 @@ impl PipeWire {
             Ok(Ok(())) => Ok(Self {
                 survey: Survey {
                     commands,
+                    keys: StreamKeys::default(),
                     shared,
                     connected,
                 },
@@ -725,9 +769,11 @@ impl PipeWire {
     ) -> Result<CaptureStream> {
         let (events, incoming) = bounded(64);
         let (reply, outcome) = bounded(1);
+        let stream = self.survey.keys.next();
         self.survey
             .commands
             .send(Request::Capture(Box::new(CaptureOpen {
+                stream,
                 request: request.clone(),
                 sink,
                 events,
@@ -743,7 +789,7 @@ impl PipeWire {
             incoming,
             Box::new(move || {
                 control
-                    .send(Request::StopCapture)
+                    .send(Request::StopCapture(stream))
                     .map_err(|_| Error::LoopStopped)
             }),
         ))
@@ -796,11 +842,13 @@ impl Drop for PipeWire {
 
 fn reshape_on_the_loop(
     commands: &LoopSender<Request>,
+    stream: StreamKey,
     request: &StreamRequest,
     source: Box<dyn AudioSource>,
 ) -> Reshaped {
     let (reply, answer) = bounded(1);
     let asked = Request::Reshape(Box::new(ReshapeRequest {
+        stream,
         request: request.clone(),
         source,
         reply,
@@ -876,8 +924,8 @@ fn run(
         }
     };
 
-    let active: Rc<RefCell<Option<ActiveStream>>> = Rc::new(RefCell::new(None));
-    let heard: Rc<RefCell<Option<HeardStream>>> = Rc::new(RefCell::new(None));
+    let active: Playing = Rc::new(RefCell::new(BTreeMap::new()));
+    let heard: Hearings = Rc::new(RefCell::new(BTreeMap::new()));
     let sequence = Rc::new(RefCell::new(0_i32));
     let beat: Rc<RefCell<Option<Beat>>> = Rc::new(RefCell::new(None));
     let receiver = requests.attach(mainloop.loop_(), {
@@ -906,18 +954,16 @@ fn run(
                     let _ = open.reply.send(Err(Error::Disconnected));
                     return;
                 };
-                let outcome = open_stream(&core, *open, &active);
-                if outcome.is_err() {
-                    active.borrow_mut().take();
-                }
+                open_stream(&core, *open, &active);
             }
             Request::Reshape(reshape) => {
                 let ReshapeRequest {
+                    stream,
                     request,
                     source,
                     reply,
                 } = *reshape;
-                let reshaped = match active.borrow_mut().as_mut() {
+                let reshaped = match active.borrow_mut().get_mut(&stream) {
                     Some(playing) => playing.reshape(&request, source),
                     None => Reshaped::Refused {
                         source,
@@ -932,30 +978,30 @@ fn run(
                     return;
                 };
                 let CaptureOpen {
+                    stream,
                     request,
                     sink,
                     events,
                     reply,
                 } = *open;
                 match build_capture_stream(&core, &request, sink, &events) {
-                    Ok(stream) => {
-                        heard.borrow_mut().replace(stream);
+                    Ok(capture) => {
+                        heard.borrow_mut().insert(stream, capture);
                         let _ = reply.send(Ok(()));
                     }
                     Err(error) => {
-                        heard.borrow_mut().take();
                         let _ = reply.send(Err(error));
                     }
                 }
             }
-            Request::StopCapture => {
-                if let Some(Opened { stream, .. }) = heard.borrow().as_ref() {
+            Request::StopCapture(stream) => {
+                let stopped = heard.borrow_mut().remove(&stream);
+                if let Some(Opened { stream, .. }) = stopped.as_ref() {
                     let _ = stream.disconnect();
                 }
-                heard.borrow_mut().take();
             }
-            Request::SetActive(wanted) => {
-                if let Some(playing) = active.borrow().as_ref() {
+            Request::SetActive { stream, active: wanted } => {
+                if let Some(playing) = active.borrow().get(&stream) {
                     let _ = playing.stream().set_active(wanted);
                 }
             }
@@ -974,21 +1020,21 @@ fn run(
                     None => tracing::warn!(%sink, device, "the device under this sink has left the graph"),
                 }
             }
-            Request::Drain => {
-                if let Some(playing) = active.borrow_mut().as_mut() {
+            Request::Drain(stream) => {
+                if let Some(playing) = active.borrow_mut().get_mut(&stream) {
                     let _ = playing.stream().flush(true);
                     playing.drain_asked = true;
                     playing.drained.set(false);
                 }
             }
-            Request::Close => {
-                if let Some(playing) = active.borrow().as_ref() {
+            Request::Close(stream) => {
+                let closed = active.borrow_mut().remove(&stream);
+                if let Some(playing) = closed.as_ref() {
                     let _ = playing.stream().disconnect();
                 }
-                active.borrow_mut().take();
             }
             Request::Heartbeat => {
-                if let Some(playing) = active.borrow_mut().as_mut() {
+                for playing in active.borrow_mut().values_mut() {
                     playing.handing.let_go_of_the_spent();
                 }
                 let Some(core) = graph.borrow().as_ref().map(|held| held.core.clone()) else {
@@ -1042,8 +1088,8 @@ fn run(
                 }
             }
             Request::Shutdown => {
-                active.borrow_mut().take();
-                heard.borrow_mut().take();
+                active.borrow_mut().clear();
+                heard.borrow_mut().clear();
                 if let Some(mainloop) = mainloop.upgrade() {
                     mainloop.quit();
                 }
@@ -1068,8 +1114,8 @@ fn run(
     mainloop.run();
 
     drop(receiver);
-    active.borrow_mut().take();
-    heard.borrow_mut().take();
+    active.borrow_mut().clear();
+    heard.borrow_mut().clear();
     graph.borrow_mut().take();
     connected.store(false, Ordering::Release);
 }
@@ -1077,8 +1123,8 @@ fn run(
 fn lose_the_graph(
     graph: &RefCell<Option<Graph>>,
     connected: &AtomicBool,
-    active: &RefCell<Option<ActiveStream>>,
-    heard: &RefCell<Option<HeardStream>>,
+    active: &RefCell<BTreeMap<StreamKey, ActiveStream>>,
+    heard: &RefCell<BTreeMap<StreamKey, HeardStream>>,
     reaching: &Reaching,
 ) {
     let Some(gone) = graph.borrow_mut().take() else {
@@ -1086,8 +1132,8 @@ fn lose_the_graph(
     };
     tracing::warn!("the PipeWire daemon went away; reconnecting when it is back");
     connected.store(false, Ordering::Release);
-    active.borrow_mut().take();
-    heard.borrow_mut().take();
+    active.borrow_mut().clear();
+    heard.borrow_mut().clear();
     reaching.pending.borrow_mut().clear();
     drop(gone);
     reaching.forget_the_graph();
@@ -1598,12 +1644,9 @@ fn pod_of(info: AudioInfoRaw, id: u32) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-fn open_stream(
-    core: &pipewire::core::CoreRc,
-    open: OpenRequest,
-    active: &Rc<RefCell<Option<ActiveStream>>>,
-) -> Result<()> {
+fn open_stream(core: &pipewire::core::CoreRc, open: OpenRequest, active: &Playing) {
     let OpenRequest {
+        stream: key,
         request,
         target,
         source,
@@ -1612,24 +1655,20 @@ fn open_stream(
         awaiting,
     } = open;
     if awaiting.is_given_up() {
-        return Ok(());
+        return;
     }
 
-    let outcome = build_stream(core, &request, target.as_ref(), source, &slots);
-    match outcome {
+    match build_stream(core, &request, target.as_ref(), source, &slots) {
         Ok(stream) if awaiting.kept() => {
-            active.borrow_mut().replace(stream);
+            active.borrow_mut().insert(key, stream);
             let _ = reply.send(Ok(()));
-            Ok(())
         }
         Ok(abandoned) => {
             tracing::debug!("a stream opened after its asker gave up waiting is closed");
             let _ = abandoned.stream().disconnect();
-            Ok(())
         }
         Err(error) => {
             let _ = reply.send(Err(error));
-            Err(Error::LoopStopped)
         }
     }
 }

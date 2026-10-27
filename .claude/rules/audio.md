@@ -362,8 +362,9 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   multiplied marker is noise) and goes quiet at once on its marked silence. **Pause** stands the
   stream down once the consumer is quiet (`finish_fading`), or after `quiet_within` where the graph
   never pulled. **Stop, track change, every rebind** retire the output (`Engine::retiring`): fade
-  out, close once quiet; `promote` opens no new stream until then (the client holds one playback
-  stream). **Seek in place** fades old audio out, new in. A stream opened mid-track opens
+  out, close once quiet; `promote` opens no new stream until then (a player holds one stream of its
+  own at a time, so a pinned graph rate or an exclusive sink is never asked to carry two of its
+  streams at differing rates; the client itself holds any number, below). **Seek in place** fades old audio out, new in. A stream opened mid-track opens
   `Entering::FadedIn`; at a track's start it opens whole, so a bit-perfect first frame is untouched.
   Only a stream the graph is pulling fades (`Output::is_sounding`).
 - **A volume or ReplayGain change is heard at once, on what the ring holds.** The consumer trims each
@@ -1030,6 +1031,18 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   so the clip keeps wall-clock timing and the deadline is not extended; a reopen that fails adds no
   silence, so a microphone gone for the whole clip is still `NothingHeard`. **A stop that fails keeps
   the clip heard** (`finished`: warned; the error stands only when nothing was heard).
+- **A client holds any number of streams of either kind, each steered only by its own handle.**
+  `Survey::open` and `PipeWire::capture` mint a `StreamKey` (`StreamKeys`, shared by every clone of
+  the `Survey`) before asking the loop; the loop keeps playback streams and captures in
+  `BTreeMap`s by key, and every request that steers one (`SetActive`, `Drain`, `Close`,
+  `Reshape`, `StopCapture`) names its key, so an open never replaces another stream and a handle
+  outliving a lost graph cannot steer the stream opened after the reconnect. A `SinkStream`
+  dropped without `close` closes its own stream (its control holds a `Steering` whose `Drop` sends
+  `Close` for its key; a second `Close` for a key gone is nothing), as a dropped `CaptureStream`
+  stops its own. Several `Player`s in one process each start a client of their own
+  (`Player::with_sources`) and run apart, each on its own sink and stream
+  (`one_client_plays_two_streams_at_once_each_steered_and_closed_on_its_own`,
+  `two_players_in_one_process_play_at_once_each_on_its_own_sink_and_steered_alone`).
 - **A metadata key cleared reads as unset.** `Discovered::heard` reads `settings` and `default`
   metadata keyed by speaker (`HeldIn`): a key with no value clears what it held; a key of nothing
   clears every key that object carries and no other's (as `pw-metadata -d`). **Only the core

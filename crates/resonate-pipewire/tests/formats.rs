@@ -346,9 +346,10 @@ fn pw_cli(folder: &Path, args: &[&str]) -> bool {
 }
 
 fn port_the_stream(folder: &Path, hosting: Hosting) -> bool {
-    let Some(node) = the_playback_node(folder) else {
-        return false;
-    };
+    the_playback_node(folder).is_some_and(|node| port_the_node(folder, &node, hosting))
+}
+
+fn port_the_node(folder: &Path, node: &str, hosting: Hosting) -> bool {
     let format = format!(
         "{{ mediaType: audio, mediaSubtype: raw, format: {}, rate: {}, channels: {}, position: [ {} ] }}",
         hosting.wire,
@@ -359,7 +360,77 @@ fn port_the_stream(folder: &Path, hosting: Hosting) -> bool {
     let config = format!(
         "{{ direction: Output, mode: passthrough, monitor: false, control: false, format: {format} }}"
     );
-    pw_cli(folder, &["set-param", node.as_str(), "PortConfig", &config])
+    pw_cli(folder, &["set-param", node, "PortConfig", &config])
+}
+
+fn the_playback_nodes(folder: &Path) -> Vec<String> {
+    let Ok(listed) = Command::new("pw-cli")
+        .args(["ls", "Node"])
+        .env("PIPEWIRE_RUNTIME_DIR", folder)
+        .output()
+    else {
+        return Vec::new();
+    };
+    let mut node = None;
+    let mut nodes = Vec::new();
+    for line in String::from_utf8_lossy(&listed.stdout).lines() {
+        if let Some(id) = line.trim().strip_prefix("id ") {
+            node = id.split(',').next().map(str::to_owned);
+        }
+        if line.contains("Stream/Output/Audio")
+            && let Some(id) = node.take()
+        {
+            nodes.push(id);
+        }
+    }
+    nodes
+}
+
+fn quoted<'a>(line: &'a str, key: &str) -> Option<&'a str> {
+    line.trim()
+        .strip_prefix(key)?
+        .trim_start()
+        .strip_prefix('=')?
+        .trim()
+        .strip_prefix('"')?
+        .strip_suffix('"')
+}
+
+fn the_first_output_of(folder: &Path, node: &str) -> Option<String> {
+    let listed = Command::new("pw-cli")
+        .args(["ls", "Port"])
+        .env("PIPEWIRE_RUNTIME_DIR", folder)
+        .output()
+        .ok()?;
+    let mut port = None;
+    let mut on_the_node = false;
+    for line in String::from_utf8_lossy(&listed.stdout).lines() {
+        if let Some(id) = line.trim().strip_prefix("id ") {
+            port = id.split(',').next().map(str::to_owned);
+            on_the_node = false;
+        }
+        if quoted(line, "node.id") == Some(node) {
+            on_the_node = true;
+        }
+        if on_the_node && quoted(line, "port.name") == Some("output_1") {
+            return port;
+        }
+    }
+    None
+}
+
+fn link_the_node(folder: &Path, node: &str, hosting: Hosting) -> bool {
+    let Some(port) = the_first_output_of(folder, node) else {
+        return false;
+    };
+    Command::new("pw-link")
+        .arg(port)
+        .arg(format!("{}:playback_1", hosting.sink))
+        .env("PIPEWIRE_RUNTIME_DIR", folder)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
 }
 
 fn link_the_stream(folder: &Path, hosting: Hosting) -> bool {
@@ -644,6 +715,122 @@ fn a_sink_leaving_under_an_open_stream(folder: &Path) {
     );
 }
 
+fn counting(pulled: &Arc<AtomicUsize>) -> Box<Counting> {
+    Box::new(Counting {
+        pulled: Arc::clone(pulled),
+    })
+}
+
+fn grows(pulled: &Arc<AtomicUsize>, by: usize) -> bool {
+    let from = pulled.load(Ordering::Relaxed);
+    until(|| pulled.load(Ordering::Relaxed) >= from + by)
+}
+
+fn grows_while(growing: &Arc<AtomicUsize>, by: usize, still: &Arc<AtomicUsize>) -> bool {
+    let held = still.load(Ordering::Relaxed);
+    grows(growing, by) && still.load(Ordering::Relaxed) == held
+}
+
+fn two_streams_on_one_client(folder: &Path) {
+    let pipewire = PipeWire::start(STREAM).expect("the hosted daemon answers");
+    let sinks = the_hosted_sinks(&pipewire);
+    let one = HOSTED[3];
+    let other = HOSTED[2];
+    let first = Arc::new(AtomicUsize::new(0));
+    let second = Arc::new(AtomicUsize::new(0));
+    let wanted = bytes_in_a_quarter_second(one).max(bytes_in_a_quarter_second(other));
+
+    let a = pipewire
+        .open(
+            &request(named(&sinks, one.sink), one.spec),
+            counting(&first),
+        )
+        .expect("the first stream opens");
+    a.set_active(true).expect("the first stream activates");
+    let mut alone = Vec::new();
+    let one_stood = until(|| {
+        alone = the_playback_nodes(folder);
+        alone.len() == 1
+    });
+    let a_node = alone.first().cloned().unwrap_or_default();
+    let a_linked = until(|| port_the_node(folder, &a_node, one))
+        && until(|| link_the_node(folder, &a_node, one));
+    let a_flowed = until(|| first.load(Ordering::Relaxed) >= wanted);
+
+    let b = pipewire
+        .open(
+            &request(named(&sinks, other.sink), other.spec),
+            counting(&second),
+        )
+        .expect("the second stream opens");
+    b.set_active(true).expect("the second stream activates");
+    let mut both = Vec::new();
+    let two_stood = until(|| {
+        both = the_playback_nodes(folder);
+        both.len() == 2
+    });
+    let b_node = both
+        .iter()
+        .find(|node| **node != a_node)
+        .cloned()
+        .unwrap_or_default();
+    let b_linked = until(|| port_the_node(folder, &b_node, other))
+        && until(|| link_the_node(folder, &b_node, other));
+    let both_flowed = grows(&second, wanted) && grows(&first, wanted);
+
+    a.set_active(false).expect("the first stream deactivates");
+    let a_stood_down_alone = grows(&second, wanted) && grows_while(&second, wanted, &first);
+
+    a.close().expect("the first stream closes");
+    let mut left = Vec::new();
+    let one_left = until(|| {
+        left = the_playback_nodes(folder);
+        left == [b_node.clone()]
+    });
+    let b_played_on = grows(&second, wanted);
+    let b_reshaped = matches!(
+        b.reshape(
+            &request(named(&sinks, other.sink), other.spec),
+            counting(&second)
+        ),
+        Reshaped::Kept
+    );
+
+    drop(b);
+    let none_left = until(|| the_playback_nodes(folder).is_empty());
+    let _ = pipewire.shutdown();
+
+    assert!(one_stood, "the first stream never stood in the graph");
+    assert!(a_linked, "the first stream never linked");
+    assert!(a_flowed, "the first stream was never pulled");
+    assert!(
+        two_stood,
+        "a second stream did not stand beside the first: {both:?}"
+    );
+    assert!(b_linked, "the second stream never linked");
+    assert!(both_flowed, "the two streams were not pulled at once");
+    assert!(
+        a_stood_down_alone,
+        "deactivating the first stream did not stop it alone"
+    );
+    assert!(
+        one_left,
+        "closing the first stream left {left:?}, not the second alone"
+    );
+    assert!(
+        b_played_on,
+        "the second stream stopped when the first closed"
+    );
+    assert!(
+        b_reshaped,
+        "the second stream was not its own after the first closed"
+    );
+    assert!(
+        none_left,
+        "a stream dropped without a close stayed in the graph"
+    );
+}
+
 fn the_playback_node(folder: &Path) -> Option<String> {
     let listed = Command::new("pw-cli")
         .args(["ls", "Node"])
@@ -725,6 +912,15 @@ fn a_stream_another_client_turns_or_mutes_is_heard_as_scaled_until_it_is_back_at
         "a_stream_another_client_turns_or_mutes_is_heard_as_scaled_until_it_is_back_at_unity",
         "v",
         a_stream_turned_by_another_client,
+    );
+}
+
+#[test]
+fn one_client_plays_two_streams_at_once_each_steered_and_closed_on_its_own() {
+    hosted_as(
+        "one_client_plays_two_streams_at_once_each_steered_and_closed_on_its_own",
+        "t",
+        two_streams_on_one_client,
     );
 }
 
