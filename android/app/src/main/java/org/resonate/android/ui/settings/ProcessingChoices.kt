@@ -1,6 +1,7 @@
 package org.resonate.android.ui.settings
 
 import kotlin.math.roundToInt
+import org.resonate.android.nativecore.CrossfeedLevel
 import org.resonate.android.nativecore.GainMode
 import org.resonate.android.nativecore.LossyRestoration
 import org.resonate.android.nativecore.ResamplingPhase
@@ -39,6 +40,30 @@ val phaseChoices =
             ResamplingPhase.MINIMUM,
             "Minimum",
             "No ringing before transients, a little phase shift",
+        ),
+    )
+
+val crossfeedChoices =
+    listOf(
+        Choice(
+            CrossfeedLevel.OFF,
+            "Off",
+            "Each channel stays in its own ear, exactly as the record was mixed",
+        ),
+        Choice(
+            CrossfeedLevel.LIGHT,
+            "Light",
+            "A faint, low copy of each side reaches the other ear (650 Hz, 9.5 dB down), enough to take the edge off a hard-panned record",
+        ),
+        Choice(
+            CrossfeedLevel.MODERATE,
+            "Moderate",
+            "The classic setting (700 Hz, 6 dB down): the image closes up toward the front without losing its width",
+        ),
+        Choice(
+            CrossfeedLevel.STRONG,
+            "Strong",
+            "The most of the other side reaches each ear (700 Hz, 4.5 dB down), for old stereo records with the voices on one side and the band on the other",
         ),
     )
 

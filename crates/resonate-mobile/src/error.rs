@@ -297,6 +297,11 @@ pub enum Error {
     ImpulseTooLarge,
     #[error("The file holds no response room correction can use")]
     NoImpulse,
+    #[error("The two speaker responses are not a pair: {source}")]
+    ImpulsePair {
+        #[source]
+        source: Box<resonate_engine::PairedReadError>,
+    },
     #[error("The room correction file could not be {op}")]
     ImpulseFile {
         op: crate::room::ImpulseOp,

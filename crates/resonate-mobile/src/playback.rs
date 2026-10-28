@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use resonate_engine::{
-    Command, Equalisation, FilterPhase, Quality, ReplayGainMode, Restoration, Until,
+    Command, Crossfeed, Equalisation, FilterPhase, Quality, ReplayGainMode, Restoration, Until,
 };
 
 use crate::{Error, Result, equaliser::EqualiserCurve};
@@ -32,6 +32,26 @@ pub enum ResamplingPhase {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, uniffi::Enum)]
+pub enum CrossfeedLevel {
+    #[default]
+    Off,
+    Light,
+    Moderate,
+    Strong,
+}
+
+impl From<CrossfeedLevel> for Crossfeed {
+    fn from(level: CrossfeedLevel) -> Self {
+        match level {
+            CrossfeedLevel::Off => Self::Off,
+            CrossfeedLevel::Light => Self::Light,
+            CrossfeedLevel::Moderate => Self::Moderate,
+            CrossfeedLevel::Strong => Self::Strong,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, uniffi::Enum)]
 pub enum LossyRestoration {
     #[default]
     Off,
@@ -50,6 +70,7 @@ pub struct PlaybackPreferences {
     pub restoration: LossyRestoration,
     pub buffer_ms: u32,
     pub dsd_like_pcm: bool,
+    pub crossfeed: CrossfeedLevel,
 }
 
 impl Default for PlaybackPreferences {
@@ -64,6 +85,7 @@ impl Default for PlaybackPreferences {
             restoration: LossyRestoration::default(),
             buffer_ms: 500,
             dsd_like_pcm: false,
+            crossfeed: CrossfeedLevel::Off,
         }
     }
 }
@@ -125,6 +147,9 @@ impl PlaybackPreferences {
         }
         if self.dsd_like_pcm != previous.dsd_like_pcm {
             commands.push(Command::SetDsdLikePcm(self.dsd_like_pcm));
+        }
+        if self.crossfeed != previous.crossfeed {
+            commands.push(Command::SetCrossfeed(self.crossfeed.into()));
         }
         Ok(commands)
     }
@@ -199,6 +224,37 @@ mod tests {
                 .expect("a renamed curve")
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn a_crossfeed_level_is_sent_once_and_survives_a_round_trip_of_every_level() {
+        let previous = PlaybackPreferences::default();
+        assert_eq!(previous.crossfeed, CrossfeedLevel::Off);
+
+        for (level, engine) in [
+            (CrossfeedLevel::Light, Crossfeed::Light),
+            (CrossfeedLevel::Moderate, Crossfeed::Moderate),
+            (CrossfeedLevel::Strong, Crossfeed::Strong),
+        ] {
+            let mut preferences = previous.clone();
+            preferences.crossfeed = level;
+
+            let commands = preferences.commands(&previous).expect("a level");
+            assert!(matches!(
+                commands.as_slice(),
+                [Command::SetCrossfeed(sent)] if *sent == engine
+            ));
+            assert!(preferences.commands(&preferences).expect("same").is_empty());
+            assert_eq!(preferences.clone(), preferences);
+        }
+
+        let mut back = previous.clone();
+        back.crossfeed = CrossfeedLevel::Strong;
+        let commands = previous.commands(&back).expect("switched off");
+        assert!(matches!(
+            commands.as_slice(),
+            [Command::SetCrossfeed(Crossfeed::Off)]
+        ));
     }
 
     #[test]

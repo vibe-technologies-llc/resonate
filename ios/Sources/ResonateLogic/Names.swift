@@ -29,6 +29,12 @@ extension ResamplingPhase {
     public static func named(_ name: String?) -> ResamplingPhase? { every.first { $0.name == name } }
 }
 
+extension CrossfeedLevel {
+    public static let every: [CrossfeedLevel] = [.off, .light, .moderate, .strong]
+    public var name: String { "\(self)" }
+    public static func named(_ name: String?) -> CrossfeedLevel? { every.first { $0.name == name } }
+}
+
 extension LossyRestoration {
     public static let every: [LossyRestoration] = [.off, .repair, .extend]
     public var name: String { "\(self)" }

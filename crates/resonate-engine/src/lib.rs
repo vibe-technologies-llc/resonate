@@ -47,8 +47,8 @@ pub use resonate_core::{
     },
 };
 pub use resonate_dsp::{
-    Crossfeed, DitherKind, FilterPhase, Impulse, NoiseShaping, Quality, ReplayGainMode,
-    Restoration, SincParams, TruePeakMeter, Tuning,
+    Crossfeed, DitherKind, Error as DspError, FilterPhase, Impulse, NoiseShaping, Quality,
+    ReplayGainMode, Restoration, SincParams, Speaker, TruePeakMeter, Tuning,
 };
 
 pub use crate::{
@@ -58,7 +58,7 @@ pub use crate::{
     },
     error::{Cause, Error, Result},
     heard::{A_SEEK, COUNTS_AS_HEARD, Counting, Listening, Played},
-    impulse::{LONGEST_IMPULSE, read_impulse},
+    impulse::{LONGEST_IMPULSE, PairedReadError, binaural_wave, read_binaural_pair, read_impulse},
     kept::{KEPT_EVERY, Keep, Keeping},
     pipeline::{
         BluetoothWake, Decoded, EngineConfig, Equalisation, Levelling, OutputMode, OutputPlan,

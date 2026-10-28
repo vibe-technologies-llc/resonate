@@ -16,8 +16,9 @@ use resonate_core::{
     eq::{Band, BandKind, Preamp, Traced, TracedOn},
 };
 use resonate_engine::{
-    AnalysisError, Applied, BandGains, Command, Impulse, Loudest, NodeName, Player, Sources, Watch,
-    Watching, read_impulse,
+    AnalysisError, Applied, BandGains, Command, DspError, Impulse, Loudest, NodeName,
+    PairedReadError, Player, Sources, Watch, Watching, binaural_wave, read_binaural_pair,
+    read_impulse,
 };
 use resonate_eq::{Binding, BuiltIn, Device, MEASURERS_BEST_FIRST, ProfileName};
 use resonate_library::Library;
@@ -1846,18 +1847,67 @@ impl RootView {
 const ROOM_NOTE: &str = "The response is convolved with every stream after the equaliser, at the \
                          stream's own rate, a partition of 1 024 frames behind. It is read again \
                          from the file at every start, so a new measurement written over it is \
-                         heard from then on.";
+                         heard from then on. A four-channel file is read as a two-by-two \
+                         (binaural) response, in the order left-to-left, left-to-right, \
+                         right-to-left, right-to-right; two stereo files, one for each speaker, \
+                         are joined into one.";
+
+const BINAURAL_NOTE: &str = "A two-by-two (binaural) response: each speaker's response is heard at \
+                             both ears, so a stereo stream is convolved four ways.";
+
+const BINAURAL_FILE: &str = "binaural-response.wav";
 
 const NO_ROOM: &str = "Nothing is corrected.";
 
 impl RootView {
+    fn room_is_crossed(&self) -> bool {
+        self.room_shape
+            .as_ref()
+            .is_some_and(|(_, crossed)| *crossed)
+    }
+
+    fn look_at_the_room(&mut self, file: &Path, cx: &mut Context<Self>) {
+        if self
+            .room_shape
+            .as_ref()
+            .is_some_and(|(seen, _)| seen == file)
+        {
+            return;
+        }
+        self.room_shape = Some((file.to_path_buf(), false));
+        let reading = file.to_path_buf();
+        let read = cx.background_executor().spawn({
+            let reading = reading.clone();
+            async move { read_impulse(&Sources::local(), &MediaLocation::local(&reading)) }
+        });
+        self.looking_at_the_room = cx.spawn(async move |this, cx| {
+            let crossed = matches!(read.await, Ok(Some(impulse)) if impulse.is_crossed());
+            let _ = this.update(cx, |this, cx| {
+                if this
+                    .room_shape
+                    .as_ref()
+                    .is_some_and(|(seen, _)| *seen == reading)
+                {
+                    this.room_shape = Some((reading, crossed));
+                    cx.notify();
+                }
+            });
+        });
+    }
+
     pub(super) fn room_group(&mut self, cx: &mut Context<Self>) -> Div {
         let held = cx.global::<ResonateApp>().convolution.clone();
+        if let Some(file) = &held {
+            self.look_at_the_room(file, cx);
+        }
 
         kit::section_body()
             .child(match &held {
                 Some(file) => note(file.display().to_string()),
                 None => note(NO_ROOM),
+            })
+            .when(held.is_some() && self.room_is_crossed(), |body| {
+                body.child(note(BINAURAL_NOTE))
             })
             .child(
                 div()
@@ -1870,6 +1920,15 @@ impl RootView {
                         Icon::Folder,
                         false,
                         |this, _, cx| this.choose_a_response(cx),
+                        self,
+                        cx,
+                    ))
+                    .child(action(
+                        "choose-a-speaker-pair",
+                        "Choose a pair…",
+                        Icon::Folder,
+                        false,
+                        |this, _, cx| this.choose_a_speaker_pair(cx),
                         self,
                         cx,
                     ))
@@ -1908,6 +1967,67 @@ impl RootView {
         .detach();
     }
 
+    fn choose_a_speaker_pair(&self, cx: &mut Context<Self>) {
+        let left = cx.prompt_for_paths(speaker_options("Left speaker"));
+        cx.spawn(async move |this, cx| {
+            let Ok(Ok(Some(chosen))) = left.await else {
+                return;
+            };
+            let Some(left) = chosen.into_iter().next() else {
+                return;
+            };
+            let Ok(right) = this.update(cx, |_, cx| {
+                cx.prompt_for_paths(speaker_options("Right speaker"))
+            }) else {
+                return;
+            };
+            let Ok(Ok(Some(chosen))) = right.await else {
+                return;
+            };
+            let Some(right) = chosen.into_iter().next() else {
+                return;
+            };
+            let _ = this.update(cx, |this, cx| {
+                this.correct_the_room_by_a_pair(left, right, cx)
+            });
+        })
+        .detach();
+    }
+
+    fn correct_the_room_by_a_pair(
+        &mut self,
+        left: PathBuf,
+        right: PathBuf,
+        cx: &mut Context<Self>,
+    ) {
+        let kept = cx
+            .global::<ResonateApp>()
+            .places
+            .equaliser
+            .with_file_name(BINAURAL_FILE);
+        let assembling = kept.clone();
+        let assembled = cx.background_executor().spawn(async move {
+            let whole = read_binaural_pair(
+                &Sources::local(),
+                &MediaLocation::local(&left),
+                &MediaLocation::local(&right),
+            )
+            .map_err(|error| pair_refusal(&error))?;
+            let wave = binaural_wave(&whole).map_err(|error| pair_refusal(&error))?;
+            write_beside(&assembling, &wave).map_err(|error| {
+                tracing::warn!(%error, "the assembled binaural response could not be kept");
+                KEPT_NOT.to_owned()
+            })
+        });
+        self.reading_the_room = cx.spawn(async move |this, cx| {
+            let assembled = assembled.await;
+            let _ = this.update(cx, |this, cx| match assembled {
+                Ok(()) => this.correct_the_room(Some(kept), cx),
+                Err(words) => this.report(Notice::Trouble(words), cx),
+            });
+        });
+    }
+
     pub(crate) fn correct_the_room(&mut self, file: Option<PathBuf>, cx: &mut Context<Self>) {
         let Some(file) = file else {
             self.reading_the_room = Task::ready(());
@@ -1925,6 +2045,7 @@ impl RootView {
             let read = read.await;
             let _ = this.update(cx, |this, cx| match read {
                 Ok(Some(impulse)) => {
+                    this.room_shape = Some((file.clone(), impulse.is_crossed()));
                     cx.update_global::<ResonateApp, _>(|global, _| {
                         global.convolution = Some(file.clone());
                     });
@@ -2020,6 +2141,49 @@ fn fitted_to(songs: usize) -> String {
         0 => "The preamp is fitted to the room correction".to_owned(),
         1 => "The preamp is fitted to the one song measured".to_owned(),
         songs => format!("The preamp is fitted to the {songs} songs measured"),
+    }
+}
+
+const KEPT_NOT: &str = "The pair could not be kept as one response";
+
+fn speaker_options(label: &'static str) -> PathPromptOptions {
+    PathPromptOptions {
+        files: true,
+        directories: false,
+        multiple: false,
+        prompt: Some(SharedString::new_static(label)),
+    }
+}
+
+fn write_beside(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let staged = target.with_extension(format!("{}.new", std::process::id()));
+    std::fs::write(&staged, bytes)?;
+    std::fs::rename(&staged, target)
+}
+
+fn pair_refusal(error: &PairedReadError) -> String {
+    match error {
+        PairedReadError::Read { speaker, .. } => {
+            format!("The {speaker} speaker's file could not be read as a response")
+        }
+        PairedReadError::Empty { speaker } => {
+            format!("The {speaker} speaker's file holds no response to convolve with")
+        }
+        PairedReadError::Pair(DspError::SpeakerNotStereo { speaker, .. }) => {
+            format!("The {speaker} speaker's file is not stereo")
+        }
+        PairedReadError::Pair(DspError::SpeakerAlreadyCrossed { speaker }) => {
+            format!("The {speaker} speaker's file is already a two-by-two response")
+        }
+        PairedReadError::Pair(DspError::SpeakerRatesDiffer { .. }) => {
+            "The two files are at different sample rates".to_owned()
+        }
+        PairedReadError::Pair(DspError::SpeakerLengthsDiffer { .. }) => {
+            "The two files are of different lengths".to_owned()
+        }
+        PairedReadError::Pair(_) => {
+            "The two files could not be joined into one response".to_owned()
+        }
     }
 }
 

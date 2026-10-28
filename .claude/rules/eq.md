@@ -378,14 +378,34 @@ The stereo image, apart from the transducer: both are stereo-only, off by defaul
   transducer. `SetCrossfeed` rebinds the plan at the position as `SetConvolution` does
   (`rebind_where_the_plan_moves`): no splice, so it is heard a ring later. A DoP stream refuses it
   (`dop_survives`). The binary reads `crossfeed` from `config.toml`, the settings pane has a
-  *Crossfeed* group in Processing, `resonate explain` prints it. The phones do not offer it
-  (`FEATURES.md`).
+  *Crossfeed* group in Processing, `resonate explain` prints it. **The phones offer it as a preference**:
+  `PlaybackPreferences::crossfeed` is a `CrossfeedLevel` (`off`, `light`, `moderate`, `strong`, the
+  engine's four) and `commands` sends `SetCrossfeed` when it moves. iOS and Android keep it under
+  `crossfeed` beside the other playback preferences (the level's name, `PlaybackPreferencesStore`),
+  and their *Sound processing* pages offer it in a *Stereo image* section with the desktop's wording
+  for each level and its note that only a stereo stream is crossfed and a crossfed stream is converted
+  (`a_crossfeed_level_is_sent_once_and_survives_a_round_trip_of_every_level`, `StoresTests`).
 - **A two-by-two response is the same convolver over four taps.** `Impulse::crossed` takes exactly
   `CROSSED_RESPONSES` (4) channels in the order left-to-left, left-to-right, right-to-left,
   right-to-right, where *XY* is input *X* heard at output *Y* (a pure cross response swaps the
   channels, `a_pure_cross_response_swaps_the_channels`; the identity is transparent). `read_impulse`
   makes a crossed `Impulse` of any four-channel file, so the *Room correction* file serves as a
-  binaural response; `Impulse::is_crossed` is part of equality. `Convolver::prepare` builds four
+  binaural response; `Impulse::is_crossed` is part of equality. **Two stereo files make the same
+  response**: `Impulse::binaural(left, right)` takes the left speaker's response (its channels are the
+  two ears, LL and LR) and the right speaker's (RL and RR) and refuses what is not a pair with a typed
+  `resonate_dsp::Error` (`SpeakerNotStereo`, `SpeakerAlreadyCrossed`, `SpeakerRatesDiffer`,
+  `SpeakerLengthsDiffer`). `engine::read_binaural_pair` reads both files unscaled, joins them and only
+  then applies `with_headroom` to the whole (scaling each file alone would change their balance), and
+  `binaural_wave` writes the result as a four-channel float WAVE, which is how a pair is kept as the one
+  file the settings and the phones already name. The desktop's *Room correction* group has *Choose a
+  pair…* (left file, then right), which keeps `binaural-response.wav` beside the equaliser folder and
+  corrects by it as by any chosen file; the phones' boundary has `keep_binaural_room_correction`
+  (two byte strings and extensions, a refusal `Error::ImpulsePair`), no page offering it yet.
+  Every pane says when the response held is two-by-two: the desktop group a note under the file, the
+  phones' description *Two-by-two (binaural)* for four channels
+  (`two_stereo_responses_are_assembled_left_speaker_first`,
+  `a_pair_that_is_not_two_stereo_responses_of_one_rate_and_length_is_refused`,
+  `two_stereo_responses_are_kept_as_one_two_by_two_response_that_reads_back`). `Convolver::prepare` builds four
   `Channel`s (input *k / 2* to output *k % 2*) only when the impulse is crossed **and** the stream is
   stereo; on any other layout the four channels are taken one a stream channel as before. Each
   output sums two channels' ready samples, so the cost is that of four mono convolutions. **Headroom

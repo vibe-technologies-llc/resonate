@@ -4,6 +4,7 @@ import android.content.SharedPreferences
 import android.util.Log
 import java.io.IOException
 import org.resonate.android.nativecore.EqualiserCurve
+import org.resonate.android.nativecore.CrossfeedLevel
 import org.resonate.android.nativecore.GainMode
 import org.resonate.android.nativecore.LossyRestoration
 import org.resonate.android.nativecore.PlaybackPreferences
@@ -32,6 +33,9 @@ class PlaybackPreferencesStore(private val storage: SharedPreferences) {
                 storage.getInt("buffer-ms", defaults.bufferMs.toInt()).coerceIn(50, 2000).toUInt(),
             dsdLikePcm = storage.getBoolean("dsd-like-pcm", defaults.dsdLikePcm),
             truePeak = storage.getBoolean("true-peak", defaults.truePeak),
+            crossfeed =
+                CrossfeedLevel.entries.find { it.name == storage.getString("crossfeed", null) }
+                    ?: defaults.crossfeed,
             restoration =
                 LossyRestoration.entries.find { it.name == storage.getString("restoration", null) }
                     ?: defaults.restoration,
@@ -104,6 +108,7 @@ class PlaybackPreferencesStore(private val storage: SharedPreferences) {
             .putInt("buffer-ms", preferences.bufferMs.toInt())
             .putBoolean("dsd-like-pcm", preferences.dsdLikePcm)
             .putBoolean("true-peak", preferences.truePeak)
+            .putString("crossfeed", preferences.crossfeed.name)
             .putString("restoration", preferences.restoration.name)
 
     private fun keepCurve(

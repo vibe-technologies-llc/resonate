@@ -3,6 +3,8 @@ use std::result;
 use resonate_core::{ChannelCount, Ratio, SampleRate};
 use thiserror::Error;
 
+use crate::convolve::Speaker;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct RatioLimits {
     pub min: Ratio,
@@ -42,6 +44,21 @@ pub enum Error {
 
     #[error("a response needing {bytes} bytes is more than the {at_most} a convolver may hold")]
     ResponseTooLarge { bytes: u64, at_most: u64 },
+
+    #[error("the {speaker} speaker's response holds {channels} channels; a pair is stereo files")]
+    SpeakerNotStereo { speaker: Speaker, channels: usize },
+
+    #[error("the {speaker} speaker's response is already a two-by-two one")]
+    SpeakerAlreadyCrossed { speaker: Speaker },
+
+    #[error("the left speaker's response is at {left} and the right's at {right}")]
+    SpeakerRatesDiffer { left: SampleRate, right: SampleRate },
+
+    #[error("the left speaker's response is {left} frames and the right's {right}")]
+    SpeakerLengthsDiffer { left: usize, right: usize },
+
+    #[error("the pair of responses holds no usable taps")]
+    SpeakersUnusable,
 }
 
 pub type Result<T> = result::Result<T, Error>;

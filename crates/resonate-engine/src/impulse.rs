@@ -2,11 +2,91 @@ use std::time::Duration;
 
 use resonate_codec::{DecodeStatus, Decoder, Sources};
 use resonate_core::{AudioBuffer, Frames, MediaLocation, SampleData, SampleFormat, StreamSpec};
-use resonate_dsp::Impulse;
+use resonate_dsp::{Impulse, Speaker};
+use thiserror::Error;
 
 pub const LONGEST_IMPULSE: Duration = Duration::from_secs(10);
 
+#[derive(Debug, Error)]
+pub enum PairedReadError {
+    #[error("the {speaker} speaker's response could not be read")]
+    Read {
+        speaker: Speaker,
+        #[source]
+        source: resonate_codec::Error,
+    },
+
+    #[error("the {speaker} speaker's file holds no response")]
+    Empty { speaker: Speaker },
+
+    #[error(transparent)]
+    Pair(#[from] resonate_dsp::Error),
+}
+
 pub fn read_impulse(
+    sources: &Sources,
+    location: &MediaLocation,
+) -> resonate_codec::Result<Option<Impulse>> {
+    Ok(read_unscaled(sources, location)?.map(Impulse::with_headroom))
+}
+
+pub fn read_binaural_pair(
+    sources: &Sources,
+    left: &MediaLocation,
+    right: &MediaLocation,
+) -> Result<Impulse, PairedReadError> {
+    let heard = |speaker, location| {
+        read_unscaled(sources, location)
+            .map_err(|source| PairedReadError::Read { speaker, source })?
+            .ok_or(PairedReadError::Empty { speaker })
+    };
+    let left = heard(Speaker::Left, left)?;
+    let right = heard(Speaker::Right, right)?;
+    Ok(Impulse::binaural(&left, &right)?.with_headroom())
+}
+
+const WAVE_FORMAT_EXTENSIBLE: u16 = 0xFFFE;
+const QUAD_SPEAKERS: u32 = 0x33;
+const IEEE_FLOAT_SUBFORMAT: [u8; 16] = [
+    3, 0, 0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xAA, 0, 0x38, 0x9B, 0x71,
+];
+const FLOAT_BITS: u16 = 32;
+
+pub fn binaural_wave(impulse: &Impulse) -> Result<Vec<u8>, PairedReadError> {
+    let taps = impulse.at(impulse.rate())?;
+    let channels = u16::try_from(taps.len()).unwrap_or(u16::MAX);
+    let frames = impulse.frames();
+    let block_align = channels * (FLOAT_BITS / 8);
+    let data_bytes = u32::try_from(frames * usize::from(block_align)).unwrap_or(u32::MAX);
+    let rate = impulse.rate().hz();
+
+    let mut file = Vec::with_capacity(68 + data_bytes as usize);
+    file.extend_from_slice(b"RIFF");
+    file.extend_from_slice(&(60 + data_bytes).to_le_bytes());
+    file.extend_from_slice(b"WAVEfmt ");
+    file.extend_from_slice(&40_u32.to_le_bytes());
+    file.extend_from_slice(&WAVE_FORMAT_EXTENSIBLE.to_le_bytes());
+    file.extend_from_slice(&channels.to_le_bytes());
+    file.extend_from_slice(&rate.to_le_bytes());
+    file.extend_from_slice(&(rate * u32::from(block_align)).to_le_bytes());
+    file.extend_from_slice(&block_align.to_le_bytes());
+    file.extend_from_slice(&FLOAT_BITS.to_le_bytes());
+    file.extend_from_slice(&22_u16.to_le_bytes());
+    file.extend_from_slice(&FLOAT_BITS.to_le_bytes());
+    file.extend_from_slice(&QUAD_SPEAKERS.to_le_bytes());
+    file.extend_from_slice(&IEEE_FLOAT_SUBFORMAT);
+    file.extend_from_slice(b"data");
+    file.extend_from_slice(&data_bytes.to_le_bytes());
+    for frame in 0..frames {
+        for channel in taps.iter() {
+            let tap = channel.get(frame).copied().unwrap_or(0.0);
+            file.extend_from_slice(&(tap as f32).to_le_bytes());
+        }
+    }
+    Ok(file)
+}
+
+fn read_unscaled(
     sources: &Sources,
     location: &MediaLocation,
 ) -> resonate_codec::Result<Option<Impulse>> {
@@ -41,7 +121,7 @@ pub fn read_impulse(
     } else {
         Impulse::new(rate, taps)
     };
-    Ok(impulse.map(Impulse::with_headroom))
+    Ok(impulse)
 }
 
 #[cfg(test)]
@@ -124,6 +204,100 @@ mod tests {
         assert!(read.is_crossed());
         assert_eq!(read.channels(), 4);
         assert_eq!(read.frames(), 2);
+    }
+
+    fn scratch(name: &str, channels: u16, rate: u32, samples: &[i16]) -> std::path::PathBuf {
+        let path = env::temp_dir().join(format!("resonate-{name}-{}.wav", process::id()));
+        fs::write(&path, wave_of(channels, rate, samples)).expect("a scratch response");
+        path
+    }
+
+    #[test]
+    fn two_stereo_files_are_read_as_one_two_by_two_response() {
+        let left = scratch("pair-left", 2, 48_000, &[16_384, 8_192, 0, 0]);
+        let right = scratch("pair-right", 2, 48_000, &[4_096, 16_384, 0, 0]);
+
+        let pair = read_binaural_pair(
+            &Sources::local(),
+            &MediaLocation::local(&left),
+            &MediaLocation::local(&right),
+        )
+        .expect("a pair");
+        let _ = fs::remove_file(&left);
+        let _ = fs::remove_file(&right);
+
+        assert!(pair.is_crossed());
+        assert_eq!(pair.channels(), 4);
+        assert_eq!(pair.frames(), 2);
+    }
+
+    #[test]
+    fn a_pair_of_files_at_two_rates_or_two_lengths_or_not_stereo_is_refused() {
+        let left = scratch("pair-refused-left", 2, 48_000, &[16_384, 0, 0, 0]);
+        let slower = scratch("pair-refused-rate", 2, 44_100, &[16_384, 0, 0, 0]);
+        let longer = scratch("pair-refused-length", 2, 48_000, &[16_384, 0, 0, 0, 0, 0]);
+        let mono = scratch("pair-refused-mono", 1, 48_000, &[16_384, 0]);
+        let sources = Sources::local();
+        let at = |path: &std::path::Path| MediaLocation::local(path);
+
+        let rates = read_binaural_pair(&sources, &at(&left), &at(&slower));
+        let lengths = read_binaural_pair(&sources, &at(&left), &at(&longer));
+        let channels = read_binaural_pair(&sources, &at(&left), &at(&mono));
+        for path in [&left, &slower, &longer, &mono] {
+            let _ = fs::remove_file(path);
+        }
+
+        assert!(matches!(
+            rates,
+            Err(PairedReadError::Pair(
+                resonate_dsp::Error::SpeakerRatesDiffer { .. }
+            ))
+        ));
+        assert!(matches!(
+            lengths,
+            Err(PairedReadError::Pair(
+                resonate_dsp::Error::SpeakerLengthsDiffer { left: 2, right: 3 }
+            ))
+        ));
+        assert!(matches!(
+            channels,
+            Err(PairedReadError::Pair(
+                resonate_dsp::Error::SpeakerNotStereo {
+                    speaker: Speaker::Right,
+                    channels: 1
+                }
+            ))
+        ));
+    }
+
+    #[test]
+    fn an_assembled_pair_written_as_a_wave_reads_back_as_the_same_two_by_two_response() {
+        let left = scratch("wave-left", 2, 48_000, &[16_384, 8_192, 0, 4_096]);
+        let right = scratch("wave-right", 2, 48_000, &[4_096, 16_384, 2_048, 0]);
+        let sources = Sources::local();
+        let pair = read_binaural_pair(
+            &sources,
+            &MediaLocation::local(&left),
+            &MediaLocation::local(&right),
+        )
+        .expect("a pair");
+        let _ = fs::remove_file(&left);
+        let _ = fs::remove_file(&right);
+
+        let written = env::temp_dir().join(format!("resonate-wave-both-{}.wav", process::id()));
+        fs::write(&written, binaural_wave(&pair).expect("a wave")).expect("a scratch file");
+        let read = read_impulse(&sources, &MediaLocation::local(&written))
+            .expect("a readable response")
+            .expect("a response with taps");
+        let _ = fs::remove_file(&written);
+
+        assert!(read.is_crossed());
+        assert_eq!(read.frames(), pair.frames());
+        let before = pair.at(pair.rate()).expect("taps");
+        let after = read.at(read.rate()).expect("taps");
+        for (a, b) in before.iter().flatten().zip(after.iter().flatten()) {
+            assert!((a - b).abs() < 1e-6);
+        }
     }
 
     #[test]

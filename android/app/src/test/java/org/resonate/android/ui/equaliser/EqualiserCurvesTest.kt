@@ -6,6 +6,7 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.resonate.android.nativecore.CrossfeedLevel
 import org.resonate.android.nativecore.EqualiserBand
 import org.resonate.android.nativecore.EqualiserCurve
 import org.resonate.android.nativecore.EqualiserFilter
@@ -56,6 +57,7 @@ class EqualiserCurvesTest {
             restoration = LossyRestoration.OFF,
             bufferMs = 500u,
             dsdLikePcm = false,
+            crossfeed = CrossfeedLevel.OFF,
         )
 
     private val imported =
