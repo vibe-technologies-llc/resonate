@@ -615,21 +615,19 @@ impl Catalog {
         let read_error = |source| Error::store(StoreOp::Read, source);
         let mut statement = connection
             .prepare_cached(
-                "SELECT s.true_peak, s.band_peaks FROM studies s JOIN documents d ON d.id = s.track
+                "SELECT s.band_peaks FROM studies s JOIN documents d ON d.id = s.track
                  WHERE d.missing = 0 AND length(s.band_peaks) = ?1",
             )
             .map_err(read_error)?;
         let rows = statement
-            .query_map([BAND_PEAKS_BYTES as i64], |row| {
-                Ok((row.get::<_, f64>(0)?, row.get::<_, Vec<u8>>(1)?))
-            })
+            .query_map([BAND_PEAKS_BYTES as i64], |row| row.get::<_, Vec<u8>>(0))
             .map_err(read_error)?;
 
         let mut loudest = Loudest::default();
         for row in rows {
-            let (true_peak, kept) = row.map_err(read_error)?;
+            let kept = row.map_err(read_error)?;
             if let Some(peaks) = BandPeaks::from_bytes(&kept) {
-                loudest.weigh(gains, &peaks, true_peak as f32);
+                loudest.weigh(gains, &peaks);
             }
         }
         Ok(loudest)

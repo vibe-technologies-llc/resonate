@@ -46,8 +46,8 @@ impl Loudest {
         self.peak_db().map(Preamp::holding_under_full_scale)
     }
 
-    pub fn weigh(&mut self, gains: &BandGains, peaks: &BandPeaks, true_peak: f32) {
-        self.peak = self.peak.max(gains.bound(peaks, true_peak));
+    pub fn weigh(&mut self, gains: &BandGains, peaks: &BandPeaks) {
+        self.peak = self.peak.max(gains.bound(peaks));
         self.measured += 1;
     }
 

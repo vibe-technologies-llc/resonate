@@ -1034,7 +1034,7 @@ fn peaked(packets: u64) -> Answer {
             rate: 44_100,
         },
         judged_under: 1,
-        peaks: vec![9; 58],
+        peaks: vec![9; 472],
     })
 }
 

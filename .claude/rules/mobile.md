@@ -235,8 +235,8 @@ weigh; the ledger still passes it on in its snapshot.
   `studied_under` is a study from before and stays too), over one of another judgement it replaces and
   clears its `agreement`. A verdict, lossy guess, judgement or band layout this build cannot
   name is settled and written nowhere. **The band peaks travel as an answer of their own**
-  (step 16's `band_peaks`, `sync.md`): `band_peaks_to_share` lists a row judged under this build
-  with whole peaks on a document with a kept identity, the same `WholeFile` as the study, and
+  (step 16's `band_peaks`, whole at `BAND_PEAKS_BYTES` since step 17 cleared the one-moment
+  layout, `sync.md`): `band_peaks_to_share` lists a row judged under this build with whole peaks on a document with a kept identity, the same `WholeFile` as the study, and
   `take_band_peaks` writes them on every visible copy of that file studied under this judgement
   whose peaks are not already whole, never over peaks held; a judgement or length this build cannot
   read is settled and written nowhere, and a copy not yet studied takes nothing (the study is

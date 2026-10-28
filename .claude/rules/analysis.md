@@ -52,25 +52,49 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
   (`the_bands_measured_alone_are_the_bands_a_study_keeps`); `track_studies.band_levels` holds the 29
   bytes and a row of any other length reads as unmeasured, so a later layout re-measures instead
   of misreading. The edges are absolute hertz, so a measure is good at any stream rate.
-- **A study keeps each band's own peak beside its level.** `split::Splitting` runs in the study's
-  decode (and in `band_figures`): per channel, 28 zero-phase low-pass filters, one at each band
-  edge (two Butterworth biquads forward and then backward over the same samples, `1 / (1 + (f/fc)^8)`
-  as the response, real and never negative), whose differences are the 29 bands, the first being
-  the lowest low-pass and the last the signal less the highest. The bands therefore sum to the
-  signal exactly, whatever the filters, and a tone is shared between its neighbours without any
-  of it counted twice. The backward pass needs the future, so the stream is settled a quarter second
-  at a time with a twentieth of a second of margin each side, and the first and last margins are
-  the stream mirrored (a zero extension would put a step in the lowest bands; an odd mirror a bias
-  in them); a stream noted in pieces gives the peaks it gives whole
-  (`a_stream_noted_in_pieces_has_the_peaks_it_has_noted_whole`). A band's peak is read at every
-  sample and at the half-sample between (a cubic midpoint) of every channel, the loudest kept,
-  then divided by the least a tone at the band's upper reach could show to those probes
-  (`shortfall`), so the figure is the continuous peak or over it. `BandPeaks` stores each as a
-  `u16`, 1/16 dB steps from -200 dBFS rounded up, 0 a band that held nothing: 58 bytes
-  (`BAND_PEAKS_BYTES`), `track_studies.band_peaks`, a row of any other length reading as
-  unmeasured. `Study::band_peaks` and the kept analysis (`WRITTEN_AS` 4) carry it, so a study from
-  a recalled analysis keeps its peaks. A bank costs about 5 ms a second of audio a channel.
-  `eq.md` has the bound it makes of them.
+- **A study keeps each band's own peak beside its level, over moments.** `split::Splitting` runs in
+  the study's decode (and in `band_figures`): per channel, 28 zero-phase low-pass filters, one at
+  each band edge (four Butterworth biquads, an eighth-order Butterworth, run forward and then
+  backward over the same samples, `1 / (1 + (f/fc)^16)` as the response, real and never
+  negative), whose differences are the 29 bands, the first being the lowest low-pass and the last
+  the signal less the highest. The bands therefore sum to the signal exactly, whatever the
+  filters, and a tone is shared between its neighbours without any of it counted twice. The
+  forward pass carries its state through the whole stream; the backward pass needs the future, so
+  the stream is settled half a second at a time, each pass starting a fifth of a second past what
+  it settles (the lowest edge's slowest pole has fallen to under a thousandth by then), and the
+  first and last fifths are the stream mirrored (a zero extension would put a step in the lowest
+  bands; an odd mirror a bias in them); a stream noted in pieces gives the peaks it gives whole
+  (`a_stream_noted_in_pieces_has_the_peaks_it_has_noted_whole`). **The band tree**
+  (`peaks::TREE`): 57 nodes, the whole signal first, then each node's bands halved down to each
+  band alone, every node a contiguous run of bands, so its signal is the difference of two edge
+  filters. **Tiles**: every twentieth of a second (doubling, pairs merged, past 16 384 tiles) keeps
+  each node's peak, read at every sample and at the half-sample between (a cubic midpoint) of
+  every channel, the loudest kept, then divided by the least a tone at the reach of the node's top
+  band could show to those probes (`shortfall`), so the figure is the continuous peak or over it;
+  the whole signal's peak is instead the true peak of the tile (`TruePeakMeter::at`, the decode's
+  own meter, taken a tile at a time). **Moments** (`peaks::grouped`): each tile is widened to the
+  loudest of each node over its two neighbours each way (a tenth of a second, what the fit's
+  `G_soon` spans, `eq.md`), the tiles are paired down to at most 1 024, then gathered loudest
+  first: a tile joins the moment it raises least (the largest rise of a node over the moment's,
+  relative to the moment's, times the tile's whole peak over the song's), or starts one while
+  fewer than `MOMENTS_KEPT` (8) stand; the tolerance a tile may raise a moment by is bisected to
+  the least that leaves at most eight. A moment is the loudest of each node over its tiles, so
+  every tile is held by one, and moments kept apart are moments that did not sound together
+  (`a_burst_is_kept_apart_from_a_tone_heard_long_after_it`,
+  `moments_far_apart_in_time_and_in_kind_are_kept_apart_and_quiet_ones_join_the_rest`). Eight
+  were chosen by measure: on four twenty-second excerpts of released songs under eight curves the
+  bound sat 3.55 dB over the decode on average with one moment, 3.35 with four, 3.28 with eight,
+  3.23 with sixteen and 3.15 with thirty-two, under a tenth of a decibel for each doubling past
+  eight. **Kept**: each moment is its loudest node as a `u16`
+  (1/16 dB steps from -200 dBFS, rounded up) and each node a byte of quarter-decibel steps below it
+  (rounded down, so the figure read is never under the one measured; 254 holds anything deeper
+  than 63.5 dB below, 255 a node that held nothing); the moments loudest first, silent moments
+  after: 472 bytes (`BAND_PEAKS_BYTES`), `track_studies.band_peaks`, a row of any other length
+  reading as unmeasured. `Study::band_peaks` and the kept analysis (`WRITTEN_AS` 5) carry it, so a
+  study from a recalled analysis keeps its peaks. `BandPeaks::at_once` makes the peaks of bands
+  heard as one moment (each node the sum of its bands), for a caller that has only band peaks. The
+  bank, the tree and the moments cost about 14 ms of one core a second of 44.1 kHz stereo audio,
+  twice the 7 ms the one-moment bank of two biquads an edge measured the same way. `eq.md` has the bound it makes of them.
 - **Non-number samples are silence**: `normalised` maps float NaN/infinity to 0 before any builder
   (one would ride the K-weighting history to track end). Bit reading keeps native samples.
 - **`Watching` stops a pass.** `Watch` is the window's; `EnrichProgress` implements it, so cancelling
@@ -209,7 +233,7 @@ could change (stored studies and kept analyses are weighed against it).
   `VORBIS_LATTICE_AT_LEAST` (0.012), `LATTICE_OVER_ITS_CONTROL_AT_LEAST` (4) times its control and
   `STEPPED_COEFFICIENTS_AT_LEAST` (100 000): a periodic or synthetic signal that happens to cluster
   does so at every offset, which the control refuses. Every grid's `Steps` is kept in the study and
-  the kept analysis (`WRITTEN_AS` 4, the peaks after the print; 3: a count, then coding name, rate, lattice, control and
+  the kept analysis (`WRITTEN_AS` 5, the peaks over moments after the print; 4: one moment; 3: a count, then coding name, rate, lattice, control and
   coefficients each); `track_studies` stores only the verdict (no basis column), so the change
   moved `JUDGED_UNDER` to 3 and every study is weighed again. Cost: about 0.67 s a track over the
   decode (0.75 s to 1.42 s for a 3:23 FLAC), fixed whatever its length, since every grid is done

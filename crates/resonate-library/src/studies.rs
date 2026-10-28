@@ -348,23 +348,21 @@ pub(crate) fn loudest_kept(
 ) -> Result<Loudest> {
     let gains = BandGains::of(profile, rate);
     let mut statement = connection
-        .prepare_cached(
-            "SELECT true_peak, band_peaks FROM track_studies WHERE length(band_peaks) = ?1",
-        )
+        .prepare_cached("SELECT band_peaks FROM track_studies WHERE length(band_peaks) = ?1")
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
     let rows = statement
         .query_map(params![BAND_PEAKS_BYTES as i64], |row| {
-            Ok((row.get::<_, f64>(0)?, row.get::<_, Vec<u8>>(1)?))
+            row.get::<_, Vec<u8>>(0)
         })
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
     let mut loudest = Loudest::default();
     for row in rows {
-        let (true_peak, kept) = row.map_err(|source| Error::store(StoreOp::Query, source))?;
+        let kept = row.map_err(|source| Error::store(StoreOp::Query, source))?;
         let Some(peaks) = BandPeaks::from_bytes(&kept) else {
             continue;
         };
-        loudest.weigh(&gains, &peaks, true_peak as f32);
+        loudest.weigh(&gains, &peaks);
     }
     Ok(loudest)
 }

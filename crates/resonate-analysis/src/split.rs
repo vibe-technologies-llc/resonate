@@ -1,21 +1,34 @@
-use std::f64::consts::{PI, TAU};
+use std::{
+    f64::consts::{PI, TAU},
+    num::NonZeroUsize,
+};
 
 use resonate_core::{
     SampleRate,
     eq::{Band, BandGain, BandKind, Biquad, Frequency, Q},
 };
+use resonate_dsp::TruePeakMeter;
 
-use crate::bands::{BANDS, BandPeaks, edge_of};
+use crate::{
+    bands::{BANDS, edge_of},
+    peaks::{BandPeaks, Heights, NODES, TREE, WHOLE, grouped},
+};
 
 const EDGES: usize = BANDS - 1;
 
-const SECTIONS_AN_EDGE: usize = 2;
+const LEVELS: usize = BANDS + 1;
+
+const SECTIONS_AN_EDGE: usize = 4;
 
 const SECTIONS_OF_THE_ORDER: usize = 2 * SECTIONS_AN_EDGE;
 
-const CHUNKS_A_SECOND: usize = 4;
+const CHUNKS_A_SECOND: usize = 2;
 
-const MARGINS_A_SECOND: usize = 20;
+const MARGINS_A_SECOND: usize = 5;
+
+pub(crate) const TILES_A_SECOND: usize = 20;
+
+const TILES_AT_MOST: usize = 1 << 14;
 
 const PROBE_OFFSETS: usize = 64;
 
@@ -32,6 +45,8 @@ const OCTAVES_BEYOND_A_BAND_READ: f64 = 2.0 / 3.0;
 type Plane = [f64; EDGES];
 
 type Lanes = [f64; BANDS];
+
+type Levels = [f64; LEVELS];
 
 struct Coefficients {
     b0: [Plane; SECTIONS_AN_EDGE],
@@ -51,11 +66,8 @@ impl Coefficients {
             a2: [[0.0; EDGES]; SECTIONS_AN_EDGE],
         };
         for edge in 0..EDGES {
-            let frequency = Frequency::from_hertz(edge_of(edge + 1)).unwrap_or(Frequency::HIGHEST);
-            for section in 0..SECTIONS_AN_EDGE {
-                let q = Q::from_units(butterworth_q(section)).unwrap_or(Q::BUTTERWORTH);
-                let Biquad { b0, b1, b2, a1, a2 } =
-                    Band::new(BandKind::LowPass, frequency, BandGain::FLAT, q).design(rate);
+            for (section, Biquad { b0, b1, b2, a1, a2 }) in sections_at(edge + 1, rate).enumerate()
+            {
                 planes.b0[section][edge] = b0;
                 planes.b1[section][edge] = b1;
                 planes.b2[section][edge] = b2;
@@ -67,11 +79,33 @@ impl Coefficients {
     }
 }
 
+fn sections_at(edge: usize, rate: SampleRate) -> impl Iterator<Item = Biquad> {
+    let frequency = Frequency::from_hertz(edge_of(edge)).unwrap_or(Frequency::HIGHEST);
+    (0..SECTIONS_AN_EDGE).map(move |section| {
+        let q = Q::from_units(butterworth_q(section)).unwrap_or(Q::BUTTERWORTH);
+        Band::new(BandKind::LowPass, frequency, BandGain::FLAT, q).design(rate)
+    })
+}
+
+pub(crate) fn passed_below(edge: usize, hertz: f64, rate: SampleRate) -> f64 {
+    if edge == 0 {
+        return 0.0;
+    }
+    if edge >= BANDS {
+        return 1.0;
+    }
+    let decibels: f64 = sections_at(edge, rate)
+        .map(|section| section.magnitude_db(hertz, rate))
+        .sum();
+    10_f64.powf(decibels / 10.0)
+}
+
 fn butterworth_q(section: usize) -> f64 {
     let angle = PI * (2 * section + 1) as f64 / (2 * SECTIONS_OF_THE_ORDER) as f64;
     1.0 / (2.0 * angle.cos())
 }
 
+#[derive(Clone, Copy)]
 struct Cascades {
     first: [Plane; SECTIONS_AN_EDGE],
     second: [Plane; SECTIONS_AN_EDGE],
@@ -104,37 +138,108 @@ impl Cascades {
 }
 
 struct Seen {
-    before: [Lanes; 3],
-    loudest: Lanes,
+    before: [Levels; 3],
 }
 
 impl Seen {
     const NOTHING: Self = Self {
-        before: [[0.0; BANDS]; 3],
-        loudest: [0.0; BANDS],
+        before: [[0.0; LEVELS]; 3],
     };
 
-    fn note(&mut self, lanes: &Lanes) {
+    fn note(&mut self, levels: &Levels, into: &mut Heights) {
         let [oldest, older, newer] = &self.before;
-        for band in 0..BANDS {
-            let midway = (9.0 * (older[band] + newer[band]) - oldest[band] - lanes[band]) / 16.0;
-            let louder = midway.abs().max(lanes[band].abs());
-            self.loudest[band] = self.loudest[band].max(louder);
+        let midway: Levels = std::array::from_fn(|level| {
+            (9.0 * (older[level] + newer[level]) - oldest[level] - levels[level]) / 16.0
+        });
+        for (node, height) in TREE.iter().zip(into.iter_mut()).skip(WHOLE + 1) {
+            let at = levels[node.to] - levels[node.from];
+            let between = midway[node.to] - midway[node.from];
+            *height = height.max(at.abs()).max(between.abs());
         }
-        self.before = [self.before[1], self.before[2], *lanes];
+        self.before = [self.before[1], self.before[2], *levels];
+    }
+}
+
+struct Tiles {
+    frames: usize,
+    loudest: Vec<Heights>,
+}
+
+impl Tiles {
+    fn holding(&mut self, frame: usize) -> &mut Heights {
+        let mut tile = frame / self.frames;
+        while tile >= self.loudest.len() {
+            self.loudest.push([0.0; NODES]);
+            if self.loudest.len() > TILES_AT_MOST {
+                self.loudest = self
+                    .loudest
+                    .chunks(2)
+                    .map(|pair| {
+                        let other = pair.last().unwrap_or(&pair[0]);
+                        std::array::from_fn(|node| pair[0][node].max(other[node]))
+                    })
+                    .collect();
+                self.frames *= 2;
+                tile = frame / self.frames;
+            }
+        }
+        &mut self.loudest[tile]
+    }
+}
+
+struct Channel {
+    forward: Cascades,
+    heard: Vec<f64>,
+    passed: Vec<Plane>,
+    seen: Seen,
+}
+
+impl Channel {
+    const fn new() -> Self {
+        Self {
+            forward: Cascades::SILENT,
+            heard: Vec::new(),
+            passed: Vec::new(),
+            seen: Seen::NOTHING,
+        }
+    }
+
+    fn pass(&mut self, coefficients: &Coefficients, sample: f64) -> Plane {
+        let mut lanes = [sample; EDGES];
+        self.forward.step(coefficients, &mut lanes);
+        lanes
+    }
+
+    fn begin(&mut self, coefficients: &Coefficients, margin: usize) {
+        let before = margin.min(self.heard.len().saturating_sub(1));
+        for back in (1..=before).rev() {
+            self.pass(coefficients, self.heard[back]);
+        }
+        self.pass_from(coefficients, 0);
+    }
+
+    fn pass_from(&mut self, coefficients: &Coefficients, from: usize) {
+        for at in from..self.heard.len() {
+            let lanes = self.pass(coefficients, self.heard[at]);
+            self.passed.push(lanes);
+        }
     }
 }
 
 pub(crate) struct Splitting {
-    channels: usize,
     chunk: usize,
     margin: usize,
     coefficients: Coefficients,
-    windows: Vec<Vec<f64>>,
-    settled: usize,
+    channels: Vec<Channel>,
     begun: bool,
-    seen: Vec<Seen>,
-    stored: Vec<Plane>,
+    base: usize,
+    backward: Vec<Plane>,
+    tiles: Tiles,
+    meter: TruePeakMeter,
+    metered: Vec<f32>,
+    metered_from: usize,
+    tile_frames: usize,
+    noted: usize,
     shortfalls: Lanes,
 }
 
@@ -142,118 +247,158 @@ impl Splitting {
     pub(crate) fn new(rate: SampleRate, channels: usize) -> Self {
         let channels = channels.max(1);
         let hz = rate.hz() as usize;
+        let tile_frames = (hz / TILES_A_SECOND).max(1);
         Self {
-            channels,
             chunk: (hz / CHUNKS_A_SECOND).max(1),
             margin: (hz / MARGINS_A_SECOND).max(1),
             coefficients: Coefficients::at(rate),
-            windows: vec![Vec::new(); channels],
-            settled: 0,
+            channels: (0..channels).map(|_| Channel::new()).collect(),
             begun: false,
-            seen: (0..channels).map(|_| Seen::NOTHING).collect(),
-            stored: Vec::new(),
+            base: 0,
+            backward: Vec::new(),
+            tiles: Tiles {
+                frames: tile_frames,
+                loudest: Vec::new(),
+            },
+            meter: TruePeakMeter::at(
+                rate,
+                NonZeroUsize::new(channels).unwrap_or(NonZeroUsize::MIN),
+            ),
+            metered: Vec::new(),
+            metered_from: 0,
+            tile_frames,
+            noted: 0,
             shortfalls: shortfalls_at(rate),
         }
     }
 
     pub(crate) fn note(&mut self, interleaved: &[f32]) {
-        for frame in interleaved.chunks_exact(self.channels) {
-            for (window, sample) in self.windows.iter_mut().zip(frame) {
-                window.push(f64::from(*sample));
+        let width = self.channels.len();
+        for frame in interleaved.chunks_exact(width) {
+            for (channel, sample) in self.channels.iter_mut().zip(frame) {
+                channel.heard.push(f64::from(*sample));
             }
+            self.meter_frame(frame);
         }
-        while self.frames_held() >= self.settled + self.chunk + self.margin {
+
+        if self.begun {
+            for channel in &mut self.channels {
+                let from = channel.passed.len();
+                channel.pass_from(&self.coefficients, from);
+            }
+        } else if self.frames_held() > self.margin {
+            self.begin();
+        }
+
+        while self.begun && self.frames_held() >= self.chunk + self.margin {
             self.settle(self.chunk, false);
         }
     }
 
     pub(crate) fn finished(mut self) -> BandPeaks {
-        let unsettled = self.frames_held() - self.settled;
+        if !self.begun {
+            self.begin();
+        }
+        let unsettled = self.frames_held();
         self.settle(unsettled, true);
-        for seen in &mut self.seen {
+
+        let last = self.noted.saturating_sub(1);
+        let tile = self.tiles.holding(last);
+        for channel in &mut self.channels {
             for _ in 0..LAST_MIDPOINT_FRAMES {
-                seen.note(&[0.0; BANDS]);
+                channel.seen.note(&[0.0; LEVELS], tile);
             }
         }
 
-        BandPeaks::of((0..BANDS).map(|band| {
-            let loudest = self
-                .seen
-                .iter()
-                .map(|seen| seen.loudest[band])
-                .fold(0.0, f64::max);
-            loudest / self.shortfalls[band]
-        }))
+        if !self.metered.is_empty() {
+            let peak = self.meter.take(&self.metered);
+            let whole = &mut self.tiles.holding(self.metered_from)[WHOLE];
+            *whole = whole.max(peak);
+        }
+        let ringing = self.meter.finish();
+        let whole = &mut self.tiles.holding(last)[WHOLE];
+        *whole = whole.max(ringing);
+
+        if self.noted == 0 {
+            return BandPeaks::SILENT;
+        }
+        for heights in &mut self.tiles.loudest {
+            for (height, node) in heights.iter_mut().zip(&TREE).skip(WHOLE + 1) {
+                *height /= self.shortfalls[node.to - 1];
+            }
+        }
+        grouped(&self.tiles.loudest)
+    }
+
+    fn meter_frame(&mut self, frame: &[f32]) {
+        if self.metered.is_empty() {
+            self.metered_from = self.noted;
+        }
+        self.metered.extend_from_slice(frame);
+        self.noted += 1;
+        if self.noted.is_multiple_of(self.tile_frames) {
+            let peak = self.meter.take(&self.metered);
+            let whole = &mut self.tiles.holding(self.metered_from)[WHOLE];
+            *whole = whole.max(peak);
+            self.metered.clear();
+        }
     }
 
     fn frames_held(&self) -> usize {
-        self.windows.first().map_or(0, Vec::len)
+        self.channels
+            .first()
+            .map_or(0, |channel| channel.heard.len())
+    }
+
+    fn begin(&mut self) {
+        for channel in &mut self.channels {
+            channel.begin(&self.coefficients, self.margin);
+        }
+        self.begun = true;
     }
 
     fn settle(&mut self, frames: usize, ending: bool) {
         if frames == 0 {
             return;
         }
-        for channel in 0..self.channels {
-            self.settle_channel(channel, frames, ending);
+        for index in 0..self.channels.len() {
+            self.settle_channel(index, frames, ending);
         }
-        self.begun = true;
-        self.settled += frames;
-        if self.settled > self.margin {
-            let behind = self.settled - self.margin;
-            for window in &mut self.windows {
-                window.drain(..behind);
-            }
-            self.settled = self.margin;
+        for channel in &mut self.channels {
+            channel.heard.drain(..frames);
+            channel.passed.drain(..frames);
         }
+        self.base += frames;
     }
 
-    fn settle_channel(&mut self, channel: usize, frames: usize, ending: bool) {
-        let window = &self.windows[channel];
-        let before = if self.begun {
-            0
+    fn settle_channel(&mut self, index: usize, frames: usize, ending: bool) {
+        let channel = &mut self.channels[index];
+        self.backward.clear();
+        if ending {
+            let held = channel.heard.len();
+            let after = self.margin.min(held.saturating_sub(1));
+            self.backward.extend_from_slice(&channel.passed);
+            for ahead in 1..=after {
+                let sample = channel.heard[held - 1 - ahead];
+                let lanes = channel.pass(&self.coefficients, sample);
+                self.backward.push(lanes);
+            }
         } else {
-            self.margin.min(window.len().saturating_sub(1))
-        };
-        let after = if ending {
-            self.margin.min(window.len().saturating_sub(1))
-        } else {
-            0
-        };
-        let from = before + self.settled;
-        let to = from + frames;
-
-        self.stored.clear();
-        let mut forward = Cascades::SILENT;
-        let padded_before = (1..=before).rev().map(|back| window[back]);
-        let padded_after = (1..=after).map(|ahead| window[window.len() - 1 - ahead]);
-        for sample in padded_before
-            .chain(window.iter().copied())
-            .chain(padded_after)
-        {
-            let mut lanes = [sample; EDGES];
-            forward.step(&self.coefficients, &mut lanes);
-            self.stored.push(lanes);
+            self.backward
+                .extend_from_slice(&channel.passed[..frames + self.margin]);
         }
 
         let mut backward = Cascades::SILENT;
-        for lanes in self.stored[from..].iter_mut().rev() {
+        for lanes in self.backward.iter_mut().rev() {
             backward.step(&self.coefficients, lanes);
         }
 
-        let seen = &mut self.seen[channel];
-        for at in from..to {
-            let mut bands = [0.0; BANDS];
-            let mut below = 0.0;
-            for (band, slot) in bands.iter_mut().enumerate() {
-                let above = self.stored[at]
-                    .get(band)
-                    .copied()
-                    .unwrap_or(window[at - before]);
-                *slot = above - below;
-                below = above;
-            }
-            seen.note(&bands);
+        for at in 0..frames {
+            let mut levels = [0.0; LEVELS];
+            levels[1..BANDS].copy_from_slice(&self.backward[at]);
+            levels[BANDS] = channel.heard[at];
+            let tile = self.tiles.holding(self.base + at);
+            channel.seen.note(&levels, tile);
         }
     }
 }
@@ -317,19 +462,39 @@ mod tests {
         splitting.finished()
     }
 
-    fn amplitudes(peaks: &BandPeaks) -> Vec<f64> {
-        peaks.amplitudes().to_vec()
+    fn leaves(peaks: &BandPeaks) -> Vec<f64> {
+        (0..BANDS)
+            .map(|band| {
+                let leaf = TREE
+                    .iter()
+                    .position(|node| node.halves.is_none() && node.from == band)
+                    .expect("a leaf");
+                peaks
+                    .moments()
+                    .map(|heights| heights[leaf])
+                    .fold(0.0, f64::max)
+            })
+            .collect()
+    }
+
+    fn whole(peaks: &BandPeaks) -> f64 {
+        peaks
+            .moments()
+            .map(|heights| heights[WHOLE])
+            .fold(0.0, f64::max)
     }
 
     #[test]
     fn a_tone_is_held_between_the_bands_around_it_and_they_hold_no_more_than_it_does() {
-        let peaks = amplitudes(&peaks_of(&faded_tone(1_000.0, 0.8, 2), 2, 4_096));
+        let measured = peaks_of(&faded_tone(1_000.0, 0.8, 2), 2, 4_096);
+        let peaks = leaves(&measured);
 
         let together: f64 = peaks.iter().sum();
         let loudest = peaks.iter().copied().fold(0.0, f64::max);
 
-        assert!((0.8..0.8 * 1.1).contains(&together), "{together}");
+        assert!((0.8..0.8 * 1.05).contains(&together), "{together}");
         assert!(loudest < 0.8 * 0.6, "{loudest}");
+        assert!((whole(&measured) - 0.8).abs() < 0.8 * 0.02, "{measured:?}");
     }
 
     #[test]
@@ -355,8 +520,8 @@ mod tests {
         }
         let silence = vec![0.0_f32; RATE.hz() as usize * 2];
 
-        let heard = amplitudes(&peaks_of(&stereo, 2, 4_096));
-        let mono_of_the_louder = amplitudes(&peaks_of(&faded_tone(500.0, 0.7, 1), 1, 4_096));
+        let heard = peaks_of(&stereo, 2, 4_096);
+        let mono_of_the_louder = peaks_of(&faded_tone(500.0, 0.7, 1), 1, 4_096);
 
         assert_eq!(heard, mono_of_the_louder);
         assert!(peaks_of(&silence, 1, 4_096).is_silent());
@@ -373,5 +538,44 @@ mod tests {
         let peaks = peaks_of(&signal, 1, 100);
 
         assert!(!peaks.is_silent());
+    }
+
+    #[test]
+    fn a_burst_is_kept_apart_from_a_tone_heard_long_after_it() {
+        let rate = f64::from(RATE.hz());
+        let signal: Vec<f32> = (0..RATE.hz() as usize * 3)
+            .map(|frame| {
+                let seconds = frame as f64 / rate;
+                let burst = if (0.5..0.6).contains(&seconds) {
+                    (TAU * 60.0 * seconds).sin() * 0.7
+                } else {
+                    0.0
+                };
+                let tone = if (2.0..2.5).contains(&seconds) {
+                    (TAU * 6_000.0 * seconds).sin() * 0.6
+                } else {
+                    0.0
+                };
+                (burst + tone) as f32
+            })
+            .collect();
+        let low = TREE
+            .iter()
+            .position(|node| node.from == 0 && node.to == BANDS / 2)
+            .expect("the lower half");
+        let high = TREE
+            .iter()
+            .position(|node| node.from == BANDS / 2 && node.to == BANDS)
+            .expect("the upper half");
+
+        let peaks = peaks_of(&signal, 1, 4_096);
+
+        assert!(peaks.moments().count() >= 2);
+        assert!(
+            peaks
+                .moments()
+                .all(|heights| heights[low] < 0.2 || heights[high] < 0.2),
+            "{peaks:?}"
+        );
     }
 }

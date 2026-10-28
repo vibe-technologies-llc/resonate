@@ -144,6 +144,10 @@ ALTER TABLE studies ADD COLUMN band_peaks BLOB;
 CREATE TRIGGER documents_forget_where_the_peaks_gathered AFTER UPDATE OF size, modified ON documents WHEN old.size IS NOT new.size OR old.modified IS NOT new.modified BEGIN UPDATE studies SET band_peaks = NULL WHERE track = new.id; END;
 ";
 
+const PEAKS_KEPT_AS_ONE_MOMENT_ARE_MEASURED_AGAIN: &str = "
+UPDATE studies SET band_peaks = NULL WHERE length(band_peaks) = 58;
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     LISTENS_NAME_THEIR_ORIGIN,
@@ -161,6 +165,7 @@ const MIGRATIONS: &[&str] = &[
     SONGS_WAITING_KNOW_THEIR_FILE,
     STUDIES_KEEP_THEIR_PRINT_AND_WHAT_IT_WAS_HEARD_AS,
     STUDIES_KEEP_WHERE_THEIR_PEAKS_GATHER,
+    PEAKS_KEPT_AS_ONE_MOMENT_ARE_MEASURED_AGAIN,
 ];
 
 #[cfg(test)]
@@ -967,6 +972,65 @@ mod tests {
 
         assert_eq!(after_retitle.as_deref(), Some("disagrees"));
         assert_eq!(after_change, None);
+        drop(held);
+        drop(opened);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn peaks_kept_as_one_moment_are_forgotten_and_peaks_kept_over_moments_stay() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock")
+            .as_nanos();
+        let path = env::temp_dir().join(format!("resonate-mobile-moments-{unique}.sqlite"));
+        let connection = Connection::open(&path).expect("a database");
+        connection
+            .create_scalar_function(
+                "folded",
+                1,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
+            )
+            .expect("the fold");
+        let before = laid_before(PEAKS_KEPT_AS_ONE_MOMENT_ARE_MEASURED_AGAIN);
+        for step in &MIGRATIONS[..before] {
+            connection.execute_batch(step).expect("an earlier version");
+        }
+        connection
+            .execute_batch(
+                "INSERT INTO documents (uri, name, title, artist, album, duration_ms, rate, codec, size, modified)
+                 VALUES ('content://music/one.flac', 'one.flac', 'One', 'A', 'B', 1000, 44100, 'flac', 10, 1700000000123),
+                        ('content://music/many.flac', 'many.flac', 'Many', 'A', 'B', 1000, 44100, 'flac', 10, 1700000000123);
+                 INSERT INTO studies (track, verdict, peak, rms, true_peak, clipped, band_peaks)
+                 SELECT id, 'genuine', 0.5, 0.1, 0.5, 0,
+                        CASE name WHEN 'one.flac' THEN zeroblob(58) ELSE zeroblob(472) END
+                   FROM documents",
+            )
+            .expect("studies of before");
+        connection
+            .pragma_update(
+                None,
+                "user_version",
+                u32::try_from(before).expect("a count"),
+            )
+            .expect("its stamp");
+        drop(connection);
+
+        let opened = Catalog::open(&path).expect("migrated");
+        let held = opened.0.lock();
+        let peaks = |name: &str| -> Option<i64> {
+            held.query_row(
+                "SELECT length(s.band_peaks) FROM studies s JOIN documents d ON d.id = s.track
+                  WHERE d.name = ?1",
+                [name],
+                |row| row.get(0),
+            )
+            .expect("a study")
+        };
+
+        assert_eq!(peaks("one.flac"), None);
+        assert_eq!(peaks("many.flac"), Some(472));
         drop(held);
         drop(opened);
         let _ = fs::remove_file(path);

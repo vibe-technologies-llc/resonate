@@ -10,8 +10,9 @@ use crate::{
     Error, Result, Spectrum, Watching,
     analysis::{native_format, opened},
     conform::Walking,
+    peaks::{BandPeaks, Heights, NODES, TILES_REACHED_EACH_WAY, TREE, WHOLE},
     spectrum::{FLOOR_DB, Transforming},
-    split::Splitting,
+    split::{Splitting, TILES_A_SECOND, passed_below},
 };
 
 pub const BANDS: usize = 29;
@@ -24,17 +25,15 @@ const STEPS_A_DECIBEL: f64 = 2.0;
 
 const SILENT: u8 = u8::MAX;
 
-pub const BAND_PEAKS_BYTES: usize = BANDS * 2;
-
-const PEAK_STEPS_A_DECIBEL: f64 = 16.0;
-
-const PEAK_CODE_ZERO_DB: f64 = 200.0;
-
-const SILENT_PEAK: u16 = 0;
-
-const SKIRT_BANDS: f64 = 2.0;
-
 const LOWEST_REACH_HZ: f64 = Frequency::LOWEST_CENTIHERTZ as f64 / 100.0;
+
+const POINTS_ACROSS_THE_RANGE: usize = 2_048;
+
+const SHARE_HELD_WHOLE_FROM: f64 = 0.25;
+
+const LEVELS_BETWEEN: usize = 8;
+
+const QUIETEST_LEVEL: f64 = 0.25;
 
 const LEVELS_ALIKE_WITHIN: f64 = 1e-4;
 
@@ -119,66 +118,6 @@ fn steps_below(loudest: f64, power: f64) -> u8 {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct BandPeaks {
-    codes: [u16; BANDS],
-}
-
-impl BandPeaks {
-    pub const SILENT: Self = Self {
-        codes: [SILENT_PEAK; BANDS],
-    };
-
-    pub fn of(peaks: impl IntoIterator<Item = f64>) -> Self {
-        let mut codes = [SILENT_PEAK; BANDS];
-        for (code, peak) in codes.iter_mut().zip(peaks) {
-            *code = code_above(peak);
-        }
-        Self { codes }
-    }
-
-    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        let (pairs, rest) = bytes.as_chunks::<2>();
-        if !rest.is_empty() || pairs.len() != BANDS {
-            return None;
-        }
-        Some(Self {
-            codes: std::array::from_fn(|band| u16::from_le_bytes(pairs[band])),
-        })
-    }
-
-    pub fn to_bytes(&self) -> [u8; BAND_PEAKS_BYTES] {
-        let mut bytes = [0; BAND_PEAKS_BYTES];
-        for (slot, code) in bytes.as_chunks_mut::<2>().0.iter_mut().zip(self.codes) {
-            *slot = code.to_le_bytes();
-        }
-        bytes
-    }
-
-    pub fn is_silent(&self) -> bool {
-        self.codes.iter().all(|code| *code == SILENT_PEAK)
-    }
-
-    pub(crate) fn amplitudes(&self) -> [f64; BANDS] {
-        self.codes.map(amplitude_of)
-    }
-}
-
-fn code_above(peak: f64) -> u16 {
-    if !peak.is_finite() || peak <= 0.0 {
-        return SILENT_PEAK;
-    }
-    let steps = ((20.0 * peak.log10() + PEAK_CODE_ZERO_DB) * PEAK_STEPS_A_DECIBEL).ceil();
-    steps.clamp(1.0, f64::from(u16::MAX)) as u16
-}
-
-pub(crate) fn amplitude_of(code: u16) -> f64 {
-    if code == SILENT_PEAK {
-        return 0.0;
-    }
-    10_f64.powf((f64::from(code) / PEAK_STEPS_A_DECIBEL - PEAK_CODE_ZERO_DB) / 20.0)
-}
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BandFigures {
     pub levels: BandLevels,
@@ -188,82 +127,192 @@ pub struct BandFigures {
 #[derive(Clone, Debug, PartialEq)]
 struct Anchor {
     level: f64,
-    reach: [f64; BANDS],
+    reach: Heights,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BandGains {
     anchors: Vec<Anchor>,
+    ringing: Heights,
 }
+
+type Heard = (f64, f64);
 
 impl BandGains {
     pub fn of(profile: &Arc<Profile>, rate: SampleRate) -> Self {
         let at_the_rate = profile.at_rate(rate);
-
-        let mut levels = vec![0.0, 1.0];
-        levels.extend((0..BANDS).map(|band| {
-            let (from, to) = span_of_band(band);
-            let decibels = at_the_rate.peak_db_between(from, to, rate);
-            if decibels.is_finite() {
-                10_f64.powf(decibels / 20.0)
-            } else {
-                1.0
-            }
-        }));
-        levels.sort_by(f64::total_cmp);
-        levels.dedup_by(|later, earlier| (*later - *earlier).abs() < LEVELS_ALIKE_WITHIN);
-
-        let mut anchors: Vec<Anchor> = levels
+        let hertz = points_across(&at_the_rate, rate);
+        let shares: Vec<Heights> = hertz.iter().map(|hertz| shares_at(*hertz, rate)).collect();
+        let heard = at_the_rate.heard_at(&hertz, rate);
+        let reached = TILES_REACHED_EACH_WAY * (rate.hz() as usize / TILES_A_SECOND).max(1);
+        let soon = soon_heard_at(
+            &tapered(at_the_rate.impulse_responses(reached, rate)),
+            &hertz,
+            rate,
+        );
+        let later: Vec<Vec<Heard>> = heard
             .iter()
-            .map(|level| Anchor {
-                level: *level,
-                reach: [0.0; BANDS],
+            .zip(&soon)
+            .map(|(whole, soon)| {
+                whole
+                    .iter()
+                    .zip(soon)
+                    .map(|(whole, soon)| (whole.0 - soon.0, whole.1 - soon.1))
+                    .collect()
             })
             .collect();
-        for band in 0..BANDS {
-            let (from, to) = reach_of_band(band);
-            let reaches = at_the_rate.farthest_from_between(&levels, from, to, rate);
-            for (anchor, reach) in anchors.iter_mut().zip(reaches) {
-                anchor.reach[band] = reach;
-            }
+
+        Self {
+            anchors: levels_of(&heard)
+                .into_iter()
+                .map(|level| Anchor {
+                    level,
+                    reach: reach_of(&soon, &shares, level),
+                })
+                .collect(),
+            ringing: reach_of(&later, &shares, 0.0),
         }
-        Self { anchors }
     }
 
-    pub fn bound(&self, peaks: &BandPeaks, true_peak: f32) -> f64 {
-        if peaks.is_silent() || !true_peak.is_finite() {
-            return 0.0;
-        }
-        let whole = f64::from(true_peak.max(0.0));
-        let amplitudes = peaks.amplitudes();
+    pub fn bound(&self, peaks: &BandPeaks) -> f64 {
+        let (held, whole) = peaks
+            .moments()
+            .fold((0.0, [0.0; NODES]), |(held, whole), heights| {
+                let bound = self.bound_of(&heights);
+                let louder = std::array::from_fn(|node| f64::max(whole[node], heights[node]));
+                (f64::max(held, bound), louder)
+            });
+        held + cheapest(&self.ringing, &whole)
+    }
+
+    fn bound_of(&self, heights: &Heights) -> f64 {
         self.anchors
             .iter()
-            .map(|anchor| {
-                let apart: f64 = anchor
-                    .reach
-                    .iter()
-                    .zip(amplitudes)
-                    .map(|(reach, amplitude)| reach * amplitude)
-                    .sum();
-                anchor.level.abs() * whole + apart
-            })
+            .map(|anchor| anchor.level.abs() * heights[WHOLE] + cheapest(&anchor.reach, heights))
             .fold(f64::INFINITY, f64::min)
     }
 }
 
-fn reach_of_band(band: usize) -> (f64, f64) {
-    let skirt = 2.0_f64.powf(SKIRT_BANDS / BANDS_AN_OCTAVE);
-    let from = if band == 0 {
-        LOWEST_REACH_HZ
-    } else {
-        edge_of(band) / skirt
-    };
-    let to = if band + 1 >= BANDS {
-        f64::INFINITY
-    } else {
-        edge_of(band + 1) * skirt
-    };
-    (from, to)
+fn levels_of(heard: &[Vec<Heard>]) -> Vec<f64> {
+    let (quietest, loudest) = heard
+        .iter()
+        .flatten()
+        .map(|(real, imaginary)| real.hypot(*imaginary))
+        .fold((f64::INFINITY, 0.0_f64), |(low, high), gain| {
+            (low.min(gain), high.max(gain))
+        });
+    let mut levels = vec![0.0, 1.0];
+    if loudest.is_finite() && loudest > 0.0 {
+        let from = quietest.clamp(QUIETEST_LEVEL, loudest);
+        let ratio = loudest / from;
+        levels.extend(
+            (0..LEVELS_BETWEEN)
+                .map(|step| from * ratio.powf(step as f64 / (LEVELS_BETWEEN - 1) as f64)),
+        );
+    }
+    levels.sort_by(f64::total_cmp);
+    levels.dedup_by(|later, earlier| (*later - *earlier).abs() < LEVELS_ALIKE_WITHIN);
+    levels
+}
+
+fn reach_of(heard: &[Vec<Heard>], shares: &[Heights], level: f64) -> Heights {
+    heard
+        .iter()
+        .zip(shares)
+        .fold([0.0; NODES], |mut reach, (responses, shares)| {
+            let apart = responses
+                .iter()
+                .map(|(real, imaginary)| (real - level).hypot(*imaginary))
+                .fold(0.0, f64::max);
+            for (reach, share) in reach.iter_mut().zip(shares) {
+                *reach = reach.max(share * apart);
+            }
+            reach
+        })
+}
+
+fn tapered(mut responses: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
+    for response in &mut responses {
+        let frames = response.len();
+        let from = frames * 3 / 4;
+        let across = (frames - from).max(1) as f64;
+        for (frame, sample) in response.iter_mut().enumerate().skip(from) {
+            let into = (frame - from) as f64 / across;
+            *sample *= 0.5 + 0.5 * (std::f64::consts::PI * into).cos();
+        }
+    }
+    responses
+}
+
+fn soon_heard_at(responses: &[Vec<f64>], hertz: &[f64], rate: SampleRate) -> Vec<Vec<Heard>> {
+    hertz
+        .iter()
+        .map(|hertz| {
+            let angle = std::f64::consts::TAU * hertz / f64::from(rate.hz());
+            let (turn_imaginary, turn_real) = angle.sin_cos();
+            responses
+                .iter()
+                .map(|response| {
+                    let mut turned = (1.0, 0.0);
+                    let mut heard = (0.0, 0.0);
+                    for sample in response {
+                        heard.0 += sample * turned.0;
+                        heard.1 += sample * turned.1;
+                        turned = (
+                            turned.0 * turn_real - turned.1 * turn_imaginary,
+                            turned.0 * turn_imaginary + turned.1 * turn_real,
+                        );
+                    }
+                    heard
+                })
+                .collect()
+        })
+        .collect()
+}
+
+fn cheapest(reach: &Heights, heights: &Heights) -> f64 {
+    let mut costs = [0.0; NODES];
+    for index in (0..NODES).rev() {
+        let own = reach[index] * heights[index];
+        costs[index] = match TREE[index].halves {
+            Some((lower, upper)) => own.min(costs[lower] + costs[upper]),
+            None => own,
+        };
+    }
+    costs[WHOLE]
+}
+
+fn points_across(profile: &Profile, rate: SampleRate) -> Vec<f64> {
+    let nyquist = f64::from(rate.hz()) / 2.0;
+    let ratio = nyquist / LOWEST_REACH_HZ;
+    let last = (POINTS_ACROSS_THE_RANGE - 1) as f64;
+    let centres = profile
+        .bands()
+        .iter()
+        .filter(|band| band.applies_at(rate))
+        .map(|band| band.frequency.hertz());
+    (0..POINTS_ACROSS_THE_RANGE)
+        .map(|point| LOWEST_REACH_HZ * ratio.powf(point as f64 / last))
+        .chain(centres)
+        .collect()
+}
+
+fn shares_at(hertz: f64, rate: SampleRate) -> Heights {
+    let passed: [f64; BANDS + 1] = std::array::from_fn(|edge| passed_below(edge, hertz, rate));
+    let held_whole = |share: f64| (share / SHARE_HELD_WHOLE_FROM).min(1.0);
+    let weighed: [f64; BANDS] = std::array::from_fn(|band| {
+        let share = (passed[band + 1] - passed[band]).max(0.0);
+        held_whole(share) * share
+    });
+    let all_weighed: f64 = weighed.iter().sum();
+    std::array::from_fn(|index| {
+        let node = TREE[index];
+        let share = (passed[node.to] - passed[node.from]).max(0.0);
+        let own = held_whole(share);
+        let elsewhere = all_weighed - weighed[node.from..node.to].iter().sum::<f64>();
+        let spread = own * share + elsewhere;
+        if spread > 0.0 { own / spread } else { 0.0 }
+    })
 }
 
 pub fn band_figures(
@@ -369,8 +418,7 @@ mod tests {
         assert!(levels.is_silent());
         assert_eq!(levels, BandLevels::SILENT);
         assert_eq!(
-            BandGains::of(&boosting(100.0, 6.0), SampleRate::HZ_44100)
-                .bound(&BandPeaks::SILENT, 0.9),
+            BandGains::of(&boosting(100.0, 6.0), SampleRate::HZ_44100).bound(&BandPeaks::SILENT),
             0.0
         );
     }
@@ -384,12 +432,16 @@ mod tests {
         assert_eq!(BandLevels::from_bytes(&[]), None);
     }
 
-    fn peaks_in(sounding: &[(f64, f64)]) -> BandPeaks {
-        let mut peaks = [0.0; BANDS];
-        for (hertz, peak) in sounding {
-            peaks[band_of(*hertz)] = *peak;
-        }
-        BandPeaks::of(peaks)
+    fn tone_of(hertz: f64, peak: f64) -> BandPeaks {
+        let rate = SampleRate::HZ_44100;
+        let shares: [f64; BANDS] = std::array::from_fn(|band| {
+            passed_below(band + 1, hertz, rate) - passed_below(band, hertz, rate)
+        });
+        let heights: Heights = std::array::from_fn(|index| {
+            let node = TREE[index];
+            shares[node.from..node.to].iter().sum::<f64>() * peak
+        });
+        BandPeaks::of_moments(&[heights])
     }
 
     fn decibels_between(bound: f64, peak: f64) -> f64 {
@@ -397,74 +449,75 @@ mod tests {
     }
 
     #[test]
-    fn peaks_read_back_from_their_bytes_and_a_wrong_length_reads_as_nothing() {
-        let peaks = peaks_in(&[(110.0, 0.8), (3_000.0, 0.05)]);
+    fn a_tone_on_a_boost_is_raised_by_it_and_a_tone_far_from_it_is_not() {
+        let gains = BandGains::of(&boosting(110.0, 6.0), SampleRate::HZ_44100);
 
-        assert_eq!(BandPeaks::from_bytes(&peaks.to_bytes()), Some(peaks));
-        assert_eq!(BandPeaks::from_bytes(&peaks.to_bytes()[1..]), None);
-        assert_eq!(BandPeaks::from_bytes(&[]), None);
-        assert!(BandPeaks::SILENT.is_silent());
-        assert!(!peaks.is_silent());
-    }
-
-    #[test]
-    fn a_peak_is_kept_at_or_above_what_it_was_by_less_than_a_tenth_of_a_decibel() {
-        for peak in [1e-9, 0.003, 0.25, 0.8, 1.0, 3.7, 1_000.0] {
-            let kept = amplitude_of(code_above(peak));
-
-            assert!(kept >= peak, "{kept} under {peak}");
-            assert!(decibels_between(kept, peak) < 0.1, "{kept} over {peak}");
-        }
-        assert_eq!(code_above(0.0), SILENT_PEAK);
-        assert_eq!(code_above(f64::NAN), SILENT_PEAK);
-        assert_eq!(amplitude_of(SILENT_PEAK), 0.0);
-    }
-
-    #[test]
-    fn music_peaking_on_a_boost_is_raised_by_it_and_music_far_from_it_is_not() {
-        let reach = BandGains::of(&boosting(110.0, 6.0), SampleRate::HZ_44100);
-        let on_the_boost = peaks_in(&[(110.0, 0.5)]);
-        let far_from_it = peaks_in(&[(5_000.0, 0.5)]);
-
-        let raised = reach.bound(&on_the_boost, 0.5);
-        let left = reach.bound(&far_from_it, 0.5);
+        let raised = gains.bound(&tone_of(110.0, 0.5));
+        let left = gains.bound(&tone_of(5_000.0, 0.5));
 
         assert!(
-            (decibels_between(raised, 0.5) - 6.0).abs() < 0.3,
+            (0.0..0.3).contains(&(decibels_between(raised, 0.5) - 6.0)),
             "{raised}"
         );
-        assert!((left - 0.5).abs() < 0.01, "{left}");
+        assert!((0.0..0.25).contains(&decibels_between(left, 0.5)), "{left}");
     }
 
     #[test]
-    fn a_song_peaking_in_two_bands_is_bounded_between_the_flat_peak_and_the_boost_on_all_of_it() {
-        let both = peaks_in(&[(110.0, 0.4), (5_000.0, 0.4)]);
-        let reach = BandGains::of(&boosting(110.0, 6.0), SampleRate::HZ_44100);
+    fn a_tone_beside_a_narrow_boost_pays_little_of_its_height() {
+        let gains = BandGains::of(&bell(63.0, 8.0, 4.0), SampleRate::HZ_44100);
 
-        let bound = reach.bound(&both, 0.5);
+        let bound = gains.bound(&tone_of(100.0, 0.8));
 
-        let all_boosted = 0.5 * 10_f64.powf(6.0 / 20.0);
-        assert!(bound > 0.5 && bound < all_boosted + 0.01, "{bound}");
+        let height = 8.0;
+        assert!(decibels_between(bound, 0.8) < height / 2.0, "{bound}");
     }
 
     #[test]
     fn a_cut_lowers_the_bound_and_a_flat_curve_leaves_the_peak_as_it_was() {
-        let peaks = peaks_in(&[(110.0, 0.8)]);
+        let peaks = tone_of(110.0, 0.8);
         let flat = BandGains::of(&Arc::new(Profile::flat()), SampleRate::HZ_44100);
         let cutting = BandGains::of(&bell(110.0, -6.0, 0.2), SampleRate::HZ_44100);
 
-        assert!((flat.bound(&peaks, 0.8) - 0.8).abs() < 0.8 * 0.01);
-        assert!(cutting.bound(&peaks, 0.8) < 0.8 * 0.7);
+        assert!((flat.bound(&peaks) - 0.8).abs() < 0.8 * 0.01);
+        assert!(cutting.bound(&peaks) < 0.8 * 0.7);
     }
 
     #[test]
-    fn peaks_gathered_in_one_boosted_band_are_bounded_by_the_boost_though_the_rest_is_loud() {
-        let reach = BandGains::of(&boosting(110.0, 6.0), SampleRate::HZ_44100);
-        let gathered = peaks_in(&[(110.0, 0.7), (4_000.0, 0.2), (9_000.0, 0.2)]);
+    fn the_loudest_moment_sets_the_bound_and_a_quiet_one_on_the_boost_need_not() {
+        let gains = BandGains::of(&boosting(110.0, 6.0), SampleRate::HZ_44100);
+        let loud_elsewhere = tone_of(5_000.0, 0.9);
+        let quiet_on_the_boost = tone_of(110.0, 0.3);
+        let moments: Vec<Heights> = loud_elsewhere
+            .moments()
+            .chain(quiet_on_the_boost.moments())
+            .collect();
+        let apart = BandPeaks::of_moments(&moments);
+        let together = BandPeaks::of_moments(&[std::array::from_fn(|node| {
+            moments[0][node] + moments[1][node]
+        })]);
 
-        let bound = reach.bound(&gathered, 0.7);
+        let bound_apart = gains.bound(&apart);
+        let bound_together = gains.bound(&together);
 
-        let boosted_peak = 0.7 * 10_f64.powf(6.0 / 20.0);
-        assert!(bound >= boosted_peak, "{bound} under {boosted_peak}");
+        assert!(decibels_between(bound_apart, 0.9) < 0.2, "{bound_apart}");
+        assert!(bound_together > bound_apart + 0.2, "{bound_together}");
+    }
+
+    #[test]
+    fn a_curve_ringing_past_the_moments_kept_bounds_its_ring_by_the_whole_song() {
+        let ringing = BandGains::of(&bell(25.0, 12.0, 20.0), SampleRate::HZ_44100);
+        let settled = BandGains::of(&bell(25.0, 12.0, 1.0), SampleRate::HZ_44100);
+        let on_the_ring = tone_of(25.0, 0.5);
+        let away_from_it = tone_of(5_000.0, 0.5);
+        let louder = |peaks: &BandPeaks| peaks.moments().next().expect("a moment");
+
+        let rung = cheapest(&ringing.ringing, &louder(&on_the_ring));
+        let rung_away = cheapest(&ringing.ringing, &louder(&away_from_it));
+        let settled_ring = cheapest(&settled.ringing, &louder(&on_the_ring));
+
+        assert!(rung > 0.5, "{rung}");
+        assert!(rung_away < 0.02, "{rung_away}");
+        assert!(settled_ring < rung / 10.0, "{settled_ring}");
+        assert!(ringing.bound(&on_the_ring) >= 0.5 * 10_f64.powf(12.0 / 20.0) * 0.99);
     }
 }

@@ -878,28 +878,19 @@ impl Profile {
             })
     }
 
-    pub fn farthest_from_between(
-        &self,
-        levels: &[f64],
-        from_hz: f64,
-        to_hz: f64,
-        rate: SampleRate,
-    ) -> Vec<f64> {
+    pub fn heard_at(&self, hertz: &[f64], rate: SampleRate) -> Vec<Vec<(f64, f64)>> {
         let heard = self.heard_apart(rate);
-        self.points_across(from_hz, to_hz, rate).into_iter().fold(
-            vec![0.0; levels.len()],
-            |mut farthest, hertz| {
-                let responses = responses_at(&heard, hertz, rate);
-                for (farthest, level) in farthest.iter_mut().zip(levels) {
-                    let reach = responses
-                        .iter()
-                        .map(|(real, imaginary)| (real - level).hypot(*imaginary))
-                        .fold(0.0, f64::max);
-                    *farthest = farthest.max(reach);
-                }
-                farthest
-            },
-        )
+        hertz
+            .iter()
+            .map(|hertz| responses_at(&heard, *hertz, rate))
+            .collect()
+    }
+
+    pub fn impulse_responses(&self, frames: usize, rate: SampleRate) -> Vec<Vec<f64>> {
+        self.heard_apart(rate)
+            .iter()
+            .map(|sections| impulse_response(sections, frames))
+            .collect()
     }
 
     pub fn fitted_preamp(&self, rate: SampleRate) -> Preamp {
@@ -949,6 +940,22 @@ fn responses_at(heard: &[Vec<Biquad>], hertz: f64, rate: SampleRate) -> Vec<(f64
                         real * next_imaginary + imaginary * next_real,
                     )
                 })
+        })
+        .collect()
+}
+
+fn impulse_response(sections: &[Biquad], frames: usize) -> Vec<f64> {
+    let mut held = vec![(0.0, 0.0); sections.len()];
+    (0..frames)
+        .map(|frame| {
+            let mut sample = if frame == 0 { 1.0 } else { 0.0 };
+            for (section, (first, second)) in sections.iter().zip(held.iter_mut()) {
+                let output = section.b0 * sample + *first;
+                *first = section.b1 * sample - section.a1 * output + *second;
+                *second = section.b2 * sample - section.a2 * output;
+                sample = output;
+            }
+            sample
         })
         .collect()
 }
@@ -1506,26 +1513,62 @@ mod tests {
     }
 
     #[test]
-    fn how_far_a_span_lies_from_a_level_is_how_far_the_boosted_response_reaches_from_it() {
+    fn the_response_heard_at_a_frequency_is_complex_and_counts_every_channel_apart() {
         let rate = SampleRate::HZ_48000;
         let boosting = Profile::new(
             Preamp::from_decibels(-4.0).expect("in range"),
             vec![band(BandKind::Peaking, 100.0, 6.0, 2.0)],
         )
         .expect("one band");
-        let heights_alone = 10_f64.powf(6.0 / 20.0) - 1.0;
+        let left_alone = Profile::new(
+            Preamp::NONE,
+            vec![Band {
+                channels: ChannelSet::of(&[0]).expect("left"),
+                ..band(BandKind::Peaking, 100.0, 6.0, 2.0)
+            }],
+        )
+        .expect("one band on the left");
 
-        let on_the_boost = boosting.farthest_from_between(&[1.0, 0.0], 80.0, 125.0, rate);
-        let beside_it = boosting.farthest_from_between(&[1.0], 4_000.0, 8_000.0, rate);
-        let flat = Profile::flat().farthest_from_between(&[1.0, 0.0], 80.0, 125.0, rate);
-        let past_nyquist = boosting.farthest_from_between(&[1.0], 30_000.0, 40_000.0, rate);
+        let heard = boosting.heard_at(&[100.0, 6_000.0], rate);
+        let apart = left_alone.heard_at(&[100.0], rate);
 
-        assert!(on_the_boost[0] >= heights_alone - 1e-9, "{on_the_boost:?}");
-        assert!(on_the_boost[0] < heights_alone + 0.1, "{on_the_boost:?}");
-        assert!(on_the_boost[1] >= heights_alone + 1.0 - 1e-9);
-        assert!(beside_it[0] < 0.05, "{beside_it:?}");
-        assert!(flat[0].abs() < 1e-12 && (flat[1] - 1.0).abs() < 1e-12);
-        assert_eq!(past_nyquist, vec![0.0]);
+        let boosted = 10_f64.powf(6.0 / 20.0);
+        let (real, imaginary) = heard[0][0];
+        assert!((real.hypot(imaginary) - boosted).abs() < 1e-6, "{heard:?}");
+        let (real, imaginary) = heard[1][0];
+        assert!((real.hypot(imaginary) - 1.0).abs() < 0.01, "{heard:?}");
+        assert_eq!(apart[0].len(), 2);
+        assert!((apart[0][1].0 - 1.0).abs() < 1e-12 && apart[0][1].1.abs() < 1e-12);
+    }
+
+    #[test]
+    fn the_impulse_response_of_a_curve_sums_to_its_gain_at_rest_and_rings_where_it_is_narrow() {
+        let rate = SampleRate::HZ_48000;
+        let shelf = Profile::new(
+            Preamp::NONE,
+            vec![band(BandKind::LowShelf, 200.0, 6.0, 0.7)],
+        )
+        .expect("one band");
+        let narrow = Profile::new(
+            Preamp::NONE,
+            vec![band(BandKind::Peaking, 25.0, 12.0, 20.0)],
+        )
+        .expect("one band");
+
+        let shelved = shelf.impulse_responses(48_000, rate);
+        let ringing = narrow.impulse_responses(48_000, rate);
+
+        let at_rest: f64 = shelved[0].iter().sum();
+        assert!(
+            (at_rest - 10_f64.powf(6.0 / 20.0)).abs() < 1e-3,
+            "{at_rest}"
+        );
+        let late: f64 = ringing[0][24_000..].iter().map(|sample| sample.abs()).sum();
+        assert!(late > 0.1, "{late}");
+        assert_eq!(
+            Profile::flat().impulse_responses(3, rate),
+            vec![vec![1.0, 0.0, 0.0]]
+        );
     }
 
     #[test]

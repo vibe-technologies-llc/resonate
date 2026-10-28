@@ -3204,8 +3204,8 @@ mod tests {
                 .0
                 .lock()
                 .query_row(
-                    "SELECT count(*) FROM studies WHERE length(band_levels) = 29 AND length(band_peaks) = 58",
-                    [],
+                    "SELECT count(*) FROM studies WHERE length(band_levels) = 29 AND length(band_peaks) = ?1",
+                    [resonate_analysis::BAND_PEAKS_BYTES as i64],
                     |row| row.get(0),
                 )
                 .expect("a count")
@@ -3403,14 +3403,20 @@ mod tests {
                 .lock()
                 .execute(
                     "UPDATE studies SET band_levels = ?1, band_peaks = ?2",
-                    [vec![7_u8; 29], vec![3_u8; 58]],
+                    [
+                        vec![7_u8; 29],
+                        vec![3_u8; resonate_analysis::BAND_PEAKS_BYTES],
+                    ],
                 )
                 .expect("kept bands");
 
             passing_with_no_key(&harness, &Arc::new(Told::default()));
 
             assert_eq!(bands_of(&harness, 'a'), Some(vec![7_u8; 29]));
-            assert_eq!(peaks_of(&harness, 'a'), Some(vec![3_u8; 58]));
+            assert_eq!(
+                peaks_of(&harness, 'a'),
+                Some(vec![3_u8; resonate_analysis::BAND_PEAKS_BYTES])
+            );
             assert_eq!(studies(&harness), 1);
         }
 
@@ -3428,7 +3434,10 @@ mod tests {
 
             passing_with_no_key(&harness, &Arc::new(Told::default()));
 
-            assert_eq!(peaks_of(&harness, 'a').map(|peaks| peaks.len()), Some(58));
+            assert_eq!(
+                peaks_of(&harness, 'a').map(|peaks| peaks.len()),
+                Some(resonate_analysis::BAND_PEAKS_BYTES)
+            );
             assert_ne!(bands_of(&harness, 'a'), Some(vec![7_u8; 29]));
             assert_eq!(measured(&harness), 1);
         }

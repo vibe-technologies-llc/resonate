@@ -8,6 +8,7 @@ mod headroom;
 mod kept;
 mod levels;
 mod loudness;
+mod peaks;
 mod print;
 mod reduce;
 mod signature;
@@ -26,16 +27,14 @@ pub fn read_a_kept_analysis(bytes: &[u8]) {
 
 pub use crate::{
     analysis::{Analysis, Examined, Excerpt, Study, analyse, excerpt, print, study},
-    bands::{
-        BAND_PEAKS_BYTES, BANDS, BandFigures, BandGains, BandLevels, BandPeaks, band_figures,
-        span_of_band,
-    },
+    bands::{BANDS, BandFigures, BandGains, BandLevels, band_figures, span_of_band},
     envelope::{ENVELOPE_COLUMNS, ENVELOPE_LANES, Envelope, Reach},
     error::{AnalysisOp, Error, Result},
     headroom::{CUTS_AT_MOST, Cut, Loudest, loudest_through, peak_through},
     kept::{KEPT_BYTES_AT_MOST, KeptAnalyses},
     levels::{Levels, Stereo},
     loudness::Loudness,
+    peaks::{BAND_PEAKS_BYTES, BandPeaks},
     print::PRINTED_FOR,
     signature::{Signature, signature_of},
     spectrogram::{Ramp, SPECTROGRAM_COLUMNS, SPECTROGRAM_FLOOR_DB, SPECTROGRAM_ROWS, Spectrogram},

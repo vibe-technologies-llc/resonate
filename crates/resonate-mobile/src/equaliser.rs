@@ -633,7 +633,7 @@ mod tests {
                 (from..to).contains(&1_000.0)
             })
             .expect("a band holds one kilohertz");
-        let peaks = resonate_analysis::BandPeaks::of(
+        let peaks = resonate_analysis::BandPeaks::at_once(
             (0..resonate_analysis::BANDS).map(|band| if band == sounding { peak } else { 0.0 }),
         );
 
