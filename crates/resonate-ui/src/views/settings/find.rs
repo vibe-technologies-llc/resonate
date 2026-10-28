@@ -469,7 +469,7 @@ impl Group {
             }
             Self::RoomCorrection => {
                 "convolution impulse response ir fir room correction speakers rew drc \
-                 measurement wav"
+                 measurement wav sofa hrir hrtf"
             }
             Self::Abx => {
                 "abx blind test listening level matched equaliser bypass double blind \

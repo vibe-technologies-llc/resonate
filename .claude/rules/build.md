@@ -63,14 +63,14 @@ Linux sound server or GUI libraries are needed.
 ## Fuzzing
 
 - **The hand-rolled parsers are fuzzed from outside the workspace**: `fuzz/`'s `[workspace]` table
-  detaches it, so workspace lints do not reach libfuzzer's macros. Twenty-two targets: `probe`, `boxes`,
+  detaches it, so workspace lints do not reach libfuzzer's macros. Twenty-three targets: `probe`, `boxes`,
   `cue`, `lrc`, `lyricsfile`, `ttml`, `playlist`, `search`, `uri`, `decoded`, `equaliser`, `mcp`, `sync`,
   `rewriter` (the vault's `bare` over every container and `declared_digest`), `unpacking` (zstd frame
   indexing and the reader), `padding` (the tag writer's padded heads), `journal` (an undo journal,
   sealed by the seam so the checksum is not the fuzzer's to guess), `overlay` (the write overlay
   driven against a byte-vector model, then landed), `cover` (`Drawing::of` and its scalings),
   `pages` (the shared-page, Spotify, YouTube, TIDAL embed and song.link readers), `manifest` (TIDAL's BTS and
-  DASH documents), `kept` (the analysis cache reader).
+  DASH documents), `kept` (the analysis cache reader), `sofa` (an HRIR set through `hdf5-reader`).
 - **`probe`'s input is the file and its last three bytes are the run's shape**, so a seed stays a
   plain file a player opens (`fuzz_targets/held.rs`, its `MediaProvider`, is shared with `boxes` and
   `cue`): the last byte's low bit serves it as a pipe (`held::Arrival::Piped`: no seek, no length,

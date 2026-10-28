@@ -15,6 +15,9 @@ import org.resonate.android.nativecore.RoomCorrection
 
 private const val ON_KEY = "room-correction"
 private const val NAME_KEY = "room-correction-name"
+
+val RESPONSE_DOCUMENTS =
+    arrayOf("audio/*", "application/x-hdf5", "application/x-netcdf", "application/octet-stream")
 private const val RESPONSE_BYTES_AT_MOST = 64 * 1024 * 1024
 
 data class RoomView(

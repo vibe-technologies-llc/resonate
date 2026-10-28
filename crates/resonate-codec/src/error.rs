@@ -12,6 +12,7 @@ use crate::{
     Container,
     dsd::{DsdChunk, DsdField},
     sheet::SheetField,
+    sofa::Fault as SofaFault,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -278,6 +279,13 @@ pub enum Error {
         source: FileEncodingError,
     },
 
+    #[error("{location} is not a set of head-related responses this player reads")]
+    Sofa {
+        location: MediaLocation,
+        #[source]
+        source: SofaFault,
+    },
+
     #[error(transparent)]
     Domain(#[from] resonate_core::Error),
 }
@@ -322,7 +330,8 @@ impl Error {
             | Self::TagsUnread { location, .. }
             | Self::ChangedWhileWritten { location }
             | Self::WrittenBackPartway { location, .. }
-            | Self::TagsUnwritten { location, .. } => Some(location),
+            | Self::TagsUnwritten { location, .. }
+            | Self::Sofa { location, .. } => Some(location),
             Self::SeekOutOfRange { .. } | Self::Domain(_) => None,
         }
     }

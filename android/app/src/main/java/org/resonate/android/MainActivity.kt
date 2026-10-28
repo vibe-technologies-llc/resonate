@@ -202,7 +202,8 @@ class MainActivity : ComponentActivity(), Host {
         roomChooser.launch(
             Intent(Intent.ACTION_OPEN_DOCUMENT)
                 .addCategory(Intent.CATEGORY_OPENABLE)
-                .setType("audio/*")
+                .setType("*/*")
+                .putExtra(Intent.EXTRA_MIME_TYPES, RESPONSE_DOCUMENTS)
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         )
     }

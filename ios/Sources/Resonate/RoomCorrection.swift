@@ -167,6 +167,9 @@ final class RoomCorrectionState {
 }
 
 struct RoomCorrectionSection: View {
+    private static let responseTypes: [UTType] =
+        [.audio] + (UTType(filenameExtension: "sofa").map { [$0] } ?? [])
+
     @Environment(Library.self) private var library
     @State private var choosing = false
     @State private var forgetting = false
@@ -184,7 +187,7 @@ struct RoomCorrectionSection: View {
             Button(room.reading ? "Reading…" : room.name == nil ? "Choose a response…" : "Choose another response…",
                    systemImage: "waveform.path") { choosing = true }
                 .disabled(room.reading || room.left != nil)
-                .fileImporter(isPresented: $choosing, allowedContentTypes: [.audio]) { result in
+                .fileImporter(isPresented: $choosing, allowedContentTypes: Self.responseTypes) { result in
                     switch result {
                     case .success(let url): room.choose(url)
                     case .failure(let failure): library.report(failure)
@@ -196,7 +199,7 @@ struct RoomCorrectionSection: View {
                     choosingRight = true
                 }
                 .disabled(room.reading)
-                .fileImporter(isPresented: $choosingRight, allowedContentTypes: [.audio]) { result in
+                .fileImporter(isPresented: $choosingRight, allowedContentTypes: Self.responseTypes) { result in
                     switch result {
                     case .success(let url): room.chooseRight(url)
                     case .failure(let failure): library.report(failure)
@@ -207,7 +210,7 @@ struct RoomCorrectionSection: View {
             } else {
                 Button("Choose a pair…", systemImage: "headphones") { choosingLeft = true }
                     .disabled(room.reading)
-                    .fileImporter(isPresented: $choosingLeft, allowedContentTypes: [.audio]) { result in
+                    .fileImporter(isPresented: $choosingLeft, allowedContentTypes: Self.responseTypes) { result in
                         switch result {
                         case .success(let url): room.chooseLeft(url)
                         case .failure(let failure): library.report(failure)
@@ -220,7 +223,7 @@ struct RoomCorrectionSection: View {
         } header: {
             Text("Room correction")
         } footer: {
-            Text("A measured impulse response, up to ten seconds long, is convolved before the equaliser on every output. It is lowered where it would lift the music past full scale. A four-channel file is a two-by-two (binaural) response, in the order left-to-left, left-to-right, right-to-left, right-to-right. A pair is two stereo responses, the left speaker's and then the right's, each as heard at both ears, joined into one two-by-two response.")
+            Text("A measured impulse response, up to ten seconds long, is convolved before the equaliser on every output. It is lowered where it would lift the music past full scale. A four-channel file is a two-by-two (binaural) response, in the order left-to-left, left-to-right, right-to-left, right-to-right. A SOFA set of head-related responses is read as the same, from the measurements nearest 30 degrees left and right. A pair is two stereo responses, the left speaker's and then the right's, each as heard at both ears, joined into one two-by-two response.")
         }
         .confirmationDialog("Forget the room correction?", isPresented: $forgetting, titleVisibility: .visible) {
             Button("Forget", role: .destructive) { room.forget() }

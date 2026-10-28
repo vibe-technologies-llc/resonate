@@ -213,7 +213,8 @@ const fn cause_of_a_read(read: &resonate_codec::Error) -> Cause {
         | Read::TooManyChannels { .. }
         | Read::ChannelMaskNotRepresentable { .. }
         | Read::FormatChanged { .. }
-        | Read::DsdCompressed { .. } => Cause::Unsupported,
+        | Read::DsdCompressed { .. }
+        | Read::Sofa { .. } => Cause::Unsupported,
         Read::SeekOutOfRange { .. }
         | Read::NotSeekable { .. }
         | Read::ReadBySeeking { .. }

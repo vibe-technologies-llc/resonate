@@ -112,7 +112,8 @@ impl Failure {
             | Codec::FrameCountNotRepresentable { .. }
             | Codec::PacketOffsetNotRepresentable { .. }
             | Codec::PacketTableCut { .. }
-            | Codec::PacketUndecodable { .. } => Self::Undecodable,
+            | Codec::PacketUndecodable { .. }
+            | Codec::Sofa { .. } => Self::Undecodable,
             Codec::Io { .. }
             | Codec::Symphonia { .. }
             | Codec::SheetTooLarge { .. }

@@ -22,5 +22,8 @@ tracing.workspace = true
 [target.'cfg(target_os = "linux")'.dependencies]
 resonate-pipewire.workspace = true
 
+[dev-dependencies]
+hdf5-writer.workspace = true
+
 [lints]
 workspace = true

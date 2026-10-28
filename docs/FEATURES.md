@@ -98,9 +98,11 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   is never a FLAC
 
 ## Later: Equaliser and DSP extras
-- [M] An HRIR set in SOFA (a netCDF-4 file over HDF5) is not read: a pure-Rust HDF5 reader would
-  have to choose the measurement nearest a direction and resample it to the stream, so a set is
-  first cut to a four-channel WAV elsewhere
+- [S] A SOFA HRIR set is read at the fixed speaker angles (30 degrees either side of the front, no
+  elevation) from the nearest measurement of a `SimpleFreeFieldHRIR`-shaped set: another angle
+  for the speakers, an interpolation between measurements, a head turned, a multi-emitter
+  (`MultiSpeakerBRIR`) or netCDF-3 classic set, and a set past the phones' 64 MiB response limit
+  are not read
 - [M] *Fit the preamp*'s kept-figure bound still sits 2 to 6 dB over the decode for broadband
   music under a curve that moves many bands, and a band whose skirt reaches a narrow boost pays a
   little of it: each node's share of a frequency is fixed by the curve, not fitted to the song's

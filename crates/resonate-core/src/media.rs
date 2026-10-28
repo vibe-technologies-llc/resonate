@@ -28,6 +28,8 @@ pub const AUDIO_EXTENSIONS: &[&str] = &[
     "oga", "ogg", "opus", "rf64", "w64", "wav", "wave", "wv",
 ];
 
+pub const HRIR_EXTENSIONS: &[&str] = &["sofa"];
+
 pub const PICTURE_EXTENSIONS: &[&str] = &[
     "avif", "bmp", "gif", "jpeg", "jpg", "jxl", "png", "tif", "tiff", "webp",
 ];

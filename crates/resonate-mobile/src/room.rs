@@ -7,7 +7,7 @@ use std::{
 
 use parking_lot::Mutex;
 use resonate_codec::Sources;
-use resonate_core::{AUDIO_EXTENSIONS, MediaLocation};
+use resonate_core::{AUDIO_EXTENSIONS, HRIR_EXTENSIONS, MediaLocation};
 use resonate_engine::{
     Command, Impulse, PairedReadError, binaural_wave, read_binaural_pair, read_impulse,
 };
@@ -138,7 +138,9 @@ impl Room {
 
     fn stage_as(&self, stem: &str, bytes: &[u8], extension: &str) -> Result<PathBuf> {
         let extension = extension.to_ascii_lowercase();
-        if !AUDIO_EXTENSIONS.contains(&extension.as_str()) {
+        if !AUDIO_EXTENSIONS.contains(&extension.as_str())
+            && !HRIR_EXTENSIONS.contains(&extension.as_str())
+        {
             return Err(Error::ImpulseExtension);
         }
         if bytes.len() > IMPULSE_BYTES_AT_MOST {
@@ -314,6 +316,8 @@ pub(crate) fn wave(samples: &[i16]) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
+    use hdf5_writer::{AttributeBuilder, DatasetBuilder, Hdf5Builder, WriteOptions};
+
     use super::*;
 
     fn folder(name: &str) -> PathBuf {
@@ -436,6 +440,56 @@ mod tests {
             room.kept().expect("a listing"),
             Some(folder.join("room-correction.wav"))
         );
+        assert_eq!(fs::read_dir(&folder).expect("a listing").count(), 1);
+    }
+
+    fn head_related_set() -> Vec<u8> {
+        let mut impulses = Vec::new();
+        for measurement in 0..2 {
+            for ear in 0..2 {
+                for frame in 0..8 {
+                    impulses
+                        .push(f64::from(measurement * 2 + ear + 1) / 10.0 * f64::from(frame == 0));
+                }
+            }
+        }
+        Hdf5Builder::new()
+            .dataset(DatasetBuilder::typed_data("Data.IR", vec![2, 2, 8], &impulses).expect("taps"))
+            .dataset(
+                DatasetBuilder::typed_data(
+                    "SourcePosition",
+                    vec![2, 3],
+                    &[30.0, 0.0, 1.0, 330.0, 0.0, 1.0],
+                )
+                .expect("positions")
+                .attribute(AttributeBuilder::fixed_string("Type", "spherical")),
+            )
+            .dataset(
+                DatasetBuilder::typed_data("Data.SamplingRate", vec![1], &[48_000.0])
+                    .expect("rate"),
+            )
+            .into_plan()
+            .expect("a plan")
+            .encode(WriteOptions::default())
+            .expect("bytes")
+    }
+
+    #[test]
+    fn a_set_of_head_related_responses_is_kept_as_the_two_by_two_response_it_reads_as() {
+        let folder = folder("sofa");
+        let room = Room::under(folder.clone());
+        let sources = Sources::local();
+
+        let impulse = room
+            .keep(&head_related_set(), "SOFA", &sources)
+            .expect("a kept set");
+
+        assert_eq!(
+            room.kept().expect("a listing"),
+            Some(folder.join("room-correction.sofa"))
+        );
+        assert_eq!(RoomCorrection::of(&impulse).channels, 4);
+        assert_eq!(RoomCorrection::of(&impulse).rate, 48_000);
         assert_eq!(fs::read_dir(&folder).expect("a listing").count(), 1);
     }
 
