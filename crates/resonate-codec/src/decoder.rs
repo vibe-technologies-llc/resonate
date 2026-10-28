@@ -27,7 +27,7 @@ use crate::{
     boxes::BoxLayout,
     container::{self, Opened},
     cue,
-    dsd::{self, DSD_BLOCK_FRAMES, Packing},
+    dsd::{self, DSD_BLOCK_FRAMES, DopMarker, Packing},
     mpa::{self, Shape},
     source::{FormatHint, Media, Reading as SourceReading, Sources},
     splices::{Edit, Place, Splices},
@@ -915,6 +915,20 @@ impl Decoder {
         self.delivery = wanted;
         if let Held::Dsd(held) = &mut self.reading {
             held.deliver(wanted.packing);
+        }
+    }
+
+    pub fn marker_due(&self) -> Option<DopMarker> {
+        match (&self.reading, self.delivery.packing) {
+            (Held::Dsd(held), Packing::DopMarked(_)) => Some(held.marker_due()),
+            _ => None,
+        }
+    }
+
+    pub fn mark_next_with(&mut self, marker: DopMarker) {
+        if let (Held::Dsd(held), Packing::DopMarked(_)) = (&mut self.reading, self.delivery.packing)
+        {
+            held.mark_next_with(marker);
         }
     }
 

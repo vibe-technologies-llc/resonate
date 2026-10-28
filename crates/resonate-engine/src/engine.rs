@@ -3018,13 +3018,23 @@ impl Engine {
         };
         !self.sleeps_at_this_end()
             && !self.rebind_owed
-            && matches!(output.plan.packing, Packing::Samples)
+            && self.marks_on_across_a_boundary(output)
             && output.draining.is_none()
             && !output.ended
             && !output.ends_at_a_change
             && !output.sleep_fading
             && !output.rendered_for_another
             && !output.producer.is_discarding()
+    }
+
+    fn marks_on_across_a_boundary(&self, output: &Output) -> bool {
+        match output.plan.packing {
+            Packing::Samples => true,
+            Packing::DopMarked(_) => self
+                .track
+                .as_ref()
+                .is_some_and(|track| track.decoding.marker_due().is_some()),
+        }
     }
 
     fn is_settling(&self) -> bool {
@@ -3132,6 +3142,9 @@ impl Engine {
         } else {
             self.swap_chain(wanted)
         };
+        if let (Some(due), Some(entering)) = (leaving.decoding.marker_due(), self.track.as_mut()) {
+            entering.decoding.mark_next_with(due);
+        }
 
         let muted = self.muted;
         let Some(output) = self.output.as_mut() else {

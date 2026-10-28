@@ -55,7 +55,7 @@ pub use crate::{
         the_one_named as the_one_a_cue_names,
     },
     decoder::{Codec, Container, DecodeStatus, Decoder, Delivery, Holes, MediaInfo},
-    dsd::{DsdChunk, DsdField, DsdRate, Packing},
+    dsd::{DopMarker, DsdChunk, DsdField, DsdRate, Packing},
     error::{CodecOp, Error, Result, StreamTrackId, TrackProperty},
     journal::{
         Mended, mend_a_cut_short_write, mend_what_was_written_back_from_elsewhere,

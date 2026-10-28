@@ -29,6 +29,22 @@ const fn reversed() -> [u8; 256] {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DopMarker {
+    First,
+    Second,
+}
+
+impl DopMarker {
+    pub(crate) const fn carried_by(frame: u64) -> Self {
+        if frame.is_multiple_of(2) {
+            Self::First
+        } else {
+            Self::Second
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Dop {
     bits: BitOrder,
 }
@@ -39,10 +55,9 @@ impl Dop {
     }
 
     pub(crate) const fn marker(frame: u64) -> u8 {
-        if frame.is_multiple_of(2) {
-            DOP_MARK_FIRST
-        } else {
-            DOP_MARK_SECOND
+        match DopMarker::carried_by(frame) {
+            DopMarker::First => DOP_MARK_FIRST,
+            DopMarker::Second => DOP_MARK_SECOND,
         }
     }
 
