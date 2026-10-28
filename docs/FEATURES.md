@@ -61,12 +61,17 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   lyric text (LRCLIB's text search finds none)
 
 ## Identification
-- [M · 0.3.0] The quantiser steps were weighed only on the encoders this machine has (ffmpeg's AAC,
-  faac, LAME, libvorbis and ffmpeg's Vorbis): no Apple, FhG or fdk AAC, no FhG or other MP3
-  encoder and no aoTuV Vorbis weighed, faac at 160 kbps is found in 9 of 22, one wall-less MP3 rip
-  in the library the 8-step floor found reads 0.0014 under the shipped count, a lossy decode
-  dithered or resampled to a rate other than the other CD rate with no wall still reads as
-  lossless, and an Opus decode is only `Suspect` (its bands sit on no lattice)
+- [M · 0.3.0] The quantiser steps were weighed only on the encoders this machine has (ffmpeg's
+  AAC, faac, fdk AAC, LAME, libvorbis and ffmpeg's Vorbis): no Apple or FhG AAC, no FhG or other
+  MP3 encoder and no aoTuV Vorbis weighed; fdk AAC at 320 kbps and faac at `-q 100` still miss
+  five to seven of 36 loud masters, whose lattice reads 0.008 at most (the cause is not found; at
+  320 kbps large quantised values thin a log lattice, a power-law lattice per scale factor band
+  would need each band's scale factor searched); a lossy decode downsampled below the rate it was coded at loses its grid; MP2 (twolame) is not
+  weighed, its subband samples sitting on a linear grid per scale factor; and an Opus decode is
+  only `Suspect`: CELT codes a band's energy as a residual from a prediction on the previous
+  frame's, so the energies sit on no lattice of their own (a direct search of 960-line frames at
+  every offset found none), and weighing the residual wants libopus's mean table, post-filter and
+  stereo state
 
 ## Later: Sources and providers
 - [M · blocked: services] The Bandcamp and Discogs links an `Identity` carries are read by nothing;

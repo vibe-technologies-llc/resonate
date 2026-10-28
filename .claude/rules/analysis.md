@@ -187,83 +187,134 @@ could change (stored studies and kept analyses are weighed against it).
   `MANTISSA_BITS`) and exponent. Vorbis is read at `VORBIS_TURNS_A_FLOOR_STEP` (2) turns a floor
   step, the second harmonic, since `log2(r)/0.0908` is near a whole turn for residues 1, 2 and 4
   and near a half for 3, 5 and 6 (q10 read 0.0131 on the fundamental, 0.035 on the harmonic).
-  Every coefficient counts but digital silence (`SILENT_COEFFICIENT_UP_TO`, 1/4 096 of a 16-bit
-  step): a floor of 8 steps was tried and biased quiet genuine tracks to 0.03-0.09 at every offset
-  (the edge of the counted range sits inside one period), where counting the rounding noise only
-  dilutes. First two channels, lossless codecs only.
+  First two channels, lossless codecs only.
+- **A coefficient counts by how far it stands above the 16-bit rounding.** Each carries a weight
+  that rises as a smoothstep in `log2|c|` over a `Ramp` (`unit` the grid's 16-bit step in its own
+  coefficients, `from` and `to` in octaves above it: AAC and Vorbis 3 to 7, MP3 2 to 6 with a unit
+  of 0.535), so rounding noise and the dither on it (a triangular one at 16 times the usual scale
+  still leaves the lattice) weigh nothing and a loud coefficient, whose rounding is a small share
+  of its size, weighs one. The lattice is `|Σ w·phase| / Σ w`, and `Steps::coefficients` is the
+  *effective* count `(Σ w)² / Σ w²`. A smooth ramp has no edge in the lattice's period, which a
+  hard floor does: a floor of 8 steps biased quiet genuine tracks to 0.03-0.09 at every offset.
+  Digital silence (`SILENT_COEFFICIENT_UP_TO`, 1/4 096 of a 16-bit step) carries no weight. The
+  weights lifted the lattice where it had been diluted by rounding noise (faac at 64 kbps from 3
+  to 12 of 36 found on the ramp alone, before the kinds) and left every genuine source at 0.01 at
+  most.
+- **A frame may be any block the encoder chose, so each is taken as the strongest of its kinds.**
+  `Grid::KINDS` blocks are tried at every frame and the one with the largest `|Σ|² / Σ w²`
+  supplies the frame's sum. A choice made on magnitude alone leaves the sum of a recording
+  zero-mean (the phase is untouched), so the null only grows about 1.4 times in noise, while the
+  lattice stops being diluted by frames of another shape: faac and fdk AAC take eight short blocks
+  in three of four frames of a loud master (one measured stretch of 300 frames: 14 long, 30 start,
+  30 stop, 226 eight short), which is why the long-block lattice of faac at 160 kbps read 0.001 on
+  10 of 36 sources and the same sources read 0.24 to 0.78 with every kind. `Aac` has four kinds
+  (long, start, stop, eight short blocks of 128 lines with a 256 window at 448 + 128k, the short
+  window's slope the long window's family, KBD alpha 6 in the short KBD family) under both window
+  families; `Mp3` has four (normal, start, stop from the standard's windows, and three 12-sample
+  windows of 6 lines in each subband, with no alias butterflies and a gain of 3 so the lattice
+  stays in phase with the long blocks, since the decoder's unscaled inverse transform gains
+  `n / 4` for `n` 36 and 12); Vorbis has one. A control that lands on the short-block grid would
+  read the lattice again (a half frame, 512, is four short hops), so `Aac`'s control is 576 off.
+  Verified on synthetic streams through long, start, stop and eight short blocks in AAC and every
+  block type in MP3 (`coefficients_on_the_steps_are_found_through_long_start_stop_and_eight_short_blocks`,
+  `lines_on_the_steps_are_found_whatever_block_types_the_granules_run_through`).
 - **One search and confirmation, one `Grid` per coding.** `Stepping<G: Grid>` holds the stage
   machine; a grid names its hop, the residues searched, the span a frame reads, its lines, its
-  window shapes, the control's shift, the frames a search and a confirmation take and whether mid
-  and side are weighed. Neither the frame offset nor the window is known (a decoder trims its
-  priming, a cut starts anywhere), so the search tries every residue under every shape over
-  `FRAMES_A_SEARCH` frames at `SEARCHES` (4) busy places `SEARCHED_EVERY_SECONDS` apart (a place
+  window shapes, its block kinds, the control's shift, the frames a search and a confirmation take
+  and whether mid and side are weighed. Neither the frame offset nor the window is known (a decoder
+  trims its priming, a cut starts anywhere), so the search tries every residue under every shape
+  over `FRAMES_A_SEARCH` frames at `SEARCHES` (4) busy places `SEARCHED_EVERY_SECONDS` apart (a place
   with under `BUSY_SHARE` of its coefficients counted is skipped, at most
-  `TRIED_FOR_EACH_SEARCH_AT_MOST` places a search tried), ranks by `|Σ|²/n`, then confirms the best
-  `CANDIDATES` over `CONFIRMED_FRAMES` together with a *control* `CONTROL_SHIFT` off the same grid.
+  `TRIED_FOR_EACH_SEARCH_AT_MOST` places a search tried), ranks by `|Σ|²/Σw²`, then confirms the
+  best `CANDIDATES` over `CONFIRMED_FRAMES` together with a *control* `CONTROL_SHIFT` off the same
+  grid.
   - `Aac`: 1 024-line MDCT, sine and Kaiser-Bessel (α 4) windows, every 1 024 residues, 4..16 kHz
     in L, R, mid and side (a band may be coded either way), 4 frames a search, 400 confirmed,
-    control half a frame off, rates up to 96 kHz.
+    control 576 off, rates up to 96 kHz.
   - `Mp3` (`granules.rs`): the hybrid filterbank of ISO 11172-3 run forward: the polyphase
     analysis with the standard's window (`SYNTHESIS_WINDOW`, Table B.3's integers over 65 536,
     divided by 32; the 64-row matrixing folded to 32 terms), the 18-line MDCT of 36 subband samples
-    under the long-block sine window with odd subbands' odd samples inverted, then the encoder's
-    alias-reduction butterflies (without them the lattice drops to a third). 576 residues, 6..20 kHz
-    in L, R, mid and side (MP3's mid and side are `/√2`, two quarter-octave steps from ours), 4
-    granules a search, 400 confirmed, control half a granule off, rates up to 48 kHz. Only the
-    subbands the band reaches (and one either side for the butterflies) are computed; polyphase
-    vectors are kept by position (`AHashMap`, cleared after each search and run, at most
-    `VECTORS_KEPT_AT_MOST`) since neighbouring residues and granules share 35 of 36. Short blocks
-    are not modelled; their granules only dilute.
+    under the block window with odd subbands' odd samples inverted, then the encoder's
+    alias-reduction butterflies on the long kinds (without them the lattice drops to a third).
+    576 residues, 6..20 kHz in L, R, mid and side (MP3's mid and side are `/√2`, two quarter-octave
+    steps from ours), 4 granules a search, 400 confirmed, control half a granule off, rates up to
+    48 kHz. Only the subbands the band reaches (and one either side for the butterflies) are
+    computed; polyphase vectors are kept by position (`AHashMap`, cleared after each search and
+    run, at most `VECTORS_KEPT_AT_MOST`) since neighbouring residues, granules and kinds share 35
+    of 36.
   - `Vorbis`: 2 048-sample blocks under Vorbis's power-sine window, L and R only (square-polar
     coupling is lossless on residues, so each channel is floor times integer). A short block run
     shifts the long-block grid by a multiple of 128 (a long-short hop is 576, short-short 128), so
     the grid is stepped every 128 samples over 128 residues: one frame in eight lands on a long
     block, which dilutes the lattice but keeps the grid across transients. 4..16 kHz, 32 frames a
     search, 1 600 confirmed, control 64 samples off, rates up to 48 kHz.
-- **A decode resampled to the other CD rate is weighed brought back.** `Weighing` runs the three
-  grids at the stream's rate and, for 44.1 or 48 kHz (`BROUGHT_BACK_TO`), feeds the first two
-  channels through a `Resampler` (`Quality::Balanced`, linear phase) to the other rate and runs
-  `Aac` and `Mp3` there, at `SEARCHES_RESAMPLED` (2) places. A linear-phase round trip puts the
-  grid back on whole samples and its passband leaves 4..20 kHz as it was: ffmpeg's AAC at 256 kbps
-  read 0.364 decoded and 0.364 brought back from 48 kHz. Each grid stops taking samples once done,
-  so only the first 20 s or so are resampled. A `Steps` carries its `coding` and the `rate` its
-  grid stood at; a rate other than the stream's is `resampled_from`. Hi-res decodes of a CD-rate
-  lossy stream are left to the upsampling wall; dither still hides the steps.
+- **A decode taken to another rate is weighed brought back.** `Weighing` runs the three grids at
+  the stream's rate and feeds the first two channels through a `Resampler` (`Quality::Balanced`,
+  linear phase) to each rate in `BROUGHT_BACK_TO`, running `Aac` and `Mp3` there at
+  `SEARCHES_RESAMPLED` (2) places: 44.1 kHz to 48, 48 to 44.1, and 88.2, 96, 176.4 and 192 kHz to
+  both CD rates (a lossy CD-rate stream played out at a hi-res rate keeps its grid however the
+  upsampler's wall was hidden). A linear-phase round trip puts the grid back on whole samples and
+  its passband leaves 4..20 kHz as it was: ffmpeg's AAC at 256 kbps read 0.364 decoded and 0.364
+  brought back from 48 kHz. Each grid stops taking samples once done, so only the first 20 s or so
+  are resampled. A `Steps` carries its `coding` and the `rate` its grid stood at; a rate other than
+  the stream's is `resampled_from`. A decode downsampled below the rate it was coded at has lost
+  the band above the new Nyquist and the grid with it: fdk AAC at 160 kbps taken to 32 kHz is found in none.
 - **Taken at a lattice per coding, over its control, over enough coefficients.** The verdict takes
-  a grid at `AAC_LATTICE_AT_LEAST` (0.03), `MP3_LATTICE_AT_LEAST` (0.02) or
-  `VORBIS_LATTICE_AT_LEAST` (0.012), `LATTICE_OVER_ITS_CONTROL_AT_LEAST` (4) times its control and
-  `STEPPED_COEFFICIENTS_AT_LEAST` (100 000): a periodic or synthetic signal that happens to cluster
-  does so at every offset, which the control refuses. Every grid's `Steps` is kept in the study and
-  the kept analysis (`WRITTEN_AS` 5, the peaks over moments after the print; 4: one moment; 3: a count, then coding name, rate, lattice, control and
-  coefficients each); `track_studies` stores only the verdict (no basis column), so the change
-  moved `JUDGED_UNDER` to 3 and every study is weighed again. Cost: about 0.67 s a track over the
-  decode (0.75 s to 1.42 s for a 3:23 FLAC), fixed whatever its length, since every grid is done
-  within its first 20 s
+  a grid at `AAC_LATTICE_AT_LEAST` (0.02), `MP3_LATTICE_AT_LEAST` (0.02) or
+  `VORBIS_LATTICE_AT_LEAST` (0.012), `LATTICE_OVER_ITS_CONTROL_AT_LEAST` (4) times its control,
+  `STEPPED_COEFFICIENTS_AT_LEAST` (20 000 effective) and `LATTICE_SIGNIFICANCE_AT_LEAST` (12) over
+  `1 / √coefficients`: a periodic or synthetic signal that happens to cluster does so at every
+  offset, which the control refuses, and a lattice among few coefficients is chance, which the
+  significance refuses (a genuine track read 0.019 on 21 000 effective coefficients, a significance
+  of 2.8; a real MP3 rip reads 0.023 on 300 000, 12.6). Every grid's `Steps` is kept in the study
+  and the kept analysis (`WRITTEN_AS` 5, the peaks over moments after the print; 4: one moment; 3: a count, then coding name,
+  rate, lattice, control and coefficients each, the last now the effective count); `track_studies`
+  stores only the verdict (no basis column), so the change moved `JUDGED_UNDER` to 4 and every
+  study is weighed again. Cost: about 2 s a track over the decode (3.9 s to 5.9 s for a 3:33 FLAC
+  on a loaded machine, 0.9 s to 3.3 s for 40 s at 96 kHz, which runs two resamplers), fixed
+  whatever its length, since every grid is done within its first 20 s
   (`coefficients_on_the_quantiser_steps_are_found_at_any_frame_offset_and_free_ones_are_not`,
   `lines_on_the_quantiser_steps_are_found_through_the_hybrid_filterbank_at_any_offset`,
   `residues_on_vorbis_floor_are_found_on_any_short_block_grid_and_free_ones_are_not`, and in
-  `tests/references.rs` the ffmpeg AAC, resampled AAC, LAME and libvorbis round trips beside
+  `tests/references.rs` the ffmpeg AAC, faac and fdkaac, dithered and hi-res, resampled AAC, LAME
+  and libvorbis round trips beside
   `loud_noise_and_dense_music_at_every_cd_rate_land_on_no_codecs_steps`).
-- **What the steps were measured on.** Before: 39 CD and hi-res sources through ffmpeg's AAC at
-  256 and 320 kbps, all 140 decodes found. Now: 22 CD-rate library sources (16 at 44.1, 6 at
-  48 kHz; 25 with the hi-res ones), 40 s each, encoded and decoded back to 16-bit FLAC by ffmpeg:
-  ffmpeg's AAC at 256 kbps 22 of 22 (lattice 0.072 to 0.36) and at 320 kbps 22 of 22 (0.070 to
-  0.22), faac at 160 kbps 9 of 22; LAME at 320 kbps with `--lowpass -1` 21 of 22 (0.046 to 0.15,
-  the miss 0.005), `-V0` 22 of 22 (0.021 to 0.20), `-V2 --lowpass -1` 21 of 22, 192 kbps 22 of 22;
-  libvorbis q6 21 of 22 (0.015 to 0.056), q8 20 of 22, q10 20 of 22 (0.012 to 0.058), ffmpeg's own
-  Vorbis encoder 21 of 22; ffmpeg's AAC at 256 kbps decoded and resampled to the other CD rate 22
-  of 22 (0.146 to 0.355), LAME 320 open resampled 22 of 22 (0.033 to 0.147). Every control read
-  0.015 at most. Every MP3 and Vorbis miss but two is one quiet ambient source; faac's misses read
-  under the threshold, as before (a miss, never a false call). No source was called: every grid on every source
-  read 0.0030 at most. The whole library, 461 tracks studied whole, read at most 0.0039 (AAC),
-  0.0038 (MP3, either rate) and 0.0023 (Vorbis) on every track not already `Fake`; five were called:
-  two AAC and two MP3 rips already walled, and one MP3 rip with no wall (`Genuine` before, lattice
-  0.186). A second wall-less MP3 rip read 0.041 to 0.069 under the earlier floor of 8 steps and
-  0.0014 once every coefficient counts: a miss of the shipped grid. The statistics tried before (band levels,
-  100 Hz holes, the side channel, the top octave's swing, coefficients at the 16-bit floor on AAC's
-  grid) separated nothing. No Apple, FhG or fdk encode weighed (none on this machine). Opus
-  lowpasses at 20 kHz at any bitrate and its CELT bands are not on a lattice: an Opus transcode is
-  `Suspect`.
+- **What the steps were measured on.** 36 CD-rate library sources (28 at 44.1 kHz, 8 at 48), 40 s
+  each, encoded and decoded back to 16-bit FLAC; the table is the sources found before, then now.
+  ffmpeg's AAC at 256 kbps 36 and 36 (lattice 0.16 to 0.62), at 128 kbps 35 and 35; faac `-b 64` 3
+  and 34, `-b 96` 21 and 36, `-b 128` 27 and 36, `-b 160` 26 and 36 (0.24 to 0.78), `-q 100` 15 and
+  29, `-q 200` 26 and 34, `-q 300` 25 and 36; fdk AAC `-b 128000` 34 and 36, `-b 160000` 36 and 36,
+  `-b 256000` 35 and 35, `-b 320000` 29 and 31, VBR mode 1 25 and 36, mode 3 21 and 36, mode 5 36
+  and 36; LAME at 320 kbps with `--lowpass -1` 36 and 36 (0.08 to 0.26), `-V0` 36 and 36, `-V2
+  --lowpass -1` 36 and 36, 192 kbps 36 and 36, 128 kbps 36 and 36 (0.48 to 0.85); libvorbis q3 34
+  and 36, q6 34 and 36, q10 28 and 32, ffmpeg's Vorbis encoder 34 and 36. Taken to another rate (15
+  sources, fdk AAC 160 kbps, faac 160 kbps, LAME 192 kbps): to 96 kHz 0 and 15 of 15 for each
+  (lattice 0.18 to 0.54 for fdk, 0.15 to 0.70 for faac, 0.42 to 0.59 for LAME), fdk to 88.2 kHz 0
+  and 15; triangular dither 15 and 15 and noise-shaped dither (shibata) 15 and 15 for fdk and LAME,
+  11 and 15 for faac; a triangular dither at 16 times its scale 12 and 14 for fdk and 13 and 13 for
+  LAME; fdk taken to 32 kHz 0 and 0. Every control read 0.015 at most. The sources read at most
+  0.0078 (AAC), 0.0101 (MP3) and 0.0030 (Vorbis) with the weights and every kind (0.0025, 0.0035 and
+  0.0017 before). The misses that remain are fdk at 320 kbps (5 of 36), faac at `-q 100` (7), `-q
+  200` (2) and `-b 64` (2), libvorbis q10 (4) and a few of the others (one or two of 36), loud
+  masters whose lattice reads 0.012 at most; the cause is not found (at 320 kbps the quantised
+  values run large and a log lattice thins as `q` grows, `q^(4/3)` stepping by under a percent past
+  `q` 100, which does not explain faac at low quality); none is a false call. The whole library, 462
+  tracks studied whole (461 FLAC and a WAVE), reads at most 0.0194 on a genuine track with 20 000
+  effective coefficients or more (a significance of 2.8, at most 4.95 anywhere) and no verdict
+  moved: 9 tracks are called (7 before), the two new ones (an MP3 rip at 0.023 and one at 0.080 from
+  48 kHz) already `Fake` by their wall. The statistics tried before (band levels, 100 Hz holes, the
+  side channel, the top octave's swing, coefficients at the 16-bit floor on AAC's grid) separated
+  nothing. No Apple or FhG encode weighed (none on this machine). **Opus** lowpasses at 20 kHz at
+  any bitrate and its CELT bands are not on a lattice of their own: an Opus transcode is `Suspect`.
+  A direct search was run (the decode un-pre-emphasised, CELT's MDCT of 960 lines under its
+  120-sample-overlap window at all 960 frame offsets, each of the 21 bands' log2 amplitude against a
+  lattice of 1, 1/2 and 1/4): the strongest offset read a mean z² of 1.7 to 2.3 at 64, 128 and 192
+  kbps against 1.9 for a non-Opus source and no sharp peak at any offset (neighbouring offsets read
+  alike), as CELT codes a band's energy as an integer residual from a prediction on the previous
+  frame's and the lower bands' running term, so the energies themselves sit on none; the residual
+  wants libopus's mean table, its pitch post-filter and stereo state, and was not built. **MP2**
+  (twolame) has its steps in the subband domain on a linear grid per scale factor (3 levels to 65
+  535, scale factors at 2^(-k/3)), not on log steps, and is not weighed.
 
 ## Studies in the catalog
 
