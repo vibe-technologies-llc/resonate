@@ -208,6 +208,12 @@ class EqualiserViewModel(private val resonate: Resonate) : ViewModel() {
 
     fun chooseRoomResponse() = resonate.host.chooseRoomResponse()
 
+    fun chooseRoomLeft(uri: Uri) = resonate.features.room.chooseLeft(uri)
+
+    fun chooseRoomRight(uri: Uri) = resonate.features.room.chooseRight(uri)
+
+    fun cancelRoomPair() = resonate.features.room.cancelPair()
+
     fun turnRoom(on: Boolean) = resonate.features.room.turn(on)
 
     fun forgetRoom() = resonate.features.room.forget()

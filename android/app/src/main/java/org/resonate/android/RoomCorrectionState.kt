@@ -22,7 +22,16 @@ data class RoomView(
     val name: String?,
     val kept: RoomCorrection?,
     val reading: Boolean,
+    val left: RoomHalf? = null,
 )
+
+data class RoomHalf(val uri: Uri, val name: String)
+
+fun roomStem(name: String): String = name.substringBeforeLast('.')
+
+fun roomExtension(name: String): String = name.substringAfterLast('.', "")
+
+fun pairedRoomName(left: String, right: String): String = "${roomStem(left)} and ${roomStem(right)}"
 
 class RoomCorrectionState(
     context: Context,
@@ -61,8 +70,8 @@ class RoomCorrectionState(
                 val native = library.native()
                 val name = resolver.displayNameOf(uri)
                 val bytes = withContext(Dispatchers.IO) { read(uri) }
-                val kept = native.keepRoomCorrection(bytes, name.substringAfterLast('.', ""))
-                val stem = name.substringBeforeLast('.')
+                val kept = native.keepRoomCorrection(bytes, roomExtension(name))
+                val stem = roomStem(name)
                 settings.edit().putString(NAME_KEY, stem).apply()
                 view.value = view.value.copy(kept = kept, name = stem)
                 apply(native, true)
@@ -70,6 +79,40 @@ class RoomCorrectionState(
                 view.value = view.value.copy(reading = false)
             }
         }
+    }
+
+    fun chooseLeft(uri: Uri) = step {
+        view.value = view.value.copy(left = RoomHalf(uri, resolver.displayNameOf(uri)))
+    }
+
+    fun chooseRight(uri: Uri) {
+        val left = view.value.left ?: return
+        view.value = view.value.copy(reading = true)
+        step {
+            try {
+                val native = library.native()
+                val right = resolver.displayNameOf(uri)
+                val leftBytes = withContext(Dispatchers.IO) { read(left.uri) }
+                val rightBytes = withContext(Dispatchers.IO) { read(uri) }
+                val kept =
+                    native.keepBinauralRoomCorrection(
+                        leftBytes,
+                        roomExtension(left.name),
+                        rightBytes,
+                        roomExtension(right),
+                    )
+                val named = pairedRoomName(left.name, right)
+                settings.edit().putString(NAME_KEY, named).apply()
+                view.value = view.value.copy(kept = kept, name = named)
+                apply(native, true)
+            } finally {
+                view.value = view.value.copy(reading = false, left = null)
+            }
+        }
+    }
+
+    fun cancelPair() {
+        view.value = view.value.copy(left = null)
     }
 
     fun forget() = step {

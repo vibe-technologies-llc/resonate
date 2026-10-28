@@ -524,7 +524,12 @@ file is read up to 64 MiB and one byte (the boundary refuses the byte) and kept 
 `keep_room_correction`, then switched on; the switch, the response's channels, rate and length and
 *Forget the response* (confirmed) follow, as `eq.md`'s *Room correction* says. `room-correction` (on)
 and `room-correction-name` live in the `playback` preferences, as iOS's suite; the kept response is
-applied at start (`initialize`), a missing file turning correction off with a notice. Choosing,
+applied at start (`initialize`), a missing file turning correction off with a notice. *Choose a
+pair* opens `ActivityResultContracts.OpenDocument` of audio for the left speaker's file, kept in
+`RoomView.left` (`RoomHalf`: its URI and display name) while the section shows it with *Choose the
+right speaker's response* and *Cancel*; the right file chosen, both are read as the single one is and
+kept through `keep_binaural_room_correction` (`RoomCorrectionState.chooseRight`, `eq.md`'s *Crossfeed
+and binaural responses*; `RoomPairNamesTest`). Choosing,
 applying, forgetting and restoring run one at a time under one mutex.
 
 The sleep timer is the engine's `Until`: elapsed time, end of song or end of queue, with cancellation

@@ -1357,7 +1357,11 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
 - **Room correction** is the equaliser page's last section (`RoomCorrection.swift`): choosing an
   audio file reads at most 64 MiB and one byte on `Work.aside` and keeps it through
   `keep_room_correction`, then switches it on; the switch, the response's channels, rate and length
-  and *Forget the response* follow (`eq.md`'s *Room correction*). One response serves every output.
+  and *Forget the response* follow (`eq.md`'s *Room correction*). *Choose a pair…* takes the left
+  speaker's file (`RoomCorrectionState.left`), then *Choose the right speaker's response…* the
+  right's (or *Cancel*), each its own `fileImporter` on its own button, and keeps both through
+  `keep_binaural_room_correction`; the name is `ResonateLogic`'s `RoomPair.name` (`RoomPairTests`).
+  One response serves every output.
 
 ## Siri
 
