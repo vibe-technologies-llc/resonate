@@ -113,6 +113,25 @@ both threads share (`Mpris::name` = current name). `Mpris::shutdown`: stop flag,
 folder; idempotent (`Drop` reruns it). `crates/resonate-mpris/tests/name.rs` is its own test binary:
 instance names are keyed by pid and each process has its own `INSTANCES` pool.
 
+**Every zone is a player of its own on the bus, under a name its number keeps.** The window's first
+zone (and headless `resonate play`) claims `org.mpris.MediaPlayer2.resonate`; zone *N* claims
+`org.mpris.MediaPlayer2.resonate.zone<N>` (`service::bus_name_of`), its fallback when that is taken
+`…resonate.instance<pid>.zone<N>` (`instance_name`). Why `zone<N>` and not `instance<pid>`: the spec
+lets a player append a dot and any identifier unique to it (an element not starting with a digit),
+naming `instance<pid>` only as an example; a pid changes every run and says nothing of which zone,
+while a zone's number is kept with it (`library.md`'s zones table) so a script or `--player zone2`
+names the same zone each run. `Mpris::start` takes the `ZoneId`; each zone's service is its own
+connection, poll thread, notifications and idle inhibit, and only the first registers with BlueZ
+(`answers_headsets`). **`Identity` names the zone once there are several** (`Resonate (Study)`, the
+binary's `identity_of`; `Resonate` alone with one zone) and `org.resonate.Player1`'s `Zone` (`s`)
+always names it (`Host::zone`, the first zone's default name where the host has none); the poll diffs
+both and announces a rename. The client finds a zone by number (`numbered`: the plain name and an
+`instance` name are zone 1, a name ending `.zone<N>` is zone *N*) or by the name `Zone` reads,
+case folded (`Running::zoned`, `ZoneAsked`); `Standing::zone` is what `resonate players` prints
+(`a_second_zone_is_a_player_of_its_own_named_for_its_number_and_found_by_number_or_name`). The
+crate still sees zones only through `Player` and `Host`: the binary's `Desktop` holds a `Weak<Zones>`
+and its zone's id and sends every command through `Zones::send` (`audio.md`).
+
 **`DesktopEntry` = the installed entry, which Flatpak renames**: the binary's `Host` answers
 `FLATPAK_ID` where set, for the bus property and a notification's `desktop-entry` hint
 (`packaging.md`).
@@ -216,7 +235,8 @@ needs `--system-talk-name=org.bluez` (`packaging.md`)
   temp folder) before asking the bus and holds it until `Mpris::start` claimed the name; a second
   launch waits at most `WAITS_AT_MOST` (15 s); an untakeable lock starts the window as before.
 - **A player is chosen by name; one reading of the bus serves every way of choosing.** `ours` =
-  names that are `org.mpris.MediaPlayer2.resonate` or an `instance` under it, plain name first.
+  names that are `org.mpris.MediaPlayer2.resonate` or anything under it (an `instance`, a
+  `zone<N>`), plain name first, so `found` and `a_window` land on the first zone.
   `Running::found` = first, `listed` = all, `named` = the one that `answers_to` a `PlayerName`
   (whole bus name or `instance<pid>` alone), so `resonate players` prints what `--player` takes.
   `Standing` = what one answers about itself (`Option`s: nothing vs empty differ); a player that

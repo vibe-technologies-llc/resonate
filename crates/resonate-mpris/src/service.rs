@@ -13,7 +13,7 @@ use std::{
 use ahash::AHashMap;
 use crossbeam_channel::{Receiver, Sender, bounded};
 use parking_lot::RwLock;
-use resonate_core::{Frames, TrackId, Volume};
+use resonate_core::{Frames, TrackId, Volume, ZoneId};
 use resonate_engine::{
     CoverArt, MediaInfo, PlaybackState, Player, PlayerState, QueueItem, QueueRows, RepeatMode,
     Seeks, TagsRead, TrackState,
@@ -47,6 +47,7 @@ const HEARD_READ_EVERY: Duration = Duration::from_secs(1);
 const WAITING_TELLS: usize = 4;
 const ANNOUNCE_BUDGET: Duration = Duration::from_millis(100);
 const INSTANCES: u32 = 16;
+pub(crate) const ZONE_PREFIX: &str = "zone";
 
 struct Claimed {
     name: RwLock<WellKnownName<'static>>,
@@ -99,6 +100,7 @@ pub struct Mpris {
 
 impl Mpris {
     pub fn start(
+        zone: ZoneId,
         player: Arc<Player>,
         host: Arc<dyn Host>,
         playlists: Option<Arc<dyn Playlists>>,
@@ -150,7 +152,7 @@ impl Mpris {
             .map_err(|source| Error::bus(BusOp::Connect, source))?;
 
         let losses = name_losses(&connection);
-        let claimed = Arc::new(Claimed::new(claim(&connection)?));
+        let claimed = Arc::new(Claimed::new(claim(&connection, zone)?));
         let stop = Arc::new(AtomicBool::new(false));
         let (tells, told) = bounded(WAITING_TELLS);
         let thread = {
@@ -165,6 +167,7 @@ impl Mpris {
         if let Some(losses) = losses {
             watch_the_name(
                 connection.clone(),
+                zone,
                 Arc::clone(&claimed),
                 Arc::clone(&stop),
                 losses,
@@ -219,24 +222,25 @@ impl Drop for Mpris {
     }
 }
 
-fn claim(connection: &Connection) -> Result<WellKnownName<'static>> {
-    let preferred =
-        WellKnownName::try_from(BUS_NAME).map_err(|source| Error::bus(BusOp::ClaimName, source))?;
+fn claim(connection: &Connection, zone: ZoneId) -> Result<WellKnownName<'static>> {
+    let preferred = WellKnownName::try_from(bus_name_of(zone))
+        .map_err(|source| Error::bus(BusOp::ClaimName, source))?;
     if owned(connection, &preferred)? {
         return Ok(preferred);
     }
 
-    tracing::debug!("another player already owns the preferred bus name");
-    instances(connection, preferred)
+    tracing::debug!(%zone, "another player already owns the preferred bus name");
+    instances(connection, zone, preferred)
 }
 
 fn instances(
     connection: &Connection,
+    zone: ZoneId,
     fallback: WellKnownName<'static>,
 ) -> Result<WellKnownName<'static>> {
     let mut taken = fallback;
     for attempt in 1..=INSTANCES {
-        let name = WellKnownName::try_from(instance_name(attempt))
+        let name = WellKnownName::try_from(instance_name(zone, attempt))
             .map_err(|source| Error::bus(BusOp::ClaimName, source))?;
         if owned(connection, &name)? {
             return Ok(name);
@@ -266,6 +270,7 @@ fn name_losses(connection: &Connection) -> Option<Arrivals<NameLostStream>> {
 
 fn watch_the_name(
     connection: Connection,
+    zone: ZoneId,
     claimed: Arc<Claimed>,
     stop: Arc<AtomicBool>,
     losses: Arrivals<NameLostStream>,
@@ -285,7 +290,7 @@ fn watch_the_name(
                 if args.name().as_str() != lost.as_str() {
                     continue;
                 }
-                match instances(&connection, lost.clone()) {
+                match instances(&connection, zone, lost.clone()) {
                     Ok(name) => {
                         tracing::warn!(%lost, %name, "another player took the bus name; serving under an instance name instead");
                         claimed.moved_to(name);
@@ -310,10 +315,21 @@ fn hand_back(connection: &Connection, name: &WellKnownName<'static>) {
     }
 }
 
-fn instance_name(attempt: u32) -> String {
-    match attempt {
+pub(crate) fn bus_name_of(zone: ZoneId) -> String {
+    match zone.is_first() {
+        true => BUS_NAME.to_owned(),
+        false => format!("{BUS_NAME}.{ZONE_PREFIX}{zone}"),
+    }
+}
+
+fn instance_name(zone: ZoneId, attempt: u32) -> String {
+    let instance = match attempt {
         1 => format!("{BUS_NAME}.instance{}", process::id()),
         other => format!("{BUS_NAME}.instance{}-{other}", process::id()),
+    };
+    match zone.is_first() {
+        true => instance,
+        false => format!("{instance}.{ZONE_PREFIX}{zone}"),
     }
 }
 
@@ -357,6 +373,8 @@ struct Watched {
     waiting: u32,
     playhead: Option<Playhead>,
     reads: u64,
+    identity: String,
+    zone: String,
 }
 
 impl Watched {
@@ -390,6 +408,10 @@ fn announce(
         tracing::warn!("the MPRIS track list vanished from the object server");
         return;
     };
+    let Ok(root) = server.interface::<_, Root>(OBJECT_PATH) else {
+        tracing::warn!("the MPRIS root interface vanished from the object server");
+        return;
+    };
     let Ok(ours) = server.interface::<_, OwnInterface>(OBJECT_PATH) else {
         tracing::warn!("the sleep timer interface vanished from the object server");
         return;
@@ -416,6 +438,7 @@ fn announce(
         if let Some(headsets) = headsets.as_ref() {
             publish(headsets.player(), &watched, &next);
         }
+        publish_root(&root, &watched, &next);
         publish_ours(&ours, &watched, &next);
         publish_tracks(&tracks, shared, &watched, &next);
         if let Some(collected) = collected.as_ref() {
@@ -638,6 +661,8 @@ fn snapshot(
             rate: current.source.rate.hz(),
         }),
         reads: shared.player.media_revision(),
+        identity: shared.host.identity(),
+        zone: shared.host.zone().as_str().to_owned(),
     }
 }
 
@@ -681,7 +706,16 @@ fn status_moved(before: PlaybackState, now: PlaybackState) -> bool {
     PlaybackStatus::from(before) != PlaybackStatus::from(now)
 }
 
+fn publish_root(root: &InterfaceRef<Root>, before: &Watched, now: &Watched) {
+    if before.identity != now.identity {
+        report(block_on(root.get().identity_changed(root.signal_emitter())));
+    }
+}
+
 fn publish_ours(ours: &InterfaceRef<OwnInterface>, before: &Watched, now: &Watched) {
+    if before.zone != now.zone {
+        report(block_on(ours.get().zone_changed(ours.signal_emitter())));
+    }
     if before.sleep != now.sleep {
         report(block_on(ours.get().sleep_changed(ours.signal_emitter())));
     }

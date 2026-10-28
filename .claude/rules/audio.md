@@ -702,12 +702,34 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   rest. `Resumption::rows` = load order, `Resumption::order` = play order over it
   (`resonate-core::plays_in`: an order naming each row once stands, else load order); `restore`
   writes the shuffle flag, not `set_shuffle` (would reshuffle). Volume and repeat are deliberately
-  not kept. Only bare `resonate` resumes; `resume` off discards what was kept. `Keeping` samples the
+  not kept (a zone's volume is, beside its device: `library.md`). Only bare `resonate` resumes, every
+  zone the window held coming back with its own queue (the binary's `zoning::restore`); `resume` off
+  discards what was kept, zones included. `Keeping` samples the
   `PlayerState` and published queue like a play and answers `Keep::Queue` (`Queued::stamp` moved),
   `Keep::Order` (`Queued::revision` or shuffle moved) or `Keep::Place` (row changed, position moved
   `KEPT_EVERY`, or transport rests elsewhere than the place kept); only the first allocates a
   `Resumption`. `resonate play` samples every 500 ms and keeps once more as it leaves
   (`Keeping::kept_on_leaving`: the same answers, but a place counts as moved at any distance).
+- **A zone is a `Player` of its own; `Zones` (`zones.rs`) holds them and is the one way a command
+  reaches one.** Each zone has its own queue, place, transport, sleep timer, device and volume, and
+  its own PipeWire client and stream (the sink section). `Zones::start` takes the first player (never
+  removed: `Error::FirstZoneStays`); `add` takes the next free number (`Opening::anew`: *Zone N*, the
+  default device, full volume), `open` a kept one, both through the `Opens` seam the binary fills
+  (`open` builds the player from the first zone's `OutputSettings::applied_to` the start config, so
+  a zone opened late wears the settings in force; `opened`/`closed` start and end its bus service).
+  `Zones::send` routes by `CommandKind::within`: `Within::TheZone` (queue, transport, volume, sink,
+  device mute, sleep) to the zone, `Within::EveryZone` (every output setting, the equaliser, room
+  correction, `Relocate`) to all of them, so the settings file stays one set for every zone and the
+  equaliser binding follows each zone's own device (`Equalisation` is bound per sink).
+  **A device another zone holds bit-perfect is refused**: `Zones::holding` reads each other zone's
+  published output, and one whose settings prefer bit-perfect and whose mode is `BitPerfect` or
+  `Repacked` holds its sink (`holds_its_device`); `SetSink` naming that sink, or following the
+  default while the default is it, is `Error::DeviceHeld { by }`. PipeWire offers this client no
+  exclusive stream, so on Linux bit-perfect is the one hold. Two zones on a mixed (converted) device
+  both play to it; a zone that turns bit-perfect after another chose the device is not undone, the
+  graph converts the other
+  (`two_zones_play_apart_each_steered_alone_while_a_setting_reaches_both`,
+  `a_device_another_zone_holds_bit_perfect_is_refused_and_a_mixed_one_is_shared`).
 - **Removing the playing row moves on as a skip** (`Queue::hand_on` = `advance` minus the
   repeat-track hold; else `Engine::remove` stops with `QueueFinished`).
 - **A play is what was heard, sampled not hooked.** `Listening` takes a `PlayerState` beside the

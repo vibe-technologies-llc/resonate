@@ -254,6 +254,23 @@ is never named.
   - Release is taken from three places (inside the window, `on_mouse_up_out`, a move reporting no
     button held). The equaliser's handles ride the same surface: a `HeldBand` beside the `Grab`
     (`eq.md`).
+- **The window shows one zone at a time; the switcher in the header chooses it.** `ResonateApp::zones`
+  is the engine's `Zones`; `RootView::zones` holds a `ZoneShown` (`PlayerModel` entity, `Listening`,
+  `Keeping`, last `KeptZone`, observer) per zone and `RootView::player` is the selected one's, so the
+  queue, transport, now-playing, output picker and visualiser shown are that zone's and nothing else
+  changes. `views/zones.rs`'s `Switcher` is the windowless model (selection, add, remove falling back to
+  the zone before, rename, the label and what a screen reader hears), tested there. The control sits
+  before the window controls: a speaker mark alone with one zone, the selected zone's name beside it
+  once there are several; a press or `enter` opens a `Menu` listing the zones (*Check* on the shown
+  one), *Add a zone*, *Rename this zone…* and, off the first, *Remove this zone*. Switching never
+  touches playback (`show_zone` moves `listen_in` to the shown zone and clears the volume aim, mute
+  memory, seek grab, queue names and take-out offer, which belong to one queue). Adding and removing
+  run on the background executor (a player opens its own PipeWire client). Renaming swaps the control
+  for a `Field` (`zone_name`, in `text_fields`): `enter` names it, escape or a press outside leaves it.
+  `RootView::send` goes through `Zones::send`, and a refusal is a toast naming the zone in the way
+  (`zones::refusal`); `store`/`forget` drop the `sink` and `volume` keys for any zone but the first
+  (`SettingKey::is_the_zones_own`), its device and volume being kept with the zone. The output
+  picker routes through `route_to` and marks a device another zone holds *HELD BIT-PERFECT BY …*.
 - **`PlayerModel::state` returns a borrow of the model, not a copy.** Clone it before anything taking
   `&mut Context`: `let model = self.player.read(cx); let state = model.state().clone();`.
 
@@ -1048,9 +1065,10 @@ is never named.
   alone. A lone word draws no chip. A pane with nothing left says "No albums match." where a search is
   in force, "No albums yet." where none is, and "The library couldn't be read." (with a toast)
   where the last read failed (`LibraryModel::unreadable`, checked before the narrowed wording). A failed read for a query other than the one the lists were read for empties them (`listed_for`, `forget_the_listing`); a failed refresh of the same query keeps its rows.
-- **The window keeps the queue for the next run; the switch stopping it discards what was kept.**
-  `RootView` holds a `Keeping` (field `resuming`) off the `PlayerModel` observer, keeping what
-  `resonate play` keeps (`audio.md`). `Stored::resume` is a `config.toml` key; the *Resuming* card is a
+- **The window keeps every zone's queue for the next run; the switch stopping it discards what was
+  kept.** Each `ZoneShown` holds a `Keeping` and a `Listening` off its own `PlayerModel` observer
+  (`RootView::zone_moved`), keeping what `resonate play` keeps (`audio.md`) under its `ZoneId`, and
+  its `KeptZone` (name, device, volume) where it moved (`keep_the_zone`). Every zone's plays count. `Stored::resume` is a `config.toml` key; the *Resuming* card is a
   Library group (it writes to the catalog). Off = `Library::forget_resumption` at once. Each write
   awaits the one before it (`keep_after_what_was_kept`).
 - **Tab, restore size and Settings category each have a memory switch** (`remember-tab`,

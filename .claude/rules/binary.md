@@ -43,6 +43,16 @@ paths:
   catalog are its own and cannot be swapped from outside, so handing files over while ignoring those
   flags would play them from a catalog the listener did not name.
 
+- **A zone is addressed where a running player is.** `queue` and `sleep` take `--zone <N|NAME>`
+  (conflicting with `--player`): a number is the zone's (1 the first), anything else the name the
+  window shows, case folded (`ZoneAsked`, `Running::zoned`, `Error::NoSuchZone`); with neither flag
+  it is the first zone, as before. `players` prints a `ZONE` column. `play` is one player and so the
+  first zone. The window's zones are made in `zoning.rs`: `Opener` fills the engine's `Opens` seam
+  (a player over the same `Sources`, its bus service through `mpris::start_zone`), `restore` opens
+  every kept zone and resumes its queue; the signal farewell silences every zone. The settings file
+  keeps no zone key: the first zone's device and volume are `sink` and `volume`, the rest live with
+  the zones in the catalog (`library.md`).
+
 ## Reading a file argument
 
 One reader for URIs: `resonate-core::MediaLocation::{from_uri, to_uri}` (in core because bus and

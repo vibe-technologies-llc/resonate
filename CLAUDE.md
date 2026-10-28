@@ -13,8 +13,8 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `dependencies.md` | `**/Cargo.toml` | version pinning, crate layering, feature flags that are not optional |
 | `binary.md` | the binary, the settings pane | the CLI grammar, file arguments and URIs, the MIME list, signals, the terminal, the settings decisions, the settings file |
 | `realtime.md` | engine, pipewire, the Oboe and RemoteIO callbacks, dsp, `listen::recording`, `core::rt` | the audio-callback contract |
-| `audio.md` | engine, codec, dsp, pipewire | decode, the prescan guards, transport, queue, sleep, resumption, what is published, DSP, sink |
-| `mpris.md` | resonate-mpris, the binary's `mpris.rs`, `starting.rs` | the bus, the track list, covers, the name, notifications, the idle inhibit, `Running` |
+| `audio.md` | engine, codec, dsp, pipewire | decode, the prescan guards, transport, queue, zones, sleep, resumption, what is published, DSP, sink |
+| `mpris.md` | resonate-mpris, the binary's `mpris.rs`, `starting.rs` | the bus, the track list, covers, the name and each zone's, notifications, the idle inhibit, `Running` |
 | `library.md` | library, mpris, the playlist panes, the binary's `playlists.rs` | schema, scan, enrichment, tag writing, deleting, organise, search, playlists, undo, sheets, statistics, suggestions, share |
 | `lyrics.md` | resonate-lyrics, the lyrics model and pane, `sylt.rs`, `lrclib.rs`, `sung.rs`, the phones' `lyrics.rs` | the vocabulary, the provider seam, the LRC reader |
 | `eq.md` | resonate-eq, `core::eq`, the DSP stage and convolver, `impulse.rs`, `autoeq.rs`, the equaliser panes, the phones' `equaliser.rs`, `room.rs` and graph | the vocabulary, the biquads, the per-sink binding, the formats, AutoEq, the phones' curve and room correction |
@@ -114,6 +114,9 @@ Invariants the layering protects (the rules files have the rest):
   source; another source brings its own catalog, its queue rows read through `Player::media`.
 - **An artist is one artist however spelled**: `folded_letters` (core) folds `artists.key`,
   `tracks_fts` and a typed search word.
+- **A zone is a `Player`; `Zones` owns them and every command reaches one through `Zones::send`**
+  (`audio.md`): the window shows one at a time, each is its own MPRIS player (`mpris.md`), each
+  queue is kept under its `ZoneId`.
 - **The engine reaches the graph through `resonate-audio::Backend`, never `PipeWire`**: `Player::with_backend` takes
   any other, so `crates/resonate-engine/tests/transport.rs` drives a transport with no daemon.
 - **`resonate-mpris` sees the engine only through `Player` and the front end only through `Host`**,
@@ -205,7 +208,8 @@ CI runs exactly this list, iOS aside (`release.yml` runs on tags only); the debu
 stack's test harness:
 
 - **Output:** `sinks`, `explain`, `info`, `analyse` (`--recognise` asks AcoustID), `listen`, `eq`.
-- **Playing:** `play <files>` (transport keys on stdin), `queue`, `players`, `sleep`, `share`, `mcp`.
+- **Playing:** `play <files>` (transport keys on stdin), `queue`, `players`, `sleep`, `share`, `mcp`;
+  `queue` and `sleep` take `--zone <N|NAME>` for a zone of the window.
 - **Catalog:** `scan`, `roots`, `forget`, `enrich`, `tag`, `organise`, `dedupe`, `vault`, `studies`, `stats`,
   `favourites`, `suggest`, `playlists`, `playlist`, `import`.
 - **Wants:** `wants`, `missing`, `poll`, `tidal` (device sign-in), `lastfm` (scrobbling sign-in).

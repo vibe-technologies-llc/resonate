@@ -17,7 +17,7 @@ use parking_lot::Mutex;
 use resonate_codec::{Error as CodecError, Result as CodecResult};
 use resonate_core::{
     ChannelLayout, FrameSpan, Frames, Gain, MediaLocation, PlaylistId, SampleFormat, SampleRate,
-    SourceId, TrackId, Volume,
+    SourceId, TrackId, Volume, ZoneId,
 };
 use resonate_engine::{
     AudioSource, Backend, Command, EngineConfig, Media, MediaProvider, NodeName, Opener, Placement,
@@ -574,6 +574,7 @@ impl Harness {
         };
         let shelf = Arc::new(Shelf::new());
         let mpris = Mpris::start(
+            ZoneId::FIRST,
             Arc::clone(&player),
             Arc::new(host),
             Some(Arc::clone(&shelf) as Arc<dyn Playlists>),

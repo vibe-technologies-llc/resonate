@@ -17,8 +17,8 @@ use gpui::{
     App, AsyncApp, Context, Image, Pixels, RenderImage, SharedString, Task, WeakEntity, px,
 };
 use resonate_core::{
-    AlbumId, ArtistId, FrameSpan, MediaLocation, PlaylistId, QueueStamp, ReleaseTrackId, Span,
-    TrackId, WantId,
+    AlbumId, ArtistId, FrameSpan, KeptZone, MediaLocation, PlaylistId, QueueStamp, ReleaseTrackId,
+    Span, TrackId, WantId, ZoneId,
 };
 use resonate_engine::{Keep, Played, QueueItem};
 use resonate_library::{
@@ -4940,17 +4940,37 @@ impl LibraryModel {
         cx.notify();
     }
 
-    pub fn keep_the_queue(&mut self, keep: Keep, cx: &Context<Self>) {
+    pub fn keep_the_queue(&mut self, zone: ZoneId, keep: Keep, cx: &Context<Self>) {
         let library = Arc::clone(&self.library);
 
         self.keep_after_what_was_kept(cx, move || {
             let kept = match keep {
-                Keep::Queue(resumption) => library.keep_resumption(&resumption),
-                Keep::Order(reordered) => library.keep_order(&reordered),
-                Keep::Place { row, at } => library.keep_place(row, at),
+                Keep::Queue(resumption) => library.keep_resumption(zone, &resumption),
+                Keep::Order(reordered) => library.keep_order(zone, &reordered),
+                Keep::Place { row, at } => library.keep_place(zone, row, at),
             };
             if let Err(error) = kept {
                 tracing::warn!(%error, "the queue was not kept for the next run");
+            }
+        });
+    }
+
+    pub fn keep_the_zone(&mut self, zone: KeptZone, cx: &Context<Self>) {
+        let library = Arc::clone(&self.library);
+
+        self.keep_after_what_was_kept(cx, move || {
+            if let Err(error) = library.keep_zone(&zone) {
+                tracing::warn!(%error, zone = %zone.id, "the zone was not kept for the next run");
+            }
+        });
+    }
+
+    pub fn forget_the_zone(&mut self, zone: ZoneId, cx: &Context<Self>) {
+        let library = Arc::clone(&self.library);
+
+        self.keep_after_what_was_kept(cx, move || {
+            if let Err(error) = library.forget_zone(zone) {
+                tracing::warn!(%error, %zone, "what was kept of a zone could not be discarded");
             }
         });
     }

@@ -18,13 +18,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   `build-std`
 
 ## Playback and output
-- [L · 0.3.0] A listener cannot play to more than one output at once from one Resonate: the PipeWire
-  client holds any number of streams and several `Player`s run apart in one process, but nothing a
-  listener reaches starts a second one, and what it would be is the owner's to settle (a second
-  player in the window or a zone beside the first, how its device and queue are chosen, its MPRIS
-  name, what `resume` and the settings keep of it, whether the phones offer it); nor does one player
-  open its next stream while the outgoing one fades on another device, where no pinned rate or
-  exclusive sink would be asked to carry both
+- [M · 0.3.0] Zones do not hand over to one another: a fade carrying one zone's song into another
+  is not built, nor does one player open its next stream on another device while the outgoing one
+  fades there (no pinned rate or exclusive sink would be asked to carry both), and the phones offer
+  no zones at all
 - [M · blocked: pipewire-rs] A rebind or turn inside a row that moves the rate while
   `force-graph-rate` pins it (on by default), or switches the pin, still reopens the PipeWire stream:
   the pin is the node's `node.rate` property, which only `pw_stream_update_properties` moves, and

@@ -5,12 +5,12 @@ use std::{
 };
 
 use crossbeam_channel::{Receiver, unbounded};
-use resonate_core::Gain;
+use resonate_core::{Gain, ZoneId, ZoneName};
 use resonate_engine::{
     AudioSource, Backend, EngineConfig, Opener, Player, SinkChange, SinkError, SinkId, SinkInfo,
     SinkResult, SinkStream, StreamRequest, Surveyor,
 };
-use resonate_mpris::{Host, Mpris};
+use resonate_mpris::{Host, Mpris, Running, Session, ZoneAsked};
 use zbus::{
     fdo::{RequestNameFlags, RequestNameReply},
     names::{BusName, WellKnownName},
@@ -109,7 +109,7 @@ impl Served {
             Player::with_backend(EngineConfig::default(), |_| Ok(Box::new(NoSinks::new())))
                 .expect("the engine starts behind a silent sink"),
         );
-        let mpris = Mpris::start(player, Arc::new(Desktop), None)
+        let mpris = Mpris::start(ZoneId::FIRST, player, Arc::new(Desktop), None)
             .expect("the MPRIS service reaches the session bus");
 
         Some(Self {
@@ -218,4 +218,64 @@ fn a_name_taken_away_is_answered_by_serving_under_an_instance_name() {
         root.get_property::<String>("Identity").expect("Identity"),
         IDENTITY
     );
+}
+
+struct Zoned;
+
+impl Host for Zoned {
+    fn identity(&self) -> String {
+        "Resonate (Study)".to_owned()
+    }
+
+    fn zone(&self) -> ZoneName {
+        ZoneName::given("Study").expect("a name")
+    }
+}
+
+#[test]
+fn a_second_zone_is_a_player_of_its_own_named_for_its_number_and_found_by_number_or_name() {
+    let Ok(connection) = Connection::session() else {
+        eprintln!("skipped: no session bus to talk to");
+        return;
+    };
+    let second = ZoneId::new(2).expect("a second zone");
+    let player = Arc::new(
+        Player::with_backend(EngineConfig::default(), |_| Ok(Box::new(NoSinks::new())))
+            .expect("the engine starts behind a silent sink"),
+    );
+    let mpris = Mpris::start(second, player, Arc::new(Zoned), None)
+        .expect("the zone's MPRIS service reaches the session bus");
+    let named = mpris.name().to_string();
+    let session = Session::open().expect("a session for the client");
+
+    let root = Proxy::new(&connection, named.clone(), OBJECT_PATH, ROOT)
+        .expect("the zone answers under its own name");
+    let by_number = Running::zoned_in(&session, &ZoneAsked::Numbered(second))
+        .expect("the bus lists its players")
+        .map(|running| running.name().to_string());
+    let by_name = Running::zoned_in(&session, &ZoneAsked::read("study"))
+        .expect("the bus lists its players")
+        .map(|running| running.name().to_string());
+    let standing = Running::zoned_in(&session, &ZoneAsked::Numbered(second))
+        .expect("the bus lists its players")
+        .map(|running| {
+            running
+                .standing()
+                .expect("the zone says how it stands")
+                .zone
+        });
+
+    assert!(
+        named == "org.mpris.MediaPlayer2.resonate.zone2"
+            || (named.starts_with(INSTANCE_PREFIX) && named.ends_with(".zone2")),
+        "the second zone took {named}"
+    );
+    assert_eq!(
+        root.get_property::<String>("Identity").expect("Identity"),
+        "Resonate (Study)"
+    );
+    assert_eq!(by_number.as_deref(), Some(named.as_str()));
+    assert_eq!(by_name.as_deref(), Some(named.as_str()));
+    assert_eq!(standing, Some(Some("Study".to_owned())));
+    mpris.shutdown();
 }

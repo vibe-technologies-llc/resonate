@@ -33,5 +33,6 @@ mod suggestions;
 pub(crate) mod transport;
 mod typing;
 pub(crate) mod visualiser;
+pub(crate) mod zones;
 
 pub use crate::views::root::{Pane, RootView};

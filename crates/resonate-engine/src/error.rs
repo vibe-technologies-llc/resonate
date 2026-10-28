@@ -1,6 +1,6 @@
 use std::result;
 
-use resonate_core::{Frames, MediaLocation, Span, StreamSpec, TrackId};
+use resonate_core::{Frames, MediaLocation, Span, StreamSpec, TrackId, ZoneId};
 use thiserror::Error;
 
 use crate::{CommandKind, TransportState};
@@ -72,6 +72,18 @@ pub enum Error {
 
     #[error("the thread decoding track {track} stopped without an answer")]
     DecoderStopped { track: TrackId },
+
+    #[error("zone {by} holds that device bit-perfect")]
+    DeviceHeld { by: ZoneId },
+
+    #[error("there is no zone {zone}")]
+    NoSuchZone { zone: ZoneId },
+
+    #[error("the first zone is never taken away")]
+    FirstZoneStays,
+
+    #[error("every zone number is taken")]
+    NoZoneLeft,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -87,6 +99,8 @@ pub enum Cause {
     QueueMoved,
     NothingPlaying,
     PlayerStopped,
+    HeldByAnotherZone,
+    ZoneRefused,
 }
 
 impl Cause {
@@ -108,6 +122,8 @@ impl Error {
             Self::SeekOutOfRange { .. } => Cause::CannotSeek,
             Self::CommandPending { .. } | Self::EngineStopped => Cause::PlayerStopped,
             Self::OpenerStopped { .. } | Self::DecoderStopped { .. } => Cause::Unreadable,
+            Self::DeviceHeld { .. } => Cause::HeldByAnotherZone,
+            Self::NoSuchZone { .. } | Self::FirstZoneStays | Self::NoZoneLeft => Cause::ZoneRefused,
         }
     }
 
@@ -126,7 +142,11 @@ impl Error {
             | Self::CommandPending { .. }
             | Self::EngineStopped
             | Self::OpenerStopped { .. }
-            | Self::DecoderStopped { .. } => None,
+            | Self::DecoderStopped { .. }
+            | Self::DeviceHeld { .. }
+            | Self::NoSuchZone { .. }
+            | Self::FirstZoneStays
+            | Self::NoZoneLeft => None,
         }
     }
 
@@ -145,7 +165,11 @@ impl Error {
             | Self::QueueEmpty
             | Self::InvalidTransition { .. }
             | Self::CommandPending { .. }
-            | Self::EngineStopped => None,
+            | Self::EngineStopped
+            | Self::DeviceHeld { .. }
+            | Self::NoSuchZone { .. }
+            | Self::FirstZoneStays
+            | Self::NoZoneLeft => None,
         }
     }
 }

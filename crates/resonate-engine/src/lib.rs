@@ -18,6 +18,7 @@ mod streaming;
 mod surveying;
 mod tap;
 mod turns;
+mod zones;
 
 pub use resonate_analysis::{
     Analysis, AnalysisOp, CUTS_AT_MOST, Cut, Cutoff, ENVELOPE_LANES, Envelope,
@@ -39,7 +40,7 @@ pub use resonate_codec::{
     StreamProfile, TagSet, TopLevelBox, Variability, WINDOW,
 };
 pub use resonate_core::{
-    Locator, MediaLocation, Resumable, Resumption, SourceId, Span,
+    KeptZone, Locator, MediaLocation, Resumable, Resumption, SourceId, Span, ZoneId, ZoneName,
     eq::{
         Band, BandGain, BandKind, Biquad, Frequency, MAX_BANDS, Preamp, Profile, Q,
         RESPONSE_POINTS, sweep,
@@ -72,6 +73,7 @@ pub use crate::{
         Seeks, StreamDigest, TrackState, TransportState,
     },
     tap::{Caught, Tap, Tapped},
+    zones::{Held, Opening, Opens, Within, Zone, Zones, holds_its_device},
 };
 pub(crate) use crate::{
     command::{Reply, Request},

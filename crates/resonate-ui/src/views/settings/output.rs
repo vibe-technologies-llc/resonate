@@ -348,6 +348,16 @@ impl Choice for KeptAwake {
     }
 }
 
+struct Lying {
+    open: Option<SinkId>,
+    source: Option<StreamSpec>,
+    held_by: Option<SharedString>,
+}
+
+fn held_by_another(zone: &str) -> String {
+    format!("HELD BIT-PERFECT BY {}", zone.to_uppercase())
+}
+
 impl RootView {
     pub(super) fn bluetooth_group(&mut self, cx: &mut Context<Self>) -> Div {
         let wake = self.player.read(cx).output_settings().bluetooth;
@@ -429,12 +439,21 @@ impl RootView {
             routes_to(&sinks),
             cx,
         ));
+        let held = Self::zones(cx).holding(self.switcher.selected());
         for sink in &sinks {
+            let held_by = held
+                .iter()
+                .find(|held| held.sink == sink.id)
+                .and_then(|held| self.switcher.name_of(held.by))
+                .map(|zone| SharedString::from(zone.to_string()));
             listed = listed.child(self.device(
                 sink,
                 wanted.as_ref() == Some(&sink.name),
-                open,
-                source,
+                Lying {
+                    open,
+                    source,
+                    held_by,
+                },
                 cx,
             ));
         }
@@ -466,8 +485,7 @@ impl RootView {
                         .child(kit::details([kit::detail(routes_to)])),
                 ),
             |this, _, cx| {
-                this.send(Command::SetSink(None), cx);
-                this.store(&Setting::Sink(None), cx);
+                this.route_to(None, cx);
             },
             cx,
         )
@@ -477,10 +495,14 @@ impl RootView {
         &self,
         sink: &SinkInfo,
         chosen: bool,
-        open: Option<SinkId>,
-        source: Option<StreamSpec>,
+        lying: Lying,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
+        let Lying {
+            open,
+            source,
+            held_by,
+        } = lying;
         let exact = source.is_some_and(|spec| sink.supports(spec));
         let playing = open == Some(sink.id);
         let unplugged = unplugged(sink);
@@ -513,10 +535,17 @@ impl RootView {
             .when(playing, |line| {
                 line.child(kit::badge(IN_USE, theme::accent()))
             })
+            .when_some(held_by.clone(), |line, zone| {
+                line.child(kit::badge(held_by_another(&zone), theme::faint()))
+            })
             .children(verdict);
 
         let saying = if spoken::listening() {
-            sink_spoken(&routed, &formats)
+            let said = sink_spoken(&routed, &formats);
+            match held_by.as_ref() {
+                Some(zone) => format!("{said}, {}", held_by_another(zone).to_lowercase()),
+                None => said,
+            }
         } else {
             String::new()
         };
@@ -558,15 +587,13 @@ impl RootView {
             .focus(|row| row.border_color(rgb(theme::accent())))
             .on_action(
                 cx.listener(move |this, _: &crate::app::PressControl, _, cx| {
-                    this.send(Command::SetSink(Some(name.clone())), cx);
-                    this.store(&Setting::Sink(Some(name.clone())), cx);
+                    this.route_to(Some(name.clone()), cx);
                     cx.stop_propagation();
                 }),
             )
             .on_click(cx.listener(move |this, click: &ClickEvent, _, cx| {
                 if by_the_pointer(click) {
-                    this.send(Command::SetSink(Some(clicked.clone())), cx);
-                    this.store(&Setting::Sink(Some(clicked.clone())), cx);
+                    this.route_to(Some(clicked.clone()), cx);
                 }
             }))
     }

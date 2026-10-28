@@ -1688,14 +1688,17 @@ mod tests {
             })
             .collect();
         library
-            .keep_resumption(&resonate_core::Resumption {
-                rows,
-                order: vec![2, 0, 1],
-                row: 1,
-                at: Frames(3 * 44_100),
-                shuffle: true,
-                next: None,
-            })
+            .keep_resumption(
+                resonate_core::ZoneId::FIRST,
+                &resonate_core::Resumption {
+                    rows,
+                    order: vec![2, 0, 1],
+                    row: 1,
+                    at: Frames(3 * 44_100),
+                    shuffle: true,
+                    next: None,
+                },
+            )
             .expect("a resumption kept");
         let catalogued = Catalogued {
             library: Arc::new(library),
@@ -1725,14 +1728,17 @@ mod tests {
             })
             .collect();
         library
-            .keep_resumption(&resonate_core::Resumption {
-                rows,
-                order: vec![0, 1, 2],
-                row: 1,
-                at: Frames(3 * 44_100),
-                shuffle: false,
-                next: None,
-            })
+            .keep_resumption(
+                resonate_core::ZoneId::FIRST,
+                &resonate_core::Resumption {
+                    rows,
+                    order: vec![0, 1, 2],
+                    row: 1,
+                    at: Frames(3 * 44_100),
+                    shuffle: false,
+                    next: None,
+                },
+            )
             .expect("a resumption kept");
         let catalogued = Catalogued {
             library: Arc::new(library),

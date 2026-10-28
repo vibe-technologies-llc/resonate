@@ -43,6 +43,8 @@ mod trashing;
 mod vault;
 mod vocabulary;
 mod wanting;
+#[cfg(feature = "ui")]
+mod zoning;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -68,13 +70,15 @@ use resonate_codec::{
 use resonate_core::Resumption;
 use resonate_core::{
     AlbumId, ArtistId, FrameSpan, Frames, MediaLocation, PlaylistId, SampleRate, StreamSpec,
-    Volume, names_audio,
+    Volume, ZoneId, names_audio,
 };
 use resonate_engine::{
     BluetoothWake, Command, Counting, Decoded, EngineConfig, Event, Impulse, Keep, Keeping,
     Levelling, Listening, OutputPlan, Placement, Player, PlayerState, QueueItem, Queued,
     RepeatMode, Unclaimed, Until, plan_output, read_impulse, resolve_replay_gain, stamp_of,
 };
+#[cfg(feature = "ui")]
+use resonate_engine::{Opens, Zones};
 use resonate_library::{
     Aged, Cancelling, Cut, DeliveryFolder, Direction, EnrichOptions, EnrichSummary, Failure,
     Failures, FileTags, HistoryKept, Kept, Layout, Library, Listen, ListeningService, LookupOp,
@@ -84,7 +88,7 @@ use resonate_library::{
     StudyFilter, TRIES_BEFORE_GIVING_UP, UnheldRelease, Vault, VaultFiles, Want, cuts_listed_in,
     folded_letters,
 };
-use resonate_mpris::{PlayerName, Queueing, Reloadable, Running, Standing};
+use resonate_mpris::{PlayerName, Queueing, Reloadable, Running, Standing, ZoneAsked};
 use resonate_pipewire::{
     HardwareVolume, NodeName, PipeWire, Plugged, SinkFormats, SinkInfo, Words,
 };
@@ -341,7 +345,9 @@ fn run() -> Result<()> {
         Some(Sub::Import { files, name }) => {
             import(&open_library(&cli, &config)?, files, name.as_deref())
         }
-        Some(Sub::Sleep { spec, player }) => sleep::set(spec, player.as_deref()),
+        Some(Sub::Sleep { spec, player, zone }) => {
+            sleep::set(spec, player.as_deref(), zone.as_deref())
+        }
         Some(Sub::Stats { window, top }) => {
             stats::print(&open_library(&cli, &config)?, *window, top.get())
         }
@@ -2118,7 +2124,7 @@ fn play(
 }
 
 fn queue_onto_a_running_player(cli: &Cli, config: &Config, wanted: &QueueArgs) -> Result<()> {
-    let running = reached(wanted.player.as_deref())?;
+    let running = reached(wanted.player.as_deref(), wanted.zone.as_deref())?;
     let rows = match wanted.playlist.as_deref() {
         Some(name) => playlist_rows(cli, config, name)?,
         None => queue_items(&wanted.files)
@@ -2142,7 +2148,10 @@ fn queue_onto_a_running_player(cli: &Cli, config: &Config, wanted: &QueueArgs) -
     Ok(())
 }
 
-fn reached(player: Option<&str>) -> Result<Running> {
+fn reached(player: Option<&str>, zone: Option<&str>) -> Result<Running> {
+    if let Some(zone) = zone.map(ZoneAsked::read) {
+        return Running::zoned(&zone)?.ok_or(Error::NoSuchZone { zone });
+    }
     let Some(name) = player.map(PlayerName::new) else {
         return Running::found()?.ok_or(Error::NothingRunning);
     };
@@ -2187,10 +2196,13 @@ fn players() -> Result<()> {
         return Ok(());
     }
 
-    let mut table = Table::new(vec!["PLAYER", "STATUS", "QUEUED", "TITLE", "ARTIST"]);
+    let mut table = Table::new(vec![
+        "PLAYER", "ZONE", "STATUS", "QUEUED", "TITLE", "ARTIST",
+    ]);
     for player in &standing {
         table.push(vec![
             player.name.to_string(),
+            player.zone.clone().unwrap_or_default(),
             player
                 .playback
                 .map_or_else(String::new, |status| status.as_str().to_owned()),
@@ -2304,15 +2316,21 @@ fn play_queue(
     let keeps = resuming(config, library.as_deref());
 
     let (asked_to_quit, quitting) = bounded(1);
-    signals::quit_when_told(asked_to_quit.clone(), Arc::clone(&player));
+    let silenced = Arc::clone(&player);
+    signals::quit_when_told(
+        asked_to_quit.clone(),
+        signals::silencing(move || vec![Arc::clone(&silenced)]),
+    );
     let mpris = mpris::start(
+        &mpris::Serving::new(
+            &sources,
+            library.as_ref(),
+            settings_path(cli).ok(),
+            Some(asked_to_quit),
+            None,
+            &Arc::new(AtomicBool::new(config.notifies())),
+        ),
         &player,
-        &sources,
-        library.as_ref(),
-        settings_path(cli).ok(),
-        Some(asked_to_quit),
-        None,
-        &Arc::new(AtomicBool::new(config.notifies())),
     );
     let presenter = discord::start(&player, library.as_ref(), config);
     let submitting = library
@@ -2716,33 +2734,51 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     queue(&player, &cli.files, keeps.then(|| library.as_ref()))?;
 
     let (asked_to_quit, quitting) = bounded(1);
-    signals::quit_when_told(asked_to_quit.clone(), Arc::clone(&player));
     let (attending, attention) = crossbeam_channel::unbounded();
     let (asked_to_raise, raising) = bounded(1);
     let (follow, followed) = crossbeam_channel::unbounded();
     let notify = Arc::new(AtomicBool::new(config.notifies()));
     let by_sound = online::by_sound(&config);
     let lyrics_by_the_locale = online::lyrics_by_the_locale(&config);
-    let mpris = mpris::start(
-        &player,
+    let opener = zoning::Opener::new(
+        engine_config(&cli, &config),
         &sources,
-        Some(&library),
-        Some(places.config.clone()),
-        Some(asked_to_quit),
-        Some(mpris::Window {
-            attention,
-            raise: asked_to_raise,
-            followed: follow,
+        mpris::Serving::new(
+            &sources,
+            Some(&library),
+            Some(places.config.clone()),
+            Some(asked_to_quit.clone()),
+            Some(mpris::Window {
+                attention,
+                raise: asked_to_raise,
+                followed: follow,
+            }),
+            &notify,
+        ),
+    );
+    let kept_zones = zoning::kept_zones(&library, keeps);
+    let zones = Zones::start(
+        Arc::clone(&player),
+        zoning::first_named(&kept_zones),
+        Arc::clone(&opener) as Arc<dyn Opens>,
+    );
+    let silenced = Arc::downgrade(&zones);
+    signals::quit_when_told(
+        asked_to_quit,
+        signals::silencing(move || {
+            silenced.upgrade().map_or_else(Vec::new, |zones| {
+                zones.listed().into_iter().map(|zone| zone.player).collect()
+            })
         }),
-        &notify,
     );
     drop(starting);
-    let listens = listen::in_the_window(&config, mpris.as_ref().map(resonate_mpris::Mpris::teller));
+    zoning::restore(&zones, &library, &kept_zones);
+    let listens = listen::in_the_window(&config, opener.teller());
     let presenter = Arc::new(discord::start(&player, Some(&library), &config));
     let submitting = submitting::start(&config, &library, &player);
     let syncing = sync::start(&config, Some(&places.config), &library);
     let outcome = resonate_ui::run(
-        Arc::clone(&player),
+        Arc::clone(&zones),
         Arc::clone(&library),
         resonate_ui::Lookups {
             lyricists: Arc::new(online::lyricists(
@@ -2855,7 +2891,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     drop(presenter);
     syncing.leave();
     submitting.leave();
-    drop(mpris);
+    zones.leave();
     outcome?;
     Ok(())
 }
@@ -2987,9 +3023,9 @@ fn keep_the_queue_by(
         return;
     };
     let kept = match keep(keeping, &player.state(), &player.queued()) {
-        Some(Keep::Queue(resumption)) => library.keep_resumption(&resumption),
-        Some(Keep::Order(reordered)) => library.keep_order(&reordered),
-        Some(Keep::Place { row, at }) => library.keep_place(row, at),
+        Some(Keep::Queue(resumption)) => library.keep_resumption(ZoneId::FIRST, &resumption),
+        Some(Keep::Order(reordered)) => library.keep_order(ZoneId::FIRST, &reordered),
+        Some(Keep::Place { row, at }) => library.keep_place(ZoneId::FIRST, row, at),
         None => return,
     };
 

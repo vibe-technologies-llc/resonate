@@ -7,7 +7,7 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use resonate_core::{Frames, MediaLocation, Resumable, Resumption, Span};
+use resonate_core::{Frames, MediaLocation, Resumable, Resumption, Span, ZoneId};
 use resonate_library::{Library, Result, ScanOptions, SortOrder, TrackQuery};
 
 const RATE: u32 = 44_100;
@@ -225,18 +225,21 @@ fn a_kept_queue_row_that_will_not_open_is_dropped_and_the_rest_resumed() -> Resu
     let tree = Tree::new();
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
-    library.keep_resumption(&Resumption {
-        rows: vec![
-            row("/music/0.flac"),
-            row("/music/1.flac"),
-            row("/music/2.flac"),
-        ],
-        order: vec![2, 1, 0],
-        row: 2,
-        at: PLAYED_INTO,
-        shuffle: true,
-        next: Some(Span::one(1)),
-    })?;
+    library.keep_resumption(
+        ZoneId::FIRST,
+        &Resumption {
+            rows: vec![
+                row("/music/0.flac"),
+                row("/music/1.flac"),
+                row("/music/2.flac"),
+            ],
+            order: vec![2, 1, 0],
+            row: 2,
+            at: PLAYED_INTO,
+            shuffle: true,
+            next: Some(Span::one(1)),
+        },
+    )?;
     beside(&database)
         .execute(
             "UPDATE resume_rows SET uri = 'nothing openable' WHERE position = 1",

@@ -375,6 +375,8 @@ const fn plainly(cause: Cause) -> &'static str {
         Cause::Unreadable => "A track couldn't be found",
         Cause::Unsupported => "A track is in a format Resonate can't play",
         Cause::Damaged => "A track couldn't be played",
+        Cause::HeldByAnotherZone => "Another zone plays that device bit-perfect",
+        Cause::ZoneRefused => "That zone is no longer there",
     }
 }
 
@@ -559,6 +561,8 @@ mod tests {
             Cause::QueueMoved,
             Cause::NothingPlaying,
             Cause::PlayerStopped,
+            Cause::HeldByAnotherZone,
+            Cause::ZoneRefused,
         ] {
             let said = would_not_do(CommandKind::Play, cause);
             assert!(

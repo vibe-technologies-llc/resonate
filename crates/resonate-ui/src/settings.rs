@@ -467,6 +467,12 @@ pub enum Setting {
     SyncSongs(SyncedSongs),
 }
 
+impl SettingKey {
+    pub const fn is_the_zones_own(self) -> bool {
+        matches!(self, Self::Sink | Self::Volume)
+    }
+}
+
 impl Setting {
     pub const fn key(&self) -> SettingKey {
         match self {

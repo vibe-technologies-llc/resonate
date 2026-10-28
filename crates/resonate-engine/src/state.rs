@@ -172,6 +172,29 @@ impl OutputSettings {
         }
     }
 
+    pub fn applied_to(&self, config: EngineConfig) -> EngineConfig {
+        EngineConfig {
+            sink: self.sink.clone(),
+            quality: self.quality,
+            filter_phase: self.filter_phase,
+            true_peak: self.true_peak,
+            restoration: self.restoration,
+            dither: self.dither,
+            noise_shaping: self.noise_shaping,
+            replay_gain: self.replay_gain,
+            levelling: self.levelling,
+            prefer_bit_perfect: self.prefer_bit_perfect,
+            dop: self.dop,
+            dsd_like_pcm: self.dsd_like_pcm,
+            device_volume: self.device_volume,
+            force_graph_rate: self.force_graph_rate,
+            bluetooth: self.bluetooth,
+            buffer: self.buffer,
+            equaliser: Arc::clone(&self.equaliser),
+            ..config
+        }
+    }
+
     pub fn already_says(&self, config: &EngineConfig) -> bool {
         self.sink == config.sink
             && self.quality == config.quality
@@ -266,6 +289,21 @@ mod tests {
     use resonate_dsp::Quality;
 
     use super::*;
+
+    #[test]
+    fn settings_laid_over_a_config_give_back_the_config_they_were_read_from() {
+        let config = EngineConfig {
+            sink: Some(NodeName::new("a dac")),
+            quality: Quality::Fast,
+            prefer_bit_perfect: false,
+            ..EngineConfig::default()
+        };
+
+        assert_eq!(
+            OutputSettings::of(&config).applied_to(EngineConfig::default()),
+            config
+        );
+    }
 
     fn every_field_moved(config: &mut EngineConfig) -> Vec<&'static str> {
         let mut moved = Vec::new();

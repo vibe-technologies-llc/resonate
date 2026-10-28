@@ -24,13 +24,14 @@ use resonate_core::{
 use resonate_engine::{
     AudioSource, Backend, Band, BandGain, BandKind, Caught, Cause, Command, DitherKind,
     EngineConfig, Equalisation, Error as EngineError, Event, FADED_OVER, FilterPhase, Frequency,
-    GraphTime, HardwareVolume, Hinting, Impulse, Media, MediaProvider, MediaStream, NodeName,
-    NoiseShaping, Opener, OutputMode, Placement, PlaybackState, Player, Plugged, Preamp,
-    PreviousRestarts, Profile, Q, Quality, QueueItem, QueueRows, Reading, RepeatMode,
+    GraphTime, HardwareVolume, Held, Hinting, Impulse, Media, MediaProvider, MediaStream, NodeName,
+    NoiseShaping, Opener, Opening, Opens, OutputMode, Placement, PlaybackState, Player, Plugged,
+    Preamp, PreviousRestarts, Profile, Q, Quality, QueueItem, QueueRows, Reading, RepeatMode,
     ReplayGainMode, Reshaped, Reshaper, Restoration, Result, Resumable, Resumption, SinkChange,
     SinkError, SinkFormats, SinkId, SinkInfo, SinkPort, SinkResult, SinkStream, SkipUnderRepeat,
     SourceId, Sources, StreamClock, StreamCommand, StreamEvent, StreamRequest, StreamState,
-    StreamVolume, Surveyor, Tapped, Unreshapable, Until, Words, stamp_of,
+    StreamVolume, Surveyor, Tapped, Unreshapable, Until, Words, Zone, ZoneId, ZoneName, Zones,
+    stamp_of,
 };
 
 const RATE: u32 = 44_100;
@@ -1488,6 +1489,201 @@ fn two_players_in_one_process_play_at_once_each_on_its_own_sink_and_steered_alon
         vec![Some(SinkId::new(2))],
         "the second player opened beyond its own sink"
     );
+    Ok(())
+}
+
+struct FakeZones {
+    sinks: Vec<SinkInfo>,
+    graphs: Mutex<BTreeMap<ZoneId, Arc<Mutex<Graph>>>>,
+    closed: Mutex<Vec<ZoneId>>,
+}
+
+impl FakeZones {
+    fn over(sinks: Vec<SinkInfo>) -> Arc<Self> {
+        Arc::new(Self {
+            sinks,
+            graphs: Mutex::new(BTreeMap::new()),
+            closed: Mutex::new(Vec::new()),
+        })
+    }
+
+    fn started(self: &Arc<Self>) -> Result<Arc<Zones>> {
+        let first = self.opened(&Opening::anew(ZoneId::FIRST))?;
+        Ok(Zones::start(
+            first,
+            ZoneName::first_given_to(ZoneId::FIRST),
+            Arc::clone(self) as Arc<dyn Opens>,
+        ))
+    }
+
+    fn graph(&self, zone: ZoneId) -> Arc<Mutex<Graph>> {
+        Arc::clone(
+            self.graphs
+                .lock()
+                .get(&zone)
+                .expect("every zone opened has a graph of its own"),
+        )
+    }
+}
+
+impl Opens for FakeZones {
+    fn open(&self, opening: &Opening, alongside: &Player) -> Result<Arc<Player>> {
+        let player = self.opened(opening)?;
+        let followed = player.output_settings().quality == alongside.output_settings().quality;
+        assert!(
+            followed,
+            "a zone opened apart from the settings the first one holds"
+        );
+        Ok(player)
+    }
+
+    fn closed(&self, zone: &Zone) {
+        self.closed.lock().push(zone.id);
+    }
+}
+
+impl FakeZones {
+    fn opened(&self, opening: &Opening) -> Result<Arc<Player>> {
+        let (backend, graph) = FakeSink::new(self.sinks.clone());
+        self.graphs.lock().insert(opening.id, graph);
+        let config = EngineConfig {
+            sink: opening.sink.clone(),
+            volume: opening.volume,
+            ..config()
+        };
+        Ok(Arc::new(Player::with_backend(config, move |_| {
+            Ok(Box::new(backend))
+        })?))
+    }
+}
+
+fn played_from(zones: &Zones, zone: ZoneId, path: &Path) -> Result<()> {
+    zones.send(
+        zone,
+        Command::Load {
+            items: vec![track(path, 1)],
+            start_at: 0,
+            autoplay: true,
+        },
+    )
+}
+
+#[test]
+fn two_zones_play_apart_each_steered_alone_while_a_setting_reaches_both() -> Result<()> {
+    let tree = Tree::new();
+    let path = tree.write("kitchen.wav", &pcm(16, FRAMES * 20).file);
+    let other_path = tree.write("study.wav", &pcm(16, FRAMES * 20).file);
+    let opened = FakeZones::over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
+    let zones = opened.started()?;
+
+    let study = zones.add()?;
+    played_from(&zones, ZoneId::FIRST, &path)?;
+    played_from(&zones, study.id, &other_path)?;
+    let first = zones.first().player;
+    wait_for(&first, playing, "the first zone to play");
+    wait_for(&study.player, playing, "the second zone to play");
+
+    zones.send(ZoneId::FIRST, Command::Pause)?;
+    wait_for(&first, paused, "the first zone to pause");
+    let half = Volume::new(0.5).expect("half way");
+    zones.send(study.id, Command::SetVolume(half))?;
+    zones.send(study.id, Command::SetQuality(Quality::Fast))?;
+    wait_for(
+        &first,
+        |player| player.output_settings().quality == Quality::Fast,
+        "the resampler chosen in one zone to reach the first",
+    );
+    wait_for(
+        &study.player,
+        |player| player.state().volume == half,
+        "the second zone to take its own volume",
+    );
+
+    assert_eq!(study.name.as_str(), "Zone 2");
+    assert!(
+        playing(&study.player),
+        "pausing one zone stood the other down"
+    );
+    assert_eq!(study.player.output_settings().quality, Quality::Fast);
+    assert_eq!(
+        first.state().volume,
+        Volume::MAX,
+        "one zone's volume moved another's"
+    );
+    assert_eq!(
+        study.player.queue().first().map(|row| row.location.clone()),
+        Some(MediaLocation::local(&other_path)),
+        "the second zone did not keep a queue of its own"
+    );
+    assert!(opened.graph(ZoneId::FIRST).lock().opens >= 1);
+    assert!(opened.graph(study.id).lock().opens >= 1);
+    Ok(())
+}
+
+#[test]
+fn a_device_another_zone_holds_bit_perfect_is_refused_and_a_mixed_one_is_shared() -> Result<()> {
+    let tree = Tree::new();
+    let path = tree.write("held.wav", &pcm(16, FRAMES * 40).file);
+    let dac = sink(&[SampleRate::HZ_44100], &[SampleFormat::S16]);
+    let speakers = arriving();
+    let opened = FakeZones::over(vec![dac.clone(), speakers.clone()]);
+    let zones = opened.started()?;
+    let study = zones.add()?;
+    let first = zones.first().player;
+
+    played_from(&zones, ZoneId::FIRST, &path)?;
+    wait_for(
+        &first,
+        |player| {
+            player
+                .state()
+                .output
+                .is_some_and(|output| output.mode == OutputMode::BitPerfect)
+        },
+        "the first zone to play its device bit-perfect",
+    );
+    let refused = zones.send(study.id, Command::SetSink(Some(dac.name.clone())));
+    let refused_by_default = zones.send(study.id, Command::SetSink(None));
+    let held = zones.holding(study.id);
+
+    zones.send(ZoneId::FIRST, Command::SetSink(Some(speakers.name.clone())))?;
+    wait_for(
+        &first,
+        |player| {
+            player
+                .state()
+                .output
+                .is_some_and(|output| output.sink == speakers.id)
+        },
+        "the first zone to move to a device it mixes into",
+    );
+    let shared = zones.send(study.id, Command::SetSink(Some(speakers.name.clone())));
+    let freed = zones.send(ZoneId::FIRST, Command::SetSink(Some(speakers.name.clone())));
+
+    assert!(
+        matches!(refused, Err(EngineError::DeviceHeld { by }) if by == ZoneId::FIRST),
+        "a device held bit-perfect was handed to a second zone: {refused:?}"
+    );
+    assert!(
+        matches!(refused_by_default, Err(EngineError::DeviceHeld { .. })),
+        "following the default led a second zone onto a held device: {refused_by_default:?}"
+    );
+    assert_eq!(
+        held,
+        vec![Held {
+            sink: dac.id,
+            by: ZoneId::FIRST
+        }]
+    );
+    assert!(shared.is_ok(), "a mixed device was refused: {shared:?}");
+    assert!(freed.is_ok());
+    assert!(matches!(
+        zones.remove(ZoneId::FIRST),
+        Err(EngineError::FirstZoneStays)
+    ));
+    assert_eq!(zones.remove(study.id)?.id, study.id);
+    assert_eq!(*opened.closed.lock(), vec![study.id]);
+    assert_eq!(zones.count(), 1);
     Ok(())
 }
 

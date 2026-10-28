@@ -40,9 +40,17 @@ rows read via `Player::media` like any unscanned row.
   before believing it (`audio.md`), so a tag write that moves the size and the row's `file_size`
   together keeps the count and a file rewritten behind the catalog's back is walked again
   (`a_scan_keeps_the_frames_it_walked_and_the_catalog_hands_them_to_playback`).
-- **Transport state = three tables, each moving at its own rate.** `resume`: singleton (queue's row,
-  frame, shuffled, taken, `next_first`/`next_last`). `resume_rows`: one row per *loaded*-order
-  position. `resume_order`: one per *playing*-order position. `Keeping` (`resonate-engine`
+- **Transport state = three tables, each moving at its own rate, each keyed by zone.** `resume`: one
+  row per zone (queue's row, frame, shuffled, taken, `next_first`/`next_last`). `resume_rows`: one
+  row per zone and *loaded*-order position. `resume_order`: one per zone and *playing*-order
+  position. `zones`: one row per zone the window holds (`KeptZone`: number, name, and for every zone
+  but the first its device's `node.name` and volume; the first zone's are the `sink` and `volume`
+  keys). The `A_ZONE_KEEPS_ITS_OWN_QUEUE` step rebuilt the three tables with a `zone` column, the
+  rows kept before carried over as zone 1. `keep_resumption`, `keep_order`, `keep_place` and
+  `resumption_of` take the `ZoneId`; `resumption` is zone 1's (the handoff's, `sync.md`);
+  `keep_zone` upserts a zone's row, `forget_zone` drops it with its queue, `forget_resumption`
+  drops every zone (`every_zone_keeps_its_own_name_device_volume_and_queue_and_comes_back_as_it_was_left`).
+  A file moved rewrites `resume_rows` in every zone. `Keeping` (`resonate-engine`
   `kept.rs`) picks the write: unchanged queue = one upsert of the place; reorder/reshuffle =
   `resume_order` only; only rows arriving/leaving rewrite `resume_rows`. `keep_place` writes row and
   frame only, so a place written seconds into a track cannot lose the order; `keep_order` writes
