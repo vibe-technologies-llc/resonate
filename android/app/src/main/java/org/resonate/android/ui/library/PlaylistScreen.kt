@@ -59,6 +59,10 @@ import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.components.DragHandle
 import org.resonate.android.ui.components.LocalSheets
 import org.resonate.android.ui.components.PlaylistCover
+import org.resonate.android.ui.components.RowSelection
+import org.resonate.android.ui.components.SelectionRemoval
+import org.resonate.android.ui.components.SongSelectionBar
+import org.resonate.android.ui.components.rememberSelection
 import org.resonate.android.ui.components.TrackRow
 import org.resonate.android.ui.components.rememberArtwork
 import org.resonate.android.ui.components.rememberReorder
@@ -90,6 +94,8 @@ fun PlaylistScreen(screen: Screen.Playlist) {
     val entries = loaded.valueOrNull().orEmpty()
     val tracks = entries.map { it.track }
     val list = rememberLazyListState()
+    val selection = rememberSelection<String>()
+    LaunchedEffect(entries) { selection.retain(entries.map { it.key }) }
     val reorder =
         rememberReorder(
             items = entries,
@@ -107,6 +113,26 @@ fun PlaylistScreen(screen: Screen.Playlist) {
             model::open,
             tag = "playlist",
             list = list,
+            selectionBar =
+                if (!selection.active) null
+                else {
+                    {
+                        SongSelectionBar(
+                            tracks = selection.picked(entries) { it.key }.map { it.track },
+                            onSelectAll = { selection.selectAll(entries.map { it.key }) },
+                            onClose = selection::clear,
+                            removal =
+                                if (search != null) null
+                                else
+                                    SelectionRemoval("Remove from playlist") {
+                                        model.removeAll(
+                                            selection.picked(entries) { it.key }.map { it.position },
+                                            playlist?.revision,
+                                        )
+                                    },
+                        )
+                    }
+                },
             actions = {
                 OverflowMenu(
                     playlistMenu(
@@ -182,6 +208,7 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                         trailing = {
                             IconButton(onClick = { sheets.song(entry.track) }) { Icon(Icons.Rounded.MoreVert, "More options") }
                         },
+                        selection = selection.row(entry.key),
                     )
                 }
                 return@CollectionPage
@@ -199,6 +226,7 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                             onMore = { sheets.song(entry.track) },
                             onRemove = { model.remove(entry.position, playlist?.revision) },
                             onMove = { to -> model.move(entry.position, to, playlist?.revision) },
+                            selection = selection.row(entry.key),
                             handle = { DragHandle(reorder, entry.key) },
                         )
                     }
@@ -301,6 +329,7 @@ private fun PlaylistRow(
     onMore: () -> Unit,
     onRemove: () -> Unit,
     onMove: (Int) -> Unit,
+    selection: RowSelection,
     handle: @Composable () -> Unit,
 ) {
     val dismiss = rememberSwipeToDismissBoxState()
@@ -357,6 +386,7 @@ private fun PlaylistRow(
                         handle()
                     }
                 },
+                selection = selection,
             )
         }
     }

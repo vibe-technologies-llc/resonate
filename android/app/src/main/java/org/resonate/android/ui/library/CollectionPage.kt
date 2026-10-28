@@ -27,6 +27,7 @@ fun <T> CollectionPage(
     list: LazyListState = rememberLazyListState(),
     actions: @Composable RowScope.() -> Unit = {},
     floatingActionButton: @Composable () -> Unit = {},
+    selectionBar: (@Composable () -> Unit)? = null,
     content: LazyListScope.(T) -> Unit,
 ) {
     val past = rememberPastHeader(list)
@@ -35,6 +36,7 @@ fun <T> CollectionPage(
         size = TitleSize.SMALL,
         actions = actions,
         floatingActionButton = floatingActionButton,
+        selectionBar = selectionBar,
     ) { padding ->
         LoadedContent(loaded, onRetry, Modifier.padding(padding)) { value ->
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {

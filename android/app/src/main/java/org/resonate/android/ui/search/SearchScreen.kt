@@ -70,6 +70,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.resonate.android.nativecore.SearchSong
 import org.resonate.android.ui.components.LocalPageBottomPadding
 import org.resonate.android.ui.components.SettingsAction
+import org.resonate.android.ui.components.SongSelectionBar
+import org.resonate.android.ui.components.rememberSelection
 import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
@@ -102,12 +104,28 @@ fun SearchScreen() {
         }
     }
     val footer = LocalPageBottomPadding.current
+    val library by model.libraryShown.collectAsStateWithLifecycle()
+    val chosen by model.scope.collectAsStateWithLifecycle()
+    val songs = (library as? LibraryShown.Answered)?.let { shownSongs(chosen, it.answer.found) }.orEmpty()
+    val selection = rememberSelection<ULong>()
+    LaunchedEffect(songs) { selection.retain(songs.map { it.id }) }
+    LaunchedEffect(onlinePage) { if (onlinePage) selection.clear() }
     BackHandler(enabled = trail.nested) { model.back() }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
-        topBar = { SearchHeader(model, scrolled) },
+        topBar = {
+            if (selection.active) {
+                SongSelectionBar(
+                    tracks = selection.picked(songs) { it.id },
+                    onSelectAll = { selection.selectAll(songs.map { it.id }) },
+                    onClose = selection::clear,
+                )
+            } else {
+                SearchHeader(model, scrolled)
+            }
+        },
     ) { padding ->
         AnimatedContent(
             onlinePage,
@@ -124,7 +142,7 @@ fun SearchScreen() {
                     act = { acting = it },
                 )
             } else {
-                LibraryResults(model, libraryGrid, content, act = { acting = it })
+                LibraryResults(model, libraryGrid, content, selection, act = { acting = it })
             }
         }
     }

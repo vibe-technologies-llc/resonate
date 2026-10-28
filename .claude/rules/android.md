@@ -413,6 +413,32 @@ a searchable multi-song picker over the batched add seam; rename, revision-check
 delete and undo are the native calls. A row plays its list from the position tapped
 (`Playback.play(tracks, index)`), so a repeated song selects the row pressed.
 
+**Songs are multi-selected from every list of songs** with one helper, `Selection<K>` (`Selection.kt`):
+a set of row keys, `begin`, `toggle`, `selectAll`, `retain` (rows that left the list are dropped, so a
+delete or a filter never leaves a ghost), `picked(items, keyOf)` (the chosen items in the order the
+list shows them) and `row(key)`, the `RowSelection` a `TrackRow` takes. A screen owns its `Selection`
+(`rememberSelection`) because it must swap its own top bar; the key is the track id, except where a
+song can repeat (a playlist's `PlaylistEntry.key`, the queue's `rowKey`). A long press on a row
+(haptic `LongPress`) selects it, a tap toggles while any row is selected, and toggling the last row off
+leaves selection; the row's trailing *More* button is hidden while selecting and is how a row's menu
+stays reachable otherwise. A selected row draws a check over its cover (or number) on `secondaryContainer`
+and says `selected` to TalkBack, which also gets a custom action *Select <title>*. While selecting,
+`Page` (and `CollectionPage`, the Search scaffold and the queue sheet's header) show `SongSelectionBar`
+in place of the title bar: *N selected* (a polite live region), *Clear selection* (Back does the
+same), *Select all* (of what the list shows: the artist page's folded five, Search's songs of the
+chosen scope), *Play* (the selection, in list order), *Add to playlist*, *Add to favourites* or
+*Remove from favourites* (the latter when every selected song is one), and in *More* *Play next*, *Add
+to queue*, the list's own removal (*Remove from playlist* on a list playlist, *Remove from queue* in
+the queue; `SelectionRemoval`) and *Delete N songs* where every song's folder is writable
+(`songDeletable`; confirmed by the one `DeleteSongsDialog`). Every action clears the selection. The
+songs are re-read from the catalog (`findTrack`) first so the favourite state is live. The boundary has
+no batched favourite or removal, so `LibraryRepository.setFavourites`, `PlaylistViewModel.removeAll`
+(positions from the last, each against the revision the one before made) and `PlayerViewModel.removeAll`
+loop the single native call inside one worker request; queue inserts, add-to-playlist and deletion
+are the existing batches. Songs, Album, Artist, Favourites, mixes, a playlist, Search's songs and the
+queue select; Home, Statistics and Identical songs do not. The Library pager clears the selection
+when the page changes (`SelectionTest`).
+
 **Lyrics** are a `LazyColumn` of `LyricLine`s following the native `LyricFrame` (`mobile.md`'s
 *Lyrics*; the frame is computed only while a lyrics pane is open, `watchLyrics`). The active line is
 full size and ink, the rest 0.94 scale at 38 % alpha with the distant ones blurred, a wipe colouring

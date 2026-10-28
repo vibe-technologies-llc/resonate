@@ -8,6 +8,7 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -25,6 +26,8 @@ import org.resonate.android.ui.components.LocalSheets
 import org.resonate.android.ui.components.SectionHeader
 import org.resonate.android.ui.components.SongArtwork
 import org.resonate.android.ui.components.TrackRow
+import org.resonate.android.ui.components.SongSelectionBar
+import org.resonate.android.ui.components.rememberSelection
 import org.resonate.android.ui.components.rememberArtwork
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
@@ -70,12 +73,26 @@ fun AlbumScreen(screen: Screen.Album) {
     val owner = album?.artist ?: screen.artist
     val various = album?.variousArtists == true
     val seed = rememberSeedOf(rememberArtwork(cover, 0u, SEED_EDGE))
+    val songs = page?.tracks.orEmpty()
+    val selection = rememberSelection<ULong>()
+    LaunchedEffect(songs) { selection.retain(songs.map { it.id }) }
     ArtworkTheme(seed) {
         CollectionPage(
             title,
             loaded,
             model.retry::again,
             tag = "album",
+        selectionBar =
+            if (!selection.active) null
+            else {
+                {
+                    SongSelectionBar(
+                        tracks = selection.picked(songs) { it.id },
+                        onSelectAll = { selection.selectAll(songs.map { it.id }) },
+                        onClose = selection::clear,
+                    )
+                }
+            },
             actions = {
                 val tracks = page?.tracks.orEmpty()
                 OverflowMenu(
@@ -135,6 +152,7 @@ fun AlbumScreen(screen: Screen.Album) {
                             number = trackNumber(track, index),
                             supporting = albumRowLine(track, owner, various),
                             onMore = { sheets.song(track) },
+                            selection = selection.row(track.id),
                         )
                     }
                 }

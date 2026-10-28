@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -60,7 +61,11 @@ import org.resonate.android.ui.components.DragHandle
 import org.resonate.android.ui.components.EmptyState
 import org.resonate.android.ui.components.IconTile
 import org.resonate.android.ui.components.LocalSheets
+import org.resonate.android.ui.components.RowSelection
 import org.resonate.android.ui.components.SectionHeader
+import org.resonate.android.ui.components.SelectionRemoval
+import org.resonate.android.ui.components.SongSelectionBar
+import org.resonate.android.ui.components.rememberSelection
 import org.resonate.android.ui.components.SheetRow
 import org.resonate.android.ui.components.TrackRow
 import org.resonate.android.ui.components.rememberReorder
@@ -82,6 +87,9 @@ fun QueueSheet(model: PlayerViewModel, onDismiss: () -> Unit) {
     val handoffRows = if (queue.handoffs.isNotEmpty()) 1 else 0
     val historyRows = if (queue.history.isNotEmpty()) 1 + queue.history.size else 0
     val list = rememberLazyListState()
+    val selection = rememberSelection<String>()
+    val rows = remember(queue) { queue.history + listOfNotNull(queue.current) + queue.upNext }
+    LaunchedEffect(rows) { selection.retain(rows.map { rowKey(it) }) }
     val currentRows = if (queue.current != null) 2 else 0
     val reorder =
         rememberReorder(
@@ -93,7 +101,15 @@ fun QueueSheet(model: PlayerViewModel, onDismiss: () -> Unit) {
             onMove = { from, to -> model.move(from, to) },
         )
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state) {
-        Row(
+        if (selection.active) {
+            SongSelectionBar(
+                tracks = selection.picked(rows) { rowKey(it) },
+                onSelectAll = { selection.selectAll(rows.map { rowKey(it) }) },
+                onClose = selection::clear,
+                removal = SelectionRemoval("Remove from queue", model::removeAll),
+                windowInsets = WindowInsets(0),
+            )
+        } else Row(
             Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -155,7 +171,7 @@ fun QueueSheet(model: PlayerViewModel, onDismiss: () -> Unit) {
                 item("history") { SectionHeader("History") }
                 items(queue.history, key = { rowKey(it) }) { track ->
                     val index = queue.history.indexOf(track)
-                    QueueRow(model, track, onClick = { model.jump(index) }, sheets = sheets)
+                    QueueRow(model, track, onClick = { model.jump(index) }, sheets = sheets, selection = selection.row(rowKey(track)))
                 }
             }
             queue.current?.let { current ->
@@ -166,11 +182,13 @@ fun QueueSheet(model: PlayerViewModel, onDismiss: () -> Unit) {
                         playing = true,
                         onClick = {},
                         onMore = { sheets.song(current, queueId = current.queueId) },
+                        selection = selection.row(rowKey(current)),
                     )
                 }
             }
             item("next") { SectionHeader("Up next") }
-            items(reorder.shown, key = { rowKey(it) }) { track ->
+            val standing = (queue.history + listOfNotNull(queue.current)).map { rowKey(it) }.toSet()
+            items(reorder.shown.filter { rowKey(it) !in standing }, key = { rowKey(it) }) { track ->
                 val key = rowKey(track)
                 Box(reorderable(reorder, key)) {
                     QueueRow(
@@ -181,6 +199,7 @@ fun QueueSheet(model: PlayerViewModel, onDismiss: () -> Unit) {
                             if (at >= 0) model.jump(queue.firstUpNext + at)
                         },
                         sheets = sheets,
+                        selection = selection.row(key),
                         handle = { DragHandle(reorder, key) },
                     )
                 }
@@ -241,6 +260,7 @@ private fun QueueRow(
     track: Track,
     onClick: () -> Unit,
     sheets: org.resonate.android.ui.components.Sheets,
+    selection: RowSelection,
     handle: (@Composable () -> Unit)? = null,
 ) {
     val dismiss = rememberSwipeToDismissBoxState()
@@ -267,6 +287,7 @@ private fun QueueRow(
             TrackRow(
                 track,
                 onClick = onClick,
+                selection = selection,
                 onMore = if (handle == null) ({ sheets.song(track, queueId = track.queueId) }) else null,
                 trailing =
                     handle?.let { drag ->

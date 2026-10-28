@@ -25,6 +25,7 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
@@ -38,6 +39,8 @@ import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.components.LocalSheets
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.SettingsAction
+import org.resonate.android.ui.components.SongSelectionBar
+import org.resonate.android.ui.components.rememberSelection
 import org.resonate.android.ui.components.TitleSize
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
@@ -61,7 +64,11 @@ fun LibraryScreen() {
     val ready by model.ready.collectAsStateWithLifecycle()
     val empty by model.catalogEmpty.collectAsStateWithLifecycle()
     val unread by model.unread.collectAsStateWithLifecycle()
+    val songs by model.songs.collectAsStateWithLifecycle()
+    val selection = rememberSelection<ULong>()
     val onPlaylists = pager.currentPage == Shelf.PLAYLISTS.ordinal
+    LaunchedEffect(pager.currentPage) { selection.clear() }
+    LaunchedEffect(songs) { selection.retain(songs.map { it.id }) }
     val newPlaylist = { sheets.name("New playlist") { model.createPlaylist(it) } }
     Page(
         "Library",
@@ -88,6 +95,17 @@ fun LibraryScreen() {
                 )
             )
         },
+        selectionBar =
+            if (!selection.active) null
+            else {
+                {
+                    SongSelectionBar(
+                        tracks = selection.picked(songs) { it.id },
+                        onSelectAll = { selection.selectAll(songs.map { it.id }) },
+                        onClose = selection::clear,
+                    )
+                }
+            },
         floatingActionButton = {
             AnimatedVisibility(
                 visible = onPlaylists && !empty,
@@ -138,7 +156,7 @@ fun LibraryScreen() {
                         key = { Shelf.entries[it].name },
                     ) { page ->
                         when (Shelf.entries[page]) {
-                            Shelf.SONGS -> SongsTab(model, below)
+                            Shelf.SONGS -> SongsTab(model, below, selection)
                             Shelf.ALBUMS -> AlbumsTab(model, below)
                             Shelf.ARTISTS -> ArtistsTab(model, below)
                             Shelf.PLAYLISTS ->
