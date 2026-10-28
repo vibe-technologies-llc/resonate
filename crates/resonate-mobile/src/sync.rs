@@ -15,8 +15,8 @@ use parking_lot::Mutex;
 use resonate_codec::{Sources, probe_scanned};
 use resonate_core::{
     AUDIO_EXTENSIONS, Answer, Answered as Learnt, Frames, Mbid, MediaLocation, Recording,
-    Resumable, Resumption, SampleRate, TrackId, WholeFile, folded_letters, naming::named_within,
-    title_words,
+    Resumable, Resumption, SampleRate, SharedPrint, TrackId, WholeFile, folded_letters,
+    naming::named_within, title_words,
 };
 use resonate_engine::Command;
 use resonate_sync::{
@@ -1495,6 +1495,18 @@ impl Catalog for DocumentCatalog {
             Answer::Study(study) => self.take_study(study),
             Answer::Release(_) => Ok(true),
         }
+    }
+
+    fn prints_wanted(&self, skip: usize, most: usize) -> Answered<Vec<WholeFile>> {
+        self.files_wanting_a_print(skip, most)
+    }
+
+    fn print(&self, file: WholeFile) -> Answered<Option<SharedPrint>> {
+        self.print_to_share(file)
+    }
+
+    fn take_print(&self, file: WholeFile, print: &SharedPrint) -> Answered<bool> {
+        self.take_shared_print(file, print)
     }
 
     fn revision(&self) -> u64 {

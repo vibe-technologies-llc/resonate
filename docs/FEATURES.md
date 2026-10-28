@@ -52,13 +52,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Providers and network
 
 ## Device sync
-- [M · 0.3.0] The phones keep no acoustic print (`studies` holds none), so they neither ask nor
-  answer a device for a study's print and recognition as the desktop does (`Prints`, `sync.md`): a
-  study landed on a phone carries no print, and the pass decodes the song again whenever an AcoustID
-  key is set. A phone could keep the print beside the study, take a recognition re-weighed by its own
-  `agreement` against the row's name, and ask and answer them keyed by the `WholeFile` its documents
-  already keep. Prints, covers and Lyricsfiles are asked only of a device a connection already
-  stands to, never punched for, and an album known only as its release group asks the archive
 
 ## Equaliser and DSP
 

@@ -169,7 +169,10 @@ pub use crate::{
     spelling::{Spellings, spelt_alike},
     statistics::{Day, Listened, MostListened, Statistics, Window},
     store::{A_THUMBNAIL_BELOW, betters, folded_letters},
-    studies::{Agreement, HEARD_AT_LEAST, Heard, HeardAs, Studied, StudiedTrack, StudyFilter},
+    studies::{
+        Agreement, HEARD_AT_LEAST, Heard, HeardAs, KeptPrint, Studied, StudiedTrack, StudyFilter,
+        weighed_again,
+    },
     suggest::{Kind as SuggestionKind, PICTURED_BY_AT_MOST, Reason, Suggestion},
     sung::{BETTERED_AFTER, LyricsAhead, MISSED_AGAIN_AFTER},
     supply::{

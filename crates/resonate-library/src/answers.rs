@@ -5,18 +5,20 @@ use std::{
 
 use resonate_analysis::{BANDS, JUDGED_UNDER, LossyGuess, Verdict};
 use resonate_core::{
-    AlbumId, Answer, Answered, Chromaprint, Figure, Link, Mbid, Recording, SharedCredit,
-    SharedHeard, SharedLyrics, SharedLyricsfile, SharedMedium, SharedPrint, SharedRecognition,
-    SharedRelease, SharedStudy, SharedTrack, TrackId, WholeFile,
+    AlbumId, Answer, Answered, Figure, Link, Mbid, Recording, SharedCredit, SharedLyrics,
+    SharedLyricsfile, SharedMedium, SharedPrint, SharedRecognition, SharedRelease, SharedStudy,
+    SharedTrack, TrackId, WholeFile,
 };
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 
 use crate::{
-    CoverSource, Credit, Cut, Error, HeardAs, LyricText, Medium, RecordingMatch, Release,
-    ReleaseMatch, ReleaseTrack, Result, StoreOp,
+    CoverSource, Credit, Cut, Error, KeptPrint, LyricText, Medium, Release, ReleaseMatch,
+    ReleaseTrack, Result, StoreOp,
     db::Inner,
-    enrich::{EXACT_SCORE, Fit, Pressing, agreement, takes_strictly},
-    enriched, store, studies, sung,
+    enrich::{EXACT_SCORE, Fit, Pressing, takes_strictly},
+    enriched, store, studies,
+    studies::weighed_again,
+    sung,
     synced::{RECORDING_COLUMNS, RECORDING_JOINS, lasts_alike, recording_at, resolved},
 };
 
@@ -944,43 +946,20 @@ pub(crate) fn print_to_share(inner: &Inner, file: WholeFile) -> Result<Option<Sh
                     i64::from(JUDGED_UNDER)
                 ],
                 |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, Option<i64>>(1)?,
-                        row.get::<_, bool>(2)?,
-                        row.get::<_, Option<String>>(3)?,
-                        row.get::<_, Option<i64>>(4)?,
-                        row.get::<_, Option<String>>(5)?,
-                        row.get::<_, Option<String>>(6)?,
-                    ))
+                    Ok(KeptPrint {
+                        encoded: row.get(0)?,
+                        seconds: row.get(1)?,
+                        recognised: row.get(2)?,
+                        heard_as: row.get(3)?,
+                        heard_score: row.get(4)?,
+                        heard_title: row.get(5)?,
+                        heard_artist: row.get(6)?,
+                    })
                 },
             )
             .optional()
             .map_err(|source| Error::store(StoreOp::Query, source))?;
-        let Some((encoded, length, recognised, heard_as, score, title, artist)) = kept else {
-            return Ok(None);
-        };
-
-        let length = Duration::from_secs(length.unwrap_or_default().max(0).cast_unsigned());
-        let Ok(print) = Chromaprint::new(&encoded, length) else {
-            return Ok(None);
-        };
-        let recognition = match (recognised, heard_as, title) {
-            (false, _, _) => None,
-            (true, None, _) => Some(SharedRecognition::Unheard),
-            (true, Some(heard_as), Some(title)) => {
-                store::mbid_in(Some(&heard_as)).map(|recording| {
-                    SharedRecognition::Heard(SharedHeard {
-                        recording,
-                        score: score.map_or(0, |score| score.clamp(0, i64::from(u8::MAX)) as u8),
-                        title,
-                        artist,
-                    })
-                })
-            }
-            (true, Some(_), None) => None,
-        };
-        Ok(Some(SharedPrint { print, recognition }))
+        Ok(kept.and_then(KeptPrint::shared))
     })
 }
 
@@ -1038,17 +1017,7 @@ fn take_recognition(
     let Some(named) = enriched::track_as_heard(transaction, track)? else {
         return Ok(false);
     };
-    let heard = match recognition {
-        SharedRecognition::Unheard => None,
-        SharedRecognition::Heard(heard) => Some(HeardAs {
-            recording: heard.recording.clone(),
-            score: heard.score,
-            title: heard.title.clone(),
-            artist: heard.artist.clone(),
-        }),
-    };
-    let found: Vec<RecordingMatch> = heard.iter().map(HeardAs::as_a_match).collect();
-    let weighed = agreement(&found, &named);
+    let (heard, weighed) = weighed_again(recognition, &named);
     studies::write_recognition(
         transaction,
         track,

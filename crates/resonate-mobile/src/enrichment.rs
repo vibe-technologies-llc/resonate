@@ -14,7 +14,7 @@ use crossbeam_channel::{Sender, bounded};
 use parking_lot::Mutex;
 use resonate_analysis::{Watching, band_levels};
 use resonate_codec::{CoverArt, ImageFormat, Sources, probe_scanned};
-use resonate_core::{AlbumId, Isrc, Link, Mbid, SourceId, TrackId};
+use resonate_core::{AlbumId, Chromaprint, Isrc, Link, Mbid, SourceId, TrackId};
 use resonate_library::{
     A_THUMBNAIL_BELOW, Agreement, AlbumToAsk, BETTERED_AFTER, COVERS_ASKED_AGAIN_AFTER, Certainty,
     Fingerprints, Fruitless, Identified, KeptLyrics, LookupOp, LyricText, LyricsAsked,
@@ -1329,6 +1329,10 @@ impl Hearer<'_> {
             Err(error) => return Err(error.into()),
         };
 
+        if let Some(print) = self.catalog.kept_print(track)? {
+            return self.recognised(track, held, print);
+        }
+
         let studied = resonate_analysis::study(
             self.sources,
             &location(&held.uri)?,
@@ -1353,6 +1357,10 @@ impl Hearer<'_> {
             return Ok(());
         };
 
+        self.recognised(track, held, print)
+    }
+
+    fn recognised(&self, track: u64, held: Track, print: Chromaprint) -> Asked<()> {
         match recognised_through(self.catalog, self.printer, track, held, print) {
             Ok(_) => {
                 self.refused_in_a_row.set(0);
@@ -1701,7 +1709,8 @@ impl Catalog {
             .prepare(
                 "SELECT d.id FROM documents d LEFT JOIN studies s ON s.track = d.id
                  WHERE d.missing = 0 AND (?1 OR (s.agreement IS NULL AND NOT EXISTS (
-                    SELECT 1 FROM unstudied u WHERE u.track = d.id AND u.under = ?2)))
+                    SELECT 1 FROM unstudied u WHERE u.track = d.id AND u.under = ?2))
+                    OR (s.studied_under = ?2 AND s.print IS NOT NULL AND s.recognised IS NULL))
                  ORDER BY d.downloaded IS NULL, d.downloaded DESC, d.id",
             )
             .map_err(read_error)?;
@@ -3601,6 +3610,55 @@ mod tests {
             assert_eq!(once, 4);
             assert_eq!(printer.calls(), 0);
             assert!(misnamed(&harness).is_empty());
+        }
+
+        #[test]
+        fn a_print_landed_from_another_device_is_heard_without_decoding_the_song_again() {
+            let harness = Harness::new();
+            let printer = Printer::hearing("Time");
+            let landed = harness.song('a').id;
+            let print =
+                Chromaprint::new("AQADtEmSJEmSJEmS", Duration::from_secs(2)).expect("a print");
+
+            hearing(&harness, &printer);
+            let unprinted = printer.calls();
+            harness
+                .player
+                .catalog
+                .land_print(landed, &print)
+                .expect("a landed print");
+            harness
+                .player
+                .catalog
+                .0
+                .lock()
+                .execute(
+                    "UPDATE documents SET title = 'Time', artist = 'Pink Floyd' WHERE id = ?1",
+                    [landed as i64],
+                )
+                .expect("a named song");
+            fs::remove_file(harness.folder.join("a.wav")).expect("a song out of reach");
+            hearing(&harness, &printer);
+            let heard: (Option<String>, Option<String>, bool) = harness
+                .player
+                .catalog
+                .0
+                .lock()
+                .query_row(
+                    "SELECT agreement, heard_title, recognised IS NOT NULL
+                       FROM studies WHERE track = ?1",
+                    [landed as i64],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .expect("a study");
+            hearing(&harness, &printer);
+
+            assert_eq!(unprinted, 0);
+            assert_eq!(
+                heard,
+                (Some("agrees".to_owned()), Some("Time".to_owned()), true)
+            );
+            assert_eq!(printer.calls(), 1);
         }
     }
 }

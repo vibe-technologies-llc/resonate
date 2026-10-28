@@ -234,16 +234,38 @@ weigh; the ledger still passes it on in its snapshot.
   packets digest are the study's, never over a row `studied_under` this build (a row with no
   `studied_under` is a study from before and stays too), over one of another judgement it replaces and
   clears its `agreement`. A verdict, lossy guess, judgement or band layout this build cannot
-  name is settled and written nowhere. The pass still decodes a landed song when it holds an
-  AcoustID key, since the study that lands carries no print and `tracks_to_hear` asks for the
-  recognition (`agreement`) the landed row lacks; the phones keep no print, so they neither ask nor
-  answer the desktop's `Prints` request (`sync.md`).
+  name is settled and written nowhere.
   (`a_study_lands_on_every_copy_that_is_the_same_file_and_on_no_other_encode`,
   `a_study_of_another_encode_another_length_or_another_rate_is_never_written`,
   `a_study_never_lands_over_one_at_this_judgement_but_replaces_one_of_another`,
   `words_land_only_on_a_song_held_strictly_and_never_over_as_rich_words`,
   `landed_studies_are_listed_for_sending_exactly_as_they_arrived_beside_kept_words`,
   `a_study_the_phone_kept_itself_is_listed_with_the_file_it_measured`).
+- **A print and its recognition are kept beside the study and asked of a device, not told.** The
+  catalog's step 15 (`STUDIES_KEEP_THEIR_PRINT_AND_WHAT_IT_WAS_HEARD_AS`) gave `studies` the
+  desktop's `print`, `print_length`, `recognised` (nanoseconds) and `heard_as`, `heard_score`,
+  `heard_title`, `heard_artist`, all cleared by the `documents_forget_what_was_printed` trigger when a
+  document's `size` or `modified` moves. The pass's `keep_studied` keeps the print its study made
+  (the analysis pane's `keep_study` none, its row being judged under no build); `land_study`
+  clears them where it replaces a study of another judgement. `recognised_through` (the pass and
+  `recognise_track`) keeps the top match heard (`HeardAs::top_of`) and stamps `recognised` through
+  `keep_recognition`; a study that made no print is `Unheard` with `recognised` left null, so a print
+  landed later is still heard. The seam is the desktop's (`sync.md`), its shared halves
+  `resonate-library`'s `KeptPrint::shared` and `weighed_again`: `prints_wanted` lists the
+  `WholeFile`s (`documents.packets`, `frames`, `rate`) of visible documents studied under this
+  `JUDGED_UNDER` whose `print` or `recognised` is null, one entry a file, the most lately studied
+  first; `print` answers the print of such a copy, a recognised one first; `take_print` lands the
+  print on each copy of that file studied under this judgement whose `print` is null, never over one,
+  and the recognition on each whose `recognised` is null, weighed again against the copy's own name
+  (`named_on_the_phone`). The service asks connected devices on the desktop's pacing. **The pass skips
+  the second decode once a print is kept**: `Hearer::hear` recognises from `kept_print` without
+  studying, and `tracks_to_hear` takes a row whose print is kept and recognition owed even where its
+  own study left it `Unheard`
+  (`a_print_and_its_recognition_from_another_device_land_on_every_copy_and_are_weighed_against_the_phones_own_names`,
+  `a_print_and_recognition_the_phone_made_answer_another_device_lacking_them`,
+  `a_print_alone_leaves_the_recognition_owed_and_one_that_heard_nothing_lands_as_unheard`,
+  `a_print_kept_beside_a_study_is_forgotten_when_its_file_changes`,
+  `a_print_landed_from_another_device_is_heard_without_decoding_the_song_again`).
 
 ## The equaliser
 
