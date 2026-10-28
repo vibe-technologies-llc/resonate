@@ -2594,9 +2594,23 @@ impl Engine {
             replay_gain,
             output.attenuator,
         );
-        output
-            .producer
-            .hear_at(heard_amplitude(&wanted, self.muted));
+        let entering = heard_amplitude(&wanted, self.muted);
+        match self.boundary.as_ref() {
+            Some(boundary) => {
+                let leaving = plan_for(
+                    boundary.leaving.decoded(),
+                    &output.bound,
+                    output.plan.stream,
+                    &self.config,
+                    boundary.leaving.replay_gain,
+                    output.attenuator,
+                );
+                output
+                    .producer
+                    .hear_across(heard_amplitude(&leaving, self.muted), entering);
+            }
+            None => output.producer.hear_at(entering),
+        }
 
         if retuning == Retuning::Equaliser && wanted.equalisation != output.plan.equalisation {
             match self.splice_the_back(wanted.clone())? {

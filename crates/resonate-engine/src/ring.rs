@@ -54,7 +54,6 @@ struct Rendered {
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Stepped {
     turn: u64,
-    amplitude: f32,
 }
 
 pub fn ring(
@@ -72,6 +71,7 @@ pub fn ring(
     let (faults, drained) = rtrb::RingBuffer::new(FAULT_SLOTS);
     let (announcing, announced) = rtrb::RingBuffer::new(RENDERED_SLOTS);
     let heard = Arc::new(AtomicU32::new(level.heard.to_bits()));
+    let heard_after = Arc::new(AtomicU32::new(level.heard.to_bits()));
     let turns = Arc::new(AtomicU64::new(0));
     let dropped = Arc::new(AtomicU32::new(0));
     let starved = Arc::new(AtomicU64::new(0));
@@ -107,6 +107,7 @@ pub fn ring(
             owed: None,
             rendering: level.rendered,
             heard: Arc::clone(&heard),
+            heard_after: Arc::clone(&heard_after),
             turns: Arc::clone(&turns),
             turn: 0,
         },
@@ -124,6 +125,7 @@ pub fn ring(
             level: faded,
             announced,
             heard,
+            heard_after,
             turns,
             stepped: None,
             read: 0,
@@ -215,6 +217,7 @@ pub struct RingProducer {
     owed: Option<Rendered>,
     rendering: f32,
     heard: Arc<AtomicU32>,
+    heard_after: Arc<AtomicU32>,
     turns: Arc<AtomicU64>,
     turn: u64,
 }
@@ -283,16 +286,20 @@ impl RingProducer {
         self.turns.store(self.turn, Ordering::Release);
     }
 
+    pub fn hear_across(&mut self, leaving: f32, entering: f32) {
+        self.heard_after
+            .store(entering.to_bits(), Ordering::Release);
+        self.heard.store(leaving.to_bits(), Ordering::Release);
+    }
+
     pub fn turn_at(&mut self, rendered: f32, heard: f32, ahead: usize) {
+        self.heard_after.store(heard.to_bits(), Ordering::Release);
         self.rendering = rendered;
         self.owed = Some(Rendered {
             epoch: self.requested,
             from: self.written.saturating_add(ahead as u64),
             amplitude: rendered,
-            heard: Some(Stepped {
-                turn: self.turn,
-                amplitude: heard,
-            }),
+            heard: Some(Stepped { turn: self.turn }),
         });
         self.hand_over_what_is_owed();
     }
@@ -508,6 +515,7 @@ pub struct RingConsumer {
     level: f64,
     announced: rtrb::Consumer<Rendered>,
     heard: Arc<AtomicU32>,
+    heard_after: Arc<AtomicU32>,
     turns: Arc<AtomicU64>,
     stepped: Option<Stepped>,
     read: u64,
@@ -811,7 +819,9 @@ impl RingConsumer {
     fn wanted(&self) -> f64 {
         let turn = self.turns.load(Ordering::Acquire);
         match self.stepped {
-            Some(stepped) if stepped.turn == turn => f64::from(stepped.amplitude),
+            Some(stepped) if stepped.turn == turn => {
+                f64::from(f32::from_bits(self.heard_after.load(Ordering::Acquire)))
+            }
             Some(_) | None => f64::from(f32::from_bits(self.heard.load(Ordering::Acquire))),
         }
     }
@@ -1880,6 +1890,70 @@ mod tests {
         consumer.fill(&mut sunk);
 
         assert_eq!(left_of(&sunk)[8..], [250, 250, 250, 250]);
+    }
+
+    #[test]
+    fn a_level_asked_while_a_turn_waits_is_heard_on_each_side_at_its_own_row_gain() {
+        let (mut producer, mut consumer) = faded();
+        producer.write(&steady(8));
+        producer.turn_at(0.5, 0.5, 0);
+        producer.write(&steady_at(500, 16));
+        producer.hear_across(0.5, 0.25);
+
+        let mut sunk = vec![0_u8; 24 * 4];
+        consumer.fill(&mut sunk);
+
+        let left = left_of(&sunk);
+        assert_eq!(left[..2], [750, 500]);
+        assert!(left[2..8].iter().all(|sample| *sample == 500), "{left:?}");
+        assert!(left[8..8 + 6].windows(2).all(|pair| pair[1] <= pair[0]));
+        assert!(
+            left[8 + 6..].iter().all(|sample| *sample == 250),
+            "{left:?}"
+        );
+    }
+
+    #[test]
+    fn a_mute_asked_while_a_turn_waits_silences_the_leaving_tail_and_the_entering_row() {
+        let (mut producer, mut consumer) = faded();
+        producer.write(&steady(8));
+        producer.turn_at(0.5, 0.5, 0);
+        producer.write(&steady_at(500, 16));
+        producer.hear_across(0.0, 0.0);
+
+        let mut sunk = vec![0_u8; 24 * 4];
+        consumer.fill(&mut sunk);
+
+        let left = left_of(&sunk);
+        assert!(
+            left[left.len() - 8..].iter().all(|sample| *sample == 0),
+            "{left:?}"
+        );
+        assert!(
+            left[..8].windows(2).all(|pair| pair[1] <= pair[0]),
+            "{left:?}"
+        );
+    }
+
+    #[test]
+    fn a_level_asked_after_the_turn_was_reached_is_what_the_entering_row_is_heard_at() {
+        let (mut producer, mut consumer) = faded();
+        producer.write(&steady(4));
+        producer.turn_at(0.5, 0.5, 0);
+        producer.write(&steady_at(500, 16));
+
+        let mut reached = vec![0_u8; 8 * 4];
+        consumer.fill(&mut reached);
+        producer.hear_across(0.25, 0.25);
+
+        let mut sunk = vec![0_u8; 12 * 4];
+        consumer.fill(&mut sunk);
+
+        let left = left_of(&sunk);
+        assert!(
+            left[left.len() - 4..].iter().all(|sample| *sample == 250),
+            "{left:?}"
+        );
     }
 
     #[test]
