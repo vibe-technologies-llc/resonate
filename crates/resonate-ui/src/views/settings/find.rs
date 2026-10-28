@@ -149,7 +149,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 63] = [
+    pub(crate) const ALL: [Self; 64] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
