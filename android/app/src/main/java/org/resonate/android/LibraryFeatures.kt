@@ -114,7 +114,7 @@ data class RefusedLanding(val until: Long, val tries: Int)
 private const val LANDING_PAUSE_MS = 60000L
 private const val LYRIC_FRAME_EVERY_MS = 33L
 private const val LANDING_TRIES_AT_MOST = 3
-private const val MISSING_CHECKED_EVERY_MS = 300000L
+private const val MISSING_CHECKED_EVERY_MS = 15000L
 private const val DEVICE_NAME_SETTING = "device_name"
 private const val RECENT_SEARCHES_KEY = "recent-searches"
 private const val REMEMBER_SEARCHES_KEY = "remember-searches"

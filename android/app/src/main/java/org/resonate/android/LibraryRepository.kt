@@ -20,11 +20,13 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -76,7 +78,7 @@ class LibraryRepository(private val context: Context) {
                 Dispatchers.IO +
                 CoroutineExceptionHandler { _, failure ->
                     Log.e("Resonate", "A library task failed", failure)
-                    mutableStatus.value = "The player could not complete that action"
+                    fail("The player could not complete that action")
                 }
         )
     @Volatile private var engine = CompletableDeferred<MobilePlayer>()
@@ -191,6 +193,15 @@ class LibraryRepository(private val context: Context) {
         return found
     }
 
+    @Volatile private var failureText: String? = null
+
+    val statusIsFailure: Flow<Boolean> = status.map { it != null && it == failureText }
+
+    private fun fail(message: String) {
+        failureText = message
+        mutableStatus.value = message
+    }
+
     internal fun notice(message: String) {
         mutableStatus.value = message
     }
@@ -253,6 +264,8 @@ class LibraryRepository(private val context: Context) {
                                         ?.detachFd() ?: -1
                                 } catch (gone: FileNotFoundException) {
                                     documentNotFound()
+                                } catch (gone: IllegalArgumentException) {
+                                    documentNotFound()
                                 } catch (failure: Exception) {
                                     Log.w("Resonate", "Document grant could not be opened", failure)
                                     documentRefused()
@@ -296,7 +309,7 @@ class LibraryRepository(private val context: Context) {
                     IllegalStateException("The audio library could not be loaded", failure)
                 )
                 Log.e("Resonate", "Native audio library could not be loaded", failure)
-                mutableStatus.value = "The audio library could not be loaded"
+                fail("The audio library could not be loaded")
             } finally {
                 withContext(NonCancellable) {
                     access.withLock {
@@ -336,7 +349,7 @@ class LibraryRepository(private val context: Context) {
                             moving = state.transport == Transport.PLAYING,
                             readAt = SystemClock.elapsedRealtime(),
                         )
-                    state.failure?.let { mutableStatus.value = it }
+                    state.failure?.let(::fail)
                     if (state.waiting != waiting) {
                         if (waiting != null && mutableStatus.value == waiting) {
                             mutableStatus.value = null
@@ -677,6 +690,10 @@ class LibraryRepository(private val context: Context) {
         mutableStatus.value = null
     }
 
+    fun dismissStatus(shown: String) {
+        mutableStatus.compareAndSet(shown, null)
+    }
+
     @Synchronized
     fun close() {
         started = false
@@ -692,7 +709,7 @@ class LibraryRepository(private val context: Context) {
 
     internal fun report(failure: Exception) {
         Log.e("Resonate", "Player operation failed", failure)
-        mutableStatus.value = failure.message ?: "The player could not complete that action"
+        fail(failure.message ?: "The player could not complete that action")
     }
 
     companion object {

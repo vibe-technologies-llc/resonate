@@ -47,6 +47,8 @@ import org.resonate.android.ui.SyncActivity
 import org.resonate.android.ui.counted
 import org.resonate.android.ui.syncActivity
 
+private const val NOTICE_SHOWN_FOR_MS = 6_000L
+
 @Composable
 fun Banners(modifier: Modifier = Modifier) {
     val resonate = LocalResonate.current
@@ -60,6 +62,12 @@ fun Banners(modifier: Modifier = Modifier) {
             now = SystemClock.elapsedRealtime()
             delay(1_000)
         }
+    }
+    val failed by resonate.library.statusIsFailure.collectAsState(false)
+    LaunchedEffect(status, failed) {
+        val shown = status?.takeUnless { failed } ?: return@LaunchedEffect
+        delay(NOTICE_SHOWN_FOR_MS)
+        resonate.library.dismissStatus(shown)
     }
     val activity = syncActivity(sync, asked, now)
     val leavingActivity = heldWhileLeaving(activity)
@@ -93,7 +101,7 @@ fun Banners(modifier: Modifier = Modifier) {
             enter = expandVertically() + fadeIn(),
             exit = shrinkVertically() + fadeOut(),
         ) {
-            NoticeBanner(leavingStatus.orEmpty(), onDismiss = resonate.library::dismissStatus)
+            NoticeBanner(leavingStatus.orEmpty(), onDismiss = { resonate.library.dismissStatus() })
         }
     }
 }

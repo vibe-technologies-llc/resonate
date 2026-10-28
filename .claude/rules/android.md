@@ -348,7 +348,7 @@ arriving on a first scan never squeeze its buttons.
 **Banners** are three, all `LiveRegion`s: *Reading music folder*, *Syncing with your devices* or
 *Fetching songs from your devices* (progress; a fixed label with the changing count and the bar
 cleared from the semantics, so a count is never read again at every step) and the notice, which
-says a failure or a status and stays until dismissed, whatever call succeeds after it. **What the library finds by itself is silent by default**: *Tell me what the library finds by itself* in Library tools (`tell-findings` in `library-features`, off by default, `LibraryFeatures.tellsFindings`) gates the two notices the app raises with nobody asking, the songs hidden because their files are gone and the songs a sync landing kept, through `FindingNotices.shown` (`FindingNoticesTest`). Everything the listener asked for (a scan's *Read N songs*, filing, tags, deletion) and every failure is shown whatever the switch says, as is the live *Reading music folder* progress; the app starts no scan of its own. A liked song
+says a failure or a status: a status fades after 6 s (`Banners`, as iOS's notice), a failure stays until dismissed (`LibraryRepository.statusIsFailure`), and a later message replaces either. **What the library finds by itself is silent by default**: *Tell me what the library finds by itself* in Library tools (`tell-findings` in `library-features`, off by default, `LibraryFeatures.tellsFindings`) gates the two notices the app raises with nobody asking, the songs hidden because their files are gone and the songs a sync landing kept, through `FindingNotices.shown` (`FindingNoticesTest`). Everything the listener asked for (a scan's *Read N songs*, filing, tags, deletion) and every failure is shown whatever the switch says, as is the live *Reading music folder* progress; the app starts no scan of its own. A liked song
 shows *Added to favourites* on the snackbar with *Add to playlist*; the song sheet (`SongSheet`)
 holds the song's actions, adding Equaliser, Audio output and Visualizer when opened from the
 player, and *Remove from queue* from a queue row.
@@ -527,12 +527,16 @@ untouched, and hides the songs under a tree as withdrawn (`hide_songs_under` its
 `<tree>/document/`) while Downloads keeps its entries.
 
 **A song whose file has gone is hidden, as on iOS** (`LibraryFeatures.forgetMissing`): when the
-Activity comes forward (at most every five minutes, and not during a scan) and after a scan that
+Activity comes forward (at most every fifteen seconds, so a trip to a file manager and back finds
+the deletions, and not during a scan) and after a scan that
 failed on no song, `hide_unlisted_songs` is given the prefixes of the readable folders (a tree whose
 root answers a query, and MediaStore's Files collection while Downloads is on), so an unreadable
 grant never hides its songs, and the documents those folders list (`MusicDocuments.listed`: one
 query a directory, not one open a song): only a song the listing does not show is opened, so
-`NotFound` still decides, and a listing that fails part-way costs opens, never a wrong hiding. A pass that hid songs reads the catalog again, reloads the open
+`NotFound` still decides (a deleted document under a tree grant fails to open with an
+`IllegalArgumentException`, from `FileSystemProvider.isChildDocument`, as well as a
+`FileNotFoundException`, and `openGranted` answers both `NotFound`; a `SecurityException` is a refusal),
+and a listing that fails part-way costs opens, never a wrong hiding. A pass that hid songs reads the catalog again, reloads the open
 playlist and, only when *Tell me what the library finds by itself* is on, says *N songs whose files are gone were hidden*; one that fails is reported once per
 distinct text. The queue drops hidden rows through the boundary's own `left_the_queue`.
 
