@@ -45,6 +45,15 @@ pub enum Error {
     #[error("a profile of {0} bands is more than the {MAX_BANDS} a chain carries")]
     TooManyBands(usize),
 
+    #[error("a listening test of {0} trials is outside 1..={max}", max = crate::abx::TRIALS_AT_MOST)]
+    AbxTrialsOutOfRange(usize),
+
+    #[error("every trial of the listening test has been answered")]
+    AbxFinished,
+
+    #[error("the two arms of the listening test differ by {millibels} millibels after levelling")]
+    LevelsNotMatched { millibels: i32 },
+
     #[error("an identifier must be non-zero")]
     ZeroId,
 

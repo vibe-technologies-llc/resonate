@@ -1,4 +1,5 @@
 mod about;
+mod abx;
 mod appearance;
 pub(crate) mod curve;
 mod defaults;
@@ -17,6 +18,7 @@ mod tidal;
 
 use std::{cell::Cell, rc::Rc, sync::atomic::Ordering};
 
+pub(crate) use abx::Audition;
 use gpui::{
     AnyElement, ClickEvent, Context, Div, FocusHandle, FontWeight, MouseButton, Pixels, Point,
     Role, SharedString, Stateful, Window, canvas, div, prelude::*, px, relative, rgb,
@@ -422,6 +424,7 @@ impl RootView {
             Group::Bands => self.bands_group(cx),
             Group::Measured => self.measured_group(cx),
             Group::RoomCorrection => self.room_group(cx),
+            Group::Abx => self.abx_group(cx),
             Group::MusicExtensions => self.music_extensions_group(cx),
             Group::MinimumLength => self.minimum_length_group(cx),
             Group::Folders => self.folders_group(cx),

@@ -30,6 +30,14 @@ impl Equalisation {
         self.bound.get(sink).or(self.fallback.as_ref())
     }
 
+    pub fn auditioning(sink: NodeName, profile: Arc<Profile>) -> Self {
+        Self {
+            enabled: true,
+            bound: BTreeMap::from([(sink, Arc::clone(&profile))]),
+            fallback: Some(profile),
+        }
+    }
+
     pub fn binds_anything(&self) -> bool {
         !self.bound.is_empty() || self.fallback.is_some()
     }
@@ -661,6 +669,20 @@ mod tests {
     const BLOCK: usize = 1024;
     const THIS_SINK: &str = "alsa_output.test";
     const ANOTHER_SINK: &str = "alsa_output.other";
+
+    #[test]
+    fn an_auditioned_profile_is_on_for_the_sink_it_names_and_for_every_other() {
+        let profile = Arc::new(Profile::flat());
+
+        let auditioning = Equalisation::auditioning(this_sink(), Arc::clone(&profile));
+
+        assert!(auditioning.enabled);
+        assert_eq!(auditioning.for_sink(&this_sink()), Some(&profile));
+        assert_eq!(
+            auditioning.for_sink(&NodeName::new(ANOTHER_SINK)),
+            Some(&profile)
+        );
+    }
 
     fn this_sink() -> NodeName {
         NodeName::new(THIS_SINK)
