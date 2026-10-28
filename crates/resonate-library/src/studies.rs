@@ -14,7 +14,10 @@ use resonate_analysis::{
     Watching,
 };
 use resonate_codec::Sources;
-use resonate_core::{Chromaprint, FrameSpan, MediaLocation, SampleRate, TrackId, eq::Profile};
+use resonate_core::{
+    Chromaprint, FrameSpan, MediaLocation, SampleRate, SharedHeard, SharedPrint, SharedRecognition,
+    TrackId, eq::Profile,
+};
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 
 use crate::{
@@ -74,7 +77,11 @@ impl HeardAs {
         }
     }
 
-    pub(crate) fn as_a_match(&self) -> RecordingMatch {
+    pub fn top_of(found: &[RecordingMatch]) -> Option<Self> {
+        enrich::top_heard(found).map(Self::of)
+    }
+
+    pub fn as_a_match(&self) -> RecordingMatch {
         RecordingMatch {
             recording: self.recording.clone(),
             score: self.score,
@@ -93,6 +100,59 @@ impl HeardAs {
             releases: Vec::new(),
         }
     }
+}
+
+pub struct KeptPrint {
+    pub encoded: String,
+    pub seconds: Option<i64>,
+    pub recognised: bool,
+    pub heard_as: Option<String>,
+    pub heard_score: Option<i64>,
+    pub heard_title: Option<String>,
+    pub heard_artist: Option<String>,
+}
+
+impl KeptPrint {
+    pub fn shared(self) -> Option<SharedPrint> {
+        let length = Duration::from_secs(self.seconds.unwrap_or_default().max(0).cast_unsigned());
+        let print = Chromaprint::new(&self.encoded, length).ok()?;
+        let recognition = match (self.recognised, self.heard_as, self.heard_title) {
+            (false, _, _) => None,
+            (true, None, _) => Some(SharedRecognition::Unheard),
+            (true, Some(heard_as), Some(title)) => {
+                store::mbid_in(Some(&heard_as)).map(|recording| {
+                    SharedRecognition::Heard(SharedHeard {
+                        recording,
+                        score: self
+                            .heard_score
+                            .map_or(0, |score| score.clamp(0, i64::from(u8::MAX)) as u8),
+                        title,
+                        artist: self.heard_artist,
+                    })
+                })
+            }
+            (true, Some(_), None) => None,
+        };
+        Some(SharedPrint { print, recognition })
+    }
+}
+
+pub fn weighed_again(
+    recognition: &SharedRecognition,
+    named: &TrackToAsk,
+) -> (Option<HeardAs>, Agreement) {
+    let heard = match recognition {
+        SharedRecognition::Unheard => None,
+        SharedRecognition::Heard(heard) => Some(HeardAs {
+            recording: heard.recording.clone(),
+            score: heard.score,
+            title: heard.title.clone(),
+            artist: heard.artist.clone(),
+        }),
+    };
+    let found: Vec<RecordingMatch> = heard.iter().map(HeardAs::as_a_match).collect();
+    let weighed = enrich::agreement(&found, named);
+    (heard, weighed)
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -854,7 +914,7 @@ pub(crate) fn heard_and_noted(
     }
 
     let agreement = enrich::agreement(&recognition.matches, &track);
-    let heard = enrich::top_heard(&recognition.matches).map(HeardAs::of);
+    let heard = HeardAs::top_of(&recognition.matches);
     if let Err(error) = library.note_recognition(id, heard.as_ref(), agreement) {
         tracing::warn!(%error, track = %id, "a recognition was not kept");
     }

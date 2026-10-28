@@ -400,8 +400,11 @@ artist the catalog holds by its folded name, unidentified, takes the credit's MB
 then answered and its tracks paired, so the pass asks neither again
 (`a_release_landed_on_one_catalog_lands_on_another_holding_the_album_and_is_not_asked_again`,
 `a_release_the_album_held_there_does_not_strictly_match_is_never_written`). **The phones take and
-send kept lyrics and studies under the same rules, never a release, and neither ask nor answer a print** (`resonate-mobile`'s
-`sync/answers.rs`, `mobile.md`'s *Answers from other devices*). The binary's
+send kept lyrics and studies under the same rules, never a release, and ask and answer a print and
+its recognition as the desktop does** (`resonate-mobile`'s `sync/answers.rs`, `mobile.md`'s *Answers
+from other devices*): the shared halves are `resonate-library`'s `KeptPrint::shared` (the kept
+columns read as a `SharedPrint`) and `weighed_again` (a shared recognition as a `HeardAs` and the
+agreement it bears with a row's own name), which `print_to_share` and `take_shared_print` use too. The binary's
 `Catalogued` sits over `Library` (`resonate-library`'s `synced.rs`: `synced_playlists` reads lists
 only and `synced_queries` the saved queries, a query written over a list or the reverse made anew
 rather than overwritten; a recording resolves by MBID, else folded artist, title words and album with lengths within
@@ -708,7 +711,7 @@ will not open is left out of the holdings.
   nobody made stays wanted. The sender reads each file with `print` and sends only what it keeps within
   `SharedPrint::travels`. It crosses end to end, never kept on the server
   (`a_print_and_its_recognition_one_device_holds_reach_another_lacking_them_and_one_neither_holds_stays_missing`).
-  The phones' catalogs keep no print and neither ask nor answer.
+  The phones' catalogs ask and answer on the same pacing, the service being the same.
 - **Android and iOS send and fetch songs only on an unmetered network** unless mobile data is allowed
   (`allow_transfers`); incoming peers are refused meanwhile, a run under way stops before its next
   song as a cut-short run does, and a `Fetch` asked meanwhile is answered `Missing`

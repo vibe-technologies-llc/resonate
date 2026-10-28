@@ -10,8 +10,8 @@ use resonate_codec::{ImageFormat, probe};
 use resonate_core::{Chromaprint, Mbid, TrackId, folded_letters, words_of_a_name};
 use resonate_engine::{Counting, Listening, Tapped};
 use resonate_library::{
-    Fingerprints, LookupOp, Printed, RecordingAsked, RecordingMatch, RecordingRelease, Reference,
-    SongLink, Sounded, TrackToAsk, Wording, agreement, in_the_order_worth_offering,
+    Fingerprints, HeardAs, LookupOp, Printed, RecordingAsked, RecordingMatch, RecordingRelease,
+    Reference, SongLink, Sounded, TrackToAsk, Wording, agreement, in_the_order_worth_offering,
 };
 use resonate_online::{Identity, Online};
 use resonate_providers::A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY;
@@ -233,11 +233,15 @@ pub(crate) fn recognised_through(
         Printed::Nothing => &[][..],
         Printed::Recognised(songs) => songs.as_slice(),
     };
-    catalog.keep_agreement(id, agreement(heard, &named))?;
+    catalog.keep_recognition(
+        id,
+        HeardAs::top_of(heard).as_ref(),
+        agreement(heard, &named),
+    )?;
     Ok(recognised)
 }
 
-fn named_on_the_phone(id: u64, track: &Track) -> Result<TrackToAsk> {
+pub(crate) fn named_on_the_phone(id: u64, track: &Track) -> Result<TrackToAsk> {
     let said = |text: &str| Some(text.trim().to_owned()).filter(|text| !text.is_empty());
     let tagged_title = said(&track.title).filter(|title| title != &track.name);
     let artist = said(&track.artist);

@@ -7,8 +7,8 @@ use resonate_analysis::{
     BANDS, BandGains, BandLevels, Cut, JUDGED_UNDER, LossyGuess, Loudest, Study,
 };
 use resonate_codec::{MediaInfo, Scanned};
-use resonate_core::Calendar;
-use resonate_library::Agreement;
+use resonate_core::{Calendar, Chromaprint};
+use resonate_library::{Agreement, HeardAs};
 use rusqlite::{OptionalExtension, Transaction, params};
 
 use crate::{
@@ -31,6 +31,7 @@ struct Figures<'a> {
     clipped: u64,
     bits: Option<u32>,
     band_levels: &'a [u8],
+    print: Option<&'a Chromaprint>,
     measured: Option<Measured>,
 }
 
@@ -63,13 +64,13 @@ pub(crate) struct LandedStudy<'a> {
     pub(crate) mono_as_stereo: bool,
 }
 
-const STUDY_UPSERT: &str = "INSERT INTO studies (track, verdict, peak, rms, true_peak, loudness, dynamic_range, clipped, bits, band_levels, studied, studied_under, cutoff_hz, cutoff_drop, lossy_guess, upsampled_from, declared_bits, loudness_range, mono_as_stereo)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
-     ON CONFLICT(track) DO UPDATE SET verdict = excluded.verdict, peak = excluded.peak, rms = excluded.rms, true_peak = excluded.true_peak, loudness = excluded.loudness, dynamic_range = excluded.dynamic_range, clipped = excluded.clipped, bits = excluded.bits, band_levels = excluded.band_levels, studied = excluded.studied, studied_under = excluded.studied_under, cutoff_hz = excluded.cutoff_hz, cutoff_drop = excluded.cutoff_drop, lossy_guess = excluded.lossy_guess, upsampled_from = excluded.upsampled_from, declared_bits = excluded.declared_bits, loudness_range = excluded.loudness_range, mono_as_stereo = excluded.mono_as_stereo";
+const STUDY_UPSERT: &str = "INSERT INTO studies (track, verdict, peak, rms, true_peak, loudness, dynamic_range, clipped, bits, band_levels, studied, studied_under, cutoff_hz, cutoff_drop, lossy_guess, upsampled_from, declared_bits, loudness_range, mono_as_stereo, print, print_length)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
+     ON CONFLICT(track) DO UPDATE SET verdict = excluded.verdict, peak = excluded.peak, rms = excluded.rms, true_peak = excluded.true_peak, loudness = excluded.loudness, dynamic_range = excluded.dynamic_range, clipped = excluded.clipped, bits = excluded.bits, band_levels = excluded.band_levels, studied = excluded.studied, studied_under = excluded.studied_under, cutoff_hz = excluded.cutoff_hz, cutoff_drop = excluded.cutoff_drop, lossy_guess = excluded.lossy_guess, upsampled_from = excluded.upsampled_from, declared_bits = excluded.declared_bits, loudness_range = excluded.loudness_range, mono_as_stereo = excluded.mono_as_stereo, print = excluded.print, print_length = excluded.print_length";
 
 const LANDED_STUDY: &str = "INSERT INTO studies (track, verdict, peak, rms, true_peak, loudness, dynamic_range, clipped, bits, band_levels, studied, studied_under, cutoff_hz, cutoff_drop, lossy_guess, upsampled_from, declared_bits, loudness_range, mono_as_stereo)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
-     ON CONFLICT(track) DO UPDATE SET verdict = excluded.verdict, peak = excluded.peak, rms = excluded.rms, true_peak = excluded.true_peak, loudness = excluded.loudness, dynamic_range = excluded.dynamic_range, clipped = excluded.clipped, bits = excluded.bits, band_levels = excluded.band_levels, studied = excluded.studied, studied_under = excluded.studied_under, cutoff_hz = excluded.cutoff_hz, cutoff_drop = excluded.cutoff_drop, lossy_guess = excluded.lossy_guess, upsampled_from = excluded.upsampled_from, declared_bits = excluded.declared_bits, loudness_range = excluded.loudness_range, mono_as_stereo = excluded.mono_as_stereo, agreement = NULL
+     ON CONFLICT(track) DO UPDATE SET verdict = excluded.verdict, peak = excluded.peak, rms = excluded.rms, true_peak = excluded.true_peak, loudness = excluded.loudness, dynamic_range = excluded.dynamic_range, clipped = excluded.clipped, bits = excluded.bits, band_levels = excluded.band_levels, studied = excluded.studied, studied_under = excluded.studied_under, cutoff_hz = excluded.cutoff_hz, cutoff_drop = excluded.cutoff_drop, lossy_guess = excluded.lossy_guess, upsampled_from = excluded.upsampled_from, declared_bits = excluded.declared_bits, loudness_range = excluded.loudness_range, mono_as_stereo = excluded.mono_as_stereo, agreement = NULL, print = NULL, print_length = NULL, recognised = NULL, heard_as = NULL, heard_score = NULL, heard_title = NULL, heard_artist = NULL
      WHERE studies.studied_under IS NOT NULL AND studies.studied_under <> excluded.studied_under";
 
 type StoredLyrics = (Option<String>, Option<String>, String);
@@ -412,6 +413,7 @@ impl Catalog {
                 clipped: report.clipped,
                 bits: report.bits_in_use,
                 band_levels: levels.as_bytes(),
+                print: None,
                 measured: None,
             },
         )
@@ -430,6 +432,7 @@ impl Catalog {
                 clipped: study.levels.clipped,
                 bits: study.levels.bits_in_use.map(u32::from),
                 band_levels: BandLevels::of(&study.spectrum).as_bytes(),
+                print: study.print.as_ref(),
                 measured: Some(Measured {
                     cutoff_hz: study.judgement.cutoff.map(|cutoff| cutoff.hz),
                     cutoff_drop: study.judgement.cutoff.map(|cutoff| cutoff.drop_db),
@@ -469,6 +472,8 @@ impl Catalog {
                     measured.and_then(|measured| measured.declared_bits),
                     measured.and_then(|measured| measured.loudness_range),
                     measured.map(|measured| measured.mono_as_stereo),
+                    figures.print.map(Chromaprint::encoded),
+                    figures.print.map(print_seconds),
                 ],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
@@ -623,6 +628,73 @@ impl Catalog {
         Ok(owed)
     }
 
+    pub(crate) fn keep_recognition(
+        &self,
+        id: u64,
+        heard: Option<&HeardAs>,
+        agreement: Agreement,
+    ) -> Result<bool> {
+        let kept = self
+            .0
+            .lock()
+            .execute(
+                "UPDATE studies SET recognised = ?2, heard_as = ?3, heard_score = ?4,
+                        heard_title = ?5, heard_artist = ?6, agreement = ?7
+                  WHERE track = ?1",
+                params![
+                    id as i64,
+                    nanos_now(),
+                    heard.map(|heard| heard.recording.as_str()),
+                    heard.map(|heard| i64::from(heard.score)),
+                    heard.map(|heard| heard.title.as_str()),
+                    heard.and_then(|heard| heard.artist.as_deref()),
+                    agreement.as_str(),
+                ],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(kept > 0)
+    }
+
+    pub(crate) fn kept_print(&self, id: u64) -> Result<Option<Chromaprint>> {
+        let kept = self
+            .0
+            .lock()
+            .query_row(
+                "SELECT print, print_length FROM studies
+                  WHERE track = ?1 AND studied_under = ?2 AND print IS NOT NULL",
+                params![id as i64, i64::from(JUDGED_UNDER)],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<i64>>(1)?)),
+            )
+            .optional()
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        Ok(kept.and_then(|(encoded, seconds)| {
+            let length = Duration::from_secs(seconds.unwrap_or_default().max(0).cast_unsigned());
+            Chromaprint::new(&encoded, length)
+                .inspect_err(|error| {
+                    tracing::warn!(%error, id, "a kept print could not be read, so the song is studied again");
+                })
+                .ok()
+        }))
+    }
+
+    pub(crate) fn land_print(&self, id: u64, print: &Chromaprint) -> Result<bool> {
+        let landed = self
+            .0
+            .lock()
+            .execute(
+                "UPDATE studies SET print = ?2, print_length = ?3
+                  WHERE track = ?1 AND studied_under = ?4 AND print IS NULL",
+                params![
+                    id as i64,
+                    print.encoded(),
+                    print_seconds(print),
+                    i64::from(JUDGED_UNDER)
+                ],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(landed > 0)
+    }
+
     pub(crate) fn keep_agreement(&self, id: u64, agreement: Agreement) -> Result<()> {
         self.0
             .lock()
@@ -665,6 +737,10 @@ pub(crate) fn unreferenced_picture_dropped(
         [picture],
     )?;
     Ok(())
+}
+
+fn print_seconds(print: &Chromaprint) -> i64 {
+    i64::try_from(print.length().as_secs()).unwrap_or(i64::MAX)
 }
 
 fn nanos_now() -> i64 {

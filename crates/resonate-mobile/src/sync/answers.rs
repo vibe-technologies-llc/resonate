@@ -1,7 +1,10 @@
 use resonate_analysis::{BANDS, JUDGED_UNDER, LossyGuess, Verdict};
 use resonate_codec::{Sources, probe_scanned};
-use resonate_core::{Answer, Figure, Recording, SharedLyrics, SharedStudy, SourceId, WholeFile};
-use resonate_library::LyricText;
+use resonate_core::{
+    Answer, Figure, Recording, SharedLyrics, SharedPrint, SharedRecognition, SharedStudy, SourceId,
+    WholeFile,
+};
+use resonate_library::{KeptPrint, LyricText, weighed_again};
 use resonate_lyrics::read_lyrics;
 use rusqlite::{OptionalExtension, Row, params};
 
@@ -14,6 +17,7 @@ use crate::{
     catalog_extras::LandedStudy,
     documents::location,
     enrichment::{SHARED_LYRICS, is_synced},
+    features::named_on_the_phone,
 };
 
 const NEARLY_THE_SAME_MILLISECOND: i64 = 1;
@@ -184,6 +188,129 @@ impl DocumentCatalog {
         Ok(same_file)
     }
 
+    pub(super) fn files_wanting_a_print(
+        &self,
+        skip: usize,
+        most: usize,
+    ) -> Answered<Vec<WholeFile>> {
+        let skip = i64::try_from(skip).unwrap_or(i64::MAX);
+        let most = i64::try_from(most).unwrap_or(i64::MAX);
+        let connection = self.catalog.0.lock();
+        let mut query = connection
+            .prepare_cached(
+                "SELECT d.packets, d.frames, d.rate
+                   FROM documents d JOIN studies s ON s.track = d.id
+                  WHERE d.missing = 0 AND s.studied_under = ?1
+                    AND (s.print IS NULL OR s.recognised IS NULL)
+                    AND d.packets IS NOT NULL AND d.frames IS NOT NULL
+                  GROUP BY d.packets, d.frames, d.rate
+                  ORDER BY max(s.studied) DESC, min(d.id) LIMIT ?2 OFFSET ?3",
+            )
+            .map_err(unavailable)?;
+        query
+            .query_map(params![i64::from(JUDGED_UNDER), most, skip], |row| {
+                file_at(row, 0)
+            })
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .map_err(unavailable)
+    }
+
+    pub(super) fn print_to_share(&self, file: WholeFile) -> Answered<Option<SharedPrint>> {
+        let kept = self
+            .catalog
+            .0
+            .lock()
+            .query_row(
+                "SELECT s.print, s.print_length, s.recognised IS NOT NULL, s.heard_as,
+                        s.heard_score, s.heard_title, s.heard_artist
+                   FROM documents d JOIN studies s ON s.track = d.id
+                  WHERE d.missing = 0 AND d.packets = ?1 AND d.frames = ?2 AND d.rate = ?3
+                    AND s.studied_under = ?4 AND s.print IS NOT NULL
+                  ORDER BY s.recognised IS NOT NULL DESC, s.studied DESC LIMIT 1",
+                params![
+                    file.packets.cast_signed(),
+                    file.frames.cast_signed(),
+                    file.rate,
+                    i64::from(JUDGED_UNDER)
+                ],
+                |row| {
+                    Ok(KeptPrint {
+                        encoded: row.get(0)?,
+                        seconds: row.get(1)?,
+                        recognised: row.get(2)?,
+                        heard_as: row.get(3)?,
+                        heard_score: row.get(4)?,
+                        heard_title: row.get(5)?,
+                        heard_artist: row.get(6)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(unavailable)?;
+        Ok(kept.and_then(KeptPrint::shared))
+    }
+
+    pub(super) fn take_shared_print(
+        &self,
+        file: WholeFile,
+        shared: &SharedPrint,
+    ) -> Answered<bool> {
+        if !shared.travels() {
+            return Ok(false);
+        }
+
+        let mut landed = false;
+        for (id, unprinted, unrecognised) in self.studied_copies_of(file)? {
+            if unprinted {
+                landed |= self.catalog.land_print(id, &shared.print).map_err(failed)?;
+            }
+            if let (true, Some(recognition)) = (unrecognised, &shared.recognition) {
+                landed |= self.take_recognition(id, recognition)?;
+            }
+        }
+        Ok(landed)
+    }
+
+    fn studied_copies_of(&self, file: WholeFile) -> Answered<Vec<(u64, bool, bool)>> {
+        let connection = self.catalog.0.lock();
+        let mut query = connection
+            .prepare_cached(
+                "SELECT d.id, s.print IS NULL, s.recognised IS NULL
+                   FROM documents d JOIN studies s ON s.track = d.id
+                  WHERE d.missing = 0 AND d.packets = ?1 AND d.frames = ?2 AND d.rate = ?3
+                    AND s.studied_under = ?4
+                  ORDER BY d.id",
+            )
+            .map_err(unavailable)?;
+        query
+            .query_map(
+                params![
+                    file.packets.cast_signed(),
+                    file.frames.cast_signed(),
+                    file.rate,
+                    i64::from(JUDGED_UNDER)
+                ],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?.cast_unsigned(),
+                        row.get::<_, bool>(1)?,
+                        row.get::<_, bool>(2)?,
+                    ))
+                },
+            )
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .map_err(unavailable)
+    }
+
+    fn take_recognition(&self, id: u64, recognition: &SharedRecognition) -> Answered<bool> {
+        let track = self.catalog.track(id).map_err(failed)?;
+        let named = named_on_the_phone(id, &track).map_err(failed)?;
+        let (heard, weighed) = weighed_again(recognition, &named);
+        self.catalog
+            .keep_recognition(id, heard.as_ref(), weighed)
+            .map_err(failed)
+    }
+
     fn held_strictly(&self, recording: &Recording) -> Answered<Option<u64>> {
         let connection = self.catalog.0.lock();
         let Some(id) = self.resolved_in(&connection, recording)? else {
@@ -273,6 +400,14 @@ fn failed(error: crate::Error) -> resonate_sync::Refused {
     resonate_sync::Refused::Unavailable
 }
 
+fn file_at(row: &Row<'_>, from: usize) -> rusqlite::Result<WholeFile> {
+    Ok(WholeFile {
+        packets: row.get::<_, i64>(from)?.cast_unsigned(),
+        frames: row.get::<_, i64>(from + 1)?.max(0).cast_unsigned(),
+        rate: row.get(from + 2)?,
+    })
+}
+
 fn study_at(row: &Row<'_>) -> rusqlite::Result<SharedStudy> {
     let figure =
         |at: usize| -> rusqlite::Result<Figure> { Ok(Figure::of(row.get::<_, f64>(at)? as f32)) };
@@ -293,11 +428,7 @@ fn study_at(row: &Row<'_>) -> rusqlite::Result<SharedStudy> {
     };
 
     Ok(SharedStudy {
-        file: WholeFile {
-            packets: row.get::<_, i64>(1)?.cast_unsigned(),
-            frames: row.get::<_, i64>(2)?.max(0).cast_unsigned(),
-            rate: row.get(3)?,
-        },
+        file: file_at(row, 1)?,
         judged_under: JUDGED_UNDER,
         verdict: row.get(4)?,
         cutoff_hz: hertz(5)?,
@@ -320,10 +451,11 @@ fn study_at(row: &Row<'_>) -> rusqlite::Result<SharedStudy> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{fs, num::NonZeroUsize, time::Duration};
 
     use resonate_analysis::{BandLevels, Watch};
-    use resonate_core::Mbid;
+    use resonate_core::{Chromaprint, Mbid, MediaLocation, SharedHeard};
+    use resonate_library::{Agreement, HeardAs, Library, ScanOptions};
     use resonate_sync::Catalog;
 
     use super::*;
@@ -794,5 +926,323 @@ mod tests {
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].recording.title, "a.wav");
         assert!(after_the_file_changed.is_empty());
+    }
+
+    const ECHOES: &str = "b84ee12a-09ef-421b-82de-0441a926375b";
+
+    fn a_print() -> Chromaprint {
+        Chromaprint::new("AQADtEmSJEmSJEmS", Duration::from_secs(181)).expect("a print")
+    }
+
+    fn heard_as_echoes() -> HeardAs {
+        HeardAs {
+            recording: Mbid::new(ECHOES).expect("an mbid"),
+            score: 96,
+            title: "Echoes".to_owned(),
+            artist: Some("Pink Floyd".to_owned()),
+        }
+    }
+
+    fn named_as(harness: &Harness, id: u64, title: &str, artist: &str) {
+        harness
+            .player
+            .catalog
+            .0
+            .lock()
+            .execute(
+                "UPDATE documents SET title = ?2, artist = ?3 WHERE id = ?1",
+                params![id as i64, title, artist],
+            )
+            .expect("a named song");
+    }
+
+    fn studied_on_the_phone(harness: &Harness, id: u64, print: Option<Chromaprint>) {
+        let name = harness
+            .player
+            .catalog
+            .track(id)
+            .expect("a song")
+            .uri
+            .clone();
+        let at = location(&name).expect("a document");
+        let mut study =
+            resonate_analysis::study(&harness.player.sources, &at, None, &Watch::default())
+                .expect("a study");
+        study.print = print;
+        let scanned = probe_scanned(&harness.player.sources, &at).expect("a scan");
+        harness
+            .player
+            .catalog
+            .keep_studied(id, &study)
+            .expect("kept");
+        harness
+            .player
+            .catalog
+            .keep_identity(id, &scanned)
+            .expect("identified");
+    }
+
+    struct Heard {
+        print: Option<String>,
+        heard_as: Option<String>,
+        agreement: Option<String>,
+        recognised: bool,
+    }
+
+    fn heard_on_the_phone(harness: &Harness, id: u64) -> Heard {
+        harness
+            .player
+            .catalog
+            .0
+            .lock()
+            .query_row(
+                "SELECT print, heard_as, agreement, recognised IS NOT NULL
+                   FROM studies WHERE track = ?1",
+                [id as i64],
+                |row| {
+                    Ok(Heard {
+                        print: row.get(0)?,
+                        heard_as: row.get(1)?,
+                        agreement: row.get(2)?,
+                        recognised: row.get(3)?,
+                    })
+                },
+            )
+            .expect("a study")
+    }
+
+    fn desktop_over(harness: &Harness) -> Library {
+        let library = Library::open_in_memory().expect("a library");
+        library
+            .scan(ScanOptions {
+                roots: vec![harness.folder.clone()],
+                incremental: true,
+                follow_symlinks: false,
+                extract_cover_art: false,
+                workers: NonZeroUsize::MIN,
+            })
+            .expect("a scan")
+            .join()
+            .expect("a scan done");
+        library
+    }
+
+    fn studied_on_the_desktop(library: &Library, harness: &Harness, name: &str) -> MediaLocation {
+        let at = MediaLocation::local(harness.folder.join(name));
+        let track = library
+            .track_held(&at, None)
+            .expect("a read")
+            .expect("a held track");
+        let study = resonate_analysis::study(&library.sources(), &at, None, &Watch::default())
+            .expect("a study");
+        library.note_study(track, &study).expect("a kept study");
+        at
+    }
+
+    #[test]
+    fn a_print_and_its_recognition_from_another_device_land_on_every_copy_and_are_weighed_against_the_phones_own_names()
+     {
+        let harness = Harness::new();
+        let documents = documents_over(&harness);
+        let desktop = desktop_over(&harness);
+        let [agreeing, disagreeing, unstudied] = [0, 1, 2].map(|nth| harness.songs[nth].id);
+        let tone = with_a_tone(&harness);
+        let at = studied_on_the_desktop(&desktop, &harness, "a.wav");
+        let track = desktop
+            .track_held(&at, None)
+            .expect("a read")
+            .expect("a held track");
+        let mut study = resonate_analysis::study(&desktop.sources(), &at, None, &Watch::default())
+            .expect("a study");
+        study.print = Some(a_print());
+        desktop.note_study(track, &study).expect("a printed study");
+        desktop
+            .note_recognition(track, Some(&heard_as_echoes()), Agreement::Agrees)
+            .expect("a recognition");
+        named_as(&harness, agreeing, "Echoes", "Pink Floyd");
+        named_as(&harness, disagreeing, "Brain Damage", "Roger Waters");
+        studied_on_the_phone(&harness, agreeing, None);
+        studied_on_the_phone(&harness, disagreeing, None);
+        studied_on_the_phone(&harness, tone, None);
+
+        let wanted = Catalog::prints_wanted(&documents, 0, 10).expect("wanted");
+        let file = whole_file_of(&harness, "a.wav");
+        let shared = desktop.print_to_share(file).expect("a read");
+        let given = shared.as_ref().expect("a print to give");
+        let taken = Catalog::take_print(&documents, file, given).expect("taken");
+        let again = Catalog::take_print(&documents, file, given).expect("taken again");
+
+        let [agreed, disagreed, never_studied, other_file] =
+            [agreeing, disagreeing, unstudied, tone].map(|id| {
+                harness
+                    .player
+                    .catalog
+                    .0
+                    .lock()
+                    .query_row(
+                        "SELECT count(*) FROM studies WHERE track = ?1",
+                        [id as i64],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .expect("a count")
+            });
+        assert_eq!(wanted.len(), 2);
+        assert!(wanted.contains(&file));
+        assert!(taken);
+        assert!(!again);
+        assert_eq!((agreed, disagreed, never_studied, other_file), (1, 1, 0, 1));
+        let agreed = heard_on_the_phone(&harness, agreeing);
+        let disagreed = heard_on_the_phone(&harness, disagreeing);
+        let untouched = heard_on_the_phone(&harness, tone);
+        assert_eq!(agreed.print.as_deref(), Some(a_print().encoded()));
+        assert_eq!(agreed.heard_as.as_deref(), Some(ECHOES));
+        assert_eq!(agreed.agreement.as_deref(), Some("agrees"));
+        assert!(agreed.recognised);
+        assert_eq!(disagreed.print.as_deref(), Some(a_print().encoded()));
+        assert_eq!(disagreed.agreement.as_deref(), Some("disagrees"));
+        assert_eq!(untouched.print, None);
+        assert!(!untouched.recognised);
+        assert_eq!(
+            Catalog::prints_wanted(&documents, 0, 10).expect("wanted"),
+            vec![whole_file_of(&harness, "e.wav")]
+        );
+    }
+
+    #[test]
+    fn a_print_and_recognition_the_phone_made_answer_another_device_lacking_them() {
+        let harness = Harness::new();
+        let documents = documents_over(&harness);
+        let desktop = desktop_over(&harness);
+        let [printed, recognised] = [0, 1].map(|nth| harness.songs[nth].id);
+        named_as(&harness, printed, "Echoes", "Pink Floyd");
+        studied_on_the_phone(&harness, printed, Some(a_print()));
+        let file = whole_file_of(&harness, "a.wav");
+        let at = studied_on_the_desktop(&desktop, &harness, "a.wav");
+
+        let printed_only = Catalog::print(&documents, file).expect("a read");
+        studied_on_the_phone(&harness, recognised, Some(a_print()));
+        harness
+            .player
+            .catalog
+            .keep_recognition(recognised, Some(&heard_as_echoes()), Agreement::Agrees)
+            .expect("a recognition");
+        let wanted = desktop.prints_wanted(0, 10).expect("wanted");
+        let told = Catalog::print(&documents, wanted[0]).expect("a read");
+        let elsewhere = Catalog::print(
+            &documents,
+            WholeFile {
+                packets: file.packets ^ 1,
+                ..file
+            },
+        )
+        .expect("a read");
+        let given = told.clone().expect("a print to give");
+        let taken = desktop.take_shared_print(wanted[0], &given).expect("taken");
+
+        let (_, landed) = desktop
+            .study_of(&at, None)
+            .expect("a read")
+            .expect("a study");
+        assert_eq!(wanted, vec![file]);
+        assert_eq!(
+            printed_only.map(|print| (print.print, print.recognition)),
+            Some((a_print(), None))
+        );
+        assert_eq!(given.print, a_print());
+        assert_eq!(
+            given.recognition,
+            Some(SharedRecognition::Heard(SharedHeard {
+                recording: Mbid::new(ECHOES).expect("an mbid"),
+                score: 96,
+                title: "Echoes".to_owned(),
+                artist: Some("Pink Floyd".to_owned()),
+            }))
+        );
+        assert_eq!(elsewhere, None);
+        assert!(taken);
+        assert_eq!(landed.print, Some(a_print()));
+        assert_eq!(landed.heard_as, Some(heard_as_echoes()));
+        assert!(landed.recognised.is_some());
+        assert!(desktop.prints_wanted(0, 10).expect("wanted").is_empty());
+    }
+
+    #[test]
+    fn a_print_alone_leaves_the_recognition_owed_and_one_that_heard_nothing_lands_as_unheard() {
+        let harness = Harness::new();
+        let documents = documents_over(&harness);
+        let id = harness.songs[0].id;
+        named_as(&harness, id, "Echoes", "Pink Floyd");
+        studied_on_the_phone(&harness, id, None);
+        let file = whole_file_of(&harness, "a.wav");
+
+        let printed = Catalog::take_print(
+            &documents,
+            file,
+            &SharedPrint {
+                print: a_print(),
+                recognition: None,
+            },
+        )
+        .expect("taken");
+        let owed = heard_on_the_phone(&harness, id);
+        let still_wanted = Catalog::prints_wanted(&documents, 0, 10).expect("wanted");
+        let heard_nothing = Catalog::take_print(
+            &documents,
+            file,
+            &SharedPrint {
+                print: a_print(),
+                recognition: Some(SharedRecognition::Unheard),
+            },
+        )
+        .expect("taken");
+        let settled = heard_on_the_phone(&harness, id);
+
+        assert!(printed);
+        assert_eq!(owed.print.as_deref(), Some(a_print().encoded()));
+        assert!(!owed.recognised);
+        assert_eq!(still_wanted, vec![file]);
+        assert!(heard_nothing);
+        assert_eq!(settled.heard_as, None);
+        assert_eq!(settled.agreement.as_deref(), Some("unheard"));
+        assert!(settled.recognised);
+        assert!(
+            Catalog::prints_wanted(&documents, 0, 10)
+                .expect("wanted")
+                .is_empty()
+        );
+        assert_eq!(
+            Catalog::print(&documents, file)
+                .expect("a read")
+                .and_then(|print| print.recognition),
+            Some(SharedRecognition::Unheard)
+        );
+    }
+
+    #[test]
+    fn a_print_kept_beside_a_study_is_forgotten_when_its_file_changes() {
+        let harness = Harness::new();
+        let documents = documents_over(&harness);
+        let id = harness.songs[0].id;
+        studied_on_the_phone(&harness, id, Some(a_print()));
+        harness
+            .player
+            .catalog
+            .keep_recognition(id, Some(&heard_as_echoes()), Agreement::Agrees)
+            .expect("a recognition");
+        let file = whole_file_of(&harness, "a.wav");
+
+        let before = Catalog::print(&documents, file).expect("a read");
+        change(
+            &harness,
+            "UPDATE documents SET size = 99, modified = 99 WHERE id = ?1",
+            id,
+        );
+        let after = heard_on_the_phone(&harness, id);
+
+        assert!(before.is_some());
+        assert_eq!(after.print, None);
+        assert_eq!(after.heard_as, None);
+        assert!(!after.recognised);
+        assert_eq!(Catalog::print(&documents, file).expect("a read"), None);
     }
 }
