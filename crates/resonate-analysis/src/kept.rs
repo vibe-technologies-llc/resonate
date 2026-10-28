@@ -14,8 +14,8 @@ use resonate_core::{
 };
 
 use crate::{
-    Analysis, Coding, Envelope, Examined, Levels, Loudness, Spectrogram, Spectrum, Steps, Stereo,
-    Study,
+    Analysis, BandPeaks, Coding, Envelope, Examined, Levels, Loudness, Spectrogram, Spectrum,
+    Steps, Stereo, Study,
     envelope::ENVELOPE_LANES,
     spectrogram::SPECTROGRAM_ROWS,
     verdict::{JUDGED_UNDER, Weighed, judged},
@@ -23,7 +23,7 @@ use crate::{
 
 const MAGIC: &[u8; 4] = b"RSAN";
 
-const WRITTEN_AS: u8 = 3;
+const WRITTEN_AS: u8 = 4;
 
 const KEPT_AS: &str = "analysis";
 
@@ -334,6 +334,7 @@ fn written(analysis: &Analysis) -> Vec<u8> {
         writer.bytes(print.encoded().as_bytes());
         writer.duration(print.length());
     });
+    writer.bytes(&study.band_peaks.to_bytes());
 
     let envelope = &analysis.envelope;
     writer.u8(u8::try_from(envelope.lanes).unwrap_or(u8::MAX));
@@ -432,6 +433,7 @@ pub(crate) fn read(bytes: &[u8]) -> Option<Analysis> {
         let encoded = std::str::from_utf8(reader.bytes()?).ok()?.to_owned();
         Chromaprint::new(&encoded, reader.duration()?).ok()
     })?;
+    let band_peaks = BandPeaks::from_bytes(reader.bytes()?)?;
 
     let lanes = usize::from(reader.u8()?);
     let frames_per_column = reader.u64()?;
@@ -500,6 +502,7 @@ pub(crate) fn read(bytes: &[u8]) -> Option<Analysis> {
             steps,
             judgement,
             print,
+            band_peaks,
         },
         envelope,
         spectrogram,
@@ -612,6 +615,7 @@ mod tests {
                 spectrum,
                 steps,
                 print: Chromaprint::new("AQAA", Duration::from_secs(12)).ok(),
+                band_peaks: BandPeaks::of((0..29).map(|band| f64::from(band + 1) / 40.0)),
             },
             envelope: Envelope {
                 lanes: 2,

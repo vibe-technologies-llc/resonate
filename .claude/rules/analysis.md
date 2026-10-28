@@ -47,11 +47,30 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
   taking everything under 31.5 Hz and the last everything above its edge, a bin read at its own
   frequency and DC left out) and keeps each as a byte, half-dB steps below the loudest band
   (`SILENT` where the band held nothing above `FLOOR_DB`, so a silent song is all `SILENT`). It is
-  derived from the spectrum, so a kept analysis, a study and `band_levels(sources, location, span,
-  watch)` (one decode with only the transform, for a study kept without it) agree
+  derived from the spectrum, so a kept analysis, a study and `band_figures(sources, location, span,
+  watch)` (one decode with the transform and the bank, for a study kept without them) agree
   (`the_bands_measured_alone_are_the_bands_a_study_keeps`); `track_studies.band_levels` holds the 29
   bytes and a row of any other length reads as unmeasured, so a later layout re-measures instead
   of misreading. The edges are absolute hertz, so a measure is good at any stream rate.
+- **A study keeps each band's own peak beside its level.** `split::Splitting` runs in the study's
+  decode (and in `band_figures`): per channel, 28 zero-phase low-pass filters, one at each band
+  edge (two Butterworth biquads forward and then backward over the same samples, `1 / (1 + (f/fc)^8)`
+  as the response, real and never negative), whose differences are the 29 bands, the first being
+  the lowest low-pass and the last the signal less the highest. The bands therefore sum to the
+  signal exactly, whatever the filters, and a tone is shared between its neighbours without any
+  of it counted twice. The backward pass needs the future, so the stream is settled a quarter second
+  at a time with a twentieth of a second of margin each side, and the first and last margins are
+  the stream mirrored (a zero extension would put a step in the lowest bands; an odd mirror a bias
+  in them); a stream noted in pieces gives the peaks it gives whole
+  (`a_stream_noted_in_pieces_has_the_peaks_it_has_noted_whole`). A band's peak is read at every
+  sample and at the half-sample between (a cubic midpoint) of every channel, the loudest kept,
+  then divided by the least a tone at the band's upper reach could show to those probes
+  (`shortfall`), so the figure is the continuous peak or over it. `BandPeaks` stores each as a
+  `u16`, 1/16 dB steps from -200 dBFS rounded up, 0 a band that held nothing: 58 bytes
+  (`BAND_PEAKS_BYTES`), `track_studies.band_peaks`, a row of any other length reading as
+  unmeasured. `Study::band_peaks` and the kept analysis (`WRITTEN_AS` 4) carry it, so a study from
+  a recalled analysis keeps its peaks. A bank costs about 5 ms a second of audio a channel.
+  `eq.md` has the bound it makes of them.
 - **Non-number samples are silence**: `normalised` maps float NaN/infinity to 0 before any builder
   (one would ride the K-weighting history to track end). Bit reading keeps native samples.
 - **`Watching` stops a pass.** `Watch` is the window's; `EnrichProgress` implements it, so cancelling
@@ -190,7 +209,7 @@ could change (stored studies and kept analyses are weighed against it).
   `VORBIS_LATTICE_AT_LEAST` (0.012), `LATTICE_OVER_ITS_CONTROL_AT_LEAST` (4) times its control and
   `STEPPED_COEFFICIENTS_AT_LEAST` (100 000): a periodic or synthetic signal that happens to cluster
   does so at every offset, which the control refuses. Every grid's `Steps` is kept in the study and
-  the kept analysis (`WRITTEN_AS` 3: a count, then coding name, rate, lattice, control and
+  the kept analysis (`WRITTEN_AS` 4, the peaks after the print; 3: a count, then coding name, rate, lattice, control and
   coefficients each); `track_studies` stores only the verdict (no basis column), so the change
   moved `JUDGED_UNDER` to 3 and every study is weighed again. Cost: about 0.67 s a track over the
   decode (0.75 s to 1.42 s for a 3:23 FLAC), fixed whatever its length, since every grid is done
@@ -224,7 +243,7 @@ could change (stored studies and kept analyses are weighed against it).
 ## Studies in the catalog
 
 - **`track_studies`: one row per track, trigger-forgotten on a changed file.** Holds verdict +
-  basis, levels, loudness, `band_levels` (above), print, recognition (`recognised`, `heard_as`, score, title, artist,
+  basis, levels, loudness, `band_levels` and `band_peaks` (above), print, recognition (`recognised`, `heard_as`, score, title, artist,
   `Agreement`). `track_studies_forget_a_changed_file` deletes the row when an update moves size,
   mtime or span (a trigger, not an upsert clause: covers every writer). Tag runs are the one writer
   known not to touch audio: `files_retagged` holds a written file's `track_studies` and `unstudied`
@@ -237,8 +256,8 @@ could change (stored studies and kept analyses are weighed against it).
   `available_parallelism` (min 1, capped at the work asked) threads named `resonate-study-<n>`, one
   shared counter, started before the pass, joined after the pictures. `to_study` = no study, older
   `JUDGED_UNDER`, or unrecognised print (only where something can recognise; `refresh` re-asks from
-  the kept print, no second decode), or a current study with no `band_levels`, which is measured
-  alone (`ToStudy::unmeasured`) and never studied again for it. The list says only *whether* a print is kept
+  the kept print, no second decode), or a current study with no `band_levels` or no `band_peaks`,
+  which is measured alone (`ToStudy::unmeasured`) and never studied again for it. The list says only *whether* a print is kept
   (`ToStudy::print_held`); the worker reads it on taking the row (`Library::print_held`), so prints
   are never all in memory. `EnrichOptions::studies` (`study` key) leaves the pool unstarted; the
   fingerprint route still studies the one track it recognises.

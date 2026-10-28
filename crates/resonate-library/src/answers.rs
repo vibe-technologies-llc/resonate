@@ -3,11 +3,11 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use resonate_analysis::{BANDS, JUDGED_UNDER, LossyGuess, Verdict};
+use resonate_analysis::{BAND_PEAKS_BYTES, BANDS, BandPeaks, JUDGED_UNDER, LossyGuess, Verdict};
 use resonate_core::{
-    AlbumId, Answer, Answered, Figure, Link, Mbid, Recording, SharedCredit, SharedLyrics,
-    SharedLyricsfile, SharedMedium, SharedPrint, SharedRecognition, SharedRelease, SharedStudy,
-    SharedTrack, TrackId, WholeFile,
+    AlbumId, Answer, Answered, Figure, Link, Mbid, Recording, SharedBandPeaks, SharedCredit,
+    SharedLyrics, SharedLyricsfile, SharedMedium, SharedPrint, SharedRecognition, SharedRelease,
+    SharedStudy, SharedTrack, TrackId, WholeFile,
 };
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 
@@ -45,6 +45,7 @@ pub(crate) fn after(inner: &Inner, mark: i64, most: usize) -> Result<Vec<Answere
     let mut answered = inner.read(|connection| {
         let mut answered = lyrics_after(connection, mark, most)?;
         answered.extend(studies_after(connection, mark, most)?);
+        answered.extend(band_peaks_after(connection, mark, most)?);
         answered.extend(releases_after(connection, mark, most)?);
         Ok(answered)
     })?;
@@ -114,6 +115,43 @@ fn studies_after(connection: &Connection, mark: i64, most: i64) -> Result<Vec<An
     Ok(rows.into_iter().flatten().collect())
 }
 
+fn band_peaks_after(connection: &Connection, mark: i64, most: i64) -> Result<Vec<Answered>> {
+    let mut statement = connection
+        .prepare_cached(&format!(
+            "SELECT s.studied, t.packets, t.duration, t.sample_rate, s.band_peaks, {RECORDING_COLUMNS}
+               FROM track_studies s JOIN tracks t ON t.id = s.track_id
+               {RECORDING_JOINS}
+              WHERE s.studied >= ?1 AND s.studied_under = ?3 AND length(s.band_peaks) = ?4
+                AND t.packets IS NOT NULL AND t.duration IS NOT NULL AND {WHOLE_FILE}
+              ORDER BY s.studied LIMIT ?2"
+        ))
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    let rows = statement
+        .query_map(
+            params![mark, most, i64::from(JUDGED_UNDER), BAND_PEAKS_BYTES as i64],
+            |row| {
+                let at: i64 = row.get(0)?;
+                let peaks = SharedBandPeaks {
+                    file: WholeFile {
+                        packets: row.get::<_, i64>(1)?.cast_unsigned(),
+                        frames: row.get::<_, i64>(2)?.max(0).cast_unsigned(),
+                        rate: row.get(3)?,
+                    },
+                    judged_under: JUDGED_UNDER,
+                    peaks: row.get(4)?,
+                };
+                Ok(recording_at(row, 5)?.map(|recording| Answered {
+                    recording,
+                    at,
+                    answer: Answer::BandPeaks(peaks),
+                }))
+            },
+        )
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    Ok(rows.into_iter().flatten().collect())
+}
+
 fn study_at(row: &Row<'_>) -> rusqlite::Result<SharedStudy> {
     let figure =
         |at: usize| -> rusqlite::Result<Figure> { Ok(Figure::of(row.get::<_, f64>(at)? as f32)) };
@@ -165,6 +203,7 @@ pub(crate) fn take(inner: &Inner, recording: &Recording, answer: &Answer) -> Res
             inner.write(|transaction| take_lyrics(transaction, recording, lyrics))
         }
         Answer::Study(study) => take_study(inner, study),
+        Answer::BandPeaks(peaks) => take_band_peaks(inner, peaks),
         Answer::Release(release) => {
             inner.write(|transaction| take_release(transaction, recording, release))
         }
@@ -253,6 +292,34 @@ fn take_study(inner: &Inner, study: &SharedStudy) -> Result<bool> {
         for (track, studied) in &copies {
             if !studied {
                 write_shared_study(transaction, *track, study, verdict, lossy_guess)?;
+            }
+        }
+        Ok(!copies.is_empty())
+    })
+}
+
+fn take_band_peaks(inner: &Inner, shared: &SharedBandPeaks) -> Result<bool> {
+    if shared.judged_under != JUDGED_UNDER || BandPeaks::from_bytes(&shared.peaks).is_none() {
+        return Ok(true);
+    }
+
+    inner.write(|transaction| {
+        let copies = copies_of(transaction, shared.file)?;
+        for (track, studied) in &copies {
+            if *studied {
+                transaction
+                    .execute(
+                        "UPDATE track_studies SET band_peaks = ?1
+                          WHERE track_id = ?2 AND studied_under = ?3
+                            AND coalesce(length(band_peaks), 0) != ?4",
+                        params![
+                            shared.peaks,
+                            track.get().cast_signed(),
+                            i64::from(JUDGED_UNDER),
+                            BAND_PEAKS_BYTES as i64
+                        ],
+                    )
+                    .map_err(|source| Error::store(StoreOp::Update, source))?;
             }
         }
         Ok(!copies.is_empty())

@@ -107,6 +107,13 @@ pub struct SharedStudy {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SharedBandPeaks {
+    pub file: WholeFile,
+    pub judged_under: u32,
+    pub peaks: Vec<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SharedCredit {
     pub name: String,
     pub joined_by: String,
@@ -223,6 +230,7 @@ pub enum Answer {
     Lyrics(SharedLyrics),
     Study(SharedStudy),
     Release(Box<SharedRelease>),
+    BandPeaks(SharedBandPeaks),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -237,6 +245,7 @@ impl Answer {
         match self {
             Self::Lyrics(_) | Self::Release(_) => None,
             Self::Study(study) => Some(study.file),
+            Self::BandPeaks(peaks) => Some(peaks.file),
         }
     }
 
@@ -245,7 +254,7 @@ impl Answer {
             Self::Lyrics(lyrics) => {
                 !lyrics.text.trim().is_empty() && lyrics.text.len() <= LONGEST_SHARED_LYRICS
             }
-            Self::Study(_) => true,
+            Self::Study(_) | Self::BandPeaks(_) => true,
             Self::Release(release) => release.travels(),
         }
     }

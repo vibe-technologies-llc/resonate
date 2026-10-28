@@ -6,8 +6,8 @@ use std::{
 use resonate_core::{
     Answer, CODES_SHARED_AT_MOST, Chromaprint, Figure, LARGEST_SHARED_LYRICSFILE,
     LINKS_SHARED_AT_MOST, LONGEST_SHARED_LYRICS, LONGEST_SHARED_PRINT, Link, Mbid, Recording,
-    SharedCredit, SharedHeard, SharedLyrics, SharedLyricsfile, SharedMedium, SharedPrint,
-    SharedRecognition, SharedRelease, SharedStudy, SharedTrack, WholeFile,
+    SharedBandPeaks, SharedCredit, SharedHeard, SharedLyrics, SharedLyricsfile, SharedMedium,
+    SharedPrint, SharedRecognition, SharedRelease, SharedStudy, SharedTrack, WholeFile,
 };
 
 use crate::{
@@ -32,10 +32,17 @@ pub const LARGEST_RECORD: usize = 256 * 1024;
 pub const LARGEST_DATAGRAM: usize = 2048;
 const RECORD_AT_LEAST: usize = 2;
 const BAND_LEVELS_AT_MOST: usize = 256;
+const BAND_PEAKS_AT_MOST: usize = 256;
 const ANSWER_LYRICS: u8 = 0;
 const ANSWER_STUDY: u8 = 1;
 const ANSWER_RELEASE: u8 = 2;
-const ANSWER_KINDS: &[u8] = &[ANSWER_LYRICS, ANSWER_STUDY, ANSWER_RELEASE];
+const ANSWER_BAND_PEAKS: u8 = 3;
+const ANSWER_KINDS: &[u8] = &[
+    ANSWER_LYRICS,
+    ANSWER_STUDY,
+    ANSWER_RELEASE,
+    ANSWER_BAND_PEAKS,
+];
 const MEDIUM_AT_LEAST: usize = 4;
 const TRACK_AT_LEAST: usize = 9;
 const CREDIT_AT_LEAST: usize = 3;
@@ -413,6 +420,13 @@ impl Writer {
                 self.byte(ANSWER_RELEASE);
                 self.release(release);
             }
+            Answer::BandPeaks(shared) => {
+                self.byte(ANSWER_BAND_PEAKS);
+                self.whole_file(shared.file);
+                self.number(u64::from(shared.judged_under));
+                let end = shared.peaks.len().min(BAND_PEAKS_AT_MOST);
+                self.bytes(&shared.peaks[..end]);
+            }
         }
     }
 
@@ -789,6 +803,14 @@ impl<'a> Reader<'a> {
             ANSWER_RELEASE => self
                 .release()
                 .map(|release| Some(Answer::Release(Box::new(release)))),
+            ANSWER_BAND_PEAKS => {
+                let file = self.whole_file()?;
+                Ok(Some(Answer::BandPeaks(SharedBandPeaks {
+                    file,
+                    judged_under: self.small()?,
+                    peaks: self.bytes(BAND_PEAKS_AT_MOST)?.to_vec(),
+                })))
+            }
             _ => Ok(None),
         }
     }
@@ -2401,6 +2423,44 @@ mod tests {
         );
         assert_eq!(
             decoded_bundle_knowing(&bundle, &[ANSWER_LYRICS, ANSWER_STUDY]).expect("decoded"),
+            vec![study]
+        );
+    }
+
+    fn peaked() -> Answer {
+        Answer::BandPeaks(SharedBandPeaks {
+            file: WholeFile {
+                packets: u64::MAX,
+                frames: 61_871_400,
+                rate: 44_100,
+            },
+            judged_under: 1,
+            peaks: (0..58).collect(),
+        })
+    }
+
+    #[test]
+    fn the_peaks_of_a_study_read_back_and_a_build_knowing_only_lyrics_studies_and_releases_skips_them()
+     {
+        let study = Change::Answer(AnswerNote {
+            recording: song("Echoes"),
+            stamp: stamp(),
+            answer: studied(),
+        });
+        let peaks = Change::Answer(AnswerNote {
+            recording: song("Echoes"),
+            stamp: stamp(),
+            answer: peaked(),
+        });
+        let bundle = encoded_bundle(&[study.clone(), peaks.clone()]);
+
+        assert_eq!(
+            decoded_bundle(&bundle).expect("decoded"),
+            vec![study.clone(), peaks]
+        );
+        assert_eq!(
+            decoded_bundle_knowing(&bundle, &[ANSWER_LYRICS, ANSWER_STUDY, ANSWER_RELEASE])
+                .expect("decoded"),
             vec![study]
         );
     }

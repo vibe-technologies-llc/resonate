@@ -271,7 +271,18 @@ platforms; the catalog seam stays thin.
   `SharedRelease` (kind 2, boxed in `Answer`: what `land_release` lands, i.e. the release's ids,
   title, credit, date, country, label, numbers, kind, front-cover flag and links, its media and every
   track with its recording and track ids, length in milliseconds, codes and links; a link travels as
-  its MusicBrainz type and URL, the service read off the URL again). A kind a later build adds skips
+  its MusicBrainz type and URL, the service read off the URL again) or `SharedBandPeaks` (kind 3:
+  the same `WholeFile` and `JUDGED_UNDER`, then the 58 bytes of the study's band peaks, the figures
+  `eq.md`'s preamp fit bounds from). **Peaks are an answer beside the study, not a field of it**:
+  a `SharedStudy` is never extended (an earlier build reads it to its end and refuses a trailing
+  byte), so a build without kind 3 skips the peaks and takes the study as ever
+  (`the_peaks_of_a_study_read_back_and_a_build_knowing_only_lyrics_studies_and_releases_skips_them`),
+  and the ledger keeps them as a row of their own, kind 3 and the file
+  (`the_peaks_of_a_study_travel_as_an_answer_of_their_own_beside_it_and_are_not_sent_back`,
+  `the_peaks_of_two_encodes_of_a_song_are_two_answers`). The catalog lists the peaks right after
+  the study they belong to and lands them only on a copy of the same file already holding a study
+  at this `JUDGED_UNDER`, never over peaks it holds; peaks measured alone later keep the study's
+  `studied` stamp, so only a device pairing afresh is told them. A kind a later build adds skips
   the change, as an unknown tag does
   (`an_answer_of_a_kind_a_later_build_adds_is_skipped_and_the_rest_read`), so a build reading only
   lyrics and studies skips a release whole
@@ -375,7 +386,7 @@ study lands only on a copy that is the same file**: every whole-file row whose `
 `duration` and `sample_rate` are the study's `WholeFile`, holding no study at this `JUDGED_UNDER`
 (never over one: it would drop a recognition), so the pass's `to_study` steps past it; a verdict or
 lossy guess this build cannot name, another `JUDGED_UNDER` or another band layout is settled and
-written nowhere
+written nowhere (its peaks land after it, on a copy already studied and holding none: `library.md`, `eq.md`)
 (`a_study_and_kept_words_land_on_a_catalog_holding_the_same_file_and_read_back_as_they_went`,
 `a_study_of_another_encode_or_words_for_another_take_are_never_written`). **A release travels once
 an album, its ledger row keyed by the album's first paired track** (lowest disc and position), and only where the

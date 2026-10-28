@@ -35,9 +35,9 @@ pub use crate::{
     answer::{
         Answer, Answered, CODES_SHARED_AT_MOST, Figure, HEAVIEST_SHARED_RELEASE,
         LARGEST_SHARED_LYRICSFILE, LINKS_SHARED_AT_MOST, LONGEST_SHARED_LYRICS,
-        LONGEST_SHARED_PRINT, SharedCredit, SharedHeard, SharedLyrics, SharedLyricsfile,
-        SharedMedium, SharedPrint, SharedRecognition, SharedRelease, SharedStudy, SharedTrack,
-        WholeFile,
+        LONGEST_SHARED_PRINT, SharedBandPeaks, SharedCredit, SharedHeard, SharedLyrics,
+        SharedLyricsfile, SharedMedium, SharedPrint, SharedRecognition, SharedRelease, SharedStudy,
+        SharedTrack, WholeFile,
     },
     appearance::{
         Accent, Appearance, ArtistsDrawn, ScrollbarMode, Spectral, SpectrumBands, SpectrumFalls,

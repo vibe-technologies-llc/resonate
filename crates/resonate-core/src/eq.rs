@@ -585,6 +585,19 @@ impl Biquad {
         self.magnitude_db_at(Turned::at(hertz, rate))
     }
 
+    fn response_at(self, turned: Turned) -> (f64, f64) {
+        let (above_real, above_imaginary) = turned.parts(self.b0, self.b1, self.b2);
+        let (below_real, below_imaginary) = turned.parts(1.0, self.a1, self.a2);
+        let below = below_real * below_real + below_imaginary * below_imaginary;
+        if below <= 0.0 {
+            return (0.0, 0.0);
+        }
+        (
+            (above_real * below_real + above_imaginary * below_imaginary) / below,
+            (above_imaginary * below_real - above_real * below_imaginary) / below,
+        )
+    }
+
     fn magnitude_db_at(self, turned: Turned) -> f64 {
         let above = turned.squared_modulus(self.b0, self.b1, self.b2);
         let below = turned.squared_modulus(1.0, self.a1, self.a2);
@@ -618,9 +631,15 @@ impl Turned {
         }
     }
 
+    fn parts(self, zeroth: f64, first: f64, second: f64) -> (f64, f64) {
+        (
+            zeroth + first * self.cos + second * self.cos_twice,
+            first * self.sin + second * self.sin_twice,
+        )
+    }
+
     fn squared_modulus(self, zeroth: f64, first: f64, second: f64) -> f64 {
-        let real = zeroth + first * self.cos + second * self.cos_twice;
-        let imaginary = first * self.sin + second * self.sin_twice;
+        let (real, imaginary) = self.parts(zeroth, first, second);
         real * real + imaginary * imaginary
     }
 }
@@ -829,29 +848,58 @@ impl Profile {
             })
     }
 
-    pub fn peak_db_between(&self, from_hz: f64, to_hz: f64, rate: SampleRate) -> f64 {
+    fn points_across(&self, from_hz: f64, to_hz: f64, rate: SampleRate) -> Vec<f64> {
         let nyquist = f64::from(rate.hz()) / 2.0;
         let to_hz = to_hz.min(nyquist);
         if from_hz.partial_cmp(&to_hz) != Some(Ordering::Less) {
-            return f64::NEG_INFINITY;
+            return Vec::new();
         }
 
-        let heard = self.heard_apart(rate);
         let last = (POINTS_ACROSS_A_SPAN - 1) as f64;
         let ratio = to_hz / from_hz;
-        let centres: Vec<f64> = self
+        let centres = self
             .bands()
             .iter()
             .filter(|band| band.applies_at(rate))
             .map(|band| band.frequency.hertz())
-            .filter(|hertz| (from_hz..=to_hz).contains(hertz))
-            .collect();
+            .filter(|hertz| (from_hz..=to_hz).contains(hertz));
         (0..POINTS_ACROSS_A_SPAN)
             .map(|point| from_hz * ratio.powf(point as f64 / last))
             .chain(centres)
+            .collect()
+    }
+
+    pub fn peak_db_between(&self, from_hz: f64, to_hz: f64, rate: SampleRate) -> f64 {
+        let heard = self.heard_apart(rate);
+        self.points_across(from_hz, to_hz, rate)
+            .into_iter()
             .fold(f64::NEG_INFINITY, |highest, hertz| {
                 highest.max(loudest_db(&heard, hertz, rate))
             })
+    }
+
+    pub fn farthest_from_between(
+        &self,
+        levels: &[f64],
+        from_hz: f64,
+        to_hz: f64,
+        rate: SampleRate,
+    ) -> Vec<f64> {
+        let heard = self.heard_apart(rate);
+        self.points_across(from_hz, to_hz, rate).into_iter().fold(
+            vec![0.0; levels.len()],
+            |mut farthest, hertz| {
+                let responses = responses_at(&heard, hertz, rate);
+                for (farthest, level) in farthest.iter_mut().zip(levels) {
+                    let reach = responses
+                        .iter()
+                        .map(|(real, imaginary)| (real - level).hypot(*imaginary))
+                        .fold(0.0, f64::max);
+                    *farthest = farthest.max(reach);
+                }
+                farthest
+            },
+        )
     }
 
     pub fn fitted_preamp(&self, rate: SampleRate) -> Preamp {
@@ -885,6 +933,24 @@ fn loudest_db(heard: &[Vec<Biquad>], hertz: f64, rate: SampleRate) -> f64 {
         .iter()
         .map(|sections| shaped_db(sections, hertz, rate))
         .fold(f64::NEG_INFINITY, f64::max)
+}
+
+fn responses_at(heard: &[Vec<Biquad>], hertz: f64, rate: SampleRate) -> Vec<(f64, f64)> {
+    let turned = Turned::at(hertz, rate);
+    heard
+        .iter()
+        .map(|sections| {
+            sections
+                .iter()
+                .fold((1.0, 0.0), |(real, imaginary), section| {
+                    let (next_real, next_imaginary) = section.response_at(turned);
+                    (
+                        real * next_real - imaginary * next_imaginary,
+                        real * next_imaginary + imaginary * next_real,
+                    )
+                })
+        })
+        .collect()
 }
 
 fn shaped_db(sections: &[Biquad], hertz: f64, rate: SampleRate) -> f64 {
@@ -1437,6 +1503,29 @@ mod tests {
             boosting.peak_db_between(200.0, 100.0, rate),
             f64::NEG_INFINITY
         );
+    }
+
+    #[test]
+    fn how_far_a_span_lies_from_a_level_is_how_far_the_boosted_response_reaches_from_it() {
+        let rate = SampleRate::HZ_48000;
+        let boosting = Profile::new(
+            Preamp::from_decibels(-4.0).expect("in range"),
+            vec![band(BandKind::Peaking, 100.0, 6.0, 2.0)],
+        )
+        .expect("one band");
+        let heights_alone = 10_f64.powf(6.0 / 20.0) - 1.0;
+
+        let on_the_boost = boosting.farthest_from_between(&[1.0, 0.0], 80.0, 125.0, rate);
+        let beside_it = boosting.farthest_from_between(&[1.0], 4_000.0, 8_000.0, rate);
+        let flat = Profile::flat().farthest_from_between(&[1.0, 0.0], 80.0, 125.0, rate);
+        let past_nyquist = boosting.farthest_from_between(&[1.0], 30_000.0, 40_000.0, rate);
+
+        assert!(on_the_boost[0] >= heights_alone - 1e-9, "{on_the_boost:?}");
+        assert!(on_the_boost[0] < heights_alone + 0.1, "{on_the_boost:?}");
+        assert!(on_the_boost[1] >= heights_alone + 1.0 - 1e-9);
+        assert!(beside_it[0] < 0.05, "{beside_it:?}");
+        assert!(flat[0].abs() < 1e-12 && (flat[1] - 1.0).abs() < 1e-12);
+        assert_eq!(past_nyquist, vec![0.0]);
     }
 
     #[test]

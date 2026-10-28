@@ -11,7 +11,7 @@ use std::{
 
 use resonate_analysis::{
     BandGains, BandLevels, Cut, Error, Finding, LossyGuess, Ramp, Verdict, Watch, Watching,
-    analyse, band_levels, loudest_through, peak_through, print, study,
+    analyse, band_figures, loudest_through, peak_through, print, span_of_band, study,
 };
 use resonate_codec::Sources;
 use resonate_core::{
@@ -355,11 +355,22 @@ fn boosting_the_bass() -> Arc<Profile> {
     Arc::new(Profile::new(Preamp::NONE, vec![boost]).expect("a profile in range"))
 }
 
+const FADE_SECONDS: f64 = 0.1;
+
+fn faded(position: f64) -> f64 {
+    let fade = (position / FADE_SECONDS).clamp(0.0, 1.0);
+    0.5 - 0.5 * (std::f64::consts::PI * fade).cos()
+}
+
 fn tone(hertz: f64, amplitude: f64) -> Vec<i32> {
-    (0..(RATE * 3) as usize)
+    let frames = (RATE * 3) as usize;
+    (0..frames)
         .flat_map(|frame| {
-            let phase = std::f64::consts::TAU * hertz * frame as f64 / f64::from(RATE);
-            let sample = (phase.sin() * amplitude * 32_767.0) as i32;
+            let seconds = frame as f64 / f64::from(RATE);
+            let left = frames as f64 / f64::from(RATE) - seconds;
+            let envelope = faded(seconds).min(faded(left));
+            let phase = std::f64::consts::TAU * hertz * seconds;
+            let sample = (phase.sin() * amplitude * envelope * 32_767.0) as i32;
             [sample, sample]
         })
         .collect()
@@ -471,14 +482,39 @@ fn a_stopped_watch_ends_the_fit_and_nothing_measured_fits_nothing() {
     assert_eq!(nothing.fitted_preamp(), None);
 }
 
-fn peak_db_estimated_from_the_kept_bands(profile: &Arc<Profile>, location: &MediaLocation) -> f64 {
+fn peak_db_bounded_from_the_kept_bands(profile: &Arc<Profile>, location: &MediaLocation) -> f64 {
     let studied = study(&Sources::local(), location, None, &Watch::default()).expect("a study");
     let gains = BandGains::of(profile, SampleRate::HZ_44100);
-    let peak = gains.peak(
-        &BandLevels::of(&studied.spectrum),
-        studied.loudness.true_peak,
-    );
-    20.0 * peak.log10()
+    let bound = gains.bound(&studied.band_peaks, studied.loudness.true_peak);
+    20.0 * bound.log10()
+}
+
+const STEPS_A_DECIBEL_OF_A_LEVEL: f64 = 2.0;
+
+fn peak_db_estimated_from_the_kept_levels(profile: &Arc<Profile>, location: &MediaLocation) -> f64 {
+    let studied = study(&Sources::local(), location, None, &Watch::default()).expect("a study");
+    let levels = BandLevels::of(&studied.spectrum);
+    let at_the_rate = profile.at_rate(SampleRate::HZ_44100);
+    let (shaped, heard) =
+        levels
+            .as_bytes()
+            .iter()
+            .enumerate()
+            .fold((0.0, 0.0), |(shaped, heard), (band, step)| {
+                if *step == u8::MAX {
+                    return (shaped, heard);
+                }
+                let amplitude = 10_f64.powf(-f64::from(*step) / STEPS_A_DECIBEL_OF_A_LEVEL / 20.0);
+                let (from, to) = span_of_band(band);
+                let decibels = at_the_rate.peak_db_between(from, to, SampleRate::HZ_44100);
+                let gain = if decibels.is_finite() {
+                    10_f64.powf(decibels / 20.0)
+                } else {
+                    1.0
+                };
+                (shaped + amplitude * gain, heard + amplitude)
+            });
+    20.0 * (f64::from(studied.loudness.true_peak) * shaped / heard).log10()
 }
 
 #[test]
@@ -486,12 +522,14 @@ fn the_bands_measured_alone_are_the_bands_a_study_keeps() {
     let tree = Tree::new();
     let music = tree.wave("music.wav", RATE, 16, &tone(BOOSTED_AT_HZ, 0.8));
 
-    let alone = band_levels(&Sources::local(), &music, None, &Watch::default())
+    let alone = band_figures(&Sources::local(), &music, None, &Watch::default())
         .expect("bands measured alone");
     let studied = study(&Sources::local(), &music, None, &Watch::default()).expect("a study");
 
-    assert_eq!(alone, BandLevels::of(&studied.spectrum));
-    assert!(!alone.is_silent());
+    assert_eq!(alone, studied.band_figures());
+    assert_eq!(alone.levels, BandLevels::of(&studied.spectrum));
+    assert!(!alone.levels.is_silent());
+    assert!(!alone.peaks.is_silent());
 }
 
 #[test]
@@ -502,38 +540,182 @@ fn a_stopped_watch_ends_the_measure_of_the_bands() {
     stopped.stop();
 
     assert!(matches!(
-        band_levels(&Sources::local(), &music, None, &stopped),
+        band_figures(&Sources::local(), &music, None, &stopped),
         Err(Error::Stopped)
     ));
 }
 
 #[test]
-fn music_sounding_on_the_boost_is_estimated_from_its_bands_as_the_decode_measures_it() {
+fn music_sounding_on_the_boost_is_bounded_by_its_bands_as_the_decode_measures_it() {
     let tree = Tree::new();
     let profile = boosting_the_bass();
     let on_the_boost = tree.wave("on-the-boost.wav", RATE, 16, &tone(BOOSTED_AT_HZ, 0.8));
 
-    let estimated = peak_db_estimated_from_the_kept_bands(&profile, &on_the_boost);
+    let bounded = peak_db_bounded_from_the_kept_bands(&profile, &on_the_boost);
     let decoded = peak_db_through(&profile, &on_the_boost);
 
-    assert!(
-        (estimated - decoded).abs() < WITHIN_DB,
-        "{estimated} against {decoded}"
-    );
+    assert!(bounded >= decoded - 0.01, "{bounded} under {decoded}");
+    assert!(bounded < decoded + 1.0, "{bounded} against {decoded}");
 }
 
 #[test]
-fn music_sounding_away_from_the_boost_is_estimated_from_its_bands_as_the_decode_measures_it() {
+fn music_sounding_away_from_the_boost_is_bounded_by_its_bands_as_the_decode_measures_it() {
     let tree = Tree::new();
     let profile = boosting_the_bass();
     let elsewhere = tree.wave("elsewhere.wav", RATE, 16, &tone(SOUNDED_ELSEWHERE_HZ, 0.8));
 
-    let estimated = peak_db_estimated_from_the_kept_bands(&profile, &elsewhere);
+    let bounded = peak_db_bounded_from_the_kept_bands(&profile, &elsewhere);
     let decoded = peak_db_through(&profile, &elsewhere);
 
+    assert!(bounded >= decoded - 0.01, "{bounded} under {decoded}");
+    assert!(bounded < decoded + 0.5, "{bounded} against {decoded}");
+    assert!(bounded < 0.0, "{bounded}");
+}
+
+fn bass_bursts_over_a_steady_tone() -> Vec<i32> {
+    let bursts_at = [0.5, 1.5, 2.5];
+    let burst_seconds = 0.04;
+    (0..(RATE * 3) as usize)
+        .flat_map(|frame| {
+            let seconds = frame as f64 / f64::from(RATE);
+            let steady = (std::f64::consts::TAU * SOUNDED_ELSEWHERE_HZ * seconds).sin() * 0.3;
+            let burst: f64 = bursts_at
+                .iter()
+                .map(|at| {
+                    let into = (seconds - at) / burst_seconds;
+                    if !(0.0..1.0).contains(&into) {
+                        return 0.0;
+                    }
+                    let swell = (std::f64::consts::PI * into).sin().powi(2);
+                    swell * (std::f64::consts::TAU * 110.0 * seconds).sin() * 0.6
+                })
+                .sum();
+            let sample = ((steady + burst) * 32_767.0) as i32;
+            [sample, sample]
+        })
+        .collect()
+}
+
+#[test]
+fn a_song_whose_peaks_gather_in_a_boosted_band_passes_the_estimate_and_not_the_bound() {
+    let tree = Tree::new();
+    let profile = boosting_the_bass();
+    let gathered = tree.wave("gathered.wav", RATE, 16, &bass_bursts_over_a_steady_tone());
+
+    let decoded = peak_db_through(&profile, &gathered);
+    let estimated = peak_db_estimated_from_the_kept_levels(&profile, &gathered);
+    let bounded = peak_db_bounded_from_the_kept_bands(&profile, &gathered);
+
     assert!(
-        (estimated - decoded).abs() < WITHIN_DB,
-        "{estimated} against {decoded}"
+        estimated < decoded - 1.0,
+        "{estimated} against {decoded}: the estimate was meant to fall short"
     );
-    assert!(estimated < 0.0, "{estimated}");
+    assert!(bounded >= decoded - 0.01, "{bounded} under {decoded}");
+    assert!(
+        Preamp::holding_under_full_scale(bounded).decibels()
+            <= Preamp::holding_under_full_scale(decoded).decibels()
+    );
+    assert!(
+        Preamp::holding_under_full_scale(estimated).decibels()
+            > Preamp::holding_under_full_scale(decoded).decibels()
+    );
+}
+
+fn shaped(bands: &[(BandKind, f64, f64, f64)]) -> Arc<Profile> {
+    let bands = bands
+        .iter()
+        .map(|(kind, hertz, decibels, q)| {
+            Band::new(
+                *kind,
+                Frequency::from_hertz(*hertz).expect("in range"),
+                BandGain::from_decibels(*decibels).expect("in range"),
+                Q::from_units(*q).expect("in range"),
+            )
+        })
+        .collect();
+    Arc::new(Profile::new(Preamp::NONE, bands).expect("a profile in range"))
+}
+
+fn two_tones_beating() -> Vec<i32> {
+    (0..(RATE * 3) as usize)
+        .flat_map(|frame| {
+            let seconds = frame as f64 / f64::from(RATE);
+            let envelope = faded(seconds).min(faded(3.0 - seconds));
+            let low = (std::f64::consts::TAU * 63.0 * seconds).sin() * 0.45;
+            let high = (std::f64::consts::TAU * 2_500.0 * seconds).sin() * 0.4;
+            let sample = ((low + high) * envelope * 32_767.0) as i32;
+            [sample, sample]
+        })
+        .collect()
+}
+
+fn noise_between_fades() -> Vec<i32> {
+    let mut samples = music(RATE, 18_000.0, 14_000.0);
+    let frames = samples.len() / 2;
+    for frame in 0..frames {
+        let seconds = frame as f64 / f64::from(RATE);
+        let envelope = faded(seconds).min(faded(SECONDS as f64 - seconds));
+        for sample in &mut samples[frame * 2..frame * 2 + 2] {
+            *sample = (f64::from(*sample) * envelope) as i32;
+        }
+    }
+    samples
+}
+
+#[test]
+fn the_bound_holds_over_what_the_decode_measures_whatever_the_curve_and_where_the_music_sounds() {
+    let tree = Tree::new();
+    let songs = [
+        (
+            "tone",
+            tree.wave("tone.wav", RATE, 16, &tone(BOOSTED_AT_HZ, 0.8)),
+        ),
+        (
+            "bursts",
+            tree.wave("bursts.wav", RATE, 16, &bass_bursts_over_a_steady_tone()),
+        ),
+        (
+            "beats",
+            tree.wave("beats.wav", RATE, 16, &two_tones_beating()),
+        ),
+        (
+            "noise",
+            tree.wave("noise.wav", RATE, 16, &noise_between_fades()),
+        ),
+    ];
+    let curves = [
+        ("a bass boost", boosting_the_bass()),
+        (
+            "a narrow boost",
+            shaped(&[(BandKind::Peaking, 63.0, 8.0, 4.0)]),
+        ),
+        (
+            "a low shelf",
+            shaped(&[(BandKind::LowShelf, 200.0, 6.0, 0.7)]),
+        ),
+        (
+            "a high shelf",
+            shaped(&[(BandKind::HighShelf, 4_000.0, 5.0, 0.7)]),
+        ),
+        (
+            "boosts and cuts",
+            shaped(&[
+                (BandKind::Peaking, 80.0, 5.0, 1.0),
+                (BandKind::Peaking, 800.0, -4.0, 1.5),
+                (BandKind::Peaking, 2_500.0, 6.0, 2.0),
+                (BandKind::HighPass, 30.0, 0.0, 0.7),
+            ]),
+        ),
+    ];
+
+    for (song, location) in &songs {
+        for (curve, profile) in &curves {
+            let decoded = peak_db_through(profile, location);
+            let bounded = peak_db_bounded_from_the_kept_bands(profile, location);
+            assert!(
+                bounded >= decoded - 0.02,
+                "{song} under {curve}: {bounded} under {decoded}"
+            );
+        }
+    }
 }

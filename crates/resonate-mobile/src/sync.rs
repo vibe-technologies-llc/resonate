@@ -1484,6 +1484,7 @@ impl Catalog for DocumentCatalog {
     fn answers_after(&self, mark: i64, most: usize) -> Answered<Vec<Learnt>> {
         let mut learnt = self.lyrics_to_share(mark, most)?;
         learnt.extend(self.studies_to_share(mark, most)?);
+        learnt.extend(self.band_peaks_to_share(mark, most)?);
         learnt.sort_by_key(|learnt| learnt.at);
         learnt.truncate(most);
         Ok(learnt)
@@ -1493,6 +1494,7 @@ impl Catalog for DocumentCatalog {
         match answer {
             Answer::Lyrics(lyrics) => self.take_lyrics(recording, lyrics),
             Answer::Study(study) => self.take_study(study),
+            Answer::BandPeaks(peaks) => self.take_band_peaks(peaks),
             Answer::Release(_) => Ok(true),
         }
     }

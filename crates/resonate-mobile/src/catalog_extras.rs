@@ -4,7 +4,8 @@ use std::{
 };
 
 use resonate_analysis::{
-    BANDS, BandGains, BandLevels, Cut, JUDGED_UNDER, LossyGuess, Loudest, Study,
+    BAND_PEAKS_BYTES, BANDS, BandFigures, BandGains, BandPeaks, Cut, JUDGED_UNDER, LossyGuess,
+    Loudest, Study,
 };
 use resonate_codec::{MediaInfo, Scanned};
 use resonate_core::{Calendar, Chromaprint};
@@ -31,6 +32,7 @@ struct Figures<'a> {
     clipped: u64,
     bits: Option<u32>,
     band_levels: &'a [u8],
+    band_peaks: [u8; BAND_PEAKS_BYTES],
     print: Option<&'a Chromaprint>,
     measured: Option<Measured>,
 }
@@ -64,9 +66,9 @@ pub(crate) struct LandedStudy<'a> {
     pub(crate) mono_as_stereo: bool,
 }
 
-const STUDY_UPSERT: &str = "INSERT INTO studies (track, verdict, peak, rms, true_peak, loudness, dynamic_range, clipped, bits, band_levels, studied, studied_under, cutoff_hz, cutoff_drop, lossy_guess, upsampled_from, declared_bits, loudness_range, mono_as_stereo, print, print_length)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
-     ON CONFLICT(track) DO UPDATE SET verdict = excluded.verdict, peak = excluded.peak, rms = excluded.rms, true_peak = excluded.true_peak, loudness = excluded.loudness, dynamic_range = excluded.dynamic_range, clipped = excluded.clipped, bits = excluded.bits, band_levels = excluded.band_levels, studied = excluded.studied, studied_under = excluded.studied_under, cutoff_hz = excluded.cutoff_hz, cutoff_drop = excluded.cutoff_drop, lossy_guess = excluded.lossy_guess, upsampled_from = excluded.upsampled_from, declared_bits = excluded.declared_bits, loudness_range = excluded.loudness_range, mono_as_stereo = excluded.mono_as_stereo, print = excluded.print, print_length = excluded.print_length";
+const STUDY_UPSERT: &str = "INSERT INTO studies (track, verdict, peak, rms, true_peak, loudness, dynamic_range, clipped, bits, band_levels, studied, studied_under, cutoff_hz, cutoff_drop, lossy_guess, upsampled_from, declared_bits, loudness_range, mono_as_stereo, print, print_length, band_peaks)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
+     ON CONFLICT(track) DO UPDATE SET verdict = excluded.verdict, peak = excluded.peak, rms = excluded.rms, true_peak = excluded.true_peak, loudness = excluded.loudness, dynamic_range = excluded.dynamic_range, clipped = excluded.clipped, bits = excluded.bits, band_levels = excluded.band_levels, studied = excluded.studied, studied_under = excluded.studied_under, cutoff_hz = excluded.cutoff_hz, cutoff_drop = excluded.cutoff_drop, lossy_guess = excluded.lossy_guess, upsampled_from = excluded.upsampled_from, declared_bits = excluded.declared_bits, loudness_range = excluded.loudness_range, mono_as_stereo = excluded.mono_as_stereo, print = excluded.print, print_length = excluded.print_length, band_peaks = excluded.band_peaks";
 
 const LANDED_STUDY: &str = "INSERT INTO studies (track, verdict, peak, rms, true_peak, loudness, dynamic_range, clipped, bits, band_levels, studied, studied_under, cutoff_hz, cutoff_drop, lossy_guess, upsampled_from, declared_bits, loudness_range, mono_as_stereo)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
@@ -399,7 +401,7 @@ impl Catalog {
         &self,
         id: u64,
         report: &AnalysisReport,
-        levels: &BandLevels,
+        figures: &BandFigures,
     ) -> Result<()> {
         self.keep_figures(
             id,
@@ -412,7 +414,8 @@ impl Catalog {
                 dynamic_range: report.dynamic_range,
                 clipped: report.clipped,
                 bits: report.bits_in_use,
-                band_levels: levels.as_bytes(),
+                band_levels: figures.levels.as_bytes(),
+                band_peaks: figures.peaks.to_bytes(),
                 print: None,
                 measured: None,
             },
@@ -431,7 +434,8 @@ impl Catalog {
                 dynamic_range: study.loudness.dynamic_range.map(u32::from),
                 clipped: study.levels.clipped,
                 bits: study.levels.bits_in_use.map(u32::from),
-                band_levels: BandLevels::of(&study.spectrum).as_bytes(),
+                band_levels: study.band_figures().levels.as_bytes(),
+                band_peaks: study.band_peaks.to_bytes(),
                 print: study.print.as_ref(),
                 measured: Some(Measured {
                     cutoff_hz: study.judgement.cutoff.map(|cutoff| cutoff.hz),
@@ -474,6 +478,7 @@ impl Catalog {
                     measured.map(|measured| measured.mono_as_stereo),
                     figures.print.map(Chromaprint::encoded),
                     figures.print.map(print_seconds),
+                    figures.band_peaks.as_slice(),
                 ],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
@@ -540,12 +545,13 @@ impl Catalog {
         let mut statement = connection
             .prepare_cached(
                 "SELECT d.id, d.uri FROM documents d JOIN studies s ON s.track = d.id
-                 WHERE d.missing = 0 AND coalesce(length(s.band_levels), 0) != ?1
+                 WHERE d.missing = 0 AND (coalesce(length(s.band_levels), 0) != ?1
+                                          OR coalesce(length(s.band_peaks), 0) != ?2)
                  ORDER BY d.id",
             )
             .map_err(read_error)?;
         statement
-            .query_map([BANDS as i64], |row| {
+            .query_map([BANDS as i64, BAND_PEAKS_BYTES as i64], |row| {
                 Ok((row.get::<_, i64>(0)? as u64, row.get::<_, String>(1)?))
             })
             .map_err(read_error)?
@@ -553,16 +559,42 @@ impl Catalog {
             .map_err(read_error)
     }
 
-    pub(crate) fn keep_bands(&self, id: u64, levels: &BandLevels) -> Result<()> {
+    pub(crate) fn keep_bands(&self, id: u64, figures: &BandFigures) -> Result<()> {
         self.0
             .lock()
             .execute(
-                "UPDATE studies SET band_levels = ?2
-                 WHERE track = ?1 AND coalesce(length(band_levels), 0) != ?3",
-                params![id as i64, levels.as_bytes(), BANDS as i64],
+                "UPDATE studies SET band_levels = ?2, band_peaks = ?3
+                 WHERE track = ?1 AND (coalesce(length(band_levels), 0) != ?4
+                                       OR coalesce(length(band_peaks), 0) != ?5)",
+                params![
+                    id as i64,
+                    figures.levels.as_bytes(),
+                    figures.peaks.to_bytes().as_slice(),
+                    BANDS as i64,
+                    BAND_PEAKS_BYTES as i64
+                ],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         Ok(())
+    }
+
+    pub(crate) fn land_band_peaks(&self, id: u64, peaks: &[u8]) -> Result<bool> {
+        let landed = self
+            .0
+            .lock()
+            .execute(
+                "UPDATE studies SET band_peaks = ?2
+                 WHERE track = ?1 AND studied_under = ?3
+                   AND coalesce(length(band_peaks), 0) != ?4",
+                params![
+                    id as i64,
+                    peaks,
+                    i64::from(JUDGED_UNDER),
+                    BAND_PEAKS_BYTES as i64
+                ],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(landed > 0)
     }
 
     pub(crate) fn note_unstudied(&self, id: u64) -> Result<()> {
@@ -583,12 +615,12 @@ impl Catalog {
         let read_error = |source| Error::store(StoreOp::Read, source);
         let mut statement = connection
             .prepare_cached(
-                "SELECT s.true_peak, s.band_levels FROM studies s JOIN documents d ON d.id = s.track
-                 WHERE d.missing = 0 AND length(s.band_levels) = ?1",
+                "SELECT s.true_peak, s.band_peaks FROM studies s JOIN documents d ON d.id = s.track
+                 WHERE d.missing = 0 AND length(s.band_peaks) = ?1",
             )
             .map_err(read_error)?;
         let rows = statement
-            .query_map([BANDS as i64], |row| {
+            .query_map([BAND_PEAKS_BYTES as i64], |row| {
                 Ok((row.get::<_, f64>(0)?, row.get::<_, Vec<u8>>(1)?))
             })
             .map_err(read_error)?;
@@ -596,8 +628,8 @@ impl Catalog {
         let mut loudest = Loudest::default();
         for row in rows {
             let (true_peak, kept) = row.map_err(read_error)?;
-            if let Some(levels) = BandLevels::from_bytes(&kept) {
-                loudest.weigh(gains, &levels, true_peak as f32);
+            if let Some(peaks) = BandPeaks::from_bytes(&kept) {
+                loudest.weigh(gains, &peaks, true_peak as f32);
             }
         }
         Ok(loudest)
@@ -609,7 +641,7 @@ impl Catalog {
         let mut statement = connection
             .prepare_cached(
                 "SELECT EXISTS (SELECT 1 FROM studies s JOIN documents d ON d.id = s.track
-                                 WHERE d.uri = ?1 AND d.missing = 0 AND length(s.band_levels) = ?2)",
+                                 WHERE d.uri = ?1 AND d.missing = 0 AND length(s.band_peaks) = ?2)",
             )
             .map_err(read_error)?;
 
@@ -617,9 +649,10 @@ impl Catalog {
         for cut in cuts {
             let held = cut.span.is_none()
                 && statement
-                    .query_row(params![cut.location.to_uri(), BANDS as i64], |row| {
-                        row.get::<_, bool>(0)
-                    })
+                    .query_row(
+                        params![cut.location.to_uri(), BAND_PEAKS_BYTES as i64],
+                        |row| row.get::<_, bool>(0),
+                    )
                     .map_err(read_error)?;
             if !held {
                 owed.push(cut.clone());

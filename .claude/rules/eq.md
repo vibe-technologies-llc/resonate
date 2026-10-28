@@ -131,16 +131,27 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
 - **A study keeps what a fit needs, so the desktop fits to the whole catalog.** Every study
   stores `track_studies.band_levels` (`BandLevels`: 29 third-octave bands from 25 Hz, the first
   taking everything under 31.5 Hz and the last everything over 16.1 kHz, each one byte, half-dB
-  steps below the loudest band; 255 is a band the music never sounded in, all 255 a silent song;
-  `analysis.md`). `BandGains::of(profile, rate)` is the profile's loudest gain over each band's
-  span before the preamp (`Profile::peak_db_between`, the same sweep-plus-centres weighing as
-  `peak_db`), and `BandGains::peak(levels, true_peak)` is the song's stored true peak times the
-  mean of those gains weighted by each band's amplitude: music on the boost fits as the model
-  does, music away from it as itself, music across both between
-  (`music_sounding_on_the_boost_is_estimated_from_its_bands_as_the_decode_measures_it`,
-  `music_sounding_away_from_the_boost_is_estimated_from_its_bands_as_the_decode_measures_it`).
-  **It is an estimate, not a bound**: bands whose peaks fall together can pass it, and a cut
-  lowers it only as far as the least-cut point of each band.
+  steps below the loudest band; 255 is a band the music never sounded in, all 255 a silent song)
+  and `track_studies.band_peaks` (`BandPeaks`: each band's own true peak, `analysis.md`), both
+  measured in the study's one decode. The fit reads only the peaks: `BandGains::of(profile, rate)`
+  keeps, for each of a few anchor levels (0, 1 and the profile's loudest gain over each band's span,
+  `Profile::peak_db_between`), how far the response lies from that level over each band's reach
+  (`Profile::farthest_from_between`: the complex response, so phase counts, over the band widened by
+  two bands each way, the extent over which the bank puts 2 % of a tone in a band; band 0 reaches
+  down to 1 Hz and the last to Nyquist, and per-channel bands count on the channel they reach
+  furthest), and `BandGains::bound(peaks, true_peak)` is the least over the anchors `c` of
+  `|c| * true_peak + sum(reach_b(c) * peak_b)`. **It is a bound**: the output is
+  `c * x + sum((H - c) * x_b)` and the bank's bands sum to the signal exactly, so no anchor can
+  fall below the true output peak but by what lies beyond the reach, and the flat anchor makes music away from the curve fit as
+  itself while the boosted anchors make a song whose peaks gather in a boosted band fit as the
+  boost takes it (`a_song_whose_peaks_gather_in_a_boosted_band_passes_the_estimate_and_not_the_bound`,
+  `the_bound_holds_over_what_the_decode_measures_whatever_the_curve_and_where_the_music_sounds`).
+  The old estimate, the true peak times the mean gain weighted by each band's energy, is gone: a
+  loud sustained band hid the quiet band where the peak gathered. **What stays loose is the
+  price of a bound**: bands are summed as if their peaks fell together, so broadband music under a
+  curve that moves many bands fits deeper than the decode would, and a narrow boost beside the
+  music costs its whole reach; the bank leaves under 2 % of a tone beyond the reach, which the
+  bound does not count. `Loudest::weigh` takes the peaks.
 - **The set is the catalog's kept bands plus the queue's unmeasured songs, bounded.**
   `Library::loudest_kept(profile, rate)` folds every kept measure in one read (`Loudest::measured`
   counts them); `Library::unmeasured(cuts)` is the cuts no kept measure of the right length
@@ -155,12 +166,15 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   the phones' catalog alike). `Player::cuts_to_fit` and `Player::loudest_among` serve the window;
   none of it runs on the audio thread. Room correction and the volume stage are not in the run (the
   convolver is not part of `Equaliser`); `Impulse::with_headroom` holds the response's loudest gain
-  to unity, so its magnitude never passes 0 dB, but the run does not model its shape.
+  to unity, so its magnitude never passes 0 dB, but the run does not model its shape. The decode
+  (`peak_through`) is exact for the stage it runs; the kept figures bound it.
 - **A study kept before the bands were measured is measured alone, never studied again.**
-  `to_study` lists a current study whose `band_levels` is missing or of another length as
-  `unmeasured`; the pool decodes it once through `resonate_analysis::band_levels` (the study's own
-  transform, so the same bands) and updates that one column, leaving the print, the recognition
-  and the verdict where they stood (`a_study_kept_without_its_bands_is_measured_alone_and_keeps_everything_else_it_held`).
+  `to_study` lists a current study whose `band_levels` or `band_peaks` is missing or of another
+  length as `unmeasured`; the pool decodes it once through `resonate_analysis::band_figures` (the
+  study's own transform and bank, so the same figures) and updates those two columns, leaving the
+  print, the recognition, the verdict and the `studied` stamp where they stood
+  (`a_study_kept_without_its_bands_is_measured_alone_and_keeps_everything_else_it_held`,
+  `a_study_kept_without_its_peaks_is_measured_alone_and_is_not_fitted_from_until_it_is`).
   A study under an older `JUDGED_UNDER` is studied whole as ever. Until a song is measured the
   fit decodes it if it is queued and passes it over otherwise.
 - **The press keeps the model as the first answer.** The desktop's *Fit* sets the model fit at
@@ -170,24 +184,25 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   lands the measured preamp only if the shown bands are the ones measured, toasting *The preamp is
   fitted to the N songs measured*. The phones read the same bands from their own catalog:
   `MobilePlayer::fitted_preamp_to_the_queue(curve)` folds `Catalog::loudest_kept` (every visible
-  document whose `studies.band_levels` is 29 bytes, through `BandGains::of` at the stream rate,
+  document whose `studies.band_peaks` is 58 bytes, through `BandGains::of` at the stream rate,
   48 kHz with none open) with a decode of `Catalog::unmeasured(cuts_to_fit)` alone, the queue's
-  songs with no kept bands (a cut, which no study covers, a document not indexed, one studied
-  before `band_levels` existed or changed since: `documents_forget_where_the_music_sounded`), and
+  songs with no kept peaks (a cut, which no study covers, a document not indexed, one studied
+  before `band_peaks` existed or changed since: `documents_forget_where_the_peaks_gathered`), and
   answers the preamp in dB (`None` for nothing measured or all of it silent, held to the phone's
   `PREAMP_AT_MOST_DB`), stopping the fit before it through `Services::fitting`; an empty queue
   still reads the catalog. The pass and the analysis pane keep the bands with the study
   (`keep_studied`, `keep_study`). **A study kept before the bands is measured alone, as on the
   desktop**: `enrichment::measure_the_unmeasured` runs first in the pass's study thread, key or none
   (it asks no service and decodes only studies already kept), over `Catalog::studies_without_bands`
-  (every visible document whose study has no 29-byte `band_levels`), decoding each once through
-  `resonate_analysis::band_levels` and writing that one column through `Catalog::keep_bands`, which
-  leaves the verdict, true peak, print and agreement where they stood and never overwrites bands
-  already kept; a stopped pass ends it, a document that will not open is left owed for the next pass
+  (every visible document whose study lacks the 29-byte `band_levels` or the 58-byte `band_peaks`),
+  decoding each once through `resonate_analysis::band_figures` and writing those two columns
+  through `Catalog::keep_bands`, which leaves the verdict, true peak, print and agreement where they
+  stood and never overwrites figures already whole; a stopped pass ends it, a document that will not open is left owed for the next pass
   (and decoded on a press as before). The next fit reads it without a decode
   (`a_study_kept_without_its_bands_is_measured_by_a_pass_with_no_key_and_keeps_all_else`,
   `a_song_measured_by_the_pass_is_no_longer_owed_a_decode_when_the_preamp_is_fitted`,
   `bands_already_kept_are_not_measured_again_and_a_song_without_a_study_gains_none`,
+  `a_study_kept_with_its_levels_but_not_its_peaks_is_measured_for_both`,
   `a_pass_told_to_stop_measures_nothing_and_a_file_that_will_not_open_stays_owed`). Android and iOS set the model fit, then the measured one if the
   curve is still the one fitted
   (`a_queue_of_silence_fits_nothing_and_an_empty_one_or_a_bad_curve_is_told_apart`,

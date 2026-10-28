@@ -13,6 +13,7 @@ mod reduce;
 mod signature;
 mod spectrogram;
 mod spectrum;
+mod split;
 mod steps;
 mod verdict;
 mod watch;
@@ -25,7 +26,10 @@ pub fn read_a_kept_analysis(bytes: &[u8]) {
 
 pub use crate::{
     analysis::{Analysis, Examined, Excerpt, Study, analyse, excerpt, print, study},
-    bands::{BANDS, BandGains, BandLevels, band_levels},
+    bands::{
+        BAND_PEAKS_BYTES, BANDS, BandFigures, BandGains, BandLevels, BandPeaks, band_figures,
+        span_of_band,
+    },
     envelope::{ENVELOPE_COLUMNS, ENVELOPE_LANES, Envelope, Reach},
     error::{AnalysisOp, Error, Result},
     headroom::{CUTS_AT_MOST, Cut, Loudest, loudest_through, peak_through},

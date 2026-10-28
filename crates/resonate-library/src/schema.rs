@@ -15,6 +15,7 @@ const MIGRATIONS: &[&str] = &[
     RELEASES_LANDED_WITHOUT_THEIR_CREDIT_ARE_ASKED_AGAIN,
     AN_UNHELD_LISTEN_KEEPS_WHAT_IT_WAS,
     A_SONG_RECEIVED_GOES_WITH_ITS_FILE,
+    A_STUDY_KEEPS_WHERE_ITS_PEAKS_GATHER,
 ];
 
 const STAMPS: [SchemaFingerprint; MIGRATIONS.len() + 1] = stamps();
@@ -98,6 +99,10 @@ CREATE TABLE offered_step_rows (
 
 const A_STUDY_KEEPS_WHERE_THE_MUSIC_SOUNDS: &str = "
 ALTER TABLE track_studies ADD COLUMN band_levels BLOB;
+";
+
+const A_STUDY_KEEPS_WHERE_ITS_PEAKS_GATHER: &str = "
+ALTER TABLE track_studies ADD COLUMN band_peaks BLOB;
 ";
 
 const A_RELEASE_KEEPS_ITS_CREDIT: &str = "
@@ -1302,7 +1307,7 @@ mod tests {
         }
         assert!(
             studies_hold_their_bands(&connection),
-            "a study kept at the first release was not given a place for its bands"
+            "a study kept at the first release was not given a place for its bands and their peaks"
         );
         assert_eq!(
             stamped(&connection).expect("the stamp reads back"),
@@ -1314,12 +1319,12 @@ mod tests {
     fn studies_hold_their_bands(connection: &Connection) -> bool {
         connection
             .query_row(
-                "SELECT count(*) FROM pragma_table_info('track_studies') WHERE name = 'band_levels'",
+                "SELECT count(*) FROM pragma_table_info('track_studies') WHERE name IN ('band_levels', 'band_peaks')",
                 [],
                 |row| row.get::<_, i64>(0),
             )
             .expect("the columns")
-            == 1
+            == 2
     }
 
     #[test]

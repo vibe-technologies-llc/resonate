@@ -234,7 +234,17 @@ weigh; the ledger still passes it on in its snapshot.
   packets digest are the study's, never over a row `studied_under` this build (a row with no
   `studied_under` is a study from before and stays too), over one of another judgement it replaces and
   clears its `agreement`. A verdict, lossy guess, judgement or band layout this build cannot
-  name is settled and written nowhere.
+  name is settled and written nowhere. **The band peaks travel as an answer of their own**
+  (step 16's `band_peaks`, `sync.md`): `band_peaks_to_share` lists a row judged under this build
+  with whole peaks on a document with a kept identity, the same `WholeFile` as the study, and
+  `take_band_peaks` writes them on every visible copy of that file studied under this judgement
+  whose peaks are not already whole, never over peaks held; a judgement or length this build cannot
+  read is settled and written nowhere, and a copy not yet studied takes nothing (the study is
+  listed first, so it lands first; a phone that missed it measures its own peaks alone). A study
+  landed without peaks reads as unmeasured to `studies_without_bands` until they arrive or the pass
+  measures them (`the_peaks_of_a_study_land_on_every_studied_copy_of_the_same_file_and_never_over_peaks_held`,
+  `peaks_of_another_encode_judgement_or_layout_are_written_nowhere`,
+  `the_peaks_a_phone_kept_are_listed_beside_its_study_with_the_file_it_measured`).
   (`a_study_lands_on_every_copy_that_is_the_same_file_and_on_no_other_encode`,
   `a_study_of_another_encode_another_length_or_another_rate_is_never_written`,
   `a_study_never_lands_over_one_at_this_judgement_but_replaces_one_of_another`,

@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, path::Path, time::Duration};
 
-use resonate_core::{Answer, Answered, Recording, RecordingKey};
+use resonate_core::{Answer, Answered, Recording, RecordingKey, WholeFile};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::{
@@ -31,6 +31,7 @@ const ANSWER_PAGES_A_LOOK: usize = 8;
 const ANSWER_OF_LYRICS: i64 = 0;
 const ANSWER_OF_A_STUDY: i64 = 1;
 const ANSWER_OF_A_RELEASE: i64 = 2;
+const ANSWER_OF_BAND_PEAKS: i64 = 3;
 
 const V1: &str = "
 CREATE TABLE state (
@@ -256,17 +257,20 @@ struct AnswerSlot {
 }
 
 impl AnswerSlot {
+    fn slot_of(file: WholeFile) -> Vec<u8> {
+        let mut slot = Vec::with_capacity(20);
+        slot.extend_from_slice(&file.packets.to_le_bytes());
+        slot.extend_from_slice(&file.frames.to_le_bytes());
+        slot.extend_from_slice(&file.rate.to_le_bytes());
+        slot
+    }
+
     fn of(recording: &Recording, answer: &Answer) -> Self {
         let (kind, file) = match answer {
             Answer::Lyrics(_) => (ANSWER_OF_LYRICS, Vec::new()),
             Answer::Release(_) => (ANSWER_OF_A_RELEASE, Vec::new()),
-            Answer::Study(study) => {
-                let mut slot = Vec::with_capacity(20);
-                slot.extend_from_slice(&study.file.packets.to_le_bytes());
-                slot.extend_from_slice(&study.file.frames.to_le_bytes());
-                slot.extend_from_slice(&study.file.rate.to_le_bytes());
-                (ANSWER_OF_A_STUDY, slot)
-            }
+            Answer::Study(study) => (ANSWER_OF_A_STUDY, Self::slot_of(study.file)),
+            Answer::BandPeaks(peaks) => (ANSWER_OF_BAND_PEAKS, Self::slot_of(peaks.file)),
         };
         Self {
             key: recording.key(),
