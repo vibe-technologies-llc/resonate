@@ -324,7 +324,7 @@ could change (stored studies and kept analyses are weighed against it).
   mtime or span (a trigger, not an upsert clause: covers every writer). Tag runs are the one writer
   known not to touch audio: `files_retagged` holds a written file's `track_studies` and `unstudied`
   rows across its follow (`KeptAcross`, `library.md`) and puts them back.
-- **A failed study is kept as failed.** `unstudied` holds the id under the failing `JUDGED_UNDER`;
+- **A failed study is kept as failed**, a band measurement of a study kept without its bands included (`measured_now`), so a file that no longer decodes is not decoded again by every pass (`bands_that_cannot_be_measured_are_kept_as_failed_and_not_decoded_again_on_every_pass`). `unstudied` holds the id under the failing `JUDGED_UNDER`;
   `to_study` and `Library::will_not_study` skip it until `unstudied_forget_a_changed_file` fires,
   `JUDGED_UNDER` moves, or `refresh` re-asks. Stopped studies and out-of-reach files
   (`Error::is_out_of_reach`: unmounted drive, downed share) leave no mark.

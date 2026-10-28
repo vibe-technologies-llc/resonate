@@ -843,8 +843,13 @@ fn measured_now(library: &Library, sources: &Sources, progress: &EnrichProgress,
     ) {
         Ok(figures) => figures,
         Err(resonate_analysis::Error::Stopped) => return,
+        Err(error) if error.is_out_of_reach() => {
+            tracing::debug!(%error, location = %asked.location, "a track's file was out of reach, so its bands are measured another time");
+            return;
+        }
         Err(error) => {
-            tracing::debug!(%error, location = %asked.location, "a study's bands could not be measured, so they are measured another time");
+            tracing::debug!(%error, location = %asked.location, "a study's bands could not be measured");
+            unstudied(library, asked.id);
             return;
         }
     };

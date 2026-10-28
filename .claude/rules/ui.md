@@ -1907,7 +1907,7 @@ is never named.
   missing covers*, *Stop* while a lookup runs) and *The tags in the files* (the armed *Preview*/*Apply*
   pass below). *Read every file again* (`Reading::Everything` beside `Prompted` on
   `LibraryModel::start_scan`) re-probes every file whatever size and mtime say, each row keeping id,
-  plays, favourite; *Look for missing covers* is `Library::ask_again_for_covers` + a lookup; *Refresh
+  plays, favourite; *Look for missing covers* is `Library::ask_again_for_covers` + a lookup with studies and lyrics off (`LibraryModel::only_the_covers`), so the button never starts the study pool's decoding; *Refresh
   all* is `enrich(true)`. The files part greys with `is_busy`, the lookups with `is_busy`,
   `is_enriching` and `!can_enrich`.
 - **Library roots are edited through the desktop's file picker, or typed.** `App::prompt_for_paths`

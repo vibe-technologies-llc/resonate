@@ -18685,6 +18685,32 @@ fn a_study_kept_without_its_bands_is_measured_alone_and_keeps_everything_else_it
 }
 
 #[test]
+fn bands_that_cannot_be_measured_are_kept_as_failed_and_not_decoded_again_on_every_pass()
+-> Result<()> {
+    let tree = Tree::new();
+    let file = tree.write("1.wav", &Wav::new().frames(4 * RATE as usize).build());
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    enrich(&library, &Arc::new(Fake::new(Canned::default())), false)?;
+    beside(&database)
+        .execute(
+            "UPDATE track_studies SET band_levels = NULL, band_peaks = NULL",
+            [],
+        )
+        .expect("the study reads as one kept before its bands were measured");
+    fs::write(&file, b"no longer audio").expect("the file broken");
+
+    enrich(&library, &Arc::new(Fake::new(Canned::default())), false)?;
+    let kept_as_failed: i64 = beside(&database)
+        .query_row("SELECT count(*) FROM unstudied", [], |row| row.get(0))
+        .expect("the failed studies counted");
+
+    assert_eq!(kept_as_failed, 1);
+    Ok(())
+}
+
+#[test]
 fn a_study_kept_without_its_peaks_is_measured_alone_and_is_not_fitted_from_until_it_is()
 -> Result<()> {
     let tree = Tree::new();

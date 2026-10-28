@@ -4715,7 +4715,7 @@ impl LibraryModel {
             return;
         }
         match self.library.ask_again_for_covers() {
-            Ok(_) => self.enrich(false, cx),
+            Ok(_) => self.enrich_with(self.only_the_covers(), cx),
             Err(error) => {
                 tracing::error!(%error, "the covers still missing could not be asked for again");
                 toast::tell(
@@ -5048,18 +5048,32 @@ impl LibraryModel {
     }
 
     pub fn enrich(&mut self, refresh: bool, cx: &mut Context<Self>) {
-        if self.enriching.is_some() || !self.online {
-            return;
-        }
-        let Some(reference) = self.for_the_pass.reference.clone() else {
-            return;
-        };
         let asked = EnrichOptions {
             refresh,
             at_most: None,
             sought: Arc::clone(&self.sought),
             studies: self.studies,
             lyrics: self.lyrics,
+        };
+        self.enrich_with(asked, cx);
+    }
+
+    fn only_the_covers(&self) -> EnrichOptions {
+        EnrichOptions {
+            refresh: false,
+            at_most: None,
+            sought: Arc::clone(&self.sought),
+            studies: false,
+            lyrics: false,
+        }
+    }
+
+    fn enrich_with(&mut self, asked: EnrichOptions, cx: &mut Context<Self>) {
+        if self.enriching.is_some() || !self.online {
+            return;
+        }
+        let Some(reference) = self.for_the_pass.reference.clone() else {
+            return;
         };
         let handle = match self.library.enrich(
             reference,
