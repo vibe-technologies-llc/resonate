@@ -86,9 +86,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] *Fit the preamp* on both desktop and phones leaves room correction and the volume stage
   outside what it runs (the phones hold no applied response the fit could read, and the convolver
   is not part of the stage the decode runs)
-- [M] *Fit the preamp*'s kept-figure bound adds the 29 bands' peaks as if they fell together, so
-  broadband music under a curve that moves many bands fits deeper than the decode would; a tighter
-  bound needs each band's level kept over time (an envelope a band, not one peak)
+- [M] *Fit the preamp*'s kept-figure bound still sits 2 to 6 dB over the decode for broadband
+  music under a curve that moves many bands, and a band whose skirt reaches a narrow boost pays a
+  little of it: each node's share of a frequency is fixed by the curve, not fitted to the song's
+  peaks (solving the tone model's dual per song would let a quiet band carry a boost it borders)
 - [M] AutoEq is the only online correction source, fetched one device at a time; a measurement of
   the listener's own is fitted to a target on every front end, but only from a file
 - [M] Lossy restoration was tuned and tested on ffmpeg's own MP3, AAC and Vorbis encodes of

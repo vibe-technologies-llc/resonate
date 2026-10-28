@@ -17,6 +17,7 @@ const MIGRATIONS: &[&str] = &[
     A_SONG_RECEIVED_GOES_WITH_ITS_FILE,
     A_STUDY_KEEPS_WHERE_ITS_PEAKS_GATHER,
     A_ZONE_KEEPS_ITS_OWN_QUEUE,
+    PEAKS_KEPT_AS_ONE_MOMENT_ARE_MEASURED_AGAIN,
 ];
 
 const STAMPS: [SchemaFingerprint; MIGRATIONS.len() + 1] = stamps();
@@ -104,6 +105,10 @@ ALTER TABLE track_studies ADD COLUMN band_levels BLOB;
 
 const A_STUDY_KEEPS_WHERE_ITS_PEAKS_GATHER: &str = "
 ALTER TABLE track_studies ADD COLUMN band_peaks BLOB;
+";
+
+const PEAKS_KEPT_AS_ONE_MOMENT_ARE_MEASURED_AGAIN: &str = "
+UPDATE track_studies SET band_peaks = NULL WHERE length(band_peaks) = 58;
 ";
 
 const A_RELEASE_KEEPS_ITS_CREDIT: &str = "
@@ -1412,6 +1417,48 @@ mod tests {
         assert_eq!(answered(1), Some(1));
         assert_eq!(answered(2), Some(500));
         assert_eq!(answered(3), None);
+    }
+
+    #[test]
+    fn peaks_kept_as_one_moment_are_forgotten_and_peaks_kept_over_moments_stay() {
+        let connection = opened();
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == PEAKS_KEPT_AS_ONE_MOMENT_ARE_MEASURED_AGAIN)
+            .expect("the step that forgets them");
+        connection
+            .execute_batch(V1)
+            .expect("the first release's schema");
+        for step in &MIGRATIONS[..before] {
+            connection.execute_batch(step).expect("an earlier step");
+        }
+        connection
+            .pragma_update(None, "user_version", as_signed(STAMPS[before].0))
+            .expect("the earlier stamp");
+        connection
+            .execute_batch(
+                "PRAGMA foreign_keys = OFF;
+                 INSERT INTO track_studies (track_id, studied, studied_under, verdict, peak, rms,
+                                            true_peak, clipped, mono_as_stereo, band_levels, band_peaks)
+                 VALUES (1, 1, 1, 'genuine', 0.5, 0.1, 0.5, 0, 0, zeroblob(29), zeroblob(58)),
+                        (2, 1, 1, 'genuine', 0.5, 0.1, 0.5, 0, 0, zeroblob(29), zeroblob(472));
+                 PRAGMA foreign_keys = ON;",
+            )
+            .expect("studies kept earlier");
+
+        lay_out(&connection).expect("the catalog is carried forward");
+
+        let peaks = |id: i64| -> Option<i64> {
+            connection
+                .query_row(
+                    "SELECT length(band_peaks) FROM track_studies WHERE track_id = ?1",
+                    [id],
+                    |row| row.get(0),
+                )
+                .expect("a study")
+        };
+        assert_eq!(peaks(1), None);
+        assert_eq!(peaks(2), Some(472));
     }
 
     #[test]

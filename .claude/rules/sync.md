@@ -272,8 +272,9 @@ platforms; the catalog seam stays thin.
   title, credit, date, country, label, numbers, kind, front-cover flag and links, its media and every
   track with its recording and track ids, length in milliseconds, codes and links; a link travels as
   its MusicBrainz type and URL, the service read off the URL again) or `SharedBandPeaks` (kind 3:
-  the same `WholeFile` and `JUDGED_UNDER`, then the 58 bytes of the study's band peaks, the figures
-  `eq.md`'s preamp fit bounds from). **Peaks are an answer beside the study, not a field of it**:
+  the same `WholeFile` and `JUDGED_UNDER`, then the study's band peaks as the catalog keeps them,
+  472 bytes of up to eight moments of the band tree, at most 1 024 read, the figures `eq.md`'s
+  preamp fit bounds from; a length the reader's build does not keep is settled and written nowhere). **Peaks are an answer beside the study, not a field of it**:
   a `SharedStudy` is never extended (an earlier build reads it to its end and refuses a trailing
   byte), so a build without kind 3 skips the peaks and takes the study as ever
   (`the_peaks_of_a_study_read_back_and_a_build_knowing_only_lyrics_studies_and_releases_skips_them`),

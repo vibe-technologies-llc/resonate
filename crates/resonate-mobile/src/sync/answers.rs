@@ -789,7 +789,7 @@ mod tests {
         SharedBandPeaks {
             file,
             judged_under: JUDGED_UNDER,
-            peaks: BandPeaks::of((0..BANDS).map(|band| loudest / (band + 1) as f64))
+            peaks: BandPeaks::at_once((0..BANDS).map(|band| loudest / (band + 1) as f64))
                 .to_bytes()
                 .to_vec(),
         }

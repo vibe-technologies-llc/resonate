@@ -137,26 +137,48 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   stores `track_studies.band_levels` (`BandLevels`: 29 third-octave bands from 25 Hz, the first
   taking everything under 31.5 Hz and the last everything over 16.1 kHz, each one byte, half-dB
   steps below the loudest band; 255 is a band the music never sounded in, all 255 a silent song)
-  and `track_studies.band_peaks` (`BandPeaks`: each band's own true peak, `analysis.md`), both
-  measured in the study's one decode. The fit reads only the peaks: `BandGains::of(profile, rate)`
-  keeps, for each of a few anchor levels (0, 1 and the profile's loudest gain over each band's span,
-  `Profile::peak_db_between`), how far the response lies from that level over each band's reach
-  (`Profile::farthest_from_between`: the complex response, so phase counts, over the band widened by
-  two bands each way, the extent over which the bank puts 2 % of a tone in a band; band 0 reaches
-  down to 1 Hz and the last to Nyquist, and per-channel bands count on the channel they reach
-  furthest), and `BandGains::bound(peaks, true_peak)` is the least over the anchors `c` of
-  `|c| * true_peak + sum(reach_b(c) * peak_b)`. **It is a bound**: the output is
-  `c * x + sum((H - c) * x_b)` and the bank's bands sum to the signal exactly, so no anchor can
-  fall below the true output peak but by what lies beyond the reach, and the flat anchor makes music away from the curve fit as
-  itself while the boosted anchors make a song whose peaks gather in a boosted band fit as the
-  boost takes it (`a_song_whose_peaks_gather_in_a_boosted_band_passes_the_estimate_and_not_the_bound`,
-  `the_bound_holds_over_what_the_decode_measures_whatever_the_curve_and_where_the_music_sounds`).
-  The old estimate, the true peak times the mean gain weighted by each band's energy, is gone: a
-  loud sustained band hid the quiet band where the peak gathered. **What stays loose is the
-  price of a bound**: bands are summed as if their peaks fell together, so broadband music under a
-  curve that moves many bands fits deeper than the decode would, and a narrow boost beside the
-  music costs its whole reach; the bank leaves under 2 % of a tone beyond the reach, which the
-  bound does not count. `Loudest::weigh` takes the peaks.
+  and `track_studies.band_peaks` (`BandPeaks`: up to `MOMENTS_KEPT` (8) moments, each the peaks of
+  the 57 nodes of the band tree over a stretch of the song, `analysis.md`), both measured in the
+  study's one decode. The fit reads only the peaks. **The bound** (`BandGains::of(profile, rate)`,
+  then `BandGains::bound(peaks)`): the output is `c * x + sum over S of (G - c) * x_S` for any level
+  `c` and any partition of the bands into tree nodes `S`, since the bank's bands sum to the signal
+  exactly; each term is bounded by the node's peak times its *reach*, and the tree is searched
+  bottom up for the cheapest partition (`cheapest`), so broadband music pays one peak for a span
+  the curve moves alike instead of the peaks of every band in it as if they fell together. A node's
+  reach at level `c` is `max over f of share_S(f) * |G_soon(f) - c|`, `G` the complex response
+  (`Profile::heard_at`, phase counts; per-channel bands count on the channel they reach furthest)
+  on 2 048 points from 1 Hz to Nyquist plus every band's centre. `share_S(f)` is the bank's own
+  leakage, not a flat widening: with `B_S(f)` the node's real response (`split::passed_below`, the
+  band-edge filters at the fit rate) and `phi(B) = min(1, B / 0.25) * B`, `share_S = min(1, B_S /
+  0.25) / (phi(B_S) + sum of phi(B_b) over the bands b outside S)`; since `phi` is superadditive,
+  the shares of any partition cover every frequency at least once (`sum of share_S * B_S >= 1`),
+  so a steady tone anywhere is bounded at its own response, and a node pays for a frequency in its
+  skirt only by the share of it the node holds. The levels are 0, 1 and eight geometric steps from
+  the curve's quietest gain (at least 0.25) to its loudest; each moment takes its least level and
+  the bound is the loudest moment's. **Time**: a moment holds every node's peak over its stretch
+  widened by a tenth of a second each way, so the first tenth of a second of the impulse response
+  (`Profile::impulse_responses`, its last quarter tapered by a raised cosine) is `G_soon`, and the
+  rest (`G - G_soon`) is bounded apart (`ringing`, at level 0) by the loudest of each node over all
+  the moments, so a narrow band low down that rings past a moment is paid for by whatever the song
+  holds near it. **What is rigorous and what is not**: the sum over a partition is exact, the
+  moments hold every stretch with its neighbours, the codes round up and the ring is bounded by the
+  whole song, but `|G - c| * peak` bounds a term's peak exactly only for a steady tone or a
+  sustained sum of tones; a transient through a resonant or phase-turning curve can pass it by up
+  to the filter's L1-to-peak ratio (about 4/π for a narrow resonance), the band peaks are read at
+  each sample and its cubic midpoint scaled by a tone's shortfall at the band's reach, the bank is
+  zero-phase only to within its margin (`analysis.md`), and the bank's response is taken at the
+  fit rate though the study ran at the file's. The slack the sum over nodes leaves has covered
+  every such case measured: the bound holds over the decode across seven songs and thirteen curves
+  (`the_bound_holds_over_what_the_decode_measures_whatever_the_curve_and_where_the_music_sounds`),
+  and fits as the boost takes it where a song's peaks gather in a boosted band
+  (`a_song_whose_peaks_gather_in_a_boosted_band_passes_the_estimate_and_not_the_bound`). **What
+  stays loose**: a song with every band busy under a curve that moves many of them still bounds a
+  few decibels over its decode (a node's terms are summed apart and the shares are fixed by the
+  curve, not fitted to the song), and a band whose skirt reaches a narrow boost pays a little of it
+  (`broadband_music_under_a_curve_moving_every_octave_is_bounded_within_a_few_decibels_of_its_decode`,
+  `a_tone_beside_a_narrow_boost_is_bounded_near_its_decode`). The old estimate, the true peak times
+  the mean gain weighted by each band's energy, is gone: a loud sustained band hid the quiet band
+  where the peak gathered. `Loudest::weigh` takes the peaks.
 - **The set is the catalog's kept bands plus the queue's unmeasured songs, bounded.**
   `Library::loudest_kept(profile, rate)` folds every kept measure in one read (`Loudest::measured`
   counts them); `Library::unmeasured(cuts)` is the cuts no kept measure of the right length
@@ -175,7 +197,8 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   (`peak_through`) is exact for the stage it runs; the kept figures bound it.
 - **A study kept before the bands were measured is measured alone, never studied again.**
   `to_study` lists a current study whose `band_levels` or `band_peaks` is missing or of another
-  length as `unmeasured`; the pool decodes it once through `resonate_analysis::band_figures` (the
+  length as `unmeasured` (the thirteenth step, `PEAKS_KEPT_AS_ONE_MOMENT_ARE_MEASURED_AGAIN`, clears
+  the 58-byte peaks of the layout that kept one moment, and the phones' seventeenth does the same); the pool decodes it once through `resonate_analysis::band_figures` (the
   study's own transform and bank, so the same figures) and updates those two columns, leaving the
   print, the recognition, the verdict and the `studied` stamp where they stood
   (`a_study_kept_without_its_bands_is_measured_alone_and_keeps_everything_else_it_held`,
@@ -189,7 +212,7 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   lands the measured preamp only if the shown bands are the ones measured, toasting *The preamp is
   fitted to the N songs measured*. The phones read the same bands from their own catalog:
   `MobilePlayer::fitted_preamp_to_the_queue(curve)` folds `Catalog::loudest_kept` (every visible
-  document whose `studies.band_peaks` is 58 bytes, through `BandGains::of` at the stream rate,
+  document whose `studies.band_peaks` is `BAND_PEAKS_BYTES` (472) long, through `BandGains::of` at the stream rate,
   48 kHz with none open) with a decode of `Catalog::unmeasured(cuts_to_fit)` alone, the queue's
   songs with no kept peaks (a cut, which no study covers, a document not indexed, one studied
   before `band_peaks` existed or changed since: `documents_forget_where_the_peaks_gathered`), and
@@ -199,7 +222,7 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   (`keep_studied`, `keep_study`). **A study kept before the bands is measured alone, as on the
   desktop**: `enrichment::measure_the_unmeasured` runs first in the pass's study thread, key or none
   (it asks no service and decodes only studies already kept), over `Catalog::studies_without_bands`
-  (every visible document whose study lacks the 29-byte `band_levels` or the 58-byte `band_peaks`),
+  (every visible document whose study lacks the 29-byte `band_levels` or the 472-byte `band_peaks`),
   decoding each once through `resonate_analysis::band_figures` and writing those two columns
   through `Catalog::keep_bands`, which leaves the verdict, true peak, print and agreement where they
   stood and never overwrites figures already whole; a stopped pass ends it, a document that will not open is left owed for the next pass

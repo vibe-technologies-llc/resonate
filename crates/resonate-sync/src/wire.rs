@@ -32,7 +32,7 @@ pub const LARGEST_RECORD: usize = 256 * 1024;
 pub const LARGEST_DATAGRAM: usize = 2048;
 const RECORD_AT_LEAST: usize = 2;
 const BAND_LEVELS_AT_MOST: usize = 256;
-const BAND_PEAKS_AT_MOST: usize = 256;
+const BAND_PEAKS_AT_MOST: usize = 1_024;
 const ANSWER_LYRICS: u8 = 0;
 const ANSWER_STUDY: u8 = 1;
 const ANSWER_RELEASE: u8 = 2;
@@ -2435,7 +2435,7 @@ mod tests {
                 rate: 44_100,
             },
             judged_under: 1,
-            peaks: (0..58).collect(),
+            peaks: (0..472).map(|byte| (byte % 251) as u8).collect(),
         })
     }
 

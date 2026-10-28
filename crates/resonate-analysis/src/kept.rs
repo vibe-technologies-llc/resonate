@@ -23,7 +23,7 @@ use crate::{
 
 const MAGIC: &[u8; 4] = b"RSAN";
 
-const WRITTEN_AS: u8 = 4;
+const WRITTEN_AS: u8 = 5;
 
 const KEPT_AS: &str = "analysis";
 
@@ -615,7 +615,7 @@ mod tests {
                 spectrum,
                 steps,
                 print: Chromaprint::new("AQAA", Duration::from_secs(12)).ok(),
-                band_peaks: BandPeaks::of((0..29).map(|band| f64::from(band + 1) / 40.0)),
+                band_peaks: BandPeaks::at_once((0..29).map(|band| f64::from(band + 1) / 40.0)),
             },
             envelope: Envelope {
                 lanes: 2,
