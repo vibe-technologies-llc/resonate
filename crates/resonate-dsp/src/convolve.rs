@@ -15,6 +15,7 @@ pub fn partition_frames_at(rate: SampleRate) -> usize {
     let scaled = (rate.hz() / FRAMES_A_PARTITION_IS_FOR).max(1) as usize;
     PARTITION_AT_48_KHZ * scaled.next_power_of_two()
 }
+const POINTS_A_BLOCK: usize = 128;
 const RESAMPLED_A_BLOCK_AT_A_TIME: usize = 4_096;
 const SPECTRUM_POINTS_A_TAP: usize = 4;
 const BYTES_A_TAP: u64 = size_of::<f64>() as u64;
@@ -132,6 +133,28 @@ impl Impulse {
         }
     }
 
+    pub fn heard_at(&self, hertz: &[f64], rate: SampleRate) -> Result<Vec<Vec<(f64, f64)>>> {
+        let taps = self.at(rate)?;
+        let turns: Vec<(f64, f64)> = hertz
+            .iter()
+            .map(|hertz| {
+                let angle = std::f64::consts::TAU * hertz / f64::from(rate.hz());
+                let (imaginary, real) = angle.sin_cos();
+                (real, imaginary)
+            })
+            .collect();
+        let mut heard = vec![Vec::with_capacity(taps.len()); hertz.len()];
+        for channel in taps.iter() {
+            for (block, turns) in turns.chunks(POINTS_A_BLOCK).enumerate() {
+                let sums = summed_turns(channel, turns);
+                for (at, sum) in sums.into_iter().enumerate() {
+                    heard[block * POINTS_A_BLOCK + at].push(sum);
+                }
+            }
+        }
+        Ok(heard)
+    }
+
     pub fn at(&self, rate: SampleRate) -> Result<Taps> {
         if rate == self.rate {
             return Ok(Arc::from(self.taps.clone()));
@@ -151,6 +174,38 @@ impl Impulse {
         self.at_rates.lock().push((rate, Arc::clone(&resampled)));
         Ok(resampled)
     }
+}
+
+fn summed_turns(taps: &[f64], steps: &[(f64, f64)]) -> Vec<(f64, f64)> {
+    let mut turned_real = vec![1.0; steps.len()];
+    let mut turned_imaginary = vec![0.0; steps.len()];
+    let mut real = vec![0.0; steps.len()];
+    let mut imaginary = vec![0.0; steps.len()];
+    let step_real: Vec<f64> = steps.iter().map(|step| step.0).collect();
+    let step_imaginary: Vec<f64> = steps.iter().map(|step| step.1).collect();
+
+    for tap in taps {
+        for (((real, imaginary), turned_real), turned_imaginary) in real
+            .iter_mut()
+            .zip(imaginary.iter_mut())
+            .zip(turned_real.iter_mut())
+            .zip(turned_imaginary.iter_mut())
+        {
+            *real += tap * *turned_real;
+            *imaginary += tap * *turned_imaginary;
+        }
+        for (((turned_real, turned_imaginary), step_real), step_imaginary) in turned_real
+            .iter_mut()
+            .zip(turned_imaginary.iter_mut())
+            .zip(&step_real)
+            .zip(&step_imaginary)
+        {
+            let next_real = *turned_real * step_real - *turned_imaginary * step_imaginary;
+            *turned_imaginary = *turned_real * step_imaginary + *turned_imaginary * step_real;
+            *turned_real = next_real;
+        }
+    }
+    real.into_iter().zip(imaginary).collect()
 }
 
 fn resampled(taps: &[f64], from: SampleRate, to: SampleRate) -> Result<Vec<f64>> {
@@ -510,6 +565,58 @@ mod tests {
                     "channel {channel} frame {at}: {heard} against {direct}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn the_response_heard_at_a_frequency_is_the_sum_of_its_taps_turned_by_the_frequency() {
+        let taps = vec![0.5, 0.25, -0.125, 0.0625];
+        let impulse = Impulse::new(RATE, vec![taps.clone(), vec![1.0]]).expect("an impulse");
+        let hertz = [0.0, 100.0, 5_000.0, 23_000.0];
+
+        let heard = impulse.heard_at(&hertz, RATE).expect("a response");
+
+        assert_eq!(heard.len(), hertz.len());
+        for (at, hertz) in hertz.iter().enumerate() {
+            let angle = std::f64::consts::TAU * hertz / f64::from(RATE.hz());
+            let direct =
+                taps.iter()
+                    .enumerate()
+                    .fold((0.0, 0.0), |(real, imaginary), (lag, tap)| {
+                        (
+                            real + tap * (angle * lag as f64).cos(),
+                            imaginary + tap * (angle * lag as f64).sin(),
+                        )
+                    });
+            assert!((heard[at][0].0 - direct.0).abs() < 1e-12, "{hertz} Hz");
+            assert!((heard[at][0].1 - direct.1).abs() < 1e-12, "{hertz} Hz");
+            assert_eq!(heard[at][1], (1.0, 0.0));
+        }
+    }
+
+    #[test]
+    fn a_response_longer_than_a_block_of_points_is_heard_at_every_one_of_them() {
+        let taps: Vec<f64> = (0..3_000)
+            .map(|at| (-(at as f64) / 500.0).exp() * (at as f64 * 0.01).sin())
+            .collect();
+        let impulse = Impulse::new(RATE, vec![taps.clone()]).expect("an impulse");
+        let hertz: Vec<f64> = (0..300).map(|at| 20.0 + at as f64 * 70.0).collect();
+
+        let heard = impulse.heard_at(&hertz, RATE).expect("a response");
+
+        for at in [0, 127, 128, 129, 255, 299] {
+            let angle = std::f64::consts::TAU * hertz[at] / f64::from(RATE.hz());
+            let direct =
+                taps.iter()
+                    .enumerate()
+                    .fold((0.0, 0.0), |(real, imaginary), (lag, tap)| {
+                        (
+                            real + tap * (angle * lag as f64).cos(),
+                            imaginary + tap * (angle * lag as f64).sin(),
+                        )
+                    });
+            assert!((heard[at][0].0 - direct.0).abs() < 1e-9, "point {at}");
+            assert!((heard[at][0].1 - direct.1).abs() < 1e-9, "point {at}");
         }
     }
 

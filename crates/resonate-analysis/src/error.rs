@@ -34,6 +34,12 @@ pub enum Error {
         source: Box<resonate_dsp::Error>,
     },
 
+    #[error("the room correction could not be brought to the rate the stream was measured at")]
+    Correcting {
+        #[source]
+        source: Box<resonate_dsp::Error>,
+    },
+
     #[error("the analysis was stopped before it reached the end of the stream")]
     Stopped,
 }
@@ -42,7 +48,10 @@ impl Error {
     pub fn is_out_of_reach(&self) -> bool {
         match self {
             Self::Codec { source, .. } => source.is_out_of_reach(),
-            Self::Conformity { .. } | Self::Equalising { .. } | Self::Stopped => false,
+            Self::Conformity { .. }
+            | Self::Equalising { .. }
+            | Self::Correcting { .. }
+            | Self::Stopped => false,
         }
     }
 

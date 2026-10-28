@@ -5,6 +5,7 @@ use std::{
     time::Duration,
 };
 
+use parking_lot::Mutex;
 use resonate_codec::Sources;
 use resonate_core::{AUDIO_EXTENSIONS, MediaLocation};
 use resonate_engine::{Command, Impulse, read_impulse};
@@ -55,11 +56,23 @@ impl RoomCorrection {
 
 pub(crate) struct Room {
     folder: PathBuf,
+    applied: Mutex<Option<Arc<Impulse>>>,
 }
 
 impl Room {
     pub(crate) const fn under(folder: PathBuf) -> Self {
-        Self { folder }
+        Self {
+            folder,
+            applied: Mutex::new(None),
+        }
+    }
+
+    pub(crate) fn applied(&self) -> Option<Arc<Impulse>> {
+        self.applied.lock().clone()
+    }
+
+    fn apply(&self, impulse: Option<Arc<Impulse>>) {
+        *self.applied.lock() = impulse;
     }
 
     fn kept(&self) -> Result<Option<PathBuf>> {
@@ -192,14 +205,39 @@ impl MobilePlayer {
             _ => None,
         };
         let described = impulse.as_deref().map(RoomCorrection::of);
-        self.command(Command::SetConvolution(impulse))?;
+        self.command(Command::SetConvolution(impulse.clone()))?;
+        self.room.apply(impulse);
         Ok(described)
     }
 
     pub fn forget_room_correction(&self) -> Result<()> {
         self.command(Command::SetConvolution(None))?;
+        self.room.apply(None);
         self.room.forget()
     }
+}
+
+#[cfg(test)]
+pub(crate) fn wave(samples: &[i16]) -> Vec<u8> {
+    let rate: u32 = 48_000;
+    let data = u32::try_from(samples.len() * 2).expect("a short wave");
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"RIFF");
+    bytes.extend_from_slice(&(36 + data).to_le_bytes());
+    bytes.extend_from_slice(b"WAVEfmt ");
+    bytes.extend_from_slice(&16u32.to_le_bytes());
+    bytes.extend_from_slice(&1u16.to_le_bytes());
+    bytes.extend_from_slice(&1u16.to_le_bytes());
+    bytes.extend_from_slice(&rate.to_le_bytes());
+    bytes.extend_from_slice(&(rate * 2).to_le_bytes());
+    bytes.extend_from_slice(&2u16.to_le_bytes());
+    bytes.extend_from_slice(&16u16.to_le_bytes());
+    bytes.extend_from_slice(b"data");
+    bytes.extend_from_slice(&data.to_le_bytes());
+    for sample in samples {
+        bytes.extend_from_slice(&sample.to_le_bytes());
+    }
+    bytes
 }
 
 #[cfg(test)]
@@ -212,28 +250,6 @@ mod tests {
         let _ = fs::remove_dir_all(&folder);
         fs::create_dir_all(&folder).expect("a folder");
         folder
-    }
-
-    fn wave(samples: &[i16]) -> Vec<u8> {
-        let rate: u32 = 48_000;
-        let data = u32::try_from(samples.len() * 2).expect("a short wave");
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(b"RIFF");
-        bytes.extend_from_slice(&(36 + data).to_le_bytes());
-        bytes.extend_from_slice(b"WAVEfmt ");
-        bytes.extend_from_slice(&16u32.to_le_bytes());
-        bytes.extend_from_slice(&1u16.to_le_bytes());
-        bytes.extend_from_slice(&1u16.to_le_bytes());
-        bytes.extend_from_slice(&rate.to_le_bytes());
-        bytes.extend_from_slice(&(rate * 2).to_le_bytes());
-        bytes.extend_from_slice(&2u16.to_le_bytes());
-        bytes.extend_from_slice(&16u16.to_le_bytes());
-        bytes.extend_from_slice(b"data");
-        bytes.extend_from_slice(&data.to_le_bytes());
-        for sample in samples {
-            bytes.extend_from_slice(&sample.to_le_bytes());
-        }
-        bytes
     }
 
     #[test]

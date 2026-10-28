@@ -15,8 +15,7 @@ use resonate_analysis::{
 };
 use resonate_codec::Sources;
 use resonate_core::{
-    Chromaprint, FrameSpan, MediaLocation, SampleRate, SharedHeard, SharedPrint, SharedRecognition,
-    TrackId, eq::Profile,
+    Chromaprint, FrameSpan, MediaLocation, SharedHeard, SharedPrint, SharedRecognition, TrackId,
 };
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 
@@ -341,12 +340,7 @@ pub(crate) fn write_band_figures(
     Ok(changed > 0)
 }
 
-pub(crate) fn loudest_kept(
-    connection: &Connection,
-    profile: &Arc<Profile>,
-    rate: SampleRate,
-) -> Result<Loudest> {
-    let gains = BandGains::of(profile, rate);
+pub(crate) fn loudest_kept(connection: &Connection, gains: &BandGains) -> Result<Loudest> {
     let mut statement = connection
         .prepare_cached("SELECT band_peaks FROM track_studies WHERE length(band_peaks) = ?1")
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
@@ -362,7 +356,7 @@ pub(crate) fn loudest_kept(
         let Some(peaks) = BandPeaks::from_bytes(&kept) else {
             continue;
         };
-        loudest.weigh(&gains, &peaks);
+        loudest.weigh(gains, &peaks);
     }
     Ok(loudest)
 }

@@ -887,9 +887,17 @@ impl Profile {
     }
 
     pub fn impulse_responses(&self, frames: usize, rate: SampleRate) -> Vec<Vec<f64>> {
+        let mut impulse = vec![0.0; frames];
+        if let Some(first) = impulse.first_mut() {
+            *first = 1.0;
+        }
+        self.filtered(&impulse, rate)
+    }
+
+    pub fn filtered(&self, input: &[f64], rate: SampleRate) -> Vec<Vec<f64>> {
         self.heard_apart(rate)
             .iter()
-            .map(|sections| impulse_response(sections, frames))
+            .map(|sections| filtered_through(sections, input))
             .collect()
     }
 
@@ -944,11 +952,12 @@ fn responses_at(heard: &[Vec<Biquad>], hertz: f64, rate: SampleRate) -> Vec<(f64
         .collect()
 }
 
-fn impulse_response(sections: &[Biquad], frames: usize) -> Vec<f64> {
+fn filtered_through(sections: &[Biquad], input: &[f64]) -> Vec<f64> {
     let mut held = vec![(0.0, 0.0); sections.len()];
-    (0..frames)
-        .map(|frame| {
-            let mut sample = if frame == 0 { 1.0 } else { 0.0 };
+    input
+        .iter()
+        .map(|input| {
+            let mut sample = *input;
             for (section, (first, second)) in sections.iter().zip(held.iter_mut()) {
                 let output = section.b0 * sample + *first;
                 *first = section.b1 * sample - section.a1 * output + *second;
@@ -1569,6 +1578,31 @@ mod tests {
             Profile::flat().impulse_responses(3, rate),
             vec![vec![1.0, 0.0, 0.0]]
         );
+    }
+
+    #[test]
+    fn a_curve_filters_any_input_as_its_impulse_response_convolves_with_it() {
+        let rate = SampleRate::HZ_48000;
+        let peaking = Profile::new(Preamp::NONE, vec![band(BandKind::Peaking, 300.0, 6.0, 2.0)])
+            .expect("one band");
+        let input = [
+            0.5, -0.25, 0.0, 1.0, 0.125, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        ];
+
+        let filtered = peaking.filtered(&input, rate);
+        let impulse = peaking.impulse_responses(input.len(), rate);
+
+        assert_eq!(filtered.len(), impulse.len());
+        for (at, heard) in filtered[0].iter().enumerate() {
+            let convolved: f64 = input
+                .iter()
+                .enumerate()
+                .filter(|(lag, _)| *lag <= at)
+                .map(|(lag, sample)| sample * impulse[0][at - lag])
+                .sum();
+            assert!((heard - convolved).abs() < 1e-12, "frame {at}");
+        }
+        assert_eq!(Profile::flat().filtered(&input, rate), vec![input.to_vec()]);
     }
 
     #[test]

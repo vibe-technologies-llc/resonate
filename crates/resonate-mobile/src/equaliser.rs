@@ -1,6 +1,6 @@
 use std::{f64::consts::SQRT_2, sync::Arc};
 
-use resonate_analysis::{BandGains, Watch};
+use resonate_analysis::{Applied, BandGains, Watch};
 use resonate_core::{
     SampleRate,
     eq::{
@@ -418,19 +418,24 @@ pub fn response_curve(
         .collect())
 }
 
-#[uniffi::export]
-pub fn fitted_preamp(curve: EqualiserCurve, rate_hz: Option<u32>) -> Result<f32> {
-    let profile = curve.profile()?;
-    let rate = rate_hz.map_or(Ok(FITTED_AT), SampleRate::new)?;
-    let fitted = profile.fitted_preamp(rate).decibels() as f32;
-
-    Ok(fitted.max(-PREAMP_AT_MOST_DB))
+impl MobilePlayer {
+    fn applied(&self, curve: EqualiserCurve) -> Result<Applied> {
+        Ok(Applied::from(Arc::new(curve.profile()?)).corrected_by(self.room.applied()))
+    }
 }
 
 #[uniffi::export]
 impl MobilePlayer {
+    pub fn fitted_preamp(&self, curve: EqualiserCurve, rate_hz: Option<u32>) -> Result<f32> {
+        let applied = self.applied(curve)?;
+        let rate = rate_hz.map_or(Ok(FITTED_AT), SampleRate::new)?;
+        let fitted = applied.fitted_preamp(rate)?.decibels() as f32;
+
+        Ok(fitted.max(-PREAMP_AT_MOST_DB))
+    }
+
     pub fn fitted_preamp_to_the_queue(&self, curve: EqualiserCurve) -> Result<Option<f32>> {
-        let profile = Arc::new(curve.profile()?);
+        let applied = self.applied(curve)?;
         let (rows, playing, rate) = {
             let held = self.player.lock();
             let player = held.as_ref().ok_or(Error::Closed)?;
@@ -450,10 +455,10 @@ impl MobilePlayer {
         }
 
         let cuts = resonate_engine::cuts_to_fit(&rows, playing);
-        let kept = self.catalog.loudest_kept(&BandGains::of(&profile, rate))?;
+        let kept = self.catalog.loudest_kept(&BandGains::of(&applied, rate)?)?;
         let owed = self.catalog.unmeasured(&cuts)?;
         let decoded =
-            resonate_analysis::loudest_through(&self.sources, &owed, &profile, watch.as_ref())?;
+            resonate_analysis::loudest_through(&self.sources, &owed, &applied, watch.as_ref())?;
 
         Ok(kept
             .joined(decoded)
@@ -555,6 +560,10 @@ mod tests {
 
     #[test]
     fn the_fitted_preamp_holds_the_loudest_band_under_full_scale_as_the_desktop_does() {
+        use crate::harness::Harness;
+
+        let harness = Harness::new();
+        let fitted_preamp = |curve, rate| harness.player.fitted_preamp(curve, rate);
         let boosted = EqualiserCurve {
             name: String::new(),
             preamp_db: 3.0,
@@ -590,6 +599,105 @@ mod tests {
             fitted_preamp(boosted, Some(7)),
             Err(Error::Domain(_))
         ));
+    }
+
+    fn lowpassing_the_treble() -> Vec<u8> {
+        let half = i16::MAX / 2 + 1;
+        crate::room::wave(&[half, half])
+    }
+
+    fn averaging_two_dozen_taps() -> Vec<u8> {
+        let tap = (f64::from(i16::MAX) / 24.0) as i16;
+        crate::room::wave(&[tap; 24])
+    }
+
+    #[test]
+    fn the_fit_a_phone_offers_includes_the_room_correction_it_applies() {
+        use crate::harness::Harness;
+
+        let harness = Harness::new();
+        let treble = curve(vec![peaking(10_000.0, 6.0, 1.0)]);
+
+        let alone = harness
+            .player
+            .fitted_preamp(treble.clone(), None)
+            .expect("a fit");
+        harness
+            .player
+            .keep_room_correction(lowpassing_the_treble(), "wav".to_owned())
+            .expect("a kept response");
+        let kept_and_off = harness
+            .player
+            .fitted_preamp(treble.clone(), None)
+            .expect("a fit");
+        harness
+            .player
+            .apply_room_correction(true)
+            .expect("an applied response");
+        let corrected = harness
+            .player
+            .fitted_preamp(treble.clone(), None)
+            .expect("a fit");
+        harness
+            .player
+            .apply_room_correction(false)
+            .expect("a response taken off");
+        let taken_off = harness.player.fitted_preamp(treble, None).expect("a fit");
+
+        assert!((alone + 6.0).abs() < 0.05, "{alone}");
+        assert_eq!(kept_and_off, alone);
+        assert!(
+            corrected > alone + 1.5,
+            "{corrected} dB against {alone} dB alone"
+        );
+        assert_eq!(taken_off, alone);
+    }
+
+    #[test]
+    fn the_measured_fit_a_phone_offers_includes_the_room_correction_it_applies() {
+        use crate::harness::Harness;
+
+        let harness = Harness::new();
+        let boosted = curve(vec![peaking(1000.0, 6.0, 1.0)]);
+        kept_sounding_at_one_kilohertz(&harness, 'a', 0.9);
+        harness
+            .player
+            .load(harness.ids("a"), 0, false)
+            .expect("a queue");
+
+        let alone = harness
+            .player
+            .fitted_preamp_to_the_queue(boosted.clone())
+            .expect("a fit")
+            .expect("a measure");
+        harness
+            .player
+            .keep_room_correction(averaging_two_dozen_taps(), "wav".to_owned())
+            .expect("a kept response");
+        harness
+            .player
+            .apply_room_correction(true)
+            .expect("an applied response");
+        let corrected = harness
+            .player
+            .fitted_preamp_to_the_queue(boosted.clone())
+            .expect("a fit")
+            .expect("a measure");
+        harness
+            .player
+            .forget_room_correction()
+            .expect("a response forgotten");
+        let forgotten = harness
+            .player
+            .fitted_preamp_to_the_queue(boosted)
+            .expect("a fit")
+            .expect("a measure");
+
+        assert!(
+            corrected > alone + 2.0,
+            "{corrected} dB against {alone} dB alone"
+        );
+        assert_eq!(forgotten, alone);
     }
 
     #[test]

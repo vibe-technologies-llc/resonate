@@ -3,6 +3,7 @@ paths:
   - "crates/resonate-eq/**/*.rs"
   - "crates/resonate-eq/targets/*.csv"
   - "crates/resonate-analysis/src/headroom.rs"
+  - "crates/resonate-analysis/src/applied.rs"
   - "crates/resonate-core/src/eq.rs"
   - "crates/resonate-dsp/src/eq.rs"
   - "crates/resonate-dsp/src/convolve.rs"
@@ -122,13 +123,39 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
 
 ## Fit the preamp to the music
 
+- **The fit covers everything a sample meets after the preamp: the room correction, then the
+  bands.** `resonate_analysis::Applied` is the one input of every fit: a `Profile` and the
+  `Impulse` of the room correction in force (`Applied::from(profile)` alone, `corrected_by(Some(impulse))`
+  with one), so the model, the decode and the bound read one chain and cannot disagree on it. Its
+  responses compose the correction into the profile's: `Applied::heard_at` multiplies the
+  correction's complex response (`Impulse::heard_at`, the taps summed turned by each frequency, the
+  same turn as `Profile::heard_at`, at the stream rate through `Impulse::at`) into every channel
+  response of the profile, one product for each profile channel group and each channel of the
+  correction, since the fit does not know which stream channel a speaker slot meets (the loudest
+  pair counts); `Applied::impulse_responses` filters each correction channel's first taps through
+  the profile's biquads (`Profile::filtered`, of which `impulse_responses` is the unit-impulse case),
+  which is the composed response, exact for the frames it holds; `Applied::peak_db` and
+  `fitted_preamp` are the model's sine over that product. **The volume stage is left out, by
+  reason**: `Volume` is 0 to 1 and its gain its cube (`Volume::to_gain`), so the slider can only
+  attenuate, and it sits after the equaliser, where a boost is meant to be attenuated by it
+  (*Where it runs*); a ReplayGain boost is per track, from tags the fit does not read, and is capped
+  by the source's declared peak with the true-peak guard behind it (`audio.md`). A preamp that holds
+  the stage under full scale holds the gain stage under it at every position of the slider.
 - **The model fits a sine; the music is measured.** `Profile::fitted_preamp` assumes full scale at
   the curve's loudest point, so a bass boost over a song with a quiet low end costs headroom it
-  never uses. `resonate_analysis::peak_through(sources, location, span, profile, watch)` decodes the
-  cut as a study does (`Walking`, the shape it opened in), runs the real `Equaliser` stage over it
+  never uses. `resonate_analysis::peak_through(sources, location, span, applied, watch)` decodes the
+  cut as a study does (`Walking`, the shape it opened in), runs the real `Convolver` (where there is
+  a correction, prepared at the file's rate) and then the real `Equaliser` stage over it
   at the file's rate, on the profile `at_rate` that rate and with its preamp taken off, and returns
-  the stage output's true peak (`TruePeakMeter::at`, the guard's own interpolator). The preamp is a
-  scalar before the bands, so one decode answers: `Preamp::holding_under_full_scale` of that peak.
+  the output's true peak (`TruePeakMeter::at`, the guard's own interpolator); the convolver's tail is
+  flushed through the stage once the song ends, so a response that holds the music back past its end
+  is measured too
+  (`a_response_holding_the_music_back_past_its_end_is_measured_in_the_tail_it_flushes`). The preamp is a
+  scalar before the correction and the bands, so one decode answers: `Preamp::holding_under_full_scale` of that peak.
+  A correction that boosts where the music sits fits deeper than the profile alone and one that cuts
+  there fits shallower
+  (`a_room_correction_that_boosts_where_the_music_sits_makes_the_fit_deeper_than_the_profile_alone`,
+  `a_room_correction_that_cuts_where_the_music_sits_needs_less_preamp_than_the_profile_alone`).
   Music at full scale on the boost fits as the model does
   (`music_peaking_at_full_scale_on_the_boost_is_fitted_as_the_curve_alone_is`); a boost where the
   music has no energy fits less (`a_boost_where_the_music_has_no_energy_needs_less_preamp_than_the_curve_alone_says`);
@@ -139,14 +166,16 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   steps below the loudest band; 255 is a band the music never sounded in, all 255 a silent song)
   and `track_studies.band_peaks` (`BandPeaks`: up to `MOMENTS_KEPT` (8) moments, each the peaks of
   the 57 nodes of the band tree over a stretch of the song, `analysis.md`), both measured in the
-  study's one decode. The fit reads only the peaks. **The bound** (`BandGains::of(profile, rate)`,
-  then `BandGains::bound(peaks)`): the output is `c * x + sum over S of (G - c) * x_S` for any level
+  study's one decode. The fit reads only the peaks. **The bound** (`BandGains::of(&applied, rate)?`,
+  then `BandGains::bound(peaks)`; fallible because the correction is redrawn at the fit rate, which
+  can refuse a response too large to hold, `Error::Correcting`): the output is `c * x + sum over S of (G - c) * x_S` for any level
   `c` and any partition of the bands into tree nodes `S`, since the bank's bands sum to the signal
   exactly; each term is bounded by the node's peak times its *reach*, and the tree is searched
   bottom up for the cheapest partition (`cheapest`), so broadband music pays one peak for a span
   the curve moves alike instead of the peaks of every band in it as if they fell together. A node's
   reach at level `c` is `max over f of share_S(f) * |G_soon(f) - c|`, `G` the complex response
-  (`Profile::heard_at`, phase counts; per-channel bands count on the channel they reach furthest)
+  (`Applied::heard_at`, phase counts; per-channel bands count on the channel they reach furthest,
+  the correction's response multiplied in)
   on 2 048 points from 1 Hz to Nyquist plus every band's centre. `share_S(f)` is the bank's own
   leakage, not a flat widening: with `B_S(f)` the node's real response (`split::passed_below`, the
   band-edge filters at the fit rate) and `phi(B) = min(1, B / 0.25) * B`, `share_S = min(1, B_S /
@@ -157,7 +186,8 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   the curve's quietest gain (at least 0.25) to its loudest; each moment takes its least level and
   the bound is the loudest moment's. **Time**: a moment holds every node's peak over its stretch
   widened by a tenth of a second each way, so the first tenth of a second of the impulse response
-  (`Profile::impulse_responses`, its last quarter tapered by a raised cosine) is `G_soon`, and the
+  (`Applied::impulse_responses`, the correction's taps run through the profile's biquads, its last
+  quarter tapered by a raised cosine) is `G_soon`, and the
   rest (`G - G_soon`) is bounded apart (`ringing`, at level 0) by the loudest of each node over all
   the moments, so a narrow band low down that rings past a moment is paid for by whatever the song
   holds near it. **What is rigorous and what is not**: the sum over a partition is exact, the
@@ -170,9 +200,15 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   fit rate though the study ran at the file's. The slack the sum over nodes leaves has covered
   every such case measured: the bound holds over the decode across seven songs and thirteen curves
   (`the_bound_holds_over_what_the_decode_measures_whatever_the_curve_and_where_the_music_sounds`),
+  and under six corrections (a boosting pair of taps, a lowpassing one, an echo, a dispersive burst,
+  a response held back 0.3 s, a linear-phase low pass) beside four curves and five songs
+  (`the_bound_still_holds_over_what_the_decode_measures_with_a_correction_in_the_chain`),
   and fits as the boost takes it where a song's peaks gather in a boosted band
   (`a_song_whose_peaks_gather_in_a_boosted_band_passes_the_estimate_and_not_the_bound`). **What
-  stays loose**: a song with every band busy under a curve that moves many of them still bounds a
+  stays loose**: a correction whose energy comes after a tenth of a second (a linear-phase design
+  delays its main lobe by half its length) leaves `G_soon` empty and is paid for whole from the
+  song's peaks at level 0, the cost of not shifting a moment by the response's delay
+  (`a_correction_whose_energy_comes_late_is_paid_for_from_the_whole_song`); a song with every band busy under a curve that moves many of them still bounds a
   few decibels over its decode (a node's terms are summed apart and the shares are fixed by the
   curve, not fitted to the song), and a band whose skirt reaches a narrow boost pays a little of it
   (`broadband_music_under_a_curve_moving_every_octave_is_bounded_within_a_few_decibels_of_its_decode`,
@@ -191,10 +227,12 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   with `Loudest::joined`. `Loudest::fitted_preamp` is `None` where nothing was measured or all of
   it was silent. `Loudest::weigh` is the one fold of a kept measure into the run (the library's and
   the phones' catalog alike). `Player::cuts_to_fit` and `Player::loudest_among` serve the window;
-  none of it runs on the audio thread. Room correction and the volume stage are not in the run (the
-  convolver is not part of `Equaliser`); `Impulse::with_headroom` holds the response's loudest gain
-  to unity, so its magnitude never passes 0 dB, but the run does not model its shape. The decode
-  (`peak_through`) is exact for the stage it runs; the kept figures bound it.
+  none of it runs on the audio thread. The run is the whole chain after the preamp (above):
+  `Impulse::with_headroom` holds a read response's loudest gain to unity, but its impulse response
+  can still lengthen a peak (a dispersive one sums its taps' magnitudes), which is why the fit runs
+  and bounds it rather than assuming it harmless. The decode (`peak_through`) is exact for the
+  chain it runs; the kept figures bound it. `Library::loudest_kept(&BandGains)` takes the gains the
+  caller made, so the library never sees a correction.
 - **A study kept before the bands were measured is measured alone, never studied again.**
   `to_study` lists a current study whose `band_levels` or `band_peaks` is missing or of another
   length as `unmeasured` (the thirteenth step, `PEAKS_KEPT_AS_ONE_MOMENT_ARE_MEASURED_AGAIN`, clears
@@ -205,15 +243,19 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   `a_study_kept_without_its_peaks_is_measured_alone_and_is_not_fitted_from_until_it_is`).
   A study under an older `JUDGED_UNDER` is studied whole as ever. Until a song is measured the
   fit decodes it if it is queued and passes it over otherwise.
-- **The press keeps the model as the first answer.** The desktop's *Fit* sets the model fit at
-  once, then `RootView::fit_the_preamp_to_the_queue` measures on the background executor under a
+- **The press keeps the model as the first answer.** The desktop's *Fit* sets the model fit of the profile at
+  once, then `RootView::fit_the_preamp_to_the_queue` reads the room response again from the file the
+  settings name (`read_impulse`; one that will not read is logged and left out), builds the
+  `Applied`, and measures on the background executor under a
   `Fitting` (a `Watch` stopped when it is dropped, so a second press or the window going replaces
   it; an empty queue still reads the catalog) and `EqualiserModel::fit_the_preamp_to_the_music`
   lands the measured preamp only if the shown bands are the ones measured, toasting *The preamp is
-  fitted to the N songs measured*. The phones read the same bands from their own catalog:
+  fitted to the N songs measured*; where nothing was measured and a correction is applied it lands
+  the model fit through the correction (`Applied::fitted_preamp`) instead, toasting *The preamp is
+  fitted to the room correction*. The phones read the same bands from their own catalog:
   `MobilePlayer::fitted_preamp_to_the_queue(curve)` folds `Catalog::loudest_kept` (every visible
-  document whose `studies.band_peaks` is `BAND_PEAKS_BYTES` (472) long, through `BandGains::of` at the stream rate,
-  48 kHz with none open) with a decode of `Catalog::unmeasured(cuts_to_fit)` alone, the queue's
+  document whose `studies.band_peaks` is `BAND_PEAKS_BYTES` (472) long, through `BandGains::of` the
+  curve and the room correction applied at the stream rate, 48 kHz with none open) with a decode of `Catalog::unmeasured(cuts_to_fit)` alone, the queue's
   songs with no kept peaks (a cut, which no study covers, a document not indexed, one studied
   before `band_peaks` existed or changed since: `documents_forget_where_the_peaks_gathered`), and
   answers the preamp in dB (`None` for nothing measured or all of it silent, held to the phone's
@@ -261,6 +303,8 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   The binary reads the file at start, `explain` names it; the pane's *Room correction* group reads
   one on a background thread. `RootView::reading_the_room` is one task: a second pick replaces it,
   *Stop correcting* drops it, so the last gesture wins. One response for all devices, no binding.
+- **The fit of the preamp covers it** (*Fit the preamp to the music*): the decode runs the
+  `Convolver` before the stage and the bound multiplies its response in.
 - **The phones keep one response file** (`resonate-mobile/src/room.rs`): `keep_room_correction(bytes,
   extension)` refuses an extension outside `AUDIO_EXTENSIONS` (`ImpulseExtension`) or more than
   `IMPULSE_BYTES_AT_MOST` (64 MiB, `ImpulseTooLarge`), stages the bytes as
@@ -570,12 +614,21 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   `Profile::response` with the preamp, at the stream rate (48 kHz where none is given) over core's
   `sweep` (log-spaced 20 Hz to 20 kHz, points held to 2..=2048), so point *i* sits at
   `20 · 1000^(i/(n-1))` Hz (`the_drawn_response_of_one_band_is_the_biquad_the_stage_runs`).
-- ***Fit the preamp* is the desktop's fit, then the queue's**: `fitted_preamp(curve, rate)` is
-  `Profile::fitted_preamp` (so `peak_db`, the bands' loudest point before the preamp, centres
-  weighed beside the sweep) at the stream rate (48 kHz where none is given), held to the phone's
-  `PREAMP_AT_MOST_DB`; a curve that only cuts fits 0 dB. Both phones offer it beside the preamp
-  slider and keep no peak arithmetic of their own; `fitted_preamp_to_the_queue` follows it (above)
-  (`the_fitted_preamp_holds_the_loudest_band_under_full_scale_as_the_desktop_does`).
+- **The phones hold the room correction they apply, so the fit can read it**: `Room::applied` is
+  the `Impulse` last sent as `SetConvolution` by `apply_room_correction(true)` and cleared by
+  `apply_room_correction(false)` and `forget_room_correction` (a response kept and not applied is
+  not in the chain), and `MobilePlayer::applied(curve)` is `Applied::from(curve.profile())`
+  `corrected_by` it, the one input of both phone fits.
+- ***Fit the preamp* is the desktop's fit, then the queue's**: `MobilePlayer::fitted_preamp(curve,
+  rate)` is `Applied::fitted_preamp` (`Profile::fitted_preamp` where no correction is applied, so
+  `peak_db`, the bands' loudest point before the preamp, centres weighed beside the sweep; with one,
+  the same sweep and centres over the product of the responses) at the stream rate (48 kHz where
+  none is given), held to the phone's `PREAMP_AT_MOST_DB`; a curve that only cuts fits 0 dB. Both
+  phones offer it beside the preamp slider and keep no peak arithmetic of their own;
+  `fitted_preamp_to_the_queue` follows it (above)
+  (`the_fitted_preamp_holds_the_loudest_band_under_full_scale_as_the_desktop_does`,
+  `the_fit_a_phone_offers_includes_the_room_correction_it_applies`,
+  `the_measured_fit_a_phone_offers_includes_the_room_correction_it_applies`).
 - **An import becomes editable bands, and says what it gave up**: `parse_eq_profile` (pasted or
   file text) and `auto_eq_profile` answer `EqualiserImport`: every `on` filter is a
   band (an `OFF` filter is dropped, it never sounded), keeping the speaker slots it names as

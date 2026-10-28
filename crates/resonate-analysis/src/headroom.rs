@@ -12,10 +12,10 @@ use resonate_core::{
     FrameSpan, MediaLocation, SampleFormat, SampleRate, StreamSpec,
     eq::{Preamp, Profile},
 };
-use resonate_dsp::{Equaliser, Processor, TruePeakMeter};
+use resonate_dsp::{Convolver, Equaliser, Processor, TruePeakMeter};
 
 use crate::{
-    BandGains, BandPeaks, Error, Result, Watching,
+    Applied, BandGains, BandPeaks, Error, Result, Watching,
     analysis::{native_format, opened},
     conform::Walking,
 };
@@ -60,11 +60,99 @@ impl Loudest {
     }
 }
 
+struct Shaping {
+    convolver: Option<Convolver>,
+    stage: Equaliser,
+    widened: Vec<f64>,
+    corrected: Vec<f64>,
+    shaped: Vec<f64>,
+    narrowed: Vec<f32>,
+}
+
+impl Shaping {
+    fn prepared(applied: &Applied, spec: StreamSpec) -> Result<Self> {
+        let rate = spec.rate;
+        let mut stage = Equaliser::new(without_the_preamp(applied.profile(), rate), rate);
+        stage
+            .prepare(spec, FRAMES_AT_A_TIME)
+            .map_err(|source| Error::Equalising {
+                source: Box::new(source),
+            })?;
+        let convolver = applied
+            .correction()
+            .map(|impulse| {
+                let mut convolver = Convolver::new(Arc::clone(impulse));
+                convolver
+                    .prepare(spec, FRAMES_AT_A_TIME)
+                    .map(|_| convolver)
+                    .map_err(|source| Error::Correcting {
+                        source: Box::new(source),
+                    })
+            })
+            .transpose()?;
+        Ok(Self {
+            convolver,
+            stage,
+            widened: Vec::new(),
+            corrected: Vec::new(),
+            shaped: Vec::new(),
+            narrowed: Vec::new(),
+        })
+    }
+
+    fn shape(&mut self, heard: &[f32], meter: &mut TruePeakMeter) {
+        self.widened.clear();
+        self.widened
+            .extend(heard.iter().map(|sample| f64::from(*sample)));
+        let Some(convolver) = self.convolver.as_mut() else {
+            let widened = std::mem::take(&mut self.widened);
+            self.equalise(&widened, meter);
+            self.widened = widened;
+            return;
+        };
+        self.corrected.clear();
+        self.corrected.resize(self.widened.len(), 0.0);
+        convolver.process(&self.widened, &mut self.corrected);
+        let corrected = std::mem::take(&mut self.corrected);
+        self.equalise(&corrected, meter);
+        self.corrected = corrected;
+    }
+
+    fn drain(&mut self, channels: usize, meter: &mut TruePeakMeter) {
+        loop {
+            let Some(convolver) = self.convolver.as_mut() else {
+                return;
+            };
+            self.corrected.clear();
+            self.corrected.resize(FRAMES_AT_A_TIME * channels, 0.0);
+            let flushed = convolver.flush(&mut self.corrected);
+            if flushed == 0 {
+                return;
+            }
+            self.corrected.truncate(flushed * channels);
+            let corrected = std::mem::take(&mut self.corrected);
+            self.equalise(&corrected, meter);
+            self.corrected = corrected;
+        }
+    }
+
+    fn equalise(&mut self, input: &[f64], meter: &mut TruePeakMeter) {
+        self.shaped.clear();
+        self.shaped.resize(input.len(), 0.0);
+        self.stage.process(input, &mut self.shaped);
+
+        self.narrowed.clear();
+        self.narrowed
+            .extend(self.shaped.iter().map(|sample| *sample as f32));
+        meter.note(&self.narrowed);
+    }
+}
+
 pub fn peak_through(
     sources: &Sources,
     location: &MediaLocation,
     span: Option<FrameSpan>,
-    profile: &Arc<Profile>,
+    applied: &Applied,
     watch: &dyn Watching,
 ) -> Result<f64> {
     let (mut decoder, info) = opened(sources, location, span)?;
@@ -77,24 +165,13 @@ pub fn peak_through(
     let layout = info.spec.channels;
     let channels = usize::from(layout.count().get());
 
-    let mut stage = Equaliser::new(without_the_preamp(profile, rate), rate);
-    stage
-        .prepare(
-            StreamSpec::new(rate, layout, SampleFormat::F32),
-            FRAMES_AT_A_TIME,
-        )
-        .map_err(|source| Error::Equalising {
-            source: Box::new(source),
-        })?;
+    let mut shaping = Shaping::prepared(applied, StreamSpec::new(rate, layout, SampleFormat::F32))?;
     let mut meter = TruePeakMeter::at(
         rate,
         NonZeroUsize::new(channels).unwrap_or(NonZeroUsize::MIN),
     );
 
     let mut walking = Walking::new(StreamSpec::new(rate, layout, format));
-    let mut widened = Vec::new();
-    let mut shaped = Vec::new();
-    let mut narrowed = Vec::new();
     loop {
         if watch.stopped() {
             return Err(Error::Stopped);
@@ -102,17 +179,9 @@ pub fn peak_through(
         let Some(heard) = walking.step(&mut decoder)? else {
             break;
         };
-
-        widened.clear();
-        widened.extend(heard.samples.iter().map(|sample| f64::from(*sample)));
-        shaped.clear();
-        shaped.resize(widened.len(), 0.0);
-        stage.process(&widened, &mut shaped);
-
-        narrowed.clear();
-        narrowed.extend(shaped.iter().map(|sample| *sample as f32));
-        meter.note(&narrowed);
+        shaping.shape(heard.samples, &mut meter);
     }
+    shaping.drain(channels, &mut meter);
 
     Ok(meter.finish())
 }
@@ -120,7 +189,7 @@ pub fn peak_through(
 pub fn loudest_through(
     sources: &Sources,
     cuts: &[Cut],
-    profile: &Arc<Profile>,
+    applied: &Applied,
     watch: &dyn Watching,
 ) -> Result<Loudest> {
     let next = AtomicUsize::new(0);
@@ -130,7 +199,7 @@ pub fn loudest_through(
 
     let measured: Vec<Result<Loudest>> = thread::scope(|scope| {
         let handles: Vec<_> = (0..workers)
-            .map(|_| scope.spawn(|| measure_the_cuts(sources, cuts, profile, watch, &next)))
+            .map(|_| scope.spawn(|| measure_the_cuts(sources, cuts, applied, watch, &next)))
             .collect();
         handles
             .into_iter()
@@ -146,13 +215,13 @@ pub fn loudest_through(
 fn measure_the_cuts(
     sources: &Sources,
     cuts: &[Cut],
-    profile: &Arc<Profile>,
+    applied: &Applied,
     watch: &dyn Watching,
     next: &AtomicUsize,
 ) -> Result<Loudest> {
     let mut loudest = Loudest::default();
     while let Some(cut) = cuts.get(next.fetch_add(1, Ordering::Relaxed)) {
-        match peak_through(sources, &cut.location, cut.span, profile, watch) {
+        match peak_through(sources, &cut.location, cut.span, applied, watch) {
             Ok(peak) => {
                 loudest.peak = loudest.peak.max(peak);
                 loudest.measured += 1;

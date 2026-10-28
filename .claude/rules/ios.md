@@ -1312,7 +1312,7 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   cannot linger.
 - **The selected band's inspector** is a section below: type (all eight kinds), frequency, gain
   (gain kinds only) and Q, each typed (committed on return) or stepped (a semitone, 0.5 dB, a sixth
-  of an octave of Q), and Delete. *Fit the preamp* asks `fitted_preamp` on `Work.aside` at the
+  of an octave of Q), and Delete. *Fit the preamp* asks the player's `fitted_preamp` (through the room correction applied) on `Work.aside` at the
   stream's rate and commits it as a preamp move is; it is off with no bands. *Add a band* adds a
   peaking band at 1 kHz; *Reset* in *Adjust sound*
   confirms either removing every band or starting from ten flat octave bands. VoiceOver reads each

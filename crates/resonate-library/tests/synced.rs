@@ -1262,8 +1262,11 @@ fn a_study_and_kept_words_land_on_a_catalog_holding_the_same_file_and_read_back_
     assert_eq!(
         there
             .loudest_kept(
-                &Arc::new(resonate_core::eq::Profile::flat()),
-                resonate_core::SampleRate::HZ_44100
+                &resonate_analysis::BandGains::of(
+                    &resonate_analysis::Applied::from(Arc::new(resonate_core::eq::Profile::flat())),
+                    resonate_core::SampleRate::HZ_44100
+                )
+                .expect("gains under a flat curve")
             )?
             .measured,
         1

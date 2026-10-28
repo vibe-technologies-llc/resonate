@@ -18614,8 +18614,12 @@ fn a_tag_run_keeps_the_study_of_every_file_it_wrote() -> Result<()> {
     Ok(())
 }
 
-fn flat_curve() -> Arc<resonate_core::eq::Profile> {
-    Arc::new(resonate_core::eq::Profile::flat())
+fn flat_gains() -> resonate_analysis::BandGains {
+    resonate_analysis::BandGains::of(
+        &resonate_analysis::Applied::from(Arc::new(resonate_core::eq::Profile::flat())),
+        resonate_core::SampleRate::HZ_44100,
+    )
+    .expect("gains under a flat curve")
 }
 
 fn whole_cut(location: &MediaLocation) -> resonate_analysis::Cut {
@@ -18635,7 +18639,7 @@ fn a_study_the_enrichment_keeps_holds_the_bands_its_music_sounds_in() -> Result<
     enrich(&library, &Arc::new(Fake::new(Canned::default())), false)?;
     let location = MediaLocation::local(&file);
 
-    let loudest = library.loudest_kept(&flat_curve(), resonate_core::SampleRate::HZ_44100)?;
+    let loudest = library.loudest_kept(&flat_gains())?;
 
     assert_eq!(loudest.measured, 1);
     assert!(loudest.peak > 0.5, "{}", loudest.peak);
@@ -18667,12 +18671,7 @@ fn a_study_kept_without_its_bands_is_measured_alone_and_keeps_everything_else_it
         library.unmeasured(&[whole_cut(&location)])?,
         vec![whole_cut(&location)]
     );
-    assert_eq!(
-        library
-            .loudest_kept(&flat_curve(), resonate_core::SampleRate::HZ_44100)?
-            .measured,
-        0
-    );
+    assert_eq!(library.loudest_kept(&flat_gains())?.measured, 0);
 
     enrich(&library, &Arc::new(Fake::new(Canned::default())), false)?;
 
@@ -18695,9 +18694,7 @@ fn a_study_kept_without_its_peaks_is_measured_alone_and_is_not_fitted_from_until
     scan(&library, &options(&tree))?;
     enrich(&library, &Arc::new(Fake::new(Canned::default())), false)?;
     let location = MediaLocation::local(&file);
-    let kept = library
-        .loudest_kept(&flat_curve(), resonate_core::SampleRate::HZ_44100)?
-        .peak;
+    let kept = library.loudest_kept(&flat_gains())?.peak;
     beside(&database)
         .execute("UPDATE track_studies SET band_peaks = NULL", [])
         .expect("the study reads as one kept before its peaks were measured");
@@ -18706,17 +18703,12 @@ fn a_study_kept_without_its_peaks_is_measured_alone_and_is_not_fitted_from_until
         library.unmeasured(&[whole_cut(&location)])?,
         vec![whole_cut(&location)]
     );
-    assert_eq!(
-        library
-            .loudest_kept(&flat_curve(), resonate_core::SampleRate::HZ_44100)?
-            .measured,
-        0
-    );
+    assert_eq!(library.loudest_kept(&flat_gains())?.measured, 0);
 
     enrich(&library, &Arc::new(Fake::new(Canned::default())), false)?;
 
     assert_eq!(library.unmeasured(&[whole_cut(&location)])?, vec![]);
-    let measured = library.loudest_kept(&flat_curve(), resonate_core::SampleRate::HZ_44100)?;
+    let measured = library.loudest_kept(&flat_gains())?;
     assert_eq!(measured.measured, 1);
     assert!(
         (measured.peak - kept).abs() < 1e-6,
