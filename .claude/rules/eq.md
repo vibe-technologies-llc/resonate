@@ -400,7 +400,13 @@ The stereo image, apart from the transducer: both are stereo-only, off by defaul
   file the settings and the phones already name. The desktop's *Room correction* group has *Choose a
   pair…* (left file, then right), which keeps `binaural-response.wav` beside the equaliser folder and
   corrects by it as by any chosen file; the phones' boundary has `keep_binaural_room_correction`
-  (two byte strings and extensions, a refusal `Error::ImpulsePair`), no page offering it yet.
+  (two byte strings and extensions, a refusal `Error::ImpulsePair`), which keeps the joined pair as
+  the one `room-correction.*` response. Each phone's *Room correction* section offers *Choose a
+  pair* (the left speaker's file, held while the section shows *Left speaker* with *Choose the right
+  speaker's response* and *Cancel*, then the right's), reads both as the single file is read, keeps
+  them through it and switches correction on, naming the response *<left stem> and <right stem>*
+  (`pairedRoomName`, `RoomPair.name`); a refusal is reported as the single file's is, and the pair
+  held is cleared whatever the answer.
   Every pane says when the response held is two-by-two: the desktop group a note under the file, the
   phones' description *Two-by-two (binaural)* for four channels
   (`two_stereo_responses_are_assembled_left_speaker_first`,

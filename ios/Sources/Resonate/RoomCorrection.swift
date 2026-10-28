@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import ResonateLogic
 import ResonateNative
 import SwiftUI
 import UniformTypeIdentifiers
@@ -18,6 +19,7 @@ final class RoomCorrectionState {
     private(set) var name: String?
     private(set) var kept: RoomCorrection?
     private(set) var reading = false
+    private(set) var left: URL?
     @ObservationIgnored private var changing: Task<Void, Never>?
 
     init(library: Library) {
@@ -57,6 +59,48 @@ final class RoomCorrectionState {
                 let bytes = try await Work.aside { try Self.contents(of: url, atMost: largest) }
                 let kept = try await Work.aside {
                     try native.keepRoomCorrection(bytes: bytes, extension: extensionName)
+                }
+                self.kept = kept
+                name = named
+                settings.set(named, forKey: Self.nameKey)
+                await apply(true)
+            } catch {
+                library.report(error)
+            }
+        }
+    }
+
+    func chooseLeft(_ url: URL) {
+        left = url
+    }
+
+    func cancelPair() {
+        left = nil
+    }
+
+    func chooseRight(_ url: URL) {
+        guard let left else { return }
+        let named = RoomPair.name(left: left.lastPathComponent, right: url.lastPathComponent)
+        let leftExtension = RoomPair.fileExtension(of: left.lastPathComponent)
+        let rightExtension = RoomPair.fileExtension(of: url.lastPathComponent)
+        reading = true
+        queue { [self] in
+            defer {
+                reading = false
+                self.left = nil
+            }
+            do {
+                let native = try await library.player()
+                let largest = Self.largest
+                let leftBytes = try await Work.aside { try Self.contents(of: left, atMost: largest) }
+                let rightBytes = try await Work.aside { try Self.contents(of: url, atMost: largest) }
+                let kept = try await Work.aside {
+                    try native.keepBinauralRoomCorrection(
+                        leftBytes: leftBytes,
+                        leftExtension: leftExtension,
+                        rightBytes: rightBytes,
+                        rightExtension: rightExtension
+                    )
                 }
                 self.kept = kept
                 name = named
@@ -126,6 +170,8 @@ struct RoomCorrectionSection: View {
     @Environment(Library.self) private var library
     @State private var choosing = false
     @State private var forgetting = false
+    @State private var choosingLeft = false
+    @State private var choosingRight = false
 
     var body: some View {
         let room = library.features.room
@@ -137,20 +183,44 @@ struct RoomCorrectionSection: View {
             }
             Button(room.reading ? "Reading…" : room.name == nil ? "Choose a response…" : "Choose another response…",
                    systemImage: "waveform.path") { choosing = true }
+                .disabled(room.reading || room.left != nil)
+                .fileImporter(isPresented: $choosing, allowedContentTypes: [.audio]) { result in
+                    switch result {
+                    case .success(let url): room.choose(url)
+                    case .failure(let failure): library.report(failure)
+                    }
+                }
+            if let left = room.left {
+                LabeledContent("Left speaker", value: left.lastPathComponent)
+                Button(room.reading ? "Reading…" : "Choose the right speaker's response…", systemImage: "waveform.path") {
+                    choosingRight = true
+                }
                 .disabled(room.reading)
+                .fileImporter(isPresented: $choosingRight, allowedContentTypes: [.audio]) { result in
+                    switch result {
+                    case .success(let url): room.chooseRight(url)
+                    case .failure(let failure): library.report(failure)
+                    }
+                }
+                Button("Cancel", systemImage: "xmark") { room.cancelPair() }
+                    .disabled(room.reading)
+            } else {
+                Button("Choose a pair…", systemImage: "headphones") { choosingLeft = true }
+                    .disabled(room.reading)
+                    .fileImporter(isPresented: $choosingLeft, allowedContentTypes: [.audio]) { result in
+                        switch result {
+                        case .success(let url): room.chooseLeft(url)
+                        case .failure(let failure): library.report(failure)
+                        }
+                    }
+            }
             if room.name != nil {
                 Button("Forget the response", systemImage: "trash", role: .destructive) { forgetting = true }
             }
         } header: {
             Text("Room correction")
         } footer: {
-            Text("A measured impulse response, up to ten seconds long, is convolved before the equaliser on every output. It is lowered where it would lift the music past full scale. A four-channel file is a two-by-two (binaural) response, in the order left-to-left, left-to-right, right-to-left, right-to-right.")
-        }
-        .fileImporter(isPresented: $choosing, allowedContentTypes: [.audio]) { result in
-            switch result {
-            case .success(let url): room.choose(url)
-            case .failure(let failure): library.report(failure)
-            }
+            Text("A measured impulse response, up to ten seconds long, is convolved before the equaliser on every output. It is lowered where it would lift the music past full scale. A four-channel file is a two-by-two (binaural) response, in the order left-to-left, left-to-right, right-to-left, right-to-right. A pair is two stereo responses, the left speaker's and then the right's, each as heard at both ears, joined into one two-by-two response.")
         }
         .confirmationDialog("Forget the room correction?", isPresented: $forgetting, titleVisibility: .visible) {
             Button("Forget", role: .destructive) { room.forget() }
