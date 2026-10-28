@@ -2201,6 +2201,50 @@ fn a_graph_answering_another_format_has_the_stream_it_holds_reshaped_rather_than
 }
 
 #[test]
+fn a_format_the_graph_settled_while_its_stream_was_kept_is_followed_once_the_stream_is_reshaped_alike()
+-> Result<()> {
+    let (player, graph, _tree) = two_formats_over_a_deep_track_reshaped(Reshaping::Settled)?;
+    let asked = graph.lock().requests[0].spec;
+    let deeper = Duration::from_millis(250);
+    let block = BLOCK_FRAMES * frame_bytes(asked.format);
+
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, graph| graph.played.len() >= 4 * block,
+        "the first blocks to play",
+    );
+    player.send(Command::SetBuffer(deeper))?;
+    wait_for(
+        &player,
+        |player| player.output_settings().buffer == deeper,
+        "the deeper buffer to retire the output",
+    );
+    answer_with_the_other_format(&graph);
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, graph| graph.reshapes == 2,
+        "the stream reshaped alike to be reshaped again around the format the graph settled",
+    );
+
+    let graph = graph.lock();
+    assert_eq!(graph.reshapes, 2);
+    assert_eq!(graph.requests[1].spec, asked, "the buffer moved the format");
+    assert_eq!(
+        graph.requests[2].spec.format,
+        the_other_word_of_the_two(asked.format)
+    );
+    assert_eq!(
+        graph.opens, 1,
+        "a stream that could be reshaped was reopened"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_reshaped_stream_whose_format_the_graph_never_settles_is_reopened() -> Result<()> {
     let (player, graph, _tree) = two_formats_over_a_deep_track_reshaped(Reshaping::NeverSettled)?;
 

@@ -461,6 +461,7 @@ struct Output {
     last_pulled: Option<(u64, Instant)>,
     overs_of_retired_chains: u64,
     handed: Option<Handed>,
+    heard_while_kept: Vec<StreamEvent>,
     format_owed_since: Option<Instant>,
     recall: Recall,
     splice_owed: bool,
@@ -618,6 +619,7 @@ impl Output {
             last_pulled: None,
             overs_of_retired_chains: 0,
             handed: None,
+            heard_while_kept: Vec::new(),
             format_owed_since: None,
             recall,
             splice_owed: false,
@@ -849,12 +851,17 @@ impl Output {
         })
     }
 
-    fn take_what_the_stream_was_handed(&mut self) {
+    fn take_what_the_stream_was_handed(&mut self, heard_while_kept: Vec<StreamEvent>) {
         let Some(handed) = self.handed.take() else {
             return;
         };
         self.status.stream_volume = handed.stream_volume;
-        if handed.spec == self.plan.stream {
+        let asked_alike = handed.spec == self.plan.stream;
+        self.heard_while_kept = heard_while_kept
+            .into_iter()
+            .filter(|event| asked_alike || !matches!(event, StreamEvent::FormatChanged { .. }))
+            .collect();
+        if asked_alike {
             self.status.words = handed.words;
             return;
         }
@@ -3580,7 +3587,9 @@ impl Engine {
             output.stream = Some(stream);
             output.active = active;
             match came {
-                Came::Reshaped => output.take_what_the_stream_was_handed(),
+                Came::Reshaped { heard_while_kept } => {
+                    output.take_what_the_stream_was_handed(heard_while_kept);
+                }
                 Came::Opened => output.handed = None,
             }
         }
@@ -3836,7 +3845,7 @@ impl Engine {
     }
 
     fn drain_events(output: &mut Output) -> Drained {
-        let mut events = Drained::new();
+        let mut events: Drained = output.heard_while_kept.drain(..).collect();
         loop {
             let Some(stream) = output.stream.as_ref() else {
                 return events;

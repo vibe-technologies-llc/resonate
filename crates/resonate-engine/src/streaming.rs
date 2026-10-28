@@ -5,10 +5,10 @@ use resonate_audio::{AudioSource, Reshaped, SinkStream, StreamEvent, StreamReque
 
 use crate::{Opener, SinkResult};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Came {
     Opened,
-    Reshaped,
+    Reshaped { heard_while_kept: Vec<StreamEvent> },
 }
 
 pub(crate) type Streamed = (u64, SinkResult<(SinkStream, Came)>);
@@ -30,7 +30,9 @@ impl Asked {
         } = self;
         let source = match kept {
             Some(stream) => match reshaped(*stream, &request, source) {
-                Ok(stream) => return (made, Ok((stream, Came::Reshaped))),
+                Ok((stream, heard_while_kept)) => {
+                    return (made, Ok((stream, Came::Reshaped { heard_while_kept })));
+                }
                 Err(Unkept::Refused(source)) => source,
                 Err(Unkept::Lost(error)) => return (made, Err(error)),
             },
@@ -50,14 +52,14 @@ fn reshaped(
     stream: SinkStream,
     request: &StreamRequest,
     source: Box<dyn AudioSource>,
-) -> Result<SinkStream, Unkept> {
-    if !has_stood_up_to_now(&stream) {
+) -> Result<(SinkStream, Vec<StreamEvent>), Unkept> {
+    let Some(heard_while_kept) = heard_while_kept(&stream) else {
         tracing::debug!("a stream that failed while it was kept is closed rather than reshaped");
         close_unwanted(stream);
         return Err(Unkept::Refused(source));
-    }
+    };
     match stream.reshape(request, source) {
-        Reshaped::Kept => Ok(stream),
+        Reshaped::Kept => Ok((stream, heard_while_kept)),
         Reshaped::Refused { source, because } => {
             tracing::debug!(
                 ?because,
@@ -73,8 +75,9 @@ fn reshaped(
     }
 }
 
-fn has_stood_up_to_now(stream: &SinkStream) -> bool {
-    let failures = stream.events().try_iter().filter(|event| {
+fn heard_while_kept(stream: &SinkStream) -> Option<Vec<StreamEvent>> {
+    let heard: Vec<StreamEvent> = stream.events().try_iter().collect();
+    let failed = heard.iter().any(|event| {
         matches!(
             event,
             StreamEvent::StateChanged {
@@ -83,7 +86,7 @@ fn has_stood_up_to_now(stream: &SinkStream) -> bool {
             } | StreamEvent::Refused { .. }
         )
     });
-    failures.count() == 0
+    (!failed).then_some(heard)
 }
 
 pub(crate) struct Streaming {

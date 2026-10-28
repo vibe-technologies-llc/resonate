@@ -472,7 +472,15 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   priming, not a stream's connect and negotiation. A reshaped stream keeps its published words and
   stream volume where the format stands; where it moved, a `FormatChanged` is owed within
   `RESHAPED_FORMAT_SETTLED_WITHIN` (1 s), else the row is rebound `rebind_on_a_new_stream`, as a
-  stalled discard is. The backend contract: `SinkStream::reshaped_by` gives a stream its
+  stalled discard is. **What the kept stream told nobody is told once it is reshaped:** the worker
+  reads every event a kept stream raised (`heard_while_kept`; a failure or refusal closes it and
+  reopens), and the landing (`Came::Reshaped`) hands the rest to the output, which reads them before
+  its own in the next `poll_stream`: a `VolumeChanged` always, a `FormatChanged` only where the
+  reshape asked for the spec the stream already had, since there the callback still writes silence
+  against a settlement nothing will repeat and the engine must follow it (`downgrade`); where the
+  spec moved, the graph settles again and an old one would turn the stream back
+  (`a_format_the_graph_settled_while_its_stream_was_kept_is_followed_once_the_stream_is_reshaped_alike`).
+  The backend contract: `SinkStream::reshaped_by` gives a stream its
   `Reshaper`; a stream given none refuses `Unreshapable::Unsupported`, as the test fake's default does;
   the phones' streams are given one, below (`a_buffer_moved_mid_track_reshapes_the_stream_and_plays_on_from_where_it_was_heard`,
   `a_graph_answering_another_format_has_the_stream_it_holds_reshaped_rather_than_reopened`,
