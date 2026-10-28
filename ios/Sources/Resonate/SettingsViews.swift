@@ -149,7 +149,7 @@ struct SettingsView: View {
                 title: "Sound processing",
                 detail: Self.processingSummary(preferences),
                 symbol: "dial.medium",
-                keywords: "sound playback ReplayGain resampling clip true peak restoration volume",
+                keywords: "sound playback ReplayGain resampling clip true peak restoration volume crossfeed headphones stereo image",
                 opening: .page(.processing)
             ),
             SettingsEntry(
@@ -848,6 +848,18 @@ struct ProcessingView: View {
                     }
                 }
                 Section {
+                    Picker("Crossfeed", selection: binding(settings.crossfeed) { $0.crossfeed = $1 }) {
+                        Text("Off").tag(CrossfeedLevel.off)
+                        Text("Light").tag(CrossfeedLevel.light)
+                        Text("Moderate").tag(CrossfeedLevel.moderate)
+                        Text("Strong").tag(CrossfeedLevel.strong)
+                    }
+                } header: {
+                    Text("Stereo image")
+                } footer: {
+                    Text(Self.crossfeedMeaning(settings.crossfeed) + " Only a stereo stream is crossfed; anything else plays as it is whatever this says. A crossfed stream is converted rather than bit-perfect.")
+                }
+                Section {
                     Picker("Lossy restoration", selection: binding(settings.restoration) { $0.restoration = $1 }) {
                         Text("Off").tag(LossyRestoration.off)
                         Text("Repair").tag(LossyRestoration.repair)
@@ -859,6 +871,15 @@ struct ProcessingView: View {
             }
         }
         .navigationTitle("Sound processing")
+    }
+
+    private static func crossfeedMeaning(_ level: CrossfeedLevel) -> String {
+        switch level {
+        case .off: "Each channel stays in its own ear, exactly as the record was mixed."
+        case .light: "A faint, low copy of each side reaches the other ear (650 Hz, 9.5 dB down), enough to take the edge off a hard-panned record."
+        case .moderate: "The classic setting (700 Hz, 6 dB down): the image closes up toward the front without losing its width."
+        case .strong: "The most of the other side reaches each ear (700 Hz, 4.5 dB down), for old stereo records with the voices on one side and the band on the other."
+        }
     }
 
     private func binding<Value: Sendable>(

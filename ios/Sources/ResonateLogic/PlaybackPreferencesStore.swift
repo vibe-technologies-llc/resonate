@@ -104,6 +104,7 @@ public struct PlaybackPreferencesStore: Sendable {
         if storage.object(forKey: "true-peak") != nil {
             preferences.truePeak = storage.bool(forKey: "true-peak")
         }
+        preferences.crossfeed = CrossfeedLevel.named(storage.string(forKey: "crossfeed")) ?? preferences.crossfeed
 
         if let kept = storage.string(forKey: Self.curveKey) {
             let name = storage.string(forKey: Self.curveNameKey) ?? ""
@@ -128,6 +129,7 @@ public struct PlaybackPreferencesStore: Sendable {
         storage.set(preferences.dsdLikePcm, forKey: "dsd-like-pcm")
         storage.set(preferences.truePeak, forKey: "true-peak")
         storage.set(preferences.restoration.name, forKey: "restoration")
+        storage.set(preferences.crossfeed.name, forKey: "crossfeed")
     }
 
     private func keepCurve(_ curve: EqualiserCurve, in storage: UserDefaults) {

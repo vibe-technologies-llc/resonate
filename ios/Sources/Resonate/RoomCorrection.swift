@@ -144,7 +144,7 @@ struct RoomCorrectionSection: View {
         } header: {
             Text("Room correction")
         } footer: {
-            Text("A measured impulse response, up to ten seconds long, is convolved before the equaliser on every output. It is lowered where it would lift the music past full scale.")
+            Text("A measured impulse response, up to ten seconds long, is convolved before the equaliser on every output. It is lowered where it would lift the music past full scale. A four-channel file is a two-by-two (binaural) response, in the order left-to-left, left-to-right, right-to-left, right-to-right.")
         }
         .fileImporter(isPresented: $choosing, allowedContentTypes: [.audio]) { result in
             switch result {
@@ -158,7 +158,7 @@ struct RoomCorrectionSection: View {
     }
 
     private static func described(_ kept: RoomCorrection) -> String {
-        let channels = kept.channels == 1 ? "Mono" : kept.channels == 2 ? "Stereo" : "\(kept.channels) channels"
+        let channels = kept.channels == 1 ? "Mono" : kept.channels == 2 ? "Stereo" : kept.channels == 4 ? "Two-by-two (binaural)" : "\(kept.channels) channels"
         let rate = String(format: "%g kHz", Double(kept.rate) / 1000)
         let length = String(format: "%.2f s", Double(kept.lengthMs) / 1000)
         return "\(channels) · \(rate) · \(length)"

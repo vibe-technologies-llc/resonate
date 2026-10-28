@@ -150,6 +150,7 @@ class EqualiserScalesTest {
         assertEquals("Stereo · 48 kHz · 1.50 s", describeRoom(RoomCorrection(2u, 48_000u, 1_500uL)))
         assertEquals("Mono · 44.1 kHz · 0.25 s", describeRoom(RoomCorrection(1u, 44_100u, 250uL)))
         assertEquals("6 channels · 96 kHz · 10.00 s", describeRoom(RoomCorrection(6u, 96_000u, 10_000uL)))
+        assertEquals("Two-by-two (binaural) · 48 kHz · 0.50 s", describeRoom(RoomCorrection(4u, 48_000u, 500uL)))
         assertEquals("", describeRoom(RoomCorrection(0u, 48_000u, 1_000uL)))
         assertEquals("", describeRoom(null))
     }

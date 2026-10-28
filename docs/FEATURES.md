@@ -58,12 +58,7 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Device sync
 
 ## Equaliser and DSP
-- [S · 0.3.0] The phones have no crossfeed: `PlaybackPreferences` carries no crossfeed level, so
-  neither the Compose nor the SwiftUI processing page offers the stage the desktop's settings do
-  (the engine reads `Command::SetCrossfeed` on every target)
-- [S · 0.3.0] A binaural response is loaded only as a four-channel file through *Room correction*
-  (left-to-left, left-to-right, right-to-left, right-to-right); two stereo files, one for each
-  speaker, are not read, and the pane does not say a four-channel response is a two-by-two one
+- [S · 0.3.0] The phones' room-correction sections load a response from one file only: `keep_binaural_room_correction` joins two stereo files into a binaural pair at the boundary, but neither page offers a second picker for it
 
 ## Search
 - [M · blocked: service] A pasted Spotify, TIDAL or Apple Music playlist link lists only the songs its

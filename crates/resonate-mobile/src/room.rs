@@ -8,13 +8,17 @@ use std::{
 use parking_lot::Mutex;
 use resonate_codec::Sources;
 use resonate_core::{AUDIO_EXTENSIONS, MediaLocation};
-use resonate_engine::{Command, Impulse, read_impulse};
+use resonate_engine::{
+    Command, Impulse, PairedReadError, binaural_wave, read_binaural_pair, read_impulse,
+};
 
 use crate::{Error, MobilePlayer, Result};
 
 pub const IMPULSE_BYTES_AT_MOST: usize = 64 * 1024 * 1024;
 const KEPT_STEM: &str = "room-correction";
 const CANDIDATE_STEM: &str = "room-correction-candidate";
+const LEFT_STEM: &str = "room-correction-candidate-left";
+const RIGHT_STEM: &str = "room-correction-candidate-right";
 
 #[derive(Clone, Copy, Debug)]
 pub enum ImpulseOp {
@@ -114,7 +118,11 @@ impl Room {
     }
 
     fn drop_candidates(&self) -> Result<()> {
-        while let Some(path) = self.stemmed(CANDIDATE_STEM)? {
+        self.drop_stemmed(CANDIDATE_STEM)
+    }
+
+    fn drop_stemmed(&self, stem: &str) -> Result<()> {
+        while let Some(path) = self.stemmed(stem)? {
             fs::remove_file(&path).map_err(|source| Error::ImpulseFile {
                 op: ImpulseOp::Remove,
                 source,
@@ -124,6 +132,11 @@ impl Room {
     }
 
     fn stage(&self, bytes: &[u8], extension: &str) -> Result<PathBuf> {
+        self.drop_candidates()?;
+        self.stage_as(CANDIDATE_STEM, bytes, extension)
+    }
+
+    fn stage_as(&self, stem: &str, bytes: &[u8], extension: &str) -> Result<PathBuf> {
         let extension = extension.to_ascii_lowercase();
         if !AUDIO_EXTENSIONS.contains(&extension.as_str()) {
             return Err(Error::ImpulseExtension);
@@ -131,13 +144,40 @@ impl Room {
         if bytes.len() > IMPULSE_BYTES_AT_MOST {
             return Err(Error::ImpulseTooLarge);
         }
-        self.drop_candidates()?;
-        let path = self.folder.join(format!("{CANDIDATE_STEM}.{extension}"));
+        let path = self.folder.join(format!("{stem}.{extension}"));
         fs::write(&path, bytes).map_err(|source| Error::ImpulseFile {
             op: ImpulseOp::Keep,
             source,
         })?;
         Ok(path)
+    }
+
+    fn keep_pair(
+        &self,
+        left: Speaking<'_>,
+        right: Speaking<'_>,
+        sources: &Sources,
+    ) -> Result<Impulse> {
+        self.drop_stemmed(LEFT_STEM)?;
+        self.drop_stemmed(RIGHT_STEM)?;
+        let left_path = self.stage_as(LEFT_STEM, left.bytes, left.extension)?;
+        let right_path = match self.stage_as(RIGHT_STEM, right.bytes, right.extension) {
+            Ok(path) => path,
+            Err(error) => {
+                let _ = fs::remove_file(&left_path);
+                return Err(error);
+            }
+        };
+        let paired = read_binaural_pair(
+            sources,
+            &MediaLocation::local(&left_path),
+            &MediaLocation::local(&right_path),
+        );
+        let _ = fs::remove_file(&left_path);
+        let _ = fs::remove_file(&right_path);
+        let whole = paired.map_err(pairing_refused)?;
+        let wave = binaural_wave(&whole).map_err(pairing_refused)?;
+        self.keep(&wave, "wav", sources)
     }
 
     fn promote(&self, candidate: &Path) -> Result<PathBuf> {
@@ -177,6 +217,17 @@ impl Room {
     }
 }
 
+pub(crate) struct Speaking<'a> {
+    pub bytes: &'a [u8],
+    pub extension: &'a str,
+}
+
+fn pairing_refused(source: PairedReadError) -> Error {
+    Error::ImpulsePair {
+        source: Box::new(source),
+    }
+}
+
 fn read(sources: &Sources, path: &Path) -> Result<Impulse> {
     read_impulse(sources, &MediaLocation::local(path))?.ok_or(Error::NoImpulse)
 }
@@ -189,6 +240,27 @@ impl MobilePlayer {
         extension: String,
     ) -> Result<RoomCorrection> {
         let impulse = self.room.keep(&bytes, &extension, &self.sources)?;
+        Ok(RoomCorrection::of(&impulse))
+    }
+
+    pub fn keep_binaural_room_correction(
+        &self,
+        left_bytes: Vec<u8>,
+        left_extension: String,
+        right_bytes: Vec<u8>,
+        right_extension: String,
+    ) -> Result<RoomCorrection> {
+        let impulse = self.room.keep_pair(
+            Speaking {
+                bytes: &left_bytes,
+                extension: &left_extension,
+            },
+            Speaking {
+                bytes: &right_bytes,
+                extension: &right_extension,
+            },
+            &self.sources,
+        )?;
         Ok(RoomCorrection::of(&impulse))
     }
 
@@ -277,6 +349,94 @@ mod tests {
         room.forget().expect("forgotten");
 
         assert_eq!(room.kept().expect("a listing"), None);
+    }
+
+    fn stereo_wave(frames: &[[i16; 2]], rate: u32) -> Vec<u8> {
+        let data = u32::try_from(frames.len() * 4).expect("a short wave");
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(36 + data).to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&2u16.to_le_bytes());
+        bytes.extend_from_slice(&rate.to_le_bytes());
+        bytes.extend_from_slice(&(rate * 4).to_le_bytes());
+        bytes.extend_from_slice(&4u16.to_le_bytes());
+        bytes.extend_from_slice(&16u16.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&data.to_le_bytes());
+        for frame in frames {
+            for sample in frame {
+                bytes.extend_from_slice(&sample.to_le_bytes());
+            }
+        }
+        bytes
+    }
+
+    #[test]
+    fn two_stereo_responses_are_kept_as_one_two_by_two_response_that_reads_back() {
+        let folder = folder("pair");
+        let room = Room::under(folder.clone());
+        let sources = Sources::local();
+        let left = stereo_wave(&[[16_384, 4_096], [0, 0]], 48_000);
+        let right = stereo_wave(&[[2_048, 16_384], [0, 0]], 48_000);
+
+        let kept = room
+            .keep_pair(
+                Speaking {
+                    bytes: &left,
+                    extension: "wav",
+                },
+                Speaking {
+                    bytes: &right,
+                    extension: "WAV",
+                },
+                &sources,
+            )
+            .expect("a pair kept");
+
+        assert!(kept.is_crossed());
+        assert_eq!(RoomCorrection::of(&kept).channels, 4);
+        assert_eq!(fs::read_dir(&folder).expect("a listing").count(), 1);
+        let again =
+            read(&sources, &room.kept().expect("a listing").expect("a file")).expect("read back");
+        assert!(again.is_crossed());
+    }
+
+    #[test]
+    fn a_pair_at_two_rates_or_lengths_is_refused_and_the_kept_response_stands() {
+        let folder = folder("pair-refused");
+        let room = Room::under(folder.clone());
+        let sources = Sources::local();
+        room.keep(&wave(&[i16::MAX, 0, 0, 0]), "wav", &sources)
+            .expect("a kept response");
+        let left = stereo_wave(&[[16_384, 4_096], [0, 0]], 48_000);
+        let slower = stereo_wave(&[[2_048, 16_384], [0, 0]], 44_100);
+        let longer = stereo_wave(&[[2_048, 16_384], [0, 0], [0, 0]], 48_000);
+        let at = |bytes| Speaking {
+            bytes,
+            extension: "wav",
+        };
+
+        let rates = room.keep_pair(at(&left), at(&slower), &sources);
+        let lengths = room.keep_pair(at(&left), at(&longer), &sources);
+
+        assert!(matches!(
+            rates,
+            Err(Error::ImpulsePair { source })
+                if matches!(*source, PairedReadError::Pair(resonate_engine::DspError::SpeakerRatesDiffer { .. }))
+        ));
+        assert!(matches!(
+            lengths,
+            Err(Error::ImpulsePair { source })
+                if matches!(*source, PairedReadError::Pair(resonate_engine::DspError::SpeakerLengthsDiffer { .. }))
+        ));
+        assert_eq!(
+            room.kept().expect("a listing"),
+            Some(folder.join("room-correction.wav"))
+        );
+        assert_eq!(fs::read_dir(&folder).expect("a listing").count(), 1);
     }
 
     #[test]

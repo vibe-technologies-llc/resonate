@@ -12,6 +12,7 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.resonate.android.nativecore.CrossfeedLevel
 import org.resonate.android.nativecore.Documents
 import org.resonate.android.nativecore.EqualiserBand
 import org.resonate.android.nativecore.EqualiserFilter
@@ -56,6 +57,7 @@ class PlaybackPreferencesTest {
                         phase = ResamplingPhase.INTERMEDIATE,
                         truePeak = false,
                         restoration = LossyRestoration.REPAIR,
+                        crossfeed = CrossfeedLevel.MODERATE,
                     )
             player.configurePlayback(settings)
             store.write(settings)

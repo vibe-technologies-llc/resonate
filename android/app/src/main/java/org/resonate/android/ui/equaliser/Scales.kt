@@ -101,6 +101,7 @@ fun describeRoom(room: RoomCorrection?): String {
         when (room.channels) {
             1u -> "Mono"
             2u -> "Stereo"
+            4u -> "Two-by-two (binaural)"
             else -> "${room.channels} channels"
         }
     val kilohertz = String.format(Locale.ROOT, "%.1f", room.rate.toDouble() / 1000).removeSuffix(".0")

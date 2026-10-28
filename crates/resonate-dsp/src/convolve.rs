@@ -65,6 +65,21 @@ impl PartialEq for Impulse {
 
 pub const CROSSED_RESPONSES: usize = 4;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Speaker {
+    Left,
+    Right,
+}
+
+impl std::fmt::Display for Speaker {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Left => "left",
+            Self::Right => "right",
+        })
+    }
+}
+
 impl Impulse {
     pub fn new(rate: SampleRate, taps: Vec<Vec<f64>>) -> Option<Self> {
         if taps.is_empty()
@@ -89,6 +104,34 @@ impl Impulse {
             crossed: true,
             ..impulse
         })
+    }
+
+    pub fn binaural(left: &Self, right: &Self) -> Result<Self> {
+        for (speaker, response) in [(Speaker::Left, left), (Speaker::Right, right)] {
+            if response.crossed {
+                return Err(Error::SpeakerAlreadyCrossed { speaker });
+            }
+            if response.taps.len() != 2 {
+                return Err(Error::SpeakerNotStereo {
+                    speaker,
+                    channels: response.taps.len(),
+                });
+            }
+        }
+        if left.rate != right.rate {
+            return Err(Error::SpeakerRatesDiffer {
+                left: left.rate,
+                right: right.rate,
+            });
+        }
+        if left.frames() != right.frames() {
+            return Err(Error::SpeakerLengthsDiffer {
+                left: left.frames(),
+                right: right.frames(),
+            });
+        }
+        let taps = left.taps.iter().chain(&right.taps).cloned().collect();
+        Self::crossed(left.rate, taps).ok_or(Error::SpeakersUnusable)
     }
 
     pub const fn is_crossed(&self) -> bool {
@@ -860,6 +903,72 @@ mod tests {
         for (at, sample) in input.iter().enumerate() {
             assert!((written[late + at] - sample).abs() < 1e-9, "sample {at}");
         }
+    }
+
+    fn speaker(rate: SampleRate, near: Vec<f64>, far: Vec<f64>) -> Impulse {
+        Impulse::new(rate, vec![near, far]).expect("a stereo response")
+    }
+
+    #[test]
+    fn two_stereo_responses_are_assembled_left_speaker_first() {
+        let left = speaker(RATE, vec![0.9, 0.1], vec![0.3, 0.0]);
+        let right = speaker(RATE, vec![0.2, 0.0], vec![0.8, 0.05]);
+
+        let pair = Impulse::binaural(&left, &right).expect("a pair");
+        let whole = Impulse::crossed(
+            RATE,
+            vec![
+                vec![0.9, 0.1],
+                vec![0.3, 0.0],
+                vec![0.2, 0.0],
+                vec![0.8, 0.05],
+            ],
+        )
+        .expect("four responses");
+
+        assert!(pair.is_crossed());
+        assert_eq!(pair, whole);
+    }
+
+    #[test]
+    fn a_pair_that_is_not_two_stereo_responses_of_one_rate_and_length_is_refused() {
+        let stereo = speaker(RATE, vec![1.0, 0.5], vec![0.0, 0.0]);
+        let mono = Impulse::new(RATE, vec![vec![1.0, 0.5]]).expect("a mono response");
+        let other_rate = speaker(SampleRate::HZ_44100, vec![1.0, 0.5], vec![0.0, 0.0]);
+        let longer = speaker(RATE, vec![1.0, 0.5, 0.25], vec![0.0, 0.0, 0.0]);
+        let crossed = Impulse::crossed(RATE, vec![vec![1.0]; 4]).expect("four responses");
+
+        assert_eq!(
+            Impulse::binaural(&mono, &stereo),
+            Err(Error::SpeakerNotStereo {
+                speaker: Speaker::Left,
+                channels: 1
+            })
+        );
+        assert_eq!(
+            Impulse::binaural(&stereo, &mono),
+            Err(Error::SpeakerNotStereo {
+                speaker: Speaker::Right,
+                channels: 1
+            })
+        );
+        assert_eq!(
+            Impulse::binaural(&stereo, &other_rate),
+            Err(Error::SpeakerRatesDiffer {
+                left: RATE,
+                right: SampleRate::HZ_44100
+            })
+        );
+        assert_eq!(
+            Impulse::binaural(&stereo, &longer),
+            Err(Error::SpeakerLengthsDiffer { left: 2, right: 3 })
+        );
+        assert_eq!(
+            Impulse::binaural(&stereo, &crossed),
+            Err(Error::SpeakerAlreadyCrossed {
+                speaker: Speaker::Right
+            })
+        );
     }
 
     #[test]

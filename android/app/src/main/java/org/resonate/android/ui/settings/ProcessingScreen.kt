@@ -13,6 +13,7 @@ import androidx.compose.material.icons.automirrored.rounded.ShowChart
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Science
 import androidx.compose.material.icons.rounded.Timer
@@ -45,6 +46,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.resonate.android.nativecore.CrossfeedLevel
 import org.resonate.android.nativecore.GainMode
 import org.resonate.android.nativecore.LossyRestoration
 import org.resonate.android.nativecore.PlaybackPreferences
@@ -71,6 +73,8 @@ class ProcessingViewModel(resonate: Resonate) : ViewModel() {
     fun phase(value: ResamplingPhase) = change { it.copy(phase = value) }
 
     fun restoration(value: LossyRestoration) = change { it.copy(restoration = value) }
+
+    fun crossfeed(level: CrossfeedLevel) = change { it.copy(crossfeed = level) }
 
     fun truePeak(enabled: Boolean) = change { it.copy(truePeak = enabled) }
 
@@ -122,6 +126,22 @@ fun ProcessingScreen() {
                     selected = current.phase,
                     onChoose = model::phase,
                     modifier = Modifier.testTag("phase"),
+                )
+            }
+            item(key = "stereo") { SectionHeader("Stereo image") }
+            item(key = "crossfeed") {
+                ChoiceRow(
+                    title = "Crossfeed",
+                    icon = Icons.Rounded.Headphones,
+                    choices = crossfeedChoices,
+                    selected = current.crossfeed,
+                    onChoose = model::crossfeed,
+                    modifier = Modifier.testTag("crossfeed"),
+                )
+            }
+            item(key = "crossfeed-note") {
+                Footnote(
+                    "Only a stereo stream is crossfed; anything else plays as it is whatever this says. A crossfed stream is converted rather than bit-perfect."
                 )
             }
             item(key = "sources") { SectionHeader("Sources") }

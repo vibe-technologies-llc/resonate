@@ -194,6 +194,7 @@ let interactionNotAllowed: Int32 = -25308
         chosen.restoration = .repair
         chosen.truePeak = !chosen.truePeak
         chosen.dsdLikePcm = !chosen.dsdLikePcm
+        chosen.crossfeed = .moderate
         chosen.bufferMs = 750
 
         store.write(chosen, for: nil)
@@ -206,6 +207,7 @@ let interactionNotAllowed: Int32 = -25308
         #expect(read.restoration == .repair)
         #expect(read.truePeak == chosen.truePeak)
         #expect(read.dsdLikePcm == chosen.dsdLikePcm)
+        #expect(read.crossfeed == .moderate)
         #expect(read.bufferMs == 750)
     }
 
