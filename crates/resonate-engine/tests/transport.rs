@@ -1698,6 +1698,245 @@ fn a_device_another_zone_holds_bit_perfect_is_refused_and_a_mixed_one_is_shared(
     Ok(())
 }
 
+fn kitchen() -> SinkInfo {
+    SinkInfo {
+        id: SinkId::new(3),
+        name: NodeName::new("alsa_output.kitchen"),
+        description: "Kitchen speakers".to_owned(),
+        is_default: false,
+        ..sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])
+    }
+}
+
+fn samples_of(bytes: &[u8]) -> Vec<i16> {
+    bytes
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|sample| i16::from_le_bytes(*sample))
+        .collect()
+}
+
+fn heard_as_faded_out(played: &[u8], expected: &[u8]) -> bool {
+    let Some(from) = played
+        .iter()
+        .zip(expected)
+        .position(|(one, other)| one != other)
+    else {
+        return false;
+    };
+    let heard = samples_of(&played[from..]);
+    let written = samples_of(&expected[from..played.len().min(expected.len())]);
+    let no_louder = heard
+        .iter()
+        .zip(&written)
+        .all(|(heard, written)| heard.unsigned_abs() <= written.unsigned_abs());
+    let ramped = heard.iter().any(|sample| *sample != 0);
+    let ends_silent = heard.iter().rev().take(16).all(|sample| *sample == 0);
+    from > 0 && no_louder && ramped && ends_silent
+}
+
+fn locations(rows: &QueueRows) -> Vec<MediaLocation> {
+    rows.iter().map(|row| row.location.clone()).collect()
+}
+
+#[test]
+fn a_zone_hands_its_song_over_to_another_that_fades_in_where_it_was_heard_while_it_fades_out_and_stops()
+-> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES * 20);
+    let path = tree.write("handed.wav", &source.file);
+    let after = tree.write("after.wav", &pcm(16, FRAMES).file);
+    let elsewhere = kitchen();
+    let opened = FakeZones::over(vec![
+        sink(&[SampleRate::HZ_44100], &[SampleFormat::S16]),
+        elsewhere.clone(),
+    ]);
+    let zones = opened.started()?;
+    let study = zones.add()?;
+    let first = zones.first().player;
+    let outgoing = opened.graph(ZoneId::FIRST);
+    let incoming = opened.graph(study.id);
+    let stride = frame_bytes(SampleFormat::S16);
+    let block = SHORT_PULL_FRAMES * stride;
+
+    zones.send(study.id, Command::SetSink(Some(elsewhere.name.clone())))?;
+    zones.send(
+        ZoneId::FIRST,
+        Command::Load {
+            items: vec![track(&path, 1), track(&after, 2)],
+            start_at: 0,
+            autoplay: true,
+        },
+    )?;
+    wait_for(&first, playing, "the first zone to play");
+    play_until(
+        &first,
+        &outgoing,
+        block,
+        |player, _| {
+            player
+                .state()
+                .current
+                .is_some_and(|track| track.position >= Frames(FRAMES as u64))
+        },
+        "the first zone to be heard a while",
+    );
+    let queued = locations(&first.queue());
+    let heard_at = first.state().current.map(|track| track.position);
+    let closed_before = outgoing.lock().closes;
+
+    let handover = zones.hand_over(ZoneId::FIRST, study.id)?;
+    let (at, row, sounding) = (handover.at(), handover.row(), handover.sounding());
+    play_until(
+        &first,
+        &outgoing,
+        block,
+        |player, graph| {
+            player.state().playback == PlaybackState::Stopped && graph.closes > closed_before
+        },
+        "the first zone to fade out and stop",
+    );
+    handover.wait()?;
+    wait_for(
+        &first,
+        |player| player.queue().is_empty(),
+        "the first zone's queue to move away",
+    );
+    play_until(
+        &study.player,
+        &incoming,
+        block,
+        |_, graph| graph.played.len() >= block * 40,
+        "the second zone to be heard",
+    );
+
+    let played = incoming.lock().played.clone();
+    let expected = &source.stream[at.get() as usize * stride..];
+    let opening = Frames::from_duration(FADED_OVER, SampleRate::HZ_44100).get() as usize * stride;
+
+    assert!(sounding);
+    assert_eq!(row, 0);
+    assert!(
+        heard_at.is_some_and(|heard| at >= heard),
+        "the second zone opened at {at:?}, before {heard_at:?} the first had been heard at"
+    );
+    assert!(
+        heard_as_faded_in(&played, expected),
+        "the second zone was not heard fading in from where the first stood"
+    );
+    assert_ne!(
+        played.get(..opening),
+        expected.get(..opening),
+        "the second zone came in at full level rather than fading in"
+    );
+    assert!(
+        heard_as_faded_out(&outgoing.lock().played, &source.stream),
+        "the first zone was cut rather than faded out"
+    );
+    assert_eq!(
+        locations(&study.player.queue()),
+        queued,
+        "the queue did not move with the song"
+    );
+    assert_eq!(study.player.state().queue_position, Some(0));
+    assert!(playing(&study.player));
+    assert_eq!(
+        study.player.state().output.map(|output| output.sink),
+        Some(elsewhere.id),
+        "the second zone did not play on its own device"
+    );
+    assert_eq!(first.state().playback, PlaybackState::Stopped);
+    Ok(())
+}
+
+#[test]
+fn a_paused_zone_hands_over_paused_where_it_stood_and_a_handover_is_refused_where_it_cannot_land()
+-> Result<()> {
+    let tree = Tree::new();
+    let path = tree.write("held.wav", &pcm(16, FRAMES * 20).file);
+    let opened = FakeZones::over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
+    let zones = opened.started()?;
+    let study = zones.add()?;
+    let third = zones.add()?;
+    let first = zones.first().player;
+    let outgoing = opened.graph(ZoneId::FIRST);
+    let block = SHORT_PULL_FRAMES * frame_bytes(SampleFormat::S16);
+
+    played_from(&zones, ZoneId::FIRST, &path)?;
+    wait_for(
+        &first,
+        |player| {
+            player
+                .state()
+                .output
+                .is_some_and(|output| output.mode == OutputMode::BitPerfect)
+        },
+        "the first zone to play its device bit-perfect",
+    );
+    play_until(
+        &first,
+        &outgoing,
+        block,
+        |player, _| {
+            player
+                .state()
+                .current
+                .is_some_and(|track| track.position >= Frames(FRAMES as u64))
+        },
+        "the first zone to be heard a while",
+    );
+    let held = zones.hand_over(ZoneId::FIRST, study.id).err();
+    let itself = zones.hand_over(ZoneId::FIRST, ZoneId::FIRST).err();
+    let empty = zones.hand_over(study.id, third.id).err();
+
+    stand_still(&first);
+    let stood_at = first.state().current.map(|track| track.position);
+    let handover = zones.hand_over(ZoneId::FIRST, study.id)?;
+    let sounding = handover.sounding();
+    let at = handover.at();
+    handover.wait()?;
+    wait_for(
+        &study.player,
+        |player| {
+            player
+                .state()
+                .current
+                .is_some_and(|track| track.position == at)
+        },
+        "the second zone to stand where the first stood",
+    );
+    wait_for(
+        &first,
+        |player| player.queue().is_empty(),
+        "the first zone's queue to move away",
+    );
+
+    assert!(
+        matches!(held, Some(EngineError::DeviceHeld { by }) if by == ZoneId::FIRST),
+        "a zone was handed a device the outgoing one holds bit-perfect: {held:?}"
+    );
+    assert!(matches!(
+        itself,
+        Some(EngineError::HandedToItself { zone }) if zone == ZoneId::FIRST
+    ));
+    assert!(matches!(
+        empty,
+        Some(EngineError::NothingToHandOver { zone }) if zone == study.id
+    ));
+    assert!(!sounding);
+    assert_eq!(Some(at), stood_at);
+    assert!(
+        !playing(&study.player),
+        "a paused song began playing as it moved"
+    );
+    assert_eq!(
+        locations(&study.player.queue()),
+        vec![MediaLocation::local(&path)]
+    );
+    Ok(())
+}
+
 #[test]
 fn what_a_starved_graph_went_without_is_published_in_frames() -> Result<()> {
     const A_SECOND: usize = RATE as usize;

@@ -166,6 +166,7 @@ const fn plainly(cause: Cause) -> &'static str {
         Cause::Damaged => "A song couldn't be played",
         Cause::HeldByAnotherZone => "Another zone plays that device bit-perfect",
         Cause::ZoneRefused => "That zone is no longer there",
+        Cause::NotHandedOver => "The other zone didn't take the playback over",
     }
 }
 

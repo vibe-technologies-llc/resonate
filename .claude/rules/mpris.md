@@ -27,7 +27,7 @@ the client a second `resonate` reaches a first through.
 - **A location whose source is not in `Host::sources` is refused**; `SupportedUriSchemes` is built
   from the same list; `SupportedMimeTypes` is the binary's `MIME_TYPES` (`binary.md`).
 - **What MPRIS has no word for gets our own interface** `org.resonate.Player1`, same object path:
-  `SetSleep`, `Sleep`, `PlayingNext`, `PlayOrder`, `AddTracks`, `Relocate`, `Tune`, `Reload`. `Relocate(a(ss))` takes `(from, to)`
+  `SetSleep`, `Sleep`, `PlayingNext`, `PlayOrder`, `AddTracks`, `Relocate`, `Tune`, `Reload`, `HandOver`. `Relocate(a(ss))` takes `(from, to)`
   URI pairs in landing order = one `Command::Relocate`; `Running::relocate` sends `MOVES_A_CALL`
   (4096) per call (moves compose) to stay under the bus's message limit.
   The poll diffs the *published pair*, not the `Asleep` behind it (`left` ticks continuously).
@@ -39,6 +39,13 @@ the client a second `resonate` reaches a first through.
   `Reloadable::name` of the group changed (`equaliser`, `submission`, `sync`, `tidal`) and the path, asked of
   `Host::reload`, which refuses (`InvalidArgs`) a file it does not read or a group it cannot take
   up (`Running::reload`).
+  `HandOver(u)` moves what this zone plays onto the zone of that number (`Host::hand_over`, the
+  binary's `Zones::hand_over` from the service's own zone; `audio.md`): answered once the handover
+  has begun (`HandedOver::Moving`), its landing logged by the engine, never awaited on the bus
+  thread; a host with no zones, an unknown number or a handover refused is `InvalidArgs`
+  (`Running::hand_over`, `Running::zone_number`). Each zone's service then reads what its own
+  player publishes, so the outgoing one falls to `Stopped` with an empty track list and the
+  incoming one takes the song, position and tracks with no call of its own.
 
 ## The track list
 

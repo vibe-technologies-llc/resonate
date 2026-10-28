@@ -765,6 +765,31 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   graph converts the other
   (`two_zones_play_apart_each_steered_alone_while_a_setting_reaches_both`,
   `a_device_another_zone_holds_bit_perfect_is_refused_and_a_mixed_one_is_shared`).
+- **A zone hands what it plays over to another by opening the other's stream first and fading out
+  only once it sounds; one device is never asked to carry both.** `Zones::hand_over(from, to)`
+  (`zones.rs`) refuses a zone to itself (`HandedToItself`), a zone with nothing queued
+  (`NothingToHandOver`) and, while the outgoing zone means to sound (`Playing` or `Buffering`), an
+  incoming zone whose chosen device (`OutputSettings::sink`, named or the default) some zone holds
+  bit-perfect, the outgoing one included (`DeviceHeld`, `Zones::holder_of`): the overlap would ask
+  a pinned rate to carry two streams. A paused or stopped outgoing zone may hand over onto the very
+  device it holds, since nothing overlaps. It takes the outgoing `PlayerState` and published queue
+  as `resumption_of` (`kept.rs`, what `Keeping` keeps: rows in load order, play order, shuffle, rows
+  played next, row and heard position) and sends, through `Zones::send`, `SetRepeat` and
+  `Command::Resume` to the incoming zone, then `Play` asked as a request where the outgoing one
+  meant to sound; the incoming engine binds its own device and opens mid-track `Entering::FadedIn`
+  at the outgoing zone's heard frame (a row at its start opens whole). A `resonate-handover`
+  thread then waits for that `Play`'s outcome and for the incoming zone to publish `Playing` with
+  an output (within `HANDED_OVER_WITHIN`, 10 s), and only then sends the outgoing zone `Stop`,
+  which retires its output with the ordinary fade, and takes its queue away with one `Remove` of
+  every row under the revision it was read at (`Zones::send_if_the_queue_is_still`: an edit made
+  meanwhile keeps its queue). Unheard or refused, the incoming zone is stopped and the outgoing one
+  plays on (`HandoverUnheard`, or the `Play`'s own error). Volume, sleep timer and device stay each
+  zone's own; the incoming zone lags the outgoing one by its stream's opening, heard as the two
+  fades overlapping. The `Handover` handle names the row and frame handed over and `wait` joins
+  the thread; a dropped handle detaches it, which logs a failure itself. MPRIS follows from each
+  zone's published state (`mpris.md`)
+  (`a_zone_hands_its_song_over_to_another_that_fades_in_where_it_was_heard_while_it_fades_out_and_stops`,
+  `a_paused_zone_hands_over_paused_where_it_stood_and_a_handover_is_refused_where_it_cannot_land`).
 - **Removing the playing row moves on as a skip** (`Queue::hand_on` = `advance` minus the
   repeat-track hold; else `Engine::remove` stops with `QueueFinished`).
 - **A play is what was heard, sampled not hooked.** `Listening` takes a `PlayerState` beside the

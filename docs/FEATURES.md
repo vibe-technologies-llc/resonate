@@ -25,10 +25,11 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [S · 0.3.0] A DoP stream drains at every track boundary: a gapless handover would restart the
   marker sequence mid-stream, which a DAC may read as lost lock, so `Engine::may_hand_on` asks
   for sample packing
-- [M · 0.3.0] Zones do not hand over to one another: a fade carrying one zone's song into another
-  is not built, nor does one player open its next stream on another device while the outgoing one
-  fades there (no pinned rate or exclusive sink would be asked to carry both), and the phones offer
-  no zones at all
+- [M · 0.3.0] The phones offer no zones: one player plays one queue to the route the system
+  chose, so neither a second room nor a handover between two devices can be reached there
+- [S · 0.3.0] A handover between zones is not sample-aligned: the incoming zone opens at the
+  frame the outgoing one was heard at when asked and starts its fade once its own stream sounds,
+  so it lags the outgoing one by that stream's opening and its priming
 - [M · blocked: pipewire-rs] A rebind or turn inside a row that moves the rate while
   `force-graph-rate` pins it (on by default), or switches the pin, still reopens the PipeWire stream:
   the pin is the node's `node.rate` property, which only `pw_stream_update_properties` moves, and

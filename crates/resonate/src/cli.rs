@@ -481,7 +481,7 @@ pub struct PlaylistArgs {
 pub struct QueueArgs {
     #[arg(
         value_name = "FILE",
-        required_unless_present = "playlist",
+        required_unless_present_any = ["playlist", "move_to"],
         help = "Files to queue, each a path or a file:// URI"
     )]
     pub files: Vec<OsString>,
@@ -527,6 +527,17 @@ pub struct QueueArgs {
                 row it is on"
     )]
     pub play: bool,
+
+    #[arg(
+        long,
+        value_name = "ZONE",
+        conflicts_with_all = ["files", "playlist", "player", "next", "play"],
+        help = "Queue nothing: move what the zone --zone names plays (its song, where it stands, \
+                its queue and whether it plays) onto this zone of the window, by its number or \
+                its name. The other zone opens its own device and fades in from where the first \
+                was heard while the first fades out and stops"
+    )]
+    pub move_to: Option<String>,
 }
 
 #[derive(Debug, Args)]

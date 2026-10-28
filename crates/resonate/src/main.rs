@@ -2128,6 +2128,9 @@ fn play(
 
 fn queue_onto_a_running_player(cli: &Cli, config: &Config, wanted: &QueueArgs) -> Result<()> {
     let running = reached(wanted.player.as_deref(), wanted.zone.as_deref())?;
+    if let Some(to) = wanted.move_to.as_deref().map(ZoneAsked::read) {
+        return move_the_playback(&running, to);
+    }
     let rows = match wanted.playlist.as_deref() {
         Some(name) => playlist_rows(cli, config, name)?,
         None => queue_items(&wanted.files)
@@ -2148,6 +2151,16 @@ fn queue_onto_a_running_player(cli: &Cli, config: &Config, wanted: &QueueArgs) -
     )?;
 
     said!("queued {queued} onto {}", running.name());
+    Ok(())
+}
+
+fn move_the_playback(running: &Running, to: ZoneAsked) -> Result<()> {
+    let target = Running::zoned(&to)?
+        .and_then(|target| target.zone_number())
+        .ok_or(Error::NoSuchZone { zone: to })?;
+    running.hand_over(target)?;
+
+    said!("moving what {} plays to zone {target}", running.name());
     Ok(())
 }
 

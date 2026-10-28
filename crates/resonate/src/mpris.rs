@@ -13,7 +13,9 @@ use resonate_codec::Sources;
 use resonate_core::{FrameSpan, MediaLocation, SourceId, TrackId, ZoneId, ZoneName};
 use resonate_engine::{Command, NodeName, Placement, Player, QueueItem, Unclaimed, Zones};
 use resonate_library::Library;
-use resonate_mpris::{Heard, Host, Mpris, Opened, Reloadable, Reloaded, Tunable, Tuned};
+use resonate_mpris::{
+    HandedOver, Heard, Host, Mpris, Opened, Reloadable, Reloaded, Tunable, Tuned,
+};
 
 use crate::{
     cli::{DitherArg, FilterPhaseArg, NoiseShapingArg, QualityArg},
@@ -288,6 +290,19 @@ impl Host for Desktop {
             }
             Reloadable::Submission | Reloadable::Sync => Reloaded::Refused,
             Reloadable::Tidal => self.tidal_signed_in_again(Path::new(settings)),
+        }
+    }
+
+    fn hand_over(&self, to: ZoneId) -> HandedOver {
+        let Some((zones, from)) = self.zones() else {
+            return HandedOver::Refused;
+        };
+        match zones.hand_over(from, to) {
+            Ok(_) => HandedOver::Moving,
+            Err(error) => {
+                tracing::warn!(%error, %from, %to, "playback asked over the session bus to move was not");
+                HandedOver::Refused
+            }
         }
     }
 }

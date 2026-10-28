@@ -59,7 +59,7 @@ pub use crate::{
     error::{Cause, Error, Result},
     heard::{A_SEEK, COUNTS_AS_HEARD, Counting, Listening, Played},
     impulse::{LONGEST_IMPULSE, read_impulse},
-    kept::{KEPT_EVERY, Keep, Keeping},
+    kept::{KEPT_EVERY, Keep, Keeping, resumption_of},
     pipeline::{
         BluetoothWake, Decoded, EngineConfig, Equalisation, Levelling, OutputMode, OutputPlan,
         plan_for, plan_output, resolve_replay_gain,
@@ -73,7 +73,9 @@ pub use crate::{
         Seeks, StreamDigest, TrackState, TransportState,
     },
     tap::{Caught, Tap, Tapped},
-    zones::{Held, Opening, Opens, Within, Zone, Zones, holds_its_device},
+    zones::{
+        HANDED_OVER_WITHIN, Handover, Held, Opening, Opens, Within, Zone, Zones, holds_its_device,
+    },
 };
 pub(crate) use crate::{
     command::{Reply, Request},

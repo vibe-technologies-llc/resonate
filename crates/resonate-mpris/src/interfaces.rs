@@ -2,7 +2,7 @@ use std::{collections::HashMap, mem, sync::Arc, time::Duration};
 
 use ahash::AHashSet;
 use parking_lot::Mutex;
-use resonate_core::{FrameSpan, Frames, MediaLocation, Span, TrackId, Volume};
+use resonate_core::{FrameSpan, Frames, MediaLocation, Span, TrackId, Volume, ZoneId};
 use resonate_engine::{
     ArtRead, Command, Placement, Player, PlayerState, QueueItem, QueueRows, StreamDigest,
     TrackState, unclaimed_id,
@@ -10,7 +10,7 @@ use resonate_engine::{
 use zbus::{ObjectPath, OwnedObjectPath, OwnedVariant, Variant, fdo, interface};
 
 use crate::{
-    Heard, Host, Opened, Reloadable, Reloaded, Tunable, Tuned,
+    HandedOver, Heard, Host, Opened, Reloadable, Reloaded, Tunable, Tuned,
     art::Pictures,
     service,
     track::{
@@ -487,6 +487,15 @@ impl OwnInterface {
         match self.shared.host.reload(group, settings) {
             Reloaded::Applied => Ok(()),
             Reloaded::Refused => Err(refused()),
+        }
+    }
+
+    fn hand_over(&self, zone: u32) -> fdo::Result<()> {
+        let refused = || fdo::Error::InvalidArgs(format!("playback cannot move to zone {zone}"));
+        let to = ZoneId::new(zone).ok_or_else(refused)?;
+        match self.shared.host.hand_over(to) {
+            HandedOver::Moving => Ok(()),
+            HandedOver::Refused => Err(refused()),
         }
     }
 

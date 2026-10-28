@@ -28,6 +28,7 @@ const SWITCHER_GROUP: &str = "zone-switcher";
 const ADD_A_ZONE: &str = "Add a zone";
 const RENAME_THE_ZONE: &str = "Rename this zone…";
 const REMOVE_THE_ZONE: &str = "Remove this zone";
+const MOVED_TO: &str = "Move playback to";
 const NAME_SHOWN_AT_MOST: f32 = 120.0;
 const NAMING_FIELD_WIDTH: f32 = 140.0;
 
@@ -127,6 +128,21 @@ impl Switcher {
         }
     }
 
+    pub(crate) fn elsewhere(&self) -> impl Iterator<Item = &Shown> {
+        self.shown.iter().filter(|zone| zone.id != self.selected)
+    }
+
+    pub(crate) fn moving_to(&self, id: ZoneId) -> Option<String> {
+        self.name_of(id).map(|name| format!("{MOVED_TO} {name}"))
+    }
+
+    pub(crate) fn moved_to(&self, id: ZoneId) -> String {
+        match self.name_of(id) {
+            Some(name) => format!("Playing in {name} now"),
+            None => "Playing in the other zone now".to_owned(),
+        }
+    }
+
     pub(crate) const fn can_remove(&self) -> bool {
         !self.selected.is_first()
     }
@@ -193,6 +209,15 @@ pub(crate) fn refusal(error: &Error, switcher: &Switcher) -> String {
             switcher
                 .name_of(*by)
                 .map_or_else(|| "Another zone".to_owned(), ToString::to_string)
+        ),
+        Error::NothingToHandOver { .. } => {
+            "There's nothing in this zone's queue to move".to_owned()
+        }
+        Error::HandoverUnheard { zone } => format!(
+            "{} didn't start playing, so the music stayed where it was",
+            switcher
+                .name_of(*zone)
+                .map_or_else(|| "The other zone".to_owned(), ToString::to_string)
         ),
         other => toast::would_not_do(Command::Stop.kind(), other.cause()),
     }
@@ -352,6 +377,30 @@ impl RootView {
         cx.notify();
     }
 
+    pub(crate) fn move_playback_to(&mut self, to: ZoneId, cx: &mut Context<Self>) {
+        let from = self.switcher.selected();
+        let zones = Self::zones(cx);
+        let handing = cx.background_executor().spawn(async move {
+            zones
+                .hand_over(from, to)
+                .and_then(|handover| handover.wait())
+        });
+
+        self.show_zone(to, cx);
+        cx.spawn(async move |this, cx| {
+            let handed = handing.await;
+            let _ = this.update(cx, |this, cx| match handed {
+                Ok(()) => toast::tell(Notice::Done(this.switcher.moved_to(to)), cx),
+                Err(error) => {
+                    tracing::warn!(%error, from = %from, to = %to, "playback was not moved");
+                    this.show_zone(from, cx);
+                    toast::tell(Notice::Trouble(refusal(&error, &this.switcher)), cx);
+                }
+            });
+        })
+        .detach();
+    }
+
     pub(crate) fn name_the_zone(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let selected = self.switcher.selected();
         let held = self
@@ -509,6 +558,18 @@ impl RootView {
         }
 
         let selected = self.switcher.selected();
+        if self.switcher.several() {
+            menu = menu.apart();
+            for zone in self.switcher.elsewhere() {
+                let id = zone.id;
+                let Some(said) = self.switcher.moving_to(id) else {
+                    continue;
+                };
+                menu = menu.does(Icon::Export, said, move |this, _, cx| {
+                    this.move_playback_to(id, cx);
+                });
+            }
+        }
         menu = menu
             .apart()
             .does(Icon::Plus, ADD_A_ZONE, |this, _, cx| this.add_a_zone(cx))
@@ -642,6 +703,34 @@ mod tests {
             })
         );
         assert_eq!(switcher.kept(zone(9), None, half), None);
+    }
+
+    #[test]
+    fn playback_is_offered_to_every_zone_but_the_one_shown_and_a_failed_move_names_the_zone() {
+        let mut switcher = three();
+        switcher.select(zone(2));
+
+        assert_eq!(
+            switcher
+                .elsewhere()
+                .map(|zone| zone.id.get())
+                .collect::<Vec<_>>(),
+            vec![1, 3]
+        );
+        assert_eq!(
+            switcher.moving_to(zone(3)).as_deref(),
+            Some("Move playback to Study")
+        );
+        assert_eq!(switcher.moving_to(zone(9)), None);
+        assert_eq!(switcher.moved_to(zone(3)), "Playing in Study now");
+        assert_eq!(
+            refusal(&Error::HandoverUnheard { zone: zone(3) }, &switcher),
+            "Study didn't start playing, so the music stayed where it was"
+        );
+        assert_eq!(
+            refusal(&Error::NothingToHandOver { zone: zone(2) }, &switcher),
+            "There's nothing in this zone's queue to move"
+        );
     }
 
     #[test]

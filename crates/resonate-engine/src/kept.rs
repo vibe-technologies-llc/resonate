@@ -61,15 +61,7 @@ impl Keeping {
 
         if standing.is_none_or(|standing| standing.stamp != held.stamp) {
             self.kept = Some((row, at));
-            let (rows, order) = in_load_order(queued);
-            return Some(Keep::Queue(Resumption {
-                rows,
-                order,
-                row,
-                at,
-                shuffle: state.shuffle,
-                next: queued.next,
-            }));
+            return Some(Keep::Queue(resumption_of(state, queued)));
         }
         if standing != Some(held) {
             self.kept = Some((row, at));
@@ -105,6 +97,21 @@ impl Keeping {
             None => return held_at != at,
         };
         Frames(held_at.get().abs_diff(at.get())) >= Frames::from_duration(KEPT_EVERY, rate)
+    }
+}
+
+pub fn resumption_of(state: &PlayerState, queued: &Queued) -> Resumption {
+    let (rows, order) = in_load_order(queued);
+    Resumption {
+        rows,
+        order,
+        row: state.queue_position.unwrap_or(0),
+        at: state
+            .current
+            .as_ref()
+            .map_or(Frames::ZERO, |track| track.position),
+        shuffle: state.shuffle,
+        next: queued.next,
     }
 }
 
