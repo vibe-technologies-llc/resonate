@@ -51,6 +51,12 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Device sync
 
 ## Equaliser and DSP
+- [M · 0.3.0] No crossfeed or binaural stage: every stage works per channel (`Impulse` holds one set
+  of taps per channel and `Remix` folds by position), so hard-panned stereo on headphones has no
+  Bauer-style crossfeed (a lowpassed, delayed, attenuated copy of each channel into the other) and an
+  HRIR set (SOFA or a two-by-two impulse response) cannot be convolved, since a path from left to
+  right needs a matrix of responses; the headphone work built so far (AutoEq, a listener's own
+  measurement, room correction) corrects the transducer and leaves the stereo image alone
 
 ## Search
 - [M · blocked: service] A pasted Spotify, TIDAL or Apple Music playlist link lists only the songs its
@@ -74,6 +80,12 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   stereo state
 
 ## Later: Sources and providers
+- [L] A server's library cannot be browsed or played, only wanted songs fetched: Subsonic, TIDAL,
+  hifi-api and Monochrome deliver a file to keep, and the catalog is the local source's alone, though
+  the playing side is ready (`Sources` opens any other provider off the engine thread under
+  `OPENED_WITHIN` and `READ_WITHIN`, `Player::media` reads a queue row of any source). A Subsonic
+  (Navidrome, Jellyfin's Subsonic API) source with its own catalog, browsed and played in place, is
+  what a listener with a home server would reach first
 - [M · blocked: services] The Bandcamp and Discogs links an `Identity` carries are read by nothing;
   no provider asks either
 - [M · blocked: servers] Subsonic matches a recording id or ISRC but not the release-track id the
@@ -109,6 +121,19 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   multichannel AAC whose program config element (`matrix_mixdown_idx`, `pseudo_surround`)
   symphonia-codec-aac 0.6.1 refuses (`aac: program config`, and more than two channels is `aac too
   complex`)
+
+## Later: Network output
+- [L] Output reaches PipeWire, Oboe and RemoteIO alone: a stereo behind a network streamer (UPnP
+  and OpenHome renderers, AirPlay, Chromecast) cannot be played to, though `resonate-audio::Backend`
+  is the seam the engine reaches every sink through and a zone is a `Player` of its own, so a
+  renderer would be one more backend and a room one more zone. Such a sink holds its own clock and
+  takes a URL or a stream rather than a ring, so the plan's bit-perfect modes would not apply to it
+
+## Later: Equaliser and DSP extras
+- [M] Nothing lets a listener test what the chain does: restoration, the resampler's quality and
+  phase, noise shaping and the equaliser are tuned by measurement, with no level-matched ABX in the
+  player to hear whether a setting is audible (the chain against a bypass of itself, gain matched to
+  0.1 dB, a verdict kept per trial)
 
 ## Later: Lyrics
 - [L · blocked: gpui] The sung line cannot grow as it lights: gpui 0.2.2 on Linux draws a glyph on a
