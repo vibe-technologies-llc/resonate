@@ -49,6 +49,16 @@ the service, `DownloadOp`'s says what the download could not be), never a debug 
 `downloads::failure_of` is the one reading of a provider's error into those variants, for a find, an
 opening and the TIDAL sign-in alike.
 
+**A measurement that will not fit says which file** (`measurement.rs`): `Error::Measurement { file,
+source }` carries `MeasuredFile::{Measurement, Target}` and the boxed `resonate_eq::Error`, and
+`failure::of_a_measurement` words each refusal (too large, no point, too few points, a span that
+misses 500 Hz to 2 kHz, nothing to correct) as a sentence naming the file; a built-in target no one
+is called is `UnknownTarget { name }`. `fit_measurement` takes the measurement's bytes and a
+`MeasurementTarget` (a built-in's name or a document's bytes), is synchronous CPU work for the
+caller to run off its main thread, and `measurement_offers()` hands over the built-ins and the byte
+limit (`eq.md`'s *A measurement of your own*). Its result field is `imported`, not `import`, a Swift
+keyword.
+
 ## A failure is told by its cause
 
 `failure.rs` reads `resonate_engine::Cause` (the desktop's reading of an engine error, with

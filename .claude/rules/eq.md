@@ -13,9 +13,13 @@ paths:
   - "crates/resonate-ui/src/views/settings/curve.rs"
   - "crates/resonate/src/equaliser.rs"
   - "crates/resonate-mobile/src/equaliser.rs"
+  - "crates/resonate-mobile/src/measurement.rs"
   - "crates/resonate-mobile/src/room.rs"
   - "ios/Sources/Resonate/RoomCorrection.swift"
+  - "ios/Sources/Resonate/MeasuredCorrection.swift"
+  - "ios/Sources/ResonateLogic/Measurement.swift"
   - "android/app/src/main/java/org/resonate/android/RoomCorrectionState.kt"
+  - "android/app/src/main/java/org/resonate/android/ui/equaliser/Measurement*.kt"
   - "ios/Sources/Resonate/EqualiserGraph.swift"
 ---
 
@@ -341,7 +345,7 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
 ## A measurement of your own
 
 A second correction source beside AutoEq: the listener's own frequency-response measurement, fitted
-to a target. `resonate-eq` only, no network, desktop and CLI; the phones do not reach it yet.
+to a target. `resonate-eq` only, no network, on the desktop, the CLI and both phones.
 
 - **A response is read as far as it parses** (`measurement::read_response`, the `apo` rule): text goes
   through `text::decoded`; `Response` is points sorted by hertz, a repeated frequency keeping its
@@ -392,9 +396,23 @@ to a target. `resonate-eq` only, no network, desktop and CLI; the phones do not 
   executor in `_measured` (own task, like `_imported`), shows the new profile and says how many
   bands, which target and the error before and after. The group shows whether or not online is on:
   nothing in it asks the network.
-- **Not yet**: the phones. `parse_eq_profile` is their only import hook and takes profiles, not
-  responses; a boundary function fitting a measurement and a picker for it in both apps are the
-  remaining work (`docs/FEATURES.md`).
+- **The phones fit it through one boundary function** (`resonate-mobile/src/measurement.rs`):
+  `fit_measurement(measurement, target, name)` reads the measurement's bytes with `read_response`,
+  the target as `MeasurementTarget::BuiltIn { name }` (`BuiltIn::parse`, any case) or
+  `Document { bytes }` (the same reader), fits with `Fitting::default()` and answers a
+  `MeasurementFit`: `imported` (an `EqualiserImport` through `equaliser::imported`, so the curve is
+  held to the phone's bounds and counted in `clamped`, `converted` false, `passed_over` the
+  measurement's lines that were no point), `bands` and the weighted error `off_by_db_before` and
+  `off_by_db_after`. It is the desktop's fit of the same bytes
+  (`the_phones_fit_is_the_desktops_fit_of_the_same_bytes`). `measurement_offers()` hands the front
+  end the built-ins (`name`, `label`, one `recommended`: Harman over-ear 2018, the desktop's default)
+  and `bytes_at_most` (`LARGEST_MEASUREMENT`), so a phone reads that and one byte and keeps no list or
+  limit of its own. A refusal is `Error::Measurement { file, source }` (`MeasuredFile::Measurement`
+  or `Target`, a `ResponseMissesTheMidBand` attributed to the file whose span it carries) displayed
+  as a sentence naming the file (`failure::of_a_measurement`), or `UnknownTarget { name }`
+  (`a_file_that_will_not_read_is_refused_in_a_sentence_naming_which_file`). The fit is CPU work and
+  synchronous, so a phone calls it off its main thread. Neither phone keeps the profile as a file:
+  the result becomes the curve in use, as any import does, and is kept as the curve's text.
 
 ## AutoEq
 
@@ -544,6 +562,9 @@ to a target. `resonate-eq` only, no network, desktop and CLI; the phones do not 
   to it and counted in `clamped`, beside the reader's own `passed_over` (an unnameable channel)/`approximated`/`clamped`.
   A GraphicEQ line arrives as its 48 kHz fit and sets `converted`; editing it lets the target go, as
   `band_mut` does on the desktop, so the per-rate refit is not kept.
+- **A measurement of the listener's own is a third way in** (`fit_measurement`, *A measurement of
+  your own*): it answers the same `EqualiserImport` inside a `MeasurementFit`, so a phone loads it
+  as it loads an AutoEq profile.
 - **Kept as EqualizerAPO text**: `equaliser_text` writes a valid curve and `parse_eq_profile` reads
   it back as it was (`a_curve_kept_as_text_reads_back_as_the_same_curve`). Both phones store that
   text under `equaliser-curve` and the name under `equaliser-curve-name`, in the `playback` suite or

@@ -477,6 +477,21 @@ confirmed and told in a notice (Android's idiom, where iOS offers Undo). The equ
 room correction stay one for every output, as on the desktop and iOS
 (`OutputRoutesTest`, `OutputCurvesTest`, `PlaybackPreferencesTest`).
 
+**A measurement of the listener's own is fitted from the equaliser page** (`MeasurementSection`,
+`MeasurementAim.kt`, between *Import a profile* and *Headphone correction*): *Fit toward* chips for
+the boundary's built-in targets (`measurement_offers`, the recommended one chosen first) and *A
+file…*, which opens `ActivityResultContracts.OpenDocument` and reads the target through
+`ContentResolver.readUpTo` (`DocumentReads.kt`, at most the offers' `bytes_at_most` and one byte, so
+the boundary's refusal speaks for a larger one); *Fit a measurement…* opens the picker for the
+measurement itself. `EqualiserViewModel.fitFrom` reads on `Dispatchers.IO`, fits on
+`Dispatchers.Default` through `fit_measurement`, then commits the fitted curve as an import does
+(`commit`: it switches the equaliser on, binds to the output in use) and says `fitSentence`: the
+bands, the target, the error before and after and any lines passed over, also kept in the section
+under a progress bar while it runs. `MeasurementView` holds the offers, the aim (`Aim.BuiltIn` or
+`Aim.Document`), whether a fit is running and the last sentence; a second fit is refused while one
+runs, and a refusal reaches the status line as the boundary's sentence
+(`MeasurementAimTest`). The section does not show before the offers are read.
+
 **Room correction is the equaliser page's last section** (`RoomCorrectionSection`, `RoomCorrectionState.kt`):
 *Choose a response…* opens the system document picker for audio (`ACTION_OPEN_DOCUMENT`), the chosen
 file is read up to 64 MiB and one byte (the boundary refuses the byte) and kept through

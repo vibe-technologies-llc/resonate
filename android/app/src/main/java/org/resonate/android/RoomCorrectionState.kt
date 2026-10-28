@@ -2,7 +2,6 @@ package org.resonate.android
 
 import android.content.Context
 import android.net.Uri
-import android.provider.OpenableColumns
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -60,7 +59,7 @@ class RoomCorrectionState(
         step {
             try {
                 val native = library.native()
-                val name = displayName(uri)
+                val name = resolver.displayNameOf(uri)
                 val bytes = withContext(Dispatchers.IO) { read(uri) }
                 val kept = native.keepRoomCorrection(bytes, name.substringAfterLast('.', ""))
                 val stem = name.substringBeforeLast('.')
@@ -110,12 +109,6 @@ class RoomCorrectionState(
         settings.edit().putBoolean(ON_KEY, on).apply()
         view.value = view.value.copy(on = on)
     }
-
-    private fun displayName(uri: Uri): String =
-        resolver
-            .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
-            ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
-            ?: uri.lastPathSegment.orEmpty().substringAfterLast('/')
 
     private fun read(uri: Uri): ByteArray =
         resolver.openInputStream(uri)?.use { it.readNBytes(RESPONSE_BYTES_AT_MOST + 1) }
