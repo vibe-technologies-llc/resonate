@@ -5003,6 +5003,124 @@ fn a_row_heard_on_without_a_gap_is_announced_as_the_graph_reaches_it_not_as_it_i
     Ok(())
 }
 
+#[test]
+fn a_run_of_rows_each_shorter_than_the_ring_plays_on_without_a_gap_each_announced_as_the_graph_reaches_it()
+-> Result<()> {
+    const SHORT_ROW_FRAMES: usize = 1_500;
+    const SHORT_ROWS: u64 = 6;
+
+    let tree = Tree::new();
+    let rows: Vec<(u64, Vec<u8>)> = (1..=SHORT_ROWS)
+        .map(|id| {
+            (
+                id,
+                steady(
+                    i16::try_from(id * 1_000).unwrap_or(i16::MAX),
+                    SHORT_ROW_FRAMES,
+                ),
+            )
+        })
+        .collect();
+    let last = pcm(16, FRAMES);
+    let mut items: Vec<QueueItem> = rows
+        .iter()
+        .map(|(id, file)| track(&tree.write(&format!("{id}.wav"), file), *id))
+        .collect();
+    items.push(track(&tree.write("last.wav", &last.file), SHORT_ROWS + 1));
+
+    let row_bytes = SHORT_ROW_FRAMES * frame_bytes(SampleFormat::S16);
+    let mut heard: Vec<u8> = (1..=SHORT_ROWS)
+        .flat_map(|id| {
+            let level = i16::try_from(id * 1_000).unwrap_or(i16::MAX);
+            (0..SHORT_ROW_FRAMES * usize::from(CHANNELS)).flat_map(move |_| level.to_le_bytes())
+        })
+        .collect();
+    heard.extend_from_slice(&last.stream[..BLOCK_FRAMES * frame_bytes(SampleFormat::S16)]);
+    let boundaries: Vec<usize> = (1..=SHORT_ROWS as usize)
+        .map(|row| row * row_bytes)
+        .collect();
+
+    let (player, graph) = player_with_tail(
+        vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
+        0,
+        true,
+    )?;
+    player.send(Command::Load {
+        items,
+        start_at: 0,
+        autoplay: true,
+    })?;
+
+    let mut started = Vec::new();
+    let mut finished = Vec::new();
+    let mut published_early = Vec::new();
+    play_until(
+        &player,
+        &graph,
+        SHORT_PULL_FRAMES * frame_bytes(SampleFormat::S16),
+        |player, graph| {
+            for event in player.events().try_iter() {
+                match event {
+                    Event::TrackStarted(id) => started.push((id.get(), graph.played.len())),
+                    Event::TrackFinished(id) => finished.push((id.get(), graph.played.len())),
+                    Event::Failed { error, .. } => panic!("playback failed: {error}"),
+                    _ => {}
+                }
+            }
+            for (row, boundary) in boundaries.iter().enumerate() {
+                let entering = row as u64 + 2;
+                if graph.played.len() < *boundary && plays(player, entering) {
+                    published_early.push((entering, graph.played.len()));
+                }
+            }
+            graph.played.len() >= heard.len()
+                && started.last().is_some_and(|(id, _)| *id == SHORT_ROWS + 1)
+        },
+        "every short row and the long one after them to be heard",
+    );
+
+    let graph = graph.lock();
+    assert!(
+        graph.played[..heard.len()] == heard[..],
+        "the short rows did not reach the graph back to back, frame for frame"
+    );
+    assert_eq!(graph.opens, 1, "a short row opened a stream of its own");
+    assert_eq!(
+        graph.closes, 0,
+        "the stream was closed between the short rows"
+    );
+    assert_eq!(
+        graph.drains, 0,
+        "the graph was asked to drain after a short row"
+    );
+    assert_eq!(
+        published_early,
+        [],
+        "a row was published before the graph reached it"
+    );
+    assert_eq!(
+        started.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+        (1..=SHORT_ROWS + 1).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        finished.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+        (1..=SHORT_ROWS).collect::<Vec<_>>()
+    );
+    for (row, boundary) in boundaries.iter().enumerate() {
+        let (id, at) = started[row + 1];
+        assert!(
+            *boundary <= at && at < boundary + row_bytes,
+            "row {id} was started at {at} bytes, its first frame at {boundary}"
+        );
+        let (id, at) = finished[row];
+        assert!(
+            *boundary <= at && at < boundary + row_bytes,
+            "row {id} was finished at {at} bytes, its last frame before {boundary}"
+        );
+    }
+    Ok(())
+}
+
 struct QuieterOnOneRow {
     quiet: MediaLocation,
     gain: f32,

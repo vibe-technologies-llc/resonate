@@ -278,6 +278,13 @@ enum Seat {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Reckoning {
+    seat: Seat,
+    after: usize,
+    let_go: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Row {
     InOrder(usize),
     Next(usize),
@@ -991,17 +998,79 @@ impl Queue {
     }
 
     pub fn wraps_next(&self) -> bool {
-        self.repeat == RepeatMode::Queue
-            && self.seat != Seat::Nowhere
-            && self.waiting().is_empty()
-            && self.after >= self.order.len()
+        self.wraps_next_after(0)
+    }
+
+    pub fn wraps_next_after(&self, rows_ahead: usize) -> bool {
+        self.repeat == RepeatMode::Queue && self.is_last_after(rows_ahead)
     }
 
     pub fn ends_with_this_row(&self) -> bool {
-        self.repeat == RepeatMode::Off
-            && self.seat != Seat::Nowhere
-            && self.waiting().is_empty()
-            && self.after >= self.order.len()
+        self.ends_with_the_row_after(0)
+    }
+
+    pub fn ends_with_the_row_after(&self, rows_ahead: usize) -> bool {
+        self.repeat == RepeatMode::Off && self.is_last_after(rows_ahead)
+    }
+
+    fn is_last_after(&self, rows_ahead: usize) -> bool {
+        self.reckoned_after(rows_ahead).is_some_and(|reckoning| {
+            reckoning.seat != Seat::Nowhere
+                && self.waiting_at(reckoning) == 0
+                && reckoning.after >= self.order.len()
+        })
+    }
+
+    fn reckoned_after(&self, rows_ahead: usize) -> Option<Reckoning> {
+        let mut reckoning = Reckoning {
+            seat: self.seat,
+            after: self.after,
+            let_go: 0,
+        };
+        if self.repeat == RepeatMode::Track {
+            return Some(reckoning);
+        }
+        for _ in 0..rows_ahead {
+            reckoning = self.advanced_from(reckoning)?;
+        }
+        Some(reckoning)
+    }
+
+    fn advanced_from(&self, reckoning: Reckoning) -> Option<Reckoning> {
+        let let_go = match reckoning.seat {
+            Seat::Nowhere => return None,
+            Seat::Next => reckoning.let_go + 1,
+            Seat::InOrder => reckoning.let_go,
+        };
+        if self.next.len() > let_go {
+            Some(Reckoning {
+                seat: Seat::Next,
+                let_go,
+                ..reckoning
+            })
+        } else if reckoning.after < self.order.len() {
+            Some(Reckoning {
+                seat: Seat::InOrder,
+                after: reckoning.after + 1,
+                let_go,
+            })
+        } else if self.repeat == RepeatMode::Queue && !self.shuffle && !self.order.is_empty() {
+            Some(Reckoning {
+                seat: Seat::InOrder,
+                after: 1,
+                let_go,
+            })
+        } else {
+            None
+        }
+    }
+
+    fn waiting_at(&self, reckoning: Reckoning) -> usize {
+        let heard = usize::from(reckoning.seat == Seat::Next);
+        self.next
+            .len()
+            .saturating_sub(reckoning.let_go)
+            .saturating_sub(heard)
     }
 
     pub fn advance(&mut self, natural: bool) -> Option<usize> {
@@ -1028,22 +1097,25 @@ impl Queue {
         self.heard_place()
     }
 
-    pub fn follows_naturally(&self) -> Option<&QueueItem> {
+    pub fn follows_naturally_after(&self, rows_ahead: usize) -> Option<&QueueItem> {
         if self.seat == Seat::Nowhere {
             return None;
         }
         if self.repeat == RepeatMode::Track {
             return self.current();
         }
-        let waiting = match self.seat {
-            Seat::Next => self.next.get(1),
-            Seat::Nowhere | Seat::InOrder => self.next.front(),
+        let reckoning = self.reckoned_after(rows_ahead)?;
+        let waiting = match reckoning.seat {
+            Seat::Next => self.next.get(reckoning.let_go + 1),
+            Seat::Nowhere | Seat::InOrder => self.next.get(reckoning.let_go),
         };
-        let held = waiting.or_else(|| self.order.get(self.after)).or_else(|| {
-            (self.repeat == RepeatMode::Queue && !self.shuffle)
-                .then(|| self.order.front())
-                .flatten()
-        })?;
+        let held = waiting
+            .or_else(|| self.order.get(reckoning.after))
+            .or_else(|| {
+                (self.repeat == RepeatMode::Queue && !self.shuffle)
+                    .then(|| self.order.front())
+                    .flatten()
+            })?;
         Some(held.item.as_ref())
     }
 
@@ -2828,6 +2900,48 @@ mod tests {
         queue.advance(true);
         assert_eq!(current(&queue), Some(1));
         assert_eq!(numbered(&queue), [1, 2]);
+    }
+
+    #[test]
+    fn what_follows_rows_ahead_is_what_advancing_that_many_rows_would_find_next() {
+        for repeat in [RepeatMode::Off, RepeatMode::Queue, RepeatMode::Track] {
+            for queued in 0..3 {
+                for start_at in 0..3 {
+                    let mut queue = loaded(3, start_at);
+                    queue.set_repeat(repeat);
+                    queue.insert(
+                        (0..queued).map(|n| item(90 + n)).collect(),
+                        Placement::Queued,
+                    );
+
+                    let mut advanced = queue.clone();
+                    for rows_ahead in 0..8 {
+                        let said = (
+                            queue
+                                .follows_naturally_after(rows_ahead)
+                                .map(|item| item.id.get()),
+                            queue.wraps_next_after(rows_ahead),
+                            queue.ends_with_the_row_after(rows_ahead),
+                        );
+                        let found = (
+                            advanced
+                                .follows_naturally_after(0)
+                                .map(|item| item.id.get()),
+                            advanced.wraps_next(),
+                            advanced.ends_with_this_row(),
+                        );
+                        assert_eq!(
+                            said, found,
+                            "{repeat:?}, {queued} queued, from {start_at}, {rows_ahead} ahead"
+                        );
+                        if found.0.is_none() {
+                            break;
+                        }
+                        advanced.advance(true);
+                    }
+                }
+            }
+        }
     }
 
     #[test]

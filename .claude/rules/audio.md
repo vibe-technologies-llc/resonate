@@ -355,11 +355,25 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   frame and the one stepped to there without disturbing the announcement
   (`a_volume_asked_while_a_boundary_waits_reaches_the_leaving_tail_and_the_entering_row_at_each_rows_gain`,
   `a_mute_asked_while_a_boundary_waits_silences_the_leaving_tail_and_the_entering_row`). The
-  handover is a `Boundary` (`at`, a frame of this output's ring, and the leaving `Track`), and
-  until the graph has read past `at` (`reach_the_boundary`, before every fill, the loop waking by
-  `until_the_boundary`) the leaving row is what is heard: the queue has not advanced,
-  `PlayerState::current`, the digest and the sleep timer read `heard_track`, and `position` counts
-  the leaving row's end less what lies between the graph and `at`. Reached, `pass_the_boundary`
+  handover is a `Boundary` (`at`, a frame of this output's ring, the ring's `Turned` and the
+  leaving `Track`), and until the graph has read past `at` (`reach_the_boundary`, before every
+  fill, the loop waking by `until_the_boundary`) the leaving row is what is heard: the queue has not
+  advanced, `PlayerState::current`, the digest and the sleep timer read `heard_track`, and
+  `position` counts the leaving row's end less what lies between the graph and `at`. **Boundaries
+  wait one behind another** (`Engine::boundaries`, oldest first, at most `TURNS_WAITING_AT_MOST`,
+  seven): a row shorter than the ring ends while the last boundary still waits and is handed on
+  behind it, so a run of short cue cuts or interludes plays without a gap. The row a further
+  boundary opens is `Queue::follows_naturally_after(boundaries)`, reckoned without moving the queue
+  (`Reckoning`; a wrap under shuffle reckons nothing), and the sleep timer's end is weighed at the
+  decoding row (`wraps_next_after`, `ends_with_the_row_after`). Each turn's heard level is a slot of
+  its own in the ring (below), so a volume asked meanwhile reaches every waiting row at its own
+  gain (`retune_for` plans each leaving `Track`). The front boundary is the heard one;
+  `reach_the_boundary` passes every one the graph has read past, each announcing the row the next
+  boundary leaves (or the decoding one), and taking the boundary back restores the front one's row
+  and drops the rest. A row ending before the stream has opened waits for the row after it rather
+  than draining (`waits_while_the_ring_holds`: nothing pulls yet)
+  (`a_run_of_rows_each_shorter_than_the_ring_plays_on_without_a_gap_each_announced_as_the_graph_reaches_it`).
+  Reached, `pass_the_boundary`
   raises `TrackFinished` and `TrackStarted`, advances the queue as a natural skip (a seek counted
   where the row repeats), resets the heard floor, renegotiations and failures, and pauses where the
   sleep timer ends here, so MPRIS, the played count and the scrobble follow the frame heard. A queue
@@ -372,10 +386,10 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   and waits for `StreamEvent::Drained` (`SinkStream::latency` on the wall clock is the fallback),
   and the next row opens (`start` takes the `Ahead` that landed for it), so bit-perfect wins
   wherever the rate, word or channels move. Refused also: a sleep timer ending at
-  this row or queue, a sleep fade, a rebind owed, a draining or discarding ring, and a second
-  boundary behind one the graph has not reached (a row shorter than the ring); a splice, reshape or
-  ramp in flight, or an opening not landed, waits while the ring holds more than
-  `HANDED_ON_WHILE_THE_RING_HOLDS` (40 ms). A splice asked while a boundary waits is owed
+  the row being decoded or queue, a sleep fade, a rebind owed, a draining or discarding ring, and
+  an eighth boundary behind seven the graph has not reached; a splice, reshape or ramp in flight,
+  or an opening not landed, waits while the ring holds more than `HANDED_ON_WHILE_THE_RING_HOLDS`
+  (40 ms), or while no stream has opened yet. A splice asked while a boundary waits is owed
   (`rows_of_one_format_play_on_through_one_stream_with_no_drain_and_not_a_frame_between_them`,
   `dop_rows_play_on_through_one_stream_with_no_drain_no_gap_and_the_marker_unbroken_across_them`,
   `a_row_heard_on_without_a_gap_is_announced_as_the_graph_reaches_it_not_as_it_is_written`,

@@ -32,7 +32,10 @@ use crate::{
         resolve_replay_gain,
     },
     queue::{self, Queue, QueueItem, Removal},
-    ring::{Entering, FADED_OVER, Level, RingConsumer, RingMonitor, RingProducer, ring},
+    ring::{
+        Entering, FADED_OVER, Level, RingConsumer, RingMonitor, RingProducer,
+        TURNS_WAITING_AT_MOST, Turned, ring,
+    },
     streaming::{Asked, Came, Streamed, Streaming, close_unwanted},
     surveying::{Surveyed, Surveying},
     turns::Turns,
@@ -241,6 +244,7 @@ impl Ahead {
 struct Boundary {
     at: u64,
     made: u64,
+    turned: Turned,
     leaving: Track,
 }
 
@@ -900,7 +904,7 @@ pub struct Engine {
     queue: Queue,
     opening: Option<Opening>,
     ahead: Option<Ahead>,
-    boundary: Option<Boundary>,
+    boundaries: VecDeque<Boundary>,
     announced: Option<u64>,
     stale_sinks: bool,
     formats_owed: bool,
@@ -1060,7 +1064,7 @@ impl Engine {
             queue: Queue::new(),
             opening: None,
             ahead: None,
-            boundary: None,
+            boundaries: VecDeque::new(),
             announced: None,
             stale_sinks,
             formats_owed: false,
@@ -1696,10 +1700,10 @@ impl Engine {
                 {
                     track.location = to;
                 }
-                if let Some(boundary) = self.boundary.as_mut()
-                    && let Some(to) = queue::landed_at(&boundary.leaving.location, &moved)
-                {
-                    boundary.leaving.location = to;
+                for boundary in &mut self.boundaries {
+                    if let Some(to) = queue::landed_at(&boundary.leaving.location, &moved) {
+                        boundary.leaving.location = to;
+                    }
                 }
                 Ok(())
             }
@@ -2029,7 +2033,7 @@ impl Engine {
         self.failures = 0;
         self.retire_the_output();
         self.track = None;
-        self.boundary = None;
+        self.boundaries.clear();
         self.ahead = None;
         self.opening = None;
         self.answer_the_deferred(Ok(()));
@@ -2119,7 +2123,7 @@ impl Engine {
         if self.queue.current().is_none() {
             return Err(Error::QueueEmpty);
         }
-        if natural && self.boundary.is_some() && !self.pass_the_boundary() {
+        if natural && !self.boundaries.is_empty() && !self.pass_every_boundary() {
             return Ok(());
         }
         if natural && let Some(id) = self.track.as_ref().map(|track| track.id) {
@@ -2301,7 +2305,7 @@ impl Engine {
 
         self.retire_the_output();
         self.track = None;
-        self.boundary = None;
+        self.boundaries.clear();
         if self.opening.take().is_some() {
             self.answer_the_deferred(Ok(()));
         }
@@ -2539,7 +2543,7 @@ impl Engine {
     }
 
     fn splice_the_back(&mut self, wanted: OutputPlan) -> Result<Splicing> {
-        if self.boundary.is_some()
+        if !self.boundaries.is_empty()
             && let Some(output) = self.output.as_mut()
         {
             output.splice_owed = true;
@@ -2556,7 +2560,7 @@ impl Engine {
             .output
             .as_ref()
             .is_some_and(|output| output.splice_owed && !output.producer.is_splicing());
-        if !owed || self.boundary.is_some() {
+        if !owed || !self.boundaries.is_empty() {
             return;
         }
         if let Some(output) = self.output.as_mut() {
@@ -2602,19 +2606,33 @@ impl Engine {
             output.attenuator,
         );
         let entering = heard_amplitude(&wanted, self.muted);
-        match self.boundary.as_ref() {
-            Some(boundary) => {
-                let leaving = plan_for(
-                    boundary.leaving.decoded(),
-                    &output.bound,
-                    output.plan.stream,
-                    &self.config,
-                    boundary.leaving.replay_gain,
-                    output.attenuator,
-                );
-                output
-                    .producer
-                    .hear_across(heard_amplitude(&leaving, self.muted), entering);
+        let heard_as_planned = |track: &Track| {
+            let plan = plan_for(
+                track.decoded(),
+                &output.bound,
+                output.plan.stream,
+                &self.config,
+                track.replay_gain,
+                output.attenuator,
+            );
+            heard_amplitude(&plan, self.muted)
+        };
+        match self.boundaries.front() {
+            Some(front) => {
+                let leaving = heard_as_planned(&front.leaving);
+                let after: SmallVec<[(Turned, f32); TURNS_WAITING_AT_MOST]> = self
+                    .boundaries
+                    .iter()
+                    .zip(
+                        self.boundaries
+                            .iter()
+                            .skip(1)
+                            .map(|next| heard_as_planned(&next.leaving))
+                            .chain([entering]),
+                    )
+                    .map(|(boundary, heard)| (boundary.turned, heard))
+                    .collect();
+                output.producer.hear_across(leaving, &after);
             }
             None => output.producer.hear_at(entering),
         }
@@ -3005,10 +3023,15 @@ impl Engine {
     }
 
     fn sleeps_at_this_end(&self) -> bool {
+        self.sleeps_at_the_end_of(0)
+    }
+
+    fn sleeps_at_the_end_of(&self, rows_ahead: usize) -> bool {
         self.sleep.is_some_and(|sleeping| {
             sleeping.ends_the_track()
                 || (sleeping.ends_the_queue()
-                    && (self.queue.wraps_next() || self.queue.ends_with_this_row()))
+                    && (self.queue.wraps_next_after(rows_ahead)
+                        || self.queue.ends_with_the_row_after(rows_ahead)))
         })
     }
 
@@ -3016,7 +3039,8 @@ impl Engine {
         let Some(output) = self.output.as_ref() else {
             return false;
         };
-        !self.sleeps_at_this_end()
+        self.boundaries.len() < TURNS_WAITING_AT_MOST
+            && !self.sleeps_at_the_end_of(self.boundaries.len())
             && !self.rebind_owed
             && self.marks_on_across_a_boundary(output)
             && output.draining.is_none()
@@ -3050,7 +3074,7 @@ impl Engine {
         let holds = self.output.as_ref().is_some_and(|output| {
             let least =
                 Frames::from_duration(HANDED_ON_WHILE_THE_RING_HOLDS, output.plan.stream.rate);
-            output.buffered() as u64 > least.get()
+            output.stream.is_none() || output.buffered() as u64 > least.get()
         });
         if holds {
             Handing::Waits
@@ -3071,13 +3095,17 @@ impl Engine {
     }
 
     fn hand_on(&mut self) -> Handing {
-        if !self.may_hand_on() || self.boundary.is_some() {
+        if !self.may_hand_on() {
             return Handing::Refused;
         }
         if self.is_settling() {
             return self.waits_while_the_ring_holds();
         }
-        let Some(next) = self.queue.follows_naturally().cloned() else {
+        let Some(next) = self
+            .queue
+            .follows_naturally_after(self.boundaries.len())
+            .cloned()
+        else {
             return Handing::Refused;
         };
         if self
@@ -3152,7 +3180,7 @@ impl Engine {
         };
         let ahead = output.frames_rendered_ahead_of_the_ring();
         let rendered = output.chain.gain_amplitude().unwrap_or(Gain::UNITY.get());
-        output
+        let turned = output
             .producer
             .turn_at(rendered, heard_amplitude(&output.plan, muted), ahead);
         let held = if holds_the_leaving {
@@ -3160,9 +3188,10 @@ impl Engine {
         } else {
             0
         };
-        self.boundary = Some(Boundary {
+        self.boundaries.push_back(Boundary {
             at: output.producer.written().saturating_add(held),
             made: output.made,
+            turned,
             leaving,
         });
         if let Err(error) = swapped {
@@ -3185,39 +3214,54 @@ impl Engine {
     }
 
     fn heard_track(&self) -> Option<&Track> {
-        self.boundary
-            .as_ref()
+        self.boundaries
+            .front()
             .map(|boundary| &boundary.leaving)
             .or(self.track.as_ref())
     }
 
     fn reach_the_boundary(&mut self) {
-        let reached = match (self.boundary.as_ref(), self.output.as_ref()) {
-            (None, _) => return,
-            (Some(boundary), Some(output)) if output.made == boundary.made => {
-                output.producer.read() >= boundary.at
-            }
-            (Some(_), _) => {
-                self.take_the_boundary_back();
+        loop {
+            let reached = match (self.boundaries.front(), self.output.as_ref()) {
+                (None, _) => return,
+                (Some(boundary), Some(output)) if output.made == boundary.made => {
+                    output.producer.read() >= boundary.at
+                }
+                (Some(_), _) => {
+                    self.take_the_boundary_back();
+                    return;
+                }
+            };
+            if !reached || !self.pass_the_boundary() {
                 return;
             }
-        };
-        if reached {
-            self.pass_the_boundary();
         }
     }
 
     fn until_the_boundary(&self) -> Option<Duration> {
-        let (boundary, output) = (self.boundary.as_ref()?, self.output.as_ref()?);
+        let (boundary, output) = (self.boundaries.front()?, self.output.as_ref()?);
         let frames = boundary.at.saturating_sub(output.producer.read());
         Some(Frames(frames).to_duration(output.plan.stream.rate))
     }
 
+    fn pass_every_boundary(&mut self) -> bool {
+        while !self.boundaries.is_empty() {
+            if !self.pass_the_boundary() {
+                return false;
+            }
+        }
+        true
+    }
+
     fn pass_the_boundary(&mut self) -> bool {
-        let Some(boundary) = self.boundary.take() else {
+        let Some(boundary) = self.boundaries.pop_front() else {
             return false;
         };
-        let Some(entering) = self.track.as_ref().map(|track| track.id) else {
+        let entering = match self.boundaries.front() {
+            Some(next) => Some(next.leaving.id),
+            None => self.track.as_ref().map(|track| track.id),
+        };
+        let Some(entering) = entering else {
             return false;
         };
         let leaving = boundary.leaving.id;
@@ -3248,7 +3292,9 @@ impl Engine {
         self.failures = 0;
         self.fill_owed = true;
         let muted = self.muted;
-        if let Some(output) = self.output.as_mut() {
+        if self.boundaries.is_empty()
+            && let Some(output) = self.output.as_mut()
+        {
             let heard = heard_amplitude(&output.plan, muted);
             output.producer.hear_at(heard);
         }
@@ -3263,13 +3309,14 @@ impl Engine {
     }
 
     fn take_the_boundary_back(&mut self) -> bool {
-        if self.boundary.is_none() {
+        if self.boundaries.is_empty() {
             return false;
         }
         let _ = self.heard_position();
-        let Some(boundary) = self.boundary.take() else {
+        let Some(boundary) = self.boundaries.pop_front() else {
             return false;
         };
+        self.boundaries.clear();
         self.track = Some(boundary.leaving);
         if let Some(output) = self.output.as_mut() {
             output.rendered_for_another = true;
@@ -3281,7 +3328,7 @@ impl Engine {
         if let Some(ahead) = self.ahead.as_mut() {
             ahead.look();
         }
-        if !self.playing || self.boundary.is_some() || self.opening.is_some() {
+        if !self.playing || self.opening.is_some() {
             return;
         }
         let (Some(track), Some(_)) = (self.track.as_ref(), self.output.as_ref()) else {
@@ -3297,7 +3344,7 @@ impl Engine {
         if !near {
             return;
         }
-        let Some(next) = self.queue.follows_naturally() else {
+        let Some(next) = self.queue.follows_naturally_after(self.boundaries.len()) else {
             self.ahead = None;
             return;
         };
@@ -4069,10 +4116,10 @@ impl Engine {
     }
 
     fn fail(&mut self, error: Error) {
-        if self.boundary.is_some() {
+        if !self.boundaries.is_empty() {
             let entering = self.track.as_ref().map(|track| track.id);
             if entering.is_some() && error.track() == entering {
-                if !self.pass_the_boundary() {
+                if !self.pass_every_boundary() {
                     tracing::warn!(%error, "a row failed after the queue had moved past it");
                     return;
                 }
@@ -4113,7 +4160,7 @@ impl Engine {
     }
 
     fn position(&self) -> Frames {
-        if let (Some(boundary), Some(output)) = (self.boundary.as_ref(), self.output.as_ref()) {
+        if let (Some(boundary), Some(output)) = (self.boundaries.front(), self.output.as_ref()) {
             let leaving = &boundary.leaving;
             let behind = boundary
                 .at
@@ -4218,7 +4265,7 @@ impl Engine {
 
     fn publish_digest(&mut self) {
         let mode = self.config.replay_gain;
-        let heard = match self.boundary.as_mut() {
+        let heard = match self.boundaries.front_mut() {
             Some(boundary) => Some(&mut boundary.leaving),
             None => self.track.as_mut(),
         };

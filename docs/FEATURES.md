@@ -18,10 +18,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   `build-std`
 
 ## Playback and output
-- [M · 0.3.0] A row shorter than what the ring holds is not handed on gaplessly to the one after
-  it: while one boundary waits for the graph a second is not written behind it
-  (`Engine::hand_on` refuses), so the row drains and the next opens as a format change does; a run
-  of short cue cuts or interludes still has a gap after each that ends before the last was heard
 - [M · 0.3.0] The phones offer no zones: one player plays one queue to the route the system
   chose, so neither a second room nor a handover between two devices can be reached there
 - [M · 0.4.0] A handover between zones is not sample-aligned: the incoming zone opens at the

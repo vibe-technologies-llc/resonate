@@ -56,9 +56,10 @@ rest on this discipline alone):
   tests run there.
 - `resonate-engine/src/ring.rs`: what the graph pulls from; fader and trim scale in place, fade
   state from atomics, each rendered level's start from a preallocated SPSC queue (a gapless turn
-  between rows steps to a heard level held in an atomic beside the current one, both movable by
-  `hear_across` while the turn waits, and a later `hear_at` outranks the step through an atomic
-  turn count). A splice (an
+  between rows steps to a heard level held in a fixed array of `TURNS_HELD` atomics, one slot a
+  turn by its `Turned` count, so up to `TURNS_WAITING_AT_MOST` turns wait at once each at its own
+  level; every slot and the current level are movable by `hear_across` while turns wait, and a
+  later `hear_at` outranks every step through an atomic turn count). A splice (an
   equaliser change, `audio.md`) arrives as two atomics behind a `Release`d count; the consumer pops
   to its point, commits the stale frames unread and stores the count back, all within the ring's
   own preallocated bytes.
