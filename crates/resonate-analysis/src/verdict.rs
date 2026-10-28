@@ -4,7 +4,7 @@ use resonate_codec::Codec;
 
 use crate::{Coding, Levels, Spectrum, Steps, spectrum::BAND_HZ};
 
-pub const JUDGED_UNDER: u32 = 3;
+pub const JUDGED_UNDER: u32 = 4;
 
 const WALL_DB: f32 = 30.0;
 const WALL_FLOOR_SLACK_DB: f32 = 15.0;
@@ -28,11 +28,12 @@ const DC_OFFSET_FROM: f32 = 0.01;
 const LOWEST_FULL_BAND_RATE: u32 = 44_100;
 const ANTI_ALIAS_EDGE: f32 = 0.9;
 const BITS_A_FLOAT_CARRIES: u8 = 24;
-const AAC_LATTICE_AT_LEAST: f32 = 0.03;
+const AAC_LATTICE_AT_LEAST: f32 = 0.02;
 const MP3_LATTICE_AT_LEAST: f32 = 0.02;
 const VORBIS_LATTICE_AT_LEAST: f32 = 0.012;
 const LATTICE_OVER_ITS_CONTROL_AT_LEAST: f32 = 4.0;
-const STEPPED_COEFFICIENTS_AT_LEAST: u64 = 100_000;
+const STEPPED_COEFFICIENTS_AT_LEAST: u64 = 20_000;
+const LATTICE_SIGNIFICANCE_AT_LEAST: f32 = 12.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Verdict {
@@ -396,6 +397,7 @@ fn on_quantiser_steps(steps: &Steps) -> bool {
         Coding::Vorbis => VORBIS_LATTICE_AT_LEAST,
     };
     steps.coefficients >= STEPPED_COEFFICIENTS_AT_LEAST
+        && steps.lattice * (steps.coefficients as f32).sqrt() >= LATTICE_SIGNIFICANCE_AT_LEAST
         && steps.lattice >= lattice_at_least
         && steps.lattice >= steps.control * LATTICE_OVER_ITS_CONTROL_AT_LEAST
 }
@@ -769,10 +771,22 @@ mod tests {
         });
         assert_eq!(everywhere.verdict, Verdict::Genuine);
         let few = weighed(Steps {
-            coefficients: 50_000,
+            coefficients: 10_000,
             ..stepped
         });
         assert_eq!(few.verdict, Verdict::Genuine);
+        let weak = weighed(Steps {
+            lattice: 0.03,
+            coefficients: 30_000,
+            ..stepped
+        });
+        assert_eq!(weak.verdict, Verdict::Genuine);
+        let strong_among_few = weighed(Steps {
+            lattice: 0.1,
+            coefficients: 30_000,
+            ..stepped
+        });
+        assert_eq!(strong_among_few.verdict, Verdict::Fake);
         let loose = weighed(Steps {
             lattice: 0.003,
             control: 0.0005,

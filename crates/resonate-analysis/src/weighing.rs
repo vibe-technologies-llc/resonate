@@ -6,9 +6,13 @@ use crate::{
     steps::{Aac, Stepping, Steps, Vorbis},
 };
 
-const BROUGHT_BACK_TO: [(u32, SampleRate); 2] = [
-    (44_100, SampleRate::HZ_48000),
-    (48_000, SampleRate::HZ_44100),
+const BROUGHT_BACK_TO: [(u32, &[SampleRate]); 6] = [
+    (44_100, &[SampleRate::HZ_48000]),
+    (48_000, &[SampleRate::HZ_44100]),
+    (88_200, &[SampleRate::HZ_44100, SampleRate::HZ_48000]),
+    (96_000, &[SampleRate::HZ_48000, SampleRate::HZ_44100]),
+    (176_400, &[SampleRate::HZ_44100, SampleRate::HZ_48000]),
+    (192_000, &[SampleRate::HZ_48000, SampleRate::HZ_44100]),
 ];
 const FRAMES_AT_A_TIME: usize = 4_096;
 const LANES_WEIGHED_AT_MOST: usize = 2;
@@ -65,10 +69,7 @@ struct Resampled {
 }
 
 impl Resampled {
-    fn new(rate: u32, channels: usize) -> Option<Self> {
-        let (_, to) = BROUGHT_BACK_TO
-            .into_iter()
-            .find(|(from, _)| *from == rate)?;
+    fn new(rate: u32, channels: usize, to: SampleRate) -> Option<Self> {
         let lanes = channels.min(LANES_WEIGHED_AT_MOST);
         let layout = if lanes == 1 {
             ChannelLayout::Mono
@@ -131,27 +132,36 @@ impl Resampled {
 
 pub(crate) struct Weighing {
     native: Coded,
-    resampled: Option<Resampled>,
+    resampled: Vec<Resampled>,
+}
+
+fn brought_back(rate: u32, channels: usize) -> Vec<Resampled> {
+    BROUGHT_BACK_TO
+        .into_iter()
+        .filter(|(from, _)| *from == rate)
+        .flat_map(|(_, targets)| targets.iter().copied())
+        .filter_map(|to| Resampled::new(rate, channels, to))
+        .collect()
 }
 
 impl Weighing {
     pub(crate) fn new(rate: u32, channels: usize) -> Self {
         Self {
             native: Coded::new(rate, channels),
-            resampled: Resampled::new(rate, channels),
+            resampled: brought_back(rate, channels),
         }
     }
 
     pub(crate) fn unweighed() -> Self {
         Self {
             native: Coded::unweighed(),
-            resampled: None,
+            resampled: Vec::new(),
         }
     }
 
     pub(crate) fn note(&mut self, interleaved: &[f32]) {
         self.native.note(interleaved);
-        if let Some(resampled) = &mut self.resampled {
+        for resampled in &mut self.resampled {
             resampled.note(interleaved);
         }
     }
@@ -159,7 +169,7 @@ impl Weighing {
     pub(crate) fn finished(self) -> Vec<Steps> {
         let mut steps = Vec::new();
         self.native.finished(&mut steps);
-        if let Some(resampled) = self.resampled {
+        for resampled in self.resampled {
             resampled.coded.finished(&mut steps);
         }
         steps

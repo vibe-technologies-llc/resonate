@@ -1,5 +1,6 @@
 use std::{
     f64::consts::{PI, TAU},
+    ops::Range,
     sync::Arc,
 };
 
@@ -26,6 +27,11 @@ const AAC_FROM_HZ: f32 = 4_000.0;
 const AAC_TO_HZ: f32 = 16_000.0;
 const HIGHEST_AAC_RATE: u32 = 96_000;
 const KAISER_BESSEL_ALPHA: f64 = 4.0;
+const SHORT_KAISER_BESSEL_ALPHA: f64 = 6.0;
+const AAC_SHORT_HOP: usize = 128;
+const AAC_SHORTS: usize = 8;
+const AAC_SHORTS_START: usize = 448;
+const AAC_FLAT_END: usize = 1_472;
 
 const VORBIS_LONG_HOP: usize = 1_024;
 const VORBIS_SHORT_HOP: usize = 128;
@@ -67,38 +73,65 @@ pub struct Steps {
 pub(crate) struct Tally {
     sum: Complex<f64>,
     count: u64,
+    mass: f64,
+    spread: f64,
 }
 
 impl Tally {
     fn add(&mut self, other: Self) {
         self.sum += other.sum;
         self.count += other.count;
+        self.mass += other.mass;
+        self.spread += other.spread;
+    }
+
+    fn effective(self) -> u64 {
+        if self.spread <= 0.0 {
+            0
+        } else {
+            (self.mass * self.mass / self.spread) as u64
+        }
     }
 
     fn resultant(self) -> f64 {
-        if self.count == 0 {
+        if self.mass <= 0.0 {
             0.0
         } else {
-            self.sum.norm() / self.count as f64
+            self.sum.norm() / self.mass
         }
     }
 
     fn rayleigh(self) -> f64 {
-        if self.count == 0 {
+        if self.spread <= 0.0 {
             0.0
         } else {
-            self.sum.norm_sqr() / self.count as f64
+            self.sum.norm_sqr() / self.spread
         }
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct Ramp {
+    pub(crate) unit: f32,
+    pub(crate) from: f32,
+    pub(crate) to: f32,
+}
+
+pub(crate) const STEPS_RAMP: Ramp = Ramp {
+    unit: 1.0,
+    from: 3.0,
+    to: 7.0,
+};
+
 pub(crate) struct Phases {
     mantissas: Vec<Complex<f32>>,
     exponents: Vec<Complex<f32>>,
+    from: f32,
+    to: f32,
 }
 
 impl Phases {
-    pub(crate) fn new(steps_an_octave: f64) -> Self {
+    pub(crate) fn new(steps_an_octave: f64, ramp: Ramp) -> Self {
         let mantissas = (0..MANTISSA_BINS)
             .map(|bin| {
                 let mantissa = 1.0 + (bin as f64 + 0.5) / MANTISSA_BINS as f64;
@@ -111,21 +144,28 @@ impl Phases {
                 turned(1.0, TAU * (steps_an_octave * octave).fract())
             })
             .collect();
+        let shift = ramp.unit.log2();
         Self {
             mantissas,
             exponents,
+            from: ramp.from + shift,
+            to: ramp.to + shift,
         }
     }
 
-    fn of(&self, coefficient: f32) -> (Complex<f32>, u32) {
+    fn of(&self, coefficient: f32) -> (Complex<f32>, u32, f32) {
         let magnitude = coefficient.abs();
         let counted = u32::from(magnitude > SILENT_COEFFICIENT_UP_TO);
         let bits = magnitude.to_bits();
         let bin = (bits >> MANTISSA_SHIFT) as usize & (MANTISSA_BINS - 1);
         let exponent = (bits >> (f32::MANTISSA_DIGITS - 1)) as usize & (EXPONENTS - 1);
+        let x = (exponent as i32 - EXPONENT_BIAS) as f32 + (bits & 0x7f_ffff) as f32 / 8_388_608.0;
+        let t = ((x - self.from) / (self.to - self.from)).clamp(0.0, 1.0);
+        let weight = t * t * (3.0 - 2.0 * t) * counted as f32;
         (
-            self.mantissas[bin] * self.exponents[exponent] * counted as f32,
+            self.mantissas[bin] * self.exponents[exponent] * weight,
             counted,
+            weight,
         )
     }
 }
@@ -159,6 +199,14 @@ impl Band {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct Taking {
+    pub(crate) lane: usize,
+    pub(crate) at: u64,
+    pub(crate) shape: usize,
+    pub(crate) kind: usize,
+}
+
 pub(crate) trait Grid {
     const CODING: Coding;
     const HOP: usize;
@@ -166,6 +214,7 @@ pub(crate) trait Grid {
     const SPAN: usize;
     const LINES: usize;
     const SHAPES: usize;
+    const KINDS: usize = 1;
     const CONTROL_SHIFT: usize;
     const FRAMES_A_SEARCH: usize;
     const CONFIRMED_FRAMES: usize;
@@ -173,7 +222,7 @@ pub(crate) trait Grid {
 
     fn band(rate: u32) -> Option<Band>;
 
-    fn new(band: &Band) -> Self;
+    fn new(rate: u32, band: &Band) -> Self;
 
     fn phases(&self) -> &Phases;
 
@@ -185,6 +234,17 @@ pub(crate) trait Grid {
         shape: usize,
         into: &mut [f32],
     );
+
+    fn frame(
+        &mut self,
+        taking: Taking,
+        samples: &[f32],
+        band: &Band,
+        into: &mut [f32],
+    ) -> Range<usize> {
+        self.coefficients(taking.lane, samples, taking.at, taking.shape, into);
+        band.first..band.past
+    }
 
     fn forget(&mut self) {}
 }
@@ -237,7 +297,7 @@ impl<G: Grid> Stepping<G> {
         let weighable = !band.is_empty();
         let hop = G::HOP as u64;
         let every = (u64::from(rate) * SEARCHED_EVERY_SECONDS).div_ceil(hop) * hop;
-        let grid = weighable.then(|| G::new(&band));
+        let grid = weighable.then(|| G::new(rate, &band));
         Self {
             searches,
             rate,
@@ -332,23 +392,41 @@ impl<G: Grid> Stepping<G> {
     }
 
     fn tally_frame(&mut self, start: usize, shape: usize) -> Tally {
+        let mut chosen = Tally::default();
+        let mut chosen_strength = -1.0_f64;
+        for kind in 0..G::KINDS {
+            let tally = self.tally_kind(start, shape, kind);
+            let strength = tally.rayleigh();
+            if strength > chosen_strength {
+                chosen_strength = strength;
+                chosen = tally;
+            }
+        }
+        chosen
+    }
+
+    fn tally_kind(&mut self, start: usize, shape: usize, kind: usize) -> Tally {
         let Some(grid) = self.grid.as_mut() else {
             return Tally::default();
         };
         let at = self.held_from + start as u64;
-        grid.coefficients(
-            0,
-            &self.held[0][start..start + G::SPAN],
+        let taking = Taking {
+            lane: 0,
             at,
             shape,
+            kind,
+        };
+        let lines = grid.frame(
+            taking,
+            &self.held[0][start..start + G::SPAN],
+            &self.band,
             &mut self.left,
         );
         if self.paired {
-            grid.coefficients(
-                1,
+            grid.frame(
+                Taking { lane: 1, ..taking },
                 &self.held[1][start..start + G::SPAN],
-                at,
-                shape,
+                &self.band,
                 &mut self.right,
             );
         }
@@ -356,12 +434,16 @@ impl<G: Grid> Stepping<G> {
         let phases = grid.phases();
         let mut sum = Complex::<f32>::default();
         let mut count = 0_u32;
+        let mut mass = 0.0_f32;
+        let mut spread = 0.0_f32;
         let mut add = |coefficient: f32| {
-            let (phase, counted) = phases.of(coefficient);
+            let (phase, counted, weight) = phases.of(coefficient);
             sum += phase;
             count += counted;
+            mass += weight;
+            spread += weight * weight;
         };
-        for line in self.band.first..self.band.past {
+        for line in lines {
             let left = self.left[line];
             add(left);
             if self.paired {
@@ -376,6 +458,8 @@ impl<G: Grid> Stepping<G> {
         Tally {
             sum: Complex::new(f64::from(sum.re), f64::from(sum.im)),
             count: u64::from(count),
+            mass: f64::from(mass),
+            spread: f64::from(spread),
         }
     }
 
@@ -476,7 +560,7 @@ impl<G: Grid> Stepping<G> {
                     rate,
                     lattice: lattice.resultant() as f32,
                     control: control.resultant() as f32,
-                    coefficients: lattice.count,
+                    coefficients: lattice.effective(),
                 }
             })
             .max_by(|one, other| one.lattice.total_cmp(&other.lattice))
@@ -617,8 +701,8 @@ fn bessel_i0(value: f64) -> f64 {
     sum
 }
 
-fn kaiser_bessel_window(hop: usize) -> Vec<f64> {
-    let beta = PI * KAISER_BESSEL_ALPHA;
+fn kaiser_bessel_window(hop: usize, alpha: f64) -> Vec<f64> {
+    let beta = PI * alpha;
     let kaiser: Vec<f64> = (0..=hop)
         .map(|nth| {
             let reach = 2.0 * nth as f64 / hop as f64 - 1.0;
@@ -650,9 +734,71 @@ fn vorbis_window(span: usize) -> Vec<f64> {
         .collect()
 }
 
+fn starting(long: &[f64], short: &[f64]) -> Vec<f64> {
+    (0..long.len())
+        .map(|nth| match nth {
+            nth if nth < AAC_HOP => long[nth],
+            nth if nth < AAC_FLAT_END => 1.0,
+            nth if nth < AAC_FLAT_END + AAC_SHORT_HOP => short[AAC_SHORT_HOP + nth - AAC_FLAT_END],
+            _ => 0.0,
+        })
+        .collect()
+}
+
+fn stopping(long: &[f64], short: &[f64]) -> Vec<f64> {
+    let mut window = starting(long, short);
+    window.reverse();
+    window
+}
+
+#[derive(Clone, Copy)]
+enum AacBlock {
+    Long,
+    Start,
+    Stop,
+    Eight,
+}
+
+const AAC_BLOCKS: [AacBlock; 4] = [
+    AacBlock::Long,
+    AacBlock::Start,
+    AacBlock::Stop,
+    AacBlock::Eight,
+];
+
 pub(crate) struct Aac {
-    mdct: Mdct,
+    long: Mdct,
+    short: Mdct,
+    short_band: Band,
+    shorts: Vec<f32>,
     phases: Phases,
+}
+
+impl Aac {
+    fn windows() -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {
+        let long = [
+            sine_window(2 * AAC_HOP),
+            kaiser_bessel_window(AAC_HOP, KAISER_BESSEL_ALPHA),
+        ];
+        let short = [
+            sine_window(2 * AAC_SHORT_HOP),
+            kaiser_bessel_window(AAC_SHORT_HOP, SHORT_KAISER_BESSEL_ALPHA),
+        ];
+        let mut longs: Vec<Vec<f64>> = long.to_vec();
+        let starts: Vec<Vec<f64>> = long
+            .iter()
+            .zip(&short)
+            .map(|(long, short)| starting(long, short))
+            .collect();
+        let stops: Vec<Vec<f64>> = long
+            .iter()
+            .zip(&short)
+            .map(|(long, short)| stopping(long, short))
+            .collect();
+        longs.extend(starts);
+        longs.extend(stops);
+        (longs, short.to_vec())
+    }
 }
 
 impl Grid for Aac {
@@ -662,7 +808,8 @@ impl Grid for Aac {
     const SPAN: usize = 2 * AAC_HOP;
     const LINES: usize = AAC_HOP;
     const SHAPES: usize = 2;
-    const CONTROL_SHIFT: usize = AAC_HOP / 2;
+    const KINDS: usize = AAC_BLOCKS.len();
+    const CONTROL_SHIFT: usize = AAC_HOP / 2 + AAC_SHORT_HOP / 2;
     const FRAMES_A_SEARCH: usize = 4;
     const CONFIRMED_FRAMES: usize = 400;
     const MID_AND_SIDE: bool = true;
@@ -671,13 +818,14 @@ impl Grid for Aac {
         (rate <= HIGHEST_AAC_RATE).then(|| Band::of(rate, AAC_HOP, AAC_FROM_HZ, AAC_TO_HZ))
     }
 
-    fn new(_: &Band) -> Self {
+    fn new(rate: u32, _: &Band) -> Self {
+        let (longs, shorts) = Self::windows();
         Self {
-            mdct: Mdct::new(
-                AAC_HOP,
-                vec![sine_window(2 * AAC_HOP), kaiser_bessel_window(AAC_HOP)],
-            ),
-            phases: Phases::new(QUARTER_OCTAVE_STEPS),
+            long: Mdct::new(AAC_HOP, longs),
+            short: Mdct::new(AAC_SHORT_HOP, shorts),
+            short_band: Band::of(rate, AAC_SHORT_HOP, AAC_FROM_HZ, AAC_TO_HZ),
+            shorts: vec![0.0; AAC_SHORT_HOP],
+            phases: Phases::new(QUARTER_OCTAVE_STEPS, STEPS_RAMP),
         }
     }
 
@@ -686,7 +834,45 @@ impl Grid for Aac {
     }
 
     fn coefficients(&mut self, _: usize, samples: &[f32], _: u64, shape: usize, into: &mut [f32]) {
-        self.mdct.coefficients(samples, shape, into);
+        self.long.coefficients(samples, shape, into);
+    }
+
+    fn frame(
+        &mut self,
+        taking: Taking,
+        samples: &[f32],
+        band: &Band,
+        into: &mut [f32],
+    ) -> Range<usize> {
+        let Taking { shape, kind, .. } = taking;
+        match AAC_BLOCKS[kind] {
+            AacBlock::Long => {
+                self.long.coefficients(samples, shape, into);
+                band.first..band.past
+            }
+            AacBlock::Start => {
+                self.long.coefficients(samples, 2 + shape, into);
+                band.first..band.past
+            }
+            AacBlock::Stop => {
+                self.long.coefficients(samples, 4 + shape, into);
+                band.first..band.past
+            }
+            AacBlock::Eight => {
+                let width = self.short_band.width();
+                for window in 0..AAC_SHORTS {
+                    let from = AAC_SHORTS_START + window * AAC_SHORT_HOP;
+                    self.short.coefficients(
+                        &samples[from..from + 2 * AAC_SHORT_HOP],
+                        shape,
+                        &mut self.shorts,
+                    );
+                    into[window * width..(window + 1) * width]
+                        .copy_from_slice(&self.shorts[self.short_band.first..self.short_band.past]);
+                }
+                0..AAC_SHORTS * width
+            }
+        }
     }
 }
 
@@ -712,10 +898,13 @@ impl Grid for Vorbis {
             .then(|| Band::of(rate, VORBIS_LONG_HOP, VORBIS_FROM_HZ, VORBIS_TO_HZ))
     }
 
-    fn new(_: &Band) -> Self {
+    fn new(_: u32, _: &Band) -> Self {
         Self {
             mdct: Mdct::new(VORBIS_LONG_HOP, vec![vorbis_window(2 * VORBIS_LONG_HOP)]),
-            phases: Phases::new(VORBIS_TURNS_A_FLOOR_STEP / VORBIS_FLOOR_OCTAVES_A_STEP),
+            phases: Phases::new(
+                VORBIS_TURNS_A_FLOOR_STEP / VORBIS_FLOOR_OCTAVES_A_STEP,
+                STEPS_RAMP,
+            ),
         }
     }
 
@@ -768,8 +957,84 @@ pub(crate) mod tests {
     }
 
     fn synthesised(coefficients: impl FnMut(usize) -> f64, shape: usize) -> Vec<f32> {
-        let aac = Aac::new(&Band { first: 0, past: 0 });
-        synthesised_under(aac.mdct.window(shape), coefficients)
+        let aac = Aac::new(RATE, &Band { first: 0, past: 0 });
+        synthesised_under(aac.long.window(shape), coefficients)
+    }
+
+    const BLOCK_SEQUENCE: [AacBlock; 6] = [
+        AacBlock::Long,
+        AacBlock::Long,
+        AacBlock::Start,
+        AacBlock::Eight,
+        AacBlock::Eight,
+        AacBlock::Stop,
+    ];
+
+    fn cosine_short(nth: usize, bin: usize) -> f64 {
+        (PI / AAC_SHORT_HOP as f64
+            * (nth as f64 + 0.5 + AAC_SHORT_HOP as f64 / 2.0)
+            * (bin as f64 + 0.5))
+            .cos()
+    }
+
+    fn synthesised_blocks(mut coefficients: impl FnMut(usize) -> f64, shape: usize) -> Vec<f32> {
+        let aac = Aac::new(RATE, &Band { first: 0, past: 0 });
+        let frames = SECONDS * RATE as usize / AAC_HOP;
+        let long_scale = (2.0 / AAC_HOP as f64).sqrt() / f64::from(SIXTEEN_BIT_STEPS);
+        let short_scale = (2.0 / AAC_SHORT_HOP as f64).sqrt() / f64::from(SIXTEEN_BIT_STEPS);
+        let short_window = aac.short.window(shape);
+        let long_cosines: Vec<f64> = (0..2 * AAC_HOP * AAC_HOP)
+            .map(|at| cosine_at(at / AAC_HOP, at % AAC_HOP))
+            .collect();
+        let short_cosines: Vec<f64> = (0..2 * AAC_SHORT_HOP * AAC_SHORT_HOP)
+            .map(|at| cosine_short(at / AAC_SHORT_HOP, at % AAC_SHORT_HOP))
+            .collect();
+
+        let mut out = vec![0.0_f64; (frames + 1) * AAC_HOP];
+        for frame in 0..frames {
+            let block = BLOCK_SEQUENCE[frame % BLOCK_SEQUENCE.len()];
+            match block {
+                AacBlock::Eight => {
+                    for window in 0..AAC_SHORTS {
+                        let held: Vec<f64> = (0..AAC_SHORT_HOP).map(&mut coefficients).collect();
+                        let from = frame * AAC_HOP + AAC_SHORTS_START + window * AAC_SHORT_HOP;
+                        for nth in 0..2 * AAC_SHORT_HOP {
+                            let row =
+                                &short_cosines[nth * AAC_SHORT_HOP..(nth + 1) * AAC_SHORT_HOP];
+                            let sum: f64 = row
+                                .iter()
+                                .zip(&held)
+                                .map(|(cosine, held)| cosine * held)
+                                .sum();
+                            out[from + nth] += sum * short_scale * f64::from(short_window[nth]);
+                        }
+                    }
+                }
+                AacBlock::Long | AacBlock::Start | AacBlock::Stop => {
+                    let which = match block {
+                        AacBlock::Long => shape,
+                        AacBlock::Start => 2 + shape,
+                        _ => 4 + shape,
+                    };
+                    let window = aac.long.window(which);
+                    let held: Vec<f64> = (0..AAC_HOP).map(&mut coefficients).collect();
+                    for nth in 0..2 * AAC_HOP {
+                        let row = &long_cosines[nth * AAC_HOP..(nth + 1) * AAC_HOP];
+                        let sum: f64 = row
+                            .iter()
+                            .zip(&held)
+                            .map(|(cosine, held)| cosine * held)
+                            .sum();
+                        out[frame * AAC_HOP + nth] += sum * long_scale * f64::from(window[nth]);
+                    }
+                }
+            }
+        }
+        out.iter()
+            .map(|sample| {
+                (sample * f64::from(SIXTEEN_BIT_STEPS)).round() as f32 / SIXTEEN_BIT_STEPS
+            })
+            .collect()
     }
 
     fn synthesised_under(window: &[f32], mut coefficients: impl FnMut(usize) -> f64) -> Vec<f32> {
@@ -836,15 +1101,15 @@ pub(crate) mod tests {
         let samples: Vec<f32> = (0..2 * AAC_HOP)
             .map(|_| wandering.next() as f32 - 0.5)
             .collect();
-        let mut aac = Aac::new(&Band { first: 0, past: 0 });
+        let mut aac = Aac::new(RATE, &Band { first: 0, past: 0 });
         let mut fast = vec![0.0; AAC_HOP];
         let scale = (2.0 / AAC_HOP as f64).sqrt();
 
         for shape in 0..Aac::SHAPES {
-            aac.mdct.coefficients(&samples, shape, &mut fast);
+            aac.long.coefficients(&samples, shape, &mut fast);
             let windowed: Vec<f64> = samples
                 .iter()
-                .zip(aac.mdct.window(shape))
+                .zip(aac.long.window(shape))
                 .map(|(sample, weight)| f64::from(*sample) * f64::from(*weight))
                 .collect();
 
@@ -857,11 +1122,11 @@ pub(crate) mod tests {
 
     #[test]
     fn each_window_meets_its_mirror_in_power() {
-        let aac = Aac::new(&Band { first: 0, past: 0 });
-        let vorbis = Vorbis::new(&Band { first: 0, past: 0 });
+        let aac = Aac::new(RATE, &Band { first: 0, past: 0 });
+        let vorbis = Vorbis::new(RATE, &Band { first: 0, past: 0 });
         let windows = [
-            aac.mdct.window(0),
-            aac.mdct.window(1),
+            aac.long.window(0),
+            aac.long.window(1),
             vorbis.mdct.window(0),
         ];
 
@@ -876,8 +1141,11 @@ pub(crate) mod tests {
 
     #[test]
     fn a_phase_is_the_same_whole_turns_apart_and_opposite_half_a_turn_apart() {
-        let quarter = Phases::new(QUARTER_OCTAVE_STEPS);
-        let floor = Phases::new(VORBIS_TURNS_A_FLOOR_STEP / VORBIS_FLOOR_OCTAVES_A_STEP);
+        let quarter = Phases::new(QUARTER_OCTAVE_STEPS, STEPS_RAMP);
+        let floor = Phases::new(
+            VORBIS_TURNS_A_FLOOR_STEP / VORBIS_FLOOR_OCTAVES_A_STEP,
+            STEPS_RAMP,
+        );
         let apart = |phases: &Phases, octaves: f64| {
             let value = 300.0_f32;
             let moved = (f64::from(value) * octaves.exp2()) as f32;
@@ -913,6 +1181,27 @@ pub(crate) mod tests {
         }
     }
 
+    #[test]
+    fn coefficients_on_the_steps_are_found_through_long_start_stop_and_eight_short_blocks() {
+        for shape in 0..Aac::SHAPES {
+            let left = synthesised_blocks(quantised(11), shape);
+            let right = synthesised_blocks(quantised(23), shape);
+            for skipped in [0, 300] {
+                let steps = stepped::<Aac>(&left, &right, skipped).expect("weighed");
+
+                assert!(steps.lattice > 0.2, "{shape} {skipped} {steps:?}");
+                assert!(steps.control < steps.lattice / 10.0, "{steps:?}");
+                assert_eq!(steps.coding, Coding::Aac);
+            }
+
+            let left = synthesised_blocks(unquantised(11), shape);
+            let right = synthesised_blocks(unquantised(23), shape);
+            let steps = stepped::<Aac>(&left, &right, 0).expect("weighed");
+
+            assert!(steps.lattice < 0.01, "{shape} {steps:?}");
+        }
+    }
+
     fn on_vorbis_floor(seed: u64) -> impl FnMut(usize) -> f64 {
         let mut wandering = Wandering(seed);
         move |bin| {
@@ -931,7 +1220,7 @@ pub(crate) mod tests {
 
     #[test]
     fn residues_on_vorbis_floor_are_found_on_any_short_block_grid_and_free_ones_are_not() {
-        let vorbis = Vorbis::new(&Band { first: 0, past: 0 });
+        let vorbis = Vorbis::new(RATE, &Band { first: 0, past: 0 });
         let window = vorbis.mdct.window(0);
         let left = synthesised_under(window, on_vorbis_floor(11));
         let right = synthesised_under(window, on_vorbis_floor(23));

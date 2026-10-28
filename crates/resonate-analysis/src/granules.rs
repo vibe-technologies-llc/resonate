@@ -2,7 +2,7 @@ use std::{f64::consts::PI, ops::Range};
 
 use ahash::AHashMap;
 
-use crate::steps::{Band, Coding, Grid, Phases, QUARTER_OCTAVE_STEPS};
+use crate::steps::{Band, Coding, Grid, Phases, QUARTER_OCTAVE_STEPS, Ramp, Taking};
 
 const SUBBANDS: usize = 32;
 const POLYPHASE_TAPS: usize = 512;
@@ -12,6 +12,17 @@ const GRANULE: usize = SUBBANDS * LINES_A_SUBBAND;
 const VECTORS_A_BLOCK: usize = 2 * LINES_A_SUBBAND;
 const SPAN: usize = (VECTORS_A_BLOCK - 1) * SUBBANDS + POLYPHASE_TAPS;
 const BUTTERFLIES: usize = 8;
+const SHORT_BLOCK: usize = 12;
+const SHORT_LINES: usize = 6;
+const SHORT_WINDOWS: usize = 3;
+const SHORT_FIRST: usize = 6;
+const SHORT_GAIN: f32 = 3.0;
+const SHORT_KIND: usize = 3;
+const MP3_RAMP: Ramp = Ramp {
+    unit: 0.535,
+    from: 2.0,
+    to: 6.0,
+};
 const WINDOW_UNITS_A_ONE: f64 = 65_536.0;
 
 const MP3_FROM_HZ: f32 = 6_000.0;
@@ -64,7 +75,9 @@ type Vector = [f32; SUBBANDS];
 pub(crate) struct Mp3 {
     analysis_window: Vec<f32>,
     matrixing: Vec<f32>,
-    block_window: [f32; VECTORS_A_BLOCK],
+    block_windows: [[f32; VECTORS_A_BLOCK]; 3],
+    short_window: [f32; SHORT_BLOCK],
+    short_turning: Vec<f32>,
     turning: Vec<f32>,
     butterflies: [(f32, f32); BUTTERFLIES],
     vectors: AHashMap<(usize, u64), Vector>,
@@ -101,11 +114,32 @@ impl Mp3 {
         vector
     }
 
-    fn transformed(&mut self, subband: usize) {
+    fn transformed_short(&mut self, subband: usize) {
+        for window in 0..SHORT_WINDOWS {
+            let mut windowed = [0.0_f32; SHORT_BLOCK];
+            for (nth, slot) in windowed.iter_mut().enumerate() {
+                let at = SHORT_FIRST + SHORT_LINES * window + nth;
+                let inverted = subband % 2 == 1 && at % 2 == 1;
+                let value = self.block[at][subband] * self.short_window[nth];
+                *slot = if inverted { -value } else { value };
+            }
+            for line in 0..SHORT_LINES {
+                let row = &self.short_turning[line * SHORT_BLOCK..(line + 1) * SHORT_BLOCK];
+                self.lines[subband][window * SHORT_LINES + line] = SHORT_GAIN
+                    * row
+                        .iter()
+                        .zip(&windowed)
+                        .map(|(cosine, value)| cosine * value)
+                        .sum::<f32>();
+            }
+        }
+    }
+
+    fn transformed(&mut self, subband: usize, kind: usize) {
         let mut windowed = [0.0_f32; VECTORS_A_BLOCK];
         for (nth, slot) in windowed.iter_mut().enumerate() {
             let inverted = subband % 2 == 1 && nth % 2 == 1;
-            let value = self.block[nth][subband] * self.block_window[nth];
+            let value = self.block[nth][subband] * self.block_windows[kind][nth];
             *slot = if inverted { -value } else { value };
         }
         let quarter = LINES_A_SUBBAND / 2;
@@ -129,6 +163,30 @@ impl Mp3 {
         }
     }
 
+    fn transform(&mut self, lane: usize, samples: &[f32], at: u64, kind: usize, into: &mut [f32]) {
+        for nth in 0..VECTORS_A_BLOCK {
+            let from = nth * SUBBANDS;
+            self.block[nth] = self.vector(
+                lane,
+                &samples[from..from + POLYPHASE_TAPS],
+                at + from as u64,
+            );
+        }
+        for subband in self.subbands.clone() {
+            if kind == SHORT_KIND {
+                self.transformed_short(subband);
+            } else {
+                self.transformed(subband, kind);
+            }
+        }
+        if kind != SHORT_KIND {
+            self.unaliased();
+        }
+        for (subband, lines) in self.lines.iter().enumerate() {
+            into[subband * LINES_A_SUBBAND..(subband + 1) * LINES_A_SUBBAND].copy_from_slice(lines);
+        }
+    }
+
     fn unaliased(&mut self) {
         for subband in self.subbands.start + 1..self.subbands.end {
             for (nth, (sine, cosine)) in self.butterflies.iter().enumerate() {
@@ -139,6 +197,31 @@ impl Mp3 {
             }
         }
     }
+}
+
+fn long_slope(nth: usize) -> f64 {
+    (PI / VECTORS_A_BLOCK as f64 * (nth as f64 + 0.5)).sin()
+}
+
+fn short_slope(nth: usize) -> f64 {
+    (PI / SHORT_BLOCK as f64 * (nth as f64 + 0.5)).sin()
+}
+
+fn block_windows() -> [[f32; VECTORS_A_BLOCK]; 3] {
+    let normal = std::array::from_fn(|nth| long_slope(nth) as f32);
+    let start = std::array::from_fn(|nth| match nth {
+        0..18 => long_slope(nth) as f32,
+        18..24 => 1.0,
+        24..30 => short_slope(nth - 18) as f32,
+        _ => 0.0,
+    });
+    let stop = std::array::from_fn(|nth| match nth {
+        0..6 => 0.0,
+        6..12 => short_slope(nth - 6) as f32,
+        12..18 => 1.0,
+        _ => long_slope(nth) as f32,
+    });
+    [normal, start, stop]
 }
 
 fn analysis_window() -> Vec<f32> {
@@ -199,6 +282,7 @@ impl Grid for Mp3 {
     const SPAN: usize = SPAN;
     const LINES: usize = GRANULE;
     const SHAPES: usize = 1;
+    const KINDS: usize = 4;
     const CONTROL_SHIFT: usize = GRANULE / 2;
     const FRAMES_A_SEARCH: usize = 4;
     const CONFIRMED_FRAMES: usize = 400;
@@ -208,16 +292,27 @@ impl Grid for Mp3 {
         (rate <= HIGHEST_MP3_RATE).then(|| Band::of(rate, GRANULE, MP3_FROM_HZ, MP3_TO_HZ))
     }
 
-    fn new(band: &Band) -> Self {
+    fn new(_: u32, band: &Band) -> Self {
         let lowest = (band.first / LINES_A_SUBBAND).saturating_sub(1);
         let highest = (band.past.saturating_sub(1) / LINES_A_SUBBAND + 1).min(SUBBANDS - 1);
-        let block_window = std::array::from_fn(|nth| {
-            (PI / VECTORS_A_BLOCK as f64 * (nth as f64 + 0.5)).sin() as f32
-        });
+        let block_windows = block_windows();
+        let short_window = std::array::from_fn(|nth| short_slope(nth) as f32);
+        let short_turning = (0..SHORT_LINES * SHORT_BLOCK)
+            .map(|at| {
+                let line = (at / SHORT_BLOCK) as f64;
+                let nth = (at % SHORT_BLOCK) as f64;
+                (PI / (2 * SHORT_BLOCK) as f64
+                    * (2.0 * nth + 1.0 + SHORT_LINES as f64)
+                    * (2.0 * line + 1.0))
+                    .cos() as f32
+            })
+            .collect();
         Self {
             analysis_window: analysis_window(),
             matrixing: matrixing(),
-            block_window,
+            block_windows,
+            short_window,
+            short_turning,
             turning: turning(),
             butterflies: butterflies(),
             vectors: AHashMap::new(),
@@ -225,7 +320,7 @@ impl Grid for Mp3 {
             folded: [0.0; LINES_A_SUBBAND],
             lines: [[0.0; LINES_A_SUBBAND]; SUBBANDS],
             subbands: lowest..highest + 1,
-            phases: Phases::new(QUARTER_OCTAVE_STEPS),
+            phases: Phases::new(QUARTER_OCTAVE_STEPS, MP3_RAMP),
         }
     }
 
@@ -234,20 +329,21 @@ impl Grid for Mp3 {
     }
 
     fn coefficients(&mut self, lane: usize, samples: &[f32], at: u64, _: usize, into: &mut [f32]) {
-        for nth in 0..VECTORS_A_BLOCK {
-            let from = nth * SUBBANDS;
-            self.block[nth] = self.vector(
-                lane,
-                &samples[from..from + POLYPHASE_TAPS],
-                at + from as u64,
-            );
-        }
-        for subband in self.subbands.clone() {
-            self.transformed(subband);
-        }
-        self.unaliased();
-        for (subband, lines) in self.lines.iter().enumerate() {
-            into[subband * LINES_A_SUBBAND..(subband + 1) * LINES_A_SUBBAND].copy_from_slice(lines);
+        self.transform(lane, samples, at, 0, into);
+    }
+
+    fn frame(
+        &mut self,
+        taking: Taking,
+        samples: &[f32],
+        band: &Band,
+        into: &mut [f32],
+    ) -> Range<usize> {
+        self.transform(taking.lane, samples, taking.at, taking.kind, into);
+        if taking.kind == SHORT_KIND {
+            self.subbands.start * LINES_A_SUBBAND..(self.subbands.end) * LINES_A_SUBBAND
+        } else {
+            band.first..band.past
         }
     }
 
@@ -267,23 +363,34 @@ mod tests {
     const SECONDS: usize = 14;
     const SYNTHESIS_HISTORY: usize = 1_024;
 
-    fn synthesised(mut coefficients: impl FnMut(usize) -> f64) -> Vec<f32> {
+    const BLOCK_SEQUENCE: [usize; 6] = [0, 0, 1, SHORT_KIND, SHORT_KIND, 2];
+
+    fn synthesised(coefficients: impl FnMut(usize) -> f64) -> Vec<f32> {
+        synthesised_blocks(coefficients, |_| 0)
+    }
+
+    fn synthesised_blocks(
+        mut coefficients: impl FnMut(usize) -> f64,
+        kind_of: impl Fn(usize) -> usize,
+    ) -> Vec<f32> {
         let granules = SECONDS * RATE as usize / GRANULE;
-        let window: Vec<f64> = (0..VECTORS_A_BLOCK)
-            .map(|nth| (PI / VECTORS_A_BLOCK as f64 * (nth as f64 + 0.5)).sin())
-            .collect();
+        let windows = block_windows();
         let butterflies = butterflies();
         let mut overlap = vec![[0.0_f64; LINES_A_SUBBAND]; SUBBANDS];
         let mut history = vec![0.0_f64; SYNTHESIS_HISTORY];
         let mut out = Vec::with_capacity(granules * GRANULE);
 
-        for _ in 0..granules {
+        for granule in 0..granules {
+            let kind = kind_of(granule);
             let mut lines: Vec<[f64; LINES_A_SUBBAND]> = (0..SUBBANDS)
                 .map(|subband| {
                     std::array::from_fn(|line| coefficients(subband * LINES_A_SUBBAND + line))
                 })
                 .collect();
             for subband in 1..SUBBANDS {
+                if kind == SHORT_KIND {
+                    break;
+                }
                 for (nth, (sine, cosine)) in butterflies.iter().enumerate() {
                     let (sine, cosine) = (f64::from(*sine), f64::from(*cosine));
                     let below = lines[subband - 1][LINES_A_SUBBAND - 1 - nth];
@@ -294,21 +401,40 @@ mod tests {
             }
             let mut subband_samples = vec![[0.0_f64; SUBBANDS]; LINES_A_SUBBAND];
             for (subband, held) in lines.iter().enumerate() {
-                let block: Vec<f64> = (0..VECTORS_A_BLOCK)
-                    .map(|nth| {
-                        let sum: f64 = held
-                            .iter()
-                            .enumerate()
-                            .map(|(line, value)| {
-                                let angle = PI / (2.0 * VECTORS_A_BLOCK as f64)
-                                    * (2.0 * nth as f64 + 1.0 + LINES_A_SUBBAND as f64)
-                                    * (2.0 * line as f64 + 1.0);
-                                value * angle.cos()
-                            })
-                            .sum();
-                        sum * window[nth] * 2.0 / LINES_A_SUBBAND as f64
-                    })
-                    .collect();
+                let block: Vec<f64> = if kind == SHORT_KIND {
+                    let mut block = vec![0.0_f64; VECTORS_A_BLOCK];
+                    for window in 0..SHORT_WINDOWS {
+                        for nth in 0..SHORT_BLOCK {
+                            let sum: f64 = (0..SHORT_LINES)
+                                .map(|line| {
+                                    let angle = PI / (2.0 * SHORT_BLOCK as f64)
+                                        * (2.0 * nth as f64 + 1.0 + SHORT_LINES as f64)
+                                        * (2.0 * line as f64 + 1.0);
+                                    held[window * SHORT_LINES + line] * angle.cos()
+                                })
+                                .sum();
+                            block[SHORT_FIRST + SHORT_LINES * window + nth] +=
+                                sum * short_slope(nth) * 2.0 / LINES_A_SUBBAND as f64;
+                        }
+                    }
+                    block
+                } else {
+                    (0..VECTORS_A_BLOCK)
+                        .map(|nth| {
+                            let sum: f64 = held
+                                .iter()
+                                .enumerate()
+                                .map(|(line, value)| {
+                                    let angle = PI / (2.0 * VECTORS_A_BLOCK as f64)
+                                        * (2.0 * nth as f64 + 1.0 + LINES_A_SUBBAND as f64)
+                                        * (2.0 * line as f64 + 1.0);
+                                    value * angle.cos()
+                                })
+                                .sum();
+                            sum * f64::from(windows[kind][nth]) * 2.0 / LINES_A_SUBBAND as f64
+                        })
+                        .collect()
+                };
                 for nth in 0..LINES_A_SUBBAND {
                     let value = block[nth] + overlap[subband][nth];
                     let inverted = subband % 2 == 1 && nth % 2 == 1;
@@ -374,6 +500,26 @@ mod tests {
     }
 
     #[test]
+    fn lines_on_the_steps_are_found_whatever_block_types_the_granules_run_through() {
+        let kind_of = |granule: usize| BLOCK_SEQUENCE[granule % BLOCK_SEQUENCE.len()];
+        let left = synthesised_blocks(quantised(11), kind_of);
+        let right = synthesised_blocks(quantised(23), kind_of);
+        for skipped in [0, 300] {
+            let steps = stepped::<Mp3>(&left, &right, skipped).expect("weighed");
+
+            assert!(steps.lattice > 0.15, "{skipped} {steps:?}");
+            assert!(steps.control < steps.lattice / 10.0, "{steps:?}");
+            assert_eq!(steps.coding, Coding::Mp3);
+        }
+
+        let left = synthesised_blocks(unquantised(11), kind_of);
+        let right = synthesised_blocks(unquantised(23), kind_of);
+        let steps = stepped::<Mp3>(&left, &right, 0).expect("weighed");
+
+        assert!(steps.lattice < 0.01, "{steps:?}");
+    }
+
+    #[test]
     fn a_rate_no_mp3_stream_carries_is_not_weighed() {
         let stepping = Stepping::<Mp3>::new(96_000, 2);
 
@@ -410,14 +556,14 @@ mod tests {
 
     #[test]
     fn the_folded_block_transform_is_the_standards_mdct() {
-        let mut mp3 = Mp3::new(&Band::of(44_100, GRANULE, 0.0, 22_050.0));
+        let mut mp3 = Mp3::new(44_100, &Band::of(44_100, GRANULE, 0.0, 22_050.0));
         let mut wandering = Wandering(9);
         for vector in &mut mp3.block {
             *vector = std::array::from_fn(|_| wandering.next() as f32 - 0.5);
         }
         let subband = 4;
 
-        mp3.transformed(subband);
+        mp3.transformed(subband, 0);
         for line in 0..LINES_A_SUBBAND {
             let slow: f64 = (0..VECTORS_A_BLOCK)
                 .map(|nth| {
@@ -425,7 +571,7 @@ mod tests {
                         * (2.0 * nth as f64 + 1.0 + LINES_A_SUBBAND as f64)
                         * (2.0 * line as f64 + 1.0);
                     f64::from(mp3.block[nth][subband])
-                        * f64::from(mp3.block_window[nth])
+                        * f64::from(mp3.block_windows[0][nth])
                         * angle.cos()
                 })
                 .sum();

@@ -46,6 +46,18 @@ const MP3_ENCODES: [(&str, &[&str]); 2] = [
     ("v0", &["-V0"]),
 ];
 const VORBIS_QUALITIES: [&str; 2] = ["6", "10"];
+const FAAC_BITRATES: [&str; 3] = ["64", "96", "160"];
+const DECODE_FILTERS: [(&str, Option<u32>); 4] = [
+    ("aresample=96000", Some(MUSIC_RATE)),
+    ("aresample=88200", Some(MUSIC_RATE)),
+    ("aresample=osf=s16:dither_method=triangular", None),
+    ("aresample=osf=s16:dither_method=shibata", None),
+];
+const FDK_ENCODES: [(&str, &[&str]); 3] = [
+    ("cbr-128", &["-b", "128000"]),
+    ("cbr-256", &["-b", "256000"]),
+    ("vbr-3", &["-m", "3"]),
+];
 
 static NEXT: AtomicU32 = AtomicU32::new(0);
 
@@ -416,6 +428,19 @@ fn lame(arguments: &[&OsStr]) -> Option<()> {
     status.success().then_some(())
 }
 
+fn encoder(program: &str, flags: &[&str], from: &Path, to: &Path) -> Option<()> {
+    let status = Command::new(program)
+        .args(flags)
+        .arg("-o")
+        .arg(to)
+        .arg(from)
+        .stdout(process::Stdio::null())
+        .stderr(process::Stdio::null())
+        .status()
+        .ok()?;
+    status.success().then_some(())
+}
+
 fn as_flac(from: &Path, to: &Path, filter: Option<String>) -> Option<()> {
     let mut arguments = vec![OsStr::new("-i"), from.as_os_str()];
     let filter = filter.map(OsString::from);
@@ -530,6 +555,84 @@ fn ffmpegs_aac_at_256_and_320_kbps_decoded_back_to_flac_lands_on_its_quantiser_s
 
         for decoded in [&whole, &cut] {
             assert_decoded_from(decoded, Coding::Aac, None, bitrate);
+        }
+    }
+}
+
+#[test]
+fn faacs_and_fdk_aacs_decoded_back_to_flac_land_on_aacs_steps_whatever_blocks_they_choose() {
+    let Some(Sourced { tree, source, wave }) = music_source(MUSIC_RATE) else {
+        eprintln!("skipped: no ffmpeg to write FLAC with");
+        return;
+    };
+
+    assert_a_genuine_source(&source);
+
+    let mut weighed = 0;
+    for bitrate in FAAC_BITRATES {
+        let encoded = tree.root.join(format!("faac-{bitrate}.m4a"));
+        if encoder("faac", &["-b", bitrate], &wave, &encoded).is_none() {
+            eprintln!("skipped: no faac to encode AAC with");
+            break;
+        }
+        let decoded = tree.root.join(format!("faac-{bitrate}.flac"));
+        as_flac(&encoded, &decoded, None).expect("a decode");
+
+        assert_decoded_from(&decoded, Coding::Aac, None, &format!("faac {bitrate}"));
+        weighed += 1;
+    }
+    for (name, flags) in FDK_ENCODES {
+        let encoded = tree.root.join(format!("fdk-{name}.m4a"));
+        if encoder("fdkaac", flags, &wave, &encoded).is_none() {
+            eprintln!("skipped: no fdkaac to encode AAC with");
+            break;
+        }
+        let decoded = tree.root.join(format!("fdk-{name}.flac"));
+        as_flac(&encoded, &decoded, None).expect("a decode");
+
+        assert_decoded_from(&decoded, Coding::Aac, None, &format!("fdkaac {name}"));
+        weighed += 1;
+    }
+    eprintln!("weighed {weighed} AAC encodes");
+}
+
+#[test]
+fn a_lossy_decode_dithered_or_taken_to_a_hi_res_rate_still_lands_on_the_steps() {
+    let Some(Sourced { tree, source, wave }) = music_source(MUSIC_RATE) else {
+        eprintln!("skipped: no ffmpeg to encode AAC with");
+        return;
+    };
+    let aac = tree.root.join("256k.m4a");
+    ffmpeg(&[
+        "-i".as_ref(),
+        source.as_os_str(),
+        "-c:a".as_ref(),
+        "aac".as_ref(),
+        "-b:a".as_ref(),
+        "256k".as_ref(),
+        aac.as_os_str(),
+    ])
+    .expect("an AAC encode");
+    let mp3 = tree.root.join("open.mp3");
+    let has_lame = lame(&[
+        "-b".as_ref(),
+        "320".as_ref(),
+        "--lowpass".as_ref(),
+        "-1".as_ref(),
+        wave.as_os_str(),
+        mp3.as_os_str(),
+    ])
+    .is_some();
+
+    for (nth, (filter, resampled_from)) in DECODE_FILTERS.into_iter().enumerate() {
+        let decoded = tree.root.join(format!("aac-{nth}.flac"));
+        as_flac(&aac, &decoded, Some(filter.to_owned())).expect("a decode");
+        assert_decoded_from(&decoded, Coding::Aac, resampled_from, filter);
+
+        if has_lame {
+            let decoded = tree.root.join(format!("mp3-{nth}.flac"));
+            as_flac(&mp3, &decoded, Some(filter.to_owned())).expect("a decode");
+            assert_decoded_from(&decoded, Coding::Mp3, resampled_from, filter);
         }
     }
 }
