@@ -383,9 +383,14 @@ impl MobilePlayer {
 
     pub fn sync_received(&self) -> Result<Vec<ReceivedSong>> {
         let waiting = self.waiting_songs()?;
+        if waiting.is_empty() {
+            return Ok(Vec::new());
+        }
+        let indexed = Indexed::read(&self.catalog.0.lock()).map_err(read_error)?;
+
         let mut still = Vec::with_capacity(waiting.len());
         for song in waiting {
-            match self.held_already(&song) {
+            match self.held_already(&song, &indexed) {
                 Ok(Some(track)) => self.settled(&song, track),
                 Ok(None) => still.push(song.received),
                 Err(error) => {
@@ -686,7 +691,7 @@ impl MobilePlayer {
             .ok_or(Error::UnknownReceivedSong)
     }
 
-    fn held_already(&self, waiting: &Waiting) -> Result<Option<u64>> {
+    fn held_already(&self, waiting: &Waiting, indexed: &Indexed) -> Result<Option<u64>> {
         let keys = self.keys_waiting(&waiting.received)?;
         let mut held = Vec::new();
         {
@@ -698,6 +703,11 @@ impl MobilePlayer {
         if let Some(file) = waiting.file {
             held.extend(the_same_file(&self.catalog, &self.sources, file).unwrap_or_default());
         }
+        held.extend(
+            indexed
+                .visible
+                .resolved(&recording_of(&waiting.received.song)),
+        );
         for id in held {
             if not_gone(&self.catalog, &self.sources, id).map_err(read_error)? {
                 return Ok(Some(id));
@@ -3003,6 +3013,44 @@ mod tests {
                 .expect("none waiting")
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn a_waiting_song_another_encode_of_which_was_indexed_meanwhile_settles_onto_that_row() {
+        let folder = folder("another-encode");
+        let (player, documents) = granted(&folder);
+        let hunter = two_seconds_of("Hunter");
+        landed_waiting(&documents, &folder, &hunter);
+        let waiting = player.sync_received().expect("the waiting songs");
+        let kept = player.waiting_song(waiting[0].id).expect("its file").path;
+        fs::write(folder.join("downloaded.flac"), b"another encode").expect("a download");
+        let downloaded = player
+            .catalog
+            .upsert(Track {
+                uri: "content://test/downloaded.flac".into(),
+                name: "Björk - Hunter.flac".into(),
+                title: hunter.title.clone(),
+                artist: hunter.artist.clone(),
+                album: hunter.album.clone(),
+                duration_ms: 2_000,
+                rate: 44_100,
+                codec: "FLAC".into(),
+                ..Track::default()
+            })
+            .expect("an indexed download");
+
+        let still = player.sync_received().expect("the waiting songs");
+        let settled = documents
+            .resolved_in(&player.catalog.0.lock(), &hunter)
+            .expect("an answer");
+
+        let _ = fs::remove_dir_all(&folder);
+        assert!(
+            still.is_empty(),
+            "a song already held was left to land again"
+        );
+        assert!(!kept.exists());
+        assert_eq!(settled, Some(downloaded.id));
     }
 
     #[test]
