@@ -592,8 +592,8 @@ pub struct EqArgs {
         conflicts_with_all = ["find", "list"],
         help = "Which device's binding the rest of this command reads or writes, by the \
                 node.name `resonate sinks` prints. With none it is the binding every device \
-                that names none of its own falls back to. With --import or --fetch the profile \
-                kept is bound to it"
+                that names none of its own falls back to. With --import, --fetch or \
+                --fit-measurement the profile kept is bound to it"
     )]
     pub r#for: Option<String>,
 
@@ -618,8 +618,8 @@ pub struct EqArgs {
         value_name = "NAME",
         conflicts_with_all = ["find", "suggest", "list", "forget", "own", "forget_own"],
         help = "Bind this kept profile to the device --for names and turn the equaliser on. \
-                With --import or --fetch it names what the new profile is kept as, and with \
-                --export it names which one is written out"
+                With --import, --fetch or --fit-measurement it names what the new profile is \
+                kept as, and with --export it names which one is written out"
     )]
     pub profile: Option<String>,
 
@@ -644,7 +644,30 @@ pub struct EqArgs {
     #[arg(
         long,
         value_name = "FILE",
-        conflicts_with_all = ["on", "off", "import", "find", "fetch", "suggest", "list", "forget", "forget_own"],
+        conflicts_with_all = ["on", "off", "import", "export", "find", "fetch", "suggest", "list", "forget", "forget_own", "unbind"],
+        help = "Fit a correction to a frequency-response measurement of your own and keep it \
+                as a profile: AutoEq's CSV, REW's exported text or two columns of frequency \
+                and decibels. Both are set level at the middle of the spectrum, smoothed to a \
+                sixth of an octave, and up to ten bands, shelves among them, are fitted to \
+                what lies between the measurement and --target. Named by --profile or by the \
+                file, bound to the device --for names, or kept as its own curve with --own"
+    )]
+    pub fit_measurement: Option<PathBuf>,
+
+    #[arg(
+        long,
+        value_name = "NAME|FILE",
+        requires = "fit_measurement",
+        help = "What --fit-measurement fits toward: flat, harman-over-ear-2018 or \
+                harman-in-ear-2019, or a file in the same formats as a measurement. With none \
+                it is harman-over-ear-2018"
+    )]
+    pub target: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "FILE",
+        conflicts_with_all = ["on", "off", "import", "find", "fetch", "suggest", "list", "forget", "forget_own", "fit_measurement"],
         help = "Write a profile out as an EqualizerAPO ParametricEQ file — the one --profile \
                 names, or the one bound to the device --for names"
     )]
@@ -709,8 +732,8 @@ pub struct EqArgs {
         long,
         conflicts_with_all = ["off", "profile", "unbind", "find", "suggest", "list", "forget", "forget_own"],
         help = "Bind the device --for names to a curve of its own and turn the equaliser on. \
-                With --import or --fetch what is read becomes that curve rather than a kept \
-                profile, and with --export that curve is what is written out, bound or not"
+                With --import, --fetch or --fit-measurement what is read becomes that curve \
+                rather than a kept profile, and with --export that curve is what is written out, bound or not"
     )]
     pub own: bool,
 

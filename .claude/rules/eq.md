@@ -1,6 +1,7 @@
 ---
 paths:
   - "crates/resonate-eq/**/*.rs"
+  - "crates/resonate-eq/targets/*.csv"
   - "crates/resonate-analysis/src/headroom.rs"
   - "crates/resonate-core/src/eq.rs"
   - "crates/resonate-dsp/src/eq.rs"
@@ -28,7 +29,7 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
 - **Arithmetic is `resonate-core::eq`**: stage, `explain`, `resonate eq` and the pane curve cannot
   disagree on a band; `resonate-dsp` stays a core leaf. `resonate-eq` is I/O only (EqualizerAPO and
   GraphicEQ readers, profile store, AutoEq catalogue, the `Corrections` seam `resonate-online`
-  fills).
+  fills, the fit of a listener's own measurement).
 - **`Band` fields are quantised integer newtypes**: `Frequency` centihertz, `BandGain`/`Preamp`
   milli-dB, `Q` milli-units. `OutputSettings` derives `Eq` and `publish_settings` compares it every
   16 ms; floats would not build.
@@ -336,6 +337,64 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   volume step. A hand-moved preamp is carried as its distance from the fitted one. A `Target`
   profile is written as `Preamp:` plus the `GraphicEQ:` line, gains trimmed to the milli-dB; filter
   lines beside one are passed over. `band_mut`, `push`, `remove` let go of the curve.
+
+## A measurement of your own
+
+A second correction source beside AutoEq: the listener's own frequency-response measurement, fitted
+to a target. `resonate-eq` only, no network, desktop and CLI; the phones do not reach it yet.
+
+- **A response is read as far as it parses** (`measurement::read_response`, the `apo` rule): text goes
+  through `text::decoded`; `Response` is points sorted by hertz, a repeated frequency keeping its
+  first, a frequency outside 0 to 1 MHz or a level past 400 dB or not finite dropped; at least
+  `POINTS_AT_LEAST` (8) points or `NoMeasuredPoints`/`TooFewMeasuredPoints`; `LARGEST_MEASUREMENT`
+  (4 MiB, weighed before decoding) or `MeasurementTooLarge`; a line that is no point is counted in
+  `passed_over`. Three layouts, one reader: REW's export (`*` lines, then frequency, SPL and phase
+  split on tabs or spaces, `Layout::Rew`), a headed CSV such as AutoEq's `frequency,raw` (the level
+  is the column named `raw`, `spl`, `magnitude`, `level`, `response`, `amplitude` or `gain`, else the
+  second, `Layout::Headed`) and plain frequency/decibel pairs (`Layout::Plain`). Fields split on a tab,
+  a `;`, a comma with no space beside it where the line has one token, or whitespace, so a comma
+  decimal reads (`read_number`).
+- **Targets are data**: `BuiltIn::{Flat, HarmanOverEar2018, HarmanInEar2019}` (named `flat`,
+  `harman-over-ear-2018`, `harman-in-ear-2019`, any case). The two Harman curves are AutoEq's
+  published `targets/Harman over-ear 2018.csv` and `Harman in-ear 2019.csv` (MIT-licensed, 696
+  points each, 0 dB at 1 kHz), kept whole as `crates/resonate-eq/targets/*.csv` and read by the same
+  reader; the tests pin their bass, ear-gain and treble levels. Another target is a file in the same
+  formats: `Store::goal_named` is a built-in's name, else a path.
+- **The fit** (`fitting::fit(measured, goal, &Fitting)`): both responses are smoothed to a sixth of
+  an octave onto 256 log-spaced points from 20 Hz to 20 kHz (the mean of the raw points in the
+  window, interpolating where none lies in it) and set level by their mean over 500 Hz to 2 kHz, so
+  the level a measurement was taken at changes nothing; both must reach 500 Hz and 2 kHz
+  (`ResponseMissesTheMidBand`). What is wanted is `goal - measured`. Weights are 1 to 6 kHz falling
+  to 0.25 at 20 kHz, since a treble dip is mostly the rig. A greedy pass picks from a dictionary
+  of peaking bands (a sixth of an octave apart from 20 Hz to 16 kHz, Q 0.5 to 8), low shelves up
+  to 1 kHz and high shelves from 1.5 kHz (Q 0.5 to 1), the one whose least-squares gain removes
+  most of the weighted error, the gain held to `boost_at_most_db` (6) and `cut_at_most_db` (12),
+  Q to `q_least`/`q_most`, at most one shelf of each kind and one band to a kind and frequency,
+  at most `bands` (10, never past `MAX_BANDS`); it stops when a band would be under
+  `WORTH_A_BAND_DB` (0.3) or remove under 1% of the error. Each gain is then settled on the
+  band's exact biquad response and `REFINING_PASSES` (3) passes re-settle every band in turn
+  against all the others, nudging its frequency (a 24th of an octave, twice either way) and Q
+  (by a factor of 1.4 either way) where that leaves less. Bands are sorted by frequency and the
+  preamp is `Profile::fitted_preamp(FITTED_AT)`, the model's own path. `Fitted` carries the
+  weighted RMS error before and after; a measurement the greedy pass finds nothing worth a band
+  in is `NothingToCorrect`, never a flat profile kept.
+- **The result is an ordinary parametric profile**: no `Target`, so it is not refitted per rate
+  (its bands are the fit at 48 kHz and the bilinear warp is the same one every parametric
+  profile carries) and it is kept as EqualizerAPO text by `Store::keep`/`keep_own`.
+  `Store::fit_file(from, goal, fitting)` reads and fits, answering `Measured { fitted, layout,
+  passed_over }`; `Store::response_in` reads a file under `LARGEST_MEASUREMENT`.
+- **Reachable from `eq --fit-measurement FILE [--target NAME|FILE]`** (default
+  `harman-over-ear-2018`), kept like `--import`: named by `--profile` or the file's stem
+  (`Store::name_for_import`, a replaced name said), bound by `--for`, or the device's own curve with
+  `--own`; it conflicts with every other action. And from the *Measured corrections* group: the
+  *Fit toward* chips (`Goal::{BuiltIn, File}`, Harman over-ear 2018 by default,
+  `EqualiserModel::aim_at`) and *Fit a measurement…*, which fits and keeps on the background
+  executor in `_measured` (own task, like `_imported`), shows the new profile and says how many
+  bands, which target and the error before and after. The group shows whether or not online is on:
+  nothing in it asks the network.
+- **Not yet**: the phones. `parse_eq_profile` is their only import hook and takes profiles, not
+  responses; a boundary function fitting a measurement and a picker for it in both apps are the
+  remaining work (`docs/FEATURES.md`).
 
 ## AutoEq
 

@@ -7,8 +7,8 @@ use resonate_core::{
 };
 use resonate_engine::{Equalisation, NodeName};
 use resonate_eq::{
-    Binding, Catalogue, Corrected, Device, DeviceId, Found, ProfileName, Store, search_preferring,
-    suggest_preferring,
+    Binding, BuiltIn, Catalogue, Corrected, Device, DeviceId, Found, Measured, ProfileName,
+    Response, Store, search_preferring, suggest_preferring,
 };
 
 use crate::{Bindings, Measurers, models::Notice, toast};
@@ -81,6 +81,19 @@ impl Curve {
 pub struct Placed {
     pub frequency: Frequency,
     pub gain: BandGain,
+}
+
+fn fitted_said(name: &ProfileName, aimed_at: &str, measured: &Measured) -> String {
+    let passed_over = match measured.passed_over {
+        0 => String::new(),
+        lines => format!("; {lines} lines of the measurement were passed over"),
+    };
+    format!(
+        "Kept {name}, {} bands fitted toward {aimed_at}: {:.1} dB off before and {:.1} dB after{passed_over}",
+        measured.fitted.profile.bands().len(),
+        measured.fitted.off_by_db_before,
+        measured.fitted.off_by_db_after,
+    )
 }
 
 fn caveats(kept: &resonate_eq::Kept) -> String {
@@ -211,6 +224,33 @@ struct Peaked {
     peak: f64,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Goal {
+    BuiltIn(BuiltIn),
+    File(PathBuf),
+}
+
+impl Goal {
+    pub const BY_DEFAULT: Self = Self::BuiltIn(BuiltIn::HarmanOverEar2018);
+
+    fn response(&self) -> resonate_eq::Result<Response> {
+        match self {
+            Self::BuiltIn(built_in) => built_in.response(),
+            Self::File(file) => Ok(Store::response_in(file)?.response),
+        }
+    }
+
+    pub fn spoken(&self) -> String {
+        match self {
+            Self::BuiltIn(built_in) => built_in.label().to_owned(),
+            Self::File(file) => file.file_name().map_or_else(
+                || file.display().to_string(),
+                |name| name.to_string_lossy().into_owned(),
+            ),
+        }
+    }
+}
+
 pub struct EqualiserModel {
     store: Store,
     corrections: Arc<Corrected>,
@@ -231,6 +271,8 @@ pub struct EqualiserModel {
     found: Vec<Found>,
     reading_the_catalogue: bool,
     fetching: bool,
+    goal: Goal,
+    fitting_a_measurement: bool,
     notice: Option<Notice>,
     untold: bool,
     _saved: Task<()>,
@@ -238,6 +280,7 @@ pub struct EqualiserModel {
     _exported: Task<()>,
     _catalogued: Task<()>,
     _fetched: Task<()>,
+    _measured: Task<()>,
 }
 
 impl EqualiserModel {
@@ -265,6 +308,8 @@ impl EqualiserModel {
             found: Vec::new(),
             reading_the_catalogue: false,
             fetching: false,
+            goal: Goal::BY_DEFAULT,
+            fitting_a_measurement: false,
             notice: None,
             untold: false,
             _saved: Task::ready(()),
@@ -272,6 +317,7 @@ impl EqualiserModel {
             _exported: Task::ready(()),
             _catalogued: Task::ready(()),
             _fetched: Task::ready(()),
+            _measured: Task::ready(()),
         };
         model.gather();
         model
@@ -324,6 +370,18 @@ impl EqualiserModel {
 
     pub const fn is_looking(&self) -> bool {
         self.reading_the_catalogue || self.fetching
+    }
+
+    pub const fn goal(&self) -> &Goal {
+        &self.goal
+    }
+
+    pub fn aim_at(&mut self, goal: Goal) {
+        self.goal = goal;
+    }
+
+    pub const fn is_fitting_a_measurement(&self) -> bool {
+        self.fitting_a_measurement
     }
 
     pub fn has_a_source(&self) -> bool {
@@ -808,6 +866,45 @@ impl EqualiserModel {
         });
     }
 
+    pub fn fit_a_measurement(&mut self, from: PathBuf, cx: &mut Context<Self>) {
+        let folder = self.store.folder().to_path_buf();
+        let goal = self.goal.clone();
+        self.fitting_a_measurement = true;
+
+        self._measured = cx.spawn(async move |this, cx| {
+            let aimed_at = goal.spoken();
+            let fitted = cx
+                .background_executor()
+                .spawn(async move {
+                    let store = Store::at(folder);
+                    let target = goal.response()?;
+                    let measured =
+                        Store::fit_file(&from, &target, &resonate_eq::Fitting::default())?;
+                    let name = Store::name_for_import(&from, None);
+                    store.keep(&name, &measured.fitted.profile)?;
+                    Ok::<_, resonate_eq::Error>((name, measured))
+                })
+                .await;
+
+            let outcome = this.update(cx, |this, cx| {
+                this.fitting_a_measurement = false;
+                match fitted {
+                    Ok((name, measured)) => {
+                        this.reload();
+                        this.replaced(&name);
+                        this.reread(Curve::Kept(name.clone()));
+                        this.notice = Some(Notice::Done(fitted_said(&name, &aimed_at, &measured)));
+                    }
+                    Err(error) => {
+                        this.notice = Some(toast::eq_could_not("fit that measurement", &error));
+                    }
+                }
+                cx.notify();
+            });
+            let _ = outcome;
+        });
+    }
+
     pub fn export(&mut self, to: PathBuf, cx: &mut Context<Self>) {
         let Some((curve, profile)) = self.shown.clone() else {
             return;
@@ -1267,6 +1364,107 @@ mod tests {
             "the catalogue read was dropped and left the pane looking"
         );
         assert!(known, "the catalogue was never read");
+    }
+
+    fn dipped_measurement(folder: &std::path::Path) -> PathBuf {
+        let text: String = (0..60)
+            .map(|step| {
+                let hertz = 20.0 * 1.12_f64.powi(step);
+                let level = if (3_000.0..6_000.0).contains(&hertz) {
+                    -5.0
+                } else {
+                    0.0
+                };
+                format!("{hertz:.2}\t{level:.2}\n")
+            })
+            .collect();
+        std::fs::create_dir_all(folder).expect("a writable temporary directory");
+        let file = folder.join("dipped.txt");
+        std::fs::write(&file, format!("* REW\n{text}")).expect("a writable temporary directory");
+        file
+    }
+
+    #[gpui::test]
+    fn a_measurement_fitted_in_the_pane_is_kept_and_shown_as_the_profile_it_became(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use gpui::AppContext as _;
+
+        let folder = std::env::temp_dir().join(format!(
+            "resonate-ui-equaliser-measured-{}",
+            std::process::id()
+        ));
+        let measurement = dipped_measurement(&folder);
+        let model = cx.new(|_| {
+            EqualiserModel::new(
+                folder.join("equaliser"),
+                Arc::new(Corrected::uncorrected()),
+                Bindings::default(),
+            )
+        });
+
+        model.update(cx, |model, cx| {
+            model.aim_at(Goal::BuiltIn(BuiltIn::Flat));
+            model.fit_a_measurement(measurement, cx);
+        });
+        assert!(model.read_with(cx, |model, _| model.is_fitting_a_measurement()));
+        cx.run_until_parked();
+
+        let (fitting, shown, bands, notice, kept) = model.update(cx, |model, _| {
+            (
+                model.is_fitting_a_measurement(),
+                model.shown_curve().cloned(),
+                model.shown_bands(),
+                model.take_notice(),
+                model.kept().to_vec(),
+            )
+        });
+        let _ = std::fs::remove_dir_all(&folder);
+
+        assert!(!fitting);
+        assert_eq!(shown, Some(Curve::Kept(named("dipped"))));
+        assert_eq!(kept, vec![named("dipped")]);
+        assert!(bands.iter().any(|band| band.gain.decibels() > 2.0));
+        assert!(matches!(notice, Some(Notice::Done(said)) if said.contains("fitted toward Flat")));
+    }
+
+    #[gpui::test]
+    fn a_target_file_that_is_not_there_leaves_the_pane_with_a_notice_and_nothing_kept(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use gpui::AppContext as _;
+
+        let folder = std::env::temp_dir().join(format!(
+            "resonate-ui-equaliser-no-target-{}",
+            std::process::id()
+        ));
+        let measurement = dipped_measurement(&folder);
+        let model = cx.new(|_| {
+            EqualiserModel::new(
+                folder.join("equaliser"),
+                Arc::new(Corrected::uncorrected()),
+                Bindings::default(),
+            )
+        });
+
+        model.update(cx, |model, cx| {
+            model.aim_at(Goal::File(folder.join("missing.csv")));
+            model.fit_a_measurement(measurement, cx);
+        });
+        cx.run_until_parked();
+
+        let (fitting, kept, notice) = model.update(cx, |model, _| {
+            (
+                model.is_fitting_a_measurement(),
+                model.kept().to_vec(),
+                model.take_notice(),
+            )
+        });
+        let _ = std::fs::remove_dir_all(&folder);
+
+        assert!(!fitting);
+        assert!(kept.is_empty());
+        assert!(matches!(notice, Some(Notice::Trouble(_))));
     }
 
     #[test]

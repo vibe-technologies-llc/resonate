@@ -69,6 +69,28 @@ pub enum Error {
     #[error("the profile holds more than the {limit} lines a profile may hold")]
     TooManyLines { limit: usize },
 
+    #[error("the measurement holds more than the {limit} bytes a measurement may hold")]
+    MeasurementTooLarge { limit: usize },
+
+    #[error("no line of that file reads as a frequency and a level")]
+    NoMeasuredPoints,
+
+    #[error("the file holds {found} points and a response needs at least {least}")]
+    TooFewMeasuredPoints { found: usize, least: usize },
+
+    #[error(
+        "a response spans {lowest_hertz:.0} Hz to {highest_hertz:.0} Hz and must reach 500 Hz to 2 kHz to be set against another"
+    )]
+    ResponseMissesTheMidBand {
+        lowest_hertz: f64,
+        highest_hertz: f64,
+    },
+
+    #[error(
+        "the measurement is within {off_by_db:.1} dB of the target, so there is nothing to correct"
+    )]
+    NothingToCorrect { off_by_db: f64 },
+
     #[error(transparent)]
     Domain(#[from] resonate_core::Error),
 }
