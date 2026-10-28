@@ -357,7 +357,7 @@ to a target. `resonate-eq` only, no network, desktop and CLI; the phones do not 
 - **Targets are data**: `BuiltIn::{Flat, HarmanOverEar2018, HarmanInEar2019}` (named `flat`,
   `harman-over-ear-2018`, `harman-in-ear-2019`, any case). The two Harman curves are AutoEq's
   published `targets/Harman over-ear 2018.csv` and `Harman in-ear 2019.csv` (MIT-licensed, 696
-  points each, 0 dB at 1 kHz), kept whole as `crates/resonate-eq/targets/*.csv` and read by the same
+  points each, 0 dB at 1 kHz), kept whole as `crates/resonate-eq/targets/*.csv` with its notice beside them (`LICENSE-AutoEq`, named in `COPYRIGHT`) and read by the same
   reader; the tests pin their bass, ear-gain and treble levels. Another target is a file in the same
   formats: `Store::goal_named` is a built-in's name, else a path.
 - **The fit** (`fitting::fit(measured, goal, &Fitting)`): both responses are smoothed to a sixth of

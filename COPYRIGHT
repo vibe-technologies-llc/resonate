@@ -2,3 +2,7 @@ Copyright (C) 2026 Vibe Technologies LLC
 
 Resonate is free software under the GNU Affero General Public License,
 version 3 or later. See LICENSE.
+
+crates/resonate-eq/targets/harman-over-ear-2018.csv and harman-in-ear-2019.csv are AutoEq's
+published target curves, under the MIT License; its notice is
+crates/resonate-eq/targets/LICENSE-AutoEq.
