@@ -339,7 +339,14 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   frames on and carries the resampler or convolver across where it can. The ring is told the frame
   (`RingProducer::turn_at`: the rendered and heard amplitude together, announced like `render_at`,
   so the consumer steps both on that frame and leaves the frames either side untouched; a
-  `hear_at` asked after the announcement outranks the step, through the ring's turn count). The
+  `hear_at` asked after the announcement outranks the step, through the ring's turn count; the
+  heard amplitude after the turn is an atomic of its own beside the one heard now). A volume, mute
+  or ReplayGain change asked while the boundary waits is heard on each side at its own row's gain:
+  `retune_for` plans the leaving row too (`plan_for` over the `Boundary`'s `Track`) and calls
+  `RingProducer::hear_across(leaving, entering)`, which moves the level heard until the boundary
+  frame and the one stepped to there without disturbing the announcement
+  (`a_volume_asked_while_a_boundary_waits_reaches_the_leaving_tail_and_the_entering_row_at_each_rows_gain`,
+  `a_mute_asked_while_a_boundary_waits_silences_the_leaving_tail_and_the_entering_row`). The
   handover is a `Boundary` (`at`, a frame of this output's ring, and the leaving `Track`), and
   until the graph has read past `at` (`reach_the_boundary`, before every fill, the loop waking by
   `until_the_boundary`) the leaving row is what is heard: the queue has not advanced,

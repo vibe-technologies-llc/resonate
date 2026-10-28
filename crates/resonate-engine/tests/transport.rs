@@ -4646,6 +4646,127 @@ fn a_row_heard_on_without_a_gap_is_announced_as_the_graph_reaches_it_not_as_it_i
     Ok(())
 }
 
+struct QuieterOnOneRow {
+    quiet: MediaLocation,
+    gain: f32,
+}
+
+impl Hinting for QuieterOnOneRow {
+    fn hints(&self, location: &MediaLocation, _: Option<FrameSpan>) -> TrackHints {
+        TrackHints {
+            measured: MeasuredGain {
+                track: (*location == self.quiet)
+                    .then(|| Decibels::new(self.gain).ok())
+                    .flatten(),
+                album: None,
+            },
+            ..TrackHints::default()
+        }
+    }
+}
+
+fn left_words(bytes: &[u8]) -> Vec<i16> {
+    words(bytes)
+        .chunks_exact(usize::from(CHANNELS))
+        .map(|frame| frame[0])
+        .collect()
+}
+
+fn a_level_asked_while_a_boundary_waits_reaches_each_row_at_its_own_gain(
+    asked: Volume,
+    leaving_heard: i16,
+    entering_heard: i16,
+) -> Result<()> {
+    const LEAVING_LEVEL: i16 = 8_000;
+    const ENTERING_LEVEL: i16 = 12_000;
+    const PULLED_BEFORE_THE_ASK: usize = 14_000;
+    const RAMP_AND_MARGIN: usize = 1_000;
+    const TOLERANCE: i16 = 16;
+
+    let tree = Tree::new();
+    let first = tree.write("first.wav", &steady(LEAVING_LEVEL, FRAMES));
+    let second = tree.write("second.wav", &steady(ENTERING_LEVEL, FRAMES));
+    let sources = Arc::new(Sources::local().hinted_by(Arc::new(QuieterOnOneRow {
+        quiet: MediaLocation::local(&first),
+        gain: -6.0206,
+    })));
+    let frame = frame_bytes(SampleFormat::S16);
+
+    let (player, graph) = settled_over(
+        vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
+        sources,
+        EngineConfig {
+            replay_gain: ReplayGainMode::Track,
+            ..ring_deep()
+        },
+    )?;
+    player.send(Command::Load {
+        items: vec![track(&first, 1), track(&second, 2)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    play_until(
+        &player,
+        &graph,
+        SHORT_PULL_FRAMES * frame,
+        |_, graph| graph.played.len() >= PULLED_BEFORE_THE_ASK * frame,
+        "the leaving row to play until its end is in the ring",
+    );
+    thread::sleep(Duration::from_millis(300));
+    assert!(plays(&player, 1), "the boundary was reached before the ask");
+
+    player
+        .request(Command::SetVolume(asked))?
+        .wait_for(PATIENCE)?;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame,
+        |_, graph| graph.played.len() >= (FRAMES + FRAMES / 2) * frame,
+        "the entering row to play",
+    );
+
+    let graph = graph.lock();
+    let heard = left_words(&graph.played);
+    let tail = &heard[PULLED_BEFORE_THE_ASK + RAMP_AND_MARGIN..FRAMES];
+    let entering = &heard[FRAMES..FRAMES + FRAMES / 2];
+    assert!(
+        tail.iter()
+            .all(|word| (word - leaving_heard).abs() <= TOLERANCE),
+        "the leaving tail did not carry its own gain: {:?}",
+        &tail[..8]
+    );
+    assert!(
+        entering
+            .iter()
+            .all(|word| (word - entering_heard).abs() <= TOLERANCE),
+        "the entering row did not carry its own gain: {:?}",
+        entering
+            .iter()
+            .position(|word| (word - entering_heard).abs() > TOLERANCE)
+            .map(|at| (at, &entering[at..at + 8]))
+    );
+    assert_eq!(graph.opens, 1);
+    assert_eq!(graph.drains, 0);
+    Ok(())
+}
+
+#[test]
+fn a_volume_asked_while_a_boundary_waits_reaches_the_leaving_tail_and_the_entering_row_at_each_rows_gain()
+-> Result<()> {
+    a_level_asked_while_a_boundary_waits_reaches_each_row_at_its_own_gain(
+        Volume::new(0.5).expect("half volume"),
+        500,
+        1_500,
+    )
+}
+
+#[test]
+fn a_mute_asked_while_a_boundary_waits_silences_the_leaving_tail_and_the_entering_row() -> Result<()>
+{
+    a_level_asked_while_a_boundary_waits_reaches_each_row_at_its_own_gain(Volume::MUTE, 0, 0)
+}
+
 #[test]
 fn a_row_at_another_rate_still_drains_the_stream_and_opens_one_of_its_own() -> Result<()> {
     let tree = Tree::new();
