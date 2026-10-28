@@ -214,7 +214,7 @@ pub(crate) fn refusal(error: &Error, switcher: &Switcher) -> String {
             "There's nothing in this zone's queue to move".to_owned()
         }
         Error::HandoverUnheard { zone } => format!(
-            "{} didn't start playing, so the music stayed where it was",
+            "{} didn't start playing, so the music stayed where it was and its own queue was put back",
             switcher
                 .name_of(*zone)
                 .map_or_else(|| "The other zone".to_owned(), ToString::to_string)
@@ -725,7 +725,7 @@ mod tests {
         assert_eq!(switcher.moved_to(zone(3)), "Playing in Study now");
         assert_eq!(
             refusal(&Error::HandoverUnheard { zone: zone(3) }, &switcher),
-            "Study didn't start playing, so the music stayed where it was"
+            "Study didn't start playing, so the music stayed where it was and its own queue was put back"
         );
         assert_eq!(
             refusal(&Error::NothingToHandOver { zone: zone(2) }, &switcher),

@@ -1851,6 +1851,73 @@ fn a_zone_hands_its_song_over_to_another_that_fades_in_where_it_was_heard_while_
 }
 
 #[test]
+fn a_handover_the_other_zone_never_sounds_puts_its_own_queue_back_and_leaves_the_first_playing()
+-> Result<()> {
+    let tree = Tree::new();
+    let handed = tree.write("handed.wav", &pcm(16, FRAMES * 20).file);
+    let own = tree.write("own.wav", &pcm(16, FRAMES * 20).file);
+    let device = sink(&[SampleRate::HZ_44100], &[SampleFormat::S16]);
+    let opened = FakeZones::over(vec![device.clone()]);
+    let zones = opened.started()?;
+    let study = zones.add()?;
+    let first = zones.first().player;
+    let incoming = opened.graph(study.id);
+    let block = SHORT_PULL_FRAMES * frame_bytes(SampleFormat::S16);
+
+    played_from(&zones, study.id, &own)?;
+    play_until(
+        &study.player,
+        &incoming,
+        block,
+        |player, _| {
+            player
+                .state()
+                .current
+                .is_some_and(|track| track.position >= Frames(FRAMES as u64))
+        },
+        "the second zone to be heard a while",
+    );
+    stand_still(&study.player);
+    let stood_at = study.player.state().current.map(|track| track.position);
+    change_the_graph(&incoming, SinkChange::Removed(device.id), Vec::clear);
+    wait_for(
+        &study.player,
+        |player| player.sinks().is_empty(),
+        "the second zone to see its device gone",
+    );
+    played_from(&zones, ZoneId::FIRST, &handed)?;
+    wait_for(&first, playing, "the first zone to play");
+
+    let landed = zones.hand_over(ZoneId::FIRST, study.id)?.wait();
+    wait_for(
+        &study.player,
+        |player| {
+            locations(&player.queue()) == vec![MediaLocation::local(&own)]
+                && player.state().current.map(|track| track.position) == stood_at
+        },
+        "the second zone's own queue to come back where it stood",
+    );
+
+    assert!(
+        landed.is_err(),
+        "a handover nothing heard was told as landed"
+    );
+    assert!(
+        playing(&first),
+        "the first zone stopped though nothing took over"
+    );
+    assert_eq!(
+        locations(&first.queue()),
+        vec![MediaLocation::local(&handed)]
+    );
+    assert!(
+        !playing(&study.player),
+        "the second zone played its own queue back"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_paused_zone_hands_over_paused_where_it_stood_and_a_handover_is_refused_where_it_cannot_land()
 -> Result<()> {
     let tree = Tree::new();

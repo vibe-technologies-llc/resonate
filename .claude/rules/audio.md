@@ -789,8 +789,13 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   an output (within `HANDED_OVER_WITHIN`, 10 s), and only then sends the outgoing zone `Stop`,
   which retires its output with the ordinary fade, and takes its queue away with one `Remove` of
   every row under the revision it was read at (`Zones::send_if_the_queue_is_still`: an edit made
-  meanwhile keeps its queue). Unheard or refused, the incoming zone is stopped and the outgoing one
-  plays on (`HandoverUnheard`, or the `Play`'s own error). Volume, sleep timer and device stay each
+  meanwhile keeps its queue). Unheard or refused (the `Resume` or `Play` refused, the thread not
+  spawned, nothing published within the wait), the incoming zone is stopped and put back as it
+  stood before the handover (`Before`: its own repeat and `resumption_of` its queue and place, read
+  before any send), the restoring `Resume` sent under the revision the handed `Resume` installed so
+  an edit made to the handed queue meanwhile is left in place; the outgoing one plays on
+  (`HandoverUnheard`, or the refusal itself;
+  `a_handover_the_other_zone_never_sounds_puts_its_own_queue_back_and_leaves_the_first_playing`). Volume, sleep timer and device stay each
   zone's own; the incoming zone lags the outgoing one by its stream's opening, heard as the two
   fades overlapping. The `Handover` handle names the row and frame handed over and `wait` joins
   the thread; a dropped handle detaches it, which logs a failure itself. MPRIS follows from each

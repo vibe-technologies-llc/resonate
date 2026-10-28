@@ -9,11 +9,11 @@ use std::{
 
 use parking_lot::RwLock;
 use resonate_audio::{NodeName, SinkId};
-use resonate_core::{Frames, Span, Volume, ZoneId, ZoneName};
+use resonate_core::{Frames, Resumption, Span, Volume, ZoneId, ZoneName};
 
 use crate::{
     Command, Error, Outcome, OutputMode, OutputSettings, OutputStatus, PlaybackState, Player,
-    PlayerState, Result, resumption_of,
+    PlayerState, RepeatMode, Result, resumption_of,
 };
 
 pub const HANDED_OVER_WITHIN: Duration = Duration::from_secs(10);
@@ -92,6 +92,28 @@ impl Handover {
             .join()
             .unwrap_or(Err(Error::HandoverUnheard { zone: to }))
     }
+}
+
+#[derive(Clone)]
+struct Before {
+    repeat: RepeatMode,
+    resumption: Resumption,
+}
+
+impl Before {
+    fn of(player: &Player) -> Self {
+        let state = player.state();
+        Self {
+            repeat: state.repeat,
+            resumption: resumption_of(&state, &player.queued()),
+        }
+    }
+}
+
+struct Handed {
+    resumed: Outcome,
+    played: Option<Outcome>,
+    before: Before,
 }
 
 pub struct Zones {
@@ -262,28 +284,41 @@ impl Zones {
 
         let resumption = resumption_of(&state, &queued);
         let (row, at) = (resumption.landing(), resumption.at);
+        let before = Before::of(&incoming.player);
 
         self.send(to, Command::SetRepeat(state.repeat))?;
-        self.send(to, Command::Resume(resumption))?;
-        let played = if sounding {
-            Some(incoming.player.request(Command::Play)?)
-        } else {
-            None
+        let resumed = incoming.player.request(Command::Resume(resumption))?;
+        let played = match sounding.then(|| incoming.player.request(Command::Play)) {
+            Some(Err(error)) => {
+                self.put_back(to, before, None);
+                return Err(error);
+            }
+            Some(Ok(played)) => Some(played),
+            None => None,
         };
 
         let zones = Arc::clone(self);
         let revision = queued.revision;
         let last = queued.rows.len() - 1;
+        let kept = before.clone();
         let waiting = thread::Builder::new()
             .name("resonate-handover".to_owned())
             .spawn(move || {
-                let landed = zones.let_the_outgoing_go(from, to, played, revision, last);
+                let handed = Handed {
+                    resumed,
+                    played,
+                    before: kept,
+                };
+                let landed = zones.let_the_outgoing_go(from, to, handed, revision, last);
                 if let Err(error) = &landed {
                     tracing::warn!(%error, %from, %to, "playback handed over did not land");
                 }
                 landed
-            })
-            .map_err(|_| Error::HandoverUnheard { zone: to })?;
+            });
+        let Ok(waiting) = waiting else {
+            self.put_back(to, before, None);
+            return Err(Error::HandoverUnheard { zone: to });
+        };
 
         Ok(Handover {
             to,
@@ -298,19 +333,55 @@ impl Zones {
         &self,
         from: ZoneId,
         to: ZoneId,
-        played: Option<Outcome>,
+        handed: Handed,
         revision: u64,
         last: usize,
     ) -> Result<()> {
-        if let Some(played) = played {
-            let started = played.wait_for(HANDED_OVER_WITHIN);
-            if started.is_err() || !self.heard_from(to)? {
-                self.send(to, Command::Stop)?;
-                return Err(started.err().unwrap_or(Error::HandoverUnheard { zone: to }));
-            }
+        let Handed {
+            resumed,
+            played,
+            before,
+        } = handed;
+
+        let resumed = resumed.wait_for(HANDED_OVER_WITHIN);
+        let installed = self.zone(to).map(|zone| zone.player.queued().revision);
+        let landed = match (resumed, played) {
+            (Err(error), _) => Err(error),
+            (Ok(()), Some(played)) => self.started(to, played),
+            (Ok(()), None) => Ok(()),
+        };
+        if let Err(error) = landed {
+            self.put_back(to, before, installed);
+            return Err(error);
         }
+
         self.send(from, Command::Stop)?;
         self.send_if_the_queue_is_still(from, revision, Command::Remove(Span::between(0, last)))
+    }
+
+    fn started(&self, to: ZoneId, played: Outcome) -> Result<()> {
+        played.wait_for(HANDED_OVER_WITHIN)?;
+        if self.heard_from(to)? {
+            Ok(())
+        } else {
+            Err(Error::HandoverUnheard { zone: to })
+        }
+    }
+
+    fn put_back(&self, to: ZoneId, before: Before, installed: Option<u64>) {
+        let Before { repeat, resumption } = before;
+        let resume = Command::Resume(resumption);
+
+        let put = self
+            .send(to, Command::Stop)
+            .and_then(|()| self.send(to, Command::SetRepeat(repeat)))
+            .and_then(|()| match installed {
+                Some(revision) => self.send_if_the_queue_is_still(to, revision, resume),
+                None => self.send(to, resume),
+            });
+        if let Err(error) = put {
+            tracing::warn!(%error, zone = %to, "the queue a handover replaced was not put back");
+        }
     }
 
     fn heard_from(&self, id: ZoneId) -> Result<bool> {
