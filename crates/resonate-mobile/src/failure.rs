@@ -1,7 +1,8 @@
 use resonate_engine::{Cause, CommandKind, Event, PlaybackState, PlayerState, QueueRows};
+use resonate_eq::Error as Eq;
 use resonate_library::{Error as Library, LookupOp};
 
-use crate::{MobilePlayer, documents::document_uri};
+use crate::{MobilePlayer, documents::document_uri, measurement::MeasuredFile};
 
 impl MobilePlayer {
     pub(crate) fn still_waiting(&self, state: &PlayerState) -> Option<String> {
@@ -120,6 +121,33 @@ pub(crate) fn of_a_lookup(op: LookupOp, source: &Library) -> String {
             format!("The online service refused {refusals} requests in a row, the last for {asked}")
         }
         _ => format!("The online lookup of {asked} failed"),
+    }
+}
+
+pub(crate) fn of_a_measurement(file: MeasuredFile, source: &Eq) -> String {
+    const MIB: usize = 1024 * 1024;
+    match source {
+        Eq::MeasurementTooLarge { limit } => {
+            format!("The {file} file is larger than {} MiB", limit / MIB)
+        }
+        Eq::NoMeasuredPoints => {
+            format!("No line of the {file} file reads as a frequency and a level")
+        }
+        Eq::TooFewMeasuredPoints { found, least } => {
+            format!("The {file} file holds {found} points and a response needs at least {least}")
+        }
+        Eq::ResponseMissesTheMidBand {
+            lowest_hertz,
+            highest_hertz,
+        } => format!(
+            "The {file} spans {lowest_hertz:.0} Hz to {highest_hertz:.0} Hz and must reach 500 Hz to 2 kHz"
+        ),
+        Eq::NothingToCorrect { off_by_db } => {
+            format!(
+                "The measurement is within {off_by_db:.1} dB of the target, so there is nothing to correct"
+            )
+        }
+        _ => format!("The {file} file could not be read"),
     }
 }
 

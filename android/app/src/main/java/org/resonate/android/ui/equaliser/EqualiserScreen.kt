@@ -202,6 +202,9 @@ private fun EqualiserContent(
                     }
                 }
             }
+            item(key = "measurement") {
+                MeasurementSection(model)
+            }
             item(key = "correction") {
                 ListItem(
                     onClick = { navigator.open(Screen.HeadphoneCorrection) },

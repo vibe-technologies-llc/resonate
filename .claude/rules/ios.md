@@ -1337,6 +1337,17 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   playing (`followRoute`); unbinding, or forgetting the output in use under *Curves kept for other
   outputs*, falls back to the shared curve at once. The switch stays one for every output, as on the
   desktop. The engine still gets one curve as its `Equalisation` fallback.
+- **A measurement of the listener's own is fitted from the equaliser page** (`MeasuredCorrectionSection`,
+  `MeasuredCorrection.swift`, after *Import a profile*): a *Fit toward* picker of the boundary's
+  built-in targets (`measurementOffers()`, read once, the recommended one chosen first), *Choose a
+  target file…* and *Fit a measurement…*, each its own `fileImporter` on its own button (two on one
+  view lose one). The file is read on `Work.aside` at most `bytesAtMost` and one byte, fitted by
+  `fitMeasurement` on `Work.aside`, and its curve adopted as an imported profile is (`Features.adopt`:
+  the equaliser on, the curve in use, bound or shared) with a notice of `Measurement.told`: bands,
+  target, the error before and after, lines passed over, values held to the limits. The decisions
+  (`MeasurementAim`, `MeasurementView`, `Measurement.profileName`, `Measurement.told`) are
+  `ResonateLogic`'s (`MeasurementTests`); `MeasuredCorrectionState` only reads files and calls the
+  boundary, and refuses a second fit while one runs.
 - **Room correction** is the equaliser page's last section (`RoomCorrection.swift`): choosing an
   audio file reads at most 64 MiB and one byte on `Work.aside` and keeps it through
   `keep_room_correction`, then switches it on; the switch, the response's channels, rate and length

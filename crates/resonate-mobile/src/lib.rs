@@ -15,6 +15,7 @@ mod listening;
 mod logging;
 mod loves;
 mod lyrics;
+mod measurement;
 mod mixes;
 mod online_tools;
 mod organising;
@@ -68,6 +69,10 @@ pub use crate::{
     },
     error::{Error, Result, StoreOp},
     logging::{LogLevel, Logbook, keep_log},
+    measurement::{
+        BuiltInTarget, MeasurementFit, MeasurementOffers, MeasurementTarget, fit_measurement,
+        measurement_offers,
+    },
     playback::{
         GainMode, LossyRestoration, PlaybackPreferences, ResamplingPhase, ResamplingQuality,
         SleepTimer, default_playback_preferences,

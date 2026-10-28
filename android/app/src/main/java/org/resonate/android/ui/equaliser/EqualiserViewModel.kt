@@ -1,5 +1,7 @@
 package org.resonate.android.ui.equaliser
 
+import android.content.ContentResolver
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -16,17 +18,21 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.resonate.android.OutputRoute
 import org.resonate.android.RoomView
+import org.resonate.android.readUpTo
 import org.resonate.android.nativecore.EqualiserCurve
 import org.resonate.android.nativecore.EqualiserPreset
 import org.resonate.android.nativecore.PlaybackPreferences
 import org.resonate.android.nativecore.equaliserFrequencies
 import org.resonate.android.nativecore.equaliserLimits
 import org.resonate.android.nativecore.equaliserPresets
+import org.resonate.android.nativecore.fitMeasurement
 import org.resonate.android.nativecore.fittedPreamp
+import org.resonate.android.nativecore.measurementOffers
 import org.resonate.android.nativecore.parseEqProfile
 import org.resonate.android.nativecore.responseCurve
 import org.resonate.android.ui.Resonate
@@ -70,6 +76,10 @@ class EqualiserViewModel(private val resonate: Resonate) : ViewModel() {
 
     val room: StateFlow<RoomView> = resonate.features.room.view
 
+    private val measuring = MutableStateFlow(MeasurementView.unread)
+
+    val measurement: StateFlow<MeasurementView> = measuring.asStateFlow()
+
     init {
         viewModelScope.launch {
             mutableInfo.value =
@@ -80,6 +90,10 @@ class EqualiserViewModel(private val resonate: Resonate) : ViewModel() {
                         equaliserPresets(),
                     )
                 }
+        }
+        viewModelScope.launch {
+            val offers = withContext(Dispatchers.Default) { measurementOffers() }
+            measuring.update { if (it.offers == null) MeasurementView.of(offers) else it }
         }
         viewModelScope.launch { stored.collect { if (!holding) draft.value = null } }
     }
@@ -155,6 +169,37 @@ class EqualiserViewModel(private val resonate: Resonate) : ViewModel() {
                 }
             commit(found.curve)
             onApplied()
+        }
+    }
+
+    fun aimAt(aim: Aim) = measuring.update { it.aimed(aim) }
+
+    fun aimAtDocument(resolver: ContentResolver, uri: Uri) {
+        val offers = measuring.value.offers ?: return
+        resonate.attempt(viewModelScope) { _ ->
+            val read = withContext(Dispatchers.IO) { resolver.readUpTo(uri, offers.bytesAtMost) }
+            measuring.update { it.aimed(Aim.Document(read.name, read.bytes)) }
+        }
+    }
+
+    fun fitFrom(resolver: ContentResolver, uri: Uri) {
+        val view = measuring.value
+        val offers = view.offers ?: return
+        val aim = view.aim ?: return
+        if (view.fitting) return
+        measuring.update { it.begun() }
+        resonate.attempt(viewModelScope) { _ ->
+            try {
+                val read = withContext(Dispatchers.IO) { resolver.readUpTo(uri, offers.bytesAtMost) }
+                val fit =
+                    withContext(Dispatchers.Default) {
+                        fitMeasurement(read.bytes, aim.target(), profileNameFor(read.name))
+                    }
+                commit(fit.imported.curve)
+                measuring.update { it.finished(fitSentence(fit, aim.label(offers.targets))) }
+            } finally {
+                measuring.update { it.finished(null) }
+            }
         }
     }
 

@@ -177,6 +177,14 @@ pub enum Error {
     },
     #[error("the equaliser profile could not be read")]
     Equaliser(#[from] resonate_eq::Error),
+    #[error("{}", crate::failure::of_a_measurement(*file, source))]
+    Measurement {
+        file: crate::measurement::MeasuredFile,
+        #[source]
+        source: Box<resonate_eq::Error>,
+    },
+    #[error("No built-in target is called {name}")]
+    UnknownTarget { name: String },
     #[error("this service does not recognise the account")]
     UnknownAccount,
     #[error("audio analysis failed")]
@@ -310,6 +318,16 @@ impl Error {
     ) -> Self {
         Self::Reference {
             op,
+            source: Box::new(source),
+        }
+    }
+
+    pub(crate) fn measurement(
+        file: crate::measurement::MeasuredFile,
+        source: resonate_eq::Error,
+    ) -> Self {
+        Self::Measurement {
+            file,
             source: Box::new(source),
         }
     }

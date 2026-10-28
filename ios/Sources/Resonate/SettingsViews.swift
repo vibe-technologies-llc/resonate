@@ -523,6 +523,7 @@ struct SoundSettingsView: View {
                 }
                 HeadphoneCorrectionSection(model: $model, current: curve, choose: { ask(.device($0)) }, search: search)
                 ProfileImportSection(paste: paste, choose: { choosingFile = true })
+                MeasuredCorrectionSection()
                 RoomCorrectionSection()
                 let others = library.boundRoutes.filter { $0.id != library.route?.id }
                 if !others.isEmpty {

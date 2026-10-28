@@ -47,6 +47,7 @@ final class Features {
     @ObservationIgnored lazy var downloads = DownloadQueue(library: library)
     @ObservationIgnored lazy var listening = Listening(library: library)
     @ObservationIgnored lazy var room = RoomCorrectionState(library: library)
+    @ObservationIgnored lazy var measured = MeasuredCorrectionState(library: library) { [unowned self] in adopt($0) }
     @ObservationIgnored private lazy var transfers = BackgroundHold(
         name: "Fetching songs from your devices",
         continued: BackgroundHold.transfers,
@@ -1309,6 +1310,11 @@ final class Features {
     }
 
     private func load(_ found: EqualiserImport) {
+        adopt(found)
+        library.notice(Self.loaded(found))
+    }
+
+    func adopt(_ found: EqualiserImport) {
         let curve = found.curve
         library.updatePreferences { current in
             var next = current
@@ -1316,7 +1322,6 @@ final class Features {
             next.equaliser = curve
             return next
         }
-        library.notice(Self.loaded(found))
     }
 
     private static func loaded(_ found: EqualiserImport) -> String {
