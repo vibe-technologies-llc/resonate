@@ -84,6 +84,15 @@ pub enum Error {
 
     #[error("every zone number is taken")]
     NoZoneLeft,
+
+    #[error("zone {zone} cannot hand its playback over to itself")]
+    HandedToItself { zone: ZoneId },
+
+    #[error("zone {zone} has nothing queued to hand over")]
+    NothingToHandOver { zone: ZoneId },
+
+    #[error("zone {zone} did not start playing what was handed over to it")]
+    HandoverUnheard { zone: ZoneId },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -101,6 +110,7 @@ pub enum Cause {
     PlayerStopped,
     HeldByAnotherZone,
     ZoneRefused,
+    NotHandedOver,
 }
 
 impl Cause {
@@ -124,6 +134,8 @@ impl Error {
             Self::OpenerStopped { .. } | Self::DecoderStopped { .. } => Cause::Unreadable,
             Self::DeviceHeld { .. } => Cause::HeldByAnotherZone,
             Self::NoSuchZone { .. } | Self::FirstZoneStays | Self::NoZoneLeft => Cause::ZoneRefused,
+            Self::NothingToHandOver { .. } => Cause::NothingPlaying,
+            Self::HandedToItself { .. } | Self::HandoverUnheard { .. } => Cause::NotHandedOver,
         }
     }
 
@@ -146,7 +158,10 @@ impl Error {
             | Self::DeviceHeld { .. }
             | Self::NoSuchZone { .. }
             | Self::FirstZoneStays
-            | Self::NoZoneLeft => None,
+            | Self::NoZoneLeft
+            | Self::HandedToItself { .. }
+            | Self::NothingToHandOver { .. }
+            | Self::HandoverUnheard { .. } => None,
         }
     }
 
@@ -169,7 +184,10 @@ impl Error {
             | Self::DeviceHeld { .. }
             | Self::NoSuchZone { .. }
             | Self::FirstZoneStays
-            | Self::NoZoneLeft => None,
+            | Self::NoZoneLeft
+            | Self::HandedToItself { .. }
+            | Self::NothingToHandOver { .. }
+            | Self::HandoverUnheard { .. } => None,
         }
     }
 }

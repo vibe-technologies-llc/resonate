@@ -262,7 +262,12 @@ is never named.
   the zone before, rename, the label and what a screen reader hears), tested there. The control sits
   before the window controls: a speaker mark alone with one zone, the selected zone's name beside it
   once there are several; a press or `enter` opens a `Menu` listing the zones (*Check* on the shown
-  one), *Add a zone*, *Rename this zone…* and, off the first, *Remove this zone*. Switching never
+  one), with several a *Move playback to …* entry per other zone (`Switcher::elsewhere`,
+  `moving_to`), *Add a zone*, *Rename this zone…* and, off the first, *Remove this zone*. **Moving
+  playback** (`RootView::move_playback_to`) runs `Zones::hand_over` and its `wait` on the
+  background executor and shows the incoming zone at once; landed, a toast says *Playing in … now*
+  (`moved_to`); refused or unheard, the window goes back to the zone it came from and
+  `zones::refusal` names why (`HandoverUnheard`, `NothingToHandOver`, `DeviceHeld`). Switching never
   touches playback (`show_zone` moves `listen_in` to the shown zone and clears the volume aim, mute
   memory, seek grab, queue names and take-out offer, which belong to one queue). Adding and removing
   run on the background executor (a player opens its own PipeWire client). Renaming swaps the control

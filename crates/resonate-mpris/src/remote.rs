@@ -35,6 +35,7 @@ const ADD_TRACKS: &str = "AddTracks";
 const RELOCATE: &str = "Relocate";
 const TUNE: &str = "Tune";
 const RELOAD: &str = "Reload";
+const HAND_OVER: &str = "HandOver";
 const MOVES_A_CALL: usize = 4096;
 pub const ROWS_A_CALL: usize = 128;
 const PLAYING_NEXT: &str = "PlayingNext";
@@ -231,6 +232,16 @@ impl Running {
 
     pub const fn name(&self) -> &WellKnownName<'static> {
         &self.name
+    }
+
+    pub fn zone_number(&self) -> Option<ZoneId> {
+        numbered(self.name.as_str())
+    }
+
+    pub fn hand_over(&self, to: ZoneId) -> Result<()> {
+        self.proxy(OWN_INTERFACE)?
+            .call::<_, _, ()>(HAND_OVER, &(to.get(),))
+            .map_err(|source| Error::bus(BusOp::Call, source))
     }
 
     pub fn zone(&self) -> Result<String> {

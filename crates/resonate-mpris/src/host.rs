@@ -21,6 +21,12 @@ pub enum Reloaded {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum HandedOver {
+    Moving,
+    Refused,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Reloadable {
     Equaliser,
     Submission,
@@ -149,6 +155,10 @@ pub trait Host: Send + Sync + 'static {
 
     fn reload(&self, _group: Reloadable, _settings: &str) -> Reloaded {
         Reloaded::Refused
+    }
+
+    fn hand_over(&self, _to: ZoneId) -> HandedOver {
+        HandedOver::Refused
     }
 }
 

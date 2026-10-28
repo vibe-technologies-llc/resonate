@@ -46,7 +46,10 @@ paths:
 - **A zone is addressed where a running player is.** `queue` and `sleep` take `--zone <N|NAME>`
   (conflicting with `--player`): a number is the zone's (1 the first), anything else the name the
   window shows, case folded (`ZoneAsked`, `Running::zoned`, `Error::NoSuchZone`); with neither flag
-  it is the first zone, as before. `players` prints a `ZONE` column. `play` is one player and so the
+  it is the first zone, as before. `queue --move-to <N|NAME>` queues nothing: it moves what the
+  `--zone` zone plays onto the named one over `HandOver` (`move_the_playback`, the target's number
+  read off its bus name by `Running::zone_number`), conflicting with files, `--playlist`,
+  `--player`, `--next` and `--play`. `players` prints a `ZONE` column. `play` is one player and so the
   first zone. The window's zones are made in `zoning.rs`: `Opener` fills the engine's `Opens` seam
   (a player over the same `Sources`, its bus service through `mpris::start_zone`), `restore` opens
   every kept zone and resumes its queue; the signal farewell silences every zone. The settings file

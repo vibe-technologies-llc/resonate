@@ -20,8 +20,8 @@ pub use crate::{
     caret::{Blinking, caret_blinking},
     error::{BusOp, Error, Result},
     host::{
-        Heard, Host, Opened, PlaylistInfo, PlaylistOrder, Playlists, Reloadable, Reloaded, Tunable,
-        Tuned,
+        HandedOver, Heard, Host, Opened, PlaylistInfo, PlaylistOrder, Playlists, Reloadable,
+        Reloaded, Tunable, Tuned,
     },
     icons::tell_the_icons_changed,
     remote::{

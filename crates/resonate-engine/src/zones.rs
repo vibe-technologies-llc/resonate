@@ -1,13 +1,23 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicU64, Ordering},
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    thread::{self, JoinHandle},
+    time::{Duration, Instant},
 };
 
 use parking_lot::RwLock;
 use resonate_audio::{NodeName, SinkId};
-use resonate_core::{Volume, ZoneId, ZoneName};
+use resonate_core::{Frames, Span, Volume, ZoneId, ZoneName};
 
-use crate::{Command, Error, OutputMode, OutputSettings, OutputStatus, Player, Result};
+use crate::{
+    Command, Error, Outcome, OutputMode, OutputSettings, OutputStatus, PlaybackState, Player,
+    PlayerState, Result, resumption_of,
+};
+
+pub const HANDED_OVER_WITHIN: Duration = Duration::from_secs(10);
+const LOOKED_AT_EVERY: Duration = Duration::from_millis(2);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Within {
@@ -53,6 +63,35 @@ pub trait Opens: Send + Sync + 'static {
 pub struct Held {
     pub sink: SinkId,
     pub by: ZoneId,
+}
+
+pub struct Handover {
+    to: ZoneId,
+    row: usize,
+    at: Frames,
+    sounding: bool,
+    waiting: JoinHandle<Result<()>>,
+}
+
+impl Handover {
+    pub const fn row(&self) -> usize {
+        self.row
+    }
+
+    pub const fn at(&self) -> Frames {
+        self.at
+    }
+
+    pub const fn sounding(&self) -> bool {
+        self.sounding
+    }
+
+    pub fn wait(self) -> Result<()> {
+        let to = self.to;
+        self.waiting
+            .join()
+            .unwrap_or(Err(Error::HandoverUnheard { zone: to }))
+    }
 }
 
 pub struct Zones {
@@ -188,6 +227,104 @@ impl Zones {
         }
     }
 
+    pub fn send_if_the_queue_is_still(
+        &self,
+        id: ZoneId,
+        revision: u64,
+        command: Command,
+    ) -> Result<()> {
+        let zone = self.zone(id).ok_or(Error::NoSuchZone { zone: id })?;
+        match command.kind().within() {
+            Within::TheZone => zone.player.send_if_the_queue_is_still(revision, command),
+            Within::EveryZone => self.send(id, command),
+        }
+    }
+
+    pub fn hand_over(self: &Arc<Self>, from: ZoneId, to: ZoneId) -> Result<Handover> {
+        if from == to {
+            return Err(Error::HandedToItself { zone: from });
+        }
+        let outgoing = self.zone(from).ok_or(Error::NoSuchZone { zone: from })?;
+        let incoming = self.zone(to).ok_or(Error::NoSuchZone { zone: to })?;
+        let state = outgoing.player.state();
+        let queued = outgoing.player.queued();
+        if queued.rows.is_empty() {
+            return Err(Error::NothingToHandOver { zone: from });
+        }
+        let sounding = means_to_sound(&state);
+
+        let wanted = incoming.player.output_settings().sink.clone();
+        if let Some(held) = self.holder_of(to, wanted.as_ref())
+            && (held.by != from || sounding)
+        {
+            return Err(Error::DeviceHeld { by: held.by });
+        }
+
+        let resumption = resumption_of(&state, &queued);
+        let (row, at) = (resumption.landing(), resumption.at);
+
+        self.send(to, Command::SetRepeat(state.repeat))?;
+        self.send(to, Command::Resume(resumption))?;
+        let played = if sounding {
+            Some(incoming.player.request(Command::Play)?)
+        } else {
+            None
+        };
+
+        let zones = Arc::clone(self);
+        let revision = queued.revision;
+        let last = queued.rows.len() - 1;
+        let waiting = thread::Builder::new()
+            .name("resonate-handover".to_owned())
+            .spawn(move || {
+                let landed = zones.let_the_outgoing_go(from, to, played, revision, last);
+                if let Err(error) = &landed {
+                    tracing::warn!(%error, %from, %to, "playback handed over did not land");
+                }
+                landed
+            })
+            .map_err(|_| Error::HandoverUnheard { zone: to })?;
+
+        Ok(Handover {
+            to,
+            row,
+            at,
+            sounding,
+            waiting,
+        })
+    }
+
+    fn let_the_outgoing_go(
+        &self,
+        from: ZoneId,
+        to: ZoneId,
+        played: Option<Outcome>,
+        revision: u64,
+        last: usize,
+    ) -> Result<()> {
+        if let Some(played) = played {
+            let started = played.wait_for(HANDED_OVER_WITHIN);
+            if started.is_err() || !self.heard_from(to)? {
+                self.send(to, Command::Stop)?;
+                return Err(started.err().unwrap_or(Error::HandoverUnheard { zone: to }));
+            }
+        }
+        self.send(from, Command::Stop)?;
+        self.send_if_the_queue_is_still(from, revision, Command::Remove(Span::between(0, last)))
+    }
+
+    fn heard_from(&self, id: ZoneId) -> Result<bool> {
+        let deadline = Instant::now() + HANDED_OVER_WITHIN;
+        while Instant::now() < deadline {
+            let zone = self.zone(id).ok_or(Error::NoSuchZone { zone: id })?;
+            if sounds(&zone.player.state()) {
+                return Ok(true);
+            }
+            thread::sleep(LOOKED_AT_EVERY);
+        }
+        Ok(false)
+    }
+
     pub fn holding(&self, besides: ZoneId) -> Vec<Held> {
         self.held
             .read()
@@ -229,6 +366,17 @@ impl Zones {
     fn moved(&self) {
         self.revision.fetch_add(1, Ordering::AcqRel);
     }
+}
+
+fn means_to_sound(state: &PlayerState) -> bool {
+    matches!(
+        state.playback,
+        PlaybackState::Playing | PlaybackState::Buffering
+    )
+}
+
+fn sounds(state: &PlayerState) -> bool {
+    state.playback == PlaybackState::Playing && state.output.is_some()
 }
 
 pub fn holds_its_device(output: &OutputStatus, settings: &OutputSettings) -> bool {
