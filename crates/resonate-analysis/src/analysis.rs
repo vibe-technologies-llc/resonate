@@ -6,8 +6,8 @@ use resonate_core::{
 };
 
 use crate::{
-    AnalysisOp, Envelope, Error, Judgement, Levels, Loudness, Result, Spectrogram, Spectrum, Steps,
-    Watching,
+    AnalysisOp, BandFigures, BandLevels, BandPeaks, Envelope, Error, Judgement, Levels, Loudness,
+    Result, Spectrogram, Spectrum, Steps, Watching,
     conform::Walking,
     envelope::Enveloping,
     levels::Leveling,
@@ -15,6 +15,7 @@ use crate::{
     print::Printing,
     spectrogram::Spectrographing,
     spectrum::{Transforming, heard_channels},
+    split::Splitting,
     verdict::{Weighed, judged},
     weighing::Weighing,
 };
@@ -42,6 +43,16 @@ pub struct Study {
     pub steps: Vec<Steps>,
     pub judgement: Judgement,
     pub print: Option<Chromaprint>,
+    pub band_peaks: BandPeaks,
+}
+
+impl Study {
+    pub fn band_figures(&self) -> BandFigures {
+        BandFigures {
+            levels: BandLevels::of(&self.spectrum),
+            peaks: self.band_peaks,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -247,6 +258,7 @@ fn walked<D: Drawing>(
 
     let placements = info.speakers.placements(info.spec.channels.count().get());
     let mut transforming = Transforming::new(rate.hz(), &placements);
+    let mut splitting = Splitting::new(rate, channels);
     let mut drawn = drawing(&examined, transforming.points());
     let mut leveling = Leveling::new(channels, format);
     let mut metering = Metering::new(&placements, rate);
@@ -273,6 +285,7 @@ fn walked<D: Drawing>(
         drawn.note_block(heard.samples);
         weighing.note(heard.samples);
         transforming.note(heard.samples, |powers| drawn.note_transform(powers));
+        splitting.note(heard.samples);
 
         frames += (heard.samples.len() / channels) as u64;
         watch.reached(Frames(frames), info.duration);
@@ -301,6 +314,7 @@ fn walked<D: Drawing>(
             steps,
             judgement,
             print: printing.finished(examined.length),
+            band_peaks: splitting.finished(),
         },
         drawn,
     ))

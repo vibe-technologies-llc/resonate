@@ -1255,10 +1255,19 @@ fn a_study_and_kept_words_land_on_a_catalog_holding_the_same_file_and_read_back_
         .collect::<Result<Vec<_>>>()?;
     let read_back = there.answers_to_share(0, 10)?;
 
-    assert_eq!(shared.len(), 2);
-    assert_eq!(taken, [true, true]);
+    assert_eq!(shared.len(), 3);
+    assert_eq!(taken, [true, true, true]);
     assert_eq!(answers_of(&read_back), answers_of(&shared));
     assert!(there.study_of(&location, None)?.is_some());
+    assert_eq!(
+        there
+            .loudest_kept(
+                &Arc::new(resonate_core::eq::Profile::flat()),
+                resonate_core::SampleRate::HZ_44100
+            )?
+            .measured,
+        1
+    );
     assert_eq!(
         there
             .kept_lyrics(&location, None)?
@@ -1370,8 +1379,10 @@ fn a_study_of_another_encode_or_words_for_another_take_are_never_written() -> Re
         synced: false,
     });
 
-    assert_eq!(shared.len(), 1);
-    assert!(!there.take_shared_answer(&shared[0].recording, &shared[0].answer)?);
+    assert_eq!(shared.len(), 2);
+    for answered in &shared {
+        assert!(!there.take_shared_answer(&answered.recording, &answered.answer)?);
+    }
     assert!(!there.take_shared_answer(&another_take, &words)?);
     assert!(
         there

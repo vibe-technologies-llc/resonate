@@ -12,7 +12,7 @@ use std::{
 
 use crossbeam_channel::{Sender, bounded};
 use parking_lot::Mutex;
-use resonate_analysis::{Watching, band_levels};
+use resonate_analysis::{Watching, band_figures};
 use resonate_codec::{CoverArt, ImageFormat, Sources, probe_scanned};
 use resonate_core::{AlbumId, Chromaprint, Isrc, Link, Mbid, SourceId, TrackId};
 use resonate_library::{
@@ -1244,9 +1244,9 @@ fn measure_the_unmeasured(
                 continue;
             }
         };
-        match band_levels(sources, &at, None, &Hearing(told)) {
-            Ok(levels) => {
-                if let Err(error) = catalog.keep_bands(track, &levels) {
+        match band_figures(sources, &at, None, &Hearing(told)) {
+            Ok(figures) => {
+                if let Err(error) = catalog.keep_bands(track, &figures) {
                     tracing::warn!(%error, track, "a study's bands were not kept");
                 }
             }
@@ -3204,7 +3204,7 @@ mod tests {
                 .0
                 .lock()
                 .query_row(
-                    "SELECT count(*) FROM studies WHERE length(band_levels) = 29",
+                    "SELECT count(*) FROM studies WHERE length(band_levels) = 29 AND length(band_peaks) = 58",
                     [],
                     |row| row.get(0),
                 )
@@ -3331,6 +3331,20 @@ mod tests {
                 .expect("a study")
         }
 
+        fn peaks_of(harness: &Harness, name: char) -> Option<Vec<u8>> {
+            harness
+                .player
+                .catalog
+                .0
+                .lock()
+                .query_row(
+                    "SELECT band_peaks FROM studies WHERE track = ?1",
+                    [harness.song(name).id as i64],
+                    |row| row.get(0),
+                )
+                .expect("a study")
+        }
+
         fn passing_with_no_key(harness: &Harness, told: &Arc<Told>) {
             let fake = Arc::new(Fake::default());
             passed_by(harness, &asking(&fake), told, EnrichmentOptions::default());
@@ -3387,13 +3401,36 @@ mod tests {
                 .catalog
                 .0
                 .lock()
-                .execute("UPDATE studies SET band_levels = ?1", [vec![7_u8; 29]])
+                .execute(
+                    "UPDATE studies SET band_levels = ?1, band_peaks = ?2",
+                    [vec![7_u8; 29], vec![3_u8; 58]],
+                )
                 .expect("kept bands");
 
             passing_with_no_key(&harness, &Arc::new(Told::default()));
 
             assert_eq!(bands_of(&harness, 'a'), Some(vec![7_u8; 29]));
+            assert_eq!(peaks_of(&harness, 'a'), Some(vec![3_u8; 58]));
             assert_eq!(studies(&harness), 1);
+        }
+
+        #[test]
+        fn a_study_kept_with_its_levels_but_not_its_peaks_is_measured_for_both() {
+            let harness = sounding_library();
+            studied_before_the_bands(&harness, "a");
+            harness
+                .player
+                .catalog
+                .0
+                .lock()
+                .execute("UPDATE studies SET band_levels = ?1", [vec![7_u8; 29]])
+                .expect("kept levels");
+
+            passing_with_no_key(&harness, &Arc::new(Told::default()));
+
+            assert_eq!(peaks_of(&harness, 'a').map(|peaks| peaks.len()), Some(58));
+            assert_ne!(bands_of(&harness, 'a'), Some(vec![7_u8; 29]));
+            assert_eq!(measured(&harness), 1);
         }
 
         #[test]

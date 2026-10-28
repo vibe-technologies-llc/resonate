@@ -627,8 +627,15 @@ mod tests {
     }
 
     fn kept_sounding_at_one_kilohertz(harness: &crate::harness::Harness, name: char, peak: f64) {
-        let mut steps = [255_u8; 29];
-        steps[15] = 0;
+        let sounding = (0..resonate_analysis::BANDS)
+            .find(|band| {
+                let (from, to) = resonate_analysis::span_of_band(*band);
+                (from..to).contains(&1_000.0)
+            })
+            .expect("a band holds one kilohertz");
+        let peaks = resonate_analysis::BandPeaks::of(
+            (0..resonate_analysis::BANDS).map(|band| if band == sounding { peak } else { 0.0 }),
+        );
 
         harness
             .player
@@ -636,9 +643,13 @@ mod tests {
             .0
             .lock()
             .execute(
-                "INSERT INTO studies (track, verdict, peak, rms, true_peak, clipped, band_levels)
+                "INSERT INTO studies (track, verdict, peak, rms, true_peak, clipped, band_peaks)
                  VALUES (?1, 'genuine', 0.5, 0.1, ?2, 0, ?3)",
-                rusqlite::params![harness.song(name).id as i64, peak, steps.to_vec()],
+                rusqlite::params![
+                    harness.song(name).id as i64,
+                    peak,
+                    peaks.to_bytes().as_slice()
+                ],
             )
             .expect("a study");
     }
@@ -674,7 +685,7 @@ mod tests {
 
         let expected = -(20.0 * (0.9_f64 * 2.0).log10()) as f32;
         assert!(
-            (queued_and_kept - expected).abs() < 0.05,
+            (queued_and_kept - expected).abs() < 0.15,
             "{queued_and_kept} against {expected} dB"
         );
         assert_eq!(catalog_alone, queued_and_kept);

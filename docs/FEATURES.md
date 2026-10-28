@@ -88,10 +88,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Later: Equaliser and DSP extras
 - [M] *Fit the preamp* on both desktop and phones leaves room correction and the volume stage
   outside what it runs (the phones hold no applied response the fit could read, and the convolver
-  is not part of the stage the decode runs); the estimate from kept bands is not a bound, a song
-  whose peaks gather in one band can still pass the fit, and a bound needs each band's own peak
-  kept beside its level (a new `band_levels`-style column and migration step on both catalogs, and
-  an analysis pass that splits the signal into the 29 bands)
+  is not part of the stage the decode runs)
+- [M] *Fit the preamp*'s kept-figure bound adds the 29 bands' peaks as if they fell together, so
+  broadband music under a curve that moves many bands fits deeper than the decode would; a tighter
+  bound needs each band's level kept over time (an envelope a band, not one peak)
 - [L] AutoEq is the only correction source, fetched one device at a time
 - [M] Lossy restoration was tuned and tested on ffmpeg's own MP3, AAC and Vorbis encodes of
   synthetic tones, walls and music-like notes at several bitrates, not on a breadth of real music

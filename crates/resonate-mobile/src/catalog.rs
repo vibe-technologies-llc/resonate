@@ -139,6 +139,11 @@ ALTER TABLE studies ADD COLUMN heard_artist TEXT;
 CREATE TRIGGER documents_forget_what_was_printed AFTER UPDATE OF size, modified ON documents WHEN old.size IS NOT new.size OR old.modified IS NOT new.modified BEGIN UPDATE studies SET print = NULL, print_length = NULL, recognised = NULL, heard_as = NULL, heard_score = NULL, heard_title = NULL, heard_artist = NULL WHERE track = new.id; END;
 ";
 
+const STUDIES_KEEP_WHERE_THEIR_PEAKS_GATHER: &str = "
+ALTER TABLE studies ADD COLUMN band_peaks BLOB;
+CREATE TRIGGER documents_forget_where_the_peaks_gathered AFTER UPDATE OF size, modified ON documents WHEN old.size IS NOT new.size OR old.modified IS NOT new.modified BEGIN UPDATE studies SET band_peaks = NULL WHERE track = new.id; END;
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     LISTENS_NAME_THEIR_ORIGIN,
@@ -155,6 +160,7 @@ const MIGRATIONS: &[&str] = &[
     SONGS_OF_A_WITHDRAWN_FOLDER_STAY_HELD,
     SONGS_WAITING_KNOW_THEIR_FILE,
     STUDIES_KEEP_THEIR_PRINT_AND_WHAT_IT_WAS_HEARD_AS,
+    STUDIES_KEEP_WHERE_THEIR_PEAKS_GATHER,
 ];
 
 #[cfg(test)]

@@ -3,8 +3,8 @@ mod shelf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use resonate_core::{
-    Answer, Figure, Link, Mbid, Recording, SharedCredit, SharedLyrics, SharedMedium, SharedRelease,
-    SharedStudy, SharedTrack, WholeFile,
+    Answer, Figure, Link, Mbid, Recording, SharedBandPeaks, SharedCredit, SharedLyrics,
+    SharedMedium, SharedRelease, SharedStudy, SharedTrack, WholeFile,
 };
 use resonate_sync::{
     Catalog, Change, Follow, Ledger, LocalListen, LocalPlaylistId, Me, Platform, SpaceId,
@@ -1026,6 +1026,18 @@ fn studied(packets: u64) -> Answer {
     })
 }
 
+fn peaked(packets: u64) -> Answer {
+    Answer::BandPeaks(SharedBandPeaks {
+        file: WholeFile {
+            packets,
+            frames: 7_938_000,
+            rate: 44_100,
+        },
+        judged_under: 1,
+        peaks: vec![9; 58],
+    })
+}
+
 fn answers_in(changes: &[Change]) -> usize {
     changes
         .iter()
@@ -1164,6 +1176,36 @@ fn a_release_travels_beside_the_words_of_its_song_and_is_not_sent_back() {
     );
     assert_eq!(answers_in(&phone.send()), 0);
     assert_eq!(answers_in(&desk.send()), 0);
+}
+
+#[test]
+fn the_peaks_of_a_study_travel_as_an_answer_of_their_own_beside_it_and_are_not_sent_back() {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut phone = Device::new("Phone", &["A"]);
+    desk.shelf.answer_here("A", studied(42));
+    desk.shelf.answer_here("A", peaked(42));
+
+    let told = desk.send();
+    phone.receive(&told);
+
+    assert_eq!(answers_in(&told), 2);
+    assert_eq!(phone.shelf.answers_of("A"), [studied(42), peaked(42)]);
+    assert_eq!(answers_in(&phone.send()), 0);
+    assert_eq!(answers_in(&desk.send()), 0);
+}
+
+#[test]
+fn the_peaks_of_two_encodes_of_a_song_are_two_answers() {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut phone = Device::new("Phone", &["A"]);
+    desk.shelf.answer_here("A", peaked(42));
+    desk.shelf.answer_here("A", peaked(43));
+
+    let told = desk.send();
+    phone.receive(&told);
+
+    assert_eq!(answers_in(&told), 2);
+    assert_eq!(phone.shelf.answers_of("A"), [peaked(42), peaked(43)]);
 }
 
 #[test]

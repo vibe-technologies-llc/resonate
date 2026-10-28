@@ -5721,13 +5721,13 @@ impl Library {
             .write(|transaction| studies::write_study(transaction, track, study, SystemTime::now()))
     }
 
-    pub(crate) fn note_band_levels(
+    pub(crate) fn note_band_figures(
         &self,
         track: TrackId,
-        levels: &resonate_analysis::BandLevels,
+        figures: &resonate_analysis::BandFigures,
     ) -> Result<bool> {
         self.inner
-            .write(|transaction| studies::write_band_levels(transaction, track, levels))
+            .write(|transaction| studies::write_band_figures(transaction, track, figures))
     }
 
     pub fn loudest_kept(

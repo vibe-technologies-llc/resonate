@@ -1,8 +1,8 @@
-use resonate_analysis::{BANDS, JUDGED_UNDER, LossyGuess, Verdict};
+use resonate_analysis::{BAND_PEAKS_BYTES, BANDS, BandPeaks, JUDGED_UNDER, LossyGuess, Verdict};
 use resonate_codec::{Sources, probe_scanned};
 use resonate_core::{
-    Answer, Figure, Recording, SharedLyrics, SharedPrint, SharedRecognition, SharedStudy, SourceId,
-    WholeFile,
+    Answer, Figure, Recording, SharedBandPeaks, SharedLyrics, SharedPrint, SharedRecognition,
+    SharedStudy, SourceId, WholeFile,
 };
 use resonate_library::{KeptPrint, LyricText, weighed_again};
 use resonate_lyrics::read_lyrics;
@@ -99,6 +99,58 @@ impl DocumentCatalog {
             )
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
             .map_err(unavailable)
+    }
+
+    pub(super) fn band_peaks_to_share(&self, mark: i64, most: usize) -> Answered<Vec<Learnt>> {
+        let most = i64::try_from(most).unwrap_or(i64::MAX);
+        let connection = self.catalog.0.lock();
+        let mut query = connection
+            .prepare_cached(&format!(
+                "SELECT s.studied, d.packets, d.frames, d.rate, s.band_peaks, {RECORDING_COLUMNS}
+                   FROM studies s JOIN documents d ON d.id = s.track
+                  WHERE s.studied >= ?1 AND s.studied_under = ?3 AND length(s.band_peaks) = ?4
+                    AND d.missing = 0 AND d.packets IS NOT NULL AND d.frames IS NOT NULL
+                  ORDER BY s.studied, s.track LIMIT ?2"
+            ))
+            .map_err(unavailable)?;
+        query
+            .query_map(
+                params![mark, most, i64::from(JUDGED_UNDER), BAND_PEAKS_BYTES as i64],
+                |row| {
+                    let at: i64 = row.get(0)?;
+                    let peaks = SharedBandPeaks {
+                        file: WholeFile {
+                            packets: row.get::<_, i64>(1)?.cast_unsigned(),
+                            frames: row.get::<_, i64>(2)?.max(0).cast_unsigned(),
+                            rate: row.get(3)?,
+                        },
+                        judged_under: JUDGED_UNDER,
+                        peaks: row.get(4)?,
+                    };
+                    Ok(Learnt {
+                        recording: recording_at(row, 5)?,
+                        at,
+                        answer: Answer::BandPeaks(peaks),
+                    })
+                },
+            )
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .map_err(unavailable)
+    }
+
+    pub(super) fn take_band_peaks(&self, shared: &SharedBandPeaks) -> Answered<bool> {
+        if shared.judged_under != JUDGED_UNDER || BandPeaks::from_bytes(&shared.peaks).is_none() {
+            return Ok(true);
+        }
+
+        let mut same_file = false;
+        for copy in the_same_file(&self.catalog, &self.sources, shared.file)? {
+            same_file = true;
+            self.catalog
+                .land_band_peaks(copy, &shared.peaks)
+                .map_err(failed)?;
+        }
+        Ok(same_file)
     }
 
     pub(super) fn take_lyrics(
@@ -453,7 +505,7 @@ fn study_at(row: &Row<'_>) -> rusqlite::Result<SharedStudy> {
 mod tests {
     use std::{fs, num::NonZeroUsize, time::Duration};
 
-    use resonate_analysis::{BandLevels, Watch};
+    use resonate_analysis::Watch;
     use resonate_core::{Chromaprint, Mbid, MediaLocation, SharedHeard};
     use resonate_library::{Agreement, HeardAs, Library, ScanOptions};
     use resonate_sync::Catalog;
@@ -621,7 +673,9 @@ mod tests {
                     lyrics.synced,
                     learnt.recording.mbid.is_some(),
                 ),
-                Answer::Study(_) | Answer::Release(_) => panic!("not words among the words"),
+                Answer::Study(_) | Answer::Release(_) | Answer::BandPeaks(_) => {
+                    panic!("not words among the words")
+                }
             })
             .collect();
         told.sort();
@@ -713,6 +767,113 @@ mod tests {
             vec![Some("fake".to_owned()); harness.songs.len()]
         );
         assert_eq!(studied_as(&harness, tone), None);
+    }
+
+    fn peaks_held(harness: &Harness, id: u64) -> Option<Vec<u8>> {
+        harness
+            .player
+            .catalog
+            .0
+            .lock()
+            .query_row(
+                "SELECT band_peaks FROM studies WHERE track = ?1",
+                [id as i64],
+                |row| row.get(0),
+            )
+            .optional()
+            .expect("a read")
+            .flatten()
+    }
+
+    fn peaks_of(file: WholeFile, loudest: f64) -> SharedBandPeaks {
+        SharedBandPeaks {
+            file,
+            judged_under: JUDGED_UNDER,
+            peaks: BandPeaks::of((0..BANDS).map(|band| loudest / (band + 1) as f64))
+                .to_bytes()
+                .to_vec(),
+        }
+    }
+
+    #[test]
+    fn the_peaks_of_a_study_land_on_every_studied_copy_of_the_same_file_and_never_over_peaks_held()
+    {
+        let harness = Harness::new();
+        let documents = documents_over(&harness);
+        let file = whole_file_of(&harness, "a.wav");
+        let [a, b] = [0, 1].map(|nth| harness.songs[nth].id);
+        study_row(&harness, a, "genuine", Some(JUDGED_UNDER));
+        study_row(&harness, b, "genuine", Some(JUDGED_UNDER));
+        let first = peaks_of(file, 0.5);
+        let second = peaks_of(file, 0.9);
+
+        let landed = documents.take_band_peaks(&first);
+        let again = documents.take_band_peaks(&second);
+
+        assert_eq!((landed, again), (Ok(true), Ok(true)));
+        assert_eq!(peaks_held(&harness, a), Some(first.peaks.clone()));
+        assert_eq!(peaks_held(&harness, b), Some(first.peaks));
+        assert_eq!(peaks_held(&harness, harness.songs[2].id), None);
+    }
+
+    #[test]
+    fn peaks_of_another_encode_judgement_or_layout_are_written_nowhere() {
+        let harness = Harness::new();
+        let documents = documents_over(&harness);
+        let file = whole_file_of(&harness, "a.wav");
+        let a = harness.songs[0].id;
+        study_row(&harness, a, "genuine", Some(JUDGED_UNDER));
+        let other_digest = WholeFile {
+            packets: file.packets ^ 1,
+            ..file
+        };
+        let other_judgement = SharedBandPeaks {
+            judged_under: JUDGED_UNDER + 1,
+            ..peaks_of(file, 0.5)
+        };
+        let other_layout = SharedBandPeaks {
+            peaks: vec![1; BAND_PEAKS_BYTES + 1],
+            ..peaks_of(file, 0.5)
+        };
+
+        assert_eq!(
+            documents.take_band_peaks(&peaks_of(other_digest, 0.5)),
+            Ok(false)
+        );
+        assert_eq!(documents.take_band_peaks(&other_judgement), Ok(true));
+        assert_eq!(documents.take_band_peaks(&other_layout), Ok(true));
+        assert_eq!(peaks_held(&harness, a), None);
+    }
+
+    #[test]
+    fn the_peaks_a_phone_kept_are_listed_beside_its_study_with_the_file_it_measured() {
+        let harness = Harness::new();
+        let documents = documents_over(&harness);
+        let tone = with_a_tone(&harness);
+        let at = location(&format!("{FOLDER}e.wav")).expect("a document");
+        let study = resonate_analysis::study(&harness.player.sources, &at, None, &Watch::default())
+            .expect("a study");
+        let scanned = probe_scanned(&harness.player.sources, &at).expect("a scan");
+        harness
+            .player
+            .catalog
+            .keep_studied(tone, &study)
+            .expect("kept");
+        harness
+            .player
+            .catalog
+            .keep_identity(tone, &scanned)
+            .expect("identified");
+
+        let listed = documents.band_peaks_to_share(0, 10).expect("listed");
+
+        assert_eq!(listed.len(), 1);
+        let Answer::BandPeaks(told) = &listed[0].answer else {
+            panic!("band peaks");
+        };
+        assert_eq!(told.file, whole_file_of(&harness, "e.wav"));
+        assert_eq!(told.judged_under, JUDGED_UNDER);
+        assert_eq!(told.peaks, study.band_peaks.to_bytes().to_vec());
     }
 
     #[test]
@@ -825,7 +986,7 @@ mod tests {
             .iter()
             .filter_map(|learnt| match &learnt.answer {
                 Answer::Study(study) => Some(study.clone()),
-                Answer::Lyrics(_) | Answer::Release(_) => None,
+                Answer::Lyrics(_) | Answer::Release(_) | Answer::BandPeaks(_) => None,
             })
             .collect();
         let words = listed
@@ -913,7 +1074,7 @@ mod tests {
         harness
             .player
             .catalog
-            .keep_study(b, &report, &BandLevels::of(&study.spectrum))
+            .keep_study(b, &report, &study.band_figures())
             .expect("kept by the pane");
         let listed = documents.studies_to_share(0, 10).expect("listed");
         change(
