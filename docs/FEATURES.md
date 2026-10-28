@@ -27,9 +27,12 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   for sample packing
 - [M · 0.3.0] The phones offer no zones: one player plays one queue to the route the system
   chose, so neither a second room nor a handover between two devices can be reached there
-- [S · 0.3.0] A handover between zones is not sample-aligned: the incoming zone opens at the
+- [M · 0.4.0] A handover between zones is not sample-aligned: the incoming zone opens at the
   frame the outgoing one was heard at when asked and starts its fade once its own stream sounds,
-  so it lags the outgoing one by that stream's opening and its priming
+  so it lags the outgoing one by that stream's opening and its priming; a seek once it sounds
+  would still miss by tens of milliseconds (a published position is up to `PUBLISH_TICK` old and a
+  seek lands on the graph's next quantum), so alignment needs each backend's callback to stamp the
+  heard frame with the moment it was heard and the incoming zone to land its first frame on it
 - [M · blocked: pipewire-rs] A rebind or turn inside a row that moves the rate while
   `force-graph-rate` pins it (on by default), or switches the pin, still reopens the PipeWire stream:
   the pin is the node's `node.rate` property, which only `pw_stream_update_properties` moves, and
