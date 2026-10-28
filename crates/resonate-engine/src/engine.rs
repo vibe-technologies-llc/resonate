@@ -65,6 +65,8 @@ const SLEEP_FADES_OVER: Duration = Duration::from_secs(10);
 const PULLED_WITHIN: Duration = Duration::from_millis(250);
 const OPENING_ANSWERED_WITHIN: Duration = Duration::from_millis(250);
 const RESHAPED_FORMAT_SETTLED_WITHIN: Duration = Duration::from_secs(1);
+const OPENED_AHEAD_BY: Duration = Duration::from_secs(10);
+const HANDED_ON_WHILE_THE_RING_HOLDS: Duration = Duration::from_millis(40);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ReadBy {
@@ -89,6 +91,14 @@ enum Filled {
     ForNow,
     WhenTheSourceAnswers,
     AtAChange,
+    AtTheEnd,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Handing {
+    Handed,
+    Waits,
+    Refused,
 }
 
 struct Track {
@@ -109,6 +119,7 @@ struct Track {
     profiled_from: Frames,
     sampled: Option<Frames>,
     published: Option<usize>,
+    ended: bool,
 }
 
 enum Peak {
@@ -125,6 +136,10 @@ struct Unwrapped {
 }
 
 impl Unwrapped {
+    fn decoded(&self) -> Decoded {
+        Decoded::of(&self.info, self.hints.lowpass)
+    }
+
     fn open(item: &QueueItem, sources: &Sources) -> resonate_codec::Result<Self> {
         let (mut decoder, info) = match item.span {
             Some(span) => Decoder::open_span(sources, &item.location, span)?,
@@ -163,6 +178,12 @@ impl Opening {
         Self { item, at, landed }
     }
 
+    fn already(item: QueueItem, at: Frames, came: resonate_codec::Result<Unwrapped>) -> Self {
+        let (landing, landed) = crossbeam_channel::bounded(1);
+        let _ = landing.send(came);
+        Self { item, at, landed }
+    }
+
     fn landed(&self) -> Option<Result<Unwrapped>> {
         let track = self.item.id;
         match self.landed.try_recv() {
@@ -171,6 +192,56 @@ impl Opening {
             Err(TryRecvError::Disconnected) => Some(Err(Error::OpenerStopped { track })),
         }
     }
+}
+
+struct Ahead {
+    opening: Opening,
+    came: Option<resonate_codec::Result<Unwrapped>>,
+    lost: bool,
+}
+
+impl Ahead {
+    fn begin(item: QueueItem, sources: &Arc<Sources>) -> Self {
+        Self {
+            opening: Opening::begin(item, Frames::ZERO, sources),
+            came: None,
+            lost: false,
+        }
+    }
+
+    fn look(&mut self) -> bool {
+        if self.came.is_some() {
+            return true;
+        }
+        match self.opening.landed.try_recv() {
+            Ok(came) => {
+                self.came = Some(came);
+                true
+            }
+            Err(TryRecvError::Empty) => false,
+            Err(TryRecvError::Disconnected) => {
+                self.lost = true;
+                false
+            }
+        }
+    }
+
+    fn awaited(&self) -> Option<&Receiver<resonate_codec::Result<Unwrapped>>> {
+        (self.came.is_none() && !self.lost).then_some(&self.opening.landed)
+    }
+
+    fn opening_at(self, at: Frames) -> Opening {
+        match self.came {
+            Some(came) => Opening::already(self.opening.item, at, came),
+            None => Opening { at, ..self.opening },
+        }
+    }
+}
+
+struct Boundary {
+    at: u64,
+    made: u64,
+    leaving: Track,
 }
 
 impl Track {
@@ -205,6 +276,7 @@ impl Track {
             profiled_from: Frames::ZERO,
             sampled: None,
             published: None,
+            ended: false,
         };
         track.measure_where_wanted(sources, config);
         track
@@ -278,6 +350,7 @@ impl Track {
                 source: resonate_codec::Error::NotSeekable { location },
             });
         };
+        self.ended = false;
         decoder
             .seek(to)
             .map_err(|source| Error::Decode { track, source })
@@ -391,6 +464,7 @@ struct Output {
     format_owed_since: Option<Instant>,
     recall: Recall,
     splice_owed: bool,
+    rendered_for_another: bool,
 }
 
 struct Retiring {
@@ -547,6 +621,7 @@ impl Output {
             format_owed_since: None,
             recall,
             splice_owed: false,
+            rendered_for_another: false,
         })
     }
 
@@ -817,6 +892,8 @@ pub struct Engine {
     changes: Option<Receiver<SinkChange>>,
     queue: Queue,
     opening: Option<Opening>,
+    ahead: Option<Ahead>,
+    boundary: Option<Boundary>,
     announced: Option<u64>,
     stale_sinks: bool,
     formats_owed: bool,
@@ -871,6 +948,7 @@ struct Heard {
     surveyed: Option<Receiver<Surveyed>>,
     events: Option<Receiver<StreamEvent>>,
     opened: Option<Receiver<resonate_codec::Result<Unwrapped>>>,
+    ahead: Option<Receiver<resonate_codec::Result<Unwrapped>>>,
     decoded: Option<Receiver<Returned>>,
     streamed: Option<Receiver<Streamed>>,
 }
@@ -891,6 +969,9 @@ impl Heard {
         if let Some(opened) = self.opened.as_ref() {
             select.recv(opened);
         }
+        if let Some(ahead) = self.ahead.as_ref() {
+            select.recv(ahead);
+        }
         if let Some(decoded) = self.decoded.as_ref() {
             select.recv(decoded);
         }
@@ -910,6 +991,10 @@ impl Heard {
             && is_one_channel(
                 self.opened.as_ref(),
                 engine.opening.as_ref().map(|opening| &opening.landed),
+            )
+            && is_one_channel(
+                self.ahead.as_ref(),
+                engine.ahead.as_ref().and_then(Ahead::awaited),
             )
             && is_one_channel(
                 self.decoded.as_ref(),
@@ -967,6 +1052,8 @@ impl Engine {
             changes,
             queue: Queue::new(),
             opening: None,
+            ahead: None,
+            boundary: None,
             announced: None,
             stale_sinks,
             formats_owed: false,
@@ -1018,7 +1105,9 @@ impl Engine {
                 self.land_the_opening();
                 self.watch_discard();
                 self.take_what_was_decoded();
+                self.reach_the_boundary();
                 self.pump();
+                self.open_ahead();
                 self.finish_reshaping();
                 self.splice_what_is_owed();
                 self.finish_fading();
@@ -1067,6 +1156,7 @@ impl Engine {
                 .map(|surveying| surveying.answers().clone()),
             events: self.listening().map(|stream| stream.events().clone()),
             opened: self.opening.as_ref().map(|opening| opening.landed.clone()),
+            ahead: self.ahead.as_ref().and_then(Ahead::awaited).cloned(),
             decoded: self
                 .track
                 .as_ref()
@@ -1121,6 +1211,10 @@ impl Engine {
         let budget = match self.sleep.and_then(Sleeping::left) {
             Some(left) if left > SLEEP_FADES_OVER => budget.min(left - SLEEP_FADES_OVER),
             Some(left) => budget.min(left),
+            None => budget,
+        };
+        let budget = match self.until_the_boundary().filter(|_| self.playing) {
+            Some(left) => budget.min(left.max(SHORTEST_TICK)),
             None => budget,
         };
         let budget = match self.deferred_answer_due_in() {
@@ -1446,6 +1540,7 @@ impl Engine {
             Command::Seek(to) => self.seek(to),
             Command::SeekBy(delta) => {
                 let now = self.position().get();
+                self.take_the_boundary_back();
                 let to = Frames(if delta < 0 {
                     now.saturating_sub(delta.unsigned_abs())
                 } else {
@@ -1458,6 +1553,7 @@ impl Engine {
             }
             Command::Next => self.next(),
             Command::Previous => {
+                self.take_the_boundary_back();
                 self.failures = 0;
                 if self.restarts_the_track() {
                     self.seek(Frames::ZERO)
@@ -1589,6 +1685,11 @@ impl Engine {
                 {
                     track.location = to;
                 }
+                if let Some(boundary) = self.boundary.as_mut()
+                    && let Some(to) = queue::landed_at(&boundary.leaving.location, &moved)
+                {
+                    boundary.leaving.location = to;
+                }
                 Ok(())
             }
         }
@@ -1619,7 +1720,7 @@ impl Engine {
         if !ends_here {
             return None;
         }
-        let track = self.track.as_ref()?;
+        let track = self.heard_track()?;
         let left = track.info.duration?.saturating_sub(self.position());
         Some(left.to_duration(track.info.spec.rate))
     }
@@ -1917,6 +2018,8 @@ impl Engine {
         self.failures = 0;
         self.retire_the_output();
         self.track = None;
+        self.boundary = None;
+        self.ahead = None;
         self.opening = None;
         self.answer_the_deferred(Ok(()));
         self.unbound = None;
@@ -2005,6 +2108,9 @@ impl Engine {
         if self.queue.current().is_none() {
             return Err(Error::QueueEmpty);
         }
+        if natural && self.boundary.is_some() && !self.pass_the_boundary() {
+            return Ok(());
+        }
         if natural && let Some(id) = self.track.as_ref().map(|track| track.id) {
             self.emit(Event::TrackFinished(id));
         }
@@ -2044,6 +2150,7 @@ impl Engine {
     }
 
     fn seek(&mut self, to: Frames) -> Result<()> {
+        self.take_the_boundary_back();
         if let Some(opening) = self.opening.as_mut() {
             opening.at = to;
             return Ok(());
@@ -2119,7 +2226,10 @@ impl Engine {
         let (Some(track), Some(output)) = (self.track.as_ref(), self.output.as_ref()) else {
             return false;
         };
-        self.playing && track.info.is_seekable && output.holds_a_live_stream()
+        self.playing
+            && track.info.is_seekable
+            && output.holds_a_live_stream()
+            && !output.rendered_for_another
     }
 
     fn seek_in_place(&mut self, to: Frames) -> Result<()> {
@@ -2180,13 +2290,18 @@ impl Engine {
 
         self.retire_the_output();
         self.track = None;
+        self.boundary = None;
         if self.opening.take().is_some() {
             self.answer_the_deferred(Ok(()));
         }
         self.heard_at_least = None;
         self.rebind_owed = false;
 
-        self.opening = Some(Opening::begin(item, at, &self.sources));
+        let opening = match self.ahead.take() {
+            Some(ahead) if ahead.opening.item == item && !ahead.lost => ahead.opening_at(at),
+            Some(_) | None => Opening::begin(item, at, &self.sources),
+        };
+        self.opening = Some(opening);
         self.openings_begun = self.openings_begun.wrapping_add(1);
         self.transport = TransportState::Loading;
         Ok(())
@@ -2330,6 +2445,11 @@ impl Engine {
             return Ok(());
         }
         let resumes_at = at.unwrap_or_else(|| self.position());
+        let at = if self.take_the_boundary_back() {
+            Some(resumes_at)
+        } else {
+            at
+        };
         self.retire(how);
 
         let bound = self.bind(at, target);
@@ -2408,6 +2528,12 @@ impl Engine {
     }
 
     fn splice_the_back(&mut self, wanted: OutputPlan) -> Result<Splicing> {
+        if self.boundary.is_some()
+            && let Some(output) = self.output.as_mut()
+        {
+            output.splice_owed = true;
+            return Ok(Splicing::Owed);
+        }
         let (Some(track), Some(output)) = (self.track.as_mut(), self.output.as_mut()) else {
             return Ok(Splicing::Unspliceable);
         };
@@ -2419,7 +2545,7 @@ impl Engine {
             .output
             .as_ref()
             .is_some_and(|output| output.splice_owed && !output.producer.is_splicing());
-        if !owed {
+        if !owed || self.boundary.is_some() {
             return;
         }
         if let Some(output) = self.output.as_mut() {
@@ -2835,9 +2961,316 @@ impl Engine {
         };
         match outcome {
             Ok(Filled::AtAChange) => self.follow_the_change(),
+            Ok(Filled::AtTheEnd) => self.end_the_track(),
             Ok(filled) => self.fill_owed = filled == Filled::ForNow,
             Err(error) => self.fail(error),
         }
+    }
+
+    fn end_the_track(&mut self) {
+        match self.hand_on() {
+            Handing::Handed => self.fill_owed = true,
+            Handing::Waits => {}
+            Handing::Refused => {
+                if let Some(output) = self.output.as_mut() {
+                    Self::flush(output);
+                }
+            }
+        }
+    }
+
+    fn sleeps_at_this_end(&self) -> bool {
+        self.sleep.is_some_and(|sleeping| {
+            sleeping.ends_the_track()
+                || (sleeping.ends_the_queue()
+                    && (self.queue.wraps_next() || self.queue.ends_with_this_row()))
+        })
+    }
+
+    fn may_hand_on(&self) -> bool {
+        let Some(output) = self.output.as_ref() else {
+            return false;
+        };
+        !self.sleeps_at_this_end()
+            && !self.rebind_owed
+            && matches!(output.plan.packing, Packing::Samples)
+            && output.draining.is_none()
+            && !output.ended
+            && !output.ends_at_a_change
+            && !output.sleep_fading
+            && !output.rendered_for_another
+            && !output.producer.is_discarding()
+    }
+
+    fn is_settling(&self) -> bool {
+        self.output.as_ref().is_some_and(|output| {
+            output.producer.is_splicing()
+                || output.splice_owed
+                || output.settles_into.is_some()
+                || output.chain.is_ramping()
+        })
+    }
+
+    fn waits_while_the_ring_holds(&self) -> Handing {
+        let holds = self.output.as_ref().is_some_and(|output| {
+            let least =
+                Frames::from_duration(HANDED_ON_WHILE_THE_RING_HOLDS, output.plan.stream.rate);
+            output.buffered() as u64 > least.get()
+        });
+        if holds {
+            Handing::Waits
+        } else {
+            Handing::Refused
+        }
+    }
+
+    fn plan_on_the_open_stream(&self, unwrapped: &Unwrapped) -> Option<OutputPlan> {
+        let output = self.output.as_ref()?;
+        if output.plan.stream != output.status.negotiated {
+            return None;
+        }
+        let sink = self.bound_sink()?;
+        let replay_gain = levelled(&self.config, &unwrapped.info, unwrapped.hints);
+        let wanted = plan_output(unwrapped.decoded(), &sink, &self.config, replay_gain);
+        self.keeps_its_stream_for(&wanted).then_some(wanted)
+    }
+
+    fn hand_on(&mut self) -> Handing {
+        if !self.may_hand_on() || self.boundary.is_some() {
+            return Handing::Refused;
+        }
+        if self.is_settling() {
+            return self.waits_while_the_ring_holds();
+        }
+        let Some(next) = self.queue.follows_naturally().cloned() else {
+            return Handing::Refused;
+        };
+        if self
+            .ahead
+            .as_ref()
+            .is_none_or(|ahead| ahead.opening.item != next || ahead.lost)
+        {
+            self.ahead = Some(Ahead::begin(next, &self.sources));
+        }
+        let Some(ahead) = self.ahead.as_mut() else {
+            return Handing::Refused;
+        };
+        if !ahead.look() {
+            return if ahead.lost {
+                Handing::Refused
+            } else {
+                self.waits_while_the_ring_holds()
+            };
+        }
+        let wanted = match self.ahead.as_ref().and_then(|ahead| ahead.came.as_ref()) {
+            Some(Ok(unwrapped)) => self.plan_on_the_open_stream(unwrapped),
+            Some(Err(_)) | None => None,
+        };
+        let (Some(wanted), Some(output)) = (wanted, self.output.as_ref()) else {
+            return Handing::Refused;
+        };
+        let alike = wanted.same_shape_as(&output.plan);
+        let carries = output.plan.carries_the_front_into(&wanted);
+        if !alike && !output.has_room_for_what_the_chain_holds(carries) {
+            return self.waits_while_the_ring_holds();
+        }
+        let Some(Ahead {
+            opening,
+            came: Some(Ok(unwrapped)),
+            ..
+        }) = self.ahead.take()
+        else {
+            return Handing::Refused;
+        };
+        self.hand_on_to(&opening.item, unwrapped, wanted, alike || carries);
+        Handing::Handed
+    }
+
+    fn hand_on_to(
+        &mut self,
+        item: &QueueItem,
+        unwrapped: Unwrapped,
+        wanted: OutputPlan,
+        holds_the_leaving: bool,
+    ) {
+        let entering = Track::of(item, unwrapped, &self.sources, &self.config);
+        let Some(leaving) = self.track.replace(entering) else {
+            return;
+        };
+        let alike = self
+            .output
+            .as_ref()
+            .is_some_and(|output| wanted.same_shape_as(&output.plan));
+        let swapped = if alike {
+            self.retune_for_the_entering(wanted);
+            Ok(())
+        } else {
+            self.swap_chain(wanted)
+        };
+
+        let muted = self.muted;
+        let Some(output) = self.output.as_mut() else {
+            return;
+        };
+        let ahead = output.frames_rendered_ahead_of_the_ring();
+        let rendered = output.chain.gain_amplitude().unwrap_or(Gain::UNITY.get());
+        output
+            .producer
+            .turn_at(rendered, heard_amplitude(&output.plan, muted), ahead);
+        let held = if holds_the_leaving {
+            output.chain.latency_frames().round() as u64
+        } else {
+            0
+        };
+        self.boundary = Some(Boundary {
+            at: output.producer.written().saturating_add(held),
+            made: output.made,
+            leaving,
+        });
+        if let Err(error) = swapped {
+            self.fail(error);
+        }
+    }
+
+    fn retune_for_the_entering(&mut self, wanted: OutputPlan) {
+        let (Some(track), Some(output)) = (self.track.as_mut(), self.output.as_mut()) else {
+            return;
+        };
+        output.chain.set_gain(
+            output.attenuator.leaves(self.config.volume),
+            replay_gain_as_planned(track.decoded().packing, &self.config, track.replay_gain),
+        );
+        let delivery = wanted.delivery();
+        track.decoding.deliver(delivery);
+        track.decoded.retype(delivery.format);
+        output.plan = wanted;
+    }
+
+    fn heard_track(&self) -> Option<&Track> {
+        self.boundary
+            .as_ref()
+            .map(|boundary| &boundary.leaving)
+            .or(self.track.as_ref())
+    }
+
+    fn reach_the_boundary(&mut self) {
+        let reached = match (self.boundary.as_ref(), self.output.as_ref()) {
+            (None, _) => return,
+            (Some(boundary), Some(output)) if output.made == boundary.made => {
+                output.producer.read() >= boundary.at
+            }
+            (Some(_), _) => {
+                self.take_the_boundary_back();
+                return;
+            }
+        };
+        if reached {
+            self.pass_the_boundary();
+        }
+    }
+
+    fn until_the_boundary(&self) -> Option<Duration> {
+        let (boundary, output) = (self.boundary.as_ref()?, self.output.as_ref()?);
+        let frames = boundary.at.saturating_sub(output.producer.read());
+        Some(Frames(frames).to_duration(output.plan.stream.rate))
+    }
+
+    fn pass_the_boundary(&mut self) -> bool {
+        let Some(boundary) = self.boundary.take() else {
+            return false;
+        };
+        let Some(entering) = self.track.as_ref().map(|track| track.id) else {
+            return false;
+        };
+        let leaving = boundary.leaving.id;
+        drop(boundary);
+        self.emit(Event::TrackFinished(leaving));
+
+        let sleeps = self.sleeps_at_this_end();
+        if self.queue.advance(true).is_none() {
+            self.finish_the_queue();
+            return false;
+        }
+        if self.queue.current().map(|item| item.id) != Some(entering) {
+            tracing::debug!("the queue moved while the next row was heard ahead; it opens afresh");
+            if sleeps {
+                self.nods_off();
+            }
+            let started = self.start(Frames::ZERO);
+            if let Err(error) = self.past_what_will_not_open(started) {
+                self.fail(error);
+            }
+            return false;
+        }
+        if entering == leaving {
+            self.seeks = self.seeks.stepped();
+        }
+        self.heard_at_least = None;
+        self.renegotiations = 0;
+        self.failures = 0;
+        self.fill_owed = true;
+        let muted = self.muted;
+        if let Some(output) = self.output.as_mut() {
+            let heard = heard_amplitude(&output.plan, muted);
+            output.producer.hear_at(heard);
+        }
+        self.emit(Event::TrackStarted(entering));
+        if sleeps {
+            self.sleep = None;
+            if let Err(error) = self.pause() {
+                tracing::warn!(%error, "the sleep timer could not pause the transport");
+            }
+        }
+        true
+    }
+
+    fn take_the_boundary_back(&mut self) -> bool {
+        if self.boundary.is_none() {
+            return false;
+        }
+        let _ = self.heard_position();
+        let Some(boundary) = self.boundary.take() else {
+            return false;
+        };
+        self.track = Some(boundary.leaving);
+        if let Some(output) = self.output.as_mut() {
+            output.rendered_for_another = true;
+        }
+        true
+    }
+
+    fn open_ahead(&mut self) {
+        if let Some(ahead) = self.ahead.as_mut() {
+            ahead.look();
+        }
+        if !self.playing || self.boundary.is_some() || self.opening.is_some() {
+            return;
+        }
+        let (Some(track), Some(_)) = (self.track.as_ref(), self.output.as_ref()) else {
+            return;
+        };
+        let near = track.ended
+            || track.info.duration.is_some_and(|duration| {
+                duration
+                    .saturating_sub(track.decoding.position())
+                    .to_duration(track.clock())
+                    <= OPENED_AHEAD_BY
+            });
+        if !near {
+            return;
+        }
+        let Some(next) = self.queue.follows_naturally() else {
+            self.ahead = None;
+            return;
+        };
+        if self
+            .ahead
+            .as_ref()
+            .is_some_and(|ahead| &ahead.opening.item == next && !ahead.lost)
+        {
+            return;
+        }
+        self.ahead = Some(Ahead::begin(next.clone(), &self.sources));
     }
 
     fn follow_the_change(&mut self) {
@@ -2888,12 +3321,15 @@ impl Engine {
                 return Ok(Filled::ForNow);
             }
             if track.undecoded() == 0 {
+                if track.ended {
+                    return Ok(Filled::AtTheEnd);
+                }
                 track.decoded_at = 0;
                 match track.next_block()? {
                     Block::Decoded => {}
                     Block::Ended => {
-                        Self::flush(output);
-                        return Ok(Filled::AsFarAsItGoes);
+                        track.ended = true;
+                        return Ok(Filled::AtTheEnd);
                     }
                     Block::Reformatted(spec) => {
                         track.sounding = spec;
@@ -3155,6 +3591,7 @@ impl Engine {
         }
 
         tracing::warn!("the graph let go of the stream; the row waits for it to come back");
+        self.take_the_boundary_back();
         let at = self.heard_position();
         if let Some(output) = self.output.as_mut() {
             output.close();
@@ -3592,6 +4029,17 @@ impl Engine {
     }
 
     fn fail(&mut self, error: Error) {
+        if self.boundary.is_some() {
+            let entering = self.track.as_ref().map(|track| track.id);
+            if entering.is_some() && error.track() == entering {
+                if !self.pass_the_boundary() {
+                    tracing::warn!(%error, "a row failed after the queue had moved past it");
+                    return;
+                }
+            } else {
+                self.take_the_boundary_back();
+            }
+        }
         let mut error = error;
         loop {
             error = match self.parked_for_a_device(error) {
@@ -3625,6 +4073,15 @@ impl Engine {
     }
 
     fn position(&self) -> Frames {
+        if let (Some(boundary), Some(output)) = (self.boundary.as_ref(), self.output.as_ref()) {
+            let leaving = &boundary.leaving;
+            let behind = boundary
+                .at
+                .saturating_sub(output.producer.read())
+                .saturating_add(output.latency().get());
+            let on_the_clock = Frames(behind).rescaled(output.plan.stream.rate, leaving.clock());
+            return leaving.decoding.position().saturating_sub(on_the_clock);
+        }
         let Some(track) = self.track.as_ref() else {
             return Frames::ZERO;
         };
@@ -3657,7 +4114,7 @@ impl Engine {
             TransportState::Stopped => PlaybackState::Stopped,
         };
         let position = self.heard_position();
-        let current = self.track.as_ref().map(|track| TrackState {
+        let current = self.heard_track().map(|track| TrackState {
             id: track.id,
             source: track.info.spec,
             position,
@@ -3721,7 +4178,11 @@ impl Engine {
 
     fn publish_digest(&mut self) {
         let mode = self.config.replay_gain;
-        let Some(track) = self.track.as_mut() else {
+        let heard = match self.boundary.as_mut() {
+            Some(boundary) => Some(&mut boundary.leaving),
+            None => self.track.as_mut(),
+        };
+        let Some(track) = heard else {
             if self.published.digest.read().is_some() {
                 *self.published.digest.write() = None;
             }
@@ -3865,6 +4326,7 @@ mod tests {
             surveyed: Some(surveyed.clone()),
             events: Some(events.clone()),
             opened: None,
+            ahead: None,
             decoded: None,
             streamed: None,
         };
@@ -3902,6 +4364,7 @@ mod tests {
             surveyed: None,
             events: None,
             opened: None,
+            ahead: None,
             decoded: None,
             streamed: None,
         };

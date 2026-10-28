@@ -10,20 +10,6 @@ of `- Item` bullets.
 | [PERFORMANCE.md](PERFORMANCE.md) | cost: work done more often, in more memory or on a thread it should not be on |
 | [TESTING.md](TESTING.md) | proof and plumbing: untested paths, fuzz targets, hardware, dependencies, packaging |
 
-## Next
-
-- [L · 0.3.0] No playback is gapless: a track change fades the output out, drains the ring, asks
-  the graph to drain and opens the next stream (`audio.md`, *Transport*), so every boundary of a
-  live album, a classical work or a cue-sheet image (each cut a row of one file) is a gap, though
-  the engine already carries a stream across a turn of shape inside a row (`Block::Reformatted`,
-  `swap_chain`). Open the next row ahead on the opener thread while the last seconds play, and where
-  its plan keeps the open stream (`keeps_its_stream_for`: same stream, packing and ring depth) hand
-  the chain's tail on and swap in the next track's chain with no drain, stepping the gain at the
-  boundary frame (`render_at`) and raising `TrackFinished`/`TrackStarted`, the played count, MPRIS
-  and the scrobble at the frame the graph reaches rather than the frame written; a boundary that
-  turns the rate, word or channels keeps today's drain, so bit-perfect still wins where the format
-  moves. Samples are untouched, so it needs no opt-in; the phones share the engine and gain it.
-
 ## Reading an entry
 
 `- [S · 0.2.0] text` or `- [M · blocked: gpui] text`: the bracket is the prefix, complexity first,

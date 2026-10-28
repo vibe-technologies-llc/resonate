@@ -55,7 +55,9 @@ rest on this discipline alone):
   nothing and touches no lock. The buffer handling and the fill are on the host as well, so their
   tests run there.
 - `resonate-engine/src/ring.rs`: what the graph pulls from; fader and trim scale in place, fade
-  state from atomics, each rendered level's start from a preallocated SPSC queue. A splice (an
+  state from atomics, each rendered level's start from a preallocated SPSC queue (a gapless turn
+  between rows carries the heard level beside it, which a later `hear_at` outranks through an
+  atomic turn count). A splice (an
   equaliser change, `audio.md`) arrives as two atomics behind a `Release`d count; the consumer pops
   to its point, commits the stale frames unread and stores the count back, all within the ring's
   own preallocated bytes.

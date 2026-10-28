@@ -326,10 +326,45 @@ Invariants from file to sink. Callback contract: `realtime.md`.
 
 ## Transport
 
-- **Bit-perfect wins at every track boundary; no gapless playback.** A track change drains the ring
-  and reopens the stream: once dry, the engine asks the graph to drain and waits for
-  `StreamEvent::Drained` (`SinkStream::latency` on the wall clock is the fallback). A stream takes
-  every instruction through one `StreamCommand`, keeping that handshake, `set_active` and `close` on
+- **Rows of one format play on gaplessly; a boundary that moves the format drains.** Samples are
+  untouched, so there is no setting. While the transport plays and the decoder stands within
+  `OPENED_AHEAD_BY` (10 s) of a row's end, `open_ahead` opens the row a natural advance lands on
+  (`Queue::follows_naturally`: the next waiting or in-order row, the same row under repeat-track,
+  the first on a wrap only without shuffle) on a `resonate-track-open` thread as an `Ahead`. When
+  the decoder ends (`Filled::AtTheEnd`, `Track::ended`), `Engine::hand_on` weighs the landed row's
+  plan on the bound sink against the open one (`keeps_its_stream_for`: same stream, packing and ring
+  depth): kept, the entering `Track` replaces the leaving one with no flush and no drain. A plan
+  `same_shape_as` the open one keeps the chain and only sets its gain
+  (`retune_for_the_entering`); any other goes through `swap_chain`, which hands the old chain's held
+  frames on and carries the resampler or convolver across where it can. The ring is told the frame
+  (`RingProducer::turn_at`: the rendered and heard amplitude together, announced like `render_at`,
+  so the consumer steps both on that frame and leaves the frames either side untouched; a
+  `hear_at` asked after the announcement outranks the step, through the ring's turn count). The
+  handover is a `Boundary` (`at`, a frame of this output's ring, and the leaving `Track`), and
+  until the graph has read past `at` (`reach_the_boundary`, before every fill, the loop waking by
+  `until_the_boundary`) the leaving row is what is heard: the queue has not advanced,
+  `PlayerState::current`, the digest and the sleep timer read `heard_track`, and `position` counts
+  the leaving row's end less what lies between the graph and `at`. Reached, `pass_the_boundary`
+  raises `TrackFinished` and `TrackStarted`, advances the queue as a natural skip (a seek counted
+  where the row repeats), resets the heard floor, renegotiations and failures, and pauses where the
+  sleep timer ends here, so MPRIS, the played count and the scrobble follow the frame heard. A queue
+  edited meanwhile so that it lands elsewhere starts that row afresh (`start`). **Anything that
+  rebuilds the row first takes the boundary back** (`take_the_boundary_back`, from `rebind_with`,
+  a seek, `Previous`, a lost graph, a failure not the entering row's): the leaving `Track` comes
+  back at its heard position, the entering one is dropped and the output is marked
+  `rendered_for_another`, so no seek reuses it in place; a failure of the entering row passes the
+  boundary first. **Refused, today's drain:** the ring drains, the engine asks the graph to drain
+  and waits for `StreamEvent::Drained` (`SinkStream::latency` on the wall clock is the fallback),
+  and the next row opens (`start` takes the `Ahead` that landed for it), so bit-perfect wins
+  wherever the rate, word or channels move. Refused also: a DoP stream, a sleep timer ending at
+  this row or queue, a sleep fade, a rebind owed, a draining or discarding ring, and a second
+  boundary behind one the graph has not reached (a row shorter than the ring); a splice, reshape or
+  ramp in flight, or an opening not landed, waits while the ring holds more than
+  `HANDED_ON_WHILE_THE_RING_HOLDS` (40 ms). A splice asked while a boundary waits is owed
+  (`rows_of_one_format_play_on_through_one_stream_with_no_drain_and_not_a_frame_between_them`,
+  `a_row_heard_on_without_a_gap_is_announced_as_the_graph_reaches_it_not_as_it_is_written`,
+  `a_row_at_another_rate_still_drains_the_stream_and_opens_one_of_its_own`). A stream takes every
+  instruction through one `StreamCommand`, keeping the drain handshake, `set_active` and `close` on
   one ordered channel to the loop thread.
 - **A turn of rate or channels partway through a track is a boundary inside the row.** On
   `Block::Reformatted` the engine sets `Track::sounding` (what the chain and plan are built for;

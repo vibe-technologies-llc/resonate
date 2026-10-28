@@ -115,6 +115,15 @@ fn steady(level: i16, frames: usize) -> Vec<u8> {
     wave(16, CHANNELS, &data)
 }
 
+fn sixteen_bit_stereo_at(rate: u32, mut file: Vec<u8>) -> Vec<u8> {
+    const RATE_AT: Range<usize> = 24..28;
+    const BYTES_A_SECOND_AT: Range<usize> = 28..32;
+
+    file[RATE_AT].copy_from_slice(&rate.to_le_bytes());
+    file[BYTES_A_SECOND_AT].copy_from_slice(&(rate * 4).to_le_bytes());
+    file
+}
+
 fn wave(bits: u16, channels: u16, data: &[u8]) -> Vec<u8> {
     let block_align = channels * bits / 8;
     let mut fmt = Vec::new();
@@ -157,6 +166,7 @@ struct Graph {
     events: Option<Sender<StreamEvent>>,
     requests: Vec<StreamRequest>,
     opens: usize,
+    drains: usize,
     reshapes: usize,
     closes: usize,
     active: bool,
@@ -322,6 +332,7 @@ impl Opener for FakeSink {
                 match command {
                     StreamCommand::SetActive(active) => graph.active = active,
                     StreamCommand::Drain => {
+                        graph.drains += 1;
                         if answers_drain && let Some(events) = graph.events.as_ref() {
                             let _ = events.try_send(StreamEvent::Drained);
                         }
@@ -3472,8 +3483,14 @@ fn a_row_that_found_no_device_to_start_on_is_announced_once_it_plays() -> Result
     let tree = Tree::new();
     let source = pcm(16, 4_000);
     let first = tree.write("first.wav", &source.file);
-    let second = tree.write("second.wav", &source.file);
-    let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    let second = tree.write(
+        "second.wav",
+        &sixteen_bit_stereo_at(48_000, source.file.clone()),
+    );
+    let (player, graph) = player(vec![sink(
+        &[SampleRate::HZ_44100, SampleRate::HZ_48000],
+        &[SampleFormat::S16],
+    )])?;
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2)],
         start_at: 0,
@@ -3513,7 +3530,10 @@ fn a_row_that_found_no_device_to_start_on_is_announced_once_it_plays() -> Result
         &graph,
         SinkInfo {
             id: SinkId::new(3),
-            ..sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])
+            ..sink(
+                &[SampleRate::HZ_44100, SampleRate::HZ_48000],
+                &[SampleFormat::S16],
+            )
         },
     );
     wait_for(
@@ -4521,6 +4541,160 @@ fn a_queue_that_runs_out_finishes_every_track_then_stops() -> Result<()> {
 }
 
 #[test]
+fn rows_of_one_format_play_on_through_one_stream_with_no_drain_and_not_a_frame_between_them()
+-> Result<()> {
+    const ENTERING_LEVEL: i16 = 1_234;
+
+    let tree = Tree::new();
+    let leaving = pcm(16, FRAMES);
+    let first = tree.write("first.wav", &leaving.file);
+    let second = tree.write("second.wav", &steady(ENTERING_LEVEL, FRAMES));
+    let third = tree.write("third.wav", &leaving.file);
+    let mut heard = leaving.stream.clone();
+    heard.extend((0..FRAMES * usize::from(CHANNELS)).flat_map(|_| ENTERING_LEVEL.to_le_bytes()));
+
+    let (player, graph) = player_with_tail(
+        vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
+        0,
+        true,
+    )?;
+    player.send(Command::Load {
+        items: vec![track(&first, 1), track(&second, 2), track(&third, 3)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame_bytes(SampleFormat::S16),
+        |_, graph| graph.played.len() >= heard.len(),
+        "two rows to reach the graph",
+    );
+
+    let graph = graph.lock();
+    assert!(
+        graph.played[..heard.len()] == heard[..],
+        "the rows did not reach the graph back to back, frame for frame"
+    );
+    assert_eq!(graph.opens, 1, "the second row opened a stream of its own");
+    assert_eq!(graph.closes, 0, "the stream was closed between the rows");
+    assert_eq!(
+        graph.drains, 0,
+        "the graph was asked to drain between the rows"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_row_heard_on_without_a_gap_is_announced_as_the_graph_reaches_it_not_as_it_is_written()
+-> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let first = tree.write("first.wav", &source.file);
+    let second = tree.write("second.wav", &source.file);
+    let boundary = source.stream.len();
+
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: vec![track(&first, 1), track(&second, 2)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+
+    let mut finished_at = None;
+    let mut started_at = None;
+    let mut published_early = None;
+    play_until(
+        &player,
+        &graph,
+        SHORT_PULL_FRAMES * frame_bytes(SampleFormat::S16),
+        |player, graph| {
+            for event in player.events().try_iter() {
+                match event {
+                    Event::TrackFinished(id) if id.get() == 1 => {
+                        finished_at = Some(graph.played.len());
+                    }
+                    Event::TrackStarted(id) if id.get() == 2 => {
+                        started_at = Some(graph.played.len());
+                    }
+                    Event::Failed { error, .. } => panic!("playback failed: {error}"),
+                    _ => {}
+                }
+            }
+            if graph.played.len() < boundary && plays(player, 2) {
+                published_early = Some(graph.played.len());
+            }
+            started_at.is_some()
+        },
+        "the second row to be announced",
+    );
+
+    assert_eq!(
+        published_early, None,
+        "the second row was published before the graph reached it"
+    );
+    assert!(
+        finished_at.is_some_and(|at| at >= boundary),
+        "the first row was finished at {finished_at:?} of {boundary} bytes"
+    );
+    assert!(
+        started_at.is_some_and(|at| at >= boundary),
+        "the second row was started at {started_at:?} of {boundary} bytes"
+    );
+    assert_eq!(graph.lock().opens, 1);
+    assert_eq!(player.state().queue_position, Some(1));
+    Ok(())
+}
+
+#[test]
+fn a_row_at_another_rate_still_drains_the_stream_and_opens_one_of_its_own() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let first = tree.write("first.wav", &source.file);
+    let second = tree.write(
+        "second.wav",
+        &sixteen_bit_stereo_at(48_000, source.file.clone()),
+    );
+
+    let (player, graph) = player_with_tail(
+        vec![sink(
+            &[SampleRate::HZ_44100, SampleRate::HZ_48000],
+            &[SampleFormat::S16],
+        )],
+        0,
+        true,
+    )?;
+    player.send(Command::Load {
+        items: vec![track(&first, 1), track(&second, 2)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame_bytes(SampleFormat::S16),
+        |player, graph| graph.opens == 2 && plays(player, 2),
+        "the second row to open a stream at its own rate",
+    );
+
+    let graph = graph.lock();
+    assert!(
+        graph.played[..source.stream.len()] == source.stream[..],
+        "the first row did not reach the graph whole"
+    );
+    assert_eq!(graph.drains, 1, "the first row's stream was not drained");
+    assert_eq!(
+        graph
+            .requests
+            .iter()
+            .map(|request| request.spec.rate)
+            .collect::<Vec<_>>(),
+        [SampleRate::HZ_44100, SampleRate::HZ_48000],
+    );
+    Ok(())
+}
+
+#[test]
 fn a_queue_that_runs_out_says_so_however_many_events_went_undrained_before_it() -> Result<()> {
     const ROWS: u64 = 150;
 
@@ -4644,11 +4818,17 @@ fn a_track_boundary_ends_when_the_graph_says_it_is_done_not_on_its_own_clock() -
     let tree = Tree::new();
     let source = pcm(16, 4_000);
     let first = tree.write("first.wav", &source.file);
-    let second = tree.write("second.wav", &source.file);
+    let second = tree.write(
+        "second.wav",
+        &sixteen_bit_stereo_at(48_000, source.file.clone()),
+    );
 
     let unplayable_tail = u64::from(RATE) * 30;
     let (player, graph) = player_with_tail(
-        vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
+        vec![sink(
+            &[SampleRate::HZ_44100, SampleRate::HZ_48000],
+            &[SampleFormat::S16],
+        )],
         unplayable_tail,
         true,
     )?;
@@ -4739,10 +4919,16 @@ fn a_graph_that_never_reports_a_drain_still_advances_on_the_delay_it_reports() -
     let tree = Tree::new();
     let source = pcm(16, 4_000);
     let first = tree.write("first.wav", &source.file);
-    let second = tree.write("second.wav", &source.file);
+    let second = tree.write(
+        "second.wav",
+        &sixteen_bit_stereo_at(48_000, source.file.clone()),
+    );
 
     let (player, graph) = player_with_tail(
-        vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
+        vec![sink(
+            &[SampleRate::HZ_44100, SampleRate::HZ_48000],
+            &[SampleFormat::S16],
+        )],
         u64::from(RATE) / 10,
         false,
     )?;
@@ -4773,10 +4959,16 @@ fn a_pause_while_the_last_buffer_drains_says_paused_and_holds_the_row_until_play
     let tree = Tree::new();
     let source = pcm(16, 4_000);
     let first = tree.write("first.wav", &source.file);
-    let second = tree.write("second.wav", &source.file);
+    let second = tree.write(
+        "second.wav",
+        &sixteen_bit_stereo_at(48_000, source.file.clone()),
+    );
 
     let (player, graph) = player_with_tail(
-        vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
+        vec![sink(
+            &[SampleRate::HZ_44100, SampleRate::HZ_48000],
+            &[SampleFormat::S16],
+        )],
         u64::from(RATE) / 4,
         false,
     )?;
@@ -8274,9 +8466,14 @@ fn a_sleep_timer_set_to_the_end_of_a_track_leaves_the_queue_on_the_next_row() ->
         "a timer that fired is still published"
     );
     let graph = graph.lock();
-    assert_eq!(
-        graph.played.len(),
-        source.stream.len(),
+    assert!(
+        graph.played.len() >= source.stream.len(),
+        "the first track was cut short of the sleep timer"
+    );
+    assert!(
+        graph.played[source.stream.len()..]
+            .iter()
+            .all(|byte| *byte == 0),
         "the second track played past the sleep timer"
     );
     assert_eq!(graph.opens, 1, "the second row opened a stream anyway");
@@ -8368,9 +8565,15 @@ fn a_sleep_timer_set_to_the_end_of_a_queue_pauses_where_the_queue_wraps() -> Res
         None,
         "a timer that fired is still published"
     );
-    assert_eq!(
-        graph.lock().played.len(),
-        source.stream.len() * 2,
+    let played = &graph.lock().played;
+    assert!(
+        played.len() >= source.stream.len() * 2,
+        "the queue was cut short of its wrap"
+    );
+    assert!(
+        played[source.stream.len() * 2..]
+            .iter()
+            .all(|byte| *byte == 0),
         "the wrapped queue played a round and a half"
     );
     Ok(())
