@@ -50,6 +50,6 @@
 0.050	narrow f64 to s32
 2.190	convolve a second's response at 48k
 10.900	convolve a second's response at 192k
-0.030	crossfeed at 48k
-0.120	crossfeed at 192k
-0.450	convolve a quarter second two by two at 48k
+0.045	crossfeed at 48k
+0.180	crossfeed at 192k
+1.200	convolve a quarter second two by two at 48k
