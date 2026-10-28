@@ -1618,7 +1618,7 @@ impl RootView {
         cx.notify();
     }
 
-    fn curve_rate(&self, cx: &App) -> SampleRate {
+    pub(super) fn curve_rate(&self, cx: &App) -> SampleRate {
         self.player
             .read(cx)
             .state()

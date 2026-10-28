@@ -9,6 +9,8 @@ paths:
   - "crates/resonate-dsp/src/convolve.rs"
   - "crates/resonate-engine/src/impulse.rs"
   - "crates/resonate-online/src/autoeq.rs"
+  - "crates/resonate-core/src/abx.rs"
+  - "crates/resonate-ui/src/views/settings/abx.rs"
   - "crates/resonate-ui/src/equaliser.rs"
   - "crates/resonate-ui/src/views/settings/equaliser.rs"
   - "crates/resonate-ui/src/views/settings/curve.rs"
@@ -278,6 +280,38 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   (`a_queue_of_silence_fits_nothing_and_an_empty_one_or_a_bad_curve_is_told_apart`,
   `songs_with_kept_bands_are_fitted_without_a_decode_and_the_whole_catalog_counts`,
   `kept_bands_are_forgotten_with_a_changed_file_and_a_cut_row_is_never_taken_as_measured`).
+
+## The listening test
+
+A level-matched ABX of the equaliser against a bypass of itself, in the Equaliser category's
+*Listening test* group (`Group::Abx`, `views/settings/abx.rs`); the arithmetic is
+`resonate-core::abx`, windowless and tested.
+
+- **A is the chain as set, B its bypass, each lowered and neither raised.** `Arms::matched(profile,
+  rate)` measures `mean_gain_db` (the mean power of `Profile::response`, preamp included, over the
+  log-spaced sweep from 20 Hz to 16 kHz, so equal weight per octave) and lowers whichever arm is
+  louder by the difference through its preamp (A's own, or a flat B's), so no match can clip. The
+  residual is measured again on the two arms as built (the preamp is quantised to milli-dB) and
+  must be within `LEVELS_MATCHED_WITHIN_DB` (0.1), else `Error::LevelsNotMatched` (also where the
+  preamp would pass its range) and the test does not begin. The room correction is not an arm; it
+  stays on in both and is not in the match.
+- **X is drawn up front from a seed**: `Session::new(planned, seed)` fixes every X with a
+  splitmix64 stream (the window seeds it from the clock; 1 to `TRIALS_AT_MOST` (100) trials, the
+  pane offers 8, 16 and 32), `answer(arm)` keeps a `Trial` (X and the answer) per trial and refuses
+  one past the last (`Error::AbxFinished`); `Score::p_value` is the exact one-sided binomial tail
+  at p = 1/2 (`binomial_tail`, summed in log space) and `is_significant` is under `SIGNIFICANT_AT`
+  (0.05).
+- **The switch is the equaliser's own command.** Hearing an arm sends `Command::SetEqualisation`
+  of `Equalisation::auditioning(sink, profile)` (the profile bound to the sink in use and as the
+  fallback), so it is spliced into what the ring holds and blended over `SPLICE_BLENDED_OVER`
+  (*Where it runs*): no gap and no click, and heard a few pulls after the press, within the buffer.
+  Nothing is added to the audio callback. Ending the test, or any edit of the curve, sends the
+  real `Equalisation` again (`tell_the_engine`). The test needs a curve bound to the device in use
+  (a toast says so), uses the shown profile `at_rate` the stream rate, and its state
+  (`RootView::audition`) lives for the run only.
+- **The pane shows what the listener needs and no more**: the trial and score with the chance of
+  that by guessing, a line of verdicts per trial, the residual level in dB, and which arm is
+  playing; an X is heard but never named, and the verdict of the last answer is shown after it.
 
 ## Room correction
 

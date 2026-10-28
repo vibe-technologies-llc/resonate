@@ -130,10 +130,13 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   takes a URL or a stream rather than a ring, so the plan's bit-perfect modes would not apply to it
 
 ## Later: Equaliser and DSP extras
-- [M] Nothing lets a listener test what the chain does: restoration, the resampler's quality and
-  phase, noise shaping and the equaliser are tuned by measurement, with no level-matched ABX in the
-  player to hear whether a setting is audible (the chain against a bypass of itself, gain matched to
-  0.1 dB, a verdict kept per trial)
+- [M] The listening test toggles the equaliser alone: restoration, the resampler's quality and
+  phase and noise shaping each rebind the stream (a gap) on a change, so they cannot be A and B of a
+  test without a splice for them, and each would need its own level match (the resampler's and
+  dither's are flat in level, restoration's is not)
+- [S] The listening test is the window's alone: `resonate abx FILE` would run the same
+  `resonate_core::abx::Session` over a looped song on stdin keys, and the phones (Android, iOS)
+  would reach it through `resonate-mobile`'s boundary
 
 ## Later: Lyrics
 - [L · blocked: gpui] The sung line cannot grow as it lights: gpui 0.2.2 on Linux draws a glyph on a

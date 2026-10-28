@@ -100,6 +100,7 @@ pub(crate) enum Group {
     Bands,
     Measured,
     RoomCorrection,
+    Abx,
     MusicExtensions,
     MinimumLength,
     Folders,
@@ -147,7 +148,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 62] = [
+    pub(crate) const ALL: [Self; 63] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -166,6 +167,7 @@ impl Group {
         Self::Bands,
         Self::Measured,
         Self::RoomCorrection,
+        Self::Abx,
         Self::MusicExtensions,
         Self::MinimumLength,
         Self::Folders,
@@ -231,7 +233,8 @@ impl Group {
             | Self::BoundTo
             | Self::Bands
             | Self::Measured
-            | Self::RoomCorrection => Category::Equaliser,
+            | Self::RoomCorrection
+            | Self::Abx => Category::Equaliser,
             Self::MusicExtensions | Self::MinimumLength => Category::Filters,
             Self::Folders
             | Self::Updating
@@ -292,6 +295,7 @@ impl Group {
             Self::Bands => "Bands",
             Self::Measured => "Measured corrections",
             Self::RoomCorrection => "Room correction",
+            Self::Abx => "Listening test",
             Self::MusicExtensions => "File extensions",
             Self::MinimumLength => "Minimum length",
             Self::Folders => "Music folders",
@@ -359,6 +363,7 @@ impl Group {
             Self::Bands => BANDS_HINT,
             Self::Measured => MEASURED_HINT,
             Self::RoomCorrection => ROOM_HINT,
+            Self::Abx => ABX_HINT,
             Self::MusicExtensions => {
                 "Choose which supported file extensions appear in the library. Every supported extension is included by default. Files and catalog entries are kept when excluded."
             }
@@ -456,6 +461,10 @@ impl Group {
             Self::RoomCorrection => {
                 "convolution impulse response ir fir room correction speakers rew drc \
                  measurement wav"
+            }
+            Self::Abx => {
+                "abx blind test listening level matched equaliser bypass double blind \
+                 audible difference trial p value"
             }
             Self::MusicExtensions => {
                 "music filters formats mp3 flac m4a audio files extension include exclude"
@@ -624,6 +633,7 @@ impl Group {
             Self::MusicExtensions => &[SettingKey::MusicExtensions],
             Self::MinimumLength => &[SettingKey::MinimumLength],
             Self::RoomCorrection => &[SettingKey::Convolution],
+            Self::Abx => &[],
             Self::Subsonic => &[
                 SettingKey::Subsonic,
                 SettingKey::SubsonicUser,
@@ -984,6 +994,11 @@ pub(crate) const TIDAL_HINT: &str = "A TIDAL subscription of your own, signed in
                                      Monochrome is asked too, by the ISRC alone. The hosted \
                                      hifi-api and Monochrome services are asked only where you \
                                      allow them.";
+
+pub(crate) const ABX_HINT: &str = "Hear the equaliser against a bypass of itself, level-matched \
+                                   to a tenth of a decibel, and say in each trial whether the \
+                                   hidden one is A or B. The score keeps its chance of being \
+                                   luck.";
 
 pub(crate) const ROOM_HINT: &str = "An impulse response measured in the room — a WAV or \
                                     FLAC as REW or DRC writes it — convolved with everything \

@@ -227,6 +227,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
                 || standing.remember_settings_category != REMEMBER_SETTINGS_CATEGORY
         }
         Group::Bands
+        | Group::Abx
         | Group::Pairing
         | Group::SyncDevices
         | Group::Updating
@@ -302,6 +303,7 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         | Group::Subsonic
         | Group::Tidal
         | Group::RoomCorrection
+        | Group::Abx
         | Group::Resuming
         | Group::History
         | Group::Notifications
