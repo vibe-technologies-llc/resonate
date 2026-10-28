@@ -17,6 +17,7 @@ pub enum ConfigKey {
     FilterPhase,
     TruePeak,
     RestoreLossy,
+    Crossfeed,
     Dither,
     NoiseShaping,
     ReplayGain,
@@ -166,7 +167,7 @@ impl fmt::Display for Named {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 102] = [
+    pub const ALL: [Self; 103] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -174,6 +175,7 @@ impl ConfigKey {
         Self::FilterPhase,
         Self::TruePeak,
         Self::RestoreLossy,
+        Self::Crossfeed,
         Self::Dither,
         Self::NoiseShaping,
         Self::ReplayGain,
@@ -280,6 +282,7 @@ impl ConfigKey {
             Self::FilterPhase => "filter-phase",
             Self::TruePeak => "true-peak",
             Self::RestoreLossy => "restore-lossy",
+            Self::Crossfeed => "crossfeed",
             Self::Dither => "dither",
             Self::NoiseShaping => "noise-shaping",
             Self::ReplayGain => "replay-gain",

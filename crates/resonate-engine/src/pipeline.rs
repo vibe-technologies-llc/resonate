@@ -8,9 +8,10 @@ use resonate_core::{
     eq::{Frequency, Profile},
 };
 use resonate_dsp::{
-    Back, Chain, ChainBuilder, Convolver, Dither, DitherKind, Equaliser, FilterPhase, Front,
-    GainConfig, GainStage, Impulse, NoiseShaping, Overs, Quality, Remix, ReplayGainMode, Resampler,
-    ResamplerConfig, Restoration, Restore, RestoreConfig, Result, TruePeak, Tuning,
+    Back, Chain, ChainBuilder, Convolver, Crossfeed, Crossfeeder, Dither, DitherKind, Equaliser,
+    FilterPhase, Front, GainConfig, GainStage, Impulse, NoiseShaping, Overs, Quality, Remix,
+    ReplayGainMode, Resampler, ResamplerConfig, Restoration, Restore, RestoreConfig, Result,
+    TruePeak, Tuning,
 };
 
 use crate::{PreviousRestarts, SkipUnderRepeat, seed};
@@ -65,6 +66,7 @@ pub struct EngineConfig {
     pub volume: Volume,
     pub equaliser: Arc<Equalisation>,
     pub convolution: Option<Arc<Impulse>>,
+    pub crossfeed: Crossfeed,
     pub skip_under_repeat: SkipUnderRepeat,
     pub previous_restarts: PreviousRestarts,
 }
@@ -148,6 +150,7 @@ impl Default for EngineConfig {
             volume: Volume::MAX,
             equaliser: Arc::new(Equalisation::default()),
             convolution: None,
+            crossfeed: Crossfeed::Off,
             skip_under_repeat: SkipUnderRepeat::default(),
             previous_restarts: PreviousRestarts::default(),
         }
@@ -218,6 +221,7 @@ pub struct OutputPlan {
     pub resample: Option<(SampleRate, SampleRate)>,
     pub equalisation: Option<Arc<Profile>>,
     pub convolution: Option<Arc<Impulse>>,
+    pub crossfeed: Option<Crossfeed>,
     pub dither_to: Option<BitDepth>,
     pub shaping: NoiseShaping,
     pub gain: Option<GainConfig>,
@@ -233,6 +237,7 @@ impl OutputPlan {
             && self.resample.is_none()
             && self.equalisation.is_none()
             && self.convolution.is_none()
+            && self.crossfeed.is_none()
             && self.gain.is_none()
             && self.dither_to.is_none()
             && !self.rounds
@@ -286,6 +291,7 @@ impl OutputPlan {
             && self.resample == other.resample
             && self.equalisation.is_some() == other.equalisation.is_some()
             && convolves_alike(self.convolution.as_ref(), other.convolution.as_ref())
+            && self.crossfeed == other.crossfeed
             && self.dither_to == other.dither_to
             && self.shaping == other.shaping
             && self.gain.is_some() == other.gain.is_some()
@@ -303,6 +309,7 @@ impl OutputPlan {
             && self.resample == other.resample
             && self.equalisation == other.equalisation
             && convolves_alike(self.convolution.as_ref(), other.convolution.as_ref())
+            && self.crossfeed == other.crossfeed
             && self.dither_to == other.dither_to
             && (self.dither_to.is_none() || self.shaping == other.shaping)
             && self.gain == other.gain
@@ -394,6 +401,9 @@ impl OutputPlan {
     }
 
     fn backed(&self, mut builder: ChainBuilder, config: &EngineConfig) -> ChainBuilder {
+        if let Some(crossfeed) = self.crossfeed {
+            builder = builder.push(Box::new(Crossfeeder::new(crossfeed)));
+        }
         if let Some(profile) = self.equalisation.as_ref() {
             builder = builder.push(Box::new(Equaliser::new(
                 Arc::clone(profile),
@@ -478,6 +488,7 @@ fn dop_survives(
         && sink.supports(source)
         && gain_config(config, Attenuator::of(config, sink), replay_gain).is_none()
         && eq_config(config, &sink.name, source.rate).is_none()
+        && config.crossfeed == Crossfeed::Off
 }
 
 fn untouched(stream: StreamSpec, rate: DsdRate) -> OutputPlan {
@@ -490,6 +501,7 @@ fn untouched(stream: StreamSpec, rate: DsdRate) -> OutputPlan {
         resample: None,
         equalisation: None,
         convolution: None,
+        crossfeed: None,
         dither_to: None,
         shaping: NoiseShaping::None,
         gain: None,
@@ -524,10 +536,12 @@ pub fn plan_for(
         .then_some((source.channels, stream.channels));
     let equalisation = eq_config(config, sink, stream.rate);
     let convolution = config.convolution.clone();
+    let crossfeed = crossfeed_config(config, stream);
     let converts = resample.is_some()
         || remix.is_some()
         || equalisation.is_some()
         || convolution.is_some()
+        || crossfeed.is_some()
         || restoration.is_some();
     let gain = gain_config(config, attenuator, replay_gain)
         .or_else(|| converts.then(|| gain_of(config, attenuator, replay_gain)));
@@ -567,6 +581,7 @@ pub fn plan_for(
         resample,
         equalisation,
         convolution,
+        crossfeed,
         dither_to: dithers.then(|| stream.format.bit_depth()),
         shaping: config.noise_shaping.at(stream.rate),
         gain,
@@ -636,6 +651,11 @@ fn eq_config(config: &EngineConfig, sink: &NodeName, rate: SampleRate) -> Option
         .for_sink(sink)
         .map(|profile| profile.at_rate(rate))
         .filter(|profile| !profile.is_transparent())
+}
+
+fn crossfeed_config(config: &EngineConfig, stream: StreamSpec) -> Option<Crossfeed> {
+    (config.crossfeed != Crossfeed::Off && stream.channels == ChannelLayout::Stereo)
+        .then_some(config.crossfeed)
 }
 
 fn gain_config(
@@ -2057,6 +2077,42 @@ mod tests {
         assert_eq!(plan.packing, Packing::Samples);
         assert!(plan.equalisation.is_some());
         assert_eq!(plan.mode, OutputMode::Converted);
+    }
+
+    #[test]
+    fn crossfeed_takes_a_stereo_plan_off_the_bit_perfect_path_and_a_mono_one_never() {
+        let sink = sink(&[SampleRate::HZ_48000], &[SampleFormat::S24]);
+        let config = EngineConfig {
+            crossfeed: Crossfeed::Moderate,
+            ..EngineConfig::default()
+        };
+        let stereo = spec(SampleRate::HZ_48000, SampleFormat::S24);
+        let mono = StreamSpec::new(SampleRate::HZ_48000, ChannelLayout::Mono, SampleFormat::S24);
+
+        let crossfed = plan(stereo, &sink, &config);
+        let mono_sink = named(
+            "mono",
+            &[SampleRate::HZ_48000],
+            &[SampleFormat::S24],
+            &[ChannelLayout::Mono],
+        );
+        let alone = plan(mono, &mono_sink, &config);
+
+        assert_eq!(crossfed.crossfeed, Some(Crossfeed::Moderate));
+        assert_eq!(crossfed.mode, OutputMode::Converted);
+        assert!(!crossfed.is_transparent());
+        assert_eq!(alone.crossfeed, None);
+    }
+
+    #[test]
+    fn crossfeed_off_leaves_the_plan_the_shape_it_had() {
+        let sink = sink(&[SampleRate::HZ_48000], &[SampleFormat::S24]);
+        let source = spec(SampleRate::HZ_48000, SampleFormat::S24);
+
+        let plain = plan(source, &sink, &EngineConfig::default());
+
+        assert_eq!(plain.crossfeed, None);
+        assert_eq!(plain.mode, OutputMode::BitPerfect);
     }
 
     #[test]

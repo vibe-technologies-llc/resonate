@@ -140,6 +140,7 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
         Setting::Restoration(restoration) => {
             (ConfigKey::RestoreLossy, Some(restoration.as_str().into()))
         }
+        Setting::Crossfeed(crossfeed) => (ConfigKey::Crossfeed, Some(crossfeed.as_str().into())),
         Setting::Dither(dither) => (ConfigKey::Dither, Some(dither_text(*dither).into())),
         Setting::NoiseShaping(shaping) => {
             (ConfigKey::NoiseShaping, Some(shaping_text(*shaping).into()))
@@ -395,6 +396,7 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::FilterPhase => ConfigKey::FilterPhase,
         SettingKey::TruePeak => ConfigKey::TruePeak,
         SettingKey::Restoration => ConfigKey::RestoreLossy,
+        SettingKey::Crossfeed => ConfigKey::Crossfeed,
         SettingKey::Dither => ConfigKey::Dither,
         SettingKey::NoiseShaping => ConfigKey::NoiseShaping,
         SettingKey::ReplayGain => ConfigKey::ReplayGain,

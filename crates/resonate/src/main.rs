@@ -1616,6 +1616,9 @@ fn explain(cli: &Cli, config: &Config, path: &Path) -> Result<()> {
             restoring.tuning
         );
     }
+    if let Some(crossfeed) = plan.crossfeed {
+        said!("crossfeed: {}", crossfeed.as_str());
+    }
     if plan.true_peak {
         said!("guard:   true peaks held under -0.1 dBTP");
     }
@@ -2691,6 +2694,7 @@ fn engine_config(cli: &Cli, config: &Config) -> EngineConfig {
         device_volume: config.device_volume.unwrap_or(defaults.device_volume),
         true_peak: config.true_peak.unwrap_or(defaults.true_peak),
         restoration: config.restoration.unwrap_or(defaults.restoration),
+        crossfeed: config.crossfeed.unwrap_or(defaults.crossfeed),
         force_graph_rate: config.force_graph_rate.unwrap_or(defaults.force_graph_rate),
         bluetooth: BluetoothWake {
             on: config.bluetooth_wake.unwrap_or(defaults.bluetooth.on),

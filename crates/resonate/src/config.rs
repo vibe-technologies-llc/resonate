@@ -19,8 +19,8 @@ use resonate_core::{
     SpectrumFalls, SpectrumFloor, SpectrumTilt, SyncedSongs, TextSize, Theme, Trim, Volume,
 };
 use resonate_engine::{
-    DitherKind, FilterPhase, NoiseShaping, PreviousRestarts, Quality, ReplayGainMode, Restoration,
-    SkipUnderRepeat,
+    Crossfeed, DitherKind, FilterPhase, NoiseShaping, PreviousRestarts, Quality, ReplayGainMode,
+    Restoration, SkipUnderRepeat,
 };
 use resonate_eq::{Binding, ProfileName};
 use resonate_library::{HistoryKept, Layout, MinimumLength, MusicExtensions, MusicFilters};
@@ -106,6 +106,7 @@ pub struct Config {
     pub filter_phase: Option<FilterPhase>,
     pub true_peak: Option<bool>,
     pub restoration: Option<Restoration>,
+    pub crossfeed: Option<Crossfeed>,
     pub dither: Option<DitherKind>,
     pub noise_shaping: Option<NoiseShaping>,
     pub replay_gain: Option<ReplayGainMode>,
@@ -225,6 +226,7 @@ impl fmt::Debug for Config {
             filter_phase,
             true_peak,
             restoration,
+            crossfeed,
             dither,
             noise_shaping,
             replay_gain,
@@ -330,6 +332,7 @@ impl fmt::Debug for Config {
             .field("filter_phase", filter_phase)
             .field("true_peak", true_peak)
             .field("restoration", restoration)
+            .field("crossfeed", crossfeed)
             .field("dither", dither)
             .field("noise_shaping", noise_shaping)
             .field("replay_gain", replay_gain)
@@ -867,6 +870,9 @@ impl Config {
             ConfigKey::TruePeak => config.true_peak = Some(at.boolean(value)?),
             ConfigKey::RestoreLossy => {
                 config.restoration = Some(at.one_of(value, Restoration::named)?);
+            }
+            ConfigKey::Crossfeed => {
+                config.crossfeed = Some(at.one_of(value, Crossfeed::named)?);
             }
             ConfigKey::ForceGraphRate => config.force_graph_rate = Some(at.boolean(value)?),
             ConfigKey::BluetoothWake => config.bluetooth_wake = Some(at.boolean(value)?),
@@ -1575,7 +1581,7 @@ mod tests {
 
     #[test]
     fn the_man_page_gives_every_spelling_a_setting_takes() {
-        let spelled: [(ConfigKey, Vec<String>); 15] = [
+        let spelled: [(ConfigKey, Vec<String>); 16] = [
             (ConfigKey::Quality, spelled_by::<QualityArg>()),
             (ConfigKey::FilterPhase, spelled_by::<FilterPhaseArg>()),
             (ConfigKey::Dither, spelled_by::<DitherArg>()),
@@ -1585,6 +1591,10 @@ mod tests {
                 Restoration::ALL
                     .map(|kind| kind.as_str().to_owned())
                     .to_vec(),
+            ),
+            (
+                ConfigKey::Crossfeed,
+                Crossfeed::ALL.map(|kind| kind.as_str().to_owned()).to_vec(),
             ),
             (
                 ConfigKey::Theme,
@@ -2651,6 +2661,13 @@ mod tests {
             load(Some(&scratch.path)).expect("it reads back").quality,
             Some(Quality::VeryHigh)
         );
+    }
+
+    #[test]
+    fn a_crossfeed_is_read_by_name() {
+        let config = read("crossfeed = \"moderate\"").expect("a known crossfeed");
+        assert_eq!(config.crossfeed, Some(Crossfeed::Moderate));
+        assert!(read("crossfeed = \"magic\"").is_err());
     }
 
     #[test]

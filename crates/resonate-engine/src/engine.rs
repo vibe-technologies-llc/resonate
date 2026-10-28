@@ -1518,6 +1518,10 @@ impl Engine {
                 self.config.restoration = restoration;
                 self.rebind_where_the_plan_moves(ReadBy::PlanAlone)
             }
+            Command::SetCrossfeed(crossfeed) => {
+                self.config.crossfeed = crossfeed;
+                self.rebind_where_the_plan_moves(ReadBy::PlanAlone)
+            }
             Command::SetTruePeak(on) => {
                 self.config.true_peak = on;
                 if let Some(track) = self.track.as_mut() {

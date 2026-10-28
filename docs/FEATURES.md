@@ -51,12 +51,12 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Device sync
 
 ## Equaliser and DSP
-- [M · 0.3.0] No crossfeed or binaural stage: every stage works per channel (`Impulse` holds one set
-  of taps per channel and `Remix` folds by position), so hard-panned stereo on headphones has no
-  Bauer-style crossfeed (a lowpassed, delayed, attenuated copy of each channel into the other) and an
-  HRIR set (SOFA or a two-by-two impulse response) cannot be convolved, since a path from left to
-  right needs a matrix of responses; the headphone work built so far (AutoEq, a listener's own
-  measurement, room correction) corrects the transducer and leaves the stereo image alone
+- [S · 0.3.0] The phones have no crossfeed: `PlaybackPreferences` carries no crossfeed level, so
+  neither the Compose nor the SwiftUI processing page offers the stage the desktop's settings do
+  (the engine reads `Command::SetCrossfeed` on every target)
+- [S · 0.3.0] A binaural response is loaded only as a four-channel file through *Room correction*
+  (left-to-left, left-to-right, right-to-left, right-to-right); two stereo files, one for each
+  speaker, are not read, and the pane does not say a four-channel response is a two-by-two one
 
 ## Search
 - [M · blocked: service] A pasted Spotify, TIDAL or Apple Music playlist link lists only the songs its
@@ -100,6 +100,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   is never a FLAC
 
 ## Later: Equaliser and DSP extras
+- [M] An HRIR set in SOFA (a netCDF-4 file over HDF5) is not read: a pure-Rust HDF5 reader would
+  have to choose the measurement nearest a direction and resample it to the stream, so a set is
+  first cut to a four-channel WAV elsewhere
 - [M] *Fit the preamp*'s kept-figure bound still sits 2 to 6 dB over the decode for broadband
   music under a curve that moves many bands, and a band whose skirt reaches a narrow boost pays a
   little of it: each node's share of a frequency is fixed by the curve, not fitted to the song's

@@ -1,5 +1,6 @@
 mod chain;
 mod convolve;
+mod crossfeed;
 mod dither;
 mod eq;
 mod error;
@@ -15,7 +16,8 @@ mod restore;
 
 pub use crate::{
     chain::{Back, Chain, ChainBuilder, Front},
-    convolve::{Convolver, Impulse, partition_frames_at},
+    convolve::{CROSSED_RESPONSES, Convolver, Impulse, partition_frames_at},
+    crossfeed::{Crossfeed, Crossfeeder},
     dither::{Dither, DitherKind, NoiseShaping},
     eq::{Easing, Equaliser},
     error::{Error, RatioLimits, Result},
