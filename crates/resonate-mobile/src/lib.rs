@@ -64,8 +64,7 @@ pub use crate::{
     equaliser::{
         EqualiserBand, EqualiserCurve, EqualiserFilter, EqualiserImport, EqualiserLimits,
         EqualiserPreset, equaliser_frequencies, equaliser_limits, equaliser_presets,
-        equaliser_text, fitted_preamp, parse_eq_profile, response_curve, ten_band_curve,
-        ten_band_gains,
+        equaliser_text, parse_eq_profile, response_curve, ten_band_curve, ten_band_gains,
     },
     error::{Error, Result, StoreOp},
     logging::{LogLevel, Logbook, keep_log},

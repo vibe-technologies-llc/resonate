@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use resonate_codec::Sources;
 use resonate_core::{
     FrameSpan, MediaLocation, SampleRate, StreamSpec,
@@ -9,6 +7,7 @@ use resonate_core::{
 use crate::{
     Error, Result, Spectrum, Watching,
     analysis::{native_format, opened},
+    applied::{Applied, Heard},
     conform::Walking,
     peaks::{BandPeaks, Heights, NODES, TILES_REACHED_EACH_WAY, TREE, WHOLE},
     spectrum::{FLOOR_DB, Transforming},
@@ -136,17 +135,15 @@ pub struct BandGains {
     ringing: Heights,
 }
 
-type Heard = (f64, f64);
-
 impl BandGains {
-    pub fn of(profile: &Arc<Profile>, rate: SampleRate) -> Self {
-        let at_the_rate = profile.at_rate(rate);
-        let hertz = points_across(&at_the_rate, rate);
+    pub fn of(applied: &Applied, rate: SampleRate) -> Result<Self> {
+        let at_the_rate = applied.at_rate(rate);
+        let hertz = points_across(at_the_rate.profile(), rate);
         let shares: Vec<Heights> = hertz.iter().map(|hertz| shares_at(*hertz, rate)).collect();
-        let heard = at_the_rate.heard_at(&hertz, rate);
+        let heard = at_the_rate.heard_at(&hertz, rate)?;
         let reached = TILES_REACHED_EACH_WAY * (rate.hz() as usize / TILES_A_SECOND).max(1);
         let soon = soon_heard_at(
-            &tapered(at_the_rate.impulse_responses(reached, rate)),
+            &tapered(at_the_rate.impulse_responses(reached, rate)?),
             &hertz,
             rate,
         );
@@ -162,7 +159,7 @@ impl BandGains {
             })
             .collect();
 
-        Self {
+        Ok(Self {
             anchors: levels_of(&heard)
                 .into_iter()
                 .map(|level| Anchor {
@@ -171,7 +168,7 @@ impl BandGains {
                 })
                 .collect(),
             ringing: reach_of(&later, &shares, 0.0),
-        }
+        })
     }
 
     pub fn bound(&self, peaks: &BandPeaks) -> f64 {
@@ -351,9 +348,10 @@ pub fn band_figures(
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::{sync::Arc, time::Duration};
 
     use resonate_core::eq::{Band, BandGain, BandKind, Frequency, Preamp, Q};
+    use resonate_dsp::Impulse;
 
     use super::*;
 
@@ -373,6 +371,11 @@ mod tests {
             Q::from_units(q).expect("in range"),
         );
         Arc::new(Profile::new(Preamp::NONE, vec![band]).expect("a profile in range"))
+    }
+
+    fn gains_under(profile: &Arc<Profile>) -> BandGains {
+        BandGains::of(&Applied::from(Arc::clone(profile)), SampleRate::HZ_44100)
+            .expect("gains under a profile")
     }
 
     fn boosting(hertz: f64, decibels: f64) -> Arc<Profile> {
@@ -418,7 +421,7 @@ mod tests {
         assert!(levels.is_silent());
         assert_eq!(levels, BandLevels::SILENT);
         assert_eq!(
-            BandGains::of(&boosting(100.0, 6.0), SampleRate::HZ_44100).bound(&BandPeaks::SILENT),
+            gains_under(&boosting(100.0, 6.0)).bound(&BandPeaks::SILENT),
             0.0
         );
     }
@@ -450,7 +453,7 @@ mod tests {
 
     #[test]
     fn a_tone_on_a_boost_is_raised_by_it_and_a_tone_far_from_it_is_not() {
-        let gains = BandGains::of(&boosting(110.0, 6.0), SampleRate::HZ_44100);
+        let gains = gains_under(&boosting(110.0, 6.0));
 
         let raised = gains.bound(&tone_of(110.0, 0.5));
         let left = gains.bound(&tone_of(5_000.0, 0.5));
@@ -464,7 +467,7 @@ mod tests {
 
     #[test]
     fn a_tone_beside_a_narrow_boost_pays_little_of_its_height() {
-        let gains = BandGains::of(&bell(63.0, 8.0, 4.0), SampleRate::HZ_44100);
+        let gains = gains_under(&bell(63.0, 8.0, 4.0));
 
         let bound = gains.bound(&tone_of(100.0, 0.8));
 
@@ -475,8 +478,8 @@ mod tests {
     #[test]
     fn a_cut_lowers_the_bound_and_a_flat_curve_leaves_the_peak_as_it_was() {
         let peaks = tone_of(110.0, 0.8);
-        let flat = BandGains::of(&Arc::new(Profile::flat()), SampleRate::HZ_44100);
-        let cutting = BandGains::of(&bell(110.0, -6.0, 0.2), SampleRate::HZ_44100);
+        let flat = gains_under(&Arc::new(Profile::flat()));
+        let cutting = gains_under(&bell(110.0, -6.0, 0.2));
 
         assert!((flat.bound(&peaks) - 0.8).abs() < 0.8 * 0.01);
         assert!(cutting.bound(&peaks) < 0.8 * 0.7);
@@ -484,7 +487,7 @@ mod tests {
 
     #[test]
     fn the_loudest_moment_sets_the_bound_and_a_quiet_one_on_the_boost_need_not() {
-        let gains = BandGains::of(&boosting(110.0, 6.0), SampleRate::HZ_44100);
+        let gains = gains_under(&boosting(110.0, 6.0));
         let loud_elsewhere = tone_of(5_000.0, 0.9);
         let quiet_on_the_boost = tone_of(110.0, 0.3);
         let moments: Vec<Heights> = loud_elsewhere
@@ -505,8 +508,8 @@ mod tests {
 
     #[test]
     fn a_curve_ringing_past_the_moments_kept_bounds_its_ring_by_the_whole_song() {
-        let ringing = BandGains::of(&bell(25.0, 12.0, 20.0), SampleRate::HZ_44100);
-        let settled = BandGains::of(&bell(25.0, 12.0, 1.0), SampleRate::HZ_44100);
+        let ringing = gains_under(&bell(25.0, 12.0, 20.0));
+        let settled = gains_under(&bell(25.0, 12.0, 1.0));
         let on_the_ring = tone_of(25.0, 0.5);
         let away_from_it = tone_of(5_000.0, 0.5);
         let louder = |peaks: &BandPeaks| peaks.moments().next().expect("a moment");
@@ -519,5 +522,60 @@ mod tests {
         assert!(rung_away < 0.02, "{rung_away}");
         assert!(settled_ring < rung / 10.0, "{settled_ring}");
         assert!(ringing.bound(&on_the_ring) >= 0.5 * 10_f64.powf(12.0 / 20.0) * 0.99);
+    }
+
+    fn corrected_by(profile: &Arc<Profile>, taps: Vec<f64>) -> BandGains {
+        let correction = Impulse::new(SampleRate::HZ_44100, vec![taps]).expect("an impulse");
+        BandGains::of(
+            &Applied::from(Arc::clone(profile)).corrected_by(Some(Arc::new(correction))),
+            SampleRate::HZ_44100,
+        )
+        .expect("gains under a profile and a correction")
+    }
+
+    #[test]
+    fn a_correction_scales_the_bound_by_the_gain_it_holds_where_the_music_sounds() {
+        let flat = Arc::new(Profile::flat());
+        let peaks = tone_of(1_000.0, 0.5);
+
+        let halved = corrected_by(&flat, vec![0.5]).bound(&peaks);
+        let doubled = corrected_by(&flat, vec![2.0]).bound(&peaks);
+
+        assert!((halved - 0.25).abs() < 0.25 * 0.02, "{halved}");
+        assert!((doubled - 1.0).abs() < 0.02, "{doubled}");
+    }
+
+    #[test]
+    fn a_correction_boosting_the_bass_raises_the_bound_of_bass_and_a_lowpass_lowers_that_of_treble()
+    {
+        let flat = Arc::new(Profile::flat());
+        let boosting = corrected_by(&flat, vec![1.0, 1.0]);
+        let lowpassing = corrected_by(&flat, vec![0.5, 0.5]);
+
+        let bass = boosting.bound(&tone_of(60.0, 0.4));
+        let treble = lowpassing.bound(&tone_of(15_000.0, 0.4));
+        let bass_left_alone = lowpassing.bound(&tone_of(60.0, 0.4));
+
+        assert!(
+            (0.0..0.3).contains(&(decibels_between(bass, 0.4) - 6.0)),
+            "{bass}"
+        );
+        assert!(decibels_between(treble, 0.4) < -3.0, "{treble}");
+        assert!(
+            (0.0..0.3).contains(&decibels_between(bass_left_alone, 0.4)),
+            "{bass_left_alone}"
+        );
+    }
+
+    #[test]
+    fn a_correction_whose_energy_comes_late_is_paid_for_from_the_whole_song() {
+        let flat = Arc::new(Profile::flat());
+        let mut late = vec![0.0; 22_051];
+        late[22_050] = 0.8;
+        let gains = corrected_by(&flat, late);
+
+        let bound = gains.bound(&tone_of(1_000.0, 0.5));
+
+        assert!((bound - 0.4).abs() < 0.4 * 0.05, "{bound}");
     }
 }

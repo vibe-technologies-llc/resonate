@@ -5820,11 +5820,10 @@ impl Library {
 
     pub fn loudest_kept(
         &self,
-        profile: &Arc<resonate_core::eq::Profile>,
-        rate: SampleRate,
+        gains: &resonate_analysis::BandGains,
     ) -> Result<resonate_analysis::Loudest> {
         self.inner
-            .read(|connection| studies::loudest_kept(connection, profile, rate))
+            .read(|connection| studies::loudest_kept(connection, gains))
     }
 
     pub fn unmeasured(

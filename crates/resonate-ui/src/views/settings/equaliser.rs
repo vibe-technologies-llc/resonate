@@ -1,4 +1,10 @@
-use std::{cell::Cell as Slot, path::PathBuf, rc::Rc, sync::Arc, time::Duration};
+use std::{
+    cell::Cell as Slot,
+    path::{Path, PathBuf},
+    rc::Rc,
+    sync::Arc,
+    time::Duration,
+};
 
 use gpui::{
     App, BorderStyle, Bounds, Canvas, Context, Div, Hsla, MouseButton, MouseDownEvent,
@@ -7,10 +13,11 @@ use gpui::{
 };
 use resonate_core::{
     MediaLocation, SampleRate,
-    eq::{Band, BandKind, Preamp, Profile, Traced, TracedOn},
+    eq::{Band, BandKind, Preamp, Traced, TracedOn},
 };
 use resonate_engine::{
-    AnalysisError, Command, Loudest, NodeName, Player, Sources, Watch, Watching, read_impulse,
+    AnalysisError, Applied, BandGains, Command, Impulse, Loudest, NodeName, Player, Sources, Watch,
+    Watching, read_impulse,
 };
 use resonate_eq::{Binding, BuiltIn, Device, MEASURERS_BEST_FIRST, ProfileName};
 use resonate_library::Library;
@@ -1637,18 +1644,22 @@ impl RootView {
         let engine = self.player.read(cx).engine();
         let library = self.library.read(cx).catalog();
 
+        let room = cx.global::<ResonateApp>().convolution.clone();
+
         let watch = Arc::new(Watch::default());
         let measuring = Arc::clone(&watch);
         let profile = Arc::new(shown);
         let measured_for = Arc::clone(&profile);
         let measured = cx.background_executor().spawn(async move {
-            loudest_kept_and_queued(&library, &engine, &profile, rate, measuring.as_ref())
+            let applied = Applied::from(profile)
+                .corrected_by(room.as_deref().and_then(room_correcting_the_fit));
+            fitted_through_the_chain(&library, &engine, &applied, rate, measuring.as_ref())
         });
         let landing = cx.spawn(async move |this, cx| {
             let measured = measured.await;
             let _ = this.update(cx, |this, cx| match measured {
-                Ok(loudest) => {
-                    let Some(fitted) = loudest.fitted_preamp() else {
+                Ok(Fitted { loudest, room }) => {
+                    let Some(fitted) = loudest.fitted_preamp().or(room) else {
                         return;
                     };
                     let landed = this.equaliser.update(cx, |model, cx| {
@@ -1961,15 +1972,31 @@ impl Drop for Fitting {
     }
 }
 
-fn loudest_kept_and_queued(
+struct Fitted {
+    loudest: Loudest,
+    room: Option<Preamp>,
+}
+
+fn room_correcting_the_fit(file: &Path) -> Option<Arc<Impulse>> {
+    match read_impulse(&Sources::local(), &MediaLocation::local(file)) {
+        Ok(impulse) => impulse.map(Arc::new),
+        Err(error) => {
+            tracing::warn!(%error, "the room's response could not be read for the preamp");
+            None
+        }
+    }
+}
+
+fn fitted_through_the_chain(
     library: &Library,
     engine: &Player,
-    profile: &Arc<Profile>,
+    applied: &Applied,
     rate: SampleRate,
     watch: &dyn Watching,
-) -> Result<Loudest, AnalysisError> {
+) -> Result<Fitted, AnalysisError> {
+    let gains = BandGains::of(applied, rate)?;
     let cuts = engine.cuts_to_fit();
-    let kept = library.loudest_kept(profile, rate).unwrap_or_else(|error| {
+    let kept = library.loudest_kept(&gains).unwrap_or_else(|error| {
         tracing::warn!(%error, "the catalog's measured songs could not be read for the preamp");
         Loudest::default()
     });
@@ -1977,12 +2004,20 @@ fn loudest_kept_and_queued(
         tracing::warn!(%error, "the catalog's measured songs could not be weighed against the queue");
         cuts
     });
-    let decoded = engine.loudest_among(&owed, profile, watch)?;
-    Ok(kept.joined(decoded))
+    let decoded = engine.loudest_among(&owed, applied, watch)?;
+    let room = applied
+        .correction()
+        .map(|_| applied.fitted_preamp(rate))
+        .transpose()?;
+    Ok(Fitted {
+        loudest: kept.joined(decoded),
+        room,
+    })
 }
 
 fn fitted_to(songs: usize) -> String {
     match songs {
+        0 => "The preamp is fitted to the room correction".to_owned(),
         1 => "The preamp is fitted to the one song measured".to_owned(),
         songs => format!("The preamp is fitted to the {songs} songs measured"),
     }

@@ -31,7 +31,6 @@ import org.resonate.android.nativecore.equaliserFrequencies
 import org.resonate.android.nativecore.equaliserLimits
 import org.resonate.android.nativecore.equaliserPresets
 import org.resonate.android.nativecore.fitMeasurement
-import org.resonate.android.nativecore.fittedPreamp
 import org.resonate.android.nativecore.measurementOffers
 import org.resonate.android.nativecore.parseEqProfile
 import org.resonate.android.nativecore.responseCurve
@@ -150,7 +149,7 @@ class EqualiserViewModel(private val resonate: Resonate) : ViewModel() {
         val bounds = info.value?.bounds ?: EqualiserBounds.unread
         val rate = outputRate
         resonate.attempt(viewModelScope) { native ->
-            val fitted = withContext(Dispatchers.Default) { fittedPreamp(curve, rate) }
+            val fitted = withContext(Dispatchers.Default) { native.fittedPreamp(curve, rate) }
             val modelled = curve.withFittedPreamp(fitted, bounds)
             commit(modelled)
             val measured =

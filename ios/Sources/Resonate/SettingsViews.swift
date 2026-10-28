@@ -615,11 +615,11 @@ struct SoundSettingsView: View {
         let asked: UInt32? = rate > 0 ? rate : nil
         Task {
             do {
-                let fitted = try await Work.aside { try fittedPreamp(curve: curve, rateHz: asked) }
+                let player = try await library.player()
+                let fitted = try await Work.aside { try player.fittedPreamp(curve: curve, rateHz: asked) }
                 var modelled = curve
                 modelled.preampDb = fitted
                 edited(modelled)
-                let player = try await library.player()
                 let measured = try await Work.aside { try player.fittedPreampToTheQueue(curve: curve) }
                 guard let measured, var next = drawn.curve,
                       next.bands == curve.bands, next.preampDb == fitted else { return }

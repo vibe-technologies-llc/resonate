@@ -6,10 +6,10 @@ use std::{
 
 use ahash::AHashSet;
 use crossbeam_channel::{Receiver, Sender, bounded, unbounded};
-use resonate_analysis::{Analysis, CUTS_AT_MOST, Cut, KeptAnalyses, Loudest, Watching};
+use resonate_analysis::{Analysis, Applied, CUTS_AT_MOST, Cut, KeptAnalyses, Loudest, Watching};
 use resonate_audio::SinkInfo;
 use resonate_codec::Sources;
-use resonate_core::{FrameSpan, MediaLocation, eq::Profile};
+use resonate_core::{FrameSpan, MediaLocation};
 #[cfg(target_os = "linux")]
 use resonate_pipewire::PipeWire;
 
@@ -251,10 +251,10 @@ impl Player {
     pub fn loudest_among(
         &self,
         cuts: &[Cut],
-        profile: &Arc<Profile>,
+        applied: &Applied,
         watch: &dyn Watching,
     ) -> resonate_analysis::Result<Loudest> {
-        resonate_analysis::loudest_through(&self.sources, cuts, profile, watch)
+        resonate_analysis::loudest_through(&self.sources, cuts, applied, watch)
     }
 
     pub fn keeping_analyses(mut self, kept: KeptAnalyses) -> Self {

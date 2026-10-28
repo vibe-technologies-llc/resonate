@@ -83,13 +83,15 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   is never a FLAC
 
 ## Later: Equaliser and DSP extras
-- [M] *Fit the preamp* on both desktop and phones leaves room correction and the volume stage
-  outside what it runs (the phones hold no applied response the fit could read, and the convolver
-  is not part of the stage the decode runs)
 - [M] *Fit the preamp*'s kept-figure bound still sits 2 to 6 dB over the decode for broadband
   music under a curve that moves many bands, and a band whose skirt reaches a narrow boost pays a
   little of it: each node's share of a frequency is fixed by the curve, not fitted to the song's
   peaks (solving the tone model's dual per song would let a quiet band carry a boost it borders)
+- [M] *Fit the preamp*'s kept-figure bound pays a linear-phase room correction whole from the
+  song's peaks, because a moment holds only a tenth of a second each way and the response's main
+  lobe sits half its length later (shifting each moment by the response's delay would let the
+  anchors and the nodes meet in one moment again); the fit runs the response's own taps against
+  every point it weighs, about a second for a ten-second response on this machine
 - [M] AutoEq is the only online correction source, fetched one device at a time; a measurement of
   the listener's own is fitted to a target on every front end, but only from a file
 - [M] Lossy restoration was tuned and tested on ffmpeg's own MP3, AAC and Vorbis encodes of

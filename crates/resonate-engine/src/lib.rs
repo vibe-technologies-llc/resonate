@@ -21,7 +21,7 @@ mod turns;
 mod zones;
 
 pub use resonate_analysis::{
-    Analysis, AnalysisOp, CUTS_AT_MOST, Cut, Cutoff, ENVELOPE_LANES, Envelope,
+    Analysis, AnalysisOp, Applied, BandGains, CUTS_AT_MOST, Cut, Cutoff, ENVELOPE_LANES, Envelope,
     Error as AnalysisError, Examined, FLOOR_DB, Finding, Judgement, KeptAnalyses, Levels,
     LossyGuess, Loudest, Loudness, Ramp, Reach, SPECTROGRAM_ROWS, Spectrogram, Spectrum, Stereo,
     Study, Verdict, Watch, Watching, analyse, study,

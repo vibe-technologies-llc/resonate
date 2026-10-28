@@ -433,8 +433,8 @@ Editing a band or the preamp clears that preset name. An empty flat curve shows 
 the bands only on a completed edit. An AutoEq or imported profile keeps its filters, frequencies,
 Q and preamp; its gain-bearing bands get sliders without being converted to the octave layout.
 Advanced exposes the interactive graph, accessible band selectors and per-band type, frequency,
-gain and Q. *Fit the preamp* under the preamp slider sends the shown curve to the boundary's
-`fitted_preamp` at the stream rate (`fittedPreamp`, off the main thread) and commits
+gain and Q. *Fit the preamp* under the preamp slider sends the shown curve to the player's
+`fitted_preamp` at the stream rate, through the room correction applied (`fittedPreamp`, off the main thread) and commits
 the answer as a preamp edit, clearing the preset name; it is off with no bands. Every edit of a band
 or the preamp (slider, graph, band editor, added or deleted band, fit) switches the equaliser on, as a
 preset does (`withCurve`); only the switch turns it off, and confirmed reset removes

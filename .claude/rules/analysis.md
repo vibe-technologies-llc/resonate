@@ -39,8 +39,9 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
   (`a_stream_that_turns_is_as_loud_as_the_same_tone_that_never_does`,
   `a_study_of_a_stream_that_turns_covers_every_link_in_the_shape_it_opened_in`).
 - **`peak_through` is a decode of its own, not part of a study.** It walks like `print` and `excerpt`
-  (`Walking`, `follow_format_changes`) but runs the equaliser stage and a true-peak meter instead of
-  the builders, stores nothing and is asked on a press for the songs no study has measured
+  (`Walking`, `follow_format_changes`) but runs the room correction's `Convolver` (where one is applied, its tail flushed through the
+  stage once the song ends) and the equaliser stage, then a true-peak meter, instead of the
+  builders, stores nothing and is asked on a press for the songs no study has measured
   (`eq.md`, *Fit the preamp to the music*).
 - **A study keeps where the music sounds, per band.** `BandLevels::of(&spectrum)` sums the study's
   per-bin mean power into 29 third-octave bands (`BANDS`; edges at 25 Hz times `2^(n/3)`, band 0
