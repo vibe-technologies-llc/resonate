@@ -30,6 +30,7 @@ mod time;
 pub mod titles;
 mod volume;
 pub mod writer;
+mod zone;
 
 pub use crate::{
     answer::{
@@ -70,4 +71,5 @@ pub use crate::{
     text::{LegacyEncoding, TextEncoding},
     time::{FrameSpan, Frames},
     volume::{AppliedGain, Decibels, Gain, Trim, Volume},
+    zone::{KeptZone, LONGEST_ZONE_NAME, ZoneId, ZoneName},
 };

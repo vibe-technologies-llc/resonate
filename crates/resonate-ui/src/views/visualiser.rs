@@ -2,8 +2,8 @@ use std::time::{Duration, Instant};
 
 use gpui::{
     AnyElement, Bounds, Canvas, Context, Corners, Div, Entity, Pixels, Point, Render, SharedString,
-    Task, Window, canvas, div, fill, linear_color_stop, linear_gradient, point, prelude::*, px,
-    rgb,
+    Subscription, Task, Window, canvas, div, fill, linear_color_stop, linear_gradient, point,
+    prelude::*, px, rgb,
 };
 use resonate_core::{Frames, SampleRate, Spectral, SpectrumBands, SpectrumTilt};
 use resonate_engine::{Caught, PlaybackState, Tap, Tapped};
@@ -151,6 +151,7 @@ impl Showing {
 
 pub(crate) struct Visualiser {
     player: Entity<PlayerModel>,
+    _watched: Subscription,
     showing: Showing,
     spectrum: Spectrum,
     stereo: Stereo,
@@ -165,10 +166,11 @@ pub(crate) struct Visualiser {
 
 impl Visualiser {
     pub(crate) fn new(player: Entity<PlayerModel>, cx: &mut Context<Self>) -> Self {
-        cx.observe(&player, |_, _, cx| cx.notify()).detach();
+        let watched = cx.observe(&player, |_, _, cx| cx.notify());
 
         Self {
             player,
+            _watched: watched,
             showing: Showing::default(),
             spectrum: Spectrum::new(DRAWN_BEFORE_ANYTHING_IS_HEARD, Spectral::default()),
             stereo: Stereo::default(),
@@ -180,6 +182,13 @@ impl Visualiser {
             drawn_at: None,
             settling: Task::ready(()),
         }
+    }
+
+    pub(crate) fn follow(&mut self, player: Entity<PlayerModel>, cx: &mut Context<Self>) {
+        self._watched = cx.observe(&player, |_, _, cx| cx.notify());
+        self.player = player;
+        self.traced = None;
+        cx.notify();
     }
 
     pub(crate) const fn showing(&self) -> Showing {

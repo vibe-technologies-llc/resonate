@@ -20,7 +20,7 @@ use resonate_core::{
 use resonate_engine::{
     ArtRead, BitRate, Command, CommandKind, Event, MediaInfo, NodeName, Outcome, OutputSettings,
     PlaybackState, Player, PlayerState, QueueRows, Queued, SinkId, SinkInfo, StreamDigest, Tapped,
-    TrackState,
+    TrackState, Zones,
 };
 use resonate_eq::Corrected;
 use resonate_library::{Fingerprinters, HistoryKept, Library, Reference, Scrobblers};
@@ -166,7 +166,7 @@ pub struct Lookups {
 }
 
 pub struct ResonateApp {
-    pub player: Arc<Player>,
+    pub zones: Arc<Zones>,
     pub library: Arc<Library>,
     pub lyricists: Arc<Lyricists>,
     pub fingerprinters: Arc<Fingerprinters>,
@@ -1015,7 +1015,7 @@ fn quit_once_the_last_window_closes(cx: &mut App) {
 }
 
 pub fn run(
-    player: Arc<Player>,
+    zones: Arc<Zones>,
     library: Arc<Library>,
     lookups: Lookups,
     stored: Stored,
@@ -1038,7 +1038,7 @@ pub fn run(
         crate::fonts::settle(&cx.text_system().all_font_names());
         cx.set_global(Drawer::new());
         cx.set_global(ResonateApp {
-            player: Arc::clone(&player),
+            zones: Arc::clone(&zones),
             library,
             lyricists: Arc::clone(&lookups.lyricists),
             fingerprinters: Arc::clone(&lookups.fingerprinters),

@@ -24,7 +24,10 @@ pub use crate::{
         Tuned,
     },
     icons::tell_the_icons_changed,
-    remote::{Described, PlayerName, Queueing, ROWS_A_CALL, Running, Seeking, Session, Standing},
+    remote::{
+        Described, PlayerName, Queueing, ROWS_A_CALL, Running, Seeking, Session, Standing,
+        ZoneAsked,
+    },
     service::{Mpris, Teller, Told},
     track::{PlaybackStatus, utc_stamp},
     trash::{Trashing, trash_through_the_portal},

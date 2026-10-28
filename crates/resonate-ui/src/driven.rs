@@ -17,11 +17,12 @@ use gpui::{
     TestAppContext, TouchPhase, VisualTestContext, point, px, size,
 };
 use resonate_core::{
-    Appearance, Frames, Gain, MediaLocation, QueueStamp, Resumable, Resumption, TrackId,
+    Appearance, Frames, Gain, MediaLocation, QueueStamp, Resumable, Resumption, TrackId, ZoneId,
+    ZoneName,
 };
 use resonate_engine::{
-    AudioSource, Backend, Command, EngineConfig, Opener, Player, SinkChange, SinkError, SinkId,
-    SinkInfo, SinkResult, SinkStream, StreamRequest, Surveyor,
+    AudioSource, Backend, Command, EngineConfig, Opener, Opening, Opens, Player, SinkChange,
+    SinkError, SinkId, SinkInfo, SinkResult, SinkStream, StreamRequest, Surveyor, Zones,
 };
 use resonate_eq::Corrected;
 use resonate_library::{Fingerprinters, Library, Playing, Reference, ScanOptions};
@@ -200,6 +201,22 @@ fn player_over(sinks: Vec<SinkInfo>) -> Arc<Player> {
     )
 }
 
+struct OverTheSame(Vec<SinkInfo>);
+
+impl Opens for OverTheSame {
+    fn open(&self, _: &Opening, _: &Player) -> resonate_engine::Result<Arc<Player>> {
+        Ok(player_over(self.0.clone()))
+    }
+}
+
+pub(crate) fn zones_over(sinks: Vec<SinkInfo>) -> Arc<Zones> {
+    Zones::start(
+        player_over(sinks.clone()),
+        ZoneName::first_given_to(ZoneId::FIRST),
+        Arc::new(OverTheSame(sinks)),
+    )
+}
+
 fn nobody_listening() -> Listens {
     Listens {
         listener: Listener::new("resonate-tests"),
@@ -363,7 +380,7 @@ impl Driven {
         cx.update(|cx| {
             cx.set_global(Drawer::new());
             cx.set_global(ResonateApp {
-                player: player_over(sinks),
+                zones: zones_over(sinks),
                 library,
                 lyricists: Arc::new(lyricists),
                 fingerprinters: Arc::clone(&fingerprinters),
@@ -468,7 +485,7 @@ impl Driven {
             .collect();
         let player = self
             .cx
-            .update(|_, cx| Arc::clone(&cx.global::<ResonateApp>().player));
+            .update(|_, cx| cx.global::<ResonateApp>().zones.first().player);
         player
             .send(Command::Resume(Resumption {
                 rows,
@@ -923,6 +940,62 @@ mod tests {
         let library = catalog();
         Driven::scanned(&library, folder);
         library
+    }
+
+    #[gpui::test]
+    fn a_zone_added_is_shown_with_a_queue_of_its_own_and_switching_back_touches_neither(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes"]);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        let root = driven.root.clone();
+        let second = ZoneId::new(2).expect("a second zone");
+        let row = resonate_engine::QueueItem {
+            id: TrackId::new(7).expect("a track id"),
+            location: MediaLocation::local(folder.path().join("elsewhere.flac")),
+            span: None,
+        };
+
+        driven
+            .cx
+            .update(|_, cx| root.update(cx, |root, cx| root.add_a_zone(cx)));
+        driven.until(|root, _| root.zones.len() == 2);
+        let shown_second = driven.read(|root, _| root.switcher.selected());
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| {
+                root.send(
+                    Command::Insert {
+                        items: vec![row.clone()],
+                        at: Placement::Queued,
+                        play: false,
+                    },
+                    cx,
+                );
+            });
+        });
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
+        driven
+            .cx
+            .update(|_, cx| root.update(cx, |root, cx| root.show_zone(ZoneId::FIRST, cx)));
+        driven.settle();
+        let first_queue = driven.read(|root, cx| root.player.read(cx).queue().len());
+        let label = driven.read(|root, _| root.switcher.label());
+        let menu = driven.read(|root, _| root.zone_menu(Point::default()).labels());
+
+        driven
+            .cx
+            .update(|_, cx| root.update(cx, |root, cx| root.remove_the_zone(second, cx)));
+        driven.until(|_, cx| cx.global::<ResonateApp>().zones.count() == 1);
+
+        assert_eq!(shown_second, second);
+        assert_eq!(first_queue, 0, "a row queued in one zone landed in another");
+        assert_eq!(label.as_deref(), Some("Zone 1"));
+        assert_eq!(
+            menu,
+            vec!["Zone 1", "Zone 2", "", "Add a zone", "Rename this zone…"]
+        );
+        assert!(driven.read(|root, _| root.zones.len() == 1 && !root.switcher.several()));
     }
 
     #[gpui::test]

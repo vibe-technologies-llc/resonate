@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use resonate_core::{FrameSpan, MediaLocation, PlaylistId, SourceId, TrackId};
+use resonate_core::{FrameSpan, MediaLocation, PlaylistId, SourceId, TrackId, ZoneId, ZoneName};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Opened {
@@ -90,6 +90,10 @@ pub struct Heard {
 
 pub trait Host: Send + Sync + 'static {
     fn identity(&self) -> String;
+
+    fn zone(&self) -> ZoneName {
+        ZoneName::first_given_to(ZoneId::FIRST)
+    }
 
     fn desktop_entry(&self) -> Option<String> {
         None

@@ -28,14 +28,24 @@ struct Farewell {
     drains_within: Duration,
 }
 
+pub(crate) type Silencing = Arc<dyn Fn() + Send + Sync>;
+
+pub(crate) fn silencing(
+    players: impl Fn() -> Vec<Arc<Player>> + Send + Sync + 'static,
+) -> Silencing {
+    Arc::new(move || {
+        for player in players() {
+            if let Err(error) = player.send(Command::Stop) {
+                tracing::debug!(%error, "the engine had already stopped");
+            }
+        }
+    })
+}
+
 impl Farewell {
-    fn of(player: Arc<Player>) -> Self {
+    fn of(silence: Silencing) -> Self {
         Self {
-            silence: Arc::new(move || {
-                if let Err(error) = player.send(Command::Stop) {
-                    tracing::debug!(%error, "the engine had already stopped");
-                }
-            }),
+            silence,
             leaving: Arc::new(|signal| leave(signal)),
             silenced_after: SILENCED_AFTER,
             drains_within: DRAINS_WITHIN,
@@ -43,7 +53,7 @@ impl Farewell {
     }
 }
 
-pub(crate) fn quit_when_told(asked_to_quit: Sender<()>, player: Arc<Player>) {
+pub(crate) fn quit_when_told(asked_to_quit: Sender<()>, silence: Silencing) {
     let watched = match Signals::new(ASKING_TO_LEAVE) {
         Ok(watched) => watched,
         Err(error) => {
@@ -51,7 +61,7 @@ pub(crate) fn quit_when_told(asked_to_quit: Sender<()>, player: Arc<Player>) {
             return;
         }
     };
-    let farewell = Farewell::of(player);
+    let farewell = Farewell::of(silence);
 
     let spawned = thread::Builder::new()
         .name("resonate-signals".to_owned())

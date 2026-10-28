@@ -63,9 +63,9 @@ impl Sleep {
     }
 }
 
-pub fn set(spoken: &str, player: Option<&str>) -> Result<()> {
+pub fn set(spoken: &str, player: Option<&str>, zone: Option<&str>) -> Result<()> {
     let wanted = Sleep::read(spoken)?;
-    let running = reached(player)?;
+    let running = reached(player, zone)?;
     running.set_sleep(wanted.until())?;
 
     said!("{}: {}", running.name(), reads_as(&running)?);

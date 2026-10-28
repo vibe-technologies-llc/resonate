@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt, path::Path, time::Duration};
 
-use resonate_core::{FrameSpan, MediaLocation, PlaylistId, TrackId, Volume};
+use resonate_core::{FrameSpan, MediaLocation, PlaylistId, TrackId, Volume, ZoneId};
 use resonate_engine::{Asleep, Placement, Until};
 use zbus::{
     OwnedObjectPath, OwnedVariant,
@@ -11,7 +11,7 @@ use crate::{
     BusOp, Error, PlaylistInfo, PlaylistOrder, Reloadable, Result, Tunable,
     blocking::{Connection, Proxy, connection, fdo::DBusProxy},
     interfaces::OWN_INTERFACE,
-    service::{BUS_NAME, OBJECT_PATH},
+    service::{BUS_NAME, OBJECT_PATH, ZONE_PREFIX},
     track::{
         NO_TRACK, PlaybackStatus, no_track, playlist_of, playlist_path, sleep_asked, sleep_timer,
         track_of, track_path,
@@ -38,6 +38,8 @@ const RELOAD: &str = "Reload";
 const MOVES_A_CALL: usize = 4096;
 pub const ROWS_A_CALL: usize = 128;
 const PLAYING_NEXT: &str = "PlayingNext";
+const ZONE: &str = "Zone";
+const INSTANCE_PREFIX: &str = "instance";
 const PLAY_ORDER: &str = "PlayOrder";
 const PLAY: &str = "Play";
 const PAUSE: &str = "Pause";
@@ -81,6 +83,31 @@ impl fmt::Display for PlayerName {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ZoneAsked {
+    Numbered(ZoneId),
+    Named(String),
+}
+
+impl ZoneAsked {
+    pub fn read(given: &str) -> Self {
+        let given = given.trim();
+        match given.parse().ok().and_then(ZoneId::new) {
+            Some(zone) => Self::Numbered(zone),
+            None => Self::Named(given.to_owned()),
+        }
+    }
+}
+
+impl fmt::Display for ZoneAsked {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Numbered(zone) => write!(f, "{zone}"),
+            Self::Named(name) => f.write_str(name),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Queueing {
     pub at: Placement,
@@ -117,6 +144,7 @@ pub struct Described {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Standing {
     pub name: OwnedWellKnownName,
+    pub zone: Option<String>,
     pub playback: Option<PlaybackStatus>,
     pub queued: usize,
     pub title: Option<String>,
@@ -181,8 +209,34 @@ impl Running {
         Ok(Some(Self { connection, name }))
     }
 
+    pub fn zoned(asked: &ZoneAsked) -> Result<Option<Self>> {
+        Self::zoned_in(&Session::open()?, asked)
+    }
+
+    pub fn zoned_in(session: &Session, asked: &ZoneAsked) -> Result<Option<Self>> {
+        let connection = &session.0;
+        Ok(ours(connection)?
+            .into_iter()
+            .map(|name| Self {
+                connection: connection.clone(),
+                name,
+            })
+            .find(|running| match asked {
+                ZoneAsked::Numbered(zone) => numbered(running.name.as_str()) == Some(*zone),
+                ZoneAsked::Named(given) => running
+                    .zone()
+                    .is_ok_and(|zone| zone.to_lowercase() == given.to_lowercase()),
+            }))
+    }
+
     pub const fn name(&self) -> &WellKnownName<'static> {
         &self.name
+    }
+
+    pub fn zone(&self) -> Result<String> {
+        self.proxy(OWN_INTERFACE)?
+            .get_property(ZONE)
+            .map_err(|source| Error::bus(BusOp::Read, source))
     }
 
     pub fn standing(&self) -> Result<Standing> {
@@ -194,6 +248,7 @@ impl Running {
 
         Ok(Standing {
             name: self.name.clone().into(),
+            zone: self.zone().ok(),
             playback,
             queued: self.tracks()?.len(),
             title: text(&metadata, TITLE),
@@ -601,6 +656,18 @@ fn names_an_instance(rest: &str) -> bool {
         .is_some_and(|instance| !instance.is_empty())
 }
 
+fn numbered(name: &str) -> Option<ZoneId> {
+    let rest = name.strip_prefix(BUS_NAME)?;
+    if rest.is_empty() {
+        return Some(ZoneId::FIRST);
+    }
+    let last = rest.rsplit('.').next()?;
+    match last.strip_prefix(ZONE_PREFIX) {
+        Some(number) => ZoneId::new(number.parse().ok()?),
+        None => last.starts_with(INSTANCE_PREFIX).then_some(ZoneId::FIRST),
+    }
+}
+
 fn answers_to(name: &str, given: &str) -> bool {
     name == given
         || name
@@ -670,11 +737,44 @@ mod tests {
 
     #[test]
     fn a_name_of_this_build_is_the_one_it_claims_or_an_instance_of_it() {
+        assert!(names_this_build(&format!("{BUS_NAME}.zone2")));
         assert!(names_this_build(BUS_NAME));
         assert!(names_this_build(&format!("{BUS_NAME}.instance1234")));
         assert!(!names_this_build(&format!("{BUS_NAME}.")));
         assert!(!names_this_build(&format!("{BUS_NAME}-other")));
         assert!(!names_this_build("org.mpris.MediaPlayer2.vlc"));
+    }
+
+    #[test]
+    fn a_zone_is_found_by_the_number_its_bus_name_ends_in_and_the_first_by_the_plain_name() {
+        let second = ZoneId::new(2).expect("a second zone");
+
+        assert_eq!(numbered(BUS_NAME), Some(ZoneId::FIRST));
+        assert_eq!(
+            numbered(&format!("{BUS_NAME}.instance1234")),
+            Some(ZoneId::FIRST)
+        );
+        assert_eq!(numbered(&format!("{BUS_NAME}.zone2")), Some(second));
+        assert_eq!(
+            numbered(&format!("{BUS_NAME}.instance1234.zone2")),
+            Some(second)
+        );
+        assert_eq!(numbered(&format!("{BUS_NAME}.zonex")), None);
+        assert_eq!(numbered("org.mpris.MediaPlayer2.vlc"), None);
+        assert!(answers_to(&format!("{BUS_NAME}.zone2"), "zone2"));
+    }
+
+    #[test]
+    fn a_zone_asked_for_by_a_number_is_numbered_and_by_anything_else_named() {
+        assert_eq!(
+            ZoneAsked::read(" 2 "),
+            ZoneAsked::Numbered(ZoneId::new(2).expect("a second zone"))
+        );
+        assert_eq!(ZoneAsked::read("0"), ZoneAsked::Named("0".to_owned()));
+        assert_eq!(
+            ZoneAsked::read("Living room"),
+            ZoneAsked::Named("Living room".to_owned())
+        );
     }
 
     #[test]

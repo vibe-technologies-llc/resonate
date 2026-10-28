@@ -2,7 +2,7 @@ use std::{fmt, io, path::PathBuf, result};
 
 use resonate_core::MediaLocation;
 use resonate_library::{PassKind, PlaylistName};
-use resonate_mpris::PlayerName;
+use resonate_mpris::{PlayerName, ZoneAsked};
 use resonate_pipewire::NodeName;
 use thiserror::Error;
 
@@ -521,6 +521,9 @@ pub enum Error {
 
     #[error("no player named {name} is on the session bus; resonate players lists what is")]
     NoSuchPlayer { name: PlayerName },
+
+    #[error("no zone {zone} is on the session bus; resonate players lists the zones running")]
+    NoSuchZone { zone: ZoneAsked },
 
     #[error("no playlist named {0}")]
     NoSuchPlaylist(PlaylistName),

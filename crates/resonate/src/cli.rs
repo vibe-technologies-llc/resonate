@@ -507,6 +507,15 @@ pub struct QueueArgs {
 
     #[arg(
         long,
+        value_name = "ZONE",
+        conflicts_with = "player",
+        help = "Address this zone of the window by its number (1 is the first) or by the name \
+                the window shows. With neither this nor --player it is the first zone"
+    )]
+    pub zone: Option<String>,
+
+    #[arg(
+        long,
         help = "Play them straight after the row being played, ahead of anything already \
                 queued, rather than after what is queued"
     )]
@@ -1148,6 +1157,15 @@ pub enum Sub {
                     the lowest instance where another process holds that"
         )]
         player: Option<String>,
+
+        #[arg(
+            long,
+            value_name = "ZONE",
+            conflicts_with = "player",
+            help = "Set it on this zone of the window, by its number (1 is the first) or by the \
+                    name the window shows. With neither this nor --player it is the first zone"
+        )]
+        zone: Option<String>,
     },
 
     #[command(

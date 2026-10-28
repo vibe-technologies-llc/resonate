@@ -20,11 +20,11 @@ use gpui::{
 };
 use resonate_core::{
     AlbumId, ArtistId, ArtistsDrawn, Frames, MediaLocation, PlaylistId, QueueStamp, Span, TrackId,
-    Volume,
+    Volume, ZoneId,
 };
 use resonate_engine::{
-    Command, Counting, Keeping, Listening, Placement, PlaybackState, PlayerState, QueueItem,
-    QueueRows, RepeatMode, Unclaimed, stamp_of,
+    Command, Counting, Placement, PlayerState, QueueItem, QueueRows, RepeatMode, Unclaimed,
+    stamp_of,
 };
 use resonate_library::{
     ArtistFound, Cut, Direction, HistoryKept, Kept, Library, Playing, Playlist, PlaylistEntry,
@@ -38,7 +38,7 @@ use crate::{
     analysis::AnalysisModel,
     app::{
         ChooseReached, CycleRepeat, DropReached, FocusFilter, FocusSearch, GoToTheResults,
-        HopAbove, HopBelow, LeaveControl, LeaveSearch, Listen, LowerRow, Moved, Next, NextPane,
+        HopAbove, HopBelow, LeaveControl, LeaveSearch, Listen, LowerRow, Next, NextPane,
         OpenTheMenu, PasteAway, Pause, PlayPauseUnlessTyping, PlayReached, Previous, PreviousPane,
         Quit, RaiseRow, ReachAbove, ReachBelow, ReachEverything, ReachFirst, ReachLast, ReachNext,
         ReachPageAbove, ReachPageBelow, ReachPrevious, RedoEdit, SeekBackward, SeekForward,
@@ -84,6 +84,7 @@ use crate::{
         transport::{Handovers, Resolved, ShownCover},
         typing::{self, TypeAhead, jumped},
         visualiser::Visualiser,
+        zones::{self, Switcher, ZONE_NAME_PLACEHOLDER, ZoneShown},
     },
 };
 
@@ -679,15 +680,17 @@ pub struct RootView {
     pub(crate) inspected_room: Rc<Cell<Pixels>>,
     pub(crate) heading_room: Rc<Cell<Pixels>>,
     pub(crate) columns_fit: listing::Fitting,
-    listening: Listening,
-    resuming: Keeping,
+    pub(crate) zones: Vec<ZoneShown>,
+    pub(crate) switcher: Switcher,
+    pub(crate) naming_the_zone: Option<ZoneId>,
+    pub(crate) zone_name: Entity<Field>,
     following: Following,
     magnified: Option<Magnified>,
     pointer_inside: bool,
     volume_settled: Task<()>,
     pub(crate) band_retuning: Task<()>,
     pub(crate) band_untold: Option<bool>,
-    volume_aimed: Option<f32>,
+    pub(crate) volume_aimed: Option<f32>,
     pub(crate) muted_from: Option<Volume>,
     type_ahead: TypeAhead,
     typing_stops: Task<()>,
@@ -709,7 +712,7 @@ pub struct RootView {
     token_checked: Task<()>,
     pub(crate) signing_in: SigningIn,
     pub(crate) lastfm_signing: LastfmSigning,
-    parts: Parts,
+    pub(crate) parts: Parts,
 }
 
 fn token_notice(held: resonate_library::Result<TokenHeld>) -> Notice {
@@ -766,7 +769,7 @@ impl RootView {
             Category::default()
         };
         let last_window_size = WindowSize::from_pixels(window.window_bounds().get_bounds().size);
-        let player = Arc::clone(&global.player);
+        let zones = Arc::clone(&global.zones);
         let library = Arc::clone(&global.library);
         let settings = Arc::clone(&global.settings);
         let lyricists = Arc::clone(&global.lyricists);
@@ -782,11 +785,10 @@ impl RootView {
         let resume = global.resume;
         let organise_as = global.organise_as.clone();
         let sourcing = global.sourcing.clone();
-        let engine = Arc::clone(&global.player);
+        let engine = Arc::clone(&global.zones.first().player);
         let catalog = Arc::clone(&global.library);
         let fingerprinters = Arc::clone(&global.fingerprinters);
 
-        let player = cx.new(|cx| PlayerModel::new(player, cx));
         let library = cx.new(|cx| {
             LibraryModel::new(
                 library,
@@ -813,6 +815,17 @@ impl RootView {
             ),
         };
         let lyrics = cx.new(|_| LyricsModel::new(lyricists));
+        let held_zones = zones.listed();
+        let switcher = Switcher::of(held_zones.iter().map(|zone| (zone.id, zone.name.clone())));
+        let shown_zones: Vec<ZoneShown> = held_zones
+            .iter()
+            .map(|zone| Self::watch_the_zone(zone, cx))
+            .collect();
+        let player = shown_zones
+            .iter()
+            .find(|zone| zone.id == ZoneId::FIRST)
+            .map(|zone| zone.player.clone())
+            .unwrap_or_else(|| unreachable!("the first zone is always held"));
         let visualiser = cx.new(|cx| Visualiser::new(player.clone(), cx));
         let reaching = cx.global::<ResonateApp>().online.enabled;
         let analysis =
@@ -823,22 +836,6 @@ impl RootView {
         cx.observe(&listen, |_, _, cx| cx.notify()).detach();
         cx.observe_global::<Toaster>(|_, cx| cx.notify()).detach();
         player.read(cx).listen_in(true);
-        cx.observe(&player, |this, player, cx| {
-            let playing = player.read(cx).state().playback == PlaybackState::Playing;
-            this.library
-                .update(cx, |library, _| library.heard_playing(playing));
-            this.count_a_play(&player, cx);
-            this.keep_the_queue(&player, cx);
-            this.follow_the_playing_row(&player, cx);
-            this.look_for_lyrics(cx);
-            match player.read(cx).moved() {
-                Moved::Clock => this
-                    .parts
-                    .the_clock_moved(this.pane.follows_the_clock(), cx),
-                Moved::More => cx.notify(),
-            }
-        })
-        .detach();
         cx.observe_in(&library, window, |this, library, window, cx| {
             this.forget_what_has_gone(&library, cx);
             this.let_go_of_a_reach_the_rows_left(cx);
@@ -899,6 +896,12 @@ impl RootView {
             this.library
                 .update(cx, |library, cx| library.ask_elsewhere_now(cx));
             this.go_to_the_results(window, cx);
+        })
+        .detach();
+
+        let zone_name = cx.new(|cx| Field::new(ZONE_NAME_PLACEHOLDER, window, cx));
+        cx.subscribe_in(&zone_name, window, |this, _, _: &Submitted, window, cx| {
+            this.zone_named(window, cx);
         })
         .detach();
 
@@ -1222,8 +1225,10 @@ impl RootView {
             query_sort: SortOrder::default(),
             query_reading: SortOrder::default().reads(),
             query_cap: None,
-            listening: Listening::default(),
-            resuming: Keeping::default(),
+            zones: shown_zones,
+            switcher,
+            naming_the_zone: None,
+            zone_name,
             following: Following::default(),
             queue_rows: UniformListScrollHandle::default(),
             playlist_rows: UniformListScrollHandle::default(),
@@ -1332,12 +1337,20 @@ impl RootView {
         });
     }
 
-    fn count_a_play(&mut self, player: &Entity<PlayerModel>, cx: &mut Context<Self>) {
+    pub(crate) fn count_a_play(
+        &mut self,
+        id: ZoneId,
+        player: &Entity<PlayerModel>,
+        cx: &mut Context<Self>,
+    ) {
         let (state, queue) = {
             let model = player.read(cx);
             (model.state().clone(), model.queue())
         };
-        let Some(counting) = self.listening.heard(&state, &queue) else {
+        let Some(zone) = self.zones.iter_mut().find(|zone| zone.id == id) else {
+            return;
+        };
+        let Some(counting) = zone.listening.heard(&state, &queue) else {
             return;
         };
 
@@ -1349,7 +1362,12 @@ impl RootView {
         });
     }
 
-    fn keep_the_queue(&mut self, player: &Entity<PlayerModel>, cx: &mut Context<Self>) {
+    pub(crate) fn keep_the_queue(
+        &mut self,
+        id: ZoneId,
+        player: &Entity<PlayerModel>,
+        cx: &mut Context<Self>,
+    ) {
         if !self.library.read(cx).resumes() {
             return;
         }
@@ -1357,15 +1375,18 @@ impl RootView {
             let model = player.read(cx);
             (model.state().clone(), model.queued())
         };
-        let Some(keep) = self.resuming.kept(&state, &queued) else {
+        let Some(zone) = self.zones.iter_mut().find(|zone| zone.id == id) else {
+            return;
+        };
+        let Some(keep) = zone.resuming.kept(&state, &queued) else {
             return;
         };
 
         self.library
-            .update(cx, |library, cx| library.keep_the_queue(keep, cx));
+            .update(cx, |library, cx| library.keep_the_queue(id, keep, cx));
     }
 
-    fn follow_the_playing_row(&mut self, player: &Entity<PlayerModel>, cx: &App) {
+    pub(crate) fn follow_the_playing_row(&mut self, player: &Entity<PlayerModel>, cx: &App) {
         let playing = PlayingRow::of(player.read(cx).state());
         if self
             .following
@@ -1390,7 +1411,11 @@ impl RootView {
     }
 
     pub(crate) fn send(&self, command: Command, cx: &mut Context<Self>) {
-        self.player.read(cx).send(command);
+        let kind = command.kind();
+        if let Err(error) = Self::zones(cx).send(self.switcher.selected(), command) {
+            tracing::warn!(%error, command = ?kind, "the engine refused a command");
+            toast::tell(Notice::Trouble(zones::refusal(&error, &self.switcher)), cx);
+        }
     }
 
     pub(crate) fn send_by_position(&self, command: Command, cx: &mut Context<Self>) {
@@ -1421,12 +1446,18 @@ impl RootView {
     }
 
     pub(crate) fn store(&mut self, setting: &Setting, cx: &mut Context<Self>) {
+        if setting.key().is_the_zones_own() && !self.switcher.selected().is_first() {
+            return;
+        }
         self.settings_written
             .change(SettingChange::Store(setting.clone()));
         self.write_the_settings(cx);
     }
 
     pub(crate) fn forget(&mut self, key: SettingKey, cx: &mut Context<Self>) {
+        if key.is_the_zones_own() && !self.switcher.selected().is_first() {
+            return;
+        }
         self.settings_written.change(SettingChange::Forget(key));
         self.write_the_settings(cx);
     }
@@ -4181,6 +4212,7 @@ impl RootView {
     fn text_fields(&self) -> impl Iterator<Item = &Entity<Field>> {
         [
             &self.search,
+            &self.zone_name,
             &self.name,
             &self.contact,
             &self.acoustid,
@@ -4273,6 +4305,10 @@ impl RootView {
 
     fn dismiss_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.close_the_menu(cx) {
+            return;
+        }
+        if self.zone_name.read(cx).is_focused(window) {
+            self.stop_naming_the_zone(window, cx);
             return;
         }
         if self.finding.read(cx).is_focused(window) {
@@ -4617,6 +4653,7 @@ impl RootView {
                     .gap_2()
                     .w(px(theme::sidebar_width() - 32.0))
                     .justify_end()
+                    .child(self.zone_switcher(cx))
                     .when(client_side, |bar| {
                         bar.child(self.window_controls(window, cx))
                     }),

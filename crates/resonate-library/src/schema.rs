@@ -16,6 +16,7 @@ const MIGRATIONS: &[&str] = &[
     AN_UNHELD_LISTEN_KEEPS_WHAT_IT_WAS,
     A_SONG_RECEIVED_GOES_WITH_ITS_FILE,
     A_STUDY_KEEPS_WHERE_ITS_PEAKS_GATHER,
+    A_ZONE_KEEPS_ITS_OWN_QUEUE,
 ];
 
 const STAMPS: [SchemaFingerprint; MIGRATIONS.len() + 1] = stamps();
@@ -136,6 +137,51 @@ WHEN NOT EXISTS (SELECT 1 FROM tracks WHERE path = old.path)
 BEGIN
     DELETE FROM songs_received WHERE path = old.path;
 END;
+";
+
+const A_ZONE_KEEPS_ITS_OWN_QUEUE: &str = "
+CREATE TABLE zones (
+    id     INTEGER PRIMARY KEY CHECK (id > 0),
+    name   TEXT NOT NULL,
+    device TEXT,
+    volume REAL
+) STRICT;
+CREATE TABLE zoned_resume (
+    zone       INTEGER PRIMARY KEY CHECK (zone > 0),
+    row        INTEGER NOT NULL,
+    at         INTEGER NOT NULL,
+    shuffle    INTEGER NOT NULL DEFAULT 0,
+    taken      INTEGER NOT NULL,
+    next_first INTEGER,
+    next_last  INTEGER
+) STRICT;
+INSERT INTO zoned_resume (zone, row, at, shuffle, taken, next_first, next_last)
+SELECT 1, row, at, shuffle, taken, next_first, next_last FROM resume;
+DROP TABLE resume;
+ALTER TABLE zoned_resume RENAME TO resume;
+CREATE TABLE zoned_resume_rows (
+    zone        INTEGER NOT NULL,
+    position    INTEGER NOT NULL,
+    uri         TEXT NOT NULL,
+    span_start  INTEGER NOT NULL DEFAULT 0,
+    span_frames INTEGER,
+    PRIMARY KEY (zone, position)
+) STRICT, WITHOUT ROWID;
+INSERT INTO zoned_resume_rows (zone, position, uri, span_start, span_frames)
+SELECT 1, position, uri, span_start, span_frames FROM resume_rows;
+DROP TABLE resume_rows;
+ALTER TABLE zoned_resume_rows RENAME TO resume_rows;
+CREATE INDEX resume_rows_by_uri ON resume_rows(uri);
+CREATE TABLE zoned_resume_order (
+    zone      INTEGER NOT NULL,
+    position  INTEGER NOT NULL,
+    loaded_at INTEGER NOT NULL,
+    PRIMARY KEY (zone, position)
+) STRICT, WITHOUT ROWID;
+INSERT INTO zoned_resume_order (zone, position, loaded_at)
+SELECT 1, position, loaded_at FROM resume_order;
+DROP TABLE resume_order;
+ALTER TABLE zoned_resume_order RENAME TO resume_order;
 ";
 
 const V1: &str = "

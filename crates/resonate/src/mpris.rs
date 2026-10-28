@@ -2,7 +2,7 @@ use std::{
     env, fs,
     path::{Path, PathBuf},
     sync::{
-        Arc,
+        Arc, Weak,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -10,8 +10,8 @@ use std::{
 use clap::ValueEnum;
 use crossbeam_channel::{Receiver, Sender};
 use resonate_codec::Sources;
-use resonate_core::{FrameSpan, MediaLocation, SourceId, TrackId};
-use resonate_engine::{Command, NodeName, Placement, Player, QueueItem, Unclaimed};
+use resonate_core::{FrameSpan, MediaLocation, SourceId, TrackId, ZoneId, ZoneName};
+use resonate_engine::{Command, NodeName, Placement, Player, QueueItem, Unclaimed, Zones};
 use resonate_library::Library;
 use resonate_mpris::{Heard, Host, Mpris, Opened, Reloadable, Reloaded, Tunable, Tuned};
 
@@ -71,17 +71,63 @@ impl Attention {
     }
 }
 
-struct Desktop {
-    player: Arc<Player>,
+#[derive(Clone)]
+pub(crate) struct Serving {
     sources: Arc<Sources>,
     library: Option<Arc<Library>>,
     settings: Option<PathBuf>,
     quit: Option<Sender<()>>,
-    attention: Option<Attention>,
+    attention: Option<Arc<Attention>>,
     raise: Option<Sender<()>>,
     #[cfg(feature = "ui")]
     followed: Option<Sender<resonate_ui::Followed>>,
     notify: Arc<AtomicBool>,
+}
+
+impl Serving {
+    pub(crate) fn new(
+        sources: &Arc<Sources>,
+        library: Option<&Arc<Library>>,
+        settings: Option<PathBuf>,
+        quit: Option<Sender<()>>,
+        window: Option<Window>,
+        notify: &Arc<AtomicBool>,
+    ) -> Self {
+        #[cfg(feature = "ui")]
+        let followed = window.as_ref().map(|window| window.followed.clone());
+        let (attention, raise) = match window {
+            Some(window) => (Some(window.attention), Some(window.raise)),
+            None => (None, None),
+        };
+
+        Self {
+            sources: Arc::clone(sources),
+            library: library.map(Arc::clone),
+            settings,
+            quit,
+            attention: attention.map(|changes| {
+                Arc::new(Attention {
+                    changes,
+                    held: AtomicBool::new(OPENS_IN_FRONT),
+                })
+            }),
+            raise,
+            #[cfg(feature = "ui")]
+            followed,
+            notify: Arc::clone(notify),
+        }
+    }
+}
+
+struct Zoned {
+    zones: Weak<Zones>,
+    zone: ZoneId,
+}
+
+struct Desktop {
+    serving: Serving,
+    player: Arc<Player>,
+    zoned: Option<Zoned>,
 }
 
 pub(crate) struct Window {
@@ -93,7 +139,19 @@ pub(crate) struct Window {
 
 impl Host for Desktop {
     fn identity(&self) -> String {
-        IDENTITY.to_owned()
+        let Some((zones, zone)) = self.zones() else {
+            return IDENTITY.to_owned();
+        };
+        identity_of(
+            zones.count(),
+            zones.zone(zone).map(|zone| zone.name).as_ref(),
+        )
+    }
+
+    fn zone(&self) -> ZoneName {
+        self.zones()
+            .and_then(|(zones, zone)| zones.zone(zone))
+            .map_or_else(|| ZoneName::first_given_to(ZoneId::FIRST), |zone| zone.name)
     }
 
     fn desktop_entry(&self) -> Option<String> {
@@ -101,15 +159,15 @@ impl Host for Desktop {
     }
 
     fn can_quit(&self) -> bool {
-        self.quit.is_some()
+        self.serving.quit.is_some()
     }
 
     fn can_raise(&self) -> bool {
-        self.raise.is_some()
+        self.serving.raise.is_some()
     }
 
     fn raise(&self) {
-        let Some(raise) = self.raise.as_ref() else {
+        let Some(raise) = self.serving.raise.as_ref() else {
             return;
         };
         if raise.try_send(()).is_err() {
@@ -118,19 +176,24 @@ impl Host for Desktop {
     }
 
     fn attended(&self) -> bool {
-        self.attention.as_ref().is_some_and(Attention::held)
+        self.serving
+            .attention
+            .as_ref()
+            .is_some_and(|attention| attention.held())
     }
 
     fn notifies(&self) -> bool {
-        self.notify.load(Ordering::Acquire)
+        self.serving.notify.load(Ordering::Acquire)
     }
 
     fn answers_headsets(&self) -> bool {
-        true
+        self.zoned
+            .as_ref()
+            .is_none_or(|zoned| zoned.zone.is_first())
     }
 
     fn quit(&self) {
-        let Some(quit) = self.quit.as_ref() else {
+        let Some(quit) = self.serving.quit.as_ref() else {
             return;
         };
         if quit.try_send(()).is_err() {
@@ -139,7 +202,7 @@ impl Host for Desktop {
     }
 
     fn sources(&self) -> Vec<SourceId> {
-        self.sources.names()
+        self.serving.sources.names()
     }
 
     fn mime_types(&self) -> Vec<String> {
@@ -151,7 +214,7 @@ impl Host for Desktop {
         let mut minting = Unclaimed::beside(queue.iter().map(Arc::as_ref));
 
         let items = match location.as_path().filter(|_| names_a_sheet(location)) {
-            Some(sheet) => sheet_items(&self.sources, sheet, &mut minting),
+            Some(sheet) => sheet_items(&self.serving.sources, sheet, &mut minting),
             None => vec![QueueItem {
                 id: self
                     .held_as(location, span)
@@ -179,7 +242,7 @@ impl Host for Desktop {
     }
 
     fn heard(&self, location: &MediaLocation, span: Option<FrameSpan>) -> Option<Heard> {
-        let catalog = self.library.as_ref()?;
+        let catalog = self.serving.library.as_ref()?;
         let path = location.as_path()?;
 
         match catalog.track_at(path, span) {
@@ -196,7 +259,7 @@ impl Host for Desktop {
     }
 
     fn held_as(&self, location: &MediaLocation, span: Option<FrameSpan>) -> Option<TrackId> {
-        held_as(self.library.as_deref()?, location, span)
+        held_as(self.serving.library.as_deref()?, location, span)
     }
 
     fn tune(&self, setting: Tunable, value: &str) -> Tuned {
@@ -204,7 +267,7 @@ impl Host for Desktop {
             return Tuned::Refused;
         };
 
-        match self.player.send(command) {
+        match self.send(command) {
             Ok(()) => Tuned::Applied,
             Err(error) => {
                 tracing::warn!(%error, "a setting handed over the session bus did not reach the engine");
@@ -220,7 +283,7 @@ impl Host for Desktop {
 
         match group {
             Reloadable::Equaliser => self.equalised_again(Path::new(settings)),
-            Reloadable::Submission | Reloadable::Sync if self.library.is_some() => {
+            Reloadable::Submission | Reloadable::Sync if self.serving.library.is_some() => {
                 Reloaded::Applied
             }
             Reloadable::Submission | Reloadable::Sync => Reloaded::Refused,
@@ -230,8 +293,21 @@ impl Host for Desktop {
 }
 
 impl Desktop {
+    fn zones(&self) -> Option<(Arc<Zones>, ZoneId)> {
+        let zoned = self.zoned.as_ref()?;
+        Some((zoned.zones.upgrade()?, zoned.zone))
+    }
+
+    fn send(&self, command: Command) -> resonate_engine::Result<()> {
+        match self.zones() {
+            Some((zones, zone)) => zones.send(zone, command),
+            None => self.player.send(command),
+        }
+    }
+
     fn reads(&self, settings: &str) -> bool {
-        self.settings
+        self.serving
+            .settings
             .as_deref()
             .is_some_and(|own| same_file(own, Path::new(settings)))
     }
@@ -246,7 +322,7 @@ impl Desktop {
         };
         let equalisation = Arc::new(equaliser::resolved(&config));
 
-        match self.player.send(Command::SetEqualisation(equalisation)) {
+        match self.send(Command::SetEqualisation(equalisation)) {
             Ok(()) => {
                 self.tell_the_window_of_the_bindings(&config);
                 Reloaded::Applied
@@ -262,7 +338,7 @@ impl Desktop {
 #[cfg(feature = "ui")]
 impl Desktop {
     fn tell_the_window(&self, followed: resonate_ui::Followed) -> Reloaded {
-        let Some(window) = self.followed.as_ref() else {
+        let Some(window) = self.serving.followed.as_ref() else {
             return Reloaded::Refused;
         };
 
@@ -393,46 +469,55 @@ pub(crate) fn claimed_by(library: Option<&Library>, items: Vec<QueueItem>) -> Ve
         .collect()
 }
 
-pub(crate) fn start(
-    player: &Arc<Player>,
-    sources: &Arc<Sources>,
-    library: Option<&Arc<Library>>,
-    settings: Option<PathBuf>,
-    quit: Option<Sender<()>>,
-    window: Option<Window>,
-    notify: &Arc<AtomicBool>,
+pub(crate) fn start(serving: &Serving, player: &Arc<Player>) -> Option<Mpris> {
+    serve(serving, ZoneId::FIRST, player, None)
+}
+
+#[cfg(feature = "ui")]
+pub(crate) fn start_zone(
+    serving: &Serving,
+    zones: &Arc<Zones>,
+    zone: &resonate_engine::Zone,
 ) -> Option<Mpris> {
-    #[cfg(feature = "ui")]
-    let followed = window.as_ref().map(|window| window.followed.clone());
-    let (attention, raise) = match window {
-        Some(window) => (Some(window.attention), Some(window.raise)),
-        None => (None, None),
-    };
-    let host = Desktop {
-        player: Arc::clone(player),
-        sources: Arc::clone(sources),
-        library: library.map(Arc::clone),
-        settings,
-        quit,
-        attention: attention.map(|changes| Attention {
-            changes,
-            held: AtomicBool::new(OPENS_IN_FRONT),
+    serve(
+        serving,
+        zone.id,
+        &zone.player,
+        Some(Zoned {
+            zones: Arc::downgrade(zones),
+            zone: zone.id,
         }),
-        raise,
-        #[cfg(feature = "ui")]
-        followed,
-        notify: Arc::clone(notify),
+    )
+}
+
+fn serve(
+    serving: &Serving,
+    zone: ZoneId,
+    player: &Arc<Player>,
+    zoned: Option<Zoned>,
+) -> Option<Mpris> {
+    let host = Desktop {
+        serving: serving.clone(),
+        player: Arc::clone(player),
+        zoned,
     };
-    let playlists = library.map(|library| {
+    let playlists = serving.library.as_ref().map(|library| {
         Arc::new(Collection::new(library, player)) as Arc<dyn resonate_mpris::Playlists>
     });
 
-    match Mpris::start(Arc::clone(player), Arc::new(host), playlists) {
+    match Mpris::start(zone, Arc::clone(player), Arc::new(host), playlists) {
         Ok(mpris) => Some(mpris),
         Err(error) => {
-            tracing::warn!(%error, "media keys and desktop controls are unavailable");
+            tracing::warn!(%error, %zone, "media keys and desktop controls are unavailable");
             None
         }
+    }
+}
+
+fn identity_of(zones: usize, named: Option<&ZoneName>) -> String {
+    match named {
+        Some(name) if zones > 1 => format!("{IDENTITY} ({name})"),
+        _ => IDENTITY.to_owned(),
     }
 }
 
@@ -461,6 +546,15 @@ mod tests {
                     .strip_suffix("</mediatype>")
             })
             .collect()
+    }
+
+    #[test]
+    fn a_zone_names_itself_to_the_desktop_only_once_there_is_more_than_one() {
+        let study = ZoneName::given("Study").expect("a name");
+
+        assert_eq!(identity_of(1, Some(&study)), "Resonate");
+        assert_eq!(identity_of(2, Some(&study)), "Resonate (Study)");
+        assert_eq!(identity_of(2, None), "Resonate");
     }
 
     #[test]

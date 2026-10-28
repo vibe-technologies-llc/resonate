@@ -20,9 +20,9 @@ use std::{
 
 use parking_lot::Mutex;
 use resonate_core::{
-    AlbumId, ChannelLayout, FrameSpan, Frames, MediaLocation, PlaylistId, QueueStamp,
+    AlbumId, ChannelLayout, FrameSpan, Frames, KeptZone, MediaLocation, PlaylistId, QueueStamp,
     ReleaseTrackId, Reordered, Resumable, Resumption, SampleFormat, SampleRate, SourceId, Span,
-    StreamSpec, TrackId, WantId,
+    StreamSpec, TrackId, Volume, WantId, ZoneId, ZoneName,
 };
 use resonate_library::{
     Aged, Album, AlbumLink, AlbumMatch, AlbumNames, AlbumOrder, AlbumQuery, Artist, ArtistFound,
@@ -15987,7 +15987,7 @@ fn a_kept_queue_comes_back_as_it_was_left() -> Result<()> {
         next: None,
     };
 
-    library.keep_resumption(&kept)?;
+    library.keep_resumption(ZoneId::FIRST, &kept)?;
     assert_eq!(library.resumption()?, Some(kept));
     Ok(())
 }
@@ -16009,16 +16009,19 @@ fn what_was_queued_to_play_next_comes_back_and_goes_when_nothing_is() -> Result<
         next: Some(Span::between(1, 2)),
     };
 
-    library.keep_resumption(&kept)?;
+    library.keep_resumption(ZoneId::FIRST, &kept)?;
     assert_eq!(library.resumption()?, Some(kept.clone()));
 
-    library.keep_order(&Reordered {
-        order: vec![0, 1, 2, 3],
-        row: 3,
-        at: Frames::ZERO,
-        shuffle: false,
-        next: None,
-    })?;
+    library.keep_order(
+        ZoneId::FIRST,
+        &Reordered {
+            order: vec![0, 1, 2, 3],
+            row: 3,
+            at: Frames::ZERO,
+            shuffle: false,
+            next: None,
+        },
+    )?;
     assert_eq!(library.resumption()?.and_then(|kept| kept.next), None);
     Ok(())
 }
@@ -16039,7 +16042,7 @@ fn a_shuffled_queue_comes_back_saying_where_each_row_was_loaded() -> Result<()> 
         next: None,
     };
 
-    library.keep_resumption(&kept)?;
+    library.keep_resumption(ZoneId::FIRST, &kept)?;
     assert_eq!(library.resumption()?, Some(kept));
     Ok(())
 }
@@ -16061,7 +16064,7 @@ fn a_row_from_a_source_that_is_not_the_filesystem_is_kept_by_its_uri() -> Result
         next: None,
     };
 
-    library.keep_resumption(&kept)?;
+    library.keep_resumption(ZoneId::FIRST, &kept)?;
     assert_eq!(
         library.resumption()?.map(|kept| kept.rows),
         Some(vec![Resumable {
@@ -16081,15 +16084,18 @@ fn keeping_the_place_moves_it_without_rewriting_the_rows_or_the_shuffle() -> Res
         resumable("/music/second.flac"),
     ];
 
-    library.keep_resumption(&Resumption {
-        rows: rows.clone(),
-        order: vec![1, 0],
-        row: 0,
-        at: Frames::ZERO,
-        shuffle: true,
-        next: None,
-    })?;
-    library.keep_place(1, Frames(999))?;
+    library.keep_resumption(
+        ZoneId::FIRST,
+        &Resumption {
+            rows: rows.clone(),
+            order: vec![1, 0],
+            row: 0,
+            at: Frames::ZERO,
+            shuffle: true,
+            next: None,
+        },
+    )?;
+    library.keep_place(ZoneId::FIRST, 1, Frames(999))?;
 
     assert_eq!(
         library.resumption()?,
@@ -16113,22 +16119,28 @@ fn an_order_kept_on_its_own_leaves_the_rows_where_they_were() -> Result<()> {
         resumable("/music/second.flac"),
         resumable("/music/third.flac"),
     ];
-    library.keep_resumption(&Resumption {
-        rows: rows.clone(),
-        order: vec![0, 1, 2],
-        row: 0,
-        at: Frames::ZERO,
-        shuffle: false,
-        next: None,
-    })?;
+    library.keep_resumption(
+        ZoneId::FIRST,
+        &Resumption {
+            rows: rows.clone(),
+            order: vec![0, 1, 2],
+            row: 0,
+            at: Frames::ZERO,
+            shuffle: false,
+            next: None,
+        },
+    )?;
 
-    library.keep_order(&Reordered {
-        order: vec![2, 0, 1],
-        row: 1,
-        at: Frames(4_410),
-        shuffle: true,
-        next: None,
-    })?;
+    library.keep_order(
+        ZoneId::FIRST,
+        &Reordered {
+            order: vec![2, 0, 1],
+            row: 1,
+            at: Frames(4_410),
+            shuffle: true,
+            next: None,
+        },
+    )?;
 
     assert_eq!(
         library.resumption()?,
@@ -16167,8 +16179,8 @@ fn a_queue_kept_again_replaces_the_rows_rather_than_adding_to_them() -> Result<(
         next: None,
     };
 
-    library.keep_resumption(&longer)?;
-    library.keep_resumption(&shorter)?;
+    library.keep_resumption(ZoneId::FIRST, &longer)?;
+    library.keep_resumption(ZoneId::FIRST, &shorter)?;
     assert_eq!(library.resumption()?, Some(shorter));
     Ok(())
 }
@@ -16177,22 +16189,28 @@ fn a_queue_kept_again_replaces_the_rows_rather_than_adding_to_them() -> Result<(
 fn a_queue_kept_as_nothing_leaves_nothing_to_resume() -> Result<()> {
     let library = Library::open_in_memory()?;
 
-    library.keep_resumption(&Resumption {
-        rows: vec![resumable("/music/only.flac")],
-        order: vec![0],
-        row: 0,
-        at: Frames::ZERO,
-        shuffle: false,
-        next: None,
-    })?;
-    library.keep_resumption(&Resumption {
-        rows: Vec::new(),
-        order: Vec::new(),
-        row: 0,
-        at: Frames::ZERO,
-        shuffle: false,
-        next: None,
-    })?;
+    library.keep_resumption(
+        ZoneId::FIRST,
+        &Resumption {
+            rows: vec![resumable("/music/only.flac")],
+            order: vec![0],
+            row: 0,
+            at: Frames::ZERO,
+            shuffle: false,
+            next: None,
+        },
+    )?;
+    library.keep_resumption(
+        ZoneId::FIRST,
+        &Resumption {
+            rows: Vec::new(),
+            order: Vec::new(),
+            row: 0,
+            at: Frames::ZERO,
+            shuffle: false,
+            next: None,
+        },
+    )?;
 
     assert_eq!(library.resumption()?, None);
     Ok(())
@@ -16202,18 +16220,87 @@ fn a_queue_kept_as_nothing_leaves_nothing_to_resume() -> Result<()> {
 fn forgetting_a_kept_queue_takes_the_place_with_it() -> Result<()> {
     let library = Library::open_in_memory()?;
 
-    library.keep_resumption(&Resumption {
-        rows: vec![resumable("/music/only.flac")],
-        order: vec![0],
-        row: 0,
-        at: Frames(500),
-        shuffle: false,
-        next: None,
-    })?;
+    library.keep_resumption(
+        ZoneId::FIRST,
+        &Resumption {
+            rows: vec![resumable("/music/only.flac")],
+            order: vec![0],
+            row: 0,
+            at: Frames(500),
+            shuffle: false,
+            next: None,
+        },
+    )?;
     library.forget_resumption()?;
 
     assert_eq!(library.resumption()?, None);
     library.forget_resumption()?;
+    Ok(())
+}
+
+#[test]
+fn every_zone_keeps_its_own_name_device_volume_and_queue_and_comes_back_as_it_was_left()
+-> Result<()> {
+    let library = Library::open_in_memory()?;
+    let second = ZoneId::new(2).expect("a second zone");
+    let first_queue = Resumption {
+        rows: vec![resumable("/music/kitchen.flac")],
+        order: vec![0],
+        row: 0,
+        at: Frames(100),
+        shuffle: false,
+        next: None,
+    };
+    let second_queue = Resumption {
+        rows: vec![
+            resumable("/music/study-one.flac"),
+            resumable("/music/study-two.flac"),
+        ],
+        order: vec![1, 0],
+        row: 1,
+        at: Frames(4_410),
+        shuffle: true,
+        next: None,
+    };
+    let study = KeptZone {
+        id: second,
+        name: ZoneName::given("Study").expect("a name"),
+        device: Some("alsa_output.usb".into()),
+        volume: Some(Volume::new(0.5).expect("half way")),
+    };
+    let kitchen = KeptZone {
+        id: ZoneId::FIRST,
+        name: ZoneName::given("Kitchen").expect("a name"),
+        device: None,
+        volume: None,
+    };
+
+    library.keep_zone(&kitchen)?;
+    library.keep_zone(&study)?;
+    library.keep_resumption(ZoneId::FIRST, &first_queue)?;
+    library.keep_resumption(second, &second_queue)?;
+    library.keep_place(second, 0, Frames(9))?;
+
+    assert_eq!(library.zones()?, vec![kitchen.clone(), study.clone()]);
+    assert_eq!(library.resumption()?, Some(first_queue.clone()));
+    assert_eq!(
+        library.resumption_of(second)?,
+        Some(Resumption {
+            row: 0,
+            at: Frames(9),
+            ..second_queue
+        })
+    );
+
+    library.forget_zone(second)?;
+
+    assert_eq!(library.zones()?, vec![kitchen]);
+    assert_eq!(library.resumption_of(second)?, None);
+    assert_eq!(library.resumption()?, Some(first_queue));
+
+    library.forget_resumption()?;
+
+    assert_eq!(library.zones()?, Vec::new());
     Ok(())
 }
 
@@ -17568,18 +17655,21 @@ fn a_playlist_row_a_kept_lyric_and_a_kept_queue_row_all_follow_the_file_that_mov
     let stood = MediaLocation::local(root.join("loose/echoes.wav"));
     let set = library.start_playlist("Set", &[Cut::whole(stood.clone())])?;
     library.keep_lyrics(&stood, None, Some(&words("and no one sings me lullabies")))?;
-    library.keep_resumption(&Resumption {
-        rows: vec![Resumable {
-            location: stood.clone(),
-            span: None,
-            held: None,
-        }],
-        order: vec![0],
-        row: 0,
-        at: Frames(4_410),
-        shuffle: false,
-        next: None,
-    })?;
+    library.keep_resumption(
+        ZoneId::FIRST,
+        &Resumption {
+            rows: vec![Resumable {
+                location: stood.clone(),
+                span: None,
+                held: None,
+            }],
+            order: vec![0],
+            row: 0,
+            at: Frames(4_410),
+            shuffle: false,
+            next: None,
+        },
+    )?;
 
     applied(&library)?;
     let landed = MediaLocation::local(root.join("Pink Floyd/Meddle/02 Echoes.wav"));

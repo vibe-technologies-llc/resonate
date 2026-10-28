@@ -7,7 +7,9 @@ use resonate_dsp::{
     DitherKind, FilterPhase, Impulse, NoiseShaping, Quality, ReplayGainMode, Restoration,
 };
 
-use crate::{BluetoothWake, Equalisation, Error, Levelling, Placement, QueueItem, Result, Until};
+use crate::{
+    BluetoothWake, Equalisation, Error, Levelling, Placement, QueueItem, Result, Until, Within,
+};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum RepeatMode {
@@ -203,6 +205,56 @@ impl CommandKind {
             Self::SetBuffer => "the buffer",
             Self::SleepUntil => "the sleep timer",
             Self::Relocate => "where the files moved",
+        }
+    }
+}
+
+impl CommandKind {
+    pub const fn within(self) -> Within {
+        match self {
+            Self::Load
+            | Self::Resume
+            | Self::Insert
+            | Self::Remove
+            | Self::Clear
+            | Self::Move
+            | Self::Order
+            | Self::Play
+            | Self::Pause
+            | Self::TogglePlayPause
+            | Self::Stop
+            | Self::Seek
+            | Self::SeekBy
+            | Self::Next
+            | Self::Previous
+            | Self::JumpTo
+            | Self::SetVolume
+            | Self::SetRepeat
+            | Self::SetShuffle
+            | Self::SetSink
+            | Self::FollowTheFormats
+            | Self::SetDeviceMute
+            | Self::SleepUntil => Within::TheZone,
+            Self::SetSkipUnderRepeat
+            | Self::SetPreviousRestarts
+            | Self::SetQuality
+            | Self::SetFilterPhase
+            | Self::SetTruePeak
+            | Self::SetRestoration
+            | Self::SetDither
+            | Self::SetNoiseShaping
+            | Self::SetReplayGain
+            | Self::SetLevelling
+            | Self::SetEqualisation
+            | Self::SetConvolution
+            | Self::SetBitPerfect
+            | Self::SetDop
+            | Self::SetDsdLikePcm
+            | Self::SetDeviceVolume
+            | Self::SetForceGraphRate
+            | Self::SetBluetoothWake
+            | Self::SetBuffer
+            | Self::Relocate => Within::EveryZone,
         }
     }
 }

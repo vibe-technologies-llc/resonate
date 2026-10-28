@@ -136,6 +136,8 @@ const fn plainly(cause: Cause) -> &'static str {
         Cause::Unreadable => "A song couldn't be found",
         Cause::Unsupported => "A song is in a format Resonate can't play",
         Cause::Damaged => "A song couldn't be played",
+        Cause::HeldByAnotherZone => "Another zone plays that device bit-perfect",
+        Cause::ZoneRefused => "That zone is no longer there",
     }
 }
 

@@ -66,6 +66,8 @@ bumped per change for animation keys; drops the leaving once `HANDS_OVER` is out
   arriving on top, keeps the presses, fades in. Nothing slides.
 - **Cover**: keyed by what it pictures. Leaving face stays opaque beneath, arriving fades in over
   it: a true crossfade because a cover is opaque.
+- **A zone switch is a song change**: the panel hands over from the shown zone's song to the other's
+  as a skip does; nothing else moves.
 - **Signal path held between songs**: the engine publishes no current track while the next row
   opens; dropping the path then made the centred title and by-line fall half a line and rise again.
 

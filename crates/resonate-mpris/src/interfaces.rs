@@ -519,6 +519,11 @@ impl OwnInterface {
     }
 
     #[zbus(property)]
+    fn zone(&self) -> String {
+        self.shared.host.zone().as_str().to_owned()
+    }
+
+    #[zbus(property)]
     fn playing_next(&self) -> u32 {
         waiting_to_play(
             self.shared.player.queued().next,

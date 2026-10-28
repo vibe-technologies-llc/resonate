@@ -28,7 +28,7 @@ pub fn print(
 }
 
 fn playing() -> Result<(MediaLocation, Option<FrameSpan>)> {
-    reached(None)?
+    reached(None, None)?
         .metadata()?
         .and_then(|described| Some((described.location?, described.span)))
         .ok_or(Error::NothingPlaying)
