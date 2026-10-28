@@ -509,7 +509,11 @@ every route change (a pair of headphones at the same rate included), not from th
   `MPVolumeView` lays its slider out late and again on the first touch, which left it off centre
   until touched. `SystemVolumeLevel` reads `AVAudioSession.outputVolume` (KVO registered and the first read made on `Work.inSession`, the level assigned back on the main actor, a registration that finishes after `stopWatching` invalidated at once; it reads 0 until the session is active, so the driver's slider seeds the level once it has laid out, but only where the session gave no level above 0: a freshly made `MPVolumeView`'s slider holds a stale value for a while, and seeding from it over the session's answer slid the bar from 50 to 40 each time the cover layout came back; a row opens on the last level shown, `lastShown`, not 0)
   and sets the level through the slider of an `MPVolumeView` kept at 1 % opacity behind the capsule
-  (`VolumeDriver`, its route button hidden), whose presence also keeps the system's volume HUD away.
+  (`VolumeDriver`, its route button hidden), whose presence also keeps the system's volume HUD away;
+  that slider's thumb is an empty image and its tracks clear (`SystemVolumeLevel.hideDrawing`, once it
+  is found), since even at 1 % its knob showed as a faint bubble riding the bar. A level heard from
+  the session (the volume buttons, Control Centre) moves the fill in 0.25 s (`steppedOutside`);
+  a drag, the first reading and the driver's seed set it at once.
   The driver is mounted 600 ms after the row appears (or at the first touch), so building an
   `MPVolumeView` never lands in the zoom's first frames, and `SystemVolumeLevel` reads the session's
   volume only in `watch()`: a `@State` initial value is built on every parent body, and
@@ -621,8 +625,10 @@ every route change (a pair of headphones at the same rate included), not from th
   under its queue, favourite and playlist sections, a queue row (`QueueRow`) under its favourite and
   playlist entries with *Remove from queue* last (no Play next or Add to queue, which would only copy
   the row), a playlist row (`PlaylistRow`) under its own queue, favourite and *Add to another
-  playlist* entries with *Move up*, *Move down* and *Remove from playlist* last, and Now Playing's
-  `SongDestinations` without *Lyrics*, which the player's own mode shows. The Inspector's actions
+  playlist* entries with *Move up*, *Move down* and *Remove from playlist* last. Now Playing's
+  titles (song, artist, album) are menus of `SongDestinations` alone, *Go to album* and *Go to
+  artist* (a song with neither is plain text), since its *More* menu carries the song's details,
+  share and analysis, and the Inspector its tag editing. The Inspector's actions
   add *Edit tags*, *Go to album* and *Go to artist*. **The tag editor opens after Now Playing
   closes** (`Navigation.editTags`): asked inside the cover, it is held (`taggingAfterPlayer`), the
   cover dismissed, and the root's sheet presented from the cover's `onDismiss`

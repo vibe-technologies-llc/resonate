@@ -416,23 +416,37 @@ struct SongMenu<Label: View>: View {
     @ViewBuilder let label: () -> Label
 
     var body: some View {
-        Menu {
-            SongDestinations(track: track)
-        } label: {
+        if SongDestinations.any(for: track) {
+            Menu {
+                SongDestinations(track: track)
+            } label: {
+                label()
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .tint(Color.primary)
+            .accessibilityHint("Goes to the album or the artist")
+        } else {
             label()
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .tint(Color.primary)
-        .accessibilityHint("Shows the album, artist, song details, tags, analysis and a link to share")
     }
 }
 
 struct SongDestinations: View {
+    @Environment(Navigation.self) private var navigation
     let track: Track
 
+    static func any(for track: Track) -> Bool {
+        track.albumPage != nil || !track.artist.isEmpty
+    }
+
     var body: some View {
-        SongPages(track: track, lyrics: false)
+        if let albumPage = track.albumPage {
+            Button("Go to album", systemImage: "square.stack") { navigation.open(albumPage) }
+        }
+        if !track.artist.isEmpty {
+            Button("Go to artist", systemImage: "music.mic") { navigation.open(.artist(track.artist)) }
+        }
     }
 }
 
@@ -811,6 +825,7 @@ struct VolumeRow: View {
     private static let touchHeight: CGFloat = 34
     private static let step: Float = 1 / 16
     private static let driverMountsAfter: Duration = .milliseconds(600)
+    private static let stepFollowed: Animation = .smooth(duration: 0.25)
 
     @State private var volume = SystemVolumeLevel()
     @State private var dragging: Float?
@@ -832,6 +847,10 @@ struct VolumeRow: View {
                         Rectangle()
                             .fill(.primary.opacity(grabbed ? 0.95 : 0.7))
                             .frame(width: width * CGFloat(shown))
+                            .motion(
+                                volume.steppedOutside && !grabbed ? Self.stepFollowed : nil,
+                                value: shown
+                            )
                     }
                     .clipShape(Capsule())
                     .frame(height: grabbed ? Self.grabbedHeight : Self.restingHeight)
@@ -896,6 +915,7 @@ final class SystemVolumeLevel {
     private static var lastShown: Float = 0
 
     private(set) var level: Float = SystemVolumeLevel.lastShown
+    private(set) var steppedOutside = false
     @ObservationIgnored weak var driver: MPVolumeView?
     @ObservationIgnored private var watching: NSKeyValueObservation?
     @ObservationIgnored private var heardSinceWatching = false
@@ -931,6 +951,7 @@ final class SystemVolumeLevel {
             for _ in 0..<Self.seedTries {
                 driver.layoutIfNeeded()
                 if let slider = Self.slider(in: driver) {
+                    Self.hideDrawing(of: slider)
                     if watchAsked, !heardSinceWatching, !sessionAnswered { show(slider.value) }
                     return
                 }
@@ -941,10 +962,11 @@ final class SystemVolumeLevel {
 
     private func hear(_ heard: Float) {
         heardSinceWatching = true
-        show(heard)
+        show(heard, steppedOutside: true)
     }
 
-    private func show(_ shown: Float) {
+    private func show(_ shown: Float, steppedOutside outside: Bool = false) {
+        if steppedOutside != outside { steppedOutside = outside }
         level = shown
         Self.lastShown = shown
     }
@@ -960,6 +982,7 @@ final class SystemVolumeLevel {
         heardSinceWatching = true
         show(wanted)
         guard let slider = driver.flatMap(Self.slider(in:)) else { return }
+        Self.hideDrawing(of: slider)
         slider.setValue(wanted, animated: false)
         slider.sendActions(for: .valueChanged)
     }
@@ -971,6 +994,16 @@ final class SystemVolumeLevel {
             guard let value = change.newValue else { return }
             Task { @MainActor in heard(value) }
         }
+    }
+
+    private static func hideDrawing(of slider: UISlider) {
+        guard slider.currentThumbImage?.size != .zero else { return }
+        let nothing = UIImage()
+        for state in [UIControl.State.normal, .highlighted, .selected, .disabled] {
+            slider.setThumbImage(nothing, for: state)
+        }
+        slider.minimumTrackTintColor = .clear
+        slider.maximumTrackTintColor = .clear
     }
 
     private static func slider(in view: UIView) -> UISlider? {
