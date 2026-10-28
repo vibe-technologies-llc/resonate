@@ -391,11 +391,15 @@ class LibraryRepository(private val context: Context) {
         request { native -> native.save() }
     }
 
-    fun setFavourite(id: ULong, enabled: Boolean) {
+    fun setFavourite(id: ULong, enabled: Boolean) = setFavourites(listOf(id), enabled)
+
+    fun setFavourites(ids: List<ULong>, enabled: Boolean) {
+        if (ids.isEmpty()) return
+        val changed = ids.toSet()
         request { native ->
-            native.favourite(id, enabled)
+            ids.forEach { native.favourite(it, enabled) }
             fun updated(rows: List<Track>) = rows.map {
-                if (it.id == id) it.copy(favourite = enabled) else it
+                if (it.id in changed) it.copy(favourite = enabled) else it
             }
             mutableAllTracks.value = updated(mutableAllTracks.value)
             mutableTracks.value =
@@ -408,12 +412,12 @@ class LibraryRepository(private val context: Context) {
                     state.copy(
                         current =
                             state.current?.let {
-                                if (it.id == id) it.copy(favourite = enabled) else it
+                                if (it.id in changed) it.copy(favourite = enabled) else it
                             }
                     )
             }
             features.playlistRows.value = updated(features.playlistRows.value)
-            mutableFavourites.tryEmit(Favourited(id, enabled))
+            ids.forEach { mutableFavourites.tryEmit(Favourited(it, enabled)) }
             scope.launch { reload() }
         }
     }

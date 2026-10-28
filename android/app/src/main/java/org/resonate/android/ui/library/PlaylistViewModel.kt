@@ -77,6 +77,13 @@ class PlaylistViewModel(private val resonate: Resonate, private val id: ULong) :
     fun remove(position: Int, revision: ULong?) =
         edit(revision) { native, at -> native.removeFromPlaylist(id, at, position.toUInt()) }
 
+    fun removeAll(positions: List<Int>, revision: ULong?) =
+        edit(revision) { native, at ->
+            positions.sortedDescending().forEachIndexed { step, position ->
+                native.removeFromPlaylist(id, at + step.toULong(), position.toUInt())
+            }
+        }
+
     fun rename(name: String) = edit(null) { native, at -> native.renamePlaylist(id, at, name) }
 
     fun revise(name: String, search: SavedSearch) =

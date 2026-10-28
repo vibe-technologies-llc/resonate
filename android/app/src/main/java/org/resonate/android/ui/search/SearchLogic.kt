@@ -2,6 +2,7 @@ package org.resonate.android.ui.search
 
 import java.util.Locale
 import org.resonate.android.nativecore.LibrarySearch
+import org.resonate.android.nativecore.Track
 import org.resonate.android.nativecore.SearchColumn
 import org.resonate.android.nativecore.TextRange
 import org.resonate.android.ui.shownTitle
@@ -117,6 +118,13 @@ fun shownScope(chosen: LibraryScope, found: LibrarySearch): LibraryScope =
         LibraryScope.ARTISTS -> if (found.artists.isEmpty()) LibraryScope.TOP else chosen
         LibraryScope.SONGS -> if (found.tracks.isEmpty()) LibraryScope.TOP else chosen
         LibraryScope.TOP -> chosen
+    }
+
+fun shownSongs(chosen: LibraryScope, found: LibrarySearch): List<Track> =
+    when (shownScope(chosen, found)) {
+        LibraryScope.TOP -> found.tracks.take(TOP_SONGS)
+        LibraryScope.SONGS -> found.tracks
+        else -> emptyList()
     }
 
 fun scopes(found: LibrarySearch): List<LibraryScope> = buildList {

@@ -150,6 +150,11 @@ class PlayerViewModel(private val resonate: Resonate) : ViewModel() {
         library.request { it.removeFromQueue(row) }
     }
 
+    fun removeAll(tracks: List<Track>) {
+        val rows = tracks.mapNotNull { it.queueId }
+        if (rows.isNotEmpty()) library.request { native -> rows.forEach { native.removeFromQueue(it) } }
+    }
+
     fun clear() {
         library.request { it.clearQueue() }
     }

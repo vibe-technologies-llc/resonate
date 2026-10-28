@@ -1,5 +1,6 @@
 package org.resonate.android.ui.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.MoreVert
@@ -37,7 +40,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -71,11 +79,42 @@ fun TrackRow(
     subtitle: AnnotatedString? = null,
     onMore: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
+    selection: RowSelection? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val haptics = LocalHapticFeedback.current
+    val selecting = selection?.selecting == true
+    val selected = selection?.selected == true
+    val label = title?.text ?: track.shownTitle
     ListItem(
-        onClick = onClick,
-        modifier = modifier,
+        onClick = if (selection != null && selecting) selection.toggle else onClick,
+        onLongClick =
+            selection?.let { held ->
+                {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    if (held.selecting) held.toggle() else held.begin()
+                }
+            },
+        onLongClickLabel = selection?.let { "Select" },
+        modifier =
+            modifier
+                .then(if (selected) Modifier.background(scheme.secondaryContainer) else Modifier)
+                .then(
+                    if (selection == null) Modifier
+                    else
+                        Modifier.semantics {
+                            this.selected = selected
+                            customActions =
+                                if (selecting) emptyList()
+                                else
+                                    listOf(
+                                        CustomAccessibilityAction("Select $label") {
+                                            selection.begin()
+                                            true
+                                        }
+                                    )
+                        }
+                ),
         colors =
             ListItemDefaults.colors(
                 containerColor = Color.Transparent,
@@ -85,7 +124,9 @@ fun TrackRow(
             if (number != null) {
                 {
                     Box(Modifier.width(32.dp), contentAlignment = Alignment.Center) {
-                        if (playing) {
+                        if (selected) {
+                            Icon(Icons.Rounded.CheckCircle, null, tint = scheme.primary)
+                        } else if (playing) {
                             Icon(Icons.Rounded.GraphicEq, null, tint = scheme.primary)
                         } else {
                             Text(
@@ -101,7 +142,20 @@ fun TrackRow(
                 {
                     Box {
                         Artwork(track, Sizes.rowArt, shape = MaterialTheme.shapes.medium)
-                        if (playing) {
+                        if (selected) {
+                            Surface(
+                                color = scheme.primary,
+                                shape = CircleShape,
+                                modifier = Modifier.align(Alignment.Center).size(28.dp),
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Check,
+                                    null,
+                                    tint = scheme.onPrimary,
+                                    modifier = Modifier.padding(4.dp),
+                                )
+                            }
+                        } else if (playing) {
                             Surface(
                                 color = scheme.primary,
                                 shape = CircleShape,
@@ -137,14 +191,16 @@ fun TrackRow(
             }
         },
         trailingContent =
-            trailing
-                ?: onMore?.let { more ->
-                    {
-                        IconButton(onClick = more) {
-                            Icon(Icons.Rounded.MoreVert, contentDescription = "More options")
+            if (selecting) null
+            else
+                trailing
+                    ?: onMore?.let { more ->
+                        {
+                            IconButton(onClick = more) {
+                                Icon(Icons.Rounded.MoreVert, contentDescription = "More options")
+                            }
                         }
-                    }
-                },
+                    },
     ) {
         Text(
             title ?: AnnotatedString(track.shownTitle),

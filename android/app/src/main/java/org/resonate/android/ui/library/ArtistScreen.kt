@@ -55,6 +55,8 @@ import org.resonate.android.ui.components.LocalSheets
 import org.resonate.android.ui.components.Picture
 import org.resonate.android.ui.components.SectionHeader
 import org.resonate.android.ui.components.TrackRow
+import org.resonate.android.ui.components.SongSelectionBar
+import org.resonate.android.ui.components.rememberSelection
 import org.resonate.android.ui.components.rememberArtwork
 import org.resonate.android.ui.components.rememberPicture
 import org.resonate.android.ui.counted
@@ -118,12 +120,27 @@ fun ArtistScreen(screen: Screen.Artist) {
     val picture = rememberPicture(information?.picture)
     val seed = rememberSeedOf(picture ?: rememberArtwork(portraitSong, 0u, 96))
     LaunchedEffect(portraitSong) { portraitSong?.let(model::learn) }
+    val every = page?.tracks.orEmpty()
+    val listed = if (everySong || every.size <= SONGS_FOLDED) every else every.take(SONGS_FOLDED)
+    val selection = rememberSelection<ULong>()
+    LaunchedEffect(listed) { selection.retain(listed.map { it.id }) }
     ArtworkTheme(seed) {
         CollectionPage(
             name,
             loaded,
             model.retry::again,
             tag = "artist",
+        selectionBar =
+            if (!selection.active) null
+            else {
+                {
+                    SongSelectionBar(
+                        tracks = selection.picked(listed) { it.id },
+                        onSelectAll = { selection.selectAll(listed.map { it.id }) },
+                        onClose = selection::clear,
+                    )
+                }
+            },
             actions = {
                 val tracks = page?.tracks.orEmpty()
                 OverflowMenu(
@@ -200,6 +217,7 @@ fun ArtistScreen(screen: Screen.Artist) {
                             playing = track.id == playing,
                             supporting = track.album.ifBlank { track.artist },
                             onMore = { sheets.song(track) },
+                            selection = selection.row(track.id),
                         )
                     }
                 }

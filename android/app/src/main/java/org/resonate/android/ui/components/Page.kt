@@ -61,6 +61,7 @@ fun Page(
     back: Boolean = true,
     actions: @Composable RowScope.() -> Unit = {},
     floatingActionButton: @Composable () -> Unit = {},
+    selectionBar: (@Composable () -> Unit)? = null,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val navigator = LocalNavigator.current
@@ -96,7 +97,8 @@ fun Page(
             Spacer(Modifier.height((LocalPageBottomPadding.current - covered).coerceAtLeast(0.dp)))
         },
         topBar = {
-            PageBar(title, subtitle, size, scrollBehavior, navigation, actions)
+            if (selectionBar != null) selectionBar()
+            else PageBar(title, subtitle, size, scrollBehavior, navigation, actions)
         },
     ) { padding ->
         val direction = LocalLayoutDirection.current

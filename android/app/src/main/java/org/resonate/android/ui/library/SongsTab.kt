@@ -45,13 +45,14 @@ import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.components.EmptyState
 import org.resonate.android.ui.components.LocalSheets
 import org.resonate.android.ui.components.PlayShuffleButtons
+import org.resonate.android.ui.components.Selection
 import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.components.TrackRow
 import org.resonate.android.ui.counted
 import org.resonate.android.ui.length
 
 @Composable
-fun SongsTab(model: LibraryViewModel, padding: PaddingValues) {
+fun SongsTab(model: LibraryViewModel, padding: PaddingValues, selection: Selection<ULong>) {
     val resonate = LocalResonate.current
     val sheets = LocalSheets.current
     val songs by model.songs.collectAsStateWithLifecycle()
@@ -107,6 +108,7 @@ fun SongsTab(model: LibraryViewModel, padding: PaddingValues) {
                     onClick = { resonate.playback.play(songs, index) },
                     playing = track.id == playing,
                     onMore = { sheets.song(track) },
+                    selection = selection.row(track.id),
                 )
             }
         }

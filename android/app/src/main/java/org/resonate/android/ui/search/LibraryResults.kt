@@ -91,7 +91,9 @@ import org.resonate.android.ui.Mix
 import org.resonate.android.ui.components.ArtistPortrait
 import org.resonate.android.ui.components.EmptyState
 import org.resonate.android.ui.components.LocalSheets
+import org.resonate.android.ui.components.RowSelection
 import org.resonate.android.ui.components.SectionHeader
+import org.resonate.android.ui.components.Selection
 import org.resonate.android.ui.components.SongArtwork
 import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.components.TrackRow
@@ -109,6 +111,7 @@ fun LibraryResults(
     model: SearchViewModel,
     state: LazyListState,
     padding: PaddingValues,
+    selection: Selection<ULong>,
     act: (SearchSong) -> Unit,
 ) {
     val shown by model.libraryShown.collectAsStateWithLifecycle()
@@ -187,6 +190,7 @@ fun LibraryResults(
                             navigator.open(Screen.Artist(artist.name, artist.artworkTrack))
                         },
                         more = { track -> sheets.song(track) },
+                        selection = selection,
                     )
             }
         }
@@ -372,6 +376,7 @@ private fun LazyListScope.answered(
     openAlbum: (AlbumHit) -> Unit,
     openArtist: (ArtistHit) -> Unit,
     more: (Track) -> Unit,
+    selection: Selection<ULong>,
 ) {
     val found = answer.found
     val scope = shownScope(chosen, found)
@@ -393,7 +398,7 @@ private fun LazyListScope.answered(
     item(key = "scopes") { ScopeChips(found, scope, model::choose) }
     when (scope) {
         LibraryScope.TOP -> {
-            songs(answer, found.tracks.take(TOP_SONGS), found.tracks, playing, model, more)
+            songs(answer, found.tracks.take(TOP_SONGS), found.tracks, playing, model, more, selection)
             if (found.tracks.size > TOP_SONGS) {
                 item(key = "songs-all") {
                     SeeAll("See all ${songsCounted(found)} songs") { model.choose(LibraryScope.SONGS) }
@@ -460,7 +465,7 @@ private fun LazyListScope.answered(
                     }
                 }
             }
-            songs(answer, found.tracks, found.tracks, playing, model, more)
+            songs(answer, found.tracks, found.tracks, playing, model, more, selection)
             if (found.trackCount > found.tracks.size.toUInt()) {
                 item(key = "songs-capped") {
                     Column(Modifier.padding(horizontal = Sizes.gutter, vertical = 16.dp)) {
@@ -652,6 +657,7 @@ private fun LazyListScope.songs(
     playing: ULong?,
     model: SearchViewModel,
     more: (Track) -> Unit,
+    selection: Selection<ULong>,
 ) {
     if (shown.isEmpty()) return
     item(key = "songs-header") { SectionHeader("Songs") }
@@ -662,6 +668,7 @@ private fun LazyListScope.songs(
             playing = playing == track.id,
             onClick = { model.play(all, index) },
             onMore = { more(track) },
+            selection = selection.row(track.id),
         )
     }
 }
@@ -673,6 +680,7 @@ private fun LitTrackRow(
     playing: Boolean,
     onClick: () -> Unit,
     onMore: () -> Unit,
+    selection: RowSelection,
 ) {
     val title = bold()
     val supporting = bold(MaterialTheme.colorScheme.onSurface)
@@ -697,6 +705,7 @@ private fun LitTrackRow(
         title = headline,
         subtitle = byline,
         onMore = onMore,
+        selection = selection,
         modifier = Modifier.testTag("search-song"),
     )
 }

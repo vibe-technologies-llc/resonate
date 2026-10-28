@@ -12,6 +12,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -27,6 +28,8 @@ import org.resonate.android.ui.Mix
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.LocalSheets
 import org.resonate.android.ui.components.PlaylistCover
+import org.resonate.android.ui.components.SongSelectionBar
+import org.resonate.android.ui.components.rememberSelection
 import org.resonate.android.ui.components.TrackRow
 import org.resonate.android.ui.resonateViewModel
 
@@ -126,11 +129,24 @@ private fun SongCollection(
     val resonate = LocalResonate.current
     val sheets = LocalSheets.current
     val tracks = loaded.valueOrNull().orEmpty()
+    val selection = rememberSelection<ULong>()
+    LaunchedEffect(tracks) { selection.retain(tracks.map { it.id }) }
     CollectionPage(
         title,
         loaded,
         onRetry,
         tag = tag,
+        selectionBar =
+            if (!selection.active) null
+            else {
+                {
+                    SongSelectionBar(
+                        tracks = selection.picked(tracks) { it.id },
+                        onSelectAll = { selection.selectAll(tracks.map { it.id }) },
+                        onClose = selection::clear,
+                    )
+                }
+            },
         actions = {
             OverflowMenu(
                 listOf(
@@ -175,6 +191,7 @@ private fun SongCollection(
                     onClick = { resonate.playback.play(shown, index) },
                     playing = track.id == playing,
                     onMore = { sheets.song(track) },
+                    selection = selection.row(track.id),
                 )
             }
         }
