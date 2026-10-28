@@ -12,7 +12,7 @@ use resonate_core::{
 use resonate_engine::{
     AnalysisError, Command, Loudest, NodeName, Player, Sources, Watch, Watching, read_impulse,
 };
-use resonate_eq::{Binding, Device, MEASURERS_BEST_FIRST, ProfileName};
+use resonate_eq::{Binding, BuiltIn, Device, MEASURERS_BEST_FIRST, ProfileName};
 use resonate_library::Library;
 
 use crate::{
@@ -21,7 +21,9 @@ use crate::{
         BAND_CONTEXT, BandHigher, BandLouder, BandLower, BandNarrower, BandQuieter, BandWider,
         CONTROL_CONTEXT,
     },
-    equaliser::{CURVE_COLUMNS, Cell, DRAWN_BETWEEN_MILLIBELS, Editing, HERTZ_A_KILOHERTZ, Nudge},
+    equaliser::{
+        CURVE_COLUMNS, Cell, DRAWN_BETWEEN_MILLIBELS, Editing, Goal, HERTZ_A_KILOHERTZ, Nudge,
+    },
     icons::Icon,
     theme, toast,
     views::{
@@ -67,6 +69,14 @@ const NOTHING_BOUND: &str = "Nothing is bound to this device, so nothing is appl
 
 const SHAPED_BY_HAND: &str = "Press the curve to add a band, drag a handle to move it, scroll \
                               over one to change its Q, and right-press it to take it out.";
+
+const OWN_MEASUREMENT_NOTE: &str = "Choose a frequency-response measurement of your own — \
+                                    AutoEq's CSV, REW's exported text, or two columns of \
+                                    frequency and decibels — and a target to fit it toward. \
+                                    Both are set level across the middle of the spectrum and \
+                                    smoothed to a sixth of an octave, and up to ten bands, \
+                                    shelves among them, are fitted to what lies between them \
+                                    and kept here as a profile with its preamp.";
 
 const FOLLOWS_THE_DEFAULT: &str = "follows the default";
 const NOT_PLUGGED_IN: &str = "A device not plugged in now";
@@ -654,6 +664,132 @@ impl RootView {
             .when_some(in_use, |body, (_, description)| {
                 body.child(self.plugged_in(&description, suggested.as_ref(), knows, reachable, cx))
             })
+            .child(self.own_measurement(cx))
+    }
+
+    fn own_measurement(&mut self, cx: &mut Context<Self>) -> Div {
+        let model = self.equaliser.read(cx);
+        let goal = model.goal().clone();
+        let fitting = model.is_fitting_a_measurement();
+
+        let mut targets = div().flex().flex_wrap().gap_2();
+        for built_in in BuiltIn::ALL {
+            let id = SharedString::from(format!("target-{}", built_in.name()));
+            targets = targets.child(self.in_the_ring_at(
+                id.to_string(),
+                kit::chip(id, built_in.label(), goal == Goal::BuiltIn(built_in)).names(format!(
+                    "Fit a measurement toward the {} target",
+                    built_in.label()
+                )),
+                move |this, _, cx| this.aim_at(Goal::BuiltIn(built_in), cx),
+                cx,
+            ));
+        }
+        let own_target = matches!(goal, Goal::File(_));
+        targets = targets.child(
+            self.in_the_ring_at(
+                "target-file".to_owned(),
+                kit::chip(
+                    "target-file",
+                    if own_target {
+                        goal.spoken()
+                    } else {
+                        "A file…".to_owned()
+                    },
+                    own_target,
+                )
+                .names("Choose a file to fit a measurement toward"),
+                |this, _, cx| this.choose_a_target(cx),
+                cx,
+            ),
+        );
+
+        kit::field(
+            "Your own measurement",
+            div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child(kit::field("Fit toward", targets))
+                .child(div().flex().flex_wrap().gap_2().child(action(
+                    "fit-a-measurement",
+                    if fitting {
+                        "Fitting…"
+                    } else {
+                        "Fit a measurement…"
+                    },
+                    Icon::Import,
+                    fitting,
+                    |this, _, cx| this.choose_a_measurement(cx),
+                    self,
+                    cx,
+                )))
+                .child(note(OWN_MEASUREMENT_NOTE)),
+        )
+    }
+
+    fn aim_at(&mut self, goal: Goal, cx: &mut Context<Self>) {
+        self.equaliser.update(cx, |model, cx| {
+            model.aim_at(goal);
+            cx.notify();
+        });
+        cx.notify();
+    }
+
+    fn pick_a_file(
+        &self,
+        prompt: &'static str,
+        taken: impl Fn(&mut Self, PathBuf, &mut Context<Self>) + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        let chosen = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some(SharedString::new_static(prompt)),
+        });
+
+        cx.spawn(async move |this, cx| {
+            let answered = chosen.await;
+            let outcome = this.update(cx, |this, cx| match answered {
+                Ok(Ok(Some(paths))) => {
+                    if let Some(file) = paths.into_iter().next() {
+                        taken(this, file, cx);
+                    }
+                }
+                Ok(Ok(None)) => {}
+                Ok(Err(error)) => {
+                    tracing::error!(%error, "the file picker could not be opened");
+                    toast::tell(Notice::Trouble(NO_FILE_PICKER.to_owned()), cx);
+                }
+                Err(error) => {
+                    tracing::error!(%error, "the file picker could not be opened");
+                    toast::tell(Notice::Trouble(NO_FILE_PICKER.to_owned()), cx);
+                }
+            });
+            let _ = outcome;
+        })
+        .detach();
+    }
+
+    fn choose_a_measurement(&self, cx: &mut Context<Self>) {
+        self.pick_a_file(
+            "Fit",
+            |this, file, cx| {
+                this.equaliser
+                    .update(cx, |model, cx| model.fit_a_measurement(file, cx));
+                cx.notify();
+            },
+            cx,
+        );
+    }
+
+    fn choose_a_target(&self, cx: &mut Context<Self>) {
+        self.pick_a_file(
+            "Choose",
+            |this, file, cx| this.aim_at(Goal::File(file), cx),
+            cx,
+        );
     }
 
     fn measurer_choice(&mut self, cx: &mut Context<Self>) -> Div {

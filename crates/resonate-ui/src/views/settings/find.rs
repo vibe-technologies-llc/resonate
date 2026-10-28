@@ -451,7 +451,7 @@ impl Group {
             }
             Self::Measured => {
                 "autoeq oratory1990 crinacle harman target download fetch \
-                               measurement rig suggest"
+                               measurement rig suggest own rew fit csv response flat"
             }
             Self::RoomCorrection => {
                 "convolution impulse response ir fir room correction speakers rew drc \
@@ -921,7 +921,9 @@ pub(crate) const BANDS_HINT: &str = "What the bound curve does to the sound, dra
      exported here.";
 
 pub(crate) const MEASURED_HINT: &str = "Corrections measured by AutoEq for a few thousand \
-     headphones, fetched one device at a time and kept here as an ordinary profile file. Type a \
+     headphones, fetched one device at a time and kept here as an ordinary profile file, or \
+     fitted from a frequency-response measurement of your own toward a target: flat, a Harman \
+     curve or a file. Type a \
      name to see what has been measured and by whom; who measured it and on which rig are shown \
      beside every result, because two rigs disagree about one pair of headphones more than two \
      measurements on one rig do. What is plugged in reads the chosen device's own name back \

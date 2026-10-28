@@ -3,8 +3,8 @@ use std::{path::Path, sync::Arc};
 use resonate_core::{SampleRate, eq::Profile};
 use resonate_engine::NodeName;
 use resonate_eq::{
-    Binding, Catalogue, Corrected, DeviceId, Kept, ProfileName, Store, search_preferring,
-    suggest_preferring,
+    Binding, BuiltIn, Catalogue, Corrected, DeviceId, Fitting, Kept, Measured, ProfileName, Store,
+    search_preferring, suggest_preferring,
 };
 use resonate_mpris::Reloadable;
 use resonate_pipewire::PipeWire;
@@ -67,6 +67,9 @@ fn performed(cli: &Cli, config: &Config, wanted: &EqArgs, settings: &Path) -> Re
     }
     if let Some(from) = wanted.import.as_deref() {
         return import(&store, settings, bound.as_ref(), wanted, from);
+    }
+    if let Some(from) = wanted.fit_measurement.as_deref() {
+        return fit_measurement(&store, settings, bound.as_ref(), wanted, from);
     }
     if let Some(device) = wanted.fetch.as_deref() {
         return fetch(&store, settings, config, bound.as_ref(), wanted, device);
@@ -201,6 +204,65 @@ fn import(
         return bind(store, settings, sink, name.as_str());
     }
     Ok(())
+}
+
+fn fit_measurement(
+    store: &Store,
+    settings: &Path,
+    sink: Option<&NodeName>,
+    wanted: &EqArgs,
+    from: &Path,
+) -> Result<()> {
+    let target = wanted
+        .target
+        .as_deref()
+        .unwrap_or(BuiltIn::HarmanOverEar2018.name());
+    let goal = Store::goal_named(target)?;
+    let Measured {
+        fitted,
+        layout,
+        passed_over,
+    } = Store::fit_file(from, &goal, &Fitting::default())?;
+    let bands = fitted.profile.bands().len();
+    let told = format!(
+        "{bands} bands fitted toward {target}, {:.1} dB off before and {:.1} dB after",
+        fitted.off_by_db_before, fitted.off_by_db_after
+    );
+
+    if wanted.own {
+        store.keep_own(sink.map(NodeName::as_str), &fitted.profile)?;
+        said!(
+            "shaped {} from the {} {}: {told}",
+            spoken_own(sink),
+            layout.label(),
+            from.display()
+        );
+        measurement_passed_over(passed_over);
+        return bound_as(settings, sink, &Binding::Own);
+    }
+
+    let called = wanted.profile.as_deref().map(named).transpose()?;
+    let name = Store::name_for_import(from, called.as_ref());
+    let held = store.holds(&name);
+    store.keep(&name, &fitted.profile)?;
+    replaced_if(held, &name);
+    said!(
+        "kept {name} from the {} {}: {told}",
+        layout.label(),
+        from.display()
+    );
+    measurement_passed_over(passed_over);
+
+    if wanted.r#for.is_some() {
+        return bind(store, settings, sink, name.as_str());
+    }
+    Ok(())
+}
+
+fn measurement_passed_over(passed_over: usize) {
+    if passed_over > 0 {
+        said!("{passed_over} lines of the measurement were passed over");
+    }
 }
 
 fn replaced_if(held: bool, name: &ProfileName) {
@@ -830,6 +892,197 @@ mod tests {
         assert_eq!(scratch.bound(Some(&device)), Some(Binding::Own));
         assert_eq!(scratch.bound(None), None);
         assert!(scratch.config().equaliser_on());
+    }
+
+    fn dipped_measurement(scratch: &Scratch) -> PathBuf {
+        let text: String = (0..60)
+            .map(|step| {
+                let hertz = 20.0 * 1.12_f64.powi(step);
+                let level = if (3_000.0..6_000.0).contains(&hertz) {
+                    -5.0
+                } else {
+                    0.0
+                };
+                format!("{hertz:.2}, {level:.2}\n")
+            })
+            .collect();
+        let file = scratch.folder.join("dipped.csv");
+        fs::write(&file, format!("frequency,raw\n{text}")).expect("a writable temporary directory");
+        file
+    }
+
+    #[test]
+    fn a_measurement_is_fitted_toward_a_target_only_where_one_is_given_a_measurement() {
+        let wanted = asked(&["--fit-measurement", "m.txt", "--target", "flat"]);
+
+        assert_eq!(wanted.fit_measurement, Some(PathBuf::from("m.txt")));
+        assert_eq!(wanted.target.as_deref(), Some("flat"));
+        assert!(asked(&["--fit-measurement", "m.txt"]).target.is_none());
+
+        for refused in [
+            &["--target", "flat"][..],
+            &["--fit-measurement", "m.txt", "--import", "p.txt"],
+            &["--fit-measurement", "m.txt", "--fetch", "a/b/C"],
+            &["--fit-measurement", "m.txt", "--export", "p.txt"],
+            &["--fit-measurement", "m.txt", "--list"],
+            &["--fit-measurement", "m.txt", "--on"],
+        ] {
+            assert!(
+                Cli::try_parse_from(["resonate", "eq"].iter().chain(refused)).is_err(),
+                "{refused:?} was taken"
+            );
+        }
+        assert!(
+            Cli::try_parse_from([
+                "resonate",
+                "eq",
+                "--fit-measurement",
+                "m.txt",
+                "--profile",
+                "mine",
+                "--for",
+                DEVICE,
+            ])
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn a_fitted_measurement_is_kept_under_the_name_given_and_bound_where_a_device_is_named() {
+        let scratch = Scratch::new();
+        let device = NodeName::new(DEVICE);
+        let from = dipped_measurement(&scratch);
+        let wanted = asked(&[
+            "--fit-measurement",
+            from.to_str().expect("a UTF-8 path"),
+            "--target",
+            "flat",
+            "--profile",
+            "dipped",
+            "--for",
+            DEVICE,
+        ]);
+
+        fit_measurement(
+            &scratch.store,
+            &scratch.settings(),
+            Some(&device),
+            &wanted,
+            &from,
+        )
+        .expect("the measurement is fitted");
+
+        let name = ProfileName::new("dipped").expect("a usable name");
+        let kept = scratch
+            .store
+            .read(&name)
+            .expect("it reads")
+            .expect("it is kept");
+        assert!(!kept.bands().is_empty());
+        assert!(kept.bands().iter().any(|band| band.gain.decibels() > 2.0));
+        assert_eq!(scratch.bound(Some(&device)), Some(Binding::Profile(name)));
+        assert!(scratch.config().equaliser_on());
+    }
+
+    #[test]
+    fn a_fitted_measurement_with_own_shapes_the_devices_own_curve_and_keeps_no_profile() {
+        let scratch = Scratch::new();
+        let device = NodeName::new(DEVICE);
+        let from = dipped_measurement(&scratch);
+        let wanted = asked(&[
+            "--fit-measurement",
+            from.to_str().expect("a UTF-8 path"),
+            "--own",
+            "--for",
+            DEVICE,
+        ]);
+
+        fit_measurement(
+            &scratch.store,
+            &scratch.settings(),
+            Some(&device),
+            &wanted,
+            &from,
+        )
+        .expect("the measurement is fitted");
+
+        assert!(
+            !scratch
+                .store
+                .own(Some(DEVICE))
+                .expect("it reads")
+                .bands()
+                .is_empty()
+        );
+        assert!(scratch.store.names().expect("it walks").is_empty());
+        assert_eq!(scratch.bound(Some(&device)), Some(Binding::Own));
+    }
+
+    #[test]
+    fn a_target_file_is_read_in_place_of_a_built_in_and_a_missing_one_keeps_nothing() {
+        let scratch = Scratch::new();
+        let from = dipped_measurement(&scratch);
+        let target = scratch.folder.join("target.csv");
+        let target_text: String = (0..30)
+            .map(|step| format!("{:.2},0\n", 20.0 * 1.3_f64.powi(step)))
+            .collect();
+        fs::write(&target, format!("frequency,raw\n{target_text}"))
+            .expect("a writable temporary directory");
+
+        let by_file = asked(&[
+            "--fit-measurement",
+            from.to_str().expect("a UTF-8 path"),
+            "--target",
+            target.to_str().expect("a UTF-8 path"),
+            "--profile",
+            "by-file",
+        ]);
+        fit_measurement(&scratch.store, &scratch.settings(), None, &by_file, &from)
+            .expect("fitted to the file");
+        assert_eq!(scratch.store.names().expect("it walks").len(), 1);
+
+        let missing = scratch.folder.join("missing.csv");
+        let by_missing = asked(&[
+            "--fit-measurement",
+            from.to_str().expect("a UTF-8 path"),
+            "--target",
+            missing.to_str().expect("a UTF-8 path"),
+            "--profile",
+            "by-missing",
+        ]);
+        assert!(matches!(
+            fit_measurement(
+                &scratch.store,
+                &scratch.settings(),
+                None,
+                &by_missing,
+                &from
+            ),
+            Err(Error::Eq(resonate_eq::Error::Store { .. }))
+        ));
+        assert_eq!(scratch.store.names().expect("it walks").len(), 1);
+    }
+
+    #[test]
+    fn a_measurement_already_on_its_target_keeps_no_profile() {
+        let scratch = Scratch::new();
+        let text: String = (0..40)
+            .map(|step| format!("{:.2} 0\n", 20.0 * 1.2_f64.powi(step)))
+            .collect();
+        let from = scratch.folder.join("flat.txt");
+        fs::write(&from, text).expect("a writable temporary directory");
+        let wanted = asked(&[
+            "--fit-measurement",
+            from.to_str().expect("a UTF-8 path"),
+            "--target",
+            "flat",
+        ]);
+
+        assert!(matches!(
+            fit_measurement(&scratch.store, &scratch.settings(), None, &wanted, &from),
+            Err(Error::Eq(resonate_eq::Error::NothingToCorrect { .. }))
+        ));
+        assert!(scratch.store.names().expect("it walks").is_empty());
     }
 
     #[test]

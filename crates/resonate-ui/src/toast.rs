@@ -319,6 +319,13 @@ pub(crate) fn eq_could_not(doing: &str, error: &resonate_eq::Error) -> Notice {
         Eq::NameNotUsable => Some("that name can't be used for a profile"),
         Eq::TooLarge { .. } => Some("the file is too large"),
         Eq::TooManyLines { .. } => Some("the file holds too many lines"),
+        Eq::MeasurementTooLarge { .. } => Some("the file is too large to be a measurement"),
+        Eq::NoMeasuredPoints => Some("no line of that file reads as a frequency and a level"),
+        Eq::TooFewMeasuredPoints { .. } => Some("that file holds too few points"),
+        Eq::ResponseMissesTheMidBand { .. } => {
+            Some("the measurement and its target must both reach from 500 Hz to 2 kHz")
+        }
+        Eq::NothingToCorrect { .. } => Some("that measurement already sits on its target"),
         _ => None,
     };
     Notice::Trouble(match why {

@@ -16,7 +16,10 @@ use resonate_core::{
     writer::{self, Held, Writer},
 };
 
-use crate::{EqOp, Error, Result, StoreOp, apo};
+use crate::{
+    BuiltIn, EqOp, Error, Fitted, Fitting, LARGEST_MEASUREMENT, Layout, Response, ResponseReading,
+    Result, StoreOp, apo, fit, read_response,
+};
 
 pub const EXTENSION: &str = "txt";
 pub const NAME_AT_MOST: usize = 96;
@@ -89,6 +92,13 @@ pub struct Kept {
     pub approximated: usize,
     pub clamped: usize,
     pub bytes: Vec<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Measured {
+    pub fitted: Fitted,
+    pub layout: Layout,
+    pub passed_over: usize,
 }
 
 struct Standing {
@@ -168,7 +178,7 @@ impl Store {
         Ok(the_least(names, &self.folder))
     }
 
-    fn bytes_of(path: &Path) -> Result<Option<Vec<u8>>> {
+    fn bytes_up_to(path: &Path, limit: usize) -> Result<Option<Vec<u8>>> {
         let file = match fs::File::open(path) {
             Ok(file) => file,
             Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -176,9 +186,16 @@ impl Store {
         };
 
         let mut bytes = Vec::new();
-        file.take(apo::LARGEST_PROFILE as u64 + 1)
+        file.take(limit as u64 + 1)
             .read_to_end(&mut bytes)
             .map_err(Self::failed(path, StoreOp::Read))?;
+        Ok(Some(bytes))
+    }
+
+    fn bytes_of(path: &Path) -> Result<Option<Vec<u8>>> {
+        let Some(bytes) = Self::bytes_up_to(path, apo::LARGEST_PROFILE)? else {
+            return Ok(None);
+        };
         if bytes.len() > apo::LARGEST_PROFILE {
             return Err(Error::TooLarge {
                 op: EqOp::Parse,
@@ -361,6 +378,32 @@ impl Store {
             approximated: reading.approximated,
             clamped: reading.clamped,
             bytes,
+        })
+    }
+
+    pub fn response_in(from: &Path) -> Result<ResponseReading> {
+        let Some(bytes) = Self::bytes_up_to(from, LARGEST_MEASUREMENT)? else {
+            return Err(Self::failed(from, StoreOp::Read)(std::io::Error::from(
+                std::io::ErrorKind::NotFound,
+            )));
+        };
+        read_response(&bytes)
+    }
+
+    pub fn goal_named(text: &str) -> Result<Response> {
+        match BuiltIn::parse(text) {
+            Some(built_in) => built_in.response(),
+            None => Ok(Self::response_in(Path::new(text))?.response),
+        }
+    }
+
+    pub fn fit_file(from: &Path, goal: &Response, fitting: &Fitting) -> Result<Measured> {
+        let reading = Self::response_in(from)?;
+        let fitted = fit(&reading.response, goal, fitting)?;
+        Ok(Measured {
+            fitted,
+            layout: reading.layout,
+            passed_over: reading.passed_over,
         })
     }
 
@@ -1235,5 +1278,99 @@ mod tests {
         assert_eq!(stamp_of_staged("shared.txt"), None);
         assert_eq!(stamp_of_staged(".shared.txt.new"), None);
         assert_eq!(stamp_of_staged(".a.b.7-x.new"), None);
+    }
+
+    fn response_text(shift_db: f64) -> String {
+        (0..40)
+            .map(|step| {
+                let hertz = 20.0 * 1.2_f64.powi(step);
+                let level = if (800.0..2_000.0).contains(&hertz) {
+                    shift_db
+                } else {
+                    0.0
+                };
+                format!("{hertz:.2} {level:.2}\n")
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_measurement_in_a_file_is_fitted_and_says_how_it_was_laid_out() {
+        let scratch = Scratch::new();
+        let folder = scratch.store.folder().to_path_buf();
+        fs::create_dir_all(&folder).expect("a writable folder");
+        let file = folder.join("measured.txt");
+        let dip: String = (0..60)
+            .map(|step| {
+                let hertz = 20.0 * 1.12_f64.powi(step);
+                let level = if (3_000.0..6_000.0).contains(&hertz) {
+                    -5.0
+                } else {
+                    0.0
+                };
+                format!("{hertz:.2}\t{level:.2}\n")
+            })
+            .collect();
+        fs::write(&file, format!("* REW\n{dip}")).expect("a writable folder");
+
+        let measured = Store::fit_file(&file, &Response::flat(), &Fitting::default())
+            .expect("the file is fitted");
+
+        assert_eq!(measured.layout, Layout::Rew);
+        assert!(!measured.fitted.profile.bands().is_empty());
+        assert!(measured.fitted.off_by_db_after < measured.fitted.off_by_db_before);
+
+        let name = named("fitted");
+        scratch
+            .store
+            .keep(&name, &measured.fitted.profile)
+            .expect("kept");
+        assert_eq!(
+            scratch.store.read(&name).expect("it reads"),
+            Some(measured.fitted.profile)
+        );
+    }
+
+    #[test]
+    fn a_target_is_a_built_in_by_name_or_else_a_file_in_the_same_formats() {
+        let scratch = Scratch::new();
+        let folder = scratch.store.folder().to_path_buf();
+        fs::create_dir_all(&folder).expect("a writable folder");
+        let file = folder.join("mine.csv");
+        fs::write(
+            &file,
+            format!("frequency,raw\n{}", response_text(4.0).replace(' ', ",")),
+        )
+        .expect("a writable folder");
+
+        let built_in = Store::goal_named("Harman-Over-Ear-2018").expect("a built-in");
+        let own = Store::goal_named(file.to_str().expect("UTF-8")).expect("a file");
+
+        assert_eq!(
+            built_in,
+            BuiltIn::HarmanOverEar2018.response().expect("target")
+        );
+        assert_eq!(own.at(1_000.0), 4.0);
+        assert!(matches!(
+            Store::goal_named(folder.join("missing.csv").to_str().expect("UTF-8")),
+            Err(Error::Store {
+                op: StoreOp::Read,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn a_measurement_file_larger_than_a_measurement_may_be_is_refused() {
+        let scratch = Scratch::new();
+        let folder = scratch.store.folder().to_path_buf();
+        fs::create_dir_all(&folder).expect("a writable folder");
+        let file = folder.join("huge.txt");
+        fs::write(&file, vec![b'1'; LARGEST_MEASUREMENT + 1]).expect("a writable folder");
+
+        assert!(matches!(
+            Store::response_in(&file),
+            Err(Error::MeasurementTooLarge { .. })
+        ));
     }
 }
