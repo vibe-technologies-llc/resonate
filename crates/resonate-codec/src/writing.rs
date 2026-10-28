@@ -1505,7 +1505,10 @@ pub fn carries_what_the_file_did(standing: &Metadata, path: &Path, staged: &Path
 }
 
 fn attributes_of(path: &Path) -> io::Result<Vec<(OsString, Vec<u8>)>> {
-    let listed = match read_sized(|buffer| rustix::fs::listxattr(path, buffer)) {
+    let listed = match read_sized(
+        || rustix::fs::listxattr_query(path),
+        |buffer| rustix::fs::listxattr(path, buffer),
+    ) {
         Ok(listed) => listed,
         Err(error) if unsupported(&error) => return Ok(Vec::new()),
         Err(error) => return Err(error),
@@ -1516,15 +1519,21 @@ fn attributes_of(path: &Path) -> io::Result<Vec<(OsString, Vec<u8>)>> {
         .filter(|name| !name.is_empty())
         .map(|name| {
             let name = OsStr::from_bytes(name);
-            let value = read_sized(|buffer| rustix::fs::getxattr(path, name, buffer))?;
+            let value = read_sized(
+                || rustix::fs::getxattr_query(path, name),
+                |buffer| rustix::fs::getxattr(path, name, buffer),
+            )?;
             Ok((name.to_os_string(), value))
         })
         .collect()
 }
 
-fn read_sized(read: impl Fn(&mut [u8]) -> rustix::io::Result<usize>) -> io::Result<Vec<u8>> {
+fn read_sized(
+    sized: impl Fn() -> rustix::io::Result<usize>,
+    read: impl Fn(&mut [u8]) -> rustix::io::Result<usize>,
+) -> io::Result<Vec<u8>> {
     for _ in 0..ATTRIBUTE_READS_AT_MOST {
-        let wanted = read(&mut [])?;
+        let wanted = sized()?;
         let mut held = vec![0_u8; wanted];
         match read(&mut held) {
             Ok(read) => {
