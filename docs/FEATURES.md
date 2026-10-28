@@ -18,6 +18,13 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   `build-std`
 
 ## Playback and output
+- [M · 0.3.0] A row shorter than what the ring holds is not handed on gaplessly to the one after
+  it: while one boundary waits for the graph a second is not written behind it
+  (`Engine::hand_on` refuses), so the row drains and the next opens as a format change does; a run
+  of short cue cuts or interludes still has a gap after each that ends before the last was heard
+- [S · 0.3.0] A DoP stream drains at every track boundary: a gapless handover would restart the
+  marker sequence mid-stream, which a DAC may read as lost lock, so `Engine::may_hand_on` asks
+  for sample packing
 - [M · 0.3.0] Zones do not hand over to one another: a fade carrying one zone's song into another
   is not built, nor does one player open its next stream on another device while the outgoing one
   fades there (no pinned rate or exclusive sink would be asked to carry both), and the phones offer

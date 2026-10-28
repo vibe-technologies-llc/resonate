@@ -1028,6 +1028,25 @@ impl Queue {
         self.heard_place()
     }
 
+    pub fn follows_naturally(&self) -> Option<&QueueItem> {
+        if self.seat == Seat::Nowhere {
+            return None;
+        }
+        if self.repeat == RepeatMode::Track {
+            return self.current();
+        }
+        let waiting = match self.seat {
+            Seat::Next => self.next.get(1),
+            Seat::Nowhere | Seat::InOrder => self.next.front(),
+        };
+        let held = waiting.or_else(|| self.order.get(self.after)).or_else(|| {
+            (self.repeat == RepeatMode::Queue && !self.shuffle)
+                .then(|| self.order.front())
+                .flatten()
+        })?;
+        Some(held.item.as_ref())
+    }
+
     pub fn retreat(&mut self) -> Option<usize> {
         match self.seat {
             Seat::Nowhere => return None,

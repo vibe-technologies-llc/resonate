@@ -3,6 +3,12 @@
 Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims. Format and
 ordering are in [ROADMAP.md](ROADMAP.md).
 
+## Playback
+- [S · 0.3.1] A volume, mute or ReplayGain change asked while a gapless boundary waits for the
+  graph is heard on the leaving row's tail at the entering row's level: the ring's heard level is
+  one amplitude, computed from the entering row's plan, so the last ring of the leaving row is
+  trimmed by the ratio of the two rows' ReplayGain until the boundary is reached
+
 ## Formats
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
   symphonia 0.6.1 reads it into its own buffer before `probe_cover_art` can weigh it; its
