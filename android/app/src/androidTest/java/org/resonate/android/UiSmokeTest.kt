@@ -58,7 +58,7 @@ class UiSmokeTest {
     private fun scrollTo(device: UiDevice, selector: BySelector): UiObject2 {
         for (direction in listOf(Direction.DOWN, Direction.UP)) {
             repeat(8) {
-                InstrumentationRegistry.getInstrumentation().uiAutomation.clearCache()
+                InstrumentationRegistry.getInstrumentation().uiAutomation.forgetTheCachedTree()
                 device.findObject(selector)?.let {
                     val at = it.visibleCenter.y
                     if (at in device.displayHeight / 5..device.displayHeight * 3 / 4) {
@@ -86,7 +86,7 @@ class UiSmokeTest {
     private fun await(device: UiDevice, selector: BySelector): UiObject2 {
         var found: UiObject2? = null
         eventually {
-            InstrumentationRegistry.getInstrumentation().uiAutomation.clearCache()
+            InstrumentationRegistry.getInstrumentation().uiAutomation.forgetTheCachedTree()
             found = device.findObject(selector)
             found != null
         }

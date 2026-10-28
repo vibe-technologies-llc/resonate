@@ -123,7 +123,7 @@ class CollectionUiTest {
     private fun shown(selector: BySelector): Boolean {
         val deadline = System.nanoTime() + 3_000_000_000L
         while (System.nanoTime() < deadline) {
-            instrumentation.uiAutomation.clearCache()
+            instrumentation.uiAutomation.forgetTheCachedTree()
             if (device.hasObject(selector)) return true
             Thread.sleep(100)
         }
@@ -251,7 +251,7 @@ class CollectionUiTest {
     private fun eventually(condition: () -> Boolean) {
         val deadline = System.nanoTime() + 15_000_000_000L
         while (true) {
-            instrumentation.uiAutomation.clearCache()
+            instrumentation.uiAutomation.forgetTheCachedTree()
             if (condition()) return
             if (System.nanoTime() > deadline) {
                 val hierarchy =

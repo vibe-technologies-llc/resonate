@@ -101,7 +101,7 @@ class BackgroundPlaybackTest {
                         present
                     }
                     eventually {
-                        instrumentation.uiAutomation.clearCache()
+                        instrumentation.uiAutomation.forgetTheCachedTree()
                         device.hasObject(By.descContains("Song progress"))
                     }
                     assertTrue(device.hasObject(By.desc("Next")))
@@ -148,7 +148,7 @@ class BackgroundPlaybackTest {
                         assertTrue(device.openNotification())
                         if (paused) {
                             eventually {
-                                instrumentation.uiAutomation.clearCache()
+                                instrumentation.uiAutomation.forgetTheCachedTree()
                                 device.hasObject(By.desc("Close"))
                             }
                             instrumentation.runOnMainSync { controller.pause() }
@@ -215,7 +215,7 @@ class BackgroundPlaybackTest {
 
     private fun clickNotificationControl(device: UiDevice, selector: BySelector) {
         eventually {
-            InstrumentationRegistry.getInstrumentation().uiAutomation.clearCache()
+            InstrumentationRegistry.getInstrumentation().uiAutomation.forgetTheCachedTree()
             try {
                 val control = device.findObject(selector) ?: return@eventually false
                 control.click()
