@@ -12,9 +12,9 @@ use resonate_core::{
 };
 
 use crate::{
-    Asleep, BluetoothWake, CommandKind, DitherKind, EngineConfig, Equalisation, Error, FilterPhase,
-    Levelling, NoiseShaping, OutputMode, PreviousRestarts, Quality, Queued, RepeatMode,
-    ReplayGainMode, Restoration, SkipUnderRepeat, Tapped,
+    Asleep, BluetoothWake, CommandKind, Crossfeed, DitherKind, EngineConfig, Equalisation, Error,
+    FilterPhase, Levelling, NoiseShaping, OutputMode, PreviousRestarts, Quality, Queued,
+    RepeatMode, ReplayGainMode, Restoration, SkipUnderRepeat, Tapped,
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -135,6 +135,7 @@ pub struct OutputSettings {
     pub filter_phase: FilterPhase,
     pub true_peak: bool,
     pub restoration: Restoration,
+    pub crossfeed: Crossfeed,
     pub dither: DitherKind,
     pub noise_shaping: NoiseShaping,
     pub replay_gain: ReplayGainMode,
@@ -157,6 +158,7 @@ impl OutputSettings {
             filter_phase: config.filter_phase,
             true_peak: config.true_peak,
             restoration: config.restoration,
+            crossfeed: config.crossfeed,
             dither: config.dither,
             noise_shaping: config.noise_shaping,
             replay_gain: config.replay_gain,
@@ -179,6 +181,7 @@ impl OutputSettings {
             filter_phase: self.filter_phase,
             true_peak: self.true_peak,
             restoration: self.restoration,
+            crossfeed: self.crossfeed,
             dither: self.dither,
             noise_shaping: self.noise_shaping,
             replay_gain: self.replay_gain,
@@ -201,6 +204,7 @@ impl OutputSettings {
             && self.filter_phase == config.filter_phase
             && self.true_peak == config.true_peak
             && self.restoration == config.restoration
+            && self.crossfeed == config.crossfeed
             && self.dither == config.dither
             && self.noise_shaping == config.noise_shaping
             && self.replay_gain == config.replay_gain
@@ -333,6 +337,10 @@ mod tests {
         note("restoration", config);
         *config = EngineConfig::default();
 
+        config.crossfeed = Crossfeed::Strong;
+        note("crossfeed", config);
+        *config = EngineConfig::default();
+
         config.dither = DitherKind::None;
         note("dither", config);
         *config = EngineConfig::default();
@@ -406,7 +414,7 @@ mod tests {
         let moved = every_field_moved(&mut config);
         assert_eq!(
             moved.len(),
-            16,
+            17,
             "a field OutputSettings publishes but already_says does not compare would stop the \
              engine publishing it; noticed {moved:?}"
         );

@@ -50,6 +50,11 @@ than reaching the hard clamp. Default: true.
 String: off, repair or extend. Repair the damage an MP3, AAC or Vorbis encoder leaves under its
 cutoff, or repair and rebuild the treble it cut away above it. Default: off.
 .TP
+.B crossfeed
+String: off, light, moderate or strong. Feed a lowpassed, slightly delayed copy of each stereo channel
+into the other, as a loudspeaker mix reaches both ears, so hard-panned recordings sit less far apart on
+headphones. Level is kept so it never clips more than the source. Stereo output only. Default: off.
+.TP
 .B dither
 String: none, rectangular or triangular. The dither covering a word length the output is too short
 to hold. Default: triangular.

@@ -376,7 +376,7 @@ Invariants from file to sink. Callback contract: `realtime.md`.
 - **An equaliser change is heard within a few pulls, not a ring later: what the ring holds is
   rendered again from the frames that made it and spliced in.** Not on the pull side: the ring
   carries sink words after dither, so the callback would run biquads, guard, dither and the
-  narrowing. The chain's *back* (equaliser, gain, guard or `Overs`, dither; `then_the_back` marks
+  narrowing. The chain's *back* (crossfeed, equaliser, gain, guard or `Overs`, dither; `then_the_back` marks
   where `backed` starts, `Chain::back` names it) is fed by its front (remix, restoration, resampler,
   convolver), and every frame entering the back is kept in a `Recall` (`resonate-dsp`, f64 at the
   sink rate, two rings, `ROLLED_IN_BEFORE_A_SPLICE` and a block deep, at most `LARGEST_RING` bytes;
@@ -840,8 +840,8 @@ Invariants from file to sink. Callback contract: `realtime.md`.
 
 ## DSP
 
-- **Chain: remix, lossy restoration, resample, convolver, equaliser, gain, true-peak guard, dither**
-  (equaliser: `eq.md`). The equaliser is after the resampler (a biquad's shape warps with its design
+- **Chain: remix, lossy restoration, resample, convolver, crossfeed, equaliser, gain, true-peak guard, dither**
+  (crossfeed and the two-by-two convolver: `eq.md`; equaliser: `eq.md`). The equaliser is after the resampler (a biquad's shape warps with its design
   rate) and before gain (volume is the last word, should attenuate a boost); the convolver is before
   it (both linear). An equaliser in force makes the plan `Converted`; a DoP-packed stream refuses it.
 - **Resampler levels: one filter design at four lengths; High is default.** `Quality::params` is the

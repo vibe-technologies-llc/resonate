@@ -1,7 +1,7 @@
 use gpui::{Context, Div, SharedString, prelude::*};
 use resonate_core::Trim;
 use resonate_engine::{
-    Command, DitherKind, FilterPhase, Levelling, NoiseShaping, Quality, ReplayGainMode,
+    Command, Crossfeed, DitherKind, FilterPhase, Levelling, NoiseShaping, Quality, ReplayGainMode,
     Restoration, SincParams,
 };
 
@@ -176,6 +176,37 @@ impl Choice for NoiseShaping {
     }
 }
 
+impl Choice for Crossfeed {
+    const ALL: &'static [Self] = &[Self::Off, Self::Light, Self::Moderate, Self::Strong];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Off => "Off",
+            Self::Light => "Light",
+            Self::Moderate => "Moderate",
+            Self::Strong => "Strong",
+        }
+    }
+
+    fn meaning(self) -> SharedString {
+        SharedString::new_static(match self {
+            Self::Off => "Each channel stays in its own ear, exactly as the record was mixed.",
+            Self::Light => {
+                "A faint, low copy of each side reaches the other ear (650 Hz, 9.5 dB down), \
+                 enough to take the edge off a hard-panned record."
+            }
+            Self::Moderate => {
+                "The classic setting (700 Hz, 6 dB down): the image closes up toward the \
+                 front without losing its width."
+            }
+            Self::Strong => {
+                "The most of the other side reaches each ear (700 Hz, 4.5 dB down), for old \
+                 stereo records with the voices on one side and the band on the other."
+            }
+        })
+    }
+}
+
 impl Choice for ReplayGainMode {
     const ALL: &'static [Self] = &[Self::Off, Self::Track, Self::Album];
 
@@ -202,6 +233,10 @@ impl Choice for ReplayGainMode {
         })
     }
 }
+
+const CROSSFEED_STEREO_ONLY: &str = "Only a stereo stream is crossfed; anything else plays as it is \
+                                     whatever this says. A crossfed stream is converted rather \
+                                     than bit-perfect.";
 
 const LOSSY_ONLY: &str = "Only MP3, AAC and Vorbis files are touched; a lossless file plays as \
                           it is whatever this says. A file that is repaired is converted rather \
@@ -346,6 +381,22 @@ impl RootView {
                 },
             ))
             .child(note(LOSSY_ONLY))
+    }
+
+    pub(super) fn crossfeed_group(&mut self, cx: &mut Context<Self>) -> Div {
+        let crossfeed = self.player.read(cx).output_settings().crossfeed;
+
+        kit::section_body()
+            .child(self.choices(
+                "crossfeed",
+                crossfeed,
+                cx,
+                |this, crossfeed: Crossfeed, cx| {
+                    this.send(Command::SetCrossfeed(crossfeed), cx);
+                    this.store(&Setting::Crossfeed(crossfeed), cx);
+                },
+            ))
+            .child(note(CROSSFEED_STEREO_ONLY))
     }
 
     pub(super) fn dither_group(&mut self, cx: &mut Context<Self>) -> Div {

@@ -47,8 +47,8 @@ pub use resonate_core::{
     },
 };
 pub use resonate_dsp::{
-    DitherKind, FilterPhase, Impulse, NoiseShaping, Quality, ReplayGainMode, Restoration,
-    SincParams, TruePeakMeter, Tuning,
+    Crossfeed, DitherKind, FilterPhase, Impulse, NoiseShaping, Quality, ReplayGainMode,
+    Restoration, SincParams, TruePeakMeter, Tuning,
 };
 
 pub use crate::{

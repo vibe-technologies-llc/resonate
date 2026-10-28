@@ -4681,7 +4681,8 @@ mod tests {
     ) {
         use resonate_core::Trim;
         use resonate_engine::{
-            DitherKind, FilterPhase, Levelling, NoiseShaping, Quality, ReplayGainMode, Restoration,
+            Crossfeed, DitherKind, FilterPhase, Levelling, NoiseShaping, Quality, ReplayGainMode,
+            Restoration,
         };
 
         let trim = |millibels| Trim::from_millibels(millibels).expect("a trim");
@@ -4777,6 +4778,20 @@ mod tests {
         );
 
         flipped_until(&mut driven, "true-peak", |settings| settings.true_peak);
+        driven.scroll("settings", 600.0);
+        for (index, held) in [
+            Crossfeed::Off,
+            Crossfeed::Light,
+            Crossfeed::Moderate,
+            Crossfeed::Strong,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            pressed_until(&mut driven, "crossfeed", index, |settings| {
+                settings.crossfeed == held
+            });
+        }
     }
 
     #[gpui::test]

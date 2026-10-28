@@ -95,6 +95,7 @@ pub(crate) enum Group {
     ReplayGain,
     TruePeak,
     LossySources,
+    Crossfeed,
     Equalising,
     BoundTo,
     Bands,
@@ -147,7 +148,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 62] = [
+    pub(crate) const ALL: [Self; 63] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -161,6 +162,7 @@ impl Group {
         Self::ReplayGain,
         Self::TruePeak,
         Self::LossySources,
+        Self::Crossfeed,
         Self::Equalising,
         Self::BoundTo,
         Self::Bands,
@@ -224,6 +226,7 @@ impl Group {
             Self::Resampler
             | Self::Dither
             | Self::NoiseShaping
+            | Self::Crossfeed
             | Self::ReplayGain
             | Self::TruePeak
             | Self::LossySources => Category::Processing,
@@ -284,6 +287,7 @@ impl Group {
             Self::Resampler => "Resampler",
             Self::Dither => "Dither",
             Self::NoiseShaping => "Noise shaping",
+            Self::Crossfeed => "Crossfeed",
             Self::ReplayGain => "ReplayGain",
             Self::TruePeak => "True peak",
             Self::LossySources => "Artificially enhance lossy files",
@@ -351,6 +355,7 @@ impl Group {
             Self::Resampler => RESAMPLER_HINT,
             Self::Dither => DITHER_HINT,
             Self::NoiseShaping => SHAPING_HINT,
+            Self::Crossfeed => CROSSFEED_HINT,
             Self::ReplayGain => REPLAY_GAIN_HINT,
             Self::TruePeak => TRUE_PEAK_HINT,
             Self::LossySources => LOSSY_SOURCES_HINT,
@@ -431,6 +436,10 @@ impl Group {
             Self::Dither => "truncation triangular rectangular noise",
             Self::NoiseShaping => {
                 "lipshitz threshold hearing terhardt e-weighted psychoacoustic curve shaped"
+            }
+            Self::Crossfeed => {
+                "crossfeed bauer headphones stereo image binaural speakers narrow soundstage \
+                 bs2b meier chu moy fatigue"
             }
             Self::ReplayGain => "loudness volume normalisation gain album track pre-amp untagged",
             Self::TruePeak => "clipping intersample over limiter dbtp headroom lossy",
@@ -605,6 +614,7 @@ impl Group {
             Self::Resampler => &[SettingKey::Quality, SettingKey::FilterPhase],
             Self::Dither => &[SettingKey::Dither],
             Self::NoiseShaping => &[SettingKey::NoiseShaping],
+            Self::Crossfeed => &[SettingKey::Crossfeed],
             Self::ReplayGain => &[
                 SettingKey::ReplayGain,
                 SettingKey::PreAmp,
@@ -837,6 +847,13 @@ pub(crate) const LOSSY_SOURCES_HINT: &str = "An MP3, AAC or Vorbis file has had 
                                             the octave below it, the way AAC's SBR and Sony's \
                                             DSEE do, at a level that falls away faster than the \
                                             music does. Both touch lossy files alone.";
+
+pub(crate) const CROSSFEED_HINT: &str = "Headphones play each channel into one ear alone, where \
+                                         speakers reach both ears with a slightly delayed, \
+                                         duller copy of the other side. Crossfeed mixes that \
+                                         copy in, so a hard-panned record sits less far apart. \
+                                         The level is kept: the mix never peaks above the \
+                                         louder channel it was made from. Stereo output only.";
 
 pub(crate) const DITHER_HINT: &str = "Applies wherever the output is shallower than the source or \
                                       anything is processed, on a 16-, 24- or 32-bit device alike. \

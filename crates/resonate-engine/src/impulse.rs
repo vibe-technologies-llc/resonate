@@ -36,7 +36,12 @@ pub fn read_impulse(
         channel.truncate(most);
     }
 
-    Ok(Impulse::new(rate, taps).map(Impulse::with_headroom))
+    let impulse = if channels == resonate_dsp::CROSSED_RESPONSES {
+        Impulse::crossed(rate, taps)
+    } else {
+        Impulse::new(rate, taps)
+    };
+    Ok(impulse.map(Impulse::with_headroom))
 }
 
 #[cfg(test)]
@@ -79,6 +84,46 @@ mod tests {
         assert_eq!(read.channels(), 1);
         assert_eq!(read.frames(), 3);
         assert_eq!(read.rate().hz(), 48_000);
+    }
+
+    fn wave_of(channels: u16, rate: u32, samples: &[i16]) -> Vec<u8> {
+        let data: Vec<u8> = samples
+            .iter()
+            .flat_map(|sample| sample.to_le_bytes())
+            .collect();
+        let mut file = b"RIFF".to_vec();
+        file.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
+        file.extend_from_slice(b"WAVEfmt ");
+        file.extend_from_slice(&16_u32.to_le_bytes());
+        file.extend_from_slice(&1_u16.to_le_bytes());
+        file.extend_from_slice(&channels.to_le_bytes());
+        file.extend_from_slice(&rate.to_le_bytes());
+        file.extend_from_slice(&(rate * 2 * u32::from(channels)).to_le_bytes());
+        file.extend_from_slice(&(2 * channels).to_le_bytes());
+        file.extend_from_slice(&16_u16.to_le_bytes());
+        file.extend_from_slice(b"data");
+        file.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        file.extend_from_slice(&data);
+        file
+    }
+
+    #[test]
+    fn a_four_channel_file_is_read_as_a_two_by_two_response() {
+        let path = env::temp_dir().join(format!("resonate-binaural-{}.wav", process::id()));
+        fs::write(
+            &path,
+            wave_of(4, 48_000, &[16_384, 0, 0, 16_384, 8_192, 0, 0, 8_192]),
+        )
+        .expect("a scratch response");
+
+        let read = read_impulse(&Sources::local(), &MediaLocation::local(&path))
+            .expect("a readable response")
+            .expect("a response with taps");
+        let _ = fs::remove_file(&path);
+
+        assert!(read.is_crossed());
+        assert_eq!(read.channels(), 4);
+        assert_eq!(read.frames(), 2);
     }
 
     #[test]

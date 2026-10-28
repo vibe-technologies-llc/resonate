@@ -12,9 +12,9 @@ use resonate_core::{
     eq::{Band, BandGain, BandKind, Frequency, MAX_BANDS, Preamp, Profile, Q},
 };
 use resonate_dsp::{
-    Chain, Convolver, Dither, DitherKind, Equaliser, FilterPhase, GainConfig, GainStage, Impulse,
-    NoiseShaping, Processor, Quality, Remix, Resampler, ResamplerConfig, Restoration, Restore,
-    RestoreConfig, TruePeak, Tuning,
+    Chain, Convolver, Crossfeed, Crossfeeder, Dither, DitherKind, Equaliser, FilterPhase,
+    GainConfig, GainStage, Impulse, NoiseShaping, Processor, Quality, Remix, Resampler,
+    ResamplerConfig, Restoration, Restore, RestoreConfig, TruePeak, Tuning,
 };
 
 const BLOCK: usize = 1_024;
@@ -447,6 +447,32 @@ fn main() {
             || Box::new(Convolver::new(Arc::clone(&response))),
         );
     }
+
+    for at in [rate, SampleRate::HZ_192000] {
+        bench.stage(
+            &format!("crossfeed at {}", kilohertz(at)),
+            stereo(at),
+            || Box::new(Crossfeeder::new(Crossfeed::Moderate)),
+        );
+    }
+
+    let binaural = Arc::new(
+        Impulse::crossed(
+            rate,
+            vec![
+                (0..rate.hz() as usize / 4)
+                    .map(|tap| 0.5_f64.powi(tap as i32 % 7))
+                    .collect();
+                4
+            ],
+        )
+        .expect("a benchmarked response"),
+    );
+    bench.stage(
+        "convolve a quarter second two by two at 48k",
+        stereo(rate),
+        || Box::new(Convolver::new(Arc::clone(&binaural))),
+    );
 
     for at in [rate, SampleRate::HZ_192000] {
         let named = kilohertz(at);

@@ -153,6 +153,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         }
         Group::Dither => worn.dither != built.dither,
         Group::NoiseShaping => worn.noise_shaping != built.noise_shaping,
+        Group::Crossfeed => worn.crossfeed != built.crossfeed,
         Group::ReplayGain => {
             worn.replay_gain != built.replay_gain || worn.levelling != built.levelling
         }
@@ -257,6 +258,7 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         ],
         Group::Dither => vec![Command::SetDither(built.dither)],
         Group::NoiseShaping => vec![Command::SetNoiseShaping(built.noise_shaping)],
+        Group::Crossfeed => vec![Command::SetCrossfeed(built.crossfeed)],
         Group::ReplayGain => vec![
             Command::SetReplayGain(built.replay_gain),
             Command::SetLevelling(built.levelling),
@@ -372,6 +374,7 @@ mod tests {
                     | Group::Resampler
                     | Group::Dither
                     | Group::NoiseShaping
+                    | Group::Crossfeed
                     | Group::ReplayGain
                     | Group::TruePeak
                     | Group::LossySources

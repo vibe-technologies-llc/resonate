@@ -7,6 +7,7 @@ paths:
   - "crates/resonate-core/src/eq.rs"
   - "crates/resonate-dsp/src/eq.rs"
   - "crates/resonate-dsp/src/convolve.rs"
+  - "crates/resonate-dsp/src/crossfeed.rs"
   - "crates/resonate-engine/src/impulse.rs"
   - "crates/resonate-online/src/autoeq.rs"
   - "crates/resonate-ui/src/equaliser.rs"
@@ -317,6 +318,48 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   *Room correction* section, `fileImporter` of audio); Android keeps the same two keys in its
   `playback` preferences and does the same (`RoomCorrectionState.kt`, `RoomCorrectionSection`, the
   system audio document picker).
+
+## Crossfeed and binaural responses
+
+The stereo image, apart from the transducer: both are stereo-only, off by default and make the plan
+`Converted`.
+
+- **Crossfeed is a Bauer-style stage** (`resonate-dsp/src/crossfeed.rs`, `Crossfeeder`): each ear gets
+  the other channel delayed by `DELAY_SECONDS` (300 µs, rounded to whole frames at the rate) and
+  lowpassed by a one-pole filter, mixed with the channel's own. `Crossfeed` (`off`, `light`,
+  `moderate`, `strong`; key `crossfeed`) names a cutoff and a feed level, the figures bs2b's presets
+  use: light 650 Hz and 9.5 dB (Meier), moderate 700 Hz and 6 dB (Chu Moy), strong 700 Hz and
+  4.5 dB (bs2b's default). **Level-compensated by construction:** the cross gain is `b = 10^(-level/20)`
+  over the direct gain 1, and both are divided by `1 + b`; the lowpass has unity gain at DC and a
+  non-negative impulse response, so the sum of absolute gains is one and no output sample passes the
+  largest input one (`nothing_the_stage_makes_passes_the_largest_sample_it_was_given`). A steady
+  mono signal and a low mono tone keep their level (the bass is common to both ears); the treble of
+  a mono signal falls by `1 + b`, which is the price of that guarantee. State is a delay line and
+  one lowpass word a side, sized in `prepare`; `process` allocates nothing. `prepare` refuses
+  anything but stereo (`ChannelMismatch`); `crossfeed_config` plans it only on a stereo stream, after
+  the remix, so a mono or 5.1 stream is left alone and a mono source on a stereo sink is crossfed
+  (and unchanged, being common to both).
+- **Where it runs:** first in the *back* (`OutputPlan::backed`), after the convolver and the
+  resampler, before the equaliser, so a headphone correction still has the last word on the
+  transducer. `SetCrossfeed` rebinds the plan at the position as `SetConvolution` does
+  (`rebind_where_the_plan_moves`): no splice, so it is heard a ring later. A DoP stream refuses it
+  (`dop_survives`). The binary reads `crossfeed` from `config.toml`, the settings pane has a
+  *Crossfeed* group in Processing, `resonate explain` prints it. The phones do not offer it
+  (`FEATURES.md`).
+- **A two-by-two response is the same convolver over four taps.** `Impulse::crossed` takes exactly
+  `CROSSED_RESPONSES` (4) channels in the order left-to-left, left-to-right, right-to-left,
+  right-to-right, where *XY* is input *X* heard at output *Y* (a pure cross response swaps the
+  channels, `a_pure_cross_response_swaps_the_channels`; the identity is transparent). `read_impulse`
+  makes a crossed `Impulse` of any four-channel file, so the *Room correction* file serves as a
+  binaural response; `Impulse::is_crossed` is part of equality. `Convolver::prepare` builds four
+  `Channel`s (input *k / 2* to output *k % 2*) only when the impulse is crossed **and** the stream is
+  stereo; on any other layout the four channels are taken one a stream channel as before. Each
+  output sums two channels' ready samples, so the cost is that of four mono convolutions. **Headroom
+  is the larger of each ear's summed magnitudes** (`crossed_gain`: `|LL| + |RL|`, `|LR| + |RR|` at
+  each bin), so `with_headroom` holds coherent input at both ears under unity. `Impulse::at`
+  resamples each of the four alike. The preamp fit's `Applied` still reads a correction channel by
+  channel (the loudest pair), so the model understates a crossed response's sum; the decode
+  (`peak_through`) runs the real convolver and is exact.
 
 ## The binding
 

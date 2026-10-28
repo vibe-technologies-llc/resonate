@@ -414,6 +414,7 @@ impl RootView {
             Group::Resampler => self.resampler_group(cx),
             Group::Dither => self.dither_group(cx),
             Group::NoiseShaping => self.noise_shaping_group(cx),
+            Group::Crossfeed => self.crossfeed_group(cx),
             Group::ReplayGain => self.replay_gain_group(cx),
             Group::TruePeak => self.true_peak_group(cx),
             Group::LossySources => self.lossy_sources_group(cx),

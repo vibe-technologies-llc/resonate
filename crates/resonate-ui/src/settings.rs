@@ -19,8 +19,8 @@ use resonate_core::{
     TextSize, Theme, Trim, Volume,
 };
 use resonate_engine::{
-    DitherKind, FilterPhase, NodeName, NoiseShaping, PreviousRestarts, Quality, ReplayGainMode,
-    Restoration, SkipUnderRepeat,
+    Crossfeed, DitherKind, FilterPhase, NodeName, NoiseShaping, PreviousRestarts, Quality,
+    ReplayGainMode, Restoration, SkipUnderRepeat,
 };
 use resonate_eq::Binding;
 use resonate_library::{Cut, HistoryKept, MinimumLength, MusicExtensions};
@@ -158,6 +158,7 @@ pub enum SettingKey {
     FilterPhase,
     TruePeak,
     Restoration,
+    Crossfeed,
     Dither,
     NoiseShaping,
     ReplayGain,
@@ -255,12 +256,13 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 99] = [
+    pub const ALL: [Self; 100] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
         Self::TruePeak,
         Self::Restoration,
+        Self::Crossfeed,
         Self::Dither,
         Self::NoiseShaping,
         Self::ReplayGain,
@@ -365,6 +367,7 @@ pub enum Setting {
     FilterPhase(FilterPhase),
     TruePeak(bool),
     Restoration(Restoration),
+    Crossfeed(Crossfeed),
     Dither(DitherKind),
     NoiseShaping(NoiseShaping),
     ReplayGain(ReplayGainMode),
@@ -481,6 +484,7 @@ impl Setting {
             Self::FilterPhase(_) => SettingKey::FilterPhase,
             Self::TruePeak(_) => SettingKey::TruePeak,
             Self::Restoration(_) => SettingKey::Restoration,
+            Self::Crossfeed(_) => SettingKey::Crossfeed,
             Self::Dither(_) => SettingKey::Dither,
             Self::NoiseShaping(_) => SettingKey::NoiseShaping,
             Self::ReplayGain(_) => SettingKey::ReplayGain,

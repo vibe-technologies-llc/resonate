@@ -53,14 +53,17 @@ pub type Taps = Arc<[Vec<f64>]>;
 pub struct Impulse {
     rate: SampleRate,
     taps: Vec<Vec<f64>>,
+    crossed: bool,
     at_rates: Mutex<Vec<(SampleRate, Taps)>>,
 }
 
 impl PartialEq for Impulse {
     fn eq(&self, other: &Self) -> bool {
-        self.rate == other.rate && self.taps == other.taps
+        self.rate == other.rate && self.crossed == other.crossed && self.taps == other.taps
     }
 }
+
+pub const CROSSED_RESPONSES: usize = 4;
 
 impl Impulse {
     pub fn new(rate: SampleRate, taps: Vec<Vec<f64>>) -> Option<Self> {
@@ -73,8 +76,23 @@ impl Impulse {
         Some(Self {
             rate,
             taps,
+            crossed: false,
             at_rates: Mutex::new(Vec::new()),
         })
+    }
+
+    pub fn crossed(rate: SampleRate, taps: Vec<Vec<f64>>) -> Option<Self> {
+        if taps.len() != CROSSED_RESPONSES {
+            return None;
+        }
+        Self::new(rate, taps).map(|impulse| Self {
+            crossed: true,
+            ..impulse
+        })
+    }
+
+    pub const fn is_crossed(&self) -> bool {
+        self.crossed
     }
 
     pub const fn rate(&self) -> SampleRate {
@@ -93,26 +111,31 @@ impl Impulse {
         let size = smooth_length_from(self.frames().max(1) * SPECTRUM_POINTS_A_TAP);
         let fft = RealFftPlanner::<f64>::new().plan_fft_forward(size);
         let mut window = fft.make_input_vec();
-        let mut spectrum = fft.make_output_vec();
         let mut scratch = fft.make_scratch_vec();
-        let mut loudest = 0.0_f64;
+        let mut spectra: Vec<Vec<Complex<f64>>> = Vec::with_capacity(self.taps.len());
         for channel in &self.taps {
             window.fill(0.0);
             for (slot, tap) in window.iter_mut().zip(channel) {
                 *slot = *tap;
             }
+            let mut spectrum = fft.make_output_vec();
             if fft
                 .process_with_scratch(&mut window, &mut spectrum, &mut scratch)
                 .is_err()
             {
-                continue;
+                spectrum.fill(Complex::default());
             }
-            loudest = spectrum
-                .iter()
-                .map(Complex::norm_sqr)
-                .fold(loudest, f64::max);
+            spectra.push(spectrum);
         }
-        loudest.sqrt()
+        if self.crossed {
+            return crossed_gain(&spectra);
+        }
+        spectra
+            .iter()
+            .flatten()
+            .map(Complex::norm_sqr)
+            .fold(0.0_f64, f64::max)
+            .sqrt()
     }
 
     #[must_use]
@@ -129,6 +152,7 @@ impl Impulse {
                 .into_iter()
                 .map(|channel| channel.into_iter().map(|tap| tap * scale).collect())
                 .collect(),
+            crossed: self.crossed,
             at_rates: Mutex::new(Vec::new()),
         }
     }
@@ -174,6 +198,18 @@ impl Impulse {
         self.at_rates.lock().push((rate, Arc::clone(&resampled)));
         Ok(resampled)
     }
+}
+
+fn crossed_gain(spectra: &[Vec<Complex<f64>>]) -> f64 {
+    let [left_to_left, left_to_right, right_to_left, right_to_right] = spectra else {
+        return 0.0;
+    };
+    left_to_left
+        .iter()
+        .zip(left_to_right)
+        .zip(right_to_left.iter().zip(right_to_right))
+        .map(|((ll, lr), (rl, rr))| (ll.norm() + rl.norm()).max(lr.norm() + rr.norm()))
+        .fold(0.0_f64, f64::max)
 }
 
 fn summed_turns(taps: &[f64], steps: &[(f64, f64)]) -> Vec<(f64, f64)> {
@@ -322,6 +358,8 @@ pub struct Convolver {
     partition: usize,
     convolving: Convolving,
     channels: Vec<Channel>,
+    width: usize,
+    crossed: bool,
     tail: usize,
 }
 
@@ -404,8 +442,14 @@ impl Convolver {
             partition,
             impulse,
             channels: Vec::new(),
+            width: 0,
+            crossed: false,
             tail: 0,
         }
+    }
+
+    fn crosses(&self, spec: StreamSpec) -> bool {
+        self.impulse.is_crossed() && spec.channels == ChannelLayout::Stereo
     }
 }
 
@@ -417,7 +461,13 @@ impl Processor for Convolver {
             self.partition = partition;
             self.convolving = Convolving::planned(partition);
         }
-        let count = usize::from(spec.channel_count().get());
+        self.width = usize::from(spec.channel_count().get());
+        self.crossed = self.crosses(spec);
+        let count = if self.crossed {
+            CROSSED_RESPONSES
+        } else {
+            self.width
+        };
         refused_over(spectra_bytes(&taps, count, partition))?;
         let filters: Vec<Spectra> = taps
             .iter()
@@ -455,7 +505,7 @@ impl Processor for Convolver {
     }
 
     fn process(&mut self, input: &[f64], output: &mut [f64]) -> ProcessCount {
-        let count = self.channels.len().max(1);
+        let count = self.width.max(1);
         let frames = input.len() / count;
         let room = output.len() / count;
         let frames = frames.min(room);
@@ -464,9 +514,13 @@ impl Processor for Convolver {
             .zip(output.chunks_exact_mut(count))
             .take(frames)
         {
-            for ((channel, sample), out) in self.channels.iter_mut().zip(frame).zip(out) {
-                channel.take(*sample, &mut self.convolving);
-                *out = channel.ready.pop_front().unwrap_or(0.0);
+            if self.crossed {
+                self.crossed_frame(frame, out);
+            } else {
+                for ((channel, sample), out) in self.channels.iter_mut().zip(frame).zip(out) {
+                    channel.take(*sample, &mut self.convolving);
+                    *out = channel.ready.pop_front().unwrap_or(0.0);
+                }
             }
         }
         ProcessCount {
@@ -476,16 +530,34 @@ impl Processor for Convolver {
     }
 
     fn flush(&mut self, output: &mut [f64]) -> usize {
-        let count = self.channels.len().max(1);
+        let count = self.width.max(1);
         let frames = (output.len() / count).min(self.tail);
         for out in output.chunks_exact_mut(count).take(frames) {
-            for (channel, out) in self.channels.iter_mut().zip(out) {
-                channel.take(0.0, &mut self.convolving);
-                *out = channel.ready.pop_front().unwrap_or(0.0);
+            if self.crossed {
+                self.crossed_frame(&[0.0, 0.0], out);
+            } else {
+                for (channel, out) in self.channels.iter_mut().zip(out) {
+                    channel.take(0.0, &mut self.convolving);
+                    *out = channel.ready.pop_front().unwrap_or(0.0);
+                }
             }
         }
         self.tail -= frames;
         frames
+    }
+}
+
+impl Convolver {
+    fn crossed_frame(&mut self, frame: &[f64], out: &mut [f64]) {
+        out.fill(0.0);
+        for (path, channel) in self.channels.iter_mut().enumerate() {
+            let heard = frame.get(path / 2).copied().unwrap_or(0.0);
+            channel.take(heard, &mut self.convolving);
+            let produced = channel.ready.pop_front().unwrap_or(0.0);
+            if let Some(slot) = out.get_mut(path % 2) {
+                *slot += produced;
+            }
+        }
     }
 }
 
@@ -761,5 +833,109 @@ mod tests {
             );
             assert!(length <= least.max(2) * 11 / 10 + 4, "{least}: {length}");
         }
+    }
+
+    fn crossed(taps: [Vec<f64>; 4], input: &[f64], block: usize) -> Vec<f64> {
+        let impulse = Arc::new(Impulse::crossed(RATE, taps.to_vec()).expect("a crossed impulse"));
+        let mut stage = Convolver::new(impulse);
+        stage.prepare(stereo(), block).expect("a prepared stage");
+        let mut written = Vec::new();
+        let mut out = vec![0.0; block * 2];
+        for chunk in input.chunks(block * 2) {
+            let counted = stage.process(chunk, &mut out);
+            written.extend_from_slice(&out[..counted.frames_out * 2]);
+        }
+        let mut tail = vec![0.0; stage.max_flush_frames() * 2];
+        let flushed = stage.flush(&mut tail);
+        written.extend_from_slice(&tail[..flushed * 2]);
+        written
+    }
+
+    #[test]
+    fn a_two_by_two_identity_response_is_transparent() {
+        let input = noise(5_000);
+        let written = crossed([vec![1.0], vec![0.0], vec![0.0], vec![1.0]], &input, 700);
+
+        let late = partition_frames_at(RATE) * 2;
+        for (at, sample) in input.iter().enumerate() {
+            assert!((written[late + at] - sample).abs() < 1e-9, "sample {at}");
+        }
+    }
+
+    #[test]
+    fn a_pure_cross_response_swaps_the_channels() {
+        let input = noise(5_000);
+        let written = crossed([vec![0.0], vec![1.0], vec![1.0], vec![0.0]], &input, 700);
+
+        let late = partition_frames_at(RATE) * 2;
+        for frame in 0..5_000 {
+            assert!((written[late + frame * 2] - input[frame * 2 + 1]).abs() < 1e-9);
+            assert!((written[late + frame * 2 + 1] - input[frame * 2]).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn a_two_by_two_response_sums_each_ear_from_both_inputs_as_the_direct_sum_does() {
+        let frames = 4_000;
+        let input = noise(frames);
+        let taps = [
+            vec![0.9, 0.1, 0.05],
+            vec![0.0, 0.0, 0.3, -0.1],
+            vec![0.0, 0.2, 0.0, 0.0, 0.1],
+            vec![0.8, 0.0, -0.05],
+        ];
+        let written = crossed(taps.clone(), &input, 512);
+
+        for at in (0..frames).step_by(61) {
+            for ear in 0..2 {
+                let direct: f64 = (0..2)
+                    .map(|heard| {
+                        taps[heard * 2 + ear]
+                            .iter()
+                            .enumerate()
+                            .filter(|(lag, _)| *lag <= at)
+                            .map(|(lag, tap)| tap * input[(at - lag) * 2 + heard])
+                            .sum::<f64>()
+                    })
+                    .sum();
+                let heard = written[(partition_frames_at(RATE) + at) * 2 + ear];
+                assert!((heard - direct).abs() < 1e-9, "ear {ear} frame {at}");
+            }
+        }
+    }
+
+    #[test]
+    fn headroom_holds_a_crossed_response_to_what_both_inputs_can_add_up_to() {
+        let summing = Impulse::crossed(RATE, vec![vec![1.0], vec![0.0], vec![1.0], vec![0.0]])
+            .expect("an impulse")
+            .with_headroom();
+
+        assert!((summing.loudest_gain() - 1.0).abs() < 1e-9);
+        assert!(summing.is_crossed());
+        let taps = summing.at(RATE).expect("the response");
+        assert!((taps[0][0] - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn only_four_responses_make_a_crossed_one() {
+        assert!(Impulse::crossed(RATE, vec![vec![1.0]; 3]).is_none());
+        assert!(Impulse::crossed(RATE, vec![vec![1.0]; 5]).is_none());
+        assert!(
+            !Impulse::new(RATE, vec![vec![1.0]; 4])
+                .expect("an impulse")
+                .is_crossed()
+        );
+    }
+
+    #[test]
+    fn a_crossed_response_on_a_stream_that_is_not_stereo_is_taken_a_channel_each() {
+        let impulse = Arc::new(Impulse::crossed(RATE, vec![vec![1.0]; 4]).expect("an impulse"));
+        let mut stage = Convolver::new(impulse);
+        let quad = StreamSpec::new(RATE, ChannelLayout::Quad, resonate_core::SampleFormat::F32);
+
+        stage.prepare(quad, 512).expect("a prepared stage");
+
+        assert_eq!(stage.channels.len(), 4);
+        assert!(!stage.crossed);
     }
 }

@@ -4,7 +4,7 @@ use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, TryRecvError, bounde
 use resonate_audio::NodeName;
 use resonate_core::{Frames, MediaLocation, Resumption, SampleRate, Span, Volume};
 use resonate_dsp::{
-    DitherKind, FilterPhase, Impulse, NoiseShaping, Quality, ReplayGainMode, Restoration,
+    Crossfeed, DitherKind, FilterPhase, Impulse, NoiseShaping, Quality, ReplayGainMode, Restoration,
 };
 
 use crate::{
@@ -95,6 +95,7 @@ pub enum Command {
     SetFilterPhase(FilterPhase),
     SetTruePeak(bool),
     SetRestoration(Restoration),
+    SetCrossfeed(Crossfeed),
     SetDither(DitherKind),
     SetNoiseShaping(NoiseShaping),
     SetReplayGain(ReplayGainMode),
@@ -142,6 +143,7 @@ pub enum CommandKind {
     SetFilterPhase,
     SetTruePeak,
     SetRestoration,
+    SetCrossfeed,
     SetDither,
     SetNoiseShaping,
     SetReplayGain,
@@ -189,6 +191,7 @@ impl CommandKind {
             Self::SetFilterPhase => "the resampler's phase",
             Self::SetTruePeak => "true-peak clip prevention",
             Self::SetRestoration => "lossy restoration",
+            Self::SetCrossfeed => "crossfeed",
             Self::SetDither => "dither",
             Self::SetNoiseShaping => "noise shaping",
             Self::SetReplayGain => "ReplayGain",
@@ -241,6 +244,7 @@ impl CommandKind {
             | Self::SetFilterPhase
             | Self::SetTruePeak
             | Self::SetRestoration
+            | Self::SetCrossfeed
             | Self::SetDither
             | Self::SetNoiseShaping
             | Self::SetReplayGain
@@ -295,6 +299,7 @@ impl Command {
             Self::SetFilterPhase(_) => CommandKind::SetFilterPhase,
             Self::SetTruePeak(_) => CommandKind::SetTruePeak,
             Self::SetRestoration(_) => CommandKind::SetRestoration,
+            Self::SetCrossfeed(_) => CommandKind::SetCrossfeed,
             Self::SetDither(_) => CommandKind::SetDither,
             Self::SetNoiseShaping(_) => CommandKind::SetNoiseShaping,
             Self::SetReplayGain(_) => CommandKind::SetReplayGain,
