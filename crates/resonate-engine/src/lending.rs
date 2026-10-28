@@ -1,7 +1,7 @@
 use std::{mem, thread};
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
-use resonate_codec::{DecodeStatus, Decoder, Delivery, PacketSpan};
+use resonate_codec::{DecodeStatus, Decoder, Delivery, DopMarker, PacketSpan};
 use resonate_core::{AudioBuffer, Frames, StreamSpec};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -121,6 +121,19 @@ impl Decoding {
         match &self.holding {
             Holding::Home(decoder) => decoder.last_packet(),
             Holding::Lent | Holding::Back(_) | Holding::Gone => self.last_packet,
+        }
+    }
+
+    pub(crate) fn marker_due(&self) -> Option<DopMarker> {
+        match &self.holding {
+            Holding::Home(decoder) => decoder.marker_due(),
+            Holding::Lent | Holding::Back(_) | Holding::Gone => None,
+        }
+    }
+
+    pub(crate) fn mark_next_with(&mut self, marker: DopMarker) {
+        if let Holding::Home(decoder) = &mut self.holding {
+            decoder.mark_next_with(marker);
         }
     }
 

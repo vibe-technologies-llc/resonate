@@ -14,8 +14,11 @@ use symphonia::core::{
     meta::Visual,
 };
 
-pub use crate::dsd::rate::{DsdRate, Packing};
 pub(crate) use crate::dsd::{dop::Dop, pcm::Decimator, rate::DOP_DECIMATION};
+pub use crate::dsd::{
+    dop::DopMarker,
+    rate::{DsdRate, Packing},
+};
 use crate::{
     Error, MediaInfo, Result, Speakers, TagSet, container::positioned_layout, source::MediaStream,
 };
@@ -513,6 +516,7 @@ pub(crate) struct Stream {
     packing: Packing,
     lanes: usize,
     frame: u64,
+    marked_ahead_by: u64,
     rate: DsdRate,
     bits: BitOrder,
 }
@@ -536,6 +540,7 @@ impl Stream {
             packing,
             lanes,
             frame: 0,
+            marked_ahead_by: 0,
             rate,
             bits,
             planes: Planes::over(bytes, location, layout),
@@ -552,6 +557,19 @@ impl Stream {
 
     pub(crate) fn position(&self) -> u64 {
         self.planes.at() / BYTES_PER_DOP_FRAME
+    }
+
+    const fn marked(&self, frame: u64) -> u64 {
+        frame.wrapping_add(self.marked_ahead_by)
+    }
+
+    pub(crate) const fn marker_due(&self) -> DopMarker {
+        DopMarker::carried_by(self.marked(self.frame))
+    }
+
+    pub(crate) fn mark_next_with(&mut self, marker: DopMarker) {
+        let carried = DopMarker::carried_by(self.frame);
+        self.marked_ahead_by = u64::from(carried != marker);
     }
 
     pub(crate) fn seek(&mut self, to: Frames) -> Result<Frames> {
@@ -597,7 +615,7 @@ impl Stream {
         out.set_frames(taking as usize);
 
         let lanes = self.lanes;
-        let first = self.frame;
+        let first = self.marked(self.frame);
         let held = self.planes.held();
 
         match self.packing {
@@ -638,7 +656,7 @@ fn pack(
             let later = plane.get(at + 1).copied().unwrap_or(DSD_SILENCE);
 
             if let Some(slot) = into.get_mut(frame * lanes + lane) {
-                *slot = dop.frame(first.saturating_add(frame as u64), earlier, later);
+                *slot = dop.frame(first.wrapping_add(frame as u64), earlier, later);
             }
         }
     }
@@ -757,6 +775,50 @@ mod tests {
             SampleData::S24(samples) => samples.clone(),
             other => panic!("expected S24, got {other:?}"),
         }
+    }
+
+    fn markers_of(out: &AudioBuffer) -> Vec<u8> {
+        match out.data() {
+            SampleData::S24(samples) => samples
+                .iter()
+                .map(|sample| sample.to_le_bytes()[2])
+                .collect(),
+            other => panic!("expected S24, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_stream_told_the_marker_due_carries_on_the_alternation_another_left_off() {
+        let mut leaving = decimating(DSD_SILENCE, 1);
+        let mut entering = decimating(DSD_SILENCE, 1);
+        let mut out = twenty_four_bit();
+        let rate = DsdRate::new(DSD64).expect("dsd64");
+
+        leaving.deliver(Packing::DopMarked(rate));
+        entering.deliver(Packing::DopMarked(rate));
+        let odd = leaving
+            .next_block(&mut out, Some(DSD_BLOCK_FRAMES - 1), DSD_BLOCK_FRAMES)
+            .expect("a block packs");
+        let left = markers_of(&out);
+        let due = leaving.marker_due();
+
+        assert_eq!(odd as u64 % 2, 1);
+        assert_eq!(
+            due,
+            DopMarker::Second,
+            "an odd run left the first marker due"
+        );
+
+        entering.mark_next_with(due);
+        entering
+            .next_block(&mut out, None, DSD_BLOCK_FRAMES)
+            .expect("a block packs");
+        let joined: Vec<u8> = left.into_iter().chain(markers_of(&out)).collect();
+
+        assert!(
+            joined.windows(2).all(|pair| pair[0] != pair[1]),
+            "the marker repeated where one stream handed on to the next"
+        );
     }
 
     #[test]

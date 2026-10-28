@@ -460,7 +460,13 @@ fn arriving() -> SinkInfo {
 const DSF_BLOCK: usize = 4_096;
 const DSD64_HZ: u32 = 2_822_400;
 
+const DSD_BITS_A_DOP_FRAME_CARRIES: usize = 16;
+
 fn dsf_tone() -> Vec<u8> {
+    dsf_tone_short_by(0)
+}
+
+fn dsf_tone_short_by(dop_frames: usize) -> Vec<u8> {
     let lanes = usize::from(CHANNELS);
     let blocks = 8;
     let per_channel = blocks * DSF_BLOCK;
@@ -503,7 +509,8 @@ fn dsf_tone() -> Vec<u8> {
     fmt.extend_from_slice(&u32::from(CHANNELS).to_le_bytes());
     fmt.extend_from_slice(&DSD64_HZ.to_le_bytes());
     fmt.extend_from_slice(&1_u32.to_le_bytes());
-    fmt.extend_from_slice(&((per_channel * 8) as u64).to_le_bytes());
+    let declared = per_channel * 8 - dop_frames * DSD_BITS_A_DOP_FRAME_CARRIES;
+    fmt.extend_from_slice(&(declared as u64).to_le_bytes());
     fmt.extend_from_slice(&(DSF_BLOCK as u32).to_le_bytes());
     fmt.extend_from_slice(&0_u32.to_le_bytes());
 
@@ -6776,6 +6783,98 @@ fn a_dsd_track_reaches_a_dop_capable_sink_with_its_markers_intact() -> Result<()
             word[2]
         );
     }
+    Ok(())
+}
+
+#[test]
+fn dop_rows_play_on_through_one_stream_with_no_drain_no_gap_and_the_marker_unbroken_across_them()
+-> Result<()> {
+    let named = SourceId::new("held").expect("a lowercase name");
+    let sources = Sources::local().and(Arc::new(InMemory {
+        source: named.clone(),
+        key: "odd.dsf".to_owned(),
+        bytes: dsf_tone_short_by(1),
+    }));
+    let location = MediaLocation::new(named, "odd.dsf");
+    let row = |id| {
+        QueueItem::whole(
+            TrackId::new(id).expect("a non-zero track id"),
+            location.clone(),
+        )
+    };
+    let lanes = usize::from(CHANNELS);
+    let stride = frame_bytes(SampleFormat::S24);
+
+    let (player, graph) = settled_over(
+        vec![sink(&[SampleRate::HZ_176400], &[SampleFormat::S24])],
+        Arc::new(sources),
+        EngineConfig {
+            dop: true,
+            ..config()
+        },
+    )?;
+    player.send(Command::Load {
+        items: vec![row(1), row(2)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the first DoP row to open");
+
+    let frames = player
+        .state()
+        .current
+        .and_then(|current| current.duration)
+        .map(|duration| duration.get() as usize)
+        .expect("a DSF row names its length");
+
+    assert_eq!(
+        frames % 2,
+        1,
+        "an even row cannot break the marker, so nothing was proved"
+    );
+
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * stride,
+        |_, graph| graph.played.len() >= 2 * frames * stride,
+        "two DoP rows to reach the graph",
+    );
+
+    let graph = graph.lock();
+    let words = graph.played.as_chunks::<4>().0;
+    let heard = words
+        .get(..2 * frames * lanes)
+        .expect("both rows were played");
+    let (leaving, entering) = heard.split_at(frames * lanes);
+
+    for (index, word) in heard.iter().enumerate() {
+        let frame = index / lanes;
+        let wanted = if frame % 2 == 0 { 0x05 } else { 0xFA };
+        assert_eq!(
+            word[2], wanted,
+            "word {index} (frame {frame}, the boundary at {frames}) broke the marker sequence"
+        );
+    }
+    for (index, (left, entered)) in leaving.iter().zip(entering).enumerate() {
+        assert_eq!(
+            [left[0], left[1]],
+            [entered[0], entered[1]],
+            "word {index} of the entering row was not its own music right behind the leaving row"
+        );
+    }
+    assert_eq!(
+        graph.opens, 1,
+        "the second DoP row opened a stream of its own"
+    );
+    assert_eq!(
+        graph.closes, 0,
+        "the DoP stream was closed between the rows"
+    );
+    assert_eq!(
+        graph.drains, 0,
+        "the graph was asked to drain between the DoP rows"
+    );
     Ok(())
 }
 

@@ -249,9 +249,17 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `Packing::silence`. `Silence` is `Copy` and allocation-free (`RingConsumer::fill` is the RT
   thread). **A gap is a gap however opened:** a ring dry mid-track would lose a DoP DAC's lock, so
   `fill` pads the rest of the quantum after an underrun, except at a track's end
-  (`Discard::finished`). The marker alternates by the decoder's absolute frame, `Silence` by its own
-  count, and is read off audio by sign (`dop::packed`); both gap edges are exact (`Silence::follows`,
-  `RingConsumer::realigned`).
+  (`Discard::finished`). The marker alternates by the decoder's absolute frame (shifted by one where
+  a handover asked, below), `Silence` by its own count, and is read off audio by sign
+  (`dop::packed`); both gap edges are exact (`Silence::follows`, `RingConsumer::realigned`).
+- **A gapless handover between DoP rows carries the marker on.** The entering row's decoder starts
+  at its frame 0, which would repeat the marker after a leaving row of an odd frame count (a DAC
+  may read that as lost lock), so `hand_on_to` reads the leaving decoder's `Decoder::marker_due`
+  and tells the entering one `Decoder::mark_next_with` it (`dsd::Stream::marked_ahead_by`, 0 or 1,
+  added to the frame the marker is read from, kept across seeks). The DoP ring's turn steps nothing
+  (it never scales); `Engine::may_hand_on` refuses DoP only where the decoder is away and cannot
+  name its marker
+  (`dop_rows_play_on_through_one_stream_with_no_drain_no_gap_and_the_marker_unbroken_across_them`).
 - **Starve cost is counted in frames, apart from faults:** the ring adds frames asked for and not
   handed to one `AtomicU64` (never for a track's ending short chunk), `RingMonitor::went_without`
   swaps it out, added before the fault is raised. `Event::Underrun` carries frames missed since the
@@ -363,12 +371,13 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   boundary first. **Refused, today's drain:** the ring drains, the engine asks the graph to drain
   and waits for `StreamEvent::Drained` (`SinkStream::latency` on the wall clock is the fallback),
   and the next row opens (`start` takes the `Ahead` that landed for it), so bit-perfect wins
-  wherever the rate, word or channels move. Refused also: a DoP stream, a sleep timer ending at
+  wherever the rate, word or channels move. Refused also: a sleep timer ending at
   this row or queue, a sleep fade, a rebind owed, a draining or discarding ring, and a second
   boundary behind one the graph has not reached (a row shorter than the ring); a splice, reshape or
   ramp in flight, or an opening not landed, waits while the ring holds more than
   `HANDED_ON_WHILE_THE_RING_HOLDS` (40 ms). A splice asked while a boundary waits is owed
   (`rows_of_one_format_play_on_through_one_stream_with_no_drain_and_not_a_frame_between_them`,
+  `dop_rows_play_on_through_one_stream_with_no_drain_no_gap_and_the_marker_unbroken_across_them`,
   `a_row_heard_on_without_a_gap_is_announced_as_the_graph_reaches_it_not_as_it_is_written`,
   `a_row_at_another_rate_still_drains_the_stream_and_opens_one_of_its_own`). A stream takes every
   instruction through one `StreamCommand`, keeping the drain handshake, `set_active` and `close` on

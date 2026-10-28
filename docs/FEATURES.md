@@ -22,9 +22,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   it: while one boundary waits for the graph a second is not written behind it
   (`Engine::hand_on` refuses), so the row drains and the next opens as a format change does; a run
   of short cue cuts or interludes still has a gap after each that ends before the last was heard
-- [S · 0.3.0] A DoP stream drains at every track boundary: a gapless handover would restart the
-  marker sequence mid-stream, which a DAC may read as lost lock, so `Engine::may_hand_on` asks
-  for sample packing
 - [M · 0.3.0] The phones offer no zones: one player plays one queue to the route the system
   chose, so neither a second room nor a handover between two devices can be reached there
 - [M · 0.4.0] A handover between zones is not sample-aligned: the incoming zone opens at the
