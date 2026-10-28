@@ -46,6 +46,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "allocator-api2"
+version = "0.2.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
+
+[[package]]
 name = "annotate-snippets"
 version = "0.11.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -795,6 +801,17 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
+version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
+dependencies = [
+ "allocator-api2",
+ "equivalent",
+ "foldhash",
+]
+
+[[package]]
+name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
@@ -808,7 +825,33 @@ version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a596f1b20ed2cc5ecac41a164aaebc7258057060f06c0cf7a2ba3991ee7990fb"
 dependencies = [
- "hashbrown",
+ "hashbrown 0.17.1",
+]
+
+[[package]]
+name = "hdf5-core"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0299f0eb21c955433f590644a5178c5bb23665a8fef65fbdc0be1d81c26abe1"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
+name = "hdf5-reader"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b86dd95f258700fce52515079812ca60707b87b6d8679178f4f2a308fc08ea0b"
+dependencies = [
+ "flate2",
+ "hdf5-core",
+ "libc",
+ "lru",
+ "memmap2",
+ "ndarray",
+ "parking_lot 0.12.5",
+ "smallvec",
+ "thiserror",
 ]
 
 [[package]]
@@ -924,7 +967,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
 dependencies = [
  "equivalent",
- "hashbrown",
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -1351,10 +1394,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
+name = "lru"
+version = "0.16.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f66e8d5d03f609abc3a39e6f08e4164ebf1447a732906d39eb9b99b7919ef39"
+dependencies = [
+ "hashbrown 0.16.1",
+]
+
+[[package]]
 name = "lru-slab"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
+
+[[package]]
+name = "matrixmultiply"
+version = "0.3.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f607c237553f086e7043417a51df26b2eb899d3caff94e6a67592ff992fedc7"
+dependencies = [
+ "autocfg",
+ "rawpointer",
+]
 
 [[package]]
 name = "md-5"
@@ -1395,6 +1457,15 @@ name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
+
+[[package]]
+name = "memmap2"
+version = "0.9.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b0ca1155a9ecc25aa12e8313a119f32edf0255fea2f44839c4ac0a12b2ac157"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "memoffset"
@@ -1458,6 +1529,21 @@ name = "multiversion_no_op"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "743fb55ba31b18fb1ecef6bdc9aa2743314978ac084044301a7eee33fb99a20d"
+
+[[package]]
+name = "ndarray"
+version = "0.17.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "520080814a7a6b4a6e9070823bb24b4531daac8c4627e08ba5de8c5ef2f2752d"
+dependencies = [
+ "matrixmultiply",
+ "num-complex",
+ "num-integer",
+ "num-traits",
+ "portable-atomic",
+ "portable-atomic-util",
+ "rawpointer",
+]
 
 [[package]]
 name = "nom"
@@ -1595,12 +1681,35 @@ dependencies = [
 
 [[package]]
 name = "parking_lot"
+version = "0.12.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "93857453250e3077bd71ff98b6a65ea6621a19bb0f559a85248955ac12c45a1a"
+dependencies = [
+ "lock_api 0.4.14",
+ "parking_lot_core 0.9.12",
+]
+
+[[package]]
+name = "parking_lot"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a9cf937ca4e1d0b7578784559063422fc39ae7c5a00f02471f2614d5486fd226"
 dependencies = [
  "lock_api 0.5.0",
- "parking_lot_core",
+ "parking_lot_core 0.10.0",
+]
+
+[[package]]
+name = "parking_lot_core"
+version = "0.9.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2621685985a2ebf1c516881c026032ac7deafcda1a2c9b7850dc81e3dfcb64c1"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "redox_syscall 0.5.18",
+ "smallvec",
+ "windows-link",
 ]
 
 [[package]]
@@ -1610,7 +1719,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9cfff060068cc18aa7815010fcaf80c68c7fb9e85fc7f5c0f9bf142c21d19826"
 dependencies = [
  "libc",
- "redox_syscall",
+ "redox_syscall 0.9.5",
  "smallvec",
  "windows-link",
 ]
@@ -1847,6 +1956,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "rawpointer"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60a357793950651c4ed0f3f52338f53b2f809f32d83a07f72909fa13e4c6c1e3"
+
+[[package]]
 name = "rcgen"
 version = "0.14.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1866,6 +1981,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "538895ccf2006b473aafbe8d72770e21038961ab67aae34f3c577485fc703a7d"
 dependencies = [
  "rustfft",
+]
+
+[[package]]
+name = "redox_syscall"
+version = "0.5.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed2bf2547551a7053d6fdfafda3f938979645c44812fbfcda098faae3f1a362d"
+dependencies = [
+ "bitflags 2.13.2",
 ]
 
 [[package]]
@@ -1941,10 +2065,11 @@ name = "resonate-codec"
 version = "0.2.0"
 dependencies = [
  "ape-decoder",
+ "hdf5-reader",
  "image",
  "lofty",
  "opus-rs",
- "parking_lot",
+ "parking_lot 0.13.0",
  "resonate-core",
  "rustix",
  "symphonia",
@@ -1969,7 +2094,7 @@ dependencies = [
 name = "resonate-dsp"
 version = "0.2.0"
 dependencies = [
- "parking_lot",
+ "parking_lot 0.13.0",
  "realfft",
  "resonate-core",
  "rustfft",
@@ -1983,7 +2108,7 @@ dependencies = [
  "ahash",
  "crossbeam-channel",
  "imbl",
- "parking_lot",
+ "parking_lot 0.13.0",
  "resonate-analysis",
  "resonate-audio",
  "resonate-codec",
@@ -2043,7 +2168,7 @@ dependencies = [
  "ahash",
  "crossbeam-channel",
  "notify",
- "parking_lot",
+ "parking_lot 0.13.0",
  "resonate-analysis",
  "resonate-codec",
  "resonate-core",
@@ -2072,7 +2197,7 @@ dependencies = [
 name = "resonate-lyrics"
 version = "0.2.0"
 dependencies = [
- "parking_lot",
+ "parking_lot 0.13.0",
  "resonate-core",
  "roxmltree",
  "serde",
@@ -2103,7 +2228,7 @@ version = "0.2.0"
 dependencies = [
  "ahash",
  "crossbeam-channel",
- "parking_lot",
+ "parking_lot 0.13.0",
  "resonate-core",
  "resonate-engine",
  "rustix",
@@ -2118,7 +2243,7 @@ version = "0.2.0"
 dependencies = [
  "flate2",
  "md-5 0.11.0",
- "parking_lot",
+ "parking_lot 0.13.0",
  "resonate-analysis",
  "resonate-codec",
  "resonate-core",
@@ -2141,7 +2266,7 @@ version = "0.2.0"
 dependencies = [
  "crossbeam-channel",
  "libspa",
- "parking_lot",
+ "parking_lot 0.13.0",
  "pipewire",
  "resonate-audio",
  "resonate-core",
@@ -2155,7 +2280,7 @@ dependencies = [
 name = "resonate-providers"
 version = "0.2.0"
 dependencies = [
- "parking_lot",
+ "parking_lot 0.13.0",
  "resonate-core",
  "thiserror",
  "tracing",
@@ -2170,7 +2295,7 @@ dependencies = [
  "futures-util",
  "if-addrs",
  "mdns-sd",
- "parking_lot",
+ "parking_lot 0.13.0",
  "quinn",
  "rcgen",
  "resonate-core",
@@ -2193,7 +2318,7 @@ name = "resonate-tidal"
 version = "0.2.0"
 dependencies = [
  "base64",
- "parking_lot",
+ "parking_lot 0.13.0",
  "resonate-core",
  "resonate-fetch",
  "resonate-providers",
@@ -2211,7 +2336,7 @@ dependencies = [
  "flacenc",
  "image",
  "jxl-oxide",
- "parking_lot",
+ "parking_lot 0.13.0",
  "resonate-codec",
  "resonate-core",
  "symphonia",

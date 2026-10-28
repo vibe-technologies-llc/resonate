@@ -180,3 +180,10 @@ path = "fuzz_targets/cover.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "sofa"
+path = "fuzz_targets/sofa.rs"
+test = false
+doc = false
+bench = false

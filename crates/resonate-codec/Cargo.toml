@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 ape-decoder.workspace = true
+hdf5-reader.workspace = true
 image.workspace = true
 lofty.workspace = true
 opus-rs.workspace = true
@@ -16,6 +17,9 @@ symphonia.workspace = true
 symphonia-codec-wavpack.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+hdf5-writer.workspace = true
 
 [lints]
 workspace = true

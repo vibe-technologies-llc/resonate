@@ -58,8 +58,8 @@ pub use crate::{
     identity::{Isrc, Mbid},
     link::{Link, Relation, Service},
     media::{
-        AUDIO_EXTENSIONS, Locator, MediaLocation, PICTURE_EXTENSIONS, SourceId, names_a_picture,
-        names_audio, uri_escaped, uri_unescaped,
+        AUDIO_EXTENSIONS, HRIR_EXTENSIONS, Locator, MediaLocation, PICTURE_EXTENSIONS, SourceId,
+        names_a_picture, names_audio, uri_escaped, uri_unescaped,
     },
     presence::{AppId, Icon, Pictured, Presence, Shown},
     print::Chromaprint,

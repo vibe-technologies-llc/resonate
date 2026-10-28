@@ -1850,7 +1850,8 @@ const ROOM_NOTE: &str = "The response is convolved with every stream after the e
                          heard from then on. A four-channel file is read as a two-by-two \
                          (binaural) response, in the order left-to-left, left-to-right, \
                          right-to-left, right-to-right; two stereo files, one for each speaker, \
-                         are joined into one.";
+                         are joined into one. A SOFA set of head-related responses is read as \
+                         the same, from the measurements nearest 30 degrees left and right.";
 
 const BINAURAL_NOTE: &str = "A two-by-two (binaural) response: each speaker's response is heard at \
                              both ears, so a stereo stream is convolved four ways.";

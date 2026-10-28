@@ -36,10 +36,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.resonate.android.RESPONSE_DOCUMENTS
 import org.resonate.android.ui.components.SectionHeader
 import org.resonate.android.ui.components.Sizes
 
-private const val AUDIO_DOCUMENTS = "audio/*"
 
 @Composable
 fun RoomCorrectionSection(model: EqualiserViewModel) {
@@ -89,7 +89,7 @@ fun RoomCorrectionSection(model: EqualiserViewModel) {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 FilledTonalButton(
-                    onClick = { rightPicker.launch(arrayOf(AUDIO_DOCUMENTS)) },
+                    onClick = { rightPicker.launch(RESPONSE_DOCUMENTS) },
                     enabled = !room.reading,
                     contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
                     modifier = Modifier.testTag("room-pair-right"),
@@ -123,7 +123,7 @@ fun RoomCorrectionSection(model: EqualiserViewModel) {
                     )
                 }
                 OutlinedButton(
-                    onClick = { leftPicker.launch(arrayOf(AUDIO_DOCUMENTS)) },
+                    onClick = { leftPicker.launch(RESPONSE_DOCUMENTS) },
                     enabled = !room.reading,
                     contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
                     modifier = Modifier.testTag("room-choose-pair"),
@@ -146,7 +146,7 @@ fun RoomCorrectionSection(model: EqualiserViewModel) {
             }
         }
         Text(
-            "A measured impulse response, up to ten seconds long, is convolved before the equaliser on every output. It is lowered where it would lift the music past full scale. A four-channel file is a two-by-two (binaural) response, in the order left-to-left, left-to-right, right-to-left, right-to-right. A pair is two stereo responses, the left speaker's and then the right's, each as heard at both ears, joined into one two-by-two response.",
+            "A measured impulse response, up to ten seconds long, is convolved before the equaliser on every output. It is lowered where it would lift the music past full scale. A four-channel file is a two-by-two (binaural) response, in the order left-to-left, left-to-right, right-to-left, right-to-right. A SOFA set of head-related responses is read as the same, from the measurements nearest 30 degrees left and right. A pair is two stereo responses, the left speaker's and then the right's, each as heard at both ears, joined into one two-by-two response.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = Sizes.gutter, vertical = 4.dp),

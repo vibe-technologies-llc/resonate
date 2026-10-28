@@ -41,6 +41,9 @@ oboe.workspace = true
 [target.'cfg(target_os = "ios")'.dependencies]
 objc2-audio-toolbox.workspace = true
 
+[dev-dependencies]
+hdf5-writer.workspace = true
+
 [lints.rust]
 unsafe_code = "allow"
 

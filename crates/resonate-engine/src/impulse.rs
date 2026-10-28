@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use resonate_codec::{DecodeStatus, Decoder, Sources};
+use resonate_codec::{DecodeStatus, Decoder, Sources, read_hrir};
 use resonate_core::{AudioBuffer, Frames, MediaLocation, SampleData, SampleFormat, StreamSpec};
 use resonate_dsp::{Impulse, Speaker};
 use thiserror::Error;
@@ -90,6 +90,10 @@ fn read_unscaled(
     sources: &Sources,
     location: &MediaLocation,
 ) -> resonate_codec::Result<Option<Impulse>> {
+    if let Some(hrir) = read_hrir(sources, location, LONGEST_IMPULSE)? {
+        return Ok(Impulse::crossed(hrir.rate, hrir.responses));
+    }
+
     let (mut decoder, info) = Decoder::open(sources, location)?;
     decoder.set_output_format(SampleFormat::F32);
     let rate = info.spec.rate;
@@ -127,6 +131,9 @@ fn read_unscaled(
 #[cfg(test)]
 mod tests {
     use std::{env, fs, process};
+
+    use hdf5_writer::{AttributeBuilder, DatasetBuilder, Hdf5Builder, WriteOptions};
+    use resonate_core::SampleRate;
 
     use super::*;
 
@@ -315,5 +322,103 @@ mod tests {
             "{}",
             read.loudest_gain()
         );
+    }
+
+    const SOFA_FRAMES: usize = 64;
+
+    fn sofa_set(rate: f64) -> Vec<u8> {
+        let tap = |measurement: usize, ear: usize, frame: usize| {
+            if frame == 0 {
+                0.1 * (1 + measurement * 2 + ear) as f64
+            } else {
+                0.0
+            }
+        };
+        let mut impulses = Vec::new();
+        for measurement in 0..3 {
+            for ear in 0..2 {
+                for frame in 0..SOFA_FRAMES {
+                    impulses.push(tap(measurement, ear, frame));
+                }
+            }
+        }
+        let positions = [0.0, 0.0, 1.0, 30.0, 0.0, 1.0, 330.0, 0.0, 1.0];
+        Hdf5Builder::new()
+            .dataset(
+                DatasetBuilder::typed_data("Data.IR", vec![3, 2, SOFA_FRAMES as u64], &impulses)
+                    .expect("impulses"),
+            )
+            .dataset(
+                DatasetBuilder::typed_data("SourcePosition", vec![3, 3], &positions)
+                    .expect("positions")
+                    .attribute(AttributeBuilder::fixed_string("Type", "spherical")),
+            )
+            .dataset(
+                DatasetBuilder::typed_data("Data.SamplingRate", vec![1], &[rate]).expect("rate"),
+            )
+            .into_plan()
+            .expect("a plan")
+            .encode(WriteOptions::default())
+            .expect("bytes")
+    }
+
+    #[test]
+    fn a_set_of_head_related_responses_is_read_as_the_two_by_two_response_of_the_speakers() {
+        let path = env::temp_dir().join(format!("resonate-hrir-{}.sofa", process::id()));
+        fs::write(&path, sofa_set(44_100.0)).expect("a scratch set");
+
+        let read = read_impulse(&Sources::local(), &MediaLocation::local(&path))
+            .expect("a readable set")
+            .expect("a set with taps");
+        let _ = fs::remove_file(&path);
+
+        assert!(read.is_crossed());
+        assert_eq!(read.channels(), 4);
+        assert_eq!(read.frames(), SOFA_FRAMES);
+        assert_eq!(read.rate().hz(), 44_100);
+        let taps = read.at(read.rate()).expect("taps");
+        let firsts: Vec<f64> = taps.iter().map(|channel| channel[0]).collect();
+        for (heard, wanted) in firsts.iter().zip([0.3, 0.4, 0.5, 0.6]) {
+            assert!((heard - wanted).abs() < 1e-9, "{firsts:?}");
+        }
+    }
+
+    #[test]
+    fn a_set_is_redrawn_at_the_rate_of_the_stream_like_any_other_response() {
+        let path = env::temp_dir().join(format!("resonate-hrir-rate-{}.sofa", process::id()));
+        fs::write(&path, sofa_set(44_100.0)).expect("a scratch set");
+
+        let read = read_impulse(&Sources::local(), &MediaLocation::local(&path))
+            .expect("a readable set")
+            .expect("a set with taps");
+        let _ = fs::remove_file(&path);
+
+        let at_stream = read.at(SampleRate::HZ_96000).expect("taps");
+        assert_eq!(at_stream.len(), 4);
+        let expected = SOFA_FRAMES as f64 * 96_000.0 / 44_100.0;
+        for channel in at_stream.iter() {
+            assert!(
+                (channel.len() as f64 - expected).abs() <= 2.0,
+                "{}",
+                channel.len()
+            );
+        }
+    }
+
+    #[test]
+    fn a_set_is_not_one_of_the_two_stereo_files_of_a_pair() {
+        let path = env::temp_dir().join(format!("resonate-hrir-pair-{}.sofa", process::id()));
+        fs::write(&path, sofa_set(48_000.0)).expect("a scratch set");
+        let stereo = scratch("hrir-pair-right", 2, 48_000, &[4_096, 16_384, 0, 0]);
+
+        let refused = read_binaural_pair(
+            &Sources::local(),
+            &MediaLocation::local(&path),
+            &MediaLocation::local(&stereo),
+        );
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(&stereo);
+
+        assert!(matches!(refused, Err(PairedReadError::Pair(_))));
     }
 }

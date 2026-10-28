@@ -130,6 +130,7 @@ here, add it there.
   online). TIDAL: `base64` (`alloc`), `roxmltree` (`std`; DASH MPD), at 0.21 against gpui's 0.20:
   a second copy of a small crate, not a held-back pin.
 - **`futures-channel`**: `resonate-ui`'s; the oneshot `Drawer::draw` returns a cover by.
+- **`hdf5-reader`** (no default features, so no `rayon` and no `lz4`): `resonate-codec`'s SOFA reader alone (`eq.md`). Pure Rust, read only; its `memmap2` and `libc` are not used for a set (`from_vec`). **`hdf5-writer`**: dev-dependency of `resonate-codec`, `-engine` and `-mobile`, building the tests' sets. Both are versions of one family (`hdf5-core`), moved together.
 - **`rustfft`**: `resonate-dsp`'s, `-analysis`', library dev; at symphonia's `opt-simd` version.
   **`realfft`**: `resonate-dsp`'s convolver, over the same `rustfft`, with the same SIMD features.
   **`rusty-chromaprint`**: `resonate-analysis`'s, pure Rust, since AcoustID wants that exact print.
