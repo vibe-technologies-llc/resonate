@@ -54,6 +54,13 @@ pub trait Serves: Send + Sync {
 
     fn artists(&self) -> Result<Vec<ServedArtist>>;
 
+    fn first_page(&self) -> Result<ServedFound> {
+        Ok(ServedFound {
+            artists: self.artists()?,
+            ..ServedFound::default()
+        })
+    }
+
     fn albums_of(&self, artist: &MediaLocation) -> Result<Vec<ServedAlbum>>;
 
     fn songs_of(&self, album: &MediaLocation) -> Result<Vec<ServedSong>>;

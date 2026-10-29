@@ -457,7 +457,7 @@ iOS holds no device per zone (one route) and refuses nothing (`OUTPUTS_ARE_HELD_
 (keyed to `zones(id)` with `ON DELETE CASCADE`; `zone_queue.track` references `documents`, so
 forgetting and handing over songs reach it as they reach `queue`). The first zone keeps `queue` and
 `resume`, its `zones` row holding only a name, route or volume given;
-`save_queue_of`, `save_place_of`, `resume_of` and `place_among_rows` read either through `QueueKept`.
+`save_rows_of`, `save_place_of`, `resume_rows_of` and `place_among_rows` read either through `QueueKept`.
 `save` saves every zone; `MobilePlayer::new` resumes the first zone, then opens each kept zone at the
 system's device with its kept queue paused and at its kept volume (`restore_zones`); the front end
 binds a kept route to the device it now names (`select_zone_output`). A song gone or deleted leaves every zone's queue
@@ -535,37 +535,55 @@ iOS, `cargo clippy -p resonate-mobile --target aarch64-apple-ios` with the envir
 `ios/build-native.py` sets. The layering job refuses PipeWire, GPUI, MPRIS, Discord and Oboe in
 `resonate-mobile`'s iOS tree.
 
-## A Subsonic server in place
+## Services played in place
 
-`served.rs` is the phones' half of `providers.md`'s *A Subsonic server played in place*: a server
-browsed and played where it is, never copied into the document catalog. The front end hands the
-account (`serve_from(Option<ServedAccount>)`; blank fields or `None` serve nothing, and the front
-end passes `None` while online is off) and keeps it; the boundary holds one slot
-(`Arc<RwLock<Option<Subsonic>>>`) that `ServedSongs`, a `MediaProvider` for `subsonic` registered
-in every `Sources` the boundary makes, reads on each open, so a stream of known length is probed
-and seeked by range and nothing is spooled (the binary's `ServedSongs` is the same thing over its
-`Sources`; no provider crate may see `resonate-codec`, so each is written where `MediaProvider` is
-visible). Browsing is `served_artists`, `served_albums(artist uri)`, `served_songs(album uri)`,
-`served_search(words)`, `served_song_uris(any uri)` (an album or artist expanded to its songs, in
-the server's order) and `served_cover(uri, known name, side)` (the bytes to decode, by the cover
-name the browse gave or, with none, what the server says a song's is); each needs online
-(`OnlineOff`), a server (`NoServedServer`) and a uri the server names (`InvalidUri`), and a
-provider failure is `downloads::failure_of` as a download's is. The records carry URIs
-(`subsonic:track/<id>`), the cover name as an opaque string, and a song's length in milliseconds.
+`served.rs` is the phones' half of `providers.md`'s *A Subsonic server played in place* and *Other
+services played in place*: Subsonic, TIDAL, the keyed Resonate server, hifi-api and Monochrome
+browsed and played where they are, never copied into the document catalog. The front end hands the
+download accounts that are on and ready (`serve_from(Vec<DownloadAccount>)`, the list a download is
+given; empty while online is off). The boundary keeps a ready one (`is_ready`: Subsonic's server,
+user and password, TIDAL's client id and refresh token) that `Downloads::in_place_of` builds as a
+download would (`Reached`, one construction for both: a hosted Monochrome or hifi-api is left out
+while hosted services are declined, a hifi-api account with a key is the `resonate` service, and a
+TIDAL account hands a rotated token to `refreshed_tidal_token`), the first account a scheme wins.
+The list is compared with the one held, so a call with the same accounts builds nothing and every
+read may bind first; a service whose account stands keeps its `Arc` (one TIDAL session). One slot
+(`Arc<RwLock<Vec<Service>>>`) is read on each open by a `ServedSongs` per scheme of
+`PLAYED_IN_PLACE`, each a `MediaProvider` registered in every `Sources` the boundary makes
+(`Served::sources`), so a stream of known length is probed and seeked by range and one read onward
+is spooled (the binary's `ServedSongs` is the same thing over its `Sources`; no provider crate may
+see `resonate-codec`). `served_services` lists them (`ServedService`: scheme and title).
+`served_first_page(service)` (a Subsonic server's artists, a TIDAL account's favourites, else
+nothing) and `served_search(service, words)` take the scheme; `served_albums(artist uri)`,
+`served_songs(album uri)`, `served_song_uris(any uri)` and `served_cover(uri, known name, side)`
+reach the service the uri's scheme names. Each needs online (`OnlineOff`), the service
+(`NoServedServer`) and a uri it names (`InvalidUri`), and a provider failure is
+`downloads::failure_of` under the account's `MusicProvider`. The records carry URIs
+(`<scheme>:track/<id>`), the cover name as an opaque string, and a song's length in milliseconds.
 `load_served`, `play_served_next` and `add_served_to_queue` put songs by uri in the queue as
-`load`, `play_next` and `add_to_queue` put catalog ids, with ids minted beside the queue's own.
+`load`, `play_next` and `add_to_queue` put catalog ids, with ids minted beside the queue's own
+(`every_service_set_is_offered_and_each_is_searched_and_played_from_its_own_uris`,
+`a_service_declined_as_hosted_is_not_served_and_a_service_no_longer_given_goes`).
 
-**A served row is not a document.** `Served::names` is the scheme alone; `queue()` and the snapshot's
-`current` give such a row a `Track` with id 0 made from what the browse returned (`served_songs`,
-`served_search` and `served_song_uris` remember the songs they listed, cleared when the account
-changes; a song not remembered is titled by its uri), carrying its `queue_id` like any row. A queue
-holding one is never saved (`save` returns before writing, so the last saved queue and place stand
-and nothing is written against rows the catalog cannot name), and a listen of one is not counted
-(`store_counting`): no favourite, play count, playlist or resumption belongs to a song the library
-does not hold. Both phones draw it (`android.md`'s and `ios.md`'s *A Subsonic server*), each
-recognising a served row as id 0 with a `subsonic:` uri and keying its cover by the uri
+**A served row is not a document, but it is kept.** `Served::names` is the scheme alone; `queue()`
+and the snapshot's `current` give such a row a `Track` with id 0 made from what the browse returned
+(`served_first_page`, `served_songs`, `served_search` and `served_song_uris` remember the songs they
+listed, cleared when the accounts change; a song not remembered is titled by its uri), carrying its
+`queue_id` like any row. **A queue holding one is saved**: the catalog's step 20
+(`QUEUES_KEEP_SONGS_PLAYED_IN_PLACE`) made `served_rows` (zone, position, uri, the names the browse
+gave, and `rate`, the playing row's sample rate where it was the one playing), beside `queue` and
+`zone_queue` at the same positions; `save_rows_of` writes both in one transaction, `resume_rows_of`
+reads them back in order (`KeptRow`), `place_among_rows` counts both, and `resume_saved_in` resumes
+a served row from its uri with its names remembered, at its kept place where its rate was kept, else
+from its start. `forget_zone` drops its rows (no foreign key: the first zone has no `zones` row). The
+handoff to another device names catalog rows alone (`place_among_documents`)
+(`a_queue_holding_served_songs_is_kept_with_their_names_and_resumed_from_their_uris`). **A listen of
+one is not counted** (`store_counting`): the phones' `listens` name a document, and a favourite, play
+count or playlist belongs to a song the library holds (`docs/FEATURES.md`). Both phones draw it
+(`android.md`'s and `ios.md`'s *Services played in place*), each recognising a served row as id 0 with a served
+scheme and keying its cover by the uri
 (`a_server_is_browsed_from_its_artists_to_its_songs_and_each_has_its_cover`,
-`served_songs_are_queued_named_and_opened_by_the_players_sources_and_never_saved`,
+`served_songs_are_queued_named_and_opened_by_the_players_sources`,
 `a_blank_account_serves_nothing_and_a_uri_of_another_kind_is_invalid`).
 
 ## Hosted services on the phones

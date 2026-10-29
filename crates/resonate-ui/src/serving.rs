@@ -101,6 +101,17 @@ impl Row {
     }
 }
 
+pub(crate) fn first_rows(first: ServedFound) -> Vec<Row> {
+    if first.albums.is_empty() && first.songs.is_empty() {
+        return first.artists.into_iter().map(Row::Artist).collect();
+    }
+    rows_of_found(first)
+}
+
+pub(crate) fn favourites_in(rows: &[Row]) -> bool {
+    rows.iter().any(|row| matches!(row, Row::Heading(_)))
+}
+
 pub(crate) fn rows_of_found(found: ServedFound) -> Vec<Row> {
     let ServedFound {
         artists,
@@ -455,7 +466,7 @@ fn drawn_from(bytes: Vec<u8>, side: NonZeroU32) -> Option<Picture> {
 
 fn rows_at(serves: &dyn Serves, place: &Place) -> Result<Vec<Row>, ProviderError> {
     Ok(match place {
-        Place::Artists => serves.artists()?.into_iter().map(Row::Artist).collect(),
+        Place::Artists => first_rows(serves.first_page()?),
         Place::Artist { location, .. } => serves
             .albums_of(location)?
             .into_iter()

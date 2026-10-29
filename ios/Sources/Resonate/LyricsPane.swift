@@ -26,7 +26,7 @@ struct LyricsPane: View {
         Group {
             if track?.isServed == true {
                 ContentUnavailableView(
-                    "No words for a server's song",
+                    "No words for a streamed song",
                     systemImage: "quote.bubble",
                     description: Text("Lyrics are kept for the songs in your library.")
                 )

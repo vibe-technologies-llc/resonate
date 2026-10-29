@@ -18,8 +18,8 @@ use parking_lot::Mutex;
 use resonate_core::{Isrc, Mbid, SourceId};
 use resonate_library::ANSWERS_WITHIN;
 use resonate_providers::{
-    Asking, Authorizing, Away, Client, Delivered, Delivery, Identity, Obtained, Provider,
-    Providers, Reopened, SignsIn, TURNED_TO_APART, WAITED_ON_AFTER_AN_OFFER,
+    Asking, Authorizing, Away, Client, Delivered, Delivery, Identity, Obtained, PlaysInPlace,
+    Provider, Providers, Reopened, SignsIn, TURNED_TO_APART, WAITED_ON_AFTER_AN_OFFER,
 };
 
 use crate::{
@@ -83,7 +83,7 @@ impl fmt::Display for MusicProvider {
     }
 }
 
-#[derive(Clone, uniffi::Record)]
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
 pub struct DownloadAccount {
     pub provider: MusicProvider,
     pub server: String,
@@ -92,6 +92,33 @@ pub struct DownloadAccount {
     pub client_id: String,
     pub client_secret: String,
     pub refresh_token: String,
+}
+
+enum Reached {
+    Monochrome(resonate_monochrome::Monochrome),
+    Subsonic(resonate_subsonic::Subsonic),
+    Tidal(resonate_tidal::Tidal),
+    HifiApi(resonate_tidal::HifiApi),
+}
+
+impl Reached {
+    fn provider(self) -> Box<dyn Provider> {
+        match self {
+            Self::Monochrome(service) => Box::new(service),
+            Self::Subsonic(service) => Box::new(service),
+            Self::Tidal(service) => Box::new(service),
+            Self::HifiApi(service) => Box::new(service),
+        }
+    }
+
+    fn in_place(self) -> Arc<dyn PlaysInPlace> {
+        match self {
+            Self::Monochrome(service) => Arc::new(service),
+            Self::Subsonic(service) => Arc::new(service),
+            Self::Tidal(service) => Arc::new(service),
+            Self::HifiApi(service) => Arc::new(service),
+        }
+    }
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -472,7 +499,7 @@ impl Downloads {
         !(hosted && self.hosted_services_declined.load(Ordering::Acquire))
     }
 
-    fn provider_of(&self, account: DownloadAccount) -> Box<dyn Provider> {
+    fn reached(&self, account: DownloadAccount) -> Reached {
         let DownloadAccount {
             provider,
             server,
@@ -485,11 +512,13 @@ impl Downloads {
         let custom = !server.trim().is_empty();
         match provider {
             MusicProvider::Monochrome if custom => {
-                Box::new(resonate_monochrome::Monochrome::at(&server))
+                Reached::Monochrome(resonate_monochrome::Monochrome::at(&server))
             }
-            MusicProvider::Monochrome => Box::new(resonate_monochrome::Monochrome::hosted()),
+            MusicProvider::Monochrome => {
+                Reached::Monochrome(resonate_monochrome::Monochrome::hosted())
+            }
             MusicProvider::Subsonic => {
-                Box::new(resonate_subsonic::Subsonic::at(resonate_subsonic::Server {
+                Reached::Subsonic(resonate_subsonic::Subsonic::at(resonate_subsonic::Server {
                     url: server,
                     user,
                     password,
@@ -497,7 +526,7 @@ impl Downloads {
             }
             MusicProvider::Tidal => {
                 let refreshed = Arc::clone(&self.refreshed);
-                Box::new(
+                Reached::Tidal(
                     resonate_tidal::Tidal::signed_in(resonate_tidal::Account {
                         client_id,
                         client_secret: (!client_secret.is_empty()).then_some(client_secret),
@@ -508,14 +537,25 @@ impl Downloads {
                     }),
                 )
             }
-            MusicProvider::HifiApi if !password.trim().is_empty() => Box::new(
+            MusicProvider::HifiApi if !password.trim().is_empty() => Reached::HifiApi(
                 resonate_tidal::HifiApi::at(resonate_tidal::OWN_SERVER)
                     .with_secret(&password)
                     .known_as_resonate(),
             ),
-            MusicProvider::HifiApi if custom => Box::new(resonate_tidal::HifiApi::at(&server)),
-            MusicProvider::HifiApi => Box::new(resonate_tidal::HifiApi::hosted()),
+            MusicProvider::HifiApi if custom => {
+                Reached::HifiApi(resonate_tidal::HifiApi::at(&server))
+            }
+            MusicProvider::HifiApi => Reached::HifiApi(resonate_tidal::HifiApi::hosted()),
         }
+    }
+
+    fn provider_of(&self, account: DownloadAccount) -> Box<dyn Provider> {
+        self.reached(account).provider()
+    }
+
+    pub(crate) fn in_place_of(&self, account: DownloadAccount) -> Option<Arc<dyn PlaysInPlace>> {
+        self.is_asked(&account)
+            .then(|| self.reached(account).in_place())
     }
 
     pub(crate) fn find(

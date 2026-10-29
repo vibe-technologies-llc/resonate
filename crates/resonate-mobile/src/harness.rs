@@ -223,13 +223,9 @@ impl Harness {
 
         let documents: Arc<dyn Documents> = Arc::new(Folder(folder.clone()));
         let served = crate::served::Served::default();
-        let sources = Arc::new(
-            Sources::local()
-                .and(Arc::new(
-                    GrantedFiles::new(documents, "content").expect("a granted provider"),
-                ))
-                .and(served.provider()),
-        );
+        let sources = Arc::new(served.sources(Sources::local().and(Arc::new(
+            GrantedFiles::new(documents, "content").expect("a granted provider"),
+        ))));
         let engines: Box<Engines> = {
             let sources = Arc::clone(&sources);
             Box::new(

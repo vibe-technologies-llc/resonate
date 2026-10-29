@@ -636,8 +636,8 @@ pub enum Error {
     NoSignIn,
 
     #[cfg(not(feature = "online"))]
-    #[error("this build reaches no Subsonic server; it was built without the online feature")]
-    NoSubsonic,
+    #[error("this build plays no service in place; it was built without the online feature")]
+    NoServed,
 
     #[cfg(feature = "online")]
     #[error(
@@ -647,7 +647,21 @@ pub enum Error {
     NoSubsonicServer,
 
     #[cfg(feature = "online")]
-    #[error("a Subsonic id was asked for but none was given")]
+    #[error(
+        "no service is set in the settings to play in place (subsonic, tidal-refresh-token, \
+         hifi-secret, hifi-api, monochrome or hosted-services)"
+    )]
+    NoServedService,
+
+    #[cfg(feature = "online")]
+    #[error(
+        "{service} is not a service the settings set to play in place; resonate served lists \
+         the first that is"
+    )]
+    ServiceNotServed { service: String },
+
+    #[cfg(feature = "online")]
+    #[error("an id was asked for but none was given")]
     BlankServerId,
 
     #[cfg(feature = "online")]

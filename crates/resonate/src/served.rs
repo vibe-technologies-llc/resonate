@@ -16,16 +16,14 @@ use resonate_core::MediaLocation;
 #[cfg(feature = "online")]
 use resonate_core::SourceId;
 #[cfg(feature = "online")]
-use resonate_providers::{Album, Artist, Id, Named, PlaysInPlace, Song, Streamed};
-#[cfg(feature = "online")]
-use resonate_subsonic::Subsonic;
+use resonate_providers::{Album, Artist, Found, Id, Named, PlaysInPlace, Song, Streamed};
 
 #[cfg(feature = "online")]
 use crate::providers::{self, InPlace};
 #[cfg(feature = "online")]
 use crate::table::Table;
 use crate::{
-    cli::SubsonicArgs,
+    cli::BrowsingArgs,
     config::Config,
     error::{Error, Result},
 };
@@ -251,6 +249,26 @@ impl ServedBy {
         }
     }
 
+    fn found(&self, found: Found) -> resonate_ui::ServedFound {
+        resonate_ui::ServedFound {
+            artists: found
+                .artists
+                .into_iter()
+                .map(|artist| self.artist(artist))
+                .collect(),
+            albums: found
+                .albums
+                .into_iter()
+                .map(|album| self.album(album))
+                .collect(),
+            songs: found
+                .songs
+                .into_iter()
+                .map(|song| self.song(song))
+                .collect(),
+        }
+    }
+
     fn song(&self, song: Song) -> resonate_ui::ServedSong {
         resonate_ui::ServedSong {
             location: self.0.location_of(&Named::Song(song.id)),
@@ -320,25 +338,12 @@ impl resonate_ui::Serves for ServedBy {
             .collect())
     }
 
+    fn first_page(&self) -> resonate_providers::Result<resonate_ui::ServedFound> {
+        Ok(self.found(self.0.first_page()?))
+    }
+
     fn search(&self, words: &str) -> resonate_providers::Result<resonate_ui::ServedFound> {
-        let found = self.0.search(words)?;
-        Ok(resonate_ui::ServedFound {
-            artists: found
-                .artists
-                .into_iter()
-                .map(|artist| self.artist(artist))
-                .collect(),
-            albums: found
-                .albums
-                .into_iter()
-                .map(|album| self.album(album))
-                .collect(),
-            songs: found
-                .songs
-                .into_iter()
-                .map(|song| self.song(song))
-                .collect(),
-        })
+        Ok(self.found(self.0.search(words)?))
     }
 
     fn expand(&self, named: &MediaLocation) -> resonate_providers::Result<Vec<MediaLocation>> {
@@ -402,39 +407,106 @@ impl MediaStream for Streaming {
 }
 
 #[cfg(feature = "online")]
-pub fn browse(config: &Config, wanted: &SubsonicArgs) -> Result<()> {
+pub fn browse(
+    config: &Config,
+    settings: Option<PathBuf>,
+    service: Option<&str>,
+    wanted: &BrowsingArgs,
+) -> Result<()> {
     if !config.online_enabled() {
         return Err(Error::OnlineOff);
     }
-    let subsonic = providers::server_named(config).ok_or(Error::NoSubsonicServer)?;
+    let services = providers::in_place_named(config, settings);
+    let chosen = chosen(services, service)?;
+    for table in tables(chosen.as_ref(), wanted)? {
+        said!("{}", table.render());
+    }
+    Ok(())
+}
 
-    if let Some(id) = wanted.artist.as_deref() {
-        let held = subsonic.artist(&server_id(id)?)?;
-        said!("{}", albums_table(&subsonic, &held.albums).render());
-        return Ok(());
+#[cfg(feature = "online")]
+pub fn browse_subsonic(
+    config: &Config,
+    settings: Option<PathBuf>,
+    wanted: &BrowsingArgs,
+) -> Result<()> {
+    if !config.online_enabled() {
+        return Err(Error::OnlineOff);
     }
-    if let Some(id) = wanted.album.as_deref() {
-        let held = subsonic.album(&server_id(id)?)?;
-        said!("{}", songs_table(&subsonic, &held.songs).render());
-        return Ok(());
+    let services = providers::in_place_named(config, settings);
+    let subsonic = chosen(services, Some(SUBSONIC)).map_err(|_| Error::NoSubsonicServer)?;
+    for table in tables(subsonic.as_ref(), wanted)? {
+        said!("{}", table.render());
     }
-    if let Some(words) = wanted.search.as_deref() {
-        let found = subsonic.search(words)?;
-        said!("{}", artists_table(&subsonic, &found.artists).render());
-        said!("{}", albums_table(&subsonic, &found.albums).render());
-        said!("{}", songs_table(&subsonic, &found.songs).render());
-        return Ok(());
-    }
-    said!(
-        "{}",
-        artists_table(&subsonic, &subsonic.artists()?).render()
-    );
     Ok(())
 }
 
 #[cfg(not(feature = "online"))]
-pub fn browse(_config: &Config, _wanted: &SubsonicArgs) -> Result<()> {
-    Err(Error::NoSubsonic)
+pub fn browse(
+    _config: &Config,
+    _settings: Option<PathBuf>,
+    _service: Option<&str>,
+    _wanted: &BrowsingArgs,
+) -> Result<()> {
+    Err(Error::NoServed)
+}
+
+#[cfg(not(feature = "online"))]
+pub fn browse_subsonic(
+    _config: &Config,
+    _settings: Option<PathBuf>,
+    _wanted: &BrowsingArgs,
+) -> Result<()> {
+    Err(Error::NoServed)
+}
+
+#[cfg(feature = "online")]
+const SUBSONIC: &str = "subsonic";
+
+#[cfg(feature = "online")]
+fn chosen(services: InPlace, asked: Option<&str>) -> Result<Arc<dyn PlaysInPlace>> {
+    let Some(asked) = asked else {
+        return services.into_iter().next().ok_or(Error::NoServedService);
+    };
+    let named = asked.trim();
+    services
+        .into_iter()
+        .find(|service| service.scheme().as_str().eq_ignore_ascii_case(named))
+        .ok_or_else(|| Error::ServiceNotServed {
+            service: named.to_owned(),
+        })
+}
+
+#[cfg(feature = "online")]
+fn tables(service: &dyn PlaysInPlace, wanted: &BrowsingArgs) -> Result<Vec<Table>> {
+    if let Some(id) = wanted.artist.as_deref() {
+        let held = service.artist(&server_id(id)?)?;
+        return Ok(vec![albums_table(service, &held.albums)]);
+    }
+    if let Some(id) = wanted.album.as_deref() {
+        let held = service.album(&server_id(id)?)?;
+        return Ok(vec![songs_table(service, &held.songs)]);
+    }
+    let found = match wanted.search.as_deref() {
+        Some(words) => service.search(words)?,
+        None => service.first_page()?,
+    };
+    Ok(found_tables(service, &found))
+}
+
+#[cfg(feature = "online")]
+fn found_tables(service: &dyn PlaysInPlace, found: &Found) -> Vec<Table> {
+    let mut tables = Vec::new();
+    if !found.artists.is_empty() {
+        tables.push(artists_table(service, &found.artists));
+    }
+    if !found.albums.is_empty() {
+        tables.push(albums_table(service, &found.albums));
+    }
+    if !found.songs.is_empty() || tables.is_empty() {
+        tables.push(songs_table(service, &found.songs));
+    }
+    tables
 }
 
 #[cfg(feature = "online")]
@@ -443,8 +515,8 @@ fn server_id(id: &str) -> Result<Id> {
 }
 
 #[cfg(feature = "online")]
-fn uri_of(subsonic: &Subsonic, named: Named) -> String {
-    subsonic.location_of(&named).to_uri()
+fn uri_of(service: &dyn PlaysInPlace, named: Named) -> String {
+    service.location_of(&named).to_uri()
 }
 
 #[cfg(feature = "online")]
@@ -453,20 +525,20 @@ fn counted(count: Option<u32>) -> String {
 }
 
 #[cfg(feature = "online")]
-fn artists_table(subsonic: &Subsonic, artists: &[Artist]) -> Table {
+fn artists_table(service: &dyn PlaysInPlace, artists: &[Artist]) -> Table {
     let mut table = Table::new(vec!["ARTIST", "ALBUMS", "URI"]);
     for artist in artists {
         table.push(vec![
             artist.name.clone(),
             counted(artist.albums),
-            uri_of(subsonic, Named::Artist(artist.id.clone())),
+            uri_of(service, Named::Artist(artist.id.clone())),
         ]);
     }
     table
 }
 
 #[cfg(feature = "online")]
-fn albums_table(subsonic: &Subsonic, albums: &[Album]) -> Table {
+fn albums_table(service: &dyn PlaysInPlace, albums: &[Album]) -> Table {
     let mut table = Table::new(vec!["ALBUM", "ARTIST", "YEAR", "SONGS", "URI"]);
     for album in albums {
         table.push(vec![
@@ -476,14 +548,14 @@ fn albums_table(subsonic: &Subsonic, albums: &[Album]) -> Table {
                 .year
                 .map_or_else(|| "-".to_owned(), |year| year.to_string()),
             counted(album.songs),
-            uri_of(subsonic, Named::Album(album.id.clone())),
+            uri_of(service, Named::Album(album.id.clone())),
         ]);
     }
     table
 }
 
 #[cfg(feature = "online")]
-fn songs_table(subsonic: &Subsonic, songs: &[Song]) -> Table {
+fn songs_table(service: &dyn PlaysInPlace, songs: &[Song]) -> Table {
     let mut table = Table::new(vec!["#", "TITLE", "ARTIST", "LENGTH", "FORMAT", "URI"]);
     for song in songs {
         table.push(vec![
@@ -492,7 +564,7 @@ fn songs_table(subsonic: &Subsonic, songs: &[Song]) -> Table {
             song.artist.clone().unwrap_or_else(|| "-".to_owned()),
             crate::played(song.length),
             song.suffix.clone().unwrap_or_else(|| "-".to_owned()),
-            uri_of(subsonic, Named::Song(song.id.clone())),
+            uri_of(service, Named::Song(song.id.clone())),
         ]);
     }
     table
@@ -511,7 +583,7 @@ mod tests {
     use resonate_codec::{DecodeStatus, Decoder, probe};
     use resonate_core::{AudioBuffer, Frames, SampleData, SampleFormat};
     use resonate_monochrome::Monochrome;
-    use resonate_subsonic::Server;
+    use resonate_subsonic::{Server, Subsonic};
     use resonate_tidal::{Account, Endpoints, HifiApi, MediaHosts, Tidal};
 
     use super::*;
@@ -742,7 +814,11 @@ mod tests {
             "/media/whole.flac" => Answer::Song,
             _ => Answer::Missing,
         });
-        let tidal = Tidal::at(
+        Served::over(vec![Arc::new(tidal_at(&url))], false)
+    }
+
+    fn tidal_at(url: &str) -> Tidal {
+        Tidal::at(
             Account {
                 client_id: "client".to_owned(),
                 client_secret: None,
@@ -756,8 +832,99 @@ mod tests {
                 images: format!("{url}/images/"),
                 media: on_loopback(),
             },
+        )
+    }
+
+    fn browsing() -> BrowsingArgs {
+        BrowsingArgs {
+            artist: None,
+            album: None,
+            search: None,
+        }
+    }
+
+    #[test]
+    fn the_terminal_browses_the_service_named_and_a_tidal_accounts_first_page_is_its_favourites() {
+        let url = fake(|asked, _| {
+            match asked.path() {
+            "/auth/token" => Answer::Json(
+                r#"{"access_token":"fresh","expires_in":3600,"user":{"countryCode":"GB","userId":42}}"#
+                    .to_owned(),
+            ),
+            "/api/users/42/favorites/albums" => Answer::Json(
+                r#"{"items":[{"item":{"id":7,"title":"Meddle","artist":{"name":"Pink Floyd"}}}]}"#
+                    .to_owned(),
+            ),
+            "/api/users/42/favorites/tracks" => Answer::Json(
+                r#"{"items":[{"item":{"id":12,"title":"Echoes","duration":1412,"artist":{"name":"Pink Floyd"}}}]}"#
+                    .to_owned(),
+            ),
+            _ => Answer::Missing,
+        }
+        });
+        let services: InPlace = vec![subsonic_at(subsonic_url()), Arc::new(tidal_at(&url))];
+
+        let first = chosen(services.clone(), None).expect("the first service set");
+        let tidal = chosen(services.clone(), Some(" TIDAL ")).expect("the service named");
+        let unset = chosen(services, Some("monochrome"));
+        let none = chosen(Vec::new(), None);
+        let rendered: Vec<String> = tables(tidal.as_ref(), &browsing())
+            .expect("the first page")
+            .iter()
+            .map(Table::render)
+            .collect();
+
+        assert_eq!(first.scheme().as_str(), "subsonic");
+        assert_eq!(tidal.scheme().as_str(), "tidal");
+        assert!(
+            matches!(unset, Err(Error::ServiceNotServed { service }) if service == "monochrome")
         );
-        Served::over(vec![Arc::new(tidal)], false)
+        assert!(matches!(none, Err(Error::NoServedService)));
+        assert_eq!(rendered.len(), 2);
+        assert!(rendered[0].contains("Meddle") && rendered[0].contains("tidal:album/7"));
+        assert!(rendered[1].contains("Echoes") && rendered[1].contains("tidal:track/12"));
+    }
+
+    #[test]
+    fn a_subsonic_servers_first_page_at_the_terminal_is_its_album_by_id_and_a_search_finding_nothing_is_one_empty_table()
+     {
+        let url = fake(|asked, _| match asked.path() {
+            "/rest/getAlbum" => Answer::Json(ALBUM.to_owned()),
+            "/rest/search3" => Answer::Json(
+                r#"{"subsonic-response":{"status":"ok","version":"1.16.1","searchResult3":{}}}"#
+                    .to_owned(),
+            ),
+            _ => Answer::Missing,
+        });
+        let subsonic = subsonic_at(url);
+
+        let album = tables(
+            subsonic.as_ref(),
+            &BrowsingArgs {
+                album: Some("al-1".to_owned()),
+                ..browsing()
+            },
+        )
+        .expect("an album");
+        let nothing = tables(
+            subsonic.as_ref(),
+            &BrowsingArgs {
+                search: Some("nothing".to_owned()),
+                ..browsing()
+            },
+        )
+        .expect("a search");
+        let blank = tables(
+            subsonic.as_ref(),
+            &BrowsingArgs {
+                artist: Some(" ".to_owned()),
+                ..browsing()
+            },
+        );
+
+        assert!(album[0].render().contains("subsonic:track/so-2"));
+        assert_eq!(nothing.len(), 1);
+        assert!(matches!(blank, Err(Error::BlankServerId)));
     }
 
     fn monochrome_serving() -> Served {

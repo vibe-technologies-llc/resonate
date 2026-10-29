@@ -216,7 +216,7 @@ stack's test harness:
 - **Output:** `sinks` (`--renderers` searches the network too), `explain`, `info`, `analyse` (`--recognise` asks AcoustID), `listen`, `eq`, `abx` (a blind test of the equaliser).
 - **Playing:** `play <files>` (transport keys on stdin), `queue`, `players`, `sleep`, `share`, `mcp`;
   `queue` and `sleep` take `--zone <N|NAME>` for a zone of the window.
-- **Catalog:** `subsonic` (a Subsonic server's own, browsed in place), `scan`, `roots`, `forget`, `enrich`, `tag`, `organise`, `dedupe`, `vault`, `studies`, `stats`,
+- **Catalog:** `served` (a service played in place browsed: Subsonic, TIDAL, hifi-api, the Resonate server, Monochrome; `subsonic` is its Subsonic case), `scan`, `roots`, `forget`, `enrich`, `tag`, `organise`, `dedupe`, `vault`, `studies`, `stats`,
   `favourites`, `suggest`, `playlists`, `playlist`, `import`.
 - **Wants:** `wants`, `missing`, `poll`, `tidal` (device sign-in), `lastfm` (scrobbling sign-in).
 - **Devices:** `sync` (pairing code and devices; `--join`, `--leave`, `--fetch --from`, `--handoff`).

@@ -62,6 +62,7 @@ const LISTED_AT_MOST: usize = 25;
 struct Session {
     bearer: String,
     country: String,
+    user: Option<u64>,
     until: Instant,
 }
 
@@ -74,18 +75,24 @@ struct Granted {
     expires_in: Option<u64>,
     #[serde(default)]
     user: Option<Holder>,
+    #[serde(default, deserialize_with = "catalog::user_spelt")]
+    user_id: Option<u64>,
 }
 
 #[derive(Deserialize)]
 struct Holder {
     #[serde(default, rename = "countryCode")]
     country: Option<String>,
+    #[serde(default, rename = "userId", deserialize_with = "catalog::user_spelt")]
+    user: Option<u64>,
 }
 
 #[derive(Deserialize)]
 struct Sessions {
     #[serde(rename = "countryCode")]
     country: String,
+    #[serde(default, rename = "userId", deserialize_with = "catalog::user_spelt")]
+    user: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -226,20 +233,27 @@ impl Tidal {
             .map_or(LASTS_WHEN_UNSAID, Duration::from_secs)
             .saturating_sub(RENEWED_BEFORE);
         let bearer = format!("Bearer {}", granted.access_token);
-        let country = match granted.user.and_then(|user| user.country) {
-            Some(country) => country,
-            None => self.country_of(&bearer)?,
+        let (country, user) = match granted.user {
+            Some(Holder {
+                country: Some(country),
+                user,
+            }) => (country, user.or(granted.user_id)),
+            _ => {
+                let sessions = self.sessions_of(&bearer)?;
+                (sessions.country, sessions.user.or(granted.user_id))
+            }
         };
         Ok(Session {
             bearer,
             country,
+            user,
             until: Instant::now()
                 .checked_add(lasts)
                 .ok_or_else(|| self.asker.unreadable(op))?,
         })
     }
 
-    fn country_of(&self, bearer: &str) -> Result<String> {
+    fn sessions_of(&self, bearer: &str) -> Result<Sessions> {
         let op = ProviderOp::SignIn;
         let url = format!("{}sessions", self.endpoints.api);
         match self.asker.sent(op, || {
@@ -250,13 +264,22 @@ impl Tidal {
                 .call()
         })? {
             Sent::Answered(response) => {
-                let sessions: Sessions = self
-                    .asker
-                    .parsed(op, &self.asker.read_whole(op, response)?)?;
-                Ok(sessions.country)
+                self.asker.parsed(op, &self.asker.read_whole(op, response)?)
             }
             Sent::Refused { status, complaint } => Err(self.refusal(op, status, complaint)),
         }
+    }
+
+    fn user(&self) -> Result<Option<u64>> {
+        let session = self.session()?;
+        if session.user.is_some() {
+            return Ok(session.user);
+        }
+        let user = self.sessions_of(&session.bearer)?.user;
+        if let Some(held) = self.session.lock().as_mut() {
+            held.user = user;
+        }
+        Ok(user)
     }
 
     fn session(&self) -> Result<Session> {
@@ -527,6 +550,13 @@ impl PlaysInPlace for Tidal {
 
     fn cover_of(&self, named: &Named) -> Result<Id> {
         self.cover_named(named)
+    }
+
+    fn favourites(&self) -> Result<Found> {
+        match self.user()? {
+            Some(user) => self.favoured_by(user),
+            None => Ok(Found::default()),
+        }
     }
 }
 

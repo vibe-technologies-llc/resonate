@@ -71,8 +71,11 @@ final class Features {
         didSet { servedChanged() }
     }
     private(set) var servedGeneration = 0
-    @ObservationIgnored private var servedGiven: ServedAccount?
-    var hostedServices: Bool
+    @ObservationIgnored private var servedGiven: [DownloadAccount]?
+    private(set) var served = ServedChoice()
+    var hostedServices: Bool {
+        didSet { servedChanged() }
+    }
     var statistics: LibraryStatistics?
     var listeningDetail: ListeningDetail?
     private(set) var listenedCovers = ListenedCovers()
@@ -175,26 +178,36 @@ final class Features {
 
     var correctionBusy: Bool { searchingCorrections || applyingCorrection }
 
-    var servedAccount: ServedAccount? { online ? providers.served : nil }
+    var servedAccounts: [DownloadAccount] { providers.served(online: online, hosted: hostedServices) }
 
-    var serving: Bool { servedAccount != nil }
+    var serving: Bool { !served.services.isEmpty }
+
+    func chooseServed(_ scheme: String) {
+        served.choose(scheme)
+    }
 
     private func servedChanged() {
-        let account = servedAccount
-        guard account != servedGiven else { return }
-        servedGiven = account
+        let accounts = servedAccounts
+        guard accounts != servedGiven else { return }
+        servedGiven = accounts
         servedGeneration += 1
+        let generation = servedGeneration
         Task { [weak self] in
             guard let native = try? await self?.library.player() else { return }
-            _ = try? await Work.aside { native.serveFrom(account: account) }
+            guard let services = try? await Work.aside({ () -> [ServedService] in
+                native.serveFrom(accounts: accounts)
+                return native.servedServices()
+            }) else { return }
+            guard let self, generation == servedGeneration else { return }
+            served.offer(services)
         }
     }
 
     func serverAnswer<Value: Sendable>(_ ask: @escaping @Sendable (MobilePlayer) throws -> Value) async throws -> Value {
         let native = try await library.player()
-        let account = servedAccount
+        let accounts = servedAccounts
         return try await Work.aside {
-            native.serveFrom(account: account)
+            native.serveFrom(accounts: accounts)
             return try ask(native)
         }
     }
@@ -870,9 +883,9 @@ final class Features {
         let request = servedRequest(uri, bucket: bucket)
         let side = UInt32(bucket.rawValue)
         guard let native = try? await library.player() else { return nil }
-        let account = servedAccount
+        let accounts = servedAccounts
         return await artworks.image(request) {
-            native.serveFrom(account: account)
+            native.serveFrom(accounts: accounts)
             return try native.servedCover(uri: uri, known: known, side: side)
         }
     }

@@ -1,18 +1,57 @@
 import Foundation
 import ResonateNative
 
-extension Track {
-    public static let servedScheme = "subsonic:"
+public enum PlayedInPlace {
+    public static let schemes = ["subsonic", "tidal", "resonate", "hifi-api", "monochrome"]
 
-    public var isServed: Bool { id == 0 && uri.hasPrefix(Self.servedScheme) }
+    public static func scheme(of uri: String) -> String? {
+        guard let colon = uri.firstIndex(of: ":") else { return nil }
+        let scheme = String(uri[..<colon])
+        return schemes.contains(scheme) ? scheme : nil
+    }
+}
+
+extension Track {
+    public var isServed: Bool { id == 0 && PlayedInPlace.scheme(of: uri) != nil }
 
     public var pictureKey: String { isServed ? uri : String(id) }
 }
 
+extension DownloadAccount {
+    public var isHosted: Bool {
+        (provider == .monochrome || provider == .hifiApi) && !usesItsOwnServer
+    }
+}
+
 extension ProviderAccounts {
-    public var served: ServedAccount? {
-        asked.first { $0.provider == .subsonic }
-            .map { ServedAccount(server: $0.server, user: $0.user, password: $0.password) }
+    public func served(online: Bool, hosted: Bool) -> [DownloadAccount] {
+        guard online else { return [] }
+        return asked.filter { hosted || !$0.isHosted }
+    }
+}
+
+public struct ServedChoice: Equatable, Sendable {
+    public private(set) var services: [ServedService] = []
+    public private(set) var chosen: String?
+
+    public init(services: [ServedService] = []) {
+        offer(services)
+    }
+
+    public var choosing: Bool { services.count > 1 }
+
+    public var service: ServedService? { services.first { $0.scheme == chosen } }
+
+    public mutating func offer(_ offered: [ServedService]) {
+        services = offered
+        if !offered.contains(where: { $0.scheme == chosen }) {
+            chosen = offered.first?.scheme
+        }
+    }
+
+    public mutating func choose(_ scheme: String) {
+        guard services.contains(where: { $0.scheme == scheme }) else { return }
+        chosen = scheme
     }
 }
 

@@ -13,16 +13,16 @@ import org.resonate.android.ui.library.Loaded
 import org.resonate.android.ui.library.Retry
 
 suspend fun <T> Resonate.asked(load: (MobilePlayer) -> T): Result<T> {
-    val account = features.served.account.value
+    val accounts = features.served.accounts.value
     return read { native ->
-        native.serveFrom(account)
+        native.serveFrom(accounts)
         withContext(Dispatchers.IO) { load(native) }
     }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
 fun <T> Resonate.servedRead(retry: Retry, load: (MobilePlayer) -> T): Flow<Loaded<T>> =
-    combine(features.served.account, retry.asked) { account, _ -> account }
+    combine(features.served.accounts, retry.asked) { accounts, _ -> accounts }
         .flatMapLatest {
             flow {
                 emit(Loaded.Loading)

@@ -1,7 +1,10 @@
 package org.resonate.android.ui.server
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,11 +13,14 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -35,13 +41,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.resonate.android.nativecore.ServedFound
+import org.resonate.android.nativecore.ServedService
 import org.resonate.android.ui.components.EmptyState
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.SectionHeader
 import org.resonate.android.ui.components.SettingsAction
 import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.components.TitleSize
-import org.resonate.android.ui.counted
 import org.resonate.android.ui.library.LoadedContent
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.resonateViewModel
@@ -49,10 +55,12 @@ import org.resonate.android.ui.resonateViewModel
 @Composable
 fun ServerScreen() {
     val model = resonateViewModel { ServerViewModel(it) }
-    val navigator = LocalNavigator.current
     val actions = rememberServerActions()
-    val artists by model.artists.collectAsStateWithLifecycle()
+    val services by model.services.collectAsStateWithLifecycle()
+    val chosen by model.chosen.collectAsStateWithLifecycle()
+    val firstPage by model.firstPage.collectAsStateWithLifecycle()
     val found by model.found.collectAsStateWithLifecycle()
+    val title = chosen?.title.orEmpty()
     Page("Server", size = TitleSize.LARGE, back = false, actions = { SettingsAction() }) { padding ->
         val direction = LocalLayoutDirection.current
         val below =
@@ -62,37 +70,26 @@ fun ServerScreen() {
                 bottom = padding.calculateBottomPadding(),
             )
         Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
-            ServerSearchField(model)
+            ServerSearchField(model, title)
+            if (services.size > 1) {
+                ServiceChooser(services, chosen, model::choose)
+            }
             val asked = found
             if (asked == null) {
-                LoadedContent(artists, model.artistsRetry::again) { shown ->
-                    if (shown.isEmpty()) {
+                LoadedContent(firstPage, model.firstPageRetry::again) { shown ->
+                    FoundList(shown, below, actions, "served-first-page") {
                         EmptyState(
                             Icons.Rounded.Search,
-                            "This server holds no artists",
-                            detail = "Nothing was listed by the account in Settings.",
+                            searchHeadline(title),
+                            detail = firstPageEmpty(title),
                         )
-                    } else {
-                        LazyColumn(
-                            contentPadding = below,
-                            modifier = Modifier.fillMaxSize().testTag("served-artists"),
-                        ) {
-                            item("count") {
-                                SectionHeader(counted(shown.size, "artist"))
-                            }
-                            items(shown, key = { it.uri }) { artist ->
-                                ServedArtistRow(
-                                    artist,
-                                    onClick = { navigator.open(artist.screen()) },
-                                    actions = actions,
-                                )
-                            }
-                        }
                     }
                 }
             } else {
                 LoadedContent(asked, model.searchRetry::again) { shown ->
-                    FoundList(shown, below, actions)
+                    FoundList(shown, below, actions, "served-found") {
+                        EmptyState(Icons.Rounded.Search, "Nothing matches", detail = nothingMatches(title))
+                    }
                 }
             }
         }
@@ -100,17 +97,44 @@ fun ServerScreen() {
 }
 
 @Composable
-private fun FoundList(found: ServedFound, padding: PaddingValues, actions: ServerActions) {
+private fun ServiceChooser(
+    services: List<ServedService>,
+    chosen: ServedService?,
+    onChoose: (ServedService) -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = Sizes.gutter, vertical = 4.dp)
+            .selectableGroup()
+            .testTag("served-services"),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        services.forEach { service ->
+            FilterChip(
+                selected = service.scheme == chosen?.scheme,
+                onClick = { onChoose(service) },
+                label = { Text(service.title) },
+                modifier = Modifier.testTag("served-service-${service.scheme}"),
+            )
+        }
+    }
+}
+
+@Composable
+private fun FoundList(
+    found: ServedFound,
+    padding: PaddingValues,
+    actions: ServerActions,
+    tag: String,
+    empty: @Composable () -> Unit,
+) {
     val navigator = LocalNavigator.current
     if (found.isEmpty()) {
-        EmptyState(
-            Icons.Rounded.Search,
-            "Nothing matches",
-            detail = "The server found no artist, album or song for those words.",
-        )
+        empty()
         return
     }
-    LazyColumn(contentPadding = padding, modifier = Modifier.fillMaxSize().testTag("served-found")) {
+    LazyColumn(contentPadding = padding, modifier = Modifier.fillMaxSize().testTag(tag)) {
         item("summary") { SectionHeader(foundSummary(found)) }
         if (found.artists.isNotEmpty()) {
             item("artists") { SectionHeader("Artists") }
@@ -135,7 +159,7 @@ private fun FoundList(found: ServedFound, padding: PaddingValues, actions: Serve
 }
 
 @Composable
-private fun ServerSearchField(model: ServerViewModel) {
+private fun ServerSearchField(model: ServerViewModel, title: String) {
     val keyboard = LocalSoftwareKeyboardController.current
     val scheme = MaterialTheme.colorScheme
     val typed by model.typed.collectAsStateWithLifecycle()
@@ -146,7 +170,7 @@ private fun ServerSearchField(model: ServerViewModel) {
                 .padding(horizontal = Sizes.gutter, vertical = 8.dp)
                 .heightIn(min = 56.dp)
                 .testTag("served-search-field"),
-        placeholder = { Text("Search this server", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        placeholder = { Text(searchHeadline(title), maxLines = 1, overflow = TextOverflow.Ellipsis) },
         leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
         trailingIcon =
             if (typed) {

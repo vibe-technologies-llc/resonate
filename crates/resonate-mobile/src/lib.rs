@@ -50,7 +50,9 @@ use std::{
 
 use parking_lot::Mutex;
 use resonate_codec::{Picturing, Sources, probe_pictured};
-use resonate_core::{Frames, Resumable, Resumption, SampleRate, TrackId, Volume, ZoneId};
+use resonate_core::{
+    Frames, MediaLocation, Resumable, Resumption, SampleRate, TrackId, Volume, ZoneId,
+};
 use resonate_engine::{
     Command, EngineConfig, OutputStatus, PlaybackState, PlayerState, QueueItem, QueueRows,
     RepeatMode,
@@ -238,18 +240,14 @@ impl MobilePlayer {
         let catalog = Arc::new(Catalog::open(&Path::new(&folder).join("documents.sqlite"))?);
         let documents: Arc<dyn Documents> = Arc::from(documents);
         let served = served::Served::default();
-        let sources = Arc::new(
-            GRANTED_SCHEMES.iter().try_fold(
-                Sources::local()
-                    .spooling_under(Path::new(&folder).to_path_buf())
-                    .and(served.provider()),
-                |sources, scheme| {
-                    Ok::<_, Error>(
-                        sources.and(Arc::new(GrantedFiles::new(Arc::clone(&documents), scheme)?)),
-                    )
-                },
-            )?,
-        );
+        let sources = Arc::new(GRANTED_SCHEMES.iter().try_fold(
+            served.sources(Sources::local().spooling_under(Path::new(&folder).to_path_buf())),
+            |sources, scheme| {
+                Ok::<_, Error>(
+                    sources.and(Arc::new(GrantedFiles::new(Arc::clone(&documents), scheme)?)),
+                )
+            },
+        )?);
         let routing = Arc::new(output::Routing::new());
         let kept = catalog.kept_zones()?;
         let config = EngineConfig {
@@ -580,75 +578,120 @@ impl MobilePlayer {
         self.keep_volume_of(zone)?;
         let zoned = self.playing.zoned(zone.id)?;
         let mut saved = zoned.saved.lock();
-        let (place, rows) = {
+        let (place, rows, rate) = {
             let state = zone.player.state();
             let queue = zone.player.queued();
             let Some(place) = place_to_save(&state, &queue.rows, queue.revision) else {
                 return Ok(());
             };
-            (place, queue.rows)
+            let rate = state.current.map(|track| track.source.rate.hz());
+            (place, queue.rows, rate)
         };
-        if rows
-            .iter()
-            .any(|item| served::Served::names(&item.location))
-        {
-            return Ok(());
-        }
         if saved.as_ref() == Some(&place) {
             return Ok(());
         }
+        let served_playing = rows
+            .get(place.row as usize)
+            .is_some_and(|item| served::Served::names(&item.location));
         if saved
             .as_ref()
             .is_some_and(|saved| saved.revision == place.revision)
         {
             self.catalog
                 .save_place_of(zone.id, place.row, place.position_ms)?;
+            if served_playing && let Some(rate) = rate {
+                self.catalog.keep_served_rate_of(zone.id, place.row, rate)?;
+            }
         } else {
             let uris = rows
                 .iter()
+                .filter(|item| !served::Served::names(&item.location))
                 .map(|item| document_uri(&item.location))
                 .collect::<Result<Vec<_>>>()?;
-            self.catalog.save_queue_of(
-                zone.id,
-                &self.catalog.ids_at(&uris)?,
-                place.row,
-                place.position_ms,
-            )?;
+            let mut ids = self.catalog.ids_at(&uris)?.into_iter();
+            let kept = rows
+                .iter()
+                .enumerate()
+                .filter_map(|(at, item)| {
+                    if served::Served::names(&item.location) {
+                        return Some(catalog::KeptRow::Served(catalog::KeptServed {
+                            song: self.served.song_at(&item.location),
+                            rate: rate.filter(|_| at == place.row as usize),
+                        }));
+                    }
+                    ids.next().map(catalog::KeptRow::Document)
+                })
+                .collect::<Vec<_>>();
+            self.catalog
+                .save_rows_of(zone.id, &kept, place.row, place.position_ms)?;
         }
         *saved = Some(place);
         Ok(())
     }
 
     pub(crate) fn resume_saved_in(&self, zone: ZoneId) -> Result<()> {
-        let (ids, at, position) = self.catalog.resume_of(zone)?;
-        if !ids.is_empty() {
-            let tracks = self.catalog.tracks_by_id(&ids)?;
-            let rate = tracks
-                .get(at as usize)
-                .or_else(|| tracks.first())
-                .map_or(SampleRate::HZ_48000, |track| {
-                    SampleRate::new(track.rate).unwrap_or(SampleRate::HZ_48000)
-                });
-            let rows = tracks
-                .into_iter()
-                .map(|track| {
-                    Ok(Resumable {
-                        location: location(&track.uri)?,
-                        span: None,
-                        held: Some(TrackId::new(track.id)?),
-                    })
-                })
-                .collect::<Result<Vec<_>>>()?;
-            self.playing.send_to(
-                zone,
-                Command::Resume(Resumption {
-                    rows,
-                    row: at as usize,
-                    at: Frames::from_duration(Duration::from_millis(position), rate),
-                    ..Resumption::default()
-                }),
-            )?;
+        let (kept, at, position) = self.catalog.resume_rows_of(zone)?;
+        if kept.is_empty() {
+            return Ok(());
         }
+        let ids: Vec<u64> = kept
+            .iter()
+            .filter_map(|row| match row {
+                catalog::KeptRow::Document(id) => Some(*id),
+                catalog::KeptRow::Served(_) => None,
+            })
+            .collect();
+        let mut tracks = self.catalog.tracks_by_id(&ids)?.into_iter();
+        let mut playing_rate = None;
+        let mut rows = Vec::with_capacity(kept.len());
+        for (row, held) in kept.into_iter().enumerate() {
+            let (resumable, its_rate) = match held {
+                catalog::KeptRow::Document(_) => {
+                    let Some(track) = tracks.next() else {
+                        continue;
+                    };
+                    (
+                        Resumable {
+                            location: location(&track.uri)?,
+                            span: None,
+                            held: Some(TrackId::new(track.id)?),
+                        },
+                        SampleRate::new(track.rate).ok(),
+                    )
+                }
+                catalog::KeptRow::Served(served) => {
+                    let location =
+                        MediaLocation::from_uri(&served.song.uri).ok_or(Error::InvalidUri)?;
+                    let its_rate = served.rate.and_then(|rate| SampleRate::new(rate).ok());
+                    self.served.kept(std::slice::from_ref(&served.song));
+                    (
+                        Resumable {
+                            location,
+                            span: None,
+                            held: None,
+                        },
+                        its_rate,
+                    )
+                }
+            };
+            if row == at as usize {
+                playing_rate = its_rate;
+            }
+            rows.push(resumable);
+        }
+        let at_ms = if playing_rate.is_some() { position } else { 0 };
+        self.playing.send_to(
+            zone,
+            Command::Resume(Resumption {
+                rows,
+                row: at as usize,
+                at: Frames::from_duration(
+                    Duration::from_millis(at_ms),
+                    playing_rate.unwrap_or(SampleRate::HZ_48000),
+                ),
+                ..Resumption::default()
+            }),
+        )?;
         Ok(())
     }
 

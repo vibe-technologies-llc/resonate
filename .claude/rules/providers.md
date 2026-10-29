@@ -416,14 +416,14 @@ never copied into `resonate-library` (the local source's catalog alone). `Source
   their providers from the same `Kept` cells, so one TIDAL account is one `Tidal` signing in once,
   and a refresh token it rotates is handed to `Renewed` once rather than left stale in a second
   copy. The window's pane is `ui.md`'s *The server pane*; the phones' boundary is `mobile.md`'s
-  *A Subsonic server in place*.
+  *Services played in place*; the terminal's is `resonate served` (`binary.md`).
 
 ## Other services played in place
 
 TIDAL, hifi-api (hosted, a listener's own, or the keyed Resonate server) and Monochrome are sources
 of their own beside a provider, as Subsonic is: each implements the seam's `PlaysInPlace`
 (`scheme`, `title`, `artists`, `artist`, `album`, `search`, `streamed`, `cover`, `cover_of`,
-`songs_of`, `named_by`, `location_of`), named by `<scheme>:track/<id>`, `<scheme>:album/<id>`,
+`favourites`, `first_page`, `songs_of`, `named_by`, `location_of`), named by `<scheme>:track/<id>`, `<scheme>:album/<id>`,
 `<scheme>:artist/<id>` with the scheme its provider's name (`tidal`, `hifi-api`, `resonate`,
 `monochrome`), and registered by `providers::in_place` wherever its provider is registered, in the
 same order. A service that lists nothing without being asked (every one but Subsonic) answers
@@ -432,6 +432,16 @@ want's). `Streamed::seeking` is a reader a decoder may seek; `Streamed::onward` 
 whose `Seek` is `Unsupported`; both are held under a `parking_lot::Mutex` so a stream holding a
 `Receiver` is still `Sync` (`a_stream_read_onward_refuses_a_seek_and_says_it_cannot_and_one_of_known_length_seeks`).
 
+- **A first page is what the listener keeps there.** `PlaysInPlace::first_page` is `artists` where
+  the service lists any (Subsonic), else `favourites` (none by default). TIDAL's are the account's
+  own, read from v1 `users/<id>/favorites/artists`, `albums` and `tracks` (`FAVOURITES_AT_MOST`
+  each, newest first: `order=DATE&orderDirection=DESC`, each entry's `item` read as a browse's;
+  `AsksV1::favoured_by`), the user id taken off the token's `user.userId` or `user_id`, else asked
+  of `sessions` once and kept in the session (`Tidal::user`). The hosted hifi-api holds no
+  listener's account and a listener's own hifi-api has no favourites route, so theirs is empty, as
+  Monochrome's and the keyed server's are. Mixes are not offered: no `Named` names one
+  (`a_tidal_accounts_first_page_is_its_favourite_artists_albums_and_songs`,
+  `a_hifi_api_server_has_no_favourites_to_offer_and_lists_nothing_first`).
 - **TIDAL's catalog is its v1 API** (`catalog.rs`, the `AsksV1` trait): `search?query=&types=ARTISTS,ALBUMS,TRACKS`
   (`BROWSED_AT_MOST` of each), `artists/<id>/albums`, `albums/<id>/tracks`, `tracks/<id>`,
   `albums/<id>`, `artists/<id>`, each with the session's country. A TIDAL account asks it with its
@@ -457,7 +467,8 @@ whose `Seek` is `Unsupported`; both are held under a `parking_lot::Mutex` so a s
   **A seek over segments is not offered, by design**: the remuxed FLAC's byte offsets are the sum of
   the `mdat` payloads before them, which only fetching every earlier segment tells, so a byte seek
   cannot be turned into a segment and an offset; the codec spools such a stream on disc and seeks
-  once it has all arrived (`audio.md`'s *Non-seekable sources are spooled*;
+  once it has all arrived (FEATURES.md keeps a seek before then blocked on whether TIDAL's segment
+  hosts answer `Range`, which would map them a head at a time; `audio.md`'s *Non-seekable sources are spooled*;
   `a_dash_song_played_in_place_is_read_onward_as_native_flac_and_never_seeks`). A manifest offering
   less than the whole lossless track is `NotOffered` under `ProviderOp::Stream`
   (`a_tidal_song_offered_only_in_part_is_not_streamed`). The keyed server's `/file/?id=` is a

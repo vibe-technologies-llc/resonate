@@ -66,4 +66,16 @@ class ServerWordsTest {
         assertTrue(nothing.isEmpty())
         assertEquals("1 artist · 2 songs", foundSummary(some))
     }
+
+    @Test
+    fun theSearchAndItsEmptyPagesNameTheServiceChosen() {
+        assertEquals("Search TIDAL", searchHeadline("TIDAL"))
+        assertEquals("Search", searchHeadline(""))
+        assertEquals(
+            "Monochrome shows nothing until you search it. Type words above and press search.",
+            firstPageEmpty("Monochrome"),
+        )
+        assertEquals("TIDAL found no artist, album or song for those words.", nothingMatches("TIDAL"))
+        assertEquals("This service found no artist, album or song for those words.", nothingMatches(" "))
+    }
 }

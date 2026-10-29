@@ -50,6 +50,18 @@ fun albumSummary(songs: List<ServedSong>): String =
 
 fun artistSummary(albums: List<ServedAlbum>): String = counted(albums.size, "album")
 
+private fun serviceOr(title: String, otherwise: String): String = title.ifBlank { otherwise }
+
+fun searchHeadline(title: String): String = if (title.isBlank()) "Search" else "Search $title"
+
+fun firstPageEmpty(title: String): String =
+    "${serviceOr(title, "This service")} shows nothing until you search it. Type words above and press search."
+
+fun nothingMatches(title: String): String =
+    "${serviceOr(title, "This service")} found no artist, album or song for those words."
+
+val nothingFound = ServedFound(emptyList(), emptyList(), emptyList())
+
 fun ServedFound.isEmpty(): Boolean = artists.isEmpty() && albums.isEmpty() && songs.isEmpty()
 
 fun foundSummary(found: ServedFound): String =

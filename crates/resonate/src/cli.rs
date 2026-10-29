@@ -970,27 +970,41 @@ pub struct WantsArgs {
 
 #[derive(Debug, Args)]
 #[command(group(ArgGroup::new("browsing").args(["artist", "album", "search"])))]
-pub struct SubsonicArgs {
+pub struct BrowsingArgs {
     #[arg(
         long,
         value_name = "ID",
-        help = "List the albums of the artist the server knows by this id"
+        help = "List the albums of the artist the service knows by this id"
     )]
     pub artist: Option<String>,
 
     #[arg(
         long,
         value_name = "ID",
-        help = "List the songs of the album the server knows by this id"
+        help = "List the songs of the album the service knows by this id"
     )]
     pub album: Option<String>,
 
     #[arg(
         long,
         value_name = "WORDS",
-        help = "List the artists, albums and songs the server finds for these words"
+        help = "List the artists, albums and songs the service finds for these words"
     )]
     pub search: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct ServedArgs {
+    #[arg(
+        long,
+        value_name = "NAME",
+        help = "The service to browse: subsonic, tidal, resonate, hifi-api or monochrome; \
+                without it, the first the settings set"
+    )]
+    pub service: Option<String>,
+
+    #[command(flatten)]
+    pub browsing: BrowsingArgs,
 }
 
 #[derive(Debug, Subcommand)]
@@ -1264,11 +1278,18 @@ pub enum Sub {
     Players,
 
     #[command(
-        about = "Browse the Subsonic server the settings name (subsonic, subsonic-user, \
-                 subsonic-password): its artists, an artist's albums, an album's songs or what \
-                 a search finds, each with the URI play and queue take to stream it from there"
+        about = "Browse a service the settings set to play in place (Subsonic, TIDAL, the \
+                 Resonate server, hifi-api, Monochrome): its first page (a Subsonic server's \
+                 artists, a TIDAL account's favourites), an artist's albums, an album's songs or \
+                 what a search finds, each with the URI play and queue take to stream it from there"
     )]
-    Subsonic(SubsonicArgs),
+    Served(ServedArgs),
+
+    #[command(
+        about = "Browse the Subsonic server the settings name (subsonic, subsonic-user, \
+                 subsonic-password), as served --service subsonic does"
+    )]
+    Subsonic(BrowsingArgs),
 
     #[command(about = "Print the playlists the library holds")]
     Playlists {

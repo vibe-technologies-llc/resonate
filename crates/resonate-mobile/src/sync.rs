@@ -1338,7 +1338,7 @@ impl Catalog for DocumentCatalog {
             .map_err(unavailable)?;
         let held = usize::try_from(held).unwrap_or_default();
         let (playing, position_ms) =
-            catalog::place_among_rows(&connection, zone, row_at, position_ms.max(0) as u64)
+            catalog::place_among_documents(&connection, zone, row_at, position_ms.max(0) as u64)
                 .map_err(unavailable)?;
         let window = Resumed::window_around(playing, held);
         let rows = connection

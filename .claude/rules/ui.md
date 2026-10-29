@@ -1232,7 +1232,11 @@ is never named.
   at the artists again on the service chosen before where it is still set, else the first, and
   forget the covers. **With several services a chooser heads the pane**: a `kit::segmented` of
   their titles (`served-service-<n>`, `ServerModel::choose`), the first page's eyebrow the chosen
-  one's title; a choice starts at its artists and clears the search. A service that lists nothing
+  one's title; a choice starts at its artists and clears the search. **The first page is
+  `Serves::first_page`** (`artists` by default; the binary's adapter hands the service's own,
+  `providers.md`): artists alone are listed bare, anything more under the search's headings
+  (`serving::first_rows`) and titled *Favourites*, counted as a search is
+  (`a_service_with_favourites_opens_on_them_and_a_favourite_song_plays_from_the_first_page`). A service that lists nothing
   unasked opens on *This service lists nothing until it is asked* and the search
   (`two_services_are_chosen_between_in_the_pane_and_a_song_found_on_the_second_plays_from_it`). The pane (`views/served.rs`) is a heading (way back, title, the count, *Play* and
   *Add to queue* on an artist or album, and a search `Field` that asks the server on enter and an

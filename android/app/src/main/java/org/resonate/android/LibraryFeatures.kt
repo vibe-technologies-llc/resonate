@@ -201,7 +201,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             .stateIn(derivedScope, SharingStarted.Eagerly, null)
     val online = MutableStateFlow(settings.getBoolean("online", true))
     val hostedServices = MutableStateFlow(settings.getBoolean("hosted-services", true))
-    val served = Served(library, scope, online, providerAccounts)
+    val served = Served(library, scope, online, providerAccounts, hostedServices)
     val folders = MutableStateFlow<List<MusicFolder>>(emptyList())
     val organising = FolderOrganising(context, library, settings, scope, ::rereadSongs)
     val statistics = MutableStateFlow<LibraryStatistics?>(null)

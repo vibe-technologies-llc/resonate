@@ -80,10 +80,15 @@ that name. Every file argument goes through it.
   (`served.rs`, `providers.md`: `subsonic:`, `tidal:`, `hifi-api:`, `resonate:`, `monochrome:`, each
   a song, album or artist; Monochrome's a song alone): `queue_items_served` reads arguments
   through `Served::sources`, and an album or artist URI is queued as the songs the service lists
-  for it. `resonate subsonic`
-  browses the server (bare: its artists; `--artist ID`, `--album ID`, `--search WORDS`, one at a
-  time), each row with the URI `play` and `queue` take; with `online` off it is `OnlineOff`,
-  without the account `NoSubsonicServer`, in a build without `online` `NoSubsonic`.
+  for it. `resonate served [--service NAME]` browses a service (`cli::ServedArgs`: the name is a
+  scheme, case folded; without it the first the settings set, in the registry's order): bare, its
+  `first_page` (a Subsonic server's artists, a TIDAL account's favourites); `--artist ID`,
+  `--album ID`, `--search WORDS` (`cli::BrowsingArgs`, one at a time), one table a kind found, each
+  row with the URI `play` and `queue` take (`served::tables`). `resonate subsonic` is the same with
+  `--service subsonic`. With `online` off it is `OnlineOff`; no service set `NoServedService`; a
+  name not set `ServiceNotServed`; `subsonic` without the account `NoSubsonicServer`; a build
+  without `online` `NoServed`
+  (`the_terminal_browses_the_service_named_and_a_tidal_accounts_first_page_is_its_favourites`).
 - **`main::local_path`**: commands reading a local file alone (`info`, `explain`, `share <file>`,
   `playlist --add`).
 - **A cut row is named by frames too.** `to_uri_within` appends `#frames=START-END` (or `START-`),

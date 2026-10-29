@@ -13,6 +13,7 @@ use crate::hifi::{id_spelt, listings_readable};
 pub(crate) const BROWSED_AT_MOST: usize = 20;
 pub(crate) const SONGS_OF_AN_ALBUM_AT_MOST: usize = 100;
 pub(crate) const ALBUMS_OF_AN_ARTIST_AT_MOST: usize = 50;
+pub(crate) const FAVOURITES_AT_MOST: usize = 50;
 pub(crate) const IMAGES: &str = "https://resources.tidal.com/images/";
 const DELIVERED_AS: &str = "flac";
 const ALBUM_COVER: &str = "album:";
@@ -41,6 +42,26 @@ fn items_or_none<'de, D: Deserializer<'de>, T: DeserializeOwned>(
         .and_then(|value| serde_json::from_value::<Items<T>>(value).ok())
         .map(|items| items.items)
         .unwrap_or_default())
+}
+
+pub(crate) fn user_spelt<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Option<u64>, D::Error> {
+    Ok(match Option::<Value>::deserialize(deserializer)? {
+        Some(Value::Number(user)) => user.as_u64(),
+        Some(Value::String(user)) => user.trim().parse().ok(),
+        _ => None,
+    })
+}
+
+#[derive(Deserialize)]
+#[serde(bound = "T: DeserializeOwned")]
+struct Favoured<T> {
+    item: T,
+}
+
+fn favoured<T>(favoured: Items<Favoured<T>>) -> impl Iterator<Item = T> {
+    favoured.items.into_iter().map(|favoured| favoured.item)
 }
 
 #[derive(Default, Deserialize)]
@@ -265,6 +286,22 @@ pub(crate) trait AsksV1 {
             escaped(words)
         ))?;
         Ok(found.found())
+    }
+
+    fn favoured_by(&self, user: u64) -> Result<Found> {
+        let asked = |kind: &str| {
+            format!(
+                "users/{user}/favorites/{kind}?limit={FAVOURITES_AT_MOST}&offset=0&order=DATE&orderDirection=DESC"
+            )
+        };
+        let artists: Items<Favoured<V1Artist>> = self.browsed(&asked("artists"))?;
+        let albums: Items<Favoured<V1Album>> = self.browsed(&asked("albums"))?;
+        let tracks: Items<Favoured<V1Track>> = self.browsed(&asked("tracks"))?;
+        Ok(Found {
+            artists: favoured(artists).filter_map(V1Artist::artist).collect(),
+            albums: favoured(albums).filter_map(V1Album::album).collect(),
+            songs: favoured(tracks).filter_map(V1Track::song).collect(),
+        })
     }
 
     fn artist_albums(&self, id: &Id) -> Result<ArtistAlbums> {

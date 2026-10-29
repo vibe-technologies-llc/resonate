@@ -477,7 +477,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   before this was done carry no mark: nothing tells them from the listener's own.
 
 The views follow Android's screens and wording (`android.md`), with three tabs, Library, Settings
-and Search, and a Server tab while a Subsonic account is served (below) (`Tab(role: .search)`, which iOS sets apart at the trailing edge and turns into the search
+and Search, and a Server tab while a service that plays in place is served (below) (`Tab(role: .search)`, which iOS sets apart at the trailing edge and turns into the search
 field; `Root.search` has its own stack). **Songs is a page of the Library tab and the queue is
 Now Playing's Up next, neither a tab**: *All songs*, Favourites' and the
 empty states' *Browse songs* push `Destination.songs` onto the Library stack alone
@@ -1256,27 +1256,39 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   until the scene is active again, so each cancelled job still deletes its document and its journal
   entry, or the next start does, and the continued task completes unsuccessfully.
 
-## A Subsonic server
+## Services played in place
 
-- **The Server tab browses and plays a Subsonic server in place** (`mobile.md`'s *A Subsonic server
-  in place*; `ServerViews.swift`, `ResonateLogic/Served.swift`). `Features.servedAccount` is the
-  Subsonic account that is on and ready while online is on (`ProviderAccounts.served`; iOS keeps one
-  account a provider), and `Features.serving` is whether there is one. A change of either calls
-  `serve_from` (`servedChanged`) and steps `servedGeneration`, which every cover and page keys on;
-  every read binds the account again first (`Features.serverAnswer`, on `Work.aside`), so a browse
-  never races the change. **The tab is `Root.server`**, a `Tab` present only while serving, after
-  Library; the restored tab never lands on it (`Navigation.restore`) and it is left when the account
-  goes (`leaveServer`). Its pages are `Destination.served(ServedPlace)` (an artist or an album, kept
-  in the scene's navigation). The root lists the artists and searches the server on submit
-  (`.searchable`, `served_search`: artists, albums and songs in sections); an artist page is a header
+- **The Server tab browses and plays every service that plays in place** (`mobile.md`'s *Services
+  played in place*; `ServerViews.swift`, `ResonateLogic/Served.swift`). `Features.servedAccounts`
+  is `ProviderAccounts.served(online:hosted:)`: the download accounts on and ready, none while
+  online is off, and a hosted Monochrome or hifi-api (`DownloadAccount.isHosted`) left out while
+  hosted services are declined, so declining changes the list the boundary is handed. A change of
+  providers, online or hosted services calls `serve_from` (`servedChanged`), steps
+  `servedGeneration`, which every cover and page keys on, and offers `served_services` to
+  `Features.served`, a `ServedChoice`: the services in the boundary's order and the chosen scheme,
+  kept while that scheme is still served, else the first. Every read binds the accounts again first
+  (`Features.serverAnswer`, on `Work.aside`; `serve_from` is idempotent for one list), so a browse
+  never races the change. **The tab is `Root.server`**, a `Tab` present while `Features.serving`
+  (any service served), after Library; the restored tab never lands on it (`Navigation.restore`)
+  and it is left when the last service goes (`leaveServer`). Its pages are
+  `Destination.served(ServedPlace)` (an artist or an album, kept in the scene's navigation). The
+  root shows a segmented chooser only while more than one service is served, then the chosen
+  service's `served_first_page` (Subsonic's artists, TIDAL's favourites, else nothing and an
+  invitation to search) in the sections a search answers in (`ServedFoundRows`: artists, albums,
+  songs), and searches that service on submit (`.searchable`, `served_search(scheme, words)`). Monochrome and the keyed `resonate`
+  server answer only a search, and a browse a service does not offer, or a Monochrome cover, fails
+  with the boundary's sentence or the placeholder. An artist page is a header
   (`ServedHeader`: cover, name, summary, Play and Shuffle, as `CollectionHeader`) and a shelf of
-  albums; an album page lists its songs numbered by the server's track number, a row playing the
+  albums; an album page lists its songs numbered by the service's track number, a row playing the
   album from it. Every row has Play, Shuffle, Play next and Add to queue in its context menu and
   Play next and Add to queue as its leading swipe (`ServedActions`); an album or artist is expanded
   to its songs (`served_song_uris`) before it is played or queued (`Library.playServed(expanding:)`),
   and a song plays the list it was pressed in (`Library.playServed(_:at:)`, `load_served` then the
-  transport as `play(_:at:)` does). **A served row has id 0**, told by `Track.isServed` (id 0 and a
-  `subsonic:` uri); anything keyed by song id keys it by `Track.pictureKey` (its uri) instead: the
+  transport as `play(_:at:)` does). A queue holding served rows is saved and resumed by the
+  boundary like any other. **A served row has id 0**, told by `Track.isServed` (id 0 and a uri
+  whose scheme is one of `PlayedInPlace.schemes`: `subsonic`, `tidal`, `resonate`, `hifi-api`,
+  `monochrome`, each `<scheme>:track/<id>`, `album/<id>`, `artist/<id>`); anything keyed by song id
+  keys it by `Track.pictureKey` (its uri) instead: the
   artwork views (`ArtworkLoad.served`, `pictured`), the backdrop's palette memory and the lock
   screen (`NowPlaying.artworkFor`). Its cover is `ArtworkSubject.served(uri)`, named by uri, generation
   and bucket, asked through `Features.servedCover` (`served_cover`) and held in the same

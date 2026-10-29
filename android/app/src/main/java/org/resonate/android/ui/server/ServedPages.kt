@@ -77,7 +77,7 @@ fun ServedArtistScreen(screen: Screen.ServedArtist) {
                 }
             }
             if (albums.isEmpty()) {
-                item("empty") { EmptyCollection(detail = "This server lists no albums for this artist.") }
+                item("empty") { EmptyCollection(detail = "Nothing is listed for this artist.") }
             } else {
                 item("albums-title") { SectionHeader("Albums") }
                 item("albums") {
@@ -141,7 +141,7 @@ fun ServedAlbumScreen(screen: Screen.ServedAlbum) {
                     )
                 }
             }
-            if (shown.isEmpty()) item("empty") { EmptyCollection(detail = "This server lists no songs for this album.") }
+            if (shown.isEmpty()) item("empty") { EmptyCollection(detail = "Nothing is listed for this album.") }
             shown.forEachIndexed { index, song ->
                 item("row:$index:${song.uri}") {
                     ServedSongRow(

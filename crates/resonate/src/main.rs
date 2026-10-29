@@ -336,7 +336,15 @@ fn run() -> Result<()> {
         }) => play(&cli, &config, files, sleep.as_deref(), transport),
         Some(Sub::Queue(wanted)) => queue_onto_a_running_player(&cli, &config, wanted),
         Some(Sub::Players) => players(),
-        Some(Sub::Subsonic(wanted)) => served::browse(&config, wanted),
+        Some(Sub::Served(wanted)) => served::browse(
+            &config,
+            settings_path(&cli).ok(),
+            wanted.service.as_deref(),
+            &wanted.browsing,
+        ),
+        Some(Sub::Subsonic(wanted)) => {
+            served::browse_subsonic(&config, settings_path(&cli).ok(), wanted)
+        }
         Some(Sub::Playlists {
             order,
             reverse,

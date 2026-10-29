@@ -15,7 +15,7 @@ use rusqlite::{
     hooks::Action, params,
 };
 
-use crate::{Error, Result, StoreOp, Track};
+use crate::{Error, Result, StoreOp, Track, served::ServedSong};
 
 const LISTENS_NAME_THEIR_ORIGIN: &str = "
 ALTER TABLE listens ADD COLUMN origin_device BLOB;
@@ -172,6 +172,23 @@ const ZONES_KEEP_THEIR_VOLUME: &str = "
 ALTER TABLE zones ADD COLUMN volume REAL NOT NULL DEFAULT 1.0 CHECK (volume >= 0.0 AND volume <= 1.0);
 ";
 
+const QUEUES_KEEP_SONGS_PLAYED_IN_PLACE: &str = "
+CREATE TABLE served_rows (
+    zone        INTEGER NOT NULL,
+    position    INTEGER NOT NULL,
+    uri         TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    artist      TEXT,
+    album       TEXT,
+    track       INTEGER,
+    duration_ms INTEGER,
+    format      TEXT,
+    cover       TEXT,
+    rate        INTEGER,
+    PRIMARY KEY (zone, position)
+) STRICT;
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     LISTENS_NAME_THEIR_ORIGIN,
@@ -192,6 +209,7 @@ const MIGRATIONS: &[&str] = &[
     PEAKS_KEPT_AS_ONE_MOMENT_ARE_MEASURED_AGAIN,
     ZONES_KEEP_THEIR_OWN_QUEUES,
     ZONES_KEEP_THEIR_VOLUME,
+    QUEUES_KEEP_SONGS_PLAYED_IN_PLACE,
 ];
 
 #[cfg(test)]
@@ -667,10 +685,22 @@ impl Catalog {
         self.resume_of(ZoneId::FIRST)
     }
 
+    #[cfg(test)]
     pub(crate) fn save_queue_of(
         &self,
         zone: ZoneId,
         ids: &[u64],
+        at: u32,
+        position_ms: u64,
+    ) -> Result<()> {
+        let rows: Vec<KeptRow> = ids.iter().copied().map(KeptRow::Document).collect();
+        self.save_rows_of(zone, &rows, at, position_ms)
+    }
+
+    pub(crate) fn save_rows_of(
+        &self,
+        zone: ZoneId,
+        rows: &[KeptRow],
         at: u32,
         position_ms: u64,
     ) -> Result<()> {
@@ -682,10 +712,33 @@ impl Catalog {
         transaction
             .execute(kept.cleared, [zone.get()])
             .map_err(|source| Error::store(StoreOp::Write, source))?;
-        for (position, id) in ids.iter().enumerate() {
-            transaction
-                .execute(kept.row, params![zone.get(), position as i64, *id as i64])
-                .map_err(|source| Error::store(StoreOp::Write, source))?;
+        transaction
+            .execute(SERVED_ROWS_CLEARED, [zone.get()])
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        for (position, row) in rows.iter().enumerate() {
+            match row {
+                KeptRow::Document(id) => transaction
+                    .execute(kept.row, params![zone.get(), position as i64, *id as i64]),
+                KeptRow::Served(served) => transaction.execute(
+                    "INSERT INTO served_rows
+                         (zone, position, uri, title, artist, album, track, duration_ms, format, cover, rate)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                    params![
+                        zone.get(),
+                        position as i64,
+                        served.song.uri,
+                        served.song.title,
+                        served.song.artist,
+                        served.song.album,
+                        served.song.track,
+                        served.song.duration_ms.map(|length| length.min(i64::MAX as u64) as i64),
+                        served.song.format,
+                        served.song.cover,
+                        served.rate,
+                    ],
+                ),
+            }
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
         }
         transaction
             .execute(
@@ -709,17 +762,76 @@ impl Catalog {
         Ok(())
     }
 
+    pub(crate) fn keep_served_rate_of(&self, zone: ZoneId, row: u32, rate: u32) -> Result<()> {
+        self.0
+            .lock()
+            .execute(
+                "UPDATE served_rows SET rate = ?3 WHERE zone = ?1 AND position = ?2",
+                params![zone.get(), row, rate],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(())
+    }
+
+    #[cfg(test)]
     pub(crate) fn resume_of(&self, zone: ZoneId) -> Result<(Vec<u64>, u32, u64)> {
+        let (rows, at, position) = self.resume_rows_of(zone)?;
+        let ids = rows
+            .into_iter()
+            .filter_map(|row| match row {
+                KeptRow::Document(id) => Some(id),
+                KeptRow::Served(_) => None,
+            })
+            .collect();
+        Ok((ids, at, position))
+    }
+
+    pub(crate) fn resume_rows_of(&self, zone: ZoneId) -> Result<(Vec<KeptRow>, u32, u64)> {
         let kept = QueueKept::of(zone);
         let connection = self.0.lock();
         let mut query = connection
             .prepare(kept.rows)
             .map_err(|source| Error::store(StoreOp::Read, source))?;
-        let ids = query
-            .query_map([zone.get()], |row| row.get::<_, i64>(0).map(|id| id as u64))
+        let mut rows: Vec<(i64, KeptRow)> = query
+            .query_map([zone.get()], |row| {
+                Ok((row.get(0)?, KeptRow::Document(row.get::<_, i64>(1)? as u64)))
+            })
             .map_err(|source| Error::store(StoreOp::Read, source))?
-            .collect::<rusqlite::Result<Vec<u64>>>()
+            .collect::<rusqlite::Result<_>>()
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+        let mut served = connection
+            .prepare(
+                "SELECT position, uri, title, artist, album, track, duration_ms, format, cover, rate
+                 FROM served_rows WHERE zone = ?1",
+            )
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        rows.extend(
+            served
+                .query_map([zone.get()], |row| {
+                    Ok((
+                        row.get(0)?,
+                        KeptRow::Served(KeptServed {
+                            song: ServedSong {
+                                uri: row.get(1)?,
+                                title: row.get(2)?,
+                                artist: row.get(3)?,
+                                album: row.get(4)?,
+                                track: row.get(5)?,
+                                duration_ms: row
+                                    .get::<_, Option<i64>>(6)?
+                                    .map(|length| length.max(0) as u64),
+                                format: row.get(7)?,
+                                cover: row.get(8)?,
+                            },
+                            rate: row.get(9)?,
+                        }),
+                    ))
+                })
+                .map_err(|source| Error::store(StoreOp::Read, source))?
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(|source| Error::store(StoreOp::Read, source))?,
+        );
+        rows.sort_by_key(|(position, _)| *position);
         let (at, position) = connection
             .query_row(kept.read_place, [zone.get()], |row| {
                 Ok((row.get(0)?, row.get::<_, i64>(1)? as u64))
@@ -729,8 +841,33 @@ impl Catalog {
             .unwrap_or((0, 0));
         let (at, position) = place_among_rows(&connection, zone, at, position)
             .map_err(|source| Error::store(StoreOp::Read, source))?;
-        Ok((ids, at as u32, position))
+        Ok((
+            rows.into_iter().map(|(_, row)| row).collect(),
+            at as u32,
+            position,
+        ))
     }
+}
+
+const SERVED_ROWS_CLEARED: &str = "DELETE FROM served_rows WHERE zone = ?1";
+
+pub(crate) fn forget_served_rows_of(
+    connection: &rusqlite::Connection,
+    zone: ZoneId,
+) -> rusqlite::Result<usize> {
+    connection.execute(SERVED_ROWS_CLEARED, [zone.get()])
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct KeptServed {
+    pub(crate) song: ServedSong,
+    pub(crate) rate: Option<u32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum KeptRow {
+    Document(u64),
+    Served(KeptServed),
 }
 
 pub(crate) struct QueueKept {
@@ -740,6 +877,7 @@ pub(crate) struct QueueKept {
     rows: &'static str,
     pub(crate) read_place: &'static str,
     among: &'static str,
+    among_documents: &'static str,
     pub(crate) held: &'static str,
     pub(crate) window: &'static str,
 }
@@ -749,9 +887,10 @@ impl QueueKept {
         cleared: "DELETE FROM queue WHERE ?1 = ?1",
         row: "INSERT INTO queue VALUES (?2, ?3)",
         place: "INSERT INTO resume VALUES (1, ?2, ?3) ON CONFLICT(id) DO UPDATE SET row_at = excluded.row_at, position_ms = excluded.position_ms",
-        rows: "SELECT track FROM queue WHERE ?1 = ?1 ORDER BY position",
+        rows: "SELECT position, track FROM queue WHERE ?1 = ?1 ORDER BY position",
         read_place: "SELECT row_at, position_ms FROM resume WHERE id = 1 AND ?1 = ?1",
-        among: "SELECT (SELECT count(*) FROM queue WHERE position < ?2), EXISTS(SELECT 1 FROM queue WHERE position = ?2), (SELECT count(*) FROM queue) WHERE ?1 = ?1",
+        among: "SELECT (SELECT count(*) FROM queue WHERE position < ?2) + (SELECT count(*) FROM served_rows WHERE zone = ?1 AND position < ?2), EXISTS(SELECT 1 FROM queue WHERE position = ?2) OR EXISTS(SELECT 1 FROM served_rows WHERE zone = ?1 AND position = ?2), (SELECT count(*) FROM queue) + (SELECT count(*) FROM served_rows WHERE zone = ?1)",
+        among_documents: "SELECT (SELECT count(*) FROM queue WHERE position < ?2), EXISTS(SELECT 1 FROM queue WHERE position = ?2), (SELECT count(*) FROM queue) WHERE ?1 = ?1",
         held: "SELECT count(*) FROM queue q JOIN documents d ON d.id = q.track WHERE ?1 = ?1",
         window: "FROM queue q JOIN documents d ON d.id = q.track WHERE ?1 = ?1 ORDER BY q.position LIMIT ?2 OFFSET ?3",
     };
@@ -760,9 +899,10 @@ impl QueueKept {
         cleared: "DELETE FROM zone_queue WHERE zone = ?1",
         row: "INSERT INTO zone_queue(zone, position, track) VALUES (?1, ?2, ?3)",
         place: "INSERT INTO zone_resume VALUES (?1, ?2, ?3) ON CONFLICT(zone) DO UPDATE SET row_at = excluded.row_at, position_ms = excluded.position_ms",
-        rows: "SELECT track FROM zone_queue WHERE zone = ?1 ORDER BY position",
+        rows: "SELECT position, track FROM zone_queue WHERE zone = ?1 ORDER BY position",
         read_place: "SELECT row_at, position_ms FROM zone_resume WHERE zone = ?1",
-        among: "SELECT (SELECT count(*) FROM zone_queue WHERE zone = ?1 AND position < ?2), EXISTS(SELECT 1 FROM zone_queue WHERE zone = ?1 AND position = ?2), (SELECT count(*) FROM zone_queue WHERE zone = ?1)",
+        among: "SELECT (SELECT count(*) FROM zone_queue WHERE zone = ?1 AND position < ?2) + (SELECT count(*) FROM served_rows WHERE zone = ?1 AND position < ?2), EXISTS(SELECT 1 FROM zone_queue WHERE zone = ?1 AND position = ?2) OR EXISTS(SELECT 1 FROM served_rows WHERE zone = ?1 AND position = ?2), (SELECT count(*) FROM zone_queue WHERE zone = ?1) + (SELECT count(*) FROM served_rows WHERE zone = ?1)",
+        among_documents: "SELECT (SELECT count(*) FROM zone_queue WHERE zone = ?1 AND position < ?2), EXISTS(SELECT 1 FROM zone_queue WHERE zone = ?1 AND position = ?2), (SELECT count(*) FROM zone_queue WHERE zone = ?1)",
         held: "SELECT count(*) FROM zone_queue q JOIN documents d ON d.id = q.track WHERE q.zone = ?1",
         window: "FROM zone_queue q JOIN documents d ON d.id = q.track WHERE q.zone = ?1 ORDER BY q.position LIMIT ?2 OFFSET ?3",
     };
@@ -782,17 +922,45 @@ pub(crate) fn place_among_rows(
     row_at: i64,
     position_ms: u64,
 ) -> rusqlite::Result<(usize, u64)> {
-    let (before, standing, rows) = connection.query_row(
+    placed_by(
+        connection,
         QueueKept::of(zone).among,
-        params![zone.get(), row_at],
-        |row| {
+        zone,
+        row_at,
+        position_ms,
+    )
+}
+
+pub(crate) fn place_among_documents(
+    connection: &rusqlite::Connection,
+    zone: ZoneId,
+    row_at: i64,
+    position_ms: u64,
+) -> rusqlite::Result<(usize, u64)> {
+    placed_by(
+        connection,
+        QueueKept::of(zone).among_documents,
+        zone,
+        row_at,
+        position_ms,
+    )
+}
+
+fn placed_by(
+    connection: &rusqlite::Connection,
+    among: &str,
+    zone: ZoneId,
+    row_at: i64,
+    position_ms: u64,
+) -> rusqlite::Result<(usize, u64)> {
+    let (before, standing, rows) =
+        connection.query_row(among, params![zone.get(), row_at], |row| {
             Ok((
                 row.get::<_, i64>(0)?,
                 row.get::<_, bool>(1)?,
                 row.get::<_, i64>(2)?,
             ))
-        },
-    )?;
+        })?;
     let before = usize::try_from(before).unwrap_or_default();
     let last = usize::try_from(rows).unwrap_or_default().saturating_sub(1);
 

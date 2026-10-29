@@ -215,7 +215,7 @@ pub enum Error {
     InvalidWantedSong,
     #[error("online features are switched off")]
     OnlineOff,
-    #[error("No Subsonic server is set up")]
+    #[error("No service to play from is set up")]
     NoServedServer,
     #[error("The clip could not be named: {0}")]
     Heard(#[from] resonate_listen::Error),

@@ -11,7 +11,7 @@ use crate::{
     Drawn, Notice, format,
     icons::{self, Icon},
     served::ServedSong,
-    serving::{Failure, Page, Place, Row},
+    serving::{Failure, Page, Place, Row, favourites_in},
     theme,
     views::{
         browser::controls_width,
@@ -43,6 +43,8 @@ pub(crate) const SEARCH_PLACEHOLDER: &str = "Search the server, then press enter
 const NOTHING_HERE: &str = "The server holds nothing here.";
 
 const NOTHING_LISTED: &str = "This service lists nothing until it is asked.";
+
+const FAVOURITES: &str = "Favourites";
 
 const SEARCH_FIRST: &str = "Search it above for an artist, an album or a song.";
 
@@ -110,6 +112,10 @@ impl RootView {
             Page::Read(rows) => Some(counted_in(rows, place)),
             Page::Reading | Page::Failed(_) => None,
         };
+        let title = match (place, page) {
+            (Place::Artists, Page::Read(rows)) if favourites_in(rows) => FAVOURITES.to_owned(),
+            _ => place.title(),
+        };
         let playable = place.location().cloned();
 
         let mut actions = kit::actions();
@@ -176,7 +182,7 @@ impl RootView {
                         .min_w(theme::width(theme::heading_name()))
                         .gap_1()
                         .child(kit::eyebrow(eyebrow))
-                        .child(kit::title(SharedString::from(place.title())))
+                        .child(kit::title(SharedString::from(title)))
                         .when_some(counted, |column, counted| {
                             column.child(kit::subtitle(SharedString::from(counted)))
                         }),
@@ -616,7 +622,7 @@ pub(crate) fn songs_from(rows: &[Row], index: usize) -> Option<(Vec<MediaLocatio
 fn counted_in(rows: &[Row], place: &Place) -> String {
     let count = |matching: fn(&Row) -> bool| rows.iter().filter(|row| matching(row)).count();
     match place {
-        Place::Artists => format::counted(
+        Place::Artists if !favourites_in(rows) => format::counted(
             count(|row| matches!(row, Row::Artist(_))),
             "artist",
             "artists",
@@ -627,7 +633,7 @@ fn counted_in(rows: &[Row], place: &Place) -> String {
         Place::Album { .. } => {
             format::counted(count(|row| matches!(row, Row::Song(_))), "song", "songs")
         }
-        Place::Found { .. } => format!(
+        Place::Artists | Place::Found { .. } => format!(
             "{} · {} · {}",
             format::counted(
                 count(|row| matches!(row, Row::Artist(_))),
@@ -800,6 +806,64 @@ mod tests {
         }
     }
 
+    struct Favoured;
+
+    impl Serves for Favoured {
+        fn scheme(&self) -> &SourceId {
+            Searched.scheme()
+        }
+
+        fn title(&self) -> &str {
+            "TIDAL"
+        }
+
+        fn names(&self, location: &MediaLocation) -> bool {
+            location.source() == self.scheme()
+        }
+
+        fn artists(&self) -> Result<Vec<ServedArtist>> {
+            Ok(Vec::new())
+        }
+
+        fn first_page(&self) -> Result<ServedFound> {
+            Ok(ServedFound {
+                albums: vec![ServedAlbum {
+                    location: MediaLocation::from_uri("tidal:album/7").expect("a location"),
+                    name: "Meddle".to_owned(),
+                    artist: Some("Pink Floyd".to_owned()),
+                    year: None,
+                    songs: None,
+                    cover: None,
+                }],
+                songs: vec![ServedSong {
+                    location: MediaLocation::from_uri("tidal:track/12").expect("a location"),
+                    ..song("so-2", "Echoes", 6)
+                }],
+                ..ServedFound::default()
+            })
+        }
+
+        fn albums_of(&self, _: &MediaLocation) -> Result<Vec<ServedAlbum>> {
+            Ok(Vec::new())
+        }
+
+        fn songs_of(&self, _: &MediaLocation) -> Result<Vec<ServedSong>> {
+            Ok(Vec::new())
+        }
+
+        fn search(&self, _: &str) -> Result<ServedFound> {
+            Ok(ServedFound::default())
+        }
+
+        fn expand(&self, named: &MediaLocation) -> Result<Vec<MediaLocation>> {
+            Ok(vec![named.clone()])
+        }
+
+        fn cover(&self, _: &MediaLocation, _: Option<&ServedCover>, _: u32) -> Result<Vec<u8>> {
+            Searched.cover(&at("track/so-1"), None, 0)
+        }
+    }
+
     fn an_account() -> Online {
         Online {
             enabled: true,
@@ -907,6 +971,28 @@ mod tests {
                 .collect::<Vec<_>>()
         });
         assert_eq!(queued, ["subsonic:track/so-1", "subsonic:track/so-2"]);
+    }
+
+    #[gpui::test]
+    fn a_service_with_favourites_opens_on_them_and_a_favourite_song_plays_from_the_first_page(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::serving(cx, vec![Arc::new(Favoured)], an_account());
+        driven.click("tab-server");
+        driven.until(
+            |root, cx| matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 4),
+        );
+
+        let first = driven.read(|root, cx| match root.server.read(cx).page() {
+            Page::Read(rows) => (favourites_in(rows), counted_in(rows, &Place::Artists)),
+            Page::Reading | Page::Failed(_) => (false, String::new()),
+        });
+        driven.click("server-row-3");
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
+
+        let queued = driven.read(|root, cx| root.player.read(cx).queue()[0].location.to_uri());
+        assert_eq!(first, (true, "0 artists · 1 album · 1 song".to_owned()));
+        assert_eq!(queued, "tidal:track/12");
     }
 
     #[gpui::test]

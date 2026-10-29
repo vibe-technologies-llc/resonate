@@ -30,8 +30,19 @@ private func song(
         #expect(!elsewhere.isServed)
     }
 
+    @Test func everyServicePlayedInPlaceNamesItsRowsByItsScheme() {
+        for uri in ["subsonic:track/7", "tidal:track/7", "resonate:track/7", "hifi-api:track/7", "monochrome:track/7"] {
+            #expect(servedTrack(uri).isServed)
+        }
+        #expect(PlayedInPlace.scheme(of: "hifi-api:album/3") == "hifi-api")
+        #expect(PlayedInPlace.scheme(of: "resonate-folder://local/0.flac") == nil)
+        #expect(PlayedInPlace.scheme(of: "file:///a.flac") == nil)
+        #expect(PlayedInPlace.scheme(of: "tidal") == nil)
+    }
+
     @Test func aServedRowsPictureIsKeyedByItsAddressAndALibraryRowsByItsId() {
         #expect(servedTrack("subsonic:track/7").pictureKey == "subsonic:track/7")
+        #expect(servedTrack("tidal:track/7").pictureKey == "tidal:track/7")
         #expect(servedTrack("subsonic:track/8").pictureKey != servedTrack("subsonic:track/7").pictureKey)
         #expect(track(12).pictureKey == "12")
     }
@@ -48,20 +59,99 @@ private func song(
 }
 
 @Suite struct ServedAccountTests {
-    private func subsonic(_ server: String, user: String = "me", password: String = "pw") -> DownloadAccount {
-        DownloadAccount(provider: .subsonic, server: server, user: user, password: password, clientId: "", clientSecret: "", refreshToken: "")
+    private func made(
+        _ provider: MusicProvider,
+        server: String = "",
+        user: String = "",
+        password: String = "",
+        clientId: String = "",
+        refreshToken: String = ""
+    ) -> DownloadAccount {
+        DownloadAccount(provider: provider, server: server, user: user, password: password, clientId: clientId, clientSecret: "", refreshToken: refreshToken)
     }
 
-    @Test func theSubsonicAccountAskedIsTheOneServed() {
-        let accounts = ProviderAccounts(kept: [subsonic("https://a", user: "ann", password: "one")])
+    private var everyKind: ProviderAccounts {
+        ProviderAccounts(kept: [
+            made(.subsonic, server: "https://a", user: "ann", password: "one"),
+            made(.tidal, clientId: "client", refreshToken: "token"),
+            made(.hifiApi),
+            made(.monochrome, server: "https://mono"),
+        ])
+    }
 
-        #expect(accounts.served == ServedAccount(server: "https://a", user: "ann", password: "one"))
+    @Test func everyAccountOnAndReadyIsServedWhileOnline() {
+        let served = everyKind.served(online: true, hosted: true)
+
+        #expect(served.map(\.provider) == [.subsonic, .tidal, .hifiApi, .monochrome])
+        #expect(served == everyKind.asked)
+    }
+
+    @Test func nothingIsServedWhileOffline() {
+        #expect(everyKind.served(online: false, hosted: true).isEmpty)
+    }
+
+    @Test func aHostedServiceIsServedOnlyWhileHostedServicesAreAllowed() {
+        let declined = everyKind.served(online: true, hosted: false)
+        let keyed = ProviderAccounts(kept: [made(.hifiApi, password: "key")]).served(online: true, hosted: false)
+
+        #expect(declined.map(\.provider) == [.subsonic, .tidal, .monochrome])
+        #expect(keyed.map(\.provider) == [.hifiApi])
     }
 
     @Test func anAccountSwitchedOffOrIncompleteServesNothing() {
-        #expect(ProviderAccounts().served == nil)
-        #expect(ProviderAccounts(kept: [subsonic("https://a", password: "")]).served == nil)
-        #expect(ProviderAccounts(kept: [subsonic("https://a")], switchedOff: [.subsonic]).served == nil)
+        let incomplete = ProviderAccounts(kept: [made(.subsonic, server: "https://a", user: "me"), made(.tidal, clientId: "client")])
+        let off = ProviderAccounts(kept: [made(.subsonic, server: "https://a", user: "me", password: "pw")], switchedOff: [.subsonic, .monochrome])
+
+        #expect(incomplete.served(online: true, hosted: false).isEmpty)
+        #expect(off.served(online: true, hosted: true).map(\.provider) == [.hifiApi])
+    }
+}
+
+@Suite struct ServedChoiceTests {
+    private let subsonic = ServedService(scheme: "subsonic", title: "Subsonic")
+    private let tidal = ServedService(scheme: "tidal", title: "TIDAL")
+    private let monochrome = ServedService(scheme: "monochrome", title: "Monochrome")
+
+    @Test func theFirstServiceIsChosenAndOneServiceOffersNoChoice() {
+        let one = ServedChoice(services: [tidal])
+        let none = ServedChoice()
+
+        #expect(one.chosen == "tidal")
+        #expect(one.service == tidal)
+        #expect(!one.choosing)
+        #expect(none.chosen == nil)
+        #expect(none.service == nil)
+    }
+
+    @Test func aChoiceIsKeptWhileItsServiceStaysServed() {
+        var choice = ServedChoice(services: [subsonic, tidal])
+
+        choice.choose("tidal")
+        choice.offer([monochrome, tidal])
+
+        #expect(choice.choosing)
+        #expect(choice.chosen == "tidal")
+    }
+
+    @Test func aChoiceWhoseServiceGoesFallsToTheFirst() {
+        var choice = ServedChoice(services: [subsonic, tidal])
+
+        choice.choose("tidal")
+        choice.offer([monochrome, subsonic])
+
+        #expect(choice.chosen == "monochrome")
+
+        choice.offer([])
+
+        #expect(choice.chosen == nil)
+    }
+
+    @Test func aServiceNotServedCannotBeChosen() {
+        var choice = ServedChoice(services: [subsonic, tidal])
+
+        choice.choose("monochrome")
+
+        #expect(choice.chosen == "subsonic")
     }
 }
 

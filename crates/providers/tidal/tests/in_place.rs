@@ -241,6 +241,16 @@ fn tidal_server() -> Fake {
             r#"{"access_token":"fresh","expires_in":3600,"user":{"countryCode":"GB"}}"#,
         ),
         "/api/search" => Canned::json(SEARCHED),
+        "/api/sessions" => Canned::json(r#"{"countryCode":"GB","userId":"42"}"#),
+        "/api/users/42/favorites/artists" => Canned::json(
+            r#"{"items":[{"created":"2024-01-01","item":{"id":3,"name":"Pink Floyd","picture":"ee-ff"}},{"item":{"id":null}}]}"#,
+        ),
+        "/api/users/42/favorites/albums" => Canned::json(
+            r#"{"items":[{"item":{"id":7,"title":"Meddle","artist":{"name":"Pink Floyd"},"cover":"aa-bb"}}]}"#,
+        ),
+        "/api/users/42/favorites/tracks" => Canned::json(
+            r#"{"items":[{"item":{"id":12,"title":"A Pillow of Winds","duration":310,"artist":{"name":"Pink Floyd"},"album":{"title":"Meddle","cover":"aa-bb"}}}]}"#,
+        ),
         "/api/albums/7/tracks" => Canned::json(ALBUM_TRACKS),
         "/api/artists/3/albums" => Canned::json(ARTIST_ALBUMS),
         "/api/tracks/11" => Canned::json(
@@ -302,6 +312,47 @@ fn a_tidal_account_is_searched_and_its_albums_and_artists_opened_by_their_ids() 
             .all(|asked| asked.query.contains("countryCode=GB")
                 && asked.authorization.as_deref() == Some("Bearer fresh"))
     );
+}
+
+#[test]
+fn a_tidal_accounts_first_page_is_its_favourite_artists_albums_and_songs() {
+    let fake = tidal_server();
+    let tidal = fake.tidal();
+
+    let first = tidal.first_page().expect("the first page");
+
+    assert_eq!(
+        first
+            .artists
+            .iter()
+            .map(|artist| artist.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Pink Floyd"]
+    );
+    assert_eq!(first.albums[0].name, "Meddle");
+    assert_eq!(first.songs[0].title, "A Pillow of Winds");
+    assert_eq!(
+        first.songs[0].cover.as_ref().map(Id::as_str),
+        Some("album:aa-bb")
+    );
+    assert_eq!(
+        fake.heard()
+            .iter()
+            .filter(|asked| asked.path.starts_with("/api/users/42/favorites/")
+                && asked.query.contains("countryCode=GB")
+                && asked.query.contains("order=DATE"))
+            .count(),
+        3
+    );
+}
+
+#[test]
+fn a_hifi_api_server_has_no_favourites_to_offer_and_lists_nothing_first() {
+    let fake = hifi_server();
+
+    let first = fake.hifi().first_page().expect("the first page");
+
+    assert_eq!(first, resonate_providers::Found::default());
 }
 
 #[test]

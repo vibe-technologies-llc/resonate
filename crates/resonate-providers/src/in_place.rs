@@ -213,6 +213,21 @@ pub trait PlaysInPlace: Send + Sync {
 
     fn cover_of(&self, named: &Named) -> Result<Id>;
 
+    fn favourites(&self) -> Result<Found> {
+        Ok(Found::default())
+    }
+
+    fn first_page(&self) -> Result<Found> {
+        let artists = self.artists()?;
+        if artists.is_empty() {
+            return self.favourites();
+        }
+        Ok(Found {
+            artists,
+            ..Found::default()
+        })
+    }
+
     fn songs_of(&self, named: &Named) -> Result<Vec<Song>> {
         match named {
             Named::Song(id) => Ok(vec![Song::only(id.clone())]),

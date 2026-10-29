@@ -236,7 +236,7 @@ all, a 0.1.0 file the steps after `V1`); there is no copy kept before one. A lat
 step and never edits `V1`; step 2 gave `listens` the `origin_device` and `origin_id` a remote listen
 is credited by, unique together, and step 3 rebuilt `listens` with `AUTOINCREMENT`, as the desktop's is, so a deleted
 song's listen ids are never handed to the next listen (the ledger and scrobbling read `id > mark`), seeding the
-sequence past the highest `submissions.through`; step 4 gave `documents` an `added` (Unix seconds) that the `documents_dated` trigger sets on every insert, which the search index reads for `added:`; step 5 dates the rows step 4 found undated by their file's modification time (`modified` in ms, capped at now) and, for one never stamped, by the migration's own time, so no row is undated; step 6 gave `studies` an `agreement` (what `resonate_library::agreement` said of the audio against the song's name) that the `documents_forget_what_was_heard` trigger clears when a document's `size` or `modified` moves; step 7 made `playlist_queries` (`playlist` keyed to `playlists(id)` with `ON DELETE CASCADE`, `text`, `sort`, `reading`, `max_rows`: the desktop's columns and codes), the saved search a playlist fills itself from; step 8 made `unstudied` (`track` keyed to `documents(id)`, `under` the `JUDGED_UNDER` that failed it), the songs the enrichment pass could not decode, which the `documents_forget_what_would_not_decode` trigger clears when a document's `size` or `modified` moves; step 9 gave `studies` a `band_levels` (the 29 bytes `eq.md` describes, written by every study the pass and the analysis pane keep, and measured alone by the pass for a study kept before this step, `eq.md`) that the `documents_forget_where_the_music_sounded` trigger clears when a document's `size` or `modified` moves. Step 10 (`ANSWERS_TRAVEL`) gave `documents` the `packets` and `frames` that say which file a row is (cleared by the `documents_forget_which_file_they_were` trigger when `size` or `modified` moves) with the `documents_by_length` index, and `studies` the `studied`, `studied_under` and figures a study shared with another device carries (`mobile.md`'s *Answers from other devices*). Step 11 (`SONGS_RECEIVED_ARE_HELD_BY_WHAT_WAS_ASKED`) made `songs_received` (`recording` primary, `track` keyed to `documents(id)`), the recording keys (`Recording::key` and `named_key`) a landed song was fetched for. Step 12 (`DOCUMENTS_REMEMBER_WHEN_THEY_WERE_DOWNLOADED`) gave `documents` a `downloaded` (Unix seconds) that `index_download` sets on a song a download landed (search, wants, a playlist's missing songs; never a song from another device), which the enrichment pass reads to look those songs up first. Step 13 (`SONGS_OF_A_WITHDRAWN_FOLDER_STAY_HELD`) gave `documents` a `withdrawn` flag that `hide_songs_under` sets beside `missing` (a folder the listener removed, apart from a file found gone), which the `documents_return_from_a_withdrawn_folder` trigger clears whenever `missing` goes back to 0 (a scan's upsert, a restore). Step 14 (`SONGS_WAITING_KNOW_THEIR_FILE`) gave `received` the `packets`, `frames` and `rate` of the waiting file and made `received_also` (`received` keyed to `received(id)` with `ON DELETE CASCADE`, `recording`), the keys of a second spelling folded into a waiting song. Step 15 (`STUDIES_KEEP_THEIR_PRINT_AND_WHAT_IT_WAS_HEARD_AS`) gave `studies` the `print`, `print_length`, `recognised` and `heard_as`, `heard_score`, `heard_title`, `heard_artist` a study's print and recognition travel as, which the `documents_forget_what_was_printed` trigger clears when a document's `size` or `modified` moves (`mobile.md`'s *Answers from other devices*). Step 16 (`STUDIES_KEEP_WHERE_THEIR_PEAKS_GATHER`) gave `studies` a `band_peaks` (the figures the preamp fit bounds from, `eq.md`) that the `documents_forget_where_the_peaks_gathered` trigger clears when a document's `size` or `modified` moves. Step 17 (`PEAKS_KEPT_AS_ONE_MOMENT_ARE_MEASURED_AGAIN`) clears the 58-byte peaks of the layout that kept each band's peak as one moment, so the pass measures them again as the 472 bytes of up to eight moments of the band tree (`analysis.md`). Step 18 (`ZONES_KEEP_THEIR_OWN_QUEUES`) made `zones`, `zone_queue` and `zone_resume`, each zone's queue beside the first zone's `queue` and `resume` (`mobile.md`'s *Zones*). Step 19 (`ZONES_KEEP_THEIR_VOLUME`) gave `zones` a `volume`, each zone's own level (`mobile.md`'s *Zones*). A version past the chain is `Error::CatalogVersion`. `V1` holds `documents` (the metadata, the lookup's clocks `asked`/`answered`
+sequence past the highest `submissions.through`; step 4 gave `documents` an `added` (Unix seconds) that the `documents_dated` trigger sets on every insert, which the search index reads for `added:`; step 5 dates the rows step 4 found undated by their file's modification time (`modified` in ms, capped at now) and, for one never stamped, by the migration's own time, so no row is undated; step 6 gave `studies` an `agreement` (what `resonate_library::agreement` said of the audio against the song's name) that the `documents_forget_what_was_heard` trigger clears when a document's `size` or `modified` moves; step 7 made `playlist_queries` (`playlist` keyed to `playlists(id)` with `ON DELETE CASCADE`, `text`, `sort`, `reading`, `max_rows`: the desktop's columns and codes), the saved search a playlist fills itself from; step 8 made `unstudied` (`track` keyed to `documents(id)`, `under` the `JUDGED_UNDER` that failed it), the songs the enrichment pass could not decode, which the `documents_forget_what_would_not_decode` trigger clears when a document's `size` or `modified` moves; step 9 gave `studies` a `band_levels` (the 29 bytes `eq.md` describes, written by every study the pass and the analysis pane keep, and measured alone by the pass for a study kept before this step, `eq.md`) that the `documents_forget_where_the_music_sounded` trigger clears when a document's `size` or `modified` moves. Step 10 (`ANSWERS_TRAVEL`) gave `documents` the `packets` and `frames` that say which file a row is (cleared by the `documents_forget_which_file_they_were` trigger when `size` or `modified` moves) with the `documents_by_length` index, and `studies` the `studied`, `studied_under` and figures a study shared with another device carries (`mobile.md`'s *Answers from other devices*). Step 11 (`SONGS_RECEIVED_ARE_HELD_BY_WHAT_WAS_ASKED`) made `songs_received` (`recording` primary, `track` keyed to `documents(id)`), the recording keys (`Recording::key` and `named_key`) a landed song was fetched for. Step 12 (`DOCUMENTS_REMEMBER_WHEN_THEY_WERE_DOWNLOADED`) gave `documents` a `downloaded` (Unix seconds) that `index_download` sets on a song a download landed (search, wants, a playlist's missing songs; never a song from another device), which the enrichment pass reads to look those songs up first. Step 13 (`SONGS_OF_A_WITHDRAWN_FOLDER_STAY_HELD`) gave `documents` a `withdrawn` flag that `hide_songs_under` sets beside `missing` (a folder the listener removed, apart from a file found gone), which the `documents_return_from_a_withdrawn_folder` trigger clears whenever `missing` goes back to 0 (a scan's upsert, a restore). Step 14 (`SONGS_WAITING_KNOW_THEIR_FILE`) gave `received` the `packets`, `frames` and `rate` of the waiting file and made `received_also` (`received` keyed to `received(id)` with `ON DELETE CASCADE`, `recording`), the keys of a second spelling folded into a waiting song. Step 15 (`STUDIES_KEEP_THEIR_PRINT_AND_WHAT_IT_WAS_HEARD_AS`) gave `studies` the `print`, `print_length`, `recognised` and `heard_as`, `heard_score`, `heard_title`, `heard_artist` a study's print and recognition travel as, which the `documents_forget_what_was_printed` trigger clears when a document's `size` or `modified` moves (`mobile.md`'s *Answers from other devices*). Step 16 (`STUDIES_KEEP_WHERE_THEIR_PEAKS_GATHER`) gave `studies` a `band_peaks` (the figures the preamp fit bounds from, `eq.md`) that the `documents_forget_where_the_peaks_gathered` trigger clears when a document's `size` or `modified` moves. Step 17 (`PEAKS_KEPT_AS_ONE_MOMENT_ARE_MEASURED_AGAIN`) clears the 58-byte peaks of the layout that kept each band's peak as one moment, so the pass measures them again as the 472 bytes of up to eight moments of the band tree (`analysis.md`). Step 18 (`ZONES_KEEP_THEIR_OWN_QUEUES`) made `zones`, `zone_queue` and `zone_resume`, each zone's queue beside the first zone's `queue` and `resume` (`mobile.md`'s *Zones*). Step 19 (`ZONES_KEEP_THEIR_VOLUME`) gave `zones` a `volume`, each zone's own level (`mobile.md`'s *Zones*). Step 20 (`QUEUES_KEEP_SONGS_PLAYED_IN_PLACE`) made `served_rows` (zone, position, uri, the names the browse gave and the playing row's rate), the songs played in place a saved queue holds beside its catalog rows (`mobile.md`'s *Services played in place*). A version past the chain is `Error::CatalogVersion`. `V1` holds `documents` (the metadata, the lookup's clocks `asked`/`answered`
 as nanosecond stamps with `asks` and `refusals`, `release_group`, `isrc` kept from tags on index,
 `album_key`, `art_changed`, `missing`, and `size`, `modified` and `indexed_by`, the stamp a scan saw
 the file by and the `INDEXING_REVISION` that read it), `resume`, `queue`, `lyrics`, `listens`
@@ -324,7 +324,7 @@ whatever the choice, so changing it never rebuilds the content below; it provide
 colours follow the chosen theme rather than the phone's. Widgets and the launcher keep following the
 system.
 
-**The shell** (`ResonateApp`): the roots are Home, Library, Search and, while a Subsonic account is served, Server (`rootScreens`) in a
+**The shell** (`ResonateApp`): the roots are Home, Library, Search and, while any service is served in place, Server (`rootScreens`) in a
 `NavigationSuiteScaffold`, a bottom bar on a phone and a rail on a wide window; Settings is a page,
 opened from the gear (`SettingsAction`) in each root's header. Each root has its own Navigation 3
 back stack (`Navigator`), kept across Activity recreation with the selected root: choosing the
@@ -1204,40 +1204,51 @@ counts one, a refusal or cancel neither; `poll_wanted_due` answers the unheld wa
 desktop's `Want::due_at` (`RETRY_WAITS`, `POLL_AGAIN_AFTER`, given up at `TRIES_BEFORE_GIVING_UP`),
 and `next_wanted_due` the earliest of those times among them (unix seconds), for a front end's timer.
 
-## A Subsonic server
+## Services played in place
 
-**The Server tab browses and plays a Subsonic server in place** (`mobile.md`'s *A Subsonic server in
-place*; `Served.kt`, `ui/server/`). `Served` (`LibraryFeatures.served`) derives the account from the
-download accounts and the online switch: the first Subsonic account that is on and ready
-(`ProviderAccountBook.servedAccount`; only that one is served where several are kept) while online
-is on, else none. `Served.begin` hands each change to `serve_from` (so the slot the player's own
-`Sources` read on every open follows the account), and every browse binds it again first
-(`Resonate.asked`, `serve_from` being idempotent for the same server), so a read never races the
-collector. **The tab is `Screen.Server`, the fourth of `rootScreens`**, listed in the bar only while
-`Served.serving` (`ResonateApp` filters the items; the stack and index exist always so the others
-keep theirs), and leaving it when the account goes (`selectAtRoot(Home)`; a tab restored after the
-process died lands on Home until the accounts are read). Its pages are `Screen.ServedArtist` and
-`Screen.ServedAlbum`, each a `CollectionPage` over a `Loaded` read (`servedRead`: loading, ready, or
-the failure reported on the notice with *Try again*, the boundary's sentence, since a `Loaded.Failed`
-page says to check it; a changed account reads again). The root lists the artists with a search
-field that asks the server on the keyboard's search (`served_search`: artists, albums and songs in
-sections); an artist page is its header (Play and Shuffle over the artist's songs) and a shelf of
-album cards; an album page is the library album's, numbered by the server's track number, a row
-playing the album from it. Every row, card and page has *Play*, *Play next* and *Add to queue* in a
-menu; an album or artist is expanded to its songs off the main thread (`served_song_uris`, in
-`ServerActions`) before the controller or the queue is given them, since a network call must not
-hold the ordered worker. **A served song plays through the controller as a library one does**:
-`Playback.playServed` sets media items whose id is the song's uri, `RustMediaPlayer.handleSetMediaItems`
-reads such ids (`servedMediaId`, which `BrowseIds.trackOf` leaves out) and calls `load_served`.
-**A served row has id 0**, told by `Track.served` (id 0 and a `subsonic:` uri); everything keyed by
-song id keys it by `Track.pictureKey` (its uri) or `Track.rowKey` (its queue row) instead, and
-`findTrack(0)` is nothing. Its cover is `Served.bitmap` (`served_cover`, four at a time, decoded at
-the bucket drawn into a 24 MiB `LruCache` keyed by uri and bucket, a failure remembered until the
-account moves) drawn by `Artwork`, `WideArtwork` and Now Playing through `rememberCover`, and the
-session's thumbnail is the same bitmap (`artworkBitmap`), so the media notification, the lock screen,
-the mini-player and the widgets show it. A served row's song sheet offers only the player's own
-entries and *Remove from queue*; the player's lyrics button, favourite heart and the title links are
-off; *Save queue as playlist* leaves served rows out (`ServedTest`, `ServerWordsTest`).
+**The Server tab browses and plays every service that plays in place** (Subsonic, TIDAL, the keyed
+Resonate server, hifi-api and Monochrome; `mobile.md`'s *Services played in place*; `Served.kt`,
+`ui/server/`). `Served` (`LibraryFeatures.served`) derives the accounts from the download accounts,
+the online switch and *Ask the hosted services*: every account that is on and ready
+(`ProviderAccountBook.asked`, the list `find_download` is given), less a Monochrome or hifi-api
+account with no server while hosted services are declined (so a toggle changes the list handed
+over), and none while online is off (`servedAccounts`). `Served.begin` hands each change to
+`serve_from` (so the slot the player's own `Sources` read on every open follows the accounts) and
+publishes `served_services` as `Served.services`; every browse binds again first (`Resonate.asked`,
+`serve_from` being idempotent for the same list), so a read never races the collector. **The tab is
+`Screen.Server`, the fourth of `rootScreens`**, listed in the bar only while `Served.serving` (at
+least one service; `ResonateApp` filters the items; the stack and index exist always so the others
+keep theirs), and leaving it when the last service goes (`selectAtRoot(Home)`; a tab restored after
+the process died lands on Home until the accounts are read). **The root is one service at a time**:
+`FilterChip`s under the search field choose it, shown only where more than one is served;
+`ServerViewModel` keeps the scheme picked and `chosenService` answers it while that scheme is still
+served, else the first (`ServedChoiceTest`). The root shows `served_first_page` of the chosen one
+(Subsonic's artists, TIDAL's favourite artists, albums and songs, nothing for the rest, which then
+says to search) in sections as search results are (artists, albums, songs), and the field asks
+`served_search(chosen, words)` on the keyboard's search, both read again when the choice moves. Its
+pages are `Screen.ServedArtist` and `Screen.ServedAlbum`, each a `CollectionPage` over a `Loaded`
+read (`servedRead`: loading, ready, or the failure reported on the notice with *Try again*, the
+boundary's sentence, which also says a browse a service does not offer; changed accounts read
+again); an artist page is its header (Play and Shuffle over the artist's songs) and a shelf of
+album cards; an album page is the library album's, numbered by the service's track number, a row
+playing the album from it. Monochrome and the keyed Resonate server are searched for songs alone.
+Every row, card and page has *Play*, *Play next* and *Add to queue* in a menu; an album or artist
+is expanded to its songs off the main thread (`served_song_uris`, in `ServerActions`) before the
+controller or the queue is given them, since a network call must not hold the ordered worker. **A
+served song plays through the controller as a library one does**: `Playback.playServed` sets media
+items whose id is the song's uri, `RustMediaPlayer.handleSetMediaItems` reads such ids
+(`servedMediaId`, which `BrowseIds.trackOf` leaves out) and calls `load_served`. **A served row has
+id 0**, told by `Track.served` (id 0 and a uri of one of `SERVED_SCHEMES`: `subsonic:`, `tidal:`,
+`resonate:`, `hifi-api:`, `monochrome:`); everything keyed by song id keys it by `Track.pictureKey`
+(its uri) or `Track.rowKey` (its queue row) instead, and `findTrack(0)` is nothing. A queue holding
+served rows is saved and resumed by the boundary like any other. Its cover is `Served.bitmap`
+(`served_cover`, four at a time, decoded at the bucket drawn into a 24 MiB `LruCache` keyed by uri
+and bucket, a failure (Monochrome has no covers) remembered until the accounts move and leaving
+the placeholder) drawn by `Artwork`, `WideArtwork` and Now Playing through `rememberCover`, and the
+session's thumbnail is the same bitmap (`artworkBitmap`), so the media notification, the lock
+screen, the mini-player and the widgets show it. A served row's song sheet offers only the player's
+own entries and *Remove from queue*; the player's lyrics button, favourite heart and the title links
+are off; *Save queue as playlist* leaves served rows out (`ServedTest`, `ServerWordsTest`).
 
 ## Device sync
 

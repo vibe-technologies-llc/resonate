@@ -369,9 +369,11 @@ impl Catalog {
     }
 
     pub(crate) fn forget_zone(&self, zone: ZoneId) -> Result<()> {
-        self.0
-            .lock()
+        let connection = self.0.lock();
+        connection
             .execute("DELETE FROM zones WHERE id = ?1", [zone.get()])
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        crate::catalog::forget_served_rows_of(&connection, zone)
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         Ok(())
     }

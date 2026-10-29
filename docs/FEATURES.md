@@ -73,16 +73,18 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   stereo state
 
 ## Later: Sources and providers
-- [L] TIDAL, hifi-api and Monochrome are played in place on the desktop alone (the window's Server
-  pane and `tidal:`, `hifi-api:`, `resonate:`, `monochrome:` URIs): the phones' Server tab and
-  `serve_from` still reach Subsonic only, and `resonate subsonic` is the only command that browses
-  at the terminal
-- [M] A song played in place is not a library row, so it is neither favourited, counted as a listen
-  nor kept in a saved queue
-- [M] TIDAL and hifi-api list nothing until searched: the account's favourite artists, albums and
-  mixes are not offered as the pane's first page
-- [S] A TIDAL song a DASH manifest delivers in segments seeks only once the codec has spooled it
-  whole, since its remuxed byte offsets are unknown until every earlier segment is fetched
+- [M] A song played in place is never a favourite, and a phone counts no listen of one: a favourite
+  is a catalog row's mark (rated into the file, synced by recording), so the sound one is the
+  service's own (TIDAL's `favorites`, Subsonic's `star`), which nothing writes yet; the phones'
+  `listens` name a document alone, and statistics there read nothing else
+- [S] A TIDAL account's favourite mixes are not on its first page: no location names a mix
+  (`Named` is a song, an album or an artist), so a mix cannot be browsed or queued
+- [S · blocked: TIDAL's CDN] A TIDAL song a DASH manifest delivers in segments seeks only once the
+  codec has spooled it whole: the codec seeks by byte, and the remuxed FLAC's offsets are the sum of
+  every earlier segment's `mdat`, which the manifest's timeline (times alone) does not give; asking
+  each segment's head with a `Range` would map them, but whether TIDAL's segment hosts answer one is
+  not known from here, and without it the map costs fetching every earlier segment, as the spool
+  already does
 - [M · blocked: services] The Bandcamp and Discogs links an `Identity` carries are read by nothing;
   no provider asks either
 - [M · blocked: servers] Subsonic matches a recording id or ISRC but not the release-track id the

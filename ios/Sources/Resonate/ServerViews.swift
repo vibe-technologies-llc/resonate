@@ -177,47 +177,15 @@ struct ServedSongRow: View {
     }
 }
 
-struct ServerView: View {
+struct ServedFoundRows: View {
     @Environment(Library.self) private var library
-    @State private var artists: [ServedArtist] = []
-    @State private var found: ServedFound?
-    @State private var typed = ""
-    @State private var asked = ""
-    @State private var read = false
-    @State private var failure: String?
-    @State private var searchFailure: String?
+    let found: ServedFound
 
     var body: some View {
-        let generation = library.features.servedGeneration
-        List {
-            if asked.isEmpty {
-                artistRows
-            } else {
-                foundRows
-            }
-        }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .navigationTitle("Server")
-        .searchable(text: $typed, prompt: "Search this server")
-        .onSubmit(of: .search) { asked = typed.trimmingCharacters(in: .whitespacesAndNewlines) }
-        .onChange(of: typed) { _, now in
-            if now.isEmpty { asked = "" }
-        }
-        .task(id: generation) { await loadArtists() }
-        .task(id: "\(asked):\(generation)") { await search() }
-    }
-
-    @ViewBuilder
-    private var artistRows: some View {
-        if let failure {
-            ReadFailure(text: failure) { Task { await loadArtists() } }
-                .themedRows()
-        } else if read, artists.isEmpty {
-            Text("This server lists no artists.").foregroundStyle(.secondary).themedRows()
-        } else if read {
-            Section(counted(artists.count, "artist")) {
-                ForEach(artists, id: \.uri) { artist in
+        Text(found.summary).font(.footnote).foregroundStyle(.secondary).themedRows()
+        if !found.artists.isEmpty {
+            Section("Artists") {
+                ForEach(found.artists, id: \.uri) { artist in
                     NavigationLink(value: Destination.served(ServedPlace(artist))) {
                         ServedRow(uri: artist.uri, cover: artist.cover, title: artist.shownName, detail: artist.line, circle: true)
                     }
@@ -225,77 +193,134 @@ struct ServerView: View {
                 }
                 .themedRows()
             }
+        }
+        if !found.albums.isEmpty {
+            Section("Albums") {
+                ForEach(found.albums, id: \.uri) { album in
+                    NavigationLink(value: Destination.served(ServedPlace(album))) {
+                        ServedRow(uri: album.uri, cover: album.cover, title: album.shownName, detail: album.line)
+                    }
+                    .servedActions(album.uri)
+                }
+                .themedRows()
+            }
+        }
+        if !found.songs.isEmpty {
+            Section("Songs") {
+                let uris = found.songs.map(\.uri)
+                ForEach(Array(found.songs.enumerated()), id: \.element.uri) { index, song in
+                    ServedSongRow(song: song) { library.playServed(uris, at: index) }
+                }
+                .themedRows()
+            }
+        }
+    }
+}
+
+struct ServedPageLoad: Equatable {
+    let service: String
+    let words: String
+    let generation: Int
+}
+
+struct ServerView: View {
+    @Environment(Library.self) private var library
+    @State private var first: ServedFound?
+    @State private var firstOf: String?
+    @State private var found: ServedFound?
+    @State private var typed = ""
+    @State private var asked = ""
+    @State private var failure: String?
+    @State private var searchFailure: String?
+
+    var body: some View {
+        let features = library.features
+        let generation = features.servedGeneration
+        let choice = features.served
+        let service = choice.service
+        let scheme = service?.scheme ?? ""
+        let title = service?.title ?? "Server"
+        List {
+            if choice.choosing {
+                Picker("Service", selection: Binding(get: { scheme }, set: { features.chooseServed($0) })) {
+                    ForEach(choice.services, id: \.scheme) { offered in
+                        Text(offered.title).tag(offered.scheme)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .themedRows()
+            }
+            if asked.isEmpty {
+                firstRows(scheme: scheme, title: title)
+            } else {
+                foundRows(scheme: scheme, title: title)
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .navigationTitle(choice.choosing ? "Server" : title)
+        .searchable(text: $typed, prompt: "Search \(title)")
+        .onSubmit(of: .search) { asked = typed.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .onChange(of: typed) { _, now in
+            if now.isEmpty { asked = "" }
+        }
+        .task(id: ServedPageLoad(service: scheme, words: "", generation: generation)) { await loadFirst(scheme) }
+        .task(id: ServedPageLoad(service: scheme, words: asked, generation: generation)) { await search(scheme) }
+    }
+
+    @ViewBuilder
+    private func firstRows(scheme: String, title: String) -> some View {
+        if let failure {
+            ReadFailure(text: failure) { Task { await loadFirst(scheme) } }
+                .themedRows()
+        } else if let first, first.isEmpty {
+            Text("Search \(title) for artists, albums and songs.").foregroundStyle(.secondary).themedRows()
+        } else if let first {
+            ServedFoundRows(found: first)
         } else {
             ProgressView().frame(maxWidth: .infinity).themedRows()
         }
     }
 
     @ViewBuilder
-    private var foundRows: some View {
+    private func foundRows(scheme: String, title: String) -> some View {
         if let searchFailure {
-            ReadFailure(text: searchFailure) { Task { await search() } }
+            ReadFailure(text: searchFailure) { Task { await search(scheme) } }
                 .themedRows()
         } else if let found, found.isEmpty {
-            Text("The server found nothing for those words.").foregroundStyle(.secondary).themedRows()
+            Text("\(title) found nothing for those words.").foregroundStyle(.secondary).themedRows()
         } else if let found {
-            Text(found.summary).font(.footnote).foregroundStyle(.secondary).themedRows()
-            if !found.artists.isEmpty {
-                Section("Artists") {
-                    ForEach(found.artists, id: \.uri) { artist in
-                        NavigationLink(value: Destination.served(ServedPlace(artist))) {
-                            ServedRow(uri: artist.uri, cover: artist.cover, title: artist.shownName, detail: artist.line, circle: true)
-                        }
-                        .servedActions(artist.uri)
-                    }
-                    .themedRows()
-                }
-            }
-            if !found.albums.isEmpty {
-                Section("Albums") {
-                    ForEach(found.albums, id: \.uri) { album in
-                        NavigationLink(value: Destination.served(ServedPlace(album))) {
-                            ServedRow(uri: album.uri, cover: album.cover, title: album.shownName, detail: album.line)
-                        }
-                        .servedActions(album.uri)
-                    }
-                    .themedRows()
-                }
-            }
-            if !found.songs.isEmpty {
-                Section("Songs") {
-                    let uris = found.songs.map(\.uri)
-                    ForEach(Array(found.songs.enumerated()), id: \.element.uri) { index, song in
-                        ServedSongRow(song: song) { library.playServed(uris, at: index) }
-                    }
-                    .themedRows()
-                }
-            }
+            ServedFoundRows(found: found)
         } else {
             ProgressView().frame(maxWidth: .infinity).themedRows()
         }
     }
 
-    private func loadArtists() async {
+    private func loadFirst(_ service: String) async {
         failure = nil
+        if firstOf != service {
+            first = nil
+            firstOf = service
+        }
+        guard !service.isEmpty else { return }
         do {
-            artists = try await library.features.serverAnswer { try $0.servedArtists() }
-            read = true
+            let page = try await library.features.serverAnswer { try $0.servedFirstPage(service: service) }
+            guard service == firstOf else { return }
+            first = page
         } catch {
             if Task.isCancelled { return }
             failure = explained(error)
         }
     }
 
-    private func search() async {
+    private func search(_ service: String) async {
         let words = asked
-        guard !words.isEmpty else {
-            found = nil
-            searchFailure = nil
-            return
-        }
+        found = nil
         searchFailure = nil
+        guard !words.isEmpty, !service.isEmpty else { return }
         do {
-            let answer = try await library.features.serverAnswer { try $0.servedSearch(words: words) }
+            let answer = try await library.features.serverAnswer { try $0.servedSearch(service: service, words: words) }
             guard words == asked else { return }
             found = answer
         } catch {
@@ -385,7 +410,7 @@ struct ServedArtistPage: View {
             if let failure {
                 ReadFailure(text: failure) { Task { await load() } }
             } else if read, albums.isEmpty {
-                Text("This server lists no albums for this artist.").foregroundStyle(.secondary)
+                Text("No albums are listed for this artist.").foregroundStyle(.secondary)
             }
             if !albums.isEmpty {
                 Section("Albums") {
@@ -457,7 +482,7 @@ struct ServedAlbumPage: View {
             if let failure {
                 ReadFailure(text: failure) { Task { await load() } }
             } else if read, songs.isEmpty {
-                Text("This server lists no songs for this album.").foregroundStyle(.secondary)
+                Text("No songs are listed for this album.").foregroundStyle(.secondary)
             }
             let uris = songs.map(\.uri)
             ForEach(Array(songs.enumerated()), id: \.element.uri) { index, song in
