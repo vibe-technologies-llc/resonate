@@ -103,16 +103,12 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   degrees, and a set of speakers (`MultiSpeakerBRIR`) takes its nearest emitter and interpolates
   nothing; the interpolation blends in the time domain with the onsets aligned, not magnitude and
   delay apart, which a coarse set (a measurement every thirty degrees) smears
-- [M] *Fit the preamp*'s solved bound leaves the whole signal's node to the level alone: with it,
-  the tone model's solution passed the decode of transients through a phase-turning curve (an
-  allpass pair over noise and over a kick, hat and pads, by up to 0.38 dB), so broadband music
-  still bounds one to three and a half decibels over its decode; weighing each node by its own
-  transient gain over its band (the L1 of the near response filtered to it) would let the whole
-  node back in
-- [M] *Fit the preamp*'s ring, what the chain's response holds outside the fifth of a second around
-  its main lobe, is still weighed on the 2 048 points with the curve's fixed shares: an echo or a
-  reverberant tail longer than that window has comb teeth between the points, which only the
-  shares' slack covers (the near window is an envelope over every bin)
+- [M] *Fit the preamp*'s solved bound prices every node under the whole signal's at its steady
+  gain, so broadband music under a curve moving many bands still bounds one to three and a half
+  decibels over its decode; weighing each node by its band's transient gain (the L1 of the near
+  response filtered to it) was measured too loose under a dispersive correction (a random burst of
+  taps 6 to 12 dB looser), and a transient gain read from what music a band holds, not the worst
+  any music could, is not built
 - [M] A measurement of the listener's own is taken live by `resonate eq --measure` and by
   *Measure* in the window's Equaliser pane, and the phones still fit a measurement from a file
   alone: each has a microphone path for Listen (Kotlin's `AudioRecord`, Swift's `AVAudioEngine`

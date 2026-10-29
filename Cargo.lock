@@ -5729,6 +5729,7 @@ name = "resonate-analysis"
 version = "0.2.0"
 dependencies = [
  "ahash",
+ "parking_lot 0.13.0",
  "resonate-codec",
  "resonate-core",
  "resonate-dsp",

@@ -185,7 +185,9 @@ Invariants the layering protects (the rules files have the rest):
 - `RESONATE_BENCH_CEILINGS=1 cargo bench -p resonate-dsp --bench stages [<words>]`: every DSP stage
   against `benches/ceilings.tsv`; a stage added to the bench is added to the file.
   `cargo bench -p resonate-library --bench spelling` times search on a synthetic 500 000-track
-  catalog. `cargo build --profile profiling`: release with symbols.
+  catalog. `cargo bench -p resonate-analysis --bench bound` times *Fit the preamp*'s bound and
+  fold (`RESONATE_BENCH_BOUNDS=<file>` keeps the bounds to compare bit for bit).
+  `cargo build --profile profiling`: release with symbols.
 - Tests needing the outside world skip without it: `resonate-pipewire` (`stream`, `reconnect`,
   `formats`), `resonate-listen` (`capture`, `reconnect`, `microphone`), the reconnect, `formats` and
   `microphone` tests need `pw-cli` and host their own daemon; `resonate-mpris --test bus` (session
