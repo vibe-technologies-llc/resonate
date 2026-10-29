@@ -18,7 +18,10 @@ use resonate_codec::{CoverArt, ImageFormat};
 use zune_core::{bit_depth::BitDepth, colorspace::ColorSpace, options::EncoderOptions};
 use zune_jpegxl::JxlSimpleEncoder;
 
-use crate::error::{Error, PictureOp, Result, VaultOp};
+use crate::{
+    error::{Error, PictureOp, Result, VaultOp},
+    transcoded,
+};
 
 const HEAD_READ_AT_A_TIME: usize = 16 << 10;
 const MOST_EFFORT: u8 = 127;
@@ -42,6 +45,15 @@ impl Drawn {
 pub(crate) enum Drawing {
     Lossless(Drawn),
     AsItCame { width: u32, height: u32 },
+}
+
+impl Drawing {
+    pub(crate) const fn size(&self) -> (u32, u32) {
+        match self {
+            Self::Lossless(drawn) => (drawn.width, drawn.height),
+            Self::AsItCame { width, height } => (*width, *height),
+        }
+    }
 }
 
 pub(crate) fn as_jxl(art: &CoverArt) -> Result<Drawing> {
@@ -221,15 +233,22 @@ fn size_of_jxl_stream(path: &Path, mut file: File) -> Result<(u32, u32)> {
     }
 }
 
-pub(crate) fn lossless_of_jxl(bytes: &[u8]) -> Result<DynamicImage> {
-    let picture = jxl_oxide::JxlImage::builder()
+pub(crate) fn opened_jxl(bytes: &[u8]) -> Result<jxl_oxide::JxlImage> {
+    jxl_oxide::JxlImage::builder()
         .read(Cursor::new(bytes))
         .map_err(|source| {
             tracing::warn!(%source, "a JXL picture could not be opened");
             Error::PictureRead {
                 op: PictureOp::Open,
             }
-        })?;
+        })
+}
+
+pub(crate) fn lossless_of_jxl(bytes: &[u8]) -> Result<DynamicImage> {
+    lossless_of(&opened_jxl(bytes)?)
+}
+
+pub(crate) fn lossless_of(picture: &jxl_oxide::JxlImage) -> Result<DynamicImage> {
     let wide =
         picture.image_header().metadata.bit_depth.bits_per_sample() > WIDEST_EIGHT_BIT_SAMPLE;
     let render = picture.render_frame(0).map_err(|source| {
@@ -269,7 +288,15 @@ pub(crate) fn lossless_of_jxl(bytes: &[u8]) -> Result<DynamicImage> {
 }
 
 pub(crate) fn drawable(bytes: &[u8]) -> Result<CoverArt> {
-    let picture = lossless_of_jxl(bytes)?.into_rgba8();
+    let opened = opened_jxl(bytes)?;
+    if let Some(jpeg) = transcoded::reconstructed(bytes, &opened)? {
+        return Ok(CoverArt {
+            format: ImageFormat::Jpeg,
+            bytes: jpeg,
+        });
+    }
+
+    let picture = lossless_of(&opened)?.into_rgba8();
     let mut written = Vec::new();
     PngEncoder::new_with_quality(&mut written, CompressionType::Fast, FilterType::Adaptive)
         .write_image(

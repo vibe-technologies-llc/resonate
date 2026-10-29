@@ -30,7 +30,7 @@ use crate::{
     key::{Sound, VaultKey},
     ogg,
     pcm::{self, Digest},
-    standing,
+    standing, transcoded,
     unpacking::{self, Unpacking},
     wave,
 };
@@ -603,14 +603,18 @@ impl Vault {
             });
         }
 
-        let drawn = match cover::as_jxl(art)? {
-            cover::Drawing::Lossless(drawn) if drawn.bytes.len() < art.bytes.len() => drawn,
-            cover::Drawing::Lossless(drawn) => {
-                return self.kept_as_it_came(key, art, (drawn.width, drawn.height));
-            }
-            cover::Drawing::AsItCame { width, height } => {
-                return self.kept_as_it_came(key, art, (width, height));
-            }
+        let drawing = cover::as_jxl(art)?;
+        let size = drawing.size();
+        let lossless = match drawing {
+            cover::Drawing::Lossless(drawn) if drawn.bytes.len() < art.bytes.len() => Some(drawn),
+            cover::Drawing::Lossless(_) | cover::Drawing::AsItCame { .. } => None,
+        };
+        let transcoded = self.transcoded_cover(key, art, lossless.as_ref())?;
+        if let Some(kept) = transcoded {
+            return Ok(kept);
+        }
+        let Some(drawn) = lossless else {
+            return self.kept_as_it_came(key, art, size);
         };
         let target = self.cover_path(key, COVER_EXTENSION);
         let staging = self.staged(COVER_EXTENSION)?;
@@ -634,6 +638,48 @@ impl Vault {
             height: drawn.height,
             deduped: false,
         })
+    }
+
+    fn transcoded_cover(
+        &self,
+        key: VaultKey,
+        art: &CoverArt,
+        lossless: Option<&cover::Drawn>,
+    ) -> Result<Option<KeptCover>> {
+        if art.format != ImageFormat::Jpeg {
+            return Ok(None);
+        }
+        let Some(transcoded) = transcoded::of(&art.bytes).filter(|transcoded| {
+            transcoded.bytes.len() < art.bytes.len()
+                && lossless.is_none_or(|drawn| transcoded.bytes.len() <= drawn.bytes.len())
+        }) else {
+            return Ok(None);
+        };
+
+        let target = self.cover_path(key, COVER_EXTENSION);
+        let staging = self.staged(COVER_EXTENSION)?;
+        self.written_inside(&staging, &transcoded.bytes)?;
+
+        let written = self.read_inside(&staging)?;
+        if !transcoded::reconstructs(&written, &art.bytes) {
+            tracing::warn!(
+                width = transcoded.width,
+                height = transcoded.height,
+                "a transcoded JPEG cover did not reconstruct byte for byte and is kept another way"
+            );
+            self.discard(&staging)?;
+            return Ok(None);
+        }
+
+        let bytes = self.landed(&staging, &target)?;
+        Ok(Some(KeptCover {
+            key,
+            path: target,
+            bytes,
+            width: transcoded.width,
+            height: transcoded.height,
+            deduped: false,
+        }))
     }
 
     fn kept_as_it_came(
@@ -743,8 +789,23 @@ impl Vault {
                 digest.note(&bytes);
                 digest.settled() == key && cover::size_of(&bytes, Some(format)).is_ok()
             }
-            None => cover::lossless_of_jxl(&bytes).is_ok(),
+            None => self.holds_the_cover(key, &bytes),
         })
+    }
+
+    fn holds_the_cover(&self, key: VaultKey, bytes: &[u8]) -> bool {
+        let Ok(opened) = cover::opened_jxl(bytes) else {
+            return false;
+        };
+        match transcoded::reconstructed(bytes, &opened) {
+            Ok(Some(jpeg)) => {
+                let mut digest = Digest::default();
+                digest.note(&jpeg);
+                digest.settled() == key
+            }
+            Ok(None) => cover::lossless_of(&opened).is_ok(),
+            Err(_) => false,
+        }
     }
 
     pub fn packed_before_the_frames(&self, path: &Path) -> Result<bool> {

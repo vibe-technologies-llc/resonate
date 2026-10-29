@@ -139,6 +139,7 @@ flacenc = { version = "0.5.1", default-features = false, features = ["par"] }
 zstd = { version = "0.14.3", default-features = false }
 zune-core = { version = "0.5.3", default-features = false, features = ["std"] }
 zune-jpegxl = { version = "0.5.2", default-features = false, features = ["std", "threads"] }
+jxl-encoder = { version = "0.3.4", default-features = false, features = ["std", "jpeg-reencoding"] }
 jxl-oxide = { version = "0.12.6", default-features = false }
 
 pipewire = { version = "0.10.1", default-features = false, features = ["v0_3_50"] }

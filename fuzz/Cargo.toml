@@ -182,6 +182,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "transcode"
+path = "fuzz_targets/transcode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "sofa"
 path = "fuzz_targets/sofa.rs"
 test = false

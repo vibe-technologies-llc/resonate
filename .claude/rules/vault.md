@@ -133,7 +133,7 @@ rips re-encoded, 24-bit generally kept and stripped, no rule naming depths.
 
 ```
 <root>/audio/ab/abcdef…7f.flac
-<root>/covers/3c/3cd1…9a.jxl    (or .jpg, .png, … where kept as it came)
+<root>/covers/3c/3cd1…9a.jxl    (pixel-lossless, or a JPEG transcode; or .jpg, .png, … where kept as it came)
 <root>/staging/<pid>-<n>.<ext>
 ```
 
@@ -217,9 +217,47 @@ handed are no heavier, lands them under the same key with their own extension
 older build's JXL stays the dedup hit), `covers` lists them all, `picture` hands such a file back
 undrawn (`a_cover_smaller_as_it_came_than_as_lossless_pixels_is_kept_as_it_came`).
 
-**The vault decodes JXL back to PNG, so `resonate-ui` is unchanged.** `Vault::picture` answers a JXL
-as `CoverArt { format: Png, bytes }`, the type every caller takes (window, `mpris::art::Pictures`);
-`dependencies.md` forbids an image crate in `resonate-ui`.
+**A JPEG is transcoded, not re-encoded, where that is smaller and provably the same bytes.**
+`transcoded::of` reads the JPEG's quantised DCT coefficients with `jxl-encoder`'s `jpeg-reencoding`
+(pure Rust, AGPL like this project) and writes a JXL container carrying the `jbrd` reconstruction box;
+`keep_cover` takes it over the pixel-lossless JXL and over the JPEG itself only when it is smaller than
+both (`transcoded_cover`). **Byte-exactness is proved on the staged file before the rename**:
+`jxl-oxide` (`reconstruct_jpeg`, from `jxl-jbr`) rebuilds the JPEG from the bytes read back off
+disc and they must equal the cover's own, else the staged file is discarded and the cover is kept
+the next way (a warning, not an error). It lands as `covers/xx/<key>.jxl`, **the key still the MD5 of
+the original JPEG's bytes**, so `verify_cover` checks a transcoded cover by hashing the JPEG it
+reconstructs against its own file name. No schema step: the catalog names a cover by key and path, and
+the object keeps the `.jxl` name; an older build opening one decodes its pixels (as a PNG). A cover
+kept as a JPEG before the transcode stays a JPEG (nothing weighs covers again; `FEATURES.md`).
+- **Default, not a setting**: measured on photographic baseline JPEGs the JXL is 12 to 23 % smaller
+  from 300 px (4:4:4 -17 to -23 %, 4:2:0 -12 to -16 %, grey -15 to -21 %), ~+10 % on a 128 px cover
+  (kept as the JPEG by the size test), and a transcode and its read-back cost 10 to 300 ms
+  (`a_transcode_reconstructs_the_jpeg_it_came_from_byte_for_byte_and_is_smaller_from_300_pixels`
+  prints the table). Smaller, proved, and never larger than the source: nothing to opt into.
+- **What this `jxl-encoder` (0.3.4) does not do stays a JPEG**: a progressive JPEG (SOF2) is refused
+  by its parser (`a_progressive_jpeg_is_not_transcoded`); a JPEG with a `COM` segment transcodes but
+  rebuilds one byte long, so the proof refuses it
+  (`a_comment_segment_is_written_back_one_byte_long_so_the_jpeg_is_not_reconstructed`,
+  `a_jpeg_the_transcoder_cannot_hand_back_byte_for_byte_stays_a_jpeg`); EXIF and bytes after the end
+  of image round-trip. The pins break, and want deleting, when the crate learns either.
+- **Neither crate may panic on a cover, because release builds `panic = "abort"`.** `encodable` holds
+  the parsed `JpegData` to what `jxl-encoder` indexes (one or three components, each naming a quant
+  table that exists, one to four quant tables and scans, two to eight Huffman tables, marker
+  bytes from `0xC0`, non-empty APP segments): 20 000 corrupted JPEGs hit three panic sites
+  before it and none after (`a_damaged_jpeg_is_never_a_panic_...`, the `transcode` fuzz target of
+  `build.md`). **The reader is shielded too**: `jxl-jbr` indexes a damaged `jbrd` unchecked, so
+  `transcoded::sealed` appends a `rsck` box (an unknown box every decoder skips) holding the MD5 of
+  everything before it, and `reconstructed` refuses a JXL that declares reconstruction data but
+  lacks a matching seal (`Error::PictureRead { op: Reconstruct }`) before the reconstruction runs
+  (`a_transcoded_cover_with_one_bit_flipped_or_cut_short_no_longer_reads_back`).
+
+**The vault decodes a pixel-lossless JXL back to PNG, and a transcoded one to its JPEG, so
+`resonate-ui` is unchanged.** `Vault::picture` answers the first as `CoverArt { format: Png, bytes }`
+and the second as `CoverArt { format: Jpeg, bytes }` equal to what went in
+(`a_jpeg_cover_is_kept_as_a_jxl_smaller_than_it_that_hands_back_the_very_jpeg`), the type every
+caller takes (window, `mpris::art::Pictures`, the tag writer's picture, the phones);
+`dependencies.md` forbids an image crate in `resonate-ui`. The one place a cover leaves the vault is
+`picture`, so no reader sees the JXL form.
 
 A cover already under its key is a dedup hit sized from its head, read in chunks off the file
 (`cover::size_of_file`), never the whole file. A cover decodes through `resonate_codec::decode_cover`

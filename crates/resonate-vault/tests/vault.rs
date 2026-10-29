@@ -843,12 +843,12 @@ fn a_cover_reads_back_until_its_bytes_are_damaged_whichever_way_it_was_kept() {
 fn a_cover_smaller_as_it_came_than_as_lossless_pixels_is_kept_as_it_came() {
     let tree = Tree::new();
     let vault = tree.vault();
-    let art = photographed(96, 64);
+    let art = photographed(16, 16);
 
     let held = vault.keep_cover(&art).expect("a kept cover");
     assert_eq!(held.path.extension().and_then(|e| e.to_str()), Some("jpg"));
     assert_eq!(held.bytes, art.bytes.len() as u64);
-    assert_eq!((held.width, held.height), (96, 64));
+    assert_eq!((held.width, held.height), (16, 16));
 
     let drawn = vault.picture(&held.path).expect("a drawable cover");
     assert_eq!(
@@ -858,8 +858,127 @@ fn a_cover_smaller_as_it_came_than_as_lossless_pixels_is_kept_as_it_came() {
 
     let again = vault.keep_cover(&art).expect("a kept cover");
     assert!(again.deduped);
-    assert_eq!((again.width, again.height), (96, 64));
+    assert_eq!((again.width, again.height), (16, 16));
     assert_eq!(vault.holding().expect("a counted vault").covers, 1);
+}
+
+fn landscape(width: u32, height: u32, quality: u8) -> CoverArt {
+    let mut state = 0x9e37_79b9_u32;
+    let mut pixels = Vec::with_capacity((width * height * 3) as usize);
+    for y in 0..height {
+        for x in 0..width {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            let grain = (state >> 24) as f32 / 255.0 - 0.5;
+            let (fx, fy) = (x as f32 / width as f32, y as f32 / height as f32);
+            let sky = 0.55 + 0.35 * (fy * 3.1).cos();
+            let hill = 0.5 + 0.4 * ((fx * 5.0).sin() * (fy * 4.0).cos());
+            for sample in [
+                sky * 0.9 + grain * 0.12,
+                hill * 0.8 + grain * 0.12,
+                sky + hill * 0.2 + grain * 0.12,
+            ] {
+                pixels.push((sample.clamp(0.0, 1.0) * 255.0) as u8);
+            }
+        }
+    }
+    let mut written = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut written, quality)
+        .encode(&pixels, width, height, image::ExtendedColorType::Rgb8)
+        .expect("a written landscape");
+
+    CoverArt {
+        format: ImageFormat::Jpeg,
+        bytes: written,
+    }
+}
+
+fn commented(art: &CoverArt) -> CoverArt {
+    const BEHIND_THE_FIRST_SEGMENT: usize = 2 + 2 + 16;
+    let comment = b"a cover comment";
+    let mut bytes = art.bytes[..BEHIND_THE_FIRST_SEGMENT].to_vec();
+    bytes.extend_from_slice(&[0xff, 0xfe]);
+    bytes.extend_from_slice(&((comment.len() + 2) as u16).to_be_bytes());
+    bytes.extend_from_slice(comment);
+    bytes.extend_from_slice(&art.bytes[BEHIND_THE_FIRST_SEGMENT..]);
+
+    CoverArt {
+        format: ImageFormat::Jpeg,
+        bytes,
+    }
+}
+
+#[test]
+fn a_jpeg_cover_is_kept_as_a_jxl_smaller_than_it_that_hands_back_the_very_jpeg() {
+    let tree = Tree::new();
+    let vault = tree.vault();
+    let art = landscape(320, 240, 85);
+
+    let held = vault.keep_cover(&art).expect("a kept cover");
+    assert_eq!(held.path.extension().and_then(|e| e.to_str()), Some("jxl"));
+    assert!(held.bytes < art.bytes.len() as u64);
+    assert_eq!((held.width, held.height), (320, 240));
+    assert!(!held.deduped);
+
+    let drawn = vault.picture(&held.path).expect("a drawable cover");
+    assert_eq!(drawn, art, "the JPEG came back otherwise than it went in");
+    let again = vault.picture(&held.path).expect("a drawable cover");
+    assert_eq!(again, art);
+
+    let repeated = vault.keep_cover(&art).expect("a kept cover");
+    assert!(repeated.deduped);
+    assert_eq!((repeated.width, repeated.height), (320, 240));
+    assert_eq!(repeated.path, held.path);
+    assert_eq!(vault.holding().expect("a counted vault").covers, 1);
+    assert!(vault.verify_cover(&held.path).expect("a readable cover"));
+}
+
+#[test]
+fn a_transcoded_cover_with_one_bit_flipped_or_cut_short_no_longer_reads_back() {
+    let tree = Tree::new();
+    let vault = tree.vault();
+    let art = landscape(200, 150, 80);
+    let held = vault.keep_cover(&art).expect("a kept cover");
+    let whole = fs::read(&held.path).expect("the kept cover");
+    assert_eq!(held.path.extension().and_then(|e| e.to_str()), Some("jxl"));
+
+    for at in [whole.len() / 5, whole.len() / 2, whole.len() - 3] {
+        let mut flipped = whole.clone();
+        flipped[at] ^= 0x10;
+        fs::write(&held.path, &flipped).expect("a writable cover");
+        assert!(
+            !vault.verify_cover(&held.path).expect("a readable file"),
+            "a cover with a bit flipped at {at} read back"
+        );
+        assert!(vault.picture(&held.path).is_err());
+    }
+
+    fs::write(&held.path, &whole[..whole.len() / 2]).expect("a writable cover");
+    assert!(!vault.verify_cover(&held.path).expect("a readable file"));
+
+    fs::write(&held.path, &whole).expect("a writable cover");
+    assert!(vault.verify_cover(&held.path).expect("a readable file"));
+    assert_eq!(vault.picture(&held.path).expect("a cover"), art);
+}
+
+#[test]
+fn a_jpeg_the_transcoder_cannot_hand_back_byte_for_byte_stays_a_jpeg() {
+    let tree = Tree::new();
+    let vault = tree.vault();
+    let art = commented(&landscape(320, 240, 85));
+
+    let held = vault.keep_cover(&art).expect("a kept cover");
+
+    assert_eq!(held.path.extension().and_then(|e| e.to_str()), Some("jpg"));
+    assert_eq!(held.bytes, art.bytes.len() as u64);
+    assert_eq!(vault.picture(&held.path).expect("a cover"), art);
+    assert_eq!(
+        fs::read_dir(vault.root().join("staging"))
+            .expect("staging")
+            .count(),
+        0
+    );
 }
 
 #[test]

@@ -88,6 +88,10 @@ here, add it there.
   lies from now; `realtime.md`).
 - **`unicode-width`**: `Table` and the readout (CJK = two columns). `unicode-segmentation` is
   `resonate-ui`'s, text editing.
+- **`jxl-encoder`** (`std`, `jpeg-reencoding`; no `butteraugli-loop`): `resonate-vault`'s alone, the
+  JPEG-to-JXL transcode with its `jbrd` reconstruction data (`vault.md`). Pure Rust (`zenjpeg`,
+  `brotli`, `archmage`); licensed AGPL-3.0-only OR commercial, taken under the AGPL, which this project
+  is. `jxl-oxide` reads it back and reconstructs the JPEG, so no second JXL decoder joins.
 - **`image`**: exactly the five formats `CoverArt` names (`bmp`, `gif`, `jpeg`, `png`, `webp`).
   `resonate-codec`, `-vault`, `-ui`; `-library` dev-only; `-analysis` never.
 - **`proptest`**: dev-dependency of `resonate-core`, `-library`, `-ui` alone; `std` only (defaults

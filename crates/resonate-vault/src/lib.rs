@@ -14,12 +14,13 @@ mod key;
 mod ogg;
 mod pcm;
 mod standing;
+mod transcoded;
 mod unpacking;
 mod vault;
 mod wave;
 
 #[cfg(fuzzing)]
-pub use crate::fuzzing::{bare_a_file, unpack_a_file};
+pub use crate::fuzzing::{bare_a_file, transcode_a_jpeg, unpack_a_file};
 pub use crate::{
     encoding::Encoding,
     error::{Error, FlacOp, PictureOp, Result, VaultOp},

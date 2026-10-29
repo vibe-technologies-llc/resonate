@@ -18,6 +18,7 @@ pub enum FlacOp {
 pub enum PictureOp {
     Open,
     Render,
+    Reconstruct,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

@@ -86,11 +86,13 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   track
 
 ## Later: The vault
-- [L] A JPEG cover is kept byte for byte where its lossless JXL is larger, never smaller than it: a
-  byte-exact JPEG transcode (`jxl-encoder` 0.3, AGPL, opt-in) is an unproven spike
+- [S] A JPEG cover kept as a JPEG before the transcode (`vault.md`) is not weighed again: a vault
+  made by an older build keeps every one at its larger size until it is pruned and imported afresh
 - [L · blocked: flacenc] `flacenc` 0.5.1, the latest, caps the Rice parameter at 14, the rate at 96
   kHz and the depth at 24 bits: a 24-bit rip loses to `flac -8` by ~15 % and is kept; a 192 kHz rip
   is never a FLAC
+- [M · blocked: jxl-encoder] A progressive JPEG cover, and one with a `COM` segment, stays a JPEG in
+  the vault: `jxl-encoder` 0.3.4, the latest, refuses the first and rebuilds the second one byte long
 
 ## Later: Equaliser and DSP extras
 - [S] A SOFA HRIR set is not read for a head turned, for a `MultiSpeakerBRIR` measured with the

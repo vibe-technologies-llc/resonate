@@ -9,7 +9,7 @@ use resonate_codec::{Container, MediaStream, Reading};
 use resonate_core::MediaLocation;
 
 use crate::{
-    bare,
+    bare, transcoded,
     unpacking::{self, Unpacking},
 };
 
@@ -80,4 +80,11 @@ pub fn unpack_a_file(bytes: &[u8]) {
     let _ = (&mut unpacking)
         .take(MOST_UNPACKED_READ)
         .read_to_end(&mut buffer);
+}
+
+pub fn transcode_a_jpeg(bytes: &[u8]) {
+    let Some(transcoded) = transcoded::of(bytes) else {
+        return;
+    };
+    let _ = transcoded::reconstructs(&transcoded.bytes, bytes);
 }
