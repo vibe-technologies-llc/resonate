@@ -16,7 +16,7 @@ mod restore;
 
 pub use crate::{
     chain::{Back, Chain, ChainBuilder, Front},
-    convolve::{CROSSED_RESPONSES, Convolver, Impulse, Speaker, partition_frames_at},
+    convolve::{CROSSED_RESPONSES, Convolver, Impulse, Speaker, partition_frames_at, response_of},
     crossfeed::{Crossfeed, Crossfeeder},
     dither::{Dither, DitherKind, NoiseShaping},
     eq::{Easing, Equaliser},

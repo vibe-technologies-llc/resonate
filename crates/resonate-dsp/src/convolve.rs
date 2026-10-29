@@ -1,4 +1,13 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::{
+    collections::VecDeque,
+    num::NonZeroUsize,
+    panic,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    thread,
+};
 
 use parking_lot::Mutex;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex, num_complex::Complex};
@@ -16,6 +25,7 @@ pub fn partition_frames_at(rate: SampleRate) -> usize {
     PARTITION_AT_48_KHZ * scaled.next_power_of_two()
 }
 const POINTS_A_BLOCK: usize = 128;
+const TURNS_WORTH_A_THREAD: usize = 1 << 24;
 const RESAMPLED_A_BLOCK_AT_A_TIME: usize = 4_096;
 const SPECTRUM_POINTS_A_TAP: usize = 4;
 const BYTES_A_TAP: u64 = size_of::<f64>() as u64;
@@ -202,21 +212,10 @@ impl Impulse {
 
     pub fn heard_at(&self, hertz: &[f64], rate: SampleRate) -> Result<Vec<Vec<(f64, f64)>>> {
         let taps = self.at(rate)?;
-        let turns: Vec<(f64, f64)> = hertz
-            .iter()
-            .map(|hertz| {
-                let angle = std::f64::consts::TAU * hertz / f64::from(rate.hz());
-                let (imaginary, real) = angle.sin_cos();
-                (real, imaginary)
-            })
-            .collect();
         let mut heard = vec![Vec::with_capacity(taps.len()); hertz.len()];
         for channel in taps.iter() {
-            for (block, turns) in turns.chunks(POINTS_A_BLOCK).enumerate() {
-                let sums = summed_turns(channel, turns);
-                for (at, sum) in sums.into_iter().enumerate() {
-                    heard[block * POINTS_A_BLOCK + at].push(sum);
-                }
+            for (at, sum) in response_of(channel, hertz, rate).into_iter().enumerate() {
+                heard[at].push(sum);
             }
         }
         Ok(heard)
@@ -253,6 +252,58 @@ fn crossed_gain(spectra: &[Vec<Complex<f64>>]) -> f64 {
         .zip(right_to_left.iter().zip(right_to_right))
         .map(|((ll, lr), (rl, rr))| (ll.norm() + rl.norm()).max(lr.norm() + rr.norm()))
         .fold(0.0_f64, f64::max)
+}
+
+pub fn response_of(taps: &[f64], hertz: &[f64], rate: SampleRate) -> Vec<(f64, f64)> {
+    let turns: Vec<(f64, f64)> = hertz
+        .iter()
+        .map(|hertz| {
+            let angle = std::f64::consts::TAU * hertz / f64::from(rate.hz());
+            let (imaginary, real) = angle.sin_cos();
+            (real, imaginary)
+        })
+        .collect();
+    let blocks: Vec<&[(f64, f64)]> = turns.chunks(POINTS_A_BLOCK).collect();
+    let workers = if taps.len().saturating_mul(turns.len()) < TURNS_WORTH_A_THREAD {
+        1
+    } else {
+        thread::available_parallelism()
+            .map_or(1, NonZeroUsize::get)
+            .min(blocks.len())
+    };
+    if workers <= 1 {
+        return blocks
+            .iter()
+            .flat_map(|block| summed_turns(taps, block))
+            .collect();
+    }
+    let next = AtomicUsize::new(0);
+    let mut summed: Vec<(usize, Vec<(f64, f64)>)> = thread::scope(|scope| {
+        let handles: Vec<_> = (0..workers)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut taken = Vec::new();
+                    loop {
+                        let at = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(block) = blocks.get(at) else {
+                            return taken;
+                        };
+                        taken.push((at, summed_turns(taps, block)));
+                    }
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|handle| {
+                handle
+                    .join()
+                    .unwrap_or_else(|panic| panic::resume_unwind(panic))
+            })
+            .collect()
+    });
+    summed.sort_by_key(|(block, _)| *block);
+    summed.into_iter().flat_map(|(_, sums)| sums).collect()
 }
 
 fn summed_turns(taps: &[f64], steps: &[(f64, f64)]) -> Vec<(f64, f64)> {
@@ -706,6 +757,24 @@ mod tests {
             assert!((heard[at][0].0 - direct.0).abs() < 1e-12, "{hertz} Hz");
             assert!((heard[at][0].1 - direct.1).abs() < 1e-12, "{hertz} Hz");
             assert_eq!(heard[at][1], (1.0, 0.0));
+        }
+    }
+
+    #[test]
+    fn a_response_long_enough_to_be_shared_between_threads_is_heard_as_it_is_alone() {
+        let taps: Vec<f64> = (0..40_000)
+            .map(|at| (-(at as f64) / 9_000.0).exp() * (at as f64 * 0.003).sin())
+            .collect();
+        let hertz: Vec<f64> = (0..1_000).map(|at| 15.0 + at as f64 * 23.0).collect();
+
+        let shared = response_of(&taps, &hertz, RATE);
+
+        assert!(taps.len() * hertz.len() >= TURNS_WORTH_A_THREAD);
+        assert_eq!(shared.len(), hertz.len());
+        for at in [0, 127, 128, 500, 999] {
+            let alone = response_of(&taps, &hertz[at..=at], RATE);
+            assert!((shared[at].0 - alone[0].0).abs() < 1e-9, "point {at}");
+            assert!((shared[at].1 - alone[0].1).abs() < 1e-9, "point {at}");
         }
     }
 
