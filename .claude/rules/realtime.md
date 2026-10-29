@@ -70,6 +70,23 @@ rest on this discipline alone):
 - `resonate-listen/src/recording.rs`: the recording's `AudioSink`: preallocated `AtomicU32` run of
   f32 bits + atomic count, `Relaxed` stores, one `Release` publish, `Acquire` reads.
 
+**Every callback stamps what it fills.** `AudioSource::fill_stamped(dst, Stamp)` (`resonate-audio`;
+`fill` is the default for a source that reads none) hands the source the `Moment` the callback ran
+(`Moment`: nanoseconds on one process-wide monotonic clock, `Moment::start_the_clock` called by
+`ring` so the clock's first read is never on the RT thread) and the stream frames ahead of the
+fill's first (`StreamClock::stamp`: the latency the clock last read). PipeWire's `Cycle::run`
+stamps after `note_latency`, Oboe's `rendered` stamps each chunk with the frames of the chunks
+before it added, RemoteIO's `Rendering::fill` stamps with the route's latency. The ring consumer
+(`filled_from`) writes a `RingStamp` (the ring frame it took first, the moment that frame is heard,
+the moment the next fill's first frame is, the frames pulled, whether music flowed from the fill's
+start) into a seqlock of atomics (`StampSlot`, one writer, the reader retrying a torn read) under
+its discard epoch; `RingProducer::stamp` answers only the current epoch's. A ring held in step
+(`Entering::InStep`) hushes whole fills without consuming, drops the frames the engine asks
+(`drop_ahead`, counted asked against done, cancelled by a discard) as they arrive, and sounds from
+the frame its release moment lands on, rounding a moment's nanoseconds by at most
+`A_MOMENT_ROUNDED_BY_FRAMES`; an unstamped fill releases it at once. No lock, no allocation:
+counters and the slot are preallocated atomics.
+
 Scope the lint list to the module, not the crate; callback work goes in `process.rs`, not the
 closure `client.rs` registers (else the lints miss it). They cannot reach libspa. The callback sets
 `chunk.size` to exactly what the source filled, so bytes past a short read never reach the graph.

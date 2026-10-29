@@ -65,7 +65,11 @@ mod tests {
 
     fn rendering(left: usize) -> (Box<Rendering>, Arc<AtomicBool>) {
         let empty = Arc::new(AtomicBool::new(false));
-        let (rendering, _) = Rendering::fed_by(Box::new(Supply { left }), Arc::clone(&empty));
+        let (rendering, _) = Rendering::fed_by(
+            Box::new(Supply { left }),
+            Arc::clone(&empty),
+            Arc::default(),
+        );
         (Box::new(rendering), empty)
     }
 

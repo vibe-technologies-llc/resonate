@@ -6,6 +6,7 @@ mod heard;
 mod impulse;
 mod kept;
 mod lending;
+mod lockstep;
 mod measure;
 mod pipeline;
 mod player;
@@ -28,10 +29,10 @@ pub use resonate_analysis::{
 };
 pub use resonate_audio::{
     AudioSource, Backend, CardProfile, Error as SinkError, GraphTime, HardwareVolume,
-    LatencyRequest, MediaRole, NodeName, Opener, Plugged, ProfileIndex, Reshaped, Reshaper,
-    SinkChange, SinkFormats, SinkId, SinkInfo, SinkPort, SinkResult, SinkStream, StreamClock,
-    StreamCommand, StreamEvent, StreamRequest, StreamState, StreamVolume, Surveyor, Unreshapable,
-    Words,
+    LatencyRequest, MediaRole, Moment, NodeName, Opener, Plugged, ProfileIndex, Reshaped, Reshaper,
+    SinkChange, SinkFormats, SinkId, SinkInfo, SinkPort, SinkResult, SinkStream, Stamp,
+    StreamClock, StreamCommand, StreamEvent, StreamRequest, StreamState, StreamVolume, Surveyor,
+    Unreshapable, Words,
 };
 pub use resonate_codec::{
     BitRate, BoxKind, BoxLayout, Codec, Container, CoverArt, Credits, Drawing, DsdRate, Faststart,
@@ -60,13 +61,14 @@ pub use crate::{
     heard::{A_SEEK, COUNTS_AS_HEARD, Counting, Listening, Played},
     impulse::{LONGEST_IMPULSE, PairedReadError, binaural_wave, read_binaural_pair, read_impulse},
     kept::{KEPT_EVERY, Keep, Keeping, resumption_of},
+    lockstep::{HeardAt, HeardClock, Stepping},
     pipeline::{
         BluetoothWake, Decoded, EngineConfig, Equalisation, Levelling, OutputMode, OutputPlan,
         plan_for, plan_output, resolve_replay_gain,
     },
     player::{Player, cuts_to_fit},
     queue::{Placement, QueueItem, QueueRows, Queued, Unclaimed, stamp_of, unclaimed_id},
-    ring::{Entering, FADED_OVER, RingConsumer, RingMonitor, RingProducer, ring},
+    ring::{Entering, FADED_OVER, RingConsumer, RingMonitor, RingProducer, RingStamp, ring},
     sleep::{Asleep, Until},
     state::{
         Event, FirstSurvey, OutputSettings, OutputStatus, PlaybackState, PlayerState, Published,

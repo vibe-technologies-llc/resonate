@@ -289,7 +289,11 @@ mod tests {
             dropped: Arc::clone(&dropped),
             given: Arc::clone(&given),
         };
-        let (rendering, _) = Rendering::fed_by(Box::new(supply), Arc::new(AtomicBool::new(false)));
+        let (rendering, _) = Rendering::fed_by(
+            Box::new(supply),
+            Arc::new(AtomicBool::new(false)),
+            Arc::default(),
+        );
         (Box::new(rendering), Held { dropped, given })
     }
 

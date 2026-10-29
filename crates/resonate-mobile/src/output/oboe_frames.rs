@@ -8,7 +8,8 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use resonate_audio::AudioSource;
+use resonate_audio::{AudioSource, Stamp};
+use resonate_core::Frames;
 
 pub(crate) const FRAME_CAPACITY: usize = 4096;
 const WIDEST_FRAME_BYTES: usize = 8;
@@ -72,12 +73,15 @@ pub(crate) fn rendered<F: Frame>(
     bytes: &mut [u8],
     empty: &AtomicBool,
     frames: &mut [F],
+    stamp: Stamp,
 ) -> bool {
+    let mut ahead = stamp.ahead;
     for chunk in frames.chunks_mut(FRAME_CAPACITY) {
         let Some(bytes) = bytes.get_mut(..chunk.len().saturating_mul(F::BYTES)) else {
             return false;
         };
-        let filled = source.fill(bytes);
+        let filled = source.fill_stamped(bytes, Stamp { ahead, ..stamp });
+        ahead = Frames(ahead.get().saturating_add(chunk.len() as u64));
         empty.store(filled == 0, Ordering::Release);
         if let Some(unfilled) = bytes.get_mut(filled..) {
             unfilled.fill(0);
@@ -94,28 +98,56 @@ pub(crate) fn rendered<F: Frame>(
 
 #[cfg(test)]
 mod tests {
+    use resonate_audio::Moment;
+
     use super::*;
 
-    struct Bytes(Vec<u8>);
+    struct Bytes {
+        left: Vec<u8>,
+        stamped: Vec<Stamp>,
+    }
 
     impl AudioSource for Bytes {
         fn fill(&mut self, dst: &mut [u8]) -> usize {
-            let taken = dst.len().min(self.0.len());
-            for (into, from) in dst.iter_mut().zip(self.0.drain(..taken)) {
+            let taken = dst.len().min(self.left.len());
+            for (into, from) in dst.iter_mut().zip(self.left.drain(..taken)) {
                 *into = from;
             }
             taken
         }
+
+        fn fill_stamped(&mut self, dst: &mut [u8], stamp: Stamp) -> usize {
+            self.stamped.push(stamp);
+            self.fill(dst)
+        }
     }
 
-    fn rendered_from<F: Frame + Default>(bytes: Vec<u8>, frames: usize) -> (Vec<F>, bool) {
-        let mut source = Bytes(bytes);
+    fn stamp() -> Stamp {
+        Stamp {
+            at: Moment::from_nanos(1_000),
+            ahead: Frames(100),
+        }
+    }
+
+    fn rendered_stamped<F: Frame + Default>(
+        bytes: Vec<u8>,
+        frames: usize,
+    ) -> (Vec<F>, bool, Vec<Stamp>) {
+        let mut source = Bytes {
+            left: bytes,
+            stamped: Vec::new(),
+        };
         let mut held = vec![0; RENDER_BYTES];
         let empty = AtomicBool::new(true);
         let mut out = vec![F::default(); frames];
 
-        assert!(rendered(&mut source, &mut held, &empty, &mut out));
-        (out, empty.load(Ordering::Acquire))
+        assert!(rendered(&mut source, &mut held, &empty, &mut out, stamp()));
+        (out, empty.load(Ordering::Acquire), source.stamped)
+    }
+
+    fn rendered_from<F: Frame + Default>(bytes: Vec<u8>, frames: usize) -> (Vec<F>, bool) {
+        let (out, empty, _) = rendered_stamped(bytes, frames);
+        (out, empty)
     }
 
     #[test]
@@ -168,8 +200,18 @@ mod tests {
             .flat_map(|at| (at as i32).to_le_bytes())
             .collect();
 
-        let (out, _) = rendered_from::<(i32, i32)>(words, frames);
+        let (out, _, stamped) = rendered_stamped::<(i32, i32)>(words, frames);
 
+        assert_eq!(
+            stamped.iter().map(|stamp| stamp.ahead).collect::<Vec<_>>(),
+            vec![
+                Frames(100),
+                Frames(100 + FRAME_CAPACITY as u64),
+                Frames(100 + 2 * FRAME_CAPACITY as u64)
+            ],
+            "a later chunk was not told it is heard after the chunks before it"
+        );
+        assert!(stamped.iter().all(|each| each.at == stamp().at));
         assert_eq!(out.len(), frames);
         assert!(
             out.iter()

@@ -14,9 +14,9 @@ use resonate_core::{FrameSpan, MediaLocation};
 use resonate_pipewire::PipeWire;
 
 use crate::{
-    Backend, Command, CoverArt, Engine, EngineConfig, Error, Event, Landing, MediaInfo, Outcome,
-    OutputSettings, PlayerState, Published, QueueRows, Queued, Request, Result, StreamDigest,
-    Tapped,
+    Backend, Command, CoverArt, Engine, EngineConfig, Error, Event, HeardAt, HeardClock, Landing,
+    MediaInfo, Outcome, OutputSettings, PlayerState, Published, QueueRows, Queued, Request, Result,
+    Stepping, StreamDigest, Tapped,
     catalog::{ArtRead, Catalog, TagsRead},
 };
 
@@ -181,6 +181,18 @@ impl Player {
             tracing::debug!(?within, "the first sink survey had not answered in time");
         }
         self.sinks()
+    }
+
+    pub fn heard_clock(&self) -> HeardClock {
+        self.published.heard.clone()
+    }
+
+    pub fn heard_at(&self) -> Option<HeardAt> {
+        self.published.heard.read()
+    }
+
+    pub fn stepping(&self) -> Stepping {
+        *self.published.stepping.read()
     }
 
     pub fn digest(&self) -> Option<Arc<StreamDigest>> {

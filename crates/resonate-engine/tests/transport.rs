@@ -24,14 +24,14 @@ use resonate_core::{
 use resonate_engine::{
     AudioSource, Backend, Band, BandGain, BandKind, Caught, Cause, Command, DitherKind,
     EngineConfig, Equalisation, Error as EngineError, Event, FADED_OVER, FilterPhase, Frequency,
-    GraphTime, HardwareVolume, Held, Hinting, Impulse, Media, MediaProvider, MediaStream, NodeName,
-    NoiseShaping, Opener, Opening, Opens, OutputMode, Placement, PlaybackState, Player, Plugged,
-    Preamp, PreviousRestarts, Profile, Q, Quality, QueueItem, QueueRows, Reading, RepeatMode,
-    ReplayGainMode, Reshaped, Reshaper, Restoration, Result, Resumable, Resumption, SinkChange,
-    SinkError, SinkFormats, SinkId, SinkInfo, SinkPort, SinkResult, SinkStream, SkipUnderRepeat,
-    SourceId, Sources, StreamClock, StreamCommand, StreamEvent, StreamRequest, StreamState,
-    StreamVolume, Surveyor, Tapped, Unreshapable, Until, Words, Zone, ZoneId, ZoneName, Zones,
-    stamp_of,
+    GraphTime, HardwareVolume, Held, Hinting, Impulse, Media, MediaProvider, MediaStream, Moment,
+    NodeName, NoiseShaping, Opener, Opening, Opens, OutputMode, Placement, PlaybackState, Player,
+    Plugged, Preamp, PreviousRestarts, Profile, Q, Quality, QueueItem, QueueRows, Reading,
+    RepeatMode, ReplayGainMode, Reshaped, Reshaper, Restoration, Result, Resumable, Resumption,
+    SinkChange, SinkError, SinkFormats, SinkId, SinkInfo, SinkPort, SinkResult, SinkStream,
+    SkipUnderRepeat, SourceId, Sources, Stamp, Stepping, StreamClock, StreamCommand, StreamEvent,
+    StreamRequest, StreamState, StreamVolume, Surveyor, Tapped, Unreshapable, Until, Words, Zone,
+    ZoneId, ZoneName, Zones, stamp_of,
 };
 
 const RATE: u32 = 44_100;
@@ -182,6 +182,7 @@ struct Graph {
     unanswering: bool,
     clock: Option<Arc<StreamClock>>,
     survey_gate: Option<Receiver<()>>,
+    heard: Vec<(usize, Moment)>,
 }
 
 impl Graph {
@@ -194,6 +195,25 @@ impl Graph {
         let heard_for = Duration::from_secs_f64(frames as f64 / f64::from(spec.rate.hz()));
 
         (heard_for / PULL_TIMES_REAL_TIME_AT_MOST).max(SHORTEST_PAUSE_BETWEEN_PULLS)
+    }
+
+    fn pull_heard(&mut self, bytes: usize, due: Moment) {
+        if !self.active {
+            return;
+        }
+        let Some(source) = self.source.as_mut() else {
+            return;
+        };
+        let mut block = vec![0_u8; bytes];
+        let stamp = Stamp {
+            at: due,
+            ahead: Frames::ZERO,
+        };
+        let filled = source.fill_stamped(&mut block, stamp);
+        block.truncate(filled);
+        let offset = self.played.len();
+        self.heard.push((offset, due));
+        self.played.extend_from_slice(&block);
     }
 
     fn pull(&mut self, bytes: usize) -> usize {
@@ -1921,6 +1941,178 @@ fn a_handover_the_other_zone_never_sounds_puts_its_own_queue_back_and_leaves_the
         !playing(&study.player),
         "the second zone played its own queue back"
     );
+    Ok(())
+}
+
+const QUANTUM_FRAMES: usize = 256;
+const S24_STRIDE: usize = 8;
+const ALIGNED_WITHIN_FRAMES: i64 = 2;
+const MEASURED_PAST_THE_FADE: usize = 64;
+const REFERENCE_BEFORE: Duration = Duration::from_millis(30);
+
+struct Device {
+    graph: Arc<Mutex<Graph>>,
+}
+
+impl Device {
+    fn pull(&self, due: Moment) {
+        self.graph
+            .lock()
+            .pull_heard(QUANTUM_FRAMES * S24_STRIDE, due);
+    }
+
+    fn played(&self) -> Vec<u8> {
+        self.graph.lock().played.clone()
+    }
+
+    fn heard(&self) -> Vec<(usize, Moment)> {
+        self.graph.lock().heard.clone()
+    }
+}
+
+struct Clocked {
+    start: Moment,
+    ticks: u64,
+}
+
+impl Clocked {
+    fn new() -> Self {
+        Self {
+            start: Moment::now(),
+            ticks: 0,
+        }
+    }
+
+    fn run_until(&mut self, devices: &[&Device], mut done: impl FnMut() -> bool, what: &str) {
+        let deadline = Instant::now() + PATIENCE;
+        while Instant::now() < deadline {
+            let due = self.start.after_frames(
+                (self.ticks * QUANTUM_FRAMES as u64) as f64,
+                SampleRate::HZ_44100,
+            );
+            while Moment::now() < due {
+                thread::sleep(Duration::from_micros(200));
+            }
+            for device in devices {
+                device.pull(due);
+            }
+            self.ticks += 1;
+            if done() {
+                return;
+            }
+        }
+        panic!("timed out waiting for {what}");
+    }
+}
+
+fn track_frame_in(played: &[u8], frame: usize) -> Option<i64> {
+    let at = frame * S24_STRIDE;
+    let left = i32::from_le_bytes(played.get(at..at + 4)?.try_into().ok()?);
+    let right = i32::from_le_bytes(played.get(at + 4..at + 8)?.try_into().ok()?);
+    (right == left + 1).then(|| (i64::from(left) + (1 << 23) - 1) / 2)
+}
+
+fn moment_of(heard: &[(usize, Moment)], frame: usize) -> Moment {
+    let (offset, at) = heard
+        .iter()
+        .rev()
+        .find(|(offset, _)| offset / S24_STRIDE <= frame)
+        .copied()
+        .expect("a frame the device pulled");
+    at.after_frames((frame - offset / S24_STRIDE) as f64, SampleRate::HZ_44100)
+}
+
+fn frame_at(heard: &[(usize, Moment)], moment: Moment) -> usize {
+    let (offset, at) = heard
+        .iter()
+        .rev()
+        .find(|(_, at)| *at <= moment)
+        .copied()
+        .expect("a moment the device was pulled at");
+    offset / S24_STRIDE + moment.frames_since(at, SampleRate::HZ_44100).round() as usize
+}
+
+#[test]
+fn a_zone_handed_the_song_lands_its_first_frame_on_the_frame_the_other_is_heard_at() -> Result<()> {
+    let tree = Tree::new();
+    let path = tree.write("handed.wav", &pcm(24, RATE as usize * 3).file);
+    let at_home = sink(&[SampleRate::HZ_44100], &[SampleFormat::S24]);
+    let elsewhere = SinkInfo {
+        id: SinkId::new(3),
+        name: NodeName::new("alsa_output.kitchen"),
+        description: "Kitchen speakers".to_owned(),
+        is_default: false,
+        ..sink(&[SampleRate::HZ_44100], &[SampleFormat::S24])
+    };
+    let opened = FakeZones::over(vec![at_home, elsewhere.clone()]);
+    let zones = opened.started()?;
+    let study = zones.add()?;
+    let first = zones.first().player;
+    let outgoing = Device {
+        graph: opened.graph(ZoneId::FIRST),
+    };
+    let incoming = Device {
+        graph: opened.graph(study.id),
+    };
+    let mut clocked = Clocked::new();
+
+    zones.send(study.id, Command::SetSink(Some(elsewhere.name.clone())))?;
+    played_from(&zones, ZoneId::FIRST, &path)?;
+    clocked.run_until(
+        &[&outgoing, &incoming],
+        || {
+            first
+                .state()
+                .current
+                .is_some_and(|track| track.position >= Frames(u64::from(RATE) / 2))
+        },
+        "the first zone to be heard a while",
+    );
+    let handover = zones.hand_over(ZoneId::FIRST, study.id)?;
+    let asked_at = handover.at();
+    clocked.run_until(
+        &[&outgoing, &incoming],
+        || {
+            first.state().playback == PlaybackState::Stopped
+                && matches!(study.player.stepping(), Stepping::Joined(_))
+                && incoming.played().len() >= RATE as usize / 2 * S24_STRIDE
+        },
+        "the second zone to step in and the first to stop",
+    );
+    handover.wait()?;
+
+    let played_in = incoming.played();
+    let played_out = outgoing.played();
+    let (heard_in, heard_out) = (incoming.heard(), outgoing.heard());
+    let whole = (0..played_in.len() / S24_STRIDE)
+        .find(|frame| {
+            let here = track_frame_in(&played_in, *frame);
+            here.is_some() && track_frame_in(&played_in, frame + 1) == here.map(|at| at + 1)
+        })
+        .expect("the second zone was heard whole");
+    let measured = whole + MEASURED_PAST_THE_FADE;
+    let moment = moment_of(&heard_in, measured);
+    let reference = frame_at(
+        &heard_out,
+        Moment::from_nanos(moment.nanos() - REFERENCE_BEFORE.as_nanos() as u64),
+    );
+    let referenced = track_frame_in(&played_out, reference)
+        .expect("the first zone was whole before the handover");
+    let first_heard = referenced as f64
+        + moment.frames_since(moment_of(&heard_out, reference), SampleRate::HZ_44100);
+    let second_heard =
+        track_frame_in(&played_in, measured).expect("the second zone was whole past its fade");
+    let apart = second_heard - first_heard.round() as i64;
+
+    assert!(
+        apart.abs() <= ALIGNED_WITHIN_FRAMES,
+        "the second zone was heard {apart} frames from the first at the same moment"
+    );
+    assert!(
+        first_heard.round() as i64 > asked_at.get() as i64,
+        "the second zone came in where the first was asked from rather than where it was heard"
+    );
+    assert!(playing(&study.player));
     Ok(())
 }
 

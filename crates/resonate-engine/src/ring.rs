@@ -10,18 +10,21 @@ use std::{
     num::NonZeroU32,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering, fence},
     },
     time::Duration,
 };
 
-use resonate_audio::AudioSource;
-use resonate_core::{AudioBuffer, Frames, RtFault, SampleFormat, Silence, StreamSpec};
+use resonate_audio::{AudioSource, Moment, Stamp};
+use resonate_core::{AudioBuffer, Frames, RtFault, SampleFormat, SampleRate, Silence, StreamSpec};
 
 const FAULT_SLOTS: usize = 64;
 const RENDERED_SLOTS: usize = 1024;
 const RINGS_OF_ROOM_A_SPLICE_MAY_TAKE: usize = 1;
 const TURNS_HELD: usize = 8;
+const STAMP_READ_TRIES: usize = 16;
+const NOT_YET: u64 = u64::MAX;
+const A_MOMENT_ROUNDED_BY_FRAMES: f64 = 0.01;
 
 pub const TURNS_WAITING_AT_MOST: usize = TURNS_HELD - 1;
 
@@ -31,6 +34,96 @@ pub const FADED_OVER: Duration = Duration::from_millis(10);
 pub enum Entering {
     Whole,
     FadedIn,
+    InStep,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RingStamp {
+    pub called: Moment,
+    pub read: u64,
+    pub heard: Moment,
+    pub next: Moment,
+    pub pulled: u64,
+    pub flowing: bool,
+}
+
+#[derive(Default)]
+struct StampSlot {
+    sequence: AtomicU64,
+    epoch: AtomicU64,
+    called: AtomicU64,
+    read: AtomicU64,
+    heard: AtomicU64,
+    next: AtomicU64,
+    pulled: AtomicU64,
+    flowing: AtomicBool,
+}
+
+impl StampSlot {
+    fn write(&self, epoch: u64, stamp: RingStamp) {
+        let sequence = self.sequence.load(Ordering::Relaxed);
+        self.sequence
+            .store(sequence.wrapping_add(1), Ordering::Relaxed);
+        fence(Ordering::Release);
+        self.epoch.store(epoch, Ordering::Relaxed);
+        self.called.store(stamp.called.nanos(), Ordering::Relaxed);
+        self.read.store(stamp.read, Ordering::Relaxed);
+        self.heard.store(stamp.heard.nanos(), Ordering::Relaxed);
+        self.next.store(stamp.next.nanos(), Ordering::Relaxed);
+        self.pulled.store(stamp.pulled, Ordering::Relaxed);
+        self.flowing.store(stamp.flowing, Ordering::Relaxed);
+        self.sequence
+            .store(sequence.wrapping_add(2), Ordering::Release);
+    }
+
+    fn read(&self) -> Option<(u64, RingStamp)> {
+        for _ in 0..STAMP_READ_TRIES {
+            let before = self.sequence.load(Ordering::Acquire);
+            if before == 0 {
+                return None;
+            }
+            if before % 2 == 1 {
+                std::hint::spin_loop();
+                continue;
+            }
+            let epoch = self.epoch.load(Ordering::Relaxed);
+            let stamp = RingStamp {
+                called: Moment::from_nanos(self.called.load(Ordering::Relaxed)),
+                read: self.read.load(Ordering::Relaxed),
+                heard: Moment::from_nanos(self.heard.load(Ordering::Relaxed)),
+                next: Moment::from_nanos(self.next.load(Ordering::Relaxed)),
+                pulled: self.pulled.load(Ordering::Relaxed),
+                flowing: self.flowing.load(Ordering::Relaxed),
+            };
+            fence(Ordering::Acquire);
+            if self.sequence.load(Ordering::Relaxed) == before {
+                return Some((epoch, stamp));
+            }
+        }
+        None
+    }
+}
+
+struct Lockstep {
+    holding: AtomicBool,
+    release: AtomicU64,
+    drops_asked: AtomicU64,
+    drops_done: AtomicU64,
+}
+
+impl Lockstep {
+    fn holding(holding: bool) -> Arc<Self> {
+        Arc::new(Self {
+            holding: AtomicBool::new(holding),
+            release: AtomicU64::new(NOT_YET),
+            drops_asked: AtomicU64::new(0),
+            drops_done: AtomicU64::new(0),
+        })
+    }
+
+    fn drops_pending(&self) -> bool {
+        self.drops_asked.load(Ordering::Acquire) != self.drops_done.load(Ordering::Acquire)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -102,9 +195,12 @@ pub fn ring(
     let prime = bytes / bytes_per_frame.get() as usize / 2;
     let fades = matches!(silence, Silence::Unmarked) && fade > Frames::ZERO;
     let faded = match entering {
-        Entering::FadedIn if fades => SILENT,
-        Entering::Whole | Entering::FadedIn => WHOLE,
+        Entering::FadedIn | Entering::InStep if fades => SILENT,
+        Entering::Whole | Entering::FadedIn | Entering::InStep => WHOLE,
     };
+    let stamped = Arc::new(StampSlot::default());
+    let lockstep = Lockstep::holding(entering == Entering::InStep);
+    Moment::start_the_clock();
 
     (
         RingProducer {
@@ -130,6 +226,8 @@ pub fn ring(
             turns: Arc::clone(&turns),
             turn: 0,
             turned: 0,
+            stamped: Arc::clone(&stamped),
+            lockstep: Arc::clone(&lockstep),
         },
         RingConsumer {
             inner: consumer,
@@ -162,6 +260,11 @@ pub fn ring(
                 dropped: Arc::clone(&dropped),
             },
             starved: Arc::clone(&starved),
+            rate: spec.rate,
+            stamped,
+            lockstep,
+            taken_from: None,
+            opening: false,
         },
         RingMonitor {
             queue: drained,
@@ -241,9 +344,36 @@ pub struct RingProducer {
     turns: Arc<AtomicU64>,
     turn: u64,
     turned: u64,
+    stamped: Arc<StampSlot>,
+    lockstep: Arc<Lockstep>,
 }
 
 impl RingProducer {
+    pub fn stamp(&self) -> Option<RingStamp> {
+        let (epoch, stamp) = self.stamped.read()?;
+        (epoch == self.requested && !self.is_discarding()).then_some(stamp)
+    }
+
+    pub fn is_held_in_step(&self) -> bool {
+        self.lockstep.holding.load(Ordering::Acquire)
+    }
+
+    pub fn drop_ahead(&self, frames: u64) {
+        self.lockstep
+            .drops_asked
+            .fetch_add(frames, Ordering::AcqRel);
+    }
+
+    pub fn drops_pending(&self) -> bool {
+        self.lockstep.drops_pending()
+    }
+
+    pub fn release_at(&self, moment: Moment) {
+        self.lockstep
+            .release
+            .store(moment.nanos().min(NOT_YET - 1), Ordering::Release);
+    }
+
     pub fn fade_out(&self, over: Frames) {
         self.fader.over.store(over.get().max(1), Ordering::Release);
         self.fader.silenced.store(true, Ordering::Release);
@@ -563,6 +693,11 @@ pub struct RingConsumer {
     prime: usize,
     faults: FaultSink,
     starved: Arc<AtomicU64>,
+    rate: SampleRate,
+    stamped: Arc<StampSlot>,
+    lockstep: Arc<Lockstep>,
+    taken_from: Option<u64>,
+    opening: bool,
 }
 
 impl RingConsumer {
@@ -621,6 +756,10 @@ impl RingConsumer {
             let Some(part) = into.get_mut(filled..filled.saturating_add(frames * stride)) else {
                 return filled;
             };
+            if self.opening {
+                self.opening = false;
+                self.taken_from = Some(self.read);
+            }
             let (popped, _) = self.inner.pop_partial_slice(part);
             let taken = popped.len();
             self.shape(popped, target);
@@ -654,6 +793,10 @@ impl RingConsumer {
             stale.commit_all();
         }
         self.read = 0;
+        self.lockstep.drops_done.store(
+            self.lockstep.drops_asked.load(Ordering::Acquire),
+            Ordering::Release,
+        );
         self.heard_now = self.wanted();
         self.splices_seen = self.splice.asked.load(Ordering::Acquire);
         self.pending = None;
@@ -739,11 +882,96 @@ impl RingConsumer {
 
 impl AudioSource for RingConsumer {
     fn fill(&mut self, dst: &mut [u8]) -> usize {
-        let filled = self.pulled(dst);
+        self.filled_from(dst, None)
+    }
+
+    fn fill_stamped(&mut self, dst: &mut [u8], stamp: Stamp) -> usize {
+        self.filled_from(dst, Some(stamp))
+    }
+}
+
+impl RingConsumer {
+    fn filled_from(&mut self, dst: &mut [u8], stamp: Option<Stamp>) -> usize {
+        let stride = self.stride();
+        let frames = dst.len() / stride;
+        let first = stamp.map(|stamp| stamp.first_heard(self.rate));
+        let held_back = self.held_back_for_the_lockstep(frames, first);
+        self.taken_from = None;
+        let hushed = match dst.get_mut(..held_back.saturating_mul(stride)) {
+            Some(gap) if held_back > 0 => self.hush(gap),
+            Some(_) | None => 0,
+        };
+        let filled = if held_back < frames {
+            match dst.get_mut(hushed..) {
+                Some(rest) => hushed.saturating_add(self.pulled(rest)),
+                None => hushed,
+            }
+        } else {
+            self.fader.pulls.fetch_add(1, Ordering::Relaxed);
+            hushed
+        };
+        if let Some(stamp) = stamp {
+            self.note_when_it_is_heard(stamp, held_back, frames);
+        }
         self.fader
             .whole
             .store(self.level >= WHOLE, Ordering::Release);
         filled
+    }
+
+    fn note_when_it_is_heard(&self, stamp: Stamp, held_back: usize, frames: usize) {
+        let first = stamp.first_heard(self.rate);
+        let stamp = RingStamp {
+            called: stamp.at,
+            read: self.taken_from.unwrap_or(self.read),
+            heard: first.after_frames(held_back as f64, self.rate),
+            next: first.after_frames(frames as f64, self.rate),
+            pulled: frames as u64,
+            flowing: self.taken_from.is_some(),
+        };
+        self.stamped.write(self.seen, stamp);
+    }
+
+    fn held_back_for_the_lockstep(&mut self, frames: usize, first: Option<Moment>) -> usize {
+        if !self.lockstep.holding.load(Ordering::Acquire) {
+            return 0;
+        }
+        let Some(first) = first else {
+            self.lockstep.holding.store(false, Ordering::Release);
+            return 0;
+        };
+        self.apply_discard();
+        self.drop_what_the_lockstep_asks();
+        let release = self.lockstep.release.load(Ordering::Acquire);
+        if release == NOT_YET || self.lockstep.drops_pending() {
+            return frames;
+        }
+        let ahead = (Moment::from_nanos(release).frames_since(first, self.rate)
+            - A_MOMENT_ROUNDED_BY_FRAMES)
+            .ceil();
+        if ahead >= frames as f64 {
+            return frames;
+        }
+        self.lockstep.holding.store(false, Ordering::Release);
+        ahead.max(0.0) as usize
+    }
+
+    fn drop_what_the_lockstep_asks(&mut self) {
+        let asked = self.lockstep.drops_asked.load(Ordering::Acquire);
+        let done = self.lockstep.drops_done.load(Ordering::Acquire);
+        let owed = asked.saturating_sub(done);
+        if owed == 0 {
+            return;
+        }
+        let stride = self.stride();
+        let frames = owed.min(self.available_frames() as u64) as usize;
+        if let Ok(dropped) = self.inner.read_chunk(frames.saturating_mul(stride)) {
+            dropped.commit_all();
+            self.read = self.read.saturating_add(frames as u64);
+            self.lockstep
+                .drops_done
+                .store(done.saturating_add(frames as u64), Ordering::Release);
+        }
     }
 }
 
@@ -788,7 +1016,9 @@ impl RingConsumer {
         };
 
         let target = if silenced { SILENT } else { WHOLE };
+        self.opening = spliced == 0;
         let popped = self.take_into(whole, target);
+        self.opening = false;
         let taken = popped / stride;
         let filled = spliced.saturating_add(popped);
         if let Some(last) = popped
@@ -1151,6 +1381,132 @@ mod tests {
             assert_eq!(consumer.fill(&mut sunk), sunk.len());
             assert_eq!(sunk, source.as_bytes(), "{format} did not survive the ring");
         }
+    }
+
+    fn lefts_of_32(sunk: &[u8]) -> Vec<i32> {
+        sunk.as_chunks::<8>()
+            .0
+            .iter()
+            .map(|frame| i32::from_ne_bytes([frame[0], frame[1], frame[2], frame[3]]))
+            .collect()
+    }
+
+    fn stamped_at(at: Moment) -> Stamp {
+        Stamp {
+            at,
+            ahead: Frames::ZERO,
+        }
+    }
+
+    #[test]
+    fn a_ring_held_in_step_drops_what_it_is_asked_and_sounds_from_the_moment_it_is_released() {
+        let rate = SampleRate::HZ_44100;
+        let (mut producer, mut consumer, _) = ring(
+            spec(SampleFormat::S32),
+            Frames(256),
+            Silence::Unmarked,
+            UNFADED,
+            Entering::InStep,
+            Level::WHOLE,
+        );
+        producer.write(&ramp(SampleFormat::S32, 200));
+        let start = Moment::from_nanos(1_000_000_000);
+        let mut held = vec![0xAA_u8; 32 * 8];
+
+        consumer.fill_stamped(&mut held, stamped_at(start));
+        let waiting = producer.stamp().expect("the held ring was stamped");
+        producer.drop_ahead(10);
+        producer.release_at(start.after_frames(37.0, rate));
+        let mut released = vec![0xAA_u8; 32 * 8];
+        consumer.fill_stamped(&mut released, stamped_at(start.after_frames(32.0, rate)));
+        let sounding = producer.stamp().expect("the released ring was stamped");
+        let lefts = lefts_of_32(&released);
+
+        assert!(held.iter().all(|byte| *byte == 0), "a held ring sounded");
+        assert!(!waiting.flowing);
+        assert_eq!(waiting.read, 0);
+        assert!((waiting.next.frames_since(start, rate) - 32.0).abs() < A_MOMENT_ROUNDED_BY_FRAMES);
+        assert_eq!(lefts[..5], [0; 5], "the ring sounded before its release");
+        assert_eq!(
+            lefts[5], 20,
+            "the ring did not sound the frame after the ten it was asked to drop"
+        );
+        assert_eq!(lefts[6], 22);
+        assert!(!producer.is_held_in_step());
+        assert!(!producer.drops_pending());
+        assert!(sounding.flowing);
+        assert_eq!(sounding.read, 10);
+        assert!(
+            sounding
+                .heard
+                .frames_since(start.after_frames(37.0, rate), rate)
+                .abs()
+                < A_MOMENT_ROUNDED_BY_FRAMES
+        );
+    }
+
+    #[test]
+    fn a_ring_held_in_step_by_a_graph_that_stamps_nothing_sounds_at_once() {
+        let (mut producer, mut consumer, _) = ring(
+            spec(SampleFormat::S32),
+            Frames(256),
+            Silence::Unmarked,
+            UNFADED,
+            Entering::InStep,
+            Level::WHOLE,
+        );
+        producer.write(&ramp(SampleFormat::S32, 64));
+        let mut sunk = vec![0_u8; 16 * 8];
+
+        consumer.fill(&mut sunk);
+
+        assert_eq!(lefts_of_32(&sunk)[..3], [0, 2, 4]);
+        assert!(!producer.is_held_in_step());
+        assert_eq!(producer.stamp(), None, "an unstamped pull was stamped");
+    }
+
+    #[test]
+    fn a_stamp_names_the_ring_frame_heard_first_and_the_moment_it_is_heard() {
+        let rate = SampleRate::HZ_44100;
+        let (mut producer, mut consumer, _) = ring(
+            spec(SampleFormat::S32),
+            Frames(256),
+            Silence::Unmarked,
+            UNFADED,
+            Entering::Whole,
+            Level::WHOLE,
+        );
+        producer.write(&ramp(SampleFormat::S32, 100));
+        let start = Moment::from_nanos(5_000_000);
+        let mut sunk = vec![0_u8; 16 * 8];
+
+        assert_eq!(producer.stamp(), None);
+        consumer.fill_stamped(&mut sunk, stamped_at(start));
+        consumer.fill_stamped(
+            &mut sunk,
+            Stamp {
+                at: start.after_frames(16.0, rate),
+                ahead: Frames(44),
+            },
+        );
+        let stamp = producer.stamp().expect("a stamped pull was stamped");
+
+        assert!(stamp.flowing);
+        assert_eq!(stamp.read, 16);
+        assert_eq!(stamp.pulled, 16);
+        assert!(
+            stamp
+                .heard
+                .frames_since(start.after_frames(60.0, rate), rate)
+                .abs()
+                < A_MOMENT_ROUNDED_BY_FRAMES
+        );
+        assert!(
+            (stamp.next.frames_since(stamp.heard, rate) - 16.0).abs() < A_MOMENT_ROUNDED_BY_FRAMES
+        );
+
+        producer.discard_buffered();
+        assert_eq!(producer.stamp(), None, "a stamp outlived the discard");
     }
 
     #[test]

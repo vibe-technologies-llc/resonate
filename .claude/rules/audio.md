@@ -827,8 +827,31 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   an edit made to the handed queue meanwhile is left in place; the outgoing one plays on
   (`HandoverUnheard`, or the refusal itself;
   `a_handover_the_other_zone_never_sounds_puts_its_own_queue_back_and_leaves_the_first_playing`). Volume, sleep timer and device stay each
-  zone's own; the incoming zone lags the outgoing one by its stream's opening, heard as the two
-  fades overlapping. The `Handover` handle names the row and frame handed over and `wait` joins
+  zone's own. **The incoming zone lands on the frame the outgoing one is heard at.** Where the
+  outgoing zone means to sound, `Zones::hand_over` sends `Command::KeepInStepWith` the outgoing
+  player's `HeardClock` (`Player::heard_clock`; `lockstep.rs`) between the `Resume` and the `Play`
+  (ignored where an output is already bound). Every engine publishes a `HeardAt` each pass
+  (`Engine::heard_at`: the row's `QueueStamp`, the frame heard on the opening clock, the `Moment`
+  it is heard at, the rate), read off its ring's stamp (realtime.md) through
+  `Engine::frame_of_the_ring` (the decoder's position less chain latency and what lies between
+  the ring frame and the write head, or the leaving row's end while a boundary waits), only while
+  playing and the stamp names a flowing frame; `HeardAt::frame_at` extrapolates it to any moment.
+  The incoming engine binds its ring `Entering::InStep`: held silent, consuming nothing, while
+  stamps arrive. `keep_in_step` waits for its stream and a stamp, then aims at the soonest moment
+  no callback has filled yet (`RELEASED_AHEAD_BY`, 30 ms, and `PULLS_RELEASED_AHEAD_BY` pulls past
+  the next fill's first heard frame), weighs the outgoing frame heard then against its own ring's
+  next frame, and asks the ring to drop the difference and sound from that moment
+  (`RingProducer::drop_ahead`, `release_at`); where it is ahead, it sounds that much later and
+  drops nothing; where the ring holds too little to drop, it drops what it can and weighs again
+  once refilled. A row other than the outgoing one's, another opening rate, no stream within
+  `IN_STEP_WITHIN` (3 s) or a ring released by a graph that stamps nothing sounds at once
+  (`step_in_now`). `Player::stepping` publishes `Stepping` (`Alone`, `Waiting`, `Joined(moment)`);
+  the handover thread waits for it (`wait_until_in_step`), then until `FADED_OVER` past the
+  joining moment, before stopping the outgoing zone, so the incoming one has faded in, aligned,
+  before the other fades out
+  (`a_zone_handed_the_song_lands_its_first_frame_on_the_frame_the_other_is_heard_at`: a fake
+  graph stamping a steady clock, the two zones within two frames; one or none in practice). The
+  `Handover` handle names the row and frame handed over and `wait` joins
   the thread; a dropped handle detaches it, which logs a failure itself. MPRIS follows from each
   zone's published state (`mpris.md`)
   (`a_zone_hands_its_song_over_to_another_that_fades_in_where_it_was_heard_while_it_fades_out_and_stops`,

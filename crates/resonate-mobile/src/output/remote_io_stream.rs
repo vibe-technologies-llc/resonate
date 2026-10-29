@@ -121,7 +121,7 @@ where
     let (disposed, closed) = bounded(1);
     let clock = Arc::new(StreamClock::behind_by(Frames::ZERO));
     let empty = Arc::new(AtomicBool::new(false));
-    let (rendering, handing) = Rendering::fed_by(source, Arc::clone(&empty));
+    let (rendering, handing) = Rendering::fed_by(source, Arc::clone(&empty), Arc::clone(&clock));
     let thread_clock = Arc::clone(&clock);
     let routing = Arc::clone(routing);
     let reshape = reshaper(Arc::clone(&routing), commands.clone(), handing, within);

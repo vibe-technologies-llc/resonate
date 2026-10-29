@@ -13,8 +13,8 @@ use resonate_core::{
 
 use crate::{
     Asleep, BluetoothWake, CommandKind, Crossfeed, DitherKind, EngineConfig, Equalisation, Error,
-    FilterPhase, Levelling, NoiseShaping, OutputMode, PreviousRestarts, Quality, Queued,
-    RepeatMode, ReplayGainMode, Restoration, SkipUnderRepeat, Tapped,
+    FilterPhase, HeardClock, Levelling, NoiseShaping, OutputMode, PreviousRestarts, Quality,
+    Queued, RepeatMode, ReplayGainMode, Restoration, SkipUnderRepeat, Stepping, Tapped,
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -236,6 +236,8 @@ pub struct Published {
     pub tap: Arc<RwLock<Tapped>>,
     pub listening: Arc<AtomicBool>,
     pub first_survey: Arc<FirstSurvey>,
+    pub heard: HeardClock,
+    pub stepping: Arc<RwLock<Stepping>>,
 }
 
 #[derive(Default)]
