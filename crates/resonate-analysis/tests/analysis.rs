@@ -834,6 +834,13 @@ fn the_bound_holds_over_what_the_decode_measures_whatever_the_curve_and_where_th
             ]),
         ),
         (
+            "a phase turned and nothing else",
+            shaped(&[
+                (BandKind::AllPass, 300.0, 0.0, 4.0),
+                (BandKind::AllPass, 3_000.0, 0.0, 4.0),
+            ]),
+        ),
+        (
             "a low pass",
             shaped(&[(BandKind::LowPass, 2_000.0, 0.0, 2.0)]),
         ),

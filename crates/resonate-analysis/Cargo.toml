@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 ahash.workspace = true
+parking_lot.workspace = true
 resonate-codec.workspace = true
 resonate-core.workspace = true
 resonate-dsp.workspace = true

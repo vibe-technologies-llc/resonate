@@ -1,3 +1,6 @@
+use std::collections::VecDeque;
+
+use parking_lot::Mutex;
 use resonate_codec::Sources;
 use resonate_core::{
     FrameSpan, MediaLocation, SampleRate, StreamSpec,
@@ -42,6 +45,8 @@ const LEVELS_ALIKE_WITHIN: f64 = 1e-4;
 const TAPERED_SHARE: usize = 4;
 
 const ENVELOPE_BINS_A_TAP: usize = 32;
+
+const HINTS_KEPT: usize = 4;
 
 fn band_of(hertz: f64) -> usize {
     if hertz <= LOWEST_EDGE_HZ {
@@ -135,6 +140,7 @@ struct Anchor {
     level: f64,
     reach: Heights,
     apart: Vec<f64>,
+    transient: f64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -142,6 +148,42 @@ pub struct BandGains {
     anchors: Vec<Anchor>,
     ringing: Heights,
     tones: Tones,
+    hints: Hints,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Hint {
+    anchor: usize,
+    weights: Heights,
+}
+
+#[derive(Debug, Default)]
+struct Hints(Mutex<VecDeque<Hint>>);
+
+impl Hints {
+    fn held(&self) -> Vec<Hint> {
+        self.0.lock().iter().copied().collect()
+    }
+
+    fn keep(&self, hint: Hint) {
+        let mut hints = self.0.lock();
+        if hints.len() >= HINTS_KEPT {
+            hints.pop_back();
+        }
+        hints.push_front(hint);
+    }
+}
+
+impl Clone for Hints {
+    fn clone(&self) -> Self {
+        Self(Mutex::new(self.0.lock().clone()))
+    }
+}
+
+impl PartialEq for Hints {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
 }
 
 impl BandGains {
@@ -174,14 +216,27 @@ impl BandGains {
             anchors: levels
                 .into_iter()
                 .zip(spread)
-                .map(|(level, apart)| Anchor {
-                    level,
-                    reach: reach_of(&near, &shares, level),
-                    apart,
+                .map(|(level, apart)| {
+                    let swung = soon.swung_by(level);
+                    let mut reach = reach_of(&near, &shares, level);
+                    reach[WHOLE] = reach[WHOLE].max(swung);
+                    let steady = apart.iter().copied().fold(0.0, f64::max);
+                    let transient = if steady > 0.0 {
+                        (swung / steady).max(1.0)
+                    } else {
+                        1.0
+                    };
+                    Anchor {
+                        level,
+                        reach,
+                        apart,
+                        transient,
+                    }
                 })
                 .collect(),
             ringing: reach_of(&later, &shares, 0.0),
             tones,
+            hints: Hints::default(),
         })
     }
 
@@ -209,6 +264,9 @@ impl BandGains {
                 held = held.max(partitioned);
                 break;
             }
+            if loudest_yet > 0.0 && self.hinted(heights) <= held.max(floor) {
+                continue;
+            }
             held = held.max(self.solved(heights, partitioned, held.max(floor)));
         }
         held + ring
@@ -221,26 +279,57 @@ impl BandGains {
             .fold(f64::INFINITY, f64::min)
     }
 
+    fn hinted(&self, heights: &Heights) -> f64 {
+        self.hints
+            .held()
+            .iter()
+            .filter_map(|hint| {
+                let anchor = self.anchors.get(hint.anchor)?;
+                let level = anchor.level.abs() * heights[WHOLE];
+                let prices = priced(heights, anchor.transient);
+                Some(level + self.tones.paid_by(&hint.weights, &prices, &anchor.apart))
+            })
+            .fold(f64::INFINITY, f64::min)
+    }
+
     fn solved(&self, heights: &Heights, partitioned: f64, floor: f64) -> f64 {
         let mut solving = Solving::over(&self.tones, heights);
-        let mut ranked: Vec<(f64, &Anchor)> = self
+        let mut ranked: Vec<(f64, (usize, &Anchor))> = self
             .anchors
             .iter()
-            .map(|anchor| {
+            .enumerate()
+            .map(|(index, anchor)| {
                 let level = anchor.level.abs() * heights[WHOLE];
-                (level + solving.heard_alone(&anchor.apart), anchor)
+                (
+                    level + solving.heard_alone(&anchor.apart, anchor.transient),
+                    (index, anchor),
+                )
             })
             .collect();
         ranked.sort_by(|left, right| left.0.total_cmp(&right.0));
         let mut least = partitioned;
-        for (at_least, anchor) in ranked {
+        let mut solved_by = None;
+        for (at_least, (index, anchor)) in ranked {
             if least <= floor || at_least >= least {
                 break;
             }
             let level = anchor.level.abs() * heights[WHOLE];
-            if let Some(spread) = solving.bound(&anchor.apart, least - level) {
-                least = least.min(level + spread);
+            if let Some(paid) = solving.bound(
+                &anchor.apart,
+                anchor.transient,
+                least - level,
+                floor - level,
+            ) && level + paid.paid < least
+            {
+                least = level + paid.paid;
+                solved_by = Some(Hint {
+                    anchor: index,
+                    weights: paid.weights,
+                });
             }
+        }
+        if let Some(hint) = solved_by {
+            self.hints.keep(hint);
         }
         least
     }
@@ -337,6 +426,25 @@ impl Soon {
             })
             .collect();
         Self { centre, from, taps }
+    }
+
+    fn swung_by(&self, level: f64) -> f64 {
+        let centre = self.centre - self.from;
+        self.taps
+            .iter()
+            .map(|taps| {
+                taps.iter()
+                    .enumerate()
+                    .map(|(at, tap)| {
+                        if at == centre {
+                            (tap - level).abs()
+                        } else {
+                            tap.abs()
+                        }
+                    })
+                    .sum::<f64>()
+            })
+            .fold(0.0, f64::max)
     }
 
     fn spread_over(&self, levels: &[f64], spans: &[(f64, f64)], rate: SampleRate) -> Vec<Vec<f64>> {
@@ -437,6 +545,12 @@ fn faded(taps: &mut [f64], cut_before: bool) {
             *tap *= fade(into);
         }
     }
+}
+
+fn priced(heights: &Heights, transient: f64) -> Heights {
+    let mut prices = heights.map(|height| height.max(0.0));
+    prices[WHOLE] *= transient;
+    prices
 }
 
 fn cheapest(reach: &Heights, heights: &Heights) -> f64 {
@@ -817,7 +931,8 @@ mod tests {
                         .iter()
                         .map(|anchor| {
                             anchor.level.abs() * heights[WHOLE]
-                                + Solving::over(&gains.tones, &heights).heard_alone(&anchor.apart)
+                                + Solving::over(&gains.tones, &heights)
+                                    .heard_alone(&anchor.apart, anchor.transient)
                         })
                         .fold(f64::INFINITY, f64::min);
 

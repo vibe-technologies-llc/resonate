@@ -209,10 +209,21 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   sample**: the near response is transformed on `ENVELOPE_BINS_A_TAP` (32) bins a tap and each
   bin pays `|Z - c| + (pi/N)|Z'| + (pi/N)^2/2 * sum (tau - e)^2 |h|` (its value, slope and a bound on
   its curvature), so a comb's teeth between points (an echo inside the window) are paid in full.
-  **The whole signal's node is left out of the programme**: its peak is paid through the level
-  alone (`c * x` is exact), since with it the solution passed the decode of transients through a
-  phase-turning curve by up to 0.38 dB (`turned`, an allpass pair over noise and over a kick, hat
-  and pads); nodes of up to fifteen bands stayed over every decode. **A node that held nothing
+  **The whole signal's node is priced at its own transient gain**: with `r` the near window less `c`
+  at its main lobe (`Soon::swung_by`, the most of any channel), the term `r * x` peaks at most at
+  `L1(r) * P_W` whatever the music (Young's inequality), so the partition's root reaches at least
+  `L1(r)` and the programme holds the whole node with its price multiplied by `L1(r)` over the most
+  `D` reaches (`Anchor::transient`, never under 1): alone it costs that rigorous term, and it joins
+  the other nodes no cheaper. At its steady price the root passed under the decode of a curve that
+  only turns phase, claiming at level 0 that `|G| = 1` could never raise a peak: an allpass pair
+  alone (300 Hz and 3 kHz, Q 4) bounded noise 0.91 dB and a kick, hat and pads 0.81 dB under their
+  decodes (`a phase turned and nothing else` in the test below); in the programme at its steady
+  price it passed the decode of a turned curve by up to 0.38 dB, which is why it was once left out.
+  Every other node keeps its steady price: weighing each by its band's transient gain too (the L1
+  of the near response filtered by the node's band, over the band's own, over its steady gain) was
+  measured and dropped, since a dispersive correction's band responses have an L1 far over their
+  steady gain (a dispersive burst bounded 6 to 12 dB looser) and it moved the mean of the corpus
+  below from 2.36 to 2.89 dB over the decode while the root alone holds every case. **A node that held nothing
   covers nothing** (`Solving::covering`): it is left out of the programme (its room, its prices,
   its columns), never offered as a free coverer. Every band's filter leaks into its neighbours, so
   a node reads nothing beside one that held something only in figures no decode makes
@@ -239,8 +250,9 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   responses as `heard_at` does (profile group outer, correction channel inner), so near and whole
   are subtracted channel for channel. **What is rigorous and what is not**: the sum over a
   partition is exact, the moments hold every stretch with its neighbours, the codes round up, the
-  near envelope holds between bins and the ring is bounded by the whole song, but `|G - c| * peak`
-  bounds a term's peak exactly only for a steady tone or a sustained sum of tones; a transient
+  near envelope holds between bins, the ring is bounded by the whole song and the whole node alone
+  pays its L1, but `|G - c| * peak` bounds a narrower node's term exactly only for a steady tone or
+  a sustained sum of tones; a transient
   through a resonant or phase-turning curve can pass it by up to the filter's L1-to-peak ratio, the
   band peaks are read at each sample and its cubic midpoint scaled by a tone's shortfall at the
   band's reach, the bank is zero-phase only to within its margin (`analysis.md`), and the bank's
@@ -251,7 +263,13 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   lift padded to ten seconds), 375 cases with the decode above -20 dBFS: the bound sat 3.21 dB over
   the decode on average before, 2.87 with the window split around the main lobe and 2.02 solved
   (1.66, 1.64 and 0.98 with no correction; 3.49, 1.95 and 1.25 under the bass lift), never under
-  it (0.03 dB at least). The bound holds over the decode across eight songs and thirteen curves
+  it (0.03 dB at least). With the whole node at its transient price, over the same eight songs
+  under fifteen curves alone (the thirteen, the allpass pair alone and no curve) and five of them
+  under each of nine corrections (the seven below, an echo half a second late and a comb a second
+  long), 469 cases above -20 dBFS: 2.36 dB over the decode on average before and 2.35 after, 0.82
+  and 0.95 with no correction (the allpass pair alone from 0.91 under to 3.03 over; curves the
+  root's steady price had served bound up to 1.2 dB looser), 2.21 and 2.16 under a correction (up
+  to 1.6 dB tighter where the whole node joins the solution), 0.001 dB over at least. The bound holds over the decode across eight songs and fourteen curves
   (`the_bound_holds_over_what_the_decode_measures_whatever_the_curve_and_where_the_music_sounds`)
   and under seven corrections (a boosting pair of taps, a lowpassing one, an echo, a dispersive
   burst, a response held back 0.3 s, a short linear-phase low pass and a linear-phase bass lift a
@@ -275,8 +293,17 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   passes over every node whose dual weight is exactly zero (four in five of them), and the entering
   column is summed with its rows interleaved. Each is the same additions in the same order, so
   every bound is bit for bit what it was (`RESONATE_BENCH_BOUNDS=<file>` writes the bench's bounds
-  to compare). `Loudest::weigh` calls `bound_beside(peaks, loudest_yet)`, which solves no moment
-  that cannot raise what the fold already holds. The old
+  to compare). The whole node's honest price leaves the partition looser, so more moments are
+  solved (a bound about 0.5 ms a song on a loaded machine), and the fold proves sooner that a
+  moment cannot win: `Loudest::weigh` calls `bound_beside(peaks, loudest_yet)`, which solves no
+  moment whose partition cannot raise what the fold already holds, passes over one that the dual
+  weights of any of the last `HINTS_KEPT` (4) solved moments (`Hints`, kept beside the gains,
+  `Tones::paid_by`) already bound under it, and stops a level as soon as it pays under it
+  (`Solving::bound`'s `enough_at`). Each of those answers is a feasible answer of the programme,
+  so the fold is never under the programme's optimum, though it may stop under the loudest
+  `bound` by the solver's 0.1 %; the bench's folds equal their loudest bound, and a folded song
+  costs about 15 us (50 before the whole node came in, 156 before any of this). `bound` alone
+  uses no hint and is the same whatever was folded before. The old
   estimate, the true peak times the mean gain weighted by each band's energy, is gone: a loud
   sustained band hid the quiet band where the peak gathered. `Loudest::weigh` takes the peaks.
 - **The set is the catalog's kept bands plus the queue's unmeasured songs, bounded.**
