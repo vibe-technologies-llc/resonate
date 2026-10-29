@@ -18,9 +18,10 @@ use resonate_audio::{
     AudioSource, Backend, Error as SinkError, HardwareVolume, LatencyRequest, MediaRole, Opener,
     SinkChange, SinkId, SinkInfo, SinkResult, SinkStream, StreamEvent, StreamRequest, Surveyor,
 };
+use resonate_codec::{DecodeStatus, Decoder, Sources};
 use resonate_core::{
-    ChannelLayout, Frames, Gain, MediaLocation, SampleFormat, SampleRate, StreamSpec, TrackId,
-    Volume,
+    AudioBuffer, ChannelLayout, Frames, Gain, MediaLocation, SampleFormat, SampleRate, StreamSpec,
+    TrackId, Volume,
 };
 use resonate_engine::{Command, EngineConfig, Event, NodeName, Player, QueueItem};
 use resonate_upnp::{Beside, FirstSearch, Network, Searching};
@@ -45,8 +46,34 @@ const SOONER_THAN: Duration = Duration::from_millis(400);
 
 const PAST_THE_FADE_IN: Duration = Duration::from_millis(50);
 
+const WAVE_ONLY: &str = "http-get:*:audio/mpeg:*,http-get:*:audio/wav:*";
+
+#[derive(Clone, Copy)]
+struct Profile {
+    sink: &'static str,
+    openhome: bool,
+}
+
+impl Profile {
+    const fn wave() -> Self {
+        Self {
+            sink: WAVE_ONLY,
+            openhome: false,
+        }
+    }
+}
+
+impl Default for Profile {
+    fn default() -> Self {
+        Self::wave()
+    }
+}
+
 #[derive(Default)]
 struct Heard {
+    profile: Profile,
+    openhome: Vec<(String, String)>,
+    fetch_began: Option<Instant>,
     calls: Vec<(String, String)>,
     offered: Option<String>,
     offers: Vec<String>,
@@ -73,6 +100,12 @@ impl Heard {
     }
 
     fn heard_for(&self) -> Duration {
+        if !self.fetched.starts_with(b"RIFF") {
+            return self
+                .fetch_began
+                .map(|began| began.elapsed())
+                .unwrap_or_default();
+        }
         let Some(per_second) = self
             .fetched
             .get(BYTES_A_SECOND_AT..BYTES_A_SECOND_AT + 4)
@@ -93,11 +126,18 @@ struct Fake {
 
 impl Fake {
     fn start() -> Self {
+        Self::with(Profile::wave())
+    }
+
+    fn with(profile: Profile) -> Self {
         let ssdp = UdpSocket::bind("127.0.0.1:0").expect("a loopback socket for the search");
         let http = TcpListener::bind("127.0.0.1:0").expect("a loopback listener");
         let search_at = ssdp.local_addr().expect("the search address");
         let described_at = http.local_addr().expect("the description address");
-        let heard = Arc::new(Mutex::new(Heard::default()));
+        let heard = Arc::new(Mutex::new(Heard {
+            profile,
+            ..Heard::default()
+        }));
 
         let searched = Arc::clone(&heard);
         thread::spawn(move || answer_searches(&ssdp, described_at, &searched));
@@ -151,7 +191,14 @@ fn answer_searches(ssdp: &UdpSocket, described_at: SocketAddr, heard: &Mutex<Hea
     }
 }
 
-fn description() -> String {
+fn description(openhome: bool) -> String {
+    let extra = if openhome {
+        r#"<service><serviceType>urn:av-openhome-org:service:Product:1</serviceType><controlURL>/oh/product</controlURL></service>
+      <service><serviceType>urn:av-openhome-org:service:Playlist:1</serviceType><controlURL>/oh/playlist</controlURL></service>
+      <service><serviceType>urn:av-openhome-org:service:Volume:1</serviceType><controlURL>/oh/volume</controlURL></service>"#
+    } else {
+        ""
+    };
     format!(
         r#"<?xml version="1.0"?>
 <root xmlns="urn:schemas-upnp-org:device-1-0">
@@ -163,6 +210,7 @@ fn description() -> String {
       <service><serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType><controlURL>control/av</controlURL></service>
       <service><serviceType>urn:schemas-upnp-org:service:RenderingControl:1</serviceType><controlURL>/rc</controlURL></service>
       <service><serviceType>urn:schemas-upnp-org:service:ConnectionManager:1</serviceType><controlURL>/cm</controlURL></service>
+      {extra}
     </serviceList>
   </device>
 </root>"#
@@ -208,7 +256,8 @@ fn answer(mut stream: TcpStream, heard: &Arc<Mutex<Heard>>) {
     let body = String::from_utf8_lossy(&body).into_owned();
 
     if method == "GET" && path == "/device/description.xml" {
-        let description = description();
+        let openhome = heard.lock().profile.openhome;
+        let description = description(openhome);
         let (first, second) = description.split_at(description.len() / 2);
         let chunked = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: text/xml\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{first}\r\n{:x}\r\n{second}\r\n0\r\n\r\n",
@@ -227,13 +276,30 @@ fn answer(mut stream: TcpStream, heard: &Arc<Mutex<Heard>>) {
                 .map(|(_, action)| action.to_owned())
         })
         .unwrap_or_default();
+    if path.starts_with("/oh/") {
+        heard.lock().openhome.push((action.clone(), body.clone()));
+        let arguments = match action.as_str() {
+            "Characteristics" => "<VolumeMax>50</VolumeMax><VolumeUnity>25</VolumeUnity>",
+            "Volume" => "<Value>20</Value>",
+            _ => "",
+        };
+        let envelope = format!(
+            "<?xml version=\"1.0\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body><u:{action}Response xmlns:u=\"urn:av-openhome-org:service:Volume:1\">{arguments}</u:{action}Response></s:Body></s:Envelope>"
+        );
+        let answer = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/xml\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{envelope}",
+            envelope.len()
+        );
+        let _ = stream.write_all(answer.as_bytes());
+        return;
+    }
     heard.lock().calls.push((action.clone(), body.clone()));
 
     let arguments = match action.as_str() {
-        "GetProtocolInfo" => {
-            "<Source></Source><Sink>http-get:*:audio/mpeg:*,http-get:*:audio/wav:*</Sink>"
-                .to_owned()
-        }
+        "GetProtocolInfo" => format!(
+            "<Source></Source><Sink>{}</Sink>",
+            heard.lock().profile.sink
+        ),
         "GetVolume" => "<CurrentVolume>40</CurrentVolume>".to_owned(),
         "SetAVTransportURI" => {
             let mut heard = heard.lock();
@@ -294,6 +360,7 @@ fn fetch(heard: &Arc<Mutex<Heard>>) {
             return;
         }
         heard.fetching = Some(offered.clone());
+        heard.fetch_began = Some(Instant::now());
         heard.fetched.clear();
         heard.fetch_ended = false;
         offered
@@ -792,6 +859,10 @@ fn contains(fetched: &[u8], pcm: &[u8]) -> bool {
     let Some(fetched) = fetched.get(WAVE_HEADER_BYTES..) else {
         return false;
     };
+    within(fetched, pcm)
+}
+
+fn within(fetched: &[u8], pcm: &[u8]) -> bool {
     let opening = &pcm[..STRIDE * 4];
     fetched
         .windows(opening.len())
@@ -810,4 +881,367 @@ fn drained_within(events: &Receiver<StreamEvent>) -> Option<StreamEvent> {
         }
     }
     None
+}
+
+const FLAC_AND_WAVE: &str =
+    "http-get:*:audio/mpeg:*,http-get:*:audio/wav:*,http-get:*:audio/flac:*";
+
+const FLAC_WITH_SIX_CHANNELS: &str =
+    "http-get:*:audio/flac;channels=2:*,http-get:*:audio/flac;channels=6:*";
+
+const WAVE_WITH_SIX_CHANNELS: &str =
+    "http-get:*:audio/wav;channels=2:*,http-get:*:audio/wav;channels=6:*";
+
+const EXTENSIBLE_HEADER_BYTES: usize = 68;
+
+const FRONT_AND_REAR_AND_CENTRE_AND_LFE: u32 = 0x3F;
+
+fn decoded(tree: &Tree, flac: &[u8], format: SampleFormat) -> Vec<u8> {
+    let path = tree.write("fetched.flac", flac);
+    let (mut decoder, info) =
+        Decoder::open(&Sources::local(), &MediaLocation::local(&path)).expect("a FLAC stream");
+    decoder.set_output_format(format);
+    let mut block = AudioBuffer::empty(StreamSpec::new(info.spec.rate, info.spec.channels, format));
+    let mut samples = Vec::new();
+    while decoder.next_block(&mut block).expect("a decoded block") != DecodeStatus::EndOfStream {
+        samples.extend_from_slice(block.as_bytes());
+    }
+    samples
+}
+
+fn decoded_by_the_flac_tool(tree: &Tree, flac: &[u8]) -> Option<Vec<u8>> {
+    let path = tree.write("by-the-tool.flac", flac);
+    let output = process::Command::new("flac")
+        .args([
+            "--decode",
+            "--silent",
+            "--stdout",
+            "--force-raw-output",
+            "--endian=little",
+            "--sign=signed",
+        ])
+        .arg(&path)
+        .output()
+        .ok()?;
+    output.status.success().then_some(output.stdout)
+}
+
+struct Pattern {
+    channels: u32,
+    frame: u32,
+    frames: u32,
+}
+
+impl Pattern {
+    fn word(frame: u32, channel: u32) -> i32 {
+        ((frame * 131 + channel * 100_003) % 8_000_000) as i32 - 4_000_000
+    }
+
+    fn expected(channels: u32, frames: u32) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for frame in 0..frames {
+            for channel in 0..channels {
+                bytes.extend_from_slice(&Self::word(frame, channel).to_le_bytes());
+            }
+        }
+        bytes
+    }
+}
+
+impl AudioSource for Pattern {
+    fn fill(&mut self, dst: &mut [u8]) -> usize {
+        let stride = self.channels as usize * 4;
+        let mut filled = 0;
+        while filled + stride <= dst.len() && self.frame < self.frames {
+            for channel in 0..self.channels {
+                let at = filled + channel as usize * 4;
+                dst[at..at + 4].copy_from_slice(&Self::word(self.frame, channel).to_le_bytes());
+            }
+            filled += stride;
+            self.frame += 1;
+        }
+        filled
+    }
+}
+
+fn packed_words(words: &[u8]) -> Vec<u8> {
+    words
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .flat_map(|word| word[..3].to_vec())
+        .collect()
+}
+
+fn pattern_stream(
+    backend: &Beside,
+    sink: &SinkInfo,
+    spec: StreamSpec,
+    frames: u32,
+) -> SinkResult<SinkStream> {
+    backend.opener().open(
+        &StreamRequest {
+            target: Some(sink.id),
+            spec,
+            latency: LatencyRequest::Auto,
+            role: MediaRole::Music,
+            media_name: "Pattern".to_owned(),
+            force_graph_rate: false,
+            no_convert: true,
+            realtime: true,
+        },
+        Box::new(Pattern {
+            channels: u32::from(spec.channel_count().get()),
+            frame: 0,
+            frames,
+        }),
+    )
+}
+
+fn surround_stream(backend: &Beside, sink: &SinkInfo, frames: u32) -> SinkResult<SinkStream> {
+    pattern_stream(
+        backend,
+        sink,
+        StreamSpec::new(
+            SampleRate::HZ_48000,
+            ChannelLayout::Surround51,
+            SampleFormat::S24,
+        ),
+        frames,
+    )
+}
+
+#[test]
+fn a_song_played_to_a_renderer_taking_flac_is_sent_flac_that_decodes_to_the_samples_played() {
+    let fake = Fake::with(Profile {
+        sink: FLAC_AND_WAVE,
+        openhome: false,
+    });
+    let network =
+        Arc::new(Network::start(fake.searching(), FirstSearch::Awaited).expect("searches"));
+    let tree = Tree::new();
+    let pcm = music(RATE as usize * 3 / 4);
+    let path = tree.write("song.wav", &wave_file(&pcm));
+    let player = playing_on(&network);
+
+    loaded(&player, &path);
+    finished(&player);
+    fake.until("the fetch to end once drained", |heard| heard.fetch_ended);
+
+    let heard = fake.heard.lock();
+    let offered = heard.offered.as_deref().expect("an address was offered");
+    assert!(offered.ends_with(".flac"), "offered {offered}");
+    assert!(
+        heard
+            .body_of("SetAVTransportURI")
+            .is_some_and(|body| body.contains("protocolInfo=&quot;http-get:*:audio/flac:*&quot;"))
+    );
+    assert_eq!(&heard.fetched[..4], b"fLaC");
+    assert!(
+        heard.fetched.len() < pcm.len(),
+        "{} bytes of FLAC for {} of PCM",
+        heard.fetched.len(),
+        pcm.len()
+    );
+
+    let samples = decoded(&tree, &heard.fetched, SampleFormat::S16);
+    assert!(within(&samples, &pcm), "the decoded stream lacks the song");
+    if let Some(by_the_tool) = decoded_by_the_flac_tool(&tree, &heard.fetched) {
+        assert_eq!(by_the_tool, samples, "two decoders disagree on the stream");
+    }
+}
+
+#[test]
+fn a_renderer_that_states_channels_is_sent_all_six_of_a_surround_stream_in_flac_and_in_wave() {
+    let frames = 48_000 / 2;
+    let expected = Pattern::expected(6, frames);
+
+    let flac = Fake::with(Profile {
+        sink: FLAC_WITH_SIX_CHANNELS,
+        openhome: false,
+    });
+    let network = Network::start(flac.searching(), FirstSearch::Awaited).expect("searches");
+    let sink = the_renderer(&network);
+    assert!(sink.supports(StreamSpec::new(
+        SampleRate::HZ_48000,
+        ChannelLayout::Surround51,
+        SampleFormat::S24
+    )));
+    let backend = Beside::over(Box::new(NoGraph::new()), Arc::new(network));
+    let stream = surround_stream(&backend, &sink, frames).expect("the renderer takes six channels");
+    stream.set_active(true).expect("plays");
+    stream.drain().expect("drains");
+    flac.until("the fetch to end once drained", |heard| heard.fetch_ended);
+    stream.close().expect("closes");
+
+    let tree = Tree::new();
+    let heard = flac.heard.lock();
+    assert_eq!(&heard.fetched[..4], b"fLaC");
+    assert_eq!(
+        decoded(&tree, &heard.fetched, SampleFormat::S24),
+        expected,
+        "the six channels did not come back from the FLAC as they went in"
+    );
+    drop(heard);
+
+    let wave = Fake::with(Profile {
+        sink: WAVE_WITH_SIX_CHANNELS,
+        openhome: false,
+    });
+    let network = Network::start(wave.searching(), FirstSearch::Awaited).expect("searches");
+    let sink = the_renderer(&network);
+    let backend = Beside::over(Box::new(NoGraph::new()), Arc::new(network));
+    let stream = surround_stream(&backend, &sink, frames).expect("the renderer takes six channels");
+    stream.set_active(true).expect("plays");
+    stream.drain().expect("drains");
+    wave.until("the fetch to end once drained", |heard| heard.fetch_ended);
+    stream.close().expect("closes");
+
+    let heard = wave.heard.lock();
+    let fetched = &heard.fetched;
+    assert_eq!(&fetched[..4], b"RIFF");
+    assert_eq!(u16::from_le_bytes([fetched[20], fetched[21]]), 0xFFFE);
+    assert_eq!(u16::from_le_bytes([fetched[22], fetched[23]]), 6);
+    assert_eq!(
+        u16::from_le_bytes([fetched[32], fetched[33]]),
+        18,
+        "six channels of three bytes make a block of eighteen"
+    );
+    assert_eq!(u16::from_le_bytes([fetched[34], fetched[35]]), 24);
+    assert_eq!(u16::from_le_bytes([fetched[38], fetched[39]]), 24);
+    assert_eq!(
+        u32::from_le_bytes([fetched[40], fetched[41], fetched[42], fetched[43]]),
+        FRONT_AND_REAR_AND_CENTRE_AND_LFE
+    );
+    assert_eq!(&fetched[44..48], &[1, 0, 0, 0]);
+    assert_eq!(&fetched[60..64], b"data");
+    let packed = packed_words(&expected);
+    assert_eq!(&fetched[EXTENSIBLE_HEADER_BYTES..], packed.as_slice());
+}
+
+#[test]
+fn a_renderer_that_does_not_state_channels_is_offered_stereo_alone() {
+    let fake = Fake::with(Profile {
+        sink: FLAC_AND_WAVE,
+        openhome: false,
+    });
+
+    let network = Network::start(fake.searching(), FirstSearch::Awaited).expect("searches");
+    let sink = the_renderer(&network);
+
+    assert!(sink.supports(stereo_sixteen()));
+    assert!(!sink.supports(StreamSpec::new(
+        SampleRate::HZ_48000,
+        ChannelLayout::Surround51,
+        SampleFormat::S24
+    )));
+}
+
+#[test]
+fn a_renderer_offering_openhome_volume_is_turned_through_it_and_its_playlist_is_left_alone() {
+    let fake = Fake::with(Profile {
+        sink: WAVE_ONLY,
+        openhome: true,
+    });
+    let network = Network::start(fake.searching(), FirstSearch::Awaited).expect("searches");
+    let sink = the_renderer(&network);
+    let backend = Beside::over(Box::new(NoGraph::new()), Arc::new(network));
+
+    let port = sink.port.as_ref().expect("a renderer names where it is");
+    assert_eq!(port.hardware_volume, HardwareVolume::Always);
+    let volume = Volume::heard_at(port.volume.expect("the renderer's volume was read"));
+    assert!(
+        (volume.get() - 0.4).abs() < 1e-4,
+        "20 steps of 50 are {volume:?}"
+    );
+
+    backend
+        .set_device_volume(sink.id, Volume::new(0.5).expect("a volume").to_gain())
+        .expect("turns");
+    backend.set_device_mute(sink.id, true).expect("mutes");
+    fake.until("the renderer to be muted", |heard| {
+        heard.openhome.iter().any(|(action, _)| action == "SetMute")
+    });
+
+    let heard = fake.heard.lock();
+    let openhome: Vec<&str> = heard
+        .openhome
+        .iter()
+        .map(|(action, _)| action.as_str())
+        .collect();
+    assert_eq!(
+        openhome,
+        ["Characteristics", "Volume", "SetVolume", "SetMute"]
+    );
+    assert!(heard.openhome[2].1.contains("<Value>25</Value>"));
+    assert!(heard.openhome[3].1.contains("<Value>true</Value>"));
+    assert_eq!(
+        heard.actions(),
+        ["GetProtocolInfo"],
+        "RenderingControl was asked beside the OpenHome service that turns the volume"
+    );
+}
+
+#[test]
+fn flac_carries_twenty_four_bits_up_to_ninety_six_kilohertz_bit_for_bit_and_wave_the_rates_above() {
+    for rate in [
+        SampleRate::HZ_44100,
+        SampleRate::HZ_88200,
+        SampleRate::HZ_96000,
+    ] {
+        let fake = Fake::with(Profile {
+            sink: FLAC_AND_WAVE,
+            openhome: false,
+        });
+        let network = Network::start(fake.searching(), FirstSearch::Awaited).expect("searches");
+        let sink = the_renderer(&network);
+        let backend = Beside::over(Box::new(NoGraph::new()), Arc::new(network));
+        let spec = StreamSpec::new(rate, ChannelLayout::Stereo, SampleFormat::S24);
+        let frames = rate.hz() / 3;
+
+        let stream = pattern_stream(&backend, &sink, spec, frames).expect("the renderer takes it");
+        stream.set_active(true).expect("plays");
+        stream.drain().expect("drains");
+        fake.until("the fetch to end once drained", |heard| heard.fetch_ended);
+        stream.close().expect("closes");
+
+        let tree = Tree::new();
+        let heard = fake.heard.lock();
+        assert_eq!(heard.fetched.get(..4), Some(&b"fLaC"[..]), "{rate:?}");
+        assert_eq!(
+            decoded(&tree, &heard.fetched, SampleFormat::S24),
+            Pattern::expected(2, frames),
+            "{rate:?} did not come back from the FLAC as it went in"
+        );
+    }
+}
+
+#[test]
+fn a_rate_flac_cannot_carry_is_sent_as_wave_to_a_renderer_taking_both() {
+    let fake = Fake::with(Profile {
+        sink: FLAC_AND_WAVE,
+        openhome: false,
+    });
+    let network = Network::start(fake.searching(), FirstSearch::Awaited).expect("searches");
+    let sink = the_renderer(&network);
+    let backend = Beside::over(Box::new(NoGraph::new()), Arc::new(network));
+    let spec = StreamSpec::new(
+        SampleRate::HZ_192000,
+        ChannelLayout::Stereo,
+        SampleFormat::S24,
+    );
+    let frames = 192_000 / 4;
+
+    let stream = pattern_stream(&backend, &sink, spec, frames).expect("the renderer takes it");
+    stream.set_active(true).expect("plays");
+    stream.drain().expect("drains");
+    fake.until("the fetch to end once drained", |heard| heard.fetch_ended);
+    stream.close().expect("closes");
+
+    let heard = fake.heard.lock();
+    let offered = heard.offered.as_deref().expect("an address was offered");
+    assert!(offered.ends_with(".wav"), "offered {offered}");
+    assert_eq!(&heard.fetched[..4], b"RIFF");
+    let packed = packed_words(&Pattern::expected(2, frames));
+    assert_eq!(&heard.fetched[WAVE_HEADER_BYTES..], packed.as_slice());
 }

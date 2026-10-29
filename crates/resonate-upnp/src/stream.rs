@@ -17,7 +17,7 @@ use resonate_audio::{
 use resonate_core::{Frames, SampleFormat};
 
 use crate::{
-    Action, Asked, Error, Renderer, Result, Udn,
+    Action, Asked, Carriage, Error, Renderer, Result, Udn,
     feed::Feed,
     serve::{Server, Token},
 };
@@ -91,9 +91,10 @@ pub(crate) fn open(
     source: Box<dyn AudioSource>,
 ) -> SinkResult<SinkStream> {
     let spec = request.spec;
-    if !renderer.carriage().carries(spec) {
-        return Err(Error::FormatRefused(spec).into());
-    }
+    let carriage = renderer
+        .carriage_for(spec)
+        .ok_or(Error::FormatRefused(spec))?
+        .clone();
 
     let hold = Hold {
         lane: holders.lane(renderer.udn()),
@@ -102,7 +103,7 @@ pub(crate) fn open(
     let clock = Arc::new(StreamClock::behind_by(Frames::ZERO));
     let feed = Arc::new(Feed::new(
         spec,
-        renderer.carriage().clone(),
+        carriage.clone(),
         source,
         Arc::clone(&clock),
     ));
@@ -114,7 +115,7 @@ pub(crate) fn open(
         {
             tracing::debug!(%error, renderer = %renderer.udn(), "a renderer did not stop what it held before a new stream");
         }
-        if let Err(error) = offered(&renderer, server, token, request) {
+        if let Err(error) = offered(&renderer, &carriage, server, token, request) {
             *held = None;
             server.withdraw(token);
             return Err(error.into());
@@ -163,6 +164,7 @@ pub(crate) fn open(
 
 fn offered(
     renderer: &Renderer,
+    carriage: &Carriage,
     server: &Server,
     token: Token,
     request: &StreamRequest,
@@ -174,8 +176,8 @@ fn offered(
             asked: Asked::Action(Action::SetAvTransportUri),
             source,
         })?;
-    let address = server.address_toward(reached, token, renderer.carriage().extension())?;
-    renderer.set_uri(&address, &request.media_name, request.spec)
+    let address = server.address_toward(reached, token, carriage.extension())?;
+    renderer.set_uri(carriage, &address, &request.media_name, request.spec)
 }
 
 struct Watch {

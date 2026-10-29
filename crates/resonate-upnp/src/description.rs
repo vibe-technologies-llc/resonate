@@ -13,6 +13,8 @@ const TRANSPORT_KIND: &str = ":service:AVTransport:";
 
 const RENDERING_KIND: &str = ":service:RenderingControl:";
 
+const OPENHOME_VOLUME_KIND: &str = "urn:av-openhome-org:service:Volume:";
+
 const CONNECTION_KIND: &str = ":service:ConnectionManager:";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -27,6 +29,7 @@ pub(crate) struct Described {
     pub name: String,
     pub transport: Service,
     pub rendering: Option<Service>,
+    pub openhome_volume: Option<Service>,
     pub connection: Option<Service>,
 }
 
@@ -97,6 +100,7 @@ pub(crate) fn read(location: &Located, text: &str) -> Result<Described> {
         name: name.to_owned(),
         transport,
         rendering: service_of(*device, &base, RENDERING_KIND),
+        openhome_volume: service_of(*device, &base, OPENHOME_VOLUME_KIND),
         connection: service_of(*device, &base, CONNECTION_KIND),
     })
 }
@@ -195,6 +199,26 @@ mod tests {
             Some("http://10.0.0.4:1400/MediaRenderer/RenderingControl/Control".to_owned())
         );
         assert!(described.connection.is_some());
+    }
+
+    #[test]
+    fn an_openhome_volume_service_is_read_beside_the_upnp_ones_and_a_playlist_is_not_looked_for() {
+        let location = Located::parse("http://10.0.0.4:80/d.xml").expect("reads");
+        let text = r#"<root><device><deviceType>urn:schemas-upnp-org:device:MediaRenderer:1</deviceType><UDN>uuid:oh</UDN><serviceList>
+            <service><serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType><controlURL>/av</controlURL></service>
+            <service><serviceType>urn:av-openhome-org:service:Playlist:1</serviceType><controlURL>/playlist</controlURL></service>
+            <service><serviceType>urn:av-openhome-org:service:Volume:1</serviceType><controlURL>/volume</controlURL></service>
+            </serviceList></device></root>"#;
+
+        let described = read(&location, text).expect("describes a renderer");
+
+        assert_eq!(
+            described
+                .openhome_volume
+                .map(|service| service.control.to_string()),
+            Some("http://10.0.0.4:80/volume".to_owned())
+        );
+        assert!(described.rendering.is_none());
     }
 
     #[test]

@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 crossbeam-channel.workspace = true
+flacenc.workspace = true
 httparse.workspace = true
 parking_lot.workspace = true
 resonate-audio.workspace = true
@@ -15,6 +16,7 @@ thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+resonate-codec.workspace = true
 resonate-engine.workspace = true
 
 [lints]

@@ -140,14 +140,13 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   seam the desktop's renderers sit behind
 - [M] An equaliser, ReplayGain or listening-test change reaches a UPnP renderer's ear only after
   what it already holds (seconds on many streamers): a seek, a pause and the volume skip that
-  buffer (a fresh address after `Stop`, the renderer's own `Pause`, its own RenderingControl), but
-  whatever is rendered into the ring plays out behind it. OpenHome's own `Playlist` and `Volume`
-  services are not spoken (an OpenHome player is reached through the AVTransport upmpdcli puts in
-  front of it)
-- [S] A UPnP renderer is fed PCM alone: WAVE or L16 at 16 or 24 bits, stereo, so a multichannel
-  source is folded down and a renderer taking FLAC is still sent uncompressed PCM, about 9 Mbit/s at
-  24-bit 192 kHz; encoding the ring to FLAC on the way out is not done, and handing the untouched
-  file over does not fit the sink seam (`upnp.md`)
+  buffer (a fresh address after `Stop`, the renderer's own `Pause`, its own RenderingControl or
+  OpenHome `Volume`), but whatever is rendered into the ring plays out behind it
+- [S] A UPnP renderer is sent FLAC only up to 96 kHz (flacenc's bound): above it a renderer taking
+  WAVE is sent uncompressed PCM, about 9 Mbit/s at 24-bit 192 kHz, and one taking FLAC alone is
+  offered nothing above 96 kHz. Channels beyond stereo are offered only where the protocol info
+  states `channels=N` (a renderer saying nothing is folded down), and handing the untouched file
+  over does not fit the sink seam (`upnp.md`)
 - [L · blocked: Apple] AirPlay 2 cannot be played to: its pairing, encryption and buffered audio
   are Apple's own, with no published specification to build against
 
