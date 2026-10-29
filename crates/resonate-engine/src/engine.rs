@@ -51,6 +51,7 @@ mod splicing;
 
 const SINK_TIMEOUT: Duration = Duration::from_secs(2);
 const SHORTEST_TICK: Duration = Duration::from_millis(4);
+const DOWNSTREAM_RESTARTED_AFTER_QUIET_FOR: Duration = Duration::from_millis(300);
 const PUBLISH_TICK: Duration = Duration::from_millis(16);
 const IDLE_TICK: Duration = Duration::from_millis(100);
 const AT_REST_TICK: Duration = Duration::from_secs(1);
@@ -939,6 +940,7 @@ pub struct Engine {
     kept: Option<Kept>,
     unbound: Option<Frames>,
     rebind_owed: bool,
+    downstream_restart_due: Option<Instant>,
     graph_lost: Option<Instant>,
     graph_last_lost: Option<Instant>,
     graph_still_away: Option<Error>,
@@ -1112,6 +1114,7 @@ impl Engine {
             kept: None,
             unbound: None,
             rebind_owed: false,
+            downstream_restart_due: None,
             graph_lost: None,
             graph_last_lost: None,
             graph_still_away: None,
@@ -1162,6 +1165,7 @@ impl Engine {
                 self.finish_reshaping();
                 self.splice_what_is_owed();
                 self.switch_what_is_owed();
+                self.restart_what_a_renderer_holds();
                 self.finish_fading();
                 self.promote();
                 self.keep_in_step();
@@ -1260,6 +1264,10 @@ impl Engine {
             budget.min(SHORTEST_TICK)
         } else {
             budget
+        };
+        let budget = match self.downstream_restart_in() {
+            Some(left) => budget.min(left.max(SHORTEST_TICK)),
+            None => budget,
         };
         let budget = match self.sleep.and_then(Sleeping::left) {
             Some(left) if left > SLEEP_FADES_OVER => budget.min(left - SLEEP_FADES_OVER),
@@ -1713,7 +1721,7 @@ impl Engine {
             }
             Command::SetEqualisation(equalisation) => {
                 self.config.equaliser = equalisation;
-                self.retune_for(Retuning::Equaliser)
+                self.retune_heard_past_the_buffer(Retuning::Equaliser)
             }
             Command::SetBitPerfect(prefer) => {
                 self.config.prefer_bit_perfect = prefer;
@@ -1861,7 +1869,7 @@ impl Engine {
             track.published = None;
             track.measure_where_wanted(&self.sources, &self.config);
         }
-        self.retune()
+        self.retune_heard_past_the_buffer(Retuning::Level)
     }
 
     fn settle_what_was_spooled(&mut self) {
@@ -2718,6 +2726,7 @@ impl Engine {
         }
         let status = output.status;
         self.outputs_made = self.outputs_made.wrapping_add(1);
+        self.downstream_restart_due = None;
         self.output = Some(Output {
             made: self.outputs_made,
             ..output
@@ -2729,6 +2738,61 @@ impl Engine {
 
     fn retune(&mut self) -> Result<()> {
         self.retune_for(Retuning::Level)
+    }
+
+    fn retune_heard_past_the_buffer(&mut self, retuning: Retuning) -> Result<()> {
+        let made = self.outputs_made;
+        let heard_otherwise = self.renders_otherwise_for_a_renderer();
+        let retuned = self.retune_for(retuning);
+        if heard_otherwise && self.outputs_made == made {
+            self.owe_a_downstream_restart();
+        }
+        retuned
+    }
+
+    fn renders_otherwise_for_a_renderer(&self) -> bool {
+        let (Some(track), Some(output)) = (self.track.as_ref(), self.output.as_ref()) else {
+            return false;
+        };
+        output.holds_seconds_downstream()
+            && !plan_for(
+                track.decoded(),
+                &output.bound,
+                output.plan.stream,
+                &self.config,
+                track.replay_gain,
+                output.attenuator,
+            )
+            .renders_alike(&output.plan)
+    }
+
+    fn owe_a_downstream_restart(&mut self) {
+        self.downstream_restart_due = Some(Instant::now() + DOWNSTREAM_RESTARTED_AFTER_QUIET_FOR);
+    }
+
+    fn downstream_restart_in(&self) -> Option<Duration> {
+        self.downstream_restart_due
+            .map(|due| due.saturating_duration_since(Instant::now()))
+    }
+
+    fn restart_what_a_renderer_holds(&mut self) {
+        let Some(due) = self.downstream_restart_due else {
+            return;
+        };
+        if Instant::now() < due || !self.boundaries.is_empty() {
+            return;
+        }
+        self.downstream_restart_due = None;
+        let holds_seconds = self
+            .output
+            .as_ref()
+            .is_some_and(Output::holds_seconds_downstream);
+        if !holds_seconds {
+            return;
+        }
+        if let Err(error) = self.rebind_where_it_stands() {
+            tracing::warn!(%error, "a renderer's buffer could not be restarted for the change made");
+        }
     }
 
     fn settings_as_set(&self) -> EngineConfig {
@@ -2816,11 +2880,19 @@ impl Engine {
         {
             return Ok(());
         }
+        let downstream = output.holds_seconds_downstream();
         if !self.boundaries.is_empty() && output.arms.is_some() {
             output.switch_owed = true;
+            if downstream {
+                self.owe_a_downstream_restart();
+            }
             return Ok(());
         }
-        match output.hear_the_other_arm() {
+        let switched = output.hear_the_other_arm();
+        if downstream {
+            self.owe_a_downstream_restart();
+        }
+        match switched {
             Splicing::Spliced(status) => {
                 self.emit(Event::OutputChanged(status));
                 Ok(())

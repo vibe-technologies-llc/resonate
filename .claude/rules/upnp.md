@@ -30,8 +30,9 @@ dev-dependency, for the end-to-end test.
   `--sink`, the settings pane's device list). Handing the renderer the source file's URL instead
   would bypass all of that and give it a timeline of its own. What it costs: the renderer holds its
   own clock and buffer, so whatever is rendered into the ring reaches the ear only after what the
-  renderer already holds; a seek, a pause and the volume are steered past that buffer (*Past the
-  renderer's buffer*), an equaliser or ReplayGain change is not (`FEATURES.md`).
+  renderer already holds; a seek, a pause, the volume and a change of what is rendered
+  (equaliser, ReplayGain, the listening test) are steered past that buffer (*Past the renderer's
+  buffer*).
 - **Why not the untouched file:** `Backend::open` is handed an `AudioSource` of the ring's PCM, never
   the file, and everything that names what plays (the queue, the boundary between rows, position,
   sleep, the heard frame) is the engine's reading of that ring. Handing a renderer the file's own
@@ -58,12 +59,17 @@ dev-dependency, for the end-to-end test.
   with no DTD and `NODES_AT_MOST` nodes; HTTP answers capped at `ANSWER_BYTES_AT_MOST` (1 MiB).
 - **What it takes decides how it is fed** (`Carriage`, from `ConnectionManager`'s
   `GetProtocolInfo` `Sink`; a renderer holds a list of them, `Carriage::accepted_by`, in preference
-  order): `audio/flac` (or `x-flac`) is `Wrapping::Flac`, S16 and S24 at 44.1 to 96 kHz (flacenc's
-  bound, which the vault shares: above it the renderer's next carriage carries the rate); `audio/wav`
+  order): `audio/flac` (or `x-flac`) is `Wrapping::Flac`, S16 and S24 at 44.1 to 96 kHz where the
+  protocol info states no rate, else at the rates it states (`rate=`) however high (*The stream*:
+  FLAC above 96 kHz); `audio/wav`
   (or `x-wav`, `wave`, `vnd.wave`) is `Wrapping::Wave`, S16 and S24 at 44.1 to 192 kHz; `audio/L16`
   is `Wrapping::L16` at the rates it lists (44.1 and 48 kHz where none), S16. None of the three is
   `Error::TakesNoCarriage` and the device is not listed. A renderer with no ConnectionManager, or
-  one that will not answer it, is offered WAVE. `Renderer::carriage_for(spec)` is the first carriage
+  one that will not answer it, is offered WAVE. A rate is taken from the protocol info as
+  channels are, never guessed: a renderer listing `audio/flac` alone is offered FLAC to 96 kHz and
+  the engine resamples what is above to a rate it is offered, a lower-fidelity choice made only
+  because the renderer did not say it decodes more, where one that also takes WAVE is sent
+  the rate bit for bit as WAVE, and one stating `audio/flac;rate=192000` is sent 192 kHz FLAC. `Renderer::carriage_for(spec)` is the first carriage
   carrying a stream's rate, word and layout, so FLAC wins wherever it can carry what WAVE would,
   and `SinkInfo::formats` is the carriages' formats united.
 - **Channels are offered where the protocol info states them, never guessed.** A `channels=N`
@@ -129,6 +135,14 @@ identifies the listener), reads a declared, chunked or close-delimited body, and
   renderer's clock for every frame. An encoder failure ends that fetch (`Error::Encoding { op }`
   with the foreign error in `tracing`). Pause costs nothing extra: nothing is pulled, so the held
   block waits with the ring.
+- **FLAC above 96 kHz is the frame writer's, not the encoder's.** flacenc refuses a STREAMINFO
+  over 96 kHz in `Stream::new`, though its frame encoder writes any rate. `flac::Live` builds the
+  stream at `min(rate, 96 kHz)`, then names the real rate: the 20-bit STREAMINFO field in the
+  head, and in each frame the header's rate code (`0010` for 176.4 kHz, `0011` for 192 kHz,
+  `0000`, taken from STREAMINFO, for any other) with the header's CRC-8 and the frame's CRC-16
+  written again over the changed bytes (`name_the_rate_in_the_frame`; the header is
+  `FRAME_NUMBER_AT` bytes, the frame number's UTF-8 bytes and the block size's 0 to 2). Blocks stay
+  8192 frames above 48 kHz.
 - **A stream's commands go to its own `resonate-upnp-stream` thread** (`Watch`), never the
   engine's: `SetActive(true)` is `Play`, `SetActive(false)` `Pause` (only once played: a stopped
   renderer faults a pause), `Close` (or the `SinkStream` dropped) `Stop`, the token withdrawn and the
@@ -150,10 +164,26 @@ identifies the listener), reads a declared, chunked or close-delimited body, and
 
 - **A renderer's stream says it holds seconds** (`SinkStream::holding(Downstream::Seconds)`, a
   `resonate-audio` vocabulary every other backend leaves at `Moments`), and the engine reads it two
-  ways (`audio.md`): a seek while playing rebinds on a fresh stream instead of discarding the ring
-  in place, and a pause stands the stream down at once with no fade written into the ring. A
-  discard in place would only change what the renderer is fed next, after the seconds it holds; a
-  fade before a pause would sit in its buffer and be heard as a dip once it resumed.
+  three ways (`audio.md`): a seek while playing rebinds on a fresh stream instead of discarding the
+  ring in place, a pause stands the stream down at once with no fade written into the ring, and a
+  change of what is rendered restarts the stream. A discard in place would only change what the
+  renderer is fed next, after the seconds it holds; a fade before a pause would sit in its buffer
+  and be heard as a dip once it resumed; a splice of the equaliser into the ring would play out
+  behind the buffer.
+- **An equaliser, ReplayGain or listening-test change restarts the stream, once, after the change
+  has been quiet for `DOWNSTREAM_RESTARTED_AFTER_QUIET_FOR` (300 ms).** The sink cannot see
+  settings, so the engine does (`Engine::retune_heard_past_the_buffer`): on `SetEqualisation`,
+  `SetReplayGain` and `SetLevelling`, and on a listening-test arm switch, where the output holds
+  seconds and the plan it would now render differs from the one it renders (`OutputPlan::renders_alike`;
+  a volume change does not, the volume being the renderer's), the usual change in the ring is made
+  (so a non-seekable track or a refused rebind still plays the change eventually) and a restart
+  is owed. Each further change pushes the due time out, so a slider drag restarts once after it
+  settles, not at every step; the due restart is `rebind_where_it_stands` at the heard position,
+  which is a fresh stream: `Stop`, a new address, `Play`, and the renderer's buffer of the old
+  sound dropped. A rebind or a track change in between builds the output from the settings as
+  they stand and cancels the owed restart; one waits while a boundary between rows is pending. The
+  cost is a gap while the renderer reloads, the length of its own start-up, which is why it waits
+  for the drag to end and why the volume is never restarted.
 - **A fresh stream stops the renderer first.** Each stream takes the renderer's `Lane` (one per
   UDN, `Holders`): a `Mutex` holding which stream steers it. `stream::open` takes it, sends `Stop`
   where another stream held it (the renderer drops its buffer) and `SetAVTransportURI` with the new
@@ -217,7 +247,13 @@ escaping, a drain told, the volume turned and the served bytes exactly as writte
 a WAVE played through a real `Player` reaching the renderer bit for bit
 (`a_song_played_through_the_engine_to_a_renderer_reaches_it_bit_for_bit`), a pause and a volume
 change reaching it within `SOONER_THAN` (400 ms) and the song resuming bit for bit after the pause
-(`a_pause_and_a_volume_change_reach_a_renderer_at_once_and_the_song_resumes_bit_for_bit`), and a
+(`a_pause_and_a_volume_change_reach_a_renderer_at_once_and_the_song_resumes_bit_for_bit`), an
+equaliser dragged through six steps restarting the stream exactly once (one `Stop`, two addresses)
+within `RESTARTED_WITHIN` of the last step with the fresh address carrying the song at the new
+level and a volume change after it leaving it alone
+(`an_equaliser_change_dragged_on_a_renderer_restarts_its_stream_once_from_where_it_is_heard`), the
+same for a ReplayGain mode and a trim
+(`a_replay_gain_change_on_a_renderer_restarts_its_stream_and_the_fresh_address_carries_it`), and a
 seek sending `Stop`, `SetAVTransportURI` with a fresh address and `Play` within it, the new fetch
 carrying the song from where it landed and nothing before
 (`a_seek_on_a_renderer_stops_it_and_offers_a_fresh_address_starting_where_it_landed`). The fake
@@ -235,7 +271,11 @@ as a `WAVE_FORMAT_EXTENSIBLE` stream with mask `0x3F` and packed words
 renderer stating nothing is offered stereo alone; S24 stereo at 44.1, 88.2 and 96 kHz returns from
 FLAC bit for bit and 192 kHz is offered as WAVE
 (`flac_carries_twenty_four_bits_up_to_ninety_six_kilohertz_bit_for_bit_and_wave_the_rates_above`,
-`a_rate_flac_cannot_carry_is_sent_as_wave_to_a_renderer_taking_both`); an OpenHome renderer reads
+`a_rate_flac_cannot_carry_is_sent_as_wave_to_a_renderer_taking_both`); a renderer stating
+`audio/flac;rate=` 176.4, 192 and 352.8 kHz is sent FLAC that returns bit for bit through the codec
+crate, whose STREAMINFO names the rate, and through the `flac` tool (CRCs included) where installed,
+a short last block of 100 frames and one of 16-bit size included
+(`flac_above_ninety_six_kilohertz_is_sent_where_the_renderer_states_the_rate_and_comes_back_bit_for_bit`); an OpenHome renderer reads
 its volume in steps of `VolumeMax` and is turned and muted through `Volume` alone, with no
 RenderingControl call and no `Playlist` call
 (`a_renderer_offering_openhome_volume_is_turned_through_it_and_its_playlist_is_left_alone`).

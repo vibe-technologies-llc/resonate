@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     env, fs,
     io::{Read, Write},
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream, UdpSocket},
@@ -21,9 +22,12 @@ use resonate_audio::{
 use resonate_codec::{DecodeStatus, Decoder, Sources};
 use resonate_core::{
     AudioBuffer, ChannelLayout, Frames, Gain, MediaLocation, SampleFormat, SampleRate, StreamSpec,
-    TrackId, Volume,
+    TrackId, Trim, Volume,
 };
-use resonate_engine::{Command, EngineConfig, Event, NodeName, Player, QueueItem};
+use resonate_engine::{
+    Command, EngineConfig, Equalisation, Event, Levelling, NodeName, Player, Preamp,
+    Profile as EqProfile, QueueItem, ReplayGainMode,
+};
 use resonate_upnp::{Beside, FirstSearch, Network, Searching};
 
 const UDN: &str = "uuid:fake-renderer";
@@ -45,6 +49,12 @@ const STRIDE: usize = 4;
 const SOONER_THAN: Duration = Duration::from_millis(400);
 
 const PAST_THE_FADE_IN: Duration = Duration::from_millis(50);
+
+const DRAGGED_EVERY: Duration = Duration::from_millis(40);
+
+const RESTARTED_WITHIN: Duration = Duration::from_millis(1_500);
+
+const QUIET_FOR: Duration = Duration::from_millis(900);
 
 const WAVE_ONLY: &str = "http-get:*:audio/mpeg:*,http-get:*:audio/wav:*";
 
@@ -847,6 +857,178 @@ fn a_seek_on_a_renderer_stops_it_and_offers_a_fresh_address_starting_where_it_la
     );
 }
 
+fn preamped(decibels: f64) -> Arc<Equalisation> {
+    Arc::new(Equalisation {
+        enabled: true,
+        bound: BTreeMap::new(),
+        fallback: Some(Arc::new(
+            EqProfile::new(
+                Preamp::from_decibels(decibels).expect("in range"),
+                Vec::new(),
+            )
+            .expect("a profile of a preamp alone"),
+        )),
+    })
+}
+
+fn loudness_of(fetched: &[u8], from: Duration, lasting: Duration) -> f64 {
+    let start = WAVE_HEADER_BYTES + pcm_bytes(from);
+    let end = start + pcm_bytes(lasting);
+    let lefts: Vec<f64> = fetched[start..end]
+        .as_chunks::<STRIDE>()
+        .0
+        .iter()
+        .map(|frame| f64::from(i16::from_le_bytes([frame[0], frame[1]])).abs())
+        .collect();
+    lefts.iter().sum::<f64>() / lefts.len() as f64
+}
+
+fn pcm_as_fetched(pcm: &[u8]) -> Vec<u8> {
+    let mut fetched = vec![0; WAVE_HEADER_BYTES];
+    fetched.extend_from_slice(pcm);
+    fetched
+}
+
+fn stops_and_offers(heard: &Heard) -> (usize, usize) {
+    let stops = heard
+        .actions()
+        .iter()
+        .filter(|action| **action == "Stop")
+        .count();
+    (stops, heard.offers.len())
+}
+
+#[test]
+fn an_equaliser_change_dragged_on_a_renderer_restarts_its_stream_once_from_where_it_is_heard() {
+    let fake = Fake::start();
+    let network =
+        Arc::new(Network::start(fake.searching(), FirstSearch::Awaited).expect("searches"));
+    let tree = Tree::new();
+    let pcm = music(RATE as usize * 4);
+    let path = tree.write("song.wav", &wave_file(&pcm));
+    let player = playing_on(&network);
+    let unchanged = loudness_of(
+        &pcm_as_fetched(&pcm),
+        Duration::ZERO,
+        Duration::from_secs(3),
+    );
+
+    loaded(&player, &path);
+    fake.until("a quarter second to be fetched", |heard| {
+        heard.fetched.len() >= WAVE_HEADER_BYTES + pcm_bytes(Duration::from_millis(250))
+    });
+    let before = loudness_of(
+        &fake.heard.lock().fetched,
+        PAST_THE_FADE_IN,
+        Duration::from_millis(150),
+    );
+    for decibels in [-1.0, -2.0, -3.0, -4.0, -5.0, -6.0] {
+        player
+            .send(Command::SetEqualisation(preamped(decibels)))
+            .expect("equalises");
+        thread::sleep(DRAGGED_EVERY);
+    }
+    let dragged_at = Instant::now();
+    fake.until("a second address to be fetched", |heard| {
+        heard.offers.len() >= 2 && heard.fetching == heard.offers.last().cloned()
+    });
+    let restarting_took = dragged_at.elapsed();
+    fake.until("a second of the fresh address to be fetched", |heard| {
+        heard.fetched.len() >= WAVE_HEADER_BYTES + pcm_bytes(Duration::from_secs(1))
+    });
+    let after = loudness_of(
+        &fake.heard.lock().fetched,
+        PAST_THE_FADE_IN * 4,
+        Duration::from_millis(500),
+    );
+    thread::sleep(QUIET_FOR);
+    player
+        .send(Command::SetVolume(Volume::new(0.5).expect("a volume")))
+        .expect("turns");
+    thread::sleep(QUIET_FOR);
+
+    let heard = fake.heard.lock();
+    let actions = heard.actions();
+    let ratio = after / unchanged;
+    assert!(
+        restarting_took < RESTARTED_WITHIN,
+        "the drag took {restarting_took:?} to restart the stream"
+    );
+    assert!(
+        (before / unchanged - 1.0).abs() < 0.05,
+        "the stream was changed before the equaliser: {before} against {unchanged}"
+    );
+    assert!(
+        (0.45..0.56).contains(&ratio),
+        "the fresh address was not the song at -6 dB: {ratio}"
+    );
+    assert_ne!(heard.offers[0], heard.offers[1]);
+    assert_eq!(
+        stops_and_offers(&heard),
+        (1, 2),
+        "a drag or a volume change restarted the stream more than once: {actions:?}"
+    );
+    let stopped = actions
+        .iter()
+        .position(|action| *action == "Stop")
+        .expect("the renderer was stopped");
+    assert_eq!(
+        actions[stopped..stopped + 3],
+        ["Stop", "SetAVTransportURI", "Play"],
+        "{actions:?}"
+    );
+}
+
+#[test]
+fn a_replay_gain_change_on_a_renderer_restarts_its_stream_and_the_fresh_address_carries_it() {
+    let fake = Fake::start();
+    let network =
+        Arc::new(Network::start(fake.searching(), FirstSearch::Awaited).expect("searches"));
+    let tree = Tree::new();
+    let pcm = music(RATE as usize * 4);
+    let path = tree.write("song.wav", &wave_file(&pcm));
+    let player = playing_on(&network);
+    let unchanged = loudness_of(
+        &pcm_as_fetched(&pcm),
+        Duration::ZERO,
+        Duration::from_secs(3),
+    );
+
+    loaded(&player, &path);
+    fake.until("a quarter second to be fetched", |heard| {
+        heard.fetched.len() >= WAVE_HEADER_BYTES + pcm_bytes(Duration::from_millis(250))
+    });
+    player
+        .send(Command::SetLevelling(Levelling {
+            untagged: Trim::from_decibels(-6.0).expect("a trim"),
+            ..Levelling::default()
+        }))
+        .expect("levels");
+    player
+        .send(Command::SetReplayGain(ReplayGainMode::Track))
+        .expect("levels");
+    fake.until("a second address to be fetched", |heard| {
+        heard.offers.len() >= 2 && heard.fetching == heard.offers.last().cloned()
+    });
+    fake.until("a second of the fresh address to be fetched", |heard| {
+        heard.fetched.len() >= WAVE_HEADER_BYTES + pcm_bytes(Duration::from_secs(1))
+    });
+    let after = loudness_of(
+        &fake.heard.lock().fetched,
+        PAST_THE_FADE_IN * 4,
+        Duration::from_millis(500),
+    );
+    thread::sleep(QUIET_FOR);
+
+    let heard = fake.heard.lock();
+    let ratio = after / unchanged;
+    assert!(
+        (0.45..0.56).contains(&ratio),
+        "the fresh address was not the song at -6 dB: {ratio}"
+    );
+    assert_eq!(stops_and_offers(&heard), (1, 2), "{:?}", heard.actions());
+}
+
 fn queued(path: &Path) -> QueueItem {
     QueueItem {
         id: TrackId::new(1).expect("a non-zero id"),
@@ -1213,6 +1395,60 @@ fn flac_carries_twenty_four_bits_up_to_ninety_six_kilohertz_bit_for_bit_and_wave
             Pattern::expected(2, frames),
             "{rate:?} did not come back from the FLAC as it went in"
         );
+    }
+}
+
+const FLAC_WITH_HIGH_RATES_STATED: &str = "http-get:*:audio/flac;rate=176400:*,http-get:*:audio/flac;rate=192000:*,http-get:*:audio/flac;rate=352800:*,http-get:*:audio/wav:*";
+
+#[test]
+fn flac_above_ninety_six_kilohertz_is_sent_where_the_renderer_states_the_rate_and_comes_back_bit_for_bit()
+ {
+    for (rate, frames) in [
+        (SampleRate::HZ_176400, 176_400 / 3),
+        (SampleRate::HZ_192000, 192_000 / 3),
+        (SampleRate::HZ_192000, 8_192 * 2 + 100),
+        (SampleRate::HZ_352800, 352_800 / 3),
+    ] {
+        let fake = Fake::with(Profile {
+            sink: FLAC_WITH_HIGH_RATES_STATED,
+            openhome: false,
+        });
+        let network = Network::start(fake.searching(), FirstSearch::Awaited).expect("searches");
+        let sink = the_renderer(&network);
+        let backend = Beside::over(Box::new(NoGraph::new()), Arc::new(network));
+        let spec = StreamSpec::new(rate, ChannelLayout::Stereo, SampleFormat::S24);
+
+        let stream = pattern_stream(&backend, &sink, spec, frames).expect("the renderer takes it");
+        stream.set_active(true).expect("plays");
+        stream.drain().expect("drains");
+        fake.until("the fetch to end once drained", |heard| heard.fetch_ended);
+        stream.close().expect("closes");
+
+        let tree = Tree::new();
+        let heard = fake.heard.lock();
+        let offered = heard.offered.as_deref().expect("an address was offered");
+        assert!(offered.ends_with(".flac"), "{rate:?} offered {offered}");
+        assert_eq!(heard.fetched.get(..4), Some(&b"fLaC"[..]), "{rate:?}");
+        let streaminfo_rate = (u32::from(heard.fetched[18]) << 12)
+            | (u32::from(heard.fetched[19]) << 4)
+            | (u32::from(heard.fetched[20]) >> 4);
+        assert_eq!(
+            streaminfo_rate,
+            rate.hz(),
+            "the STREAMINFO names another rate"
+        );
+        assert_eq!(
+            decoded(&tree, &heard.fetched, SampleFormat::S24),
+            Pattern::expected(2, frames),
+            "{rate:?} did not come back from the FLAC as it went in"
+        );
+        if let Some(by_the_tool) = decoded_by_the_flac_tool(&tree, &heard.fetched) {
+            assert_eq!(
+                by_the_tool,
+                packed_words(&Pattern::expected(2, frames)),
+                "the flac tool read {rate:?} otherwise"
+            );
+        }
     }
 }
 

@@ -88,6 +88,7 @@ pub enum FlacOp {
     Header,
     Fill,
     Frame,
+    Rate,
 }
 
 #[derive(Debug, Error)]

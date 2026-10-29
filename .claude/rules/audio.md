@@ -491,7 +491,12 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   (a network renderer, `upnp.md`) a discard would reach the ear only after what the device holds,
   so `reuses_stream` refuses and the seek rebinds on a fresh stream; a pause stands such a stream
   down at once with no fade in the ring, so the device's own pause cuts and its buffer resumes
-  as it was (`Output::holds_seconds_downstream`).
+  as it was (`Output::holds_seconds_downstream`). **A change of what is rendered
+  restarts such a stream too:** an equaliser, ReplayGain or levelling command, or a listening-test
+  arm switch, still splices or retunes the ring as above, then owes a rebind at the heard position
+  that waits 300 ms for a further change (`downstream_restart_due`, `retune_heard_past_the_buffer`,
+  `restart_what_a_renderer_holds`), since the splice reaches the ear only after the seconds the
+  device holds; a volume change is the device's and owes none (`upnp.md`).
 - **A rebind on the same device reshapes the stream it holds instead of reopening it, where the
   backend can.** `rebind` retires the output `Retire::HandingOnItsStream`: the old ring fades out
   as ever, but once quiet its stream (active, not deaf; drained or asked to drain included, which

@@ -141,15 +141,13 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   the player serves) would be one more sink kind beside them
 - [L] The phones reach no network renderer at all, though their zones open over the same `Backend`
   seam the desktop's renderers sit behind
-- [M] An equaliser, ReplayGain or listening-test change reaches a UPnP renderer's ear only after
-  what it already holds (seconds on many streamers): a seek, a pause and the volume skip that
-  buffer (a fresh address after `Stop`, the renderer's own `Pause`, its own RenderingControl or
-  OpenHome `Volume`), but whatever is rendered into the ring plays out behind it
-- [S] A UPnP renderer is sent FLAC only up to 96 kHz (flacenc's bound): above it a renderer taking
-  WAVE is sent uncompressed PCM, about 9 Mbit/s at 24-bit 192 kHz, and one taking FLAC alone is
-  offered nothing above 96 kHz. Channels beyond stereo are offered only where the protocol info
-  states `channels=N` (a renderer saying nothing is folded down), and handing the untouched file
-  over does not fit the sink seam (`upnp.md`)
+- [S] A UPnP renderer is sent FLAC above 96 kHz only where its protocol info states the rate
+  (`audio/flac;rate=192000`); one that says nothing is offered FLAC up to 96 kHz, so a streamer
+  taking FLAC alone has 176.4 and 192 kHz material resampled to 96 kHz by the engine though it
+  might decode the rate, and one taking WAVE is sent uncompressed PCM, about 9 Mbit/s at 24-bit
+  192 kHz. Channels beyond stereo are offered only where the protocol info states `channels=N` (a
+  renderer saying nothing is folded down), and handing the untouched file over does not fit the
+  sink seam (`upnp.md`)
 - [L · blocked: Apple] AirPlay 2 cannot be played to: its pairing, encryption and buffered audio
   are Apple's own, with no published specification to build against
 
