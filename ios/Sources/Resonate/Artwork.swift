@@ -6,6 +6,7 @@ import UIKit
 
 struct ArtworkLoad: Equatable {
     let track: UInt64?
+    let served: String?
     let revision: UInt64
     let generation: Int
     let portrait: String?
@@ -25,7 +26,7 @@ struct ArtworkView: View {
     var circle = false
     var handsOver = false
     @State private var image: UIImage?
-    @State private var pictured: UInt64?
+    @State private var pictured: String?
     @State private var leaving: UIImage?
     @State private var face = 1
     @State private var bucket: ArtworkBucket?
@@ -38,7 +39,7 @@ struct ArtworkView: View {
         self.handsOver = handsOver
         let latest = circle ? nil : ShownArtwork.latest(for: track)
         _image = State(initialValue: latest)
-        _pictured = State(initialValue: latest == nil ? nil : track?.id)
+        _pictured = State(initialValue: latest == nil ? nil : track?.pictureKey)
     }
 
     var body: some View {
@@ -88,8 +89,9 @@ struct ArtworkView: View {
         let features = library.features
         return ArtworkLoad(
             track: track?.id,
+            served: track?.isServed == true ? track?.uri : nil,
             revision: track?.artRevision ?? 0,
-            generation: track.map { features.artGeneration(of: $0.id) } ?? 0,
+            generation: track.map { $0.isServed ? features.servedGeneration : features.artGeneration(of: $0.id) } ?? 0,
             portrait: portraitMbid,
             portraitGeneration: portraitMbid == nil ? 0 : features.portraitGeneration,
             bucket: bucket
@@ -102,7 +104,7 @@ struct ArtworkView: View {
             wanted = nil
             if image == nil, let held = held(at: fitting) {
                 image = held
-                pictured = track?.id
+                pictured = track?.pictureKey
             }
             return
         }
@@ -155,7 +157,7 @@ struct ArtworkView: View {
         guard !Task.isCancelled else { return }
         if image == nil, shown != nil {
             withAnimation(.easeOut(duration: Self.arrival)) { image = shown }
-            pictured = track.id
+            pictured = track.pictureKey
         } else if image !== shown {
             present(shown, of: track)
         }
@@ -163,8 +165,8 @@ struct ArtworkView: View {
     }
 
     private func present(_ shown: UIImage?, of track: Track) {
-        let anotherSong = pictured != track.id
-        pictured = shown == nil ? nil : track.id
+        let anotherSong = pictured != track.pictureKey
+        pictured = shown == nil ? nil : track.pictureKey
         guard handsOver, anotherSong, let current = image, !reduceMotion else {
             image = shown
             return
@@ -214,13 +216,14 @@ enum ShownArtwork {
     }()
 
     static func latest(for track: Track?) -> UIImage? {
-        guard let track, let shown = kept.object(forKey: NSNumber(value: track.id)), shown.revision == track.artRevision else {
+        guard let track, !track.isServed, let shown = kept.object(forKey: NSNumber(value: track.id)), shown.revision == track.artRevision else {
             return nil
         }
         return shown.image
     }
 
     static func keep(_ image: UIImage, for track: Track) {
+        guard !track.isServed else { return }
         let key = NSNumber(value: track.id)
         if let held = kept.object(forKey: key), held.revision == track.artRevision, edge(of: held.image) >= edge(of: image) {
             return
@@ -342,8 +345,14 @@ struct FavouriteButton: View {
     @State private var tapped = 0
 
     var body: some View {
+        if !track.isServed {
+            heart
+        }
+    }
+
+    private var heart: some View {
         let favourite = library.isFavourite(track)
-        Button {
+        return Button {
             tapped += 1
             library.setFavourite(track, !favourite)
         } label: {

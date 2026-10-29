@@ -1,0 +1,103 @@
+import Foundation
+import ResonateNative
+
+extension Track {
+    public static let servedScheme = "subsonic:"
+
+    public var isServed: Bool { id == 0 && uri.hasPrefix(Self.servedScheme) }
+
+    public var pictureKey: String { isServed ? uri : String(id) }
+}
+
+extension ProviderAccounts {
+    public var served: ServedAccount? {
+        asked.first { $0.provider == .subsonic }
+            .map { ServedAccount(server: $0.server, user: $0.user, password: $0.password) }
+    }
+}
+
+public struct ServedPlace: Hashable, Codable, Sendable {
+    public enum Kind: String, Codable, Sendable {
+        case artist, album
+    }
+
+    public let kind: Kind
+    public let uri: String
+    public let name: String
+    public let artist: String
+    public let cover: String?
+
+    public init(kind: Kind, uri: String, name: String, artist: String = "", cover: String? = nil) {
+        self.kind = kind
+        self.uri = uri
+        self.name = name
+        self.artist = artist
+        self.cover = cover
+    }
+
+    public init(_ artist: ServedArtist) {
+        self.init(kind: .artist, uri: artist.uri, name: artist.shownName, cover: artist.cover)
+    }
+
+    public init(_ album: ServedAlbum) {
+        self.init(kind: .album, uri: album.uri, name: album.shownName, artist: album.artist ?? "", cover: album.cover)
+    }
+}
+
+extension ServedArtist {
+    public var shownName: String { name.isEmpty ? "Unknown artist" : name }
+
+    public var line: String? { albums.map { counted(Int($0), "album") } }
+}
+
+extension ServedAlbum {
+    public var shownName: String { name.isEmpty ? "Unknown album" : name }
+
+    public var line: String {
+        [
+            artist.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 },
+            year.map { String($0) },
+            songs.map { counted(Int($0), "song") },
+        ]
+        .compactMap { $0 }
+        .joined(separator: " · ")
+    }
+}
+
+extension ServedSong {
+    public var shownTitle: String { title.isEmpty ? "Unknown song" : title }
+
+    public func line(withAlbum: Bool) -> String {
+        [
+            artist.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 },
+            album.flatMap { withAlbum && !$0.isEmpty ? $0 : nil },
+            durationMs.map { clock($0) },
+        ]
+        .compactMap { $0 }
+        .joined(separator: " · ")
+    }
+
+    public func number(at index: Int) -> UInt32 { track ?? UInt32(index + 1) }
+}
+
+extension ServedFound {
+    public var isEmpty: Bool { artists.isEmpty && albums.isEmpty && songs.isEmpty }
+
+    public var summary: String {
+        [
+            artists.isEmpty ? nil : counted(artists.count, "artist"),
+            albums.isEmpty ? nil : counted(albums.count, "album"),
+            songs.isEmpty ? nil : counted(songs.count, "song"),
+        ]
+        .compactMap { $0 }
+        .joined(separator: " · ")
+    }
+}
+
+public func servedSummary(of songs: [ServedSong]) -> String {
+    let lengths = songs.compactMap(\.durationMs)
+    guard !lengths.isEmpty else { return counted(songs.count, "song") }
+    let minutes = lengths.reduce(0, +) / 60_000
+    let length = minutes >= 60 ? "\(minutes / 60) hr \(minutes % 60) min" : "\(minutes) min"
+    return "\(counted(songs.count, "song")) · \(length)"
+}

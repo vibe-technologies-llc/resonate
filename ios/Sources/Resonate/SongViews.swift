@@ -3,7 +3,7 @@ import ResonateNative
 import SwiftUI
 
 extension Track {
-    var albumPage: Destination? { albumKey(album: album, artist: artist, albumArtist: albumArtist).map(Destination.album) }
+    var albumPage: Destination? { isServed ? nil : albumKey(album: album, artist: artist, albumArtist: albumArtist).map(Destination.album) }
 }
 
 enum Grouping: String, CaseIterable, Identifiable {
@@ -553,6 +553,13 @@ struct SongPages: View {
     let track: Track
 
     var body: some View {
+        if !track.isServed {
+            pages
+        }
+    }
+
+    @ViewBuilder
+    private var pages: some View {
         Button("Song details", systemImage: "info.circle") { navigation.open(.inspector(track)) }
         ShareSongButton(track: track)
         if library.features.tagsWritable(track) {

@@ -38,7 +38,7 @@ struct ResonateApp: App {
 }
 
 enum Root: String, Hashable, Codable {
-    case library, settings, search
+    case library, settings, search, server
 }
 
 enum Destination: Hashable, Codable {
@@ -69,6 +69,7 @@ enum Destination: Hashable, Codable {
     case background
     case identicalSongs
     case songs
+    case served(ServedPlace)
 
     static func lyrics(_ track: Track?) -> Destination {
         .songLyrics(track?.id)
@@ -158,8 +159,14 @@ final class Navigation {
     }
 
     func restore(_ kept: KeptNavigation) {
-        tab = kept.tab
-        paths = kept.paths
+        tab = kept.tab == .server ? .library : kept.tab
+        paths = kept.paths.filter { $0.key != .server }
+    }
+
+    func leaveServer() {
+        guard tab == .server || paths[.server] != nil else { return }
+        if tab == .server { tab = .library }
+        paths[.server] = nil
     }
 
     func drop(_ gone: Set<Destination>) {
@@ -273,6 +280,11 @@ struct RootView: View {
             Tab("Library", systemImage: "music.note.house", value: Root.library) {
                 stack(.library) { LibraryView() }
             }
+            if library.features.serving {
+                Tab("Server", systemImage: "server.rack", value: Root.server) {
+                    stack(.server) { ServerView() }
+                }
+            }
             Tab("Settings", systemImage: "gearshape", value: Root.settings) {
                 stack(.settings) { SettingsView() }
             }
@@ -281,6 +293,9 @@ struct RootView: View {
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
+        .onChange(of: library.features.serving) { _, serving in
+            if !serving { navigation.leaveServer() }
+        }
         .background { NavigationKeeper() }
         .task { await PlayerWarmup.warm() }
         .tint(AppearanceState.shared.tint)
@@ -468,6 +483,7 @@ struct DestinationView: View {
         case .background: BackgroundView()
         case .identicalSongs: IdenticalSongsView()
         case .songs: SongsView()
+        case .served(let place): ServedPlaceView(place: place)
         case .songLyrics(let id): LiveSong(id: id) { LyricsView(chosen: $0) }
         case .visualizer: VisualizerView()
         case .songAnalysis(let id): LiveSong(id: id) { AnalysisView(chosen: $0) }

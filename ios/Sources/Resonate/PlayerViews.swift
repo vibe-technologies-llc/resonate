@@ -51,7 +51,7 @@ struct MiniPlayer: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentTransition(reduceMotion ? .identity : .opacity)
-                .motion(Handover.animation, value: track?.id)
+                .motion(Handover.animation, value: track?.pictureKey)
             } else {
                 Spacer(minLength: 0)
             }
@@ -200,7 +200,7 @@ struct NowPlayingView: View {
             }
             .sheet(item: $picked) { PlaylistPicker(tracks: $0.tracks) }
             .alert("Save queue as playlist", isPresented: $savingQueue) {
-                PlaylistNameField(confirm: "Save") { library.features.createPlaylist($0, with: library.queue) }
+                PlaylistNameField(confirm: "Save") { library.features.createPlaylist($0, with: library.queue.filter { !$0.isServed }) }
             }
             .confirmationDialog("Clear the queue?", isPresented: $clearingQueue, titleVisibility: .visible) {
                 Button("Clear queue", role: .destructive) { library.clearQueue() }
@@ -335,7 +335,7 @@ struct MovingCover: View {
             .transaction(value: slot) { moved in
                 if moved.animation == nil, !reduceMotion { moved.animation = Self.settlesOnItsSlot }
             }
-            .motion(Handover.animation, value: track?.id)
+            .motion(Handover.animation, value: track?.pictureKey)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onChange(of: slot, initial: true) { _, now in
                 if large, now.width > 0, now.width != edge { edge = now.width }
@@ -374,7 +374,7 @@ struct PlayerTitles: View {
         HStack(alignment: .center, spacing: 12) {
             words
                 .contentTransition(.opacity)
-                .motion(Handover.animation, value: track?.id)
+                .motion(Handover.animation, value: track?.pictureKey)
             Spacer(minLength: 0)
             if let track { FavouriteButton(track: track).font(.title2) }
         }
@@ -438,7 +438,7 @@ struct SongDestinations: View {
     let track: Track
 
     static func any(for track: Track) -> Bool {
-        track.albumPage != nil || !track.artist.isEmpty
+        !track.isServed && (track.albumPage != nil || !track.artist.isEmpty)
     }
 
     var body: some View {
@@ -462,7 +462,7 @@ struct CompactTitles: View {
                 .anchorPreference(key: CoverSlot.self, value: .bounds) { [.compact: $0] }
             words
                 .contentTransition(.opacity)
-                .motion(Handover.animation, value: track?.id)
+                .motion(Handover.animation, value: track?.pictureKey)
             Spacer(minLength: 0)
             if let track { FavouriteButton(track: track).font(.title3) }
         }
@@ -1084,7 +1084,7 @@ struct PlayerMoreMenu: View {
 
     var body: some View {
         Menu("More", systemImage: "ellipsis") {
-            if let track {
+            if let track, !track.isServed {
                 Section {
                     Button("Add to playlist", systemImage: "text.badge.plus") { addToPlaylist(track) }
                     ShareSongButton(track: track)
@@ -1316,14 +1316,16 @@ struct QueueRow: View {
             .tint(.red)
         }
         .contextMenu {
-            Section {
-                Button(favourite ? "Remove from favourites" : "Add to favourites", systemImage: favourite ? "heart.slash" : "heart") {
-                    library.setFavourite(row, !favourite)
+            if !row.isServed {
+                Section {
+                    Button(favourite ? "Remove from favourites" : "Add to favourites", systemImage: favourite ? "heart.slash" : "heart") {
+                        library.setFavourite(row, !favourite)
+                    }
+                    Button("Add to playlist", systemImage: "text.badge.plus") { choosingPlaylist = true }
                 }
-                Button("Add to playlist", systemImage: "text.badge.plus") { choosingPlaylist = true }
-            }
-            Section {
-                SongPages(track: row)
+                Section {
+                    SongPages(track: row)
+                }
             }
             Section {
                 Button("Remove from queue", systemImage: "minus.circle", role: .destructive) {

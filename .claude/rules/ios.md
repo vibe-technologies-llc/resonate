@@ -476,8 +476,8 @@ sync seals its records and talks QUIC (TLS) of its own.
   and is left as it is, and so is a song a download or the listener put in Documents. Songs landed
   before this was done carry no mark: nothing tells them from the listener's own.
 
-The views follow Android's screens and wording (`android.md`), with three tabs: Library, Settings
-and Search (`Tab(role: .search)`, which iOS sets apart at the trailing edge and turns into the search
+The views follow Android's screens and wording (`android.md`), with three tabs, Library, Settings
+and Search, and a Server tab while a Subsonic account is served (below) (`Tab(role: .search)`, which iOS sets apart at the trailing edge and turns into the search
 field; `Root.search` has its own stack). **Songs is a page of the Library tab and the queue is
 Now Playing's Up next, neither a tab**: *All songs*, Favourites' and the
 empty states' *Browse songs* push `Destination.songs` onto the Library stack alone
@@ -1255,6 +1255,37 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   expiration handler, built `nonisolated`, cancels every running job and pauses the waiting ones
   until the scene is active again, so each cancelled job still deletes its document and its journal
   entry, or the next start does, and the continued task completes unsuccessfully.
+
+## A Subsonic server
+
+- **The Server tab browses and plays a Subsonic server in place** (`mobile.md`'s *A Subsonic server
+  in place*; `ServerViews.swift`, `ResonateLogic/Served.swift`). `Features.servedAccount` is the
+  Subsonic account that is on and ready while online is on (`ProviderAccounts.served`; iOS keeps one
+  account a provider), and `Features.serving` is whether there is one. A change of either calls
+  `serve_from` (`servedChanged`) and steps `servedGeneration`, which every cover and page keys on;
+  every read binds the account again first (`Features.serverAnswer`, on `Work.aside`), so a browse
+  never races the change. **The tab is `Root.server`**, a `Tab` present only while serving, after
+  Library; the restored tab never lands on it (`Navigation.restore`) and it is left when the account
+  goes (`leaveServer`). Its pages are `Destination.served(ServedPlace)` (an artist or an album, kept
+  in the scene's navigation). The root lists the artists and searches the server on submit
+  (`.searchable`, `served_search`: artists, albums and songs in sections); an artist page is a header
+  (`ServedHeader`: cover, name, summary, Play and Shuffle, as `CollectionHeader`) and a shelf of
+  albums; an album page lists its songs numbered by the server's track number, a row playing the
+  album from it. Every row has Play, Shuffle, Play next and Add to queue in its context menu and
+  Play next and Add to queue as its leading swipe (`ServedActions`); an album or artist is expanded
+  to its songs (`served_song_uris`) before it is played or queued (`Library.playServed(expanding:)`),
+  and a song plays the list it was pressed in (`Library.playServed(_:at:)`, `load_served` then the
+  transport as `play(_:at:)` does). **A served row has id 0**, told by `Track.isServed` (id 0 and a
+  `subsonic:` uri); anything keyed by song id keys it by `Track.pictureKey` (its uri) instead: the
+  artwork views (`ArtworkLoad.served`, `pictured`), the backdrop's palette memory and the lock
+  screen (`NowPlaying.artworkFor`). Its cover is `ArtworkSubject.served(uri)`, named by uri, generation
+  and bucket, asked through `Features.servedCover` (`served_cover`) and held in the same
+  `ArtworkCache`, so `ArtworkView` draws it in the queue, the mini player and Now Playing and
+  `NowPlaying` hands the same picture to `MPNowPlayingInfoCenter`; `ServedCoverView` draws a cover
+  the browse names by its own cover name. A served row has no heart, no lyrics, no details, analysis,
+  share, tags, playlist or album and artist links (`SongPages`, `SongDestinations`,
+  `FavouriteButton`, `LyricsPane`, the queue row's menu and *Save queue as playlist* leave it out),
+  and removing one from the queue offers no Undo (`ServedTests`).
 
 ## Listen
 

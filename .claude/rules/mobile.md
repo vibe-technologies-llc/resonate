@@ -548,7 +548,8 @@ changes; a song not remembered is titled by its uri), carrying its `queue_id` li
 holding one is never saved (`save` returns before writing, so the last saved queue and place stand
 and nothing is written against rows the catalog cannot name), and a listen of one is not counted
 (`store_counting`): no favourite, play count, playlist or resumption belongs to a song the library
-does not hold. Neither phone has a screen for the server yet (`FEATURES.md`)
+does not hold. Both phones draw it (`android.md`'s and `ios.md`'s *A Subsonic server*), each
+recognising a served row as id 0 with a `subsonic:` uri and keying its cover by the uri
 (`a_server_is_browsed_from_its_artists_to_its_songs_and_each_has_its_cover`,
 `served_songs_are_queued_named_and_opened_by_the_players_sources_and_never_saved`,
 `a_blank_account_serves_nothing_and_a_uri_of_another_kind_is_invalid`).
