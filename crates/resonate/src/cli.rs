@@ -1139,6 +1139,23 @@ pub enum Sub {
     Eq(EqArgs),
 
     #[command(
+        about = "Run a blind listening test of the equaliser bound to the output in use against \
+                 a bypass of itself, level-matched, over one song looped, keys on standard input"
+    )]
+    Abx {
+        #[arg(value_name = "FILE")]
+        file: OsString,
+
+        #[arg(
+            long,
+            value_name = "N",
+            default_value_t = 16,
+            help = "Hold this many trials, from 1 to 100"
+        )]
+        trials: usize,
+    },
+
+    #[command(
         about = "Read playlists in from M3U, PLS or XSPF files, appending to one already named"
     )]
     Import {

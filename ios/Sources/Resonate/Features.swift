@@ -48,6 +48,7 @@ final class Features {
     @ObservationIgnored lazy var listening = Listening(library: library)
     @ObservationIgnored lazy var room = RoomCorrectionState(library: library)
     @ObservationIgnored lazy var measured = MeasuredCorrectionState(library: library) { [unowned self] in adopt($0) }
+    @ObservationIgnored lazy var listeningTest = ListeningTestState(library: library)
     @ObservationIgnored private lazy var transfers = BackgroundHold(
         name: "Fetching songs from your devices",
         continued: BackgroundHold.transfers,

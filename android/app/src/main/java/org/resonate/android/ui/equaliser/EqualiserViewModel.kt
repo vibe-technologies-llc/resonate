@@ -27,10 +27,13 @@ import org.resonate.android.readUpTo
 import org.resonate.android.nativecore.EqualiserCurve
 import org.resonate.android.nativecore.EqualiserPreset
 import org.resonate.android.nativecore.PlaybackPreferences
+import org.resonate.android.nativecore.TestArm
+import org.resonate.android.nativecore.TestHear
 import org.resonate.android.nativecore.equaliserFrequencies
 import org.resonate.android.nativecore.equaliserLimits
 import org.resonate.android.nativecore.equaliserPresets
 import org.resonate.android.nativecore.fitMeasurement
+import org.resonate.android.nativecore.listeningTestLengths
 import org.resonate.android.nativecore.measurementOffers
 import org.resonate.android.nativecore.parseEqProfile
 import org.resonate.android.nativecore.responseCurve
@@ -79,6 +82,10 @@ class EqualiserViewModel(private val resonate: Resonate) : ViewModel() {
 
     val measurement: StateFlow<MeasurementView> = measuring.asStateFlow()
 
+    private val testing = MutableStateFlow(ListeningTestView.unread)
+
+    val listening: StateFlow<ListeningTestView> = testing.asStateFlow()
+
     init {
         viewModelScope.launch {
             mutableInfo.value =
@@ -93,6 +100,10 @@ class EqualiserViewModel(private val resonate: Resonate) : ViewModel() {
         viewModelScope.launch {
             val offers = withContext(Dispatchers.Default) { measurementOffers() }
             measuring.update { if (it.offers == null) MeasurementView.of(offers) else it }
+        }
+        viewModelScope.launch {
+            val lengths = withContext(Dispatchers.Default) { listeningTestLengths() }
+            testing.update { it.copy(lengths = lengths) }
         }
         viewModelScope.launch { stored.collect { if (!holding) draft.value = null } }
     }
@@ -200,6 +211,48 @@ class EqualiserViewModel(private val resonate: Resonate) : ViewModel() {
                 measuring.update { it.finished(null) }
             }
         }
+    }
+
+    fun beginTest(trials: UInt) {
+        val curve = shown.value ?: return
+        if (testing.value.run != null || testing.value.beginning) return
+        testing.update { it.beginning() }
+        resonate.attempt(viewModelScope) { native ->
+            try {
+                val test =
+                    withContext(Dispatchers.Default) { native.beginListeningTest(curve, trials) }
+                testing.update { it.begun(test) }
+            } finally {
+                testing.update { if (it.run == null) it.failedToBegin() else it }
+            }
+        }
+    }
+
+    fun hear(hear: TestHear) {
+        val test = testing.value.run?.test ?: return
+        resonate.attempt(viewModelScope) { native ->
+            native.hearInListeningTest(test, hear)
+            testing.update { it.stood(test.standing()) }
+        }
+    }
+
+    fun say(arm: TestArm) {
+        val test = testing.value.run?.test ?: return
+        resonate.attempt(viewModelScope) { _ ->
+            test.answer(arm)
+            testing.update { it.stood(test.standing()) }
+        }
+    }
+
+    fun endTest() {
+        val run = testing.value.run ?: return
+        testing.update { it.ended() }
+        library.request { native -> native.endListeningTest() }
+        run.test.close()
+    }
+
+    override fun onCleared() {
+        endTest()
     }
 
     fun bind(bound: Boolean) = library.bindEqualiser(bound)

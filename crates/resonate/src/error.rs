@@ -516,6 +516,18 @@ pub enum Error {
     #[error("nothing named is a file, URI or cue track that plays")]
     NothingPlayableNamed,
 
+    #[error("the listening test loops one song, and {named} were named")]
+    AbxSeveralSongs { named: usize },
+
+    #[error("the output did not open in time, so there is no rate to level-match the arms at")]
+    AbxNoOutput,
+
+    #[error(
+        "no curve is bound to {sink} with the equaliser on, so there is no chain to test; \
+         resonate eq binds one"
+    )]
+    AbxNothingBound { sink: NodeName },
+
     #[error("none of the {failed} tracks queued could be played")]
     NothingPlayed { failed: usize },
 

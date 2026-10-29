@@ -525,6 +525,7 @@ struct SoundSettingsView: View {
                 ProfileImportSection(paste: paste, choose: { choosingFile = true })
                 MeasuredCorrectionSection()
                 RoomCorrectionSection()
+                ListeningTestSection(curve: curve)
                 let others = library.boundRoutes.filter { $0.id != library.route?.id }
                 if !others.isEmpty {
                     Section {
@@ -548,6 +549,7 @@ struct SoundSettingsView: View {
             }
         }
         .navigationTitle("Equaliser")
+        .onDisappear { library.features.listeningTest.end() }
         .onChange(of: drawn, initial: true) { _, drawn in
             guard let curve = drawn.curve else { return }
             response.follow(curve, rate: drawn.rate > 0 ? drawn.rate : nil)

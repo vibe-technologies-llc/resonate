@@ -3,6 +3,7 @@
 #[macro_use]
 mod said;
 
+mod abx;
 mod analyse;
 mod cli;
 mod config;
@@ -342,6 +343,7 @@ fn run() -> Result<()> {
         ),
         Some(Sub::Playlist(wanted)) => playlist(&cli, &config, wanted),
         Some(Sub::Eq(wanted)) => equaliser::run(&cli, &config, wanted),
+        Some(Sub::Abx { file, trials }) => abx::run(&cli, &config, file, *trials),
         Some(Sub::Import { files, name }) => {
             import(&open_library(&cli, &config)?, files, name.as_deref())
         }
