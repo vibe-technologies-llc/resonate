@@ -1163,3 +1163,67 @@ fn music_heard_apart_through_a_late_linear_phase_lift_is_bounded_moment_by_momen
         assert!(bounded < decoded + 1.0, "{bounded} against {decoded}");
     }
 }
+
+const TAIL_FROM: usize = 11_025;
+const TAIL_TAPS: usize = 88_200;
+
+fn a_long_reverberant_tail(level: f64) -> Vec<f64> {
+    let mut seed = 0x7a11_u64;
+    let mut taps = vec![0.0; TAIL_FROM + TAIL_TAPS];
+    taps[0] = 1.0;
+    for tap in &mut taps[TAIL_FROM..] {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        *tap = ((seed >> 11) as f64 / (1_u64 << 53) as f64 - 0.5) * level;
+    }
+    taps
+}
+
+fn loudest_tooth_of(taps: &[f64], from_hz: f64, to_hz: f64) -> f64 {
+    let size = (taps.len() * 16).next_power_of_two();
+    let mut spectrum = vec![Complex::new(0.0, 0.0); size];
+    for (into, tap) in spectrum.iter_mut().zip(taps.iter().skip(TAIL_FROM)) {
+        *into = Complex::new(*tap, 0.0);
+    }
+    FftPlanner::new()
+        .plan_fft_forward(size)
+        .process(&mut spectrum);
+    let bin_hz = f64::from(RATE) / size as f64;
+    let first = (from_hz / bin_hz) as usize;
+    let last = (to_hz / bin_hz) as usize;
+    let loudest = (first..last)
+        .max_by(|left, right| spectrum[*left].norm().total_cmp(&spectrum[*right].norm()))
+        .expect("bins");
+    loudest as f64 * bin_hz
+}
+
+#[test]
+fn a_tone_on_a_tooth_of_a_long_reverberant_tail_is_bounded_where_the_tail_meets_it() {
+    let tree = Tree::new();
+    for level in [0.003, 0.006] {
+        let taps = a_long_reverberant_tail(level);
+        let reverberant =
+            Arc::new(Impulse::new(SampleRate::HZ_44100, vec![taps.clone()]).expect("an impulse"));
+        for (from_hz, to_hz) in [(900.0, 1_100.0), (3_000.0, 3_300.0), (7_000.0, 7_600.0)] {
+            let hertz = loudest_tooth_of(&taps, from_hz, to_hz);
+            let sounded = tree.wave(&format!("{level}-{hertz}.wav"), RATE, 16, &tone(hertz, 0.3));
+            let studied =
+                study(&Sources::local(), &sounded, None, &Watch::default()).expect("a study");
+            let applied = Applied::from(Arc::new(Profile::flat()))
+                .corrected_by(Some(Arc::clone(&reverberant)));
+
+            let decoded = peak_db_through_chain(&applied, &sounded);
+            let bounded = decibels_of_the_bound(&bounded_under(&applied), &studied);
+
+            assert!(
+                bounded >= decoded - 0.02,
+                "{hertz} Hz under a tail at {level}: {bounded} under {decoded}"
+            );
+            assert!(
+                bounded < decoded + 2.0,
+                "{hertz} Hz: {bounded} against {decoded}"
+            );
+        }
+    }
+}

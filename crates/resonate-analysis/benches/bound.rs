@@ -16,6 +16,7 @@ use resonate_core::{
     MediaLocation, SampleRate,
     eq::{Band, BandGain, BandKind, Frequency, Preamp, Profile, Q},
 };
+use resonate_dsp::Impulse;
 
 const RATE: u32 = 44_100;
 const SONG_SECONDS: f64 = 4.0;
@@ -23,6 +24,7 @@ const FADE_SECONDS: f64 = 0.1;
 const SONGS_FOLDED: usize = 1_000;
 const RUNS: usize = 7;
 const KEPT_BOUNDS: &str = "RESONATE_BENCH_BOUNDS";
+const ROOM_SECONDS: usize = 10;
 
 struct Noise(u32);
 
@@ -237,6 +239,19 @@ fn curves() -> Vec<(&'static str, Arc<Profile>)> {
     ]
 }
 
+fn reverberant() -> Arc<Impulse> {
+    let mut noise = Noise(0x7a11);
+    let frames = RATE as usize * ROOM_SECONDS;
+    let taps = (0..frames)
+        .map(|frame| {
+            let seconds = frame as f64 / f64::from(RATE);
+            let direct = if frame == 0 { 0.8 } else { 0.0 };
+            direct + noise.white() * 0.05 * (-seconds * 1.5).exp()
+        })
+        .collect();
+    Arc::new(Impulse::new(SampleRate::HZ_44100, vec![taps]).expect("a response"))
+}
+
 fn per_song(elapsed: Duration, songs: usize) -> f64 {
     elapsed.as_secs_f64() * 1e6 / songs as f64
 }
@@ -301,6 +316,21 @@ fn main() {
         "all",
         per_song(bounding, songs.len() * curves().len()),
         per_song(folding, SONGS_FOLDED * curves().len()),
+    );
+    let (heard, _) = fastest(1, || {
+        BandGains::of(
+            &Applied::from(octaves([
+                6.0, 5.0, 3.0, 1.0, -1.0, -1.0, 1.0, 3.0, 5.0, 6.0,
+            ]))
+            .corrected_by(Some(reverberant())),
+            SampleRate::HZ_44100,
+        )
+        .expect("gains under a curve and a response")
+    });
+    println!(
+        "{:>16}: gains {:7.1} ms",
+        "ten-second room",
+        heard.as_secs_f64() * 1e3
     );
     if let Some(path) = env::var_os(KEPT_BOUNDS) {
         fs::write(path, kept).expect("bounds written");

@@ -117,10 +117,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   response filtered to it) was measured too loose under a dispersive correction (a random burst of
   taps 6 to 12 dB looser), and a transient gain read from what music a band holds, not the worst
   any music could, is not built
-- [M] *Fit the preamp*'s ring, what the chain's response holds outside the fifth of a second around
-  its main lobe, is still weighed on the 2 048 points with the curve's fixed shares: an echo or a
-  reverberant tail longer than that window has comb teeth between the points, which only the
-  shares' slack covers (the near window is an envelope over every bin)
 - [M] AutoEq is the only online correction source, fetched one device at a time; a measurement of
   the listener's own is fitted to a target on every front end, but only from a file
 - [M] Lossy restoration was tuned and tested on ffmpeg's own MP3, AAC and Vorbis encodes of

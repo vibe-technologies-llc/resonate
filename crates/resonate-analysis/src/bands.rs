@@ -48,6 +48,18 @@ const ENVELOPE_BINS_A_TAP: usize = 32;
 
 const HINTS_KEPT: usize = 4;
 
+const RING_BINS_A_TAP: usize = 8;
+
+const RING_BINS_AT_MOST: usize = 1 << 21;
+
+const RING_SETTLED_WITHIN: f64 = 1e-6;
+
+const SETTLING_AT_LEAST: usize = 1_024;
+
+const SETTLING_BLOCKS: usize = 4;
+
+const SETTLING_SECONDS_AT_MOST: usize = 8;
+
 fn band_of(hertz: f64) -> usize {
     if hertz <= LOWEST_EDGE_HZ {
         return 0;
@@ -234,7 +246,7 @@ impl BandGains {
                     }
                 })
                 .collect(),
-            ringing: reach_of(&later, &shares, 0.0),
+            ringing: ringing_of(&at_the_rate, &soon, lasting, &hertz, &later, &shares, rate)?,
             tones,
             hints: Hints::default(),
         })
@@ -355,6 +367,186 @@ fn levels_of(heard: &[Vec<Heard>]) -> Vec<f64> {
     levels.sort_by(f64::total_cmp);
     levels.dedup_by(|later, earlier| (*later - *earlier).abs() < LEVELS_ALIKE_WITHIN);
     levels
+}
+
+fn ringing_of(
+    applied: &Applied,
+    soon: &Soon,
+    lasting: usize,
+    hertz: &[f64],
+    later: &[Vec<Heard>],
+    shares: &[Heights],
+    rate: SampleRate,
+) -> Result<Heights> {
+    let rung = Rung::of(applied, soon, lasting, rate)?;
+    let enveloped: Vec<Vec<f64>> = rung
+        .taps
+        .iter()
+        .zip(&rung.beyond)
+        .map(|(taps, beyond)| {
+            enveloped_between(taps, hertz, rate)
+                .into_iter()
+                .map(|held| held + beyond)
+                .collect()
+        })
+        .collect();
+    Ok(later.iter().zip(shares).enumerate().fold(
+        [0.0; NODES],
+        |mut reach, (point, (responses, shares))| {
+            let apart = responses
+                .iter()
+                .zip(&enveloped)
+                .map(|((real, imaginary), enveloped)| real.hypot(*imaginary).max(enveloped[point]))
+                .fold(0.0, f64::max);
+            for (reach, share) in reach.iter_mut().zip(shares) {
+                *reach = reach.max(share * apart);
+            }
+            reach
+        },
+    ))
+}
+
+struct Rung {
+    taps: Vec<Vec<f64>>,
+    beyond: Vec<f64>,
+}
+
+impl Rung {
+    fn of(applied: &Applied, soon: &Soon, lasting: usize, rate: SampleRate) -> Result<Self> {
+        let longest = rate.hz() as usize * SETTLING_SECONDS_AT_MOST;
+        let mut settling = soon
+            .taps
+            .iter()
+            .map(Vec::len)
+            .max()
+            .unwrap_or(0)
+            .max(SETTLING_AT_LEAST);
+        loop {
+            let frames = lasting + settling;
+            let responses = applied.impulse_responses(frames, rate)?;
+            let block = settling / SETTLING_BLOCKS;
+            let swung = |taps: &[f64]| taps.iter().map(|tap| tap.abs()).sum::<f64>();
+            let tails: Vec<(f64, f64, f64)> = responses
+                .iter()
+                .map(|response| {
+                    let end = response.len();
+                    let last = swung(&response[end.saturating_sub(block)..]);
+                    let before =
+                        swung(&response[end.saturating_sub(2 * block)..end.saturating_sub(block)]);
+                    (last, before, swung(response))
+                })
+                .collect();
+            let settled = tails
+                .iter()
+                .all(|(last, _, whole)| *last <= RING_SETTLED_WITHIN * whole);
+            if !settled && settling < longest {
+                settling *= 2;
+                continue;
+            }
+            let beyond: Vec<f64> = tails
+                .iter()
+                .map(|(last, before, whole)| {
+                    if *last == 0.0 {
+                        return 0.0;
+                    }
+                    let falling = last / before;
+                    if falling < 1.0 {
+                        last * falling / (1.0 - falling)
+                    } else if *last <= RING_SETTLED_WITHIN * whole {
+                        *last
+                    } else {
+                        *whole
+                    }
+                })
+                .collect();
+            let (taps, beyond) = responses
+                .into_iter()
+                .zip(&soon.taps)
+                .zip(beyond)
+                .map(|((mut response, near), beyond)| {
+                    for (whole, near) in response.iter_mut().skip(soon.from).zip(near) {
+                        *whole -= near;
+                    }
+                    let (held, cut) = trimmed(&response);
+                    (response[held].to_vec(), beyond + cut)
+                })
+                .unzip();
+            return Ok(Self { taps, beyond });
+        }
+    }
+}
+
+fn trimmed(taps: &[f64]) -> (std::ops::Range<usize>, f64) {
+    let whole: f64 = taps.iter().map(|tap| tap.abs()).sum();
+    let budget = RING_SETTLED_WITHIN * whole / 2.0;
+    let mut cut = 0.0;
+    let mut first = 0;
+    while let Some(tap) = taps.get(first)
+        && cut + tap.abs() <= budget
+    {
+        cut += tap.abs();
+        first += 1;
+    }
+    let mut cut_after = 0.0;
+    let mut last = taps.len();
+    while last > first && cut_after + taps[last - 1].abs() <= budget {
+        cut_after += taps[last - 1].abs();
+        last -= 1;
+    }
+    (first..last, cut + cut_after)
+}
+
+fn enveloped_between(taps: &[f64], hertz: &[f64], rate: SampleRate) -> Vec<f64> {
+    let frames = taps.len().max(1);
+    let size = (frames * RING_BINS_A_TAP)
+        .next_power_of_two()
+        .min(RING_BINS_AT_MOST)
+        .max((2 * frames).next_power_of_two());
+    let fft = FftPlanner::<f64>::new().plan_fft_forward(size);
+    let centre = (frames - 1) as f64 / 2.0;
+    let sizes_of = |power: i32| -> Vec<f64> {
+        let mut heard = vec![Complex::new(0.0, 0.0); size];
+        for (at, (into, tap)) in heard.iter_mut().zip(taps).enumerate() {
+            *into = Complex::new(tap * (at as f64 - centre).powi(power), 0.0);
+        }
+        fft.process(&mut heard);
+        heard[..=size / 2].iter().map(|bin| bin.norm()).collect()
+    };
+    let (sizes, slopes, bends) = (sizes_of(0), sizes_of(1), sizes_of(2));
+    let loudest = sizes.iter().copied().fold(0.0, f64::max);
+    let half_cell = std::f64::consts::PI / size as f64;
+    let degree = frames.div_ceil(2) as f64;
+    let turned = half_cell * degree;
+    let twisted = turned.powi(3) / 6.0 * loudest / turned.cos();
+    let near: Vec<f64> = sizes
+        .iter()
+        .zip(&slopes)
+        .zip(&bends)
+        .map(|((size, slope), bend)| size + half_cell * slope + half_cell * half_cell / 2.0 * bend)
+        .collect();
+    let bent = turned * turned / 2.0 * loudest / turned.cos();
+    let cells: Vec<f64> = near
+        .windows(2)
+        .zip(sizes.windows(2))
+        .map(|(near, sizes)| (near[0].max(near[1]) + twisted).min(sizes[0].max(sizes[1]) + bent))
+        .collect();
+    let bins_a_hertz = size as f64 / f64::from(rate.hz());
+    let nyquist = f64::from(rate.hz()) / 2.0;
+    let mut order: Vec<usize> = (0..hertz.len()).collect();
+    order.sort_by(|left, right| hertz[*left].total_cmp(&hertz[*right]));
+    let mut enveloped = vec![0.0; hertz.len()];
+    for (place, point) in order.iter().enumerate() {
+        let below = place
+            .checked_sub(1)
+            .map_or(0.0, |before| (hertz[order[before]] + hertz[*point]) / 2.0);
+        let above = order
+            .get(place + 1)
+            .map_or(nyquist, |after| (hertz[*after] + hertz[*point]) / 2.0);
+        let first = ((below * bins_a_hertz).floor() as usize).min(cells.len() - 1);
+        let last = ((above * bins_a_hertz).ceil() as usize).clamp(first + 1, cells.len());
+        enveloped[*point] = cells[first..last].iter().copied().fold(0.0, f64::max);
+    }
+    enveloped
 }
 
 fn reach_of(heard: &[Vec<Heard>], shares: &[Heights], level: f64) -> Heights {

@@ -241,8 +241,27 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   is placed where it holds the most energy (`Soon::within`; it starts at 0 for a profile alone);
   that window is `G_near`, measured against `c * e^(-i w e)` (the level delayed to the main lobe),
   and both meet the moment that holds `t - d` for `d` the window's middle. The rest (`G - G_near`) is
-  bounded apart (`ringing`, at level 0, on the 2 048 points and their fixed shares) by the loudest of
-  each node over all the moments. A linear-phase correction's main lobe, half its length late, is
+  bounded apart (`ringing`, at level 0, with the points' fixed shares) by the loudest of each node
+  over all the moments, and **between the points by an envelope, not a sample** (`ringing_of`): the
+  chain's response is run on past the correction until its last quarter of settling holds under a
+  millionth of its L1 (`Rung::of`, settling doubled from the window's length, at most
+  `SETTLING_SECONDS_AT_MOST` (8 s)), the window's taps are taken out of it, and what lies beyond is
+  paid as the geometric remainder of its last two blocks, as are the ends of the ring holding under
+  a millionth of its L1 (`trimmed`, so a long quiet tail does not lengthen it). The ring's taps,
+  and the same taps times their distance from its middle and that distance squared, are transformed
+  on at least `RING_BINS_A_TAP` (8) bins a tap (at most 2^21, never under twice the taps), and each
+  point pays the most any bin cell between its neighbours' midpoints reaches (`enveloped_between`).
+  A cell pays the lesser of two rigorous bounds, with `n` the ring's half-length, `N` the bins and
+  `S` the loudest bin over `cos(pi n/N)` (the true loudest is at most that, by Bernstein and Szegő):
+  the larger of its two bins plus linear interpolation's error `(pi n/N)^2 / 2 * S`, or the larger
+  of its two ends' value, slope and bend (`|Z| + (pi/N)|Z'| + (pi/N)^2/2 |Z''|`) plus the
+  third-order remainder `(pi n/N)^3 / 6 * S`, so a ring loud at one frequency adds little where it
+  is quiet; never under the sampled response. A long reverberant tail's teeth fall between the
+  2 048 points: two seconds of noise a quarter of a second late under a direct tap bounded a tone on
+  a tooth up to 0.69 dB under its decode, now over it
+  (`a_tone_on_a_tooth_of_a_long_reverberant_tail_is_bounded_where_the_tail_meets_it`); over the
+  corpus below it moved the mean from 2.35 to 2.38 dB over the decode (an echo or a comb past the
+  window 0.14 dB looser on average, at most 0.53). A linear-phase correction's main lobe, half its length late, is
   therefore paid moment by moment
   (`a_correction_whose_energy_comes_late_is_bounded_where_its_main_lobe_meets_the_music`,
   `music_heard_apart_through_a_late_linear_phase_lift_is_bounded_moment_by_moment`), and a causal
@@ -250,7 +269,8 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   responses as `heard_at` does (profile group outer, correction channel inner), so near and whole
   are subtracted channel for channel. **What is rigorous and what is not**: the sum over a
   partition is exact, the moments hold every stretch with its neighbours, the codes round up, the
-  near envelope holds between bins, the ring is bounded by the whole song and the whole node alone
+  near envelope holds between bins, the ring is bounded by the whole song and its envelope between
+  the points, the whole node alone
   pays its L1, but `|G - c| * peak` bounds a narrower node's term exactly only for a steady tone or
   a sustained sum of tones; a transient
   through a resonant or phase-turning curve can pass it by up to the filter's L1-to-peak ratio, the
@@ -285,8 +305,12 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   about 15 ms for a profile and 75 ms with a ten-second response (it was 28 and 320 ms here), since
   the near window is summed by `resonate_dsp::response_of`, which shares the points among
   `available_parallelism` scoped threads once taps times points pass `TURNS_WORTH_A_THREAD` (2^24),
-  as `Impulse::heard_at` does for the whole response. A solved bound costs about 0.36 ms a song
-  and a fold about 50 us a song (`cargo bench -p resonate-analysis --bench bound`: twelve songs
+  as `Impulse::heard_at` does for the whole response; the ring's envelope adds three transforms of
+  the settled ring, one after another, about 140 ms under a ten-second room response on a loaded
+  machine (the bench's `ten-second room`, about 250 ms before and 350 after there) and a
+  millisecond under a profile alone, and holds at most 2^21 complex bins (32 MiB) at a time unless
+  the ring is longer than half of that. A
+  solved bound costs about 0.36 ms a song and a fold about 50 us a song (`cargo bench -p resonate-analysis --bench bound`: twelve songs
   under six curves, a thousand songs folded; 1.2 ms and 156 us before) where the partition costs
   microseconds: the simplex prices the spans against each node's shares laid node by node over the
   contiguous spans it passes (`Tones::reaches`), so the sums run across spans and vectorise, it
