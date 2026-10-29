@@ -141,6 +141,9 @@ Path. An impulse response convolved with the signal, for room correction. Defaul
 .TP
 .B speaker-angle
 Whole number of degrees, 5 to 90. How far to either side of the front the speakers stand, for a SOFA set of head-related responses chosen as the room correction: the measurements nearest that angle are read, blended where several lie close. Default: 30.
+.TP
+.B speaker-elevation
+Whole number of degrees, \-30 to 60. How far above the level of the ears (below, if negative) the speakers stand, for a SOFA set of head-related responses chosen as the room correction: where the measurements surround that direction the response is interpolated between the corners of the triangle holding it. Default: 0.
 .SH LIBRARY AND FILES
 .TP
 .B library

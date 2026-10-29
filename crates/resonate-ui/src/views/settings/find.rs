@@ -642,7 +642,11 @@ impl Group {
             Self::Inbox => &[SettingKey::Inbox],
             Self::MusicExtensions => &[SettingKey::MusicExtensions],
             Self::MinimumLength => &[SettingKey::MinimumLength],
-            Self::RoomCorrection => &[SettingKey::Convolution, SettingKey::SpeakerAngle],
+            Self::RoomCorrection => &[
+                SettingKey::Convolution,
+                SettingKey::SpeakerAngle,
+                SettingKey::SpeakerElevation,
+            ],
             Self::Abx => &[],
             Self::Subsonic => &[
                 SettingKey::Subsonic,

@@ -156,6 +156,7 @@ pub(crate) struct ListenModel {
     stage: Stage,
     heard: Vec<Found>,
     microphones: Vec<(String, String)>,
+    looked_for_microphones: bool,
     keeps_listening: bool,
     following: Following,
     running: Task<()>,
@@ -172,6 +173,7 @@ impl ListenModel {
             stage: Stage::Idle,
             heard: Vec::new(),
             microphones: Vec::new(),
+            looked_for_microphones: false,
             keeps_listening: false,
             following: Following::Off,
             running: Task::ready(()),
@@ -200,6 +202,10 @@ impl ListenModel {
         &self.microphones
     }
 
+    pub(crate) const fn has_looked_for_microphones(&self) -> bool {
+        self.looked_for_microphones
+    }
+
     pub(crate) const fn keeps_listening(&self) -> bool {
         self.keeps_listening
     }
@@ -220,6 +226,7 @@ impl ListenModel {
     #[cfg(test)]
     pub(crate) fn hearing_of(&mut self, microphones: Vec<(String, String)>) {
         self.microphones = microphones;
+        self.looked_for_microphones = true;
         self.listing = Task::ready(());
     }
 
@@ -248,6 +255,7 @@ impl ListenModel {
     }
 
     pub(crate) fn look_for_microphones(&mut self, cx: &mut Context<Self>) {
+        self.looked_for_microphones = true;
         let listener = self.listens.listener.clone();
         let found = cx
             .background_executor()

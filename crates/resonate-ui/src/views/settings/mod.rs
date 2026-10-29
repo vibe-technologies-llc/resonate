@@ -23,7 +23,7 @@ use gpui::{
     AnyElement, ClickEvent, Context, Div, FocusHandle, FontWeight, MouseButton, Pixels, Point,
     Role, SharedString, Stateful, Window, canvas, div, prelude::*, px, relative, rgb,
 };
-use resonate_core::{Appearance, SpeakerAngle};
+use resonate_core::{Appearance, SpeakerAngle, SpeakerElevation};
 use resonate_library::DEFAULT_LAYOUT;
 use resonate_listen::{CLIP_BY_DEFAULT, Listening};
 
@@ -603,6 +603,7 @@ impl RootView {
             Group::Tidal => self.forget_the_tidal_account(cx),
             Group::RoomCorrection => {
                 self.set_the_speaker_angle(SpeakerAngle::STANDARD, cx);
+                self.set_the_speaker_elevation(SpeakerElevation::LEVEL, cx);
                 self.correct_the_room(None, cx);
             }
             Group::Organising => self.set_organise_as(DEFAULT_LAYOUT.to_owned(), cx),
@@ -676,7 +677,8 @@ impl RootView {
         let music_folder_given = cx.global::<ResonateApp>().music_folder.is_some();
         let file_dropped = cx.global::<ResonateApp>().file_dropped;
         let convolving = cx.global::<ResonateApp>().convolution.is_some()
-            || cx.global::<ResonateApp>().speaker_angle != SpeakerAngle::STANDARD;
+            || cx.global::<ResonateApp>().speaker_angle != SpeakerAngle::STANDARD
+            || cx.global::<ResonateApp>().speaker_elevation != SpeakerElevation::LEVEL;
         let subsonic_given = self
             .subsonic
             .iter()

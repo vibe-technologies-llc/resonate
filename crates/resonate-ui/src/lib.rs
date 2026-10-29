@@ -17,6 +17,7 @@ mod icons;
 mod launcher;
 mod listening;
 mod lyrics;
+mod measure;
 mod models;
 mod motion;
 mod recent;
@@ -36,6 +37,7 @@ pub use crate::{
     launcher::{AppIcon, Launcher},
     listening::Listens,
     lyrics::{Look, LyricsModel},
+    measure::{Measures, Unmeasured},
     models::{
         Beyond, Consulted, Drawn, Favourited, LibraryModel, ListedRow, MissingRow, Notice, Pass,
         Planned, Portrayed, Pressings, Previewed, RootWaiting, Selection, Tone,

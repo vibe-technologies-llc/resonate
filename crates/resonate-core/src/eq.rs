@@ -199,6 +199,69 @@ impl fmt::Display for SpeakerAngle {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SpeakerElevation(i8);
+
+impl SpeakerElevation {
+    pub const LOWEST_DEGREES: i8 = -30;
+    pub const HIGHEST_DEGREES: i8 = 60;
+
+    pub const LEVEL: Self = Self(0);
+
+    pub const fn from_degrees(degrees: i16) -> Result<Self> {
+        if degrees < Self::LOWEST_DEGREES as i16 || degrees > Self::HIGHEST_DEGREES as i16 {
+            return Err(Error::SpeakerElevationOutOfRange(degrees));
+        }
+        Ok(Self(degrees as i8))
+    }
+
+    pub const fn degrees(self) -> i8 {
+        self.0
+    }
+}
+
+impl Default for SpeakerElevation {
+    fn default() -> Self {
+        Self::LEVEL
+    }
+}
+
+impl fmt::Display for SpeakerElevation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Speakers {
+    pub angle: SpeakerAngle,
+    pub elevation: SpeakerElevation,
+}
+
+impl Speakers {
+    pub const STANDARD: Self = Self {
+        angle: SpeakerAngle::STANDARD,
+        elevation: SpeakerElevation::LEVEL,
+    };
+
+    pub const fn at(angle: SpeakerAngle) -> Self {
+        Self {
+            angle,
+            elevation: SpeakerElevation::LEVEL,
+        }
+    }
+
+    pub const fn raised_to(self, elevation: SpeakerElevation) -> Self {
+        Self { elevation, ..self }
+    }
+}
+
+impl From<SpeakerAngle> for Speakers {
+    fn from(angle: SpeakerAngle) -> Self {
+        Self::at(angle)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Preamp(i32);
 
@@ -1204,6 +1267,23 @@ pub fn sweep(points: usize) -> impl Iterator<Item = f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_speaker_elevation_holds_whole_degrees_from_below_the_ears_to_well_above_them() {
+        for held in [-30, -1, 0, 1, 45, 60] {
+            let elevation = SpeakerElevation::from_degrees(held).expect("an elevation");
+            assert_eq!(i16::from(elevation.degrees()), held);
+        }
+
+        for refused in [-31, 61, i16::MIN, i16::MAX] {
+            assert_eq!(
+                SpeakerElevation::from_degrees(refused),
+                Err(Error::SpeakerElevationOutOfRange(refused))
+            );
+        }
+        assert_eq!(SpeakerElevation::default(), SpeakerElevation::LEVEL);
+        assert_eq!(Speakers::default(), Speakers::STANDARD);
+    }
 
     #[test]
     fn a_gainless_band_given_a_gain_is_normalised_to_the_one_made_without() {

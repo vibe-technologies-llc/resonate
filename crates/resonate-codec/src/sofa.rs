@@ -5,7 +5,7 @@ use std::{
 };
 
 use hdf5_reader::{Dataset, Datatype, Hdf5File, OpenOptions, SliceInfo, SliceInfoElem};
-use resonate_core::{Frames, MediaLocation, SampleRate, SpeakerAngle};
+use resonate_core::{Frames, MediaLocation, SampleRate, SpeakerAngle, Speakers};
 use thiserror::Error;
 
 use crate::{
@@ -28,6 +28,14 @@ const NEAREST_WITHIN_DEGREES: f64 = 45.0;
 const EXACT_WITHIN_DEGREES: f64 = 0.5;
 const NEIGHBOURS_WITHIN_DEGREES: f64 = 15.0;
 const NEIGHBOURS_AT_MOST: usize = 3;
+const TRIANGLE_WITHIN_DEGREES: f64 = 30.0;
+const TRIANGLE_CANDIDATES_AT_MOST: usize = 16;
+const TRIANGLE_AREA_AT_LEAST: f64 = 1e-5;
+const INSIDE_BY_AT_LEAST: f64 = -1e-9;
+const CAP_TOLERANCE: f64 = 1e-9;
+const WEIGHT_WORTH_READING: f64 = 1e-9;
+const POLE_NEAR: f64 = 0.9;
+const IN_FRONT_OF_THE_TANGENT_PLANE_AT_LEAST: f64 = 0.1;
 const ONSET_AT_FRACTION_OF_PEAK: f64 = 0.1;
 const CHUNK_CACHE_BYTES: usize = 16 << 20;
 const CHUNK_BYTES_AT_MOST: usize = 64 << 20;
@@ -38,6 +46,11 @@ const FRONT: Direction = Direction {
     front: 1.0,
     left: 0.0,
     up: 0.0,
+};
+const UP: Direction = Direction {
+    front: 0.0,
+    left: 0.0,
+    up: 1.0,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -211,7 +224,7 @@ pub fn read_hrir(
     sources: &Sources,
     location: &MediaLocation,
     longest: Duration,
-    angle: SpeakerAngle,
+    speakers: Speakers,
 ) -> Result<Option<Hrir>> {
     let unread = |source| Error::Io {
         location: location.clone(),
@@ -235,7 +248,7 @@ pub fn read_hrir(
         .read_to_end(&mut bytes)
         .map_err(unread)?;
 
-    read_hrir_bytes(bytes, longest, angle).map_err(|source| Error::Sofa {
+    read_hrir_bytes(bytes, longest, speakers).map_err(|source| Error::Sofa {
         location: location.clone(),
         source,
     })
@@ -248,7 +261,7 @@ fn is_container(bytes: &[u8]) -> bool {
 pub fn read_hrir_bytes(
     bytes: Vec<u8>,
     longest: Duration,
-    angle: SpeakerAngle,
+    speakers: Speakers,
 ) -> std::result::Result<Option<Hrir>, Fault> {
     if !is_container(&bytes) {
         return Ok(None);
@@ -262,7 +275,9 @@ pub fn read_hrir_bytes(
     }
 
     let container = Container::of(bytes)?;
-    Set::of(&container)?.stereo_pair(longest, angle).map(Some)
+    Set::of(&container)?
+        .stereo_pair(longest, speakers)
+        .map(Some)
 }
 
 enum Container {
@@ -502,7 +517,7 @@ impl<'a> Set<'a> {
     fn stereo_pair(
         &self,
         longest: Duration,
-        angle: SpeakerAngle,
+        speakers: Speakers,
     ) -> std::result::Result<Hrir, Fault> {
         let most =
             usize::try_from(Frames::from_duration(longest, self.rate).get()).unwrap_or(usize::MAX);
@@ -515,7 +530,7 @@ impl<'a> Set<'a> {
 
         let mut ears = Vec::with_capacity(4);
         for side in [Side::Left, Side::Right] {
-            ears.extend(self.ears_of(side, angle, frames, most)?);
+            ears.extend(self.ears_of(side, speakers, frames, most)?);
         }
 
         let length = ears.iter().map(Vec::len).max().unwrap_or(0);
@@ -531,11 +546,14 @@ impl<'a> Set<'a> {
     fn ears_of(
         &self,
         side: Side,
-        angle: SpeakerAngle,
+        speakers: Speakers,
         frames: usize,
         most: usize,
     ) -> std::result::Result<Vec<Vec<f64>>, Fault> {
-        let wanted = Direction::heard_from(side.azimuth_degrees(angle), 0.0);
+        let wanted = Direction::heard_from(
+            side.azimuth_degrees(speakers.angle),
+            f64::from(speakers.elevation.degrees()),
+        );
         match &self.placing {
             Placing::Measured { directions } => {
                 let mut contributions = Vec::new();
@@ -663,6 +681,9 @@ fn neighbours_of(
     if distance <= EXACT_WITHIN_DEGREES {
         return Ok(vec![(nearest, 1.0)]);
     }
+    if let Some(surrounding) = surrounding(directions, wanted) {
+        return Ok(surrounding);
+    }
 
     let chosen: Vec<(u64, f64)> = apart_from(directions, wanted)
         .into_iter()
@@ -681,6 +702,136 @@ fn neighbours_of(
         .zip(closeness)
         .map(|((measurement, _), closeness)| (*measurement, closeness / total))
         .collect())
+}
+
+#[derive(Clone, Copy)]
+struct Corner {
+    measurement: u64,
+    direction: Direction,
+    flat: [f64; 2],
+}
+
+struct Tangent {
+    first: Direction,
+    second: Direction,
+    toward: Direction,
+}
+
+impl Tangent {
+    fn at(toward: Direction) -> Self {
+        let axis = if toward.up.abs() > POLE_NEAR {
+            FRONT
+        } else {
+            UP
+        };
+        let first = axis.cross(toward).unit();
+        let second = toward.cross(first);
+        Self {
+            first,
+            second,
+            toward,
+        }
+    }
+
+    fn flatten(&self, direction: Direction) -> Option<[f64; 2]> {
+        let depth = direction.dot(self.toward);
+        (depth > IN_FRONT_OF_THE_TANGENT_PLANE_AT_LEAST).then(|| {
+            [
+                direction.dot(self.first) / depth,
+                direction.dot(self.second) / depth,
+            ]
+        })
+    }
+}
+
+fn barycentric(a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> Option<[f64; 3]> {
+    let area = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    if area.abs() < TRIANGLE_AREA_AT_LEAST {
+        return None;
+    }
+    let turn = |from: [f64; 2], to: [f64; 2]| (from[0] * to[1] - from[1] * to[0]) / area;
+    let weights = [turn(b, c), turn(c, a), turn(a, b)];
+    weights
+        .iter()
+        .all(|weight| *weight >= INSIDE_BY_AT_LEAST)
+        .then_some(weights)
+}
+
+fn cap_around(corners: [Direction; 3]) -> Option<(Direction, f64)> {
+    let [a, b, c] = corners;
+    let centre = b.minus(a).cross(c.minus(a));
+    if centre.length() <= f64::EPSILON {
+        return None;
+    }
+    let centre = centre.unit();
+    let (centre, cosine) = match centre.dot(a) {
+        cosine if cosine < 0.0 => (centre.reversed(), -cosine),
+        cosine => (centre, cosine),
+    };
+    (cosine > 0.0).then_some((centre, cosine))
+}
+
+fn surrounding(directions: &[Option<Direction>], wanted: Direction) -> Option<Vec<(u64, f64)>> {
+    let tangent = Tangent::at(wanted);
+    let corners: Vec<Corner> = apart_from(directions, wanted)
+        .into_iter()
+        .take_while(|(_, apart)| *apart <= TRIANGLE_WITHIN_DEGREES)
+        .take(TRIANGLE_CANDIDATES_AT_MOST)
+        .filter_map(|(measurement, _)| {
+            let direction = directions
+                .get(usize::try_from(measurement).ok()?)
+                .copied()??;
+            Some(Corner {
+                measurement,
+                direction,
+                flat: tangent.flatten(direction)?,
+            })
+        })
+        .collect();
+
+    let mut best: Option<(f64, [usize; 3], [f64; 3])> = None;
+    for i in 0..corners.len() {
+        for j in i + 1..corners.len() {
+            for k in j + 1..corners.len() {
+                let Some(weights) = barycentric(corners[i].flat, corners[j].flat, corners[k].flat)
+                else {
+                    continue;
+                };
+                let Some((centre, cosine)) = cap_around([
+                    corners[i].direction,
+                    corners[j].direction,
+                    corners[k].direction,
+                ]) else {
+                    continue;
+                };
+                let crowded = corners.iter().enumerate().any(|(other, corner)| {
+                    ![i, j, k].contains(&other)
+                        && corner.direction.dot(centre) > cosine + CAP_TOLERANCE
+                });
+                if crowded {
+                    continue;
+                }
+                if best.is_none_or(|(held, ..)| cosine > held) {
+                    best = Some((cosine, [i, j, k], weights));
+                }
+            }
+        }
+    }
+
+    let (_, places, weights) = best?;
+    let chosen: Vec<(u64, f64)> = places
+        .iter()
+        .zip(weights)
+        .filter(|(_, weight)| *weight > WEIGHT_WORTH_READING)
+        .map(|(place, weight)| (corners[*place].measurement, weight))
+        .collect();
+    let total: f64 = chosen.iter().map(|(_, weight)| weight).sum();
+    Some(
+        chosen
+            .into_iter()
+            .map(|(measurement, weight)| (measurement, weight / total))
+            .collect(),
+    )
 }
 
 fn blended(mut contributions: Vec<(f64, Vec<Vec<f64>>)>, most: usize) -> Vec<Vec<f64>> {
@@ -919,12 +1070,53 @@ impl Direction {
         })
     }
 
+    fn dot(self, other: Self) -> f64 {
+        self.front * other.front + self.left * other.left + self.up * other.up
+    }
+
+    fn cross(self, other: Self) -> Self {
+        Self {
+            front: self.left * other.up - self.up * other.left,
+            left: self.up * other.front - self.front * other.up,
+            up: self.front * other.left - self.left * other.front,
+        }
+    }
+
+    fn minus(self, other: Self) -> Self {
+        Self {
+            front: self.front - other.front,
+            left: self.left - other.left,
+            up: self.up - other.up,
+        }
+    }
+
+    fn reversed(self) -> Self {
+        Self {
+            front: -self.front,
+            left: -self.left,
+            up: -self.up,
+        }
+    }
+
+    fn length(self) -> f64 {
+        self.dot(self).sqrt()
+    }
+
+    fn unit(self) -> Self {
+        let length = self.length();
+        Self {
+            front: self.front / length,
+            left: self.left / length,
+            up: self.up / length,
+        }
+    }
+
     fn is_finite(self) -> bool {
         self.front.is_finite() && self.left.is_finite() && self.up.is_finite()
     }
 
     fn degrees_from(self, other: Self) -> f64 {
-        let alike = self.front * other.front + self.left * other.left + self.up * other.up;
+        let alike = self.dot(other);
         alike.clamp(-1.0, 1.0).acos().to_degrees()
     }
 }
@@ -997,7 +1189,7 @@ mod tests {
     use crate::netcdf::written;
 
     const LONG_ENOUGH: Duration = Duration::from_secs(10);
-    const STANDARD: SpeakerAngle = SpeakerAngle::STANDARD;
+    const STANDARD: Speakers = Speakers::STANDARD;
     const FRAMES: usize = 6;
 
     #[derive(Clone, Copy)]
@@ -1498,8 +1690,8 @@ mod tests {
             .collect()
     }
 
-    fn angle(degrees: u8) -> SpeakerAngle {
-        SpeakerAngle::from_degrees(degrees).expect("an angle")
+    fn angle(degrees: u8) -> Speakers {
+        Speakers::at(SpeakerAngle::from_degrees(degrees).expect("an angle"))
     }
 
     #[test]
@@ -1785,5 +1977,112 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    fn raised(degrees: i16) -> Speakers {
+        Speakers::STANDARD.raised_to(
+            resonate_core::SpeakerElevation::from_degrees(degrees).expect("an elevation"),
+        )
+    }
+
+    fn around(azimuth_degrees: f64, radius_degrees: f64, bearing_degrees: f64) -> (f64, f64) {
+        let (azimuth, radius, bearing) = (
+            azimuth_degrees.to_radians(),
+            radius_degrees.to_radians(),
+            bearing_degrees.to_radians(),
+        );
+        let (along, up) = (radius.sin() * bearing.cos(), radius.sin() * bearing.sin());
+        let front = radius.cos() * azimuth.cos() - along * azimuth.sin();
+        let left = radius.cos() * azimuth.sin() + along * azimuth.cos();
+        (
+            left.atan2(front).to_degrees().rem_euclid(360.0),
+            up.asin().to_degrees(),
+        )
+    }
+
+    fn level_by_measurement(measurement: usize, _: usize, frame: usize) -> f64 {
+        let level = [1.0, 2.0, 6.0][measurement % 3];
+        if frame == 1 { level } else { 0.0 }
+    }
+
+    #[test]
+    fn a_speaker_inside_a_triangle_of_measurements_takes_all_three_by_where_it_stands() {
+        let mut directions = Vec::new();
+        for speaker in [30.0, -30.0] {
+            for bearing in [90.0, 210.0, 330.0] {
+                directions.push(around(speaker, 20.0, bearing));
+            }
+        }
+        let mut fixture = Fixture::new(&directions);
+        fixture.taps = Some(level_by_measurement);
+
+        let hrir = fixture.read().expect("a set").expect("a SOFA file");
+
+        for response in &hrir.responses {
+            assert_eq!(rounded(response)[..3], [0.0, 3.0, 0.0]);
+        }
+    }
+
+    #[test]
+    fn a_speaker_standing_nearer_one_corner_of_its_triangle_takes_more_of_that_corner() {
+        let mut centred = Vec::new();
+        let mut shifted = Vec::new();
+        for speaker in [30.0, -30.0] {
+            for bearing in [90.0, 210.0, 330.0] {
+                centred.push(around(speaker, 20.0, bearing));
+                shifted.push(around(speaker, 20.0, bearing));
+            }
+        }
+        let mut near_the_first = Fixture::new(&shifted);
+        near_the_first.directions[0] = around(30.0, 12.0, 90.0);
+        near_the_first.taps = Some(level_by_measurement);
+        let mut level = Fixture::new(&centred);
+        level.taps = Some(level_by_measurement);
+
+        let near = near_the_first.read().expect("a set").expect("a SOFA file");
+        let even = level.read().expect("a set").expect("a SOFA file");
+
+        assert!(near.responses[0][1] < even.responses[0][1]);
+        assert_eq!(rounded(&near.responses[2])[..3], [0.0, 3.0, 0.0]);
+    }
+
+    #[test]
+    fn a_speaker_raised_is_read_from_the_measurements_at_that_elevation() {
+        let mut fixture = Fixture::new(&[(30.0, 0.0), (30.0, 30.0), (330.0, 0.0), (330.0, 30.0)]);
+        fixture.taps = Some(impulse_by_measurement);
+
+        let level = read_hrir_bytes(fixture.bytes(), LONG_ENOUGH, STANDARD)
+            .expect("a set")
+            .expect("a SOFA file");
+        let high = read_hrir_bytes(fixture.bytes(), LONG_ENOUGH, raised(30))
+            .expect("a set")
+            .expect("a SOFA file");
+        let level_only = Fixture::new(&[(30.0, 0.0), (330.0, 0.0)]);
+        let too_high = read_hrir_bytes(level_only.bytes(), LONG_ENOUGH, raised(60));
+
+        assert_eq!(level.responses, fixture.expected(0, 2));
+        assert_eq!(high.responses, fixture.expected(1, 3));
+        assert!(matches!(too_high, Err(Fault::NoMeasurementNear { .. })));
+    }
+
+    #[test]
+    fn a_speaker_between_a_row_of_measurements_and_the_next_row_above_is_blended_of_both_rows() {
+        let mut fixture = Fixture::new(&[
+            (20.0, 0.0),
+            (40.0, 0.0),
+            (30.0, 25.0),
+            (340.0, 0.0),
+            (320.0, 0.0),
+            (330.0, 25.0),
+        ]);
+        fixture.taps = Some(level_by_measurement);
+
+        let hrir = read_hrir_bytes(fixture.bytes(), LONG_ENOUGH, raised(8))
+            .expect("a set")
+            .expect("a SOFA file");
+
+        let level = rounded(&hrir.responses[0])[1];
+        assert!(level > 1.0 && level < 6.0, "{level}");
+        assert!((level - 2.0).abs() > 0.2, "{level}");
     }
 }

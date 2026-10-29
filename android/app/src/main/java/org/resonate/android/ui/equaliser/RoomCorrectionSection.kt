@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,13 +12,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.SurroundSound
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -145,8 +150,31 @@ fun RoomCorrectionSection(model: EqualiserViewModel) {
                 }
             }
         }
+        val limits = model.speakerLimits
+        SpeakerSetting(
+            title = "Speaker angle",
+            value = room.angle,
+            least = limits.angleLeastDegrees.toInt(),
+            most = limits.angleMostDegrees.toInt(),
+            presets = listOf(20, 30, 45, 60, 90),
+            lessSaying = "Bring the speakers a degree closer",
+            moreSaying = "Put the speakers a degree further apart",
+            tag = "speaker-angle",
+            onChange = model::speakAt,
+        )
+        SpeakerSetting(
+            title = "Speaker elevation",
+            value = room.elevation,
+            least = limits.elevationLeastDegrees.toInt(),
+            most = limits.elevationMostDegrees.toInt(),
+            presets = listOf(0, 10, 20, 30, 45),
+            lessSaying = "Lower the speakers a degree",
+            moreSaying = "Raise the speakers a degree",
+            tag = "speaker-elevation",
+            onChange = model::raiseTo,
+        )
         Text(
-            "A measured impulse response, up to ten seconds long, is convolved before the equaliser on every output. It is lowered where it would lift the music past full scale. A four-channel file is a two-by-two (binaural) response, in the order left-to-left, left-to-right, right-to-left, right-to-right. A SOFA set of head-related responses is read as the same, from the measurements nearest 30 degrees left and right. A pair is two stereo responses, the left speaker's and then the right's, each as heard at both ears, joined into one two-by-two response.",
+            "A measured impulse response, up to ten seconds long, is convolved before the equaliser on every output. It is lowered where it would lift the music past full scale. A four-channel file is a two-by-two (binaural) response, in the order left-to-left, left-to-right, right-to-left, right-to-right. A SOFA set of head-related responses is read as the same, from the measurements around the speaker angle either side of the front and the elevation above the ears, blended where several surround them. A pair is two stereo responses, the left speaker's and then the right's, each as heard at both ears, joined into one two-by-two response.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = Sizes.gutter, vertical = 4.dp),
@@ -169,5 +197,58 @@ fun RoomCorrectionSection(model: EqualiserViewModel) {
             },
             dismissButton = { TextButton(onClick = { forgetting = false }) { Text("Cancel") } },
         )
+    }
+}
+
+@Composable
+private fun SpeakerSetting(
+    title: String,
+    value: Int,
+    least: Int,
+    most: Int,
+    presets: List<Int>,
+    lessSaying: String,
+    moreSaying: String,
+    tag: String,
+    onChange: (Int) -> Unit,
+) {
+    Column(Modifier.testTag(tag)) {
+        ListItem(
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            supportingContent = { Text("$value°", modifier = Modifier.testTag("$tag-value")) },
+            trailingContent = {
+                Row {
+                    IconButton(
+                        onClick = { onChange(value - 1) },
+                        enabled = value > least,
+                        modifier = Modifier.testTag("$tag-less"),
+                    ) {
+                        Icon(Icons.Rounded.Remove, lessSaying)
+                    }
+                    IconButton(
+                        onClick = { onChange(value + 1) },
+                        enabled = value < most,
+                        modifier = Modifier.testTag("$tag-more"),
+                    ) {
+                        Icon(Icons.Rounded.Add, moreSaying)
+                    }
+                }
+            },
+        ) {
+            Text(title)
+        }
+        FlowRow(
+            Modifier.fillMaxWidth().padding(horizontal = Sizes.gutter),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            presets.forEach { preset ->
+                FilterChip(
+                    selected = value == preset,
+                    onClick = { onChange(preset) },
+                    label = { Text("$preset°") },
+                    modifier = Modifier.testTag("$tag-$preset"),
+                )
+            }
+        }
     }
 }

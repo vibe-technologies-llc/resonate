@@ -270,4 +270,10 @@ class EqualiserViewModel(private val resonate: Resonate) : ViewModel() {
     fun turnRoom(on: Boolean) = resonate.features.room.turn(on)
 
     fun forgetRoom() = resonate.features.room.forget()
+
+    val speakerLimits = resonate.features.room.limits
+
+    fun speakAt(angle: Int) = resonate.features.room.speakAt(angle)
+
+    fun raiseTo(elevation: Int) = resonate.features.room.raiseTo(elevation)
 }
