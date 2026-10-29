@@ -12,7 +12,7 @@ use gpui::{
     div, linear_color_stop, linear_gradient, point, prelude::*, px, quad, relative, rgb, size,
 };
 use resonate_core::{
-    MediaLocation, SampleRate, SpeakerAngle, SpeakerElevation, Speakers,
+    HeadYaw, MediaLocation, SampleRate, SpeakerAngle, SpeakerElevation, Speakers,
     eq::{Band, BandKind, Preamp, Traced, TracedOn},
 };
 use resonate_engine::{
@@ -32,6 +32,7 @@ use crate::{
     },
     equaliser::{
         CURVE_COLUMNS, Cell, DRAWN_BETWEEN_MILLIBELS, Editing, Goal, HERTZ_A_KILOHERTZ, Nudge,
+        Sounding,
     },
     icons::Icon,
     theme, toast,
@@ -82,10 +83,11 @@ const SHAPED_BY_HAND: &str = "Press the curve to add a band, drag a handle to mo
 const NO_MEASURING: &str = "This build cannot play a sweep and hear it";
 
 const MEASURE_NOTE: &str = "Plays a sweep of eight seconds through the output in use, straight to \
-                            the device and past the equaliser, and records it for two more. Keep \
-                            the room quiet. The response is fitted toward the target above and \
-                            kept as the profile measured. The microphone's own response is \
-                            corrected too unless a calibration is taken off with resonate eq.";
+                            the device and past the equaliser, and records it for two more; Stop \
+                            ends it and keeps nothing. Keep the room quiet. The response is fitted \
+                            toward the target above and kept as the profile named, measured when \
+                            none is. The microphone's own response is corrected too unless you \
+                            choose its calibration, a measurement file taken off what is heard.";
 
 const OWN_MEASUREMENT_NOTE: &str = "Choose a frequency-response measurement of your own — \
                                     AutoEq's CSV, REW's exported text, or two columns of \
@@ -791,17 +793,122 @@ impl RootView {
                 .flex_col()
                 .gap_2()
                 .child(kit::field("Heard through", sources))
-                .child(div().flex().flex_wrap().gap_2().child(action(
-                    "measure-the-room",
-                    if measuring { "Measuring…" } else { "Measure" },
-                    Icon::Listen,
-                    measuring,
-                    |this, _, cx| this.measure_the_room(cx),
-                    self,
-                    cx,
-                )))
+                .child(self.calibration_field(cx))
+                .child(kit::field("Keep as", self.measured_as_field(cx)))
+                .child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .gap_2()
+                        .child(action(
+                            "measure-the-room",
+                            if measuring { "Measuring…" } else { "Measure" },
+                            Icon::Listen,
+                            measuring,
+                            |this, _, cx| this.measure_the_room(cx),
+                            self,
+                            cx,
+                        ))
+                        .when(measuring, |row| {
+                            row.child(action(
+                                "stop-measuring",
+                                "Stop",
+                                Icon::Stop,
+                                false,
+                                |this, _, cx| this.stop_measuring_the_room(cx),
+                                self,
+                                cx,
+                            ))
+                        }),
+                )
                 .child(note(MEASURE_NOTE)),
         )
+    }
+
+    fn calibration_field(&mut self, cx: &mut Context<Self>) -> Div {
+        let held = self.equaliser.read(cx).calibration().cloned();
+        let named = held
+            .as_ref()
+            .and_then(|file| file.file_name())
+            .map(|name| name.to_string_lossy().into_owned());
+        let measuring = self.equaliser.read(cx).is_measuring_the_room();
+
+        kit::field(
+            "Microphone calibration",
+            div()
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .gap_2()
+                .child(action(
+                    "measure-calibration",
+                    "Choose a calibration…",
+                    Icon::Import,
+                    measuring,
+                    |this, _, cx| this.choose_a_calibration(cx),
+                    self,
+                    cx,
+                ))
+                .when_some(named, |row, name| {
+                    row.child(kit::badge(name, theme::muted())).child(action(
+                        "measure-calibration-forget",
+                        "Remove",
+                        Icon::Close,
+                        measuring,
+                        |this, _, cx| this.calibrate_with(None, cx),
+                        self,
+                        cx,
+                    ))
+                }),
+        )
+    }
+
+    fn measured_as_field(&mut self, cx: &mut Context<Self>) -> Stateful<Div> {
+        let _ = cx;
+        div()
+            .id("measure-profile-name")
+            .flex()
+            .items_center()
+            .gap_2()
+            .h(theme::width(theme::search_height()))
+            .px_3()
+            .rounded_lg()
+            .bg(rgb(theme::background()))
+            .border_1()
+            .border_color(rgb(theme::border()))
+            .text_size(px(theme::text_sm()))
+            .cursor_text()
+            .hover(|field| field.border_color(theme::tinted(theme::accent(), 0x99)))
+            .on_click(cx.listener(|this, _, window, cx| {
+                this.measured_as
+                    .update(cx, |field, cx| field.take_focus(window, cx));
+                cx.notify();
+            }))
+            .child(self.measured_as.clone())
+    }
+
+    pub(crate) fn calibrate_with(&mut self, file: Option<PathBuf>, cx: &mut Context<Self>) {
+        self.equaliser.update(cx, |model, cx| {
+            model.calibrate_with(file);
+            cx.notify();
+        });
+        cx.notify();
+    }
+
+    fn choose_a_calibration(&self, cx: &mut Context<Self>) {
+        self.pick_a_file(
+            "Calibrate with",
+            |this, file, cx| this.calibrate_with(Some(file), cx),
+            cx,
+        );
+    }
+
+    pub(crate) fn stop_measuring_the_room(&mut self, cx: &mut Context<Self>) {
+        self.equaliser.update(cx, |model, cx| {
+            model.stop_measuring_the_room();
+            cx.notify();
+        });
+        cx.notify();
     }
 
     fn heard_from(
@@ -839,8 +946,31 @@ impl RootView {
             .sink_in_use()
             .map(|sink| sink.name.clone());
         let from = self.listen.read(cx).from().clone();
+        let typed = self.measured_as.read(cx).text().trim().to_owned();
+        let called = if typed.is_empty() {
+            None
+        } else {
+            match ProfileName::new(&typed) {
+                Ok(name) => Some(name),
+                Err(error) => {
+                    toast::tell(
+                        toast::eq_could_not("keep a profile under that name", &error),
+                        cx,
+                    );
+                    return;
+                }
+            }
+        };
         self.equaliser.update(cx, |model, cx| {
-            model.measure_the_room(rig, through, from, cx);
+            model.measure_the_room(
+                Sounding {
+                    rig,
+                    through,
+                    from,
+                    called,
+                },
+                cx,
+            );
         });
         cx.notify();
     }
@@ -1975,6 +2105,13 @@ const ELEVATION_NOTE: &str = "How far above the level of the ears the speakers s
                               surround that direction, the response is interpolated between the \
                               corners of the triangle that holds it.";
 
+const YAW_NOTE: &str = "How far your head is turned from the front, from -90 to 90 degrees, to \
+                        the left when positive. The speakers are looked up that many degrees \
+                        round the other way, and in a set of speakers measured at several head \
+                        orientations the view nearest the turn is read.";
+
+const HEAD_YAWS: [i16; 5] = [-45, -20, 0, 20, 45];
+
 const SPEAKER_ANGLES: [u8; 5] = [20, 30, 45, 60, 90];
 
 const SPEAKER_ELEVATIONS: [i16; 5] = [0, 10, 20, 30, 45];
@@ -2074,6 +2211,7 @@ impl RootView {
             )
             .child(self.speaker_angle_field(cx))
             .child(self.speaker_elevation_field(cx))
+            .child(self.head_yaw_field(cx))
             .child(note(ROOM_NOTE))
     }
 
@@ -2172,6 +2310,54 @@ impl RootView {
         .child(note(ELEVATION_NOTE))
     }
 
+    fn head_yaw_field(&mut self, cx: &mut Context<Self>) -> Div {
+        let held = cx.global::<ResonateApp>().head_yaw;
+        let mut presets = div().flex().flex_wrap().gap_2();
+        for degrees in HEAD_YAWS {
+            let Ok(yaw) = HeadYaw::from_degrees(degrees) else {
+                continue;
+            };
+            let id = SharedString::from(format!("head-yaw-{degrees}"));
+            presets = presets.child(
+                self.in_the_ring_at(
+                    id.to_string(),
+                    kit::chip(id, format!("{degrees}°"), held == yaw)
+                        .names(format!("Head turned {degrees} degrees")),
+                    move |this, _, cx| this.set_the_head_yaw(yaw, cx),
+                    cx,
+                ),
+            );
+        }
+        let stepper = self.degrees_stepper(
+            "head-yaw",
+            format!("{held}°"),
+            ("Turn the head a degree to the right", |this, cx| {
+                let held = i16::from(cx.global::<ResonateApp>().head_yaw.degrees());
+                if let Ok(yaw) = HeadYaw::from_degrees(held - 1) {
+                    this.set_the_head_yaw(yaw, cx);
+                }
+            }),
+            ("Turn the head a degree to the left", |this, cx| {
+                let held = i16::from(cx.global::<ResonateApp>().head_yaw.degrees());
+                if let Ok(yaw) = HeadYaw::from_degrees(held + 1) {
+                    this.set_the_head_yaw(yaw, cx);
+                }
+            }),
+            cx,
+        );
+        kit::field(
+            "Head turned",
+            div()
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .gap_3()
+                .child(stepper)
+                .child(presets),
+        )
+        .child(note(YAW_NOTE))
+    }
+
     fn degrees_stepper(
         &mut self,
         id: &'static str,
@@ -2222,6 +2408,15 @@ impl RootView {
         }
         cx.update_global::<ResonateApp, _>(|global, _| global.speaker_elevation = elevation);
         self.store(&Setting::SpeakerElevation(elevation), cx);
+        self.read_the_room_again(cx);
+    }
+
+    pub(crate) fn set_the_head_yaw(&mut self, yaw: HeadYaw, cx: &mut Context<Self>) {
+        if cx.global::<ResonateApp>().head_yaw == yaw {
+            return;
+        }
+        cx.update_global::<ResonateApp, _>(|global, _| global.head_yaw = yaw);
+        self.store(&Setting::HeadYaw(yaw), cx);
         self.read_the_room_again(cx);
     }
 
@@ -2392,6 +2587,7 @@ fn speakers_worn(cx: &App) -> Speakers {
     Speakers {
         angle: worn.speaker_angle,
         elevation: worn.speaker_elevation,
+        yaw: worn.head_yaw,
     }
 }
 

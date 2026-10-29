@@ -186,7 +186,8 @@ resonate tag                      # the tags that would be written back to say w
                                   #   learned; --apply writes them
 resonate organise                 # the moves that would file every track under a layout;
                                   #   --apply makes them
-resonate vault                    # what the vault holds; --import, --verify, --prune, --release
+resonate vault                    # what the vault holds; --import, --verify, --prune, --release,
+                                  #   --compact
 resonate studies                  # what the study of every track found; --fakes, --suspects,
                                   #   --misnamed
 resonate playlists                # the playlists the library holds

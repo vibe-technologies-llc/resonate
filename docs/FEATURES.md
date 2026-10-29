@@ -60,17 +60,18 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   lyric text (LRCLIB's text search finds none)
 
 ## Identification
-- [M · 0.3.0] The quantiser steps were weighed only on the encoders this machine has (ffmpeg's
-  AAC, faac, fdk AAC, LAME, libvorbis and ffmpeg's Vorbis): no Apple or FhG AAC, no FhG or other
-  MP3 encoder and no aoTuV Vorbis weighed; fdk AAC at 320 kbps and faac at `-q 100` still miss
-  five to seven of 36 loud masters, whose lattice reads 0.008 at most (the cause is not found; at
-  320 kbps large quantised values thin a log lattice, a power-law lattice per scale factor band
-  would need each band's scale factor searched); a lossy decode downsampled below the rate it was coded at loses its grid; MP2 (twolame) is not
-  weighed, its subband samples sitting on a linear grid per scale factor; and an Opus decode is
-  only `Suspect`: CELT codes a band's energy as a residual from a prediction on the previous
-  frame's, so the energies sit on no lattice of their own (a direct search of 960-line frames at
-  every offset found none), and weighing the residual wants libopus's mean table, post-filter and
-  stereo state
+- [M · 0.3.0] faac at `-q 100` misses 8 of 36 loud masters (28 found) and libopus 5 to 8 of 36
+  (at 64, 128 and 192 kbps and decoded to 44.1 kHz), the same masters: faac's noise substitution
+  fills bands with noise that takes most of the weight off the coded lines (`--pns 0` finds the
+  three tried), and leaving dense bands whose norm sits on the lattice out found one more for twice
+  the search; in Opus one miss reads 0.14 at its own frame offset against 0.62 for a found master,
+  the likely cause the frames its pitch post-filter touched, which undoing wants each frame's
+  period, gain and taps searched for
+- [M · blocked: encoders] The quantiser steps are weighed only on the encoders this machine has
+  (ffmpeg's AAC and MP2, faac, LAME, libvorbis, ffmpeg's Vorbis, twolame and libopus; fdk AAC on an
+  earlier one): no Apple or FhG AAC, no FhG or other MP3 encoder and no aoTuV Vorbis; fdk AAC at 320
+  kbps missed five of 36 loud masters there with the cause not found (a power-law lattice per scale
+  factor band, each band's scale factor searched, is untried without fdkaac to weigh it on)
 
 ## Later: Sources and providers
 - [M] A song played in place is never a favourite, and a phone counts no listen of one: a favourite
@@ -92,8 +93,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   track
 
 ## Later: The vault
-- [S] A JPEG cover kept as a JPEG before the transcode (`vault.md`) is not weighed again: a vault
-  made by an older build keeps every one at its larger size until it is pruned and imported afresh
 - [L · blocked: flacenc] `flacenc` 0.5.1, the latest, caps the Rice parameter at 14, the rate at 96
   kHz and the depth at 24 bits: a 24-bit rip loses to `flac -8` by ~15 % and is kept; a 192 kHz rip
   is never a FLAC
@@ -101,29 +100,24 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   the vault: `jxl-encoder` 0.3.4, the latest, refuses the first and rebuilds the second one byte long
 
 ## Later: Equaliser and DSP extras
-- [S] A SOFA HRIR set is not read for a head turned, for a `MultiSpeakerBRIR` measured with the
-  listener off the origin (`ListenerPosition` is ignored), from a netCDF-3 64-bit data file (CDF-5)
-  or past the phones' 64 MiB response limit; the interpolation triangulates the sixteen nearest
-  measurements within 30 degrees and is a true interpolation only where one triangle of them
-  surrounds the speaker, so a set measured at one elevation alone, or asked for a direction past
-  its outermost row, falls back to the inverse-distance blend of up to three measurements within 15
-  degrees, and a set of speakers (`MultiSpeakerBRIR`) takes its nearest emitter and interpolates
-  nothing; the interpolation blends in the time domain with the onsets aligned, not magnitude and
-  delay apart, which a coarse set (a measurement every thirty degrees) smears
+- [S] A phone refuses a SOFA set past 64 MiB (`IMPULSE_BYTES_AT_MOST`) though the desktop reads an
+  HDF5 one of up to 8 GiB by the ranges it needs: the limit is the boundary's, a document read whole
+  into a Kotlin `ByteArray` or Swift `Data`, copied across the boundary and staged as a file, and
+  lifting it needs a chunked staging call and a document read in chunks in both pickers; a netCDF-3
+  classic file is still read whole (up to 128 MiB) on every target, and a head's pitch and roll
+  (`ListenerView` past its heading) and a `ListenerPosition` in units other than metres are not read
 - [M] *Fit the preamp*'s solved bound prices every node under the whole signal's at its steady
   gain, so broadband music under a curve moving many bands still bounds one to three and a half
   decibels over its decode; weighing each node by its band's transient gain (the L1 of the near
   response filtered to it) was measured too loose under a dispersive correction (a random burst of
   taps 6 to 12 dB looser), and a transient gain read from what music a band holds, not the worst
   any music could, is not built
-- [S] The phones' *Measure* (a sweep through an `AudioTrack` or an `AVAudioPlayerNode` of its
+- [S · blocked: hardware] The phones' *Measure* (a sweep through an `AudioTrack` or an `AVAudioPlayerNode` of its
   own beside the engine, recorded by the microphone and fitted by `fit_recorded_sweep`; `eq.md`) is
   proved on the host against a known filter, and its Kotlin on the JVM, but not heard through a real
   phone's speaker and microphone: the iOS path is built and not run, the Android path was run end to end on an
   emulator, whose virtual microphone proves the path and says nothing of the sound, and neither phone corrects its own microphone or speaker
-  except by a calibration file the listener has; the window's *Measure* cannot be stopped part way
-  (eight seconds of sweep and two of tail) and takes no calibration file (the command's
-  `--calibration`) nor a name for the profile (it keeps `measured`)
+  except by a calibration file the listener has
 - [M] Lossy restoration was tuned and tested on ffmpeg's own MP3, AAC and Vorbis encodes of
   synthetic tones, walls and music-like notes at several bitrates, not on a breadth of real music
   per codec and bitrate and not on other encoders (Fraunhofer, Apple, Nero, libfdk); the thresholds
@@ -149,14 +143,13 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   seam the desktop's renderers sit behind
 - [M] An equaliser, ReplayGain or listening-test change reaches a UPnP renderer's ear only after
   what it already holds (seconds on many streamers): a seek, a pause and the volume skip that
-  buffer (a fresh address after `Stop`, the renderer's own `Pause`, its own RenderingControl), but
-  whatever is rendered into the ring plays out behind it. OpenHome's own `Playlist` and `Volume`
-  services are not spoken (an OpenHome player is reached through the AVTransport upmpdcli puts in
-  front of it)
-- [S] A UPnP renderer is fed PCM alone: WAVE or L16 at 16 or 24 bits, stereo, so a multichannel
-  source is folded down and a renderer taking FLAC is still sent uncompressed PCM, about 9 Mbit/s at
-  24-bit 192 kHz; encoding the ring to FLAC on the way out is not done, and handing the untouched
-  file over does not fit the sink seam (`upnp.md`)
+  buffer (a fresh address after `Stop`, the renderer's own `Pause`, its own RenderingControl or
+  OpenHome `Volume`), but whatever is rendered into the ring plays out behind it
+- [S] A UPnP renderer is sent FLAC only up to 96 kHz (flacenc's bound): above it a renderer taking
+  WAVE is sent uncompressed PCM, about 9 Mbit/s at 24-bit 192 kHz, and one taking FLAC alone is
+  offered nothing above 96 kHz. Channels beyond stereo are offered only where the protocol info
+  states `channels=N` (a renderer saying nothing is folded down), and handing the untouched file
+  over does not fit the sink seam (`upnp.md`)
 - [L · blocked: Apple] AirPlay 2 cannot be played to: its pairing, encryption and buffered audio
   are Apple's own, with no published specification to build against
 

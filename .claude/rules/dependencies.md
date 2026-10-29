@@ -53,7 +53,8 @@ here, add it there.
   `cargo tree -p resonate-library` has no `ureq`/`serde`/`serde_json` and `cargo tree -p resonate --no-default-features` links no HTTP client. `-mcp`: off `-online`, gpui, UI. `-discord`: core,
   engine vocabulary, serde; no gpui, library, HTTP client.
 - A provider crate reaches core, the seam and (a network one) `resonate-fetch` alone.
-- `resonate-upnp`: core and `resonate-audio` alone, with `httparse`, `roxmltree`, `parking_lot`,
+- `resonate-upnp`: core and `resonate-audio` alone, with `httparse`, `roxmltree`, `flacenc` (the live
+  FLAC stream, pure Rust, the vault's own encoder), `parking_lot`,
   `crossbeam-channel`, `thiserror` and `tracing`; no PipeWire, gpui, `ureq`, serde or rustls (a
   renderer is plain HTTP on the local network, `upnp.md`). The engine is its dev-dependency alone.
 - `resonate-sync`: core alone among workspace crates; no library, engine, gpui, `ureq`, serde.

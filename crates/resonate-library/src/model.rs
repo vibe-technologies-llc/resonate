@@ -107,6 +107,15 @@ pub struct Pruned {
     pub left: u64,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Compacted {
+    pub covers: u64,
+    pub was: u64,
+    pub now: u64,
+    pub kept: u64,
+    pub left: u64,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VaultObject {
     pub key: VaultKey,

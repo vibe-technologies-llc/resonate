@@ -60,17 +60,28 @@ impl resonate_ui::Measures for Sweeping {
         &self,
         through: Option<&NodeName>,
         from: &Listening,
+        hearing: &Hearing,
+        calibration: Option<&Response>,
     ) -> std::result::Result<Response, resonate_ui::Unmeasured> {
         let room = Room {
             through,
             from: from.clone(),
         };
-        measured_by(&room).map_err(resonate_ui::Unmeasured::from)
+        let heard = measured_by(&room, hearing).map_err(resonate_ui::Unmeasured::from)?;
+        match calibration {
+            Some(microphone) => calibrated(&heard, microphone).map_err(|source| {
+                resonate_ui::Unmeasured::Response(match source {
+                    Error::Eq(source) => source,
+                    _ => EqError::NoMeasuredPoints,
+                })
+            }),
+            None => Ok(heard),
+        }
     }
 }
 
 pub trait Rig {
-    fn sound(&self, sweep: &Sweep, heard_for: Duration) -> Sounded;
+    fn sound(&self, sweep: &Sweep, heard_for: Duration, hearing: &Hearing) -> Sounded;
 }
 
 pub struct Room<'a> {
@@ -79,23 +90,23 @@ pub struct Room<'a> {
 }
 
 impl Rig for Room<'_> {
-    fn sound(&self, sweep: &Sweep, heard_for: Duration) -> Sounded {
+    fn sound(&self, sweep: &Sweep, heard_for: Duration, hearing: &Hearing) -> Sounded {
         let clip = Listener::new(APP_NAME).play_and_record(
             sweep.samples(),
             self.through,
             &self.from,
             heard_for,
-            &Hearing::new(),
+            hearing,
         )?;
         Ok(clip.mono())
     }
 }
 
-pub fn measured_by(rig: &dyn Rig) -> std::result::Result<Response, Unheard> {
+pub fn measured_by(rig: &dyn Rig, hearing: &Hearing) -> std::result::Result<Response, Unheard> {
     let sweep = Sweep::for_measuring(MEASURED_AT)?;
     let heard_for = sweep.heard_for();
 
-    let recorded = rig.sound(&sweep, heard_for)?;
+    let recorded = rig.sound(&sweep, heard_for, hearing)?;
     let levels = sweep.heard_as(&recorded)?.response()?;
 
     Response::from_levels(
@@ -133,7 +144,7 @@ mod tests {
     struct Lowpassed;
 
     impl Rig for Lowpassed {
-        fn sound(&self, sweep: &Sweep, heard_for: Duration) -> Sounded {
+        fn sound(&self, sweep: &Sweep, heard_for: Duration, _hearing: &Hearing) -> Sounded {
             let total = (heard_for.as_secs_f64() * f64::from(sweep.rate().hz())) as usize;
             let mut held = 0.0_f64;
             let mut heard = vec![0.0_f32; DELAY_FRAMES];
@@ -149,7 +160,7 @@ mod tests {
     struct Silent;
 
     impl Rig for Silent {
-        fn sound(&self, _sweep: &Sweep, heard_for: Duration) -> Sounded {
+        fn sound(&self, _sweep: &Sweep, heard_for: Duration, _hearing: &Hearing) -> Sounded {
             let total = (heard_for.as_secs_f64() * f64::from(MEASURED_AT.hz())) as usize;
             Ok(vec![0.0; total])
         }
@@ -164,7 +175,7 @@ mod tests {
 
     #[test]
     fn a_sweep_through_a_fake_output_and_microphone_measures_the_filter_between_them() {
-        let measured = measured_by(&Lowpassed).expect("the sweep is measured");
+        let measured = measured_by(&Lowpassed, &Hearing::new()).expect("the sweep is measured");
 
         for hertz in [100.0, 250.0, 1_000.0, 3_000.0, 6_000.0, 10_000.0] {
             let off = (measured.at(hertz) - lowpass_db(hertz)).abs();
@@ -175,7 +186,7 @@ mod tests {
 
     #[test]
     fn what_is_measured_live_goes_through_the_fit_a_file_goes_through() {
-        let measured = measured_by(&Lowpassed).expect("the sweep is measured");
+        let measured = measured_by(&Lowpassed, &Hearing::new()).expect("the sweep is measured");
         let flat = Response::flat();
 
         let fitted = fit(&measured, &flat, &Fitting::default()).expect("a fit");
@@ -191,7 +202,7 @@ mod tests {
 
     #[test]
     fn what_is_measured_is_kept_in_the_headed_layout_a_measurement_file_reads_back_from() {
-        let measured = measured_by(&Lowpassed).expect("the sweep is measured");
+        let measured = measured_by(&Lowpassed, &Hearing::new()).expect("the sweep is measured");
 
         let read = read_response(as_csv(&measured).as_bytes()).expect("the csv reads");
 
@@ -203,7 +214,7 @@ mod tests {
 
     #[test]
     fn a_microphones_own_response_is_taken_off_what_it_heard() {
-        let heard = measured_by(&Lowpassed).expect("the sweep is measured");
+        let heard = measured_by(&Lowpassed, &Hearing::new()).expect("the sweep is measured");
         let microphone_is_the_filter = Response::from_points(
             heard
                 .points()
@@ -227,7 +238,7 @@ mod tests {
     #[test]
     fn a_microphone_that_heard_nothing_is_refused_not_fitted() {
         assert!(matches!(
-            measured_by(&Silent),
+            measured_by(&Silent, &Hearing::new()),
             Err(Unheard::Deconvolved(resonate_dsp::Error::NothingHeard))
         ));
     }

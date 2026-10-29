@@ -17,8 +17,8 @@ use gpui::{
     TestAppContext, TouchPhase, VisualTestContext, point, px, size,
 };
 use resonate_core::{
-    Appearance, Frames, Gain, MediaLocation, QueueStamp, Resumable, Resumption, SpeakerAngle,
-    SpeakerElevation, TrackId, ZoneId, ZoneName,
+    Appearance, Frames, Gain, HeadYaw, MediaLocation, QueueStamp, Resumable, Resumption,
+    SpeakerAngle, SpeakerElevation, TrackId, ZoneId, ZoneName,
 };
 use resonate_engine::{
     AudioSource, Backend, Command, EngineConfig, Opener, Opening, Opens, Player, SinkChange,
@@ -437,6 +437,7 @@ impl Driven {
                 convolution: None,
                 speaker_angle: SpeakerAngle::STANDARD,
                 speaker_elevation: SpeakerElevation::LEVEL,
+                head_yaw: HeadYaw::AHEAD,
                 music_folder: None,
                 file_dropped: true,
                 window_buttons: WindowButtons::SHOWN,
@@ -4869,7 +4870,7 @@ mod tests {
     }
 
     #[gpui::test]
-    fn any_speaker_angle_and_elevation_is_reached_by_stepping_from_the_room_correction_group(
+    fn any_speaker_angle_elevation_and_head_turn_is_reached_by_stepping_from_the_room_correction_group(
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::open(cx, catalog());
@@ -4889,6 +4890,14 @@ mod tests {
         driven.until(|_, cx| cx.global::<ResonateApp>().speaker_elevation.degrees() == 30);
         driven.click("speaker-elevation-less");
         driven.until(|_, cx| cx.global::<ResonateApp>().speaker_elevation.degrees() == 29);
+
+        scrolled_to(&mut driven, "head-yaw-more");
+        driven.click("head-yaw-more");
+        driven.until(|_, cx| cx.global::<ResonateApp>().head_yaw.degrees() == 1);
+        driven.click(named("head-yaw", 20));
+        driven.until(|_, cx| cx.global::<ResonateApp>().head_yaw.degrees() == 20);
+        driven.click("head-yaw-less");
+        driven.until(|_, cx| cx.global::<ResonateApp>().head_yaw.degrees() == 19);
     }
 
     #[gpui::test]
@@ -4902,6 +4911,8 @@ mod tests {
                 &self,
                 _through: Option<&resonate_engine::NodeName>,
                 _from: &resonate_listen::Listening,
+                _hearing: &resonate_listen::Hearing,
+                _calibration: Option<&resonate_eq::Response>,
             ) -> std::result::Result<resonate_eq::Response, crate::Unmeasured> {
                 let points = (0..60)
                     .map(|step| resonate_eq::Point {
@@ -4929,6 +4940,78 @@ mod tests {
                 .iter()
                 .any(|name| name.as_str() == "measured")
         });
+    }
+
+    #[gpui::test]
+    fn measure_in_the_equaliser_pane_keeps_the_name_typed_takes_off_the_calibration_chosen_and_lets_it_go(
+        cx: &mut TestAppContext,
+    ) {
+        struct Remembers(Arc<std::sync::atomic::AtomicUsize>);
+
+        impl crate::Measures for Remembers {
+            fn measure(
+                &self,
+                _through: Option<&resonate_engine::NodeName>,
+                _from: &resonate_listen::Listening,
+                _hearing: &resonate_listen::Hearing,
+                calibration: Option<&resonate_eq::Response>,
+            ) -> std::result::Result<resonate_eq::Response, crate::Unmeasured> {
+                self.0.store(
+                    calibration.map_or(0, |response| response.points().len()),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
+                let points = (0..60)
+                    .map(|step| resonate_eq::Point {
+                        hertz: 20.0 * 1.12_f64.powi(step),
+                        decibels: if step < 20 { 6.0 } else { 0.0 },
+                    })
+                    .collect();
+                Ok(resonate_eq::Response::from_points(points).expect("a response"))
+            }
+        }
+
+        let folder = std::env::temp_dir().join(format!(
+            "resonate-ui-driven-calibration-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&folder).expect("a scratch folder");
+        let microphone = folder.join("microphone.csv");
+        let rows: String = (0..12)
+            .map(|step| format!("{},0.5\n", 100 * (step + 1)))
+            .collect();
+        std::fs::write(&microphone, format!("frequency,raw\n{rows}")).expect("a calibration");
+        let read = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
+        let mut driven = Driven::open(cx, catalog());
+        let rig = Arc::new(Remembers(read.clone()));
+        driven.cx.update(|_, cx| {
+            cx.update_global::<ResonateApp, _>(|app, _| app.measures = Some(rig));
+        });
+        showing_settings(&mut driven, SettingsCategory::Equaliser);
+        let root = driven.root.clone();
+        let chosen = microphone.clone();
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| root.calibrate_with(Some(chosen), cx));
+        });
+        typed_into(&mut driven, |root| &root.measured_as, "Bedroom");
+        scrolled_to(&mut driven, "measure-the-room");
+
+        driven.click("measure-the-room");
+
+        driven.until(|root, cx| {
+            root.equaliser
+                .read(cx)
+                .kept()
+                .iter()
+                .any(|name| name.as_str() == "Bedroom")
+        });
+        let held = read.load(std::sync::atomic::Ordering::Relaxed);
+        scrolled_to(&mut driven, "measure-calibration-forget");
+        driven.click("measure-calibration-forget");
+        driven.until(|root, cx| root.equaliser.read(cx).calibration().is_none());
+        let _ = std::fs::remove_dir_all(&folder);
+
+        assert!(held >= 8, "{held}");
     }
 
     #[gpui::test]

@@ -49,7 +49,7 @@ pub use crate::{
     calendar::Calendar,
     channel::{ChannelCount, ChannelLayout, ChannelPosition},
     date::{CivilDate, SECONDS_PER_DAY, seconds_since_the_epoch},
-    eq::{SpeakerAngle, SpeakerElevation, Speakers},
+    eq::{HeadYaw, SpeakerAngle, SpeakerElevation, Speakers},
     error::{Error, Result},
     fold::{folded_letters, is_lettered, words_of_a_name},
     format::{BitDepth, RateFamily, Ratio, SampleFormat, SampleRate, StreamSpec},

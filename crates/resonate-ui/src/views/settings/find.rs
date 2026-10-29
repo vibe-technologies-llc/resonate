@@ -649,6 +649,7 @@ impl Group {
                 SettingKey::Convolution,
                 SettingKey::SpeakerAngle,
                 SettingKey::SpeakerElevation,
+                SettingKey::HeadYaw,
             ],
             Self::Abx => &[],
             Self::Subsonic => &[

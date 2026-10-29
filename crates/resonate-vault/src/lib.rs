@@ -28,7 +28,7 @@ pub use crate::{
     form::Form,
     key::VaultKey,
     vault::{
-        Halt, HeldFile, Holdings, Keeping, Kept, KeptCover, Offered, Reframing, Refusal, Replacing,
-        Taking, Vault,
+        Compacting, Halt, HeldFile, Holdings, Keeping, Kept, KeptCover, Offered, Reframing,
+        Refusal, Replacing, Taking, Vault,
     },
 };

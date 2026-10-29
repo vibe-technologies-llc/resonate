@@ -615,7 +615,7 @@ pub struct QueueArgs {
 pub struct VaultArgs {
     #[arg(
         long,
-        conflicts_with_all = ["verify", "prune"],
+        conflicts_with_all = ["verify", "prune", "compact"],
         help = "Re-encode every scanned track the vault does not already hold, strip its tags \
                 and its pictures, validate what came back and point the catalog at it. \
                 Nothing is written until --apply says so"
@@ -625,7 +625,7 @@ pub struct VaultArgs {
     #[arg(
         long = "root",
         value_name = "ROOT",
-        conflicts_with_all = ["verify", "prune"],
+        conflicts_with_all = ["verify", "prune", "compact"],
         help = "Import or release only the tracks scanned from this library root. Repeat it to \
                 name more than one; with none, every root is taken"
     )]
@@ -634,21 +634,21 @@ pub struct VaultArgs {
     #[arg(
         long,
         value_name = "N",
-        conflicts_with_all = ["verify", "prune"],
+        conflicts_with_all = ["verify", "prune", "compact"],
         help = "Import at most N tracks in this run"
     )]
     pub at_most: Option<NonZeroUsize>,
 
     #[arg(
         long,
-        help = "Make the import, the release or the prune rather than printing it; after \
-                --verify, mend what did not read back"
+        help = "Make the import, the release, the prune or the compaction rather than printing \
+                it; after --verify, mend what did not read back"
     )]
     pub apply: bool,
 
     #[arg(
         long,
-        conflicts_with_all = ["import", "prune", "roots", "at_most"],
+        conflicts_with_all = ["import", "prune", "compact", "roots", "at_most"],
         help = "Decode every object and cover the vault holds and weigh what comes back against \
                 what went in. With --apply, point each track of an object that did not read back \
                 at its own file, to be weighed again by the next import, and let every album go \
@@ -658,7 +658,7 @@ pub struct VaultArgs {
 
     #[arg(
         long,
-        conflicts_with_all = ["import", "verify", "roots", "at_most", "release"],
+        conflicts_with_all = ["import", "verify", "compact", "roots", "at_most", "release"],
         help = "Count the objects no track and no album names any more, and with --apply take \
                 them away"
     )]
@@ -666,12 +666,21 @@ pub struct VaultArgs {
 
     #[arg(
         long,
-        conflicts_with_all = ["import", "verify", "prune", "at_most"],
+        conflicts_with_all = ["import", "verify", "prune", "compact", "at_most"],
         help = "Count the vaulted tracks whose own file is still there, and with --apply point \
                 each back at that file. A track the vault holds the only copy of stays in it, \
                 and the objects released are left for --prune to take away"
     )]
     pub release: bool,
+
+    #[arg(
+        long,
+        conflicts_with_all = ["import", "verify", "prune", "release", "roots", "at_most"],
+        help = "Count the JPEG covers an earlier build kept as they came that a byte-exact \
+                JXL transcode would hold in less room, and with --apply swap each for its \
+                transcode, proved to give the very JPEG back, and point its albums at it"
+    )]
+    pub compact: bool,
 }
 
 #[derive(Debug, Args)]

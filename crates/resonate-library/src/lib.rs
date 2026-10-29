@@ -69,8 +69,8 @@ pub use resonate_codec::{
 };
 pub use resonate_core::{Chromaprint, Isrc, Link, Mbid, Relation, Service, TextEncoding};
 pub use resonate_vault::{
-    Encoding, Form, HeldFile, Holdings, Keeping, Kept as KeptInVault, KeptCover, Reframing,
-    Refusal as VaultRefusal, Taking, Vault, VaultFiles, VaultKey,
+    Compacting, Encoding, Form, HeldFile, Holdings, Keeping, Kept as KeptInVault, KeptCover,
+    Reframing, Refusal as VaultRefusal, Taking, Vault, VaultFiles, VaultKey,
 };
 
 #[cfg(fuzzing)]
@@ -117,11 +117,11 @@ pub use crate::{
     },
     meant::{ByArtist, Meant},
     model::{
-        Album, AlbumToAsk, Artist, ArtistDetail, ArtistToAsk, ArtistTotals, Counted, CoverSource,
-        Cut, Exported, Favoured, HeldMedium, HeldReleaseTrack, Imported, KeptCorrection, KeptIndex,
-        KeptLyrics, Listen, Measured, Missing, MissingTrack, NamedPlaylist, Playing, Playlist,
-        PlaylistEntry, PlaylistFormat, PortraitWanted, Pruned, ReleaseDetail, Released, Track,
-        TrackToAsk, Unfinished, UnheldRelease, VaultObject, Want,
+        Album, AlbumToAsk, Artist, ArtistDetail, ArtistToAsk, ArtistTotals, Compacted, Counted,
+        CoverSource, Cut, Exported, Favoured, HeldMedium, HeldReleaseTrack, Imported,
+        KeptCorrection, KeptIndex, KeptLyrics, Listen, Measured, Missing, MissingTrack,
+        NamedPlaylist, Playing, Playlist, PlaylistEntry, PlaylistFormat, PortraitWanted, Pruned,
+        ReleaseDetail, Released, Track, TrackToAsk, Unfinished, UnheldRelease, VaultObject, Want,
     },
     organise::{
         Companion, DEFAULT_LAYOUT, Field, Layout, Move, Named, Naming, OrganiseOptions,

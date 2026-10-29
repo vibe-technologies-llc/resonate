@@ -199,6 +199,8 @@ them no type). Decoders: `audio.md`.
   (`Library::let_go_of_vault_covers`), and the run ends well unless something went unreached. A WAVE
   object packed as one zstd frame naming no length (`Vault::packed_before_the_frames`) is counted,
   and with `--apply` repacked in frames from itself (`Vault::reframe`), whatever else failed.
+- **`vault --compact`** (conflicting with the other modes) swaps the JPEG covers an earlier build kept
+  for byte-exact JXL transcodes where smaller; a preview until `--apply` (`vault.md`).
 
 ## Settings
 
@@ -266,6 +268,9 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   value outside it costs the key alone): how far above the ears the speakers stand for the same
   set; read, written and worn with `speaker-angle` as `Config::speakers` and
   `Setting::SpeakerElevation`.
+- `head-yaw`: whole degrees -90 to 90 (`resonate_core::HeadYaw`, 0 unless set, positive to the left;
+  a value outside it costs the key alone): how far the listener's head is turned from the front for
+  the same set, the third of `Config::speakers` and `Setting::HeadYaw`.
 - `music-folder`: the one ordinary folder new songs are copied into (drops: `ui.md`, `library.md`;
   a provider's delivery with no vault open: `providers.md`), filed by `organise-as` when
   `file-dropped` is on; never the vault. Choosing stores the canonical path, refuses a non-folder or

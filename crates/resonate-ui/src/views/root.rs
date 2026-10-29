@@ -213,6 +213,7 @@ const DISCORD_APP_PLACEHOLDER: &str = "Your Discord application's id, then press
 const DISCORD_ICON_PLACEHOLDER: &str = "An asset key or an image address, then press enter";
 const FIGURE_PLACEHOLDER: &str = "A number, then press enter";
 const LOOKING_PLACEHOLDER: &str = "Which headphones, then press enter";
+const MEASURED_AS_PLACEHOLDER: &str = "measured";
 const ORGANISING_PLACEHOLDER: &str = "How the files are filed, then press enter";
 
 const TYPED_ROOT_PLACEHOLDER: &str = "Or type a folder, then press enter";
@@ -631,6 +632,7 @@ pub struct RootView {
     pub(crate) server_rows: UniformListScrollHandle,
     pub(crate) figure: Entity<Field>,
     pub(crate) looking: Entity<Field>,
+    pub(crate) measured_as: Entity<Field>,
     pub(crate) equaliser: Entity<EqualiserModel>,
     pub(crate) controls: Controls,
     pub(crate) standing_controls: Controls,
@@ -1146,6 +1148,8 @@ impl RootView {
         })
         .detach();
 
+        let measured_as = cx.new(|cx| Field::new(MEASURED_AS_PLACEHOLDER, window, cx));
+
         let equaliser = cx.new(|cx| {
             let mut model = EqualiserModel::saved_on_leaving(
                 places.equaliser.clone(),
@@ -1246,6 +1250,7 @@ impl RootView {
             server_rows: UniformListScrollHandle::new(),
             figure,
             looking,
+            measured_as,
             equaliser,
             controls: Controls::default(),
             standing_controls: Controls::default(),

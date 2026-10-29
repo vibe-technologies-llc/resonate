@@ -4,7 +4,7 @@ use resonate_codec::Codec;
 
 use crate::{Coding, Levels, Spectrum, Steps, spectrum::BAND_HZ};
 
-pub const JUDGED_UNDER: u32 = 4;
+pub const JUDGED_UNDER: u32 = 5;
 
 const WALL_DB: f32 = 30.0;
 const WALL_FLOOR_SLACK_DB: f32 = 15.0;
@@ -30,9 +30,12 @@ const ANTI_ALIAS_EDGE: f32 = 0.9;
 const BITS_A_FLOAT_CARRIES: u8 = 24;
 const AAC_LATTICE_AT_LEAST: f32 = 0.02;
 const MP3_LATTICE_AT_LEAST: f32 = 0.02;
+const MP2_LATTICE_AT_LEAST: f32 = 0.02;
+const OPUS_LATTICE_AT_LEAST: f32 = 0.05;
 const VORBIS_LATTICE_AT_LEAST: f32 = 0.012;
 const LATTICE_OVER_ITS_CONTROL_AT_LEAST: f32 = 4.0;
 const STEPPED_COEFFICIENTS_AT_LEAST: u64 = 20_000;
+const STEPPED_GROUPS_AT_LEAST: u64 = 2_000;
 const LATTICE_SIGNIFICANCE_AT_LEAST: f32 = 12.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -391,12 +394,14 @@ pub(crate) fn judged(weighed: Weighed<'_>) -> Judgement {
 }
 
 fn on_quantiser_steps(steps: &Steps) -> bool {
-    let lattice_at_least = match steps.coding {
-        Coding::Aac => AAC_LATTICE_AT_LEAST,
-        Coding::Mp3 => MP3_LATTICE_AT_LEAST,
-        Coding::Vorbis => VORBIS_LATTICE_AT_LEAST,
+    let (lattice_at_least, counted_at_least) = match steps.coding {
+        Coding::Aac => (AAC_LATTICE_AT_LEAST, STEPPED_COEFFICIENTS_AT_LEAST),
+        Coding::Mp3 => (MP3_LATTICE_AT_LEAST, STEPPED_COEFFICIENTS_AT_LEAST),
+        Coding::Mp2 => (MP2_LATTICE_AT_LEAST, STEPPED_GROUPS_AT_LEAST),
+        Coding::Vorbis => (VORBIS_LATTICE_AT_LEAST, STEPPED_COEFFICIENTS_AT_LEAST),
+        Coding::Opus => (OPUS_LATTICE_AT_LEAST, STEPPED_GROUPS_AT_LEAST),
     };
-    steps.coefficients >= STEPPED_COEFFICIENTS_AT_LEAST
+    steps.coefficients >= counted_at_least
         && steps.lattice * (steps.coefficients as f32).sqrt() >= LATTICE_SIGNIFICANCE_AT_LEAST
         && steps.lattice >= lattice_at_least
         && steps.lattice >= steps.control * LATTICE_OVER_ITS_CONTROL_AT_LEAST

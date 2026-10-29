@@ -48,6 +48,9 @@ pub enum Error {
     #[error("a speaker elevation of {0} degrees is outside {min}..={max}", min = crate::eq::SpeakerElevation::LOWEST_DEGREES, max = crate::eq::SpeakerElevation::HIGHEST_DEGREES)]
     SpeakerElevationOutOfRange(i16),
 
+    #[error("a head yaw of {0} degrees is outside {min}..={max}", min = crate::eq::HeadYaw::RIGHTMOST_DEGREES, max = crate::eq::HeadYaw::LEFTMOST_DEGREES)]
+    HeadYawOutOfRange(i16),
+
     #[error("a profile of {0} bands is more than the {MAX_BANDS} a chain carries")]
     TooManyBands(usize),
 

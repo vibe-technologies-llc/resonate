@@ -13,6 +13,8 @@ pub enum Action {
     GetPositionInfo,
     GetProtocolInfo,
     GetVolume,
+    Volume,
+    Characteristics,
     SetVolume,
     SetMute,
 }
@@ -27,6 +29,8 @@ impl Action {
             Self::GetPositionInfo => "GetPositionInfo",
             Self::GetProtocolInfo => "GetProtocolInfo",
             Self::GetVolume => "GetVolume",
+            Self::Volume => "Volume",
+            Self::Characteristics => "Characteristics",
             Self::SetVolume => "SetVolume",
             Self::SetMute => "SetMute",
         }
@@ -39,7 +43,11 @@ impl Action {
             Self::Pause => Operation::Pause,
             Self::Stop => Operation::Close,
             Self::GetPositionInfo => Operation::Connect,
-            Self::GetVolume | Self::SetVolume | Self::SetMute => Operation::Volume,
+            Self::GetVolume
+            | Self::Volume
+            | Self::Characteristics
+            | Self::SetVolume
+            | Self::SetMute => Operation::Volume,
         }
     }
 }
@@ -73,6 +81,15 @@ pub enum ServeOp {
     Route,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum FlacOp {
+    Configure,
+    Shape,
+    Header,
+    Fill,
+    Frame,
+}
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("{asked:?} could not reach the renderer")]
@@ -101,8 +118,10 @@ pub enum Error {
     Fault { action: Action, code: Option<u32> },
     #[error("the device description names no media renderer with an AVTransport service")]
     NotARenderer,
-    #[error("the renderer takes neither WAVE nor L16, so it cannot be streamed to")]
-    TakesNoPcm,
+    #[error("the renderer takes none of FLAC, WAVE or L16, so it cannot be streamed to")]
+    TakesNoCarriage,
+    #[error("the stream could not be encoded as FLAC at {op:?}")]
+    Encoding { op: FlacOp },
     #[error("the address is not an http address a renderer can be reached at")]
     UnreadableAddress,
     #[error("searching the network failed at {op:?}")]
@@ -134,12 +153,12 @@ impl Error {
             | Self::NotADocument { asked, .. } => asked.operation(),
             Self::Unanswered { action } | Self::Fault { action, .. } => action.operation(),
             Self::NotARenderer
-            | Self::TakesNoPcm
+            | Self::TakesNoCarriage
             | Self::UnreadableAddress
             | Self::Search { .. }
             | Self::Serve { .. }
             | Self::NoSuchRenderer(_) => Operation::Connect,
-            Self::FormatRefused(_) => Operation::Format,
+            Self::FormatRefused(_) | Self::Encoding { .. } => Operation::Format,
         }
     }
 }

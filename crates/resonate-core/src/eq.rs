@@ -232,27 +232,67 @@ impl fmt::Display for SpeakerElevation {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct HeadYaw(i8);
+
+impl HeadYaw {
+    pub const RIGHTMOST_DEGREES: i8 = -90;
+    pub const LEFTMOST_DEGREES: i8 = 90;
+
+    pub const AHEAD: Self = Self(0);
+
+    pub const fn from_degrees(degrees: i16) -> Result<Self> {
+        if degrees < Self::RIGHTMOST_DEGREES as i16 || degrees > Self::LEFTMOST_DEGREES as i16 {
+            return Err(Error::HeadYawOutOfRange(degrees));
+        }
+        Ok(Self(degrees as i8))
+    }
+
+    pub const fn degrees(self) -> i8 {
+        self.0
+    }
+}
+
+impl Default for HeadYaw {
+    fn default() -> Self {
+        Self::AHEAD
+    }
+}
+
+impl fmt::Display for HeadYaw {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Speakers {
     pub angle: SpeakerAngle,
     pub elevation: SpeakerElevation,
+    pub yaw: HeadYaw,
 }
 
 impl Speakers {
     pub const STANDARD: Self = Self {
         angle: SpeakerAngle::STANDARD,
         elevation: SpeakerElevation::LEVEL,
+        yaw: HeadYaw::AHEAD,
     };
 
     pub const fn at(angle: SpeakerAngle) -> Self {
         Self {
             angle,
             elevation: SpeakerElevation::LEVEL,
+            yaw: HeadYaw::AHEAD,
         }
     }
 
     pub const fn raised_to(self, elevation: SpeakerElevation) -> Self {
         Self { elevation, ..self }
+    }
+
+    pub const fn turned_to(self, yaw: HeadYaw) -> Self {
+        Self { yaw, ..self }
     }
 }
 
@@ -1283,6 +1323,23 @@ mod tests {
         }
         assert_eq!(SpeakerElevation::default(), SpeakerElevation::LEVEL);
         assert_eq!(Speakers::default(), Speakers::STANDARD);
+    }
+
+    #[test]
+    fn a_head_yaw_holds_whole_degrees_a_quarter_turn_either_way() {
+        for held in [-90, -1, 0, 1, 45, 90] {
+            let yaw = HeadYaw::from_degrees(held).expect("a yaw");
+            assert_eq!(i16::from(yaw.degrees()), held);
+        }
+
+        for refused in [-91, 91, i16::MIN, i16::MAX] {
+            assert_eq!(
+                HeadYaw::from_degrees(refused),
+                Err(Error::HeadYawOutOfRange(refused))
+            );
+        }
+        assert_eq!(HeadYaw::default(), HeadYaw::AHEAD);
+        assert_eq!(Speakers::STANDARD.yaw, HeadYaw::AHEAD);
     }
 
     #[test]

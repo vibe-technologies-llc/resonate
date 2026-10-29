@@ -16,7 +16,7 @@ use resonate_audio::{
 use resonate_core::{Gain, Volume};
 
 use crate::{
-    Error, Located, Renderer, Result, ServeOp,
+    Error, Located, Renderer, Result, ServeOp, carriage,
     serve::Server,
     ssdp,
     stream::{self, Holders},
@@ -332,7 +332,7 @@ fn spawn_failed(source: io::Error) -> Error {
 }
 
 fn sink_of(id: SinkId, renderer: &Renderer) -> SinkInfo {
-    let carriage = renderer.carriage();
+    let (formats, allowed_rates) = carriage::unite(renderer.carriages());
     SinkInfo {
         id,
         name: renderer.node_name(),
@@ -351,8 +351,8 @@ fn sink_of(id: SinkId, renderer: &Renderer) -> SinkInfo {
             muted: false,
         }),
         profile: None,
-        formats: carriage.formats(),
-        allowed_rates: carriage.rates(),
+        formats,
+        allowed_rates,
         current_rate: None,
     }
 }

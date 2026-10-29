@@ -38,12 +38,12 @@ dev-dependency, for the end-to-end test.
   address where `GetProtocolInfo` lists its format would bit-perfectly play the file, but beside the
   engine rather than through it: the engine would go on pulling a ring nobody hears, and gapless
   rows, the equaliser and the zone handover would silently stop applying. A bit-perfect PCM stream
-  already reaches a renderer whenever the plan is `BitPerfect`; what is left (`FEATURES.md`) is
-  FLAC-encoding that PCM on the way out to spare the network, which fits the seam.
+  reaches a renderer whenever the plan is `BitPerfect`, and where the renderer takes FLAC that PCM is
+  encoded on the way out to spare the network (*The stream*), which fits the seam.
 - **A renderer's node name is `upnp:` and its UDN** (`RENDERER_NODES`, `Renderer::node_name`), so a
   `sink` key or `--sink` names it across runs and replugs as a PipeWire `node.name` does; its
   `SinkInfo` is `is_hardware`, never default, `Plugged::Unsaid`, with `HardwareVolume::Always` where
-  it has RenderingControl and the volume `GetVolume` read at discovery.
+  it has RenderingControl or OpenHome's `Volume` and the volume read at discovery.
 
 ## Finding and describing
 
@@ -57,10 +57,24 @@ dev-dependency, for the end-to-end test.
   names a MediaRenderer, else the first holding an AVTransport service. XML through `roxmltree`
   with no DTD and `NODES_AT_MOST` nodes; HTTP answers capped at `ANSWER_BYTES_AT_MOST` (1 MiB).
 - **What it takes decides how it is fed** (`Carriage`, from `ConnectionManager`'s
-  `GetProtocolInfo` `Sink`): `audio/wav` (or `x-wav`, `wave`, `vnd.wave`) is `Carriage::Wave`, offered
-  S16 and S24 stereo at 44.1 to 192 kHz; `audio/L16` alone is `Carriage::L16` at the rates it lists
-  (44.1 and 48 kHz where none), S16 stereo; neither is `Error::TakesNoPcm` and the device is not
-  listed. A renderer with no ConnectionManager, or one that will not answer it, is offered WAVE.
+  `GetProtocolInfo` `Sink`; a renderer holds a list of them, `Carriage::accepted_by`, in preference
+  order): `audio/flac` (or `x-flac`) is `Wrapping::Flac`, S16 and S24 at 44.1 to 96 kHz (flacenc's
+  bound, which the vault shares: above it the renderer's next carriage carries the rate); `audio/wav`
+  (or `x-wav`, `wave`, `vnd.wave`) is `Wrapping::Wave`, S16 and S24 at 44.1 to 192 kHz; `audio/L16`
+  is `Wrapping::L16` at the rates it lists (44.1 and 48 kHz where none), S16. None of the three is
+  `Error::TakesNoCarriage` and the device is not listed. A renderer with no ConnectionManager, or
+  one that will not answer it, is offered WAVE. `Renderer::carriage_for(spec)` is the first carriage
+  carrying a stream's rate, word and layout, so FLAC wins wherever it can carry what WAVE would,
+  and `SinkInfo::formats` is the carriages' formats united.
+- **Channels are offered where the protocol info states them, never guessed.** A `channels=N`
+  parameter on any entry of a wrapping (1 to 8) adds that count's layouts (`layouts_of`: the named
+  layout and, where the count has a different unnamed one, `Discrete(n)`); a wrapping naming none
+  is stereo alone, so a renderer that says nothing about channels is folded down by the engine's
+  matrix as before rather than sent six channels it may refuse (a refused stream fails the sink).
+  A stereo-only soundbar behind `audio/wav` therefore never sees 5.1, and an AV receiver that
+  lists `audio/flac;channels=6` is sent all six. The ring's channel order is the order of the
+  layouts' positions, which is both FLAC's order for 1 to 8 channels and ascending
+  `WAVE_FORMAT_EXTENSIBLE` mask bits, so no channel is moved on the way out.
 - **A `Network` may rest.** `Network::resting` binds nothing and sends nothing (only the
   `resonate-upnp-turns` thread runs); `Network::look` starts the stream server once and a
   `resonate-upnp-search` thread, `Network::rest` stops searching and forgets every renderer, each
@@ -83,24 +97,38 @@ identifies the listener), reads a declared, chunked or close-delimited body, and
 
 ## The stream
 
-- **The renderer pulls a live WAVE (or L16) the player serves, paced at the ring's real time.** One
+- **The renderer pulls a live FLAC, WAVE or L16 the player serves, paced at the ring's real time.** One
   `Server` per `Network` (`resonate-upnp-serve`, a `TcpListener` on `Searching::serving_on`, all
-  addresses by default) offers each stream under `/resonate/<token>.<wav|pcm>`, the token a
+  addresses by default) offers each stream under `/resonate/<token>.<flac|wav|pcm>`, the token a
   `RandomState` hash so another machine cannot guess one; the address handed to the renderer is the
   local address the system routes toward it (`address_toward`). `Network::open` refuses a spec the
   carriage does not carry (`FormatRefused`), offers the `Feed`, sends `SetAVTransportURI` with a
   DIDL-Lite item naming the title and `protocolInfo`, and answers a `SinkStream` with a
   `FormatChanged` already told (S24 is `Words::Packed`: three bytes on the wire).
 - **A `Feed` is the ring's consumer behind an HTTP answer** (`resonate-upnp-feed`, one thread a
-  fetch): a WAVE header with no length (`RIFF` and `data` sizes near `u32::MAX`), then quanta of a
-  hundredth of a second pulled through `fill_stamped` no faster than the wall clock, the 24-bit ring
-  word cut to three bytes and L16 turned big-endian (`wave::carried`). Pacing is the graph's job
+  fetch): a head with no length, then quanta of a hundredth of a second pulled through
+  `fill_stamped` no faster than the wall clock and carried by the fetch's `Wire`. WAVE is a
+  `RIFF`/`data` header with sizes near `u32::MAX` (the 44-byte header up to two channels, the
+  68-byte `WAVE_FORMAT_EXTENSIBLE` one with the layout's speaker mask above), the 24-bit ring word
+  cut to three bytes and L16 turned big-endian (`wave::carried`). Pacing is the graph's job
   everywhere else and the ring pads an underrun with silence, so pulling at network speed would
   drain the ring and write that silence into the music. Where the renderer stops reading (its buffer
   full, a slower clock) writes block and the debt past one quantum is forgiven, so the renderer's
   clock governs and the pull never bursts to catch up. A second fetch of the same stream takes the
   source over and the first ends (renderers sniff an address before playing it). Inactive, nothing
   is pulled.
+- **FLAC is encoded live from the ring, bit for bit** (`flac::Live`, over `flacenc`, which exposes
+  what a stream with no end needs: the STREAMINFO is written first with an unknown total
+  (`total_samples` 0, no MD5), then one fixed-size frame per block as the ring fills it, 4096 frames
+  up to 48 kHz and 8192 above, default compression and no threads, so a block costs a fraction of
+  its own duration). Every fetch begins a stream of its own (`fLaC`, frame numbers from zero), so a
+  renderer that sniffs and refetches gets a valid stream either time. The encoder holds a partial
+  block until the next quantum completes it, so `served`, which the renderer's clock is read
+  against, counts only frames written; a drain flushes the short last block (the one frame whose
+  size differs, which FLAC allows) before the end is marked, so `Drained` still waits on the
+  renderer's clock for every frame. An encoder failure ends that fetch (`Error::Encoding { op }`
+  with the foreign error in `tracing`). Pause costs nothing extra: nothing is pulled, so the held
+  block waits with the ring.
 - **A stream's commands go to its own `resonate-upnp-stream` thread** (`Watch`), never the
   engine's: `SetActive(true)` is `Play`, `SetActive(false)` `Pause` (only once played: a stopped
   renderer faults a pause), `Close` (or the `SinkStream` dropped) `Stop`, the token withdrawn and the
@@ -136,9 +164,34 @@ identifies the listener), reads a declared, chunked or close-delimited body, and
 - **A pause is the renderer's own `Pause`**, heard at once; the feed stops pulling, so on `Play` the
   renderer resumes the very buffer it held and the ring continues it frame for frame.
 - **The volume is always the renderer's** (`HardwareVolume::Always`, which `Attenuator::of` hands
-  the volume whatever `device-volume` says): `SetVolume`/`SetMute` go out on the
+  the volume whatever `device-volume` says), through OpenHome's `Volume` service where the device
+  offers it, else RenderingControl: `SetVolume`/`SetMute` go out on the
   `resonate-upnp-turns` thread the moment the slider moves, never waiting on the network, and the
   stream stays at unity (`BitPerfect` where the plan is).
+
+## OpenHome
+
+A renderer whose description lists `urn:av-openhome-org:service:Volume:1` is turned through it
+(`Renderer::openhome`, preferred over RenderingControl where both are listed, because it is the
+volume the OpenHome player itself keeps, where RenderingControl is a bridge onto it): `Characteristics` gives
+`VolumeMax` once at discovery (100 where it does not answer), `Volume`'s `Value` over it is the
+volume read at discovery, and `SetVolume`/`SetMute` carry `Value` in steps (`volume * VolumeMax`,
+rounded) and `true`/`false`, on the same `resonate-upnp-turns` thread. Nothing else of OpenHome is
+spoken, on purpose:
+
+- **`Playlist` (`Insert`, `SeekId`, `Play`) gives no gain over AVTransport for this design.** The
+  engine owns the queue and the gapless handover, and the renderer is handed one endless live
+  address per stream, so a playlist of one that never changes is all `Playlist` could hold. Using it
+  would mean emptying the listener's own OpenHome playlist (`DeleteAll`) or leaving our entry in it,
+  switching the Product's source to Playlist (`Product.SetSourceIndex`) out from under whatever
+  else plays, reading the position from the separate `Time` service, and keeping a second
+  transport in step with the first. An OpenHome player that offers AVTransport (upmpdcli, Linn's
+  bridge) already maps `SetAVTransportURI` and `Play` onto it, and a device that offers
+  OpenHome alone is not found by the MediaRenderer search this crate sends, so `Playlist` would
+  not widen the renderers reached. Seeking, pausing and the fresh address after `Stop` (*Past the renderer's buffer*)
+  are the same moves either way.
+- **`Product` is not asked** (no standby or source handling): a renderer asleep or on another
+  source refuses `Play` and that is `StreamEvent::Refused`, as for any renderer.
 
 ## In the binary
 
@@ -169,3 +222,20 @@ seek sending `Stop`, `SetAVTransportURI` with a fresh address and `Play` within 
 carrying the song from where it landed and nothing before
 (`a_seek_on_a_renderer_stops_it_and_offers_a_fresh_address_starting_where_it_landed`). The fake
 stops reading a fetch on `Stop` and fetches each new address afresh, as a renderer does.
+
+The fake takes a `Profile`: the `Sink` string `GetProtocolInfo` answers and whether the description
+adds OpenHome's `Product`, `Playlist` and `Volume` (answered under `/oh/`, recorded apart from
+AVTransport's calls). With FLAC offered, a song played through a real `Player` arrives as `fLaC`
+smaller than its PCM, offered as `audio/flac`, and decodes through the codec crate (and through the
+`flac` tool where installed) to bytes containing the song
+(`a_song_played_to_a_renderer_taking_flac_is_sent_flac_that_decodes_to_the_samples_played`); a 5.1
+S24 stream to a renderer stating `channels=6` comes back from FLAC sample for sample and arrives
+as a `WAVE_FORMAT_EXTENSIBLE` stream with mask `0x3F` and packed words
+(`a_renderer_that_states_channels_is_sent_all_six_of_a_surround_stream_in_flac_and_in_wave`); a
+renderer stating nothing is offered stereo alone; S24 stereo at 44.1, 88.2 and 96 kHz returns from
+FLAC bit for bit and 192 kHz is offered as WAVE
+(`flac_carries_twenty_four_bits_up_to_ninety_six_kilohertz_bit_for_bit_and_wave_the_rates_above`,
+`a_rate_flac_cannot_carry_is_sent_as_wave_to_a_renderer_taking_both`); an OpenHome renderer reads
+its volume in steps of `VolumeMax` and is turned and muted through `Volume` alone, with no
+RenderingControl call and no `Playlist` call
+(`a_renderer_offering_openhome_volume_is_turned_through_it_and_its_playlist_is_left_alone`).

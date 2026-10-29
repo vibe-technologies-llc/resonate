@@ -14,11 +14,7 @@ use parking_lot::Mutex;
 use resonate_audio::{AudioSource, GraphTime, StreamClock};
 use resonate_core::{Ratio, StreamSpec};
 
-use crate::{
-    Carriage,
-    http::USER_AGENT,
-    wave::{self, wire_bytes},
-};
+use crate::{Carriage, http::USER_AGENT, wire::Wire};
 
 const QUANTA_A_SECOND: u64 = 100;
 
@@ -115,14 +111,13 @@ impl Feed {
         if head_only {
             return Ok(());
         }
-        if self.carriage == Carriage::Wave {
-            stream.write_all(&wave::header(self.spec))?;
-        }
+        let (mut wire, head) = Wire::begin(&self.carriage, self.spec).map_err(io::Error::other)?;
+        stream.write_all(&head)?;
 
         let Some(mut source) = self.taken(mine) else {
             return Ok(());
         };
-        let poured = self.pour(stream, source.as_mut(), mine);
+        let poured = self.pour(stream, source.as_mut(), &mut wire, mine);
         *self.source.lock() = Some(source);
         poured
     }
@@ -157,17 +152,14 @@ impl Feed {
         &self,
         stream: &mut TcpStream,
         source: &mut dyn AudioSource,
+        wire: &mut Wire,
         mine: u64,
     ) -> io::Result<()> {
         let rate = u64::from(self.spec.rate.hz());
         let stride = self.spec.bytes_per_frame().get() as usize;
         let quantum = (rate / QUANTA_A_SECOND).max(1);
         let mut ring = vec![0; quantum as usize * stride];
-        let mut wire = Vec::with_capacity(
-            quantum as usize
-                * usize::from(self.spec.channel_count().get())
-                * wire_bytes(self.spec.format),
-        );
+        let mut carried = Vec::new();
 
         let mut from = Instant::now();
         let mut sent = 0_u64;
@@ -193,20 +185,25 @@ impl Feed {
 
             let filled = source.fill_stamped(&mut ring, self.clock.stamp());
             let whole = filled / stride * stride;
-            wave::carried(
-                ring.get(..whole).unwrap_or_default(),
-                self.spec.format,
-                &self.carriage,
-                &mut wire,
-            );
-            if !self.written(stream, &wire, mine)? {
+            let pulled = (whole / stride) as u64;
+            let ending = self.draining.load(Ordering::Acquire) && filled < ring.len();
+
+            let mut written = wire
+                .carry(ring.get(..whole).unwrap_or_default(), pulled, &mut carried)
+                .map_err(io::Error::other)?;
+            if !self.written(stream, &carried, mine)? {
                 return Ok(());
             }
-            let frames = (whole / stride) as u64;
-            sent = sent.saturating_add(frames);
-            let served = self.served.fetch_add(frames, Ordering::AcqRel) + frames;
+            if ending {
+                written += wire.finish(&mut carried).map_err(io::Error::other)?;
+                if !self.written(stream, &carried, mine)? {
+                    return Ok(());
+                }
+            }
+            sent = sent.saturating_add(pulled);
+            let served = self.served.fetch_add(written, Ordering::AcqRel) + written;
 
-            if self.draining.load(Ordering::Acquire) && filled < ring.len() {
+            if ending {
                 self.ended_at.store(served, Ordering::Release);
                 return Ok(());
             }

@@ -21,7 +21,7 @@ use resonate_core::{
     ZoneName,
 };
 use resonate_providers::Providers;
-use resonate_vault::{Encoding, Kept as VaultKept, Replacing, VaultFiles};
+use resonate_vault::{Compacting, Encoding, HeldFile, Kept as VaultKept, Replacing, VaultFiles};
 use rusqlite::{
     Connection, OptionalExtension as _, Row, Transaction, TransactionBehavior, hooks::Action,
     params, params_from_iter, types::Value,
@@ -31,8 +31,8 @@ use crate::{
     ALBUMS_FOUND_ELSEWHERE_AT_MOST, ARTISTS_FOUND_ELSEWHERE_AT_MOST, Aged, Album, AlbumFound,
     AlbumMatch, AlbumNotHeld, AlbumOrder, AlbumQuery, AlbumToAsk, Artist, ArtistDetail,
     ArtistFound, ArtistOrder, ArtistProfile, ArtistQuery, ArtistRelease, ArtistToAsk, ArtistTotals,
-    Asked, Billed, Cancelling, Certainty, Clause, Codec, Column, Compare, Condition, Counted,
-    CoverArt, Covering, Cut, Day, Direction, EnrichHandle, EnrichOptions, Error, Exported,
+    Asked, Billed, Cancelling, Certainty, Clause, Codec, Column, Compacted, Compare, Condition,
+    Counted, CoverArt, Covering, Cut, Day, Direction, EnrichHandle, EnrichOptions, Error, Exported,
     Favoured, Fingerprinters, Found, Fruitless, Genre, HeldMedium, HeldReleaseTrack, HistoryKept,
     Holdings, ImageFormat, ImportHandle, ImportOptions, Imported, Isrc, Kept, KeptCorrection,
     KeptCover, KeptIndex, KeptLyrics, KeyColumn, Learning, LifeSpan, Link, Listen,
@@ -3117,6 +3117,79 @@ impl Library {
         }
         .map_err(|source| refused(&root, source))?;
         Ok(pruned)
+    }
+
+    pub fn compact_the_vault_covers(&self) -> Result<Compacted> {
+        self.compacting_the_vault_covers(Applying::Yes)
+    }
+
+    pub fn vault_covers_compaction_foretold(&self) -> Result<Compacted> {
+        self.compacting_the_vault_covers(Applying::No)
+    }
+
+    fn compacting_the_vault_covers(&self, applying: Applying) -> Result<Compacted> {
+        let _walk = self.walk_the_tree()?;
+        let vault = Arc::clone(self.inner.opened_vault()?);
+        let covers = vault.covers().map_err(|source| Error::Vault {
+            path: vault.root().to_path_buf(),
+            source: Box::new(source),
+        })?;
+
+        let mut compacted = Compacted::default();
+        for cover in covers {
+            let compacting = match applying {
+                Applying::Yes => vault.compact_cover(&cover.path),
+                Applying::No => vault.foretell_compacting(&cover.path),
+            };
+            let (was, now) = match compacting {
+                Ok(Compacting::NotHeld) => continue,
+                Ok(Compacting::NoSmaller | Compacting::Unproven) => {
+                    compacted.kept += 1;
+                    continue;
+                }
+                Ok(Compacting::Foretold { was, now }) => (was, now),
+                Ok(Compacting::Beside { jxl, was, now }) => {
+                    if applying == Applying::Yes
+                        && let Err(error) = self.settle_the_cover(&vault, &cover, &jxl)
+                    {
+                        tracing::warn!(path = %cover.path.display(), %error, "a cover's smaller form stands beside it, and the JPEG stays for the next pass");
+                        compacted.left += 1;
+                        continue;
+                    }
+                    (was, now)
+                }
+                Err(error) => {
+                    tracing::warn!(path = %cover.path.display(), %error, "a cover could not be weighed for a transcode");
+                    compacted.left += 1;
+                    continue;
+                }
+            };
+            compacted.covers += 1;
+            compacted.was += was;
+            compacted.now += now;
+        }
+        Ok(compacted)
+    }
+
+    fn settle_the_cover(&self, vault: &Vault, cover: &HeldFile, jxl: &Path) -> Result<()> {
+        let within = self.inner.within_the_vault(jxl)?;
+        let key = cover.key.to_string();
+        self.inner.write(|transaction| {
+            transaction
+                .execute(
+                    "UPDATE albums SET cover_path = ?1 WHERE cover_key = ?2",
+                    params![within, key],
+                )
+                .map(|_| ())
+                .map_err(|source| Error::store(StoreOp::Update, source))
+        })?;
+        vault
+            .forget(&cover.path)
+            .map(|_| ())
+            .map_err(|source| Error::Vault {
+                path: cover.path.clone(),
+                source: Box::new(source),
+            })
     }
 
     fn vault_keys_noted(&self) -> Result<AHashSet<VaultKey>> {

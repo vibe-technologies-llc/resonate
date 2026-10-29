@@ -18,6 +18,7 @@ private const val ON_KEY = "room-correction"
 private const val NAME_KEY = "room-correction-name"
 private const val ANGLE_KEY = "speaker-angle"
 private const val ELEVATION_KEY = "speaker-elevation"
+private const val YAW_KEY = "head-yaw"
 
 val RESPONSE_DOCUMENTS =
     arrayOf("audio/*", "application/x-hdf5", "application/x-netcdf", "application/octet-stream")
@@ -31,6 +32,7 @@ data class RoomView(
     val left: RoomHalf? = null,
     val angle: Int,
     val elevation: Int,
+    val yaw: Int,
 )
 
 data class RoomHalf(val uri: Uri, val name: String)
@@ -59,6 +61,7 @@ class RoomCorrectionState(
                 reading = false,
                 angle = settings.getInt(ANGLE_KEY, limits.angleStandardDegrees.toInt()),
                 elevation = settings.getInt(ELEVATION_KEY, 0),
+                yaw = settings.getInt(YAW_KEY, 0),
             )
         )
 
@@ -66,6 +69,7 @@ class RoomCorrectionState(
         try {
             native.setSpeakerAngle(view.value.angle.toUByte())
             native.setSpeakerElevation(view.value.elevation.toShort())
+            native.setHeadYaw(view.value.yaw.toShort())
             view.value = view.value.copy(kept = native.keptRoomCorrection())
             if (view.value.on && native.applyRoomCorrection(true) == null) gone()
         } catch (failure: Exception) {
@@ -136,6 +140,13 @@ class RoomCorrectionState(
         val kept = native.setSpeakerElevation(elevation.toShort())
         settings.edit().putInt(ELEVATION_KEY, elevation).apply()
         view.value = view.value.copy(elevation = elevation, kept = kept ?: view.value.kept)
+    }
+
+    fun turnTo(yaw: Int) = step {
+        val native = library.native()
+        val kept = native.setHeadYaw(yaw.toShort())
+        settings.edit().putInt(YAW_KEY, yaw).apply()
+        view.value = view.value.copy(yaw = yaw, kept = kept ?: view.value.kept)
     }
 
     fun cancelPair() {
