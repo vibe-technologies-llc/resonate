@@ -15,8 +15,8 @@ use futures_channel::oneshot;
 use gpui::{Pixels, Size, px, size};
 use resonate_core::{
     Accent, AppId, ArtistsDrawn, Frames, Icon, Pictured, PlaylistId, Presence, ScrollbarMode,
-    Shown, SpeakerAngle, Spectral, SpectrumBands, SpectrumFalls, SpectrumFloor, SpectrumTilt,
-    SyncedSongs, TextSize, Theme, Trim, Volume,
+    Shown, SpeakerAngle, SpeakerElevation, Spectral, SpectrumBands, SpectrumFalls, SpectrumFloor,
+    SpectrumTilt, SyncedSongs, TextSize, Theme, Trim, Volume,
 };
 use resonate_engine::{
     Crossfeed, DitherKind, FilterPhase, NodeName, NoiseShaping, PreviousRestarts, Quality,
@@ -199,6 +199,7 @@ pub enum SettingKey {
     EqualiserMeasurerFor,
     Convolution,
     SpeakerAngle,
+    SpeakerElevation,
     Resume,
     HistoryKept,
     SkipUnderRepeat,
@@ -257,7 +258,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 101] = [
+    pub const ALL: [Self; 102] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -304,6 +305,7 @@ impl SettingKey {
         Self::EqualiserMeasurerFor,
         Self::Convolution,
         Self::SpeakerAngle,
+        Self::SpeakerElevation,
         Self::Resume,
         Self::HistoryKept,
         Self::SkipUnderRepeat,
@@ -416,6 +418,7 @@ pub enum Setting {
     },
     Convolution(Option<PathBuf>),
     SpeakerAngle(SpeakerAngle),
+    SpeakerElevation(SpeakerElevation),
     Resume(bool),
     HistoryKept(HistoryKept),
     SkipUnderRepeat(SkipUnderRepeat),
@@ -528,6 +531,7 @@ impl Setting {
             Self::EqualiserMeasurerFor { .. } => SettingKey::EqualiserMeasurerFor,
             Self::Convolution(_) => SettingKey::Convolution,
             Self::SpeakerAngle(_) => SettingKey::SpeakerAngle,
+            Self::SpeakerElevation(_) => SettingKey::SpeakerElevation,
             Self::Resume(_) => SettingKey::Resume,
             Self::HistoryKept(_) => SettingKey::HistoryKept,
             Self::SkipUnderRepeat(_) => SettingKey::SkipUnderRepeat,
@@ -891,6 +895,7 @@ pub struct Stored {
     pub lyrics_by_the_locale: Arc<AtomicBool>,
     pub convolution: Option<PathBuf>,
     pub speaker_angle: SpeakerAngle,
+    pub speaker_elevation: SpeakerElevation,
     pub music_folder: Option<PathBuf>,
     pub file_dropped: bool,
     pub window_buttons: WindowButtons,

@@ -94,6 +94,7 @@ icons! {
     Check => "check",
     Folder => "folder",
     Plus => "plus",
+    Minus => "minus",
     Discard => "discard",
     Delete => "delete",
     Download => "download",

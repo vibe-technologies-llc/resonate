@@ -18,7 +18,7 @@ use gpui::{
 };
 use resonate_core::{
     Appearance, Frames, Gain, MediaLocation, QueueStamp, Resumable, Resumption, SpeakerAngle,
-    TrackId, ZoneId, ZoneName,
+    SpeakerElevation, TrackId, ZoneId, ZoneName,
 };
 use resonate_engine::{
     AudioSource, Backend, Command, EngineConfig, Opener, Opening, Opens, Player, SinkChange,
@@ -389,6 +389,7 @@ impl Driven {
                 online,
                 bindings: Bindings::default(),
                 measurers: Measurers::default(),
+                measures: None,
                 for_the_pass: Consulted {
                     reference: reference.clone(),
                     fingerprinters,
@@ -410,6 +411,7 @@ impl Driven {
                 lyrics_by_the_locale: Arc::new(AtomicBool::new(false)),
                 convolution: None,
                 speaker_angle: SpeakerAngle::STANDARD,
+                speaker_elevation: SpeakerElevation::LEVEL,
                 music_folder: None,
                 file_dropped: true,
                 window_buttons: WindowButtons::SHOWN,
@@ -4817,6 +4819,81 @@ mod tests {
         driven.click(named("speaker-angle", 45));
 
         driven.until(|_, cx| cx.global::<ResonateApp>().speaker_angle.degrees() == 45);
+    }
+
+    fn scrolled_to(driven: &mut Driven, id: &'static str) {
+        for _ in 0..80 {
+            let in_reach = driven.cx.debug_bounds(id).is_some_and(|bounds| {
+                bounds.center().y > px(150.0) && bounds.center().y < px(500.0)
+            });
+            if in_reach {
+                return;
+            }
+            driven.scroll("settings", 200.0);
+        }
+    }
+
+    #[gpui::test]
+    fn any_speaker_angle_and_elevation_is_reached_by_stepping_from_the_room_correction_group(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::open(cx, catalog());
+        showing_settings(&mut driven, SettingsCategory::Equaliser);
+        scrolled_to(&mut driven, "speaker-angle-more");
+
+        driven.click("speaker-angle-more");
+        driven.until(|_, cx| cx.global::<ResonateApp>().speaker_angle.degrees() == 31);
+        driven.click("speaker-angle-less");
+        driven.click("speaker-angle-less");
+        driven.until(|_, cx| cx.global::<ResonateApp>().speaker_angle.degrees() == 29);
+
+        scrolled_to(&mut driven, "speaker-elevation-more");
+        driven.click("speaker-elevation-more");
+        driven.until(|_, cx| cx.global::<ResonateApp>().speaker_elevation.degrees() == 1);
+        driven.click(named("speaker-elevation", 30));
+        driven.until(|_, cx| cx.global::<ResonateApp>().speaker_elevation.degrees() == 30);
+        driven.click("speaker-elevation-less");
+        driven.until(|_, cx| cx.global::<ResonateApp>().speaker_elevation.degrees() == 29);
+    }
+
+    #[gpui::test]
+    fn measure_in_the_equaliser_pane_plays_the_sweep_and_keeps_the_fit_as_a_profile(
+        cx: &mut TestAppContext,
+    ) {
+        struct Flat;
+
+        impl crate::Measures for Flat {
+            fn measure(
+                &self,
+                _through: Option<&resonate_engine::NodeName>,
+                _from: &resonate_listen::Listening,
+            ) -> std::result::Result<resonate_eq::Response, crate::Unmeasured> {
+                let points = (0..60)
+                    .map(|step| resonate_eq::Point {
+                        hertz: 20.0 * 1.12_f64.powi(step),
+                        decibels: if step < 20 { 6.0 } else { 0.0 },
+                    })
+                    .collect();
+                Ok(resonate_eq::Response::from_points(points).expect("a response"))
+            }
+        }
+
+        let mut driven = Driven::open(cx, catalog());
+        driven.cx.update(|_, cx| {
+            cx.update_global::<ResonateApp, _>(|app, _| app.measures = Some(Arc::new(Flat)));
+        });
+        showing_settings(&mut driven, SettingsCategory::Equaliser);
+        scrolled_to(&mut driven, "measure-the-room");
+
+        driven.click("measure-the-room");
+
+        driven.until(|root, cx| {
+            root.equaliser
+                .read(cx)
+                .kept()
+                .iter()
+                .any(|name| name.as_str() == "measured")
+        });
     }
 
     #[gpui::test]

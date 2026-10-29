@@ -72,7 +72,7 @@ use resonate_codec::{
 #[cfg(feature = "ui")]
 use resonate_core::Resumption;
 use resonate_core::{
-    AlbumId, ArtistId, FrameSpan, Frames, MediaLocation, PlaylistId, SampleRate, SpeakerAngle,
+    AlbumId, ArtistId, FrameSpan, Frames, MediaLocation, PlaylistId, SampleRate, Speakers,
     StreamSpec, Volume, ZoneId, names_audio,
 };
 use resonate_engine::{
@@ -2649,8 +2649,8 @@ fn frames_in(span: Duration, rate: SampleRate) -> i64 {
     i64::try_from(Frames::from_duration(span, rate).get()).unwrap_or(i64::MAX)
 }
 
-pub(crate) fn impulse_at(path: &Path, angle: SpeakerAngle) -> Option<Arc<Impulse>> {
-    match read_impulse(&Sources::local(), &MediaLocation::local(path), angle) {
+pub(crate) fn impulse_at(path: &Path, speakers: Speakers) -> Option<Arc<Impulse>> {
+    match read_impulse(&Sources::local(), &MediaLocation::local(path), speakers) {
         Ok(Some(impulse)) => Some(Arc::new(impulse)),
         Ok(None) => {
             tracing::warn!(path = %path.display(), "the room's response holds no taps, so nothing is corrected");
@@ -2731,7 +2731,7 @@ fn engine_config(cli: &Cli, config: &Config) -> EngineConfig {
         convolution: config
             .convolution
             .as_deref()
-            .and_then(|path| impulse_at(path, config.speaker_angle())),
+            .and_then(|path| impulse_at(path, config.speakers())),
         skip_under_repeat: config.skip_under_repeat(),
         previous_restarts: config.previous_restarts(),
         ..defaults
@@ -2846,6 +2846,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             corrections: Arc::new(online::corrections(&config, Some(Arc::clone(&library)))),
             bindings: equaliser::bound(&config),
             measurers: equaliser::measured_by(&config),
+            measures: Some(Arc::new(measuring::Sweeping)),
             online: resonate_ui::Online {
                 enabled: config.online_enabled(),
                 after_scan: config.enriches_after_scan(),
@@ -2891,6 +2892,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             lyrics_by_the_locale,
             convolution: config.convolution.clone(),
             speaker_angle: config.speaker_angle(),
+            speaker_elevation: config.speaker_elevation(),
             music_folder: config.music_folder.clone(),
             file_dropped: config.files_what_is_dropped(),
             window_buttons: config.window_buttons(),

@@ -92,13 +92,15 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   is never a FLAC
 
 ## Later: Equaliser and DSP extras
-- [S] A SOFA HRIR set is not read for speakers at an elevation, by an interpolation that surrounds
-  the point (a triangulation of the sphere, or magnitude and delay blended apart; the blend is an
-  inverse-distance weighting of up to three measurements within 15 degrees), for a head turned, for
-  a `MultiSpeakerBRIR` measured with the listener off the origin (`ListenerPosition` is ignored),
-  from a netCDF-3 64-bit data file (CDF-5) or past the phones' 64 MiB response limit; the desktop
-  pane offers five speaker angles (the file takes any from 5 to 90 degrees) and the phones' pages
-  offer none (the boundary has `set_speaker_angle`)
+- [S] A SOFA HRIR set is not read for a head turned, for a `MultiSpeakerBRIR` measured with the
+  listener off the origin (`ListenerPosition` is ignored), from a netCDF-3 64-bit data file (CDF-5)
+  or past the phones' 64 MiB response limit; the interpolation triangulates the sixteen nearest
+  measurements within 30 degrees and is a true interpolation only where one triangle of them
+  surrounds the speaker, so a set measured at one elevation alone, or asked for a direction past
+  its outermost row, falls back to the inverse-distance blend of up to three measurements within 15
+  degrees, and a set of speakers (`MultiSpeakerBRIR`) takes its nearest emitter and interpolates
+  nothing; the interpolation blends in the time domain with the onsets aligned, not magnitude and
+  delay apart, which a coarse set (a measurement every thirty degrees) smears
 - [M] *Fit the preamp*'s solved bound leaves the whole signal's node to the level alone: with it,
   the tone model's solution passed the decode of transients through a phase-turning curve (an
   allpass pair over noise and over a kick, hat and pads, by up to 0.38 dB), so broadband music
@@ -109,9 +111,14 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   its main lobe, is still weighed on the 2 048 points with the curve's fixed shares: an echo or a
   reverberant tail longer than that window has comb teeth between the points, which only the
   shares' slack covers (the near window is an envelope over every bin)
-- [M] A measurement of the listener's own is taken live only by `resonate eq --measure` on the
-  desktop: the window's Equaliser pane and both phones (a microphone permission and a sweep through
-  the route in use) still fit a measurement from a file alone
+- [M] A measurement of the listener's own is taken live by `resonate eq --measure` and by
+  *Measure* in the window's Equaliser pane, and the phones still fit a measurement from a file
+  alone: each has a microphone path for Listen (Kotlin's `AudioRecord`, Swift's `AVAudioEngine`
+  input) but neither has a playback of its own beside the engine to send a sweep through past the
+  equaliser and the room correction in force (through the engine's output they would colour it),
+  and the boundary has no call fitting a recorded sweep; the window's *Measure* cannot be stopped
+  part way (eight seconds of sweep and two of tail) and takes no calibration file (the command's
+  `--calibration`) nor a name for the profile (it keeps `measured`)
 - [S] AutoEq is the only online correction source. The one keyless public source of measurements
   found, squig.link (`/data/phone_book.json` and REW text per device, the CrinGraph tool's
   convention every squig site copies), has no documented API or terms and names no rig or

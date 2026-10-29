@@ -15,7 +15,7 @@ use gpui::{
 };
 use resonate_core::{
     Appearance, ArtistsDrawn, FrameSpan, Frames, MediaLocation, Presence, ScrollbarMode,
-    SpeakerAngle, Spectral, TrackId,
+    SpeakerAngle, SpeakerElevation, Spectral, TrackId,
 };
 use resonate_engine::{
     ArtRead, BitRate, Command, CommandKind, Event, MediaInfo, NodeName, Outcome, OutputSettings,
@@ -33,6 +33,7 @@ use crate::{
     drawing::Drawer,
     format, icons,
     listening::Listens,
+    measure::Measures,
     models::{
         AtSide, Consulted, Drawn, FirstRead, Forget, Magnifying, Picture, Scale, drawn_within,
         held, magnified_of,
@@ -161,6 +162,7 @@ pub struct Lookups {
     pub online: Online,
     pub bindings: Bindings,
     pub measurers: Measurers,
+    pub measures: Option<Arc<dyn Measures>>,
     pub sourcing: Sourcing,
     pub listens: Listens,
 }
@@ -175,6 +177,7 @@ pub struct ResonateApp {
     pub online: Online,
     pub bindings: Bindings,
     pub measurers: Measurers,
+    pub measures: Option<Arc<dyn Measures>>,
     pub reference: Option<Arc<dyn Reference>>,
     pub for_the_pass: Consulted,
     pub scrobblers: Option<Arc<dyn Scrobblers>>,
@@ -189,6 +192,7 @@ pub struct ResonateApp {
     pub lyrics_by_the_locale: Arc<AtomicBool>,
     pub convolution: Option<PathBuf>,
     pub speaker_angle: SpeakerAngle,
+    pub speaker_elevation: SpeakerElevation,
     pub music_folder: Option<PathBuf>,
     pub file_dropped: bool,
     pub window_buttons: WindowButtons,
@@ -1047,6 +1051,7 @@ pub fn run(
             settings: Arc::clone(&stored.settings),
             bindings: lookups.bindings.clone(),
             measurers: lookups.measurers.clone(),
+            measures: lookups.measures.clone(),
             online: lookups.online.clone(),
             reference: lookups.reference.clone(),
             for_the_pass: lookups.for_the_pass.clone(),
@@ -1062,6 +1067,7 @@ pub fn run(
             lyrics_by_the_locale: Arc::clone(&stored.lyrics_by_the_locale),
             convolution: stored.convolution.clone(),
             speaker_angle: stored.speaker_angle,
+            speaker_elevation: stored.speaker_elevation,
             music_folder: stored.music_folder.clone(),
             file_dropped: stored.file_dropped,
             window_buttons: stored.window_buttons,

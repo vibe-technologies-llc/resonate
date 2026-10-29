@@ -12,9 +12,12 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.RoomCorrection
+import org.resonate.android.nativecore.speakerLimits
 
 private const val ON_KEY = "room-correction"
 private const val NAME_KEY = "room-correction-name"
+private const val ANGLE_KEY = "speaker-angle"
+private const val ELEVATION_KEY = "speaker-elevation"
 
 val RESPONSE_DOCUMENTS =
     arrayOf("audio/*", "application/x-hdf5", "application/x-netcdf", "application/octet-stream")
@@ -26,6 +29,8 @@ data class RoomView(
     val kept: RoomCorrection?,
     val reading: Boolean,
     val left: RoomHalf? = null,
+    val angle: Int,
+    val elevation: Int,
 )
 
 data class RoomHalf(val uri: Uri, val name: String)
@@ -44,6 +49,7 @@ class RoomCorrectionState(
 ) {
     private val settings = context.getSharedPreferences("playback", Context.MODE_PRIVATE)
     private val access = Mutex()
+    val limits = speakerLimits()
     val view =
         MutableStateFlow(
             RoomView(
@@ -51,11 +57,15 @@ class RoomCorrectionState(
                 name = settings.getString(NAME_KEY, null),
                 kept = null,
                 reading = false,
+                angle = settings.getInt(ANGLE_KEY, limits.angleStandardDegrees.toInt()),
+                elevation = settings.getInt(ELEVATION_KEY, 0),
             )
         )
 
     fun restore(native: MobilePlayer) = step {
         try {
+            native.setSpeakerAngle(view.value.angle.toUByte())
+            native.setSpeakerElevation(view.value.elevation.toShort())
             view.value = view.value.copy(kept = native.keptRoomCorrection())
             if (view.value.on && native.applyRoomCorrection(true) == null) gone()
         } catch (failure: Exception) {
@@ -112,6 +122,20 @@ class RoomCorrectionState(
                 view.value = view.value.copy(reading = false, left = null)
             }
         }
+    }
+
+    fun speakAt(angle: Int) = step {
+        val native = library.native()
+        val kept = native.setSpeakerAngle(angle.toUByte())
+        settings.edit().putInt(ANGLE_KEY, angle).apply()
+        view.value = view.value.copy(angle = angle, kept = kept ?: view.value.kept)
+    }
+
+    fun raiseTo(elevation: Int) = step {
+        val native = library.native()
+        val kept = native.setSpeakerElevation(elevation.toShort())
+        settings.edit().putInt(ELEVATION_KEY, elevation).apply()
+        view.value = view.value.copy(elevation = elevation, kept = kept ?: view.value.kept)
     }
 
     fun cancelPair() {

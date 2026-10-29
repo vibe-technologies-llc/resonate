@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use resonate_codec::{DecodeStatus, Decoder, Sources, read_hrir};
 use resonate_core::{
-    AudioBuffer, Frames, MediaLocation, SampleData, SampleFormat, SpeakerAngle, StreamSpec,
+    AudioBuffer, Frames, MediaLocation, SampleData, SampleFormat, Speakers, StreamSpec,
 };
 use resonate_dsp::{Impulse, Speaker};
 use thiserror::Error;
@@ -28,19 +28,19 @@ pub enum PairedReadError {
 pub fn read_impulse(
     sources: &Sources,
     location: &MediaLocation,
-    angle: SpeakerAngle,
+    speakers: Speakers,
 ) -> resonate_codec::Result<Option<Impulse>> {
-    Ok(read_unscaled(sources, location, angle)?.map(Impulse::with_headroom))
+    Ok(read_unscaled(sources, location, speakers)?.map(Impulse::with_headroom))
 }
 
 pub fn read_binaural_pair(
     sources: &Sources,
     left: &MediaLocation,
     right: &MediaLocation,
-    angle: SpeakerAngle,
+    speakers: Speakers,
 ) -> Result<Impulse, PairedReadError> {
     let heard = |speaker, location| {
-        read_unscaled(sources, location, angle)
+        read_unscaled(sources, location, speakers)
             .map_err(|source| PairedReadError::Read { speaker, source })?
             .ok_or(PairedReadError::Empty { speaker })
     };
@@ -93,9 +93,9 @@ pub fn binaural_wave(impulse: &Impulse) -> Result<Vec<u8>, PairedReadError> {
 fn read_unscaled(
     sources: &Sources,
     location: &MediaLocation,
-    angle: SpeakerAngle,
+    speakers: Speakers,
 ) -> resonate_codec::Result<Option<Impulse>> {
-    if let Some(hrir) = read_hrir(sources, location, LONGEST_IMPULSE, angle)? {
+    if let Some(hrir) = read_hrir(sources, location, LONGEST_IMPULSE, speakers)? {
         return Ok(Impulse::crossed(hrir.rate, hrir.responses));
     }
 
@@ -171,7 +171,7 @@ mod tests {
         let read = read_impulse(
             &Sources::local(),
             &MediaLocation::local(&path),
-            SpeakerAngle::STANDARD,
+            Speakers::STANDARD,
         )
         .expect("a readable response")
         .expect("a response with taps");
@@ -215,7 +215,7 @@ mod tests {
         let read = read_impulse(
             &Sources::local(),
             &MediaLocation::local(&path),
-            SpeakerAngle::STANDARD,
+            Speakers::STANDARD,
         )
         .expect("a readable response")
         .expect("a response with taps");
@@ -241,7 +241,7 @@ mod tests {
             &Sources::local(),
             &MediaLocation::local(&left),
             &MediaLocation::local(&right),
-            SpeakerAngle::STANDARD,
+            Speakers::STANDARD,
         )
         .expect("a pair");
         let _ = fs::remove_file(&left);
@@ -261,10 +261,9 @@ mod tests {
         let sources = Sources::local();
         let at = |path: &std::path::Path| MediaLocation::local(path);
 
-        let rates = read_binaural_pair(&sources, &at(&left), &at(&slower), SpeakerAngle::STANDARD);
-        let lengths =
-            read_binaural_pair(&sources, &at(&left), &at(&longer), SpeakerAngle::STANDARD);
-        let channels = read_binaural_pair(&sources, &at(&left), &at(&mono), SpeakerAngle::STANDARD);
+        let rates = read_binaural_pair(&sources, &at(&left), &at(&slower), Speakers::STANDARD);
+        let lengths = read_binaural_pair(&sources, &at(&left), &at(&longer), Speakers::STANDARD);
+        let channels = read_binaural_pair(&sources, &at(&left), &at(&mono), Speakers::STANDARD);
         for path in [&left, &slower, &longer, &mono] {
             let _ = fs::remove_file(path);
         }
@@ -301,7 +300,7 @@ mod tests {
             &sources,
             &MediaLocation::local(&left),
             &MediaLocation::local(&right),
-            SpeakerAngle::STANDARD,
+            Speakers::STANDARD,
         )
         .expect("a pair");
         let _ = fs::remove_file(&left);
@@ -312,7 +311,7 @@ mod tests {
         let read = read_impulse(
             &sources,
             &MediaLocation::local(&written),
-            SpeakerAngle::STANDARD,
+            Speakers::STANDARD,
         )
         .expect("a readable response")
         .expect("a response with taps");
@@ -335,7 +334,7 @@ mod tests {
         let read = read_impulse(
             &Sources::local(),
             &MediaLocation::local(&path),
-            SpeakerAngle::STANDARD,
+            Speakers::STANDARD,
         )
         .expect("a readable response")
         .expect("a response with taps");
@@ -394,7 +393,7 @@ mod tests {
         let read = read_impulse(
             &Sources::local(),
             &MediaLocation::local(&path),
-            SpeakerAngle::STANDARD,
+            Speakers::STANDARD,
         )
         .expect("a readable set")
         .expect("a set with taps");
@@ -415,7 +414,7 @@ mod tests {
     fn a_speaker_angle_the_listener_sets_moves_the_measurements_a_set_is_read_at() {
         let path = env::temp_dir().join(format!("resonate-hrir-angle-{}.sofa", process::id()));
         fs::write(&path, sofa_set(48_000.0)).expect("a scratch set");
-        let narrow = SpeakerAngle::from_degrees(5).expect("an angle");
+        let narrow = Speakers::at(resonate_core::SpeakerAngle::from_degrees(5).expect("an angle"));
 
         let read = read_impulse(&Sources::local(), &MediaLocation::local(&path), narrow)
             .expect("a readable set")
@@ -437,7 +436,7 @@ mod tests {
         let read = read_impulse(
             &Sources::local(),
             &MediaLocation::local(&path),
-            SpeakerAngle::STANDARD,
+            Speakers::STANDARD,
         )
         .expect("a readable set")
         .expect("a set with taps");
@@ -465,7 +464,7 @@ mod tests {
             &Sources::local(),
             &MediaLocation::local(&path),
             &MediaLocation::local(&stereo),
-            SpeakerAngle::STANDARD,
+            Speakers::STANDARD,
         );
         let _ = fs::remove_file(&path);
         let _ = fs::remove_file(&stereo);

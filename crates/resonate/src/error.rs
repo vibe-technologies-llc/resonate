@@ -50,6 +50,7 @@ pub enum ConfigKey {
     EqualiserProfile,
     Convolution,
     SpeakerAngle,
+    SpeakerElevation,
     Resume,
     HistoryKept,
     SkipRepeatsQueue,
@@ -168,7 +169,7 @@ impl fmt::Display for Named {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 104] = [
+    pub const ALL: [Self; 105] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -209,6 +210,7 @@ impl ConfigKey {
         Self::EqualiserProfile,
         Self::Convolution,
         Self::SpeakerAngle,
+        Self::SpeakerElevation,
         Self::Resume,
         Self::HistoryKept,
         Self::SkipRepeatsQueue,
@@ -319,6 +321,7 @@ impl ConfigKey {
             Self::EqualiserProfile => "equaliser-profile",
             Self::Convolution => "convolution",
             Self::SpeakerAngle => "speaker-angle",
+            Self::SpeakerElevation => "speaker-elevation",
             Self::Resume => "resume",
             Self::HistoryKept => "history-kept",
             Self::OrganiseAs => "organise-as",

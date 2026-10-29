@@ -5,6 +5,7 @@ use resonate_dsp::Sweep;
 use resonate_eq::{Error as EqError, Point, Response};
 use resonate_listen::{Hearing, Listener, Listening};
 use resonate_pipewire::NodeName;
+use thiserror::Error as ThisError;
 
 use crate::{Error, Result};
 
@@ -17,8 +18,61 @@ pub const HEARD_AFTER_THE_SWEEP: Duration = Duration::from_secs(2);
 const APP_NAME: &str = "Resonate";
 const CSV_HEADER: &str = "frequency,raw";
 
+pub type Sounded = std::result::Result<Vec<f32>, resonate_listen::Error>;
+
+#[derive(Debug, ThisError)]
+pub enum Unheard {
+    #[error(transparent)]
+    Played(#[from] resonate_listen::Error),
+
+    #[error(transparent)]
+    Deconvolved(#[from] resonate_dsp::Error),
+
+    #[error(transparent)]
+    Response(#[from] EqError),
+}
+
+impl From<Unheard> for Error {
+    fn from(unheard: Unheard) -> Self {
+        match unheard {
+            Unheard::Played(source) => Self::Listen(source),
+            Unheard::Deconvolved(source) => Self::Sweep(source),
+            Unheard::Response(source) => Self::Eq(source),
+        }
+    }
+}
+
+#[cfg(feature = "ui")]
+impl From<Unheard> for resonate_ui::Unmeasured {
+    fn from(unheard: Unheard) -> Self {
+        match unheard {
+            Unheard::Played(source) => Self::Heard(Box::new(source)),
+            Unheard::Deconvolved(source) => Self::Deconvolved(source),
+            Unheard::Response(source) => Self::Response(source),
+        }
+    }
+}
+
+#[cfg(feature = "ui")]
+pub struct Sweeping;
+
+#[cfg(feature = "ui")]
+impl resonate_ui::Measures for Sweeping {
+    fn measure(
+        &self,
+        through: Option<&NodeName>,
+        from: &Listening,
+    ) -> std::result::Result<Response, resonate_ui::Unmeasured> {
+        let room = Room {
+            through,
+            from: from.clone(),
+        };
+        measured_by(&room).map_err(resonate_ui::Unmeasured::from)
+    }
+}
+
 pub trait Rig {
-    fn sound(&self, sweep: &Sweep, heard_for: Duration) -> Result<Vec<f32>>;
+    fn sound(&self, sweep: &Sweep, heard_for: Duration) -> Sounded;
 }
 
 pub struct Room<'a> {
@@ -27,7 +81,7 @@ pub struct Room<'a> {
 }
 
 impl Rig for Room<'_> {
-    fn sound(&self, sweep: &Sweep, heard_for: Duration) -> Result<Vec<f32>> {
+    fn sound(&self, sweep: &Sweep, heard_for: Duration) -> Sounded {
         let clip = Listener::new(APP_NAME).play_and_record(
             sweep.samples(),
             self.through,
@@ -39,7 +93,7 @@ impl Rig for Room<'_> {
     }
 }
 
-pub fn measured_by(rig: &dyn Rig) -> Result<Response> {
+pub fn measured_by(rig: &dyn Rig) -> std::result::Result<Response, Unheard> {
     let sweep = Sweep::new(MEASURED_AT, SWEEP_FROM_HZ, SWEEP_TO_HZ, SWEEP_FOR)?;
     let heard_for = sweep.length() + HEARD_AFTER_THE_SWEEP;
 
@@ -53,7 +107,9 @@ pub fn measured_by(rig: &dyn Rig) -> Result<Response> {
             decibels: level.decibels,
         })
         .collect();
-    Response::from_points(points).ok_or(Error::Eq(EqError::NoMeasuredPoints))
+    Response::from_points(points)
+        .ok_or(EqError::NoMeasuredPoints)
+        .map_err(Unheard::from)
 }
 
 pub fn calibrated(heard: &Response, microphone: &Response) -> Result<Response> {
@@ -91,7 +147,7 @@ mod tests {
     struct Lowpassed;
 
     impl Rig for Lowpassed {
-        fn sound(&self, sweep: &Sweep, heard_for: Duration) -> Result<Vec<f32>> {
+        fn sound(&self, sweep: &Sweep, heard_for: Duration) -> Sounded {
             let total = (heard_for.as_secs_f64() * f64::from(sweep.rate().hz())) as usize;
             let mut held = 0.0_f64;
             let mut heard = vec![0.0_f32; DELAY_FRAMES];
@@ -107,7 +163,7 @@ mod tests {
     struct Silent;
 
     impl Rig for Silent {
-        fn sound(&self, _sweep: &Sweep, heard_for: Duration) -> Result<Vec<f32>> {
+        fn sound(&self, _sweep: &Sweep, heard_for: Duration) -> Sounded {
             let total = (heard_for.as_secs_f64() * f64::from(MEASURED_AT.hz())) as usize;
             Ok(vec![0.0; total])
         }
@@ -186,7 +242,7 @@ mod tests {
     fn a_microphone_that_heard_nothing_is_refused_not_fitted() {
         assert!(matches!(
             measured_by(&Silent),
-            Err(Error::Sweep(resonate_dsp::Error::NothingHeard))
+            Err(Unheard::Deconvolved(resonate_dsp::Error::NothingHeard))
         ));
     }
 }

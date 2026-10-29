@@ -16,8 +16,8 @@ use clap::ValueEnum as _;
 use resonate_core::Appearance;
 use resonate_core::{
     Accent, AppId, ArtistsDrawn, Icon, Pictured, Presence, ScrollbarMode, Shown, SpeakerAngle,
-    SpectrumBands, SpectrumFalls, SpectrumFloor, SpectrumTilt, SyncedSongs, TextSize, Theme, Trim,
-    Volume,
+    SpeakerElevation, Speakers, SpectrumBands, SpectrumFalls, SpectrumFloor, SpectrumTilt,
+    SyncedSongs, TextSize, Theme, Trim, Volume,
 };
 use resonate_engine::{
     Crossfeed, DitherKind, FilterPhase, NoiseShaping, PreviousRestarts, Quality, ReplayGainMode,
@@ -182,6 +182,7 @@ pub struct Config {
     pub file_dropped: Option<bool>,
     pub convolution: Option<PathBuf>,
     pub speaker_angle: Option<SpeakerAngle>,
+    pub speaker_elevation: Option<SpeakerElevation>,
     pub subsonic: Option<String>,
     pub subsonic_user: Option<String>,
     pub subsonic_password: Option<String>,
@@ -303,6 +304,7 @@ impl fmt::Debug for Config {
             file_dropped,
             convolution,
             speaker_angle,
+            speaker_elevation,
             subsonic,
             subsonic_user,
             subsonic_password,
@@ -410,6 +412,7 @@ impl fmt::Debug for Config {
             .field("file_dropped", file_dropped)
             .field("convolution", convolution)
             .field("speaker_angle", speaker_angle)
+            .field("speaker_elevation", speaker_elevation)
             .field("subsonic", subsonic)
             .field("subsonic_user", subsonic_user)
             .field("subsonic_password", &withheld(subsonic_password.as_ref()))
@@ -613,6 +616,17 @@ impl Config {
 
     pub fn speaker_angle(&self) -> SpeakerAngle {
         self.speaker_angle.unwrap_or_default()
+    }
+
+    pub fn speaker_elevation(&self) -> SpeakerElevation {
+        self.speaker_elevation.unwrap_or_default()
+    }
+
+    pub fn speakers(&self) -> Speakers {
+        Speakers {
+            angle: self.speaker_angle(),
+            elevation: self.speaker_elevation(),
+        }
     }
 
     #[cfg(feature = "ui")]
@@ -964,6 +978,11 @@ impl Config {
                 let degrees = u8::try_from(degrees).map_err(|_| at.rejected())?;
                 config.speaker_angle =
                     Some(SpeakerAngle::from_degrees(degrees).map_err(|_| at.rejected())?);
+            }
+            ConfigKey::SpeakerElevation => {
+                let degrees = i16::try_from(at.integer(value)?).map_err(|_| at.rejected())?;
+                config.speaker_elevation =
+                    Some(SpeakerElevation::from_degrees(degrees).map_err(|_| at.rejected())?);
             }
             ConfigKey::Subsonic => config.subsonic = given(at.string(value)?),
             ConfigKey::SubsonicUser => config.subsonic_user = given(at.string(value)?),
@@ -2691,6 +2710,25 @@ mod tests {
             "speaker-angle = 91",
             "speaker-angle = -30",
             "speaker-angle = \"wide\"",
+        ] {
+            assert!(read(refused).is_err(), "{refused}");
+        }
+    }
+
+    #[test]
+    fn a_speaker_elevation_is_read_in_whole_degrees_above_or_below_the_ears_and_held_to_a_range() {
+        let high = read("speaker-elevation = 30").expect("a known elevation");
+        let low = read("speaker-elevation = -30").expect("a known elevation");
+        assert_eq!(high.speaker_elevation().degrees(), 30);
+        assert_eq!(low.speaker_elevation().degrees(), -30);
+        assert_eq!(Config::default().speaker_elevation().degrees(), 0);
+        assert_eq!(high.speakers().angle, SpeakerAngle::STANDARD);
+
+        for refused in [
+            "speaker-elevation = 61",
+            "speaker-elevation = -31",
+            "speaker-elevation = 100000",
+            "speaker-elevation = \"up\"",
         ] {
             assert!(read(refused).is_err(), "{refused}");
         }

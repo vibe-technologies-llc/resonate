@@ -45,6 +45,9 @@ pub enum Error {
     #[error("a speaker angle of {0} degrees is outside {min}..={max}", min = crate::eq::SpeakerAngle::NARROWEST_DEGREES, max = crate::eq::SpeakerAngle::WIDEST_DEGREES)]
     SpeakerAngleOutOfRange(u16),
 
+    #[error("a speaker elevation of {0} degrees is outside {min}..={max}", min = crate::eq::SpeakerElevation::LOWEST_DEGREES, max = crate::eq::SpeakerElevation::HIGHEST_DEGREES)]
+    SpeakerElevationOutOfRange(i16),
+
     #[error("a profile of {0} bands is more than the {MAX_BANDS} a chain carries")]
     TooManyBands(usize),
 

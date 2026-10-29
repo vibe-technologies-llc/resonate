@@ -512,7 +512,7 @@ The stereo image, apart from the transducer: both are stereo-only, off by defaul
 - **A SOFA set of head-related responses is read as the same two-by-two response**
   (`resonate-codec/src/sofa.rs`, `read_hrir(sources, location, longest, angle)`; `HRIR_EXTENSIONS`
   is `sofa`, apart from `AUDIO_EXTENSIONS` so a scan never admits one as a song).
-  `engine::read_impulse` (and `read_binaural_pair`) take the `SpeakerAngle` and ask `read_hrir`
+  `engine::read_impulse` (and `read_binaural_pair`) take the `Speakers` and ask `read_hrir`
   first, falling through to the decoders where the file is neither HDF5 nor netCDF-3 classic
   (`Ok(None)`: sniffed from the first bytes, the HDF5 signature or `CDF` and a version, never the
   extension), so the desktop's file choosers, the `convolution` key and the phones' pickers need no
@@ -535,20 +535,37 @@ The stereo image, apart from the transducer: both are stereo-only, off by defaul
   `SourcePosition` exactly `[M, 3]`, `EmitterPosition` `[E, 3]` or `[E, 3, 1]`, `ListenerView` `[M, 3]`
   or `[1, 3]`, `Data.Delay` `[2]`, `[1, 2]` or `[M, 2]`, `Data.SamplingRate` at most a million
   numbers, `M` at most a million, `E` at most 65 536, the response cut at `LONGEST_IMPULSE`).
-  **The speaker angle is a setting**: `resonate_core::SpeakerAngle` (whole degrees, 5 to 90,
-  `STANDARD` 30), the key `speaker-angle` (`Config::speaker_angle`, an integer held to
-  `NARROWEST_DEGREES..=WIDEST_DEGREES`, `Setting::SpeakerAngle`), worn on `ResonateApp::speaker_angle`
-  and offered in the Room correction group as chips of 20, 30, 45, 60 and 90 degrees; choosing one
-  stores it and reads the held response file again (`set_the_speaker_angle`, then
-  `correct_the_room`), the group's mark puts back 30 and stops correcting, and every read of the
-  response the window makes (the shape look, the fit of the preamp, a pair) asks at the angle worn.
-  The left speaker is `angle` degrees left of the front at no elevation, the right the same to the
-  right. **A free-field set** (`SimpleFreeFieldHRIR`) reads each speaker from the measurements
-  around it (`neighbours_of`): the nearest, by the angle between directions (the radius is
-  ignored), must lie within 45 degrees (`NoMeasurementNear`, naming the side, else the set is
-  refused rather than answered with a far one); within `EXACT_WITHIN_DEGREES` (0.5) it is taken
-  whole, the first of equals winning; otherwise up to three nearest, the nearest always and the
-  others only within `NEIGHBOURS_WITHIN_DEGREES` (15), are blended by inverse-square distance.
+  **Where the speakers stand is two settings, one `Speakers`** (`resonate_core::eq`): a
+  `SpeakerAngle` (whole degrees, 5 to 90, `STANDARD` 30) and a `SpeakerElevation` (whole degrees,
+  -30 to 60, `LEVEL` 0, `Error::SpeakerElevationOutOfRange`), the keys `speaker-angle` and
+  `speaker-elevation` (`Config::speakers`, each an integer held to its range, a value outside it
+  costing the key alone), `Setting::SpeakerAngle` and `Setting::SpeakerElevation`, worn on
+  `ResonateApp::speaker_angle` and `speaker_elevation` (`speakers_worn` in the pane makes the pair
+  every read takes). The Room correction group offers each as a stepper (`degrees_stepper`: a
+  `kit::icon_button` of `Icon::Minus` and one of `Icon::Plus`, a degree a press, the reading
+  between) beside chips for common places (20, 30, 45, 60 and 90 degrees of angle; 0, 10, 20, 30
+  and 45 of elevation), so any angle from 5 to 90 and any elevation is reached; changing one stores
+  it and reads the held response file again (`set_the_speaker_angle`, `set_the_speaker_elevation`,
+  then `correct_the_room`), the group's mark puts back 30 and 0 and stops correcting, and every
+  read of the response the window makes (the shape look, the fit of the preamp, a pair) asks at the
+  pair worn. The left speaker is `angle` degrees left of the front at `elevation` degrees above
+  the ears, the right the same to the right. **A free-field set** (`SimpleFreeFieldHRIR`) reads
+  each speaker from the measurements around it (`neighbours_of`): the nearest, by the angle between
+  directions (the radius is ignored), must lie within 45 degrees (`NoMeasurementNear`, naming the
+  side, else the set is refused rather than answered with a far one); within
+  `EXACT_WITHIN_DEGREES` (0.5) it is taken whole, the first of equals winning. **Otherwise the
+  speaker is interpolated inside a triangle of measurements** (`surrounding`): the
+  `TRIANGLE_CANDIDATES_AT_MOST` (16) nearest measurements within `TRIANGLE_WITHIN_DEGREES` (30) are
+  projected onto the plane touching the sphere at the speaker's direction (gnomonic, so a great
+  circle is a straight line), every triple of them holding the speaker (barycentric weights all
+  non-negative, area over `TRIANGLE_AREA_AT_LEAST`) whose circumscribed cap holds no other
+  candidate (the Delaunay condition on the sphere, `cap_around`) is a triangle of the
+  triangulation, the smallest cap winning a tie, and the three barycentric weights (a vertex the
+  speaker lies on the far side of, weight zero, is left out) are the blend's. Where no triangle
+  surrounds it (a set at one elevation alone, a direction past the outermost row, fewer than three
+  measurements, collinear ones) the fallback is the old one: up to three nearest, the nearest
+  always and the others only within `NEIGHBOURS_WITHIN_DEGREES` (15), blended by inverse-square
+  distance.
   **A blend is onset-aligned** (`aligned_sum`): each ear of each measurement (with its
   `Data.Delay` laid as silence before it) has its onset, the first tap at a tenth of its peak
   (`onset_of`); the blend's onset is the weighted mean of them, rounded, and each response is
@@ -582,14 +599,27 @@ The stereo image, apart from the transducer: both are stereo-only, off by defaul
   `a_classic_file_cut_short_or_marked_anywhere_is_refused_or_read_and_never_panics`,
   `a_set_of_head_related_responses_is_read_as_the_two_by_two_response_of_the_speakers`,
   `a_speaker_angle_the_listener_sets_moves_the_measurements_a_set_is_read_at`,
+  `a_speaker_inside_a_triangle_of_measurements_takes_all_three_by_where_it_stands`,
+  `a_speaker_standing_nearer_one_corner_of_its_triangle_takes_more_of_that_corner`,
+  `a_speaker_raised_is_read_from_the_measurements_at_that_elevation`,
+  `a_speaker_between_a_row_of_measurements_and_the_next_row_above_is_blended_of_both_rows`,
   `a_set_of_head_related_responses_is_kept_as_the_two_by_two_response_it_reads_as`). The phones'
   pickers offer `.sofa` beside audio (Android's `RESPONSE_DOCUMENTS`, iOS's `responseTypes`) and
-  keep one as `room-correction.sofa`; the boundary holds the angle (`speaker_angle`,
-  `set_speaker_angle(degrees)`, 30 until set, an angle outside 5 to 90 a `Domain` error) and reads
-  the kept set at it, re-reading and re-sending the correction applied when it moves (a set that
-  will not read at the new angle leaves the angle and the correction standing); neither phone's
-  page offers it yet (`FEATURES.md`)
-  (`the_speaker_angle_a_listener_sets_is_the_one_a_set_is_read_at`).
+  keep one as `room-correction.sofa`; the boundary holds the pair (`speaker_angle`,
+  `set_speaker_angle(degrees)`, 30 until set, an angle outside 5 to 90 a `Domain` error;
+  `speaker_elevation`, `set_speaker_elevation(degrees)`, 0 until set, outside -30 to 60 a `Domain`
+  error) and reads the kept set at it, re-reading and re-sending the correction applied when
+  either moves (a set that will not read at the new place leaves the pair and the correction
+  standing). `speaker_limits()` hands the front ends the bounds and the standard angle
+  (`SpeakerLimits`), so neither phone keeps a number of its own. **Both phones' Room correction
+  sections offer the two**: Android a `SpeakerSetting` each (a `ListItem` with the reading and
+  `IconButton`s of `Icons.Rounded.Remove` and `Add` stepping a degree, then `FilterChip`s of the
+  desktop's presets), kept as `speaker-angle` and `speaker-elevation` in the `playback`
+  preferences and sent at start before the response is read (`RoomCorrectionState.restore`); iOS a
+  `Stepper` each over the same limits, kept under the same keys in the `playback` suite
+  (`the_speaker_angle_a_listener_sets_is_the_one_a_set_is_read_at`,
+  `the_speaker_elevation_a_listener_sets_is_the_one_a_set_is_read_at`,
+  `the_limits_a_phone_offers_are_the_ones_the_boundary_refuses_beyond`).
 
 ## The binding
 
@@ -755,7 +785,7 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   the result becomes the curve in use, as any import does, and is kept as the curve's text.
 - **The desktop measures live: `resonate eq --measure`** (`measuring.rs`), then the same fit a file
   goes through. The phones' room correction measures nothing (`room.rs` keeps a response file), so
-  the sweep is the desktop's own. `resonate_dsp::Sweep` is an exponential sine sweep from 20 Hz to
+  the sweep is the desktop's own, the window's included. `resonate_dsp::Sweep` is an exponential sine sweep from 20 Hz to
   20 kHz over `SWEEP_FOR` (8 s) at 48 kHz, 0.1 of full scale (-20 dBFS) with 20 ms Hann fades, refused
   as `Error::SweepBand` (not below half the rate) or `SweepLength` (500 ms to a minute).
   `Listener::play_and_record` (`resonate-listen`, still reaching core, audio and pipewire alone)
@@ -790,8 +820,26 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   (`a_sweep_through_a_known_filter_is_deconvolved_to_that_filters_response`,
   `the_delay_between_playing_and_hearing_changes_nothing_but_the_delay`, `resonate-dsp`).
   `resonate-listen --test capture` plays a sweep through the desktop's monitor against a real
-  daemon and skips without one. Not built: the window's pane and the phones, which still fit from a
-  file (`FEATURES.md`).
+  daemon and skips without one. **The window's *Measure* is the same path behind a seam**
+  (`resonate_ui::Measures`, `Lookups::measures`, filled by the binary's `measuring::Sweeping`; the
+  window names no `resonate-dsp` and no PipeWire): `measuring::measured_by` answers an `Unheard`
+  (`Played`, `Deconvolved`, `Response`, each the source error unchanged, converted to the crate's
+  `Error` for the command and to `Unmeasured` for the window), and the pane's *Measure your room*
+  field (under *Your own measurement*, in *Measured corrections*) holds the microphone to hear it
+  through as the Listen sheet's own choice, chips of the desktop, the default microphone and every
+  microphone `Listener::microphones` lists (`ListenModel::choose`, shared with the sheet, so a
+  microphone chosen in one is chosen in the other; the list is looked for the first time the group
+  draws), and *Measure*, which plays through the sink in use (`PlayerModel::sink_in_use`).
+  `EqualiserModel::measure_the_room` runs the seam, the fit toward the *Fit toward* target and the
+  keep as the profile `measured` on the background executor (`_sounded`, apart from the other
+  tasks; a second press while one runs does nothing), then shows the profile and toasts the bands
+  and the error before and after, as a measurement from a file does; silence, a missing output and
+  any other failure are told in words apart (`missed_the_room`)
+  (`a_room_measured_in_the_pane_is_fitted_kept_and_shown_as_the_profile_it_became`,
+  `a_room_that_was_not_heard_leaves_nothing_kept_and_says_so`,
+  `measure_in_the_equaliser_pane_plays_the_sweep_and_keeps_the_fit_as_a_profile`). Not built: the
+  phones, which have a microphone path for Listen and no playback of their own beside the engine
+  (`FEATURES.md`), and a calibration, a name or a stop for the window's run.
 
 ## AutoEq
 

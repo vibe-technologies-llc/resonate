@@ -12,7 +12,7 @@ use gpui::{
     div, linear_color_stop, linear_gradient, point, prelude::*, px, quad, relative, rgb, size,
 };
 use resonate_core::{
-    MediaLocation, SampleRate, SpeakerAngle,
+    MediaLocation, SampleRate, SpeakerAngle, SpeakerElevation, Speakers,
     eq::{Band, BandKind, Preamp, Traced, TracedOn},
 };
 use resonate_engine::{
@@ -22,6 +22,7 @@ use resonate_engine::{
 };
 use resonate_eq::{Binding, BuiltIn, Device, MEASURERS_BEST_FIRST, ProfileName};
 use resonate_library::Library;
+use resonate_listen::Listening;
 
 use crate::{
     Bindings, Measurers, Notice, ResonateApp, Setting,
@@ -77,6 +78,14 @@ const NOTHING_BOUND: &str = "Nothing is bound to this device, so nothing is appl
 
 const SHAPED_BY_HAND: &str = "Press the curve to add a band, drag a handle to move it, scroll \
                               over one to change its Q, and right-press it to take it out.";
+
+const NO_MEASURING: &str = "This build cannot play a sweep and hear it";
+
+const MEASURE_NOTE: &str = "Plays a sweep of eight seconds through the output in use, straight to \
+                            the device and past the equaliser, and records it for two more. Keep \
+                            the room quiet. The response is fitted toward the target above and \
+                            kept as the profile measured. The microphone's own response is \
+                            corrected too unless a calibration is taken off with resonate eq.";
 
 const OWN_MEASUREMENT_NOTE: &str = "Choose a frequency-response measurement of your own — \
                                     AutoEq's CSV, REW's exported text, or two columns of \
@@ -673,6 +682,7 @@ impl RootView {
                 body.child(self.plugged_in(&description, suggested.as_ref(), knows, reachable, cx))
             })
             .child(self.own_measurement(cx))
+            .child(self.measure_the_room_field(cx))
     }
 
     fn own_measurement(&mut self, cx: &mut Context<Self>) -> Div {
@@ -734,6 +744,105 @@ impl RootView {
                 )))
                 .child(note(OWN_MEASUREMENT_NOTE)),
         )
+    }
+
+    fn measure_the_room_field(&mut self, cx: &mut Context<Self>) -> Div {
+        if !self.listen.read(cx).has_looked_for_microphones() {
+            self.listen
+                .update(cx, |listen, cx| listen.look_for_microphones(cx));
+        }
+        let listen = self.listen.read(cx);
+        let from = listen.from().clone();
+        let microphones = listen.microphones().to_vec();
+        let measuring = self.equaliser.read(cx).is_measuring_the_room();
+
+        let mut sources = div().flex().flex_wrap().gap_2();
+        sources = sources.child(self.heard_from(
+            "measure-from-desktop",
+            "The desktop".to_owned(),
+            Listening::Desktop,
+            &from,
+            "Hear what the output plays, which measures the path to it and no room",
+            cx,
+        ));
+        sources = sources.child(self.heard_from(
+            "measure-from-microphone",
+            "The default microphone".to_owned(),
+            Listening::Microphone(None),
+            &from,
+            "Hear the sweep through the default microphone",
+            cx,
+        ));
+        for (index, (name, described)) in microphones.iter().enumerate() {
+            sources = sources.child(self.heard_from(
+                &format!("measure-from-{index}"),
+                described.clone(),
+                Listening::Microphone(Some(NodeName::new(name.clone()))),
+                &from,
+                "Hear the sweep through this microphone",
+                cx,
+            ));
+        }
+
+        kit::field(
+            "Measure your room",
+            div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child(kit::field("Heard through", sources))
+                .child(div().flex().flex_wrap().gap_2().child(action(
+                    "measure-the-room",
+                    if measuring { "Measuring…" } else { "Measure" },
+                    Icon::Listen,
+                    measuring,
+                    |this, _, cx| this.measure_the_room(cx),
+                    self,
+                    cx,
+                )))
+                .child(note(MEASURE_NOTE)),
+        )
+    }
+
+    fn heard_from(
+        &mut self,
+        id: &str,
+        label: String,
+        source: Listening,
+        chosen: &Listening,
+        saying: &'static str,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let selected = *chosen == source;
+        let key = SharedString::from(id.to_owned());
+        self.in_the_ring_at(
+            id.to_owned(),
+            kit::chip(key, label, selected).names(saying),
+            move |this, _, cx| {
+                let source = source.clone();
+                this.listen
+                    .update(cx, |listen, cx| listen.choose(source, cx));
+                cx.notify();
+            },
+            cx,
+        )
+    }
+
+    fn measure_the_room(&mut self, cx: &mut Context<Self>) {
+        let Some(rig) = cx.global::<ResonateApp>().measures.clone() else {
+            toast::tell(Notice::Trouble(NO_MEASURING.to_owned()), cx);
+            return;
+        };
+        let through = self
+            .player
+            .read(cx)
+            .sink_in_use()
+            .map(|sink| sink.name.clone());
+        let from = self.listen.read(cx).from().clone();
+        self.equaliser.update(cx, |model, cx| {
+            model.measure_the_room(rig, through, from, cx);
+        });
+        cx.notify();
     }
 
     fn aim_at(&mut self, goal: Goal, cx: &mut Context<Self>) {
@@ -1646,7 +1755,7 @@ impl RootView {
         let library = self.library.read(cx).catalog();
 
         let room = cx.global::<ResonateApp>().convolution.clone();
-        let angle = cx.global::<ResonateApp>().speaker_angle;
+        let speakers = speakers_worn(cx);
 
         let watch = Arc::new(Watch::default());
         let measuring = Arc::clone(&watch);
@@ -1655,7 +1764,7 @@ impl RootView {
         let measured = cx.background_executor().spawn(async move {
             let applied = Applied::from(profile).corrected_by(
                 room.as_deref()
-                    .and_then(|file| room_correcting_the_fit(file, angle)),
+                    .and_then(|file| room_correcting_the_fit(file, speakers)),
             );
             fitted_through_the_chain(&library, &engine, &applied, rate, measuring.as_ref())
         });
@@ -1858,10 +1967,17 @@ const ROOM_NOTE: &str = "The response is convolved with every stream after the e
                          netCDF file of that shape reads as well, and so does a set of \
                          speakers measured at each ear.";
 
-const SPEAKER_NOTE: &str = "How far to either side of the front the speakers stand, for a SOFA \
-                            set. Changing it reads the set again.";
+const SPEAKER_NOTE: &str = "How far to either side of the front the speakers stand, from 5 to 90 \
+                            degrees, for a SOFA set. Changing it reads the set again.";
+
+const ELEVATION_NOTE: &str = "How far above the level of the ears the speakers stand (below, when \
+                              negative), from -30 to 60 degrees. Where the set's measurements \
+                              surround that direction, the response is interpolated between the \
+                              corners of the triangle that holds it.";
 
 const SPEAKER_ANGLES: [u8; 5] = [20, 30, 45, 60, 90];
+
+const SPEAKER_ELEVATIONS: [i16; 5] = [0, 10, 20, 30, 45];
 
 const BINAURAL_NOTE: &str = "A two-by-two (binaural) response: each speaker's response is heard at \
                              both ears, so a stereo stream is convolved four ways.";
@@ -1887,10 +2003,10 @@ impl RootView {
         }
         self.room_shape = Some((file.to_path_buf(), false));
         let reading = file.to_path_buf();
-        let angle = cx.global::<ResonateApp>().speaker_angle;
+        let speakers = speakers_worn(cx);
         let read = cx.background_executor().spawn({
             let reading = reading.clone();
-            async move { read_impulse(&Sources::local(), &MediaLocation::local(&reading), angle) }
+            async move { read_impulse(&Sources::local(), &MediaLocation::local(&reading), speakers) }
         });
         self.looking_at_the_room = cx.spawn(async move |this, cx| {
             let crossed = matches!(read.await, Ok(Some(impulse)) if impulse.is_crossed());
@@ -1957,18 +2073,19 @@ impl RootView {
                     }),
             )
             .child(self.speaker_angle_field(cx))
+            .child(self.speaker_elevation_field(cx))
             .child(note(ROOM_NOTE))
     }
 
     fn speaker_angle_field(&mut self, cx: &mut Context<Self>) -> Div {
         let held = cx.global::<ResonateApp>().speaker_angle;
-        let mut angles = div().flex().flex_wrap().gap_2();
+        let mut presets = div().flex().flex_wrap().gap_2();
         for degrees in SPEAKER_ANGLES {
             let Ok(angle) = SpeakerAngle::from_degrees(degrees) else {
                 continue;
             };
             let id = SharedString::from(format!("speaker-angle-{degrees}"));
-            angles = angles.child(self.in_the_ring_at(
+            presets = presets.child(self.in_the_ring_at(
                 id.to_string(),
                 kit::chip(id, format!("{degrees}°"), held == angle).names(format!(
                     "Speakers {degrees} degrees either side of the front"
@@ -1977,7 +2094,113 @@ impl RootView {
                 cx,
             ));
         }
-        kit::field("Speaker angle", angles).child(note(SPEAKER_NOTE))
+        let stepper = self.degrees_stepper(
+            "speaker-angle",
+            format!("{held}°"),
+            ("Bring the speakers a degree closer", |this, cx| {
+                let held = cx.global::<ResonateApp>().speaker_angle.degrees();
+                if let Ok(angle) = SpeakerAngle::from_degrees(held.saturating_sub(1)) {
+                    this.set_the_speaker_angle(angle, cx);
+                }
+            }),
+            ("Put the speakers a degree further apart", |this, cx| {
+                let held = cx.global::<ResonateApp>().speaker_angle.degrees();
+                if let Ok(angle) = SpeakerAngle::from_degrees(held.saturating_add(1)) {
+                    this.set_the_speaker_angle(angle, cx);
+                }
+            }),
+            cx,
+        );
+        kit::field(
+            "Speaker angle",
+            div()
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .gap_3()
+                .child(stepper)
+                .child(presets),
+        )
+        .child(note(SPEAKER_NOTE))
+    }
+
+    fn speaker_elevation_field(&mut self, cx: &mut Context<Self>) -> Div {
+        let held = cx.global::<ResonateApp>().speaker_elevation;
+        let mut presets = div().flex().flex_wrap().gap_2();
+        for degrees in SPEAKER_ELEVATIONS {
+            let Ok(elevation) = SpeakerElevation::from_degrees(degrees) else {
+                continue;
+            };
+            let id = SharedString::from(format!("speaker-elevation-{degrees}"));
+            presets = presets.child(
+                self.in_the_ring_at(
+                    id.to_string(),
+                    kit::chip(id, format!("{degrees}°"), held == elevation)
+                        .names(format!("Speakers {degrees} degrees above the ears")),
+                    move |this, _, cx| this.set_the_speaker_elevation(elevation, cx),
+                    cx,
+                ),
+            );
+        }
+        let stepper = self.degrees_stepper(
+            "speaker-elevation",
+            format!("{held}°"),
+            ("Lower the speakers a degree", |this, cx| {
+                let held = i16::from(cx.global::<ResonateApp>().speaker_elevation.degrees());
+                if let Ok(elevation) = SpeakerElevation::from_degrees(held - 1) {
+                    this.set_the_speaker_elevation(elevation, cx);
+                }
+            }),
+            ("Raise the speakers a degree", |this, cx| {
+                let held = i16::from(cx.global::<ResonateApp>().speaker_elevation.degrees());
+                if let Ok(elevation) = SpeakerElevation::from_degrees(held + 1) {
+                    this.set_the_speaker_elevation(elevation, cx);
+                }
+            }),
+            cx,
+        );
+        kit::field(
+            "Speaker elevation",
+            div()
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .gap_3()
+                .child(stepper)
+                .child(presets),
+        )
+        .child(note(ELEVATION_NOTE))
+    }
+
+    fn degrees_stepper(
+        &mut self,
+        id: &'static str,
+        reading: String,
+        less: (&'static str, fn(&mut Self, &mut Context<Self>)),
+        more: (&'static str, fn(&mut Self, &mut Context<Self>)),
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let (less_hint, step_less) = less;
+        let (more_hint, step_more) = more;
+        let less_id = format!("{id}-less");
+        let more_id = format!("{id}-more");
+        div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(self.in_the_ring_at(
+                less_id.clone(),
+                kit::icon_button(SharedString::from(less_id), Icon::Minus, less_hint),
+                move |this, _, cx| step_less(this, cx),
+                cx,
+            ))
+            .child(kit::figure(reading).min_w(px(40.0)).flex().justify_center())
+            .child(self.in_the_ring_at(
+                more_id.clone(),
+                kit::icon_button(SharedString::from(more_id), Icon::Plus, more_hint),
+                move |this, _, cx| step_more(this, cx),
+                cx,
+            ))
     }
 
     pub(crate) fn set_the_speaker_angle(&mut self, angle: SpeakerAngle, cx: &mut Context<Self>) {
@@ -1986,6 +2209,23 @@ impl RootView {
         }
         cx.update_global::<ResonateApp, _>(|global, _| global.speaker_angle = angle);
         self.store(&Setting::SpeakerAngle(angle), cx);
+        self.read_the_room_again(cx);
+    }
+
+    pub(crate) fn set_the_speaker_elevation(
+        &mut self,
+        elevation: SpeakerElevation,
+        cx: &mut Context<Self>,
+    ) {
+        if cx.global::<ResonateApp>().speaker_elevation == elevation {
+            return;
+        }
+        cx.update_global::<ResonateApp, _>(|global, _| global.speaker_elevation = elevation);
+        self.store(&Setting::SpeakerElevation(elevation), cx);
+        self.read_the_room_again(cx);
+    }
+
+    fn read_the_room_again(&mut self, cx: &mut Context<Self>) {
         let held = cx.global::<ResonateApp>().convolution.clone();
         if let Some(file) = held {
             self.correct_the_room(Some(file), cx);
@@ -2052,13 +2292,13 @@ impl RootView {
             .equaliser
             .with_file_name(BINAURAL_FILE);
         let assembling = kept.clone();
-        let angle = cx.global::<ResonateApp>().speaker_angle;
+        let speakers = speakers_worn(cx);
         let assembled = cx.background_executor().spawn(async move {
             let whole = read_binaural_pair(
                 &Sources::local(),
                 &MediaLocation::local(&left),
                 &MediaLocation::local(&right),
-                angle,
+                speakers,
             )
             .map_err(|error| pair_refusal(&error))?;
             let wave = binaural_wave(&whole).map_err(|error| pair_refusal(&error))?;
@@ -2086,9 +2326,9 @@ impl RootView {
             return;
         };
         let reading = file.clone();
-        let angle = cx.global::<ResonateApp>().speaker_angle;
+        let speakers = speakers_worn(cx);
         let read = cx.background_executor().spawn(async move {
-            read_impulse(&Sources::local(), &MediaLocation::local(&reading), angle)
+            read_impulse(&Sources::local(), &MediaLocation::local(&reading), speakers)
         });
         self.reading_the_room = cx.spawn(async move |this, cx| {
             let read = read.await;
@@ -2147,8 +2387,16 @@ struct Fitted {
     room: Option<Preamp>,
 }
 
-fn room_correcting_the_fit(file: &Path, angle: SpeakerAngle) -> Option<Arc<Impulse>> {
-    match read_impulse(&Sources::local(), &MediaLocation::local(file), angle) {
+fn speakers_worn(cx: &App) -> Speakers {
+    let worn = cx.global::<ResonateApp>();
+    Speakers {
+        angle: worn.speaker_angle,
+        elevation: worn.speaker_elevation,
+    }
+}
+
+fn room_correcting_the_fit(file: &Path, speakers: Speakers) -> Option<Arc<Impulse>> {
+    match read_impulse(&Sources::local(), &MediaLocation::local(file), speakers) {
         Ok(impulse) => impulse.map(Arc::new),
         Err(error) => {
             tracing::warn!(%error, "the room's response could not be read for the preamp");

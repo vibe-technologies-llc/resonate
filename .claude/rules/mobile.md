@@ -298,6 +298,9 @@ weigh; the ledger still passes it on in its snapshot.
 
 ## The equaliser
 
+The room correction reads a SOFA set at the speaker pair the boundary holds (`room.rs`:
+`speaker_angle`, `speaker_elevation` and their setters, `speaker_limits()` for the bounds; `eq.md`).
+
 The phones' curve, its bounds, the drawn response, imports and stored form are `eq.md`'s *The
 phones* (`equaliser.rs`); `playback.rs` sends it with the other sound preferences.
 

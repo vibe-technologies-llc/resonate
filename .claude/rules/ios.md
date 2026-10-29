@@ -1371,7 +1371,10 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   speaker's file (`RoomCorrectionState.left`), then *Choose the right speaker's response…* the
   right's (or *Cancel*), each its own `fileImporter` on its own button, and keeps both through
   `keep_binaural_room_correction`; the name is `ResonateLogic`'s `RoomPair.name` (`RoomPairTests`).
-  One response serves every output.
+  One response serves every output. The section ends in a `Stepper` each for the speaker angle and
+  elevation (`RoomCorrectionState.speak(at:)`, `raise(to:)`, bounds from `speakerLimits()`, kept in
+  `playback` as `speaker-angle` and `speaker-elevation`, sent at start before the response is read;
+  `eq.md`), not built or run on this host (no xtool): the Swift is held by the boundary's tests alone.
 
 ## Siri
 

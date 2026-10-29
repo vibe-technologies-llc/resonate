@@ -7,11 +7,18 @@ use resonate_core::{
 };
 use resonate_engine::{Equalisation, NodeName};
 use resonate_eq::{
-    Binding, BuiltIn, Catalogue, Corrected, Device, DeviceId, Found, Measured, ProfileName,
-    Response, Store, search_preferring, suggest_preferring,
+    Binding, BuiltIn, Catalogue, Corrected, Device, DeviceId, Fitted, Fitting, Found, Measured,
+    ProfileName, Response, Store, fit, search_preferring, suggest_preferring,
 };
+use resonate_listen::Listening;
+use thiserror::Error;
 
-use crate::{Bindings, Measurers, models::Notice, toast};
+use crate::{
+    Bindings, Measurers,
+    measure::{Measures, Unmeasured},
+    models::Notice,
+    toast,
+};
 
 pub const CURVE_COLUMNS: usize = 192;
 pub const DRAWN_BETWEEN_MILLIBELS: i32 = 15_000;
@@ -89,11 +96,42 @@ fn fitted_said(name: &ProfileName, aimed_at: &str, measured: &Measured) -> Strin
         lines => format!("; {lines} lines of the measurement were passed over"),
     };
     format!(
-        "Kept {name}, {} bands fitted toward {aimed_at}: {:.1} dB off before and {:.1} dB after{passed_over}",
-        measured.fitted.profile.bands().len(),
-        measured.fitted.off_by_db_before,
-        measured.fitted.off_by_db_after,
+        "{}{passed_over}",
+        fit_said(name, aimed_at, &measured.fitted)
     )
+}
+
+fn fit_said(name: &ProfileName, aimed_at: &str, fitted: &Fitted) -> String {
+    format!(
+        "Kept {name}, {} bands fitted toward {aimed_at}: {:.1} dB off before and {:.1} dB after",
+        fitted.profile.bands().len(),
+        fitted.off_by_db_before,
+        fitted.off_by_db_after,
+    )
+}
+
+const MEASURED_LIVE: &str = "measured";
+
+#[derive(Debug, Error)]
+enum Missed {
+    #[error("the room could not be heard")]
+    Heard(#[source] Unmeasured),
+
+    #[error("the room's measurement could not be fitted or kept")]
+    Fitted(#[source] resonate_eq::Error),
+}
+
+fn missed_the_room(error: &Missed) -> Notice {
+    match error {
+        Missed::Heard(unmeasured) if unmeasured.is_silence() => Notice::Trouble(
+            "Nothing was heard — check the microphone is on and the output can be heard".to_owned(),
+        ),
+        Missed::Heard(unmeasured) if unmeasured.is_a_missing_output() => {
+            Notice::Trouble("The output to play the sweep through isn't there".to_owned())
+        }
+        Missed::Heard(_) => Notice::Trouble("Couldn't play the sweep and hear it".to_owned()),
+        Missed::Fitted(error) => toast::eq_could_not("fit that measurement", error),
+    }
 }
 
 fn caveats(kept: &resonate_eq::Kept) -> String {
@@ -273,6 +311,7 @@ pub struct EqualiserModel {
     fetching: bool,
     goal: Goal,
     fitting_a_measurement: bool,
+    measuring_the_room: bool,
     notice: Option<Notice>,
     untold: bool,
     _saved: Task<()>,
@@ -281,6 +320,7 @@ pub struct EqualiserModel {
     _catalogued: Task<()>,
     _fetched: Task<()>,
     _measured: Task<()>,
+    _sounded: Task<()>,
 }
 
 impl EqualiserModel {
@@ -310,6 +350,7 @@ impl EqualiserModel {
             fetching: false,
             goal: Goal::BY_DEFAULT,
             fitting_a_measurement: false,
+            measuring_the_room: false,
             notice: None,
             untold: false,
             _saved: Task::ready(()),
@@ -318,6 +359,7 @@ impl EqualiserModel {
             _catalogued: Task::ready(()),
             _fetched: Task::ready(()),
             _measured: Task::ready(()),
+            _sounded: Task::ready(()),
         };
         model.gather();
         model
@@ -382,6 +424,10 @@ impl EqualiserModel {
 
     pub const fn is_fitting_a_measurement(&self) -> bool {
         self.fitting_a_measurement
+    }
+
+    pub const fn is_measuring_the_room(&self) -> bool {
+        self.measuring_the_room
     }
 
     pub fn has_a_source(&self) -> bool {
@@ -897,6 +943,59 @@ impl EqualiserModel {
                     }
                     Err(error) => {
                         this.notice = Some(toast::eq_could_not("fit that measurement", &error));
+                    }
+                }
+                cx.notify();
+            });
+            let _ = outcome;
+        });
+    }
+
+    pub fn measure_the_room(
+        &mut self,
+        rig: Arc<dyn Measures>,
+        through: Option<NodeName>,
+        from: Listening,
+        cx: &mut Context<Self>,
+    ) {
+        if self.measuring_the_room {
+            return;
+        }
+        let folder = self.store.folder().to_path_buf();
+        let goal = self.goal.clone();
+        self.measuring_the_room = true;
+
+        self._sounded = cx.spawn(async move |this, cx| {
+            let aimed_at = goal.spoken();
+            let kept = cx
+                .background_executor()
+                .spawn(async move {
+                    let heard = rig
+                        .measure(through.as_ref(), &from)
+                        .map_err(Missed::Heard)?;
+                    let target = goal.response().map_err(Missed::Fitted)?;
+                    let fitted =
+                        fit(&heard, &target, &Fitting::default()).map_err(Missed::Fitted)?;
+                    let name = ProfileName::after(MEASURED_LIVE);
+                    Store::at(folder)
+                        .keep(&name, &fitted.profile)
+                        .map_err(Missed::Fitted)?;
+                    Ok::<_, Missed>((name, fitted))
+                })
+                .await;
+
+            let outcome = this.update(cx, |this, cx| {
+                this.measuring_the_room = false;
+                match kept {
+                    Ok((name, fitted)) => {
+                        this.reload();
+                        this.replaced(&name);
+                        this.reread(Curve::Kept(name.clone()));
+                        this.notice = Some(Notice::Done(fit_said(&name, &aimed_at, &fitted)));
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, "the room could not be measured");
+                        this.notice = Some(missed_the_room(&error));
                     }
                 }
                 cx.notify();
@@ -1465,6 +1564,117 @@ mod tests {
         assert!(!fitting);
         assert!(kept.is_empty());
         assert!(matches!(notice, Some(Notice::Trouble(_))));
+    }
+
+    struct Dipped;
+
+    impl Measures for Dipped {
+        fn measure(
+            &self,
+            _through: Option<&NodeName>,
+            _from: &Listening,
+        ) -> Result<Response, Unmeasured> {
+            let points = (0..60)
+                .map(|step| {
+                    let hertz = 20.0 * 1.12_f64.powi(step);
+                    let decibels = if (3_000.0..6_000.0).contains(&hertz) {
+                        -5.0
+                    } else {
+                        0.0
+                    };
+                    resonate_eq::Point { hertz, decibels }
+                })
+                .collect();
+            Ok(Response::from_points(points).expect("a response"))
+        }
+    }
+
+    struct Deaf;
+
+    impl Measures for Deaf {
+        fn measure(
+            &self,
+            _through: Option<&NodeName>,
+            _from: &Listening,
+        ) -> Result<Response, Unmeasured> {
+            Err(Unmeasured::Deconvolved(
+                resonate_engine::DspError::NothingHeard,
+            ))
+        }
+    }
+
+    #[gpui::test]
+    fn a_room_measured_in_the_pane_is_fitted_kept_and_shown_as_the_profile_it_became(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use gpui::AppContext as _;
+
+        let folder =
+            std::env::temp_dir().join(format!("resonate-ui-equaliser-room-{}", std::process::id()));
+        let model = cx.new(|_| {
+            EqualiserModel::new(
+                folder.join("equaliser"),
+                Arc::new(Corrected::uncorrected()),
+                Bindings::default(),
+            )
+        });
+
+        model.update(cx, |model, cx| {
+            model.aim_at(Goal::BuiltIn(BuiltIn::Flat));
+            model.measure_the_room(Arc::new(Dipped), None, Listening::Desktop, cx);
+        });
+        assert!(model.read_with(cx, |model, _| model.is_measuring_the_room()));
+        cx.run_until_parked();
+
+        let (measuring, shown, bands, notice) = model.update(cx, |model, _| {
+            (
+                model.is_measuring_the_room(),
+                model.shown_curve().cloned(),
+                model.shown_bands(),
+                model.take_notice(),
+            )
+        });
+        let _ = std::fs::remove_dir_all(&folder);
+
+        assert!(!measuring);
+        assert_eq!(shown, Some(Curve::Kept(named("measured"))));
+        assert!(bands.iter().any(|band| band.gain.decibels() > 2.0));
+        assert!(matches!(notice, Some(Notice::Done(said)) if said.contains("fitted toward Flat")));
+    }
+
+    #[gpui::test]
+    fn a_room_that_was_not_heard_leaves_nothing_kept_and_says_so(cx: &mut gpui::TestAppContext) {
+        use gpui::AppContext as _;
+
+        let folder =
+            std::env::temp_dir().join(format!("resonate-ui-equaliser-deaf-{}", std::process::id()));
+        let model = cx.new(|_| {
+            EqualiserModel::new(
+                folder.join("equaliser"),
+                Arc::new(Corrected::uncorrected()),
+                Bindings::default(),
+            )
+        });
+
+        model.update(cx, |model, cx| {
+            model.measure_the_room(Arc::new(Deaf), None, Listening::Microphone(None), cx);
+        });
+        cx.run_until_parked();
+
+        let (measuring, kept, notice) = model.update(cx, |model, _| {
+            (
+                model.is_measuring_the_room(),
+                model.kept().to_vec(),
+                model.take_notice(),
+            )
+        });
+        let _ = std::fs::remove_dir_all(&folder);
+
+        assert!(!measuring);
+        assert!(kept.is_empty());
+        assert!(
+            matches!(notice, Some(Notice::Trouble(said)) if said.starts_with("Nothing was heard"))
+        );
     }
 
     #[test]

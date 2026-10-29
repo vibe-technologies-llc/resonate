@@ -1083,7 +1083,7 @@ is never named.
   saved value.
 - **The window is handed its lookups and owns none.** `Lookups` is what `run` takes: `lyricists`,
   `fingerprinters`, `reference` (`Option<Arc<dyn Reference>>`), `for_the_pass` (`Consulted`),
-  `scrobblers`, `signs_in`, `corrections`, the `online` setting, `bindings`, `sourcing`, `listens`;
+  `scrobblers`, `signs_in`, `corrections`, the `online` setting, `bindings`, `measures` (the sweep of the Equaliser pane's *Measure*, `eq.md`), `sourcing`, `listens`;
   `ResonateApp` holds them as globals, so `LibraryModel::new` knows whether it `can_enrich`. A scan not
   cancelled runs `enrich(false)` as it ends where `can_enrich` (online *and* a reference) allows; the
   lookup polls at `SCAN_POLL` and reloads every `POLLS_PER_RELOAD` polls. Online off under a run keeps

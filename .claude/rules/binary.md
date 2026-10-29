@@ -246,6 +246,10 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   `At::within`, a value outside it costs the key alone): how far to either side of the front the
   speakers stand when `convolution` names a SOFA set (`eq.md`); the start reads the set at it
   (`impulse_at`) and the Room correction group writes it as `Setting::SpeakerAngle`.
+- `speaker-elevation`: whole degrees -30 to 60 (`resonate_core::SpeakerElevation`, 0 unless set; a
+  value outside it costs the key alone): how far above the ears the speakers stand for the same
+  set; read, written and worn with `speaker-angle` as `Config::speakers` and
+  `Setting::SpeakerElevation`.
 - `music-folder`: the one ordinary folder new songs are copied into (drops: `ui.md`, `library.md`;
   a provider's delivery with no vault open: `providers.md`), filed by `organise-as` when
   `file-dropped` is on; never the vault. Choosing stores the canonical path, refuses a non-folder or

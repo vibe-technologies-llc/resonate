@@ -7,7 +7,9 @@ use std::{
 
 use parking_lot::Mutex;
 use resonate_codec::Sources;
-use resonate_core::{AUDIO_EXTENSIONS, HRIR_EXTENSIONS, MediaLocation, SpeakerAngle};
+use resonate_core::{
+    AUDIO_EXTENSIONS, HRIR_EXTENSIONS, MediaLocation, SpeakerAngle, SpeakerElevation, Speakers,
+};
 use resonate_engine::{
     Command, Impulse, PairedReadError, binaural_wave, read_binaural_pair, read_impulse,
 };
@@ -44,6 +46,26 @@ pub struct RoomCorrection {
     pub length_ms: u64,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct SpeakerLimits {
+    pub angle_least_degrees: u8,
+    pub angle_most_degrees: u8,
+    pub angle_standard_degrees: u8,
+    pub elevation_least_degrees: i16,
+    pub elevation_most_degrees: i16,
+}
+
+#[uniffi::export]
+pub fn speaker_limits() -> SpeakerLimits {
+    SpeakerLimits {
+        angle_least_degrees: SpeakerAngle::NARROWEST_DEGREES,
+        angle_most_degrees: SpeakerAngle::WIDEST_DEGREES,
+        angle_standard_degrees: SpeakerAngle::STANDARD.degrees(),
+        elevation_least_degrees: i16::from(SpeakerElevation::LOWEST_DEGREES),
+        elevation_most_degrees: i16::from(SpeakerElevation::HIGHEST_DEGREES),
+    }
+}
+
 impl RoomCorrection {
     fn of(impulse: &Impulse) -> Self {
         let rate = impulse.rate().hz();
@@ -61,7 +83,7 @@ impl RoomCorrection {
 pub(crate) struct Room {
     folder: PathBuf,
     applied: Mutex<Option<Arc<Impulse>>>,
-    angle: Mutex<SpeakerAngle>,
+    speakers: Mutex<Speakers>,
 }
 
 impl Room {
@@ -69,7 +91,7 @@ impl Room {
         Self {
             folder,
             applied: Mutex::new(None),
-            angle: Mutex::new(SpeakerAngle::STANDARD),
+            speakers: Mutex::new(Speakers::STANDARD),
         }
     }
 
@@ -77,12 +99,12 @@ impl Room {
         self.applied.lock().clone()
     }
 
-    fn angle(&self) -> SpeakerAngle {
-        *self.angle.lock()
+    fn speakers(&self) -> Speakers {
+        *self.speakers.lock()
     }
 
-    fn speak_at(&self, angle: SpeakerAngle) {
-        *self.angle.lock() = angle;
+    fn speak_at(&self, speakers: Speakers) {
+        *self.speakers.lock() = speakers;
     }
 
     fn apply(&self, impulse: Option<Arc<Impulse>>) {
@@ -184,7 +206,7 @@ impl Room {
             sources,
             &MediaLocation::local(&left_path),
             &MediaLocation::local(&right_path),
-            self.angle(),
+            self.speakers(),
         );
         let _ = fs::remove_file(&left_path);
         let _ = fs::remove_file(&right_path);
@@ -218,7 +240,7 @@ impl Room {
 
     fn keep(&self, bytes: &[u8], extension: &str, sources: &Sources) -> Result<Impulse> {
         let candidate = self.stage(bytes, extension)?;
-        let impulse = match read(sources, &candidate, self.angle()) {
+        let impulse = match read(sources, &candidate, self.speakers()) {
             Ok(impulse) => impulse,
             Err(error) => {
                 let _ = fs::remove_file(&candidate);
@@ -241,8 +263,25 @@ fn pairing_refused(source: PairedReadError) -> Error {
     }
 }
 
-fn read(sources: &Sources, path: &Path, angle: SpeakerAngle) -> Result<Impulse> {
-    read_impulse(sources, &MediaLocation::local(path), angle)?.ok_or(Error::NoImpulse)
+fn read(sources: &Sources, path: &Path, speakers: Speakers) -> Result<Impulse> {
+    read_impulse(sources, &MediaLocation::local(path), speakers)?.ok_or(Error::NoImpulse)
+}
+
+impl MobilePlayer {
+    fn speak_at(&self, speakers: Speakers) -> Result<Option<RoomCorrection>> {
+        let described = match (self.room.applied(), self.room.kept()?) {
+            (Some(_), Some(path)) => {
+                let impulse = Arc::new(read(&self.sources, &path, speakers)?);
+                let described = RoomCorrection::of(&impulse);
+                self.command(Command::SetConvolution(Some(impulse.clone())))?;
+                self.room.apply(Some(impulse));
+                Some(described)
+            }
+            _ => None,
+        };
+        self.room.speak_at(speakers);
+        Ok(described)
+    }
 }
 
 #[uniffi::export]
@@ -281,17 +320,17 @@ impl MobilePlayer {
         let Some(path) = self.room.kept()? else {
             return Ok(None);
         };
-        let angle = self.room.angle();
+        let speakers = self.room.speakers();
         Ok(Some(RoomCorrection::of(&read(
             &self.sources,
             &path,
-            angle,
+            speakers,
         )?)))
     }
 
     pub fn apply_room_correction(&self, on: bool) -> Result<Option<RoomCorrection>> {
         let impulse = match (on, self.room.kept()?) {
-            (true, Some(path)) => Some(Arc::new(read(&self.sources, &path, self.room.angle())?)),
+            (true, Some(path)) => Some(Arc::new(read(&self.sources, &path, self.room.speakers())?)),
             _ => None,
         };
         let described = impulse.as_deref().map(RoomCorrection::of);
@@ -301,23 +340,27 @@ impl MobilePlayer {
     }
 
     pub fn speaker_angle(&self) -> u8 {
-        self.room.angle().degrees()
+        self.room.speakers().angle.degrees()
+    }
+
+    pub fn speaker_elevation(&self) -> i16 {
+        i16::from(self.room.speakers().elevation.degrees())
     }
 
     pub fn set_speaker_angle(&self, degrees: u8) -> Result<Option<RoomCorrection>> {
         let angle = SpeakerAngle::from_degrees(degrees)?;
-        let described = match (self.room.applied(), self.room.kept()?) {
-            (Some(_), Some(path)) => {
-                let impulse = Arc::new(read(&self.sources, &path, angle)?);
-                let described = RoomCorrection::of(&impulse);
-                self.command(Command::SetConvolution(Some(impulse.clone())))?;
-                self.room.apply(Some(impulse));
-                Some(described)
-            }
-            _ => None,
-        };
-        self.room.speak_at(angle);
-        Ok(described)
+        self.speak_at(Speakers {
+            angle,
+            ..self.room.speakers()
+        })
+    }
+
+    pub fn set_speaker_elevation(&self, degrees: i16) -> Result<Option<RoomCorrection>> {
+        let elevation = SpeakerElevation::from_degrees(degrees)?;
+        self.speak_at(Speakers {
+            elevation,
+            ..self.room.speakers()
+        })
     }
 
     pub fn forget_room_correction(&self) -> Result<()> {
@@ -442,7 +485,7 @@ mod tests {
         let again = read(
             &sources,
             &room.kept().expect("a listing").expect("a file"),
-            room.angle(),
+            room.speakers(),
         )
         .expect("read back");
         assert!(again.is_crossed());
@@ -540,7 +583,9 @@ mod tests {
         let sources = Sources::local();
         room.keep(&head_related_set(), "sofa", &sources)
             .expect("a kept set");
-        room.speak_at(SpeakerAngle::from_degrees(90).expect("an angle"));
+        room.speak_at(Speakers::at(
+            SpeakerAngle::from_degrees(90).expect("an angle"),
+        ));
 
         let refused = room.keep(&head_related_set(), "sofa", &sources);
 
@@ -550,6 +595,40 @@ mod tests {
             Some(folder.join("room-correction.sofa"))
         );
         assert_eq!(fs::read_dir(&folder).expect("a listing").count(), 1);
+    }
+
+    #[test]
+    fn the_speaker_elevation_a_listener_sets_is_the_one_a_set_is_read_at() {
+        let folder = folder("elevation");
+        let room = Room::under(folder.clone());
+        let sources = Sources::local();
+        room.keep(&head_related_set(), "sofa", &sources)
+            .expect("a kept set");
+        room.speak_at(
+            Speakers::STANDARD.raised_to(SpeakerElevation::from_degrees(60).expect("an elevation")),
+        );
+
+        let refused = room.keep(&head_related_set(), "sofa", &sources);
+
+        assert!(matches!(refused, Err(Error::Decode(_))));
+        assert_eq!(fs::read_dir(&folder).expect("a listing").count(), 1);
+    }
+
+    #[test]
+    fn the_limits_a_phone_offers_are_the_ones_the_boundary_refuses_beyond() {
+        let limits = speaker_limits();
+        let player_angle = |degrees: u8| SpeakerAngle::from_degrees(degrees).is_ok();
+        let player_elevation = |degrees: i16| SpeakerElevation::from_degrees(degrees).is_ok();
+
+        assert!(player_angle(limits.angle_least_degrees));
+        assert!(player_angle(limits.angle_most_degrees));
+        assert!(!player_angle(limits.angle_least_degrees - 1));
+        assert!(!player_angle(limits.angle_most_degrees + 1));
+        assert!(player_elevation(limits.elevation_least_degrees));
+        assert!(player_elevation(limits.elevation_most_degrees));
+        assert!(!player_elevation(limits.elevation_least_degrees - 1));
+        assert!(!player_elevation(limits.elevation_most_degrees + 1));
+        assert_eq!(limits.angle_standard_degrees, 30);
     }
 
     #[test]
