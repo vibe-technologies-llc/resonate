@@ -1014,7 +1014,15 @@ mod tests {
         assert_eq!(label.as_deref(), Some("Zone 1"));
         assert_eq!(
             menu,
-            vec!["Zone 1", "Zone 2", "", "Add a zone", "Rename this zone…"]
+            vec![
+                "Zone 1",
+                "Zone 2",
+                "",
+                "Move playback to Zone 2",
+                "",
+                "Add a zone",
+                "Rename this zone…"
+            ]
         );
         assert!(driven.read(|root, _| root.zones.len() == 1 && !root.switcher.several()));
     }
