@@ -1776,7 +1776,7 @@ impl Library {
         heard: Duration,
     ) -> Result<Option<Counted>> {
         let Some(path) = location.as_path() else {
-            return Ok(None);
+            return self.played_in_place(location, heard).map(Some);
         };
         let text = store::path_text(path);
         let (start, _) = store::span_columns(span);
@@ -1838,6 +1838,26 @@ impl Library {
                 listen: Listen::Held(ListenId::new(listen as u64)?),
             },
         }))
+    }
+
+    fn played_in_place(&self, location: &MediaLocation, heard: Duration) -> Result<Counted> {
+        let unheld = self.inner.write(|transaction| {
+            let moment = SystemTime::now();
+            let began = store::to_nanos(moment.checked_sub(heard).unwrap_or(moment));
+            transaction
+                .query_row(
+                    "INSERT INTO unheld_listens (path, span_start, at, began)
+                     VALUES (?1, 0, ?2, ?3)
+                     RETURNING rowid",
+                    params![location.to_uri(), store::to_nanos(moment), began],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map_err(|source| Error::store(StoreOp::Insert, source))
+        })?;
+        Ok(Counted {
+            track: None,
+            listen: Listen::Unheld(ListenId::new(unheld as u64)?),
+        })
     }
 
     pub fn submit_listens(&self, scrobbler: &dyn Scrobbler) -> Result<Submitted> {

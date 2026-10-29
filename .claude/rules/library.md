@@ -54,7 +54,9 @@ rows read via `Player::media` like any unscanned row.
   `kept.rs`) picks the write: unchanged queue = one upsert of the place; reorder/reshuffle =
   `resume_order` only; only rows arriving/leaving rewrite `resume_rows`. `keep_place` writes row and
   frame only, so a place written seconds into a track cannot lose the order; `keep_order` writes
-  order, place, shuffle, next span together. Rows carry `MediaLocation::to_uri`;
+  order, place, shuffle, next span together. Rows carry `MediaLocation::to_uri`, so a song played
+  in place is kept by its URI beside the held rows and resumed through `Sources`, `held` none
+  (`a_saved_queue_keeps_a_song_played_in_place_by_its_uri_beside_a_held_one`);
   `span_start`/`span_frames` follow `store::span`, so a cue row resumes as its cut.  A URI no longer
   naming a location drops that row alone (`resumed::Kept` renumbers over the rest; playing row
   dropped = resume at the next row's start; no openable row = `None`). `keep_resumption` replaces
@@ -531,7 +533,12 @@ rows read via `Player::media` like any unscanned row.
   from the upsert's `DO UPDATE SET`. `Library::track_played` answers `None` where a non-local
   location has no row, **but the play is kept against the path.** `unheld_listens` holds path, span
   start, moment, time heard, and for a listen a deletion took off its row what it was (`listen_id`,
-  `elsewhere`, `origin_device`, `origin_id`; NULL, 0 for a play counted with no row);
+  `elsewhere`, `origin_device`, `origin_id`; NULL, 0 for a play counted with no row). **A song
+  played in place is counted there under its URI** (`played_in_place`: any location that is not a
+  path, span start 0), so its plays and time are in `statistics` and `listening_by_day` without
+  pretending it is a row: no row's path is a URI, so `credit_the_unheld` never takes it, and no
+  service is told it (`a_song_played_in_place_counts_as_a_listen_against_its_uri_and_never_as_a_row`);
+  it is never a favourite (`docs/FEATURES.md`);
   `history::credit_the_unheld` runs after the prune of every scan a row arrived in: a play whose
   path and start now name a row becomes a `listens` row stamped when heard, **under its own id where
   that is free and with its origin**, so a listen already told to devices and services stays at or

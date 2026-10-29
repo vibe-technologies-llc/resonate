@@ -32,17 +32,18 @@ use resonate_library::{
     EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form, Genre,
     GroupAsked, GroupMatch, GroupRelease, HeldMedium, HistoryKept, ImageFormat, ImportOptions,
     ImportSummary, Isrc, Issued, Kept, Layout, Learning, Library, LifeSpan, Link, LinkNames,
-    Linked, LinkedPlaylist, ListedSong, ListeningService, LookupOp, Love, Loved, LovedNames,
-    LovesTold, LyricText, LyricsAhead, LyricsAsked, Maker, Mbid, Medium, Missing, MissingTrack,
-    NamesMoved, OrganiseOptions, OrganiseSummary, Performer, Picturing, Playing, PlaylistFormat,
-    PlaylistLink, PlaylistOrder, PollHandle, PollOptions, PollProgress, Popularity, Pruned,
-    RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference,
-    Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack,
-    Removal, Result, RetagOptions, RetagSummary, RowOrder, SUBMITTED_AT_ONCE, SavedQuery,
-    ScanOptions, ScanStats, Scrobble, Scrobbler, Search, Service, SheetEdit, SheetField,
-    SheetScope, Sidecar, SongLink, SongsAsked, SortOrder, Sought, Sources, StreamAsked, Suggestion,
-    TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource, TextEncoding, TokenHeld,
-    Track, TrackQuery, Trashes, UnheldRelease, Unwritten, Vault, Waits, Window, Wording, Written,
+    Linked, LinkedPlaylist, ListedSong, Listen, ListeningService, LookupOp, Love, Loved,
+    LovedNames, LovesTold, LyricText, LyricsAhead, LyricsAsked, Maker, Mbid, Medium, Missing,
+    MissingTrack, NamesMoved, OrganiseOptions, OrganiseSummary, Performer, Picturing, Playing,
+    PlaylistFormat, PlaylistLink, PlaylistOrder, PollHandle, PollOptions, PollProgress, Popularity,
+    Pruned, RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease,
+    Reference, Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
+    ReleaseTrack, Removal, Result, RetagOptions, RetagSummary, RowOrder, SUBMITTED_AT_ONCE,
+    SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search, Service, SheetEdit,
+    SheetField, SheetScope, Sidecar, SongLink, SongsAsked, SortOrder, Sought, Sources, StreamAsked,
+    Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource,
+    TextEncoding, TokenHeld, Track, TrackQuery, Trashes, UnheldRelease, Unwritten, Vault, Waits,
+    Window, Wording, Written,
 };
 use resonate_providers::{
     Delivery, Error as ProvidedError, Extension, Identity, Obtained, Opened, Opening, Provider,
@@ -6046,18 +6047,71 @@ fn a_play_of_something_the_catalog_does_not_hold_counts_against_no_row() -> Resu
             .iter()
             .all(|track| track.plays == 0)
     );
+    Ok(())
+}
+
+#[test]
+fn a_song_played_in_place_counts_as_a_listen_against_its_uri_and_never_as_a_row() -> Result<()> {
+    let (_tree, library) = scanned_shapes();
+    let served = MediaLocation::new(
+        SourceId::new("tidal").expect("a lowercase name"),
+        "track/11",
+    );
+
+    let counted = library
+        .track_played(&served, None, Duration::from_secs(40))?
+        .expect("a play kept against the song's uri");
+    library.listened(counted.listen, Duration::from_secs(90))?;
+    let statistics = library.statistics(Window::Everything)?;
+
+    assert_eq!(counted.track, None);
+    assert!(matches!(counted.listen, Listen::Unheld(_)));
+    assert_eq!(statistics.plays, 1);
+    assert_eq!(statistics.listened, Duration::from_secs(90));
+    assert_eq!(statistics.tracks, 0);
     assert!(
         library
-            .track_played(
-                &MediaLocation::new(
-                    SourceId::new("radio").expect("a lowercase name"),
-                    "a-stream"
-                ),
-                None,
-                Duration::ZERO
-            )?
-            .is_none()
+            .tracks(&TrackQuery::default())?
+            .iter()
+            .all(|track| track.plays == 0)
     );
+    Ok(())
+}
+
+#[test]
+fn a_saved_queue_keeps_a_song_played_in_place_by_its_uri_beside_a_held_one() -> Result<()> {
+    let (tree, library) = scanned_shapes();
+    let cold = MediaLocation::local(tree.path().join("cold.wav"));
+    let served = MediaLocation::from_uri("subsonic:track/so-1").expect("a served song");
+    let resumption = Resumption {
+        rows: [served.clone(), cold.clone()]
+            .into_iter()
+            .map(|location| Resumable {
+                location,
+                span: None,
+                held: None,
+            })
+            .collect(),
+        row: 0,
+        at: Frames(4410),
+        ..Resumption::default()
+    };
+
+    library.keep_resumption(ZoneId::FIRST, &resumption)?;
+    let resumed = library.resumption()?.expect("the queue kept");
+
+    assert_eq!(
+        resumed
+            .rows
+            .iter()
+            .map(|row| row.location.clone())
+            .collect::<Vec<_>>(),
+        [served, cold]
+    );
+    assert_eq!(resumed.rows[0].held, None);
+    assert!(resumed.rows[1].held.is_some());
+    assert_eq!(resumed.row, 0);
+    assert_eq!(resumed.at, Frames(4410));
     Ok(())
 }
 
