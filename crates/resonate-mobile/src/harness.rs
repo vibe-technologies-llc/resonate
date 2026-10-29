@@ -21,7 +21,7 @@ use resonate_audio::{
 };
 use resonate_codec::Sources;
 use resonate_core::{
-    ChannelLayout, Frames, Gain, Resumable, Resumption, SampleFormat, SampleRate, TrackId,
+    ChannelLayout, Frames, Gain, Resumable, Resumption, SampleFormat, SampleRate, TrackId, ZoneId,
 };
 use resonate_engine::{Command, EngineConfig, Player};
 
@@ -33,6 +33,7 @@ use crate::{
     features::Services,
     output::Routing,
     sync::Syncing,
+    zoning::{Engines, Playing},
 };
 
 pub(crate) const RATE: u32 = 44_100;
@@ -105,14 +106,15 @@ impl Backend for Silent {
 struct Sounding {
     _announces: Sender<SinkChange>,
     changes: Receiver<SinkChange>,
+    sink: SinkId,
 }
 
-struct Heard;
+struct Heard(SinkId);
 
-fn speakers() -> SinkInfo {
+fn speakers(sink: SinkId) -> SinkInfo {
     let rate = SampleRate::new(RATE).expect("a rate");
     SinkInfo {
-        id: SinkId::new(1),
+        id: sink,
         name: NodeName::new("test.speakers"),
         description: "Test speakers".to_owned(),
         is_default: true,
@@ -132,7 +134,7 @@ fn speakers() -> SinkInfo {
 
 impl Surveyor for Heard {
     fn enumerate_sinks(&self, _: Duration) -> SinkResult<Vec<SinkInfo>> {
-        Ok(vec![speakers()])
+        Ok(vec![speakers(self.0)])
     }
 }
 
@@ -157,11 +159,11 @@ impl Backend for Sounding {
     }
 
     fn surveyor(&self) -> Arc<dyn Surveyor> {
-        Arc::new(Heard)
+        Arc::new(Heard(self.sink))
     }
 
     fn opener(&self) -> Arc<dyn Opener> {
-        Arc::new(Heard)
+        Arc::new(Heard(self.sink))
     }
 
     fn set_device_volume(&self, _: SinkId, _: Gain) -> SinkResult<()> {
@@ -191,8 +193,8 @@ pub(crate) struct Harness {
 
 impl Drop for Harness {
     fn drop(&mut self) {
-        if let Some(player) = self.player.player.lock().take() {
-            let _ = player.shutdown();
+        if let Some(zones) = self.player.playing.take() {
+            let _ = crate::zoning::shut_down(zones);
         }
         let _ = fs::remove_dir_all(&self.folder);
     }
@@ -223,38 +225,30 @@ impl Harness {
         let sources = Arc::new(Sources::local().and(Arc::new(
             GrantedFiles::new(documents, "content").expect("a granted provider"),
         )));
-        let engine = Player::with_sources_and_backend(
+        let engines: Box<Engines> = {
+            let sources = Arc::clone(&sources);
+            Box::new(
+                move |zone: ZoneId, config: EngineConfig, _: &Arc<Routing>| {
+                    engine_over(device, zone, config, Arc::clone(&sources))
+                },
+            )
+        };
+        let engine = engine_over(
+            device,
+            ZoneId::FIRST,
             EngineConfig::default(),
             Arc::clone(&sources),
-            move |_| {
-                let (announces, changes) = unbounded();
-                let backend: Box<dyn Backend> = match device {
-                    Device::None => Box::new(Silent {
-                        _announces: announces,
-                        changes,
-                    }),
-                    Device::Speakers => Box::new(Sounding {
-                        _announces: announces,
-                        changes,
-                    }),
-                };
-                Ok(backend)
-            },
         )
         .expect("an engine over the backend");
         let player = MobilePlayer {
-            player: Mutex::new(Some(engine)),
+            playing: Playing::start(engine, Arc::new(Routing::new()), None, engines),
             catalog: Arc::new(Catalog::open(Path::new(":memory:")).expect("a catalog")),
             sources,
-            failure: Mutex::new(None),
-            waiting: Mutex::new(None),
-            saved: Mutex::new(None),
             preferences: Mutex::new(PlaybackPreferences::default()),
             services: Services::default(),
             playlist_undo: Mutex::new(Vec::new()),
             downloads: Downloads::default(),
             syncing: Syncing::under(folder.clone()),
-            routing: Arc::new(Routing::new()),
             enriching: crate::enrichment::Enriching::default(),
             room: crate::room::Room::under(std::env::temp_dir()),
             tagging: crate::tagging::Tagging::under(std::env::temp_dir()),
@@ -309,9 +303,8 @@ impl Harness {
         };
 
         self.player
-            .player
-            .lock()
-            .as_ref()
+            .playing
+            .player()
             .expect("an open player")
             .request(Command::Resume(resumption))
             .expect("a resumption sent")
@@ -363,6 +356,29 @@ impl Harness {
             snapshot.position_ms,
         )
     }
+}
+
+fn engine_over(
+    device: Device,
+    zone: ZoneId,
+    config: EngineConfig,
+    sources: Arc<Sources>,
+) -> resonate_engine::Result<Player> {
+    Player::with_sources_and_backend(config, sources, move |_| {
+        let (announces, changes) = unbounded();
+        let backend: Box<dyn Backend> = match device {
+            Device::None => Box::new(Silent {
+                _announces: announces,
+                changes,
+            }),
+            Device::Speakers => Box::new(Sounding {
+                _announces: announces,
+                changes,
+                sink: SinkId::new(zone.get()),
+            }),
+        };
+        Ok(backend)
+    })
 }
 
 pub(crate) fn name_of(track: &Track) -> char {

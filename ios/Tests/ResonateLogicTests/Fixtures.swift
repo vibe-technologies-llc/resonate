@@ -51,7 +51,9 @@ func snapshot(
     repeat repeatMode: UInt32 = 0,
     sleepRemainingMs: UInt64? = nil,
     queueRevision: UInt64 = 1,
-    catalogRevision: UInt64 = 1
+    catalogRevision: UInt64 = 1,
+    zone: UInt32 = 1,
+    zonesRevision: UInt64 = 0
 ) -> Snapshot {
     Snapshot(
         transport: transport,
@@ -69,6 +71,8 @@ func snapshot(
         sleep: nil,
         sleepRemainingMs: sleepRemainingMs,
         queueRevision: queueRevision,
-        catalogRevision: catalogRevision
+        catalogRevision: catalogRevision,
+        zone: zone,
+        zonesRevision: zonesRevision
     )
 }

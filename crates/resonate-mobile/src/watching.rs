@@ -6,9 +6,10 @@ use std::{
 
 use crossbeam_channel::{Receiver, RecvTimeoutError};
 use parking_lot::Mutex;
-use resonate_engine::{Event, PlaybackState, Player, QueueRows};
+use resonate_core::ZoneId;
+use resonate_engine::{Event, PlaybackState, QueueRows};
 
-use crate::{Error, MobilePlayer, Result};
+use crate::{Error, MobilePlayer, Result, zoning::Zoned};
 
 const COUNTED_EVERY_WHILE_PLAYING: Duration = Duration::from_secs(1);
 const COUNTED_EVERY_OTHERWISE: Duration = Duration::from_secs(2);
@@ -24,7 +25,7 @@ pub(crate) struct Watching {
 }
 
 impl Watching {
-    fn tell(&self) {
+    pub(crate) fn tell(&self) {
         let watch = self.watch.lock().clone();
         if let Some(watch) = watch {
             watch.moved();
@@ -53,61 +54,63 @@ impl MobilePlayer {
 }
 
 impl MobilePlayer {
-    pub(crate) fn take_in(&self, events: Vec<Event>, rows: &QueueRows) {
+    pub(crate) fn take_in(&self, zoned: &Zoned, events: Vec<Event>, rows: &QueueRows) {
         for event in events {
             if let Some(told) = crate::failure::waiting_told(&event) {
-                *self.waiting.lock() = Some(told);
+                *zoned.waiting.lock() = Some(told);
             } else if let Some(told) = self.failure_told(rows, event) {
-                *self.failure.lock() = Some(told);
+                *zoned.failure.lock() = Some(told);
             }
         }
     }
 
-    pub(crate) fn absorbed(&self, first: Event, rest: &Receiver<Event>) {
+    pub(crate) fn absorbed(
+        &self,
+        zone: ZoneId,
+        first: Event,
+        rest: &Receiver<Event>,
+    ) -> Result<()> {
         let mut events = vec![first];
         events.extend(rest.try_iter());
 
         let moved = events.iter().any(changes_what_is_shown);
-        let rows = self
-            .held_player(|player| player.queued().rows)
-            .unwrap_or_default();
+        let zoned = self.playing.zoned(zone)?;
+        let rows = self.playing.player_of(zone)?.queued().rows;
 
-        self.take_in(events, &rows);
+        self.take_in(&zoned, events, &rows);
         if moved {
             self.services.watching.tell();
         }
+        Ok(())
     }
 
-    fn held_player<T>(&self, read: impl FnOnce(&Player) -> T) -> Result<T> {
-        let held = self.player.lock();
-        Ok(read(held.as_ref().ok_or(Error::Closed)?))
-    }
+    pub(crate) fn counted_now(&self, zone: ZoneId) -> Result<PlaybackState> {
+        let player = self.playing.player_of(zone)?;
+        let (state, rows) = (player.state(), player.queued().rows);
 
-    pub(crate) fn counted_now(&self) -> Result<PlaybackState> {
-        let (state, rows) = self.held_player(|player| {
-            let state = player.state();
-            (state, player.queued().rows)
-        })?;
-
-        self.count_listening(&state, &rows)?;
+        self.count_listening(zone, &state, &rows)?;
         Ok(state.playback)
     }
 }
 
-pub(crate) fn keep(player: &Arc<MobilePlayer>) {
-    let Ok(events) = player.held_player(|held| held.events().clone()) else {
+pub(crate) fn keep(player: &Arc<MobilePlayer>, zone: ZoneId) {
+    let Ok(events) = player
+        .playing
+        .player_of(zone)
+        .map(|held| held.events().clone())
+    else {
         return;
     };
     let player = Arc::downgrade(player);
     let started = thread::Builder::new()
         .name("resonate-watch".into())
-        .spawn(move || watch(&player, &events));
+        .spawn(move || watch(&player, zone, &events));
     if let Err(error) = started {
         tracing::warn!(%error, "listening could not be counted in the background");
     }
 }
 
-pub(crate) fn watch(player: &Weak<MobilePlayer>, events: &Receiver<Event>) {
+pub(crate) fn watch(player: &Weak<MobilePlayer>, zone: ZoneId, events: &Receiver<Event>) {
     let mut wait = COUNTED_EVERY_OTHERWISE;
     let mut failing = false;
     loop {
@@ -115,12 +118,12 @@ pub(crate) fn watch(player: &Weak<MobilePlayer>, events: &Receiver<Event>) {
         let Some(player) = player.upgrade() else {
             return;
         };
-        match arrived {
-            Ok(first) => player.absorbed(first, events),
-            Err(RecvTimeoutError::Timeout) => {}
+        let absorbed = match arrived {
+            Ok(first) => player.absorbed(zone, first, events),
+            Err(RecvTimeoutError::Timeout) => Ok(()),
             Err(RecvTimeoutError::Disconnected) => return,
-        }
-        match player.counted_now() {
+        };
+        match absorbed.and_then(|()| player.counted_now(zone)) {
             Ok(playback) => {
                 failing = false;
                 wait = if playback == PlaybackState::Playing {
@@ -129,7 +132,7 @@ pub(crate) fn watch(player: &Weak<MobilePlayer>, events: &Receiver<Event>) {
                     COUNTED_EVERY_OTHERWISE
                 };
             }
-            Err(Error::Closed) => return,
+            Err(Error::Closed | Error::NoZone { .. }) => return,
             Err(error) => {
                 if !failing {
                     tracing::warn!(%error, "a listen could not be counted");

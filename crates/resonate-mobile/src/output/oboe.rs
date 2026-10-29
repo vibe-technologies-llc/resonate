@@ -31,7 +31,6 @@ use super::{
     oboe_offers::{MIXED, Way, sink_formats},
     oboe_render::Rendering,
     oboe_reshape::{Opened, Order, controlled_by, reshaper},
-    oboe_state::OUTPUT,
     waits::{OPEN_WITHIN, between_commands, opened_within},
 };
 
@@ -54,7 +53,7 @@ impl Surveyor for Device {
     fn enumerate_sinks(&self, _: Duration) -> Result<Vec<SinkInfo>> {
         let (formats, allowed_rates) = sink_formats(&self.0.offered(exclusive_on));
         Ok(vec![SinkInfo {
-            id: OUTPUT,
+            id: self.0.sink(),
             name: NodeName::new("android-default"),
             description: "Android audio output".into(),
             is_default: true,

@@ -165,9 +165,8 @@ impl MobilePlayer {
             return Err(Error::ListeningTestNothingToTest);
         }
         let rate = {
-            let held = self.player.lock();
-            let player = held.as_ref().ok_or(Error::Closed)?;
-            player
+            self.playing
+                .player()?
                 .state()
                 .output
                 .map_or(FITTED_AT, |output| output.negotiated.rate)
@@ -226,8 +225,10 @@ mod tests {
     }
 
     fn engine_equalisation(harness: &Harness) -> Arc<Equalisation> {
-        let held = harness.player.player.lock();
-        held.as_ref()
+        harness
+            .player
+            .playing
+            .player()
             .expect("an open player")
             .output_settings()
             .equaliser

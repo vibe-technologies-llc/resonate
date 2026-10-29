@@ -9,6 +9,7 @@ use std::{
 };
 
 use parking_lot::Mutex;
+use resonate_core::ZoneId;
 use rusqlite::{
     CachedStatement, Connection, OptionalExtension, TransactionBehavior, functions::FunctionFlags,
     hooks::Action, params,
@@ -148,6 +149,25 @@ const PEAKS_KEPT_AS_ONE_MOMENT_ARE_MEASURED_AGAIN: &str = "
 UPDATE studies SET band_peaks = NULL WHERE length(band_peaks) = 58;
 ";
 
+const ZONES_KEEP_THEIR_OWN_QUEUES: &str = "
+CREATE TABLE zones (
+    id    INTEGER PRIMARY KEY CHECK (id >= 1),
+    name  TEXT NOT NULL,
+    route TEXT NOT NULL DEFAULT ''
+) STRICT;
+CREATE TABLE zone_resume (
+    zone        INTEGER PRIMARY KEY REFERENCES zones(id) ON DELETE CASCADE,
+    row_at      INTEGER NOT NULL,
+    position_ms INTEGER NOT NULL
+) STRICT;
+CREATE TABLE zone_queue (
+    zone     INTEGER NOT NULL REFERENCES zones(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    track    INTEGER NOT NULL REFERENCES documents(id),
+    PRIMARY KEY (zone, position)
+) STRICT;
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     LISTENS_NAME_THEIR_ORIGIN,
@@ -166,6 +186,7 @@ const MIGRATIONS: &[&str] = &[
     STUDIES_KEEP_THEIR_PRINT_AND_WHAT_IT_WAS_HEARD_AS,
     STUDIES_KEEP_WHERE_THEIR_PEAKS_GATHER,
     PEAKS_KEPT_AS_ONE_MOMENT_ARE_MEASURED_AGAIN,
+    ZONES_KEEP_THEIR_OWN_QUEUES,
 ];
 
 #[cfg(test)]
@@ -626,57 +647,121 @@ impl Catalog {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(crate) fn save_queue(&self, ids: &[u64], at: u32, position_ms: u64) -> Result<()> {
+        self.save_queue_of(ZoneId::FIRST, ids, at, position_ms)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn save_place(&self, row: u32, position_ms: u64) -> Result<()> {
+        self.save_place_of(ZoneId::FIRST, row, position_ms)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn resume(&self) -> Result<(Vec<u64>, u32, u64)> {
+        self.resume_of(ZoneId::FIRST)
+    }
+
+    pub(crate) fn save_queue_of(
+        &self,
+        zone: ZoneId,
+        ids: &[u64],
+        at: u32,
+        position_ms: u64,
+    ) -> Result<()> {
+        let kept = QueueKept::of(zone);
         let mut connection = self.0.lock();
         let transaction = connection
             .transaction()
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         transaction
-            .execute("DELETE FROM queue", [])
+            .execute(kept.cleared, [zone.get()])
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         for (position, id) in ids.iter().enumerate() {
             transaction
-                .execute(
-                    "INSERT INTO queue VALUES (?1, ?2)",
-                    params![position as i64, *id as i64],
-                )
+                .execute(kept.row, params![zone.get(), position as i64, *id as i64])
                 .map_err(|source| Error::store(StoreOp::Write, source))?;
         }
-        transaction.execute("INSERT INTO resume VALUES (1, ?1, ?2) ON CONFLICT(id) DO UPDATE SET row_at = excluded.row_at, position_ms = excluded.position_ms", params![at, position_ms.min(i64::MAX as u64) as i64])
+        transaction
+            .execute(
+                kept.place,
+                params![zone.get(), at, position_ms.min(i64::MAX as u64) as i64],
+            )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         transaction
             .commit()
             .map_err(|source| Error::store(StoreOp::Write, source))
     }
 
-    pub(crate) fn save_place(&self, row: u32, position_ms: u64) -> Result<()> {
-        self.0.lock().execute("INSERT INTO resume VALUES (1, ?1, ?2) ON CONFLICT(id) DO UPDATE SET row_at = excluded.row_at, position_ms = excluded.position_ms",
-            params![row, position_ms.min(i64::MAX as u64) as i64]).map_err(|source| Error::store(StoreOp::Write, source))?;
+    pub(crate) fn save_place_of(&self, zone: ZoneId, row: u32, position_ms: u64) -> Result<()> {
+        self.0
+            .lock()
+            .execute(
+                QueueKept::of(zone).place,
+                params![zone.get(), row, position_ms.min(i64::MAX as u64) as i64],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
         Ok(())
     }
 
-    pub(crate) fn resume(&self) -> Result<(Vec<u64>, u32, u64)> {
+    pub(crate) fn resume_of(&self, zone: ZoneId) -> Result<(Vec<u64>, u32, u64)> {
+        let kept = QueueKept::of(zone);
         let connection = self.0.lock();
         let mut query = connection
-            .prepare("SELECT track FROM queue ORDER BY position")
+            .prepare(kept.rows)
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let ids = query
-            .query_map([], |row| row.get::<_, i64>(0).map(|id| id as u64))
+            .query_map([zone.get()], |row| row.get::<_, i64>(0).map(|id| id as u64))
             .map_err(|source| Error::store(StoreOp::Read, source))?
             .collect::<rusqlite::Result<Vec<u64>>>()
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let (at, position) = connection
-            .query_row(
-                "SELECT row_at, position_ms FROM resume WHERE id = 1",
-                [],
-                |row| Ok((row.get(0)?, row.get::<_, i64>(1)? as u64)),
-            )
+            .query_row(kept.read_place, [zone.get()], |row| {
+                Ok((row.get(0)?, row.get::<_, i64>(1)? as u64))
+            })
             .optional()
             .map_err(|source| Error::store(StoreOp::Read, source))?
             .unwrap_or((0, 0));
-        let (at, position) = place_among_rows(&connection, at, position)
+        let (at, position) = place_among_rows_of(&connection, zone, at, position)
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         Ok((ids, at as u32, position))
+    }
+}
+
+struct QueueKept {
+    cleared: &'static str,
+    row: &'static str,
+    place: &'static str,
+    rows: &'static str,
+    read_place: &'static str,
+    among: &'static str,
+}
+
+impl QueueKept {
+    const FIRST: Self = Self {
+        cleared: "DELETE FROM queue WHERE ?1 = ?1",
+        row: "INSERT INTO queue VALUES (?2, ?3)",
+        place: "INSERT INTO resume VALUES (1, ?2, ?3) ON CONFLICT(id) DO UPDATE SET row_at = excluded.row_at, position_ms = excluded.position_ms",
+        rows: "SELECT track FROM queue WHERE ?1 = ?1 ORDER BY position",
+        read_place: "SELECT row_at, position_ms FROM resume WHERE id = 1 AND ?1 = ?1",
+        among: "SELECT (SELECT count(*) FROM queue WHERE position < ?2), EXISTS(SELECT 1 FROM queue WHERE position = ?2), (SELECT count(*) FROM queue) WHERE ?1 = ?1",
+    };
+
+    const ANOTHER: Self = Self {
+        cleared: "DELETE FROM zone_queue WHERE zone = ?1",
+        row: "INSERT INTO zone_queue(zone, position, track) VALUES (?1, ?2, ?3)",
+        place: "INSERT INTO zone_resume VALUES (?1, ?2, ?3) ON CONFLICT(zone) DO UPDATE SET row_at = excluded.row_at, position_ms = excluded.position_ms",
+        rows: "SELECT track FROM zone_queue WHERE zone = ?1 ORDER BY position",
+        read_place: "SELECT row_at, position_ms FROM zone_resume WHERE zone = ?1",
+        among: "SELECT (SELECT count(*) FROM zone_queue WHERE zone = ?1 AND position < ?2), EXISTS(SELECT 1 FROM zone_queue WHERE zone = ?1 AND position = ?2), (SELECT count(*) FROM zone_queue WHERE zone = ?1)",
+    };
+
+    const fn of(zone: ZoneId) -> &'static Self {
+        if zone.is_first() {
+            &Self::FIRST
+        } else {
+            &Self::ANOTHER
+        }
     }
 }
 
@@ -685,9 +770,18 @@ pub(crate) fn place_among_rows(
     row_at: i64,
     position_ms: u64,
 ) -> rusqlite::Result<(usize, u64)> {
+    place_among_rows_of(connection, ZoneId::FIRST, row_at, position_ms)
+}
+
+fn place_among_rows_of(
+    connection: &rusqlite::Connection,
+    zone: ZoneId,
+    row_at: i64,
+    position_ms: u64,
+) -> rusqlite::Result<(usize, u64)> {
     let (before, standing, rows) = connection.query_row(
-        "SELECT (SELECT count(*) FROM queue WHERE position < ?1), EXISTS(SELECT 1 FROM queue WHERE position = ?1), (SELECT count(*) FROM queue)",
-        [row_at],
+        QueueKept::of(zone).among,
+        params![zone.get(), row_at],
         |row| {
             Ok((
                 row.get::<_, i64>(0)?,

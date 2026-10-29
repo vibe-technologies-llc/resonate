@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, io};
 
-use resonate_core::{Recording, Span};
+use resonate_core::{Recording, Span, ZoneId};
 use resonate_engine::Command;
 use rusqlite::{Connection, Transaction};
 
@@ -116,11 +116,18 @@ impl MobilePlayer {
         if missing.is_empty() {
             return 0;
         }
+        self.playing
+            .listed()
+            .iter()
+            .map(|zone| self.drop_from_queue_in(zone.id, missing))
+            .sum()
+    }
 
+    fn drop_from_queue_in(&self, zone: ZoneId, missing: &BTreeSet<String>) -> usize {
         let mut dropped = 0;
         for _ in 0..QUEUE_EDITS_AT_MOST {
             let mut run = None;
-            let edited = self.edit_queue(|queued, _| {
+            let edited = self.edit_queue_in(zone, |queued, _| {
                 let gone = |row: usize| {
                     document_uri(&queued.rows[row].location).is_ok_and(|uri| missing.contains(&uri))
                 };

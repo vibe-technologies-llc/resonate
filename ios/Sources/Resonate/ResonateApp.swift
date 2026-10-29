@@ -95,6 +95,7 @@ final class Navigation {
     var nowPlaying = false
     var choosingFolder = false
     var sleepTimer = false
+    var zones = false
     var filters = false
     var listening = false
     var tagging: TagEditing?
@@ -293,6 +294,7 @@ struct RootView: View {
         }
         .modifier(DeleteSongsConfirmation(insidePlayer: false))
         .modifier(SleepTimerPresentation(presenting: !navigation.nowPlaying))
+        .modifier(ZonesPresentation(presenting: !navigation.nowPlaying))
         .sheet(isPresented: $navigation.filters) {
             FilterSheet()
         }
@@ -323,6 +325,7 @@ struct RootView: View {
             guard erasing else { return }
             navigation.nowPlaying = false
             navigation.sleepTimer = false
+            navigation.zones = false
             navigation.filters = false
             navigation.listening = false
             navigation.choosingFolder = false

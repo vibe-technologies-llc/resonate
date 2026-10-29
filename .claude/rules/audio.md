@@ -803,6 +803,9 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   graph converts the other
   (`two_zones_play_apart_each_steered_alone_while_a_setting_reaches_both`,
   `a_device_another_zone_holds_bit_perfect_is_refused_and_a_mixed_one_is_shared`).
+- **The phones hold a `Zones` too** (`mobile.md`'s *Zones*): the boundary's calls address the zone
+  shown, each zone opens over an Oboe or RemoteIO route of its own, and each queue is kept under its
+  `ZoneId` in the document catalog.
 - **A zone hands what it plays over to another by opening the other's stream first and fading out
   only once it sounds; one device is never asked to carry both.** `Zones::hand_over(from, to)`
   (`zones.rs`) refuses a zone to itself (`HandedToItself`), a zone with nothing queued

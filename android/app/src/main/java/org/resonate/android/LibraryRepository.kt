@@ -358,9 +358,9 @@ class LibraryRepository(private val context: Context) {
                         state.waiting?.let { mutableStatus.value = it }
                     }
                     val now = SystemClock.elapsedRealtime()
-                    if (queueReads.due(state.queueRevision, state.catalogRevision, now)) {
+                    if (queueReads.due(state.zone, state.queueRevision, state.catalogRevision, now)) {
                         mutableQueue.value = native.queue()
-                        queueReads.noted(state.queueRevision, state.catalogRevision, now)
+                        queueReads.noted(state.zone, state.queueRevision, state.catalogRevision, now)
                     }
                     if (++saves >= SAVE_EVERY_TICKS) {
                         saves = 0

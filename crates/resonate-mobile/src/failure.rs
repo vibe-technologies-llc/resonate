@@ -2,11 +2,11 @@ use resonate_engine::{Cause, CommandKind, Event, PlaybackState, PlayerState, Que
 use resonate_eq::Error as Eq;
 use resonate_library::{Error as Library, LookupOp};
 
-use crate::{MobilePlayer, documents::document_uri, measurement::MeasuredFile};
+use crate::{MobilePlayer, documents::document_uri, measurement::MeasuredFile, zoning::Zoned};
 
 impl MobilePlayer {
-    pub(crate) fn still_waiting(&self, state: &PlayerState) -> Option<String> {
-        let mut waiting = self.waiting.lock();
+    pub(crate) fn still_waiting(zoned: &Zoned, state: &PlayerState) -> Option<String> {
+        let mut waiting = zoned.waiting.lock();
         if waiting_is_over(state) {
             *waiting = None;
         }

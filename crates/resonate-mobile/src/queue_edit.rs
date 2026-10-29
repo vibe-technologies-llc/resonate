@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use resonate_core::{Resumable, Resumption, Span, TrackId};
+use resonate_core::{Resumable, Resumption, Span, TrackId, ZoneId};
 use resonate_engine::{Command, Placement, PlayerState, QueueItem, Queued};
 
 use crate::{Error, MobilePlayer, Result, documents::location};
@@ -84,9 +84,16 @@ impl MobilePlayer {
         &self,
         edit: impl FnOnce(&Queued, &PlayerState) -> Result<Option<Command>>,
     ) -> Result<()> {
+        self.edit_queue_in(self.playing.shown(), edit)
+    }
+
+    pub(crate) fn edit_queue_in(
+        &self,
+        zone: ZoneId,
+        edit: impl FnOnce(&Queued, &PlayerState) -> Result<Option<Command>>,
+    ) -> Result<()> {
         let outcome = {
-            let held = self.player.lock();
-            let player = held.as_ref().ok_or(Error::Closed)?;
+            let player = self.playing.player_of(zone)?;
             let queued = player.queued();
 
             let Some(command) = edit(&queued, &player.state())? else {
@@ -201,9 +208,8 @@ mod tests {
 
         let rows = harness
             .player
-            .player
-            .lock()
-            .as_ref()
+            .playing
+            .player()
             .expect("an open player")
             .queued()
             .rows;
@@ -245,9 +251,8 @@ mod tests {
 
         let rows = harness
             .player
-            .player
-            .lock()
-            .as_ref()
+            .playing
+            .player()
             .expect("an open player")
             .queued()
             .rows;
@@ -277,9 +282,8 @@ mod tests {
 
         let queue = harness
             .player
-            .player
-            .lock()
-            .as_ref()
+            .playing
+            .player()
             .expect("an open player")
             .queued();
         let state = |playback| PlayerState {
@@ -660,8 +664,8 @@ mod tests {
     fn a_closed_player_refuses_every_edit() {
         let harness = Harness::new();
         harness.resumed("ab", 0, 0);
-        if let Some(player) = harness.player.player.lock().take() {
-            player.shutdown().expect("a shutdown");
+        if let Some(zones) = harness.player.playing.take() {
+            crate::zoning::shut_down(zones).expect("a shutdown");
         }
 
         assert!(matches!(
@@ -738,7 +742,13 @@ mod tests {
         let told = "No speakers or headphones to play through — playing on once one is there";
         harness.resumed("ab", 0, 0);
 
-        *harness.player.waiting.lock() = Some(told.to_owned());
+        *harness
+            .player
+            .playing
+            .zoned(ZoneId::FIRST)
+            .expect("the first zone")
+            .waiting
+            .lock() = Some(told.to_owned());
         let paused = harness.player.snapshot().expect("a snapshot");
         let again = harness.player.snapshot().expect("a snapshot");
         harness.player.stop().expect("a stop sent");
@@ -837,7 +847,10 @@ mod tests {
             .send(Event::TrackStarted(TrackId::new(1).expect("an id")))
             .expect("an event sent");
 
-        harness.player.absorbed(Event::QueueFinished, &arrives);
+        harness
+            .player
+            .absorbed(ZoneId::FIRST, Event::QueueFinished, &arrives)
+            .expect("absorbed");
 
         assert_eq!(told.load(Ordering::Relaxed), 1);
         assert!(arrives.is_empty());
@@ -854,7 +867,12 @@ mod tests {
 
         harness
             .player
-            .absorbed(Event::Underrun { missing: Frames(1) }, &arrives);
+            .absorbed(
+                ZoneId::FIRST,
+                Event::Underrun { missing: Frames(1) },
+                &arrives,
+            )
+            .expect("absorbed");
 
         assert_eq!(told.load(Ordering::Relaxed), 0);
     }
@@ -864,7 +882,7 @@ mod tests {
         let (sends, arrives) = unbounded();
         sends.send(Event::QueueFinished).expect("an event sent");
 
-        crate::watching::watch(&std::sync::Weak::new(), &arrives);
+        crate::watching::watch(&std::sync::Weak::new(), ZoneId::FIRST, &arrives);
 
         assert_eq!(arrives.len(), 0);
     }
@@ -874,7 +892,10 @@ mod tests {
         let harness = Harness::new();
         harness.resumed("ab", 0, 0);
 
-        let playback = harness.player.counted_now().expect("a count");
+        let playback = harness
+            .player
+            .counted_now(resonate_core::ZoneId::FIRST)
+            .expect("a count");
 
         assert_eq!(playback, PlaybackState::Paused);
     }

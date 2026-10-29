@@ -15,6 +15,13 @@ import Testing
         #expect(moved.isDue(after: read, since: .now))
     }
 
+    @Test func anotherZoneShownIsDueAtOnceThoughItsRevisionIsTheSame() {
+        let read = QueueListed(snapshot(zone: 1))
+        let other = QueueListed(snapshot(zone: 2))
+
+        #expect(other.isDue(after: read, since: .now))
+    }
+
     @Test func anUnmovedQueueIsNotDueHoweverLongAgoItWasRead() {
         let read = QueueListed(snapshot())
 

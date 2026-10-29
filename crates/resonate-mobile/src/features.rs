@@ -8,7 +8,7 @@ use parking_lot::Mutex;
 use resonate_analysis::{Finding, Watch};
 use resonate_codec::{ImageFormat, probe};
 use resonate_core::{Chromaprint, Mbid, TrackId, folded_letters, words_of_a_name};
-use resonate_engine::{Counting, Listening, Tapped};
+use resonate_engine::{Counting, Tapped};
 use resonate_library::{
     Fingerprints, HeardAs, LookupOp, Printed, RecordingAsked, RecordingMatch, RecordingRelease,
     Reference, SongLink, Sounded, TrackToAsk, Wording, agreement, in_the_order_worth_offering,
@@ -34,7 +34,6 @@ pub(crate) struct Services {
     analysis: Mutex<Option<Arc<Watch>>>,
     pub(crate) fitting: Mutex<Option<Arc<Watch>>>,
     pub(crate) analyses: Mutex<BTreeMap<u64, Arc<resonate_analysis::Analysis>>>,
-    listening: Mutex<(Listening, Option<i64>)>,
     pub(crate) searching: crate::search::Searching,
     pub(crate) watching: crate::watching::Watching,
 }
@@ -51,7 +50,6 @@ impl Default for Services {
             analysis: Mutex::new(None),
             fitting: Mutex::new(None),
             analyses: Mutex::new(BTreeMap::new()),
-            listening: Mutex::new((Listening::default(), None)),
             searching: crate::search::Searching::default(),
             watching: crate::watching::Watching::default(),
         }
@@ -270,46 +268,47 @@ pub(crate) fn named_on_the_phone(id: u64, track: &Track) -> Result<TrackToAsk> {
 #[uniffi::export]
 impl MobilePlayer {
     pub fn select_output(&self, device: i32) -> Result<()> {
-        if device < 0 || !self.routing.select(device) {
+        let routing = self.playing.zoned(self.playing.shown())?.routing.clone();
+        if device < 0 || !routing.select(device) {
             return Err(Error::OutputUnavailable);
         }
         self.command(resonate_engine::Command::SetSink(None))
     }
 
     pub fn output_device(&self) -> i32 {
-        self.routing.actual()
+        self.playing
+            .zoned(self.playing.shown())
+            .map_or(0, |zoned| zoned.routing.actual())
     }
 
     pub fn output_route_changed(&self, rate: u32, latency_ms: f64, rebind: bool) -> Result<()> {
-        if self.routing.route_changed(rate, latency_ms) {
-            self.command(resonate_engine::Command::FollowTheFormats)?;
-        }
+        self.follow_the_formats(self.playing.route_changed(rate, latency_ms))?;
         if rebind {
-            self.command(resonate_engine::Command::SetSink(None))?;
+            for zone in self.playing.listed() {
+                self.playing
+                    .send_to(zone.id, resonate_engine::Command::SetSink(None))?;
+            }
         }
         Ok(())
     }
 
     pub fn set_follow_song_rate(&self, follows: bool) -> Result<()> {
-        if self.routing.follow_song_rate(follows) {
-            self.command(resonate_engine::Command::FollowTheFormats)?;
-        }
-        Ok(())
+        self.follow_the_formats(self.playing.follow_song_rate(follows))
     }
 
     pub fn output_offers_changed(&self, device: i32, bit_perfect: Vec<OutputFormat>) -> Result<()> {
-        if self.routing.offer(device, &bit_perfect) {
-            self.command(resonate_engine::Command::FollowTheFormats)?;
-        }
-        Ok(())
+        self.follow_the_formats(self.playing.offer(device, &bit_perfect))
     }
 
     pub fn output_stream(&self) -> Option<OutputStream> {
-        self.routing.stream()
+        self.playing
+            .zoned(self.playing.shown())
+            .ok()
+            .and_then(|zoned| zoned.routing.stream())
     }
 
     pub fn watch_output_mixer(&self, mixer: Box<dyn OutputMixer>) {
-        self.routing.watch_mixer(Arc::from(mixer));
+        self.playing.watch_mixer(&Arc::from(mixer));
     }
 
     pub fn configure_online(&self, enabled: bool) {
@@ -452,8 +451,7 @@ impl MobilePlayer {
     }
 
     pub fn visualizer(&self, enabled: bool) -> Result<Vec<f32>> {
-        let held = self.player.lock();
-        let player = held.as_ref().ok_or(Error::Closed)?;
+        let player = self.playing.player()?;
         player.listen_in(enabled);
         let mut left = vec![0.0; 256];
         if enabled && let Tapped::Samples(tap) = player.tap() {
@@ -661,18 +659,38 @@ impl MobilePlayer {
 
     pub(crate) fn count_listening(
         &self,
+        zone: resonate_core::ZoneId,
         state: &resonate_engine::PlayerState,
         queue: &resonate_engine::QueueRows,
     ) -> Result<()> {
-        let mut listening = self.services.listening.lock();
+        let zoned = self.playing.zoned(zone)?;
+        let mut listening = zoned.listening.lock();
         let counted = listening.0.heard(state, queue);
         self.store_counting(&mut listening.1, counted)
     }
 
     pub(crate) fn finish_listening(&self) -> Result<()> {
-        let mut listening = self.services.listening.lock();
+        self.playing
+            .every_zoned()
+            .iter()
+            .map(|(_, zoned)| self.settle_listening(zoned))
+            .fold(Ok(()), Result::and)
+    }
+
+    pub(crate) fn settle_listening(&self, zoned: &crate::zoning::Zoned) -> Result<()> {
+        let mut listening = zoned.listening.lock();
         let counted = listening.0.leaves();
         self.store_counting(&mut listening.1, counted)
+    }
+
+    fn follow_the_formats(&self, moved: Vec<resonate_core::ZoneId>) -> Result<()> {
+        moved
+            .into_iter()
+            .map(|zone| {
+                self.playing
+                    .send_to(zone, resonate_engine::Command::FollowTheFormats)
+            })
+            .fold(Ok(()), Result::and)
     }
 
     fn store_counting(&self, visit: &mut Option<i64>, counted: Option<Counting>) -> Result<()> {
@@ -937,9 +955,8 @@ mod tests {
         fn rows(harness: &Harness) -> QueueRows {
             harness
                 .player
-                .player
-                .lock()
-                .as_ref()
+                .playing
+                .player()
                 .expect("an open player")
                 .queued()
                 .rows
@@ -983,7 +1000,11 @@ mod tests {
             for position in positions {
                 harness
                     .player
-                    .count_listening(&at(rows, row, *position, whole), rows)
+                    .count_listening(
+                        resonate_core::ZoneId::FIRST,
+                        &at(rows, row, *position, whole),
+                        rows,
+                    )
                     .expect("a listen counted");
             }
         }

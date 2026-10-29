@@ -210,6 +210,7 @@ struct NowPlayingView: View {
             .modifier(DeleteSongsConfirmation(insidePlayer: true))
             .modifier(SharingSheet(presenting: true))
             .modifier(SleepTimerPresentation(presenting: true))
+            .modifier(ZonesPresentation(presenting: true))
             .modifier(PairingOffer(presenting: true))
         }
     }
@@ -1102,6 +1103,7 @@ struct PlayerMoreMenu: View {
                 Button("Sleep timer", systemImage: library.snapshot?.sleep == nil ? "moon.zzz" : "moon.zzz.fill") {
                     navigation.sleepTimer = true
                 }
+                Button("Zones", systemImage: "hifispeaker.2") { navigation.zones = true }
                 Button("Equaliser", systemImage: "slider.vertical.3") {
                     navigation.tab = .settings
                     navigation.open(.sound)

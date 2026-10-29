@@ -242,6 +242,9 @@ final class Library {
     @ObservationIgnored private var queueListed: QueueListed?
     @ObservationIgnored private var queueUnreadable: QueueListed?
     @ObservationIgnored private var queueReadAt = ContinuousClock.now
+    private(set) var zones: [PlayerZone] = []
+    @ObservationIgnored private var zonesListed: ZonesListed?
+    @ObservationIgnored private var zoneTicks = 0
     @ObservationIgnored private var volumeSending = false
     @ObservationIgnored private var volumeOwed: Float?
     @ObservationIgnored private var refreshing: Task<Void, Never>?
@@ -397,6 +400,7 @@ final class Library {
                 let shown = steeringFresh ? state : steered.applied(to: state)
                 publish(shown)
                 listQueue(of: native, as: state)
+                listZones(as: state)
                 nowPlaying.update(shown, answered: state)
                 await features.tick(native, state)
             } catch {
@@ -443,6 +447,49 @@ final class Library {
                 queueUnreadable = wanted
                 queueReadAt = .now
             }
+        }
+    }
+
+    private func listZones(as state: Snapshot) {
+        zoneTicks += 1
+        let wanted = ZonesListed(state)
+        guard wanted.isDue(after: zonesListed, zones: zones.count, ticks: zoneTicks) else { return }
+        zoneTicks = 0
+        zonesListed = wanted
+        request({ $0.zones() }) { [self] read in
+            if read != zones { zones = read }
+        }
+    }
+
+    func showZone(_ zone: PlayerZone) {
+        changeZones { try $0.showZone(zone: zone.id) }
+    }
+
+    func addZone() {
+        changeZones { _ = try $0.addZone(name: "", device: 0, route: "") }
+    }
+
+    func renameZone(_ zone: PlayerZone, to name: String) {
+        changeZones { try $0.renameZone(zone: zone.id, name: name) }
+    }
+
+    func removeZone(_ zone: PlayerZone) {
+        changeZones { try $0.removeZone(zone: zone.id) }
+    }
+
+    func handOver(to zone: PlayerZone) {
+        changeZones { try $0.handOverTo(zone: zone.id) }
+    }
+
+    private func changeZones(_ change: @escaping @Sendable (MobilePlayer) throws -> Void) {
+        nudgePoll()
+        request({ native in
+            try change(native)
+            return native.zones()
+        }) { [self] read in
+            zones = read
+            zonesListed = nil
+            nudgePoll()
         }
     }
 

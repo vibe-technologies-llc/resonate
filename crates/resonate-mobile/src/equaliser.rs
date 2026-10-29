@@ -437,8 +437,7 @@ impl MobilePlayer {
     pub fn fitted_preamp_to_the_queue(&self, curve: EqualiserCurve) -> Result<Option<f32>> {
         let applied = self.applied(curve)?;
         let (rows, playing, rate) = {
-            let held = self.player.lock();
-            let player = held.as_ref().ok_or(Error::Closed)?;
+            let player = self.playing.player()?;
             let state = player.state();
             (
                 player.queue(),

@@ -46,6 +46,7 @@ import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.Speaker
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -124,6 +125,7 @@ fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
     var height by remember { mutableFloatStateOf(1f) }
     var dragged by remember { mutableFloatStateOf(0f) }
     var queueOpen by rememberSaveable { mutableStateOf(false) }
+    var zonesOpen by rememberSaveable { mutableStateOf(false) }
     val sheets = LocalSheets.current
     var pane by rememberSaveable { mutableStateOf(Pane.ARTWORK) }
     PredictiveBackHandler(enabled = expansion.expanded) { events ->
@@ -208,6 +210,7 @@ fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
                                 pane = if (pane == Pane.LYRICS) Pane.ARTWORK else Pane.LYRICS
                             },
                             onQueue = { queueOpen = true },
+                            onZones = { zonesOpen = true },
                         )
                     }
                     if (wide) {
@@ -240,6 +243,7 @@ fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
             }
         }
         if (queueOpen) QueueSheet(model, onDismiss = { queueOpen = false })
+        if (zonesOpen) ZonesSheet(onDismiss = { zonesOpen = false })
         if (sheets.sleeping) SleepTimerSheet(model, onDismiss = { sheets.sleeping = false })
     }
 }
@@ -305,6 +309,7 @@ private fun ColumnScope.Controls(
     pane: Pane,
     onLyrics: () -> Unit,
     onQueue: () -> Unit,
+    onZones: () -> Unit,
 ) {
     val track = playing?.track
     val resonate = LocalResonate.current
@@ -375,7 +380,7 @@ private fun ColumnScope.Controls(
     Spacer(Modifier.height(16.dp))
     Volume(model, playing)
     Spacer(Modifier.height(8.dp))
-    PlayerActions(model, pane, playing, onLyrics, onQueue)
+    PlayerActions(model, pane, playing, onLyrics, onQueue, onZones)
     Spacer(Modifier.height(8.dp))
 }
 
@@ -527,15 +532,26 @@ private fun PlayerActions(
     playing: Playing?,
     onLyrics: () -> Unit,
     onQueue: () -> Unit,
+    onZones: () -> Unit,
 ) {
     val sheets = LocalSheets.current
     val remaining by model.sleepRemaining.collectAsStateWithLifecycle()
+    val zones by LocalResonate.current.features.zones.listed.collectAsStateWithLifecycle()
+    val zoneShown = zones.firstOrNull { it.shown }?.name?.takeIf { zones.size > 1 }
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
     ) {
         ActionToggle(Icons.Rounded.Lyrics, "Lyrics", pane == Pane.LYRICS, onLyrics, Modifier.weight(1f))
         ActionToggle(Icons.AutoMirrored.Rounded.QueueMusic, "Queue", false, onQueue, Modifier.weight(1f))
+        ActionToggle(
+            Icons.Rounded.Speaker,
+            zoneShown ?: "Zones",
+            false,
+            onZones,
+            Modifier.weight(1f),
+            description = zoneShown?.let { "Zones, $it shown" } ?: "Zones",
+        )
         if (playing?.sleep != null) {
             ActionToggle(
                 Icons.Rounded.Bedtime,

@@ -23,13 +23,19 @@ pub(crate) struct Routing {
     pub(crate) changes: Receiver<SinkChange>,
     latency_moved: Sender<()>,
     pub(crate) latency_moves: Receiver<()>,
+    sink: SinkId,
 }
 
 impl Routing {
     pub(crate) fn new() -> Self {
+        Self::serving(OUTPUT)
+    }
+
+    pub(crate) fn serving(sink: SinkId) -> Self {
         let (announce, changes) = unbounded();
         let (latency_moved, latency_moves) = bounded(1);
         Self {
+            sink,
             rate: AtomicU32::new(SampleRate::HZ_48000.hz()),
             latency: AtomicU64::new(0),
             announce,
@@ -47,6 +53,14 @@ impl Routing {
         0
     }
 
+    pub(crate) const fn sink(&self) -> SinkId {
+        self.sink
+    }
+
+    pub(crate) fn requested(&self) -> i32 {
+        0
+    }
+
     pub(crate) fn route_changed(&self, rate: u32, latency_ms: f64) -> bool {
         let Ok(rate) = SampleRate::new(rate) else {
             return false;
@@ -57,7 +71,7 @@ impl Routing {
         }
         let moved = self.rate.swap(rate.hz(), Ordering::Relaxed) != rate.hz();
         if moved {
-            let _ = self.announce.send(SinkChange::Reformatted(OUTPUT));
+            let _ = self.announce.send(SinkChange::Reformatted(self.sink));
         }
         moved
     }
@@ -139,6 +153,21 @@ mod tests {
 
     fn changes_waiting(routing: &Routing) -> Vec<SinkChange> {
         routing.changes.try_iter().collect()
+    }
+
+    #[test]
+    fn a_route_serving_another_zone_announces_its_own_sink() {
+        let kitchen = SinkId::new(2);
+        let routing = Routing::serving(kitchen);
+
+        assert!(routing.route_changed(44_100, 10.0));
+
+        assert_eq!(Routing::new().sink(), OUTPUT);
+        assert_eq!(routing.sink(), kitchen);
+        assert!(matches!(
+            changes_waiting(&routing).as_slice(),
+            [SinkChange::Reformatted(sink)] if *sink == kitchen
+        ));
     }
 
     #[test]
@@ -235,6 +264,7 @@ mod tests {
 
         assert!(!routing.select(7));
         assert_eq!(routing.actual(), 0);
+        assert_eq!(routing.requested(), 0);
     }
 
     #[test]

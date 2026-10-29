@@ -13,13 +13,22 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   linked whole, traps in `ExtensionFoundation` before a widget registers (xtool issue 313)
 - [M · blocked: Apple] iOS has no CarPlay: the CarPlay audio entitlement is granted by Apple to a
   paid team on request, and a free signing cannot carry it
+- [M · blocked: Apple] iOS zones share one output: `AVAudioSession` sends the app to one route at
+  a time, so a second zone adds a queue of its own and a handover but no second room (both zones'
+  RemoteIO units mix into that route)
 - [M · blocked: rust nightly] Pointer authentication (an `arm64e` slice) is not adopted: the Rust
   library builds for `aarch64-apple-ios` on stable, and `arm64e-apple-ios` needs a nightly
   `build-std`
 
 ## Playback and output
-- [M · 0.3.0] The phones offer no zones: one player plays one queue to the route the system
-  chose, so neither a second room nor a handover between two devices can be reached there
+- [S · 0.4.0] A phone offers its other devices only its first zone's queue to continue: sync's
+  handoff reads the first zone's saved place (`DocumentCatalog::resumption` over `queue` and
+  `resume`), never the zone shown, so a song handed to a second zone cannot be continued elsewhere
+- [S · 0.4.0] A phone keeps no zone's volume: a zone reopens at full volume at the next start, where
+  the desktop keeps each zone's volume beside its device
+- [S · 0.4.0] Two Android zones are never refused one output: each zone reports a sink of its own,
+  so two zones bound to one USB DAC both ask the bit-perfect mixer for it and Android decides,
+  where the desktop refuses a device another zone holds bit-perfect
 - [S · 0.4.0] A handover between zones is aligned on the moment each callback ran plus the latency
   its stream clock last read, not on the device's own timestamp (`pw_time.now` with its `delay`,
   Oboe's `getTimestamp`, RemoteIO's `AudioTimeStamp`), so two zones meet only as closely as a

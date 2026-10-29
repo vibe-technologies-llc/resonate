@@ -8,7 +8,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `errors.md` | always | the `thiserror` architecture and its structural enforcement |
 | `build.md` | `.github`, `.cargo`, `fuzz`, the root manifest, benches | CI, `release.yml` (tag-driven RPM, DEB, Arch and signed APK assets and their secrets), the profiles and `target-cpu`, the fuzz targets |
 | `android.md` | Android Gradle project, the mobile boundary and binding tool | Compose, native build, documents, service lifecycle, emulator checks, and the boundary behaviour both phones share |
-| `mobile.md` | resonate-mobile, resonate-bindgen, both `build-native.py` | the unsafe exception, one surface on every target, granted-document schemes, the output per target |
+| `mobile.md` | resonate-mobile, resonate-bindgen, both `build-native.py` | the unsafe exception, one surface on every target, granted-document schemes, the output per target, the phones' zones |
 | `ios.md` | `ios/**`, the RemoteIO output | the xtool toolchain, the native library and bindings, the App Intents metadata, hardening, the shape of the SwiftUI app, Siri |
 | `dependencies.md` | `**/Cargo.toml` | version pinning, crate layering, feature flags that are not optional |
 | `binary.md` | the binary, the settings pane | the CLI grammar, file arguments and URIs, the MIME list, signals, the terminal, the settings decisions, the settings file |
@@ -116,7 +116,8 @@ Invariants the layering protects (the rules files have the rest):
   `tracks_fts` and a typed search word.
 - **A zone is a `Player`; `Zones` owns them and every command reaches one through `Zones::send`**
   (`audio.md`): the window shows one at a time, each is its own MPRIS player (`mpris.md`), each
-  queue is kept under its `ZoneId`.
+  queue is kept under its `ZoneId`; the phones' boundary holds one too, its calls addressing the
+  zone shown (`mobile.md`).
 - **The engine reaches the graph through `resonate-audio::Backend`, never `PipeWire`**: `Player::with_backend` takes
   any other, so `crates/resonate-engine/tests/transport.rs` drives a transport with no daemon.
 - **`resonate-mpris` sees the engine only through `Player` and the front end only through `Host`**,
