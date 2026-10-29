@@ -6,7 +6,7 @@ use resonate_mpris::{PlayerName, ZoneAsked};
 use resonate_pipewire::NodeName;
 use thiserror::Error;
 
-use crate::{sleep::Spoken, suggest::SuggestionName};
+use crate::{cli::AbxOfArg, sleep::Spoken, suggest::SuggestionName};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ConfigKey {
@@ -527,6 +527,9 @@ pub enum Error {
          resonate eq binds one"
     )]
     AbxNothingBound { sink: NodeName },
+
+    #[error("an --against flag names an arm of another test than the {testing:?} one asked for")]
+    AbxAgainstElsewhere { testing: AbxOfArg },
 
     #[error("none of the {failed} tracks queued could be played")]
     NothingPlayed { failed: usize },

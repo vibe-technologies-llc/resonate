@@ -1,6 +1,6 @@
 use std::{
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
+    sync::{Arc, atomic::AtomicBool},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use parking_lot::Mutex;
@@ -9,9 +9,16 @@ use resonate_core::{
     abx::{Arm, Arms, Session, TRIALS_BY_DEFAULT, Verdict},
     eq::FITTED_AT,
 };
-use resonate_engine::{Command, Equalisation};
+use resonate_engine::{
+    Audition, Command, Contest, DitherKind, Dithering, Equalisation, FilterPhase, Lowered,
+    NoiseShaping, Quality, Resampling, Restoration,
+};
 
-use crate::{Error, MobilePlayer, Result, equaliser::EqualiserCurve};
+use crate::{
+    Error, MobilePlayer, Result,
+    equaliser::EqualiserCurve,
+    playback::{LossyRestoration, ResamplingPhase, ResamplingQuality},
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum TestArm {
@@ -48,15 +55,113 @@ pub struct TestStanding {
     pub heard: Option<TestArm>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum TestedDither {
+    Off,
+    Flat,
+    Shaped,
+}
+
+impl From<TestedDither> for Dithering {
+    fn from(dither: TestedDither) -> Self {
+        match dither {
+            TestedDither::Off => Self {
+                kind: DitherKind::None,
+                shaping: NoiseShaping::None,
+            },
+            TestedDither::Flat => Self {
+                kind: DitherKind::Triangular,
+                shaping: NoiseShaping::None,
+            },
+            TestedDither::Shaped => Self {
+                kind: DitherKind::Triangular,
+                shaping: NoiseShaping::Threshold,
+            },
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum TestedSetting {
+    Restoration {
+        a: LossyRestoration,
+        b: LossyRestoration,
+    },
+    Resampling {
+        a_quality: ResamplingQuality,
+        a_phase: ResamplingPhase,
+        b_quality: ResamplingQuality,
+        b_phase: ResamplingPhase,
+    },
+    Dither {
+        a: TestedDither,
+        b: TestedDither,
+    },
+}
+
+const fn restoration_of(restoration: LossyRestoration) -> Restoration {
+    match restoration {
+        LossyRestoration::Off => Restoration::Off,
+        LossyRestoration::Repair => Restoration::Repair,
+        LossyRestoration::Extend => Restoration::Extend,
+    }
+}
+
+const fn resampling_of(quality: ResamplingQuality, phase: ResamplingPhase) -> Resampling {
+    Resampling {
+        quality: match quality {
+            ResamplingQuality::Fast => Quality::Fast,
+            ResamplingQuality::Balanced => Quality::Balanced,
+            ResamplingQuality::High => Quality::High,
+            ResamplingQuality::VeryHigh => Quality::VeryHigh,
+        },
+        phase: match phase {
+            ResamplingPhase::Linear => FilterPhase::Linear,
+            ResamplingPhase::Intermediate => FilterPhase::Intermediate,
+            ResamplingPhase::Minimum => FilterPhase::Minimum,
+        },
+    }
+}
+
+impl From<TestedSetting> for Contest {
+    fn from(setting: TestedSetting) -> Self {
+        match setting {
+            TestedSetting::Restoration { a, b } => Self::Restoration {
+                a: restoration_of(a),
+                b: restoration_of(b),
+            },
+            TestedSetting::Resampling {
+                a_quality,
+                a_phase,
+                b_quality,
+                b_phase,
+            } => Self::Resampling {
+                a: resampling_of(a_quality, a_phase),
+                b: resampling_of(b_quality, b_phase),
+            },
+            TestedSetting::Dither { a, b } => Self::Dithering {
+                a: a.into(),
+                b: b.into(),
+            },
+        }
+    }
+}
+
 struct Running {
     session: Session,
     heard: Option<TestArm>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+enum Compared {
+    Equaliser(Arms),
+    Setting { contest: Contest, lowered: Lowered },
+}
+
 #[derive(uniffi::Object)]
 pub struct ListeningTest {
     running: Mutex<Running>,
-    arms: Arms,
+    compared: Compared,
 }
 
 impl ListeningTest {
@@ -66,18 +171,22 @@ impl ListeningTest {
         chain: &resonate_core::eq::Profile,
         rate: resonate_core::SampleRate,
     ) -> Result<Self> {
-        let session = Session::new(trials as usize, seed).map_err(refused)?;
         let arms = Arms::matched(chain, rate).map_err(refused)?;
+        Self::comparing(trials, seed, Compared::Equaliser(arms))
+    }
+
+    fn comparing(trials: u32, seed: u64, compared: Compared) -> Result<Self> {
+        let session = Session::new(trials as usize, seed).map_err(refused)?;
         Ok(Self {
             running: Mutex::new(Running {
                 session,
                 heard: None,
             }),
-            arms,
+            compared,
         })
     }
 
-    fn equalisation_of(&self, hear: TestHear) -> Result<Option<Equalisation>> {
+    fn command_for(&self, hear: TestHear) -> Result<Option<Command>> {
         let mut running = self.running.lock();
         let arm = match hear {
             TestHear::A => Arm::A,
@@ -92,13 +201,29 @@ impl ListeningTest {
             TestHear::B => Some(TestArm::B),
             TestHear::X => None,
         };
-        Ok(Some(Equalisation {
-            enabled: true,
-            fallback: Some(Arc::new(self.arms.profile(arm).clone())),
-            ..Equalisation::default()
+        Ok(Some(match &self.compared {
+            Compared::Equaliser(arms) => Command::SetEqualisation(Arc::new(Equalisation {
+                enabled: true,
+                fallback: Some(Arc::new(arms.profile(arm).clone())),
+                ..Equalisation::default()
+            })),
+            Compared::Setting { contest, lowered } => Command::Audition(Some(Audition {
+                contest: *contest,
+                heard: arm,
+                lowered: *lowered,
+            })),
         }))
     }
+
+    fn residual_db(&self) -> f64 {
+        match &self.compared {
+            Compared::Equaliser(arms) => arms.residual_db(),
+            Compared::Setting { .. } => 0.0,
+        }
+    }
 }
+
+const SETTING_TEST_BEGUN_WITHIN: Duration = Duration::from_secs(10);
 
 fn refused(error: CoreError) -> Error {
     match error {
@@ -134,7 +259,7 @@ impl ListeningTest {
                 .verdicts()
                 .map(|verdict| verdict == Verdict::Right)
                 .collect(),
-            residual_db: self.arms.residual_db(),
+            residual_db: self.residual_db(),
             heard: running.heard,
         }
     }
@@ -180,16 +305,44 @@ impl MobilePlayer {
         )?))
     }
 
+    pub fn begin_setting_test(
+        &self,
+        setting: TestedSetting,
+        trials: u32,
+    ) -> Result<Arc<ListeningTest>> {
+        let contest = Contest::from(setting);
+        let player = self.playing.player()?;
+        let lowered = if contest.is_flat_in_level() {
+            Lowered::NOTHING
+        } else {
+            player
+                .levels_of_the_contest(contest, &AtomicBool::new(false))?
+                .lowered()?
+        };
+        let test =
+            ListeningTest::comparing(trials, clock_seed(), Compared::Setting { contest, lowered })?;
+        self.playing
+            .player()?
+            .request(Command::Audition(Some(Audition {
+                contest,
+                heard: Arm::A,
+                lowered,
+            })))?
+            .wait_for(SETTING_TEST_BEGUN_WITHIN)?;
+        Ok(Arc::new(test))
+    }
+
     pub fn hear_in_listening_test(&self, test: Arc<ListeningTest>, hear: TestHear) -> Result<()> {
-        let Some(equalisation) = test.equalisation_of(hear)? else {
+        let Some(command) = test.command_for(hear)? else {
             return Ok(());
         };
-        self.command(Command::SetEqualisation(Arc::new(equalisation)))
+        self.command(command)
     }
 
     pub fn end_listening_test(&self) -> Result<()> {
         let preferences = self.preferences.lock().clone();
         let equalisation = preferences.equalisation(preferences.equaliser.profile()?);
+        self.command(Command::Audition(None))?;
         self.command(Command::SetEqualisation(Arc::new(equalisation)))
     }
 }
@@ -243,6 +396,13 @@ mod tests {
                 "the engine never took the equalisation"
             );
             thread::sleep(LOOKED_AGAIN_AFTER);
+        }
+    }
+
+    fn arms_of(test: &ListeningTest) -> &Arms {
+        match &test.compared {
+            Compared::Equaliser(arms) => arms,
+            Compared::Setting { .. } => panic!("a test of the equaliser"),
         }
     }
 
@@ -315,14 +475,14 @@ mod tests {
             .player
             .hear_in_listening_test(Arc::clone(&test), TestHear::A)
             .expect("heard");
-        engine_holds(&harness, &sent(&test.arms.a));
+        engine_holds(&harness, &sent(&arms_of(&test).a));
         assert_eq!(test.standing().heard, Some(TestArm::A));
 
         harness
             .player
             .hear_in_listening_test(Arc::clone(&test), TestHear::B)
             .expect("heard");
-        engine_holds(&harness, &sent(&test.arms.b));
+        engine_holds(&harness, &sent(&arms_of(&test).b));
         assert_eq!(test.standing().heard, Some(TestArm::B));
 
         let x = drawn(&test);
@@ -330,7 +490,7 @@ mod tests {
             .player
             .hear_in_listening_test(Arc::clone(&test), TestHear::X)
             .expect("heard");
-        engine_holds(&harness, &sent(test.arms.profile(x)));
+        engine_holds(&harness, &sent(arms_of(&test).profile(x)));
         assert_eq!(test.standing().heard, None);
 
         harness.player.end_listening_test().expect("put back");
@@ -402,6 +562,72 @@ mod tests {
 
         let desktop = Arms::matched(&profile.at_rate(FITTED_AT), FITTED_AT).expect("matched");
 
-        assert_eq!(test.arms, desktop);
+        assert_eq!(*arms_of(&test), desktop);
+    }
+
+    #[test]
+    fn a_setting_test_is_refused_while_nothing_plays() {
+        let harness = Harness::new();
+
+        let begun = harness.player.begin_setting_test(
+            TestedSetting::Dither {
+                a: TestedDither::Shaped,
+                b: TestedDither::Off,
+            },
+            4,
+        );
+
+        assert!(matches!(
+            begun,
+            Err(Error::Player(resonate_engine::Error::NothingToAudition))
+        ));
+    }
+
+    #[test]
+    fn each_setting_a_phone_names_is_the_contest_the_engine_runs() {
+        assert_eq!(
+            Contest::from(TestedSetting::Restoration {
+                a: LossyRestoration::Off,
+                b: LossyRestoration::Extend,
+            }),
+            Contest::Restoration {
+                a: Restoration::Off,
+                b: Restoration::Extend,
+            }
+        );
+        assert_eq!(
+            Contest::from(TestedSetting::Resampling {
+                a_quality: ResamplingQuality::Fast,
+                a_phase: ResamplingPhase::Minimum,
+                b_quality: ResamplingQuality::VeryHigh,
+                b_phase: ResamplingPhase::Linear,
+            }),
+            Contest::Resampling {
+                a: Resampling {
+                    quality: Quality::Fast,
+                    phase: FilterPhase::Minimum,
+                },
+                b: Resampling {
+                    quality: Quality::VeryHigh,
+                    phase: FilterPhase::Linear,
+                },
+            }
+        );
+        assert_eq!(
+            Contest::from(TestedSetting::Dither {
+                a: TestedDither::Shaped,
+                b: TestedDither::Off,
+            }),
+            Contest::Dithering {
+                a: Dithering {
+                    kind: DitherKind::Triangular,
+                    shaping: NoiseShaping::Threshold,
+                },
+                b: Dithering {
+                    kind: DitherKind::None,
+                    shaping: NoiseShaping::None,
+                },
+            }
+        );
     }
 }

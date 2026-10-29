@@ -18,9 +18,12 @@ paths:
 - **`play` and `playlist <name>` set the transport** via `cli::TransportArgs` (under `playlist` it
   conflicts with every editing flag). Volume is a whole percent. Shuffle and repeat are sent before
   the `Load`.
-- **`abx FILE [--trials N]` is the listening test of the equaliser at the terminal** (`abx.rs`, `eq.md`'s
-  *The listening test*): one song looped, keys `a` `b` `x` `1` `2` `q` `?` from `input::strokes`, which
-  reads a byte at a time on a terminal (`KeyAtATime`, none in the background) and a line at a time
+- **`abx FILE [--trials N] [--of equaliser|restoration|resampler|dither] [--against-…]` is the
+  listening test at the terminal** (`abx.rs`, `eq.md`'s *The listening test*): the equaliser
+  against its bypass by default, else the setting `--of` names as set against the `--against-…`
+  arm (`cli::AbxArgs`, flattened; an `--against` flag of another test is refused in `run`, since
+  clap cannot say a flag is allowed only beside one value): one song looped, keys `a` `b` `x` `1`
+  `2` `q` `?` from `input::strokes`, which reads a byte at a time on a terminal (`KeyAtATime`, none in the background) and a line at a time
   piped, and ends at end of input. It prints through `said!` like `play`.
 - **`scan` is incremental and off links unless told** (`--full`, `--follow-links`).
 - **`forget` reads each argument as the first of three**: a root (`Library::remove_root`); a

@@ -16,18 +16,19 @@ use std::{
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use parking_lot::Mutex;
-use resonate_codec::{Error as CodecError, Result as CodecResult};
+use resonate_codec::{Error as CodecError, Placement as SpeakerPlacement, Result as CodecResult};
 use resonate_core::{
     ChannelLayout, Decibels, FrameSpan, Frames, Gain, MeasuredGain, MediaLocation, Ratio,
-    SampleFormat, SampleRate, Span, StreamSpec, TrackHints, TrackId, Volume,
+    SampleFormat, SampleRate, Span, StreamSpec, TrackHints, TrackId, Volume, abx::Arm,
 };
 use resonate_engine::{
-    AudioSource, Backend, Band, BandGain, BandKind, Caught, Cause, Command, DeviceTime, DitherKind,
-    EngineConfig, Equalisation, Error as EngineError, Event, FADED_OVER, FilterPhase, Frequency,
-    GraphTime, HardwareVolume, Held, Hinting, Impulse, Media, MediaProvider, MediaStream, Moment,
-    NodeName, NoiseShaping, Opener, Opening, Opens, OutputMode, Placement, PlaybackState, Player,
-    Plugged, Preamp, PreviousRestarts, Profile, Q, Quality, QueueItem, QueueRows, Reading,
-    RepeatMode, ReplayGainMode, Reshaped, Reshaper, Restoration, Result, Resumable, Resumption,
+    AudioSource, Audition, Backend, Band, BandGain, BandKind, Caught, Cause, Command, Contest,
+    DeviceTime, DitherKind, Dithering, EngineConfig, Equalisation, Error as EngineError, Event,
+    FADED_OVER, FilterPhase, Frequency, GraphTime, HardwareVolume, Held, Hinting, Impulse,
+    LoudnessMeter, Lowered, Media, MediaProvider, MediaStream, Moment, NodeName, NoiseShaping,
+    Opener, Opening, Opens, OutputMode, Placement, PlaybackState, Player, Plugged, Preamp,
+    PreviousRestarts, Profile, Q, Quality, QueueItem, QueueRows, Reading, RepeatMode,
+    ReplayGainMode, Resampling, Reshaped, Reshaper, Restoration, Result, Resumable, Resumption,
     SinkChange, SinkError, SinkFormats, SinkId, SinkInfo, SinkPort, SinkResult, SinkStream,
     SkipUnderRepeat, SourceId, Sources, Stepping, StreamClock, StreamCommand, StreamEvent,
     StreamRequest, StreamState, StreamVolume, Surveyor, Tapped, Unreshapable, Until, Words, Zone,
@@ -10988,5 +10989,385 @@ fn a_seek_back_across_a_turn_reopens_the_output_for_the_format_it_lands_in() -> 
             .any(|event| matches!(event, Event::Failed { .. })),
         "the seek across the turn failed the row"
     );
+    Ok(())
+}
+
+const AUDITIONED_RING: Duration = Duration::from_millis(500);
+const AUDITIONS_PULLED_TIMES_REAL_TIME: u32 = 2;
+const AUDITIONED_SECONDS: usize = 6;
+const A_PERIOD_HOLDS_ITS_PEAK_WITHIN: f64 = 0.03;
+const A_STEP_MAY_PASS_THE_SINE_BY: f64 = 1.05;
+const DITHER_STEPS_AT_MOST: f64 = 48.0;
+const SILENT_RUN_AT_MOST_FRAMES: usize = 32;
+const LEVELS_HEARD_MATCHED_WITHIN_DB: f64 = 0.02;
+const RESTORATION_MOVES_THE_TONES_BY_AT_LEAST_DB: f64 = 0.08;
+const RESTORED_TONES_SECONDS: usize = 14;
+const RESTORED_TONE_AMPLITUDE: f64 = 0.04;
+const RESTORED_TONES_HZ: [u32; 12] = [
+    997, 2_003, 3_001, 4_007, 5_003, 6_007, 7_001, 8_009, 9_001, 10_007, 10_501, 11_003,
+];
+const HEARD_BEFORE_MEASURING: Duration = Duration::from_secs(4);
+const MEASURED_FOR: Duration = Duration::from_secs(3);
+
+fn auditioning(
+    sinks: Vec<SinkInfo>,
+    config: EngineConfig,
+    path: &Path,
+) -> Result<(Player, Arc<Mutex<Graph>>)> {
+    let (backend, graph) = FakeSink::new(sinks);
+    let player = Player::with_backend(
+        EngineConfig {
+            buffer: AUDITIONED_RING,
+            ..config
+        },
+        move |_| Ok(Box::new(backend)),
+    )?;
+    player.send(Command::Load {
+        items: vec![track(path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    Ok((player, graph))
+}
+
+fn pull_for(player: &Player, graph: &Arc<Mutex<Graph>>, stride: usize, frames: usize, what: &str) {
+    let until = graph.lock().played.len() / stride + frames;
+    play_paced_until(
+        player,
+        graph,
+        BLOCK_FRAMES * stride,
+        AUDITIONS_PULLED_TIMES_REAL_TIME,
+        |_, graph| graph.played.len() / stride >= until,
+        what,
+    );
+}
+
+fn audition_of(contest: Contest, heard: Arm, lowered: Lowered) -> Command {
+    Command::Audition(Some(Audition {
+        contest,
+        heard,
+        lowered,
+    }))
+}
+
+struct Switched {
+    from: usize,
+    switches: Vec<usize>,
+    opens: usize,
+    spliced: usize,
+}
+
+fn spliced_since(player: &Player) -> usize {
+    player
+        .events()
+        .try_iter()
+        .filter(|event| matches!(event, Event::OutputChanged(_)))
+        .count()
+}
+
+fn switched_back_and_forth(
+    player: &Player,
+    graph: &Arc<Mutex<Graph>>,
+    stride: usize,
+    contest: Contest,
+) -> Result<Switched> {
+    let rate = player
+        .state()
+        .output
+        .map_or(RATE, |output| output.negotiated.rate.hz()) as usize;
+    pull_for(player, graph, stride, rate / 4, "the song to play");
+    answered(player, audition_of(contest, Arm::A, Lowered::NOTHING))?;
+    pull_for(player, graph, stride, rate, "arm A to be heard");
+    let from = graph.lock().played.len() / stride;
+    let opens = graph.lock().opens;
+    spliced_since(player);
+
+    let mut switches = Vec::new();
+    for heard in [Arm::B, Arm::A, Arm::B] {
+        switches.push(graph.lock().played.len() / stride);
+        answered(player, audition_of(contest, heard, Lowered::NOTHING))?;
+        pull_for(player, graph, stride, rate / 2, "the other arm to be heard");
+    }
+    Ok(Switched {
+        from,
+        switches,
+        opens,
+        spliced: spliced_since(player),
+    })
+}
+
+fn every_period_holds_its_peak(left: &[f64], from: usize, period: usize, peak: f64) -> bool {
+    left[from..].chunks_exact(period).all(|run| {
+        let loudest = run
+            .iter()
+            .fold(0.0_f64, |most, sample| most.max(sample.abs()));
+        (loudest / peak - 1.0).abs() < A_PERIOD_HOLDS_ITS_PEAK_WITHIN
+    })
+}
+
+fn loudest_period(left: &[f64], from: usize, period: usize) -> f64 {
+    left[from..from + period]
+        .iter()
+        .fold(0.0_f64, |most, sample| most.max(sample.abs()))
+}
+
+#[test]
+fn switching_between_two_resampler_qualities_splices_the_other_without_a_gap_or_a_step()
+-> Result<()> {
+    let tree = Tree::new();
+    let path = tree.write("sine.wav", &sine(RATE as usize * AUDITIONED_SECONDS));
+    let (player, graph) = auditioning(
+        vec![sink(&[SampleRate::HZ_48000], &[SampleFormat::S16])],
+        EngineConfig {
+            dither: DitherKind::None,
+            ..config()
+        },
+        &path,
+    )?;
+    let contest = Contest::Resampling {
+        a: Resampling {
+            quality: Quality::Fast,
+            phase: FilterPhase::Linear,
+        },
+        b: Resampling {
+            quality: Quality::VeryHigh,
+            phase: FilterPhase::Linear,
+        },
+    };
+    let stride = frame_bytes(SampleFormat::S16);
+
+    let switched = switched_back_and_forth(&player, &graph, stride, contest)?;
+
+    let graph = graph.lock();
+    let left = left_of_the_graph(&graph.played);
+    let period = (SINE_PERIOD_FRAMES * 48_000).div_ceil(RATE as usize);
+    let climbs = steepest_the_sine_climbs() * f64::from(RATE) / 48_000.0;
+    assert!(
+        every_period_holds_its_peak(&left, switched.from, period, SINE_PEAK),
+        "a period after the audition began fell from the sine's peak: a gap, or two arms out of step blended"
+    );
+    assert!(
+        steepest_step(&left[switched.from..]) < climbs * A_STEP_MAY_PASS_THE_SINE_BY,
+        "the sine stepped by {} across the switches, where it climbs {climbs} at most",
+        steepest_step(&left[switched.from..])
+    );
+    assert_eq!(
+        graph.opens, switched.opens,
+        "switching the resampler's quality reopened the stream"
+    );
+    assert_eq!(switched.spliced, 3, "not every switch was spliced in");
+    Ok(())
+}
+
+#[test]
+fn switching_dither_on_and_off_splices_the_other_without_a_gap_or_a_step() -> Result<()> {
+    let tree = Tree::new();
+    let path = tree.write("sine.wav", &sine(RATE as usize * AUDITIONED_SECONDS));
+    let (player, graph) = auditioning(
+        vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
+        EngineConfig {
+            volume: Volume::new(0.9).expect("a volume"),
+            ..config()
+        },
+        &path,
+    )?;
+    let contest = Contest::Dithering {
+        a: Dithering {
+            kind: DitherKind::Triangular,
+            shaping: NoiseShaping::None,
+        },
+        b: Dithering {
+            kind: DitherKind::None,
+            shaping: NoiseShaping::None,
+        },
+    };
+    let stride = frame_bytes(SampleFormat::S16);
+
+    let switched = switched_back_and_forth(&player, &graph, stride, contest)?;
+
+    let graph = graph.lock();
+    let left = left_of_the_graph(&graph.played);
+    let peak = loudest_period(&left, switched.from, SINE_PERIOD_FRAMES);
+    let climbs = steepest_the_sine_climbs() * peak / SINE_PEAK;
+    assert!(
+        every_period_holds_its_peak(&left, switched.from, SINE_PERIOD_FRAMES, peak),
+        "a period after the audition began fell from the sine's peak"
+    );
+    assert!(
+        steepest_step(&left[switched.from..])
+            < climbs * A_STEP_MAY_PASS_THE_SINE_BY + DITHER_STEPS_AT_MOST,
+        "the sine stepped by {} across the switches",
+        steepest_step(&left[switched.from..])
+    );
+    assert_eq!(
+        graph.opens, switched.opens,
+        "switching the dither reopened the stream"
+    );
+    assert_eq!(switched.spliced, 3, "not every switch was spliced in");
+    let settled =
+        Frames::from_duration(Duration::from_millis(100), SampleRate::HZ_44100).get() as usize;
+    let repeats_itself = |frames: Range<usize>| {
+        frames
+            .into_iter()
+            .all(|frame| left[frame] == left[frame + SINE_PERIOD_FRAMES])
+    };
+    let dithered = switched.switches[1] + settled..switched.switches[2];
+    let undithered = switched.switches[2] + settled..left.len() - SINE_PERIOD_FRAMES;
+    assert!(
+        !repeats_itself(dithered),
+        "arm A, dithered, came out as the same words every period"
+    );
+    assert!(
+        repeats_itself(undithered),
+        "arm B, undithered, did not come out as the same words every period"
+    );
+    Ok(())
+}
+
+fn tones_in_an_mp3(tree: &Tree) -> Option<PathBuf> {
+    let path = tree.root.join("tones.mp3");
+    let sum = RESTORED_TONES_HZ
+        .iter()
+        .map(|hertz| format!("{RESTORED_TONE_AMPLITUDE}*sin(2*PI*{hertz}*t)"))
+        .collect::<Vec<_>>()
+        .join("+");
+    let tones =
+        format!("aevalsrc={sum}|{sum}:sample_rate={RATE}:duration={RESTORED_TONES_SECONDS}");
+    let made = process::Command::new("ffmpeg")
+        .args(["-y", "-v", "error", "-f", "lavfi", "-i", &tones])
+        .args([
+            "-c:a",
+            "libmp3lame",
+            "-b:a",
+            "64k",
+            "-cutoff",
+            "11500",
+            "-id3v2_version",
+            "0",
+        ])
+        .arg(&path)
+        .stdout(process::Stdio::null())
+        .stderr(process::Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success());
+    if !made {
+        eprintln!("skipped: no ffmpeg with libmp3lame to encode the tones");
+        return None;
+    }
+    Some(path)
+}
+
+fn floats_of_the_graph(played: &[u8]) -> Vec<f32> {
+    played
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|sample| f32::from_le_bytes(*sample))
+        .collect()
+}
+
+fn loudness_over(samples: &[f32], frames: Range<usize>) -> f64 {
+    let mut meter = LoudnessMeter::new(
+        &[SpeakerPlacement::Front, SpeakerPlacement::Front],
+        SampleRate::HZ_44100,
+    );
+    meter.note(&samples[frames.start * 2..frames.end * 2]);
+    f64::from(
+        meter
+            .finished()
+            .integrated
+            .expect("the tones have a loudness"),
+    )
+}
+
+fn longest_silence(samples: &[f32]) -> usize {
+    samples
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .fold((0, 0), |(longest, run), frame| {
+            let run = if frame.iter().all(|sample| *sample == 0.0) {
+                run + 1
+            } else {
+                0
+            };
+            (longest.max(run), run)
+        })
+        .0
+}
+
+#[test]
+fn restoration_on_and_off_are_heard_level_matched_and_switched_without_a_gap() -> Result<()> {
+    let tree = Tree::new();
+    let Some(path) = tones_in_an_mp3(&tree) else {
+        return Ok(());
+    };
+    let (player, graph) = auditioning(
+        vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::F32])],
+        config(),
+        &path,
+    )?;
+    let contest = Contest::Restoration {
+        a: Restoration::Off,
+        b: Restoration::Extend,
+    };
+    let stride = frame_bytes(SampleFormat::F32);
+    let rate = RATE as usize;
+    let settled =
+        Frames::from_duration(HEARD_BEFORE_MEASURING, SampleRate::HZ_44100).get() as usize;
+    let measured = Frames::from_duration(MEASURED_FOR, SampleRate::HZ_44100).get() as usize;
+
+    let levels = player.levels_of_the_contest(contest, &AtomicBool::new(false))?;
+    let lowered = levels.lowered()?;
+    pull_for(&player, &graph, stride, rate / 4, "the song to play");
+    answered(&player, audition_of(contest, Arm::A, lowered))?;
+    let began = graph.lock().played.len() / stride;
+    pull_for(
+        &player,
+        &graph,
+        stride,
+        settled + measured,
+        "arm A to be heard",
+    );
+    let opens = graph.lock().opens;
+    spliced_since(&player);
+    let switched_at = graph.lock().played.len() / stride;
+    answered(&player, audition_of(contest, Arm::B, lowered))?;
+    pull_for(
+        &player,
+        &graph,
+        stride,
+        rate / 2 + measured,
+        "arm B to be heard",
+    );
+
+    let spliced = spliced_since(&player);
+    let graph = graph.lock();
+    let samples = floats_of_the_graph(&graph.played);
+    let heard_a = loudness_over(&samples, switched_at - measured..switched_at);
+    let b_from = switched_at + rate / 2;
+    let heard_b = loudness_over(&samples, b_from..b_from + measured);
+    assert!(
+        levels.apart_db().abs() > RESTORATION_MOVES_THE_TONES_BY_AT_LEAST_DB,
+        "restoring the tones moved their loudness by only {} dB, too little to prove a match",
+        levels.apart_db()
+    );
+    assert!(
+        (heard_a - heard_b).abs() < LEVELS_HEARD_MATCHED_WITHIN_DB,
+        "A was heard at {heard_a:.2} LUFS and B at {heard_b:.2} LUFS, though measured {:.2} dB apart and lowered by {} millibels",
+        levels.apart_db(),
+        lowered.by.millibels()
+    );
+    assert!(
+        longest_silence(&samples[(began + rate / 2) * 2..(b_from + measured) * 2])
+            < SILENT_RUN_AT_MOST_FRAMES,
+        "a gap opened while the arms were switched"
+    );
+    assert_eq!(
+        graph.opens, opens,
+        "switching restoration reopened the stream"
+    );
+    assert_eq!(spliced, 1, "the switch to arm B was not spliced in");
     Ok(())
 }
