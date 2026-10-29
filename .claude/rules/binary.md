@@ -73,6 +73,12 @@ that name. Every file argument goes through it.
   UTF-8. `%00` decoding into a local path refuses the URI.
 - **Another source's URI only where its scheme names a source this build's `Sources` holds**
   (`01:intro.flac` is a file here). Scheme and `localhost` are case-insensitive.
+- **A Subsonic URI is the server's only where the settings name one** (`served.rs`, `providers.md`):
+  `queue_items_served` reads arguments through `Served::sources`, and `subsonic:album/<id>` or
+  `subsonic:artist/<id>` is queued as the songs the server lists for it. `resonate subsonic`
+  browses the server (bare: its artists; `--artist ID`, `--album ID`, `--search WORDS`, one at a
+  time), each row with the URI `play` and `queue` take; with `online` off it is `OnlineOff`,
+  without the account `NoSubsonicServer`, in a build without `online` `NoSubsonic`.
 - **`main::local_path`**: commands reading a local file alone (`info`, `explain`, `share <file>`,
   `playlist --add`).
 - **A cut row is named by frames too.** `to_uri_within` appends `#frames=START-END` (or `START-`),

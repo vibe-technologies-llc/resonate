@@ -1,6 +1,7 @@
 mod agents;
 mod failed;
 mod ranged;
+mod seeking;
 mod stall;
 mod trust;
 mod waited;
@@ -16,6 +17,7 @@ pub use crate::{
         ASKED_LATER, RESUMES_AT_MOST, Ranged, Unfetched, asking_to_resume, validator_of,
         waited_before,
     },
+    seeking::{SKIPPED_RATHER_THAN_ASKED, Seeking},
     stall::BrokenOffAfter,
     trust::{certificate_refused, system_and_built_in},
     waited::{retry_after, retry_after_of},

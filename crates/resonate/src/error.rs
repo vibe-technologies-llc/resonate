@@ -623,6 +623,21 @@ pub enum Error {
     #[error("this build has no TIDAL sign-in; it was built without the online feature")]
     NoSignIn,
 
+    #[cfg(not(feature = "online"))]
+    #[error("this build reaches no Subsonic server; it was built without the online feature")]
+    NoSubsonic,
+
+    #[cfg(feature = "online")]
+    #[error(
+        "subsonic, subsonic-user and subsonic-password are not all set in the settings, so there \
+         is no Subsonic server to browse"
+    )]
+    NoSubsonicServer,
+
+    #[cfg(feature = "online")]
+    #[error("a Subsonic id was asked for but none was given")]
+    BlankServerId,
+
     #[cfg(feature = "online")]
     #[error(
         "tidal-client-id is not set in the settings, and TIDAL's sign-in needs the client it names"

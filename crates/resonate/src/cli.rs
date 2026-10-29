@@ -836,6 +836,31 @@ pub struct WantsArgs {
     pub album: Option<String>,
 }
 
+#[derive(Debug, Args)]
+#[command(group(ArgGroup::new("browsing").args(["artist", "album", "search"])))]
+pub struct SubsonicArgs {
+    #[arg(
+        long,
+        value_name = "ID",
+        help = "List the albums of the artist the server knows by this id"
+    )]
+    pub artist: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "ID",
+        help = "List the songs of the album the server knows by this id"
+    )]
+    pub album: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "WORDS",
+        help = "List the artists, albums and songs the server finds for these words"
+    )]
+    pub search: Option<String>,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum Sub {
     #[command(
@@ -1098,6 +1123,13 @@ pub enum Sub {
                  is playing"
     )]
     Players,
+
+    #[command(
+        about = "Browse the Subsonic server the settings name (subsonic, subsonic-user, \
+                 subsonic-password): its artists, an artist's albums, an album's songs or what \
+                 a search finds, each with the URI play and queue take to stream it from there"
+    )]
+    Subsonic(SubsonicArgs),
 
     #[command(about = "Print the playlists the library holds")]
     Playlists {
