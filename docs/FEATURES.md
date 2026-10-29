@@ -73,11 +73,13 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   stereo state
 
 ## Later: Sources and providers
-- [L] A Subsonic server is browsed and played in place only from the command line: the window has
-  no pane to browse it (`resonate subsonic` lists, `play`/`queue` take its URIs, and a window launched
-  or queued onto plays them, but nothing in the window lists the server), the phones reach it only
-  to fetch wanted songs, its songs carry no cover beyond what the stream holds, and TIDAL, hifi-api
-  and Monochrome are still only asked for a file to keep
+- [L] A Subsonic server is browsed and played in place on the desktop (the command line and the
+  window's Server pane, with the server's covers) and the phones' boundary can browse, queue and
+  open it, but neither phone has a screen for it (the Android Compose and iOS SwiftUI browsers and
+  their mini-player and lock-screen rows, which today name a served song from what the browse
+  returned and draw no cover of its own, are not built), a served song is not a library row so it
+  is neither favourited, counted as a listen nor kept in a saved queue, and TIDAL, hifi-api and
+  Monochrome are still only asked for a file to keep
 - [M · blocked: services] The Bandcamp and Discogs links an `Identity` carries are read by nothing;
   no provider asks either
 - [M · blocked: servers] Subsonic matches a recording id or ISRC but not the release-track id the

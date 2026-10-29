@@ -518,6 +518,38 @@ iOS, `cargo clippy -p resonate-mobile --target aarch64-apple-ios` with the envir
 `ios/build-native.py` sets. The layering job refuses PipeWire, GPUI, MPRIS, Discord and Oboe in
 `resonate-mobile`'s iOS tree.
 
+## A Subsonic server in place
+
+`served.rs` is the phones' half of `providers.md`'s *A Subsonic server played in place*: a server
+browsed and played where it is, never copied into the document catalog. The front end hands the
+account (`serve_from(Option<ServedAccount>)`; blank fields or `None` serve nothing, and the front
+end passes `None` while online is off) and keeps it; the boundary holds one slot
+(`Arc<RwLock<Option<Subsonic>>>`) that `ServedSongs`, a `MediaProvider` for `subsonic` registered
+in every `Sources` the boundary makes, reads on each open, so a stream of known length is probed
+and seeked by range and nothing is spooled (the binary's `ServedSongs` is the same thing over its
+`Sources`; no provider crate may see `resonate-codec`, so each is written where `MediaProvider` is
+visible). Browsing is `served_artists`, `served_albums(artist uri)`, `served_songs(album uri)`,
+`served_search(words)`, `served_song_uris(any uri)` (an album or artist expanded to its songs, in
+the server's order) and `served_cover(uri, known name, side)` (the bytes to decode, by the cover
+name the browse gave or, with none, what the server says a song's is); each needs online
+(`OnlineOff`), a server (`NoServedServer`) and a uri the server names (`InvalidUri`), and a
+provider failure is `downloads::failure_of` as a download's is. The records carry URIs
+(`subsonic:track/<id>`), the cover name as an opaque string, and a song's length in milliseconds.
+`load_served`, `play_served_next` and `add_served_to_queue` put songs by uri in the queue as
+`load`, `play_next` and `add_to_queue` put catalog ids, with ids minted beside the queue's own.
+
+**A served row is not a document.** `Served::names` is the scheme alone; `queue()` and the snapshot's
+`current` give such a row a `Track` with id 0 made from what the browse returned (`served_songs`,
+`served_search` and `served_song_uris` remember the songs they listed, cleared when the account
+changes; a song not remembered is titled by its uri), carrying its `queue_id` like any row. A queue
+holding one is never saved (`save` returns before writing, so the last saved queue and place stand
+and nothing is written against rows the catalog cannot name), and a listen of one is not counted
+(`store_counting`): no favourite, play count, playlist or resumption belongs to a song the library
+does not hold. Neither phone has a screen for the server yet (`FEATURES.md`)
+(`a_server_is_browsed_from_its_artists_to_its_songs_and_each_has_its_cover`,
+`served_songs_are_queued_named_and_opened_by_the_players_sources_and_never_saved`,
+`a_blank_account_serves_nothing_and_a_uri_of_another_kind_is_invalid`).
+
 ## Hosted services on the phones
 
 **`configure_hosted_services(enabled)` is the desktop's `hosted-services` on a phone** (default on, kept

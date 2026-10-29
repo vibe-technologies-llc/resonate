@@ -491,6 +491,7 @@ mod tests {
             enriching: crate::enrichment::Enriching::default(),
             room: crate::room::Room::under(std::env::temp_dir()),
             tagging: Tagging::under(std::env::temp_dir()),
+            served: crate::served::Served::default(),
         }
     }
 
