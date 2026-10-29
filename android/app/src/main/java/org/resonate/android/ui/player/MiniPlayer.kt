@@ -54,6 +54,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import org.resonate.android.rowKey
 import org.resonate.android.ui.components.Artwork
 import org.resonate.android.ui.shownArtist
 import org.resonate.android.ui.shownTitle
@@ -112,7 +113,7 @@ fun MiniPlayer(model: PlayerViewModel, expansion: PlayerExpansion, modifier: Mod
                     AnimatedContent(
                         track,
                         transitionSpec = { fadeIn() togetherWith fadeOut() },
-                        contentKey = { it?.id },
+                        contentKey = { it?.rowKey },
                         modifier = Modifier.weight(1f),
                         label = "mini titles",
                     ) { shown ->

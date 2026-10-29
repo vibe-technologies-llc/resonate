@@ -73,6 +73,7 @@ import kotlinx.coroutines.withContext
 import org.resonate.android.nativecore.SavedSearch
 import org.resonate.android.nativecore.Track
 import org.resonate.android.nativecore.albumKey
+import org.resonate.android.served
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.albumOwner
@@ -215,44 +216,50 @@ private fun SongSheet(request: SongSheetRequest, dismiss: () -> Unit) {
     val sheets = LocalSheets.current
     val scope = rememberCoroutineScope()
     val catalog by resonate.library.allTracks.collectAsState()
-    val track = remember(catalog, request) { resonate.library.findTrack(request.track.id) ?: request.track }
+    val track =
+        remember(catalog, request) {
+            if (request.track.served) request.track
+            else resonate.library.findTrack(request.track.id) ?: request.track
+        }
     val actions = buildList {
-        add(
-            SheetAction(
-                if (track.favourite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                if (track.favourite) "Remove from favourites" else "Add to favourites",
-            ) {
-                resonate.favourite(track, !track.favourite, sheets, scope)
-            }
-        )
-        add(SheetAction(Icons.AutoMirrored.Rounded.PlaylistPlay, "Play next") {
-            resonate.library.request { it.playNext(listOf(track.id)) }
-        })
-        add(SheetAction(Icons.AutoMirrored.Rounded.QueueMusic, "Add to queue") {
-            resonate.library.request { it.addToQueue(listOf(track.id)) }
-        })
-        add(SheetAction(Icons.AutoMirrored.Rounded.PlaylistAdd, "Add to playlist") {
-            sheets.addToPlaylist(listOf(track))
-        })
-        if (track.album.isNotBlank()) {
-            add(SheetAction(Icons.Rounded.Album, "Go to album") { navigator.openAlbumOf(track) })
-        }
-        add(SheetAction(Icons.Rounded.Person, "Go to artist") { navigator.openArtistOf(track) })
-        add(SheetAction(Icons.Rounded.Lyrics, "Lyrics") { navigator.open(Screen.Lyrics(track.id)) })
-        add(SheetAction(Icons.Rounded.Insights, "Analysis") {
-            navigator.open(Screen.Analysis(track.id))
-        })
-        add(SheetAction(Icons.Rounded.Info, "Song details") {
-            navigator.open(Screen.Details(track.id))
-        })
-        add(SheetAction(Icons.Rounded.Share, "Share link") { resonate.shareLink(track, scope) })
-        if (resonate.features.tags.writable(track)) {
-            add(SheetAction(Icons.Rounded.Edit, "Edit tags") { sheets.editTags(listOf(track)) })
-        }
-        if (resonate.features.songDeletable(track)) {
-            add(SheetAction(Icons.Rounded.DeleteOutline, "Delete song", destructive = true) {
-                sheets.deleting = listOf(track)
+        if (!track.served) {
+            add(
+                SheetAction(
+                    if (track.favourite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                    if (track.favourite) "Remove from favourites" else "Add to favourites",
+                ) {
+                    resonate.favourite(track, !track.favourite, sheets, scope)
+                }
+            )
+            add(SheetAction(Icons.AutoMirrored.Rounded.PlaylistPlay, "Play next") {
+                resonate.library.request { it.playNext(listOf(track.id)) }
             })
+            add(SheetAction(Icons.AutoMirrored.Rounded.QueueMusic, "Add to queue") {
+                resonate.library.request { it.addToQueue(listOf(track.id)) }
+            })
+            add(SheetAction(Icons.AutoMirrored.Rounded.PlaylistAdd, "Add to playlist") {
+                sheets.addToPlaylist(listOf(track))
+            })
+            if (track.album.isNotBlank()) {
+                add(SheetAction(Icons.Rounded.Album, "Go to album") { navigator.openAlbumOf(track) })
+            }
+            add(SheetAction(Icons.Rounded.Person, "Go to artist") { navigator.openArtistOf(track) })
+            add(SheetAction(Icons.Rounded.Lyrics, "Lyrics") { navigator.open(Screen.Lyrics(track.id)) })
+            add(SheetAction(Icons.Rounded.Insights, "Analysis") {
+                navigator.open(Screen.Analysis(track.id))
+            })
+            add(SheetAction(Icons.Rounded.Info, "Song details") {
+                navigator.open(Screen.Details(track.id))
+            })
+            add(SheetAction(Icons.Rounded.Share, "Share link") { resonate.shareLink(track, scope) })
+            if (resonate.features.tags.writable(track)) {
+                add(SheetAction(Icons.Rounded.Edit, "Edit tags") { sheets.editTags(listOf(track)) })
+            }
+            if (resonate.features.songDeletable(track)) {
+                add(SheetAction(Icons.Rounded.DeleteOutline, "Delete song", destructive = true) {
+                    sheets.deleting = listOf(track)
+                })
+            }
         }
         if (request.inPlayer) {
             add(SheetAction(Icons.Rounded.Bedtime, "Sleep timer") { sheets.sleeping = true })

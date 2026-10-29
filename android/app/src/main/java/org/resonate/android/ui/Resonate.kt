@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import kotlinx.coroutines.CancellationException
@@ -74,6 +75,14 @@ class Playback(
         remote.play()
     }
 
+    fun playServed(uris: List<String>, index: Int = 0) {
+        val remote = remote() ?: return
+        if (uris.isEmpty()) return
+        remote.setMediaItems(uris.map(::servedItem), index.coerceIn(uris.indices), 0)
+        remote.prepare()
+        remote.play()
+    }
+
     fun toggle() {
         val remote = remote() ?: return
         if (remote.playWhenReady) remote.pause() else remote.play()
@@ -116,6 +125,9 @@ class Playback(
         remote()?.volume = value.coerceIn(0f, 1f)
     }
 }
+
+private fun servedItem(uri: String): MediaItem =
+    MediaItem.Builder().setMediaId(uri).setUri(uri).build()
 
 class Resonate(val library: LibraryRepository, val playback: Playback, val host: Host) {
     val features: LibraryFeatures

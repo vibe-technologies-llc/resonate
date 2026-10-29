@@ -143,6 +143,7 @@ class LibraryRepository(private val context: Context) {
     @Volatile private var indexed: Pair<List<Track>, Map<ULong, Track>>? = null
 
     fun findTrack(id: ULong): Track? {
+        if (id == 0uL) return null
         val rows = mutableAllTracks.value
         val index =
             indexed?.takeIf { it.first === rows }?.second

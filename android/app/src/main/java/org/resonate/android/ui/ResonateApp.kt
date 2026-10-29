@@ -17,9 +17,11 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.GroupAdd
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.LibraryMusic
@@ -36,6 +38,7 @@ import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffo
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -80,6 +83,7 @@ private val destinations =
         Screen.Library to
             Destination("Library", Icons.Rounded.LibraryMusic, Icons.Outlined.LibraryMusic),
         Screen.Search to Destination("Search", Icons.Rounded.Search, Icons.Outlined.Search),
+        Screen.Server to Destination("Server", Icons.Rounded.Cloud, Icons.Outlined.Cloud),
     )
 
 @Composable
@@ -100,6 +104,11 @@ fun ResonateApp(resonate: Resonate) {
             LocalPlayerExpansion provides expansion,
         ) {
             FollowArtworkChanges(clock)
+            val serving by resonate.features.served.serving.collectAsStateWithLifecycle()
+            val shownRoots = rootScreens.filter { it != Screen.Server || serving }
+            LaunchedEffect(serving) {
+                if (!serving && navigator.root == Screen.Server) navigator.selectAtRoot(Screen.Home)
+            }
             val player = resonateViewModel { PlayerViewModel(it) }
             val adaptive = currentWindowAdaptiveInfo()
             val fitted = NavigationSuiteScaffoldDefaults.navigationSuiteType(adaptive)
@@ -117,7 +126,7 @@ fun ResonateApp(resonate: Resonate) {
                     navigationSuiteType = suite,
                     containerColor = MaterialTheme.colorScheme.surface,
                     navigationItems = {
-                        rootScreens.forEach { screen ->
+                        shownRoots.forEach { screen ->
                             val destination = destinations.getValue(screen)
                             val selected = navigator.root == screen
                             NavigationSuiteItem(

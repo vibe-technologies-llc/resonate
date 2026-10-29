@@ -3,7 +3,6 @@ package org.resonate.android
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.media.AudioDeviceInfo
 import android.net.ConnectivityManager
 import android.net.Network
@@ -202,6 +201,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             .stateIn(derivedScope, SharingStarted.Eagerly, null)
     val online = MutableStateFlow(settings.getBoolean("online", true))
     val hostedServices = MutableStateFlow(settings.getBoolean("hosted-services", true))
+    val served = Served(library, scope, online, providerAccounts)
     val folders = MutableStateFlow<List<MusicFolder>>(emptyList())
     val organising = FolderOrganising(context, library, settings, scope, ::rereadSongs)
     val statistics = MutableStateFlow<LibraryStatistics?>(null)
@@ -363,6 +363,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
         native.configureOnline(online.value)
         native.configureHostedServices(hostedServices.value)
+        served.begin(native)
         enrichment.initialize(online.value)
         downloads.recover(native)
         settings.getString("unfinished-sync-landing", null)?.let { value ->
@@ -951,7 +952,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
         mutableArtChanges.tryEmit(songs)
     }
 
-    suspend fun artworkBitmap(track: Track, edge: Int): Bitmap? = artworkBitmap(track.id, edge)
+    suspend fun artworkBitmap(track: Track, edge: Int): Bitmap? =
+        if (track.served) served.bitmap(track.uri, null, edge) else artworkBitmap(track.id, edge)
 
     private class SeenPicture(val picture: ULong, val generation: Int, val stamp: Int)
 
@@ -1009,22 +1011,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             return it
         }
         val bytes = native.picture(picture) ?: return null
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-        if (
-            bounds.outWidth <= 0 ||
-                bounds.outHeight <= 0 ||
-                bounds.outWidth > 32768 ||
-                bounds.outHeight > 32768
-        )
-            return null
-        val options =
-            BitmapFactory.Options().apply {
-                inSampleSize = ArtworkSizes.sampleFor(bounds.outWidth, bounds.outHeight, edge)
-            }
-        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)?.also {
-            pictures.put(key, it)
-        }
+        return decoded(bytes, edge)?.also { pictures.put(key, it) }
     }
 
     suspend fun mediaArtwork(track: Track): ByteArray? =
