@@ -344,6 +344,7 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
             ConfigKey::SpeakerElevation,
             Some(i64::from(elevation.degrees()).into()),
         ),
+        Setting::HeadYaw(yaw) => (ConfigKey::HeadYaw, Some(i64::from(yaw.degrees()).into())),
         Setting::Subsonic(given) => given_or_cleared(ConfigKey::Subsonic, given),
         Setting::SubsonicUser(given) => given_or_cleared(ConfigKey::SubsonicUser, given),
         Setting::SubsonicPassword(given) => given_or_cleared(ConfigKey::SubsonicPassword, given),
@@ -478,6 +479,7 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::Convolution => ConfigKey::Convolution,
         SettingKey::SpeakerAngle => ConfigKey::SpeakerAngle,
         SettingKey::SpeakerElevation => ConfigKey::SpeakerElevation,
+        SettingKey::HeadYaw => ConfigKey::HeadYaw,
         SettingKey::Subsonic => ConfigKey::Subsonic,
         SettingKey::SubsonicUser => ConfigKey::SubsonicUser,
         SettingKey::SubsonicPassword => ConfigKey::SubsonicPassword,
@@ -544,7 +546,8 @@ mod tests {
     use std::{env, ffi::OsStr, fs, os::unix::ffi::OsStrExt as _, process};
 
     use resonate_core::{
-        Accent, AppId, Pictured, Presence, Shown, SpeakerAngle, SpeakerElevation, TextSize, Theme,
+        Accent, AppId, HeadYaw, Pictured, Presence, Shown, SpeakerAngle, SpeakerElevation,
+        TextSize, Theme,
     };
 
     use super::*;
@@ -713,6 +716,26 @@ mod tests {
 
         assert_eq!(chosen.speaker_elevation(), lowered);
         assert_eq!(forgotten.speaker_elevation(), SpeakerElevation::LEVEL);
+    }
+
+    #[test]
+    fn a_head_yaw_the_pane_chooses_reads_back_and_one_put_back_is_gone() {
+        let folder = env::temp_dir().join(format!("resonate-settings-yawed-{}", process::id()));
+        let path = folder.join("config.toml");
+        let file = File::at(path.clone());
+        let turned = HeadYaw::from_degrees(-35).expect("a yaw");
+
+        file.apply(&[SettingChange::Store(Setting::HeadYaw(turned))])
+            .expect("a writable temporary directory");
+        let chosen = config::load(Some(&path)).expect("the file reads back");
+
+        file.apply(&[SettingChange::Forget(SettingKey::HeadYaw)])
+            .expect("a writable temporary directory");
+        let forgotten = config::load(Some(&path)).expect("the file reads back");
+        let _ = fs::remove_dir_all(folder);
+
+        assert_eq!(chosen.head_yaw(), turned);
+        assert_eq!(forgotten.head_yaw(), HeadYaw::AHEAD);
     }
 
     #[test]

@@ -13,6 +13,7 @@ opus-rs.workspace = true
 parking_lot.workspace = true
 resonate-core.workspace = true
 rustix.workspace = true
+rustfft.workspace = true
 symphonia.workspace = true
 symphonia-codec-wavpack.workspace = true
 thiserror.workspace = true

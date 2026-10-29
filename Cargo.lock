@@ -5768,6 +5768,7 @@ dependencies = [
  "opus-rs",
  "parking_lot 0.13.0",
  "resonate-core",
+ "rustfft",
  "rustix",
  "symphonia",
  "symphonia-codec-wavpack",

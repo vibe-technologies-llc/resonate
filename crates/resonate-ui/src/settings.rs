@@ -14,9 +14,9 @@ use crossbeam_channel::Sender;
 use futures_channel::oneshot;
 use gpui::{Pixels, Size, px, size};
 use resonate_core::{
-    Accent, AppId, ArtistsDrawn, Frames, Icon, Pictured, PlaylistId, Presence, ScrollbarMode,
-    Shown, SpeakerAngle, SpeakerElevation, Spectral, SpectrumBands, SpectrumFalls, SpectrumFloor,
-    SpectrumTilt, SyncedSongs, TextSize, Theme, Trim, Volume,
+    Accent, AppId, ArtistsDrawn, Frames, HeadYaw, Icon, Pictured, PlaylistId, Presence,
+    ScrollbarMode, Shown, SpeakerAngle, SpeakerElevation, Spectral, SpectrumBands, SpectrumFalls,
+    SpectrumFloor, SpectrumTilt, SyncedSongs, TextSize, Theme, Trim, Volume,
 };
 use resonate_engine::{
     Crossfeed, DitherKind, FilterPhase, NodeName, NoiseShaping, PreviousRestarts, Quality,
@@ -200,6 +200,7 @@ pub enum SettingKey {
     Convolution,
     SpeakerAngle,
     SpeakerElevation,
+    HeadYaw,
     Resume,
     HistoryKept,
     SkipUnderRepeat,
@@ -258,7 +259,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 102] = [
+    pub const ALL: [Self; 103] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -306,6 +307,7 @@ impl SettingKey {
         Self::Convolution,
         Self::SpeakerAngle,
         Self::SpeakerElevation,
+        Self::HeadYaw,
         Self::Resume,
         Self::HistoryKept,
         Self::SkipUnderRepeat,
@@ -419,6 +421,7 @@ pub enum Setting {
     Convolution(Option<PathBuf>),
     SpeakerAngle(SpeakerAngle),
     SpeakerElevation(SpeakerElevation),
+    HeadYaw(HeadYaw),
     Resume(bool),
     HistoryKept(HistoryKept),
     SkipUnderRepeat(SkipUnderRepeat),
@@ -532,6 +535,7 @@ impl Setting {
             Self::Convolution(_) => SettingKey::Convolution,
             Self::SpeakerAngle(_) => SettingKey::SpeakerAngle,
             Self::SpeakerElevation(_) => SettingKey::SpeakerElevation,
+            Self::HeadYaw(_) => SettingKey::HeadYaw,
             Self::Resume(_) => SettingKey::Resume,
             Self::HistoryKept(_) => SettingKey::HistoryKept,
             Self::SkipUnderRepeat(_) => SettingKey::SkipUnderRepeat,
@@ -896,6 +900,7 @@ pub struct Stored {
     pub convolution: Option<PathBuf>,
     pub speaker_angle: SpeakerAngle,
     pub speaker_elevation: SpeakerElevation,
+    pub head_yaw: HeadYaw,
     pub music_folder: Option<PathBuf>,
     pub file_dropped: bool,
     pub window_buttons: WindowButtons,

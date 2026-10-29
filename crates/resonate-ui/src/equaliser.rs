@@ -10,7 +10,7 @@ use resonate_eq::{
     Binding, BuiltIn, Catalogue, Corrected, Device, DeviceId, Fitted, Fitting, Found, Measured,
     ProfileName, Response, Store, fit, search_preferring, suggest_preferring,
 };
-use resonate_listen::Listening;
+use resonate_listen::{Hearing, Listening};
 use thiserror::Error;
 
 use crate::{
@@ -121,8 +121,18 @@ enum Missed {
     Fitted(#[source] resonate_eq::Error),
 }
 
+pub struct Sounding {
+    pub rig: Arc<dyn Measures>,
+    pub through: Option<NodeName>,
+    pub from: Listening,
+    pub called: Option<ProfileName>,
+}
+
 fn missed_the_room(error: &Missed) -> Notice {
     match error {
+        Missed::Heard(unmeasured) if unmeasured.is_stopped() => {
+            Notice::Noted("The measurement was stopped; nothing was kept".to_owned())
+        }
         Missed::Heard(unmeasured) if unmeasured.is_silence() => Notice::Trouble(
             "Nothing was heard — check the microphone is on and the output can be heard".to_owned(),
         ),
@@ -312,6 +322,8 @@ pub struct EqualiserModel {
     goal: Goal,
     fitting_a_measurement: bool,
     measuring_the_room: bool,
+    hearing: Option<Arc<Hearing>>,
+    calibration: Option<PathBuf>,
     notice: Option<Notice>,
     untold: bool,
     _saved: Task<()>,
@@ -351,6 +363,8 @@ impl EqualiserModel {
             goal: Goal::BY_DEFAULT,
             fitting_a_measurement: false,
             measuring_the_room: false,
+            hearing: None,
+            calibration: None,
             notice: None,
             untold: false,
             _saved: Task::ready(()),
@@ -428,6 +442,20 @@ impl EqualiserModel {
 
     pub const fn is_measuring_the_room(&self) -> bool {
         self.measuring_the_room
+    }
+
+    pub fn calibration(&self) -> Option<&PathBuf> {
+        self.calibration.as_ref()
+    }
+
+    pub fn calibrate_with(&mut self, file: Option<PathBuf>) {
+        self.calibration = file;
+    }
+
+    pub fn stop_measuring_the_room(&mut self) {
+        if let Some(hearing) = &self.hearing {
+            hearing.stop();
+        }
     }
 
     pub fn has_a_source(&self) -> bool {
@@ -951,18 +979,21 @@ impl EqualiserModel {
         });
     }
 
-    pub fn measure_the_room(
-        &mut self,
-        rig: Arc<dyn Measures>,
-        through: Option<NodeName>,
-        from: Listening,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn measure_the_room(&mut self, sounding: Sounding, cx: &mut Context<Self>) {
         if self.measuring_the_room {
             return;
         }
+        let Sounding {
+            rig,
+            through,
+            from,
+            called,
+        } = sounding;
         let folder = self.store.folder().to_path_buf();
         let goal = self.goal.clone();
+        let calibration = self.calibration.clone();
+        let hearing = Hearing::new();
+        self.hearing = Some(Arc::clone(&hearing));
         self.measuring_the_room = true;
 
         self._sounded = cx.spawn(async move |this, cx| {
@@ -970,13 +1001,17 @@ impl EqualiserModel {
             let kept = cx
                 .background_executor()
                 .spawn(async move {
+                    let microphone = calibration
+                        .map(|file| Store::response_in(&file).map(|read| read.response))
+                        .transpose()
+                        .map_err(Missed::Fitted)?;
                     let heard = rig
-                        .measure(through.as_ref(), &from)
+                        .measure(through.as_ref(), &from, &hearing, microphone.as_ref())
                         .map_err(Missed::Heard)?;
                     let target = goal.response().map_err(Missed::Fitted)?;
                     let fitted =
                         fit(&heard, &target, &Fitting::default()).map_err(Missed::Fitted)?;
-                    let name = ProfileName::after(MEASURED_LIVE);
+                    let name = called.unwrap_or_else(|| ProfileName::after(MEASURED_LIVE));
                     Store::at(folder)
                         .keep(&name, &fitted.profile)
                         .map_err(Missed::Fitted)?;
@@ -986,6 +1021,7 @@ impl EqualiserModel {
 
             let outcome = this.update(cx, |this, cx| {
                 this.measuring_the_room = false;
+                this.hearing = None;
                 match kept {
                     Ok((name, fitted)) => {
                         this.reload();
@@ -1573,6 +1609,8 @@ mod tests {
             &self,
             _through: Option<&NodeName>,
             _from: &Listening,
+            _hearing: &Hearing,
+            _calibration: Option<&Response>,
         ) -> Result<Response, Unmeasured> {
             let points = (0..60)
                 .map(|step| {
@@ -1589,6 +1627,15 @@ mod tests {
         }
     }
 
+    fn sounding(rig: Arc<dyn Measures>, from: Listening, called: Option<ProfileName>) -> Sounding {
+        Sounding {
+            rig,
+            through: None,
+            from,
+            called,
+        }
+    }
+
     struct Deaf;
 
     impl Measures for Deaf {
@@ -1596,6 +1643,8 @@ mod tests {
             &self,
             _through: Option<&NodeName>,
             _from: &Listening,
+            _hearing: &Hearing,
+            _calibration: Option<&Response>,
         ) -> Result<Response, Unmeasured> {
             Err(Unmeasured::Deconvolved(
                 resonate_engine::DspError::NothingHeard,
@@ -1621,7 +1670,7 @@ mod tests {
 
         model.update(cx, |model, cx| {
             model.aim_at(Goal::BuiltIn(BuiltIn::Flat));
-            model.measure_the_room(Arc::new(Dipped), None, Listening::Desktop, cx);
+            model.measure_the_room(sounding(Arc::new(Dipped), Listening::Desktop, None), cx);
         });
         assert!(model.read_with(cx, |model, _| model.is_measuring_the_room()));
         cx.run_until_parked();
@@ -1657,7 +1706,10 @@ mod tests {
         });
 
         model.update(cx, |model, cx| {
-            model.measure_the_room(Arc::new(Deaf), None, Listening::Microphone(None), cx);
+            model.measure_the_room(
+                sounding(Arc::new(Deaf), Listening::Microphone(None), None),
+                cx,
+            );
         });
         cx.run_until_parked();
 
@@ -1675,6 +1727,170 @@ mod tests {
         assert!(
             matches!(notice, Some(Notice::Trouble(said)) if said.starts_with("Nothing was heard"))
         );
+    }
+
+    struct Stoppable;
+
+    impl Measures for Stoppable {
+        fn measure(
+            &self,
+            _through: Option<&NodeName>,
+            _from: &Listening,
+            hearing: &Hearing,
+            _calibration: Option<&Response>,
+        ) -> Result<Response, Unmeasured> {
+            if hearing.stopped() {
+                return Err(Unmeasured::Heard(Box::new(resonate_listen::Error::Stopped)));
+            }
+            Err(Unmeasured::Heard(Box::new(
+                resonate_listen::Error::NothingHeard,
+            )))
+        }
+    }
+
+    struct Calibrated(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+    impl Measures for Calibrated {
+        fn measure(
+            &self,
+            through: Option<&NodeName>,
+            from: &Listening,
+            hearing: &Hearing,
+            calibration: Option<&Response>,
+        ) -> Result<Response, Unmeasured> {
+            self.0.store(
+                calibration.map_or(0, |response| response.points().len()),
+                std::sync::atomic::Ordering::Relaxed,
+            );
+            Dipped.measure(through, from, hearing, calibration)
+        }
+    }
+
+    #[gpui::test]
+    fn a_sweep_stopped_part_way_keeps_nothing_and_says_it_was_stopped(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use gpui::AppContext as _;
+
+        let folder = std::env::temp_dir().join(format!(
+            "resonate-ui-equaliser-stopped-{}",
+            std::process::id()
+        ));
+        let model = cx.new(|_| {
+            EqualiserModel::new(
+                folder.join("equaliser"),
+                Arc::new(Corrected::uncorrected()),
+                Bindings::default(),
+            )
+        });
+
+        model.update(cx, |model, cx| {
+            model.measure_the_room(sounding(Arc::new(Stoppable), Listening::Desktop, None), cx);
+            model.stop_measuring_the_room();
+        });
+        cx.run_until_parked();
+
+        let (measuring, kept, notice) = model.update(cx, |model, _| {
+            (
+                model.is_measuring_the_room(),
+                model.kept().to_vec(),
+                model.take_notice(),
+            )
+        });
+        let _ = std::fs::remove_dir_all(&folder);
+
+        assert!(!measuring);
+        assert!(kept.is_empty());
+        assert!(
+            matches!(notice, Some(Notice::Noted(said)) if said.starts_with("The measurement was stopped"))
+        );
+    }
+
+    #[gpui::test]
+    fn a_calibration_chosen_is_taken_off_what_was_heard_and_a_name_given_is_the_profile_kept(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use gpui::AppContext as _;
+
+        let folder = std::env::temp_dir().join(format!(
+            "resonate-ui-equaliser-calibrated-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&folder).expect("a scratch folder");
+        let microphone = folder.join("microphone.csv");
+        let rows: String = (0..12)
+            .map(|step| format!("{},0.5\n", 100 * (step + 1)))
+            .collect();
+        std::fs::write(&microphone, format!("frequency,raw\n{rows}")).expect("a calibration");
+        let read = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let model = cx.new(|_| {
+            EqualiserModel::new(
+                folder.join("equaliser"),
+                Arc::new(Corrected::uncorrected()),
+                Bindings::default(),
+            )
+        });
+
+        model.update(cx, |model, cx| {
+            model.aim_at(Goal::BuiltIn(BuiltIn::Flat));
+            model.calibrate_with(Some(microphone.clone()));
+            model.measure_the_room(
+                sounding(
+                    Arc::new(Calibrated(read.clone())),
+                    Listening::Desktop,
+                    Some(named("Living room")),
+                ),
+                cx,
+            );
+        });
+        cx.run_until_parked();
+
+        let (calibration, shown) = model.update(cx, |model, _| {
+            (model.calibration().cloned(), model.shown_curve().cloned())
+        });
+        let held = read.load(std::sync::atomic::Ordering::Relaxed);
+        let _ = std::fs::remove_dir_all(&folder);
+
+        assert_eq!(calibration, Some(microphone));
+        assert!(held >= 8, "{held}");
+        assert_eq!(shown, Some(Curve::Kept(named("Living room"))));
+    }
+
+    #[gpui::test]
+    fn a_calibration_that_will_not_read_leaves_the_sweep_unplayed_and_nothing_kept(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use gpui::AppContext as _;
+
+        let folder = std::env::temp_dir().join(format!(
+            "resonate-ui-equaliser-uncalibrated-{}",
+            std::process::id()
+        ));
+        let read = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(99));
+        let model = cx.new(|_| {
+            EqualiserModel::new(
+                folder.join("equaliser"),
+                Arc::new(Corrected::uncorrected()),
+                Bindings::default(),
+            )
+        });
+
+        model.update(cx, |model, cx| {
+            model.calibrate_with(Some(folder.join("missing.csv")));
+            model.measure_the_room(
+                sounding(Arc::new(Calibrated(read.clone())), Listening::Desktop, None),
+                cx,
+            );
+        });
+        cx.run_until_parked();
+
+        let (kept, notice) =
+            model.update(cx, |model, _| (model.kept().to_vec(), model.take_notice()));
+        let _ = std::fs::remove_dir_all(&folder);
+
+        assert!(kept.is_empty());
+        assert_eq!(read.load(std::sync::atomic::Ordering::Relaxed), 99);
+        assert!(matches!(notice, Some(Notice::Trouble(_))));
     }
 
     #[test]

@@ -12,6 +12,7 @@ final class RoomCorrectionState {
     private static let nameKey = "room-correction-name"
     private static let angleKey = "speaker-angle"
     private static let elevationKey = "speaker-elevation"
+    private static let yawKey = "head-yaw"
     static let limits = speakerLimits()
     nonisolated private static let largest = 64 * 1024 * 1024
 
@@ -25,6 +26,7 @@ final class RoomCorrectionState {
     private(set) var left: URL?
     private(set) var angle: Int
     private(set) var elevation: Int
+    private(set) var yaw: Int
     @ObservationIgnored private var changing: Task<Void, Never>?
 
     init(library: Library) {
@@ -33,16 +35,19 @@ final class RoomCorrectionState {
         name = settings.string(forKey: Self.nameKey)
         angle = settings.object(forKey: Self.angleKey) as? Int ?? Int(Self.limits.angleStandardDegrees)
         elevation = settings.object(forKey: Self.elevationKey) as? Int ?? 0
+        yaw = settings.object(forKey: Self.yawKey) as? Int ?? 0
     }
 
     func restore(_ native: MobilePlayer) {
         let on = on
         let heldAngle = UInt8(clamping: angle)
         let heldElevation = Int16(clamping: elevation)
+        let heldYaw = Int16(clamping: yaw)
         queue { [self] in
             do {
                 _ = try await Work.aside { try native.setSpeakerAngle(degrees: heldAngle) }
                 _ = try await Work.aside { try native.setSpeakerElevation(degrees: heldElevation) }
+                _ = try await Work.aside { try native.setHeadYaw(degrees: heldYaw) }
                 kept = try await Work.aside { try native.keptRoomCorrection() }
                 if on {
                     let applied = try await Work.aside { try native.applyRoomCorrection(on: true) }
@@ -103,6 +108,20 @@ final class RoomCorrectionState {
                 kept = moved ?? kept
                 elevation = degrees
                 settings.set(degrees, forKey: Self.elevationKey)
+            } catch {
+                library.report(error)
+            }
+        }
+    }
+
+    func turn(to degrees: Int) {
+        queue { [self] in
+            do {
+                let native = try await library.player()
+                let moved = try await Work.aside { try native.setHeadYaw(degrees: Int16(clamping: degrees)) }
+                kept = moved ?? kept
+                yaw = degrees
+                settings.set(degrees, forKey: Self.yawKey)
             } catch {
                 library.report(error)
             }
@@ -270,13 +289,20 @@ struct RoomCorrectionSection: View {
                 LabeledContent("Speaker elevation", value: "\(room.elevation)°")
             }
             .accessibilityIdentifier("speaker-elevation")
+            Stepper(
+                value: Binding(get: { room.yaw }, set: { room.turn(to: $0) }),
+                in: Int(RoomCorrectionState.limits.yawLeastDegrees)...Int(RoomCorrectionState.limits.yawMostDegrees)
+            ) {
+                LabeledContent("Head turned", value: "\(room.yaw)°")
+            }
+            .accessibilityIdentifier("head-yaw")
             if room.name != nil {
                 Button("Forget the response", systemImage: "trash", role: .destructive) { forgetting = true }
             }
         } header: {
             Text("Room correction")
         } footer: {
-            Text("A measured impulse response, up to ten seconds long, is convolved before the equaliser on every output. It is lowered where it would lift the music past full scale. A four-channel file is a two-by-two (binaural) response, in the order left-to-left, left-to-right, right-to-left, right-to-right. A SOFA set of head-related responses is read as the same, from the measurements around the speaker angle either side of the front and the elevation above the ears, blended where several surround them. A pair is two stereo responses, the left speaker's and then the right's, each as heard at both ears, joined into one two-by-two response.")
+            Text("A measured impulse response, up to ten seconds long, is convolved before the equaliser on every output. It is lowered where it would lift the music past full scale. A four-channel file is a two-by-two (binaural) response, in the order left-to-left, left-to-right, right-to-left, right-to-right. A SOFA set of head-related responses is read as the same, from the measurements around the speaker angle either side of the front, the elevation above the ears and the turn of your head, blended where several surround them. A pair is two stereo responses, the left speaker's and then the right's, each as heard at both ears, joined into one two-by-two response.")
         }
         .confirmationDialog("Forget the room correction?", isPresented: $forgetting, titleVisibility: .visible) {
             Button("Forget", role: .destructive) { room.forget() }

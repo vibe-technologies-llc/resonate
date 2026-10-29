@@ -14,7 +14,7 @@ use gpui::{
     WindowDecorations, WindowOptions, actions, px, size,
 };
 use resonate_core::{
-    Appearance, ArtistsDrawn, FrameSpan, Frames, MediaLocation, Presence, ScrollbarMode,
+    Appearance, ArtistsDrawn, FrameSpan, Frames, HeadYaw, MediaLocation, Presence, ScrollbarMode,
     SpeakerAngle, SpeakerElevation, Spectral, TrackId,
 };
 use resonate_engine::{
@@ -195,6 +195,7 @@ pub struct ResonateApp {
     pub convolution: Option<PathBuf>,
     pub speaker_angle: SpeakerAngle,
     pub speaker_elevation: SpeakerElevation,
+    pub head_yaw: HeadYaw,
     pub music_folder: Option<PathBuf>,
     pub file_dropped: bool,
     pub window_buttons: WindowButtons,
@@ -1071,6 +1072,7 @@ pub fn run(
             convolution: stored.convolution.clone(),
             speaker_angle: stored.speaker_angle,
             speaker_elevation: stored.speaker_elevation,
+            head_yaw: stored.head_yaw,
             music_folder: stored.music_folder.clone(),
             file_dropped: stored.file_dropped,
             window_buttons: stored.window_buttons,

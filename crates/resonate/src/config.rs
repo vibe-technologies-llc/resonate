@@ -15,9 +15,9 @@ use clap::ValueEnum as _;
 #[cfg(any(feature = "ui", test))]
 use resonate_core::Appearance;
 use resonate_core::{
-    Accent, AppId, ArtistsDrawn, Icon, Pictured, Presence, ScrollbarMode, Shown, SpeakerAngle,
-    SpeakerElevation, Speakers, SpectrumBands, SpectrumFalls, SpectrumFloor, SpectrumTilt,
-    SyncedSongs, TextSize, Theme, Trim, Volume,
+    Accent, AppId, ArtistsDrawn, HeadYaw, Icon, Pictured, Presence, ScrollbarMode, Shown,
+    SpeakerAngle, SpeakerElevation, Speakers, SpectrumBands, SpectrumFalls, SpectrumFloor,
+    SpectrumTilt, SyncedSongs, TextSize, Theme, Trim, Volume,
 };
 use resonate_engine::{
     Crossfeed, DitherKind, FilterPhase, NoiseShaping, PreviousRestarts, Quality, ReplayGainMode,
@@ -184,6 +184,7 @@ pub struct Config {
     pub convolution: Option<PathBuf>,
     pub speaker_angle: Option<SpeakerAngle>,
     pub speaker_elevation: Option<SpeakerElevation>,
+    pub head_yaw: Option<HeadYaw>,
     pub subsonic: Option<String>,
     pub subsonic_user: Option<String>,
     pub subsonic_password: Option<String>,
@@ -307,6 +308,7 @@ impl fmt::Debug for Config {
             convolution,
             speaker_angle,
             speaker_elevation,
+            head_yaw,
             subsonic,
             subsonic_user,
             subsonic_password,
@@ -416,6 +418,7 @@ impl fmt::Debug for Config {
             .field("convolution", convolution)
             .field("speaker_angle", speaker_angle)
             .field("speaker_elevation", speaker_elevation)
+            .field("head_yaw", head_yaw)
             .field("subsonic", subsonic)
             .field("subsonic_user", subsonic_user)
             .field("subsonic_password", &withheld(subsonic_password.as_ref()))
@@ -629,10 +632,15 @@ impl Config {
         self.speaker_elevation.unwrap_or_default()
     }
 
+    pub fn head_yaw(&self) -> HeadYaw {
+        self.head_yaw.unwrap_or_default()
+    }
+
     pub fn speakers(&self) -> Speakers {
         Speakers {
             angle: self.speaker_angle(),
             elevation: self.speaker_elevation(),
+            yaw: self.head_yaw(),
         }
     }
 
@@ -990,6 +998,10 @@ impl Config {
                 let degrees = i16::try_from(at.integer(value)?).map_err(|_| at.rejected())?;
                 config.speaker_elevation =
                     Some(SpeakerElevation::from_degrees(degrees).map_err(|_| at.rejected())?);
+            }
+            ConfigKey::HeadYaw => {
+                let degrees = i16::try_from(at.integer(value)?).map_err(|_| at.rejected())?;
+                config.head_yaw = Some(HeadYaw::from_degrees(degrees).map_err(|_| at.rejected())?);
             }
             ConfigKey::Subsonic => config.subsonic = given(at.string(value)?),
             ConfigKey::SubsonicUser => config.subsonic_user = given(at.string(value)?),
@@ -2737,6 +2749,26 @@ mod tests {
             "speaker-elevation = -31",
             "speaker-elevation = 100000",
             "speaker-elevation = \"up\"",
+        ] {
+            assert!(read(refused).is_err(), "{refused}");
+        }
+    }
+
+    #[test]
+    fn a_head_yaw_is_read_in_whole_degrees_either_way_and_held_to_a_quarter_turn() {
+        let left = read("head-yaw = 90").expect("a known yaw");
+        let right = read("head-yaw = -90").expect("a known yaw");
+        assert_eq!(left.head_yaw().degrees(), 90);
+        assert_eq!(right.head_yaw().degrees(), -90);
+        assert_eq!(Config::default().head_yaw(), HeadYaw::AHEAD);
+        assert_eq!(left.speakers().yaw, left.head_yaw());
+        assert_eq!(left.speakers().angle, SpeakerAngle::STANDARD);
+
+        for refused in [
+            "head-yaw = 91",
+            "head-yaw = -91",
+            "head-yaw = 100000",
+            "head-yaw = \"left\"",
         ] {
             assert!(read(refused).is_err(), "{refused}");
         }

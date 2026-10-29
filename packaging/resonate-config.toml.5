@@ -144,6 +144,9 @@ Whole number of degrees, 5 to 90. How far to either side of the front the speake
 .TP
 .B speaker-elevation
 Whole number of degrees, \-30 to 60. How far above the level of the ears (below, if negative) the speakers stand, for a SOFA set of head-related responses chosen as the room correction: where the measurements surround that direction the response is interpolated between the corners of the triangle holding it. Default: 0.
+.TP
+.B head-yaw
+Whole number of degrees, \-90 to 90. How far the listener's head is turned from the front, to the left if positive, for a SOFA set of head-related responses chosen as the room correction: both speakers are looked up that many degrees round the other way, and in a set of speakers measured at several head orientations the view nearest the turn is read. Default: 0.
 .SH LIBRARY AND FILES
 .TP
 .B library

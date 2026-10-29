@@ -5,7 +5,8 @@ const ABSENT: u32 = 0;
 const DIMENSIONS_TAG: u32 = 0x0A;
 const VARIABLES_TAG: u32 = 0x0B;
 const ATTRIBUTES_TAG: u32 = 0x0C;
-const STREAMING_RECORDS: u32 = u32::MAX;
+const STREAMING_NARROW_RECORDS: u64 = u32::MAX as u64;
+const STREAMING_WIDE_RECORDS: u64 = u64::MAX;
 const PADDED_TO: usize = 4;
 const WORD_BYTES: u64 = 4;
 const DIMENSION_BYTES_AT_LEAST: u64 = 2 * WORD_BYTES;
@@ -15,6 +16,7 @@ const RECORD_DIMENSION_LENGTH: u64 = 0;
 
 pub(crate) const FIRST_OFFSET_VERSION: u8 = 1;
 pub(crate) const SECOND_OFFSET_VERSION: u8 = 2;
+pub(crate) const WIDE_DATA_VERSION: u8 = 5;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ClassicFault {
@@ -60,10 +62,15 @@ pub(crate) enum Kind {
     Int,
     Float,
     Double,
+    UnsignedByte,
+    UnsignedShort,
+    UnsignedInt,
+    Int64,
+    UnsignedInt64,
 }
 
 impl Kind {
-    const fn of(code: u32) -> Result<Self, ClassicFault> {
+    const fn of(code: u32, extended: bool) -> Result<Self, ClassicFault> {
         match code {
             1 => Ok(Self::Byte),
             2 => Ok(Self::Char),
@@ -71,16 +78,21 @@ impl Kind {
             4 => Ok(Self::Int),
             5 => Ok(Self::Float),
             6 => Ok(Self::Double),
+            7 if extended => Ok(Self::UnsignedByte),
+            8 if extended => Ok(Self::UnsignedShort),
+            9 if extended => Ok(Self::UnsignedInt),
+            10 if extended => Ok(Self::Int64),
+            11 if extended => Ok(Self::UnsignedInt64),
             code => Err(ClassicFault::TypeUnknown { code }),
         }
     }
 
     pub(crate) const fn bytes(self) -> u64 {
         match self {
-            Self::Byte | Self::Char => 1,
-            Self::Short => 2,
-            Self::Int | Self::Float => 4,
-            Self::Double => 8,
+            Self::Byte | Self::Char | Self::UnsignedByte => 1,
+            Self::Short | Self::UnsignedShort => 2,
+            Self::Int | Self::Float | Self::UnsignedInt => 4,
+            Self::Double | Self::Int64 | Self::UnsignedInt64 => 8,
         }
     }
 }
@@ -94,11 +106,24 @@ pub(crate) enum Pick {
 struct Cursor<'a> {
     bytes: &'a [u8],
     at: usize,
+    wide_counts: bool,
 }
 
 impl<'a> Cursor<'a> {
     const fn new(bytes: &'a [u8], at: usize) -> Self {
-        Self { bytes, at }
+        Self {
+            bytes,
+            at,
+            wide_counts: false,
+        }
+    }
+
+    fn count(&mut self) -> Result<u64, ClassicFault> {
+        if self.wide_counts {
+            self.wide()
+        } else {
+            self.word().map(u64::from)
+        }
     }
 
     fn left(&self) -> u64 {
@@ -139,14 +164,18 @@ impl<'a> Cursor<'a> {
     }
 
     fn name(&mut self) -> Result<String, ClassicFault> {
-        let length = self.word()? as usize;
+        let length = self.count()?;
+        let length = usize::try_from(length).map_err(|_| ClassicFault::CountPastFile {
+            count: length,
+            left: self.left(),
+        })?;
         let raw = self.padded(length)?;
         String::from_utf8(raw.to_vec()).map_err(|_| ClassicFault::NameNotText)
     }
 
     fn list(&mut self, tag: u32, at_least: u64) -> Result<usize, ClassicFault> {
         let found = self.word()?;
-        let count = u64::from(self.word()?);
+        let count = self.count()?;
         if found == ABSENT && count == 0 {
             return Ok(0);
         }
@@ -208,15 +237,22 @@ impl Classic {
     pub(crate) fn of(bytes: Vec<u8>) -> Result<Self, ClassicFault> {
         let mut cursor = Cursor::new(&bytes, MAGIC.len());
         let version = cursor.take(1)?[0];
-        let wide_offsets = version == SECOND_OFFSET_VERSION;
-        let records = match cursor.word()? {
-            STREAMING_RECORDS => 0,
-            records => u64::from(records),
+        let wide_offsets = matches!(version, SECOND_OFFSET_VERSION | WIDE_DATA_VERSION);
+        let extended = version == WIDE_DATA_VERSION;
+        cursor.wide_counts = extended;
+        let streaming = if extended {
+            STREAMING_WIDE_RECORDS
+        } else {
+            STREAMING_NARROW_RECORDS
+        };
+        let records = match cursor.count()? {
+            held if held == streaming => 0,
+            records => records,
         };
 
         let dimensions = dimensions_of(&mut cursor)?;
-        attributes_of(&mut cursor, ATTRIBUTES_TAG)?;
-        let variables = variables_of(&mut cursor, &dimensions, wide_offsets)?;
+        attributes_of(&mut cursor, ATTRIBUTES_TAG, extended)?;
+        let variables = variables_of(&mut cursor, &dimensions, wide_offsets, extended)?;
         let record_bytes = record_bytes_of(&dimensions, &variables)?;
 
         Ok(Self {
@@ -244,19 +280,23 @@ fn dimensions_of(cursor: &mut Cursor<'_>) -> Result<Vec<Dimension>, ClassicFault
     let mut dimensions = Vec::with_capacity(count);
     for _ in 0..count {
         cursor.name()?;
-        let length = u64::from(cursor.word()?);
+        let length = cursor.count()?;
         dimensions.push(Dimension { length });
     }
     Ok(dimensions)
 }
 
-fn attributes_of(cursor: &mut Cursor<'_>, tag: u32) -> Result<Vec<Attribute>, ClassicFault> {
+fn attributes_of(
+    cursor: &mut Cursor<'_>,
+    tag: u32,
+    extended: bool,
+) -> Result<Vec<Attribute>, ClassicFault> {
     let count = cursor.list(tag, ATTRIBUTE_BYTES_AT_LEAST)?;
     let mut attributes = Vec::with_capacity(count);
     for _ in 0..count {
         let name = cursor.name()?;
-        let kind = Kind::of(cursor.word()?)?;
-        let elements = u64::from(cursor.word()?);
+        let kind = Kind::of(cursor.word()?, extended)?;
+        let elements = cursor.count()?;
         let length = elements
             .checked_mul(kind.bytes())
             .filter(|length| *length <= cursor.left())
@@ -279,12 +319,13 @@ fn variables_of(
     cursor: &mut Cursor<'_>,
     dimensions: &[Dimension],
     wide_offsets: bool,
+    extended: bool,
 ) -> Result<Vec<Header>, ClassicFault> {
     let count = cursor.list(VARIABLES_TAG, VARIABLE_BYTES_AT_LEAST)?;
     let mut variables = Vec::with_capacity(count);
     for _ in 0..count {
         let name = cursor.name()?;
-        let rank = u64::from(cursor.word()?);
+        let rank = cursor.count()?;
         if rank.saturating_mul(WORD_BYTES) > cursor.left() {
             return Err(ClassicFault::CountPastFile {
                 count: rank,
@@ -305,9 +346,9 @@ fn variables_of(
             }
             shape.push(id as usize);
         }
-        let attributes = attributes_of(cursor, ATTRIBUTES_TAG)?;
-        let kind = Kind::of(cursor.word()?)?;
-        cursor.word()?;
+        let attributes = attributes_of(cursor, ATTRIBUTES_TAG, extended)?;
+        let kind = Kind::of(cursor.word()?, extended)?;
+        cursor.count()?;
         let begin = if wide_offsets {
             cursor.wide()?
         } else {
@@ -535,8 +576,8 @@ fn ranges_of(shape: &[u64], picks: &[Pick]) -> Result<Vec<(u64, u64)>, ClassicFa
 #[cfg(test)]
 pub(crate) mod written {
     use super::{
-        ATTRIBUTES_TAG, DIMENSIONS_TAG, FIRST_OFFSET_VERSION, MAGIC, PADDED_TO,
-        SECOND_OFFSET_VERSION, VARIABLES_TAG,
+        ATTRIBUTES_TAG, DIMENSIONS_TAG, MAGIC, PADDED_TO, SECOND_OFFSET_VERSION, VARIABLES_TAG,
+        WIDE_DATA_VERSION,
     };
 
     pub(crate) struct Column {
@@ -548,7 +589,7 @@ pub(crate) mod written {
     }
 
     pub(crate) struct File {
-        pub wide_offsets: bool,
+        pub version: u8,
         pub dimensions: Vec<(&'static str, u32)>,
         pub records: u32,
         pub variables: Vec<Column>,
@@ -560,8 +601,16 @@ pub(crate) mod written {
         }
     }
 
-    fn name(bytes: &mut Vec<u8>, text: &str) {
-        bytes.extend_from_slice(&(text.len() as u32).to_be_bytes());
+    fn count(bytes: &mut Vec<u8>, wide: bool, value: usize) {
+        if wide {
+            bytes.extend_from_slice(&(value as u64).to_be_bytes());
+        } else {
+            bytes.extend_from_slice(&(value as u32).to_be_bytes());
+        }
+    }
+
+    fn name(bytes: &mut Vec<u8>, wide: bool, text: &str) {
+        count(bytes, wide, text.len());
         bytes.extend_from_slice(text.as_bytes());
         padded(bytes);
     }
@@ -586,47 +635,49 @@ pub(crate) mod written {
         }
 
         fn header(&self, begins: &[u64]) -> Vec<u8> {
+            let wide = self.version == WIDE_DATA_VERSION;
+            let wide_offsets = self.version >= SECOND_OFFSET_VERSION;
+            let absent = |bytes: &mut Vec<u8>| {
+                bytes.extend_from_slice(&[0; 4]);
+                count(bytes, wide, 0);
+            };
             let mut bytes = MAGIC.to_vec();
-            bytes.push(if self.wide_offsets {
-                SECOND_OFFSET_VERSION
-            } else {
-                FIRST_OFFSET_VERSION
-            });
-            bytes.extend_from_slice(&self.records.to_be_bytes());
+            bytes.push(self.version);
+            count(&mut bytes, wide, self.records as usize);
 
             bytes.extend_from_slice(&DIMENSIONS_TAG.to_be_bytes());
-            bytes.extend_from_slice(&(self.dimensions.len() as u32).to_be_bytes());
+            count(&mut bytes, wide, self.dimensions.len());
             for (label, length) in &self.dimensions {
-                name(&mut bytes, label);
-                bytes.extend_from_slice(&length.to_be_bytes());
+                name(&mut bytes, wide, label);
+                count(&mut bytes, wide, *length as usize);
             }
 
-            bytes.extend_from_slice(&[0; 8]);
+            absent(&mut bytes);
 
             bytes.extend_from_slice(&VARIABLES_TAG.to_be_bytes());
-            bytes.extend_from_slice(&(self.variables.len() as u32).to_be_bytes());
+            count(&mut bytes, wide, self.variables.len());
             for (variable, begin) in self.variables.iter().zip(begins) {
-                name(&mut bytes, variable.name);
-                bytes.extend_from_slice(&(variable.dimensions.len() as u32).to_be_bytes());
+                name(&mut bytes, wide, variable.name);
+                count(&mut bytes, wide, variable.dimensions.len());
                 for id in &variable.dimensions {
                     bytes.extend_from_slice(&(*id as u32).to_be_bytes());
                 }
                 if variable.attributes.is_empty() {
-                    bytes.extend_from_slice(&[0; 8]);
+                    absent(&mut bytes);
                 } else {
                     bytes.extend_from_slice(&ATTRIBUTES_TAG.to_be_bytes());
-                    bytes.extend_from_slice(&(variable.attributes.len() as u32).to_be_bytes());
+                    count(&mut bytes, wide, variable.attributes.len());
                     for (label, text) in &variable.attributes {
-                        name(&mut bytes, label);
+                        name(&mut bytes, wide, label);
                         bytes.extend_from_slice(&2_u32.to_be_bytes());
-                        bytes.extend_from_slice(&(text.len() as u32).to_be_bytes());
+                        count(&mut bytes, wide, text.len());
                         bytes.extend_from_slice(text.as_bytes());
                         padded(&mut bytes);
                     }
                 }
                 bytes.extend_from_slice(&(if variable.doubles { 6_u32 } else { 5 }).to_be_bytes());
-                bytes.extend_from_slice(&0_u32.to_be_bytes());
-                if self.wide_offsets {
+                count(&mut bytes, wide, 0);
+                if wide_offsets {
                     bytes.extend_from_slice(&begin.to_be_bytes());
                 } else {
                     bytes.extend_from_slice(&(*begin as u32).to_be_bytes());
@@ -698,7 +749,7 @@ mod tests {
 
     fn grid() -> File {
         File {
-            wide_offsets: false,
+            version: 1,
             dimensions: vec![("rows", 2), ("columns", 3)],
             records: 0,
             variables: vec![
@@ -746,21 +797,112 @@ mod tests {
     }
 
     #[test]
-    fn wide_offsets_read_as_narrow_ones_do() {
-        let mut wide = grid();
-        wide.wide_offsets = true;
+    fn wide_offsets_and_wide_data_read_as_narrow_ones_do() {
+        let versioned = |version| {
+            let mut file = grid();
+            file.version = version;
+            Classic::of(file.bytes()).expect("a classic file")
+        };
 
-        let narrow = Classic::of(grid().bytes()).expect("a classic file");
-        let wide = Classic::of(wide.bytes()).expect("a classic file");
+        let narrow = versioned(1);
+        let wide = versioned(2);
+        let data = versioned(5);
 
         let heard = |classic: &Classic| classic.variable("single").unwrap().numbers(&[]).unwrap();
         assert_eq!(heard(&narrow), heard(&wide));
+        assert_eq!(heard(&narrow), heard(&data));
+        assert_eq!(
+            data.variable("single").unwrap().text("Type"),
+            Some("spherical")
+        );
+        assert_eq!(data.variable("double").unwrap().shape(), vec![3]);
+    }
+
+    #[test]
+    fn records_of_a_wide_data_file_read_as_those_of_a_narrow_one_do() {
+        let records = |version| File {
+            version,
+            dimensions: vec![("rows", 0), ("columns", 2)],
+            records: 3,
+            variables: vec![
+                Column {
+                    name: "first",
+                    dimensions: vec![0, 1],
+                    attributes: Vec::new(),
+                    doubles: false,
+                    values: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                },
+                Column {
+                    name: "second",
+                    dimensions: vec![0, 1],
+                    attributes: Vec::new(),
+                    doubles: true,
+                    values: vec![10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
+                },
+            ],
+        };
+
+        let classic = Classic::of(records(5).bytes()).expect("a classic file");
+
+        assert_eq!(classic.variable("first").unwrap().shape(), vec![3, 2]);
+        assert_eq!(
+            classic.variable("second").unwrap().numbers(&[]).unwrap(),
+            vec![10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
+        );
+        assert_eq!(
+            classic
+                .variable("first")
+                .unwrap()
+                .numbers(&[Pick::At(2)])
+                .unwrap(),
+            vec![5.0, 6.0]
+        );
+    }
+
+    #[test]
+    fn the_integer_types_only_a_wide_data_file_has_are_known_to_it_alone() {
+        let mut extended = grid().bytes();
+        extended[3] = WIDE_DATA_VERSION;
+        assert_eq!(Kind::of(10, true), Ok(Kind::Int64));
+        assert_eq!(Kind::of(7, true).map(Kind::bytes), Ok(1));
+        assert_eq!(Kind::of(8, true).map(Kind::bytes), Ok(2));
+        assert_eq!(Kind::of(9, true).map(Kind::bytes), Ok(4));
+        assert_eq!(Kind::of(11, true).map(Kind::bytes), Ok(8));
+        assert_eq!(
+            Kind::of(10, false),
+            Err(ClassicFault::TypeUnknown { code: 10 })
+        );
+        assert!(Classic::of(extended).is_err());
+    }
+
+    #[test]
+    fn a_wide_data_file_cut_short_or_marked_never_panics() {
+        let mut file = grid();
+        file.version = 5;
+        let whole = file.bytes();
+
+        for length in 0..whole.len() {
+            let _ = Classic::of(whole[..length].to_vec());
+        }
+        for index in 0..whole.len() {
+            for pattern in [0x00, 0xff, 0x80, 0x7f] {
+                let mut marked = whole.clone();
+                marked[index] = pattern;
+                if let Ok(classic) = Classic::of(marked) {
+                    for held in ["single", "double"] {
+                        if let Some(variable) = classic.variable(held) {
+                            let _ = variable.numbers(&[]);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[test]
     fn records_interleave_and_a_variable_of_them_reads_its_own_rows() {
         let file = File {
-            wide_offsets: false,
+            version: 1,
             dimensions: vec![("rows", 0), ("columns", 2)],
             records: 3,
             variables: vec![

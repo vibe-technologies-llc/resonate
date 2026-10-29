@@ -32,7 +32,7 @@ mod views;
 
 pub use crate::{
     app::{Bus, Lookups, PlayerModel, ResonateApp, run},
-    equaliser::{Curve, EqualiserModel},
+    equaliser::{Curve, EqualiserModel, Sounding},
     error::{Error, Result, WindowKind},
     launcher::{AppIcon, Launcher},
     listening::Listens,

@@ -173,8 +173,19 @@ fun RoomCorrectionSection(model: EqualiserViewModel) {
             tag = "speaker-elevation",
             onChange = model::raiseTo,
         )
+        SpeakerSetting(
+            title = "Head turned",
+            value = room.yaw,
+            least = limits.yawLeastDegrees.toInt(),
+            most = limits.yawMostDegrees.toInt(),
+            presets = listOf(-45, -20, 0, 20, 45),
+            lessSaying = "Turn the head a degree to the right",
+            moreSaying = "Turn the head a degree to the left",
+            tag = "head-yaw",
+            onChange = model::turnTo,
+        )
         Text(
-            "A measured impulse response, up to ten seconds long, is convolved before the equaliser on every output. It is lowered where it would lift the music past full scale. A four-channel file is a two-by-two (binaural) response, in the order left-to-left, left-to-right, right-to-left, right-to-right. A SOFA set of head-related responses is read as the same, from the measurements around the speaker angle either side of the front and the elevation above the ears, blended where several surround them. A pair is two stereo responses, the left speaker's and then the right's, each as heard at both ears, joined into one two-by-two response.",
+            "A measured impulse response, up to ten seconds long, is convolved before the equaliser on every output. It is lowered where it would lift the music past full scale. A four-channel file is a two-by-two (binaural) response, in the order left-to-left, left-to-right, right-to-left, right-to-right. A SOFA set of head-related responses is read as the same, from the measurements around the speaker angle either side of the front, the elevation above the ears and the turn of your head, blended where several surround them. A pair is two stereo responses, the left speaker's and then the right's, each as heard at both ears, joined into one two-by-two response.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = Sizes.gutter, vertical = 4.dp),
