@@ -116,16 +116,16 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   and the boundary has no call fitting a recorded sweep; the window's *Measure* cannot be stopped
   part way (eight seconds of sweep and two of tail) and takes no calibration file (the command's
   `--calibration`) nor a name for the profile (it keeps `measured`)
-- [S] AutoEq is the only online correction source. The one keyless public source of measurements
-  found, squig.link (`/data/phone_book.json` and REW text per device, the CrinGraph tool's
-  convention every squig site copies), has no documented API or terms and names no rig or
-  compensation, so a correction fitted toward a target from it would be a guess about the rig
-  (`eq.md`); a download of its text already fits through `--fit-measurement`
 - [M] Lossy restoration was tuned and tested on ffmpeg's own MP3, AAC and Vorbis encodes of
   synthetic tones, walls and music-like notes at several bitrates, not on a breadth of real music
   per codec and bitrate and not on other encoders (Fraunhofer, Apple, Nero, libfdk); the thresholds
   of its short-hole reader and of the wall it follows were set on those encodes and need a corpus
   of real files to be trusted
+- [S · blocked: service] AutoEq is the only online correction source. The one keyless public source of measurements
+  found, squig.link (`/data/phone_book.json` and REW text per device, the CrinGraph tool's
+  convention every squig site copies), has no documented API or terms and names no rig or
+  compensation, so a correction fitted toward a target from it would be a guess about the rig
+  (`eq.md`); a download of its text already fits through `--fit-measurement`
 - [M · blocked: symphonia] A downmix folds by position, or unplaced channels in turn: a stream's own
   downmix coefficients are not read, because the only decoded stream that could carry them is a
   multichannel AAC whose program config element (`matrix_mixdown_idx`, `pseudo_surround`)
