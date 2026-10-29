@@ -133,6 +133,63 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   complex`)
 
 ## Later: Network output
+- [L] A stereo behind Chromecast cannot be played to: the desktop reaches UPnP AV renderers alone
+  (`resonate-upnp`, a sink beside PipeWire's); Google Cast v2 (TLS on port 8009, protobuf
+  `CastMessage` framing, mDNS `_googlecast._tcp`, the Default Media Receiver loading an address
+  the player serves) would be one more sink kind beside them
+- [L] The phones reach no network renderer at all, though their zones open over the same `Backend`
+  seam the desktop's renderers sit behind
+- [M] An equaliser, ReplayGain or listening-test change reaches a UPnP renderer's ear only after
+  what it already holds (seconds on many streamers): a seek, a pause and the volume skip that
+  buffer (a fresh address after `Stop`, the renderer's own `Pause`, its own RenderingControl), but
+  whatever is rendered into the ring plays out behind it. OpenHome's own `Playlist` and `Volume`
+  services are not spoken (an OpenHome player is reached through the AVTransport upmpdcli puts in
+  front of it)
+- [S] A UPnP renderer is fed PCM alone: WAVE or L16 at 16 or 24 bits, stereo, so a multichannel
+  source is folded down and a renderer taking FLAC is still sent uncompressed PCM, about 9 Mbit/s at
+  24-bit 192 kHz; encoding the ring to FLAC on the way out is not done, and handing the untouched
+  file over does not fit the sink seam (`upnp.md`)
+- [L · blocked: Apple] AirPlay 2 cannot be played to: its pairing, encryption and buffered audio
+  are Apple's own, with no published specification to build against
+
+## Later: Equaliser and DSP extras
+- [S] A SOFA HRIR set is not read for speakers at an elevation, by an interpolation that surrounds
+  the point (a triangulation of the sphere, or magnitude and delay blended apart; the blend is an
+  inverse-distance weighting of up to three measurements within 15 degrees), for a head turned, for
+  a `MultiSpeakerBRIR` measured with the listener off the origin (`ListenerPosition` is ignored),
+  from a netCDF-3 64-bit data file (CDF-5) or past the phones' 64 MiB response limit; the desktop
+  pane offers five speaker angles (the file takes any from 5 to 90 degrees) and the phones' pages
+  offer none (the boundary has `set_speaker_angle`)
+- [M] *Fit the preamp*'s solved bound leaves the whole signal's node to the level alone: with it,
+  the tone model's solution passed the decode of transients through a phase-turning curve (an
+  allpass pair over noise and over a kick, hat and pads, by up to 0.38 dB), so broadband music
+  still bounds one to three and a half decibels over its decode; weighing each node by its own
+  transient gain over its band (the L1 of the near response filtered to it) would let the whole
+  node back in
+- [M] *Fit the preamp*'s ring, what the chain's response holds outside the fifth of a second around
+  its main lobe, is still weighed on the 2 048 points with the curve's fixed shares: an echo or a
+  reverberant tail longer than that window has comb teeth between the points, which only the
+  shares' slack covers (the near window is an envelope over every bin)
+- [M] A measurement of the listener's own is taken live only by `resonate eq --measure` on the
+  desktop: the window's Equaliser pane and both phones (a microphone permission and a sweep through
+  the route in use) still fit a measurement from a file alone
+- [S] AutoEq is the only online correction source. The one keyless public source of measurements
+  found, squig.link (`/data/phone_book.json` and REW text per device, the CrinGraph tool's
+  convention every squig site copies), has no documented API or terms and names no rig or
+  compensation, so a correction fitted toward a target from it would be a guess about the rig
+  (`eq.md`); a download of its text already fits through `--fit-measurement`
+- [M] Lossy restoration was tuned and tested on ffmpeg's own MP3, AAC and Vorbis encodes of
+  synthetic tones, walls and music-like notes at several bitrates, not on a breadth of real music
+  per codec and bitrate and not on other encoders (Fraunhofer, Apple, Nero, libfdk); the thresholds
+  of its short-hole reader and of the wall it follows were set on those encodes and need a corpus
+  of real files to be trusted
+- [M · blocked: symphonia] A downmix folds by position, or unplaced channels in turn: a stream's own
+  downmix coefficients are not read, because the only decoded stream that could carry them is a
+  multichannel AAC whose program config element (`matrix_mixdown_idx`, `pseudo_surround`)
+  symphonia-codec-aac 0.6.1 refuses (`aac: program config`, and more than two channels is `aac too
+  complex`)
+
+## Later: Network output
 - [L] A stereo behind AirPlay or Chromecast cannot be played to: the desktop reaches UPnP AV
   renderers alone (`resonate-upnp`, a sink beside PipeWire's), and the phones reach no network
   renderer at all, though their zones open over the same `Backend` seam

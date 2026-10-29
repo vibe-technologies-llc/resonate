@@ -43,6 +43,7 @@ pub(crate) const REMEMBER_SETTINGS_CATEGORY: bool = true;
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Standing {
     pub(crate) output: OutputSettings,
+    pub(crate) renderers: bool,
     pub(crate) appearance: Appearance,
     pub(crate) online: bool,
     pub(crate) after_scan: bool,
@@ -111,6 +112,7 @@ impl Standing {
             skip_under_repeat: SkipUnderRepeat::default(),
             previous_restarts: PreviousRestarts::default(),
             notify: NOTIFY,
+            renderers: false,
             window_buttons: WINDOW_BUTTONS,
             scroll_volume: SCROLL_VOLUME,
             mouse_navigation: MOUSE_NAVIGATION,
@@ -141,7 +143,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
     let (worn, built) = (&standing.output, &AS_BUILT.output);
 
     match group {
-        Group::Device => worn.sink != built.sink,
+        Group::Device => worn.sink != built.sink || standing.renderers,
         Group::DeviceVolume => worn.device_volume != built.device_volume,
         Group::SampleRate => worn.prefer_bit_perfect != built.prefer_bit_perfect,
         Group::GraphRate => worn.force_graph_rate != built.force_graph_rate,

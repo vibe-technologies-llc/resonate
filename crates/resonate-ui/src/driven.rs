@@ -450,6 +450,7 @@ impl Driven {
                 last_settings_category: SettingsCategory::default(),
                 presence: resonate_core::Presence::default(),
                 present: unseen.clone(),
+                renderers: None,
                 synchronised: crate::Synchronised::default(),
                 syncing: None,
                 reads_as_a_code: None,

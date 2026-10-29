@@ -87,7 +87,9 @@ Boolean. Decimate DSD to the level of PCM; off, a DSD master plays some 6 dB qui
 music in PCM. Default: false.
 .TP
 .B device-volume
-Boolean. Turn the device's own volume where it has one; off, the samples are scaled. Default: false.
+Boolean. Turn the device's own volume where it has one; off, the samples are scaled. A network
+renderer turns its own volume whatever this says, since a scaled stream is heard only after what
+the renderer holds. Default: false.
 .TP
 .B volume
 Number from 0 to 1. The volume playback starts at. Default: 1.
@@ -184,7 +186,8 @@ Boolean. Start again with the queue, and the place in the song, that was left. D
 .B renderers
 Boolean. Search the local network for UPnP media renderers and list each as an output beside the
 sound server's, so a zone or \fBsink\fR can play to it. A \fBsink\fR naming one
-(\fBupnp:\fR and its UDN) searches whatever this says. Default: false.
+(\fBupnp:\fR and its UDN) searches whatever this says. The settings pane's device list switches
+it. Default: false.
 .SH ONLINE
 .TP
 .B online

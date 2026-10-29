@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    io, mem,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
     thread,
@@ -14,7 +15,12 @@ use resonate_audio::{
 };
 use resonate_core::{Gain, Volume};
 
-use crate::{Error, Located, Renderer, Result, ServeOp, serve::Server, ssdp, stream};
+use crate::{
+    Error, Located, Renderer, Result, ServeOp,
+    serve::Server,
+    ssdp,
+    stream::{self, Holders},
+};
 
 const RENDERER_IDS_FROM: u32 = 0xF000_0000;
 
@@ -47,12 +53,13 @@ pub enum FirstSearch {
 
 pub struct Network {
     shared: Arc<Shared>,
-    _stop: Sender<()>,
+    looking: Mutex<Option<Sender<()>>>,
 }
 
 struct Shared {
     searching: Searching,
-    server: Arc<Server>,
+    server: Mutex<Option<Arc<Server>>>,
+    holders: Holders,
     known: Mutex<Known>,
     round: Mutex<()>,
     listeners: Mutex<Vec<Sender<SinkChange>>>,
@@ -77,40 +84,73 @@ enum Turn {
 
 impl Network {
     pub fn start(searching: Searching, first: FirstSearch) -> Result<Self> {
-        let server = Server::start(searching.serving_on)?;
+        let network = Self::resting(searching)?;
+        network.look(first)?;
+        Ok(network)
+    }
+
+    pub fn resting(searching: Searching) -> Result<Self> {
         let (turns, turned) = unbounded();
         let shared = Arc::new(Shared {
             searching,
-            server,
+            server: Mutex::new(None),
+            holders: Holders::default(),
             known: Mutex::new(Known::default()),
             round: Mutex::new(()),
             listeners: Mutex::new(Vec::new()),
             turns,
         });
-        let spawn_failed = |source| Error::Serve {
-            op: ServeOp::Listen,
-            source,
-        };
 
         thread::Builder::new()
             .name("resonate-upnp-turns".to_owned())
             .spawn(move || turn_when_told(&turned))
             .map_err(spawn_failed)?;
 
+        Ok(Self {
+            shared,
+            looking: Mutex::new(None),
+        })
+    }
+
+    pub fn look(&self, first: FirstSearch) -> Result<()> {
+        let mut looking = self.looking.lock();
+        if looking.is_some() {
+            return Ok(());
+        }
+        {
+            let mut server = self.shared.server.lock();
+            if server.is_none() {
+                *server = Some(Server::start(self.shared.searching.serving_on)?);
+            }
+        }
+
         if first == FirstSearch::Awaited {
-            shared.round()?;
+            self.shared.round()?;
         }
         let (stop, stopped) = unbounded();
-        let searched = Arc::clone(&shared);
+        let searched = Arc::clone(&self.shared);
         thread::Builder::new()
             .name("resonate-upnp-search".to_owned())
             .spawn(move || searched.search_until(&stopped, first))
             .map_err(spawn_failed)?;
+        *looking = Some(stop);
+        Ok(())
+    }
 
-        Ok(Self {
-            shared,
-            _stop: stop,
-        })
+    pub fn rest(&self) {
+        if self.looking.lock().take().is_none() {
+            return;
+        }
+        let _one_at_a_time = self.shared.round.lock();
+        let gone: Vec<SinkChange> = mem::take(&mut self.shared.known.lock().held)
+            .into_keys()
+            .map(SinkChange::Removed)
+            .collect();
+        self.shared.announce(&gone);
+    }
+
+    pub fn is_looking(&self) -> bool {
+        self.looking.lock().is_some()
     }
 
     pub fn renderers(&self) -> Vec<(SinkId, Arc<Renderer>)> {
@@ -147,7 +187,13 @@ impl Network {
     ) -> SinkResult<SinkStream> {
         let sink = request.target.ok_or(resonate_audio::Error::NoSink)?;
         let renderer = self.renderer(sink)?;
-        stream::open(renderer, &self.shared.server, request, source)
+        let server = self
+            .shared
+            .server
+            .lock()
+            .clone()
+            .ok_or(Error::NoSuchRenderer(sink))?;
+        stream::open(renderer, &server, &self.shared.holders, request, source)
     }
 
     pub(crate) fn turn_volume(&self, sink: SinkId, gain: Gain) -> Result<()> {
@@ -219,14 +265,19 @@ impl Shared {
         }
 
         let changes = self.known.lock().settle(reached, &seen);
-        if !changes.is_empty() {
-            self.listeners.lock().retain(|listener| {
-                changes
-                    .iter()
-                    .all(|change| listener.send(change.clone()).is_ok())
-            });
-        }
+        self.announce(&changes);
         Ok(())
+    }
+
+    fn announce(&self, changes: &[SinkChange]) {
+        if changes.is_empty() {
+            return;
+        }
+        self.listeners.lock().retain(|listener| {
+            changes
+                .iter()
+                .all(|change| listener.send(change.clone()).is_ok())
+        });
     }
 }
 
@@ -273,6 +324,13 @@ impl Known {
     }
 }
 
+fn spawn_failed(source: io::Error) -> Error {
+    Error::Serve {
+        op: ServeOp::Listen,
+        source,
+    }
+}
+
 fn sink_of(id: SinkId, renderer: &Renderer) -> SinkInfo {
     let carriage = renderer.carriage();
     SinkInfo {
@@ -285,7 +343,7 @@ fn sink_of(id: SinkId, renderer: &Renderer) -> SinkInfo {
             description: format!("UPnP renderer at {}", renderer.location().host()),
             plugged: Plugged::Unsaid,
             hardware_volume: if renderer.turns_its_own_volume() {
-                HardwareVolume::Yes
+                HardwareVolume::Always
             } else {
                 HardwareVolume::No
             },

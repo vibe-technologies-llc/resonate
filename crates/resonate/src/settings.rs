@@ -234,6 +234,7 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
             Some(i64::try_from(length.as_secs()).unwrap_or(i64::MAX).into()),
         ),
         Setting::Equaliser(on) => (ConfigKey::Equaliser, Some((*on).into())),
+        Setting::Renderers(on) => (ConfigKey::Renderers, Some((*on).into())),
         Setting::Resume(keeps) => (ConfigKey::Resume, Some((*keeps).into())),
         Setting::HistoryKept(kept) => (
             ConfigKey::HistoryKept,
@@ -445,6 +446,7 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::EqualiserProfile => ConfigKey::EqualiserProfile,
         SettingKey::EqualiserMeasurer => ConfigKey::EqualiserMeasurer,
         SettingKey::EqualiserMeasurerFor => ConfigKey::EqualiserMeasurerFor,
+        SettingKey::Renderers => ConfigKey::Renderers,
         SettingKey::Resume => ConfigKey::Resume,
         SettingKey::HistoryKept => ConfigKey::HistoryKept,
         SettingKey::OrganiseAs => ConfigKey::OrganiseAs,

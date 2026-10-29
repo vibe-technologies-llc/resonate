@@ -422,7 +422,10 @@ impl Group {
 
     pub(crate) const fn also_called(self) -> &'static str {
         match self {
-            Self::Device => "sink output card dac headphones speakers pipewire profile pro audio",
+            Self::Device => {
+                "sink output card dac headphones speakers pipewire profile pro audio upnp dlna \
+                 renderer network streamer"
+            }
             Self::DeviceVolume => {
                 "hardware mixer amplifier alsa route loudness slider system volume bit perfect \
                  attenuation"
@@ -609,7 +612,7 @@ impl Group {
 
     pub(crate) const fn keys(self) -> &'static [SettingKey] {
         match self {
-            Self::Device => &[SettingKey::Sink],
+            Self::Device => &[SettingKey::Sink, SettingKey::Renderers],
             Self::DeviceVolume => &[SettingKey::DeviceVolume],
             Self::SampleRate => &[SettingKey::BitPerfect],
             Self::GraphRate => &[SettingKey::ForceGraphRate],

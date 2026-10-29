@@ -130,6 +130,13 @@ pub enum StreamCommand {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Downstream {
+    #[default]
+    Moments,
+    Seconds,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum StreamVolume {
     #[default]
     Unity,
@@ -188,6 +195,7 @@ pub struct SinkStream {
     clock: Arc<StreamClock>,
     control: Box<dyn Fn(StreamCommand) -> Result<()> + Send + Sync>,
     reshaper: Option<Reshaper>,
+    downstream: Downstream,
 }
 
 impl SinkStream {
@@ -201,7 +209,16 @@ impl SinkStream {
             clock,
             control,
             reshaper: None,
+            downstream: Downstream::Moments,
         }
+    }
+
+    pub fn holding(self, downstream: Downstream) -> Self {
+        Self { downstream, ..self }
+    }
+
+    pub const fn downstream(&self) -> Downstream {
+        self.downstream
     }
 
     pub fn reshaped_by(self, reshaper: Reshaper) -> Self {

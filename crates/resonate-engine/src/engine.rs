@@ -9,8 +9,8 @@ use std::{
 
 use crossbeam_channel::{Receiver, Select, Sender, TryRecvError, TrySendError};
 use resonate_audio::{
-    LatencyRequest, MediaRole, Moment, NodeName, SinkChange, SinkId, SinkInfo, SinkStream,
-    StreamEvent, StreamRequest, StreamState, StreamVolume, Words,
+    Downstream, LatencyRequest, MediaRole, Moment, NodeName, SinkChange, SinkId, SinkInfo,
+    SinkStream, StreamEvent, StreamRequest, StreamState, StreamVolume, Words,
 };
 use resonate_codec::{BoxLayout, Decoder, MediaInfo, Packing, ProfileBuilder, ReplayGain, Sources};
 use resonate_core::{
@@ -820,6 +820,12 @@ impl Output {
             && !self.ended
             && self.draining.is_none()
             && !self.producer.is_discarding()
+    }
+
+    fn holds_seconds_downstream(&self) -> bool {
+        self.stream
+            .as_ref()
+            .is_some_and(|stream| stream.downstream() == Downstream::Seconds)
     }
 
     fn latency(&self) -> Frames {
@@ -1983,6 +1989,9 @@ impl Engine {
             return Ok(());
         };
         output.note_the_pulls();
+        if output.holds_seconds_downstream() {
+            return output.activate(false);
+        }
         output.producer.fade_out(output.fade());
         if keeps_the_link_awake {
             output.awake_since = Some(Instant::now());
@@ -2416,6 +2425,7 @@ impl Engine {
         self.playing
             && track.info.is_seekable
             && output.holds_a_live_stream()
+            && !output.holds_seconds_downstream()
             && !output.rendered_for_another
     }
 

@@ -671,6 +671,7 @@ fn comes_out_of(sink: &SinkInfo) -> String {
         HardwareVolume::Unsaid => plugged,
         HardwareVolume::No => format!("{plugged}, volume in software"),
         HardwareVolume::Yes => format!("{plugged}, volume on the hardware"),
+        HardwareVolume::Always => format!("{plugged}, volume always on the device"),
     };
     let level = match port.volume {
         Some(gain) => format!("{volume} at {}", Volume::heard_at(gain)),
@@ -2771,7 +2772,8 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     let settings = settings::File::at(places.config.clone());
     let served = Served::for_the_window(&config);
     let sources = playing_from(Some(&library), &served);
-    let rendering = Rendering::of(&config, wanted_sink(&cli, &config).as_ref(), false);
+    let rendering = Rendering::for_the_window(&config, wanted_sink(&cli, &config).as_ref());
+    let renderers = rendering.switch();
     let player = rendering.player(engine_config(&cli, &config), Arc::clone(&sources))?;
     let player = Arc::new(match config::analyses_dir() {
         Some(dir) => player.keeping_analyses(resonate_engine::KeptAnalyses::at(dir)),
@@ -2927,6 +2929,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             last_settings_category: config.remembered_settings_category(),
             presence: config.presence(),
             present: Arc::clone(&presenter) as Arc<dyn resonate_ui::Present>,
+            renderers,
             synchronised: resonate_ui::Synchronised {
                 enabled: config.sync.unwrap_or(true),
                 nearby_only: config.syncs_nearby_only(),

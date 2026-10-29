@@ -7,7 +7,7 @@ use resonate_engine::{
 };
 
 use crate::{
-    Setting, format, theme,
+    ResonateApp, Setting, format, theme,
     views::{
         focus::by_the_pointer,
         hint::Names,
@@ -29,6 +29,10 @@ const BLUETOOTH_NOTE: &str = "Experimental, and only for a device PipeWire names
 const DEVICE_NOTE: &str = "A device chosen here is played through whatever the desktop routes \
                            other sound to; following the system default moves with the \
                            desktop's own choice.";
+
+const RENDERERS_NOTE: &str = "Looking asks the local network every minute for UPnP and DLNA \
+                              renderers (a streamer, a networked amplifier) and lists each one \
+                              beside the devices above. Off, nothing is sent to the network.";
 
 const AWAY: &str = "The device named in the settings file is not in the graph, so the system \
                     default is playing until it appears.";
@@ -111,7 +115,7 @@ fn unplugged(sink: &SinkInfo) -> bool {
 fn volume_of(sink: &SinkInfo) -> Option<String> {
     match sink.port.as_ref()?.hardware_volume {
         HardwareVolume::Unsaid => None,
-        HardwareVolume::Yes => Some(ON_THE_HARDWARE.to_owned()),
+        HardwareVolume::Yes | HardwareVolume::Always => Some(ON_THE_HARDWARE.to_owned()),
         HardwareVolume::No => Some(IN_SOFTWARE.to_owned()),
     }
 }
@@ -461,6 +465,11 @@ impl RootView {
         let away = wanted
             .as_ref()
             .is_some_and(|name| !sinks.iter().any(|sink| &sink.name == name));
+        let looking = cx
+            .global::<ResonateApp>()
+            .renderers
+            .as_ref()
+            .map(|renderers| renderers.looking());
         kit::section_body()
             .child(listed)
             .when(sinks.is_empty(), |body| body.child(note(NO_SINKS)))
@@ -468,6 +477,28 @@ impl RootView {
             .when(!sinks.is_empty() && !away, |body| {
                 body.child(note(DEVICE_NOTE))
             })
+            .when_some(looking, |body, looking| {
+                body.child(self.in_the_ring(
+                    "renderers",
+                    switch_row(
+                        "Look for renderers on the network",
+                        "Off, only this computer's own devices are listed",
+                        looking,
+                        "renderers",
+                    ),
+                    move |this, _, cx| this.look_for_renderers(!looking, cx),
+                    cx,
+                ))
+                .child(note(RENDERERS_NOTE))
+            })
+    }
+
+    pub(super) fn look_for_renderers(&mut self, on: bool, cx: &mut Context<Self>) {
+        if let Some(renderers) = cx.global::<ResonateApp>().renderers.clone() {
+            renderers.look(on);
+        }
+        self.store(&Setting::Renderers(on), cx);
+        cx.notify();
     }
 
     fn default_device(

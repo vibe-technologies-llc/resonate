@@ -30,6 +30,36 @@ impl Rendering {
         }
     }
 
+    #[cfg(feature = "ui")]
+    pub(crate) fn for_the_window(config: &Config, wanted: Option<&NodeName>) -> Self {
+        let names_one = wanted.is_some_and(names_a_renderer);
+        let network = match Network::resting(Searching::on_the_network()) {
+            Ok(network) => network,
+            Err(error) => {
+                tracing::warn!(%error, "renderers on the network cannot be played to");
+                return Self(None);
+            }
+        };
+        if names_one || config.looks_for_renderers() {
+            let first = if names_one {
+                FirstSearch::Awaited
+            } else {
+                FirstSearch::Behind
+            };
+            if let Err(error) = network.look(first) {
+                tracing::warn!(%error, "the network could not be searched for renderers");
+            }
+        }
+        Self(Some(Arc::new(network)))
+    }
+
+    #[cfg(feature = "ui")]
+    pub(crate) fn switch(&self) -> Option<Arc<dyn resonate_ui::Renderers>> {
+        self.0
+            .as_ref()
+            .map(|network| Arc::new(Switch(Arc::clone(network))) as Arc<dyn resonate_ui::Renderers>)
+    }
+
     pub(crate) fn sinks(&self) -> Vec<SinkInfo> {
         self.0
             .as_ref()
@@ -53,4 +83,24 @@ impl Rendering {
 
 pub(crate) fn names_a_renderer(sink: &NodeName) -> bool {
     sink.as_str().starts_with(RENDERER_NODES)
+}
+
+#[cfg(feature = "ui")]
+struct Switch(Arc<Network>);
+
+#[cfg(feature = "ui")]
+impl resonate_ui::Renderers for Switch {
+    fn looking(&self) -> bool {
+        self.0.is_looking()
+    }
+
+    fn look(&self, on: bool) {
+        if !on {
+            self.0.rest();
+            return;
+        }
+        if let Err(error) = self.0.look(FirstSearch::Behind) {
+            tracing::warn!(%error, "the network could not be searched for renderers");
+        }
+    }
 }

@@ -15,7 +15,8 @@ pub use crate::{
     },
     source::AudioSource,
     stream::{
-        GraphTime, LatencyRequest, MediaRole, Reshaped, Reshaper, SinkStream, StreamClock,
-        StreamCommand, StreamEvent, StreamRequest, StreamState, StreamVolume, Unreshapable,
+        Downstream, GraphTime, LatencyRequest, MediaRole, Reshaped, Reshaper, SinkStream,
+        StreamClock, StreamCommand, StreamEvent, StreamRequest, StreamState, StreamVolume,
+        Unreshapable,
     },
 };
