@@ -974,13 +974,26 @@ pub(crate) fn portraits_asked_before(now: SystemTime) -> i64 {
 }
 
 pub(crate) fn ask_again_for_covers(tx: &Transaction<'_>) -> Result<usize> {
-    tx.execute(
-        &format!(
-            "UPDATE albums SET cover_asked = NULL WHERE {UNCOVERED} AND cover_asked IS NOT NULL"
-        ),
-        [],
-    )
-    .map_err(|source| Error::store(StoreOp::Update, source))
+    let cleared = tx
+        .execute(
+            &format!(
+                "UPDATE albums SET cover_asked = NULL WHERE {UNCOVERED} AND cover_asked IS NOT NULL"
+            ),
+            [],
+        )
+        .map_err(|source| Error::store(StoreOp::Update, source))?;
+    let unmatched = tx
+        .execute(
+            &format!(
+                "UPDATE albums SET asked = NULL
+                  WHERE {UNCOVERED} AND mbid IS NULL AND release_group IS NULL
+                    AND answered IS NULL AND asked IS NOT NULL"
+            ),
+            [],
+        )
+        .map_err(|source| Error::store(StoreOp::Update, source))?;
+
+    Ok(cleared + unmatched)
 }
 
 pub(crate) fn albums_wanting_a_cover(
@@ -2160,6 +2173,33 @@ mod tests {
             .expect("the album is stamped a third time");
         assert!(!due_at(asked + A_DAY * 2 + A_MOMENT));
         assert!(due_at(asked + A_DAY * 4 + A_MOMENT));
+    }
+
+    #[test]
+    fn looking_again_for_covers_asks_again_about_an_album_nothing_matched() {
+        let mut connection = Connection::open_in_memory().expect("an in-memory database");
+        schema::configure(&connection, schema::Role::Writing).expect("the functions register");
+        schema::lay_out(&connection).expect("the schema applies");
+        connection
+            .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
+            .expect("a root is stored");
+        let tx = connection.transaction().expect("a transaction");
+        let album = one_album(&tx);
+        let asked = UNIX_EPOCH + A_MONTH;
+        let due_at = |now: SystemTime| {
+            !albums_to_ask(&tx, WAITED, false, now)
+                .expect("the albums read back")
+                .is_empty()
+        };
+
+        stamp_album_asked(&tx, album, Fruitless::Missed, asked).expect("the album is stamped");
+        assert!(!due_at(asked + A_MOMENT));
+
+        assert_eq!(
+            ask_again_for_covers(&tx).expect("the covers are asked again"),
+            1
+        );
+        assert!(due_at(asked + A_MOMENT));
     }
 
     #[test]

@@ -963,7 +963,9 @@ cover, or takes that cover where it betters a thumbnail; no per-song archive cop
 `art_changed_since(revision)` names the songs whose picture changed after a revision.
 `artist_information` answers the kept profile and fetches and keeps one only where none is;
 `artist_portrait(mbid)` reads the kept portrait; `ask_again_for_covers` clears `cover_asked` on
-albums still without one.
+albums still without one, and `asked` on an album with no picture, no artwork and no release or
+group ever answered, so a release added to MusicBrainz since is asked at once rather than after
+the doubled wait its misses earned.
 
 **The pass studies and recognises beside it** when it is given an AcoustID key
 (`EnrichmentOptions::acoustid_key`, the key both phones keep encrypted and read at each start; a blank key
@@ -1003,8 +1005,8 @@ Only on Wi-Fi defaults off and uses the unmetered-network signal. Both choices p
 preferences. Initialization, scans and new downloads or sync arrivals start an automatic pass
 only when those choices and online permit it. Restricting an automatic pass to Wi-Fi stops it
 when the network becomes metered. Explicit refresh confirms the library count, restarts with
-refresh enabled and offers Stop; retrying missing covers clears only the existing cover retry
-marks. Kotlin reads progress and artwork revisions every two seconds while the Activity is
+refresh enabled and offers Stop; retrying missing covers clears the cover retry marks and
+the wait of an album nothing matched. Kotlin reads progress and artwork revisions every two seconds while the Activity is
 visible and a pass runs, updates the artwork generation the UI keys covers by and refreshes completed catalog
 metadata. Leaving the Activity stops observation; native shutdown owns stopping the pass.
 The controller awaits the engine before taking its operation mutex, and repeated foreground

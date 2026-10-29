@@ -2333,15 +2333,26 @@ impl Catalog {
     }
 
     fn ask_again_for_covers(&self) -> Result<u32> {
-        let cleared = self
-            .0
-            .lock()
+        let mut connection = self.0.lock();
+        let transaction = connection.transaction().map_err(write_error)?;
+        let cleared = transaction
             .execute(
                 "UPDATE album_art SET cover_asked = NULL WHERE picture IS NULL AND cover_asked IS NOT NULL",
                 [],
             )
             .map_err(write_error)?;
-        Ok(u32::try_from(cleared).unwrap_or(u32::MAX))
+        let unmatched = transaction
+            .execute(
+                "UPDATE album_art SET asked = NULL
+                 WHERE picture IS NULL AND release IS NULL AND release_group IS NULL
+                   AND answered IS NULL AND asked IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM artwork w JOIN documents d ON d.id = w.track
+                                    WHERE d.album_key = album_art.album_key)",
+                [],
+            )
+            .map_err(write_error)?;
+        transaction.commit().map_err(write_error)?;
+        Ok(u32::try_from(cleared + unmatched).unwrap_or(u32::MAX))
     }
 
     fn art_changed_since(&self, revision: u64) -> Result<ChangedArt> {
@@ -2865,6 +2876,26 @@ mod tests {
             .expect("an older ask");
         passed(&catalog, &fake);
 
+        assert!(fake.calls.load(Ordering::SeqCst) > 0);
+    }
+
+    #[test]
+    fn looking_again_for_covers_asks_again_about_an_album_nothing_matched() {
+        let catalog = Arc::new(Catalog::open(Path::new(":memory:")).expect("a catalog"));
+        let fake = Arc::new(Fake::default());
+        songs(&catalog, "Unknown", 3);
+
+        passed(&catalog, &fake);
+        fake.calls.swap(0, Ordering::SeqCst);
+        passed(&catalog, &fake);
+        let waiting = fake.calls.swap(0, Ordering::SeqCst);
+        let asked_again = catalog
+            .ask_again_for_covers()
+            .expect("the covers are asked again");
+        passed(&catalog, &fake);
+
+        assert_eq!(waiting, 0);
+        assert!(asked_again > 0);
         assert!(fake.calls.load(Ordering::SeqCst) > 0);
     }
 

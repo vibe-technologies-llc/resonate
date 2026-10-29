@@ -930,7 +930,9 @@ group landing and `forget_the_match` clear it), writes each row's `release_track
   release/group, no picture, no stamp, skipping those `Pass::covered` says the run asked. An
   answered-lacking cover is not asked within `COVERS_ASKED_AGAIN_AFTER` (30 days) unless the release
   is refreshed or `Library::ask_again_for_covers` clears the stamps (settings *Look for missing
-  covers*). **A release MusicBrainz says has no front cover is not asked of the archive**:
+  covers*). The same call clears `albums.asked` on an uncovered album no release or group ever
+  answered, so a release added to MusicBrainz since (one listing no tracks, found by title and
+  artist alone) is asked at once rather than after the doubled wait its misses earned. **A release MusicBrainz says has no front cover is not asked of the archive**:
   `Release::has_front_cover` (`cover-art-archive.front`) is kept as `albums.front_cover` (`NULL` =
   perhaps); `Pass::cover` asks the group's cover instead where the release names a group, nothing
   where it names none . An album landed as its group asks `group_cover` under the same conditions.
