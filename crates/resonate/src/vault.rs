@@ -25,6 +25,9 @@ pub fn run(library: &Library, vault: &Arc<Vault>, args: &VaultArgs) -> Result<()
     if args.release {
         return release(library, args);
     }
+    if args.compact {
+        return compact(library, args.apply);
+    }
     standing(library, vault)
 }
 
@@ -50,6 +53,28 @@ fn release(library: &Library, args: &VaultArgs) -> Result<()> {
     }
     if args.apply && released.released > 0 {
         said!("resonate vault --prune takes away what nothing names any more");
+    }
+    Ok(())
+}
+
+fn compact(library: &Library, apply: bool) -> Result<()> {
+    let compacted = if apply {
+        library.compact_the_vault_covers()?
+    } else {
+        library.vault_covers_compaction_foretold()?
+    };
+    let verb = if apply { "" } else { "would swap " };
+    said!(
+        "{verb}covers {} | were {} | now {} | saved {} | left as JPEGs {} | failed {}",
+        compacted.covers,
+        bytes_text(compacted.was),
+        bytes_text(compacted.now),
+        bytes_text(compacted.was.saturating_sub(compacted.now)),
+        compacted.kept,
+        compacted.left
+    );
+    if !apply && compacted.covers > 0 {
+        said!("nothing was swapped; --apply makes it so");
     }
     Ok(())
 }

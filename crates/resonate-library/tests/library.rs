@@ -27,9 +27,9 @@ use resonate_core::{
 use resonate_library::{
     Aged, Album, AlbumLink, AlbumMatch, AlbumNames, AlbumOrder, AlbumQuery, Artist, ArtistFound,
     ArtistLink, ArtistMatch, ArtistOrder, ArtistPressings, ArtistProfile, ArtistQuery,
-    ArtistRelease, BETTERED_AFTER, Barcode, BarcodeMatch, Billed, Certainty, Codec, CoverArt,
-    CoverSource, Credit, Cut, Deleted, DeliveryFolder, Direction, Discography, Edit, Encoding,
-    EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form, Genre,
+    ArtistRelease, BETTERED_AFTER, Barcode, BarcodeMatch, Billed, Certainty, Codec, Compacted,
+    CoverArt, CoverSource, Credit, Cut, Deleted, DeliveryFolder, Direction, Discography, Edit,
+    Encoding, EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form, Genre,
     GroupAsked, GroupMatch, GroupRelease, HeldMedium, HistoryKept, ImageFormat, ImportOptions,
     ImportSummary, Isrc, Issued, Kept, Layout, Learning, Library, LifeSpan, Link, LinkNames,
     Linked, LinkedPlaylist, ListedSong, ListeningService, LookupOp, Love, Loved, LovedNames,
@@ -21813,6 +21813,238 @@ fn a_vault_opened_through_another_spelling_or_moved_keeps_every_object_and_cover
     let objects = library.vault_objects()?;
     assert!(objects[0].path.starts_with(vault.root()));
     Ok(())
+}
+
+fn a_photographed_jpeg(width: u32, height: u32) -> CoverArt {
+    let mut state = 0x9e37_79b9_u32;
+    let mut pixels = Vec::with_capacity((width * height * 3) as usize);
+    for y in 0..height {
+        for x in 0..width {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            let grain = (state >> 24) as f32 / 255.0 - 0.5;
+            let (fx, fy) = (x as f32 / width as f32, y as f32 / height as f32);
+            let sky = 0.55 + 0.35 * (fy * 3.1).cos();
+            let hill = 0.5 + 0.4 * ((fx * 5.0).sin() * (fy * 4.0).cos());
+            for sample in [
+                sky * 0.9 + grain * 0.12,
+                hill * 0.8 + grain * 0.12,
+                sky + hill * 0.2 + grain * 0.12,
+            ] {
+                pixels.push((sample.clamp(0.0, 1.0) * 255.0) as u8);
+            }
+        }
+    }
+    let mut written = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut written, 85)
+        .encode(&pixels, width, height, image::ExtendedColorType::Rgb8)
+        .expect("a written landscape");
+
+    CoverArt {
+        format: ImageFormat::Jpeg,
+        bytes: written,
+    }
+}
+
+struct OlderCovers {
+    library: Library,
+    vault: Arc<Vault>,
+    database: PathBuf,
+    art: CoverArt,
+    kept: PathBuf,
+    _tree: Tree,
+    _held: Tree,
+}
+
+impl OlderCovers {
+    fn new() -> Result<Self> {
+        let tree = Tree::new();
+        let held = Tree::new();
+        let art = a_photographed_jpeg(320, 240);
+        for (file, title, album) in [
+            ("echoes.wav", "Echoes", "Meddle"),
+            ("fearless.wav", "Fearless", "Meddle"),
+            ("time.wav", "Time", "The Dark Side of the Moon"),
+        ] {
+            tree.write(
+                file,
+                &Wav::new()
+                    .text(TITLE, title)
+                    .text(ALBUM, album)
+                    .picture(&art.bytes)
+                    .build(),
+            );
+        }
+
+        let database = tree.path().join("library.db");
+        let vault = Arc::new(Vault::make(held.path()).expect("a writable vault"));
+        let library = Library::open_with_vault(&database, Arc::clone(&vault))?;
+        scan(&library, &options(&tree))?;
+        vaulted(&library, true)?;
+
+        let named: String = beside(&database)
+            .query_row("SELECT DISTINCT cover_path FROM albums", [], |row| {
+                row.get(0)
+            })
+            .expect("one cover for every album");
+        let transcoded = vault.at(Path::new(&named)).expect("a cover in the vault");
+        assert_eq!(
+            transcoded.extension().and_then(|held| held.to_str()),
+            Some("jxl")
+        );
+
+        let kept = transcoded.with_extension("jpg");
+        fs::remove_file(&transcoded).expect("the newer form taken away");
+        fs::write(&kept, &art.bytes).expect("the JPEG an older build kept");
+        let older = vault.within(&kept).expect("a cover in the vault");
+        beside(&database)
+            .execute(
+                "UPDATE albums SET cover_path = ?1",
+                [older.to_str().expect("a path the catalog can hold")],
+            )
+            .expect("the older cover named");
+
+        Ok(Self {
+            library,
+            vault,
+            database,
+            art,
+            kept,
+            _tree: tree,
+            _held: held,
+        })
+    }
+
+    fn named(&self) -> Vec<String> {
+        let database = beside(&self.database);
+        let mut query = database
+            .prepare("SELECT cover_path FROM albums ORDER BY id")
+            .expect("a prepared query");
+        query
+            .query_map([], |row| row.get(0))
+            .expect("the covers named")
+            .map(|named| named.expect("a named cover"))
+            .collect()
+    }
+
+    fn every_album_draws_the_very_jpeg(&self) -> Result<()> {
+        let albums = self.library.albums(&AlbumQuery::default())?;
+        assert_eq!(albums.len(), 2);
+        for album in albums {
+            assert_eq!(self.library.cover_art(album.id)?, Some(self.art.clone()));
+        }
+        Ok(())
+    }
+
+    fn every_album_names_a_file_that_is_there(&self) {
+        for named in self.named() {
+            let path = self
+                .vault
+                .at(Path::new(&named))
+                .expect("a cover in the vault");
+            assert!(path.is_file(), "an album names {named}, which is gone");
+        }
+    }
+}
+
+#[test]
+fn the_jpeg_covers_an_older_build_kept_are_swapped_for_smaller_forms_every_album_follows()
+-> Result<()> {
+    let older = OlderCovers::new()?;
+    let before = older.vault.holding().expect("a counted vault");
+    assert_eq!(before.covers, 1);
+    older.every_album_draws_the_very_jpeg()?;
+
+    let foretold = older.library.vault_covers_compaction_foretold()?;
+    assert_eq!(foretold.covers, 1);
+    assert!(foretold.now < foretold.was);
+    assert!(older.named().iter().all(|named| named.ends_with(".jpg")));
+    assert!(older.kept.is_file());
+    assert_eq!(older.vault.holding().expect("a counted vault"), before);
+
+    let compacted = older.library.compact_the_vault_covers()?;
+    assert_eq!(compacted.covers, 1);
+    assert_eq!((compacted.was, compacted.now), (foretold.was, foretold.now));
+    assert_eq!((compacted.kept, compacted.left), (0, 0));
+    assert!(older.named().iter().all(|named| named.ends_with(".jxl")));
+    assert!(!older.kept.exists());
+    older.every_album_names_a_file_that_is_there();
+    older.every_album_draws_the_very_jpeg()?;
+
+    let after = older.vault.holding().expect("a counted vault");
+    assert_eq!(after.covers, 1);
+    assert_eq!(
+        after.cover_bytes,
+        before.cover_bytes - (compacted.was - compacted.now)
+    );
+    assert!(
+        older
+            .vault
+            .verify_cover(&older.kept.with_extension("jxl"))
+            .expect("a readable cover")
+    );
+
+    assert_eq!(
+        older.library.compact_the_vault_covers()?,
+        Compacted::default()
+    );
+    assert_eq!(older.library.prune_the_vault()?, Pruned::default());
+    older.every_album_draws_the_very_jpeg()
+}
+
+#[test]
+fn a_pass_stopped_between_landing_the_smaller_form_and_naming_it_is_finished_by_the_next()
+-> Result<()> {
+    let older = OlderCovers::new()?;
+    older
+        .vault
+        .compact_cover(&older.kept)
+        .expect("a landed form");
+    let jxl = older.kept.with_extension("jxl");
+    assert!(jxl.is_file() && older.kept.is_file());
+
+    assert!(older.named().iter().all(|named| named.ends_with(".jpg")));
+    older.every_album_names_a_file_that_is_there();
+    older.every_album_draws_the_very_jpeg()?;
+    assert_eq!(older.library.prune_the_vault()?, Pruned::default());
+
+    let compacted = older.library.compact_the_vault_covers()?;
+    assert_eq!((compacted.covers, compacted.left), (1, 0));
+    assert!(older.named().iter().all(|named| named.ends_with(".jxl")));
+    assert!(!older.kept.exists());
+    older.every_album_names_a_file_that_is_there();
+    older.every_album_draws_the_very_jpeg()
+}
+
+#[test]
+fn a_pass_stopped_between_naming_the_smaller_form_and_taking_the_jpeg_away_is_finished_by_the_next()
+-> Result<()> {
+    let older = OlderCovers::new()?;
+    older
+        .vault
+        .compact_cover(&older.kept)
+        .expect("a landed form");
+    let jxl = older.kept.with_extension("jxl");
+    let named = older.vault.within(&jxl).expect("a cover in the vault");
+    beside(&older.database)
+        .execute(
+            "UPDATE albums SET cover_path = ?1",
+            [named.to_str().expect("a path the catalog can hold")],
+        )
+        .expect("the smaller form named");
+    assert!(older.kept.is_file());
+
+    older.every_album_names_a_file_that_is_there();
+    older.every_album_draws_the_very_jpeg()?;
+    assert_eq!(older.library.prune_the_vault()?, Pruned::default());
+    assert!(older.kept.is_file());
+
+    let compacted = older.library.compact_the_vault_covers()?;
+    assert_eq!((compacted.covers, compacted.left), (1, 0));
+    assert!(!older.kept.exists());
+    older.every_album_names_a_file_that_is_there();
+    older.every_album_draws_the_very_jpeg()
 }
 
 #[test]
