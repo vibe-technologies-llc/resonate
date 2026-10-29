@@ -18,7 +18,7 @@ mod tidal;
 
 use std::{cell::Cell, rc::Rc, sync::atomic::Ordering};
 
-pub(crate) use abx::Audition;
+pub(crate) use abx::{ListeningTest, Setup};
 use gpui::{
     AnyElement, ClickEvent, Context, Div, FocusHandle, FontWeight, MouseButton, Pixels, Point,
     Role, SharedString, Stateful, Window, canvas, div, prelude::*, px, relative, rgb,

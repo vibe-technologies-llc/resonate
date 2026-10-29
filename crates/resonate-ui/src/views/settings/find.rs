@@ -473,7 +473,7 @@ impl Group {
             }
             Self::Abx => {
                 "abx blind test listening level matched equaliser bypass double blind \
-                 audible difference trial p value"
+                 audible difference trial p value restoration resampler dither measuring"
             }
             Self::MusicExtensions => {
                 "music filters formats mp3 flac m4a audio files extension include exclude"
@@ -1012,10 +1012,10 @@ pub(crate) const TIDAL_HINT: &str = "A TIDAL subscription of your own, signed in
                                      hifi-api and Monochrome services are asked only where you \
                                      allow them.";
 
-pub(crate) const ABX_HINT: &str = "Hear the equaliser against a bypass of itself, level-matched \
-                                   to a tenth of a decibel, and say in each trial whether the \
-                                   hidden one is A or B. The score keeps its chance of being \
-                                   luck.";
+pub(crate) const ABX_HINT: &str = "Hear the equaliser against a bypass of itself, or lossy \
+                                   restoration, the resampler or dither against another setting, \
+                                   level-matched, and say in each trial whether the hidden one is \
+                                   A or B. The score keeps its chance of being luck.";
 
 pub(crate) const ROOM_HINT: &str = "An impulse response measured in the room — a WAV or \
                                     FLAC as REW or DRC writes it — convolved with everything \
