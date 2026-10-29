@@ -1083,7 +1083,7 @@ is never named.
   saved value.
 - **The window is handed its lookups and owns none.** `Lookups` is what `run` takes: `lyricists`,
   `fingerprinters`, `reference` (`Option<Arc<dyn Reference>>`), `for_the_pass` (`Consulted`),
-  `scrobblers`, `signs_in`, `corrections`, the `online` setting, `bindings`, `sourcing`, `listens`;
+  `scrobblers`, `signs_in`, `corrections`, the `online` setting, `bindings`, `sourcing`, `serving`, `listens`;
   `ResonateApp` holds them as globals, so `LibraryModel::new` knows whether it `can_enrich`. A scan not
   cancelled runs `enrich(false)` as it ends where `can_enrich` (online *and* a reference) allows; the
   lookup polls at `SCAN_POLL` and reloads every `POLLS_PER_RELOAD` polls. Online off under a run keeps
@@ -1215,6 +1215,39 @@ is never named.
   held rows with `ListedRow::NotHeld` (*Not in your library · N songs · press one to download it*) and
   a `found_row` per song (press = `want_found`) via `restate_the_listing`/`beyond_the_listing`, which
   answers nothing until the listing is whole; a page query narrows them via `still_answering`.
+- **The server pane browses a Subsonic server in place and is there only while one is given.**
+  `Pane::Server` (`Section::Collection`, `Icon::Server`, key `server`) is drawn in the sidebar, and
+  `set_pane` lands on it, only while `ServerModel::is_open` (an account named in the live `Online`
+  with online on); the remembered tab never lands on it at start. The window reaches the server
+  through the `Serving` seam on `Lookups` (`ResonateApp::serving`): a `Fn(&Online) ->
+  Option<Arc<dyn Serves>>` the binary fills (`providers.md`), and `Serves` is gpui-free vocabulary
+  (`served.rs`: `ServedArtist`, `ServedAlbum`, `ServedSong`, `ServedFound`, `ServedCover`, every
+  call a blocking `resonate_providers::Result`), so the window names no provider crate's types.
+  `ServerModel` (`serving.rs`) is an entity held by `RootView`: a trail of `Place`s (`Artists`,
+  `Artist`, `Album`, `Found`), the `Page` of the place in front (`Reading`, `Read` rows, `Failed` with a
+  `Failure`: the account turned away, the server not reached, an answer that did not read, each
+  with what to check) read on the background executor and replaced if a newer read began, and
+  `refresh`, which `observe_global::<ResonateApp>` calls on every change of the global and which
+  does nothing unless the account moved; a moved account starts at the artists again and forgets
+  the covers. The pane (`views/served.rs`) is a heading (way back, title, the count, *Play* and
+  *Add to queue* on an artist or album, and a search `Field` that asks the server on enter and an
+  empty enter leaves the search) over one `uniform_list` of rows; a row is a cover, a title with its
+  line under it, a figure, and three marks (play, play next, add to queue). A press opens an artist
+  or album, or plays a song: on an album page the whole album from that song (`songs_from`), in a
+  search the song alone. An album or artist played or queued is expanded to its songs on the
+  background executor (`Serves::expand`, a failure a toast naming the `Failure`), and rows are
+  `QueueItem::whole` with ids minted beside the queue's (`play_served`, `queue_served`). The server
+  is only ever asked for what the pane shows: nothing is read until the pane is opened
+  (`a_server_is_a_pane_only_while_an_account_is_given_and_online_is_on`,
+  `an_artist_opens_to_its_albums_and_an_album_to_its_songs_and_a_song_plays_the_album_from_it`).
+- **A served song's cover is the server's.** A cover cell for a row whose location the server names
+  (`ServerModel::names`) draws `ServerModel::cover`, not `Player::art`, in `drawn_cover` and
+  `is_pictureless`, so the queue, the playback bar and the pane draw one picture: a row's own
+  `ServedCover` where the browse gave one, else the song's (the model asks `Serves::cover` with no
+  name and the adapter asks the server what a song's is), fetched on the background executor
+  `COVERS_FETCHED_AT_ONCE` (4) at a time, decoded on the `Drawer` at the drawn side, held in a
+  `Recent` of `COVERS_HELD` (256) keyed by name and side, a failed one asked again after a minute.
+  The magnifier opens `Magnified::Served` at the now-playing size.
 - **Missing pane = what the catalog knows it is short of, headed by run, one half at a time.**
   `Pane::Missing` under `Section::Collection`; sidebar count `Missing::tracks`, hidden at zero. Two
   tabs, `missing_tabs` (*Tracks*/*Releases*, counts), `RootView::missing_shows` (`MissingShows`, kept

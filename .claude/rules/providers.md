@@ -386,6 +386,26 @@ never copied into `resonate-library` (the local source's catalog alone). `Source
   (`an_album_on_the_server_is_queued_as_its_songs_and_each_decodes_as_streamed_bit_for_bit`,
   `a_streamed_song_seeks_back_and_decodes_on_from_where_it_landed`). A queued row's tags are what
   `Player::media` probes off the stream's head.
+- **A cover is the server's `getCoverArt`**: `Artist`, `Album` and `Song` carry `cover` (the
+  `coverArt` name the server gave, read as a string or a number), `Subsonic::cover(&Id, side)` asks
+  for it at a size (`ProviderOp::Cover`, one paced request under `answered_within`, an error
+  document the refusal it carries, at most `LARGEST_ANSWER`), and `Subsonic::cover_of(&Named)` is
+  the name to ask by: a song's is read off `getSong` (a server's `coverArt` for a song is not its
+  id, and some refuse the bare id), an album's or artist's is its own id
+  (`a_cover_is_asked_for_by_the_name_the_server_gives_it_and_a_song_is_asked_what_that_is`,
+  `a_cover_the_server_does_not_hold_is_the_refusal_it_carries`).
+- **The window's account is live, the command line's is fixed.** `Served::for_the_window` holds the
+  server in a slot (`Arc<RwLock<Option<Subsonic>>>`) its `ServedSongs` reads on every open and is
+  always registered in the window's `Sources`; `Served::serving()` is the `resonate_ui::Serving`
+  seam, which on each call builds the server from the window's live `Online`
+  (`providers::server_given`, the same `Accounts::given` the registry reads, so online off or a
+  blank field is none), keeps the `Subsonic` while its `Server` is unchanged, writes the slot and
+  answers a `ServedBy` (the `resonate_ui::Serves` adapter: browse, search, expand a location to its
+  songs, covers). An account typed, changed or cleared in Settings therefore plays at once, and
+  `resonate play` and `queue` (`Served::of`) still register the server only if the settings named
+  one at start (`a_window_plays_a_server_once_an_account_is_given_and_not_before`). The window's
+  pane is `ui.md`'s *The server pane*; the phones' boundary is `mobile.md`'s *A Subsonic server in
+  place*.
 
 ## A TIDAL account
 

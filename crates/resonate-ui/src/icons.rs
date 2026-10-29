@@ -132,6 +132,7 @@ icons! {
     Sync => "sync",
     Computer => "computer",
     Phone => "phone",
+    Server => "server",
     Reveal => "reveal",
     Conceal => "conceal",
     Spinner => "spinner",

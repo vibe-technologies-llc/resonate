@@ -2753,7 +2753,8 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
         equaliser: config::equaliser_dir()?,
     };
     let settings = settings::File::at(places.config.clone());
-    let sources = playing_from(Some(&library), &Served::of(&config));
+    let served = Served::for_the_window(&config);
+    let sources = playing_from(Some(&library), &served);
     let player = Player::with_sources(engine_config(&cli, &config), Arc::clone(&sources))?;
     let player = Arc::new(match config::analyses_dir() {
         Some(dir) => player.keeping_analyses(resonate_engine::KeptAnalyses::at(dir)),
@@ -2865,6 +2866,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
                 monochrome: config.monochrome.clone().unwrap_or_default(),
                 hosted_services: config.hosted_services_allowed(),
             },
+            serving: served.serving(),
             sourcing: {
                 let (register, unkept) = providers::sourced(settings_path(&cli).ok());
                 resonate_ui::Sourcing {

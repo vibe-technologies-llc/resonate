@@ -20,6 +20,8 @@ mod lyrics;
 mod models;
 mod motion;
 mod recent;
+mod served;
+mod serving;
 mod settings;
 mod spectrum;
 mod stereo;
@@ -38,6 +40,7 @@ pub use crate::{
         Beyond, Consulted, Drawn, Favourited, LibraryModel, ListedRow, MissingRow, Notice, Pass,
         Planned, Portrayed, Pressings, Previewed, RootWaiting, Selection, Tone,
     },
+    served::{ServedAlbum, ServedArtist, ServedCover, ServedFound, ServedSong, Serves, Serving},
     settings::{
         Asking, Bindings, CaretBlink, Continuing, Ephemeral, Followed, HandedOff, Measurers,
         Online, Places, Present, Registering, Setting, SettingChange, SettingKey, Settings,

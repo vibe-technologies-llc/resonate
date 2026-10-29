@@ -245,6 +245,25 @@ impl Driven {
         Self::corrected_by(cx, library, folder, Corrected::uncorrected())
     }
 
+    pub(crate) fn serving(
+        cx: &mut TestAppContext,
+        serves: Arc<dyn crate::Serves>,
+        online: crate::Online,
+    ) -> Self {
+        let mut driven = Self::open(
+            cx,
+            Arc::new(Library::open_in_memory().expect("a catalog in memory")),
+        );
+        driven.cx.update(|_, cx| {
+            gpui::BorrowAppContext::update_global::<ResonateApp, _>(cx, |app, _| {
+                app.serving = crate::Serving::new(move |_| Some(Arc::clone(&serves)));
+                app.online = online;
+            });
+        });
+        driven.settle();
+        driven
+    }
+
     pub(crate) fn corrected_by(
         cx: &mut TestAppContext,
         library: Arc<Library>,
@@ -437,6 +456,7 @@ impl Driven {
                     register,
                     unkept: Arc::new(|| false),
                 },
+                serving: crate::Serving::none(),
                 listens: nobody_listening(),
                 first_read: None,
                 copying: Copying::default(),
