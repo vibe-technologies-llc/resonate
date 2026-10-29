@@ -8,12 +8,12 @@ use std::{
 };
 
 use parking_lot::RwLock;
-use resonate_audio::{NodeName, SinkId};
+use resonate_audio::{Moment, NodeName, SinkId};
 use resonate_core::{Frames, Resumption, Span, Volume, ZoneId, ZoneName};
 
 use crate::{
-    Command, Error, Outcome, OutputMode, OutputSettings, OutputStatus, PlaybackState, Player,
-    PlayerState, RepeatMode, Result, resumption_of,
+    Command, Error, FADED_OVER, Outcome, OutputMode, OutputSettings, OutputStatus, PlaybackState,
+    Player, PlayerState, RepeatMode, Result, Stepping, resumption_of,
 };
 
 pub const HANDED_OVER_WITHIN: Duration = Duration::from_secs(10);
@@ -288,6 +288,11 @@ impl Zones {
 
         self.send(to, Command::SetRepeat(state.repeat))?;
         let resumed = incoming.player.request(Command::Resume(resumption))?;
+        let following = Command::KeepInStepWith(outgoing.player.heard_clock());
+        if sounding && let Err(error) = self.send(to, following) {
+            self.put_back(to, before, None);
+            return Err(error);
+        }
         let played = match sounding.then(|| incoming.player.request(Command::Play)) {
             Some(Err(error)) => {
                 self.put_back(to, before, None);
@@ -361,11 +366,29 @@ impl Zones {
 
     fn started(&self, to: ZoneId, played: Outcome) -> Result<()> {
         played.wait_for(HANDED_OVER_WITHIN)?;
-        if self.heard_from(to)? {
-            Ok(())
-        } else {
-            Err(Error::HandoverUnheard { zone: to })
+        if !self.heard_from(to)? {
+            return Err(Error::HandoverUnheard { zone: to });
         }
+        self.wait_until_in_step(to)
+    }
+
+    fn wait_until_in_step(&self, id: ZoneId) -> Result<()> {
+        let deadline = Instant::now() + HANDED_OVER_WITHIN;
+        while Instant::now() < deadline {
+            let zone = self.zone(id).ok_or(Error::NoSuchZone { zone: id })?;
+            match zone.player.stepping() {
+                Stepping::Waiting => thread::sleep(LOOKED_AT_EVERY),
+                Stepping::Alone => return Ok(()),
+                Stepping::Joined(at) => {
+                    let faded_in = at.after(FADED_OVER);
+                    while Moment::now() < faded_in && Instant::now() < deadline {
+                        thread::sleep(LOOKED_AT_EVERY);
+                    }
+                    return Ok(());
+                }
+            }
+        }
+        Ok(())
     }
 
     fn put_back(&self, to: ZoneId, before: Before, installed: Option<u64>) {

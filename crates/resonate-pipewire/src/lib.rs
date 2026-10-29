@@ -7,10 +7,10 @@ mod process;
 mod props;
 
 pub use resonate_audio::{
-    AudioSource, CardProfile, GraphTime, HardwareVolume, LatencyRequest, MediaRole, NodeName,
-    Plugged, ProfileIndex, Reshaped, SinkChange, SinkFormats, SinkId, SinkInfo, SinkPort,
-    SinkStream, StreamClock, StreamCommand, StreamEvent, StreamRequest, StreamState, StreamVolume,
-    Unreshapable, Words,
+    AudioSource, CardProfile, GraphTime, HardwareVolume, LatencyRequest, MediaRole, Moment,
+    NodeName, Plugged, ProfileIndex, Reshaped, SinkChange, SinkFormats, SinkId, SinkInfo, SinkPort,
+    SinkStream, Stamp, StreamClock, StreamCommand, StreamEvent, StreamRequest, StreamState,
+    StreamVolume, Unreshapable, Words,
 };
 
 pub use crate::{

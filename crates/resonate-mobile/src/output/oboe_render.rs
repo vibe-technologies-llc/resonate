@@ -18,6 +18,7 @@ use oboe::{
     AudioOutputCallback, AudioOutputStreamSafe, DataCallbackResult, IsChannelCount, IsFormat,
     IsFrameType,
 };
+use resonate_audio::StreamClock;
 
 use super::{
     handover::Fed,
@@ -29,6 +30,7 @@ pub(crate) struct Rendering<S> {
     pub(crate) empty: Arc<AtomicBool>,
     pub(crate) failed: Arc<AtomicBool>,
     pub(crate) bytes: Box<[u8]>,
+    pub(crate) clock: Arc<StreamClock>,
     pub(crate) shape: PhantomData<S>,
 }
 
@@ -46,7 +48,14 @@ where
         _: &mut dyn AudioOutputStreamSafe,
         frames: &mut [<(T, C) as IsFrameType>::Type],
     ) -> DataCallbackResult {
-        if rendered(self.fed.source(), &mut self.bytes, &self.empty, frames) {
+        let stamp = self.clock.stamp();
+        if rendered(
+            self.fed.source(),
+            &mut self.bytes,
+            &self.empty,
+            frames,
+            stamp,
+        ) {
             DataCallbackResult::Continue
         } else {
             DataCallbackResult::Stop

@@ -9,7 +9,7 @@ use std::{
 use crossbeam_channel::Receiver;
 use resonate_core::{Frames, Ratio, SampleRate, StreamSpec};
 
-use crate::{AudioSource, Error, Operation, Result, SinkId, Words};
+use crate::{AudioSource, Error, Moment, Operation, Result, SinkId, Stamp, Words};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct GraphTime {
@@ -75,6 +75,13 @@ impl StreamClock {
 
     pub fn graph_rate(&self) -> Option<SampleRate> {
         SampleRate::new(self.graph_hz.load(Ordering::Relaxed)).ok()
+    }
+
+    pub fn stamp(&self) -> Stamp {
+        Stamp {
+            at: Moment::now(),
+            ahead: self.latency(),
+        }
     }
 }
 

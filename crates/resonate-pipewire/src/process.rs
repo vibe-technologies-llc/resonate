@@ -19,7 +19,7 @@ use libspa::utils::Fraction;
 use pipewire::stream::Stream;
 use resonate_core::{Ratio, SampleRate, StreamSpec};
 
-use crate::{AudioSink, AudioSource, GraphTime, StreamClock, format::WireWord};
+use crate::{AudioSink, AudioSource, GraphTime, Stamp, StreamClock, format::WireWord};
 
 const PADDED_WORD: usize = 4;
 const PACKED_WORD: usize = 3;
@@ -189,6 +189,7 @@ impl Cycle {
 
     pub(crate) fn run(&self, stream: &Stream, source: &mut dyn AudioSource) {
         self.note_latency(stream);
+        let stamp = self.clock.stamp();
 
         let Some(mut buffer) = stream.dequeue_buffer() else {
             return;
@@ -201,7 +202,7 @@ impl Cycle {
         let taken = self.taking.load();
         let frame = self.frame_of(taken);
         let filled = match data.data() {
-            Some(slice) => self.write(taken, asked, slice, source),
+            Some(slice) => self.write(taken, asked, slice, source, stamp),
             None => 0,
         };
 
@@ -218,15 +219,16 @@ impl Cycle {
         asked: u64,
         slice: &mut [u8],
         source: &mut dyn AudioSource,
+        stamp: Stamp,
     ) -> usize {
         let frame = self.ring_frame_of(taken);
         let Some(quantum) = slice.get_mut(..asked_for(asked, frame, slice.len())) else {
             return 0;
         };
         match taken {
-            Taken::AsAsked(WireWord::Padded) => source.fill(quantum),
+            Taken::AsAsked(WireWord::Padded) => source.fill_stamped(quantum, stamp),
             Taken::AsAsked(WireWord::Packed) => {
-                let written = source.fill(quantum);
+                let written = source.fill_stamped(quantum, stamp);
                 pack(quantum, written)
             }
             Taken::Otherwise { .. } => {
@@ -324,9 +326,10 @@ fn ticking(rate: Fraction) -> Option<Ratio> {
 #[cfg(test)]
 #[allow(clippy::indexing_slicing, clippy::expect_used)]
 mod tests {
-    use resonate_core::{ChannelLayout, SampleFormat};
+    use resonate_core::{ChannelLayout, Frames, SampleFormat};
 
     use super::*;
+    use crate::Moment;
 
     const DOP_MARKERS: [u8; 2] = [0x05, 0xFA];
 
@@ -359,6 +362,17 @@ mod tests {
     struct Counting {
         handed: Vec<u8>,
         asked: usize,
+        stamped: Option<Stamp>,
+    }
+
+    impl Counting {
+        fn of(handed: Vec<u8>) -> Self {
+            Self {
+                handed,
+                asked: 0,
+                stamped: None,
+            }
+        }
     }
 
     impl AudioSource for Counting {
@@ -368,6 +382,18 @@ mod tests {
             dst[..written].copy_from_slice(&self.handed[..written]);
             self.handed.drain(..written);
             written
+        }
+
+        fn fill_stamped(&mut self, dst: &mut [u8], stamp: Stamp) -> usize {
+            self.stamped = Some(stamp);
+            self.fill(dst)
+        }
+    }
+
+    fn now() -> Stamp {
+        Stamp {
+            at: Moment::now(),
+            ahead: Frames::ZERO,
         }
     }
 
@@ -448,10 +474,7 @@ mod tests {
     fn a_packed_quantum_asks_the_ring_for_every_padded_frame_the_graph_wants() {
         let cycle = cycling(SampleFormat::S24);
         let frames = 256;
-        let mut source = Counting {
-            handed: vec![0x5A; 4 * 2 * 1_024],
-            asked: 0,
-        };
+        let mut source = Counting::of(vec![0x5A; 4 * 2 * 1_024]);
         let mut buffer = vec![0; 4 * 2 * 1_024];
 
         let filled = cycle.write(
@@ -459,6 +482,7 @@ mod tests {
             frames as u64,
             &mut buffer,
             &mut source,
+            now(),
         );
 
         assert_eq!(
@@ -477,10 +501,7 @@ mod tests {
     fn a_ring_laid_out_for_another_layout_is_never_written_into_the_graphs_buffer() {
         let cycle = cycling(SampleFormat::S16);
         let five_wide = NonZeroU16::new(5 * 2).expect("a five-channel frame");
-        let mut source = Counting {
-            handed: vec![0x5A; 4_096],
-            asked: 0,
-        };
+        let mut source = Counting::of(vec![0x5A; 4_096]);
         let mut buffer = vec![0xFF; 4_096];
 
         let filled = cycle.write(
@@ -488,6 +509,7 @@ mod tests {
             64,
             &mut buffer,
             &mut source,
+            now(),
         );
 
         assert_eq!(
@@ -512,12 +534,44 @@ mod tests {
     }
 
     #[test]
+    fn the_ring_is_told_how_far_its_quantum_lies_ahead_of_the_device() {
+        let clock = Arc::new(StreamClock::default());
+        let cycle = Cycle::new(
+            stereo(SampleFormat::S16),
+            Arc::new(Taking::default()),
+            Arc::clone(&clock),
+        );
+        let mut source = Counting::of(vec![0; 256]);
+        let mut buffer = vec![0; 256];
+        let ahead = GraphTime {
+            delay: 441,
+            buffered: 64,
+            queued: 0,
+            tick: Ratio {
+                numer: NonZeroU32::MIN,
+                denom: NonZeroU32::new(44_100).expect("a graph rate"),
+            },
+        };
+        clock.note(ahead, SampleRate::HZ_44100);
+        let before = Moment::now();
+
+        cycle.write(
+            Taken::AsAsked(WireWord::Padded),
+            16,
+            &mut buffer,
+            &mut source,
+            clock.stamp(),
+        );
+
+        let stamped = source.stamped.expect("the ring was handed a stamp");
+        assert_eq!(stamped.ahead, Frames(505));
+        assert!(stamped.at >= before);
+    }
+
+    #[test]
     fn a_ring_laid_out_as_the_graph_took_it_is_handed_over_as_ever() {
         let cycle = cycling(SampleFormat::S16);
-        let mut source = Counting {
-            handed: (0..=255).collect(),
-            asked: 0,
-        };
+        let mut source = Counting::of((0..=255).collect());
         let mut buffer = vec![0; 4_096];
 
         let filled = cycle.write(
@@ -525,6 +579,7 @@ mod tests {
             16,
             &mut buffer,
             &mut source,
+            now(),
         );
 
         assert_eq!(filled, 64);

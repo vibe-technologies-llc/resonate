@@ -8,7 +8,8 @@ use resonate_dsp::{
 };
 
 use crate::{
-    BluetoothWake, Equalisation, Error, Levelling, Placement, QueueItem, Result, Until, Within,
+    BluetoothWake, Equalisation, Error, HeardClock, Levelling, Placement, QueueItem, Result, Until,
+    Within,
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -62,6 +63,7 @@ pub enum Command {
         autoplay: bool,
     },
     Resume(Resumption),
+    KeepInStepWith(HeardClock),
     Insert {
         items: Vec<QueueItem>,
         at: Placement,
@@ -118,6 +120,7 @@ pub enum Command {
 pub enum CommandKind {
     Load,
     Resume,
+    KeepInStepWith,
     Insert,
     Remove,
     Clear,
@@ -167,6 +170,7 @@ impl CommandKind {
         match self {
             Self::Load => "the load",
             Self::Resume => "the resumption",
+            Self::KeepInStepWith => "keeping in step with another zone",
             Self::Insert => "the insert",
             Self::Remove => "the removal",
             Self::Clear => "the clearing",
@@ -217,6 +221,7 @@ impl CommandKind {
         match self {
             Self::Load
             | Self::Resume
+            | Self::KeepInStepWith
             | Self::Insert
             | Self::Remove
             | Self::Clear
@@ -274,6 +279,7 @@ impl Command {
         match self {
             Self::Load { .. } => CommandKind::Load,
             Self::Resume(_) => CommandKind::Resume,
+            Self::KeepInStepWith(_) => CommandKind::KeepInStepWith,
             Self::Insert { .. } => CommandKind::Insert,
             Self::Remove(_) | Self::RemoveAll(_) => CommandKind::Remove,
             Self::Clear => CommandKind::Clear,

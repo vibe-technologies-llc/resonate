@@ -7,6 +7,11 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 - [L · blocked: hardware] No forced graph rate change proved against hardware (the only card here
   offers 48 kHz alone), nor DoP against a DAC that decodes it
 
+- [S · blocked: hardware] A zone handover's alignment is proved against a fake graph whose
+  callbacks stamp a steady clock (within two frames); no two devices here are heard side by side,
+  so how closely two real sound cards meet (their own latency readings, callback lateness and clock
+  drift over the overlap) has not been measured
+
 - [S · blocked: hardware] An iPhone following the song's rate (`follow-song-rate`) is not proved on
   a USB DAC: no device is attached here, so neither the route taking `preferredSampleRate` nor the
   gap of the RemoteIO reopen it causes has been heard

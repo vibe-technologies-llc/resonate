@@ -225,6 +225,7 @@ where
         empty: Arc::clone(&empty),
         failed: Arc::clone(&failed),
         bytes: vec![0; RENDER_BYTES].into_boxed_slice(),
+        clock: Arc::clone(&clock),
         shape: PhantomData,
     };
     let opened = Asked::of(way, requested)
