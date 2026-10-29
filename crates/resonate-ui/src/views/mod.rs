@@ -24,6 +24,7 @@ pub(crate) mod reorder;
 mod root;
 mod scrollbar;
 mod search;
+mod served;
 pub(crate) mod settings;
 mod slider;
 pub(crate) mod sorting;

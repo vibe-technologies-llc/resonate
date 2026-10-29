@@ -38,6 +38,7 @@ use crate::{
         held, magnified_of,
     },
     recent::Recent,
+    served::Serving,
     settings::{
         Followed, Online, Places, Present, SettingsCategory, Sourcing, Stored, Tabs, WindowButtons,
         WindowSize,
@@ -162,6 +163,7 @@ pub struct Lookups {
     pub bindings: Bindings,
     pub measurers: Measurers,
     pub sourcing: Sourcing,
+    pub serving: Serving,
     pub listens: Listens,
 }
 
@@ -213,6 +215,7 @@ pub struct ResonateApp {
     pub reads_as_a_code: Option<fn(&str) -> bool>,
     pub launcher: Arc<dyn Launcher>,
     pub sourcing: Sourcing,
+    pub serving: Serving,
     pub listens: Listens,
     pub(crate) first_read: Option<FirstRead>,
     pub(crate) copying: Copying,
@@ -1086,6 +1089,7 @@ pub fn run(
             reads_as_a_code: stored.reads_as_a_code,
             launcher: Arc::clone(&stored.launcher),
             sourcing: lookups.sourcing.clone(),
+            serving: lookups.serving.clone(),
             listens: lookups.listens.clone(),
             first_read,
             copying,

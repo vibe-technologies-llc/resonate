@@ -704,6 +704,9 @@ impl MobilePlayer {
         }
         let connection = self.catalog.0.lock();
         match counted {
+            Some(Counting::Counts(played)) if crate::served::Served::names(&played.location) => {
+                *visit = None;
+            }
             Some(Counting::Counts(played)) => {
                 let now = SystemTime::now()
                     .duration_since(UNIX_EPOCH)

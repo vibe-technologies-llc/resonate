@@ -32,6 +32,7 @@ mod rewriting;
 mod room;
 mod saved_searches;
 mod search;
+mod served;
 mod sharing;
 mod stamp;
 mod sync;
@@ -222,6 +223,7 @@ pub struct MobilePlayer {
     enriching: enrichment::Enriching,
     room: room::Room,
     tagging: tagging::Tagging,
+    served: served::Served,
 }
 
 #[uniffi::export]
@@ -234,14 +236,19 @@ impl MobilePlayer {
         })?;
         let catalog = Arc::new(Catalog::open(&Path::new(&folder).join("documents.sqlite"))?);
         let documents: Arc<dyn Documents> = Arc::from(documents);
-        let sources = Arc::new(GRANTED_SCHEMES.iter().try_fold(
-            Sources::local().spooling_under(Path::new(&folder).to_path_buf()),
-            |sources, scheme| {
-                Ok::<_, Error>(
-                    sources.and(Arc::new(GrantedFiles::new(Arc::clone(&documents), scheme)?)),
-                )
-            },
-        )?);
+        let served = served::Served::default();
+        let sources = Arc::new(
+            GRANTED_SCHEMES.iter().try_fold(
+                Sources::local()
+                    .spooling_under(Path::new(&folder).to_path_buf())
+                    .and(served.provider()),
+                |sources, scheme| {
+                    Ok::<_, Error>(
+                        sources.and(Arc::new(GrantedFiles::new(Arc::clone(&documents), scheme)?)),
+                    )
+                },
+            )?,
+        );
         let routing = Arc::new(output::Routing::new());
         let kept = catalog.kept_zones()?;
         let config = EngineConfig {
@@ -275,6 +282,7 @@ impl MobilePlayer {
             enriching: enrichment::Enriching::default(),
             room: room::Room::under(PathBuf::from(&folder)),
             tagging: tagging::Tagging::under(PathBuf::from(&folder)),
+            served,
         });
         this.resume_saved_in(ZoneId::FIRST)?;
         watching::keep(&this, ZoneId::FIRST);
@@ -358,11 +366,22 @@ impl MobilePlayer {
 
         let uris = rows
             .iter()
+            .filter(|item| !served::Served::names(&item.location))
             .map(|item| document_uri(&item.location))
             .collect::<Result<Vec<_>>>()?;
-        let mut tracks = self.catalog.tracks_at(&uris)?;
-        for (track, item) in tracks.iter_mut().zip(rows.iter()) {
+        let mut held = self.catalog.tracks_at(&uris)?.into_iter();
+        let mut tracks = Vec::with_capacity(rows.len());
+        for item in rows.iter() {
+            let mut track = if served::Served::names(&item.location) {
+                self.served.track_of(item)
+            } else {
+                let Some(track) = held.next() else {
+                    break;
+                };
+                track
+            };
             track.queue_id = Some(item.id.get());
+            tracks.push(track);
         }
         Ok(tracks)
     }
@@ -568,6 +587,12 @@ impl MobilePlayer {
             };
             (place, queue.rows)
         };
+        if rows
+            .iter()
+            .any(|item| served::Served::names(&item.location))
+        {
+            return Ok(());
+        }
         if saved.as_ref() == Some(&place) {
             return Ok(());
         }
@@ -628,6 +653,9 @@ impl MobilePlayer {
 
     fn queue_track(&self, rows: &QueueRows, id: TrackId) -> Option<Track> {
         let item = rows.iter().find(|item| item.id == id)?;
+        if served::Served::names(&item.location) {
+            return Some(self.served.track_of(item));
+        }
         let uri = document_uri(&item.location).ok()?;
         let mut track = self.catalog.kept_track_uri(&uri).ok()?;
         track.queue_id = Some(item.id.get());

@@ -542,11 +542,18 @@ fn a_served_library(asked: &Asked) -> Canned {
             r#""artist":{"id":"ar-1","name":"Pink Floyd","album":[{"id":"al-1","name":"Meddle","artist":"Pink Floyd","year":1971,"songCount":2}]}"#,
         ),
         ("getAlbum", Some("al-1")) => ok(
-            r#""album":{"id":"al-1","name":"Meddle","artist":"Pink Floyd","song":[{"id":"so-1","title":"One of These Days","track":1,"discNumber":1,"duration":357,"suffix":"flac"},{"id":6,"title":"Echoes","track":6,"duration":1412,"suffix":"flac"}]}"#,
+            r#""album":{"id":"al-1","name":"Meddle","artist":"Pink Floyd","coverArt":"al-1","song":[{"id":"so-1","title":"One of These Days","track":1,"discNumber":1,"duration":357,"suffix":"flac"},{"id":6,"title":"Echoes","track":6,"duration":1412,"suffix":"flac"}]}"#,
         ),
         ("getSong", Some("so-1")) => ok(
-            r#""song":{"id":"so-1","title":"One of These Days","album":"Meddle","suffix":"flac"}"#,
+            r#""song":{"id":"so-1","title":"One of These Days","album":"Meddle","suffix":"flac","coverArt":"mf-so-1"}"#,
         ),
+        ("getCoverArt", Some("al-1")) => Canned {
+            status: 200,
+            headers: vec![("Content-Type", "image/jpeg".to_owned())],
+            body: b"\xFF\xD8 a picture".to_vec(),
+            sent: Sent::Whole,
+        },
+        ("getCoverArt", _) => not_held(),
         ("search3", _) => ok(
             r#""searchResult3":{"artist":[{"id":"ar-1","name":"Pink Floyd"}],"album":[{"id":"al-1","name":"Meddle"}],"song":[{"id":6,"title":"Echoes"}]}"#,
         ),
@@ -702,6 +709,47 @@ fn an_error_document_answering_a_stream_is_the_refusal_it_carries() {
         fake.subsonic().streamed(&id("so-404")),
         Err(Error::TurnedAway {
             op: ProviderOp::Stream,
+            code: 70,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn a_cover_is_asked_for_by_the_name_the_server_gives_it_and_a_song_is_asked_what_that_is() {
+    let fake = Fake::serving(|asked, _| a_served_library(asked));
+    let subsonic = fake.subsonic();
+
+    let album = subsonic.album(&id("al-1")).expect("an album");
+    let picture = subsonic
+        .cover(album.album.cover.as_ref().expect("a cover"), 300)
+        .expect("a picture");
+    let song = subsonic
+        .cover_of(&Named::Song(id("so-1")))
+        .expect("a song's cover");
+    let album_by_id = subsonic
+        .cover_of(&Named::Album(id("al-1")))
+        .expect("an album's cover");
+    let asked = fake
+        .heard()
+        .into_iter()
+        .filter(|(method, _, _)| method == "getCoverArt")
+        .count();
+
+    assert_eq!(picture, b"\xFF\xD8 a picture");
+    assert_eq!(song, id("mf-so-1"));
+    assert_eq!(album_by_id, id("al-1"));
+    assert_eq!(asked, 1);
+}
+
+#[test]
+fn a_cover_the_server_does_not_hold_is_the_refusal_it_carries() {
+    let fake = Fake::serving(|asked, _| a_served_library(asked));
+
+    assert!(matches!(
+        fake.subsonic().cover(&id("al-404"), 300),
+        Err(Error::TurnedAway {
+            op: ProviderOp::Cover,
             code: 70,
             ..
         })

@@ -65,6 +65,7 @@ pub struct Artist {
     pub id: Id,
     pub name: String,
     pub albums: Option<u32>,
+    pub cover: Option<Id>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -74,6 +75,7 @@ pub struct Album {
     pub artist: Option<String>,
     pub year: Option<u16>,
     pub songs: Option<u32>,
+    pub cover: Option<Id>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -86,6 +88,7 @@ pub struct Song {
     pub track: Option<u32>,
     pub length: Option<Duration>,
     pub suffix: Option<String>,
+    pub cover: Option<Id>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -154,6 +157,14 @@ pub(crate) fn id_spelt<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Str
     }
 }
 
+fn cover_spelt<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<String>, D::Error> {
+    Ok(match Option::<Value>::deserialize(deserializer)? {
+        Some(Value::String(id)) => Some(id),
+        Some(Value::Number(id)) => Some(id.to_string()),
+        _ => None,
+    })
+}
+
 fn number_spelt<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<u64>, D::Error> {
     Ok(match Option::<Value>::deserialize(deserializer)? {
         Some(Value::Number(number)) => number.as_u64(),
@@ -196,6 +207,8 @@ pub(crate) struct ArtistDoc {
     name: Option<String>,
     #[serde(default, rename = "albumCount", deserialize_with = "number_spelt")]
     albums: Option<u64>,
+    #[serde(default, rename = "coverArt", deserialize_with = "cover_spelt")]
+    cover: Option<String>,
     #[serde(default, deserialize_with = "readable")]
     album: Vec<AlbumDoc>,
 }
@@ -206,6 +219,7 @@ impl ArtistDoc {
             id: Id::new(&self.id)?,
             name: self.name.unwrap_or_default(),
             albums: small(self.albums),
+            cover: self.cover.as_deref().and_then(Id::new),
         })
     }
 
@@ -235,6 +249,8 @@ pub(crate) struct AlbumDoc {
     year: Option<u64>,
     #[serde(default, rename = "songCount", deserialize_with = "number_spelt")]
     songs: Option<u64>,
+    #[serde(default, rename = "coverArt", deserialize_with = "cover_spelt")]
+    cover: Option<String>,
     #[serde(default, deserialize_with = "readable")]
     song: Vec<SongDoc>,
 }
@@ -247,6 +263,7 @@ impl AlbumDoc {
             artist: self.artist,
             year: small(self.year),
             songs: small(self.songs),
+            cover: self.cover.as_deref().and_then(Id::new),
         })
     }
 
@@ -280,6 +297,8 @@ pub(crate) struct SongDoc {
     duration: Option<u64>,
     #[serde(default)]
     suffix: Option<String>,
+    #[serde(default, rename = "coverArt", deserialize_with = "cover_spelt")]
+    cover: Option<String>,
 }
 
 impl SongDoc {
@@ -293,6 +312,7 @@ impl SongDoc {
             track: small(self.track),
             length: self.duration.map(Duration::from_secs),
             suffix: self.suffix,
+            cover: self.cover.as_deref().and_then(Id::new),
         })
     }
 }

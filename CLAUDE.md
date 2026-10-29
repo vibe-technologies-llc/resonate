@@ -22,7 +22,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `motion.md` | resonate-ui | the motion vocabulary, what arrives and flips, the song handover, the scrollbar fade |
 | `vault.md` | resonate-vault, `Library::import`, `vaulted.rs`, `supply.rs`, the Vault group | the forms, the keys, validation, what the catalog holds |
 | `online.md` | resonate-online, the binary's `online.rs` | the paced client, the identity, what each service is asked and how its answer is read |
-| `providers.md` | resonate-providers, resonate-fetch, providers/*, the binary's `providers.rs`, `served.rs`, `supply.rs`, `filed.rs` | the seam, the registry, the inbox, Subsonic (fetched and played in place), TIDAL, hifi-api, Monochrome, what a delivery is and where it lands |
+| `providers.md` | resonate-providers, resonate-fetch, providers/*, the binary's `providers.rs`, `served.rs`, `supply.rs`, `filed.rs` | the seam, the registry, the inbox, Subsonic (fetched and played in place, with covers, live in the window), TIDAL, hifi-api, Monochrome, what a delivery is and where it lands |
 | `analysis.md` | resonate-analysis, `studies.rs`, `fingerprint.rs`, the analysis pane, `acoustid.rs`, `analyse.rs` | the one decode pass, the fake-lossless heuristic, the print, the studies and recognition |
 | `mcp.md` | resonate-mcp, the binary's `mcp.rs` | the transport, refusals against failures, the tools, the resources and their seam |
 | `sync.md` | resonate-sync, the binary's `sync.rs`, `synced.rs`, the sync panes | the pairing key and what it derives, the wire, the ledger, the seam, peers and transfers, devices meeting on one network |

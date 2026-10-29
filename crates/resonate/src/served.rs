@@ -1,9 +1,13 @@
 #[cfg(feature = "online")]
 use std::{
     io::{self, Read, Seek, SeekFrom},
-    sync::Arc,
+    sync::{Arc, LazyLock},
 };
 
+#[cfg(all(feature = "ui", feature = "online"))]
+use parking_lot::Mutex;
+#[cfg(feature = "online")]
+use parking_lot::RwLock;
 use resonate_codec::Sources;
 #[cfg(feature = "online")]
 use resonate_codec::{FormatHint, Media, MediaProvider, MediaStream};
@@ -24,15 +28,15 @@ use crate::{providers, table::Table};
 #[derive(Clone, Default)]
 pub struct Served {
     #[cfg(feature = "online")]
-    subsonic: Option<Subsonic>,
+    slot: Arc<RwLock<Option<Subsonic>>>,
+    #[cfg(feature = "online")]
+    live: bool,
 }
 
 impl Served {
     #[cfg(feature = "online")]
     pub fn of(config: &Config) -> Self {
-        Self {
-            subsonic: providers::server_named(config),
-        }
+        Self::over(providers::server_named(config), false)
     }
 
     #[cfg(not(feature = "online"))]
@@ -41,10 +45,29 @@ impl Served {
     }
 
     #[cfg(feature = "online")]
+    fn over(subsonic: Option<Subsonic>, live: bool) -> Self {
+        Self {
+            slot: Arc::new(RwLock::new(subsonic)),
+            live,
+        }
+    }
+
+    #[cfg(all(feature = "ui", feature = "online"))]
+    pub fn for_the_window(config: &Config) -> Self {
+        Self::over(providers::server_named(config), true)
+    }
+
+    #[cfg(all(feature = "ui", not(feature = "online")))]
+    pub const fn for_the_window(_config: &Config) -> Self {
+        Self {}
+    }
+
+    #[cfg(feature = "online")]
     pub fn sources(&self, sources: Sources) -> Sources {
-        match &self.subsonic {
-            Some(subsonic) => sources.and(Arc::new(ServedSongs(subsonic.clone()))),
-            None => sources,
+        if self.live || self.slot.read().is_some() {
+            sources.and(Arc::new(ServedSongs(Arc::clone(&self.slot))))
+        } else {
+            sources
         }
     }
 
@@ -55,7 +78,7 @@ impl Served {
 
     #[cfg(feature = "online")]
     pub fn songs_at(&self, location: &MediaLocation) -> Option<Vec<MediaLocation>> {
-        let subsonic = self.subsonic.as_ref()?;
+        let subsonic = self.slot.read().clone()?;
         let named = subsonic.named_by(location)?;
         if let Named::Song(_) = named {
             return Some(vec![location.clone()]);
@@ -78,25 +101,53 @@ impl Served {
     pub fn songs_at(&self, _location: &MediaLocation) -> Option<Vec<MediaLocation>> {
         None
     }
+
+    #[cfg(all(feature = "ui", feature = "online"))]
+    pub fn serving(&self) -> resonate_ui::Serving {
+        let slot = Arc::clone(&self.slot);
+        let opened: Mutex<Option<Subsonic>> = Mutex::new(None);
+        resonate_ui::Serving::new(move |online| {
+            let given = providers::server_given(online);
+            let mut held = opened.lock();
+            let subsonic = match (given, held.take()) {
+                (Some(given), Some(kept)) if kept.server() == &given => Some(kept),
+                (Some(given), _) => Some(Subsonic::at(given)),
+                (None, _) => None,
+            };
+            held.clone_from(&subsonic);
+            *slot.write() = subsonic.clone();
+            subsonic.map(|subsonic| Arc::new(ServedBy(subsonic)) as Arc<dyn resonate_ui::Serves>)
+        })
+    }
+
+    #[cfg(all(feature = "ui", not(feature = "online")))]
+    pub fn serving(&self) -> resonate_ui::Serving {
+        resonate_ui::Serving::none()
+    }
 }
 
 #[cfg(feature = "online")]
-struct ServedSongs(Subsonic);
+struct ServedSongs(Arc<RwLock<Option<Subsonic>>>);
 
 #[cfg(feature = "online")]
 impl MediaProvider for ServedSongs {
     fn source(&self) -> &SourceId {
-        self.0.source_id()
+        static SUBSONIC: LazyLock<SourceId> =
+            LazyLock::new(|| SourceId::new("subsonic").unwrap_or_else(|_| SourceId::local()));
+        &SUBSONIC
     }
 
     fn open(&self, location: &MediaLocation) -> resonate_codec::Result<Media> {
-        let Some(Named::Song(id)) = self.0.named_by(location) else {
+        let subsonic = self.0.read().clone();
+        let named = subsonic
+            .as_ref()
+            .and_then(|subsonic| subsonic.named_by(location));
+        let (Some(subsonic), Some(Named::Song(id))) = (subsonic, named) else {
             return Err(resonate_codec::Error::LocatorNotUsable {
                 location: location.clone(),
             });
         };
-        let streamed = self
-            .0
+        let streamed = subsonic
             .streamed(&id)
             .map_err(|error| resonate_codec::Error::Io {
                 location: location.clone(),
@@ -110,6 +161,156 @@ impl MediaProvider for ServedSongs {
             stream: Box::new(Streaming(streamed)),
             hint,
         })
+    }
+}
+
+#[cfg(all(feature = "ui", feature = "online"))]
+struct ServedBy(Subsonic);
+
+#[cfg(all(feature = "ui", feature = "online"))]
+impl ServedBy {
+    fn unreadable(&self) -> resonate_providers::Error {
+        resonate_providers::Error::Unreadable {
+            provider: self.0.source_id().clone(),
+            op: resonate_providers::ProviderOp::Browse,
+        }
+    }
+
+    fn cover_of(cover: Option<Id>) -> Option<resonate_ui::ServedCover> {
+        cover.map(|cover| resonate_ui::ServedCover(cover.as_str().to_owned()))
+    }
+
+    fn artist(&self, artist: Artist) -> resonate_ui::ServedArtist {
+        resonate_ui::ServedArtist {
+            location: self.0.location_of(&Named::Artist(artist.id)),
+            name: artist.name,
+            albums: artist.albums,
+            cover: Self::cover_of(artist.cover),
+        }
+    }
+
+    fn album(&self, album: Album) -> resonate_ui::ServedAlbum {
+        resonate_ui::ServedAlbum {
+            location: self.0.location_of(&Named::Album(album.id)),
+            name: album.name,
+            artist: album.artist,
+            year: album.year,
+            songs: album.songs,
+            cover: Self::cover_of(album.cover),
+        }
+    }
+
+    fn song(&self, song: Song) -> resonate_ui::ServedSong {
+        resonate_ui::ServedSong {
+            location: self.0.location_of(&Named::Song(song.id)),
+            title: song.title,
+            artist: song.artist,
+            album: song.album,
+            track: song.track,
+            length: song.length,
+            format: song.suffix,
+            cover: Self::cover_of(song.cover),
+        }
+    }
+}
+
+#[cfg(all(feature = "ui", feature = "online"))]
+impl resonate_ui::Serves for ServedBy {
+    fn names(&self, location: &MediaLocation) -> bool {
+        self.0.named_by(location).is_some()
+    }
+
+    fn artists(&self) -> resonate_providers::Result<Vec<resonate_ui::ServedArtist>> {
+        Ok(self
+            .0
+            .artists()?
+            .into_iter()
+            .map(|artist| self.artist(artist))
+            .collect())
+    }
+
+    fn albums_of(
+        &self,
+        artist: &MediaLocation,
+    ) -> resonate_providers::Result<Vec<resonate_ui::ServedAlbum>> {
+        let Some(Named::Artist(id)) = self.0.named_by(artist) else {
+            return Err(self.unreadable());
+        };
+        Ok(self
+            .0
+            .artist(&id)?
+            .albums
+            .into_iter()
+            .map(|album| self.album(album))
+            .collect())
+    }
+
+    fn songs_of(
+        &self,
+        album: &MediaLocation,
+    ) -> resonate_providers::Result<Vec<resonate_ui::ServedSong>> {
+        let Some(Named::Album(id)) = self.0.named_by(album) else {
+            return Err(self.unreadable());
+        };
+        Ok(self
+            .0
+            .album(&id)?
+            .songs
+            .into_iter()
+            .map(|song| self.song(song))
+            .collect())
+    }
+
+    fn search(&self, words: &str) -> resonate_providers::Result<resonate_ui::ServedFound> {
+        let found = self.0.search(words)?;
+        Ok(resonate_ui::ServedFound {
+            artists: found
+                .artists
+                .into_iter()
+                .map(|artist| self.artist(artist))
+                .collect(),
+            albums: found
+                .albums
+                .into_iter()
+                .map(|album| self.album(album))
+                .collect(),
+            songs: found
+                .songs
+                .into_iter()
+                .map(|song| self.song(song))
+                .collect(),
+        })
+    }
+
+    fn expand(&self, named: &MediaLocation) -> resonate_providers::Result<Vec<MediaLocation>> {
+        let Some(named) = self.0.named_by(named) else {
+            return Err(self.unreadable());
+        };
+        if let Named::Song(_) = named {
+            return Ok(vec![self.0.location_of(&named)]);
+        }
+        Ok(self
+            .0
+            .songs_of(&named)?
+            .into_iter()
+            .map(|song| self.0.location_of(&Named::Song(song.id)))
+            .collect())
+    }
+
+    fn cover(
+        &self,
+        of: &MediaLocation,
+        known: Option<&resonate_ui::ServedCover>,
+        side: u32,
+    ) -> resonate_providers::Result<Vec<u8>> {
+        let cover = match known {
+            Some(known) => Id::new(&known.0).ok_or_else(|| self.unreadable())?,
+            None => {
+                let named = self.0.named_by(of).ok_or_else(|| self.unreadable())?;
+                self.0.cover_of(&named)?
+            }
+        };
+        self.0.cover(&cover, side)
     }
 }
 
@@ -392,13 +593,14 @@ mod tests {
             }
         });
 
-        Served {
-            subsonic: Some(Subsonic::at(Server {
+        Served::over(
+            Some(Subsonic::at(Server {
                 url,
                 user: "listener".to_owned(),
                 password: "sesame".to_owned(),
             })),
-        }
+            false,
+        )
     }
 
     fn decoded(decoder: &mut Decoder) -> Vec<i16> {
@@ -471,5 +673,38 @@ mod tests {
 
         assert!(unserved[0].location.is_local());
         assert_eq!(served[0].location.to_uri(), "subsonic:track/so-1");
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn a_window_plays_a_server_once_an_account_is_given_and_not_before() {
+        let url = serving()
+            .slot
+            .read()
+            .as_ref()
+            .map(|subsonic| subsonic.server().url.clone())
+            .expect("a server");
+        let window = Served::for_the_window(&crate::config::Config::default());
+        let sources = window.sources(Sources::local());
+        let location = MediaLocation::from_uri("subsonic:track/so-1").expect("a uri");
+        let account = resonate_ui::Online {
+            enabled: true,
+            subsonic: url,
+            subsonic_user: "listener".to_owned(),
+            subsonic_password: "sesame".to_owned(),
+            ..resonate_ui::Online::default()
+        };
+
+        let before = probe(&sources, &location);
+        let opened = window.serving().opened(&account);
+        let after = probe(&sources, &location);
+        let withdrawn = window.serving().opened(&resonate_ui::Online::default());
+        let again = probe(&sources, &location);
+
+        assert!(before.is_err());
+        assert!(opened.is_some());
+        assert!(after.is_ok());
+        assert!(withdrawn.is_none());
+        assert!(again.is_err());
     }
 }

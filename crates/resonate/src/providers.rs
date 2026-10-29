@@ -153,6 +153,11 @@ pub fn server_named(config: &Config) -> Option<Subsonic> {
     Accounts::of(config).subsonic.map(Subsonic::at)
 }
 
+#[cfg(all(feature = "ui", feature = "online"))]
+pub fn server_given(online: &resonate_ui::Online) -> Option<Server> {
+    Accounts::given(online).subsonic
+}
+
 #[cfg(feature = "online")]
 fn given(value: Option<&str>) -> Option<String> {
     value

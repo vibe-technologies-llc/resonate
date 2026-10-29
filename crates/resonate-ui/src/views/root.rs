@@ -52,6 +52,7 @@ use crate::{
     listening::ListenModel,
     models::{Picture, Scale, Sorting},
     motion,
+    serving::ServerModel,
     settings::SettingsWriter,
     theme,
     toast::{self, Toaster},
@@ -74,6 +75,7 @@ use crate::{
         reorder::{self, Chosen, Creeping, Lift, Lifted, LiftedTo, Listed, Reach, Shift, Step},
         scrollbar::Scrollbars,
         search::{self, SearchShows, TopEntry, TopRun},
+        served::SEARCH_PLACEHOLDER as SERVER_SEARCH_PLACEHOLDER,
         settings::{
             Account, Category, FILTER_PLACEHOLDER, Fitting, HeldBand, LastfmAccount, LastfmSigning,
             Plotted, SYNC_CODE_PLACEHOLDER, SYNC_DEVICE_PLACEHOLDER, SYNC_SERVER_PLACEHOLDER,
@@ -219,6 +221,7 @@ const TYPED_ROOT_PLACEHOLDER: &str = "Or type a folder, then press enter";
 pub(crate) enum Magnified {
     Album(AlbumId),
     File(MediaLocation),
+    Served(MediaLocation),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -233,6 +236,7 @@ pub enum Pane {
     Favourites,
     Suggestions,
     Missing,
+    Server,
     Lyrics,
     Inspector,
     Visualiser,
@@ -380,7 +384,7 @@ impl Section {
 }
 
 impl Pane {
-    pub const BROWSE: [Self; 12] = [
+    pub const BROWSE: [Self; 13] = [
         Self::Albums,
         Self::Artists,
         Self::Tracks,
@@ -389,6 +393,7 @@ impl Pane {
         Self::Favourites,
         Self::Suggestions,
         Self::Missing,
+        Self::Server,
         Self::Lyrics,
         Self::Inspector,
         Self::Visualiser,
@@ -406,6 +411,7 @@ impl Pane {
             | Self::Queue
             | Self::Playlists
             | Self::Favourites
+            | Self::Server
             | Self::Lyrics
             | Self::Inspector
             | Self::Visualiser
@@ -433,6 +439,7 @@ impl Pane {
             Self::Favourites => "Favourites",
             Self::Suggestions => "Suggestions",
             Self::Missing => "Missing",
+            Self::Server => "Server",
             Self::Lyrics => "Lyrics",
             Self::Inspector => "Inspector",
             Self::Visualiser => "Visualiser",
@@ -452,6 +459,7 @@ impl Pane {
             Self::Favourites => "favourites",
             Self::Suggestions => "suggestions",
             Self::Missing => "missing",
+            Self::Server => "server",
             Self::Lyrics => "lyrics",
             Self::Inspector => "inspector",
             Self::Visualiser => "visualiser",
@@ -471,6 +479,7 @@ impl Pane {
             "favourites" => Some(Self::Favourites),
             "suggestions" => Some(Self::Suggestions),
             "missing" => Some(Self::Missing),
+            "server" => Some(Self::Server),
             "lyrics" => Some(Self::Lyrics),
             "inspector" => Some(Self::Inspector),
             "visualiser" => Some(Self::Visualiser),
@@ -494,6 +503,7 @@ impl Pane {
                 "What the releases are short of, and what the artists have put out \
                               that the library does not hold"
             }
+            Self::Server => "What your Subsonic server holds, to browse and play where it is",
             Self::Lyrics => "The words to the playing track, where a source has them",
             Self::Inspector => "What the playing file is, and what reaches the sink",
             Self::Visualiser => "The spectrum and the waveform of what is being heard",
@@ -508,9 +518,11 @@ impl Pane {
     pub(crate) const fn section(self) -> Section {
         match self {
             Self::Albums | Self::Artists | Self::Tracks | Self::Statistics => Section::Library,
-            Self::Playlists | Self::Favourites | Self::Suggestions | Self::Missing => {
-                Section::Collection
-            }
+            Self::Playlists
+            | Self::Favourites
+            | Self::Suggestions
+            | Self::Missing
+            | Self::Server => Section::Collection,
             Self::Queue
             | Self::Lyrics
             | Self::Inspector
@@ -531,6 +543,7 @@ impl Pane {
             Self::Favourites => Icon::Favourite,
             Self::Suggestions => Icon::Suggestions,
             Self::Missing => Icon::Missing,
+            Self::Server => Icon::Server,
             Self::Lyrics => Icon::Lyrics,
             Self::Inspector => Icon::Inspector,
             Self::Visualiser => Icon::Visualiser,
@@ -612,6 +625,9 @@ pub struct RootView {
     pub(crate) minimum_length: Entity<Field>,
     pub(crate) typed_root: Entity<Field>,
     pub(crate) finding: Entity<Field>,
+    pub(crate) server: Entity<ServerModel>,
+    pub(crate) server_search: Entity<Field>,
+    pub(crate) server_rows: UniformListScrollHandle,
     pub(crate) figure: Entity<Field>,
     pub(crate) looking: Entity<Field>,
     pub(crate) equaliser: Entity<EqualiserModel>,
@@ -762,7 +778,7 @@ impl RootView {
         let remember_tab = global.remember_tab;
         let pane = global
             .last_tab
-            .filter(|pane| remember_tab && pane.is_shown(tabs))
+            .filter(|pane| remember_tab && pane.is_shown(tabs) && *pane != Pane::Server)
             .unwrap_or_default();
         let remember_window_size = global.remember_window_size;
         let remember_settings_category = global.remember_settings_category;
@@ -1095,6 +1111,26 @@ impl RootView {
         })
         .detach();
 
+        let server = cx.new(ServerModel::new);
+        cx.observe(&server, |_, _, cx| cx.notify()).detach();
+        cx.observe_global::<ResonateApp>(|this, cx| {
+            this.server.update(cx, |server, cx| server.refresh(cx));
+            if this.pane == Pane::Server && !this.server.read(cx).is_open() {
+                this.set_pane(Pane::default(), cx);
+            }
+        })
+        .detach();
+
+        let server_search = cx.new(|cx| Field::new(SERVER_SEARCH_PLACEHOLDER, window, cx));
+        cx.subscribe_in(
+            &server_search,
+            window,
+            |this, _, _: &Submitted, window, cx| {
+                this.search_the_server(window, cx);
+            },
+        )
+        .detach();
+
         let figure = cx.new(|cx| Field::new(FIGURE_PLACEHOLDER, window, cx));
         cx.subscribe_in(&figure, window, |this, _, _: &Submitted, window, cx| {
             this.figure_given(window, cx);
@@ -1203,6 +1239,9 @@ impl RootView {
             minimum_length,
             typed_root,
             finding,
+            server,
+            server_search,
+            server_rows: UniformListScrollHandle::new(),
             figure,
             looking,
             equaliser,
@@ -2266,7 +2305,9 @@ impl RootView {
     }
 
     pub(crate) fn set_pane(&mut self, pane: Pane, cx: &mut Context<Self>) {
-        let pane = if pane.is_shown(cx.global::<ResonateApp>().tabs) {
+        let pane = if pane.is_shown(cx.global::<ResonateApp>().tabs)
+            && (pane != Pane::Server || self.server.read(cx).is_open())
+        {
             pane
         } else {
             Pane::default()
@@ -3441,9 +3482,12 @@ impl RootView {
 
                 (rows > 0).then_some((Shift::Listing(Listed::Heard), rows))
             }
-            Pane::Lyrics | Pane::Inspector | Pane::Visualiser | Pane::Analysis | Pane::Settings => {
-                None
-            }
+            Pane::Server
+            | Pane::Lyrics
+            | Pane::Inspector
+            | Pane::Visualiser
+            | Pane::Analysis
+            | Pane::Settings => None,
         }
     }
 
@@ -3520,7 +3564,8 @@ impl RootView {
 
     fn step_pane(&mut self, step: Step, cx: &mut Context<Self>) {
         let tabs = cx.global::<ResonateApp>().tabs;
-        let stepped = stepped_pane(self.in_front(cx), step, tabs);
+        let serves = self.server.read(cx).is_open();
+        let stepped = stepped_pane(self.in_front(cx), step, tabs, serves);
         self.choose_pane(stepped, cx);
     }
 
@@ -3913,6 +3958,7 @@ impl RootView {
             | Pane::Visualiser
             | Pane::Analysis
             | Pane::Settings => &self.track_rows,
+            Pane::Server => &self.server_rows,
         }
     }
 
@@ -4233,6 +4279,7 @@ impl RootView {
             &self.minimum_length,
             &self.typed_root,
             &self.finding,
+            &self.server_search,
             &self.figure,
             &self.looking,
         ]
@@ -4320,6 +4367,12 @@ impl RootView {
         if self.finding.read(cx).is_focused(window) {
             self.finding.update(cx, |finding, cx| finding.clear(cx));
             self.leave_filter(window, cx);
+            return;
+        }
+        if self.server_search.read(cx).is_focused(window) {
+            self.server_search.update(cx, |field, cx| field.clear(cx));
+            window.focus(&self.focus, cx);
+            cx.notify();
             return;
         }
         if self.contact.read(cx).is_focused(window) {
@@ -4819,6 +4872,7 @@ impl RootView {
         let tabs = cx.global::<ResonateApp>().tabs;
         let enriching = library.is_enriching();
         let downloads = !library.downloads().is_empty();
+        let serves = self.server.read(cx).is_open();
 
         let mut browse = div().flex().flex_col().gap_4();
         for section in Section::ALL {
@@ -4827,10 +4881,11 @@ impl RootView {
                 .flex_col()
                 .gap_0p5()
                 .child(kit::eyebrow(section.label()).px_3().pb_1p5());
-            for pane in Pane::BROWSE
-                .into_iter()
-                .filter(|pane| pane.section() == section && pane.is_shown(tabs))
-            {
+            for pane in Pane::BROWSE.into_iter().filter(|pane| {
+                pane.section() == section
+                    && pane.is_shown(tabs)
+                    && (*pane != Pane::Server || serves)
+            }) {
                 let count = match pane {
                     Pane::Albums => Some(albums),
                     Pane::Artists => Some(artists),
@@ -4841,6 +4896,7 @@ impl RootView {
                     Pane::Suggestions => (offered > 0).then_some(offered),
                     Pane::Missing => (missing > 0).then_some(missing),
                     Pane::Queue
+                    | Pane::Server
                     | Pane::Lyrics
                     | Pane::Inspector
                     | Pane::Visualiser
@@ -5535,6 +5591,12 @@ impl RootView {
         }
 
         let file = file?;
+        if self.server.read(cx).names(file) {
+            let art = self
+                .server
+                .update(cx, |server, cx| server.cover(file, None, drawn, cx))?;
+            return Some((art, Magnified::Served(file.clone())));
+        }
         let art = self
             .player
             .update(cx, |player, cx| player.art(file, drawn, cx))?;
@@ -5550,7 +5612,14 @@ impl RootView {
         let (album, file) = pictured.parts();
         let album_lacks =
             album.is_none_or(|album| self.library.read(cx).cover_is_absent(album, drawn));
-        let file_lacks = file.is_none_or(|file| self.player.read(cx).art_is_absent(file, drawn));
+        let file_lacks = file.is_none_or(|file| {
+            let server = self.server.read(cx);
+            if server.names(file) {
+                server.cover_is_absent(file, None, drawn)
+            } else {
+                self.player.read(cx).art_is_absent(file, drawn)
+            }
+        });
         album_lacks && file_lacks
     }
 
@@ -5576,6 +5645,9 @@ impl RootView {
             Magnified::File(file) => self
                 .player
                 .update(cx, |player, cx| player.whole_art(file, cx)),
+            Magnified::Served(file) => self.server.update(cx, |server, cx| {
+                server.cover(file, None, Drawn::NowPlaying, cx)
+            }),
         }
     }
 
@@ -5589,7 +5661,7 @@ impl RootView {
                 .library
                 .update(cx, |library, _| library.album_title(*album))
                 .map(SharedString::from),
-            Magnified::File(file) => Some(SharedString::from(
+            Magnified::File(file) | Magnified::Served(file) => Some(SharedString::from(
                 self.player
                     .read(cx)
                     .media(file, None)
@@ -5673,6 +5745,7 @@ impl RootView {
             Pane::Favourites => self.favourites_pane(cx),
             Pane::Suggestions => self.suggestions_pane(cx),
             Pane::Missing => self.missing_pane(cx),
+            Pane::Server => self.server_pane(cx),
             Pane::Lyrics => self.lyrics_pane(cx),
             Pane::Inspector => self.inspector(cx),
             Pane::Visualiser => self.visualiser_pane(cx),
@@ -5709,6 +5782,7 @@ impl RootView {
             .update(cx, |library, _| library.scaled_by(scale));
         self.player.update(cx, |player, _| player.scaled_by(scale));
         self.lyrics.update(cx, |lyrics, _| lyrics.scaled_by(scale));
+        self.server.update(cx, |server, _| server.scaled_by(scale));
     }
 }
 
@@ -6088,10 +6162,10 @@ fn landing(pressed: Pane, in_front: Pane, selection: Selection, opened: bool) ->
     }
 }
 
-fn stepped_pane(from: Pane, step: Step, tabs: Tabs) -> Pane {
+fn stepped_pane(from: Pane, step: Step, tabs: Tabs, serves: bool) -> Pane {
     let listed: Vec<Pane> = Pane::BROWSE
         .into_iter()
-        .filter(|pane| pane.is_shown(tabs))
+        .filter(|pane| pane.is_shown(tabs) && (*pane != Pane::Server || serves))
         .collect();
     let at = listed
         .iter()
@@ -6391,21 +6465,21 @@ mod tests {
         let listed = Pane::BROWSE;
         let (first, last) = (listed[0], listed[listed.len() - 1]);
 
-        assert_eq!(stepped_pane(first, Step::Below, EVERY_TAB), listed[1]);
+        assert_eq!(stepped_pane(first, Step::Below, EVERY_TAB, true), listed[1]);
         assert_eq!(
-            stepped_pane(last, Step::Below, EVERY_TAB),
+            stepped_pane(last, Step::Below, EVERY_TAB, true),
             first,
             "the end did not wrap"
         );
         assert_eq!(
-            stepped_pane(first, Step::Above, EVERY_TAB),
+            stepped_pane(first, Step::Above, EVERY_TAB, true),
             last,
             "the start did not wrap"
         );
 
-        let walked = listed
-            .iter()
-            .fold(first, |pane, _| stepped_pane(pane, Step::Below, EVERY_TAB));
+        let walked = listed.iter().fold(first, |pane, _| {
+            stepped_pane(pane, Step::Below, EVERY_TAB, true)
+        });
         assert_eq!(
             walked, first,
             "walking the whole sidebar did not come back to where it started"
@@ -6415,11 +6489,11 @@ mod tests {
     #[test]
     fn a_pane_the_sidebar_does_not_list_steps_onto_the_first_one_it_does() {
         assert_eq!(
-            stepped_pane(Pane::Queue, Step::Below, EVERY_TAB),
+            stepped_pane(Pane::Queue, Step::Below, EVERY_TAB, true),
             Pane::BROWSE[1]
         );
         assert_eq!(
-            stepped_pane(Pane::Settings, Step::Below, EVERY_TAB),
+            stepped_pane(Pane::Settings, Step::Below, EVERY_TAB, true),
             Pane::BROWSE[1]
         );
     }
@@ -6433,16 +6507,32 @@ mod tests {
         };
 
         assert_eq!(
-            stepped_pane(Pane::Favourites, Step::Below, hidden),
+            stepped_pane(Pane::Favourites, Step::Below, hidden, false),
             Pane::Lyrics
         );
         assert_eq!(
-            stepped_pane(Pane::Lyrics, Step::Above, hidden),
+            stepped_pane(Pane::Lyrics, Step::Above, hidden, false),
             Pane::Favourites
         );
         assert_eq!(
-            stepped_pane(Pane::Favourites, Step::Below, EVERY_TAB),
+            stepped_pane(Pane::Favourites, Step::Below, EVERY_TAB, true),
             Pane::Suggestions
+        );
+    }
+
+    #[test]
+    fn the_pane_keys_pass_over_the_server_until_one_is_given() {
+        assert_eq!(
+            stepped_pane(Pane::Missing, Step::Below, EVERY_TAB, false),
+            Pane::Lyrics
+        );
+        assert_eq!(
+            stepped_pane(Pane::Missing, Step::Below, EVERY_TAB, true),
+            Pane::Server
+        );
+        assert_eq!(
+            stepped_pane(Pane::Lyrics, Step::Above, EVERY_TAB, false),
+            Pane::Missing
         );
     }
 

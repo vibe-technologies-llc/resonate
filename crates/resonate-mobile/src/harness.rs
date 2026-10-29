@@ -222,9 +222,14 @@ impl Harness {
         }
 
         let documents: Arc<dyn Documents> = Arc::new(Folder(folder.clone()));
-        let sources = Arc::new(Sources::local().and(Arc::new(
-            GrantedFiles::new(documents, "content").expect("a granted provider"),
-        )));
+        let served = crate::served::Served::default();
+        let sources = Arc::new(
+            Sources::local()
+                .and(Arc::new(
+                    GrantedFiles::new(documents, "content").expect("a granted provider"),
+                ))
+                .and(served.provider()),
+        );
         let engines: Box<Engines> = {
             let sources = Arc::clone(&sources);
             Box::new(
@@ -252,6 +257,7 @@ impl Harness {
             enriching: crate::enrichment::Enriching::default(),
             room: crate::room::Room::under(std::env::temp_dir()),
             tagging: crate::tagging::Tagging::under(std::env::temp_dir()),
+            served,
         };
 
         let songs = SONGS

@@ -358,6 +358,10 @@ impl Subsonic {
             })
     }
 
+    pub const fn server(&self) -> &Server {
+        &self.server
+    }
+
     pub fn source_id(&self) -> &SourceId {
         &self.source
     }
@@ -413,6 +417,32 @@ impl Subsonic {
         )?;
         let found: Option<FoundDoc> = self.part(answered.found, ProviderOp::Browse)?;
         Ok(found.unwrap_or_default().found())
+    }
+
+    pub fn cover_of(&self, named: &Named) -> Result<Id> {
+        match named {
+            Named::Song(id) => {
+                let song = self.song(id)?;
+                Ok(song.cover.unwrap_or(song.id))
+            }
+            Named::Album(id) | Named::Artist(id) => Ok(id.clone()),
+        }
+    }
+
+    pub fn cover(&self, cover: &Id, side: u32) -> Result<Vec<u8>> {
+        let op = ProviderOp::Cover;
+        let deadline = Instant::now() + self.patience.answered_within;
+        let url = self.url(
+            "getCoverArt",
+            &[("id", cover.as_str()), ("size", &side.to_string())],
+        );
+        let response = self.called_within(&self.asking, op, &url, Some(deadline), None)?;
+        let media_type = response.body().mime_type().map(str::to_owned);
+        let bytes = self.read_whole(op, response)?;
+        if is_a_document(media_type.as_deref()) {
+            return Err(self.refusal_in(&bytes, op));
+        }
+        Ok(bytes)
     }
 
     pub fn songs_of(&self, named: &Named) -> Result<Vec<Song>> {
