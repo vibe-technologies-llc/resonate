@@ -36,7 +36,7 @@ pub use crate::{
     headroom::{CUTS_AT_MOST, Cut, Loudest, loudest_through, peak_through},
     kept::{KEPT_BYTES_AT_MOST, KeptAnalyses},
     levels::{Levels, Stereo},
-    loudness::Loudness,
+    loudness::{Loudness, LoudnessMeter},
     peaks::{BAND_PEAKS_BYTES, BandPeaks},
     print::PRINTED_FOR,
     signature::{Signature, signature_of},

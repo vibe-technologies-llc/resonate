@@ -1,6 +1,6 @@
 use std::{
     ffi::OsString,
-    sync::Arc,
+    sync::{Arc, atomic::AtomicBool},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -10,11 +10,22 @@ use resonate_core::{
     abx::{Arm, Arms, Score, Session, Verdict},
     eq::Profile,
 };
-use resonate_engine::{Command, Equalisation, Event, NodeName, OutputStatus, Player, RepeatMode};
+use resonate_engine::{
+    Audition, Command, Contest, DitherKind, Dithering, EngineConfig, Equalisation, Event, Lowered,
+    NodeName, OutputStatus, Player, Quality, RepeatMode, Resampling, Restoration,
+};
 
-use crate::{Cli, Error, Result, SINK_TIMEOUT, config::Config, input, readout::billing, signals};
+use crate::{
+    Cli, Error, Result, SINK_TIMEOUT,
+    cli::{AbxArgs, AbxOfArg},
+    config::Config,
+    input,
+    readout::billing,
+    signals,
+};
 
 const OUTPUT_WITHIN: Duration = Duration::from_secs(15);
+const AUDITION_BEGUN_WITHIN: Duration = Duration::from_secs(10);
 
 const HELP: &str = "\
   a  hear A      b  hear B      x  hear X
@@ -58,10 +69,76 @@ const fn key_of(stroke: char) -> Option<Key> {
     }
 }
 
+fn contest_of(asked: AbxArgs, set: &EngineConfig) -> Result<Option<Contest>> {
+    let elsewhere = Error::AbxAgainstElsewhere { testing: asked.of };
+    let restoration = asked.against_restoration.is_some();
+    let resampler = asked.against_quality.is_some() || asked.against_filter_phase.is_some();
+    let dither = asked.against_dither.is_some() || asked.against_noise_shaping.is_some();
+    match asked.of {
+        AbxOfArg::Equaliser if restoration || resampler || dither => Err(elsewhere),
+        AbxOfArg::Equaliser => Ok(None),
+        AbxOfArg::Restoration if resampler || dither => Err(elsewhere),
+        AbxOfArg::Restoration => {
+            let a = set.restoration;
+            let b = asked.against_restoration.map_or(
+                if a == Restoration::Off {
+                    Restoration::Extend
+                } else {
+                    Restoration::Off
+                },
+                Into::into,
+            );
+            Ok(Some(Contest::Restoration { a, b }))
+        }
+        AbxOfArg::Resampler if restoration || dither => Err(elsewhere),
+        AbxOfArg::Resampler => {
+            let a = Resampling {
+                quality: set.quality,
+                phase: set.filter_phase,
+            };
+            let b = Resampling {
+                quality: asked.against_quality.map_or(
+                    if a.quality == Quality::Fast {
+                        Quality::VeryHigh
+                    } else {
+                        Quality::Fast
+                    },
+                    Into::into,
+                ),
+                phase: asked.against_filter_phase.map_or(a.phase, Into::into),
+            };
+            Ok(Some(Contest::Resampling { a, b }))
+        }
+        AbxOfArg::Dither if restoration || resampler => Err(elsewhere),
+        AbxOfArg::Dither => {
+            let a = Dithering {
+                kind: set.dither,
+                shaping: set.noise_shaping,
+            };
+            let b = Dithering {
+                kind: asked.against_dither.map_or(
+                    if a.kind == DitherKind::None {
+                        DitherKind::Triangular
+                    } else {
+                        DitherKind::None
+                    },
+                    Into::into,
+                ),
+                shaping: asked.against_noise_shaping.map_or(a.shaping, Into::into),
+            };
+            Ok(Some(Contest::Dithering { a, b }))
+        }
+    }
+}
+
+enum Subject {
+    Equaliser { arms: Arms, sink: NodeName },
+    Setting { contest: Contest, lowered: Lowered },
+}
+
 struct Test {
     session: Session,
-    arms: Arms,
-    sink: NodeName,
+    subject: Subject,
 }
 
 impl Test {
@@ -76,21 +153,40 @@ impl Test {
         let arms = Arms::matched(&chain.at_rate(rate), rate)?;
         Ok(Self {
             session,
-            arms,
-            sink,
+            subject: Subject::Equaliser { arms, sink },
         })
     }
 
-    fn hearing(&self, hear: Hear) -> Option<Equalisation> {
+    fn of_a_setting(trials: usize, seed: u64, contest: Contest, lowered: Lowered) -> Result<Self> {
+        Ok(Self {
+            session: Session::new(trials, seed)?,
+            subject: Subject::Setting { contest, lowered },
+        })
+    }
+
+    fn hearing(&self, hear: Hear) -> Option<Command> {
         let arm = match hear {
             Hear::A => Arm::A,
             Hear::B => Arm::B,
             Hear::X => self.session.x()?,
         };
-        Some(Equalisation::auditioning(
-            self.sink.clone(),
-            Arc::new(self.arms.profile(arm).clone()),
-        ))
+        Some(match &self.subject {
+            Subject::Equaliser { arms, sink } => Command::SetEqualisation(Arc::new(
+                Equalisation::auditioning(sink.clone(), Arc::new(arms.profile(arm).clone())),
+            )),
+            Subject::Setting { contest, lowered } => Command::Audition(Some(Audition {
+                contest: *contest,
+                heard: arm,
+                lowered: *lowered,
+            })),
+        })
+    }
+
+    fn putting_back(&self, resolved: &Arc<Equalisation>) -> Command {
+        match self.subject {
+            Subject::Equaliser { .. } => Command::SetEqualisation(Arc::clone(resolved)),
+            Subject::Setting { .. } => Command::Audition(None),
+        }
     }
 
     fn answered(&mut self, said: Arm) -> Option<Verdict> {
@@ -110,11 +206,26 @@ impl Test {
     }
 
     fn opening(&self) -> String {
-        format!(
-            "levels matched to {:.3} dB; {}",
-            self.arms.residual_db(),
-            self.trial()
-        )
+        match &self.subject {
+            Subject::Equaliser { arms, .. } => {
+                format!(
+                    "levels matched to {:.3} dB; {}",
+                    arms.residual_db(),
+                    self.trial()
+                )
+            }
+            Subject::Setting { contest, .. } if contest.is_flat_in_level() => {
+                format!("A and B play at one level; {}", self.trial())
+            }
+            Subject::Setting { lowered, .. } if lowered.by.is_none() => {
+                format!("A and B measured at one level; {}", self.trial())
+            }
+            Subject::Setting { lowered, .. } => format!(
+                "the louder arm is lowered by {:.2} dB to match the other; {}",
+                f64::from(lowered.by.millibels()) / 100.0,
+                self.trial()
+            ),
+        }
     }
 
     fn after(&self, verdict: Verdict) -> String {
@@ -203,7 +314,33 @@ fn the_test(
     Test::begin(trials, clock_seed(), chain, status.negotiated.rate, sink)
 }
 
-pub fn run(cli: &Cli, config: &Config, file: &OsString, trials: usize) -> Result<()> {
+fn the_setting_test(player: &Player, contest: Contest, trials: usize) -> Result<Test> {
+    let lowered = if contest.is_flat_in_level() {
+        Lowered::NOTHING
+    } else {
+        said!("measuring how loud A and B play the song, to match them");
+        player
+            .levels_of_the_contest(contest, &AtomicBool::new(false))?
+            .lowered()?
+    };
+    let test = Test::of_a_setting(trials, clock_seed(), contest, lowered)?;
+    player
+        .request(Command::Audition(Some(Audition {
+            contest,
+            heard: Arm::A,
+            lowered,
+        })))?
+        .wait_for(AUDITION_BEGUN_WITHIN)?;
+    Ok(test)
+}
+
+pub fn run(
+    cli: &Cli,
+    config: &Config,
+    file: &OsString,
+    trials: usize,
+    asked: AbxArgs,
+) -> Result<()> {
     let mut named = crate::queue_items(std::slice::from_ref(file));
     if named.len() > 1 {
         return Err(Error::AbxSeveralSongs { named: named.len() });
@@ -211,6 +348,7 @@ pub fn run(cli: &Cli, config: &Config, file: &OsString, trials: usize) -> Result
     let song = named.pop().ok_or(Error::NothingPlayableNamed)?;
 
     let engine = crate::engine_config(cli, config);
+    let contest = contest_of(asked, &engine)?;
     let resolved = Arc::clone(&engine.equaliser);
     let player = Arc::new(Player::with_sources(
         engine,
@@ -233,7 +371,10 @@ pub fn run(cli: &Cli, config: &Config, file: &OsString, trials: usize) -> Result
     );
 
     let status = output_opened(&player)?;
-    let mut test = the_test(&player, &resolved, &status, trials)?;
+    let mut test = match contest {
+        None => the_test(&player, &resolved, &status, trials)?,
+        Some(contest) => the_setting_test(&player, contest, trials)?,
+    };
 
     let behind = input::played_in_the_background();
     let keyed = (!behind)
@@ -271,8 +412,8 @@ pub fn run(cli: &Cli, config: &Config, file: &OsString, trials: usize) -> Result
                     Some(Key::Quit) => break,
                     Some(Key::Help) => said!("{HELP}"),
                     Some(Key::Hear(hear)) => {
-                        let Some(equalisation) = test.hearing(hear) else { continue };
-                        if let Err(error) = player.send(Command::SetEqualisation(Arc::new(equalisation))) {
+                        let Some(command) = test.hearing(hear) else { continue };
+                        if let Err(error) = player.send(command) {
                             played = Err(error.into());
                             break;
                         }
@@ -297,7 +438,7 @@ pub fn run(cli: &Cli, config: &Config, file: &OsString, trials: usize) -> Result
     for line in test.conclusion() {
         said!("{line}");
     }
-    if let Err(error) = player.send(Command::SetEqualisation(Arc::clone(&resolved))) {
+    if let Err(error) = player.send(test.putting_back(&resolved)) {
         tracing::debug!(%error, "the engine had already stopped");
     }
     drop(player);
@@ -324,6 +465,20 @@ mod tests {
         Arc::new(
             Profile::new(Preamp::from_decibels(0.0).expect("in range"), vec![band]).expect("bands"),
         )
+    }
+
+    fn arms_of(test: &Test) -> &Arms {
+        match &test.subject {
+            Subject::Equaliser { arms, .. } => arms,
+            Subject::Setting { .. } => panic!("a test of the equaliser"),
+        }
+    }
+
+    fn equalised(heard: Option<Command>) -> Arc<Equalisation> {
+        match heard {
+            Some(Command::SetEqualisation(equalisation)) => equalisation,
+            other => panic!("an equaliser was not heard: {other:?}"),
+        }
     }
 
     fn begun(trials: usize) -> Test {
@@ -354,17 +509,17 @@ mod tests {
     fn hearing_an_arm_is_the_matched_profile_bound_to_the_sink_in_use() {
         let test = begun(4);
 
-        let heard_a = test.hearing(Hear::A).expect("A is always there");
-        let heard_b = test.hearing(Hear::B).expect("B is always there");
+        let heard_a = equalised(test.hearing(Hear::A));
+        let heard_b = equalised(test.hearing(Hear::B));
         let sink = NodeName::new("alsa_output.usb");
 
         assert_eq!(
             heard_a.for_sink(&sink).map(|profile| &**profile),
-            Some(&test.arms.a)
+            Some(&arms_of(&test).a)
         );
         assert_eq!(
             heard_b.for_sink(&sink).map(|profile| &**profile),
-            Some(&test.arms.b)
+            Some(&arms_of(&test).b)
         );
         assert!(heard_a.enabled && heard_b.enabled);
     }
@@ -375,11 +530,11 @@ mod tests {
         let x = test.session.x().expect("a trial is due");
         let sink = NodeName::new("alsa_output.usb");
 
-        let heard = test.hearing(Hear::X).expect("X is drawn");
+        let heard = equalised(test.hearing(Hear::X));
 
         assert_eq!(
             heard.for_sink(&sink).map(|profile| &**profile),
-            Some(test.arms.profile(x))
+            Some(arms_of(&test).profile(x))
         );
     }
 
@@ -392,7 +547,7 @@ mod tests {
         }
 
         assert!(test.is_finished());
-        assert_eq!(test.hearing(Hear::X), None);
+        assert!(test.hearing(Hear::X).is_none());
         assert_eq!(test.answered(Arm::A), None);
         let lines = test.conclusion();
         assert!(lines[0].starts_with("8 of 8 right"));
@@ -465,7 +620,7 @@ mod tests {
         let parsed = Cli::try_parse_from(["resonate", "abx", "song.flac", "--trials", "24"]);
 
         let Ok(Cli {
-            command: Some(Sub::Abx { file, trials }),
+            command: Some(Sub::Abx { file, trials, .. }),
             ..
         }) = parsed
         else {
@@ -483,5 +638,124 @@ mod tests {
             })
         ));
         assert!(Cli::try_parse_from(["resonate", "abx"]).is_err());
+    }
+
+    fn asked(against: &[&str]) -> AbxArgs {
+        let mut words = vec!["resonate", "abx", "song.mp3"];
+        words.extend_from_slice(against);
+        match Cli::try_parse_from(words) {
+            Ok(Cli {
+                command: Some(Sub::Abx { against, .. }),
+                ..
+            }) => against,
+            other => panic!("the grammar refused {against:?}: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_setting_is_tested_as_the_settings_have_it_against_the_arm_named_or_its_opposite() {
+        let set = EngineConfig::default();
+
+        assert_eq!(contest_of(asked(&[]), &set).ok().flatten(), None);
+        assert_eq!(
+            contest_of(asked(&["--of", "restoration"]), &set)
+                .ok()
+                .flatten(),
+            Some(Contest::Restoration {
+                a: Restoration::Off,
+                b: Restoration::Extend,
+            })
+        );
+        assert_eq!(
+            contest_of(
+                asked(&["--of", "restoration", "--against-restoration", "repair"]),
+                &set
+            )
+            .ok()
+            .flatten(),
+            Some(Contest::Restoration {
+                a: Restoration::Off,
+                b: Restoration::Repair,
+            })
+        );
+        assert_eq!(
+            contest_of(
+                asked(&["--of", "resampler", "--against-filter-phase", "minimum"]),
+                &set
+            )
+            .ok()
+            .flatten(),
+            Some(Contest::Resampling {
+                a: Resampling {
+                    quality: set.quality,
+                    phase: set.filter_phase,
+                },
+                b: Resampling {
+                    quality: Quality::Fast,
+                    phase: resonate_engine::FilterPhase::Minimum,
+                },
+            })
+        );
+        assert_eq!(
+            contest_of(asked(&["--of", "dither"]), &set).ok().flatten(),
+            Some(Contest::Dithering {
+                a: Dithering {
+                    kind: set.dither,
+                    shaping: set.noise_shaping,
+                },
+                b: Dithering {
+                    kind: DitherKind::None,
+                    shaping: set.noise_shaping,
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn an_arm_named_for_another_test_is_refused() {
+        let set = EngineConfig::default();
+
+        for against in [
+            &["--against-quality", "fast"][..],
+            &["--of", "restoration", "--against-dither", "none"],
+            &["--of", "dither", "--against-restoration", "extend"],
+            &["--of", "resampler", "--against-noise-shaping", "flat"],
+        ] {
+            assert!(
+                matches!(
+                    contest_of(asked(against), &set),
+                    Err(Error::AbxAgainstElsewhere { .. })
+                ),
+                "{against:?} was taken"
+            );
+        }
+    }
+
+    #[test]
+    fn hearing_an_arm_of_a_setting_sends_the_audition_with_that_arm_and_ending_lets_it_go() {
+        let contest = Contest::Dithering {
+            a: Dithering {
+                kind: DitherKind::Triangular,
+                shaping: resonate_engine::NoiseShaping::Threshold,
+            },
+            b: Dithering {
+                kind: DitherKind::None,
+                shaping: resonate_engine::NoiseShaping::Threshold,
+            },
+        };
+        let test = Test::of_a_setting(4, 7, contest, Lowered::NOTHING).expect("a session");
+        let x = test.session.x().expect("a trial is due");
+
+        for (hear, arm) in [(Hear::A, Arm::A), (Hear::B, Arm::B), (Hear::X, x)] {
+            assert!(matches!(
+                test.hearing(hear),
+                Some(Command::Audition(Some(Audition { heard, .. }))) if heard == arm
+            ));
+        }
+        assert!(matches!(
+            test.putting_back(&Arc::new(Equalisation::default())),
+            Command::Audition(None)
+        ));
+        assert!(test.opening().starts_with("A and B play at one level"));
     }
 }

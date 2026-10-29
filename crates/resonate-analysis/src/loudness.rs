@@ -212,6 +212,22 @@ impl Metering {
     }
 }
 
+pub struct LoudnessMeter(Metering);
+
+impl LoudnessMeter {
+    pub fn new(placements: &[Placement], sample_rate: SampleRate) -> Self {
+        Self(Metering::new(placements, sample_rate))
+    }
+
+    pub fn note(&mut self, interleaved: &[f32]) {
+        self.0.note(interleaved);
+    }
+
+    pub fn finished(self) -> Loudness {
+        self.0.finished()
+    }
+}
+
 fn weights_of(placements: &[Placement], channels: usize) -> Vec<f64> {
     let beside = placements.contains(&Placement::Side);
     let mut weights: Vec<f64> = placements

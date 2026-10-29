@@ -1,3 +1,4 @@
+mod audition;
 mod catalog;
 mod command;
 mod engine;
@@ -24,8 +25,8 @@ mod zones;
 pub use resonate_analysis::{
     Analysis, AnalysisOp, Applied, BandGains, CUTS_AT_MOST, Cut, Cutoff, ENVELOPE_LANES, Envelope,
     Error as AnalysisError, Examined, FLOOR_DB, Finding, Judgement, KeptAnalyses, Levels,
-    LossyGuess, Loudest, Loudness, Ramp, Reach, SPECTROGRAM_ROWS, Spectrogram, Spectrum, Stereo,
-    Study, Verdict, Watch, Watching, analyse, study,
+    LossyGuess, Loudest, Loudness, LoudnessMeter, Ramp, Reach, SPECTROGRAM_ROWS, Spectrogram,
+    Spectrum, Stereo, Study, Verdict, Watch, Watching, analyse, study,
 };
 pub use resonate_audio::{
     AudioSource, Backend, CardProfile, DeviceTime, Error as SinkError, GraphTime, HardwareVolume,
@@ -53,6 +54,7 @@ pub use resonate_dsp::{
 };
 
 pub use crate::{
+    audition::{Audition, Contest, ContestLevels, Dithering, Lowered, Resampling, levels_of},
     catalog::{ArtRead, TagsRead},
     command::{
         Command, CommandKind, Landing, Outcome, PreviousRestarts, RepeatMode, SkipUnderRepeat,

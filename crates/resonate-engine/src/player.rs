@@ -1,5 +1,8 @@
 use std::{
-    sync::{Arc, atomic::Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     thread::{self, JoinHandle},
     time::Duration,
 };
@@ -14,10 +17,11 @@ use resonate_core::{FrameSpan, MediaLocation};
 use resonate_pipewire::PipeWire;
 
 use crate::{
-    Backend, Command, CoverArt, Engine, EngineConfig, Error, Event, HeardAt, HeardClock, Landing,
-    MediaInfo, Outcome, OutputSettings, PlayerState, Published, QueueRows, Queued, Request, Result,
-    Stepping, StreamDigest, Tapped,
+    Backend, Command, Contest, ContestLevels, CoverArt, Engine, EngineConfig, Error, Event,
+    HeardAt, HeardClock, Landing, MediaInfo, Outcome, OutputSettings, PlayerState, Published,
+    QueueItem, QueueRows, Queued, Request, Result, Stepping, StreamDigest, Tapped,
     catalog::{ArtRead, Catalog, TagsRead},
+    levels_of,
 };
 
 const EVENT_SLOTS: usize = 256;
@@ -158,6 +162,30 @@ impl Player {
 
     pub fn output_settings(&self) -> Arc<OutputSettings> {
         Arc::clone(&self.published.settings.read())
+    }
+
+    pub fn levels_of_the_contest(
+        &self,
+        contest: Contest,
+        stop: &AtomicBool,
+    ) -> Result<ContestLevels> {
+        let state = self.state();
+        let output = state.output.ok_or(Error::NothingToAudition)?;
+        let row = state.queue_position.ok_or(Error::NothingToAudition)?;
+        let item = self
+            .queue()
+            .get(row)
+            .map(|item| QueueItem::clone(item))
+            .ok_or(Error::NothingToAudition)?;
+        let config = self.output_settings().applied_to(EngineConfig::default());
+        levels_of(
+            &self.sources,
+            &item,
+            output.negotiated,
+            &config,
+            contest,
+            stop,
+        )
     }
 
     pub fn queue(&self) -> QueueRows {

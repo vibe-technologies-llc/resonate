@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::VecDeque,
     mem,
     sync::{Arc, atomic::AtomicBool},
@@ -14,17 +15,21 @@ use resonate_audio::{
 use resonate_codec::{BoxLayout, Decoder, MediaInfo, Packing, ProfileBuilder, ReplayGain, Sources};
 use resonate_core::{
     AppliedGain, AudioBuffer, FrameSpan, Frames, Gain, MeasuredGain, MediaLocation, QueueStamp,
-    RtFault, SampleRate, Span, StreamSpec, TrackHints, TrackId, Volume,
+    RtFault, SampleRate, Span, StreamSpec, TrackHints, TrackId, Volume, abx::Arm,
 };
 use resonate_dsp::{Chain, Easing, Recall};
 use smallvec::SmallVec;
 
-use self::splicing::{Splicing, recall_for};
+use self::{
+    arms::Arms,
+    splicing::{Splicing, recall_for},
+};
 use crate::{
     Backend, Command, CommandKind, EngineConfig, Error, Event, HeardAt, HeardClock, Opener,
     OutputMode, OutputPlan, OutputSettings, OutputStatus, PlaybackState, PlayerState, Published,
     RepeatMode, ReplayGainMode, Reply, Request, Result, Seeks, SinkResult, SkipUnderRepeat,
     Sleeping, Stepping, StreamDigest, Surveyor, Tapped, Tapping, TrackState, TransportState,
+    audition::{Audition, Contested, plans_of},
     lending::{Block, Decoding, Lost, Returned},
     measure::{Measured, Measuring},
     pipeline::{
@@ -41,6 +46,7 @@ use crate::{
     turns::Turns,
 };
 
+mod arms;
 mod splicing;
 
 const SINK_TIMEOUT: Duration = Duration::from_secs(2);
@@ -475,6 +481,9 @@ struct Output {
     recall: Recall,
     splice_owed: bool,
     rendered_for_another: bool,
+    arms: Option<Arms>,
+    switch_owed: bool,
+    recall_spoiled: bool,
 }
 
 struct Retiring {
@@ -633,6 +642,9 @@ impl Output {
             recall,
             splice_owed: false,
             rendered_for_another: false,
+            arms: None,
+            switch_owed: false,
+            recall_spoiled: false,
         })
     }
 
@@ -688,6 +700,7 @@ impl Output {
             .overs_of_retired_chains
             .saturating_add(self.chain.overs());
         self.chain = chain;
+        self.arms = None;
         self.note_the_overs();
         self.status.hears(plan.mode);
         self.plan = plan;
@@ -943,6 +956,12 @@ pub struct Engine {
     deferred: Vec<Deferred>,
     lockstep: Option<Following>,
     stepping: Stepping,
+    auditioning: Option<Auditioning>,
+}
+
+struct Auditioning {
+    audition: Audition,
+    before: Contested,
 }
 
 struct Following {
@@ -1110,6 +1129,7 @@ impl Engine {
             deferred: Vec::new(),
             lockstep: None,
             stepping: Stepping::Alone,
+            auditioning: None,
         }
     }
 
@@ -1135,6 +1155,7 @@ impl Engine {
                 self.open_ahead();
                 self.finish_reshaping();
                 self.splice_what_is_owed();
+                self.switch_what_is_owed();
                 self.finish_fading();
                 self.promote();
                 self.keep_in_step();
@@ -1635,18 +1656,22 @@ impl Engine {
                 Ok(())
             }
             Command::SetQuality(quality) => {
+                self.forget_the_audition();
                 self.config.quality = quality;
                 self.rebind_where_the_plan_moves(ReadBy::Resampler)
             }
             Command::SetFilterPhase(phase) => {
+                self.forget_the_audition();
                 self.config.filter_phase = phase;
                 self.rebind_where_the_plan_moves(ReadBy::Resampler)
             }
             Command::SetDither(dither) => {
+                self.forget_the_audition();
                 self.config.dither = dither;
                 self.rebind_where_the_plan_moves(ReadBy::Dither)
             }
             Command::SetRestoration(restoration) => {
+                self.forget_the_audition();
                 self.config.restoration = restoration;
                 self.rebind_where_the_plan_moves(ReadBy::PlanAlone)
             }
@@ -1664,6 +1689,7 @@ impl Engine {
                 self.rebind_where_it_stands()
             }
             Command::SetNoiseShaping(shaping) => {
+                self.forget_the_audition();
                 self.config.noise_shaping = shaping;
                 self.rebind_where_the_plan_moves(ReadBy::PlanAlone)
             }
@@ -1718,6 +1744,7 @@ impl Engine {
                 self.wake_from_the_sleep_fade();
                 Ok(())
             }
+            Command::Audition(asked) => self.audition(asked),
             Command::Relocate(moved) => {
                 self.queue.relocate(&moved);
                 if let Some(track) = self.track.as_mut()
@@ -2402,6 +2429,8 @@ impl Engine {
         if let Some(output) = self.output.as_mut() {
             output.chain.reset();
             output.recall.forget();
+            output.start_the_arms_over();
+            output.recall_spoiled = false;
             output.producer.discard_buffered();
             output.discarding_since = Some(Instant::now());
             if let Some(tapping) = output.tapping.as_ref() {
@@ -2653,7 +2682,7 @@ impl Engine {
         } else {
             Entering::Whole
         };
-        let output = Output::open(
+        let mut output = Output::open(
             track,
             &sink,
             &self.config,
@@ -2662,6 +2691,9 @@ impl Engine {
             entering,
             self.muted,
         )?;
+        if let Some(auditioning) = self.auditioning.as_ref() {
+            output.take_up_the_audition(track, &self.config, &auditioning.audition)?;
+        }
 
         let delivery = output.plan.delivery();
         if let Some(track) = self.track.as_mut() {
@@ -2687,6 +2719,150 @@ impl Engine {
 
     fn retune(&mut self) -> Result<()> {
         self.retune_for(Retuning::Level)
+    }
+
+    fn settings_as_set(&self) -> EngineConfig {
+        let mut set = self.config.clone();
+        if let Some(auditioning) = self.auditioning.as_ref() {
+            auditioning.before.put_back(&mut set);
+        }
+        set
+    }
+
+    fn audition(&mut self, asked: Option<Audition>) -> Result<()> {
+        let Some(asked) = asked else {
+            return self.end_the_audition();
+        };
+        let running = self.auditioning.as_ref().map(|running| running.audition);
+        match running {
+            Some(running)
+                if running.contest == asked.contest && running.lowered == asked.lowered =>
+            {
+                self.hear_the_arm(asked.heard)
+            }
+            Some(_) | None => self.begin_the_audition(asked),
+        }
+    }
+
+    fn begin_the_audition(&mut self, asked: Audition) -> Result<()> {
+        let set = self.settings_as_set();
+        let (Some(track), Some(output)) = (self.track.as_ref(), self.output.as_ref()) else {
+            return Err(Error::NothingToAudition);
+        };
+        if !matches!(output.plan.packing, Packing::Samples) {
+            return Err(Error::NothingToAudition);
+        }
+        let (a, b) = plans_of(
+            track.decoded(),
+            &output.bound,
+            output.plan.stream,
+            &set,
+            track.replay_gain,
+            output.attenuator,
+            asked.contest,
+        );
+        if asked.contest.renders_alike(&a, &b) {
+            return Err(Error::ArmsAlike);
+        }
+
+        let before = Contested::of(&set);
+        self.config = set;
+        asked.contest.apply(asked.heard, &mut self.config);
+        self.auditioning = Some(Auditioning {
+            audition: asked,
+            before,
+        });
+        self.rebind_where_it_stands()
+    }
+
+    fn hear_the_arm(&mut self, arm: Arm) -> Result<()> {
+        let Some(running) = self.auditioning.as_mut() else {
+            return Ok(());
+        };
+        if running.audition.heard == arm {
+            return Ok(());
+        }
+        running.audition.heard = arm;
+        let contest = running.audition.contest;
+        contest.apply(arm, &mut self.config);
+        self.switch_the_arms()
+    }
+
+    fn switch_the_arms(&mut self) -> Result<()> {
+        let Some(heard) = self
+            .auditioning
+            .as_ref()
+            .map(|running| running.audition.heard)
+        else {
+            return Ok(());
+        };
+        let Some(output) = self.output.as_mut() else {
+            return Ok(());
+        };
+        if output
+            .arms
+            .as_ref()
+            .is_some_and(|arms| arms.heard() == heard)
+        {
+            return Ok(());
+        }
+        if !self.boundaries.is_empty() && output.arms.is_some() {
+            output.switch_owed = true;
+            return Ok(());
+        }
+        match output.hear_the_other_arm() {
+            Splicing::Spliced(status) => {
+                self.emit(Event::OutputChanged(status));
+                Ok(())
+            }
+            Splicing::Owed => Ok(()),
+            Splicing::Unspliceable => self.rebind_where_it_stands(),
+        }
+    }
+
+    fn switch_what_is_owed(&mut self) {
+        let owed = self
+            .output
+            .as_ref()
+            .is_some_and(|output| output.switch_owed && !output.producer.is_splicing());
+        if !owed || !self.boundaries.is_empty() {
+            return;
+        }
+        if let Some(output) = self.output.as_mut() {
+            output.switch_owed = false;
+        }
+        if let Err(error) = self.switch_the_arms() {
+            tracing::warn!(%error, "the arm of the listening test owed could not be heard");
+        }
+    }
+
+    fn forget_the_audition(&mut self) {
+        let Some(running) = self.auditioning.take() else {
+            return;
+        };
+        running.before.put_back(&mut self.config);
+        if let Some(output) = self.output.as_mut() {
+            output.let_go_of_the_other_arm();
+            output.switch_owed = false;
+        }
+    }
+
+    fn end_the_audition(&mut self) -> Result<()> {
+        let Some(running) = self.auditioning.as_ref().map(|running| running.audition) else {
+            return Ok(());
+        };
+        let set = self.settings_as_set();
+        let as_set = Contested::of(&set);
+        let arm_as_set = [Arm::A, Arm::B]
+            .into_iter()
+            .find(|&arm| Contested::of(&running.contest.applied(arm, &set)) == as_set);
+        let Some(arm) = arm_as_set.filter(|&arm| running.lowered.gain_of(arm) >= 1.0) else {
+            self.forget_the_audition();
+            return self.rebind_where_it_stands();
+        };
+        self.hear_the_arm(arm)?;
+        self.forget_the_audition();
+        Ok(())
     }
 
     fn splice_the_back(&mut self, wanted: OutputPlan) -> Result<Splicing> {
@@ -2784,7 +2960,11 @@ impl Engine {
             None => output.producer.hear_at(entering),
         }
 
-        if retuning == Retuning::Equaliser && wanted.equalisation != output.plan.equalisation {
+        let auditioned = output.arms.is_some();
+        if retuning == Retuning::Equaliser
+            && !auditioned
+            && wanted.equalisation != output.plan.equalisation
+        {
             match self.splice_the_back(wanted.clone())? {
                 Splicing::Spliced(status) => {
                     self.emit(Event::OutputChanged(status));
@@ -2798,17 +2978,25 @@ impl Engine {
             return Ok(());
         };
         if wanted.same_shape_as(&output.plan) {
-            output.chain.set_gain(
-                output.attenuator.leaves(self.config.volume),
-                replay_gain_as_planned(decoded_packing, &self.config, replay_gain),
-            );
+            let volume = output.attenuator.leaves(self.config.volume);
+            let planned = replay_gain_as_planned(decoded_packing, &self.config, replay_gain);
+            output.chain.set_gain(volume, planned);
+            if let Some(arms) = output.arms.as_mut() {
+                arms.set_gain_of_the_other(volume, planned);
+            }
             output.note_the_rendered_level();
             if let Some(profile) = wanted.equalisation.as_ref() {
                 output.chain.set_equalisation(profile);
                 output.chain.ease_equalisation(Easing::Returning);
+                if let Some(arms) = output.arms.as_mut() {
+                    arms.set_equalisation_of_the_other(profile);
+                }
             }
             output.plan = wanted;
             return Ok(());
+        }
+        if auditioned {
+            return self.rebind_where_it_stands();
         }
         if output.plan.becomes_on_the_same_stream(&wanted) {
             return self.reshape(wanted);
@@ -3350,10 +3538,13 @@ impl Engine {
         let (Some(track), Some(output)) = (self.track.as_mut(), self.output.as_mut()) else {
             return;
         };
-        output.chain.set_gain(
-            output.attenuator.leaves(self.config.volume),
-            replay_gain_as_planned(track.decoded().packing, &self.config, track.replay_gain),
-        );
+        let volume = output.attenuator.leaves(self.config.volume);
+        let planned =
+            replay_gain_as_planned(track.decoded().packing, &self.config, track.replay_gain);
+        output.chain.set_gain(volume, planned);
+        if let Some(arms) = output.arms.as_mut() {
+            arms.set_gain_of_the_other(volume, planned);
+        }
         let delivery = wanted.delivery();
         track.decoding.deliver(delivery);
         track.decoded.retype(delivery.format);
@@ -3575,7 +3766,7 @@ impl Engine {
                 }
             }
 
-            if output.plan.is_transparent() {
+            if output.plan.is_transparent() && output.arms.is_none() {
                 let written = output.producer.write_from(&track.decoded, track.decoded_at);
                 if written == 0 {
                     return Ok(Filled::AsFarAsItGoes);
@@ -3609,6 +3800,7 @@ impl Engine {
             return false;
         };
         let widened = track.decoded.data().widen_into(start, room);
+        output.level_the_arms(widened);
         let Some(input) = output.widened.get(..widened) else {
             return false;
         };
@@ -3616,6 +3808,11 @@ impl Engine {
         let count = output
             .chain
             .process_recalled(input, &mut output.carrier, &mut output.recall);
+        output.render_the_other_arm(
+            count.frames_out,
+            count.frames_in.min(frames_in),
+            track.source(),
+        );
 
         track.decoded_at = track
             .decoded_at
@@ -3631,7 +3828,7 @@ impl Engine {
     }
 
     fn flush(output: &mut Output) {
-        if output.plan.is_transparent() {
+        if output.plan.is_transparent() && output.arms.is_none() {
             output.end();
             return;
         }
@@ -3647,6 +3844,7 @@ impl Engine {
             }
         };
 
+        output.flush_the_other_arm(frames);
         output.stage(frames);
         output.draining = Some(0);
         Self::drain(output);
@@ -4396,11 +4594,15 @@ impl Engine {
     }
 
     fn publish_settings(&self) {
-        let unchanged = self.published.settings.read().already_says(&self.config);
+        let set = match self.auditioning {
+            Some(_) => Cow::Owned(self.settings_as_set()),
+            None => Cow::Borrowed(&self.config),
+        };
+        let unchanged = self.published.settings.read().already_says(&set);
         if unchanged {
             return;
         }
-        *self.published.settings.write() = Arc::new(OutputSettings::of(&self.config));
+        *self.published.settings.write() = Arc::new(OutputSettings::of(&set));
     }
 
     fn publish_queue(&mut self) {

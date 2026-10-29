@@ -60,7 +60,7 @@ rest on this discipline alone):
   turn by its `Turned` count, so up to `TURNS_WAITING_AT_MOST` turns wait at once each at its own
   level; every slot and the current level are movable by `hear_across` while turns wait, and a
   later `hear_at` outranks every step through an atomic turn count). A splice (an
-  equaliser change, `audio.md`) arrives as two atomics behind a `Release`d count; the consumer pops
+  equaliser change or a listening test's switch of arms, `audio.md`) arrives as two atomics behind a `Release`d count; the consumer pops
   to its point, commits the stale frames unread and stores the count back, all within the ring's
   own preallocated bytes.
 - `resonate-pipewire/src/process.rs`: the callback: playback `Cycle`, capture `Hearing` (reads each

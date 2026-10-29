@@ -21,6 +21,8 @@ paths:
   - "crates/resonate-ui/src/views/settings/abx.rs"
   - "crates/resonate/src/abx.rs"
   - "crates/resonate-mobile/src/abx.rs"
+  - "crates/resonate-engine/src/audition.rs"
+  - "crates/resonate-engine/src/engine/arms.rs"
   - "ios/Sources/Resonate/ListeningTest.swift"
   - "ios/Sources/ResonateLogic/ListeningTestWords.swift"
   - "android/app/src/main/java/org/resonate/android/ui/equaliser/ListeningTest*.kt"
@@ -385,6 +387,71 @@ A level-matched ABX of the equaliser against a bypass of itself, in the Equalise
   the score, the chance by guessing and the p-value, and the real `Equalisation` is sent back.
   `Test` is the pure half and holds the tests (`hearing_x_is_the_arm_the_session_drew_for_this_trial`,
   `answering_every_trial_rightly_ends_on_a_significant_score`).
+- **Restoration, the resampler and dither are tested by an audition: two chains run side by side
+  and the switch is the equaliser's splice.** `Command::Audition(Some(Audition { contest, heard,
+  lowered }))` (`resonate-engine::audition`): a `Contest` names what A and B differ in
+  (`Restoration { a, b }`, `Resampling { a, b }` of quality and phase, `Dithering { a, b }` of kind
+  and shaping) and writes an arm's settings into an `EngineConfig` (`Contest::apply`). Beginning
+  one keeps the contested settings as set (`Contested`), writes the heard arm's into the engine's
+  config and rebinds where the song stands (one gap, at the start of the test); `bind` then hands
+  the new `Output` the other arm (`Output::take_up_the_audition`, `engine/arms.rs`): its plan is
+  `plan_for` the other arm's config on the very stream the heard arm opened, its chain built there
+  on the engine thread with a `Recall` of what it renders, sized as the splice's. Every block the
+  heard chain consumes is widened once and fed to both (`convert`; a transparent heard plan takes the
+  converting path while an audition stands, so the other arm is fed too), each arm's output counted
+  on the ring's heard frames from the output's first, so the two are aligned frame for frame
+  (every stage keeps a track its length from its first frame). A switch of `heard` with the same
+  contest and lowering is `Output::hear_the_other_arm`: at `RingProducer::splice_point` it takes
+  the other arm's kept frames from the point on, blends the first `SPLICE_BLENDED_OVER` from the
+  words written, writes them behind the ring (`write_spliced`) and publishes the ring's `splice`,
+  then swaps chain, plan, trim and recall between the arms; nothing is rebuilt and nothing is added
+  to the callback. A switch while a splice waits for the graph or a boundary waits is owed
+  (`switch_owed`), and where none can be made (DoP, a draining tail, a ring holding too little, a
+  chain swapped since) it rebinds. **Two arms the plan and the chain render alike are refused**
+  (`Contest::renders_alike`: `OutputPlan::renders_alike`, and the quality and phase under a
+  resampler, the dither's kind under a dither, which the chain reads itself; `Error::ArmsAlike`), as
+  is nothing playing or a DoP stream (`NothingToAudition`); both read `Cause::NothingToCompare` or
+  `NothingPlaying`. While an audition stands the published settings are the ones set, not the arm's,
+  and a switch leaves `OutputStatus::mode` the one the audition began on (so no pane or chip
+  names X); a volume change sets both arms' gain, a curve edit both arms' bands, and any
+  other change of shape rebinds with both arms built again; a setting command for one of the five
+  contested settings ends the audition first and is then taken as ever. An equaliser splice is not
+  made while an audition stands, nor over a recall a switch between unlike fronts spoiled, until a
+  seek starts it over. `Command::Audition(None)` puts the settings back; where the arm as set is
+  heard unlowered it lets the other go with no gap (splicing to it first where the other is heard),
+  else it rebinds.
+- **Restoration's arms are level-matched by measuring them; the resampler's and dither's are flat.**
+  `Contest::is_flat_in_level`. `levels_of(sources, item, stream, config, contest, stop)`
+  (`Player::levels_of_the_contest` for the row playing, at the negotiated stream and the settings
+  as set) decodes the song whole through both arms' chains (`MEASURED_IN_BLOCKS_OF`, at unity
+  volume and gain) and meters each with `resonate_analysis::LoudnessMeter` (BS.1770, the study's
+  meter), leaving the first `SETTLING_LEFT_UNMEASURED` (4 s, at most half the song) out because
+  restoration learns its wall and long-term spectrum over that long and a listener compares what
+  follows; `ContestLevels::lowered` lowers the louder arm by the difference (`Lowered`, a `Trim`,
+  `Error::LevelsTooFarApart` past `Trim::WIDEST_MILLIBELS`, `LevelsUnmeasured` for silence or a
+  stop). The trim scales that arm's input as it is widened (`Output::level_the_arms`), before
+  every stage and the gain the ring is told of, so the ring's level arithmetic is untouched and
+  dither still lands on the grid. Proved on the fake graph in `tests/transport.rs`: two resampler
+  qualities and dither on and off switched three times with no period losing the sine's peak, no
+  step past the sine's own and no reopen, the undithered arm coming out the same words every period
+  and the dithered one not
+  (`switching_between_two_resampler_qualities_splices_the_other_without_a_gap_or_a_step`,
+  `switching_dither_on_and_off_splices_the_other_without_a_gap_or_a_step`); restoration off and
+  extended over an MP3 of steady tones, measured some 0.12 dB apart, heard within 0.02 dB of each
+  other once lowered, with no gap and no reopen
+  (`restoration_on_and_off_are_heard_level_matched_and_switched_without_a_gap`, skipped without
+  ffmpeg's libmp3lame).
+- **`resonate abx FILE --of restoration|resampler|dither` tests a setting** (`contest_of`): A is
+  what the settings and flags say, B the `--against-restoration`, `--against-quality`,
+  `--against-filter-phase`, `--against-dither` or `--against-noise-shaping` named (by default the
+  opposite: extend or off, fast or very high, none or triangular; phase and shaping the settings'),
+  and an `--against` flag of another test is `Error::AbxAgainstElsewhere`. Restoration is measured
+  before the test begins (on the terminal's thread; a signal leaves as ever); the keys and session
+  are the equaliser's, `a`, `b`, `x` sending the `Audition` with that arm, and the end sends
+  `Audition(None)` (`Test::putting_back`;
+  `a_setting_is_tested_as_the_settings_have_it_against_the_arm_named_or_its_opposite`,
+  `an_arm_named_for_another_test_is_refused`,
+  `hearing_an_arm_of_a_setting_sends_the_audition_with_that_arm_and_ending_lets_it_go`).
 - **The phones reach it through `resonate-mobile/src/abx.rs`**: `listening_test_lengths()` (8, 16 and
   32, the pane's), `begin_listening_test(curve, trials)` makes a `ListeningTest` object (the
   `Session`, the `Arms` and which arm is heard) from the curve shown, levelled at the stream's rate
@@ -400,7 +467,15 @@ A level-matched ABX of the equaliser against a bypass of itself, in the Equalise
   iOS `ListeningTestSection`; the words are `ListeningTestView.kt` and `ListeningTestWords.swift`,
   held by `ListeningTestViewTest` and `ListeningTestWordsTests`) and end it when the page is left or
   the test is ended; an edit of the curve sends the real curve and so ends the comparison in all but
-  name.
+  name. **A setting is tested through `begin_setting_test(setting, trials)`** (blocking: restoration
+  is measured first, so a phone calls it off its main thread): a `TestedSetting` (`Restoration`
+  of two `LossyRestoration`s, `Resampling` of two qualities and phases, `Dither` of two
+  `TestedDither`s: `Off`, `Flat` triangular, `Shaped` triangular under `Threshold`) becomes the
+  engine's `Contest`, the test holds it with its `Lowered` (`Compared::Setting`, its
+  `residual_db` 0) and begins the audition at A, refused as the engine refuses
+  (`Error::Player`, `a_setting_test_is_refused_while_nothing_plays`); hearing an arm sends the
+  `Audition`, and `end_listening_test()` sends `Audition(None)` before the preferences' curve.
+  Neither phone draws it yet (`FEATURES.md`).
 
 ## Room correction
 

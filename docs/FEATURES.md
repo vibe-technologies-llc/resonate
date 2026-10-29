@@ -143,10 +143,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   is, is not done
 
 ## Later: Equaliser and DSP extras
-- [M] The listening test toggles the equaliser alone: restoration, the resampler's quality and
-  phase and noise shaping each rebind the stream (a gap) on a change, so they cannot be A and B of a
-  test without a splice for them, and each would need its own level match (the resampler's and
-  dither's are flat in level, restoration's is not)
+- [S] The listening test of restoration, the resampler and dither is reached from `resonate abx
+  --of` and the phones' boundary (`begin_setting_test`) alone: the window's *Listening test* group
+  and both phones' *Listening test* sections still offer the equaliser against its bypass only
 
 ## Later: Lyrics
 - [L · blocked: gpui] The sung line cannot grow as it lights: gpui 0.2.2 on Linux draws a glyph on a

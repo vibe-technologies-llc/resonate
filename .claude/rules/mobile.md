@@ -193,7 +193,10 @@ behind the system's, is `library.md`'s *A day is the listener's*.
 UniFFI object holding the `Session`, the levelled `Arms` and the arm heard; `MobilePlayer` sends the
 arms (`hear_in_listening_test`) and puts the preferences' equaliser back (`end_listening_test`), so
 the object never touches the engine itself and a front end holds one per run. Refusals are
-`Error::ListeningTest*` sentences; the core errors it cannot name pass as `Domain`.
+`Error::ListeningTest*` sentences; the core errors it cannot name pass as `Domain`. The object
+compares either the equaliser's `Arms` or a setting (`Compared`): `begin_setting_test` takes a
+`TestedSetting` to the engine's audition (`eq.md`), measuring restoration's levels on the caller's
+thread, and the engine's refusals pass as `Error::Player`.
 
 ## Lyrics
 

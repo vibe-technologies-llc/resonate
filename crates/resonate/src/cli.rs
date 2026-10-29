@@ -44,6 +44,77 @@ pub enum NoiseShapingArg {
     Threshold,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
+pub enum AbxOfArg {
+    #[default]
+    Equaliser,
+    Restoration,
+    Resampler,
+    Dither,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum RestorationArg {
+    Off,
+    Repair,
+    Extend,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Args)]
+pub struct AbxArgs {
+    #[arg(
+        long,
+        value_enum,
+        value_name = "WHAT",
+        default_value_t = AbxOfArg::Equaliser,
+        help = "What A and B differ in; A is always what the settings say"
+    )]
+    pub of: AbxOfArg,
+
+    #[arg(
+        long,
+        value_enum,
+        value_name = "LEVEL",
+        help = "B's lossy restoration under --of restoration [default: extend, or off where the \
+                settings restore]"
+    )]
+    pub against_restoration: Option<RestorationArg>,
+
+    #[arg(
+        long,
+        value_enum,
+        value_name = "QUALITY",
+        help = "B's resampler quality under --of resampler [default: fast, or very-high where \
+                the settings say fast]"
+    )]
+    pub against_quality: Option<QualityArg>,
+
+    #[arg(
+        long,
+        value_enum,
+        value_name = "PHASE",
+        help = "B's resampler phase under --of resampler [default: the settings' own]"
+    )]
+    pub against_filter_phase: Option<FilterPhaseArg>,
+
+    #[arg(
+        long,
+        value_enum,
+        value_name = "KIND",
+        help = "B's dither under --of dither [default: none, or triangular where the settings \
+                dither none]"
+    )]
+    pub against_dither: Option<DitherArg>,
+
+    #[arg(
+        long,
+        value_enum,
+        value_name = "CURVE",
+        help = "B's noise shaping under --of dither [default: the settings' own]"
+    )]
+    pub against_noise_shaping: Option<NoiseShapingArg>,
+}
+
 #[derive(Debug, Parser)]
 #[command(name = "resonate", version, about = "A high-fidelity music player")]
 pub struct Cli {
@@ -1239,8 +1310,9 @@ pub enum Sub {
     Eq(EqArgs),
 
     #[command(
-        about = "Run a blind listening test of the equaliser bound to the output in use against \
-                 a bypass of itself, level-matched, over one song looped, keys on standard input"
+        about = "Run a blind listening test, level-matched, over one song looped, keys on \
+                 standard input: the equaliser bound to the output in use against a bypass of \
+                 itself, or the restoration, resampler or dither in force against another"
     )]
     Abx {
         #[arg(value_name = "FILE")]
@@ -1253,6 +1325,9 @@ pub enum Sub {
             help = "Hold this many trials, from 1 to 100"
         )]
         trials: usize,
+
+        #[command(flatten)]
+        against: AbxArgs,
     },
 
     #[command(

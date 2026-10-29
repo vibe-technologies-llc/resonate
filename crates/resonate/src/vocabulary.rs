@@ -1,6 +1,6 @@
 use crate::cli::{
     DitherArg, FilterPhaseArg, NoiseShapingArg, PlaylistOrderArg, QualityArg, RepeatArg,
-    RowOrderArg, SortArg, WindowArg,
+    RestorationArg, RowOrderArg, SortArg, WindowArg,
 };
 
 impl From<RepeatArg> for resonate_engine::RepeatMode {
@@ -40,6 +40,16 @@ impl From<QualityArg> for resonate_engine::Quality {
             QualityArg::Balanced => Self::Balanced,
             QualityArg::High => Self::High,
             QualityArg::VeryHigh => Self::VeryHigh,
+        }
+    }
+}
+
+impl From<RestorationArg> for resonate_engine::Restoration {
+    fn from(restoration: RestorationArg) -> Self {
+        match restoration {
+            RestorationArg::Off => Self::Off,
+            RestorationArg::Repair => Self::Repair,
+            RestorationArg::Extend => Self::Extend,
         }
     }
 }

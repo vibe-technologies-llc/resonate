@@ -8,8 +8,8 @@ use resonate_dsp::{
 };
 
 use crate::{
-    BluetoothWake, Equalisation, Error, HeardClock, Levelling, Placement, QueueItem, Result, Until,
-    Within,
+    Audition, BluetoothWake, Equalisation, Error, HeardClock, Levelling, Placement, QueueItem,
+    Result, Until, Within,
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -114,6 +114,7 @@ pub enum Command {
     SetBuffer(Duration),
     SleepUntil(Option<Until>),
     Relocate(Vec<(MediaLocation, MediaLocation)>),
+    Audition(Option<Audition>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -163,6 +164,7 @@ pub enum CommandKind {
     SetBuffer,
     SleepUntil,
     Relocate,
+    Audition,
 }
 
 impl CommandKind {
@@ -212,6 +214,7 @@ impl CommandKind {
             Self::SetBuffer => "the buffer",
             Self::SleepUntil => "the sleep timer",
             Self::Relocate => "where the files moved",
+            Self::Audition => "the listening test",
         }
     }
 }
@@ -242,7 +245,8 @@ impl CommandKind {
             | Self::SetSink
             | Self::FollowTheFormats
             | Self::SetDeviceMute
-            | Self::SleepUntil => Within::TheZone,
+            | Self::SleepUntil
+            | Self::Audition => Within::TheZone,
             Self::SetSkipUnderRepeat
             | Self::SetPreviousRestarts
             | Self::SetQuality
@@ -322,6 +326,7 @@ impl Command {
             Self::SetBluetoothWake(_) => CommandKind::SetBluetoothWake,
             Self::SetBuffer(_) => CommandKind::SetBuffer,
             Self::SleepUntil(_) => CommandKind::SleepUntil,
+            Self::Audition(_) => CommandKind::Audition,
         }
     }
 }

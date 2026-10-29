@@ -470,6 +470,11 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   (`an_equaliser_change_is_heard_within_a_few_pulls_rather_than_a_buffer_later_and_keeps_the_music_in_time`,
   `equaliser_changes_asked_for_faster_than_the_graph_reaches_them_end_on_the_last`,
   `a_splice_the_graph_reached_late_keeps_time_rather_than_playing_frames_again`).
+- **A listening test of restoration, the resampler or dither runs two chains side by side and
+  switches between them by the same splice** (`eq.md`'s *The listening test*): the other arm is fed
+  every block the heard chain takes, keeps what it renders in a `Recall` counted on the ring's heard
+  frames, and a switch lays its frames from the splice point, blended, and swaps the chains; no
+  stage is rebuilt, the decoder never seeks, and the callback is untouched.
 - **A mute is the ring's, not the chain's.** `Command::SetVolume(Volume::MUTE)` over a volume above
   it sets `Engine::muted` and leaves `EngineConfig::volume`, so the chain keeps rendering at the
   volume that comes back. The PCM ring ramps to zeros; the DoP ring feeds marked silence; the stream

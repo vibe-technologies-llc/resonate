@@ -93,6 +93,18 @@ pub enum Error {
 
     #[error("zone {zone} did not start playing what was handed over to it")]
     HandoverUnheard { zone: ZoneId },
+
+    #[error("nothing is playing on a stream an audition can splice into")]
+    NothingToAudition,
+
+    #[error("the two arms of the audition render alike on the stream open")]
+    ArmsAlike,
+
+    #[error("the loudness of the two arms of the audition could not be measured")]
+    LevelsUnmeasured,
+
+    #[error("the two arms of the audition are {millibels} millibels apart, past the widest trim")]
+    LevelsTooFarApart { millibels: i32 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -111,6 +123,7 @@ pub enum Cause {
     HeldByAnotherZone,
     ZoneRefused,
     NotHandedOver,
+    NothingToCompare,
 }
 
 impl Cause {
@@ -136,6 +149,10 @@ impl Error {
             Self::NoSuchZone { .. } | Self::FirstZoneStays | Self::NoZoneLeft => Cause::ZoneRefused,
             Self::NothingToHandOver { .. } => Cause::NothingPlaying,
             Self::HandedToItself { .. } | Self::HandoverUnheard { .. } => Cause::NotHandedOver,
+            Self::NothingToAudition => Cause::NothingPlaying,
+            Self::ArmsAlike | Self::LevelsUnmeasured | Self::LevelsTooFarApart { .. } => {
+                Cause::NothingToCompare
+            }
         }
     }
 
@@ -161,7 +178,11 @@ impl Error {
             | Self::NoZoneLeft
             | Self::HandedToItself { .. }
             | Self::NothingToHandOver { .. }
-            | Self::HandoverUnheard { .. } => None,
+            | Self::HandoverUnheard { .. }
+            | Self::NothingToAudition
+            | Self::ArmsAlike
+            | Self::LevelsUnmeasured
+            | Self::LevelsTooFarApart { .. } => None,
         }
     }
 
@@ -187,7 +208,11 @@ impl Error {
             | Self::NoZoneLeft
             | Self::HandedToItself { .. }
             | Self::NothingToHandOver { .. }
-            | Self::HandoverUnheard { .. } => None,
+            | Self::HandoverUnheard { .. }
+            | Self::NothingToAudition
+            | Self::ArmsAlike
+            | Self::LevelsUnmeasured
+            | Self::LevelsTooFarApart { .. } => None,
         }
     }
 }

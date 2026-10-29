@@ -72,6 +72,8 @@ impl Output {
             && !self.ended
             && !self.ends_at_a_change
             && !self.producer.is_discarding()
+            && !self.recall_spoiled
+            && self.arms.is_none()
             && self.plan.fronts_alike(&wanted);
         if !renders_in_place {
             return Ok(Splicing::Unspliceable);

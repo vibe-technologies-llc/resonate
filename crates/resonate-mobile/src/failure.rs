@@ -167,6 +167,7 @@ const fn plainly(cause: Cause) -> &'static str {
         Cause::HeldByAnotherZone => "Another zone plays that device bit-perfect",
         Cause::ZoneRefused => "That zone is no longer there",
         Cause::NotHandedOver => "The other zone didn't take the playback over",
+        Cause::NothingToCompare => "The two sides of the listening test can't be told apart here",
     }
 }
 
