@@ -711,7 +711,7 @@ mod tests {
 
     fn mark_heard(opened: &Opened) -> u8 {
         let mut bytes = [0_u8; 4];
-        opened.rendering.lock().fill(&mut bytes);
+        opened.rendering.lock().fill(&mut bytes, None);
         bytes[0]
     }
 

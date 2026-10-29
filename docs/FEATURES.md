@@ -21,11 +21,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   `build-std`
 
 ## Playback and output
-- [S · 0.4.0] A handover between zones is aligned on the moment each callback ran plus the latency
-  its stream clock last read, not on the device's own timestamp (`pw_time.now` with its `delay`,
-  Oboe's `getTimestamp`, RemoteIO's `AudioTimeStamp`), so two zones meet only as closely as a
-  callback runs after its cycle began and that latency reading is true; the graph's timestamps
-  would take the callback's lateness out
 - [M · blocked: pipewire-rs] A rebind or turn inside a row that moves the rate while
   `force-graph-rate` pins it (on by default), or switches the pin, still reopens the PipeWire stream:
   the pin is the node's `node.rate` property, which only `pw_stream_update_properties` moves, and

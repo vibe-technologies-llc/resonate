@@ -28,7 +28,7 @@ pub use resonate_analysis::{
     Study, Verdict, Watch, Watching, analyse, study,
 };
 pub use resonate_audio::{
-    AudioSource, Backend, CardProfile, Error as SinkError, GraphTime, HardwareVolume,
+    AudioSource, Backend, CardProfile, DeviceTime, Error as SinkError, GraphTime, HardwareVolume,
     LatencyRequest, MediaRole, Moment, NodeName, Opener, Plugged, ProfileIndex, Reshaped, Reshaper,
     SinkChange, SinkFormats, SinkId, SinkInfo, SinkPort, SinkResult, SinkStream, Stamp,
     StreamClock, StreamCommand, StreamEvent, StreamRequest, StreamState, StreamVolume, Surveyor,

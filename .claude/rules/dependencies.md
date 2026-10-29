@@ -80,7 +80,9 @@ here, add it there.
 - **`tracing-subscriber`**: `env-filter`, and default `tracing-log` kept: gpui logs via `log`. `resonate-mobile` takes it for the `fmt` writer of its phone log (`mobile.md`'s *Logging*).
 - **`unicode-normalization`** (`std`): core's `folded_letters` and library's `playlist::folded`.
 - **`rustix`**: no `unsafe` in OS calls: `termios`, `getpgrp` (binary), `fs` xattrs
-  (`resonate-codec`), `getuid` (`resonate-discord`).
+  (`resonate-codec`), `getuid` (`resonate-discord`), `time`'s `clock_gettime(Monotonic)`
+  (`resonate-pipewire`'s callback and Oboe's, Android alone, to read how far a device timestamp
+  lies from now; `realtime.md`).
 - **`unicode-width`**: `Table` and the readout (CJK = two columns). `unicode-segmentation` is
   `resonate-ui`'s, text editing.
 - **`image`**: exactly the five formats `CoverArt` names (`bmp`, `gif`, `jpeg`, `png`, `webp`).

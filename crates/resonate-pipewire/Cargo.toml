@@ -12,6 +12,7 @@ pipewire.workspace = true
 resonate-core.workspace = true
 resonate-audio.workspace = true
 rtrb.workspace = true
+rustix = { workspace = true, features = ["time"] }
 smallvec.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

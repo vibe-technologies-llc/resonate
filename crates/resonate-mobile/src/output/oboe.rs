@@ -225,6 +225,7 @@ where
         failed: Arc::clone(&failed),
         bytes: vec![0; RENDER_BYTES].into_boxed_slice(),
         clock: Arc::clone(&clock),
+        rate: spec.rate,
         shape: PhantomData,
     };
     let opened = Asked::of(way, requested)

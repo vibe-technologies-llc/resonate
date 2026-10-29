@@ -59,6 +59,30 @@ impl Stamp {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct DeviceTime {
+    pub clock_now: u64,
+    pub read_at: u64,
+    pub ahead: Frames,
+}
+
+impl DeviceTime {
+    pub fn stamp(self) -> Stamp {
+        Stamp {
+            at: self.moment_of_the_reading(Moment::now()),
+            ahead: self.ahead,
+        }
+    }
+
+    const fn moment_of_the_reading(self, now: Moment) -> Moment {
+        if self.read_at >= self.clock_now {
+            Moment(now.0.saturating_add(self.read_at - self.clock_now))
+        } else {
+            Moment(now.0.saturating_sub(self.clock_now - self.read_at))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -84,6 +108,49 @@ mod tests {
             stamp.first_heard(SampleRate::HZ_44100),
             Moment::from_nanos(1_000).after(Duration::from_millis(10))
         );
+    }
+
+    #[test]
+    fn a_device_reading_lands_as_far_from_now_as_it_was_on_the_devices_own_clock() {
+        let now = Moment::from_nanos(10_000_000);
+        let past = DeviceTime {
+            clock_now: 7_000_000_000,
+            read_at: 6_997_000_000,
+            ahead: Frames(64),
+        };
+        let future = DeviceTime {
+            read_at: 7_000_500_000,
+            ..past
+        };
+        let before_the_epoch = DeviceTime { read_at: 0, ..past };
+
+        assert_eq!(
+            past.moment_of_the_reading(now),
+            Moment::from_nanos(7_000_000)
+        );
+        assert_eq!(
+            future.moment_of_the_reading(now),
+            Moment::from_nanos(10_500_000)
+        );
+        assert_eq!(
+            before_the_epoch.moment_of_the_reading(now),
+            Moment::from_nanos(0)
+        );
+    }
+
+    #[test]
+    fn a_stamp_from_a_device_reading_keeps_what_lies_ahead_of_the_fill() {
+        let reading = DeviceTime {
+            clock_now: 5_000,
+            read_at: 5_000,
+            ahead: Frames(441),
+        };
+        let before = Moment::now();
+
+        let stamp = reading.stamp();
+
+        assert_eq!(stamp.ahead, Frames(441));
+        assert!(stamp.at >= before && stamp.at <= Moment::now());
     }
 
     #[test]

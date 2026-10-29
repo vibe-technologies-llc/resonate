@@ -8,7 +8,7 @@ mod stream;
 pub use crate::{
     backend::{Backend, Opener, SinkResult, Surveyor},
     error::{Error, Operation, Result},
-    moment::{Moment, Stamp},
+    moment::{DeviceTime, Moment, Stamp},
     sink::{
         CardProfile, HardwareVolume, NodeName, Plugged, ProfileIndex, SinkChange, SinkFormats,
         SinkId, SinkInfo, SinkPort, Words,

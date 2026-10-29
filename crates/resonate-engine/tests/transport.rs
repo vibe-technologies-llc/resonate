@@ -22,14 +22,14 @@ use resonate_core::{
     SampleFormat, SampleRate, Span, StreamSpec, TrackHints, TrackId, Volume,
 };
 use resonate_engine::{
-    AudioSource, Backend, Band, BandGain, BandKind, Caught, Cause, Command, DitherKind,
+    AudioSource, Backend, Band, BandGain, BandKind, Caught, Cause, Command, DeviceTime, DitherKind,
     EngineConfig, Equalisation, Error as EngineError, Event, FADED_OVER, FilterPhase, Frequency,
     GraphTime, HardwareVolume, Held, Hinting, Impulse, Media, MediaProvider, MediaStream, Moment,
     NodeName, NoiseShaping, Opener, Opening, Opens, OutputMode, Placement, PlaybackState, Player,
     Plugged, Preamp, PreviousRestarts, Profile, Q, Quality, QueueItem, QueueRows, Reading,
     RepeatMode, ReplayGainMode, Reshaped, Reshaper, Restoration, Result, Resumable, Resumption,
     SinkChange, SinkError, SinkFormats, SinkId, SinkInfo, SinkPort, SinkResult, SinkStream,
-    SkipUnderRepeat, SourceId, Sources, Stamp, Stepping, StreamClock, StreamCommand, StreamEvent,
+    SkipUnderRepeat, SourceId, Sources, Stepping, StreamClock, StreamCommand, StreamEvent,
     StreamRequest, StreamState, StreamVolume, Surveyor, Tapped, Unreshapable, Until, Words, Zone,
     ZoneId, ZoneName, Zones, stamp_of,
 };
@@ -205,10 +205,15 @@ impl Graph {
             return;
         };
         let mut block = vec![0_u8; bytes];
-        let stamp = Stamp {
-            at: due,
+        let reading = DeviceTime {
+            clock_now: Moment::now().nanos(),
+            read_at: due.nanos(),
             ahead: Frames::ZERO,
         };
+        let stamp = self
+            .clock
+            .as_ref()
+            .map_or_else(|| reading.stamp(), |clock| clock.stamp_by(Some(reading)));
         let filled = source.fill_stamped(&mut block, stamp);
         block.truncate(filled);
         let offset = self.played.len();
@@ -1949,6 +1954,7 @@ const S24_STRIDE: usize = 8;
 const ALIGNED_WITHIN_FRAMES: i64 = 2;
 const MEASURED_PAST_THE_FADE: usize = 64;
 const REFERENCE_BEFORE: Duration = Duration::from_millis(30);
+const CALLBACKS_LATE_BY_MICROS: [u64; 7] = [0, 2_600, 700, 3_300, 1_500, 400, 2_100];
 
 struct Device {
     graph: Arc<Mutex<Graph>>,
@@ -1983,6 +1989,11 @@ impl Clocked {
         }
     }
 
+    fn lateness_of(&self, device: usize) -> Duration {
+        let turn = (self.ticks as usize + 3 * device) % CALLBACKS_LATE_BY_MICROS.len();
+        Duration::from_micros(CALLBACKS_LATE_BY_MICROS[turn])
+    }
+
     fn run_until(&mut self, devices: &[&Device], mut done: impl FnMut() -> bool, what: &str) {
         let deadline = Instant::now() + PATIENCE;
         while Instant::now() < deadline {
@@ -1990,10 +2001,17 @@ impl Clocked {
                 (self.ticks * QUANTUM_FRAMES as u64) as f64,
                 SampleRate::HZ_44100,
             );
-            while Moment::now() < due {
-                thread::sleep(Duration::from_micros(200));
-            }
-            for device in devices {
+            let mut late: Vec<(Duration, &Device)> = devices
+                .iter()
+                .enumerate()
+                .map(|(index, device)| (self.lateness_of(index), *device))
+                .collect();
+            late.sort_by_key(|(lateness, _)| *lateness);
+            for (lateness, device) in late {
+                let called = due.after(lateness);
+                while Moment::now() < called {
+                    thread::sleep(Duration::from_micros(100));
+                }
                 device.pull(due);
             }
             self.ticks += 1;
