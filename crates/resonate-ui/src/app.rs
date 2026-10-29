@@ -14,8 +14,8 @@ use gpui::{
     WindowDecorations, WindowOptions, actions, px, size,
 };
 use resonate_core::{
-    Appearance, ArtistsDrawn, FrameSpan, Frames, MediaLocation, Presence, ScrollbarMode, Spectral,
-    TrackId,
+    Appearance, ArtistsDrawn, FrameSpan, Frames, MediaLocation, Presence, ScrollbarMode,
+    SpeakerAngle, Spectral, TrackId,
 };
 use resonate_engine::{
     ArtRead, BitRate, Command, CommandKind, Event, MediaInfo, NodeName, Outcome, OutputSettings,
@@ -188,6 +188,7 @@ pub struct ResonateApp {
     pub by_sound: Arc<AtomicBool>,
     pub lyrics_by_the_locale: Arc<AtomicBool>,
     pub convolution: Option<PathBuf>,
+    pub speaker_angle: SpeakerAngle,
     pub music_folder: Option<PathBuf>,
     pub file_dropped: bool,
     pub window_buttons: WindowButtons,
@@ -1060,6 +1061,7 @@ pub fn run(
             by_sound: Arc::clone(&stored.by_sound),
             lyrics_by_the_locale: Arc::clone(&stored.lyrics_by_the_locale),
             convolution: stored.convolution.clone(),
+            speaker_angle: stored.speaker_angle,
             music_folder: stored.music_folder.clone(),
             file_dropped: stored.file_dropped,
             window_buttons: stored.window_buttons,

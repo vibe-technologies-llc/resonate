@@ -42,6 +42,9 @@ pub enum Error {
     #[error("a preamp of {0} millidecibels is outside -{max}..={max}", max = BandGain::WIDEST_MILLI_DECIBELS)]
     PreampOutOfRange(i32),
 
+    #[error("a speaker angle of {0} degrees is outside {min}..={max}", min = crate::eq::SpeakerAngle::NARROWEST_DEGREES, max = crate::eq::SpeakerAngle::WIDEST_DEGREES)]
+    SpeakerAngleOutOfRange(u16),
+
     #[error("a profile of {0} bands is more than the {MAX_BANDS} a chain carries")]
     TooManyBands(usize),
 

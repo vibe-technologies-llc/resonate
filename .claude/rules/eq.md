@@ -12,6 +12,7 @@ paths:
   - "crates/resonate-dsp/src/crossfeed.rs"
   - "crates/resonate-engine/src/impulse.rs"
   - "crates/resonate-codec/src/sofa.rs"
+  - "crates/resonate-codec/src/netcdf.rs"
   - "crates/resonate-online/src/autoeq.rs"
   - "crates/resonate-core/src/abx.rs"
   - "crates/resonate-ui/src/views/settings/abx.rs"
@@ -506,42 +507,86 @@ The stereo image, apart from the transducer: both are stereo-only, off by defaul
   (`peak_through`) runs the real convolver and is exact.
 
 - **A SOFA set of head-related responses is read as the same two-by-two response**
-  (`resonate-codec/src/sofa.rs`, `read_hrir`; `HRIR_EXTENSIONS` is `sofa`, apart from
-  `AUDIO_EXTENSIONS` so a scan never admits one as a song). `engine::read_impulse` asks `read_hrir`
-  first and falls through to the decoders where the file does not start with the HDF5 signature
-  (`Ok(None)`: sniffed from the bytes, never the extension), so the desktop's file choosers, the
-  `convolution` key and the phones' pickers need no path of their own; it is a typed
-  `codec::Error::Sofa { location, source: SofaFault }`, and `read_binaural_pair` refuses a set as a
-  pair's half like any crossed response. The container is read by `hdf5-reader` (pure Rust, read
-  only, `default-features = false`: no rayon, no lz4) from a `Vec` of at most `SOFA_BYTES_AT_MOST`
-  (128 MiB, `SofaFault::TooLarge`), with the chunk cache held to 16 MiB and a chunk to 64 MiB;
-  reading `Data.IR` takes only the two measurements chosen, as hyperslabs, never the whole set, and
-  every file-declared shape is checked before a read (`Data.IR` exactly `[M, 2, N]`, `SourcePosition`
-  exactly `[M, 3]`, `Data.Delay` `[2]`, `[1, 2]` or `[M, 2]`, `Data.SamplingRate` at most a million
-  numbers, `M` at most a million, the response cut at `LONGEST_IMPULSE`). Float32 and float64 are
-  read, contiguous or chunked with deflate and shuffle (the crate's filters).
-  **The measurements chosen** are the nearest, by the angle between directions, to the standard
-  stereo speakers, 30 degrees left and right of the front at no elevation (the radius is ignored;
-  the first of equals wins); `SourcePosition:Type` is `spherical` (azimuth counterclockwise from the
-  front, elevation, in degrees unless `Units` names radians) or `cartesian` (front, left, up),
-  anything else `PositionTypeUnknown` and a missing `Type` `MemberMissing`. A set whose nearest
-  measurement to a speaker is past 45 degrees is refused (`NoMeasurementNear`, naming the side),
-  never answered with a far one. The left speaker's measurement gives LL and LR (receiver 0 and 1,
-  the left and right ear), the right speaker's RL and RR, the order `Impulse::crossed` takes. A
-  `Data.Delay` (samples, rounded, negative taken as none) is laid as silence before the ear's
-  response, and the four responses are padded with silence to one length. The rate is
-  `Data.SamplingRate` rounded to hertz (`RateNotUsable` outside 8 kHz to 768 kHz); the response is
-  then redrawn at the stream's rate by `Impulse::at` like any other, and `with_headroom` holds the
-  whole under unity. `fuzz/fuzz_targets/sofa.rs` feeds `read_hrir_bytes`, seeded by a plain and a
-  deflated set (`every_seed_of_the_fuzz_target_is_a_set_that_reads`); fixtures are built by
-  `hdf5-writer` in the tests
+  (`resonate-codec/src/sofa.rs`, `read_hrir(sources, location, longest, angle)`; `HRIR_EXTENSIONS`
+  is `sofa`, apart from `AUDIO_EXTENSIONS` so a scan never admits one as a song).
+  `engine::read_impulse` (and `read_binaural_pair`) take the `SpeakerAngle` and ask `read_hrir`
+  first, falling through to the decoders where the file is neither HDF5 nor netCDF-3 classic
+  (`Ok(None)`: sniffed from the first bytes, the HDF5 signature or `CDF` and a version, never the
+  extension), so the desktop's file choosers, the `convolution` key and the phones' pickers need no
+  path of their own; a fault is a typed `codec::Error::Sofa { location, source: SofaFault }`, and
+  `read_binaural_pair` refuses a set as a pair's half like any crossed response.
+  **The container is either of two**: HDF5, by `hdf5-reader` (pure Rust, read only,
+  `default-features = false`: no rayon, no lz4) with the chunk cache held to 16 MiB and a chunk to
+  64 MiB, float32 and float64 contiguous or chunked with deflate and shuffle; or netCDF-3 classic,
+  CDF-1 and CDF-2 (32 and 64-bit offsets), by `netcdf.rs`, a reader of our own (no C library):
+  `Classic::of` walks the header (dimensions, attributes, variables), every count checked against
+  the bytes left before anything is allocated, every name text, every dimension named by a variable
+  declared, the record dimension first; `Variable::numbers` takes a `Pick` (an index or a span) a
+  dimension and reads only the elements picked, big-endian float and double, a record variable
+  stepping by the record size, every offset checked against the file (`ClassicFault`); a `CDF`
+  file of another version (CDF-5) is `SofaFault::ClassicVersion`. The one `Variable` enum of
+  `sofa.rs` serves both, so a set is read by the same code from either. The bytes are one `Vec` of
+  at most `SOFA_BYTES_AT_MOST` (128 MiB, `SofaFault::TooLarge`); reading `Data.IR` takes only the
+  measurements chosen, as hyperslabs or runs, never the whole set, and every file-declared shape is
+  checked before a read (`Data.IR` exactly `[M, 2, N]`, or `[M, 2, E, N]` for a speaker set,
+  `SourcePosition` exactly `[M, 3]`, `EmitterPosition` `[E, 3]` or `[E, 3, 1]`, `ListenerView` `[M, 3]`
+  or `[1, 3]`, `Data.Delay` `[2]`, `[1, 2]` or `[M, 2]`, `Data.SamplingRate` at most a million
+  numbers, `M` at most a million, `E` at most 65 536, the response cut at `LONGEST_IMPULSE`).
+  **The speaker angle is a setting**: `resonate_core::SpeakerAngle` (whole degrees, 5 to 90,
+  `STANDARD` 30), the key `speaker-angle` (`Config::speaker_angle`, an integer held to
+  `NARROWEST_DEGREES..=WIDEST_DEGREES`, `Setting::SpeakerAngle`), worn on `ResonateApp::speaker_angle`
+  and offered in the Room correction group as chips of 20, 30, 45, 60 and 90 degrees; choosing one
+  stores it and reads the held response file again (`set_the_speaker_angle`, then
+  `correct_the_room`), the group's mark puts back 30 and stops correcting, and every read of the
+  response the window makes (the shape look, the fit of the preamp, a pair) asks at the angle worn.
+  The left speaker is `angle` degrees left of the front at no elevation, the right the same to the
+  right. **A free-field set** (`SimpleFreeFieldHRIR`) reads each speaker from the measurements
+  around it (`neighbours_of`): the nearest, by the angle between directions (the radius is
+  ignored), must lie within 45 degrees (`NoMeasurementNear`, naming the side, else the set is
+  refused rather than answered with a far one); within `EXACT_WITHIN_DEGREES` (0.5) it is taken
+  whole, the first of equals winning; otherwise up to three nearest, the nearest always and the
+  others only within `NEIGHBOURS_WITHIN_DEGREES` (15), are blended by inverse-square distance.
+  **A blend is onset-aligned** (`aligned_sum`): each ear of each measurement (with its
+  `Data.Delay` laid as silence before it) has its onset, the first tap at a tenth of its peak
+  (`onset_of`); the blend's onset is the weighted mean of them, rounded, and each response is
+  shifted to it before the weighted sum, so impulses of different delay add into one sharp impulse
+  and not a comb, while the arrival time (and so the interaural delay) follows the weights
+  (`two_measurements_either_side_of_a_speaker_are_blended_with_their_onsets_aligned`,
+  `a_blend_keeps_the_difference_between_the_ears_that_the_delays_make`). **A speaker set**
+  (`MultiSpeakerBRIR`, `Data.IR` of four dimensions) is not blended: the listener view
+  (`ListenerView`, spherical or cartesian, cartesian where it names no `Type`) nearest the front is
+  the one read, and each speaker takes the emitter (`EmitterPosition`) nearest its direction, the
+  listener taken at the origin (`ListenerPosition` is ignored). `SourcePosition:Type` (and the
+  emitter's, the view's) is `spherical` (azimuth counterclockwise from the front, elevation, in
+  degrees unless `Units` names radians) or `cartesian` (front, left, up), anything else
+  `PositionTypeUnknown` and a missing `Type` `MemberMissing` (not for the view). The left speaker's
+  response gives LL and LR (receiver 0 and 1, the left and right ear), the right speaker's RL and
+  RR, the order `Impulse::crossed` takes. A `Data.Delay` (samples, rounded, negative taken as
+  none) is laid as silence before the ear's response, and the four responses are padded with
+  silence to one length. The rate is `Data.SamplingRate` rounded to hertz (`RateNotUsable` outside
+  8 kHz to 768 kHz); the response is then redrawn at the stream's rate by `Impulse::at` like any
+  other, and `with_headroom` holds the whole under unity. `fuzz/fuzz_targets/sofa.rs` feeds
+  `read_hrir_bytes`, seeded by a plain and a deflated set
+  (`every_seed_of_the_fuzz_target_is_a_set_that_reads`); fixtures are built by `hdf5-writer` and,
+  for netCDF-3, by the test-only `netcdf::written` in the tests
   (`the_measurement_nearest_each_speaker_is_the_one_whose_taps_are_taken`,
+  `a_speaker_angle_the_listener_sets_chooses_the_measurements_at_that_angle`,
+  `a_classic_netcdf_file_reads_as_the_same_set_in_hdf5_does`,
+  `a_classic_file_keeping_its_measurements_as_records_single_precision_and_delayed_reads_too`,
+  `a_set_of_speakers_is_read_at_the_view_facing_the_front_and_the_emitters_at_the_angle`,
   `cartesian_positions_choose_as_spherical_ones_do`, `a_delay_puts_silent_samples_before_an_ear_and_every_response_stays_as_long_as_the_rest`,
   `a_set_cut_short_or_marked_anywhere_is_refused_or_read_and_never_panics`,
+  `a_classic_file_cut_short_or_marked_anywhere_is_refused_or_read_and_never_panics`,
   `a_set_of_head_related_responses_is_read_as_the_two_by_two_response_of_the_speakers`,
+  `a_speaker_angle_the_listener_sets_moves_the_measurements_a_set_is_read_at`,
   `a_set_of_head_related_responses_is_kept_as_the_two_by_two_response_it_reads_as`). The phones'
   pickers offer `.sofa` beside audio (Android's `RESPONSE_DOCUMENTS`, iOS's `responseTypes`) and
-  keep one as `room-correction.sofa`.
+  keep one as `room-correction.sofa`; the boundary holds the angle (`speaker_angle`,
+  `set_speaker_angle(degrees)`, 30 until set, an angle outside 5 to 90 a `Domain` error) and reads
+  the kept set at it, re-reading and re-sending the correction applied when it moves (a set that
+  will not read at the new angle leaves the angle and the correction standing); neither phone's
+  page offers it yet (`FEATURES.md`)
+  (`the_speaker_angle_a_listener_sets_is_the_one_a_set_is_read_at`).
 
 ## The binding
 

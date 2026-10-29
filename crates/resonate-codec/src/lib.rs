@@ -17,6 +17,7 @@ mod insert;
 mod journal;
 mod matroska;
 mod mpa;
+mod netcdf;
 mod ogg;
 mod opus;
 mod overlay;
@@ -62,6 +63,7 @@ pub use crate::{
         Mended, mend_a_cut_short_write, mend_what_was_written_back_from_elsewhere,
         names_a_cut_short_write,
     },
+    netcdf::ClassicFault as NetcdfFault,
     probe::{
         CoverArt, ImageFormat, PacketDigest, Pictured, Picturing, Scanned, probe, probe_cover_art,
         probe_pictured, probe_scanned, probe_span,

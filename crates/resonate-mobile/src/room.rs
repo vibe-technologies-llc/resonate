@@ -7,7 +7,7 @@ use std::{
 
 use parking_lot::Mutex;
 use resonate_codec::Sources;
-use resonate_core::{AUDIO_EXTENSIONS, HRIR_EXTENSIONS, MediaLocation};
+use resonate_core::{AUDIO_EXTENSIONS, HRIR_EXTENSIONS, MediaLocation, SpeakerAngle};
 use resonate_engine::{
     Command, Impulse, PairedReadError, binaural_wave, read_binaural_pair, read_impulse,
 };
@@ -61,6 +61,7 @@ impl RoomCorrection {
 pub(crate) struct Room {
     folder: PathBuf,
     applied: Mutex<Option<Arc<Impulse>>>,
+    angle: Mutex<SpeakerAngle>,
 }
 
 impl Room {
@@ -68,11 +69,20 @@ impl Room {
         Self {
             folder,
             applied: Mutex::new(None),
+            angle: Mutex::new(SpeakerAngle::STANDARD),
         }
     }
 
     pub(crate) fn applied(&self) -> Option<Arc<Impulse>> {
         self.applied.lock().clone()
+    }
+
+    fn angle(&self) -> SpeakerAngle {
+        *self.angle.lock()
+    }
+
+    fn speak_at(&self, angle: SpeakerAngle) {
+        *self.angle.lock() = angle;
     }
 
     fn apply(&self, impulse: Option<Arc<Impulse>>) {
@@ -174,6 +184,7 @@ impl Room {
             sources,
             &MediaLocation::local(&left_path),
             &MediaLocation::local(&right_path),
+            self.angle(),
         );
         let _ = fs::remove_file(&left_path);
         let _ = fs::remove_file(&right_path);
@@ -207,7 +218,7 @@ impl Room {
 
     fn keep(&self, bytes: &[u8], extension: &str, sources: &Sources) -> Result<Impulse> {
         let candidate = self.stage(bytes, extension)?;
-        let impulse = match read(sources, &candidate) {
+        let impulse = match read(sources, &candidate, self.angle()) {
             Ok(impulse) => impulse,
             Err(error) => {
                 let _ = fs::remove_file(&candidate);
@@ -230,8 +241,8 @@ fn pairing_refused(source: PairedReadError) -> Error {
     }
 }
 
-fn read(sources: &Sources, path: &Path) -> Result<Impulse> {
-    read_impulse(sources, &MediaLocation::local(path))?.ok_or(Error::NoImpulse)
+fn read(sources: &Sources, path: &Path, angle: SpeakerAngle) -> Result<Impulse> {
+    read_impulse(sources, &MediaLocation::local(path), angle)?.ok_or(Error::NoImpulse)
 }
 
 #[uniffi::export]
@@ -270,17 +281,42 @@ impl MobilePlayer {
         let Some(path) = self.room.kept()? else {
             return Ok(None);
         };
-        Ok(Some(RoomCorrection::of(&read(&self.sources, &path)?)))
+        let angle = self.room.angle();
+        Ok(Some(RoomCorrection::of(&read(
+            &self.sources,
+            &path,
+            angle,
+        )?)))
     }
 
     pub fn apply_room_correction(&self, on: bool) -> Result<Option<RoomCorrection>> {
         let impulse = match (on, self.room.kept()?) {
-            (true, Some(path)) => Some(Arc::new(read(&self.sources, &path)?)),
+            (true, Some(path)) => Some(Arc::new(read(&self.sources, &path, self.room.angle())?)),
             _ => None,
         };
         let described = impulse.as_deref().map(RoomCorrection::of);
         self.command(Command::SetConvolution(impulse.clone()))?;
         self.room.apply(impulse);
+        Ok(described)
+    }
+
+    pub fn speaker_angle(&self) -> u8 {
+        self.room.angle().degrees()
+    }
+
+    pub fn set_speaker_angle(&self, degrees: u8) -> Result<Option<RoomCorrection>> {
+        let angle = SpeakerAngle::from_degrees(degrees)?;
+        let described = match (self.room.applied(), self.room.kept()?) {
+            (Some(_), Some(path)) => {
+                let impulse = Arc::new(read(&self.sources, &path, angle)?);
+                let described = RoomCorrection::of(&impulse);
+                self.command(Command::SetConvolution(Some(impulse.clone())))?;
+                self.room.apply(Some(impulse));
+                Some(described)
+            }
+            _ => None,
+        };
+        self.room.speak_at(angle);
         Ok(described)
     }
 
@@ -403,8 +439,12 @@ mod tests {
         assert!(kept.is_crossed());
         assert_eq!(RoomCorrection::of(&kept).channels, 4);
         assert_eq!(fs::read_dir(&folder).expect("a listing").count(), 1);
-        let again =
-            read(&sources, &room.kept().expect("a listing").expect("a file")).expect("read back");
+        let again = read(
+            &sources,
+            &room.kept().expect("a listing").expect("a file"),
+            room.angle(),
+        )
+        .expect("read back");
         assert!(again.is_crossed());
     }
 
@@ -490,6 +530,25 @@ mod tests {
         );
         assert_eq!(RoomCorrection::of(&impulse).channels, 4);
         assert_eq!(RoomCorrection::of(&impulse).rate, 48_000);
+        assert_eq!(fs::read_dir(&folder).expect("a listing").count(), 1);
+    }
+
+    #[test]
+    fn the_speaker_angle_a_listener_sets_is_the_one_a_set_is_read_at() {
+        let folder = folder("angle");
+        let room = Room::under(folder.clone());
+        let sources = Sources::local();
+        room.keep(&head_related_set(), "sofa", &sources)
+            .expect("a kept set");
+        room.speak_at(SpeakerAngle::from_degrees(90).expect("an angle"));
+
+        let refused = room.keep(&head_related_set(), "sofa", &sources);
+
+        assert!(matches!(refused, Err(Error::Decode(_))));
+        assert_eq!(
+            room.kept().expect("a listing"),
+            Some(folder.join("room-correction.sofa"))
+        );
         assert_eq!(fs::read_dir(&folder).expect("a listing").count(), 1);
     }
 

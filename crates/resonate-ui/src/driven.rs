@@ -17,8 +17,8 @@ use gpui::{
     TestAppContext, TouchPhase, VisualTestContext, point, px, size,
 };
 use resonate_core::{
-    Appearance, Frames, Gain, MediaLocation, QueueStamp, Resumable, Resumption, TrackId, ZoneId,
-    ZoneName,
+    Appearance, Frames, Gain, MediaLocation, QueueStamp, Resumable, Resumption, SpeakerAngle,
+    TrackId, ZoneId, ZoneName,
 };
 use resonate_engine::{
     AudioSource, Backend, Command, EngineConfig, Opener, Opening, Opens, Player, SinkChange,
@@ -409,6 +409,7 @@ impl Driven {
                 by_sound: Arc::new(AtomicBool::new(false)),
                 lyrics_by_the_locale: Arc::new(AtomicBool::new(false)),
                 convolution: None,
+                speaker_angle: SpeakerAngle::STANDARD,
                 music_folder: None,
                 file_dropped: true,
                 window_buttons: WindowButtons::SHOWN,
@@ -4792,6 +4793,30 @@ mod tests {
                 settings.crossfeed == held
             });
         }
+    }
+
+    #[gpui::test]
+    fn a_speaker_angle_chosen_in_the_room_correction_group_is_worn_at_once(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::open(cx, catalog());
+        showing_settings(&mut driven, SettingsCategory::Equaliser);
+        for _ in 0..60 {
+            let in_reach = driven
+                .cx
+                .debug_bounds(named("speaker-angle", 45))
+                .is_some_and(|bounds| {
+                    bounds.center().y > px(150.0) && bounds.center().y < px(500.0)
+                });
+            if in_reach {
+                break;
+            }
+            driven.scroll("settings", 200.0);
+        }
+
+        driven.click(named("speaker-angle", 45));
+
+        driven.until(|_, cx| cx.global::<ResonateApp>().speaker_angle.degrees() == 45);
     }
 
     #[gpui::test]

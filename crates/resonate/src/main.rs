@@ -71,8 +71,8 @@ use resonate_codec::{
 #[cfg(feature = "ui")]
 use resonate_core::Resumption;
 use resonate_core::{
-    AlbumId, ArtistId, FrameSpan, Frames, MediaLocation, PlaylistId, SampleRate, StreamSpec,
-    Volume, ZoneId, names_audio,
+    AlbumId, ArtistId, FrameSpan, Frames, MediaLocation, PlaylistId, SampleRate, SpeakerAngle,
+    StreamSpec, Volume, ZoneId, names_audio,
 };
 use resonate_engine::{
     BluetoothWake, Command, Counting, Decoded, EngineConfig, Event, Impulse, Keep, Keeping,
@@ -2648,8 +2648,8 @@ fn frames_in(span: Duration, rate: SampleRate) -> i64 {
     i64::try_from(Frames::from_duration(span, rate).get()).unwrap_or(i64::MAX)
 }
 
-pub(crate) fn impulse_at(path: &Path) -> Option<Arc<Impulse>> {
-    match read_impulse(&Sources::local(), &MediaLocation::local(path)) {
+pub(crate) fn impulse_at(path: &Path, angle: SpeakerAngle) -> Option<Arc<Impulse>> {
+    match read_impulse(&Sources::local(), &MediaLocation::local(path), angle) {
         Ok(Some(impulse)) => Some(Arc::new(impulse)),
         Ok(None) => {
             tracing::warn!(path = %path.display(), "the room's response holds no taps, so nothing is corrected");
@@ -2727,7 +2727,10 @@ fn engine_config(cli: &Cli, config: &Config) -> EngineConfig {
         volume: config.volume.unwrap_or(defaults.volume),
         buffer: config.buffer.unwrap_or(defaults.buffer),
         equaliser: Arc::new(equaliser::resolved(config)),
-        convolution: config.convolution.as_deref().and_then(impulse_at),
+        convolution: config
+            .convolution
+            .as_deref()
+            .and_then(|path| impulse_at(path, config.speaker_angle())),
         skip_under_repeat: config.skip_under_repeat(),
         previous_restarts: config.previous_restarts(),
         ..defaults
@@ -2886,6 +2889,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             by_sound,
             lyrics_by_the_locale,
             convolution: config.convolution.clone(),
+            speaker_angle: config.speaker_angle(),
             music_folder: config.music_folder.clone(),
             file_dropped: config.files_what_is_dropped(),
             window_buttons: config.window_buttons(),

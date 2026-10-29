@@ -12,7 +12,7 @@ use gpui::{
     div, linear_color_stop, linear_gradient, point, prelude::*, px, quad, relative, rgb, size,
 };
 use resonate_core::{
-    MediaLocation, SampleRate,
+    MediaLocation, SampleRate, SpeakerAngle,
     eq::{Band, BandKind, Preamp, Traced, TracedOn},
 };
 use resonate_engine::{
@@ -1646,14 +1646,17 @@ impl RootView {
         let library = self.library.read(cx).catalog();
 
         let room = cx.global::<ResonateApp>().convolution.clone();
+        let angle = cx.global::<ResonateApp>().speaker_angle;
 
         let watch = Arc::new(Watch::default());
         let measuring = Arc::clone(&watch);
         let profile = Arc::new(shown);
         let measured_for = Arc::clone(&profile);
         let measured = cx.background_executor().spawn(async move {
-            let applied = Applied::from(profile)
-                .corrected_by(room.as_deref().and_then(room_correcting_the_fit));
+            let applied = Applied::from(profile).corrected_by(
+                room.as_deref()
+                    .and_then(|file| room_correcting_the_fit(file, angle)),
+            );
             fitted_through_the_chain(&library, &engine, &applied, rate, measuring.as_ref())
         });
         let landing = cx.spawn(async move |this, cx| {
@@ -1851,7 +1854,14 @@ const ROOM_NOTE: &str = "The response is convolved with every stream after the e
                          (binaural) response, in the order left-to-left, left-to-right, \
                          right-to-left, right-to-right; two stereo files, one for each speaker, \
                          are joined into one. A SOFA set of head-related responses is read as \
-                         the same, from the measurements nearest 30 degrees left and right.";
+                         the same, from the measurements nearest the speaker angle, blended where several lie close; a \
+                         netCDF file of that shape reads as well, and so does a set of \
+                         speakers measured at each ear.";
+
+const SPEAKER_NOTE: &str = "How far to either side of the front the speakers stand, for a SOFA \
+                            set. Changing it reads the set again.";
+
+const SPEAKER_ANGLES: [u8; 5] = [20, 30, 45, 60, 90];
 
 const BINAURAL_NOTE: &str = "A two-by-two (binaural) response: each speaker's response is heard at \
                              both ears, so a stereo stream is convolved four ways.";
@@ -1877,9 +1887,10 @@ impl RootView {
         }
         self.room_shape = Some((file.to_path_buf(), false));
         let reading = file.to_path_buf();
+        let angle = cx.global::<ResonateApp>().speaker_angle;
         let read = cx.background_executor().spawn({
             let reading = reading.clone();
-            async move { read_impulse(&Sources::local(), &MediaLocation::local(&reading)) }
+            async move { read_impulse(&Sources::local(), &MediaLocation::local(&reading), angle) }
         });
         self.looking_at_the_room = cx.spawn(async move |this, cx| {
             let crossed = matches!(read.await, Ok(Some(impulse)) if impulse.is_crossed());
@@ -1945,7 +1956,41 @@ impl RootView {
                         ))
                     }),
             )
+            .child(self.speaker_angle_field(cx))
             .child(note(ROOM_NOTE))
+    }
+
+    fn speaker_angle_field(&mut self, cx: &mut Context<Self>) -> Div {
+        let held = cx.global::<ResonateApp>().speaker_angle;
+        let mut angles = div().flex().flex_wrap().gap_2();
+        for degrees in SPEAKER_ANGLES {
+            let Ok(angle) = SpeakerAngle::from_degrees(degrees) else {
+                continue;
+            };
+            let id = SharedString::from(format!("speaker-angle-{degrees}"));
+            angles = angles.child(self.in_the_ring_at(
+                id.to_string(),
+                kit::chip(id, format!("{degrees}°"), held == angle).names(format!(
+                    "Speakers {degrees} degrees either side of the front"
+                )),
+                move |this, _, cx| this.set_the_speaker_angle(angle, cx),
+                cx,
+            ));
+        }
+        kit::field("Speaker angle", angles).child(note(SPEAKER_NOTE))
+    }
+
+    pub(crate) fn set_the_speaker_angle(&mut self, angle: SpeakerAngle, cx: &mut Context<Self>) {
+        if cx.global::<ResonateApp>().speaker_angle == angle {
+            return;
+        }
+        cx.update_global::<ResonateApp, _>(|global, _| global.speaker_angle = angle);
+        self.store(&Setting::SpeakerAngle(angle), cx);
+        let held = cx.global::<ResonateApp>().convolution.clone();
+        if let Some(file) = held {
+            self.correct_the_room(Some(file), cx);
+        }
+        cx.notify();
     }
 
     fn choose_a_response(&self, cx: &mut Context<Self>) {
@@ -2007,11 +2052,13 @@ impl RootView {
             .equaliser
             .with_file_name(BINAURAL_FILE);
         let assembling = kept.clone();
+        let angle = cx.global::<ResonateApp>().speaker_angle;
         let assembled = cx.background_executor().spawn(async move {
             let whole = read_binaural_pair(
                 &Sources::local(),
                 &MediaLocation::local(&left),
                 &MediaLocation::local(&right),
+                angle,
             )
             .map_err(|error| pair_refusal(&error))?;
             let wave = binaural_wave(&whole).map_err(|error| pair_refusal(&error))?;
@@ -2039,9 +2086,10 @@ impl RootView {
             return;
         };
         let reading = file.clone();
-        let read = cx
-            .background_executor()
-            .spawn(async move { read_impulse(&Sources::local(), &MediaLocation::local(&reading)) });
+        let angle = cx.global::<ResonateApp>().speaker_angle;
+        let read = cx.background_executor().spawn(async move {
+            read_impulse(&Sources::local(), &MediaLocation::local(&reading), angle)
+        });
         self.reading_the_room = cx.spawn(async move |this, cx| {
             let read = read.await;
             let _ = this.update(cx, |this, cx| match read {
@@ -2099,8 +2147,8 @@ struct Fitted {
     room: Option<Preamp>,
 }
 
-fn room_correcting_the_fit(file: &Path) -> Option<Arc<Impulse>> {
-    match read_impulse(&Sources::local(), &MediaLocation::local(file)) {
+fn room_correcting_the_fit(file: &Path, angle: SpeakerAngle) -> Option<Arc<Impulse>> {
+    match read_impulse(&Sources::local(), &MediaLocation::local(file), angle) {
         Ok(impulse) => impulse.map(Arc::new),
         Err(error) => {
             tracing::warn!(%error, "the room's response could not be read for the preamp");

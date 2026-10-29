@@ -15,8 +15,8 @@ use futures_channel::oneshot;
 use gpui::{Pixels, Size, px, size};
 use resonate_core::{
     Accent, AppId, ArtistsDrawn, Frames, Icon, Pictured, PlaylistId, Presence, ScrollbarMode,
-    Shown, Spectral, SpectrumBands, SpectrumFalls, SpectrumFloor, SpectrumTilt, SyncedSongs,
-    TextSize, Theme, Trim, Volume,
+    Shown, SpeakerAngle, Spectral, SpectrumBands, SpectrumFalls, SpectrumFloor, SpectrumTilt,
+    SyncedSongs, TextSize, Theme, Trim, Volume,
 };
 use resonate_engine::{
     Crossfeed, DitherKind, FilterPhase, NodeName, NoiseShaping, PreviousRestarts, Quality,
@@ -198,6 +198,7 @@ pub enum SettingKey {
     EqualiserMeasurer,
     EqualiserMeasurerFor,
     Convolution,
+    SpeakerAngle,
     Resume,
     HistoryKept,
     SkipUnderRepeat,
@@ -256,7 +257,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 100] = [
+    pub const ALL: [Self; 101] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -302,6 +303,7 @@ impl SettingKey {
         Self::EqualiserMeasurer,
         Self::EqualiserMeasurerFor,
         Self::Convolution,
+        Self::SpeakerAngle,
         Self::Resume,
         Self::HistoryKept,
         Self::SkipUnderRepeat,
@@ -413,6 +415,7 @@ pub enum Setting {
         measurer: Option<String>,
     },
     Convolution(Option<PathBuf>),
+    SpeakerAngle(SpeakerAngle),
     Resume(bool),
     HistoryKept(HistoryKept),
     SkipUnderRepeat(SkipUnderRepeat),
@@ -524,6 +527,7 @@ impl Setting {
             Self::EqualiserMeasurer(_) => SettingKey::EqualiserMeasurer,
             Self::EqualiserMeasurerFor { .. } => SettingKey::EqualiserMeasurerFor,
             Self::Convolution(_) => SettingKey::Convolution,
+            Self::SpeakerAngle(_) => SettingKey::SpeakerAngle,
             Self::Resume(_) => SettingKey::Resume,
             Self::HistoryKept(_) => SettingKey::HistoryKept,
             Self::SkipUnderRepeat(_) => SettingKey::SkipUnderRepeat,
@@ -886,6 +890,7 @@ pub struct Stored {
     pub by_sound: Arc<AtomicBool>,
     pub lyrics_by_the_locale: Arc<AtomicBool>,
     pub convolution: Option<PathBuf>,
+    pub speaker_angle: SpeakerAngle,
     pub music_folder: Option<PathBuf>,
     pub file_dropped: bool,
     pub window_buttons: WindowButtons,
