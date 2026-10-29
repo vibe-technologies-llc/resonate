@@ -247,7 +247,66 @@ pub fn keys() -> Receiver<Pressed> {
     })
 }
 
-fn listening(read: impl FnOnce(Sender<Pressed>) + Send + 'static) -> Receiver<Pressed> {
+pub fn strokes() -> Receiver<char> {
+    listening(|send| {
+        let mut stdin = io::stdin().lock();
+        let mut struck = Struck::default();
+        loop {
+            let (strokes, taken) = match stdin.fill_buf() {
+                Ok([]) => return,
+                Ok(read) => (
+                    read.iter()
+                        .filter_map(|byte| struck.stroke(*byte))
+                        .collect::<Vec<_>>(),
+                    read.len(),
+                ),
+                Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+                Err(_) => return,
+            };
+            stdin.consume(taken);
+
+            for stroke in strokes {
+                if send.send(stroke).is_err() {
+                    return;
+                }
+            }
+        }
+    })
+}
+
+#[derive(Default)]
+struct Struck {
+    escaping: Option<Escaping>,
+}
+
+impl Struck {
+    fn stroke(&mut self, byte: u8) -> Option<char> {
+        match self.escaping.take() {
+            Some(Escaping::Escaped) if byte == INTRODUCER => {
+                self.escaping = Some(Escaping::ControlSequence);
+                return None;
+            }
+            Some(Escaping::Escaped) if byte == SINGLE_SHIFT => {
+                self.escaping = Some(Escaping::SingleShift);
+                return None;
+            }
+            Some(Escaping::ControlSequence) if !FINAL_BYTES.contains(&byte) => {
+                self.escaping = Some(Escaping::ControlSequence);
+                return None;
+            }
+            Some(Escaping::ControlSequence | Escaping::SingleShift) => return None,
+            Some(Escaping::Escaped) | None => {}
+        }
+
+        if byte == ESCAPE {
+            self.escaping = Some(Escaping::Escaped);
+            return None;
+        }
+        byte.is_ascii_graphic().then(|| char::from(byte))
+    }
+}
+
+fn listening<T: Send + 'static>(read: impl FnOnce(Sender<T>) + Send + 'static) -> Receiver<T> {
     let (send, receive) = bounded(16);
     let spawned = thread::Builder::new()
         .name("resonate-input".to_owned())
@@ -366,6 +425,44 @@ mod tests {
 
     const fn seconds(count: u64) -> Duration {
         Duration::from_secs(count)
+    }
+
+    fn struck(bytes: &[u8]) -> String {
+        let mut struck = Struck::default();
+        bytes
+            .iter()
+            .filter_map(|byte| struck.stroke(*byte))
+            .collect()
+    }
+
+    #[test]
+    fn a_stroke_is_a_printable_byte_and_a_newline_is_none() {
+        assert_eq!(struck(b"ab 1\r\n2"), "ab12");
+    }
+
+    #[test]
+    fn an_arrow_or_function_key_strikes_nothing_and_a_key_after_a_lone_escape_is_that_key() {
+        assert_eq!(struck(b"\x1b[Aa"), "a");
+        assert_eq!(struck(b"\x1b[15~1"), "1");
+        assert_eq!(struck(b"\x1bOPb"), "b");
+        assert_eq!(struck(b"\x1bq"), "q");
+    }
+
+    #[test]
+    fn a_sequence_split_across_reads_is_still_swallowed_whole() {
+        let mut struck = Struck::default();
+
+        let first: Vec<char> = b"\x1b[1"
+            .iter()
+            .filter_map(|byte| struck.stroke(*byte))
+            .collect();
+        let second: Vec<char> = b"5~x"
+            .iter()
+            .filter_map(|byte| struck.stroke(*byte))
+            .collect();
+
+        assert!(first.is_empty());
+        assert_eq!(second, vec!['x']);
     }
 
     #[test]

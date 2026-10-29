@@ -207,7 +207,7 @@ CI runs exactly this list, iOS aside (`release.yml` runs on tags only); the debu
 `cargo run -- <subcommand> --help` is the grammar (`binary.md`); the binary doubles as the audio
 stack's test harness:
 
-- **Output:** `sinks`, `explain`, `info`, `analyse` (`--recognise` asks AcoustID), `listen`, `eq`.
+- **Output:** `sinks`, `explain`, `info`, `analyse` (`--recognise` asks AcoustID), `listen`, `eq`, `abx` (a blind test of the equaliser).
 - **Playing:** `play <files>` (transport keys on stdin), `queue`, `players`, `sleep`, `share`, `mcp`;
   `queue` and `sleep` take `--zone <N|NAME>` for a zone of the window.
 - **Catalog:** `scan`, `roots`, `forget`, `enrich`, `tag`, `organise`, `dedupe`, `vault`, `studies`, `stats`,

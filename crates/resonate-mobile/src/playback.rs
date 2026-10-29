@@ -1,5 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
+use resonate_core::eq::Profile;
 use resonate_engine::{
     Command, Crossfeed, Equalisation, FilterPhase, Quality, ReplayGainMode, Restoration, Until,
 };
@@ -91,6 +92,14 @@ impl Default for PlaybackPreferences {
 }
 
 impl PlaybackPreferences {
+    pub(crate) fn equalisation(&self, profile: Profile) -> Equalisation {
+        Equalisation {
+            enabled: self.equaliser_enabled,
+            fallback: Some(Arc::new(profile)),
+            ..Equalisation::default()
+        }
+    }
+
     pub(crate) fn commands(&self, previous: &Self) -> Result<Vec<Command>> {
         let profile = self.equaliser.profile()?;
         if !(50..=2000).contains(&self.buffer_ms) {
@@ -102,11 +111,9 @@ impl PlaybackPreferences {
         if self.equaliser_enabled != previous.equaliser_enabled
             || self.equaliser.sounds_unlike(&previous.equaliser)
         {
-            commands.push(Command::SetEqualisation(Arc::new(Equalisation {
-                enabled: self.equaliser_enabled,
-                fallback: Some(Arc::new(profile)),
-                ..Equalisation::default()
-            })));
+            commands.push(Command::SetEqualisation(Arc::new(
+                self.equalisation(profile),
+            )));
         }
         if self.replay_gain != previous.replay_gain {
             commands.push(Command::SetReplayGain(match self.replay_gain {

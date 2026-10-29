@@ -1,6 +1,6 @@
 use std::{fmt, io, path::PathBuf, result};
 
-use resonate_core::eq::MAX_BANDS;
+use resonate_core::{abx::TRIALS_AT_MOST, eq::MAX_BANDS};
 use thiserror::Error;
 
 use crate::{
@@ -244,6 +244,16 @@ pub enum Error {
     BandChannels { band: u32 },
     #[error("The preamp may lift or lower at most {PREAMP_AT_MOST_DB} dB, not {decibels} dB")]
     PreampRange { decibels: f32 },
+    #[error("A listening test holds from 1 to {TRIALS_AT_MOST} trials, not {trials}")]
+    ListeningTestTrials { trials: u32 },
+    #[error("The curve has no bands and no preamp, so there is nothing to compare with its bypass")]
+    ListeningTestNothingToTest,
+    #[error(
+        "The curve cannot be level-matched to its bypass, {millibels} thousandths of a decibel apart, so it is not tested"
+    )]
+    ListeningTestLevels { millibels: i32 },
+    #[error("That listening test has no trial left to answer")]
+    ListeningTestFinished,
     #[error("buffer length {milliseconds} ms is outside 50 to 2000 ms")]
     BufferRange { milliseconds: u32 },
     #[error("the player has been closed")]

@@ -13,6 +13,11 @@ paths:
   - "crates/resonate-online/src/autoeq.rs"
   - "crates/resonate-core/src/abx.rs"
   - "crates/resonate-ui/src/views/settings/abx.rs"
+  - "crates/resonate/src/abx.rs"
+  - "crates/resonate-mobile/src/abx.rs"
+  - "ios/Sources/Resonate/ListeningTest.swift"
+  - "ios/Sources/ResonateLogic/ListeningTestWords.swift"
+  - "android/app/src/main/java/org/resonate/android/ui/equaliser/ListeningTest*.kt"
   - "crates/resonate-ui/src/equaliser.rs"
   - "crates/resonate-ui/src/views/settings/equaliser.rs"
   - "crates/resonate-ui/src/views/settings/curve.rs"
@@ -314,6 +319,36 @@ A level-matched ABX of the equaliser against a bypass of itself, in the Equalise
 - **The pane shows what the listener needs and no more**: the trial and score with the chance of
   that by guessing, a line of verdicts per trial, the residual level in dB, and which arm is
   playing; an X is heard but never named, and the verdict of the last answer is shown after it.
+- **`resonate abx FILE [--trials N]` runs the same session on stdin keys** (`crates/resonate/src/abx.rs`):
+  one song, repeated by the track (`RepeatMode::Track`), on the real output; it waits for the first
+  `OutputChanged` to learn the sink and the negotiated rate, takes the profile the settings bind to
+  that sink (`Equalisation::for_sink`, `equaliser::resolved`; none is `Error::AbxNothingBound`, no
+  output within `OUTPUT_WITHIN` is `AbxNoOutput`, several songs `AbxSeveralSongs`), levels it with
+  `Arms::matched` at that rate (a refusal is the core error) and seeds `Session` from the clock
+  (`--trials` 1 to 100, 16 by default). Keys are single characters (`input::strokes`: one byte a key,
+  escape sequences swallowed whole, a line at a time when stdin is not a terminal): `a`, `b`, `x`
+  hear an arm through `Equalisation::auditioning`, `1` and `2` say X is A or B, `?` helps, `q`
+  quits. Saying which X was moves to the next trial on the spot and prints the verdict with the
+  running score (no X is ever named); the last trial, `q`, end of input or a signal ends the run with
+  the score, the chance by guessing and the p-value, and the real `Equalisation` is sent back.
+  `Test` is the pure half and holds the tests (`hearing_x_is_the_arm_the_session_drew_for_this_trial`,
+  `answering_every_trial_rightly_ends_on_a_significant_score`).
+- **The phones reach it through `resonate-mobile/src/abx.rs`**: `listening_test_lengths()` (8, 16 and
+  32, the pane's), `begin_listening_test(curve, trials)` makes a `ListeningTest` object (the
+  `Session`, the `Arms` and which arm is heard) from the curve shown, levelled at the stream's rate
+  (48 kHz with none open); a curve with no bands and a unity preamp is `ListeningTestNothingToTest`,
+  trials outside 1 to 100 `ListeningTestTrials`, a curve that will not level `ListeningTestLevels`.
+  `hear_in_listening_test(test, A|B|X)` sends `SetEqualisation` of the arm as the fallback, `enabled`
+  whatever the switch says; `ListeningTest::answer(A|B)` answers whether it was right (a finished
+  test is `ListeningTestFinished`) and `standing()` is the whole `TestStanding` (planned, answered,
+  right, finished, `chance_percent`, `significant`, the verdicts, the residual and the arm heard,
+  none for X); `end_listening_test()` sends the preferences' own `Equalisation` back
+  (`PlaybackPreferences::equalisation`, the one `commands` builds). Both phones draw it in the
+  equaliser page after the room correction with the desktop's wording (Android `ListeningTestSection`,
+  iOS `ListeningTestSection`; the words are `ListeningTestView.kt` and `ListeningTestWords.swift`,
+  held by `ListeningTestViewTest` and `ListeningTestWordsTests`) and end it when the page is left or
+  the test is ended; an edit of the curve sends the real curve and so ends the comparison in all but
+  name.
 
 ## Room correction
 

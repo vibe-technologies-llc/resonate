@@ -54,6 +54,10 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 - [S · blocked: network namespaces] Nearby meeting over IPv6 is proved over the loopback and the
   datagram path alone; the link local multicast group and a peer dialled by a link local address with
   its scope have not crossed a real interface (nor an IPv6-only network)
+- [S · blocked: a device] The listening test is proved on the host alone (`resonate abx`'s session and
+  keys, the boundary's object and the phones' wording): the commands it sends are checked at the
+  engine's published settings, but no run has been heard on PipeWire with a real song, nor the
+  sections driven on an emulator or an iPhone
 - [M · blocked: hardware] A microphone recording not proved against real sound reaching a microphone
 - [S · blocked: screen reader] None of the cells, links, lyric lines, plots, bars, cards, the caret and
   selection or the menu a reader follows has been heard over AT-SPI with a screen reader (Orca), only

@@ -186,6 +186,14 @@ holds. iOS passes `TimeZone.current.identifier`; Android's statistics read `stat
 and call no day-cutting export yet. Which database each target reads, and why the phones bundle one
 behind the system's, is `library.md`'s *A day is the listener's*.
 
+## The listening test
+
+`abx.rs` hands the phones core's ABX session (`eq.md`'s *The listening test*): `ListeningTest` is a
+UniFFI object holding the `Session`, the levelled `Arms` and the arm heard; `MobilePlayer` sends the
+arms (`hear_in_listening_test`) and puts the preferences' equaliser back (`end_listening_test`), so
+the object never touches the engine itself and a front end holds one per run. Refusals are
+`Error::ListeningTest*` sentences; the core errors it cannot name pass as `Domain`.
+
 ## Lyrics
 
 `lyrics.rs` hands a phone what the desktop pane reads, so neither phone keeps lyric arithmetic of

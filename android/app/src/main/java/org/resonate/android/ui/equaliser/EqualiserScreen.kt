@@ -217,6 +217,9 @@ private fun EqualiserContent(
             item(key = "room") {
                 RoomCorrectionSection(model)
             }
+            item(key = "listening-test") {
+                ListeningTestSection(model)
+            }
             item(key = "kept-curves") {
                 KeptCurves(model)
             }
