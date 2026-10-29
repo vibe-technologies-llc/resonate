@@ -762,6 +762,37 @@ mod tests {
         assert!(decibels_between(bound, 0.8) < 1.0, "{bound}");
     }
 
+    fn alone_in_the_band_holding(hertz: f64, peak: f64) -> BandPeaks {
+        let sounding = band_of(hertz);
+        BandPeaks::at_once((0..BANDS).map(|band| if band == sounding { peak } else { 0.0 }))
+    }
+
+    #[test]
+    fn a_lone_band_under_a_boost_on_it_is_bounded_at_least_at_its_boosted_peak() {
+        let boost_db = 6.0;
+        let raised = 10_f64.powf(boost_db / 20.0);
+        let averaged = corrected_by(&bell(1_000.0, boost_db, 1.0), vec![1.0 / 24.0; 24]);
+        for hertz in [100.0, 1_000.0, 5_000.0] {
+            let boosted = gains_under(&bell(hertz, boost_db, 1.0));
+            for peak in [0.5, 0.9] {
+                let bound = boosted.bound(&alone_in_the_band_holding(hertz, peak));
+
+                assert!(
+                    bound >= peak * raised * 0.999,
+                    "{bound} under {} at {hertz} Hz",
+                    peak * raised
+                );
+            }
+        }
+
+        let turn = std::f64::consts::PI * 1_000.0 / f64::from(SampleRate::HZ_44100.hz());
+        let averaged_at_the_boost = (24.0 * turn).sin() / (24.0 * turn.sin());
+        let heard = averaged.bound(&alone_in_the_band_holding(1_000.0, 0.9));
+        let truth = 0.9 * raised * averaged_at_the_boost;
+
+        assert!(heard >= truth * 0.999, "{heard} under {truth}");
+    }
+
     #[test]
     fn the_solved_bound_never_passes_the_partition_and_never_falls_under_a_tone_its_peaks_allow() {
         let profiles = [

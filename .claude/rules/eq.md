@@ -212,7 +212,17 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   **The whole signal's node is left out of the programme**: its peak is paid through the level
   alone (`c * x` is exact), since with it the solution passed the decode of transients through a
   phase-turning curve by up to 0.38 dB (`turned`, an allpass pair over noise and over a kick, hat
-  and pads); nodes of up to fifteen bands stayed over every decode. **Time**: a moment holds every
+  and pads); nodes of up to fifteen bands stayed over every decode. **A node that held nothing
+  covers nothing** (`Solving::covering`): it is left out of the programme (its room, its prices,
+  its columns), never offered as a free coverer. Every band's filter leaks into its neighbours, so
+  a node reads nothing beside one that held something only in figures no decode makes
+  (`BandPeaks::at_once`); with it in the programme a lone band at 0.9 under a +6 dB bell bounded
+  at 0 where the decode is 1.8, since the empty neighbours covered every span at no cost and the
+  solution passed under the truth. A span no remaining node reaches leaves the programme without
+  an answer and the partition stands
+  (`a_lone_band_under_a_boost_on_it_is_bounded_at_least_at_its_boosted_peak`). No moment of the
+  decodes the bound is measured against held an empty node beside a sounding one, so the figures
+  below are unchanged. **Time**: a moment holds every
   node's peak over its stretch widened by a tenth of a second each way, so the response may be
   split around a delay `d`: the chain's impulse response (`Applied::impulse_responses`, the
   correction's taps run through the profile's biquads, the whole correction long) is searched for

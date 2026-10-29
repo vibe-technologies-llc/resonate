@@ -82,6 +82,7 @@ impl Tones {
 pub(crate) struct Solving<'a> {
     tones: &'a Tones,
     heights: Heights,
+    covering: [bool; NODES],
     basis: [usize; NODES],
     inverse: Box<[[f64; NODES]; NODES]>,
     values: Heights,
@@ -96,11 +97,13 @@ impl<'a> Solving<'a> {
             held[row] = 1.0;
         }
         let heights = heights.map(|height| height.max(0.0));
+        let covering = heights.map(|height| height > 0.0);
         let room = (0..points)
             .map(|point| {
                 tones
                     .passed_at(point)
                     .iter()
+                    .filter(|(node, _)| covering[*node])
                     .map(|(node, share)| heights[*node] / share)
                     .fold(f64::INFINITY, f64::min)
             })
@@ -108,6 +111,7 @@ impl<'a> Solving<'a> {
         Self {
             tones,
             heights,
+            covering,
             room,
             basis: std::array::from_fn(|node| points + node),
             inverse,
@@ -166,7 +170,7 @@ impl<'a> Solving<'a> {
         for (point, wanted) in apart.iter().enumerate().take(points) {
             let mut covered = 0.0;
             let mut covered_kept = 0.0;
-            for (node, share) in self.tones.passed_at(point) {
+            for (node, share) in self.covered_at(point) {
                 covered += weights[*node] * share;
                 covered_kept += kept[*node] * share;
             }
@@ -225,13 +229,18 @@ impl<'a> Solving<'a> {
         }
         for (row, held) in column.iter_mut().zip(self.inverse.iter()) {
             *row = self
-                .tones
-                .passed_at(variable)
-                .iter()
+                .covered_at(variable)
                 .map(|(node, share)| held[*node] * share)
                 .sum();
         }
         column
+    }
+
+    fn covered_at(&self, point: usize) -> impl Iterator<Item = &(usize, f64)> {
+        self.tones
+            .passed_at(point)
+            .iter()
+            .filter(|(node, _)| self.covering[*node])
     }
 
     fn pivot(&mut self, entering: usize) -> bool {
