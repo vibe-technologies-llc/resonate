@@ -14,7 +14,7 @@ use crate::{
     serving::{Failure, Page, Place, Row, favourites_in},
     theme,
     views::{
-        browser::controls_width,
+        browser::{FAVOUR_HINT, UNFAVOUR_HINT, controls_width},
         hint::Names,
         kit::{self, EndsInAnEllipsis as _, Tone},
         listing,
@@ -54,7 +54,7 @@ const NOTHING_FOUND: &str = "The server found nothing for that.";
 
 const ASKING: &str = "Asking the server…";
 
-const SERVER_CONTROLS: usize = 3;
+const SERVER_CONTROLS: usize = 4;
 
 const SEARCH_ID: &str = "served-search";
 
@@ -72,7 +72,7 @@ impl RootView {
             Page::Read(rows) if rows.is_empty() => match place {
                 Place::Found { .. } => kit::empty(Icon::Server, NOTHING_FOUND, None),
                 Place::Artists => kit::empty(Icon::Server, NOTHING_LISTED, Some(SEARCH_FIRST)),
-                Place::Artist { .. } | Place::Album { .. } => {
+                Place::Artist { .. } | Place::Album { .. } | Place::Mix { .. } => {
                     kit::empty(Icon::Server, NOTHING_HERE, None)
                 }
             },
@@ -151,9 +151,10 @@ impl RootView {
             Place::Artists => titles
                 .get(chosen)
                 .map_or_else(|| place.eyebrow().to_owned(), |title| title.to_uppercase()),
-            Place::Artist { .. } | Place::Album { .. } | Place::Found { .. } => {
-                place.eyebrow().to_owned()
-            }
+            Place::Artist { .. }
+            | Place::Album { .. }
+            | Place::Mix { .. }
+            | Place::Found { .. } => place.eyebrow().to_owned(),
         };
         let chooser = (titles.len() > 1).then(|| self.service_chooser(&titles, chosen, cx));
 
@@ -248,7 +249,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let shown = rows.len();
-        let songs_here = matches!(place, Place::Album { .. });
+        let songs_here = matches!(place, Place::Album { .. } | Place::Mix { .. });
 
         Scrollbars::of(cx)
             .around(
@@ -311,7 +312,7 @@ impl RootView {
             .listed_as(move || said.clone())
             .names(match row {
                 Row::Song(_) => PLAY_THIS_HINT,
-                Row::Heading(_) | Row::Artist(_) | Row::Album(_) => OPEN_HINT,
+                Row::Heading(_) | Row::Artist(_) | Row::Album(_) | Row::Mix(_) => OPEN_HINT,
             })
             .when_some(song_number, |open, number| {
                 open.child(listing::number_cell(number))
@@ -346,9 +347,10 @@ impl RootView {
                 this.press_a_row_of_the_server(pressed.clone(), from.clone(), cx);
             }));
 
+        let favourite = row.song().cloned();
         row_frame()
             .child(open)
-            .child(self.server_controls(index, location, cx))
+            .child(self.server_controls(index, location, favourite, cx))
             .into_any_element()
     }
 
@@ -363,8 +365,21 @@ impl RootView {
         &self,
         index: usize,
         location: MediaLocation,
+        favourite: Option<ServedSong>,
         cx: &mut Context<Self>,
     ) -> Div {
+        let starred =
+            favourite.filter(|song| self.server.read(cx).keeps_favourites(&song.location));
+        let star = starred.map(|song| {
+            let favoured = self.server.read(cx).is_favoured(&song);
+            let saying = if favoured { UNFAVOUR_HINT } else { FAVOUR_HINT };
+            let which = SharedString::from(song.location.to_uri());
+            self.in_the_pane_ring(
+                kit::star(("server-row-favourite", index), favoured, which, saying),
+                move |this, _, cx| this.favour_a_served_song(song.clone(), cx),
+                cx,
+            )
+        });
         let playing = location.clone();
         let next = location.clone();
         let queued = location;
@@ -378,6 +393,7 @@ impl RootView {
             .w(px(controls_width(SERVER_CONTROLS)))
             .child(
                 controls
+                    .children(star)
                     .child(self.in_the_pane_ring(
                         kit::icon_button(("server-row-play", index), Icon::Play, PLAY_HINT),
                         move |this, _, cx| this.play_what_the_server_holds(playing.clone(), cx),
@@ -450,12 +466,57 @@ impl RootView {
                     cx,
                 );
             }),
+            Row::Mix(mix) => self.server.update(cx, |server, cx| {
+                server.open(
+                    Place::Mix {
+                        location: mix.location,
+                        name: mix.name,
+                    },
+                    cx,
+                );
+            }),
             Row::Song(song) => match from {
                 Some((locations, start)) => self.play_served(locations, start, cx),
                 None => self.play_served(vec![song.location], 0, cx),
             },
             Row::Heading(_) => {}
         }
+    }
+
+    fn favour_a_served_song(&mut self, song: ServedSong, cx: &mut Context<Self>) {
+        let Some(serves) = self.server.read(cx).serves() else {
+            return;
+        };
+        let favoured = !self.server.read(cx).is_favoured(&song);
+        let location = song.location;
+        self.server.update(cx, |server, cx| {
+            server.note_favoured(location.clone(), favoured);
+            cx.notify();
+        });
+        cx.spawn(async move |this, cx| {
+            let kept = {
+                let location = location.clone();
+                cx.background_executor()
+                    .spawn(async move { serves.favour(&location, favoured) })
+                    .await
+            };
+            let _ = this.update(cx, |this, cx| {
+                let Err(error) = kept else {
+                    return;
+                };
+                tracing::warn!(%error, "the service did not keep the favourite");
+                this.server
+                    .update(cx, |server, _| server.note_favoured(location, !favoured));
+                this.report(
+                    Notice::Trouble(format!(
+                        "Couldn't change that favourite — {}",
+                        Failure::of(&error).says().to_lowercase()
+                    )),
+                    cx,
+                );
+            });
+        })
+        .detach();
     }
 
     pub(crate) fn play_served(
@@ -589,6 +650,7 @@ fn describe(row: &Row) -> (String, Option<String>, Option<String>) {
             )
             .filter(|said| !said.is_empty()),
         ),
+        Row::Mix(mix) => (mix.name.clone(), mix.artist.clone(), None),
         Row::Song(song) => (
             song.title.clone(),
             by_line(song),
@@ -630,17 +692,18 @@ fn counted_in(rows: &[Row], place: &Place) -> String {
         Place::Artist { .. } => {
             format::counted(count(|row| matches!(row, Row::Album(_))), "album", "albums")
         }
-        Place::Album { .. } => {
+        Place::Album { .. } | Place::Mix { .. } => {
             format::counted(count(|row| matches!(row, Row::Song(_))), "song", "songs")
         }
         Place::Artists | Place::Found { .. } => format!(
-            "{} · {} · {}",
+            "{} · {} · {} · {}",
             format::counted(
                 count(|row| matches!(row, Row::Artist(_))),
                 "artist",
                 "artists"
             ),
             format::counted(count(|row| matches!(row, Row::Album(_))), "album", "albums"),
+            format::counted(count(|row| matches!(row, Row::Mix(_))), "mix", "mixes"),
             format::counted(count(|row| matches!(row, Row::Song(_))), "song", "songs"),
         ),
     }
@@ -690,6 +753,7 @@ mod tests {
             length: Some(Duration::from_secs(357)),
             format: Some("flac".to_owned()),
             cover: None,
+            favourite: None,
         }
     }
 
@@ -864,6 +928,86 @@ mod tests {
         }
     }
 
+    struct Kept {
+        favoured: Arc<parking_lot::Mutex<Vec<(MediaLocation, bool)>>>,
+    }
+
+    impl Serves for Kept {
+        fn scheme(&self) -> &SourceId {
+            Searched.scheme()
+        }
+
+        fn title(&self) -> &str {
+            "TIDAL"
+        }
+
+        fn names(&self, location: &MediaLocation) -> bool {
+            location.source() == self.scheme()
+        }
+
+        fn artists(&self) -> Result<Vec<ServedArtist>> {
+            Ok(Vec::new())
+        }
+
+        fn first_page(&self) -> Result<ServedFound> {
+            Ok(ServedFound {
+                mixes: vec![ServedAlbum {
+                    location: MediaLocation::from_uri("tidal:mix/0a1b").expect("a location"),
+                    name: "My Mix 1".to_owned(),
+                    artist: Some("Pink Floyd and more".to_owned()),
+                    year: None,
+                    songs: None,
+                    cover: None,
+                }],
+                songs: vec![
+                    ServedSong {
+                        location: MediaLocation::from_uri("tidal:track/11").expect("a location"),
+                        favourite: Some(true),
+                        ..song("so-1", "One of These Days", 1)
+                    },
+                    ServedSong {
+                        location: MediaLocation::from_uri("tidal:track/12").expect("a location"),
+                        ..song("so-2", "Echoes", 6)
+                    },
+                ],
+                ..ServedFound::default()
+            })
+        }
+
+        fn albums_of(&self, _: &MediaLocation) -> Result<Vec<ServedAlbum>> {
+            Ok(Vec::new())
+        }
+
+        fn songs_of(&self, location: &MediaLocation) -> Result<Vec<ServedSong>> {
+            assert_eq!(location.to_uri(), "tidal:mix/0a1b");
+            Ok(vec![ServedSong {
+                location: MediaLocation::from_uri("tidal:track/13").expect("a location"),
+                ..song("so-3", "Summer '68", 1)
+            }])
+        }
+
+        fn search(&self, _: &str) -> Result<ServedFound> {
+            Ok(ServedFound::default())
+        }
+
+        fn expand(&self, named: &MediaLocation) -> Result<Vec<MediaLocation>> {
+            Ok(vec![named.clone()])
+        }
+
+        fn keeps_favourites(&self) -> bool {
+            true
+        }
+
+        fn favour(&self, song: &MediaLocation, favoured: bool) -> Result<()> {
+            self.favoured.lock().push((song.clone(), favoured));
+            Ok(())
+        }
+
+        fn cover(&self, _: &MediaLocation, _: Option<&ServedCover>, _: u32) -> Result<Vec<u8>> {
+            Searched.cover(&at("track/so-1"), None, 0)
+        }
+    }
+
     fn an_account() -> Online {
         Online {
             enabled: true,
@@ -991,8 +1135,78 @@ mod tests {
         driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
 
         let queued = driven.read(|root, cx| root.player.read(cx).queue()[0].location.to_uri());
-        assert_eq!(first, (true, "0 artists · 1 album · 1 song".to_owned()));
+        assert_eq!(
+            first,
+            (true, "0 artists · 1 album · 0 mixes · 1 song".to_owned())
+        );
         assert_eq!(queued, "tidal:track/12");
+    }
+
+    #[gpui::test]
+    fn a_mix_on_the_first_page_opens_to_its_songs_and_a_song_of_it_plays(cx: &mut TestAppContext) {
+        let kept = Kept {
+            favoured: Arc::default(),
+        };
+        let mut driven = Driven::serving(cx, vec![Arc::new(kept)], an_account());
+        driven.click("tab-server");
+        driven.until(
+            |root, cx| matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 5),
+        );
+
+        driven.click("server-row-1");
+        driven.until(|root, cx| {
+            matches!(root.server.read(cx).place(), Place::Mix { .. })
+                && matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 1)
+        });
+        driven.click("server-row-0");
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
+
+        let queued = driven.read(|root, cx| root.player.read(cx).queue()[0].location.to_uri());
+        assert_eq!(queued, "tidal:track/13");
+    }
+
+    #[gpui::test]
+    fn a_star_on_a_served_song_favours_it_in_the_service_and_a_favourite_one_is_taken_out(
+        cx: &mut TestAppContext,
+    ) {
+        let favoured = Arc::default();
+        let kept = Kept {
+            favoured: Arc::clone(&favoured),
+        };
+        let mut driven = Driven::serving(cx, vec![Arc::new(kept)], an_account());
+        driven.click("tab-server");
+        driven.until(
+            |root, cx| matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 5),
+        );
+
+        driven.click("server-row-favourite-4");
+        driven.until(|_, _| favoured.lock().len() == 1);
+        driven.click("server-row-favourite-3");
+        driven.until(|_, _| favoured.lock().len() == 2);
+
+        let stars = driven.read(|root, cx| {
+            let server = root.server.read(cx);
+            match server.page() {
+                Page::Read(rows) => rows
+                    .iter()
+                    .filter_map(Row::song)
+                    .map(|song| server.is_favoured(song))
+                    .collect::<Vec<_>>(),
+                Page::Reading | Page::Failed(_) => Vec::new(),
+            }
+        });
+        assert_eq!(
+            favoured
+                .lock()
+                .iter()
+                .map(|(location, favoured)| (location.to_uri(), *favoured))
+                .collect::<Vec<_>>(),
+            [
+                ("tidal:track/12".to_owned(), true),
+                ("tidal:track/11".to_owned(), false)
+            ]
+        );
+        assert_eq!(stars, [false, true]);
     }
 
     #[gpui::test]

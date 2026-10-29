@@ -74,12 +74,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   factor band, each band's scale factor searched, is untried without fdkaac to weigh it on)
 
 ## Later: Sources and providers
-- [M] A song played in place is never a favourite, and a phone counts no listen of one: a favourite
-  is a catalog row's mark (rated into the file, synced by recording), so the sound one is the
-  service's own (TIDAL's `favorites`, Subsonic's `star`), which nothing writes yet; the phones'
-  `listens` name a document alone, and statistics there read nothing else
-- [S] A TIDAL account's favourite mixes are not on its first page: no location names a mix
-  (`Named` is a song, an album or an artist), so a mix cannot be browsed or queued
+- [M] A phone counts no listen of a song played in place and draws no star on one: the phones'
+  `listens` name a document alone, statistics there read nothing else, and the service's own
+  favourite mark (`providers.md`'s *A song played in place is a favourite in the service's own
+  mark*, the desktop's window and `resonate served`) is not reached from the boundary
 - [S · blocked: TIDAL's CDN] A TIDAL song a DASH manifest delivers in segments seeks only once the
   codec has spooled it whole: the codec seeks by byte, and the remuxed FLAC's offsets are the sum of
   every earlier segment's `mdat`, which the manifest's timeline (times alone) does not give; asking

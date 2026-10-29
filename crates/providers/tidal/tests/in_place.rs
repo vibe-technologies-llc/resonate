@@ -19,6 +19,15 @@ const SEARCHED: &str = r#"{"artists":{"items":[{"id":3,"name":"Pink Floyd","pict
 const ALBUM_TRACKS: &str = r#"{"items":[
     {"id":11,"title":"One of These Days","duration":357,"trackNumber":1,"volumeNumber":1,"artist":{"name":"Pink Floyd"},"album":{"title":"Meddle","cover":"aa-bb"}},
     {"id":12,"title":"A Pillow of Winds","version":"Remastered","duration":310,"trackNumber":2,"volumeNumber":1,"artist":{"name":"Pink Floyd"},"album":{"title":"Meddle","cover":"aa-bb"}}]}"#;
+const MIXES: &str = r#"{"items":[
+    {"dateAdded":"2024-02-01","id":"0a1b2c","title":"My Mix 1","subTitle":"Pink Floyd, Camel and more","mixType":"TRACK_MIX"},
+    {"item":{"id":"3d4e5f","title":"Daily Discovery","subTitle":""}},
+    {"id":"../x","title":"Out of the path"},
+    {"title":"Nameless"}]}"#;
+const MIX_ITEMS: &str = r#"{"items":[
+    {"item":{"id":11,"title":"One of These Days","duration":357,"artist":{"name":"Pink Floyd"},"album":{"title":"Meddle","cover":"aa-bb"}},"type":"track"},
+    {"item":null,"type":"video"},
+    {"item":{"id":12,"title":"A Pillow of Winds","duration":310,"artist":{"name":"Pink Floyd"}},"type":"track"}]}"#;
 const ARTIST_ALBUMS: &str = r#"{"items":[{"id":7,"title":"Meddle","artist":{"name":"Pink Floyd"},"cover":"aa-bb"},{"id":"x"},{"id":8,"title":"Animals","artist":{"name":"Pink Floyd"}}]}"#;
 
 fn song() -> Vec<u8> {
@@ -29,6 +38,8 @@ fn song() -> Vec<u8> {
 
 #[derive(Clone, Debug)]
 struct Asked {
+    method: String,
+    body: String,
     path: String,
     query: String,
     authorization: Option<String>,
@@ -168,6 +179,7 @@ fn answer(
     }
     let mut authorization = None;
     let mut range = None;
+    let mut body_length = 0_usize;
     loop {
         let mut header = String::new();
         match reader.read_line(&mut header) {
@@ -181,6 +193,7 @@ fn answer(
         let value = value.trim();
         match name.to_ascii_lowercase().as_str() {
             "authorization" => authorization = Some(value.to_owned()),
+            "content-length" => body_length = value.parse().unwrap_or_default(),
             "range" => {
                 range = value
                     .strip_prefix("bytes=")
@@ -189,9 +202,16 @@ fn answer(
             _ => {}
         }
     }
+    let mut sent = vec![0; body_length];
+    if reader.read_exact(&mut sent).is_err() {
+        return;
+    }
+    let method = line.split(' ').next().unwrap_or_default().to_owned();
     let target = line.split(' ').nth(1).unwrap_or_default();
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
     let asked = Asked {
+        method,
+        body: String::from_utf8_lossy(&sent).into_owned(),
         path: path.to_owned(),
         query: query.to_owned(),
         authorization,
@@ -248,9 +268,19 @@ fn tidal_server() -> Fake {
         "/api/users/42/favorites/albums" => Canned::json(
             r#"{"items":[{"item":{"id":7,"title":"Meddle","artist":{"name":"Pink Floyd"},"cover":"aa-bb"}}]}"#,
         ),
+        "/api/users/42/favorites/tracks" if asked.method == "POST" => {
+            if asked.body.starts_with("trackIds=11&") {
+                Canned::json(r#"{"lastModifiedAt":"now"}"#)
+            } else {
+                Canned::missing()
+            }
+        }
+        "/api/users/42/favorites/tracks/11" if asked.method == "DELETE" => Canned::json("{}"),
         "/api/users/42/favorites/tracks" => Canned::json(
             r#"{"items":[{"item":{"id":12,"title":"A Pillow of Winds","duration":310,"artist":{"name":"Pink Floyd"},"album":{"title":"Meddle","cover":"aa-bb"}}}]}"#,
         ),
+        "/api/users/42/favorites/mixes" => Canned::json(MIXES),
+        "/api/mixes/0a1b2c/items" => Canned::json(MIX_ITEMS),
         "/api/albums/7/tracks" => Canned::json(ALBUM_TRACKS),
         "/api/artists/3/albums" => Canned::json(ARTIST_ALBUMS),
         "/api/tracks/11" => Canned::json(
@@ -342,7 +372,89 @@ fn a_tidal_accounts_first_page_is_its_favourite_artists_albums_and_songs() {
                 && asked.query.contains("countryCode=GB")
                 && asked.query.contains("order=DATE"))
             .count(),
-        3
+        4
+    );
+}
+
+#[test]
+fn a_tidal_accounts_favourite_mixes_are_on_its_first_page_and_a_mix_is_browsed_and_expanded_to_its_songs()
+ {
+    let fake = tidal_server();
+    let tidal = fake.tidal();
+
+    let first = tidal.first_page().expect("the first page");
+    let mix = Named::Mix(first.mixes[0].id.clone());
+    let location = tidal.location_of(&mix);
+    let browsed = tidal.mix(&first.mixes[0].id).expect("the mix");
+    let songs = tidal.songs_of(&mix).expect("the mix's songs");
+
+    assert_eq!(
+        first
+            .mixes
+            .iter()
+            .map(|mix| (mix.id.as_str(), mix.name.as_str(), mix.subtitle.as_deref()))
+            .collect::<Vec<_>>(),
+        [
+            ("0a1b2c", "My Mix 1", Some("Pink Floyd, Camel and more")),
+            ("3d4e5f", "Daily Discovery", None)
+        ]
+    );
+    assert_eq!(location.to_uri(), "tidal:mix/0a1b2c");
+    assert_eq!(tidal.named_by(&location), Some(mix));
+    assert_eq!(browsed.songs, songs);
+    assert_eq!(
+        songs
+            .iter()
+            .map(|song| song.title.as_str())
+            .collect::<Vec<_>>(),
+        ["One of These Days", "A Pillow of Winds"]
+    );
+    assert_eq!(
+        tidal
+            .location_of(&Named::Song(songs[1].id.clone()))
+            .to_uri(),
+        "tidal:track/12"
+    );
+    assert!(
+        fake.heard()
+            .iter()
+            .filter(|asked| asked.path == "/api/mixes/0a1b2c/items")
+            .all(|asked| asked.query.contains("countryCode=GB")
+                && asked.authorization.as_deref() == Some("Bearer fresh"))
+    );
+}
+
+#[test]
+fn a_mix_is_refused_by_a_service_that_names_none() {
+    let fake = hifi_server();
+    let hifi = fake.hifi();
+    let mix = Named::Mix(Id::new("0a1b2c").expect("an id"));
+
+    let refused = hifi.songs_of(&mix);
+    let hidden = hifi.mix(&Id::new("../x").expect("an id"));
+
+    assert!(matches!(
+        refused,
+        Err(Error::NotOffered {
+            op: ProviderOp::Browse,
+            ..
+        })
+    ));
+    assert!(matches!(hidden, Err(Error::NotOffered { .. })));
+}
+
+#[test]
+fn a_mix_id_that_would_leave_the_path_is_never_asked() {
+    let fake = tidal_server();
+    let tidal = fake.tidal();
+
+    let refused = tidal.mix(&Id::new("../users/42").expect("an id"));
+
+    assert!(matches!(refused, Err(Error::Unreadable { .. })));
+    assert!(
+        fake.heard()
+            .iter()
+            .all(|asked| !asked.path.contains("users/42"))
     );
 }
 
@@ -594,4 +706,79 @@ fn the_hosted_hifi_service_is_browsed_through_tidals_web_api_and_streamed_throug
             .filter(|asked| asked.path.starts_with("/v1/"))
             .all(|asked| asked.query.contains("countryCode=US"))
     );
+}
+
+#[test]
+fn a_tidal_song_is_marked_a_favourite_and_taken_out_through_the_accounts_own_favourites() {
+    let fake = tidal_server();
+    let tidal = fake.tidal();
+
+    tidal.favour(&song_id(), true).expect("a favourite kept");
+    tidal
+        .favour(&song_id(), false)
+        .expect("a favourite taken out");
+    let elsewhere = tidal.favour(&Id::new("99").expect("an id"), false);
+
+    let writes: Vec<_> = fake
+        .heard()
+        .into_iter()
+        .filter(|asked| asked.method != "GET" && asked.path.starts_with("/api/users/"))
+        .collect();
+    assert!(tidal.keeps_favourites());
+    assert!(elsewhere.is_ok());
+    assert_eq!(writes.len(), 3);
+    assert_eq!(
+        (writes[0].method.as_str(), writes[0].path.as_str()),
+        ("POST", "/api/users/42/favorites/tracks")
+    );
+    assert_eq!(writes[0].body, "trackIds=11&onArtifactNotFound=FAIL");
+    assert_eq!(
+        (writes[1].method.as_str(), writes[1].path.as_str()),
+        ("DELETE", "/api/users/42/favorites/tracks/11")
+    );
+    assert!(
+        writes
+            .iter()
+            .all(|asked| asked.query.contains("countryCode=GB")
+                && asked.authorization.as_deref() == Some("Bearer fresh"))
+    );
+}
+
+#[test]
+fn a_song_tidal_will_not_add_is_the_refusal_it_carries_and_a_service_with_no_account_keeps_none() {
+    let fake = tidal_server();
+    let tidal = fake.tidal();
+    let hifi_fake = hifi_server();
+
+    let refused = tidal.favour(&Id::new("99").expect("an id"), true);
+    let kept = hifi_fake.hifi().favour(&song_id(), true);
+
+    assert!(matches!(
+        refused,
+        Err(Error::TurnedAway {
+            op: ProviderOp::Favourite,
+            code: 404,
+            ..
+        })
+    ));
+    assert!(!hifi_fake.hifi().keeps_favourites());
+    assert!(matches!(
+        kept,
+        Err(Error::NotOffered {
+            op: ProviderOp::Favourite,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn a_favourite_song_is_known_to_be_one_on_the_first_page_and_unknown_elsewhere() {
+    let fake = tidal_server();
+    let tidal = fake.tidal();
+
+    let first = tidal.first_page().expect("the first page");
+    let album = PlaysInPlace::album(&tidal, &Id::new("7").expect("an id")).expect("an album");
+
+    assert_eq!(first.songs[0].favourite, Some(true));
+    assert_eq!(album.songs[0].favourite, None);
 }

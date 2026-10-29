@@ -83,8 +83,11 @@ that name. Every file argument goes through it.
   for it. `resonate served [--service NAME]` browses a service (`cli::ServedArgs`: the name is a
   scheme, case folded; without it the first the settings set, in the registry's order): bare, its
   `first_page` (a Subsonic server's artists, a TIDAL account's favourites); `--artist ID`,
-  `--album ID`, `--search WORDS` (`cli::BrowsingArgs`, one at a time), one table a kind found, each
-  row with the URI `play` and `queue` take (`served::tables`). `resonate subsonic` is the same with
+  `--album ID`, `--mix ID`, `--search WORDS` (`cli::BrowsingArgs`, one at a time), one table a kind
+  found, each row with the URI `play` and `queue` take (`served::tables`); `--favour ID` and
+  `--unfavour ID` (the same group) mark or unmark the song the service knows by that id in the
+  service's own favourites (`PlaysInPlace::favour`) and print the song's URI; a service with none
+  is `NotOffered`. `resonate subsonic` is the same with
   `--service subsonic`. With `online` off it is `OnlineOff`; no service set `NoServedService`; a
   name not set `ServiceNotServed`; `subsonic` without the account `NoSubsonicServer`; a build
   without `online` `NoServed`

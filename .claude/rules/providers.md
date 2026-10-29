@@ -359,11 +359,15 @@ never copied into `resonate-library` (the local source's catalog alone). `Source
 
 - **What the server holds is named by a location** (`resonate_providers::Named`, the seam's
   `in_place.rs`, re-exported by `resonate-subsonic`): `subsonic:track/<id>` a song,
-  `subsonic:album/<id>` and `subsonic:artist/<id>` what they hold, the key read back by
-  `Named::read` (`a_song_album_or_artist_is_named_by_a_location_that_reads_back_as_itself`). Only a
-  song is ever a queue row. The vocabulary (`Id`, `Named`, `Artist`, `Album`, `Song`,
-  `ArtistAlbums`, `AlbumSongs`, `Found`, `Streamed`) and the `PlaysInPlace` trait are the seam's, so
-  every service played in place speaks it (*Other services played in place*, below).
+  `subsonic:album/<id>` and `subsonic:artist/<id>` what they hold, and `<scheme>:mix/<id>` a mix
+  (only a service that has them names one; Subsonic's `named_by` never reads a mix), the key read
+  back by `Named::read` (`a_song_album_or_artist_is_named_by_a_location_that_reads_back_as_itself`).
+  Only a song is ever a queue row. The vocabulary (`Id`, `Named`, `Artist`, `Album`, `Mix`, `Song`,
+  `ArtistAlbums`, `AlbumSongs`, `MixSongs`, `Found`, `Streamed`) and the `PlaysInPlace` trait are the
+  seam's, so every service played in place speaks it (*Other services played in place*, below). A
+  `Song` says whether the service holds it as a favourite in `favourite` (`Some` only where the
+  service's own answer says so: Subsonic's `starred`, TIDAL's favourite songs on the first page;
+  `None` is unknown, never no).
 - **Browsing is four calls**: `artists` (`getArtists`), `artist` (`getArtist`, its albums), `album`
   (`getAlbum`, its songs), `search` (`search3`, up to `BROWSED_AT_MOST` of each kind), with `song`
   (`getSong`); `songs_of` turns any `Named` into its songs in the server's order, an artist's
@@ -422,8 +426,8 @@ never copied into `resonate-library` (the local source's catalog alone). `Source
 
 TIDAL, hifi-api (hosted, a listener's own, or the keyed Resonate server) and Monochrome are sources
 of their own beside a provider, as Subsonic is: each implements the seam's `PlaysInPlace`
-(`scheme`, `title`, `artists`, `artist`, `album`, `search`, `streamed`, `cover`, `cover_of`,
-`favourites`, `first_page`, `songs_of`, `named_by`, `location_of`), named by `<scheme>:track/<id>`, `<scheme>:album/<id>`,
+(`scheme`, `title`, `artists`, `artist`, `album`, `mix`, `search`, `streamed`, `cover`, `cover_of`,
+`favourites`, `keeps_favourites`, `favour`, `first_page`, `songs_of`, `named_by`, `location_of`), named by `<scheme>:track/<id>`, `<scheme>:album/<id>`,
 `<scheme>:artist/<id>` with the scheme its provider's name (`tidal`, `hifi-api`, `resonate`,
 `monochrome`), and registered by `providers::in_place` wherever its provider is registered, in the
 same order. A service that lists nothing without being asked (every one but Subsonic) answers
@@ -439,9 +443,35 @@ whose `Seek` is `Unsupported`; both are held under a `parking_lot::Mutex` so a s
   `AsksV1::favoured_by`), the user id taken off the token's `user.userId` or `user_id`, else asked
   of `sessions` once and kept in the session (`Tidal::user`). The hosted hifi-api holds no
   listener's account and a listener's own hifi-api has no favourites route, so theirs is empty, as
-  Monochrome's and the keyed server's are. Mixes are not offered: no `Named` names one
-  (`a_tidal_accounts_first_page_is_its_favourite_artists_albums_and_songs`,
+  Monochrome's and the keyed server's are. **A TIDAL account's favourite mixes are on its first
+  page too** (`Found::mixes`, a `Mix`: id, name, optional subtitle): v1 `users/<id>/favorites/mixes`
+  with the same paging and order, each entry read bare or under `item`, an id of letters, digits,
+  dashes and underscores alone since it goes into a path (`V1Mix::mix`; one that does not read is
+  passed over, and an account the route answers 403 or 404 has none). A mix is named
+  `tidal:mix/<id>` (`Named::Mix`), `PlaysInPlace::mix` lists its songs (`mixes/<id>/items`,
+  `SONGS_OF_A_MIX_AT_MOST`, the entries' `item` read as a browse's), `songs_of` expands it, so a
+  mix is browsed, played and queued as an album is; its cover is not offered. A service with no
+  mixes answers `mix` with `NotOffered` under `ProviderOp::Browse`
+  (`a_tidal_accounts_favourite_mixes_are_on_its_first_page_and_a_mix_is_browsed_and_expanded_to_its_songs`,
+  `a_mix_id_that_would_leave_the_path_is_never_asked`,
+  `a_mix_is_refused_by_a_service_that_names_none`,
+  `a_tidal_accounts_first_page_is_its_favourite_artists_albums_and_songs`,
   `a_hifi_api_server_has_no_favourites_to_offer_and_lists_nothing_first`).
+- **A song played in place is a favourite in the service's own mark.** `PlaysInPlace::keeps_favourites`
+  (false by default) says a service has one and `favour(song, favoured)` writes it
+  (`ProviderOp::Favourite`; `NotOffered` where the service has none): Subsonic's `star` and `unstar`
+  (`Subsonic::favour`, one paced request under `answered_within`, the server's failed answer the
+  refusal it carries), TIDAL's v1 `POST users/<id>/favorites/tracks` (form `trackIds=<id>&onArtifactNotFound=FAIL`)
+  and `DELETE users/<id>/favorites/tracks/<id>` with the session's country, signed in and renewed
+  as every request is (`Tidal::exchanged`, one loop for GET, POST and DELETE; a removal TIDAL
+  answers 403 or 404 is already done, an addition it will not take is `TurnedAway` 404). The
+  hifi-api, the keyed server and Monochrome hold no account and keep none. This is the service's
+  mark, never the catalog's: nothing is rated into a file or synced
+  (`a_tidal_song_is_marked_a_favourite_and_taken_out_through_the_accounts_own_favourites`,
+  `a_song_tidal_will_not_add_is_the_refusal_it_carries_and_a_service_with_no_account_keeps_none`,
+  `a_favourite_song_is_known_to_be_one_on_the_first_page_and_unknown_elsewhere`,
+  `a_song_is_starred_and_unstarred_by_the_servers_own_calls_and_a_song_it_lacks_is_the_refusal_it_carries`,
+  `a_song_the_server_has_starred_is_known_to_be_a_favourite_and_one_it_has_not_is_known_not_to_be`).
 - **TIDAL's catalog is its v1 API** (`catalog.rs`, the `AsksV1` trait): `search?query=&types=ARTISTS,ALBUMS,TRACKS`
   (`BROWSED_AT_MOST` of each), `artists/<id>/albums`, `albums/<id>/tracks`, `tracks/<id>`,
   `albums/<id>`, `artists/<id>`, each with the session's country. A TIDAL account asks it with its

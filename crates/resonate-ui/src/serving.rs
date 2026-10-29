@@ -35,6 +35,10 @@ pub(crate) enum Place {
         location: MediaLocation,
         name: String,
     },
+    Mix {
+        location: MediaLocation,
+        name: String,
+    },
     Found {
         words: String,
     },
@@ -44,7 +48,9 @@ impl Place {
     pub(crate) fn title(&self) -> String {
         match self {
             Self::Artists => "Artists".to_owned(),
-            Self::Artist { name, .. } | Self::Album { name, .. } => name.clone(),
+            Self::Artist { name, .. } | Self::Album { name, .. } | Self::Mix { name, .. } => {
+                name.clone()
+            }
             Self::Found { words } => format!("\u{201C}{words}\u{201D}"),
         }
     }
@@ -54,13 +60,16 @@ impl Place {
             Self::Artists => "SERVER",
             Self::Artist { .. } => "ARTIST ON THE SERVER",
             Self::Album { .. } => "ALBUM ON THE SERVER",
+            Self::Mix { .. } => "MIX ON THE SERVER",
             Self::Found { .. } => "SEARCH ON THE SERVER",
         }
     }
 
     pub(crate) fn location(&self) -> Option<&MediaLocation> {
         match self {
-            Self::Artist { location, .. } | Self::Album { location, .. } => Some(location),
+            Self::Artist { location, .. }
+            | Self::Album { location, .. }
+            | Self::Mix { location, .. } => Some(location),
             Self::Artists | Self::Found { .. } => None,
         }
     }
@@ -71,6 +80,7 @@ pub(crate) enum Row {
     Heading(&'static str),
     Artist(ServedArtist),
     Album(ServedAlbum),
+    Mix(ServedAlbum),
     Song(ServedSong),
 }
 
@@ -79,7 +89,7 @@ impl Row {
         match self {
             Self::Heading(_) => None,
             Self::Artist(artist) => Some(&artist.location),
-            Self::Album(album) => Some(&album.location),
+            Self::Album(album) | Self::Mix(album) => Some(&album.location),
             Self::Song(song) => Some(&song.location),
         }
     }
@@ -88,7 +98,7 @@ impl Row {
         match self {
             Self::Heading(_) => None,
             Self::Artist(artist) => artist.cover.as_ref(),
-            Self::Album(album) => album.cover.as_ref(),
+            Self::Album(album) | Self::Mix(album) => album.cover.as_ref(),
             Self::Song(song) => song.cover.as_ref(),
         }
     }
@@ -96,13 +106,13 @@ impl Row {
     pub(crate) fn song(&self) -> Option<&ServedSong> {
         match self {
             Self::Song(song) => Some(song),
-            Self::Heading(_) | Self::Artist(_) | Self::Album(_) => None,
+            Self::Heading(_) | Self::Artist(_) | Self::Album(_) | Self::Mix(_) => None,
         }
     }
 }
 
 pub(crate) fn first_rows(first: ServedFound) -> Vec<Row> {
-    if first.albums.is_empty() && first.songs.is_empty() {
+    if first.albums.is_empty() && first.songs.is_empty() && first.mixes.is_empty() {
         return first.artists.into_iter().map(Row::Artist).collect();
     }
     rows_of_found(first)
@@ -117,6 +127,7 @@ pub(crate) fn rows_of_found(found: ServedFound) -> Vec<Row> {
         artists,
         albums,
         songs,
+        mixes,
     } = found;
     let mut rows = Vec::new();
     if !artists.is_empty() {
@@ -126,6 +137,10 @@ pub(crate) fn rows_of_found(found: ServedFound) -> Vec<Row> {
     if !albums.is_empty() {
         rows.push(Row::Heading("ALBUMS"));
         rows.extend(albums.into_iter().map(Row::Album));
+    }
+    if !mixes.is_empty() {
+        rows.push(Row::Heading("MIXES"));
+        rows.extend(mixes.into_iter().map(Row::Mix));
     }
     if !songs.is_empty() {
         rows.push(Row::Heading("SONGS"));
@@ -209,6 +224,7 @@ pub(crate) struct ServerModel {
     covers: Recent<AtSide<CoverKey>, Option<Picture>>,
     fetching: AHashSet<CoverKey>,
     unfetched: AHashMap<CoverKey, Instant>,
+    favoured: AHashMap<MediaLocation, bool>,
     scale: Scale,
 }
 
@@ -224,6 +240,7 @@ impl ServerModel {
             covers: Recent::new(COVERS_HELD),
             fetching: AHashSet::new(),
             unfetched: AHashMap::new(),
+            favoured: AHashMap::new(),
             scale: Scale::ONE,
         };
         model.refresh(cx);
@@ -265,6 +282,23 @@ impl ServerModel {
             .cloned()
     }
 
+    pub(crate) fn keeps_favourites(&self, location: &MediaLocation) -> bool {
+        self.serving(location)
+            .is_some_and(|serves| serves.keeps_favourites())
+    }
+
+    pub(crate) fn is_favoured(&self, song: &ServedSong) -> bool {
+        self.favoured
+            .get(&song.location)
+            .copied()
+            .or(song.favourite)
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn note_favoured(&mut self, location: MediaLocation, favoured: bool) {
+        self.favoured.insert(location, favoured);
+    }
+
     pub(crate) fn names(&self, location: &MediaLocation) -> bool {
         self.services.iter().any(|serves| serves.names(location))
     }
@@ -299,6 +333,7 @@ impl ServerModel {
             .and_then(|was| opened.iter().position(|serves| *serves.scheme() == was))
             .unwrap_or_default();
         self.services = opened;
+        self.favoured.clear();
         self.trail = vec![Place::Artists];
         self.forget_the_covers(cx);
         self.read(cx);
@@ -472,7 +507,7 @@ fn rows_at(serves: &dyn Serves, place: &Place) -> Result<Vec<Row>, ProviderError
             .into_iter()
             .map(Row::Album)
             .collect(),
-        Place::Album { location, .. } => serves
+        Place::Album { location, .. } | Place::Mix { location, .. } => serves
             .songs_of(location)?
             .into_iter()
             .map(Row::Song)

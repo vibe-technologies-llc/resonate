@@ -978,7 +978,7 @@ pub struct WantsArgs {
 }
 
 #[derive(Debug, Args)]
-#[command(group(ArgGroup::new("browsing").args(["artist", "album", "search"])))]
+#[command(group(ArgGroup::new("browsing").args(["artist", "album", "mix", "search", "favour", "unfavour"])))]
 pub struct BrowsingArgs {
     #[arg(
         long,
@@ -996,10 +996,31 @@ pub struct BrowsingArgs {
 
     #[arg(
         long,
+        value_name = "ID",
+        help = "List the songs of the mix the service knows by this id"
+    )]
+    pub mix: Option<String>,
+
+    #[arg(
+        long,
         value_name = "WORDS",
         help = "List the artists, albums and songs the service finds for these words"
     )]
     pub search: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "ID",
+        help = "Mark the song the service knows by this id as a favourite in the service itself"
+    )]
+    pub favour: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "ID",
+        help = "Take the song the service knows by this id out of the service's own favourites"
+    )]
+    pub unfavour: Option<String>,
 }
 
 #[derive(Debug, Args)]

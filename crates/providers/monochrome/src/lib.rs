@@ -421,7 +421,7 @@ impl PlaysInPlace for Monochrome {
     fn named_by(&self, location: &MediaLocation) -> Option<Named> {
         match Named::read(location, &self.source)? {
             Named::Song(id) => Some(Named::Song(id)),
-            Named::Album(_) | Named::Artist(_) => None,
+            Named::Album(_) | Named::Artist(_) | Named::Mix(_) => None,
         }
     }
 }

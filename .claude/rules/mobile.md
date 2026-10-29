@@ -554,9 +554,10 @@ read may bind first; a service whose account stands keeps its `Arc` (one TIDAL s
 (`Served::sources`), so a stream of known length is probed and seeked by range and one read onward
 is spooled (the binary's `ServedSongs` is the same thing over its `Sources`; no provider crate may
 see `resonate-codec`). `served_services` lists them (`ServedService`: scheme and title).
-`served_first_page(service)` (a Subsonic server's artists, a TIDAL account's favourites, else
-nothing) and `served_search(service, words)` take the scheme; `served_albums(artist uri)`,
-`served_songs(album uri)`, `served_song_uris(any uri)` and `served_cover(uri, known name, side)`
+`served_first_page(service)` (a Subsonic server's artists, a TIDAL account's favourites with its
+favourite mixes among the albums as records of the same shape, a mix's uri being `<scheme>:mix/<id>`,
+else nothing) and `served_search(service, words)` take the scheme; `served_albums(artist uri)`,
+`served_songs(album or mix uri)`, `served_song_uris(any uri)` and `served_cover(uri, known name, side)`
 reach the service the uri's scheme names. Each needs online (`OnlineOff`), the service
 (`NoServedServer`) and a uri it names (`InvalidUri`), and a provider failure is
 `downloads::failure_of` under the account's `MusicProvider`. The records carry URIs

@@ -13,6 +13,7 @@ pub enum ProviderOp {
     Browse,
     Stream,
     Cover,
+    Favourite,
 }
 
 #[derive(Debug, Error)]
