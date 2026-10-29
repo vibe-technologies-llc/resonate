@@ -45,17 +45,21 @@ const VORBIS_TURNS_A_FLOOR_STEP: f64 = 2.0;
 pub enum Coding {
     Aac,
     Mp3,
+    Mp2,
     Vorbis,
+    Opus,
 }
 
 impl Coding {
-    pub const ALL: [Self; 3] = [Self::Aac, Self::Mp3, Self::Vorbis];
+    pub const ALL: [Self; 5] = [Self::Aac, Self::Mp3, Self::Mp2, Self::Vorbis, Self::Opus];
 
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Aac => "AAC",
             Self::Mp3 => "MP3",
+            Self::Mp2 => "MP2",
             Self::Vorbis => "Vorbis",
+            Self::Opus => "Opus",
         }
     }
 }
@@ -78,7 +82,25 @@ pub(crate) struct Tally {
 }
 
 impl Tally {
-    fn add(&mut self, other: Self) {
+    pub(crate) fn counted(on: u64, count: u64) -> Self {
+        Self {
+            sum: Complex::new(on as f64, 0.0),
+            count,
+            mass: count as f64,
+            spread: count as f64,
+        }
+    }
+
+    pub(crate) fn weighed(phase: Complex<f32>, weight: f32) -> Self {
+        Self {
+            sum: Complex::new(f64::from(phase.re), f64::from(phase.im)),
+            count: u64::from(weight > 0.0),
+            mass: f64::from(weight),
+            spread: f64::from(weight * weight),
+        }
+    }
+
+    pub(crate) fn add(&mut self, other: Self) {
         self.sum += other.sum;
         self.count += other.count;
         self.mass += other.mass;
@@ -170,6 +192,44 @@ impl Phases {
     }
 }
 
+pub(crate) fn phased(
+    phases: &Phases,
+    lines: Range<usize>,
+    left: &[f32],
+    right: Option<&[f32]>,
+    mid_and_side: bool,
+) -> Tally {
+    let mut sum = Complex::<f32>::default();
+    let mut count = 0_u32;
+    let mut mass = 0.0_f32;
+    let mut spread = 0.0_f32;
+    let mut add = |coefficient: f32| {
+        let (phase, counted, weight) = phases.of(coefficient);
+        sum += phase;
+        count += counted;
+        mass += weight;
+        spread += weight * weight;
+    };
+    for line in lines {
+        let one = left[line];
+        add(one);
+        if let Some(right) = right {
+            let other = right[line];
+            add(other);
+            if mid_and_side {
+                add((one + other) / 2.0);
+                add((one - other) / 2.0);
+            }
+        }
+    }
+    Tally {
+        sum: Complex::new(f64::from(sum.re), f64::from(sum.im)),
+        count: u64::from(count),
+        mass: f64::from(mass),
+        spread: f64::from(spread),
+    }
+}
+
 pub(crate) fn turned(size: f64, angle: f64) -> Complex<f32> {
     let turn = Complex::from_polar(size, angle);
     Complex::new(turn.re as f32, turn.im as f32)
@@ -224,7 +284,7 @@ pub(crate) trait Grid {
 
     fn new(rate: u32, band: &Band) -> Self;
 
-    fn phases(&self) -> &Phases;
+    fn tally(&self, lines: Range<usize>, left: &[f32], right: Option<&[f32]>) -> Tally;
 
     fn coefficients(
         &mut self,
@@ -247,6 +307,10 @@ pub(crate) trait Grid {
     }
 
     fn forget(&mut self) {}
+
+    fn searched(_: usize) -> bool {
+        true
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -391,10 +455,10 @@ impl<G: Grid> Stepping<G> {
         self.held_from += gone as u64;
     }
 
-    fn tally_frame(&mut self, start: usize, shape: usize) -> Tally {
+    fn tally_frame(&mut self, start: usize, shape: usize, searching: bool) -> Tally {
         let mut chosen = Tally::default();
         let mut chosen_strength = -1.0_f64;
-        for kind in 0..G::KINDS {
+        for kind in (0..G::KINDS).filter(|kind| !searching || G::searched(*kind)) {
             let tally = self.tally_kind(start, shape, kind);
             let strength = tally.rayleigh();
             if strength > chosen_strength {
@@ -431,42 +495,14 @@ impl<G: Grid> Stepping<G> {
             );
         }
 
-        let phases = grid.phases();
-        let mut sum = Complex::<f32>::default();
-        let mut count = 0_u32;
-        let mut mass = 0.0_f32;
-        let mut spread = 0.0_f32;
-        let mut add = |coefficient: f32| {
-            let (phase, counted, weight) = phases.of(coefficient);
-            sum += phase;
-            count += counted;
-            mass += weight;
-            spread += weight * weight;
-        };
-        for line in lines {
-            let left = self.left[line];
-            add(left);
-            if self.paired {
-                let right = self.right[line];
-                add(right);
-                if G::MID_AND_SIDE {
-                    add((left + right) / 2.0);
-                    add((left - right) / 2.0);
-                }
-            }
-        }
-        Tally {
-            sum: Complex::new(f64::from(sum.re), f64::from(sum.im)),
-            count: u64::from(count),
-            mass: f64::from(mass),
-            spread: f64::from(spread),
-        }
+        let right = self.paired.then_some(self.right.as_slice());
+        grid.tally(lines, &self.left, right)
     }
 
-    fn tally_run(&mut self, start: usize, frames: usize, shape: usize) -> Tally {
+    fn tally_run(&mut self, start: usize, frames: usize, shape: usize, searching: bool) -> Tally {
         let mut tally = Tally::default();
         for frame in 0..frames {
-            tally.add(self.tally_frame(start + frame * G::HOP, shape));
+            tally.add(self.tally_frame(start + frame * G::HOP, shape, searching));
         }
         tally
     }
@@ -485,7 +521,7 @@ impl<G: Grid> Stepping<G> {
         for shape in 0..G::SHAPES {
             for residue in 0..G::RESIDUES {
                 found[shape * G::RESIDUES + residue] =
-                    self.tally_run(start + residue, G::FRAMES_A_SEARCH, shape);
+                    self.tally_run(start + residue, G::FRAMES_A_SEARCH, shape, true);
             }
         }
         if let Some(grid) = self.grid.as_mut() {
@@ -543,7 +579,8 @@ impl<G: Grid> Stepping<G> {
         let steps = candidates
             .iter()
             .map(|candidate| {
-                let lattice = self.tally_run(start + candidate.residue, frames, candidate.shape);
+                let lattice =
+                    self.tally_run(start + candidate.residue, frames, candidate.shape, false);
                 if let Some(grid) = self.grid.as_mut() {
                     grid.forget();
                 }
@@ -551,6 +588,7 @@ impl<G: Grid> Stepping<G> {
                     start + candidate.residue + G::CONTROL_SHIFT,
                     frames,
                     candidate.shape,
+                    false,
                 );
                 if let Some(grid) = self.grid.as_mut() {
                     grid.forget();
@@ -829,8 +867,8 @@ impl Grid for Aac {
         }
     }
 
-    fn phases(&self) -> &Phases {
-        &self.phases
+    fn tally(&self, lines: Range<usize>, left: &[f32], right: Option<&[f32]>) -> Tally {
+        phased(&self.phases, lines, left, right, Self::MID_AND_SIDE)
     }
 
     fn coefficients(&mut self, _: usize, samples: &[f32], _: u64, shape: usize, into: &mut [f32]) {
@@ -908,8 +946,8 @@ impl Grid for Vorbis {
         }
     }
 
-    fn phases(&self) -> &Phases {
-        &self.phases
+    fn tally(&self, lines: Range<usize>, left: &[f32], right: Option<&[f32]>) -> Tally {
+        phased(&self.phases, lines, left, right, Self::MID_AND_SIDE)
     }
 
     fn coefficients(&mut self, _: usize, samples: &[f32], _: u64, shape: usize, into: &mut [f32]) {

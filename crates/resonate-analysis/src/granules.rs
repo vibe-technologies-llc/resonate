@@ -2,10 +2,10 @@ use std::{f64::consts::PI, ops::Range};
 
 use ahash::AHashMap;
 
-use crate::steps::{Band, Coding, Grid, Phases, QUARTER_OCTAVE_STEPS, Ramp, Taking};
+use crate::steps::{Band, Coding, Grid, Phases, QUARTER_OCTAVE_STEPS, Ramp, Taking, Tally, phased};
 
-const SUBBANDS: usize = 32;
-const POLYPHASE_TAPS: usize = 512;
+pub(crate) const SUBBANDS: usize = 32;
+pub(crate) const POLYPHASE_TAPS: usize = 512;
 const POLYPHASE_ROWS: usize = 2 * SUBBANDS;
 const LINES_A_SUBBAND: usize = 18;
 const GRANULE: usize = SUBBANDS * LINES_A_SUBBAND;
@@ -70,26 +70,26 @@ const SYNTHESIS_WINDOW: [i32; POLYPHASE_TAPS] = [
     2, 2, 1, 1, 1, 1, 1, 1,
 ];
 
-type Vector = [f32; SUBBANDS];
+pub(crate) type Vector = [f32; SUBBANDS];
 
-pub(crate) struct Mp3 {
+pub(crate) struct Polyphase {
     analysis_window: Vec<f32>,
     matrixing: Vec<f32>,
-    block_windows: [[f32; VECTORS_A_BLOCK]; 3],
-    short_window: [f32; SHORT_BLOCK],
-    short_turning: Vec<f32>,
-    turning: Vec<f32>,
-    butterflies: [(f32, f32); BUTTERFLIES],
     vectors: AHashMap<(usize, u64), Vector>,
-    block: Vec<Vector>,
-    folded: [f32; LINES_A_SUBBAND],
-    lines: [[f32; LINES_A_SUBBAND]; SUBBANDS],
     subbands: Range<usize>,
-    phases: Phases,
 }
 
-impl Mp3 {
-    fn vector(&mut self, lane: usize, samples: &[f32], at: u64) -> Vector {
+impl Polyphase {
+    pub(crate) fn new(subbands: Range<usize>) -> Self {
+        Self {
+            analysis_window: analysis_window(),
+            matrixing: matrixing(),
+            vectors: AHashMap::new(),
+            subbands,
+        }
+    }
+
+    pub(crate) fn vector(&mut self, lane: usize, samples: &[f32], at: u64) -> Vector {
         if let Some(vector) = self.vectors.get(&(lane, at)) {
             return *vector;
         }
@@ -114,6 +114,26 @@ impl Mp3 {
         vector
     }
 
+    pub(crate) fn forget(&mut self) {
+        self.vectors.clear();
+    }
+}
+
+pub(crate) struct Mp3 {
+    polyphase: Polyphase,
+    block_windows: [[f32; VECTORS_A_BLOCK]; 3],
+    short_window: [f32; SHORT_BLOCK],
+    short_turning: Vec<f32>,
+    turning: Vec<f32>,
+    butterflies: [(f32, f32); BUTTERFLIES],
+    block: Vec<Vector>,
+    folded: [f32; LINES_A_SUBBAND],
+    lines: [[f32; LINES_A_SUBBAND]; SUBBANDS],
+    subbands: Range<usize>,
+    phases: Phases,
+}
+
+impl Mp3 {
     fn transformed_short(&mut self, subband: usize) {
         for window in 0..SHORT_WINDOWS {
             let mut windowed = [0.0_f32; SHORT_BLOCK];
@@ -166,7 +186,7 @@ impl Mp3 {
     fn transform(&mut self, lane: usize, samples: &[f32], at: u64, kind: usize, into: &mut [f32]) {
         for nth in 0..VECTORS_A_BLOCK {
             let from = nth * SUBBANDS;
-            self.block[nth] = self.vector(
+            self.block[nth] = self.polyphase.vector(
                 lane,
                 &samples[from..from + POLYPHASE_TAPS],
                 at + from as u64,
@@ -308,14 +328,12 @@ impl Grid for Mp3 {
             })
             .collect();
         Self {
-            analysis_window: analysis_window(),
-            matrixing: matrixing(),
+            polyphase: Polyphase::new(lowest..highest + 1),
             block_windows,
             short_window,
             short_turning,
             turning: turning(),
             butterflies: butterflies(),
-            vectors: AHashMap::new(),
             block: vec![[0.0; SUBBANDS]; VECTORS_A_BLOCK],
             folded: [0.0; LINES_A_SUBBAND],
             lines: [[0.0; LINES_A_SUBBAND]; SUBBANDS],
@@ -324,8 +342,8 @@ impl Grid for Mp3 {
         }
     }
 
-    fn phases(&self) -> &Phases {
-        &self.phases
+    fn tally(&self, lines: Range<usize>, left: &[f32], right: Option<&[f32]>) -> Tally {
+        phased(&self.phases, lines, left, right, Self::MID_AND_SIDE)
     }
 
     fn coefficients(&mut self, lane: usize, samples: &[f32], at: u64, _: usize, into: &mut [f32]) {
@@ -348,12 +366,12 @@ impl Grid for Mp3 {
     }
 
     fn forget(&mut self) {
-        self.vectors.clear();
+        self.polyphase.forget();
     }
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::steps::{
         SIXTEEN_BIT_STEPS, Stepping,
@@ -364,6 +382,52 @@ mod tests {
     const SYNTHESIS_HISTORY: usize = 1_024;
 
     const BLOCK_SEQUENCE: [usize; 6] = [0, 0, 1, SHORT_KIND, SHORT_KIND, 2];
+
+    pub(crate) struct Synthesis {
+        history: Vec<f64>,
+    }
+
+    impl Default for Synthesis {
+        fn default() -> Self {
+            Self {
+                history: vec![0.0; SYNTHESIS_HISTORY],
+            }
+        }
+    }
+
+    impl Synthesis {
+        pub(crate) fn sounded(&mut self, samples: &[f64; SUBBANDS], out: &mut Vec<f64>) {
+            self.history.rotate_right(POLYPHASE_ROWS);
+            for (row, slot) in self.history[..POLYPHASE_ROWS].iter_mut().enumerate() {
+                *slot = samples
+                    .iter()
+                    .enumerate()
+                    .map(|(subband, value)| {
+                        let angle = (ROWS_BEFORE_THE_CENTRE as f64 + row as f64)
+                            * (2.0 * subband as f64 + 1.0)
+                            * PI
+                            / POLYPHASE_ROWS as f64;
+                        value * angle.cos()
+                    })
+                    .sum();
+            }
+            for nth in 0..SUBBANDS {
+                let sum: f64 = (0..POLYPHASE_TAPS / SUBBANDS)
+                    .map(|step| {
+                        let tap = nth + SUBBANDS * step;
+                        let slot = tap / POLYPHASE_ROWS * 2 * POLYPHASE_ROWS
+                            + if tap % POLYPHASE_ROWS < SUBBANDS {
+                                tap % POLYPHASE_ROWS
+                            } else {
+                                tap % POLYPHASE_ROWS + POLYPHASE_ROWS
+                            };
+                        self.history[slot] * f64::from(SYNTHESIS_WINDOW[tap]) / WINDOW_UNITS_A_ONE
+                    })
+                    .sum();
+                out.push(sum);
+            }
+        }
+    }
 
     fn synthesised(coefficients: impl FnMut(usize) -> f64) -> Vec<f32> {
         synthesised_blocks(coefficients, |_| 0)
@@ -377,7 +441,7 @@ mod tests {
         let windows = block_windows();
         let butterflies = butterflies();
         let mut overlap = vec![[0.0_f64; LINES_A_SUBBAND]; SUBBANDS];
-        let mut history = vec![0.0_f64; SYNTHESIS_HISTORY];
+        let mut synthesis = Synthesis::default();
         let mut out = Vec::with_capacity(granules * GRANULE);
 
         for granule in 0..granules {
@@ -443,35 +507,7 @@ mod tests {
                 }
             }
             for samples in &subband_samples {
-                history.rotate_right(POLYPHASE_ROWS);
-                for (row, slot) in history[..POLYPHASE_ROWS].iter_mut().enumerate() {
-                    *slot = samples
-                        .iter()
-                        .enumerate()
-                        .map(|(subband, value)| {
-                            let angle = (ROWS_BEFORE_THE_CENTRE as f64 + row as f64)
-                                * (2.0 * subband as f64 + 1.0)
-                                * PI
-                                / POLYPHASE_ROWS as f64;
-                            value * angle.cos()
-                        })
-                        .sum();
-                }
-                for nth in 0..SUBBANDS {
-                    let sum: f64 = (0..POLYPHASE_TAPS / SUBBANDS)
-                        .map(|step| {
-                            let tap = nth + SUBBANDS * step;
-                            let slot = tap / POLYPHASE_ROWS * 2 * POLYPHASE_ROWS
-                                + if tap % POLYPHASE_ROWS < SUBBANDS {
-                                    tap % POLYPHASE_ROWS
-                                } else {
-                                    tap % POLYPHASE_ROWS + POLYPHASE_ROWS
-                                };
-                            history[slot] * f64::from(SYNTHESIS_WINDOW[tap]) / WINDOW_UNITS_A_ONE
-                        })
-                        .sum();
-                    out.push(sum);
-                }
+                synthesis.sounded(samples, &mut out);
             }
         }
         out.iter()

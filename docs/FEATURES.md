@@ -60,17 +60,18 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   lyric text (LRCLIB's text search finds none)
 
 ## Identification
-- [M · 0.3.0] The quantiser steps were weighed only on the encoders this machine has (ffmpeg's
-  AAC, faac, fdk AAC, LAME, libvorbis and ffmpeg's Vorbis): no Apple or FhG AAC, no FhG or other
-  MP3 encoder and no aoTuV Vorbis weighed; fdk AAC at 320 kbps and faac at `-q 100` still miss
-  five to seven of 36 loud masters, whose lattice reads 0.008 at most (the cause is not found; at
-  320 kbps large quantised values thin a log lattice, a power-law lattice per scale factor band
-  would need each band's scale factor searched); a lossy decode downsampled below the rate it was coded at loses its grid; MP2 (twolame) is not
-  weighed, its subband samples sitting on a linear grid per scale factor; and an Opus decode is
-  only `Suspect`: CELT codes a band's energy as a residual from a prediction on the previous
-  frame's, so the energies sit on no lattice of their own (a direct search of 960-line frames at
-  every offset found none), and weighing the residual wants libopus's mean table, post-filter and
-  stereo state
+- [M · 0.3.0] faac at `-q 100` misses 8 of 36 loud masters (28 found) and libopus 5 to 8 of 36
+  (at 64, 128 and 192 kbps and decoded to 44.1 kHz), the same masters: faac's noise substitution
+  fills bands with noise that takes most of the weight off the coded lines (`--pns 0` finds the
+  three tried), and leaving dense bands whose norm sits on the lattice out found one more for twice
+  the search; in Opus one miss reads 0.14 at its own frame offset against 0.62 for a found master,
+  the likely cause the frames its pitch post-filter touched, which undoing wants each frame's
+  period, gain and taps searched for
+- [M · blocked: encoders] The quantiser steps are weighed only on the encoders this machine has
+  (ffmpeg's AAC and MP2, faac, LAME, libvorbis, ffmpeg's Vorbis, twolame and libopus; fdk AAC on an
+  earlier one): no Apple or FhG AAC, no FhG or other MP3 encoder and no aoTuV Vorbis; fdk AAC at 320
+  kbps missed five of 36 loud masters there with the cause not found (a power-law lattice per scale
+  factor band, each band's scale factor searched, is untried without fdkaac to weigh it on)
 
 ## Later: Sources and providers
 - [L] TIDAL, hifi-api and Monochrome are played in place on the desktop alone (the window's Server

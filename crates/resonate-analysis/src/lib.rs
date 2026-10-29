@@ -1,6 +1,7 @@
 mod analysis;
 mod applied;
 mod bands;
+mod celt;
 mod conform;
 mod envelope;
 mod error;
@@ -17,6 +18,7 @@ mod spectrogram;
 mod spectrum;
 mod split;
 mod steps;
+mod subbands;
 mod tones;
 mod verdict;
 mod watch;

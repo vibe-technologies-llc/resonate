@@ -41,11 +41,17 @@ const MUSIC_SECONDS: u32 = 30;
 const AAC_BITRATES: [&str; 2] = ["256k", "320k"];
 const FRAMES_CUT_FROM_THE_DECODE: u32 = 1_000;
 const SOURCE_LATTICE_BELOW: f32 = 0.01;
+const SOURCE_SIGNIFICANCE_BELOW: f32 = 4.0;
 const MP3_ENCODES: [(&str, &[&str]); 2] = [
     ("320-open", &["-b", "320", "--lowpass", "-1"]),
     ("v0", &["-V0"]),
 ];
 const VORBIS_QUALITIES: [&str; 2] = ["6", "10"];
+const TWOLAME_BITRATES: [&str; 2] = ["192", "384"];
+const FFMPEG_MP2_BITRATE: &str = "256k";
+const OPUS_BITRATES: [&str; 3] = ["64k", "128k", "192k"];
+const OPUS_RATE: u32 = 48_000;
+const BELOW_ITS_CODED_RATE: u32 = 32_000;
 const FAAC_BITRATES: [&str; 3] = ["64", "96", "160"];
 const DECODE_FILTERS: [(&str, Option<u32>); 4] = [
     ("aresample=96000", Some(MUSIC_RATE)),
@@ -484,7 +490,15 @@ fn assert_a_genuine_source(path: &Path) {
     assert_ne!(study.judgement.verdict, Verdict::Fake, "{study:?}");
     assert!(!study.steps.is_empty(), "a lossless source is weighed");
     for steps in &study.steps {
-        assert!(steps.lattice < SOURCE_LATTICE_BELOW, "{steps:?}");
+        let by_chance = match steps.coding {
+            Coding::Opus => {
+                steps.lattice * (steps.coefficients as f32).sqrt() < SOURCE_SIGNIFICANCE_BELOW
+            }
+            Coding::Aac | Coding::Mp3 | Coding::Mp2 | Coding::Vorbis => {
+                steps.lattice < SOURCE_LATTICE_BELOW
+            }
+        };
+        assert!(by_chance, "{steps:?}");
     }
 }
 
@@ -718,6 +732,60 @@ fn lames_mp3_with_no_lowpass_decoded_back_to_flac_lands_on_its_granules_and_the_
 }
 
 #[test]
+fn mp2_from_twolame_and_ffmpeg_decoded_back_to_flac_lands_on_its_subband_levels_and_the_source_does_not()
+ {
+    let Some(Sourced { tree, source, wave }) = music_source(MUSIC_RATE) else {
+        eprintln!("skipped: no ffmpeg to encode MP2 with");
+        return;
+    };
+
+    assert_a_genuine_source(&source);
+
+    let mut encodes = Vec::new();
+    let ffmpegs = tree.root.join("ffmpeg.mp2");
+    ffmpeg(&[
+        "-i".as_ref(),
+        wave.as_os_str(),
+        "-c:a".as_ref(),
+        "mp2".as_ref(),
+        "-b:a".as_ref(),
+        FFMPEG_MP2_BITRATE.as_ref(),
+        ffmpegs.as_os_str(),
+    ])
+    .expect("an MP2 encode");
+    encodes.push(("ffmpeg", ffmpegs));
+    for bitrate in TWOLAME_BITRATES {
+        let encoded = tree.root.join(format!("twolame-{bitrate}.mp2"));
+        let status = Command::new("twolame")
+            .args(["--quiet", "-b", bitrate])
+            .arg(&wave)
+            .arg(&encoded)
+            .status();
+        if !status.is_ok_and(|status| status.success()) {
+            eprintln!("skipped: no twolame to encode MP2 with");
+            break;
+        }
+        encodes.push(("twolame", encoded));
+    }
+
+    for (name, encoded) in encodes {
+        let whole = encoded.with_extension("flac");
+        let cut = tree.root.join(format!("{name}-cut.flac"));
+        as_flac(&encoded, &whole, None).expect("a decode");
+        as_flac(
+            &encoded,
+            &cut,
+            Some(format!("atrim=start_sample={FRAMES_CUT_FROM_THE_DECODE}")),
+        )
+        .expect("a cut decode");
+
+        for decoded in [&whole, &cut] {
+            assert_decoded_from(decoded, Coding::Mp2, None, name);
+        }
+    }
+}
+
+#[test]
 fn libvorbis_with_no_lowpass_decoded_back_to_flac_lands_on_its_floor_and_the_source_does_not() {
     let Some(Sourced { tree, source, wave }) = music_source(MUSIC_RATE) else {
         eprintln!("skipped: no ffmpeg to encode Vorbis with");
@@ -755,6 +823,109 @@ fn libvorbis_with_no_lowpass_decoded_back_to_flac_lands_on_its_floor_and_the_sou
         for decoded in [&whole, &cut] {
             assert_decoded_from(decoded, Coding::Vorbis, None, quality);
         }
+    }
+}
+
+#[test]
+fn opus_decoded_back_to_flac_lands_on_the_steps_of_its_predicted_band_energies_and_the_source_does_not()
+ {
+    let Some(Sourced { tree, source, wave }) = music_source(MUSIC_RATE) else {
+        eprintln!("skipped: no ffmpeg to encode Opus with");
+        return;
+    };
+
+    assert_a_genuine_source(&source);
+
+    for bitrate in OPUS_BITRATES {
+        let encoded = tree.root.join(format!("{bitrate}.opus"));
+        if ffmpeg(&[
+            "-i".as_ref(),
+            wave.as_os_str(),
+            "-c:a".as_ref(),
+            "libopus".as_ref(),
+            "-b:a".as_ref(),
+            bitrate.as_ref(),
+            encoded.as_os_str(),
+        ])
+        .is_none()
+        {
+            eprintln!("skipped: no libopus in ffmpeg");
+            return;
+        }
+        let whole = tree.root.join(format!("opus-{bitrate}.flac"));
+        let cut = tree.root.join(format!("opus-{bitrate}-cut.flac"));
+        let resampled = tree.root.join(format!("opus-{bitrate}-resampled.flac"));
+        as_flac(&encoded, &whole, None).expect("a decode");
+        as_flac(
+            &encoded,
+            &cut,
+            Some(format!("atrim=start_sample={FRAMES_CUT_FROM_THE_DECODE}")),
+        )
+        .expect("a cut decode");
+        as_flac(
+            &encoded,
+            &resampled,
+            Some(format!("aresample={MUSIC_RATE}")),
+        )
+        .expect("a resampled decode");
+
+        for decoded in [&whole, &cut] {
+            assert_decoded_from(decoded, Coding::Opus, None, bitrate);
+        }
+        assert_decoded_from(&resampled, Coding::Opus, Some(OPUS_RATE), bitrate);
+    }
+}
+
+#[test]
+fn a_lossy_decode_downsampled_below_its_coded_rate_lands_on_the_steps_once_brought_back() {
+    let Some(Sourced { tree, source, wave }) = music_source(MUSIC_RATE) else {
+        eprintln!("skipped: no ffmpeg to encode AAC with");
+        return;
+    };
+    let downsampled_source = tree.root.join("downsampled-source.flac");
+    as_flac(
+        &source,
+        &downsampled_source,
+        Some(format!("aresample={BELOW_ITS_CODED_RATE}")),
+    )
+    .expect("a downsampled source");
+
+    assert_a_genuine_source(&downsampled_source);
+
+    let aac = tree.root.join("256k.m4a");
+    ffmpeg(&[
+        "-i".as_ref(),
+        source.as_os_str(),
+        "-c:a".as_ref(),
+        "aac".as_ref(),
+        "-b:a".as_ref(),
+        "256k".as_ref(),
+        aac.as_os_str(),
+    ])
+    .expect("an AAC encode");
+    let mut encodes = vec![(Coding::Aac, aac)];
+    let mp3 = tree.root.join("192.mp3");
+    if lame(&[
+        "-b".as_ref(),
+        "192".as_ref(),
+        wave.as_os_str(),
+        mp3.as_os_str(),
+    ])
+    .is_some()
+    {
+        encodes.push((Coding::Mp3, mp3));
+    }
+
+    for (coding, encoded) in encodes {
+        let downsampled = encoded.with_extension("flac");
+        as_flac(
+            &encoded,
+            &downsampled,
+            Some(format!("aresample={BELOW_ITS_CODED_RATE}")),
+        )
+        .expect("a downsampled decode");
+
+        assert_decoded_from(&downsampled, coding, Some(MUSIC_RATE), coding.as_str());
     }
 }
 

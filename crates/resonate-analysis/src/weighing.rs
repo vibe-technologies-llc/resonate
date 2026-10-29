@@ -2,11 +2,17 @@ use resonate_core::{ChannelLayout, SampleRate};
 use resonate_dsp::{FilterPhase, Processor, Quality, Resampler, ResamplerConfig};
 
 use crate::{
+    celt::Opus,
     granules::Mp3,
     steps::{Aac, Stepping, Steps, Vorbis},
+    subbands::Mp2,
 };
 
-const BROUGHT_BACK_TO: [(u32, &[SampleRate]); 6] = [
+const BROUGHT_BACK_TO: [(u32, &[SampleRate]); 10] = [
+    (16_000, &[SampleRate::HZ_44100, SampleRate::HZ_48000]),
+    (22_050, &[SampleRate::HZ_44100, SampleRate::HZ_48000]),
+    (24_000, &[SampleRate::HZ_48000, SampleRate::HZ_44100]),
+    (32_000, &[SampleRate::HZ_44100, SampleRate::HZ_48000]),
     (44_100, &[SampleRate::HZ_48000]),
     (48_000, &[SampleRate::HZ_44100]),
     (88_200, &[SampleRate::HZ_44100, SampleRate::HZ_48000]),
@@ -21,7 +27,9 @@ const SEARCHES_RESAMPLED: usize = 2;
 struct Coded {
     aac: Stepping<Aac>,
     mp3: Stepping<Mp3>,
+    mp2: Stepping<Mp2>,
     vorbis: Stepping<Vorbis>,
+    opus: Stepping<Opus>,
 }
 
 impl Coded {
@@ -29,7 +37,9 @@ impl Coded {
         Self {
             aac: Stepping::new(rate, channels),
             mp3: Stepping::new(rate, channels),
+            mp2: Stepping::new(rate, channels),
             vorbis: Stepping::new(rate, channels),
+            opus: Stepping::new(rate, channels),
         }
     }
 
@@ -37,24 +47,34 @@ impl Coded {
         Self {
             aac: Stepping::unweighed(),
             mp3: Stepping::unweighed(),
+            mp2: Stepping::unweighed(),
             vorbis: Stepping::unweighed(),
+            opus: Stepping::unweighed(),
         }
     }
 
     fn is_done(&self) -> bool {
-        self.aac.is_done() && self.mp3.is_done() && self.vorbis.is_done()
+        self.aac.is_done()
+            && self.mp3.is_done()
+            && self.mp2.is_done()
+            && self.vorbis.is_done()
+            && self.opus.is_done()
     }
 
     fn note(&mut self, interleaved: &[f32]) {
         self.aac.note(interleaved);
         self.mp3.note(interleaved);
+        self.mp2.note(interleaved);
         self.vorbis.note(interleaved);
+        self.opus.note(interleaved);
     }
 
     fn finished(self, into: &mut Vec<Steps>) {
         into.extend(self.aac.finished());
         into.extend(self.mp3.finished());
+        into.extend(self.mp2.finished());
         into.extend(self.vorbis.finished());
+        into.extend(self.opus.finished());
     }
 }
 
@@ -95,7 +115,9 @@ impl Resampled {
             coded: Coded {
                 aac: Stepping::searching(to.hz(), lanes, SEARCHES_RESAMPLED),
                 mp3: Stepping::searching(to.hz(), lanes, SEARCHES_RESAMPLED),
+                mp2: Stepping::searching(to.hz(), lanes, SEARCHES_RESAMPLED),
                 vorbis: Stepping::unweighed(),
+                opus: Stepping::searching(to.hz(), lanes, SEARCHES_RESAMPLED),
             },
         })
     }

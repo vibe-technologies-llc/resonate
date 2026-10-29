@@ -187,7 +187,8 @@ could change (stored studies and kept analyses are weighed against it).
   `MANTISSA_BITS`) and exponent. Vorbis is read at `VORBIS_TURNS_A_FLOOR_STEP` (2) turns a floor
   step, the second harmonic, since `log2(r)/0.0908` is near a whole turn for residues 1, 2 and 4
   and near a half for 3, 5 and 6 (q10 read 0.0131 on the fundamental, 0.035 on the harmonic).
-  First two channels, lossless codecs only.
+  MP2 and Opus are not on log steps and are read otherwise (below). First two channels, lossless
+  codecs only.
 - **A coefficient counts by how far it stands above the 16-bit rounding.** Each carries a weight
   that rises as a smoothstep in `log2|c|` over a `Ramp` (`unit` the grid's 16-bit step in its own
   coefficients, `from` and `to` in octaves above it: AAC and Vorbis 3 to 7, MP3 2 to 6 with a unit
@@ -248,6 +249,41 @@ could change (stored studies and kept analyses are weighed against it).
     the grid is stepped every 128 samples over 128 residues: one frame in eight lands on a long
     block, which dilutes the lattice but keeps the grid across transients. 4..16 kHz, 32 frames a
     search, 1 600 confirmed, control 64 samples off, rates up to 48 kHz.
+  - `Mp2` (`subbands.rs`): Layer II keeps each subband's 36 samples a frame as three *parts* of 12,
+    each part's samples `sf · 2m / n` for a scale factor `sf = 2^(1 - i/3)` (`i` 0..62) and a
+    class of `n` levels (3, 5, 7, 9, 15, 31 ... 65 535, `m` within ±(n-1)/2), a linear grid per
+    part with a step from a table. The polyphase analysis `Mp3` runs (`granules::Polyphase`, its
+    vectors kept by position for both) gives back the decoder's subband samples in its own units,
+    so a part is *on the steps* where some class and one of the scale factors within an octave
+    above its peak (`SCALE_FACTORS_ABOVE_THE_PEAK`) puts every sample within
+    `OFF_THE_STEP_AT_MOST` (0.1) of a level, the peak at a level the class has and at least
+    `SPOKEN_LEVELS_AT_LEAST` (3) samples off level zero: one spike among near-silent samples sits
+    on any coarse grid (a synthetic free stream read 0.035 without that), and a part whose peak is
+    under `PEAK_COUNTED_FROM` (32 sixteen-bit steps) is not counted. The lattice is the share of
+    counted parts on the steps (`Tally::counted`) and `coefficients` the parts counted; there is
+    no phase. 384 residues (32 polyphase offsets times 12), 0..20 kHz (subband 0 to the last coded
+    one), L and R, 12 parts a search, 1 200 confirmed, control half a subband sample (16) off,
+    rates up to 48 kHz (`subband_samples_on_a_scale_factors_levels_are_found_at_any_offset_and_free_ones_are_not`).
+  - `Opus` (`celt.rs`): CELT codes each band's energy (log2 of the band's norm less
+    `ENERGY_MEANS`, RFC 6716's table) as `α·max(E_before, -9) + Σ (1 - β)·q_lower + q + f`: a
+    prediction from the same band of the frame before (α 0.5, β 0.2 between frames of 20 ms; α 0,
+    β 0.15 in an intra frame), the integer coarse steps `q` of the bands below, its own `q`, and a
+    fine offset `f` of `(k + 0.5) / 2^B - 0.5` for `B` fine bits (plus one finalising bit), and the
+    decoder scales each unit-norm band shape to that energy exactly. So the decode is
+    pre-emphasised again (`1 - 0.85 z^-1`), taken through CELT's 1 920-sample MDCT (960 lines, 120
+    overlap under its power-sine window, 420 zeros each side) or its eight 120-line short blocks,
+    each band's energy measured (`SCALE_OCTAVES` 1.25 between our orthonormal transform and
+    CELT's), the frame before taken the same way, and the residual rebuilt band by band with each
+    `q` the rounding of what is left: `f` is then a multiple of 2^-(B+1), whole turns at
+    `TURNS_AN_ENERGY_STEP` (32) turns an energy step for any `B` up to 4. The phase of `32·f` is the
+    lattice, each band weighed by how far its norm stands over the 16-bit rounding of its lines (a
+    smoothstep 6 to 10 octaves over it). Eight kinds (the frame before long or short, this one long
+    or short, inter or intra), searched on the long inter kind alone (`Grid::searched`), 960
+    residues, 21 bands up to 20 kHz, L and R, 8 frames a search, 400 confirmed, control 540 off;
+    48 kHz only, the rate every Opus decoder gives. The pitch post-filter is left in place: frames
+    it touched weigh as noise, the rest keep the lattice (libopus at its default complexity read
+    0.63 at 128 kbps where its complexity 4, which turns the post-filter off, read 0.64)
+    (`band_energies_on_the_coarse_and_fine_steps_of_their_prediction_are_found_and_free_ones_are_not`).
 - **A decode taken to another rate is weighed brought back.** `Weighing` runs the three grids at
   the stream's rate and feeds the first two channels through a `Resampler` (`Quality::Balanced`,
   linear phase) to each rate in `BROUGHT_BACK_TO`, running `Aac` and `Mp3` there at
@@ -257,12 +293,18 @@ could change (stored studies and kept analyses are weighed against it).
   its passband leaves 4..20 kHz as it was: ffmpeg's AAC at 256 kbps read 0.364 decoded and 0.364
   brought back from 48 kHz. Each grid stops taking samples once done, so only the first 20 s or so
   are resampled. A `Steps` carries its `coding` and the `rate` its grid stood at; a rate other than
-  the stream's is `resampled_from`. A decode downsampled below the rate it was coded at has lost
-  the band above the new Nyquist and the grid with it: fdk AAC at 160 kbps taken to 32 kHz is found in none.
+  the stream's is `resampled_from`. A decode downsampled below the rate it was coded at keeps its
+  grid below the new Nyquist, so 16, 22.05, 24 and 32 kHz are brought back to both CD rates too:
+  the lines the downsampling cut are silence there and weigh nothing, and the rest are as decoded
+  (ffmpeg's AAC at 256 kbps, LAME at 192 kbps and twolame at 256 kbps taken to 32 kHz were found
+  in 36 of 36 each, lattice up to 0.45 and 0.50, where none had been; the sources taken to 32 kHz
+  in none). `Mp2` and `Opus` run brought back as `Aac` and `Mp3` do.
 - **Taken at a lattice per coding, over its control, over enough coefficients.** The verdict takes
-  a grid at `AAC_LATTICE_AT_LEAST` (0.02), `MP3_LATTICE_AT_LEAST` (0.02) or
-  `VORBIS_LATTICE_AT_LEAST` (0.012), `LATTICE_OVER_ITS_CONTROL_AT_LEAST` (4) times its control,
-  `STEPPED_COEFFICIENTS_AT_LEAST` (20 000 effective) and `LATTICE_SIGNIFICANCE_AT_LEAST` (12) over
+  a grid at `AAC_LATTICE_AT_LEAST` (0.02), `MP3_LATTICE_AT_LEAST` (0.02),
+  `MP2_LATTICE_AT_LEAST` (0.02), `VORBIS_LATTICE_AT_LEAST` (0.012) or `OPUS_LATTICE_AT_LEAST`
+  (0.05), `LATTICE_OVER_ITS_CONTROL_AT_LEAST` (4) times its control,
+  `STEPPED_COEFFICIENTS_AT_LEAST` (20 000 effective; `STEPPED_GROUPS_AT_LEAST`, 2 000, for MP2's
+  parts and Opus's band energies, each a group read whole) and `LATTICE_SIGNIFICANCE_AT_LEAST` (12) over
   `1 / √coefficients`: a periodic or synthetic signal that happens to cluster does so at every
   offset, which the control refuses, and a lattice among few coefficients is chance, which the
   significance refuses (a genuine track read 0.019 on 21 000 effective coefficients, a significance
@@ -270,14 +312,14 @@ could change (stored studies and kept analyses are weighed against it).
   and the kept analysis (`WRITTEN_AS` 5, the peaks over moments after the print; 4: one moment; 3: a count, then coding name,
   rate, lattice, control and coefficients each, the last now the effective count); `track_studies`
   stores only the verdict (no basis column), so the change moved `JUDGED_UNDER` to 4 and every
-  study is weighed again. Cost: about 2 s a track over the decode (3.9 s to 5.9 s for a 3:33 FLAC
+  study is weighed again; MP2, Opus and the low rates brought back moved it to 5. Cost: about 2 s a track over the decode (3.9 s to 5.9 s for a 3:33 FLAC
   on a loaded machine, 0.9 s to 3.3 s for 40 s at 96 kHz, which runs two resamplers), fixed
   whatever its length, since every grid is done within its first 20 s
   (`coefficients_on_the_quantiser_steps_are_found_at_any_frame_offset_and_free_ones_are_not`,
   `lines_on_the_quantiser_steps_are_found_through_the_hybrid_filterbank_at_any_offset`,
   `residues_on_vorbis_floor_are_found_on_any_short_block_grid_and_free_ones_are_not`, and in
-  `tests/references.rs` the ffmpeg AAC, faac and fdkaac, dithered and hi-res, resampled AAC, LAME
-  and libvorbis round trips beside
+  `tests/references.rs` the ffmpeg AAC, faac and fdkaac, dithered and hi-res, resampled AAC, LAME,
+  libvorbis, twolame and ffmpeg MP2, libopus and downsampled AAC and LAME round trips beside
   `loud_noise_and_dense_music_at_every_cd_rate_land_on_no_codecs_steps`).
 - **What the steps were measured on.** 36 CD-rate library sources (28 at 44.1 kHz, 8 at 48), 40 s
   each, encoded and decoded back to 16-bit FLAC; the table is the sources found before, then now.
@@ -304,17 +346,26 @@ could change (stored studies and kept analyses are weighed against it).
   moved: 9 tracks are called (7 before), the two new ones (an MP3 rip at 0.023 and one at 0.080 from
   48 kHz) already `Fake` by their wall. The statistics tried before (band levels, 100 Hz holes, the
   side channel, the top octave's swing, coefficients at the 16-bit floor on AAC's grid) separated
-  nothing. No Apple or FhG encode weighed (none on this machine). **Opus** lowpasses at 20 kHz at
-  any bitrate and its CELT bands are not on a lattice of their own: an Opus transcode is `Suspect`.
-  A direct search was run (the decode un-pre-emphasised, CELT's MDCT of 960 lines under its
-  120-sample-overlap window at all 960 frame offsets, each of the 21 bands' log2 amplitude against a
-  lattice of 1, 1/2 and 1/4): the strongest offset read a mean z² of 1.7 to 2.3 at 64, 128 and 192
-  kbps against 1.9 for a non-Opus source and no sharp peak at any offset (neighbouring offsets read
-  alike), as CELT codes a band's energy as an integer residual from a prediction on the previous
-  frame's and the lower bands' running term, so the energies themselves sit on none; the residual
-  wants libopus's mean table, its pitch post-filter and stereo state, and was not built. **MP2**
-  (twolame) has its steps in the subband domain on a linear grid per scale factor (3 levels to 65
-  535, scale factors at 2^(-k/3)), not on log steps, and is not weighed.
+  nothing. No Apple or FhG encode weighed (none on this machine). The faac misses are its
+  perceptual noise substitution, on by default: noise scaled to a band energy fills bands and takes
+  most of the weight off the coded lines (`--pns 0` finds the three misses tried at 0.27 to 0.67,
+  and one read at its own frame offset gives 0.003 with it). Leaving out bands whose norm sits on
+  the quarter-octave lattice (a noise band's norm is its scale factor's) only where the band is
+  dense, mirrored at half a step so no phase is favoured, with 8 frames a search, found 29 of 36 at
+  `-q 100` where 28 were (this corpus), as many as 8 frames a search alone, for twice the AAC
+  search, and was not kept. **MP2**
+  (`subbands.rs`, above): twolame at 128, 192, 256 and 384 kbps and ffmpeg's MP2 encoder at 256
+  kbps 36 of 36 each (0.84 to 1.0), twolame at 256 kbps dithered (triangular), taken to 96 kHz and
+  taken to 32 kHz 36 of 36 each; the sources read 0.0013 at most. **Opus** lowpasses at 20 kHz at
+  any bitrate, so its wall alone said `Suspect`; its band energies on their predicted steps
+  (`celt.rs`, above) find libopus at 64 kbps in 31 of 36, at 128 and 192 kbps in 30 (lattice up to
+  0.92), at 128 kbps decoded to 44.1 kHz and brought back in 28; the misses are the loud masters
+  the other codings miss (one reads 0.14 at its own offset where a found one reads 0.62). The
+  sources read 0.032 at most on 8 800 bands (a significance of 3). An earlier direct search of
+  the energies against a lattice of their own found nothing, as the prediction carries every
+  frame's energy off any fixed grid. The whole library (462 tracks, their first 45 s) calls the
+  same 9 tracks as before, all on AAC's or MP3's steps; MP2 reads a significance of 0.64 at most
+  and Opus 3.8 at most (on a track already called from AAC).
 
 ## Studies in the catalog
 
