@@ -27,6 +27,7 @@ mod playlists;
 mod providers;
 mod readout;
 mod reloading;
+mod rendering;
 mod served;
 #[cfg(feature = "ui")]
 mod settings;
@@ -107,6 +108,7 @@ use crate::{
     input::{Action, Pressed},
     online::Asking,
     readout::Readout,
+    rendering::Rendering,
     served::Served,
     table::Table,
 };
@@ -182,7 +184,7 @@ fn run() -> Result<()> {
     let config = config::load(cli.config.as_deref())?;
 
     match &cli.command {
-        Some(Sub::Sinks) => list_sinks(),
+        Some(Sub::Sinks { renderers }) => list_sinks(&cli, &config, *renderers),
         Some(Sub::Explain { path }) => explain(&cli, &config, &local_path(path)),
         Some(Sub::Info { path, graph }) => info::print(
             &local_path(path),
@@ -581,9 +583,10 @@ fn broken_down(failed: Failures) -> String {
     }
 }
 
-fn list_sinks() -> Result<()> {
+fn list_sinks(cli: &Cli, config: &Config, renderers: bool) -> Result<()> {
     let pipewire = PipeWire::start("Resonate")?;
-    let sinks = pipewire.enumerate_sinks(SINK_TIMEOUT)?;
+    let mut sinks = pipewire.enumerate_sinks(SINK_TIMEOUT)?;
+    sinks.extend(Rendering::of(config, wanted_sink(cli, config).as_ref(), renderers).sinks());
 
     let mut table = Table::new(vec![
         "",
@@ -640,8 +643,10 @@ fn list_sinks() -> Result<()> {
     Ok(())
 }
 
-const fn driven_by(sink: &SinkInfo) -> &'static str {
-    if sink.is_hardware {
+fn driven_by(sink: &SinkInfo) -> &'static str {
+    if rendering::names_a_renderer(&sink.name) {
+        "the network"
+    } else if sink.is_hardware {
         "a device"
     } else {
         "the graph"
@@ -2315,8 +2320,11 @@ fn play_queue(
     if let Some(percent) = transport.volume {
         engine.volume = at_percent(percent)?;
     }
-    let player = Arc::new(Player::with_sources(engine, Arc::clone(&sources))?);
-    confirm_sink(&player, wanted_sink(cli, config).as_ref());
+    let wanted = wanted_sink(cli, config);
+    let player = Arc::new(
+        Rendering::of(config, wanted.as_ref(), false).player(engine, Arc::clone(&sources))?,
+    );
+    confirm_sink(&player, wanted.as_ref());
     let queue = stamp_of(&items);
     let start_at = if transport.shuffle {
         anywhere_in(items.len())
@@ -2757,7 +2765,8 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     };
     let settings = settings::File::at(places.config.clone());
     let sources = playing_from(Some(&library), &Served::of(&config));
-    let player = Player::with_sources(engine_config(&cli, &config), Arc::clone(&sources))?;
+    let rendering = Rendering::of(&config, wanted_sink(&cli, &config).as_ref(), false);
+    let player = rendering.player(engine_config(&cli, &config), Arc::clone(&sources))?;
     let player = Arc::new(match config::analyses_dir() {
         Some(dir) => player.keeping_analyses(resonate_engine::KeptAnalyses::at(dir)),
         None => player,
@@ -2781,6 +2790,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     let opener = zoning::Opener::new(
         engine_config(&cli, &config),
         &sources,
+        rendering,
         mpris::Serving::new(
             &sources,
             Some(&library),

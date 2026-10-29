@@ -51,6 +51,7 @@ pub enum ConfigKey {
     Convolution,
     SpeakerAngle,
     Resume,
+    Renderers,
     HistoryKept,
     SkipRepeatsQueue,
     PreviousRestarts,
@@ -168,7 +169,7 @@ impl fmt::Display for Named {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 104] = [
+    pub const ALL: [Self; 105] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -210,6 +211,7 @@ impl ConfigKey {
         Self::Convolution,
         Self::SpeakerAngle,
         Self::Resume,
+        Self::Renderers,
         Self::HistoryKept,
         Self::SkipRepeatsQueue,
         Self::PreviousRestarts,
@@ -320,6 +322,7 @@ impl ConfigKey {
             Self::Convolution => "convolution",
             Self::SpeakerAngle => "speaker-angle",
             Self::Resume => "resume",
+            Self::Renderers => "renderers",
             Self::HistoryKept => "history-kept",
             Self::OrganiseAs => "organise-as",
             Self::Notify => "notify",

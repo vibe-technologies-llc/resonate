@@ -5712,6 +5712,7 @@ dependencies = [
  "resonate-sync",
  "resonate-tidal",
  "resonate-ui",
+ "resonate-upnp",
  "resonate-vault",
  "rustix",
  "signal-hook",
@@ -6155,6 +6156,21 @@ dependencies = [
  "unicode-segmentation",
  "wayland-client",
  "wayland-protocols",
+]
+
+[[package]]
+name = "resonate-upnp"
+version = "0.2.0"
+dependencies = [
+ "crossbeam-channel",
+ "httparse",
+ "parking_lot 0.13.0",
+ "resonate-audio",
+ "resonate-core",
+ "resonate-engine",
+ "roxmltree 0.21.2",
+ "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]

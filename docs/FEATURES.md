@@ -123,11 +123,18 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   complex`)
 
 ## Later: Network output
-- [L] Output reaches PipeWire, Oboe and RemoteIO alone: a stereo behind a network streamer (UPnP
-  and OpenHome renderers, AirPlay, Chromecast) cannot be played to, though `resonate-audio::Backend`
-  is the seam the engine reaches every sink through and a zone is a `Player` of its own, so a
-  renderer would be one more backend and a room one more zone. Such a sink holds its own clock and
-  takes a URL or a stream rather than a ring, so the plan's bit-perfect modes would not apply to it
+- [L] A stereo behind AirPlay or Chromecast cannot be played to: the desktop reaches UPnP AV
+  renderers alone (`resonate-upnp`, a sink beside PipeWire's), and the phones reach no network
+  renderer at all, though their zones open over the same `Backend` seam
+- [M] A seek, pause or volume change reaches a UPnP renderer's ear only after what it already
+  holds: the stream is one live WAVE paced at the ring's rate, so whatever the renderer buffered
+  (seconds on many streamers) plays out first; a seek could hand it a fresh address and a pause
+  could be timed by its `RelTime`, neither is done. OpenHome's own `Playlist` service is not
+  spoken (an OpenHome player is reached through the AVTransport upmpdcli puts in front of it)
+- [S] A UPnP renderer is fed PCM alone: WAVE or L16 at 16 or 24 bits, stereo, so a multichannel
+  source is folded down and a renderer taking FLAC is still sent uncompressed PCM, about 9 Mbit/s at
+  24-bit 192 kHz; encoding the ring to FLAC on the way out, or handing an untouched file over as it
+  is, is not done
 
 ## Later: Equaliser and DSP extras
 - [M] The listening test toggles the equaliser alone: restoration, the resampler's quality and

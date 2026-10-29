@@ -152,6 +152,7 @@ pub struct Config {
     pub equaliser_measurer: Option<String>,
     pub equaliser_measurer_for: BTreeMap<NodeName, String>,
     pub resume: Option<bool>,
+    pub renderers: Option<bool>,
     pub history_kept: Option<HistoryKept>,
     pub organise_as: Option<Layout>,
     pub notify: Option<bool>,
@@ -273,6 +274,7 @@ impl fmt::Debug for Config {
             equaliser_measurer,
             equaliser_measurer_for,
             resume,
+            renderers,
             history_kept,
             organise_as,
             notify,
@@ -380,6 +382,7 @@ impl fmt::Debug for Config {
             .field("equaliser_measurer", equaliser_measurer)
             .field("equaliser_measurer_for", equaliser_measurer_for)
             .field("resume", resume)
+            .field("renderers", renderers)
             .field("history_kept", history_kept)
             .field("organise_as", organise_as)
             .field("notify", notify)
@@ -576,6 +579,10 @@ impl Config {
 
     pub fn resumes(&self) -> bool {
         self.resume.unwrap_or(true)
+    }
+
+    pub fn looks_for_renderers(&self) -> bool {
+        self.renderers.unwrap_or(false)
     }
 
     pub fn history_kept(&self) -> HistoryKept {
@@ -983,6 +990,7 @@ impl Config {
             ConfigKey::HostedServices => config.hosted_services = Some(at.boolean(value)?),
             ConfigKey::Equaliser => config.equaliser = Some(at.boolean(value)?),
             ConfigKey::Resume => config.resume = Some(at.boolean(value)?),
+            ConfigKey::Renderers => config.renderers = Some(at.boolean(value)?),
             ConfigKey::HistoryKept => {
                 config.history_kept = Some(match value.as_integer() {
                     Some(days) => HistoryKept::for_days(days).ok_or_else(|| at.rejected())?,
