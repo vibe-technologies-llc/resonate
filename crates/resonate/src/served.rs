@@ -16,7 +16,7 @@ use resonate_core::MediaLocation;
 #[cfg(feature = "online")]
 use resonate_core::SourceId;
 #[cfg(feature = "online")]
-use resonate_providers::{Album, Artist, Found, Id, Named, PlaysInPlace, Song, Streamed};
+use resonate_providers::{Album, Artist, Found, Id, Mix, Named, PlaysInPlace, Song, Streamed};
 
 #[cfg(feature = "online")]
 use crate::providers::{self, InPlace};
@@ -249,6 +249,17 @@ impl ServedBy {
         }
     }
 
+    fn mix(&self, mix: Mix) -> resonate_ui::ServedAlbum {
+        resonate_ui::ServedAlbum {
+            location: self.0.location_of(&Named::Mix(mix.id)),
+            name: mix.name,
+            artist: mix.subtitle,
+            year: None,
+            songs: None,
+            cover: None,
+        }
+    }
+
     fn found(&self, found: Found) -> resonate_ui::ServedFound {
         resonate_ui::ServedFound {
             artists: found
@@ -266,6 +277,7 @@ impl ServedBy {
                 .into_iter()
                 .map(|song| self.song(song))
                 .collect(),
+            mixes: found.mixes.into_iter().map(|mix| self.mix(mix)).collect(),
         }
     }
 
@@ -279,6 +291,7 @@ impl ServedBy {
             length: song.length,
             format: song.suffix,
             cover: Self::cover_of(song.cover),
+            favourite: song.favourite,
         }
     }
 }
@@ -326,13 +339,13 @@ impl resonate_ui::Serves for ServedBy {
         &self,
         album: &MediaLocation,
     ) -> resonate_providers::Result<Vec<resonate_ui::ServedSong>> {
-        let Some(Named::Album(id)) = self.0.named_by(album) else {
-            return Err(self.unreadable());
+        let named = match self.0.named_by(album) {
+            Some(named @ (Named::Album(_) | Named::Mix(_))) => named,
+            _ => return Err(self.unreadable()),
         };
         Ok(self
             .0
-            .album(&id)?
-            .songs
+            .songs_of(&named)?
             .into_iter()
             .map(|song| self.song(song))
             .collect())
@@ -359,6 +372,17 @@ impl resonate_ui::Serves for ServedBy {
             .into_iter()
             .map(|song| self.0.location_of(&Named::Song(song.id)))
             .collect())
+    }
+
+    fn keeps_favourites(&self) -> bool {
+        self.0.keeps_favourites()
+    }
+
+    fn favour(&self, song: &MediaLocation, favoured: bool) -> resonate_providers::Result<()> {
+        match self.0.named_by(song) {
+            Some(Named::Song(id)) => self.0.favour(&id, favoured),
+            _ => Err(self.unreadable()),
+        }
     }
 
     fn cover(
@@ -487,6 +511,20 @@ fn tables(service: &dyn PlaysInPlace, wanted: &BrowsingArgs) -> Result<Vec<Table
         let held = service.album(&server_id(id)?)?;
         return Ok(vec![songs_table(service, &held.songs)]);
     }
+    for (id, favoured) in [
+        (wanted.favour.as_deref(), true),
+        (wanted.unfavour.as_deref(), false),
+    ] {
+        if let Some(id) = id {
+            let song = server_id(id)?;
+            service.favour(&song, favoured)?;
+            return Ok(vec![favoured_table(service, &song, favoured)]);
+        }
+    }
+    if let Some(id) = wanted.mix.as_deref() {
+        let held = service.mix(&server_id(id)?)?;
+        return Ok(vec![songs_table(service, &held.songs)]);
+    }
     let found = match wanted.search.as_deref() {
         Some(words) => service.search(words)?,
         None => service.first_page()?,
@@ -502,6 +540,9 @@ fn found_tables(service: &dyn PlaysInPlace, found: &Found) -> Vec<Table> {
     }
     if !found.albums.is_empty() {
         tables.push(albums_table(service, &found.albums));
+    }
+    if !found.mixes.is_empty() {
+        tables.push(mixes_table(service, &found.mixes));
     }
     if !found.songs.is_empty() || tables.is_empty() {
         tables.push(songs_table(service, &found.songs));
@@ -549,6 +590,29 @@ fn albums_table(service: &dyn PlaysInPlace, albums: &[Album]) -> Table {
                 .map_or_else(|| "-".to_owned(), |year| year.to_string()),
             counted(album.songs),
             uri_of(service, Named::Album(album.id.clone())),
+        ]);
+    }
+    table
+}
+
+#[cfg(feature = "online")]
+fn favoured_table(service: &dyn PlaysInPlace, song: &Id, favoured: bool) -> Table {
+    let mut table = Table::new(vec!["FAVOURITE", "URI"]);
+    table.push(vec![
+        if favoured { "kept" } else { "taken out" }.to_owned(),
+        uri_of(service, Named::Song(song.clone())),
+    ]);
+    table
+}
+
+#[cfg(feature = "online")]
+fn mixes_table(service: &dyn PlaysInPlace, mixes: &[Mix]) -> Table {
+    let mut table = Table::new(vec!["MIX", "ABOUT", "URI"]);
+    for mix in mixes {
+        table.push(vec![
+            mix.name.clone(),
+            mix.subtitle.clone().unwrap_or_else(|| "-".to_owned()),
+            uri_of(service, Named::Mix(mix.id.clone())),
         ]);
     }
     table
@@ -839,7 +903,10 @@ mod tests {
         BrowsingArgs {
             artist: None,
             album: None,
+            mix: None,
             search: None,
+            favour: None,
+            unfavour: None,
         }
     }
 
@@ -883,6 +950,56 @@ mod tests {
         assert_eq!(rendered.len(), 2);
         assert!(rendered[0].contains("Meddle") && rendered[0].contains("tidal:album/7"));
         assert!(rendered[1].contains("Echoes") && rendered[1].contains("tidal:track/12"));
+    }
+
+    #[test]
+    fn a_tidal_accounts_favourite_mixes_are_listed_and_browsed_and_a_song_is_favoured_at_the_terminal()
+     {
+        let url = fake(|asked, _| {
+            match asked.path() {
+            "/auth/token" => Answer::Json(
+                r#"{"access_token":"fresh","expires_in":3600,"user":{"countryCode":"GB","userId":42}}"#
+                    .to_owned(),
+            ),
+            "/api/users/42/favorites/mixes" => Answer::Json(
+                r#"{"items":[{"id":"0a1b","title":"My Mix 1","subTitle":"Pink Floyd and more"}]}"#
+                    .to_owned(),
+            ),
+            "/api/mixes/0a1b/items" => Answer::Json(
+                r#"{"items":[{"item":{"id":12,"title":"Echoes","duration":1412,"artist":{"name":"Pink Floyd"}},"type":"track"}]}"#
+                    .to_owned(),
+            ),
+            "/api/users/42/favorites/tracks" => Answer::Json("{}".to_owned()),
+            _ => Answer::Missing,
+        }
+        });
+        let tidal = Arc::new(tidal_at(&url));
+
+        let first = tables(tidal.as_ref(), &browsing()).expect("the first page");
+        let mix = tables(
+            tidal.as_ref(),
+            &BrowsingArgs {
+                mix: Some("0a1b".to_owned()),
+                ..browsing()
+            },
+        )
+        .expect("a mix");
+        let favoured = tables(
+            tidal.as_ref(),
+            &BrowsingArgs {
+                favour: Some("12".to_owned()),
+                ..browsing()
+            },
+        )
+        .expect("a favourite kept");
+
+        assert_eq!(first.len(), 1);
+        assert!(first[0].render().contains("My Mix 1"));
+        assert!(first[0].render().contains("Pink Floyd and more"));
+        assert!(first[0].render().contains("tidal:mix/0a1b"));
+        assert!(mix[0].render().contains("Echoes") && mix[0].render().contains("tidal:track/12"));
+        assert!(favoured[0].render().contains("kept"));
+        assert!(favoured[0].render().contains("tidal:track/12"));
     }
 
     #[test]

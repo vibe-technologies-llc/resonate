@@ -11,7 +11,7 @@ use resonate_core::{Isrc, Mbid};
 use resonate_providers::{
     Delivery, Error, Identity, Obtained, Opened, Opening, Provider, ProviderOp,
 };
-use resonate_subsonic::{Id, Named, Patience, Server, Subsonic};
+use resonate_subsonic::{Id, Named, Patience, PlaysInPlace as _, Server, Subsonic};
 
 const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
 const ECHOES_ISRC: &str = "GBN9Y1100089";
@@ -542,11 +542,14 @@ fn a_served_library(asked: &Asked) -> Canned {
             r#""artist":{"id":"ar-1","name":"Pink Floyd","album":[{"id":"al-1","name":"Meddle","artist":"Pink Floyd","year":1971,"songCount":2}]}"#,
         ),
         ("getAlbum", Some("al-1")) => ok(
-            r#""album":{"id":"al-1","name":"Meddle","artist":"Pink Floyd","coverArt":"al-1","song":[{"id":"so-1","title":"One of These Days","track":1,"discNumber":1,"duration":357,"suffix":"flac"},{"id":6,"title":"Echoes","track":6,"duration":1412,"suffix":"flac"}]}"#,
+            r#""album":{"id":"al-1","name":"Meddle","artist":"Pink Floyd","coverArt":"al-1","song":[{"id":"so-1","title":"One of These Days","track":1,"discNumber":1,"duration":357,"suffix":"flac"},{"id":6,"title":"Echoes","track":6,"duration":1412,"suffix":"flac","starred":"2024-05-01T10:00:00Z"}]}"#,
         ),
         ("getSong", Some("so-1")) => ok(
             r#""song":{"id":"so-1","title":"One of These Days","album":"Meddle","suffix":"flac","coverArt":"mf-so-1"}"#,
         ),
+        ("star" | "unstar", Some("so-1" | "6")) => {
+            Canned::json(r#"{"subsonic-response":{"status":"ok","version":"1.16.1"}}"#.to_owned())
+        }
         ("getCoverArt", Some("al-1")) => Canned {
             status: 200,
             headers: vec![("Content-Type", "image/jpeg".to_owned())],
@@ -750,6 +753,62 @@ fn a_cover_the_server_does_not_hold_is_the_refusal_it_carries() {
         fake.subsonic().cover(&id("al-404"), 300),
         Err(Error::TurnedAway {
             op: ProviderOp::Cover,
+            code: 70,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn a_song_the_server_has_starred_is_known_to_be_a_favourite_and_one_it_has_not_is_known_not_to_be()
+{
+    let fake = Fake::serving(|asked, _| a_served_library(asked));
+    let subsonic = fake.subsonic();
+
+    let album = subsonic.album(&id("al-1")).expect("an album");
+
+    assert_eq!(
+        album
+            .songs
+            .iter()
+            .map(|song| song.favourite)
+            .collect::<Vec<_>>(),
+        [Some(false), Some(true)]
+    );
+}
+
+#[test]
+fn a_song_is_starred_and_unstarred_by_the_servers_own_calls_and_a_song_it_lacks_is_the_refusal_it_carries()
+ {
+    let fake = Fake::serving(|asked, _| a_served_library(asked));
+    let subsonic = fake.subsonic();
+
+    subsonic.favour(&id("so-1"), true).expect("a song starred");
+    subsonic
+        .favour(&id("so-1"), false)
+        .expect("a song unstarred");
+    let lacking = subsonic.favour(&id("nope"), true);
+
+    let calls: Vec<_> = fake
+        .heard
+        .lock()
+        .iter()
+        .filter(|asked| asked.method.ends_with("star"))
+        .map(|asked| (asked.method.clone(), asked.id.clone()))
+        .collect();
+    assert!(subsonic.keeps_favourites());
+    assert_eq!(
+        calls,
+        [
+            ("star".to_owned(), Some("so-1".to_owned())),
+            ("unstar".to_owned(), Some("so-1".to_owned())),
+            ("star".to_owned(), Some("nope".to_owned())),
+        ]
+    );
+    assert!(matches!(
+        lacking,
+        Err(Error::TurnedAway {
+            op: ProviderOp::Favourite,
             code: 70,
             ..
         })

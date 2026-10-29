@@ -1236,13 +1236,22 @@ is never named.
   `Serves::first_page`** (`artists` by default; the binary's adapter hands the service's own,
   `providers.md`): artists alone are listed bare, anything more under the search's headings
   (`serving::first_rows`) and titled *Favourites*, counted as a search is
-  (`a_service_with_favourites_opens_on_them_and_a_favourite_song_plays_from_the_first_page`). A service that lists nothing
+  (`a_service_with_favourites_opens_on_them_and_a_favourite_song_plays_from_the_first_page`); a
+  service's favourite mixes are a *MIXES* section of `ServedFound::mixes` (`Row::Mix`, `Place::Mix`:
+  *MIX ON THE SERVER*, opened to its songs as an album is, counted in the first page's line,
+  `a_mix_on_the_first_page_opens_to_its_songs_and_a_song_of_it_plays`). **The star is the service's
+  own mark** (`Serves::keeps_favourites`, `Serves::favour`; `kit::star`, so it fills in the accent):
+  a song is a favourite where the model's `favoured` note, kept for the run and emptied when the
+  services move, says so, else where the service said `ServedSong::favourite`, else not. A press
+  notes the new state at once, writes it on the background executor
+  (`RootView::favour_a_served_song`) and, on a refusal, puts the note back and toasts the
+  `Failure` (`a_star_on_a_served_song_favours_it_in_the_service_and_a_favourite_one_is_taken_out`). A service that lists nothing
   unasked opens on *This service lists nothing until it is asked* and the search
   (`two_services_are_chosen_between_in_the_pane_and_a_song_found_on_the_second_plays_from_it`). The pane (`views/served.rs`) is a heading (way back, title, the count, *Play* and
   *Add to queue* on an artist or album, and a search `Field` that asks the server on enter and an
   empty enter leaves the search) over one `uniform_list` of rows; a row is a cover, a title with its
-  line under it, a figure, and three marks (play, play next, add to queue). A press opens an artist
-  or album, or plays a song: on an album page the whole album from that song (`songs_from`), in a
+  line under it, a figure, and three marks (play, play next, add to queue), a song of a service that
+  `keeps_favourites` with a star before them. A press opens an artist, album or mix, or plays a song: on an album page the whole album from that song (`songs_from`), in a
   search the song alone. An album or artist played or queued is expanded to its songs on the
   background executor (`Serves::expand`, a failure a toast naming the `Failure`), and rows are
   `QueueItem::whole` with ids minted beside the queue's (`play_served`, `queue_served`). The server

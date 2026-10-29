@@ -170,6 +170,8 @@ pub(crate) struct SongDoc {
     suffix: Option<String>,
     #[serde(default, rename = "coverArt", deserialize_with = "cover_spelt")]
     cover: Option<String>,
+    #[serde(default)]
+    starred: Option<Value>,
 }
 
 impl SongDoc {
@@ -184,6 +186,7 @@ impl SongDoc {
             length: self.duration.map(Duration::from_secs),
             suffix: self.suffix,
             cover: self.cover.as_deref().and_then(Id::new),
+            favourite: Some(self.starred.is_some_and(|starred| !starred.is_null())),
         })
     }
 }
@@ -208,6 +211,7 @@ impl FoundDoc {
                 .collect(),
             albums: self.album.into_iter().filter_map(AlbumDoc::album).collect(),
             songs: self.song.into_iter().filter_map(SongDoc::song).collect(),
+            mixes: Vec::new(),
         }
     }
 }

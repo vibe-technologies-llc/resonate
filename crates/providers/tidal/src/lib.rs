@@ -16,13 +16,13 @@ use parking_lot::Mutex;
 use resonate_core::{Isrc, SourceId};
 use resonate_fetch::escaped;
 use resonate_providers::{
-    AlbumSongs, Artist, ArtistAlbums, Choosing, Delivery, Error, Found, Id, Identity, Named,
-    Obtained, PlaysInPlace, Provider, ProviderOp, RefreshToken, Result, Streamed,
+    AlbumSongs, Artist, ArtistAlbums, Choosing, Delivery, Error, Found, Id, Identity, MixSongs,
+    Named, Obtained, PlaysInPlace, Provider, ProviderOp, RefreshToken, Result, Streamed,
 };
 use serde::Deserialize;
 use ureq::{
     Agent,
-    http::header::{ACCEPT, AUTHORIZATION},
+    http::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE},
 };
 
 #[cfg(fuzzing)]
@@ -54,6 +54,7 @@ const NOT_FOUND: u16 = 404;
 const NOT_READY_FOR_PLAYBACK: u16 = 4005;
 const ASKED_QUALITY: &str = "HI_RES_LOSSLESS";
 const JSON_API: &str = "application/vnd.api+json";
+const FORM: &str = "application/x-www-form-urlencoded";
 const TRACKS_TRIED_AT_MOST: usize = 5;
 const CODES_ASKED_AT_MOST: usize = 4;
 const LISTED_AT_MOST: usize = 25;
@@ -112,6 +113,12 @@ struct Listing {
 struct Attributes {
     #[serde(default)]
     isrc: Option<String>,
+}
+
+enum Verb {
+    Get,
+    Add(String),
+    Remove,
 }
 
 enum Asked {
@@ -301,20 +308,45 @@ impl Tidal {
         url: impl Fn(&str) -> String,
         accept: Option<&str>,
     ) -> Result<Asked> {
+        self.exchanged(op, &Verb::Get, url, accept)
+    }
+
+    fn exchanged(
+        &self,
+        op: ProviderOp,
+        verb: &Verb,
+        url: impl Fn(&str) -> String,
+        accept: Option<&str>,
+    ) -> Result<Asked> {
         let mut renewed = false;
         loop {
             let session = self.session()?;
             let url = url(&session.country);
-            let sent = self.asker.sent(op, || {
-                let request = self
+            let sent = self.asker.sent(op, || match verb {
+                Verb::Get => {
+                    let request = self
+                        .asker
+                        .agent
+                        .get(&url)
+                        .header(AUTHORIZATION, session.bearer.as_str());
+                    match accept {
+                        Some(accept) => request.header(ACCEPT, accept).call(),
+                        None => request.call(),
+                    }
+                }
+                Verb::Add(form) => self
                     .asker
                     .agent
-                    .get(&url)
-                    .header(AUTHORIZATION, session.bearer.as_str());
-                match accept {
-                    Some(accept) => request.header(ACCEPT, accept).call(),
-                    None => request.call(),
-                }
+                    .post(&url)
+                    .header(AUTHORIZATION, session.bearer.as_str())
+                    .header(CONTENT_TYPE, FORM)
+                    .send(form.as_str()),
+                Verb::Remove => self
+                    .asker
+                    .agent
+                    .delete(&url)
+                    .header(AUTHORIZATION, session.bearer.as_str())
+                    .call(),
             })?;
             match sent {
                 Sent::Answered(response) => {
@@ -534,6 +566,10 @@ impl PlaysInPlace for Tidal {
         self.searched(words)
     }
 
+    fn mix(&self, id: &Id) -> Result<MixSongs> {
+        self.mix_songs(id)
+    }
+
     fn streamed(&self, song: &Id) -> Result<Streamed> {
         let track = TrackId(catalog::track_id(
             &self.asker.source,
@@ -556,6 +592,42 @@ impl PlaysInPlace for Tidal {
         match self.user()? {
             Some(user) => self.favoured_by(user),
             None => Ok(Found::default()),
+        }
+    }
+
+    fn keeps_favourites(&self) -> bool {
+        true
+    }
+
+    fn favour(&self, song: &Id, favoured: bool) -> Result<()> {
+        let op = ProviderOp::Favourite;
+        let track = catalog::track_id(&self.asker.source, op, song)?;
+        let user = self.user()?.ok_or_else(|| self.asker.unreadable(op))?;
+        let (verb, path) = if favoured {
+            (
+                Verb::Add(format!("trackIds={track}&onArtifactNotFound=FAIL")),
+                format!("users/{user}/favorites/tracks"),
+            )
+        } else {
+            (
+                Verb::Remove,
+                format!("users/{user}/favorites/tracks/{track}"),
+            )
+        };
+        let api = &self.endpoints.api;
+        match self.exchanged(
+            op,
+            &verb,
+            |country| format!("{api}{path}?countryCode={country}"),
+            None,
+        )? {
+            Asked::Answered(_) => Ok(()),
+            Asked::Unavailable if !favoured => Ok(()),
+            Asked::Unavailable => Err(Error::TurnedAway {
+                provider: self.asker.source.clone(),
+                op,
+                code: NOT_FOUND,
+            }),
         }
     }
 }

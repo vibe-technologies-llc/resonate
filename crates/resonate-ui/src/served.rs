@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use resonate_core::{MediaLocation, SourceId};
-use resonate_providers::Result;
+use resonate_providers::{ProviderOp, Result, not_offered};
 
 use crate::settings::Online;
 
@@ -36,6 +36,7 @@ pub struct ServedSong {
     pub length: Option<Duration>,
     pub format: Option<String>,
     pub cover: Option<ServedCover>,
+    pub favourite: Option<bool>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -43,6 +44,7 @@ pub struct ServedFound {
     pub artists: Vec<ServedArtist>,
     pub albums: Vec<ServedAlbum>,
     pub songs: Vec<ServedSong>,
+    pub mixes: Vec<ServedAlbum>,
 }
 
 pub trait Serves: Send + Sync {
@@ -68,6 +70,14 @@ pub trait Serves: Send + Sync {
     fn search(&self, words: &str) -> Result<ServedFound>;
 
     fn expand(&self, named: &MediaLocation) -> Result<Vec<MediaLocation>>;
+
+    fn keeps_favourites(&self) -> bool {
+        false
+    }
+
+    fn favour(&self, _song: &MediaLocation, _favoured: bool) -> Result<()> {
+        Err(not_offered(self.scheme(), ProviderOp::Favourite))
+    }
 
     fn cover(&self, of: &MediaLocation, known: Option<&ServedCover>, side: u32) -> Result<Vec<u8>>;
 }

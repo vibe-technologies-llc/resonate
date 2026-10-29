@@ -8,7 +8,7 @@ use parking_lot::{Mutex, RwLock};
 use resonate_codec::{FormatHint, Media, MediaProvider, MediaStream, Sources};
 use resonate_core::{MediaLocation, Resumable, Resumption, SourceId};
 use resonate_engine::{Command, Placement, QueueItem, QueueRows, Unclaimed};
-use resonate_providers::{Album, Artist, Found, Id, Named, PlaysInPlace, Song, Streamed};
+use resonate_providers::{Album, Artist, Found, Id, Mix, Named, PlaysInPlace, Song, Streamed};
 
 use crate::{
     Error, MobilePlayer, Result, Track,
@@ -96,6 +96,17 @@ impl Service {
         }
     }
 
+    fn mix_of(&self, mix: Mix) -> ServedAlbum {
+        ServedAlbum {
+            uri: self.uri_of(Named::Mix(mix.id)),
+            name: mix.name,
+            artist: mix.subtitle,
+            year: None,
+            songs: None,
+            cover: None,
+        }
+    }
+
     fn song_of(&self, song: Song) -> ServedSong {
         ServedSong {
             uri: self.uri_of(Named::Song(song.id)),
@@ -122,6 +133,7 @@ impl Service {
                 .albums
                 .into_iter()
                 .map(|album| self.album_of(album))
+                .chain(found.mixes.into_iter().map(|mix| self.mix_of(mix)))
                 .collect(),
             songs: found
                 .songs
@@ -330,18 +342,15 @@ impl MobilePlayer {
     pub fn served_songs(&self, album: String) -> Result<Vec<ServedSong>> {
         self.require_online()?;
         let service = self.served.serving(&album)?;
-        let Named::Album(id) = service.named(&album)? else {
+        let named = service.named(&album)?;
+        if !matches!(named, Named::Album(_) | Named::Mix(_)) {
             return Err(Error::InvalidUri);
-        };
+        }
         let held = service
             .plays
-            .album(&id)
+            .songs_of(&named)
             .map_err(|error| service.refused(&error))?;
-        let songs: Vec<ServedSong> = held
-            .songs
-            .into_iter()
-            .map(|song| service.song_of(song))
-            .collect();
+        let songs: Vec<ServedSong> = held.into_iter().map(|song| service.song_of(song)).collect();
         self.served.remember(&songs);
         Ok(songs)
     }
@@ -933,5 +942,102 @@ mod tests {
             .load_served(vec!["subsonic:album/al-1".to_owned()], 0, true);
 
         assert!(matches!(loaded, Err(Error::InvalidUri)));
+    }
+
+    struct Mixing;
+
+    impl PlaysInPlace for Mixing {
+        fn scheme(&self) -> &resonate_core::SourceId {
+            static TIDAL: std::sync::LazyLock<resonate_core::SourceId> =
+                std::sync::LazyLock::new(|| resonate_core::SourceId::new("tidal").expect("a name"));
+            &TIDAL
+        }
+
+        fn title(&self) -> &'static str {
+            "TIDAL"
+        }
+
+        fn artists(&self) -> resonate_providers::Result<Vec<Artist>> {
+            Ok(Vec::new())
+        }
+
+        fn artist(&self, _: &Id) -> resonate_providers::Result<resonate_providers::ArtistAlbums> {
+            Err(resonate_providers::not_offered(
+                self.scheme(),
+                resonate_providers::ProviderOp::Browse,
+            ))
+        }
+
+        fn album(&self, _: &Id) -> resonate_providers::Result<resonate_providers::AlbumSongs> {
+            Err(resonate_providers::not_offered(
+                self.scheme(),
+                resonate_providers::ProviderOp::Browse,
+            ))
+        }
+
+        fn mix(&self, id: &Id) -> resonate_providers::Result<resonate_providers::MixSongs> {
+            Ok(resonate_providers::MixSongs {
+                mix: Mix {
+                    id: id.clone(),
+                    name: "My Mix 1".to_owned(),
+                    subtitle: None,
+                },
+                songs: vec![Song {
+                    title: "Echoes".to_owned(),
+                    ..Song::only(Id::new("12").expect("an id"))
+                }],
+            })
+        }
+
+        fn search(&self, _: &str) -> resonate_providers::Result<Found> {
+            Ok(Found::default())
+        }
+
+        fn streamed(&self, _: &Id) -> resonate_providers::Result<Streamed> {
+            Err(resonate_providers::not_offered(
+                self.scheme(),
+                resonate_providers::ProviderOp::Stream,
+            ))
+        }
+
+        fn cover(&self, _: &Id, _: u32) -> resonate_providers::Result<Vec<u8>> {
+            Ok(Vec::new())
+        }
+
+        fn cover_of(&self, _: &Named) -> resonate_providers::Result<Id> {
+            Err(resonate_providers::not_offered(
+                self.scheme(),
+                resonate_providers::ProviderOp::Cover,
+            ))
+        }
+    }
+
+    #[test]
+    fn a_mix_is_shown_to_the_phones_among_the_albums_and_opens_to_its_songs_by_its_uri() {
+        let service = Service {
+            account: of(MusicProvider::Tidal, String::new()),
+            plays: Arc::new(Mixing),
+        };
+        let found = Found {
+            mixes: vec![Mix {
+                id: Id::new("0a1b").expect("an id"),
+                name: "My Mix 1".to_owned(),
+                subtitle: Some("Pink Floyd and more".to_owned()),
+            }],
+            ..Found::default()
+        };
+
+        let shown = service.found_of(found);
+        let named = service.named(&shown.albums[0].uri).expect("a mix");
+        let songs = service.plays.songs_of(&named).expect("the mix's songs");
+
+        assert_eq!(shown.albums[0].uri, "tidal:mix/0a1b");
+        assert_eq!(shown.albums[0].name, "My Mix 1");
+        assert_eq!(
+            shown.albums[0].artist.as_deref(),
+            Some("Pink Floyd and more")
+        );
+        assert!(matches!(named, Named::Mix(_)));
+        assert_eq!(songs[0].title, "Echoes");
     }
 }

@@ -3,7 +3,8 @@ use std::time::Duration;
 use resonate_core::SourceId;
 use resonate_fetch::escaped;
 use resonate_providers::{
-    Album, AlbumSongs, Artist, ArtistAlbums, Error, Found, Id, Named, ProviderOp, Result, Song,
+    Album, AlbumSongs, Artist, ArtistAlbums, Error, Found, Id, Mix, MixSongs, Named, ProviderOp,
+    Result, Song,
 };
 use serde::{Deserialize, Deserializer, de::DeserializeOwned};
 use serde_json::Value;
@@ -14,6 +15,7 @@ pub(crate) const BROWSED_AT_MOST: usize = 20;
 pub(crate) const SONGS_OF_AN_ALBUM_AT_MOST: usize = 100;
 pub(crate) const ALBUMS_OF_AN_ARTIST_AT_MOST: usize = 50;
 pub(crate) const FAVOURITES_AT_MOST: usize = 50;
+pub(crate) const SONGS_OF_A_MIX_AT_MOST: usize = 100;
 pub(crate) const IMAGES: &str = "https://resources.tidal.com/images/";
 const DELIVERED_AS: &str = "flac";
 const ALBUM_COVER: &str = "album:";
@@ -84,6 +86,7 @@ impl V1Found {
                 .collect(),
             albums: self.albums.into_iter().filter_map(V1Album::album).collect(),
             songs: self.tracks.into_iter().filter_map(V1Track::song).collect(),
+            mixes: Vec::new(),
         }
     }
 }
@@ -107,6 +110,48 @@ impl V1Artist {
             cover: picture(ARTIST_PICTURE, self.picture.as_deref()),
         })
     }
+}
+
+#[derive(Deserialize)]
+struct Mixed {
+    #[serde(default)]
+    item: Option<V1Mix>,
+    #[serde(flatten)]
+    bare: Option<V1Mix>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct V1Mix {
+    id: String,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default, rename = "subTitle")]
+    subtitle: Option<String>,
+}
+
+impl V1Mix {
+    pub(crate) fn mix(self) -> Option<Mix> {
+        let id = self.id.trim();
+        is_a_mix(id).then_some(())?;
+        Some(Mix {
+            id: Id::new(id)?,
+            name: self.title.unwrap_or_default(),
+            subtitle: self.subtitle.filter(|subtitle| !subtitle.trim().is_empty()),
+        })
+    }
+}
+
+impl Mixed {
+    fn mix(self) -> Option<Mix> {
+        self.item.or(self.bare).and_then(V1Mix::mix)
+    }
+}
+
+fn is_a_mix(id: &str) -> bool {
+    !id.is_empty()
+        && id.chars().all(|character| {
+            character.is_ascii_alphanumeric() || character == '-' || character == '_'
+        })
 }
 
 #[derive(Deserialize)]
@@ -203,6 +248,7 @@ impl V1Track {
             length: self.duration.map(Duration::from_secs),
             suffix: Some(DELIVERED_AS.to_owned()),
             cover,
+            favourite: None,
         })
     }
 
@@ -297,10 +343,43 @@ pub(crate) trait AsksV1 {
         let artists: Items<Favoured<V1Artist>> = self.browsed(&asked("artists"))?;
         let albums: Items<Favoured<V1Album>> = self.browsed(&asked("albums"))?;
         let tracks: Items<Favoured<V1Track>> = self.browsed(&asked("tracks"))?;
+        let mixes: Items<Mixed> = self.browsed(&asked("mixes"))?;
         Ok(Found {
             artists: favoured(artists).filter_map(V1Artist::artist).collect(),
             albums: favoured(albums).filter_map(V1Album::album).collect(),
-            songs: favoured(tracks).filter_map(V1Track::song).collect(),
+            songs: favoured(tracks)
+                .filter_map(V1Track::song)
+                .map(|song| Song {
+                    favourite: Some(true),
+                    ..song
+                })
+                .collect(),
+            mixes: mixes.items.into_iter().filter_map(Mixed::mix).collect(),
+        })
+    }
+
+    fn mix_songs(&self, id: &Id) -> Result<MixSongs> {
+        let op = ProviderOp::Browse;
+        if !is_a_mix(id.as_str()) {
+            return Err(Error::Unreadable {
+                provider: self.provider().clone(),
+                op,
+            });
+        }
+        let entries: Items<Entry> = self.browsed(&format!(
+            "mixes/{id}/items?limit={SONGS_OF_A_MIX_AT_MOST}&offset=0"
+        ))?;
+        let songs: Vec<Song> = songs_of_entries(entries.items)
+            .into_iter()
+            .filter_map(V1Track::song)
+            .collect();
+        Ok(MixSongs {
+            mix: Mix {
+                id: id.clone(),
+                name: String::new(),
+                subtitle: None,
+            },
+            songs,
         })
     }
 
@@ -362,6 +441,7 @@ pub(crate) trait AsksV1 {
                     .and_then(|album| album.cover)
                     .ok_or_else(unheld)
             }
+            Named::Mix(_) => Err(unheld()),
             Named::Artist(id) => {
                 let artist = track_id(self.provider(), op, id)?;
                 let bytes = self

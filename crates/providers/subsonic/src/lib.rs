@@ -20,7 +20,7 @@ pub use resonate_providers::{
 };
 use resonate_providers::{
     Choosing, Delivery, Error, Extension, Held, Identity, Listed, Obtained, Opening, Pacing,
-    Provider, ProviderOp, Reopened, Result, is_a_page,
+    Provider, ProviderOp, Reopened, Result, is_a_page, not_offered,
 };
 use serde::{Deserialize, Deserializer, de::DeserializeOwned};
 use serde_json::Value;
@@ -419,6 +419,16 @@ impl Subsonic {
         Ok(found.unwrap_or_default().found())
     }
 
+    pub fn favour(&self, id: &Id, favoured: bool) -> Result<()> {
+        let op = ProviderOp::Favourite;
+        let method = if favoured { "star" } else { "unstar" };
+        let deadline = Instant::now() + self.patience.answered_within;
+        let url = self.url(method, &[("id", id.as_str())]);
+        let response = self.called_within(&self.asking, op, &url, Some(deadline), None)?;
+        let bytes = self.read_whole(op, response)?;
+        self.answered(&bytes, op).map(drop)
+    }
+
     pub fn cover_of(&self, named: &Named) -> Result<Id> {
         match named {
             Named::Song(id) => {
@@ -426,6 +436,7 @@ impl Subsonic {
                 Ok(song.cover.unwrap_or(song.id))
             }
             Named::Album(id) | Named::Artist(id) => Ok(id.clone()),
+            Named::Mix(_) => Err(not_offered(&self.source, ProviderOp::Cover)),
         }
     }
 
@@ -456,6 +467,7 @@ impl Subsonic {
                 }
                 Ok(songs)
             }
+            Named::Mix(_) => Err(not_offered(&self.source, ProviderOp::Browse)),
         }
     }
 
@@ -464,7 +476,7 @@ impl Subsonic {
     }
 
     pub fn named_by(&self, location: &MediaLocation) -> Option<Named> {
-        Named::read(location, &self.source)
+        Named::read(location, &self.source).filter(|named| !matches!(named, Named::Mix(_)))
     }
 
     pub fn streamed(&self, id: &Id) -> Result<Streamed> {
@@ -653,6 +665,14 @@ impl PlaysInPlace for Subsonic {
 
     fn songs_of(&self, named: &Named) -> Result<Vec<Song>> {
         Self::songs_of(self, named)
+    }
+
+    fn keeps_favourites(&self) -> bool {
+        true
+    }
+
+    fn favour(&self, song: &Id, favoured: bool) -> Result<()> {
+        Self::favour(self, song, favoured)
     }
 }
 

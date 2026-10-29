@@ -12,6 +12,7 @@ use crate::error::{Error, ProviderOp, Result};
 const SONG_KEY: &str = "track/";
 const ALBUM_KEY: &str = "album/";
 const ARTIST_KEY: &str = "artist/";
+const MIX_KEY: &str = "mix/";
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Id(Box<str>);
@@ -38,6 +39,7 @@ pub enum Named {
     Song(Id),
     Album(Id),
     Artist(Id),
+    Mix(Id),
 }
 
 impl Named {
@@ -50,6 +52,7 @@ impl Named {
             (SONG_KEY, Self::Song as fn(Id) -> Self),
             (ALBUM_KEY, Self::Album),
             (ARTIST_KEY, Self::Artist),
+            (MIX_KEY, Self::Mix),
         ]
         .into_iter()
         .find_map(|(prefix, named)| key.strip_prefix(prefix).and_then(Id::new).map(named))
@@ -60,6 +63,7 @@ impl Named {
             Self::Song(id) => (SONG_KEY, id),
             Self::Album(id) => (ALBUM_KEY, id),
             Self::Artist(id) => (ARTIST_KEY, id),
+            Self::Mix(id) => (MIX_KEY, id),
         };
         MediaLocation::new(source.clone(), format!("{prefix}{id}"))
     }
@@ -84,6 +88,13 @@ pub struct Album {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Mix {
+    pub id: Id,
+    pub name: String,
+    pub subtitle: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Song {
     pub id: Id,
     pub title: String,
@@ -94,6 +105,7 @@ pub struct Song {
     pub length: Option<Duration>,
     pub suffix: Option<String>,
     pub cover: Option<Id>,
+    pub favourite: Option<bool>,
 }
 
 impl Song {
@@ -108,6 +120,7 @@ impl Song {
             length: None,
             suffix: None,
             cover: None,
+            favourite: None,
         }
     }
 }
@@ -124,11 +137,18 @@ pub struct AlbumSongs {
     pub songs: Vec<Song>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MixSongs {
+    pub mix: Mix,
+    pub songs: Vec<Song>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Found {
     pub artists: Vec<Artist>,
     pub albums: Vec<Album>,
     pub songs: Vec<Song>,
+    pub mixes: Vec<Mix>,
 }
 
 pub trait SeekingBytes: Read + Seek + Send {}
@@ -207,6 +227,10 @@ pub trait PlaysInPlace: Send + Sync {
 
     fn search(&self, words: &str) -> Result<Found>;
 
+    fn mix(&self, _id: &Id) -> Result<MixSongs> {
+        Err(not_offered(self.scheme(), ProviderOp::Browse))
+    }
+
     fn streamed(&self, song: &Id) -> Result<Streamed>;
 
     fn cover(&self, cover: &Id, side: u32) -> Result<Vec<u8>>;
@@ -215,6 +239,14 @@ pub trait PlaysInPlace: Send + Sync {
 
     fn favourites(&self) -> Result<Found> {
         Ok(Found::default())
+    }
+
+    fn keeps_favourites(&self) -> bool {
+        false
+    }
+
+    fn favour(&self, _song: &Id, _favoured: bool) -> Result<()> {
+        Err(not_offered(self.scheme(), ProviderOp::Favourite))
     }
 
     fn first_page(&self) -> Result<Found> {
@@ -239,6 +271,7 @@ pub trait PlaysInPlace: Send + Sync {
                 }
                 Ok(songs)
             }
+            Named::Mix(id) => Ok(self.mix(id)?.songs),
         }
     }
 
@@ -275,7 +308,8 @@ mod tests {
         for named in [
             Named::Song(id.clone()),
             Named::Album(id.clone()),
-            Named::Artist(id),
+            Named::Artist(id.clone()),
+            Named::Mix(id),
         ] {
             let location = named.location(&subsonic());
             let uri = location.to_uri();

@@ -291,7 +291,7 @@ impl PlaysInPlace for HifiApi {
                 .album
                 .cover
                 .ok_or_else(|| self.asker.unreadable(ProviderOp::Cover)),
-            Named::Song(_) | Named::Album(_) | Named::Artist(_) => {
+            Named::Song(_) | Named::Album(_) | Named::Artist(_) | Named::Mix(_) => {
                 Err(self.not_browsed(ProviderOp::Cover))
             }
         }
@@ -308,6 +308,7 @@ impl PlaysInPlace for HifiApi {
                 }
                 Ok(songs)
             }
+            Named::Mix(_) => Err(self.not_browsed(ProviderOp::Browse)),
         }
     }
 }
