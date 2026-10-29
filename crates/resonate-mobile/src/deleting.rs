@@ -129,8 +129,7 @@ impl MobilePlayer {
     }
 
     fn playing_uri(&self) -> Option<String> {
-        let held = self.player.lock();
-        let player = held.as_ref()?;
+        let player = self.playing.player().ok()?;
         let state = player.state();
         let queued = player.queued();
         let id = state

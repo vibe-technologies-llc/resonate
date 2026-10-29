@@ -40,7 +40,6 @@ pub use self::formats::{OutputFormat, OutputMixer, OutputStream};
 pub(crate) use self::oboe::Routing;
 #[cfg(target_os = "ios")]
 pub(crate) use self::remote_io_state::Routing;
-use crate::Result;
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub(crate) struct Routing;
@@ -51,11 +50,19 @@ impl Routing {
         Self
     }
 
+    pub(crate) fn serving(_: resonate_audio::SinkId) -> Self {
+        Self
+    }
+
     pub(crate) fn select(&self, _: i32) -> bool {
         false
     }
 
     pub(crate) fn actual(&self) -> i32 {
+        0
+    }
+
+    pub(crate) fn requested(&self) -> i32 {
         0
     }
 
@@ -83,13 +90,11 @@ pub(crate) fn player(
     config: EngineConfig,
     sources: Arc<Sources>,
     routing: &Arc<Routing>,
-) -> Result<Player> {
+) -> resonate_engine::Result<Player> {
     let routing = Arc::clone(routing);
-    Ok(Player::with_sources_and_backend(
-        config,
-        sources,
-        move |_| Ok(Box::new(oboe::AndroidAudio::new(routing))),
-    )?)
+    Player::with_sources_and_backend(config, sources, move |_| {
+        Ok(Box::new(oboe::AndroidAudio::new(routing)))
+    })
 }
 
 #[cfg(target_os = "ios")]
@@ -97,13 +102,11 @@ pub(crate) fn player(
     config: EngineConfig,
     sources: Arc<Sources>,
     routing: &Arc<Routing>,
-) -> Result<Player> {
+) -> resonate_engine::Result<Player> {
     let routing = Arc::clone(routing);
-    Ok(Player::with_sources_and_backend(
-        config,
-        sources,
-        move |_| Ok(Box::new(remote_io::IosAudio::new(routing))),
-    )?)
+    Player::with_sources_and_backend(config, sources, move |_| {
+        Ok(Box::new(remote_io::IosAudio::new(routing)))
+    })
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -111,6 +114,6 @@ pub(crate) fn player(
     config: EngineConfig,
     sources: Arc<Sources>,
     _: &Arc<Routing>,
-) -> Result<Player> {
-    Ok(Player::with_sources(config, sources)?)
+) -> resonate_engine::Result<Player> {
+    Player::with_sources(config, sources)
 }

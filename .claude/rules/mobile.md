@@ -152,6 +152,7 @@ logcat; iOS installs none yet
 Every export exists on every target, so bindings generated from the host library match the device
 library (`ios/build-native.py` falls back to the host build where library mode cannot read the iOS
 archive). What only one platform uses is a no-op elsewhere: `select_output`/`output_device`,
+`select_zone_output`'s device,
 `set_follow_song_rate`, `output_offers_changed`, `output_stream` and `watch_output_mixer` act on
 Android's Oboe routing (iOS asks its session for the song's rate in Swift, so its `Routing` follows
 nothing and offers nothing); `output_route_changed(rate, latency_ms, rebind)` feeds iOS's route.
@@ -386,6 +387,54 @@ phones* (`equaliser.rs`); `playback.rs` sends it with the other sound preference
   (`UNIT_WITHIN`): a media-services stall in `AudioComponentInstanceNew` is a timed-out open that
   the engine parks, not a blocked engine thread, and the late unit is disposed by its own thread.
 - **Elsewhere** (host tests): PipeWire through `Player::with_sources`.
+
+## Zones
+
+**The boundary owns a `Zones`, never one player** (`zoning.rs`, `audio.md`'s zones). `Playing` holds
+the `Zones`, the zone shown (`shown`, the first until another is chosen) and a `Zoned` per zone: its
+own output `Routing`, failure, waiting, saved place and `Listening`, and the route string it was bound
+for. Every call the phones made before addresses the zone shown (`Playing::player`, `send` through
+`Zones::send`, so a setting, the equaliser and room correction reach every zone and a transport
+command the shown one); the snapshot names it (`Snapshot.zone`) with `Zones::revision`
+(`zones_revision`), so a front end reads a zone's queue again when another is shown, though its
+revision may equal the last. `zones()` lists each zone as a `PlayerZone` (id, name, route, requested
+device, shown, transport and the title it plays), `show_zone`, `add_zone(name, device, route)` (a
+blank name is *Zone N*), `rename_zone` (blank is `ZoneUnnamed`), `remove_zone` (the first is
+`FirstZoneStays`; its listen is settled and its catalog rows go), `select_zone_output(zone, device,
+route)` and `hand_over_to(zone)`, which hands the shown zone's song to another through
+`Zones::hand_over` (`lockstep.rs`; the boundary does not wait on the handover thread) and shows that
+zone. `select_output` and `output_device`/`output_stream` read the shown zone's `Routing`; follow-song-rate,
+the route's bit-perfect offers, the mixer and iOS's route reports reach every zone's (`Outputs` keeps
+the last of each for a zone opened later) and `FollowTheFormats` goes to the zones whose route moved.
+
+**A zone opens over a `Routing` of its own** (`Opener`, the `Opens` the boundary hands `Zones`): the
+first zone's sink is `OUTPUT`, a later one `Routing::serving(SinkId::new(zone))`, so the zones are
+never one sink to `Zones::holder_of` (the phones' system mixes, and one zone's bit-perfect stream
+refused every other zone a `SetSink`); its device is the id it was added or bound with (Oboe's
+`setDeviceId`, 0 the system's choice), its engine the first zone's `OutputSettings::applied_to`, and
+the room correction applied is sent to it once open. iOS has one route: every zone's RemoteIO unit
+plays into it (`FEATURES.md`).
+
+**Each zone's queue is kept under its `ZoneId`**: the catalog's step 18
+(`ZONES_KEEP_THEIR_OWN_QUEUES`) made `zones` (id, name, route), `zone_queue` and `zone_resume`
+(keyed to `zones(id)` with `ON DELETE CASCADE`; `zone_queue.track` references `documents`, so
+forgetting and handing over songs reach it as they reach `queue`). The first zone keeps `queue` and
+`resume` (sync's handoff reads them), its `zones` row holding only a name or route given;
+`save_queue_of`, `save_place_of`, `resume_of` and `place_among_rows` read either through `QueueKept`.
+`save` saves every zone; `MobilePlayer::new` resumes the first zone, then opens each kept zone at the
+system's device with its kept queue paused (`restore_zones`); the front end binds a kept route to the
+device it now names (`select_zone_output`). A song gone or deleted leaves every zone's queue
+(`drop_from_queue`), and `documents_moved` saves and resumes each zone holding a moved song. One
+`resonate-watch` thread follows each zone's events, counting that zone's listening and telling the
+watch (`watching::keep(player, zone)`; it ends when the zone's engine goes)
+(`a_zone_added_keeps_a_queue_of_its_own_and_every_call_follows_the_zone_shown`,
+`each_zones_queue_is_kept_under_its_id_and_goes_with_the_zone`,
+`a_zone_renamed_keeps_its_new_name_and_a_blank_name_or_the_first_zones_removal_is_refused`,
+`the_song_handed_to_another_zone_plays_there_and_leaves_the_zone_it_came_from`,
+`a_route_serving_another_zone_announces_its_own_sink`).
+
+**A handover to another device is sync's**: the phones already continue another device's queue
+(`sync_continue_from`, into the zone shown) and offer theirs (the first zone's, `FEATURES.md`).
 
 ## TIDAL sign-in
 

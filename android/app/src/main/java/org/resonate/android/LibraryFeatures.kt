@@ -151,8 +151,12 @@ class LibraryFeatures(private val context: Context, private val library: Library
         OutputWatch(
             context,
             offered = { device, formats -> library.outputOffersChanged(device, formats) },
-            changed = { library.outputRouteChanged(it) },
+            changed = {
+                library.outputRouteChanged(it)
+                library.request { native -> zones.bindRoutes(native, outputsNow()) }
+            },
         )
+    val zones = PlayerZones(library)
     val outputStream = MutableStateFlow<OutputStream?>(null)
     val outputs = MutableStateFlow<List<AudioOutput>>(emptyList())
     val selectedOutput = MutableStateFlow(0)
@@ -287,6 +291,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
 
     fun initialize(native: MobilePlayer) {
         room.restore(native)
+        zones.bindRoutes(native, outputsNow())
         routes.start()
         tags.initialize(native)
         providerAccounts.value =
@@ -1232,6 +1237,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
         enrichment.playing(snapshot.current?.id)
         val device = native.outputDevice()
         actualOutput.value = device
+        zones.tick(native, snapshot)
+        zones.listed.value.firstOrNull { it.shown }?.let { selectedOutput.value = it.device }
         outputStream.value = native.outputStream()
         routes.streamOn(device)
         if (downloading.value) downloads.follow(native)
@@ -1411,15 +1418,16 @@ class LibraryFeatures(private val context: Context, private val library: Library
     }
 
     fun refreshOutputs() {
-        scope.launch {
-            val manager = context.getSystemService(android.media.AudioManager::class.java)
-            outputs.value = audioOutputs(manager)
-        }
+        scope.launch { outputs.value = outputsNow() }
     }
+
+    private fun outputsNow(): List<AudioOutput> =
+        context.getSystemService(android.media.AudioManager::class.java)?.let(::audioOutputs).orEmpty()
 
     fun selectOutput(id: Int) {
         library.request { native ->
-            native.selectOutput(id)
+            native.selectZoneOutput(native.shownZone(), id, ZonePlan.routeOf(id, outputsNow()))
+            zones.reread(native)
             selectedOutput.value = id
         }
     }

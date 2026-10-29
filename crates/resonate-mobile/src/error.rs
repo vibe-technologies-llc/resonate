@@ -258,6 +258,12 @@ pub enum Error {
     BufferRange { milliseconds: u32 },
     #[error("the player has been closed")]
     Closed,
+    #[error("There is no zone {zone}")]
+    NoZone { zone: u32 },
+    #[error("A zone needs a name")]
+    ZoneUnnamed,
+    #[error("The first zone stays")]
+    FirstZoneStays,
     #[error("no queue row has the id {queue_id}")]
     UnknownQueueRow { queue_id: u64 },
     #[error("queue row {row} is outside a queue of {rows}")]

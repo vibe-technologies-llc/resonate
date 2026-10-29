@@ -1923,18 +1923,14 @@ mod tests {
 
     pub(super) fn player(folder: &Path) -> MobilePlayer {
         MobilePlayer {
-            player: Mutex::new(None),
+            playing: crate::zoning::Playing::closed(),
             catalog: Arc::new(catalog::Catalog::open(Path::new(":memory:")).expect("a catalog")),
             sources: Arc::new(Sources::local()),
-            failure: Mutex::new(None),
-            waiting: Mutex::new(None),
-            saved: Mutex::new(None),
             preferences: Mutex::new(PlaybackPreferences::default()),
             services: Services::default(),
             playlist_undo: Mutex::new(Vec::new()),
             downloads: crate::downloads::Downloads::default(),
             syncing: Syncing::under(folder.to_path_buf()),
-            routing: Arc::new(crate::output::Routing::new()),
             enriching: crate::enrichment::Enriching::default(),
             room: crate::room::Room::under(std::env::temp_dir()),
             tagging: crate::tagging::Tagging::under(std::env::temp_dir()),

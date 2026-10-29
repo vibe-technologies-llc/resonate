@@ -136,7 +136,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   `Features.tick`) before the queue is read, and the queue is read in a task of its own
   (`listQueue`, one in flight), so a whole-library queue read never holds up the song a tap
   started. The queue is read
-  only when the snapshot's `queue_revision` moved since the queue last shown (`QueueListed`), or
+  only when the snapshot's `zone` or `queue_revision` moved since the queue last shown (`QueueListed`), or
   its `catalog_revision` moved and 3 s have passed since the last read (`catalogRereadAfter`), since
   every enrichment step, scan upsert, favourite and landing moves the catalog and a whole-library
   queue read four times a second kept the CPU busy and the main thread comparing thousands of rows;
@@ -455,6 +455,16 @@ sync seals its records and talks QUIC (TLS) of its own.
   active. `write` updates an item in place and adds it only where none exists, so a refused write
   keeps the old secret. Every write runs on `Work.inSecrets`, a serial lane, never the main actor: a sync setting and a provider account are shown at once and put back if the write is refused, while a scrobbling account, the AcoustID key and the AudD token show only once written. Plain choices in `UserDefaults` suites named as Android's
   `SharedPreferences` files, with the same keys.
+
+- **Zones are a sheet from Now Playing's More menu** (`ZonesSheet.swift`, `ZonesPresentation`, raised
+  from the root and inside the cover as the sleep timer is; `mobile.md`'s *Zones*): each zone a row
+  that shows it, saying what it plays (`ZonePlan.line`), with a context menu of *Hand the song over
+  here*, *Rename* and *Remove* (also its swipe; not the first, confirmed), and *Add a zone*. iOS
+  holds one route, so a zone is added at the system's device with no route and the footer says the
+  zones share that output (`FEATURES.md`). `Library.zones` is read when `zone` or `zones_revision`
+  moves and every eighth tick while there are several (`ZonesListed`), and after each change the
+  sheet makes (`changeZones`); the lock screen reads the snapshot, so it follows the zone shown
+  (`ZonesTests`).
 
 - **What can be rebuilt stays out of backups** (`Backup.leaveOutDerived`, at launch and again once the
   player is open): `sync-received`, `sync-staging` (songs other devices send, fetched again) and `download-partials` (bytes a download kept) are

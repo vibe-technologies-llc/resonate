@@ -38,6 +38,7 @@ mod sync;
 mod tagging;
 mod vanished;
 mod watching;
+mod zoning;
 
 use std::{
     fs,
@@ -48,9 +49,9 @@ use std::{
 
 use parking_lot::Mutex;
 use resonate_codec::{Picturing, Sources, probe_pictured};
-use resonate_core::{Frames, Resumable, Resumption, SampleRate, TrackId, Volume};
+use resonate_core::{Frames, Resumable, Resumption, SampleRate, TrackId, Volume, ZoneId};
 use resonate_engine::{
-    Command, EngineConfig, OutputStatus, PlaybackState, Player, PlayerState, QueueItem, QueueRows,
+    Command, EngineConfig, OutputStatus, PlaybackState, PlayerState, QueueItem, QueueRows,
     RepeatMode,
 };
 
@@ -80,6 +81,7 @@ pub use crate::{
     rewriting::DocumentRewriting,
     saved_searches::{SavedSearch, SearchOrder, search_order_reads_descending},
     watching::PlayerWatch,
+    zoning::PlayerZone,
 };
 
 uniffi::setup_scaffolding!();
@@ -194,10 +196,14 @@ pub struct Snapshot {
     pub next_count: u32,
     #[uniffi(default)]
     pub waiting: Option<String>,
+    #[uniffi(default)]
+    pub zone: u32,
+    #[uniffi(default)]
+    pub zones_revision: u64,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-struct SavedPlace {
+pub(crate) struct SavedPlace {
     revision: u64,
     row: u32,
     position_ms: u64,
@@ -205,18 +211,14 @@ struct SavedPlace {
 
 #[derive(uniffi::Object)]
 pub struct MobilePlayer {
-    player: Mutex<Option<Player>>,
+    playing: zoning::Playing,
     catalog: Arc<Catalog>,
     sources: Arc<Sources>,
-    failure: Mutex<Option<String>>,
-    waiting: Mutex<Option<String>>,
-    saved: Mutex<Option<SavedPlace>>,
     preferences: Mutex<PlaybackPreferences>,
     services: features::Services,
     playlist_undo: Mutex<Vec<playlists::PlaylistUndo>>,
     downloads: downloads::Downloads,
     syncing: sync::Syncing,
-    routing: Arc<output::Routing>,
     enriching: enrichment::Enriching,
     room: room::Room,
     tagging: tagging::Tagging,
@@ -240,28 +242,39 @@ impl MobilePlayer {
                 )
             },
         )?);
-        let config = EngineConfig::default();
         let routing = Arc::new(output::Routing::new());
-        let player = output::player(config, Arc::clone(&sources), &routing)?;
+        let player = output::player(EngineConfig::default(), Arc::clone(&sources), &routing)?;
+        let kept = catalog.kept_zones()?;
+        let engines: Box<zoning::Engines> = {
+            let sources = Arc::clone(&sources);
+            Box::new(
+                move |_: ZoneId, config: EngineConfig, routing: &Arc<output::Routing>| {
+                    output::player(config, Arc::clone(&sources), routing)
+                },
+            )
+        };
+        let playing = zoning::Playing::start(
+            player,
+            routing,
+            kept.iter().find(|zone| zone.id.is_first()),
+            engines,
+        );
         let this = Arc::new(Self {
-            player: Mutex::new(Some(player)),
+            playing,
             catalog,
             sources,
-            failure: Mutex::new(None),
-            waiting: Mutex::new(None),
-            saved: Mutex::new(None),
             preferences: Mutex::new(PlaybackPreferences::default()),
             services: features::Services::default(),
             playlist_undo: Mutex::new(Vec::new()),
             downloads: downloads::Downloads::under(Path::new(&folder)),
             syncing: sync::Syncing::under(PathBuf::from(&folder)),
-            routing,
             enriching: enrichment::Enriching::default(),
             room: room::Room::under(PathBuf::from(&folder)),
             tagging: tagging::Tagging::under(PathBuf::from(&folder)),
         });
-        this.resume_saved()?;
-        watching::keep(&this);
+        this.resume_saved_in(ZoneId::FIRST)?;
+        watching::keep(&this, ZoneId::FIRST);
+        this.restore_zones(&kept)?;
         Ok(this)
     }
 
@@ -337,10 +350,7 @@ impl MobilePlayer {
     }
 
     pub fn queue(&self) -> Result<Vec<Track>> {
-        let rows = {
-            let held = self.player.lock();
-            held.as_ref().ok_or(Error::Closed)?.queued().rows
-        };
+        let rows = self.playing.player()?.queued().rows;
 
         let uris = rows
             .iter()
@@ -428,10 +438,8 @@ impl MobilePlayer {
     pub fn configure_playback(&self, preferences: PlaybackPreferences) -> Result<()> {
         let mut previous = self.preferences.lock();
         let commands = preferences.commands(&previous)?;
-        let held = self.player.lock();
-        let player = held.as_ref().ok_or(Error::Closed)?;
         for command in commands {
-            player.send(command)?;
+            self.command(command)?;
         }
         *previous = preferences;
         Ok(())
@@ -442,11 +450,8 @@ impl MobilePlayer {
     }
 
     pub fn seek(&self, position_ms: u64) -> Result<()> {
-        let (state, queue) = {
-            let held = self.player.lock();
-            let player = held.as_ref().ok_or(Error::Closed)?;
-            (player.state(), player.queued())
-        };
+        let player = self.playing.player()?;
+        let (state, queue) = (player.state(), player.queued());
         if let Some(rate) = self.rate_to_seek_in(&state, &queue.rows) {
             self.command(Command::Seek(Frames::from_duration(
                 Duration::from_millis(position_ms),
@@ -457,20 +462,20 @@ impl MobilePlayer {
     }
 
     pub fn transport(&self) -> Result<Transport> {
-        let held = self.player.lock();
-        let player = held.as_ref().ok_or(Error::Closed)?;
-        Ok(transport_of(player.state().playback))
+        Ok(transport_of(self.playing.player()?.state().playback))
     }
 
     pub fn snapshot(&self) -> Result<Snapshot> {
+        let zone = self.playing.shown();
+        let zones_revision = self.playing.zones()?.revision();
+        let zoned = self.playing.zoned(zone)?;
         let (events, state, queue) = {
-            let held = self.player.lock();
-            let player = held.as_ref().ok_or(Error::Closed)?;
+            let player = self.playing.player_of(zone)?;
             let events = player.events().try_iter().collect::<Vec<_>>();
             (events, player.state(), player.queued())
         };
-        self.take_in(events, &queue.rows);
-        let waiting = self.still_waiting(&state);
+        self.take_in(&zoned, events, &queue.rows);
+        let waiting = Self::still_waiting(&zoned, &state);
         let heard = state
             .current
             .map(|track| track.id)
@@ -508,7 +513,7 @@ impl MobilePlayer {
             output_rate: figures.rate,
             underruns: figures.underruns,
             overs: figures.overs,
-            failure: self.failure.lock().take(),
+            failure: zoned.failure.lock().take(),
             sleep: state.sleeping.map(|sleep| sleep.until.into()),
             sleep_remaining_ms: state
                 .sleeping
@@ -518,16 +523,41 @@ impl MobilePlayer {
             next_first,
             next_count,
             waiting,
+            zone: zone.get(),
+            zones_revision,
         })
     }
 
     pub fn save(&self) -> Result<()> {
-        let mut saved = self.saved.lock();
+        for zone in self.playing.listed() {
+            self.save_zone(&zone)?;
+        }
+        Ok(())
+    }
+
+    pub fn shutdown(&self) -> Result<()> {
+        self.sync_stop();
+        self.stop_enriching_to_close();
+        self.configure_online(false);
+        self.cancel_analysis();
+        self.downloads.cancel_every_job();
+        let finished = self.finish_listening();
+        let saved = self.save();
+        let stopped = match self.playing.take() {
+            Some(zones) => zoning::shut_down(zones),
+            None => Ok(()),
+        };
+        finished.and(saved).and(stopped)
+    }
+}
+
+impl MobilePlayer {
+    fn save_zone(&self, zone: &resonate_engine::Zone) -> Result<()> {
+        let zoned = self.playing.zoned(zone.id)?;
+        let mut saved = zoned.saved.lock();
         let (place, rows) = {
-            let held = self.player.lock();
-            let player = held.as_ref().ok_or(Error::Closed)?;
-            let state = player.state();
-            let queue = player.queued();
+            let state = zone.player.state();
+            let queue = zone.player.queued();
             let Some(place) = place_to_save(&state, &queue.rows, queue.revision) else {
                 return Ok(());
             };
@@ -540,38 +570,26 @@ impl MobilePlayer {
             .as_ref()
             .is_some_and(|saved| saved.revision == place.revision)
         {
-            self.catalog.save_place(place.row, place.position_ms)?;
+            self.catalog
+                .save_place_of(zone.id, place.row, place.position_ms)?;
         } else {
             let uris = rows
                 .iter()
                 .map(|item| document_uri(&item.location))
                 .collect::<Result<Vec<_>>>()?;
-            self.catalog
-                .save_queue(&self.catalog.ids_at(&uris)?, place.row, place.position_ms)?;
+            self.catalog.save_queue_of(
+                zone.id,
+                &self.catalog.ids_at(&uris)?,
+                place.row,
+                place.position_ms,
+            )?;
         }
         *saved = Some(place);
         Ok(())
     }
 
-    pub fn shutdown(&self) -> Result<()> {
-        self.sync_stop();
-        self.stop_enriching_to_close();
-        self.configure_online(false);
-        self.cancel_analysis();
-        self.downloads.cancel_every_job();
-        let finished = self.finish_listening();
-        let saved = self.save();
-        let stopped = match self.player.lock().take() {
-            Some(player) => player.shutdown().map_err(Error::from),
-            None => Ok(()),
-        };
-        finished.and(saved).and(stopped)
-    }
-}
-
-impl MobilePlayer {
-    pub(crate) fn resume_saved(&self) -> Result<()> {
-        let (ids, at, position) = self.catalog.resume()?;
+    pub(crate) fn resume_saved_in(&self, zone: ZoneId) -> Result<()> {
+        let (ids, at, position) = self.catalog.resume_of(zone)?;
         if !ids.is_empty() {
             let tracks = self.catalog.tracks_by_id(&ids)?;
             let rate = tracks
@@ -590,12 +608,15 @@ impl MobilePlayer {
                     })
                 })
                 .collect::<Result<Vec<_>>>()?;
-            self.command(Command::Resume(Resumption {
-                rows,
-                row: at as usize,
-                at: Frames::from_duration(Duration::from_millis(position), rate),
-                ..Resumption::default()
-            }))?;
+            self.playing.send_to(
+                zone,
+                Command::Resume(Resumption {
+                    rows,
+                    row: at as usize,
+                    at: Frames::from_duration(Duration::from_millis(position), rate),
+                    ..Resumption::default()
+                }),
+            )?;
         }
         Ok(())
     }
@@ -618,12 +639,7 @@ impl MobilePlayer {
     }
 
     fn command(&self, command: Command) -> Result<()> {
-        self.player
-            .lock()
-            .as_ref()
-            .ok_or(Error::Closed)?
-            .send(command)?;
-        Ok(())
+        self.playing.send(command)
     }
 }
 

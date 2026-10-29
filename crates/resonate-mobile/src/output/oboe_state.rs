@@ -28,12 +28,18 @@ pub(crate) struct Routing {
     preferred: Mutex<Option<i32>>,
     announce: Sender<SinkChange>,
     pub(crate) changes: Receiver<SinkChange>,
+    sink: SinkId,
 }
 
 impl Routing {
     pub(crate) fn new() -> Self {
+        Self::serving(OUTPUT)
+    }
+
+    pub(crate) fn serving(sink: SinkId) -> Self {
         let (announce, changes) = unbounded();
         Self {
+            sink,
             requested: AtomicI32::new(SYSTEM_DEFAULT),
             actual: AtomicI32::new(SYSTEM_DEFAULT),
             follows: AtomicBool::new(false),
@@ -54,6 +60,10 @@ impl Routing {
             self.announced();
         }
         true
+    }
+
+    pub(crate) const fn sink(&self) -> SinkId {
+        self.sink
     }
 
     pub(crate) fn requested(&self) -> i32 {
@@ -181,7 +191,7 @@ impl Routing {
     }
 
     fn announced(&self) {
-        let _ = self.announce.send(SinkChange::Reformatted(OUTPUT));
+        let _ = self.announce.send(SinkChange::Reformatted(self.sink));
     }
 }
 
@@ -237,6 +247,21 @@ mod tests {
         fn mix_freely(&self, device: i32) {
             self.freed.lock().push(device);
         }
+    }
+
+    #[test]
+    fn a_route_serving_another_zone_announces_its_own_sink() {
+        let kitchen = SinkId::new(2);
+        let routing = Routing::serving(kitchen);
+
+        routing.select(USB);
+
+        assert_eq!(Routing::new().sink(), OUTPUT);
+        assert_eq!(routing.sink(), kitchen);
+        assert!(matches!(
+            routing.changes.try_iter().collect::<Vec<_>>().as_slice(),
+            [SinkChange::Reformatted(sink)] if *sink == kitchen
+        ));
     }
 
     #[test]

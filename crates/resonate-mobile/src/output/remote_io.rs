@@ -25,7 +25,7 @@ use resonate_core::{ChannelLayout, Gain, SampleFormat};
 use super::{
     remote_io_fill::Rendering,
     remote_io_render::render,
-    remote_io_state::{OUTPUT, Routing},
+    remote_io_state::Routing,
     remote_io_stream::launch,
     remote_io_unit::{Toolbox, Unit},
 };
@@ -50,7 +50,7 @@ impl Surveyor for Device {
     fn enumerate_sinks(&self, _: Duration) -> Result<Vec<SinkInfo>> {
         let rate = self.0.rate();
         Ok(vec![SinkInfo {
-            id: OUTPUT,
+            id: self.0.sink(),
             name: NodeName::new("ios-route"),
             description: "iOS audio route".into(),
             is_default: true,

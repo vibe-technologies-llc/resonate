@@ -4,7 +4,7 @@ use std::{
     path::Component,
 };
 
-use resonate_engine::{Command, PlaybackState};
+use resonate_engine::{Command, PlaybackState, Player};
 use resonate_library::{DEFAULT_LAYOUT, Layout, Named, Naming};
 use rusqlite::{OptionalExtension, params};
 
@@ -67,15 +67,20 @@ impl MobilePlayer {
         if moved.is_empty() {
             return Ok(());
         }
-        let queued = self.queued_ids()?;
-        let requeued = moved.iter().any(|document| queued.contains(&document.id));
-        let playing = requeued
-            && self
-                .player
-                .lock()
-                .as_ref()
-                .is_some_and(|player| player.state().playback == PlaybackState::Playing);
-        if requeued {
+        let requeued = self
+            .playing
+            .listed()
+            .into_iter()
+            .filter(|zone| {
+                let queued = self.queued_ids(&zone.player);
+                moved.iter().any(|document| queued.contains(&document.id))
+            })
+            .map(|zone| {
+                let playing = zone.player.state().playback == PlaybackState::Playing;
+                (zone.id, playing)
+            })
+            .collect::<Vec<_>>();
+        if !requeued.is_empty() {
             self.save()?;
         }
 
@@ -86,11 +91,11 @@ impl MobilePlayer {
         }
         drop(analyses);
 
-        if requeued {
-            *self.saved.lock() = None;
-            self.resume_saved()?;
+        for (zone, playing) in requeued {
+            *self.playing.zoned(zone)?.saved.lock() = None;
+            self.resume_saved_in(zone)?;
             if playing {
-                self.command(Command::Play)?;
+                self.playing.send_to(zone, Command::Play)?;
             }
         }
         Ok(())
@@ -112,19 +117,15 @@ impl MobilePlayer {
             .map_err(|source| Error::store(StoreOp::Read, source))
     }
 
-    fn queued_ids(&self) -> Result<BTreeSet<u64>> {
-        let held = self.player.lock();
-        let Some(player) = held.as_ref() else {
-            return Ok(BTreeSet::new());
-        };
-        Ok(player
+    fn queued_ids(&self, player: &Player) -> BTreeSet<u64> {
+        player
             .queued()
             .rows
             .iter()
             .filter_map(|item| document_uri(&item.location).ok())
             .filter_map(|uri| self.catalog.track_uri(&uri).ok())
             .map(|track| track.id)
-            .collect())
+            .collect()
     }
 }
 

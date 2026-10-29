@@ -4,17 +4,19 @@ import ResonateNative
 public struct QueueListed: Equatable {
     public static let catalogRereadAfter = Duration.seconds(3)
 
+    public let zone: UInt32
     public let queue: UInt64
     public let catalog: UInt64
 
     public init(_ state: Snapshot) {
+        zone = state.zone
         queue = state.queueRevision
         catalog = state.catalogRevision
     }
 
     public func isDue(after read: QueueListed?, since readAt: ContinuousClock.Instant) -> Bool {
         guard let read else { return true }
-        if queue != read.queue { return true }
+        if zone != read.zone || queue != read.queue { return true }
         return catalog != read.catalog && readAt.duration(to: .now) >= Self.catalogRereadAfter
     }
 }
