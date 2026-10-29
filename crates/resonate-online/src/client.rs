@@ -267,7 +267,7 @@ pub(crate) trait Clock: Send + Sync {
     fn sleep(&self, span: Duration);
 }
 
-struct WallClock;
+pub(crate) struct WallClock;
 
 impl Clock for WallClock {
     fn now(&self) -> Instant {

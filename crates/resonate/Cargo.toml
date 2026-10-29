@@ -29,6 +29,7 @@ parking_lot.workspace = true
 resonate-codec.workspace = true
 resonate-core.workspace = true
 resonate-discord = { workspace = true, optional = true }
+resonate-dsp.workspace = true
 resonate-engine.workspace = true
 resonate-eq.workspace = true
 resonate-inbox.workspace = true

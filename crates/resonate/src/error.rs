@@ -684,6 +684,16 @@ pub enum Error {
     Eq(#[from] resonate_eq::Error),
 
     #[error(transparent)]
+    Sweep(#[from] resonate_dsp::Error),
+
+    #[error("cannot write the measurement to {path}", path = path.display())]
+    WriteMeasurement {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+
+    #[error(transparent)]
     Engine(#[from] resonate_engine::Error),
 
     #[error(transparent)]

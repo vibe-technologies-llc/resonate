@@ -56,6 +56,7 @@ fn settled<T>(
 pub struct AutoEq {
     client: Arc<Client>,
     library: Option<Arc<Library>>,
+    base: String,
     source: SourceId,
     read: Mutex<Option<Arc<Catalogue>>>,
 }
@@ -65,8 +66,17 @@ impl AutoEq {
         Self {
             client,
             library,
+            base: Host::AutoEq.base().to_owned(),
             source: SourceId::new(AUTOEQ).unwrap_or_else(|_| SourceId::local()),
             read: Mutex::new(None),
+        }
+    }
+
+    #[cfg(test)]
+    fn answering_at(client: Arc<Client>, base: String) -> Self {
+        Self {
+            base,
+            ..Self::new(client, None)
         }
     }
 
@@ -75,7 +85,7 @@ impl AutoEq {
     }
 
     fn text_of(&self, op: LookupOp, path: &str, limit: usize) -> crate::Result<Option<String>> {
-        let url = format!("{}{path}", Host::AutoEq.base());
+        let url = format!("{}{path}", self.base);
         let Some(bytes) = self.client.bytes(Host::AutoEq, op, &url, limit)? else {
             return Ok(None);
         };
@@ -220,9 +230,19 @@ impl Corrections for AutoEq {
 
 #[cfg(test)]
 mod tests {
-    use resonate_eq::{search, suggest};
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        thread::{self, JoinHandle},
+    };
+
+    use resonate_eq::{Corrected, search, suggest};
 
     use super::*;
+    use crate::{
+        Identity,
+        client::{Carried, Introduction, WallClock},
+    };
 
     const INDEX: &str = include_str!("../tests/fixtures/autoeq_index.md");
     const PARAMETRIC_TEXT: &str = include_str!("../tests/fixtures/autoeq_parametric.txt");
@@ -349,5 +369,127 @@ mod tests {
             Some("asked")
         );
         assert!(settled(None, offline).is_err());
+    }
+
+    struct Asked {
+        path: String,
+        user_agent: String,
+    }
+
+    fn serving(
+        answers: Vec<(String, Option<&'static str>)>,
+        requests: usize,
+    ) -> (String, JoinHandle<Vec<Asked>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+        let base = format!("http://{}", listener.local_addr().expect("an address"));
+        let served = thread::spawn(move || {
+            let mut asked = Vec::new();
+            for _ in 0..requests {
+                let (mut stream, _) = listener.accept().expect("a connection");
+                let mut head = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n")
+                    && stream.read(&mut byte).expect("a request") == 1
+                {
+                    head.push(byte[0]);
+                }
+                let head = String::from_utf8(head).expect("a head in ASCII");
+                let path = head
+                    .lines()
+                    .next()
+                    .and_then(|line| line.split(' ').nth(1))
+                    .expect("a request line")
+                    .to_owned();
+                let user_agent = head
+                    .lines()
+                    .find_map(|line| {
+                        let (name, value) = line.split_once(':')?;
+                        name.eq_ignore_ascii_case("user-agent")
+                            .then(|| value.trim().to_owned())
+                    })
+                    .unwrap_or_default();
+
+                let body = answers
+                    .iter()
+                    .find(|(wanted, _)| *wanted == path)
+                    .and_then(|(_, body)| *body);
+                let response = match body {
+                    Some(body) => format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    ),
+                    None => {
+                        "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                            .to_owned()
+                    }
+                };
+                let _ = stream.write_all(response.as_bytes());
+                asked.push(Asked { path, user_agent });
+            }
+            asked
+        });
+        (base, served)
+    }
+
+    fn over_loopback(base: String) -> AutoEq {
+        let client = Client::on_clock(
+            Introduction::as_(&Identity::of_this_build()),
+            Arc::new(WallClock),
+            Carried::Plain,
+        );
+        AutoEq::answering_at(Arc::new(client), base)
+    }
+
+    #[test]
+    fn the_whole_index_is_asked_for_once_and_lists_every_measurer_of_a_model_beside_the_others() {
+        const INDEX_PATH: &str = "/results/INDEX.md";
+        let ananda_by_crinacle =
+            DeviceId::new("crinacle/GRAS 43AG-7 over-ear/HIFIMAN Ananda").expect("a path");
+        let ananda_by_oratory =
+            DeviceId::new("oratory1990/over-ear/HIFIMAN Ananda").expect("a path");
+        let by_crinacle = parametric_path(&ananda_by_crinacle).expect("a path");
+        let (base, served) = serving(
+            vec![
+                (INDEX_PATH.to_owned(), Some(INDEX)),
+                (by_crinacle, Some(PARAMETRIC_TEXT)),
+            ],
+            3,
+        );
+        let source = over_loopback(base);
+
+        let first = source.catalogue().expect("the index is read");
+        let second = source.catalogue().expect("the index is kept for the run");
+        let sought = search(&first, "ananda");
+        let measurers: Vec<&str> = sought
+            .iter()
+            .filter_map(|found| first.device(*found))
+            .map(|device| device.measured_by.as_str())
+            .collect();
+        let fetched = Corrected::uncorrected()
+            .and(Arc::new(source))
+            .profiles(&[ananda_by_crinacle, ananda_by_oratory]);
+        let asked = served.join().expect("the server");
+
+        assert!(Arc::ptr_eq(&first, &second));
+        assert_eq!(measurers, vec!["oratory1990", "crinacle"]);
+        assert_eq!(
+            asked
+                .iter()
+                .filter(|asked| asked.path == INDEX_PATH)
+                .count(),
+            1
+        );
+        assert_eq!(asked.len(), 3);
+        assert!(matches!(&fetched[0].profile, Ok(Some(profile)) if profile.bands().len() == 10));
+        assert!(matches!(fetched[1].profile, Ok(None)));
+        let named = format!("resonate/{}", env!("CARGO_PKG_VERSION"));
+        assert!(
+            asked.iter().all(|asked| asked.user_agent == named),
+            "a request said more than what this build is: {:?}",
+            asked
+                .iter()
+                .map(|asked| &asked.user_agent)
+                .collect::<Vec<_>>()
+        );
     }
 }

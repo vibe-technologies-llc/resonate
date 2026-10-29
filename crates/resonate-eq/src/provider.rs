@@ -14,6 +14,11 @@ pub trait Corrections: Send + Sync {
     fn profile(&self, device: &DeviceId) -> Result<Option<Profile>>;
 }
 
+pub struct Fetched {
+    pub device: DeviceId,
+    pub profile: Result<Option<Profile>>,
+}
+
 pub struct Uncorrected {
     source: SourceId,
 }
@@ -89,6 +94,16 @@ impl Corrected {
             Some(error) => Err(error),
             None => Ok(Arc::new(Catalogue::empty())),
         }
+    }
+
+    pub fn profiles(&self, devices: &[DeviceId]) -> Vec<Fetched> {
+        devices
+            .iter()
+            .map(|device| Fetched {
+                device: device.clone(),
+                profile: self.profile(device),
+            })
+            .collect()
     }
 
     pub fn profile(&self, device: &DeviceId) -> Result<Option<Profile>> {
@@ -245,6 +260,55 @@ mod tests {
             corrected.profile(&thing()),
             Err(Error::Unreadable { .. })
         ));
+    }
+
+    struct Answering {
+        source: SourceId,
+    }
+
+    impl Corrections for Answering {
+        fn source(&self) -> &SourceId {
+            &self.source
+        }
+
+        fn catalogue(&self) -> Result<Arc<Catalogue>> {
+            Ok(Arc::new(Catalogue::empty()))
+        }
+
+        fn profile(&self, device: &DeviceId) -> Result<Option<Profile>> {
+            match device.as_str() {
+                "a/over-ear/Thing" => Ok(Some(Profile::flat())),
+                "a/over-ear/Gone" => Ok(None),
+                _ => Err(Error::Unreadable {
+                    provider: self.source.clone(),
+                    op: EqOp::Fetch,
+                }),
+            }
+        }
+    }
+
+    #[test]
+    fn several_devices_are_fetched_at_once_and_each_has_an_answer_of_its_own() {
+        let corrected = Corrected::uncorrected().and(Arc::new(Answering {
+            source: named("first"),
+        }));
+        let asked: Vec<DeviceId> = ["a/over-ear/Thing", "a/over-ear/Gone", "a/over-ear/Broken"]
+            .iter()
+            .map(|path| DeviceId::new(path).expect("a path"))
+            .collect();
+
+        let fetched = corrected.profiles(&asked);
+
+        assert_eq!(
+            fetched
+                .iter()
+                .map(|fetched| fetched.device.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a/over-ear/Thing", "a/over-ear/Gone", "a/over-ear/Broken"]
+        );
+        assert!(matches!(fetched[0].profile, Ok(Some(_))));
+        assert!(matches!(fetched[1].profile, Ok(None)));
+        assert!(matches!(fetched[2].profile, Err(Error::Unreadable { .. })));
     }
 
     #[test]

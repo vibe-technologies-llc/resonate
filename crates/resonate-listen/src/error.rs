@@ -7,6 +7,7 @@ use thiserror::Error;
 pub enum CaptureOp {
     Connect,
     Open,
+    Play,
     Stop,
 }
 
@@ -19,6 +20,21 @@ pub enum Error {
         #[source]
         source: Box<resonate_pipewire::Error>,
     },
+
+    #[cfg(target_os = "linux")]
+    #[error("playing through the output failed")]
+    Output {
+        #[source]
+        source: Box<resonate_audio::Error>,
+    },
+
+    #[cfg(target_os = "linux")]
+    #[error("no output is named {name}")]
+    NoSuchSink { name: resonate_pipewire::NodeName },
+
+    #[cfg(target_os = "linux")]
+    #[error("the graph has no output to play through")]
+    NoOutput,
 
     #[error("nothing reached the recording before it was given up on")]
     NothingHeard,

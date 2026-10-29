@@ -59,6 +59,28 @@ pub enum Error {
 
     #[error("the pair of responses holds no usable taps")]
     SpeakersUnusable,
+
+    #[error("a sweep from {from_hz} Hz to {to_hz} Hz does not fit below half of {rate}")]
+    SweepBand {
+        from_hz: u32,
+        to_hz: u32,
+        rate: SampleRate,
+    },
+
+    #[error("a sweep of {frames} frames is outside the length a measurement takes")]
+    SweepLength { frames: usize },
+
+    #[error("{heard} frames were heard and the sweep alone was {played}")]
+    HeardTooShort { heard: usize, played: usize },
+
+    #[error("{frames} frames heard are more than a measurement is deconvolved from")]
+    HeardTooLong { frames: usize },
+
+    #[error("nothing of the sweep was heard")]
+    NothingHeard,
+
+    #[error("the transform of {size} points failed")]
+    SweepTransform { size: usize },
 }
 
 pub type Result<T> = result::Result<T, Error>;
