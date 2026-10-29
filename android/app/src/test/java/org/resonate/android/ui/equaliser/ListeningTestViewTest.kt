@@ -3,8 +3,12 @@ package org.resonate.android.ui.equaliser
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import org.resonate.android.nativecore.LossyRestoration
 import org.resonate.android.nativecore.TestArm
+import org.resonate.android.nativecore.TestLevels
 import org.resonate.android.nativecore.TestStanding
+import org.resonate.android.nativecore.TestedDither
+import org.resonate.android.nativecore.TestedSetting
 
 class ListeningTestViewTest {
     private fun standing(
@@ -13,6 +17,7 @@ class ListeningTestViewTest {
         heard: TestArm? = null,
         significant: Boolean = false,
         chancePercent: Double = 100.0,
+        levels: TestLevels = TestLevels.Matched(0.0123),
     ) =
         TestStanding(
             planned,
@@ -22,7 +27,7 @@ class ListeningTestViewTest {
             chancePercent,
             significant,
             verdicts,
-            0.0123,
+            levels,
             heard,
         )
 
@@ -83,5 +88,53 @@ class ListeningTestViewTest {
         assertEquals(false, view.beginning().failedToBegin().beginning)
         assertEquals(view, view.ended())
         assertEquals(view, view.stood(standing(emptyList())))
+    }
+
+    @Test
+    fun aSettingTestSaysHowItsLevelsWereMatched() {
+        assertEquals(
+            "Both play at one level. Hearing A",
+            heardWords(standing(emptyList(), levels = TestLevels.Alike, heard = TestArm.A)),
+        )
+        assertEquals(
+            "Measured through both, the two play at one level. Hearing nothing chosen yet",
+            heardWords(standing(emptyList(), levels = TestLevels.MeasuredAlike)),
+        )
+        assertEquals(
+            "B lowered by 0.12 dB to match the other. Hearing B",
+            heardWords(
+                standing(emptyList(), levels = TestLevels.Lowered(TestArm.B, 0.12), heard = TestArm.B)
+            ),
+        )
+    }
+
+    @Test
+    fun aSettingIsNamedAsPlayedAndEachTestSaysWhatIsCompared() {
+        assertEquals(
+            "A is Off",
+            playedAsWords(TestedSetting.Restoration(LossyRestoration.OFF, LossyRestoration.EXTEND)),
+        )
+        assertEquals(
+            "A is Triangular, shaped",
+            playedAsWords(TestedSetting.Dither(TestedDither.SHAPED, TestedDither.OFF)),
+        )
+        assertEquals(Testing.entries.size, Testing.entries.map { it.how }.toSet().size)
+        assertEquals("Measuring…", beginningWords(Testing.Restoration))
+        assertEquals("Starting…", beginningWords(Testing.Dither))
+    }
+
+    @Test
+    fun theChoiceOfWhatIsTestedIsKeptWithTheSettingItIsTestedAgainst() {
+        val view = ListeningTestView.unread.copy(lengths = listOf(8u))
+        val against = TestedSetting.Dither(TestedDither.SHAPED, TestedDither.OFF)
+
+        val chosen = view.testing(Testing.Dither, against)
+
+        assertEquals(Testing.Dither, chosen.testing)
+        assertEquals(against, chosen.against)
+        assertEquals(
+            TestedSetting.Dither(TestedDither.SHAPED, TestedDither.FLAT),
+            chosen.against(TestedSetting.Dither(TestedDither.SHAPED, TestedDither.FLAT)).against,
+        )
     }
 }

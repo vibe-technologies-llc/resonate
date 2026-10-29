@@ -548,6 +548,18 @@ kept through `keep_binaural_room_correction` (`RoomCorrectionState.chooseRight`,
 and binaural responses*; `RoomPairNamesTest`). Choosing,
 applying, forgetting and restoring run one at a time under one mutex.
 
+**The listening test tests a setting as well as the equaliser** (`ListeningTestSection`,
+`ListeningTestView.kt`, after the room correction; `eq.md`'s *The phones*): `FilterChip`s choose
+`Testing` (*Equaliser*, *Restoration*, *Resampler*, *Dither*) and, for a setting,
+`EqualiserViewModel.chooseTesting` asks `settingTestByDefault(kind, preferences)` for the
+`TestedSetting` to begin from, drawn as *A is …* with chips for B (`Against`; the labels are
+Processing's `restorationChoices`, `qualityChoices` and `phaseChoices` and the section's
+`ditherChoices`, A left out of B's restoration and dither choices). `beginTest` calls
+`beginSettingTest` on `Dispatchers.Default` where a setting is chosen, the begin buttons reading
+*Measuring…* (restoration) or *Starting…* while it runs, and an engine refusal is `Resonate.attempt`'s
+banner carrying the boundary's sentence. The words are `ListeningTestView.kt`'s, the levels sentence
+from `TestLevels` (`ListeningTestViewTest`).
+
 The sleep timer is the engine's `Until`: elapsed time, end of song or end of queue, with cancellation
 and the existing fade into a pause. Snapshot polling carries the remaining time; the UI keeps no
 timer, so the countdown and pause continue with the Activity in the background. A timer is not

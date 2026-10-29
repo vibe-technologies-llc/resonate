@@ -26,9 +26,12 @@ import org.resonate.android.RoomView
 import org.resonate.android.readUpTo
 import org.resonate.android.nativecore.EqualiserCurve
 import org.resonate.android.nativecore.EqualiserPreset
+import org.resonate.android.nativecore.ListeningTest
+import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.PlaybackPreferences
 import org.resonate.android.nativecore.TestArm
 import org.resonate.android.nativecore.TestHear
+import org.resonate.android.nativecore.TestedSetting
 import org.resonate.android.nativecore.equaliserFrequencies
 import org.resonate.android.nativecore.equaliserLimits
 import org.resonate.android.nativecore.equaliserPresets
@@ -37,6 +40,7 @@ import org.resonate.android.nativecore.listeningTestLengths
 import org.resonate.android.nativecore.measurementOffers
 import org.resonate.android.nativecore.parseEqProfile
 import org.resonate.android.nativecore.responseCurve
+import org.resonate.android.nativecore.settingTestByDefault
 import org.resonate.android.ui.Resonate
 
 data class EqualiserInfo(
@@ -213,15 +217,40 @@ class EqualiserViewModel(private val resonate: Resonate) : ViewModel() {
         }
     }
 
+    fun chooseTesting(tested: Testing) {
+        val view = testing.value
+        if (view.run != null || view.beginning) return
+        val kind = tested.kind
+        val kept = preferences.value
+        val against = if (kind == null || kept == null) null else settingTestByDefault(kind, kept)
+        testing.update { it.testing(tested, against) }
+    }
+
+    fun against(setting: TestedSetting) {
+        testing.update { it.against(setting) }
+    }
+
     fun beginTest(trials: UInt) {
-        val curve = shown.value ?: return
-        if (testing.value.run != null || testing.value.beginning) return
+        val view = testing.value
+        if (view.run != null || view.beginning) return
+        val tested = view.testing
+        val curve = shown.value
+        val setting = view.against
+        val start: (MobilePlayer) -> ListeningTest =
+            when {
+                tested == Testing.Equaliser && curve != null -> { native ->
+                        native.beginListeningTest(curve, trials)
+                    }
+                tested != Testing.Equaliser && setting != null -> { native ->
+                        native.beginSettingTest(setting, trials)
+                    }
+                else -> return
+            }
         testing.update { it.beginning() }
         resonate.attempt(viewModelScope) { native ->
             try {
-                val test =
-                    withContext(Dispatchers.Default) { native.beginListeningTest(curve, trials) }
-                testing.update { it.begun(test) }
+                val test = withContext(Dispatchers.Default) { start(native) }
+                testing.update { it.begun(test, tested) }
             } finally {
                 testing.update { if (it.run == null) it.failedToBegin() else it }
             }

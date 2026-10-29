@@ -1372,6 +1372,17 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   right's (or *Cancel*), each its own `fileImporter` on its own button, and keeps both through
   `keep_binaural_room_correction`; the name is `ResonateLogic`'s `RoomPair.name` (`RoomPairTests`).
   One response serves every output.
+- **The listening test tests a setting as well as the equaliser** (`ListeningTest.swift`,
+  `ListeningTestState`, `eq.md`'s *The phones*): a segmented picker of `ListeningTesting`
+  (*Equaliser*, *Restoration*, *Resampler*, *Dither*, `ResonateLogic`'s) chooses what is tested, and
+  choosing a setting asks `settingTestByDefault(kind:preferences:)` for the `TestedSetting` to begin
+  from (A as the preferences have it, B their opposite), shown as *A is …* with menu pickers for B
+  (`AgainstPickers`; A is left out of B's restoration and dither choices). `begin` calls
+  `beginSettingTest` on `Work.aside` where a setting is chosen, the begin buttons reading
+  *Measuring…* (restoration) or *Starting…* while it runs, and a refusal is the boundary's sentence on
+  the notice (`library.report`). The words, labels and levels sentence (`TestLevels`) are
+  `ListeningTestWords`' (`ListeningTestWordsTests`); the footer is the running test's
+  `howItWorks`. The test ends when the page is left, as before.
 
 ## Siri
 

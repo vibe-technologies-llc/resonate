@@ -14,6 +14,7 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -29,8 +30,13 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.resonate.android.nativecore.TestArm
 import org.resonate.android.nativecore.TestHear
+import org.resonate.android.nativecore.TestedSetting
 import org.resonate.android.ui.components.SectionHeader
 import org.resonate.android.ui.components.Sizes
+import org.resonate.android.ui.settings.Choice
+import org.resonate.android.ui.settings.phaseChoices
+import org.resonate.android.ui.settings.qualityChoices
+import org.resonate.android.ui.settings.restorationChoices
 
 @Composable
 fun ListeningTestSection(model: EqualiserViewModel) {
@@ -39,13 +45,15 @@ fun ListeningTestSection(model: EqualiserViewModel) {
     val run = view.run
     Column {
         SectionHeader("Listening test")
+        if (run == null) TestingChoices(view, model)
         Text(
-            LISTENING_TEST_HOW_IT_WORKS,
+            (run?.testing ?: view.testing).how,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = Sizes.gutter, vertical = 4.dp),
         )
         if (run == null) {
+            view.against?.takeIf { view.testing != Testing.Equaliser }?.let { Against(it, model) }
             FlowRow(
                 Modifier.fillMaxWidth().padding(horizontal = Sizes.gutter, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -60,7 +68,10 @@ fun ListeningTestSection(model: EqualiserViewModel) {
                     ) {
                         Icon(Icons.Rounded.PlayArrow, null, Modifier.size(ButtonDefaults.IconSize))
                         Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                        Text("Begin $trials trials")
+                        Text(
+                            if (view.beginning) beginningWords(view.testing)
+                            else "Begin $trials trials"
+                        )
                     }
                 }
             }
@@ -118,11 +129,99 @@ fun ListeningTestSection(model: EqualiserViewModel) {
         OutlinedButton(
             onClick = model::endTest,
             contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
-            modifier = Modifier.padding(horizontal = Sizes.gutter, vertical = 4.dp).testTag("listening-end"),
+            modifier =
+                Modifier.padding(horizontal = Sizes.gutter, vertical = 4.dp)
+                    .testTag("listening-end"),
         ) {
             Icon(Icons.Rounded.Stop, null, Modifier.size(ButtonDefaults.IconSize))
             Spacer(Modifier.width(ButtonDefaults.IconSpacing))
             Text(if (standing.finished) "Done" else "End the test")
+        }
+    }
+}
+
+@Composable
+private fun TestingChoices(view: ListeningTestView, model: EqualiserViewModel) {
+    FlowRow(
+        Modifier.fillMaxWidth().padding(horizontal = Sizes.gutter, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Testing.entries.forEach { testing ->
+            FilterChip(
+                selected = view.testing == testing,
+                onClick = { model.chooseTesting(testing) },
+                enabled = !view.beginning,
+                label = { Text(testing.label) },
+                modifier = Modifier.testTag("listening-testing-${testing.name}"),
+            )
+        }
+    }
+}
+
+@Composable
+private fun Against(setting: TestedSetting, model: EqualiserViewModel) {
+    Text(
+        playedAsWords(setting),
+        style = MaterialTheme.typography.bodyMedium,
+        modifier =
+            Modifier.padding(horizontal = Sizes.gutter, vertical = 4.dp).testTag("listening-a"),
+    )
+    when (setting) {
+        is TestedSetting.Restoration ->
+            AgainstRow(
+                "B is",
+                restorationChoices.filter { it.value != setting.a },
+                setting.b,
+                "restoration",
+            ) {
+                model.against(setting.copy(b = it))
+            }
+        is TestedSetting.Resampling -> {
+            AgainstRow("B's quality", qualityChoices, setting.bQuality, "quality") {
+                model.against(setting.copy(bQuality = it))
+            }
+            AgainstRow("B's phase", phaseChoices, setting.bPhase, "phase") {
+                model.against(setting.copy(bPhase = it))
+            }
+        }
+        is TestedSetting.Dither ->
+            AgainstRow(
+                "B is",
+                ditherChoices.filter { it.value != setting.a },
+                setting.b,
+                "dither",
+            ) {
+                model.against(setting.copy(b = it))
+            }
+    }
+}
+
+@Composable
+private fun <T> AgainstRow(
+    caption: String,
+    choices: List<Choice<T>>,
+    selected: T,
+    tag: String,
+    onChoose: (T) -> Unit,
+) {
+    Text(
+        caption,
+        style = MaterialTheme.typography.labelLarge,
+        modifier = Modifier.padding(horizontal = Sizes.gutter, vertical = 4.dp),
+    )
+    FlowRow(
+        Modifier.fillMaxWidth().padding(horizontal = Sizes.gutter, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        choices.forEach { choice ->
+            FilterChip(
+                selected = selected == choice.value,
+                onClick = { onChoose(choice.value) },
+                label = { Text(choice.label) },
+                modifier = Modifier.testTag("listening-against-$tag-${choice.label}"),
+            )
         }
     }
 }
