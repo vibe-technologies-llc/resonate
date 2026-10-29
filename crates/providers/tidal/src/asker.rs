@@ -2,11 +2,14 @@ use std::{sync::Arc, time::Duration};
 
 use resonate_core::SourceId;
 use resonate_fetch::{
-    Patience, Trusted, asking_agent, configured, downloading_agent, retry_after_of, unreached,
+    Patience, Trusted, asking_agent, configured, downloading_agent, is_a_document, retry_after_of,
+    unreached,
 };
-use resonate_providers::{Error, Pacing, ProviderOp, Result};
+use resonate_providers::{Error, Id, Pacing, ProviderOp, Result};
 use serde::Deserialize;
 use ureq::{Agent, Body, http};
+
+use crate::catalog::picture_at;
 
 const ASKED_APART: Duration = Duration::from_millis(250);
 const RETRIES_AT_MOST: u32 = 3;
@@ -122,6 +125,22 @@ impl Asker {
             .limit(LARGEST_ANSWER)
             .read_to_vec()
             .map_err(|error| self.unreachable(op, error))
+    }
+
+    pub(crate) fn picture(&self, images: &str, cover: &Id, side: u32) -> Result<Vec<u8>> {
+        let op = ProviderOp::Cover;
+        let url = picture_at(images, cover, side).ok_or_else(|| self.unreadable(op))?;
+        match self.sent(op, || self.agent.get(&url).call())? {
+            Sent::Answered(response) if is_a_document(response.body().mime_type()) => {
+                Err(self.unreadable(op))
+            }
+            Sent::Answered(response) => self.read_whole(op, response),
+            Sent::Refused { status, .. } => Err(Error::Refused {
+                provider: self.source.clone(),
+                op,
+                status,
+            }),
+        }
     }
 
     pub(crate) fn parsed<T: for<'de> Deserialize<'de>>(

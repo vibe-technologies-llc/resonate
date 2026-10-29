@@ -284,7 +284,8 @@ plumbing, so a `ureq` bump is made once:
   as any `Ranged` does), except a seek at most `SKIPPED_RATHER_THAN_ASKED` (256 KiB) ahead, which
   reads on and discards. Its length is the first answer's `Content-Length`; a read at or past it
   answers nothing without asking (`a_seek_a_little_ahead_reads_on_rather_than_asking_again_and_one_past_the_end_reads_nothing`).
-  A server ignoring `Range` is read from its start past the place (`asked`'s `WHOLE`).
+  A server ignoring `Range` is read from its start past the place (`asked`'s `WHOLE`). `Seeking::bearing`
+  sends a key on the reading in hand and on every range asked after (`Ranged::opened_bearing`).
 - `escaped` (every byte but the unreserved percent-encoded), `is_a_document` (`text/`, JSON or XML:
   an error document, never a song).
 - **One odd listing never fails the answer**: each provider reads its list through a `*_readable`
@@ -356,33 +357,38 @@ given and `online` is on.
 The same server is also a source of its own: its catalog is the server's, browsed through the API,
 never copied into `resonate-library` (the local source's catalog alone). `SourceId` `subsonic`.
 
-- **What the server holds is named by a location** (`resonate_subsonic::Named`, `served.rs`):
-  `subsonic:track/<id>` a song, `subsonic:album/<id>` and `subsonic:artist/<id>` what they hold, the
-  key read back by `Named::read` (`a_song_album_or_artist_is_named_by_a_location_that_reads_back_as_itself`).
-  Only a song is ever a queue row.
+- **What the server holds is named by a location** (`resonate_providers::Named`, the seam's
+  `in_place.rs`, re-exported by `resonate-subsonic`): `subsonic:track/<id>` a song,
+  `subsonic:album/<id>` and `subsonic:artist/<id>` what they hold, the key read back by
+  `Named::read` (`a_song_album_or_artist_is_named_by_a_location_that_reads_back_as_itself`). Only a
+  song is ever a queue row. The vocabulary (`Id`, `Named`, `Artist`, `Album`, `Song`,
+  `ArtistAlbums`, `AlbumSongs`, `Found`, `Streamed`) and the `PlaysInPlace` trait are the seam's, so
+  every service played in place speaks it (*Other services played in place*, below).
 - **Browsing is four calls**: `artists` (`getArtists`), `artist` (`getArtist`, its albums), `album`
   (`getAlbum`, its songs), `search` (`search3`, up to `BROWSED_AT_MOST` of each kind), with `song`
   (`getSong`); `songs_of` turns any `Named` into its songs in the server's order, an artist's
   album by album. Each is one paced request under `Patience::answered_within`, `ProviderOp::Browse`,
   the answer read part by part (`part`) through the same `readable`/`id_spelt` tolerance as a search,
   a number written as text read too (`a_servers_artists_albums_and_songs_are_browsed_by_their_ids`,
-  `an_album_or_an_artist_named_by_its_location_is_the_songs_it_holds_in_order`). The public
-  vocabulary (`Artist`, `Album`, `Song`, `Id`, `ArtistAlbums`, `AlbumSongs`, `Found`) is built by
-  hand from private documents, as every provider's is.
+  `an_album_or_an_artist_named_by_its_location_is_the_songs_it_holds_in_order`). The seam's
+  vocabulary is built by hand from private documents, as every provider's is.
 - **A song is streamed as stored**: `streamed` asks `stream` with `format=raw`, so the server never
   transcodes and a lossless file stays bit-accurate; an answer naming a document is the refusal it
   carries (`ProviderOp::Stream`). The `Streamed` it answers names the `Content-Type` (the decoder's
-  hint, since the key carries no extension) and is a `resonate_fetch::Seeking`
-  (`a_song_is_streamed_as_stored_and_a_seek_back_asks_the_server_from_there`).
-- **The binary makes it a `MediaProvider`** (`served.rs`, under `online`, since no provider crate
-  may see `resonate-codec`): `Served::of` builds it from the same `subsonic*` settings and `online`
-  switch the provider registry reads (`providers::server_named`); `Served::sources` adds
-  `ServedSongs` to every `Sources` that plays (`playing_from`: `play`, the window and its zones) and
-  to the one reading arguments, so a `subsonic:` URI is the server's only where one is named
-  (`a_song_uri_is_a_file_here_unless_a_server_is_named_and_then_it_is_queued_as_named`). A stream of
-  known length is seekable, so `Sources`' deadlines apply and nothing is spooled; one that would not
-  open is `codec::Error::Io` carrying the seam's error. `Served::songs_at` expands an album or artist
-  argument into its songs as `queue_items_served` reads it
+  hint, since the key carries no extension) and is `Streamed::seeking` over a
+  `resonate_fetch::Seeking` (`a_song_is_streamed_as_stored_and_a_seek_back_asks_the_server_from_there`).
+- **The binary makes every service played in place a `MediaProvider`** (`served.rs`, under
+  `online`, since no provider crate may see `resonate-codec`): `Served::of(config, settings)` holds
+  the `PlaysInPlace` services `providers::in_place_named` builds from the same settings and `online`
+  switch the provider registry reads, in the registry's order; `Served::sources` adds one
+  `ServedSongs` per service's scheme to every `Sources` that plays (`playing_from`: `play`, the
+  window and its zones) and to the one reading arguments, so a `subsonic:` (or `tidal:`, …) URI is
+  the service's only where it is set (`a_song_uri_is_a_file_here_unless_a_server_is_named_and_then_it_is_queued_as_named`,
+  `a_uri_of_a_service_not_set_is_a_file_here`). A stream is seekable where `Streamed::is_seekable`
+  (a range reader of known length), so `Sources`' deadlines apply and nothing is spooled; one read
+  onward is spooled by the codec (`audio.md`); one that would not open is `codec::Error::Io` carrying
+  the seam's error. `Served::songs_at` expands an album or artist argument into its songs as
+  `queue_items_served` reads it
   (`an_album_on_the_server_is_queued_as_its_songs_and_each_decodes_as_streamed_bit_for_bit`,
   `a_streamed_song_seeks_back_and_decodes_on_from_where_it_landed`). A queued row's tags are what
   `Player::media` probes off the stream's head.
@@ -394,18 +400,78 @@ never copied into `resonate-library` (the local source's catalog alone). `Source
   id, and some refuse the bare id), an album's or artist's is its own id
   (`a_cover_is_asked_for_by_the_name_the_server_gives_it_and_a_song_is_asked_what_that_is`,
   `a_cover_the_server_does_not_hold_is_the_refusal_it_carries`).
-- **The window's account is live, the command line's is fixed.** `Served::for_the_window` holds the
-  server in a slot (`Arc<RwLock<Option<Subsonic>>>`) its `ServedSongs` reads on every open and is
-  always registered in the window's `Sources`; `Served::serving()` is the `resonate_ui::Serving`
-  seam, which on each call builds the server from the window's live `Online`
-  (`providers::server_given`, the same `Accounts::given` the registry reads, so online off or a
-  blank field is none), keeps the `Subsonic` while its `Server` is unchanged, writes the slot and
-  answers a `ServedBy` (the `resonate_ui::Serves` adapter: browse, search, expand a location to its
-  songs, covers). An account typed, changed or cleared in Settings therefore plays at once, and
-  `resonate play` and `queue` (`Served::of`) still register the server only if the settings named
-  one at start (`a_window_plays_a_server_once_an_account_is_given_and_not_before`). The window's
-  pane is `ui.md`'s *The server pane*; the phones' boundary is `mobile.md`'s *A Subsonic server in
-  place*.
+- **The window's accounts are live, the command line's are fixed.** `Served::for_the_window` holds
+  the services in a slot (`Arc<RwLock<Vec<Arc<dyn PlaysInPlace>>>>`) its `ServedSongs` read on every
+  open, one for each of `PLAYED_IN_PLACE` (`subsonic`, `tidal`, `resonate`, `hifi-api`,
+  `monochrome`) always registered in the window's `Sources`; `Served::serving()` is the
+  `resonate_ui::Serving` seam, which on each call builds the services from the window's live
+  `Online` (`providers::in_place_given`, the same `Accounts::given` the registry reads, so online off
+  or a blank field is none), writes the slot and answers a `ServedBy` per service (the
+  `resonate_ui::Serves` adapter: browse, search, expand a location to its songs, covers), the same
+  `Arc` while the service is (`a_window_offers_every_service_set_and_keeps_each_while_its_settings_stand`).
+  An account typed, changed or cleared in Settings therefore plays at once, and `resonate play` and
+  `queue` (`Served::of`) still register only what the settings named at start
+  (`a_window_plays_a_server_once_an_account_is_given_and_not_before`). **One `Made` per process**
+  (`providers::made_once`): the window's registry, its served services and every `Served::of` take
+  their providers from the same `Kept` cells, so one TIDAL account is one `Tidal` signing in once,
+  and a refresh token it rotates is handed to `Renewed` once rather than left stale in a second
+  copy. The window's pane is `ui.md`'s *The server pane*; the phones' boundary is `mobile.md`'s
+  *A Subsonic server in place*.
+
+## Other services played in place
+
+TIDAL, hifi-api (hosted, a listener's own, or the keyed Resonate server) and Monochrome are sources
+of their own beside a provider, as Subsonic is: each implements the seam's `PlaysInPlace`
+(`scheme`, `title`, `artists`, `artist`, `album`, `search`, `streamed`, `cover`, `cover_of`,
+`songs_of`, `named_by`, `location_of`), named by `<scheme>:track/<id>`, `<scheme>:album/<id>`,
+`<scheme>:artist/<id>` with the scheme its provider's name (`tidal`, `hifi-api`, `resonate`,
+`monochrome`), and registered by `providers::in_place` wherever its provider is registered, in the
+same order. A service that lists nothing without being asked (every one but Subsonic) answers
+`artists` empty; a browse its API does not offer is `Error::NotOffered` (never away, never the
+want's). `Streamed::seeking` is a reader a decoder may seek; `Streamed::onward` one it may not,
+whose `Seek` is `Unsupported`; both are held under a `parking_lot::Mutex` so a stream holding a
+`Receiver` is still `Sync` (`a_stream_read_onward_refuses_a_seek_and_says_it_cannot_and_one_of_known_length_seeks`).
+
+- **TIDAL's catalog is its v1 API** (`catalog.rs`, the `AsksV1` trait): `search?query=&types=ARTISTS,ALBUMS,TRACKS`
+  (`BROWSED_AT_MOST` of each), `artists/<id>/albums`, `albums/<id>/tracks`, `tracks/<id>`,
+  `albums/<id>`, `artists/<id>`, each with the session's country. A TIDAL account asks it with its
+  own session (`Tidal::v1`, signed in and renewed as a delivery is); the hosted hifi-api asks it at
+  `Hosting::tidal_api` with the hosted TIDAL token and country `US` (`hifi_served.rs`'s `Hosted`).
+  A version is part of the title (*A Pillow of Winds (Remastered)*); a song's cover is its
+  album's. A cover is TIDAL's picture service (`Endpoints::images`, `Hosting::images`,
+  `resources.tidal.com/images/`): an `Id` `album:<uuid>` or `artist:<uuid>` (hex and dashes alone,
+  so nothing else reaches the path) asked at the least side TIDAL draws that covers the one wanted
+  (`ALBUM_SIDES`, `ARTIST_SIDES`; `a_picture_is_asked_for_at_the_least_side_tidal_draws_that_covers_the_one_wanted`).
+- **A listener's own hifi-api is asked by its routes** (`hifi_served.rs`): `/search/?s=` (songs,
+  `data.items`), `?a=` and `?al=` (artists and albums, read from `data` as a v1 search is),
+  `/album/?id=` (`data` the album, `data.items[].item` its songs), `/artist/?f=` (`albums.items`,
+  at the top or under `data`) and `/info/?id=` (a song's album cover), every answer read tolerantly
+  (`an_album_the_server_answers_is_read_from_its_entries_and_its_own_name`). **The keyed Resonate
+  server** reaches only `/search/` and `/file/` (`server.md`), so it is searched for songs alone and
+  any album or artist is `NotOffered`.
+- **A song is the lossless original, opened as a delivery would be, and seekable where one file
+  holds it.** `streamed` asks for the playback manifest exactly as `find` does (`Tidal::media`,
+  `HifiApi::media`: the same `FULL`, lossless, unencrypted, on-its-hosts checks), then
+  `Player::streamed`: a BTS manifest naming one FLAC URL is a `Seeking` over it (Range seeks, the
+  media agent, no redirect); a DASH manifest is `Fetched` segments through `Remuxed` read onward.
+  **A seek over segments is not offered, by design**: the remuxed FLAC's byte offsets are the sum of
+  the `mdat` payloads before them, which only fetching every earlier segment tells, so a byte seek
+  cannot be turned into a segment and an offset; the codec spools such a stream on disc and seeks
+  once it has all arrived (`audio.md`'s *Non-seekable sources are spooled*;
+  `a_dash_song_played_in_place_is_read_onward_as_native_flac_and_never_seeks`). A manifest offering
+  less than the whole lossless track is `NotOffered` under `ProviderOp::Stream`
+  (`a_tidal_song_offered_only_in_part_is_not_streamed`). The keyed server's `/file/?id=` is a
+  `Seeking` that carries the key on every range it asks (`Seeking::bearing`, `Ranged::opened_bearing`;
+  `a_keyed_server_streams_its_file_with_the_key_on_every_ask_and_browses_by_search_alone`).
+- **Monochrome is searched, never browsed**: `search` lists the playable songs of
+  `/search/tracks` (artists joined, length from milliseconds); `/track/<id>` is a `Seeking`; an
+  album or artist location is not one it names, and covers are `NotOffered`
+  (`a_search_played_in_place_lists_the_playable_songs_and_a_song_streams_and_seeks_back`).
+- Proved against loopback servers in `resonate-tidal`'s `tests/in_place.rs` and the binary's
+  `served.rs` tests, which decode each service's song through `Sources` bit for bit and seek back
+  (`a_tidal_album_is_queued_as_its_songs_and_a_song_in_one_flac_file_decodes_and_seeks`,
+  `a_monochrome_song_decodes_bit_for_bit_and_seeks`,
+  `a_song_the_keyed_server_sends_decodes_bit_for_bit_and_seeks_with_the_key`).
 
 ## A TIDAL account
 

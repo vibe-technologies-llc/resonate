@@ -73,12 +73,16 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   stereo state
 
 ## Later: Sources and providers
-- [L] A Subsonic server is browsed and played in place on the desktop (the command line and the
-  window's Server pane, with the server's covers) and on both phones (a Server tab while an account
-  is on and online is, with the server's covers in the pane, the queue, the mini-player, the lock
-  screen and Now Playing), a served song is not a library row so it is neither favourited, counted
-  as a listen nor kept in a saved queue, and TIDAL, hifi-api and Monochrome are still only asked
-  for a file to keep
+- [L] TIDAL, hifi-api and Monochrome are played in place on the desktop alone (the window's Server
+  pane and `tidal:`, `hifi-api:`, `resonate:`, `monochrome:` URIs): the phones' Server tab and
+  `serve_from` still reach Subsonic only, and `resonate subsonic` is the only command that browses
+  at the terminal
+- [M] A song played in place is not a library row, so it is neither favourited, counted as a listen
+  nor kept in a saved queue
+- [M] TIDAL and hifi-api list nothing until searched: the account's favourite artists, albums and
+  mixes are not offered as the pane's first page
+- [S] A TIDAL song a DASH manifest delivers in segments seeks only once the codec has spooled it
+  whole, since its remuxed byte offsets are unknown until every earlier segment is fetched
 - [M · blocked: services] The Bandcamp and Discogs links an `Identity` carries are read by nothing;
   no provider asks either
 - [M · blocked: servers] Subsonic matches a recording id or ISRC but not the release-track id the

@@ -1,7 +1,8 @@
+use std::path::PathBuf;
 #[cfg(feature = "online")]
 use std::{
     io::{self, Read, Seek, SeekFrom},
-    sync::{Arc, LazyLock},
+    sync::Arc,
 };
 
 #[cfg(all(feature = "ui", feature = "online"))]
@@ -15,60 +16,90 @@ use resonate_core::MediaLocation;
 #[cfg(feature = "online")]
 use resonate_core::SourceId;
 #[cfg(feature = "online")]
-use resonate_subsonic::{Album, Artist, Id, Named, Song, Streamed, Subsonic};
+use resonate_providers::{Album, Artist, Id, Named, PlaysInPlace, Song, Streamed};
+#[cfg(feature = "online")]
+use resonate_subsonic::Subsonic;
 
+#[cfg(feature = "online")]
+use crate::providers::{self, InPlace};
+#[cfg(feature = "online")]
+use crate::table::Table;
 use crate::{
     cli::SubsonicArgs,
     config::Config,
     error::{Error, Result},
 };
+
 #[cfg(feature = "online")]
-use crate::{providers, table::Table};
+const PLAYED_IN_PLACE: [&str; 5] = ["subsonic", "tidal", "resonate", "hifi-api", "monochrome"];
 
 #[derive(Clone, Default)]
 pub struct Served {
     #[cfg(feature = "online")]
-    slot: Arc<RwLock<Option<Subsonic>>>,
+    slot: Arc<RwLock<InPlace>>,
     #[cfg(feature = "online")]
     live: bool,
+    #[cfg(all(feature = "ui", feature = "online"))]
+    settings: Option<PathBuf>,
 }
 
 impl Served {
     #[cfg(feature = "online")]
-    pub fn of(config: &Config) -> Self {
-        Self::over(providers::server_named(config), false)
+    pub fn of(config: &Config, settings: Option<PathBuf>) -> Self {
+        Self::over(providers::in_place_named(config, settings), false)
     }
 
     #[cfg(not(feature = "online"))]
-    pub const fn of(_config: &Config) -> Self {
+    pub fn of(_config: &Config, _settings: Option<PathBuf>) -> Self {
         Self {}
     }
 
     #[cfg(feature = "online")]
-    fn over(subsonic: Option<Subsonic>, live: bool) -> Self {
+    fn over(services: InPlace, live: bool) -> Self {
         Self {
-            slot: Arc::new(RwLock::new(subsonic)),
+            slot: Arc::new(RwLock::new(services)),
             live,
+            #[cfg(feature = "ui")]
+            settings: None,
         }
     }
 
     #[cfg(all(feature = "ui", feature = "online"))]
-    pub fn for_the_window(config: &Config) -> Self {
-        Self::over(providers::server_named(config), true)
+    pub fn for_the_window(config: &Config, settings: Option<PathBuf>) -> Self {
+        Self {
+            settings: settings.clone(),
+            ..Self::over(providers::in_place_named(config, settings), true)
+        }
     }
 
     #[cfg(all(feature = "ui", not(feature = "online")))]
-    pub const fn for_the_window(_config: &Config) -> Self {
+    pub fn for_the_window(_config: &Config, _settings: Option<PathBuf>) -> Self {
         Self {}
     }
 
     #[cfg(feature = "online")]
-    pub fn sources(&self, sources: Sources) -> Sources {
-        if self.live || self.slot.read().is_some() {
-            sources.and(Arc::new(ServedSongs(Arc::clone(&self.slot))))
-        } else {
-            sources
+    fn schemes(&self) -> Vec<SourceId> {
+        if self.live {
+            return PLAYED_IN_PLACE
+                .iter()
+                .filter_map(|scheme| SourceId::new(scheme).ok())
+                .collect();
         }
+        self.slot
+            .read()
+            .iter()
+            .map(|service| service.scheme().clone())
+            .collect()
+    }
+
+    #[cfg(feature = "online")]
+    pub fn sources(&self, sources: Sources) -> Sources {
+        self.schemes().into_iter().fold(sources, |sources, scheme| {
+            sources.and(Arc::new(ServedSongs {
+                scheme,
+                slot: Arc::clone(&self.slot),
+            }))
+        })
     }
 
     #[cfg(not(feature = "online"))]
@@ -78,20 +109,20 @@ impl Served {
 
     #[cfg(feature = "online")]
     pub fn songs_at(&self, location: &MediaLocation) -> Option<Vec<MediaLocation>> {
-        let subsonic = self.slot.read().clone()?;
-        let named = subsonic.named_by(location)?;
+        let service = serving(&self.slot.read(), location)?;
+        let named = service.named_by(location)?;
         if let Named::Song(_) = named {
             return Some(vec![location.clone()]);
         }
-        match subsonic.songs_of(&named) {
+        match service.songs_of(&named) {
             Ok(songs) => Some(
                 songs
                     .into_iter()
-                    .map(|song| subsonic.location_of(&Named::Song(song.id)))
+                    .map(|song| service.location_of(&Named::Song(song.id)))
                     .collect(),
             ),
             Err(error) => {
-                tracing::warn!(%error, %location, "the Subsonic server did not list what was named");
+                tracing::warn!(%error, %location, "the service did not list what was named");
                 Some(Vec::new())
             }
         }
@@ -105,18 +136,26 @@ impl Served {
     #[cfg(all(feature = "ui", feature = "online"))]
     pub fn serving(&self) -> resonate_ui::Serving {
         let slot = Arc::clone(&self.slot);
-        let opened: Mutex<Option<Subsonic>> = Mutex::new(None);
+        let settings = self.settings.clone();
+        let adapted: Mutex<Vec<Arc<ServedBy>>> = Mutex::new(Vec::new());
         resonate_ui::Serving::new(move |online| {
-            let given = providers::server_given(online);
-            let mut held = opened.lock();
-            let subsonic = match (given, held.take()) {
-                (Some(given), Some(kept)) if kept.server() == &given => Some(kept),
-                (Some(given), _) => Some(Subsonic::at(given)),
-                (None, _) => None,
-            };
-            held.clone_from(&subsonic);
-            *slot.write() = subsonic.clone();
-            subsonic.map(|subsonic| Arc::new(ServedBy(subsonic)) as Arc<dyn resonate_ui::Serves>)
+            let services = providers::in_place_given(online, settings.clone());
+            let mut held = adapted.lock();
+            let serving: Vec<Arc<ServedBy>> = services
+                .iter()
+                .map(|service| {
+                    held.iter()
+                        .find(|kept| Arc::ptr_eq(&kept.0, service))
+                        .cloned()
+                        .unwrap_or_else(|| Arc::new(ServedBy(Arc::clone(service))))
+                })
+                .collect();
+            held.clone_from(&serving);
+            *slot.write() = services;
+            serving
+                .into_iter()
+                .map(|served| served as Arc<dyn resonate_ui::Serves>)
+                .collect()
         })
     }
 
@@ -127,27 +166,39 @@ impl Served {
 }
 
 #[cfg(feature = "online")]
-struct ServedSongs(Arc<RwLock<Option<Subsonic>>>);
+fn serving(
+    services: &[Arc<dyn PlaysInPlace>],
+    location: &MediaLocation,
+) -> Option<Arc<dyn PlaysInPlace>> {
+    services
+        .iter()
+        .find(|service| service.scheme() == location.source())
+        .cloned()
+}
+
+#[cfg(feature = "online")]
+struct ServedSongs {
+    scheme: SourceId,
+    slot: Arc<RwLock<InPlace>>,
+}
 
 #[cfg(feature = "online")]
 impl MediaProvider for ServedSongs {
     fn source(&self) -> &SourceId {
-        static SUBSONIC: LazyLock<SourceId> =
-            LazyLock::new(|| SourceId::new("subsonic").unwrap_or_else(|_| SourceId::local()));
-        &SUBSONIC
+        &self.scheme
     }
 
     fn open(&self, location: &MediaLocation) -> resonate_codec::Result<Media> {
-        let subsonic = self.0.read().clone();
-        let named = subsonic
+        let service = serving(&self.slot.read(), location);
+        let named = service
             .as_ref()
-            .and_then(|subsonic| subsonic.named_by(location));
-        let (Some(subsonic), Some(Named::Song(id))) = (subsonic, named) else {
+            .and_then(|service| service.named_by(location));
+        let (Some(service), Some(Named::Song(id))) = (service, named) else {
             return Err(resonate_codec::Error::LocatorNotUsable {
                 location: location.clone(),
             });
         };
-        let streamed = subsonic
+        let streamed = service
             .streamed(&id)
             .map_err(|error| resonate_codec::Error::Io {
                 location: location.clone(),
@@ -165,13 +216,13 @@ impl MediaProvider for ServedSongs {
 }
 
 #[cfg(all(feature = "ui", feature = "online"))]
-struct ServedBy(Subsonic);
+struct ServedBy(Arc<dyn PlaysInPlace>);
 
 #[cfg(all(feature = "ui", feature = "online"))]
 impl ServedBy {
     fn unreadable(&self) -> resonate_providers::Error {
         resonate_providers::Error::Unreadable {
-            provider: self.0.source_id().clone(),
+            provider: self.0.scheme().clone(),
             op: resonate_providers::ProviderOp::Browse,
         }
     }
@@ -216,6 +267,14 @@ impl ServedBy {
 
 #[cfg(all(feature = "ui", feature = "online"))]
 impl resonate_ui::Serves for ServedBy {
+    fn scheme(&self) -> &SourceId {
+        self.0.scheme()
+    }
+
+    fn title(&self) -> &str {
+        self.0.title()
+    }
+
     fn names(&self, location: &MediaLocation) -> bool {
         self.0.named_by(location).is_some()
     }
@@ -334,7 +393,7 @@ impl Seek for Streaming {
 #[cfg(feature = "online")]
 impl MediaStream for Streaming {
     fn is_seekable(&self) -> bool {
-        self.0.length().is_some()
+        self.0.is_seekable()
     }
 
     fn byte_len(&self) -> Option<u64> {
@@ -448,9 +507,12 @@ mod tests {
         thread,
     };
 
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
     use resonate_codec::{DecodeStatus, Decoder, probe};
     use resonate_core::{AudioBuffer, Frames, SampleData, SampleFormat};
+    use resonate_monochrome::Monochrome;
     use resonate_subsonic::Server;
+    use resonate_tidal::{Account, Endpoints, HifiApi, MediaHosts, Tidal};
 
     use super::*;
 
@@ -468,6 +530,8 @@ mod tests {
     const CRC8_POLYNOMIAL: u8 = 0x07;
     const CRC16_POLYNOMIAL: u16 = 0x8005;
     const ALBUM: &str = r#"{"subsonic-response":{"status":"ok","version":"1.16.1","album":{"id":"al-1","name":"Meddle","song":[{"id":"so-1","title":"One","suffix":"flac"},{"id":"so-2","title":"Two","suffix":"flac"}]}}}"#;
+    const TIDAL_ALBUM: &str = r#"{"items":[{"id":11,"title":"One"},{"id":12,"title":"Two"}]}"#;
+    const KEY: &str = "Bearer hush";
 
     fn sample(frame: usize, channel: usize) -> i16 {
         i16::try_from((frame * 37 + channel * 1000) % 20_000).expect("a small sample") - 10_000
@@ -528,40 +592,69 @@ mod tests {
         file
     }
 
-    fn range_of(header: &str) -> Option<usize> {
-        let (name, value) = header.split_once(':')?;
-        if !name.eq_ignore_ascii_case("range") {
-            return None;
-        }
-        value
-            .trim()
-            .strip_prefix("bytes=")?
-            .trim_end_matches('-')
-            .parse()
-            .ok()
+    struct Asked {
+        line: String,
+        range: Option<usize>,
+        authorization: Option<String>,
     }
 
-    fn answered(stream: TcpStream, file: &[u8]) {
-        let mut reader = BufReader::new(stream);
-        let mut asked = String::new();
-        if reader.read_line(&mut asked).is_err() {
-            return;
+    impl Asked {
+        fn path(&self) -> &str {
+            let target = self.line.split(' ').nth(1).unwrap_or_default();
+            target.split('?').next().unwrap_or_default()
         }
-        let mut from = None;
+    }
+
+    enum Answer {
+        Json(String),
+        Song,
+        Missing,
+    }
+
+    fn asked_of(reader: &mut BufReader<TcpStream>) -> Option<Asked> {
+        let mut line = String::new();
+        reader.read_line(&mut line).ok()?;
+        let mut range = None;
+        let mut authorization = None;
         loop {
             let mut header = String::new();
             match reader.read_line(&mut header) {
-                Ok(0) | Err(_) => return,
+                Ok(0) | Err(_) => return None,
                 Ok(_) if header == "\r\n" => break,
-                Ok(_) => from = range_of(&header).or(from),
+                Ok(_) => {}
+            }
+            let Some((name, value)) = header.split_once(':') else {
+                continue;
+            };
+            let value = value.trim();
+            match name.to_ascii_lowercase().as_str() {
+                "range" => {
+                    range = value
+                        .strip_prefix("bytes=")
+                        .and_then(|from| from.trim_end_matches('-').parse().ok());
+                }
+                "authorization" => authorization = Some(value.to_owned()),
+                _ => {}
             }
         }
-        let (head, body) = match from {
-            _ if asked.contains("/rest/getAlbum") => (
+        Some(Asked {
+            line,
+            range,
+            authorization,
+        })
+    }
+
+    fn answered(stream: TcpStream, file: &[u8], route: &dyn Fn(&Asked, &str) -> Answer, own: &str) {
+        let mut reader = BufReader::new(stream);
+        let Some(asked) = asked_of(&mut reader) else {
+            return;
+        };
+        let (head, body) = match (route(&asked, own), asked.range) {
+            (Answer::Json(body), _) => (
                 "200 OK\r\nContent-Type: application/json".to_owned(),
-                ALBUM.as_bytes().to_vec(),
+                body.into_bytes(),
             ),
-            Some(from) => (
+            (Answer::Song, Some(from)) => (
                 format!(
                     "206 Partial\r\nContent-Type: audio/flac\r\nContent-Range: bytes {from}-{}/{}",
                     file.len() - 1,
@@ -569,9 +662,13 @@ mod tests {
                 ),
                 file[from..].to_vec(),
             ),
-            None => (
+            (Answer::Song, None) => (
                 "200 OK\r\nContent-Type: audio/flac".to_owned(),
                 file.to_vec(),
+            ),
+            (Answer::Missing, _) => (
+                "404 Not Found\r\nContent-Type: application/json".to_owned(),
+                b"{}".to_vec(),
             ),
         };
         let mut stream = reader.into_inner();
@@ -583,24 +680,101 @@ mod tests {
         let _ = stream.write_all(&body);
     }
 
-    fn serving() -> Served {
+    fn fake(route: impl Fn(&Asked, &str) -> Answer + Send + Sync + 'static) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").expect("a local port");
         let url = format!("http://{}", listener.local_addr().expect("a bound address"));
         let file = flac();
+        let own = url.clone();
         thread::spawn(move || {
             for stream in listener.incoming().flatten() {
-                answered(stream, &file);
+                answered(stream, &file, &route, &own);
             }
         });
+        url
+    }
 
-        Served::over(
-            Some(Subsonic::at(Server {
-                url,
-                user: "listener".to_owned(),
-                password: "sesame".to_owned(),
-            })),
-            false,
+    fn subsonic_url() -> String {
+        fake(|asked, _| {
+            if asked.path() == "/rest/getAlbum" {
+                Answer::Json(ALBUM.to_owned())
+            } else {
+                Answer::Song
+            }
+        })
+    }
+
+    fn subsonic_at(url: String) -> Arc<dyn PlaysInPlace> {
+        Arc::new(Subsonic::at(Server {
+            url,
+            user: "listener".to_owned(),
+            password: "sesame".to_owned(),
+        }))
+    }
+
+    fn serving() -> Served {
+        Served::over(vec![subsonic_at(subsonic_url())], false)
+    }
+
+    fn on_loopback() -> MediaHosts {
+        MediaHosts {
+            scheme: "http".to_owned(),
+            domain: "127.0.0.1".to_owned(),
+        }
+    }
+
+    fn one_flac_playback(own: &str) -> String {
+        let manifest = STANDARD.encode(format!(
+            r#"{{"mimeType":"audio/flac","codecs":"flac","encryptionType":"NONE","urls":["{own}/media/whole.flac"]}}"#
+        ));
+        format!(
+            r#"{{"assetPresentation":"FULL","manifestMimeType":"application/vnd.tidal.bts","manifest":"{manifest}"}}"#
         )
+    }
+
+    fn tidal_serving() -> Served {
+        let url = fake(|asked, own| match asked.path() {
+            "/auth/token" => Answer::Json(
+                r#"{"access_token":"fresh","expires_in":3600,"user":{"countryCode":"GB"}}"#
+                    .to_owned(),
+            ),
+            "/api/albums/7/tracks" => Answer::Json(TIDAL_ALBUM.to_owned()),
+            "/api/tracks/11/playbackinfopostpaywall" => Answer::Json(one_flac_playback(own)),
+            "/media/whole.flac" => Answer::Song,
+            _ => Answer::Missing,
+        });
+        let tidal = Tidal::at(
+            Account {
+                client_id: "client".to_owned(),
+                client_secret: None,
+                refresh_token: "sesame".to_owned(),
+            },
+            Endpoints {
+                auth: format!("{url}/auth/token"),
+                device: format!("{url}/auth/device"),
+                api: format!("{url}/api/"),
+                openapi: format!("{url}/openapi/"),
+                images: format!("{url}/images/"),
+                media: on_loopback(),
+            },
+        );
+        Served::over(vec![Arc::new(tidal)], false)
+    }
+
+    fn monochrome_serving() -> Served {
+        let url = fake(|asked, _| match asked.path() {
+            "/track/154140652551016448" => Answer::Song,
+            _ => Answer::Missing,
+        });
+        Served::over(vec![Arc::new(Monochrome::at(&url))], false)
+    }
+
+    fn keyed_serving() -> Served {
+        let url = fake(|asked, _| match asked.path() {
+            "/file/" if asked.authorization.as_deref() == Some(KEY) => Answer::Song,
+            _ => Answer::Missing,
+        });
+        let keyed = HifiApi::at(&url).with_secret("hush").known_as_resonate();
+        Served::over(vec![Arc::new(keyed)], false)
     }
 
     fn decoded(decoder: &mut Decoder) -> Vec<i16> {
@@ -620,6 +794,23 @@ mod tests {
         (from..FRAMES_A_BLOCK * BLOCKS)
             .flat_map(|frame| (0..CHANNELS).map(move |channel| sample(frame, channel)))
             .collect()
+    }
+
+    fn decodes_bit_for_bit_and_seeks_back(served: &Served, uri: &str) {
+        let sources = served.sources(Sources::local());
+        let location = MediaLocation::from_uri(uri).expect("a uri");
+
+        let (mut decoder, opened) = Decoder::open(&sources, &location).expect("the song opens");
+        let whole = decoded(&mut decoder);
+        let landed = decoder
+            .seek(Frames(FRAMES_A_BLOCK as u64 * 2))
+            .expect("a seek back");
+        let rest = decoded(&mut decoder);
+
+        assert!(opened.is_seekable, "{uri} is seekable by range");
+        assert_eq!(whole, written(0), "{uri}");
+        let from = usize::try_from(landed.0).expect("a small frame");
+        assert_eq!(rest, written(from), "{uri}");
     }
 
     #[test]
@@ -649,19 +840,7 @@ mod tests {
 
     #[test]
     fn a_streamed_song_seeks_back_and_decodes_on_from_where_it_landed() {
-        let served = serving();
-        let sources = served.sources(Sources::local());
-        let location = MediaLocation::from_uri("subsonic:track/so-1").expect("a uri");
-        let (mut decoder, _) = Decoder::open(&sources, &location).expect("the song opens");
-        let _ = decoded(&mut decoder);
-
-        let landed = decoder
-            .seek(Frames(FRAMES_A_BLOCK as u64 * 2))
-            .expect("a seek back");
-        let rest = decoded(&mut decoder);
-
-        let from = usize::try_from(landed.0).expect("a small frame");
-        assert_eq!(rest, written(from));
+        decodes_bit_for_bit_and_seeks_back(&serving(), "subsonic:track/so-1");
     }
 
     #[test]
@@ -675,16 +854,44 @@ mod tests {
         assert_eq!(served[0].location.to_uri(), "subsonic:track/so-1");
     }
 
+    #[test]
+    fn a_tidal_album_is_queued_as_its_songs_and_a_song_in_one_flac_file_decodes_and_seeks() {
+        let served = tidal_serving();
+
+        let queued = crate::queue_items_served(&[OsString::from("tidal:album/7")], &served);
+        let uris: Vec<_> = queued.iter().map(|item| item.location.to_uri()).collect();
+
+        assert_eq!(uris, ["tidal:track/11", "tidal:track/12"]);
+        decodes_bit_for_bit_and_seeks_back(&served, "tidal:track/11");
+    }
+
+    #[test]
+    fn a_monochrome_song_decodes_bit_for_bit_and_seeks() {
+        decodes_bit_for_bit_and_seeks_back(
+            &monochrome_serving(),
+            "monochrome:track/154140652551016448",
+        );
+    }
+
+    #[test]
+    fn a_song_the_keyed_server_sends_decodes_bit_for_bit_and_seeks_with_the_key() {
+        decodes_bit_for_bit_and_seeks_back(&keyed_serving(), "resonate:track/11");
+    }
+
+    #[test]
+    fn a_uri_of_a_service_not_set_is_a_file_here() {
+        let named = OsString::from("tidal:track/11");
+
+        let queued = crate::queue_items_served(std::slice::from_ref(&named), &serving());
+
+        assert!(queued[0].location.is_local());
+    }
+
     #[cfg(feature = "ui")]
     #[test]
     fn a_window_plays_a_server_once_an_account_is_given_and_not_before() {
-        let url = serving()
-            .slot
-            .read()
-            .as_ref()
-            .map(|subsonic| subsonic.server().url.clone())
-            .expect("a server");
-        let window = Served::for_the_window(&crate::config::Config::default());
+        let url = subsonic_url();
+        let window = Served::for_the_window(&crate::config::Config::default(), None);
         let sources = window.sources(Sources::local());
         let location = MediaLocation::from_uri("subsonic:track/so-1").expect("a uri");
         let account = resonate_ui::Online {
@@ -702,9 +909,41 @@ mod tests {
         let again = probe(&sources, &location);
 
         assert!(before.is_err());
-        assert!(opened.is_some());
+        assert_eq!(opened.len(), 1);
         assert!(after.is_ok());
-        assert!(withdrawn.is_none());
+        assert!(withdrawn.is_empty());
         assert!(again.is_err());
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn a_window_offers_every_service_set_and_keeps_each_while_its_settings_stand() {
+        let window = Served::for_the_window(&crate::config::Config::default(), None);
+        let serving = window.serving();
+        let account = resonate_ui::Online {
+            enabled: true,
+            subsonic: "http://127.0.0.1:9".to_owned(),
+            subsonic_user: "listener".to_owned(),
+            subsonic_password: "sesame".to_owned(),
+            tidal_client_id: "client".to_owned(),
+            tidal_refresh_token: "token".to_owned(),
+            monochrome: "http://127.0.0.1:9".to_owned(),
+            ..resonate_ui::Online::default()
+        };
+
+        let opened = serving.opened(&account);
+        let again = serving.opened(&account);
+        let titles: Vec<_> = opened
+            .iter()
+            .map(|served| served.title().to_owned())
+            .collect();
+
+        assert_eq!(titles, ["Subsonic", "TIDAL", "Monochrome"]);
+        assert!(
+            opened
+                .iter()
+                .zip(&again)
+                .all(|(opened, again)| Arc::ptr_eq(opened, again))
+        );
     }
 }

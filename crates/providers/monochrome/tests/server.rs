@@ -1,5 +1,5 @@
 use std::{
-    io::{BufRead, BufReader, Read, Write},
+    io::{BufRead, BufReader, Read, Seek, SeekFrom, Write},
     net::{TcpListener, TcpStream},
     sync::Arc,
     thread,
@@ -10,7 +10,8 @@ use parking_lot::Mutex;
 use resonate_core::Isrc;
 use resonate_monochrome::{Monochrome, Patience};
 use resonate_providers::{
-    Delivery, Error, Identity, Obtained, Opened, Opening, Provider, ProviderOp,
+    Delivery, Error, Id, Identity, Named, Obtained, Opened, Opening, PlaysInPlace, Provider,
+    ProviderOp,
 };
 
 const ECHOES_ISRC: &str = "GBN9Y1100065";
@@ -637,4 +638,54 @@ fn an_unreachable_server_is_the_provider_away() {
         })
     ));
     assert!(refused.is_err_and(|error| error.is_the_provider_away()));
+}
+
+#[test]
+fn a_search_played_in_place_lists_the_playable_songs_and_a_song_streams_and_seeks_back() {
+    let fake = Fake::serving(|asked, _| match asked {
+        Asked::Search(_) => found(&[
+            listing(ECHOES, ECHOES_ISRC),
+            listing("176742690942394368", "USSM12409270").replace("true", "false"),
+        ]),
+        Asked::Track {
+            from: Some(from), ..
+        } => Canned::audio_from(*from),
+        Asked::Track { from: None, .. } | Asked::Elsewhere(_) => Canned::audio(),
+    });
+    let monochrome = fake.monochrome();
+
+    let songs = PlaysInPlace::search(&monochrome, "echoes")
+        .expect("a search")
+        .songs;
+    let mut streamed = PlaysInPlace::streamed(&monochrome, &songs[0].id).expect("a stream");
+    let mut head = [0; 20];
+    streamed.read_exact(&mut head).expect("the head");
+    streamed.seek(SeekFrom::Start(5)).expect("a seek back");
+    let mut rest = Vec::new();
+    streamed.read_to_end(&mut rest).expect("the rest");
+    let album = PlaysInPlace::album(&monochrome, &songs[0].id).map(|_| ());
+    let named =
+        monochrome.named_by(&monochrome.location_of(&Named::Album(Id::new("1").expect("an id"))));
+
+    assert_eq!(songs.len(), 1);
+    assert_eq!(songs[0].artist.as_deref(), Some("Pink Floyd"));
+    assert_eq!(songs[0].length, Some(Duration::from_millis(1_412_451)));
+    assert!(streamed.is_seekable());
+    assert_eq!(rest, AUDIO[5..]);
+    assert!(matches!(album, Err(Error::NotOffered { .. })));
+    assert_eq!(named, None);
+    assert_eq!(
+        monochrome
+            .location_of(&Named::Song(songs[0].id.clone()))
+            .to_uri(),
+        format!("monochrome:track/{ECHOES}")
+    );
+    assert_eq!(
+        fake.heard(),
+        vec![
+            searched("echoes"),
+            track(ECHOES, None),
+            track(ECHOES, Some(5))
+        ]
+    );
 }

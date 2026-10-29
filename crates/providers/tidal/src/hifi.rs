@@ -21,6 +21,8 @@ use ureq::{Agent, http::header::AUTHORIZATION};
 use crate::{
     MediaHosts,
     asker::{Asker, Sent, media_agent},
+    catalog::IMAGES,
+    manifest::Media,
     played::{self, Finds, Playback, Player, TrackId, named_by},
 };
 
@@ -56,8 +58,8 @@ const BUSY_ASKED_AGAIN_AFTER_AT_MOST: Duration = Duration::from_secs(10);
 const ONE_DOWNLOAD_AT_ONCE: NonZeroUsize = NonZeroUsize::MIN;
 
 #[derive(Deserialize)]
-struct Wrapped<T> {
-    data: T,
+pub(crate) struct Wrapped<T> {
+    pub(crate) data: T,
 }
 
 #[derive(Deserialize)]
@@ -169,7 +171,7 @@ struct Tokens {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum TokenService {
+pub(crate) enum TokenService {
     Tidal,
     Hifi,
 }
@@ -218,7 +220,7 @@ struct Pending {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct RequestId(String);
+pub(crate) struct RequestId(String);
 
 impl RequestId {
     fn read(pending: Pending) -> Option<Self> {
@@ -231,7 +233,7 @@ impl RequestId {
     }
 }
 
-enum Answered {
+pub(crate) enum Answered {
     Ready(Vec<u8>),
     Queued(RequestId, Duration),
     Unavailable,
@@ -243,6 +245,7 @@ pub struct Hosting {
     pub hifi_token: String,
     pub tidal_token: String,
     pub tidal_api: String,
+    pub images: String,
     pub manifests: MediaHosts,
 }
 
@@ -253,6 +256,7 @@ impl Hosting {
             hifi_token: HIFI_TOKEN.to_owned(),
             tidal_token: TIDAL_TOKEN.to_owned(),
             tidal_api: TIDAL_API.to_owned(),
+            images: IMAGES.to_owned(),
             manifests: MediaHosts {
                 scheme: MANIFEST_SCHEME.to_owned(),
                 domain: MANIFEST_DOMAIN.to_owned(),
@@ -262,23 +266,24 @@ impl Hosting {
 }
 
 pub struct HifiApi {
-    asker: Asker,
-    server: String,
+    pub(crate) asker: Asker,
+    pub(crate) server: String,
     hosts: MediaHosts,
     media: Agent,
     patience: Duration,
-    hosted: Option<Hosting>,
-    secret: Option<Keyed>,
+    pub(crate) hosted: Option<Hosting>,
+    pub(crate) secret: Option<Keyed>,
+    pub(crate) images: String,
     tokens: Mutex<Tokens>,
 }
 
-struct Keyed {
+pub(crate) struct Keyed {
     secret: String,
-    relay: Agent,
+    pub(crate) relay: Agent,
 }
 
 impl Keyed {
-    fn bearer(&self) -> String {
+    pub(crate) fn bearer(&self) -> String {
         format!("Bearer {}", self.secret)
     }
 }
@@ -433,6 +438,9 @@ impl HifiApi {
         } else {
             Asker::of_the_listeners_server(source())
         };
+        let images = hosted
+            .as_ref()
+            .map_or_else(|| IMAGES.to_owned(), |hosting| hosting.images.clone());
         Self {
             asker,
             server: server.trim().trim_end_matches('/').to_owned(),
@@ -440,8 +448,16 @@ impl HifiApi {
             media: media_agent(),
             patience: QUEUED_FOR_AT_MOST,
             hosted,
+            images,
             secret: None,
             tokens: Mutex::new(Tokens::default()),
+        }
+    }
+
+    pub fn pictured_from(self, images: &str) -> Self {
+        Self {
+            images: images.to_owned(),
+            ..self
         }
     }
 
@@ -449,7 +465,7 @@ impl HifiApi {
         Self { patience, ..self }
     }
 
-    fn refusal(&self, op: ProviderOp, status: u16) -> Error {
+    pub(crate) fn refusal(&self, op: ProviderOp, status: u16) -> Error {
         let provider = self.asker.source.clone();
         if status == UNAUTHORISED {
             Error::Unwelcome {
@@ -466,7 +482,12 @@ impl HifiApi {
         }
     }
 
-    fn token(&self, op: ProviderOp, endpoint: &str, service: TokenService) -> Result<String> {
+    pub(crate) fn token(
+        &self,
+        op: ProviderOp,
+        endpoint: &str,
+        service: TokenService,
+    ) -> Result<String> {
         let now = Instant::now();
         let cached = {
             let tokens = self.tokens.lock();
@@ -569,7 +590,15 @@ impl HifiApi {
         Ok(listed.items)
     }
 
-    fn hosted_delivery(&self, hosting: &Hosting, track: TrackId) -> Result<Option<Delivery>> {
+    pub(crate) fn player(&self) -> Player<'_> {
+        Player {
+            source: &self.asker.source,
+            hosts: &self.hosts,
+            media: &self.media,
+        }
+    }
+
+    pub(crate) fn hosted_media(&self, hosting: &Hosting, track: TrackId) -> Result<Option<Media>> {
         let op = ProviderOp::Playback;
         let bearer = self.token(op, &hosting.hifi_token, TokenService::Hifi)?;
         let url = format!(
@@ -622,15 +651,11 @@ impl HifiApi {
             .trim()
             .to_owned();
         let manifest = self.asker.read_whole(op, response)?;
-        Player {
-            source: &self.asker.source,
-            hosts: &self.hosts,
-            media: &self.media,
-        }
-        .delivered_manifest(track, &attributes.track_presentation, &mime, &manifest)
+        self.player()
+            .media_in_manifest(track, &attributes.track_presentation, &mime, &manifest)
     }
 
-    fn asked(&self, op: ProviderOp, url: &str) -> Result<Answered> {
+    pub(crate) fn asked(&self, op: ProviderOp, url: &str) -> Result<Answered> {
         let sent = self.asker.sent(op, || {
             let request = self.asker.agent.get(url);
             match &self.secret {
@@ -682,7 +707,7 @@ impl HifiApi {
         }
     }
 
-    fn waited_out(&self, op: ProviderOp, asked: Answered) -> Result<Option<Vec<u8>>> {
+    pub(crate) fn waited_out(&self, op: ProviderOp, asked: Answered) -> Result<Option<Vec<u8>>> {
         let until = Instant::now() + self.patience;
         let mut answered = asked;
         loop {
@@ -732,11 +757,18 @@ impl Finds for HifiApi {
     }
 
     fn delivered(&self, track: TrackId) -> Result<Option<Delivery>> {
-        if let Some(hosting) = &self.hosted {
-            return self.hosted_delivery(hosting, track);
-        }
         if let Some(keyed) = &self.secret {
             return self.relayed(keyed, track).map(Some);
+        }
+        let media = self.media(track)?;
+        self.player().delivered_media(track, media)
+    }
+}
+
+impl HifiApi {
+    pub(crate) fn media(&self, track: TrackId) -> Result<Option<Media>> {
+        if let Some(hosting) = &self.hosted {
+            return self.hosted_media(hosting, track);
         }
         let op = ProviderOp::Playback;
         let url = format!(
@@ -748,12 +780,7 @@ impl Finds for HifiApi {
             return Ok(None);
         };
         let playback: Wrapped<Playback> = self.asker.parsed(op, &bytes)?;
-        Player {
-            source: &self.asker.source,
-            hosts: &self.hosts,
-            media: &self.media,
-        }
-        .delivered(track, &playback.data)
+        self.player().media_in(track, &playback.data)
     }
 }
 

@@ -309,9 +309,10 @@ pub(crate) fn failure_of(provider: MusicProvider, error: &resonate_providers::Er
         Refusal::StillQueued { .. } | Refusal::StillArriving { .. } | Refusal::Busy { .. } => {
             Error::ProviderAway { provider }
         }
-        Refusal::Unreadable { .. } | Refusal::OffItsHosts { .. } | Refusal::NotAnExtension => {
-            Error::ProviderUnreadable { provider }
-        }
+        Refusal::Unreadable { .. }
+        | Refusal::OffItsHosts { .. }
+        | Refusal::NotOffered { .. }
+        | Refusal::NotAnExtension => Error::ProviderUnreadable { provider },
         Refusal::AuthorizationLapsed { .. } => Error::SignInLapsed { provider },
         Refusal::AuthorizationDenied { .. } => Error::SignInDenied { provider },
     }

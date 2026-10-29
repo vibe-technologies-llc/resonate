@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use resonate_core::MediaLocation;
+use resonate_core::{MediaLocation, SourceId};
 use resonate_providers::Result;
 
 use crate::settings::Online;
@@ -46,6 +46,10 @@ pub struct ServedFound {
 }
 
 pub trait Serves: Send + Sync {
+    fn scheme(&self) -> &SourceId;
+
+    fn title(&self) -> &str;
+
     fn names(&self, location: &MediaLocation) -> bool;
 
     fn artists(&self) -> Result<Vec<ServedArtist>>;
@@ -61,7 +65,7 @@ pub trait Serves: Send + Sync {
     fn cover(&self, of: &MediaLocation, known: Option<&ServedCover>, side: u32) -> Result<Vec<u8>>;
 }
 
-type Opening = dyn Fn(&Online) -> Option<Arc<dyn Serves>> + Send + Sync;
+type Opening = dyn Fn(&Online) -> Vec<Arc<dyn Serves>> + Send + Sync;
 
 #[derive(Clone)]
 pub struct Serving {
@@ -69,17 +73,17 @@ pub struct Serving {
 }
 
 impl Serving {
-    pub fn new(opens: impl Fn(&Online) -> Option<Arc<dyn Serves>> + Send + Sync + 'static) -> Self {
+    pub fn new(opens: impl Fn(&Online) -> Vec<Arc<dyn Serves>> + Send + Sync + 'static) -> Self {
         Self {
             opens: Arc::new(opens),
         }
     }
 
     pub fn none() -> Self {
-        Self::new(|_| None)
+        Self::new(|_| Vec::new())
     }
 
-    pub fn opened(&self, online: &Online) -> Option<Arc<dyn Serves>> {
+    pub fn opened(&self, online: &Online) -> Vec<Arc<dyn Serves>> {
         (self.opens)(online)
     }
 }

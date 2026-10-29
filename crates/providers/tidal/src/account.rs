@@ -41,6 +41,7 @@ pub struct Endpoints {
     pub device: String,
     pub api: String,
     pub openapi: String,
+    pub images: String,
     pub media: MediaHosts,
 }
 
@@ -51,6 +52,7 @@ impl Endpoints {
             device: DEVICE.to_owned(),
             api: API.to_owned(),
             openapi: OPENAPI.to_owned(),
+            images: crate::catalog::IMAGES.to_owned(),
             media: MediaHosts::tidal(),
         }
     }

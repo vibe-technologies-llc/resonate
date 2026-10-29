@@ -1,6 +1,6 @@
 use std::{
     env,
-    io::{BufRead, BufReader, Read, Write},
+    io::{BufRead, BufReader, Read, Seek, SeekFrom, Write},
     net::{TcpListener, TcpStream},
     num::NonZeroUsize,
     sync::{
@@ -16,8 +16,8 @@ use parking_lot::Mutex;
 use resonate_core::{Isrc, Link, MediaLocation};
 use resonate_fetch::RESUMES_AT_MOST;
 use resonate_providers::{
-    Authorizing, Client, Delivery, Error, Held, Identity, Obtained, Opened, Opening, Provider,
-    ProviderOp, Reopened, SignsIn,
+    Authorizing, Client, Delivery, Error, Held, Identity, Obtained, Opened, Opening, PlaysInPlace,
+    Provider, ProviderOp, Reopened, SignsIn,
 };
 use resonate_tidal::{Account, Endpoints, HifiApi, Hosting, MediaHosts, Tidal, TidalSignIn};
 
@@ -117,6 +117,7 @@ impl Fake {
                 device: format!("{}/auth/device", self.url),
                 api: format!("{}/api/", self.url),
                 openapi: format!("{}/openapi/", self.url),
+                images: format!("{}/images/", self.url),
                 media: MediaHosts {
                     scheme: "http".to_owned(),
                     domain: "127.0.0.1".to_owned(),
@@ -142,6 +143,7 @@ impl Fake {
                 hifi_token: format!("{}/hifi/token", self.url),
                 tidal_token: format!("{}/tidal/token", self.url),
                 tidal_api: format!("{}/v1/", self.url),
+                images: format!("{}/images/", self.url),
                 manifests,
             },
             on_loopback(),
@@ -724,6 +726,26 @@ fn a_dash_stream_is_fetched_segments_ahead_and_read_in_order() {
         .collect();
     asked.sort_unstable();
     assert_eq!(asked, (0..=last).collect::<Vec<_>>());
+}
+
+#[test]
+fn a_dash_song_played_in_place_is_read_onward_as_native_flac_and_never_seeks() {
+    let fake = tidal_server("FULL", on_itself, whole_segment);
+
+    let mut streamed = PlaysInPlace::streamed(
+        &fake.tidal(),
+        &resonate_providers::Id::new(&TRACK.to_string()).expect("an id"),
+    )
+    .expect("a stream");
+    let mut bytes = Vec::new();
+    streamed.read_to_end(&mut bytes).expect("the stream reads");
+    let refused = streamed.seek(SeekFrom::Start(0));
+
+    assert!(!streamed.is_seekable());
+    assert_eq!(streamed.length(), None);
+    assert_eq!(streamed.media_type.as_deref(), Some("audio/flac"));
+    assert_native_flac(&bytes);
+    assert!(refused.is_err());
 }
 
 #[test]

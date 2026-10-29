@@ -1,14 +1,15 @@
 use std::{sync::Arc, time::Duration};
 
-use resonate_core::SourceId;
+use resonate_core::{MediaLocation, SourceId};
 pub use resonate_fetch::Patience;
 use resonate_fetch::{
-    ASKED_LATER, Ranged, Trusted, asking_agent, asking_to_resume, configured, downloading_agent,
-    escaped, is_a_document, retry_after_of, unreached,
+    ASKED_LATER, Ranged, Seeking, Trusted, asking_agent, asking_to_resume, configured,
+    downloading_agent, escaped, is_a_document, retry_after_of, unreached,
 };
 use resonate_providers::{
-    Choosing, Delivery, Error, Extension, Held, Identity, Listed, Obtained, Opening, Pacing,
-    Provider, ProviderOp, Reopened, Result, is_a_page,
+    AlbumSongs, Artist, ArtistAlbums, Choosing, Delivery, Error, Extension, Found, Held, Id,
+    Identity, Listed, Named, Obtained, Opening, Pacing, PlaysInPlace, Provider, ProviderOp,
+    Reopened, Result, Song, Streamed, is_a_page, not_offered,
 };
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
@@ -339,6 +340,89 @@ impl Provider for Monochrome {
             extension: Extension::new(DELIVERED_AS)?,
             opening: Opening::resumable(move |held| downloading.downloaded(&track, held)),
         }))
+    }
+}
+
+impl Listing {
+    fn song(&self) -> Option<Song> {
+        if self.playable == Some(false) {
+            return None;
+        }
+        let track = self.track()?;
+        Some(Song {
+            title: self.title.clone().unwrap_or_default(),
+            artist: (!self.artist_names.is_empty()).then(|| self.artist_names.join(", ")),
+            length: self.duration.map(Duration::from_millis),
+            suffix: Some(DELIVERED_AS.to_owned()),
+            ..Song::only(Id::new(&track.0)?)
+        })
+    }
+}
+
+impl PlaysInPlace for Monochrome {
+    fn scheme(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn title(&self) -> &'static str {
+        "Monochrome"
+    }
+
+    fn artists(&self) -> Result<Vec<Artist>> {
+        Ok(Vec::new())
+    }
+
+    fn artist(&self, _id: &Id) -> Result<ArtistAlbums> {
+        Err(not_offered(&self.source, ProviderOp::Browse))
+    }
+
+    fn album(&self, _id: &Id) -> Result<AlbumSongs> {
+        Err(not_offered(&self.source, ProviderOp::Browse))
+    }
+
+    fn search(&self, words: &str) -> Result<Found> {
+        Ok(Found {
+            songs: self
+                .searched(words)?
+                .iter()
+                .filter_map(Listing::song)
+                .collect(),
+            ..Found::default()
+        })
+    }
+
+    fn streamed(&self, song: &Id) -> Result<Streamed> {
+        let op = ProviderOp::Stream;
+        let track = TrackId::read(song.as_str()).ok_or_else(|| self.unreadable(op))?;
+        let url = self.track_url(&track);
+        let response = self.called(&self.downloading, op, &url)?;
+        let media_type = response.body().mime_type().map(str::to_owned);
+        if is_a_document(media_type.as_deref()) {
+            return Err(self.unreadable(op));
+        }
+        let reader = Seeking::continuing(
+            self.downloading.clone(),
+            url,
+            response,
+            self.patience.resumed_after,
+        );
+        let length = reader.length();
+        Ok(Streamed::seeking(reader, length, media_type))
+    }
+
+    fn cover(&self, _cover: &Id, _side: u32) -> Result<Vec<u8>> {
+        Err(not_offered(&self.source, ProviderOp::Cover))
+    }
+
+    fn cover_of(&self, _named: &Named) -> Result<Id> {
+        Err(not_offered(&self.source, ProviderOp::Cover))
+    }
+
+    fn named_by(&self, location: &MediaLocation) -> Option<Named> {
+        match Named::read(location, &self.source)? {
+            Named::Song(id) => Some(Named::Song(id)),
+            Named::Album(_) | Named::Artist(_) => None,
+        }
     }
 }
 

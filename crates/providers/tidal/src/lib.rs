@@ -1,7 +1,9 @@
 mod account;
 mod asker;
+mod catalog;
 mod fetched;
 mod hifi;
+mod hifi_served;
 mod manifest;
 mod played;
 mod remux;
@@ -14,7 +16,8 @@ use parking_lot::Mutex;
 use resonate_core::{Isrc, SourceId};
 use resonate_fetch::escaped;
 use resonate_providers::{
-    Choosing, Delivery, Error, Identity, Obtained, Provider, ProviderOp, RefreshToken, Result,
+    AlbumSongs, Artist, ArtistAlbums, Choosing, Delivery, Error, Found, Id, Identity, Named,
+    Obtained, PlaysInPlace, Provider, ProviderOp, RefreshToken, Result, Streamed,
 };
 use serde::Deserialize;
 use ureq::{
@@ -36,6 +39,7 @@ pub use crate::{
 };
 use crate::{
     asker::{Asker, Sent, media_agent},
+    catalog::AsksV1,
     played::{Finds, Playback, Player, TrackId, named_by},
     searched::Searched,
 };
@@ -428,6 +432,19 @@ impl Tidal {
     }
 
     fn delivery(&self, track: TrackId) -> Result<Option<Delivery>> {
+        let media = self.media(track)?;
+        self.player().delivered_media(track, media)
+    }
+
+    fn player(&self) -> Player<'_> {
+        Player {
+            source: &self.asker.source,
+            hosts: &self.endpoints.media,
+            media: &self.media,
+        }
+    }
+
+    fn media(&self, track: TrackId) -> Result<Option<manifest::Media>> {
         let op = ProviderOp::Playback;
         let asked = self.asked(
             op,
@@ -443,12 +460,73 @@ impl Tidal {
             return Ok(None);
         };
         let playback: Playback = self.asker.parsed(op, &bytes)?;
-        Player {
-            source: &self.asker.source,
-            hosts: &self.endpoints.media,
-            media: &self.media,
+        self.player().media_in(track, &playback)
+    }
+}
+
+impl AsksV1 for Tidal {
+    fn provider(&self) -> &SourceId {
+        &self.asker.source
+    }
+
+    fn v1(&self, op: ProviderOp, path: &str) -> Result<Option<Vec<u8>>> {
+        let joined = if path.contains('?') { '&' } else { '?' };
+        match self.asked(
+            op,
+            |country| format!("{}{path}{joined}countryCode={country}", self.endpoints.api),
+            None,
+        )? {
+            Asked::Answered(bytes) => Ok(Some(bytes)),
+            Asked::Unavailable => Ok(None),
         }
-        .delivered(track, &playback)
+    }
+
+    fn read<T: serde::de::DeserializeOwned>(&self, op: ProviderOp, bytes: &[u8]) -> Result<T> {
+        self.asker.parsed(op, bytes)
+    }
+}
+
+impl PlaysInPlace for Tidal {
+    fn scheme(&self) -> &SourceId {
+        &self.asker.source
+    }
+
+    fn title(&self) -> &'static str {
+        "TIDAL"
+    }
+
+    fn artists(&self) -> Result<Vec<Artist>> {
+        Ok(Vec::new())
+    }
+
+    fn artist(&self, id: &Id) -> Result<ArtistAlbums> {
+        self.artist_albums(id)
+    }
+
+    fn album(&self, id: &Id) -> Result<AlbumSongs> {
+        self.album_songs(id)
+    }
+
+    fn search(&self, words: &str) -> Result<Found> {
+        self.searched(words)
+    }
+
+    fn streamed(&self, song: &Id) -> Result<Streamed> {
+        let track = TrackId(catalog::track_id(
+            &self.asker.source,
+            ProviderOp::Stream,
+            song,
+        )?);
+        let media = self.media(track)?;
+        self.player().streamed(media)
+    }
+
+    fn cover(&self, cover: &Id, side: u32) -> Result<Vec<u8>> {
+        self.asker.picture(&self.endpoints.images, cover, side)
+    }
+
+    fn cover_of(&self, named: &Named) -> Result<Id> {
+        self.cover_named(named)
     }
 }
 
