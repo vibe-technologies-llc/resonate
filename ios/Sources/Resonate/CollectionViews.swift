@@ -89,13 +89,14 @@ struct LibraryView: View {
                         FavouritesCountRow()
                     }
                     if folded.isEmpty {
-                        NavigationLink(value: Destination.songs) {
-                            SongsCountRow()
-                        }
-                        .simultaneousGesture(TapGesture().onEnded {
+                        Button {
                             if library.filtering { library.setFilter(Library.everything) }
                             navigation.songsGrouping = .songs
-                        })
+                            navigation.open(.songs)
+                        } label: {
+                            SongsCountRow()
+                        }
+                        .buttonStyle(.plain)
                         NavigationLink(value: Destination.suggestions) {
                             SuggestionsRow()
                         }
@@ -284,6 +285,9 @@ struct AllSongsRow: View {
                 Text("All songs").font(.body.weight(.medium))
                 Text(counted(count, "song")).font(.subheadline).foregroundStyle(.secondary)
             }
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
         }
         .contentShape(.rect)
         .accessibilityElement(children: .combine)

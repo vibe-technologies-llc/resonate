@@ -656,8 +656,9 @@ every route change (a pair of headphones at the same rate included), not from th
   the catalog no longer holds, an album `album(key)` no longer finds, an artist with no songs or a
   playlist gone (`Library.gone`, on `Work.aside`) cuts its stack at that page, since every page above
   it was reached through it. A failed read cuts nothing: a catalog read that fails resumes `wholeCatalog`'s waiters with nothing cut. Now Playing and the sheets are not kept.
-- **The Library tab's *All songs*** is a navigation link to the Songs page, so it carries the
-  disclosure arrow its neighbours do; a simultaneous tap clears any filter or mix and shows songs.
+- **The Library tab's *All songs*** is a plain `Button` (the row draws its own chevron, as its
+  neighbours' links do) that clears any filter or mix, shows songs and opens the Songs page: a
+  `simultaneousGesture` tap on a `NavigationLink` there left a tap on the tile doing nothing.
   **Its rows' icons are one kind of tile** (`ShelfTile`: a white symbol at `.title2` centred on a
   corner-to-corner gradient of two system colours, 56 pt scaled): Favourites pink and purple, All
   songs orange and red, Suggestions teal and blue, Statistics indigo and blue. The tile takes no touch
