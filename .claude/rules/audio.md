@@ -1312,7 +1312,12 @@ Invariants from file to sink. Callback contract: `realtime.md`.
 - **A test graph pulls at most eight times real time** (`Graph::pause_after_pulling`, in `play_until`):
   a ring dry mid-track pads the quantum with silence into what the graph played, so a graph drinking
   a 200 ms ring faster than the engine's 4 ms tick refills it turned a late tick on a loaded machine
-  into dropped or padded frames in the byte-exact tests.
+  into dropped or padded frames in the byte-exact tests. **A test asserting a DoP stream byte for
+  byte pulls at real time** (`play_paced_until`, `PADDED_RINGS_PULLED_TIMES_REAL_TIME`): at eight
+  times, the 100 ms ring lasts 12.5 ms of wall time, under the engine's `PUBLISH_TICK` (16 ms), so
+  one full tick on a loaded machine ran the ring dry and its underrun pad (marked silence, kept for a
+  DAC's lock) landed between the rows
+  (`dop_rows_play_on_through_one_stream_with_no_drain_no_gap_and_the_marker_unbroken_across_them`).
 - **A test that asserts what the engine does after a command waits for the engine, not for audio
   time.** The graph's pulled frames are a clock the engine's wall time does not follow, so a
   window of pulled frames closes before a starved engine thread has acted. Waiting is on a
