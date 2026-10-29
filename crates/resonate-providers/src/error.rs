@@ -75,6 +75,9 @@ pub enum Error {
     )]
     Busy { provider: SourceId, op: ProviderOp },
 
+    #[error("{op:?} is not offered by the {provider} provider")]
+    NotOffered { provider: SourceId, op: ProviderOp },
+
     #[error("{file:?} is still arriving in the {provider} provider and is asked for again later")]
     StillArriving { provider: SourceId, file: PathBuf },
 
@@ -116,6 +119,7 @@ impl Error {
             | Self::OffItsHosts { .. }
             | Self::StillArriving { .. }
             | Self::Busy { .. }
+            | Self::NotOffered { .. }
             | Self::AuthorizationLapsed { .. }
             | Self::AuthorizationDenied { .. }
             | Self::NotAnExtension => false,

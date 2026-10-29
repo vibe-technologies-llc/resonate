@@ -231,9 +231,19 @@ impl Ranged {
         from: u64,
         resumed_after: Duration,
     ) -> Result<Self, Unfetched> {
+        Self::opened_bearing(agent, url, from, None, resumed_after)
+    }
+
+    pub fn opened_bearing(
+        agent: Agent,
+        url: String,
+        from: u64,
+        bearer: Option<String>,
+        resumed_after: Duration,
+    ) -> Result<Self, Unfetched> {
         let mut tried = 0;
         let answered = loop {
-            match asked(&agent, &url, from, None) {
+            match asked(&agent, &url, from, bearer.as_deref()) {
                 Ok(answered) => break answered,
                 Err(Unfetched::AskedLater { asked_for, .. }) if tried < RESUMES_AT_MOST => {
                     tried += 1;
@@ -252,7 +262,7 @@ impl Ranged {
         Ok(Self {
             agent,
             url,
-            bearer: None,
+            bearer,
             reader: answered.reader,
             length: answered.length,
             validator: None,

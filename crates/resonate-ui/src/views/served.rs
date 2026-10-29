@@ -42,6 +42,12 @@ pub(crate) const SEARCH_PLACEHOLDER: &str = "Search the server, then press enter
 
 const NOTHING_HERE: &str = "The server holds nothing here.";
 
+const NOTHING_LISTED: &str = "This service lists nothing until it is asked.";
+
+const SEARCH_FIRST: &str = "Search it above for an artist, an album or a song.";
+
+const CHOOSE_HINT: &str = "Browse this service";
+
 const NOTHING_FOUND: &str = "The server found nothing for that.";
 
 const ASKING: &str = "Asking the server…";
@@ -61,14 +67,13 @@ impl RootView {
         let body = match page {
             Page::Reading => kit::empty(Icon::Server, ASKING, None),
             Page::Failed(failure) => self.server_failed(failure, cx),
-            Page::Read(rows) if rows.is_empty() => kit::empty(
-                Icon::Server,
-                match place {
-                    Place::Found { .. } => NOTHING_FOUND,
-                    Place::Artists | Place::Artist { .. } | Place::Album { .. } => NOTHING_HERE,
-                },
-                None,
-            ),
+            Page::Read(rows) if rows.is_empty() => match place {
+                Place::Found { .. } => kit::empty(Icon::Server, NOTHING_FOUND, None),
+                Place::Artists => kit::empty(Icon::Server, NOTHING_LISTED, Some(SEARCH_FIRST)),
+                Place::Artist { .. } | Place::Album { .. } => {
+                    kit::empty(Icon::Server, NOTHING_HERE, None)
+                }
+            },
             Page::Read(rows) => self.server_rows_listed(rows, place, cx),
         };
 
@@ -133,18 +138,33 @@ impl RootView {
         }
         actions = actions.child(self.server_search_field(cx));
 
-        let heading = kit::heading().when_some(way_back, |heading, name| {
-            heading.child(self.in_the_pane_ring(
-                kit::way_back("server-back", name, BACK_HINT),
-                |this, _, cx| {
-                    this.server.update(cx, |server, cx| {
-                        server.back(cx);
-                    });
-                    this.server_search.update(cx, |field, cx| field.clear(cx));
-                },
-                cx,
-            ))
-        });
+        let model = self.server.read(cx);
+        let titles = model.titles();
+        let chosen = model.chosen();
+        let eyebrow = match place {
+            Place::Artists => titles
+                .get(chosen)
+                .map_or_else(|| place.eyebrow().to_owned(), |title| title.to_uppercase()),
+            Place::Artist { .. } | Place::Album { .. } | Place::Found { .. } => {
+                place.eyebrow().to_owned()
+            }
+        };
+        let chooser = (titles.len() > 1).then(|| self.service_chooser(&titles, chosen, cx));
+
+        let heading = kit::heading()
+            .when_some(chooser, |heading, chooser| heading.child(chooser))
+            .when_some(way_back, |heading, name| {
+                heading.child(self.in_the_pane_ring(
+                    kit::way_back("server-back", name, BACK_HINT),
+                    |this, _, cx| {
+                        this.server.update(cx, |server, cx| {
+                            server.back(cx);
+                        });
+                        this.server_search.update(cx, |field, cx| field.clear(cx));
+                    },
+                    cx,
+                ))
+            });
 
         heading.child(
             kit::heading_row()
@@ -155,7 +175,7 @@ impl RootView {
                         .flex_1()
                         .min_w(theme::width(theme::heading_name()))
                         .gap_1()
-                        .child(kit::eyebrow(place.eyebrow()))
+                        .child(kit::eyebrow(eyebrow))
                         .child(kit::title(SharedString::from(place.title())))
                         .when_some(counted, |column, counted| {
                             column.child(kit::subtitle(SharedString::from(counted)))
@@ -163,6 +183,26 @@ impl RootView {
                 )
                 .child(actions),
         )
+    }
+
+    fn service_chooser(&self, titles: &[String], chosen: usize, cx: &mut Context<Self>) -> Div {
+        titles
+            .iter()
+            .enumerate()
+            .fold(kit::segmented(), |chooser, (index, title)| {
+                chooser.child(
+                    self.in_the_pane_ring(
+                        kit::segment(("served-service", index), title.clone(), index == chosen)
+                            .names(CHOOSE_HINT),
+                        move |this, _, cx| {
+                            this.server
+                                .update(cx, |server, cx| server.choose(index, cx));
+                            this.server_search.update(cx, |field, cx| field.clear(cx));
+                        },
+                        cx,
+                    ),
+                )
+            })
     }
 
     fn server_search_field(&self, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -615,6 +655,7 @@ mod tests {
     use std::time::Duration;
 
     use gpui::TestAppContext;
+    use resonate_core::SourceId;
     use resonate_providers::{Error, ProviderOp, Result};
 
     use super::*;
@@ -627,6 +668,10 @@ mod tests {
 
     fn at(key: &str) -> MediaLocation {
         MediaLocation::from_uri(&format!("subsonic:{key}")).expect("a subsonic location")
+    }
+
+    fn subsonic() -> SourceId {
+        SourceId::new("subsonic").expect("a source")
     }
 
     fn song(id: &str, title: &str, track: u32) -> ServedSong {
@@ -645,6 +690,15 @@ mod tests {
     struct Held;
 
     impl Serves for Held {
+        fn scheme(&self) -> &SourceId {
+            static SUBSONIC: std::sync::LazyLock<SourceId> = std::sync::LazyLock::new(subsonic);
+            &SUBSONIC
+        }
+
+        fn title(&self) -> &str {
+            "Subsonic"
+        }
+
         fn names(&self, location: &MediaLocation) -> bool {
             location.to_uri().starts_with("subsonic:")
         }
@@ -690,6 +744,57 @@ mod tests {
         fn cover(&self, _: &MediaLocation, _: Option<&ServedCover>, _: u32) -> Result<Vec<u8>> {
             Err(Error::Unreadable {
                 provider: resonate_core::SourceId::new("subsonic").expect("a source"),
+                op: ProviderOp::Cover,
+            })
+        }
+    }
+
+    struct Searched;
+
+    impl Serves for Searched {
+        fn scheme(&self) -> &SourceId {
+            static TIDAL: std::sync::LazyLock<SourceId> =
+                std::sync::LazyLock::new(|| SourceId::new("tidal").expect("a source"));
+            &TIDAL
+        }
+
+        fn title(&self) -> &str {
+            "TIDAL"
+        }
+
+        fn names(&self, location: &MediaLocation) -> bool {
+            location.source() == self.scheme()
+        }
+
+        fn artists(&self) -> Result<Vec<ServedArtist>> {
+            Ok(Vec::new())
+        }
+
+        fn albums_of(&self, _: &MediaLocation) -> Result<Vec<ServedAlbum>> {
+            Ok(Vec::new())
+        }
+
+        fn songs_of(&self, _: &MediaLocation) -> Result<Vec<ServedSong>> {
+            Ok(Vec::new())
+        }
+
+        fn search(&self, _: &str) -> Result<ServedFound> {
+            Ok(ServedFound {
+                songs: vec![ServedSong {
+                    location: MediaLocation::from_uri("tidal:track/11").expect("a location"),
+                    ..song("so-1", "One of These Days", 1)
+                }],
+                ..ServedFound::default()
+            })
+        }
+
+        fn expand(&self, named: &MediaLocation) -> Result<Vec<MediaLocation>> {
+            Ok(vec![named.clone()])
+        }
+
+        fn cover(&self, _: &MediaLocation, _: Option<&ServedCover>, _: u32) -> Result<Vec<u8>> {
+            Err(Error::NotOffered {
+                provider: self.scheme().clone(),
                 op: ProviderOp::Cover,
             })
         }
@@ -761,11 +866,11 @@ mod tests {
     fn the_server_is_a_pane_only_while_an_account_is_given_and_online_is_on(
         cx: &mut TestAppContext,
     ) {
-        let mut driven = Driven::serving(cx, Arc::new(Held), Online::default());
+        let mut driven = Driven::serving(cx, vec![Arc::new(Held)], Online::default());
 
         assert!(!driven.read(|root, cx| root.server.read(cx).is_open()));
 
-        let mut driven = Driven::serving(cx, Arc::new(Held), an_account());
+        let mut driven = Driven::serving(cx, vec![Arc::new(Held)], an_account());
         assert!(driven.read(|root, cx| root.server.read(cx).is_open()));
 
         driven.click("tab-server");
@@ -776,7 +881,7 @@ mod tests {
     fn an_artist_opens_to_its_albums_and_an_album_to_its_songs_and_a_song_plays_the_album_from_it(
         cx: &mut TestAppContext,
     ) {
-        let mut driven = Driven::serving(cx, Arc::new(Held), an_account());
+        let mut driven = Driven::serving(cx, vec![Arc::new(Held)], an_account());
         driven.click("tab-server");
         driven.until(|root, cx| matches!(root.server.read(cx).page(), Page::Read(_)));
 
@@ -802,5 +907,53 @@ mod tests {
                 .collect::<Vec<_>>()
         });
         assert_eq!(queued, ["subsonic:track/so-1", "subsonic:track/so-2"]);
+    }
+
+    #[gpui::test]
+    fn two_services_are_chosen_between_in_the_pane_and_a_song_found_on_the_second_plays_from_it(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven =
+            Driven::serving(cx, vec![Arc::new(Held), Arc::new(Searched)], an_account());
+        driven.click("tab-server");
+        driven.until(
+            |root, cx| matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 1),
+        );
+
+        driven.click("served-service-1");
+        driven.until(|root, cx| {
+            root.server.read(cx).chosen() == 1
+                && matches!(root.server.read(cx).page(), Page::Read(rows) if rows.is_empty())
+        });
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.server.update(cx, |server, cx| {
+                server.open(
+                    Place::Found {
+                        words: "days".to_owned(),
+                    },
+                    cx,
+                )
+            });
+        });
+        driven.until(
+            |root, cx| matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 2),
+        );
+        driven.click("server-row-1");
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
+
+        let queued = driven.read(|root, cx| root.player.read(cx).queue()[0].location.to_uri());
+        let named = driven.read(|root, cx| {
+            let server = root.server.read(cx);
+            (
+                server.names(&at("track/so-1")),
+                server.names(&MediaLocation::from_uri("tidal:track/11").expect("a location")),
+                server.titles(),
+            )
+        });
+        assert_eq!(queued, "tidal:track/11");
+        assert_eq!(
+            named,
+            (true, true, vec!["Subsonic".to_owned(), "TIDAL".to_owned()])
+        );
     }
 }

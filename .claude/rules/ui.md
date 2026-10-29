@@ -1215,12 +1215,12 @@ is never named.
   held rows with `ListedRow::NotHeld` (*Not in your library · N songs · press one to download it*) and
   a `found_row` per song (press = `want_found`) via `restate_the_listing`/`beyond_the_listing`, which
   answers nothing until the listing is whole; a page query narrows them via `still_answering`.
-- **The server pane browses a Subsonic server in place and is there only while one is given.**
+- **The server pane browses whichever services play in place and is there only while one is set.**
   `Pane::Server` (`Section::Collection`, `Icon::Server`, key `server`) is drawn in the sidebar, and
-  `set_pane` lands on it, only while `ServerModel::is_open` (an account named in the live `Online`
-  with online on); the remembered tab never lands on it at start. The window reaches the server
-  through the `Serving` seam on `Lookups` (`ResonateApp::serving`): a `Fn(&Online) ->
-  Option<Arc<dyn Serves>>` the binary fills (`providers.md`), and `Serves` is gpui-free vocabulary
+  `set_pane` lands on it, only while `ServerModel::is_open` (a service the live `Online` sets, online
+  on); the remembered tab never lands on it at start. The window reaches the services through the
+  `Serving` seam on `Lookups` (`ResonateApp::serving`): a `Fn(&Online) -> Vec<Arc<dyn Serves>>` the
+  binary fills (`providers.md`), each `Serves` naming its `scheme` and `title`; `Serves` is gpui-free vocabulary
   (`served.rs`: `ServedArtist`, `ServedAlbum`, `ServedSong`, `ServedFound`, `ServedCover`, every
   call a blocking `resonate_providers::Result`), so the window names no provider crate's types.
   `ServerModel` (`serving.rs`) is an entity held by `RootView`: a trail of `Place`s (`Artists`,
@@ -1228,8 +1228,13 @@ is never named.
   `Failure`: the account turned away, the server not reached, an answer that did not read, each
   with what to check) read on the background executor and replaced if a newer read began, and
   `refresh`, which `observe_global::<ResonateApp>` calls on every change of the global and which
-  does nothing unless the account moved; a moved account starts at the artists again and forgets
-  the covers. The pane (`views/served.rs`) is a heading (way back, title, the count, *Play* and
+  does nothing unless the services moved (the same `Arc`s in the same order); moved services start
+  at the artists again on the service chosen before where it is still set, else the first, and
+  forget the covers. **With several services a chooser heads the pane**: a `kit::segmented` of
+  their titles (`served-service-<n>`, `ServerModel::choose`), the first page's eyebrow the chosen
+  one's title; a choice starts at its artists and clears the search. A service that lists nothing
+  unasked opens on *This service lists nothing until it is asked* and the search
+  (`two_services_are_chosen_between_in_the_pane_and_a_song_found_on_the_second_plays_from_it`). The pane (`views/served.rs`) is a heading (way back, title, the count, *Play* and
   *Add to queue* on an artist or album, and a search `Field` that asks the server on enter and an
   empty enter leaves the search) over one `uniform_list` of rows; a row is a cover, a title with its
   line under it, a figure, and three marks (play, play next, add to queue). A press opens an artist
@@ -1240,8 +1245,9 @@ is never named.
   is only ever asked for what the pane shows: nothing is read until the pane is opened
   (`a_server_is_a_pane_only_while_an_account_is_given_and_online_is_on`,
   `an_artist_opens_to_its_albums_and_an_album_to_its_songs_and_a_song_plays_the_album_from_it`).
-- **A served song's cover is the server's.** A cover cell for a row whose location the server names
-  (`ServerModel::names`) draws `ServerModel::cover`, not `Player::art`, in `drawn_cover` and
+- **A served song's cover is its service's.** A cover cell for a row whose location any service
+  names (`ServerModel::names`) draws `ServerModel::cover` from the service that names it (keyed by
+  scheme and cover name), not `Player::art`, in `drawn_cover` and
   `is_pictureless`, so the queue, the playback bar and the pane draw one picture: a row's own
   `ServedCover` where the browse gave one, else the song's (the model asks `Serves::cover` with no
   name and the adapter asks the server what a song's is), fetched on the background executor

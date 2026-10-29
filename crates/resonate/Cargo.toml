@@ -57,6 +57,7 @@ tracing-subscriber.workspace = true
 unicode-width.workspace = true
 
 [dev-dependencies]
+base64.workspace = true
 png.workspace = true
 rustix = { workspace = true, features = ["pty"] }
 

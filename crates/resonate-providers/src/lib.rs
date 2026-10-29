@@ -1,6 +1,7 @@
 mod delivery;
 mod error;
 mod identity;
+mod in_place;
 mod listing;
 mod pacing;
 mod provider;
@@ -13,6 +14,10 @@ pub use crate::{
     },
     error::{Error, ProviderOp, Result, is_a_page},
     identity::Identity,
+    in_place::{
+        Album, AlbumSongs, Artist, ArtistAlbums, Found, Id, Named, PlaysInPlace, SeekingBytes,
+        Song, Streamed, not_offered,
+    },
     listing::{A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY, Choosing, LENGTHS_AGREE_WITHIN, Listed, Taken},
     pacing::Pacing,
     provider::{

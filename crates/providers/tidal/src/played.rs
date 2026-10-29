@@ -1,6 +1,7 @@
 use resonate_core::{Isrc, MediaLocation, Service, SourceId};
+use resonate_fetch::{Patience, Seeking, unreached};
 use resonate_providers::{
-    Delivery, Error, Extension, Identity, Obtained, Opened, Opening, ProviderOp, Result,
+    Delivery, Error, Extension, Identity, Obtained, Opened, Opening, ProviderOp, Result, Streamed,
 };
 use serde::Deserialize;
 use ureq::Agent;
@@ -14,6 +15,8 @@ use crate::{
 
 const FULL: &str = "FULL";
 const DELIVERED_AS: &str = "flac";
+const STREAMED_AS: &str = "audio/flac";
+const WHOLE: u16 = 200;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct TrackId(pub(crate) u64);
@@ -100,7 +103,7 @@ impl Player<'_> {
         }
     }
 
-    fn media_in(&self, track: TrackId, playback: &Playback) -> Result<Option<Media>> {
+    pub(crate) fn media_in(&self, track: TrackId, playback: &Playback) -> Result<Option<Media>> {
         self.media_from(
             track,
             &playback.asset_presentation,
@@ -142,34 +145,33 @@ impl Player<'_> {
         Ok(Some(media))
     }
 
-    pub(crate) fn delivered(
-        &self,
-        track: TrackId,
-        playback: &Playback,
-    ) -> Result<Option<Delivery>> {
-        let Some(media) = self.media_in(track, playback)? else {
-            return Ok(None);
-        };
-        self.delivery(track, media).map(Some)
-    }
-
-    pub(crate) fn delivered_manifest(
+    pub(crate) fn media_in_manifest(
         &self,
         track: TrackId,
         presentation: &str,
         mime: &str,
         document: &[u8],
-    ) -> Result<Option<Delivery>> {
-        let Some(media) = self.media_from(
+    ) -> Result<Option<Media>> {
+        self.media_from(
             track,
             presentation,
             mime,
             manifest::read_document(mime, document),
-        )?
-        else {
-            return Ok(None);
-        };
-        self.delivery(track, media).map(Some)
+        )
+    }
+
+    pub(crate) fn delivered_media(
+        &self,
+        track: TrackId,
+        media: Option<Media>,
+    ) -> Result<Option<Delivery>> {
+        media.map(|media| self.delivery(track, media)).transpose()
+    }
+
+    pub(crate) fn streamed(&self, media: Option<Media>) -> Result<Streamed> {
+        let op = ProviderOp::Stream;
+        let media = media.ok_or_else(|| resonate_providers::not_offered(self.source, op))?;
+        streamed(self.source, self.media, media)
     }
 
     fn delivery(&self, track: TrackId, media: Media) -> Result<Delivery> {
@@ -178,13 +180,50 @@ impl Player<'_> {
         Ok(Delivery::Stream {
             key: track.key(),
             extension: Extension::new(DELIVERED_AS)?,
-            opening: Opening::new(move || downloaded(&provider, agent, media)),
+            opening: Opening::new(move || {
+                downloaded(&provider, agent, media, ProviderOp::Download)
+            }),
         })
     }
 }
 
-fn downloaded(provider: &SourceId, agent: Agent, media: Media) -> Result<Opened> {
-    let op = ProviderOp::Download;
+fn streamed(provider: &SourceId, agent: &Agent, media: Media) -> Result<Streamed> {
+    let op = ProviderOp::Stream;
+    if let (Container::Flac, [url]) = (media.container, media.urls.as_slice()) {
+        let response = agent
+            .get(url)
+            .call()
+            .map_err(|error| unreached(provider.clone(), op, error))?;
+        let status = response.status().as_u16();
+        if status != WHOLE {
+            return Err(Error::Refused {
+                provider: provider.clone(),
+                op,
+                status,
+            });
+        }
+        let reader = Seeking::continuing(
+            agent.clone(),
+            url.clone(),
+            response,
+            Patience::default().resumed_after,
+        );
+        let length = reader.length();
+        return Ok(Streamed::seeking(
+            reader,
+            length,
+            Some(STREAMED_AS.to_owned()),
+        ));
+    }
+    match downloaded(provider, agent.clone(), media, op)? {
+        Opened::Reading { reader, .. } => {
+            Ok(Streamed::onward(reader, Some(STREAMED_AS.to_owned())))
+        }
+        Opened::Gone => Err(resonate_providers::not_offered(provider, op)),
+    }
+}
+
+fn downloaded(provider: &SourceId, agent: Agent, media: Media, op: ProviderOp) -> Result<Opened> {
     let fetched =
         Fetched::opened(agent, media.urls).map_err(|unfetched| match unfetched.status() {
             Some(status) => Error::Refused {

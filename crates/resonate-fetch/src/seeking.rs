@@ -15,6 +15,7 @@ pub struct Seeking {
     length: Option<u64>,
     at: u64,
     reading: Option<Ranged>,
+    bearer: Option<String>,
     resumed_after: Duration,
 }
 
@@ -32,7 +33,16 @@ impl Seeking {
             length: reading.length(),
             at: 0,
             reading: Some(reading),
+            bearer: None,
             resumed_after,
+        }
+    }
+
+    pub fn bearing(self, bearer: String) -> Self {
+        Self {
+            reading: self.reading.map(|reading| reading.bearing(bearer.clone())),
+            bearer: Some(bearer),
+            ..self
         }
     }
 
@@ -43,10 +53,11 @@ impl Seeking {
     fn reading(&mut self) -> io::Result<&mut Ranged> {
         let reading = match self.reading.take() {
             Some(reading) => reading,
-            None => Ranged::opened_from(
+            None => Ranged::opened_bearing(
                 self.agent.clone(),
                 self.url.clone(),
                 self.at,
+                self.bearer.clone(),
                 self.resumed_after,
             )
             .map_err(Unfetched::into_io)?,

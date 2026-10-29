@@ -1,3 +1,5 @@
+#[cfg(feature = "online")]
+use std::sync::OnceLock;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -6,6 +8,8 @@ use std::{
 use resonate_inbox::Inbox;
 #[cfg(feature = "online")]
 use resonate_monochrome::Monochrome;
+#[cfg(feature = "online")]
+use resonate_providers::PlaysInPlace;
 use resonate_providers::Providers;
 #[cfg(feature = "online")]
 use resonate_subsonic::{Server, Subsonic};
@@ -50,9 +54,102 @@ impl Keeping {
     }
 }
 
-#[cfg(feature = "ui")]
+#[cfg(all(feature = "ui", feature = "online"))]
+pub fn sourced(settings: Option<PathBuf>) -> (resonate_ui::Registering, resonate_ui::Unkept) {
+    sourced_over(made_once(settings))
+}
+
+#[cfg(all(feature = "ui", not(feature = "online")))]
 pub fn sourced(settings: Option<PathBuf>) -> (resonate_ui::Registering, resonate_ui::Unkept) {
     sourced_over(Arc::new(Made::new(settings)))
+}
+
+#[cfg(all(feature = "online", not(test)))]
+static MADE: OnceLock<Arc<Made>> = OnceLock::new();
+
+#[cfg(all(feature = "online", not(test)))]
+fn made_once(settings: Option<PathBuf>) -> Arc<Made> {
+    Arc::clone(MADE.get_or_init(|| Arc::new(Made::new(settings))))
+}
+
+#[cfg(all(feature = "online", test))]
+fn made_once(settings: Option<PathBuf>) -> Arc<Made> {
+    thread_local! {
+        static MADE: OnceLock<Arc<Made>> = const { OnceLock::new() };
+    }
+    MADE.with(|made| Arc::clone(made.get_or_init(|| Arc::new(Made::new(settings)))))
+}
+
+#[cfg(feature = "online")]
+pub type InPlace = Vec<Arc<dyn PlaysInPlace>>;
+
+#[cfg(feature = "online")]
+pub fn in_place_named(config: &Config, settings: Option<PathBuf>) -> InPlace {
+    in_place(&Accounts::of(config), &made_once(settings))
+}
+
+#[cfg(all(feature = "ui", feature = "online"))]
+pub fn in_place_given(online: &resonate_ui::Online, settings: Option<PathBuf>) -> InPlace {
+    in_place(&Accounts::given(online), &made_once(settings))
+}
+
+#[cfg(feature = "online")]
+fn in_place(accounts: &Accounts, made: &Made) -> InPlace {
+    let mut served: InPlace = Vec::new();
+    if let Some(server) = &accounts.subsonic {
+        served.push(subsonic_of(made, server));
+    }
+    if let Some(account) = &accounts.tidal {
+        served.push(tidal_of(made, account));
+    }
+    if let Some(secret) = &accounts.resonate {
+        served.push(resonate_of(made, secret));
+    }
+    if let Some(hifi) = &accounts.hifi {
+        served.push(hifi_of(made, hifi));
+    }
+    if let Some(monochrome) = &accounts.monochrome {
+        served.push(monochrome_of(made, monochrome));
+    }
+    served
+}
+
+#[cfg(feature = "online")]
+fn subsonic_of(made: &Made, server: &Server) -> Arc<Subsonic> {
+    made.subsonic
+        .made_for(server, |server| Subsonic::at(server.clone()))
+}
+
+#[cfg(feature = "online")]
+fn tidal_of(made: &Made, account: &Account) -> Arc<Tidal> {
+    made.tidal
+        .made_for(account, |account| made.signed_in(account))
+}
+
+#[cfg(feature = "online")]
+fn resonate_of(made: &Made, secret: &Secret) -> Arc<HifiApi> {
+    made.resonate.made_for(secret, |Secret(key)| {
+        HifiApi::at(resonate_tidal::OWN_SERVER)
+            .with_secret(key)
+            .known_as_resonate()
+    })
+}
+
+#[cfg(feature = "online")]
+fn hifi_of(made: &Made, hifi: &Hosting) -> Arc<HifiApi> {
+    made.hifi.made_for(hifi, |hifi| match hifi {
+        Hosting::Hosted => HifiApi::hosted(),
+        Hosting::Custom(server) => HifiApi::at(server),
+    })
+}
+
+#[cfg(feature = "online")]
+fn monochrome_of(made: &Made, monochrome: &Hosting) -> Arc<Monochrome> {
+    made.monochrome
+        .made_for(monochrome, |monochrome| match monochrome {
+            Hosting::Hosted => Monochrome::hosted(),
+            Hosting::Custom(server) => Monochrome::at(server),
+        })
 }
 
 #[cfg(feature = "ui")]
@@ -151,11 +248,6 @@ impl Accounts {
 #[cfg(feature = "online")]
 pub fn server_named(config: &Config) -> Option<Subsonic> {
     Accounts::of(config).subsonic.map(Subsonic::at)
-}
-
-#[cfg(all(feature = "ui", feature = "online"))]
-pub fn server_given(online: &resonate_ui::Online) -> Option<Server> {
-    Accounts::given(online).subsonic
 }
 
 #[cfg(feature = "online")]
@@ -354,38 +446,19 @@ impl<Settings: Clone + PartialEq, Made> Kept<Settings, Made> {
 fn registry(inbox: Option<&Path>, accounts: &Accounts, made: &Made) -> Providers {
     let mut providers = with_inbox(inbox);
     if let Some(server) = &accounts.subsonic {
-        providers = providers.and(
-            made.subsonic
-                .made_for(server, |server| Subsonic::at(server.clone())),
-        );
+        providers = providers.and(subsonic_of(made, server));
     }
     if let Some(account) = &accounts.tidal {
-        providers = providers.and(
-            made.tidal
-                .made_for(account, |account| made.signed_in(account)),
-        );
+        providers = providers.and(tidal_of(made, account));
     }
     if let Some(secret) = &accounts.resonate {
-        providers = providers.and(made.resonate.made_for(secret, |Secret(key)| {
-            HifiApi::at(resonate_tidal::OWN_SERVER)
-                .with_secret(key)
-                .known_as_resonate()
-        }));
+        providers = providers.and(resonate_of(made, secret));
     }
     if let Some(hifi) = &accounts.hifi {
-        providers = providers.and(made.hifi.made_for(hifi, |hifi| match hifi {
-            Hosting::Hosted => HifiApi::hosted(),
-            Hosting::Custom(server) => HifiApi::at(server),
-        }));
+        providers = providers.and(hifi_of(made, hifi));
     }
     if let Some(monochrome) = &accounts.monochrome {
-        providers = providers.and(made.monochrome.made_for(
-            monochrome,
-            |monochrome| match monochrome {
-                Hosting::Hosted => Monochrome::hosted(),
-                Hosting::Custom(server) => Monochrome::at(server),
-            },
-        ));
+        providers = providers.and(monochrome_of(made, monochrome));
     }
     providers
 }

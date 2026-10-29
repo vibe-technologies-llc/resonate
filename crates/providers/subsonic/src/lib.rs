@@ -15,6 +15,9 @@ use resonate_fetch::{
     Ranged, Seeking, Trusted, asking_agent, asking_to_resume, configured, downloading_agent,
     escaped, is_a_document, retry_after_of, unreached,
 };
+pub use resonate_providers::{
+    Album, AlbumSongs, Artist, ArtistAlbums, Found, Id, Named, PlaysInPlace, Song, Streamed,
+};
 use resonate_providers::{
     Choosing, Delivery, Error, Extension, Held, Identity, Listed, Obtained, Opening, Pacing,
     Provider, ProviderOp, Reopened, Result, is_a_page,
@@ -23,9 +26,6 @@ use serde::{Deserialize, Deserializer, de::DeserializeOwned};
 use serde_json::Value;
 use ureq::{Agent, Body, http};
 
-pub use crate::served::{
-    Album, AlbumSongs, Artist, ArtistAlbums, Found, Id, Named, Song, Streamed,
-};
 use crate::served::{AlbumDoc, ArtistDoc, ArtistsDoc, FoundDoc, SongDoc, id_spelt, readable};
 
 mod served;
@@ -476,15 +476,14 @@ impl Subsonic {
             let bytes = self.read_whole(op, response)?;
             return Err(self.refusal_in(&bytes, op));
         }
-        Ok(Streamed {
-            reader: Seeking::continuing(
-                self.downloading.clone(),
-                url,
-                response,
-                self.patience.resumed_after,
-            ),
-            media_type,
-        })
+        let reader = Seeking::continuing(
+            self.downloading.clone(),
+            url,
+            response,
+            self.patience.resumed_after,
+        );
+        let length = reader.length();
+        Ok(Streamed::seeking(reader, length, media_type))
     }
 
     fn searched(&self, words: &str, offset: usize, deadline: Instant) -> Result<Vec<Listing>> {
@@ -612,6 +611,48 @@ impl Subsonic {
             None => Ranged::continuing(agent, url.to_owned(), response, resumed_after),
         };
         Ok(Reopened::Reading(ranged.into_resumed()))
+    }
+}
+
+impl PlaysInPlace for Subsonic {
+    fn scheme(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn title(&self) -> &'static str {
+        "Subsonic"
+    }
+
+    fn artists(&self) -> Result<Vec<Artist>> {
+        Self::artists(self)
+    }
+
+    fn artist(&self, id: &Id) -> Result<ArtistAlbums> {
+        Self::artist(self, id)
+    }
+
+    fn album(&self, id: &Id) -> Result<AlbumSongs> {
+        Self::album(self, id)
+    }
+
+    fn search(&self, words: &str) -> Result<Found> {
+        Self::search(self, words)
+    }
+
+    fn streamed(&self, song: &Id) -> Result<Streamed> {
+        Self::streamed(self, song)
+    }
+
+    fn cover(&self, cover: &Id, side: u32) -> Result<Vec<u8>> {
+        Self::cover(self, cover, side)
+    }
+
+    fn cover_of(&self, named: &Named) -> Result<Id> {
+        Self::cover_of(self, named)
+    }
+
+    fn songs_of(&self, named: &Named) -> Result<Vec<Song>> {
+        Self::songs_of(self, named)
     }
 }
 

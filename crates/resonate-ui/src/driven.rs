@@ -247,7 +247,7 @@ impl Driven {
 
     pub(crate) fn serving(
         cx: &mut TestAppContext,
-        serves: Arc<dyn crate::Serves>,
+        services: Vec<Arc<dyn crate::Serves>>,
         online: crate::Online,
     ) -> Self {
         let mut driven = Self::open(
@@ -256,7 +256,13 @@ impl Driven {
         );
         driven.cx.update(|_, cx| {
             gpui::BorrowAppContext::update_global::<ResonateApp, _>(cx, |app, _| {
-                app.serving = crate::Serving::new(move |_| Some(Arc::clone(&serves)));
+                app.serving = crate::Serving::new(move |online| {
+                    if online.enabled {
+                        services.clone()
+                    } else {
+                        Vec::new()
+                    }
+                });
                 app.online = online;
             });
         });

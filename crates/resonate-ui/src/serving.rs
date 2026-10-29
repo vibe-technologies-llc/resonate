@@ -6,7 +6,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use gpui::{Context, Task};
-use resonate_core::MediaLocation;
+use resonate_core::{MediaLocation, SourceId};
 use resonate_library::{CoverArt, ImageFormat};
 use resonate_providers::Error as ProviderError;
 
@@ -16,7 +16,6 @@ use crate::{
     models::{AtSide, Drawn, Forget as _, Picture, Scale, drawn_within},
     recent::Recent,
     served::{ServedAlbum, ServedArtist, ServedCover, ServedFound, ServedSong, Serves},
-    settings::Online,
 };
 
 const COVERS_HELD: NonZeroUsize = NonZeroUsize::new(256).expect("a cache holds an entry");
@@ -150,11 +149,11 @@ impl Failure {
 
     pub(crate) const fn advises(self) -> &'static str {
         match self {
-            Self::Unwelcome => "Check the user name and password in Settings, under Online.",
+            Self::Unwelcome => "Check the account in Settings, under Online.",
             Self::Unreached => {
                 "Check the address in Settings, under Online, and that the server is running."
             }
-            Self::Unreadable => "The address may not be a Subsonic server's.",
+            Self::Unreadable => "The address may not be the service's.",
         }
     }
 }
@@ -166,28 +165,9 @@ pub(crate) enum Page {
     Failed(Failure),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct Account {
-    url: String,
-    user: String,
-    password: String,
-}
-
-impl Account {
-    fn of(online: &Online) -> Option<Self> {
-        let given = |text: &str| Some(text.trim().to_owned()).filter(|text| !text.is_empty());
-        online.enabled.then_some(())?;
-        Some(Self {
-            url: given(&online.subsonic)?,
-            user: given(&online.subsonic_user)?,
-            password: given(&online.subsonic_password)?,
-        })
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum CoverKey {
-    Named(ServedCover),
+    Named(SourceId, ServedCover),
     Located(MediaLocation),
 }
 
@@ -195,14 +175,22 @@ impl CoverKey {
     fn of(location: &MediaLocation, known: Option<&ServedCover>) -> Self {
         known.map_or_else(
             || Self::Located(location.clone()),
-            |known| Self::Named(known.clone()),
+            |known| Self::Named(location.source().clone(), known.clone()),
         )
     }
 }
 
+fn the_same(held: &[Arc<dyn Serves>], opened: &[Arc<dyn Serves>]) -> bool {
+    held.len() == opened.len()
+        && held
+            .iter()
+            .zip(opened)
+            .all(|(held, opened)| Arc::ptr_eq(held, opened))
+}
+
 pub(crate) struct ServerModel {
-    serves: Option<Arc<dyn Serves>>,
-    account: Option<Account>,
+    services: Vec<Arc<dyn Serves>>,
+    chosen: usize,
     trail: Vec<Place>,
     page: Page,
     reading: u64,
@@ -216,8 +204,8 @@ pub(crate) struct ServerModel {
 impl ServerModel {
     pub(crate) fn new(cx: &mut Context<Self>) -> Self {
         let mut model = Self {
-            serves: None,
-            account: None,
+            services: Vec::new(),
+            chosen: 0,
             trail: vec![Place::Artists],
             page: Page::Reading,
             reading: 0,
@@ -232,17 +220,42 @@ impl ServerModel {
     }
 
     pub(crate) fn is_open(&self) -> bool {
-        self.serves.is_some()
+        !self.services.is_empty()
     }
 
     pub(crate) fn serves(&self) -> Option<Arc<dyn Serves>> {
-        self.serves.clone()
+        self.services.get(self.chosen).cloned()
+    }
+
+    pub(crate) fn titles(&self) -> Vec<String> {
+        self.services
+            .iter()
+            .map(|serves| serves.title().to_owned())
+            .collect()
+    }
+
+    pub(crate) const fn chosen(&self) -> usize {
+        self.chosen
+    }
+
+    pub(crate) fn choose(&mut self, chosen: usize, cx: &mut Context<Self>) {
+        if chosen == self.chosen || chosen >= self.services.len() {
+            return;
+        }
+        self.chosen = chosen;
+        self.trail = vec![Place::Artists];
+        self.read(cx);
+    }
+
+    fn serving(&self, location: &MediaLocation) -> Option<Arc<dyn Serves>> {
+        self.services
+            .iter()
+            .find(|serves| serves.names(location))
+            .cloned()
     }
 
     pub(crate) fn names(&self, location: &MediaLocation) -> bool {
-        self.serves
-            .as_ref()
-            .is_some_and(|serves| serves.names(location))
+        self.services.iter().any(|serves| serves.names(location))
     }
 
     pub(crate) fn place(&self) -> &Place {
@@ -266,12 +279,15 @@ impl ServerModel {
         let app = cx.global::<ResonateApp>();
         let online = app.online.clone();
         let serving = app.serving.clone();
-        let account = Account::of(&online);
-        if account == self.account {
+        let opened = serving.opened(&online);
+        if the_same(&self.services, &opened) {
             return;
         }
-        self.account = account;
-        self.serves = self.account.as_ref().and_then(|_| serving.opened(&online));
+        let was = self.serves().map(|serves| serves.scheme().clone());
+        self.chosen = was
+            .and_then(|was| opened.iter().position(|serves| *serves.scheme() == was))
+            .unwrap_or_default();
+        self.services = opened;
         self.trail = vec![Place::Artists];
         self.forget_the_covers(cx);
         self.read(cx);
@@ -309,7 +325,7 @@ impl ServerModel {
     fn read(&mut self, cx: &mut Context<Self>) {
         self.reading += 1;
         let serial = self.reading;
-        let Some(serves) = self.serves.clone() else {
+        let Some(serves) = self.serves() else {
             self.page = Page::Reading;
             self._read = None;
             cx.notify();
@@ -331,7 +347,7 @@ impl ServerModel {
                 this.page = match read {
                     Ok(rows) => Page::Read(rows.into()),
                     Err(error) => {
-                        tracing::warn!(%error, "the Subsonic server could not be browsed");
+                        tracing::warn!(%error, "the service could not be browsed");
                         Page::Failed(Failure::of(&error))
                     }
                 };
@@ -359,7 +375,7 @@ impl ServerModel {
         drawn: Drawn,
         cx: &mut Context<Self>,
     ) -> Option<Picture> {
-        let serves = self.serves.clone()?;
+        let serves = self.serving(of).or_else(|| self.serves())?;
         let key = CoverKey::of(of, known);
         let wanted = AtSide {
             key: key.clone(),

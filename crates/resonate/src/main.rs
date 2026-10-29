@@ -2122,7 +2122,7 @@ fn play(
 
     let items = mpris::claimed_by(
         library.as_deref(),
-        queue_items_served(arguments, &Served::of(config)),
+        queue_items_served(arguments, &Served::of(config, settings_path(cli).ok())),
     );
     if items.is_empty() {
         return Err(if arguments.is_empty() {
@@ -2151,7 +2151,7 @@ fn queue_onto_a_running_player(cli: &Cli, config: &Config, wanted: &QueueArgs) -
     }
     let rows = match wanted.playlist.as_deref() {
         Some(name) => playlist_rows(cli, config, name)?,
-        None => queue_items_served(&wanted.files, &Served::of(config))
+        None => queue_items_served(&wanted.files, &Served::of(config, settings_path(cli).ok()))
             .into_iter()
             .map(|item| (item.location, item.span))
             .collect(),
@@ -2320,7 +2320,10 @@ fn play_queue(
         asleep,
         place,
     } = opening;
-    let sources = playing_from(library.as_deref(), &Served::of(config));
+    let sources = playing_from(
+        library.as_deref(),
+        &Served::of(config, settings_path(cli).ok()),
+    );
     let mut engine = engine_config(cli, config);
     if let Some(percent) = transport.volume {
         engine.volume = at_percent(percent)?;
@@ -2760,7 +2763,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             &window,
             &cli.files,
             &mpris::tuning_of(&cli),
-            &Served::of(&config),
+            &Served::of(&config, settings_path(&cli).ok()),
         );
     }
     let places = resonate_ui::Places {
@@ -2769,7 +2772,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
         equaliser: config::equaliser_dir()?,
     };
     let settings = settings::File::at(places.config.clone());
-    let served = Served::for_the_window(&config);
+    let served = Served::for_the_window(&config, settings_path(&cli).ok());
     let sources = playing_from(Some(&library), &served);
     let rendering = Rendering::of(&config, wanted_sink(&cli, &config).as_ref(), false);
     let player = rendering.player(engine_config(&cli, &config), Arc::clone(&sources))?;
@@ -2783,7 +2786,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
         &player,
         &cli.files,
         keeps.then(|| library.as_ref()),
-        &Served::of(&config),
+        &served,
     )?;
 
     let (asked_to_quit, quitting) = bounded(1);
