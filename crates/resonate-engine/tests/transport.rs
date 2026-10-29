@@ -41,6 +41,7 @@ const BLOCK_FRAMES: usize = 1_024;
 const SHORT_PULL_FRAMES: usize = 64;
 const PATIENCE: Duration = Duration::from_secs(20);
 const PULL_TIMES_REAL_TIME_AT_MOST: u32 = 8;
+const PADDED_RINGS_PULLED_TIMES_REAL_TIME: u32 = 1;
 const SHORTEST_PAUSE_BETWEEN_PULLS: Duration = Duration::from_millis(1);
 const SECOND_ROW: Frames = Frames(RATE as u64 * 15 / 75);
 const A_SHORT_DOZE: Duration = Duration::from_millis(150);
@@ -186,7 +187,7 @@ struct Graph {
 }
 
 impl Graph {
-    fn pause_after_pulling(&self, bytes: usize) -> Duration {
+    fn pause_after_pulling(&self, bytes: usize, times_real_time: u32) -> Duration {
         let Some(request) = self.requests.last() else {
             return SHORTEST_PAUSE_BETWEEN_PULLS;
         };
@@ -194,7 +195,7 @@ impl Graph {
         let frames = spec.bytes_to_frames(bytes as u64).get();
         let heard_for = Duration::from_secs_f64(frames as f64 / f64::from(spec.rate.hz()));
 
-        (heard_for / PULL_TIMES_REAL_TIME_AT_MOST).max(SHORTEST_PAUSE_BETWEEN_PULLS)
+        (heard_for / times_real_time).max(SHORTEST_PAUSE_BETWEEN_PULLS)
     }
 
     fn pull_heard(&mut self, bytes: usize, due: Moment) {
@@ -907,6 +908,24 @@ fn play_until(
     player: &Player,
     graph: &Arc<Mutex<Graph>>,
     block: usize,
+    done: impl FnMut(&Player, &Graph) -> bool,
+    what: &str,
+) {
+    play_paced_until(
+        player,
+        graph,
+        block,
+        PULL_TIMES_REAL_TIME_AT_MOST,
+        done,
+        what,
+    );
+}
+
+fn play_paced_until(
+    player: &Player,
+    graph: &Arc<Mutex<Graph>>,
+    block: usize,
+    times_real_time: u32,
     mut done: impl FnMut(&Player, &Graph) -> bool,
     what: &str,
 ) {
@@ -915,7 +934,10 @@ fn play_until(
         let (settled, pause) = {
             let mut held = graph.lock();
             held.pull(block);
-            (done(player, &held), held.pause_after_pulling(block))
+            (
+                done(player, &held),
+                held.pause_after_pulling(block, times_real_time),
+            )
         };
         if settled {
             return;
@@ -7161,10 +7183,11 @@ fn dop_rows_play_on_through_one_stream_with_no_drain_no_gap_and_the_marker_unbro
         "an even row cannot break the marker, so nothing was proved"
     );
 
-    play_until(
+    play_paced_until(
         &player,
         &graph,
         BLOCK_FRAMES * stride,
+        PADDED_RINGS_PULLED_TIMES_REAL_TIME,
         |_, graph| graph.played.len() >= 2 * frames * stride,
         "two DoP rows to reach the graph",
     );
