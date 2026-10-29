@@ -7,20 +7,30 @@ use resonate_engine::{Command, EngineConfig, NodeName, Opening, Opens, Player, Z
 use resonate_library::Library;
 use resonate_mpris::{Mpris, Teller};
 
-use crate::mpris::{self, Serving};
+use crate::{
+    mpris::{self, Serving},
+    rendering::Rendering,
+};
 
 pub(crate) struct Opener {
     base: EngineConfig,
     sources: Arc<Sources>,
+    rendering: Rendering,
     serving: Serving,
     services: Mutex<BTreeMap<ZoneId, Mpris>>,
 }
 
 impl Opener {
-    pub(crate) fn new(base: EngineConfig, sources: &Arc<Sources>, serving: Serving) -> Arc<Self> {
+    pub(crate) fn new(
+        base: EngineConfig,
+        sources: &Arc<Sources>,
+        rendering: Rendering,
+        serving: Serving,
+    ) -> Arc<Self> {
         Arc::new(Self {
             base,
             sources: Arc::clone(sources),
+            rendering,
             serving,
             services: Mutex::new(BTreeMap::new()),
         })
@@ -39,10 +49,9 @@ impl Opens for Opener {
             ..alongside.output_settings().applied_to(self.base.clone())
         };
 
-        Ok(Arc::new(Player::with_sources(
-            config,
-            Arc::clone(&self.sources),
-        )?))
+        Ok(Arc::new(
+            self.rendering.player(config, Arc::clone(&self.sources))?,
+        ))
     }
 
     fn opened(&self, zones: &Arc<Zones>, zone: &Zone) {

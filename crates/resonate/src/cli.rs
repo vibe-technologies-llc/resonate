@@ -927,7 +927,14 @@ pub enum Sub {
     #[command(
         about = "Print the sinks PipeWire advertises, and the rates the graph will switch to"
     )]
-    Sinks,
+    Sinks {
+        #[arg(
+            long,
+            help = "Search the local network for UPnP media renderers too and list them beside \
+                    the sound server's sinks, whatever the renderers key says"
+        )]
+        renderers: bool,
+    },
 
     #[command(about = "Scan library roots and exit. With no paths, rescans every registered root")]
     Scan(ScanArgs),

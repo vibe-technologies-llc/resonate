@@ -170,6 +170,9 @@ jobs:
           only resonate-monochrome resonate-core resonate-providers resonate-fetch
           only resonate-audio resonate-core
           refuse resonate-audio pipewire libspa resonate-codec resonate-dsp gpui
+          only resonate-upnp resonate-core resonate-audio
+          check "resonate-upnp outside its tests" "$(held_by -p resonate-upnp -e normal)" \
+            pipewire libspa gpui ureq serde rustls
           refuse resonate-bindgen resonate-core resonate-engine pipewire gpui
           refuse resonate-analysis gpui resonate-engine resonate-library ureq
           refuse resonate-discord gpui resonate-library ureq

@@ -27,6 +27,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `mcp.md` | resonate-mcp, the binary's `mcp.rs` | the transport, refusals against failures, the tools, the resources and their seam |
 | `sync.md` | resonate-sync, the binary's `sync.rs`, `synced.rs`, the sync panes | the pairing key and what it derives, the wire, the ledger, the seam, peers and transfers, devices meeting on one network |
 | `server.md` | resonate-server, `packaging/server/**` | what the server keeps, sessions, presence, punching, limits, deployment |
+| `upnp.md` | resonate-upnp, the binary's `rendering.rs`, `zoning.rs` | network renderers: a renderer as a sink beside PipeWire's, SSDP, the description, SOAP, the paced live stream, the renderer's clock |
 | `discord.md` | resonate-discord, `core::presence`, the binary's `discord.rs`, the Desktop groups | the gate, the seam, the frame, what an activity says and how often |
 | `release.md` | `.github/workflows/release.yml`, `packaging/**`, the root manifest, `docs/ROADMAP.md` | versions and their spelling per ecosystem, branches, tags, the release assets, the signing secrets |
 | `packaging.md` | `packaging/**` | the Arch, Fedora, DEB and Flatpak payloads, the x86-64-v3 release baseline and the pre-release spellings |
@@ -61,7 +62,7 @@ added or a standing rule of how work is done moves.
 
 ## Architecture
 
-Twenty-eight crates. `resonate-core` is the only universal dependency; `resonate-codec`,
+Twenty-nine crates. `resonate-core` is the only universal dependency; `resonate-codec`,
 `resonate-dsp` and `resonate-pipewire` never depend on each other; `resonate-engine` joins them.
 
 ```
@@ -76,6 +77,7 @@ resonate            bin: CLI, tracing, wiring
   │     ├── resonate-dsp      resample, gain, dither
   │     ├── resonate-audio    backend contracts, sink vocabulary and streams
   │     └── resonate-pipewire Linux sink enumeration, negotiation, stream
+  ├── resonate-upnp       UPnP AV renderers on the network as sinks beside PipeWire's
   ├── resonate-online     MusicBrainz, covers, portraits, lyrics, AutoEq  [`online`]
   ├── resonate-library    scan, tags, persistence  (also on codec, vault, analysis, providers)
   ├── resonate-lyrics     lyric vocabulary and the provider seam
@@ -99,7 +101,8 @@ resonate-server      bin: keeps sealed sync records and introduces devices, over
 `cargo tree` is the authority on edges and the `layering` job in `.github/workflows/ci.yml` holds
 the refusals. Worth knowing: only the binary (and the detached `fuzz/`, for `resonate-mcp`) reaches
 `resonate-mcp` and `resonate-discord`; `resonate-online` is composed by the binary and `resonate-mobile`; a provider crate reaches the seam, core and
-(over the network) `resonate-fetch` alone; `resonate-listen` reaches core, `resonate-audio` and `resonate-pipewire`
+(over the network) `resonate-fetch` alone; `resonate-upnp` reaches core and `resonate-audio` alone (its HTTP
+hand-written over `httparse`, so a build without `online` still plays to a renderer); `resonate-listen` reaches core, `resonate-audio` and `resonate-pipewire`
 alone (its own PipeWire client per recording; capture modules only on Linux); `resonate-analysis` reaches `resonate-dsp`;
 `resonate-sync` reaches core alone and is reached by the binary, `resonate-mobile` and the server.
 
@@ -208,7 +211,7 @@ CI runs exactly this list, iOS aside (`release.yml` runs on tags only); the debu
 `cargo run -- <subcommand> --help` is the grammar (`binary.md`); the binary doubles as the audio
 stack's test harness:
 
-- **Output:** `sinks`, `explain`, `info`, `analyse` (`--recognise` asks AcoustID), `listen`, `eq`, `abx` (a blind test of the equaliser).
+- **Output:** `sinks` (`--renderers` searches the network too), `explain`, `info`, `analyse` (`--recognise` asks AcoustID), `listen`, `eq`, `abx` (a blind test of the equaliser).
 - **Playing:** `play <files>` (transport keys on stdin), `queue`, `players`, `sleep`, `share`, `mcp`;
   `queue` and `sleep` take `--zone <N|NAME>` for a zone of the window.
 - **Catalog:** `subsonic` (a Subsonic server's own, browsed in place), `scan`, `roots`, `forget`, `enrich`, `tag`, `organise`, `dedupe`, `vault`, `studies`, `stats`,

@@ -177,6 +177,11 @@ each start. Default: forever.
 .TP
 .B resume
 Boolean. Start again with the queue, and the place in the song, that was left. Default: true.
+.TP
+.B renderers
+Boolean. Search the local network for UPnP media renderers and list each as an output beside the
+sound server's, so a zone or \fBsink\fR can play to it. A \fBsink\fR naming one
+(\fBupnp:\fR and its UDN) searches whatever this says. Default: false.
 .SH ONLINE
 .TP
 .B online
