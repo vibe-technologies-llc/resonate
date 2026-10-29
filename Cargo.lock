@@ -6269,9 +6269,11 @@ name = "resonate-upnp"
 version = "0.2.0"
 dependencies = [
  "crossbeam-channel",
+ "flacenc",
  "httparse",
  "parking_lot 0.13.0",
  "resonate-audio",
+ "resonate-codec",
  "resonate-core",
  "resonate-engine",
  "roxmltree 0.21.2",
