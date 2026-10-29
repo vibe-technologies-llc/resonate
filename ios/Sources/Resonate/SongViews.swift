@@ -75,7 +75,12 @@ struct SongsView: View {
         }
         .listStyle(.plain)
         .listSectionIndexVisibility(.visible)
+        .contentMargins(.trailing, SectionIndex.clearance, for: .scrollContent)
     }
+}
+
+enum SectionIndex {
+    static let clearance: CGFloat = 24
 }
 
 enum SongsList {

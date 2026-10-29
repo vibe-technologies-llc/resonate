@@ -889,7 +889,7 @@ every route change (a pair of headphones at the same rate included), not from th
   match of a filter is kept for the pages that follow it (`Ordered`: one filter, one index, 30 s),
   so paging 100 000 songs filters and sorts once; the index is built outside the catalog's lock
   and by one caller at a time (`Searching::index`). A list of 40
-  rows or more ordered by name gets a section per letter run and the section index. `EmptyLibrary`
+  rows or more ordered by name gets a section per letter run and the section index, which the Songs page keeps clear of its rows (`SectionIndex.clearance`, a trailing `contentMargins` of the scroll content): the index sits over the list's trailing edge, and a row's heart there was covered by it and took no tap. `EmptyLibrary`
   shows only once the catalog was read empty and no scan runs; filters matching nothing offer Reset.
   The Library tab's search uses the same model for albums and artists and folds playlist names
   (`searchFolded`, which is core's `folded_letters` through `folded_text`, so *Lodz* finds *Łódź* as library search does), as the Favourites and Add-songs searches fold
