@@ -138,7 +138,10 @@ fn stage_after(error: &ListenError) -> Stage {
     match error {
         ListenError::Stopped => Stage::Idle,
         ListenError::NothingHeard => Stage::Silent,
-        ListenError::Capture { .. } => Stage::CaptureFailed,
+        ListenError::Capture { .. }
+        | ListenError::Output { .. }
+        | ListenError::NoSuchSink { .. }
+        | ListenError::NoOutput => Stage::CaptureFailed,
         ListenError::Unreachable { .. } => Stage::Unreached,
         ListenError::Refused { .. }
         | ListenError::Unreadable { .. }
@@ -450,7 +453,10 @@ fn online(cx: &Context<ListenModel>) -> bool {
 
 fn noted(error: &ListenError) {
     match error {
-        ListenError::Capture { .. } => {
+        ListenError::Capture { .. }
+        | ListenError::Output { .. }
+        | ListenError::NoSuchSink { .. }
+        | ListenError::NoOutput => {
             tracing::warn!(%error, "nothing could be listened to");
         }
         ListenError::Unreachable { .. }
