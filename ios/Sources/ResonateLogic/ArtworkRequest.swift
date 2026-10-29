@@ -22,6 +22,7 @@ public enum ArtworkSubject: Hashable, Sendable {
     case track(UInt64)
     case portrait(String)
     case picture(UInt64)
+    case served(String)
 }
 
 public struct ArtworkRequest: Hashable, Sendable {
@@ -42,6 +43,7 @@ public struct ArtworkRequest: Hashable, Sendable {
         case .track(let id): "track:\(id):\(revision):\(generation):\(bucket.rawValue)" as NSString
         case .portrait(let mbid): "portrait:\(mbid):\(generation):\(bucket.rawValue)" as NSString
         case .picture(let id): "picture:\(id):\(bucket.rawValue)" as NSString
+        case .served(let uri): "served:\(uri):\(generation):\(bucket.rawValue)" as NSString
         }
     }
 
@@ -50,6 +52,7 @@ public struct ArtworkRequest: Hashable, Sendable {
         case .track(let id): "song:\(revision):\(generation):track:\(id)" as NSString
         case .portrait(let mbid): "song:\(revision):\(generation):portrait:\(mbid)" as NSString
         case .picture(let id): "song:\(revision):\(generation):picture:\(id)" as NSString
+        case .served(let uri): "song:\(revision):\(generation):served:\(uri)" as NSString
         }
     }
 

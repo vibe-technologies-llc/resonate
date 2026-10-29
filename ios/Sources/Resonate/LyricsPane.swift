@@ -24,7 +24,13 @@ struct LyricsPane: View {
         let features = library.features
         let sheet = features.lyrics?.trackId == track?.id ? features.lyrics : nil
         Group {
-            if track == nil {
+            if track?.isServed == true {
+                ContentUnavailableView(
+                    "No words for a server's song",
+                    systemImage: "quote.bubble",
+                    description: Text("Lyrics are kept for the songs in your library.")
+                )
+            } else if track == nil {
                 ContentUnavailableView(
                     "Nothing playing",
                     systemImage: "quote.bubble",
@@ -63,7 +69,7 @@ struct LyricsPane: View {
             }
         }
         .task(id: track?.id) {
-            if let track { features.loadLyrics(track.id) }
+            if let track, !track.isServed { features.loadLyrics(track.id) }
         }
         .task(id: features.lyricsLoading) {
             lookedLong = false

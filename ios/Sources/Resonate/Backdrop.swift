@@ -76,11 +76,12 @@ struct BackdropView: View {
     private var paletteRequest: String {
         let accent = "\(AppearanceState.shared.accent?.name ?? ""):\(scheme == .dark ? "dark" : "light")"
         guard let track else { return ":\(accent)" }
-        return "\(Self.key(of: track)):\(library.features.artGeneration(of: track.id)):\(accent)"
+        let generation = track.isServed ? library.features.servedGeneration : library.features.artGeneration(of: track.id)
+        return "\(Self.key(of: track)):\(generation):\(accent)"
     }
 
     private static func key(of track: Track) -> String {
-        "\(track.id):\(track.artRevision)"
+        "\(track.pictureKey):\(track.artRevision)"
     }
 
     private var tone: BackdropTone {

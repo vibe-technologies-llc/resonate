@@ -705,6 +705,36 @@ final class Library {
         play(rows, at: Int.random(in: 0..<max(rows.count, 1)), shuffle: true)
     }
 
+    func playServed(_ uris: [String], at index: Int, shuffle: Bool = false) {
+        guard !uris.isEmpty else { return }
+        let start = UInt32(min(max(index, 0), uris.count - 1))
+
+        nowPlaying.activate()
+        steer(.loading) { native in
+            try native.loadServed(uris: uris, startAt: start, autoplay: false)
+            try native.setShuffle(shuffled: shuffle)
+            try native.play()
+        }
+    }
+
+    func shuffleServed(_ uris: [String]) {
+        playServed(uris, at: Int.random(in: 0..<max(uris.count, 1)), shuffle: true)
+    }
+
+    func playServedNext(_ uris: [String]) {
+        guard !uris.isEmpty else { return }
+        editQueue(uris.count == 1 ? "Playing next" : "Playing \(counted(uris.count, "song")) next") {
+            try $0.playServedNext(uris: uris)
+        }
+    }
+
+    func addServedToQueue(_ uris: [String]) {
+        guard !uris.isEmpty else { return }
+        editQueue(uris.count == 1 ? "Added to queue" : "Added \(counted(uris.count, "song")) to queue") {
+            try $0.addServedToQueue(uris: uris)
+        }
+    }
+
     func jump(to row: Track) {
         guard let index = queue.firstIndex(where: { $0.queueId == row.queueId }) else { return }
         nowPlaying.activate(loading: row)
@@ -838,10 +868,14 @@ final class Library {
 
     func removeFromQueue(_ row: Track) {
         guard let queueId = row.queueId else { return }
-        if let at = queue.firstIndex(where: { $0.queueId == queueId }) {
+        if !row.isServed, let at = queue.firstIndex(where: { $0.queueId == queueId }) {
             removedFromQueue = RemovedQueueRow(trackId: row.id, at: UInt32(at))
         }
         queue.removeAll { $0.queueId == queueId }
+        if row.isServed {
+            editQueue("Removed from queue") { try $0.removeFromQueue(queueId: queueId) }
+            return
+        }
         editQueue { try $0.removeFromQueue(queueId: queueId) } offering: {
             self.show("Removed from queue", as: .notice, offering: .restoreQueueRow)
         }

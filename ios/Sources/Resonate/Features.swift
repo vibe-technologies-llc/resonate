@@ -64,8 +64,14 @@ final class Features {
     var applyingCorrection = false
     var scrobbleAccount: ScrobbleAccount?
     var scrobbleStatus: String?
-    var providers = ProviderAccounts()
-    var online: Bool
+    var providers = ProviderAccounts() {
+        didSet { servedChanged() }
+    }
+    var online: Bool {
+        didSet { servedChanged() }
+    }
+    private(set) var servedGeneration = 0
+    @ObservationIgnored private var servedGiven: ServedAccount?
     var hostedServices: Bool
     var statistics: LibraryStatistics?
     var listeningDetail: ListeningDetail?
@@ -168,6 +174,30 @@ final class Features {
     }
 
     var correctionBusy: Bool { searchingCorrections || applyingCorrection }
+
+    var servedAccount: ServedAccount? { online ? providers.served : nil }
+
+    var serving: Bool { servedAccount != nil }
+
+    private func servedChanged() {
+        let account = servedAccount
+        guard account != servedGiven else { return }
+        servedGiven = account
+        servedGeneration += 1
+        Task { [weak self] in
+            guard let native = try? await self?.library.player() else { return }
+            _ = try? await Work.aside { native.serveFrom(account: account) }
+        }
+    }
+
+    func serverAnswer<Value: Sendable>(_ ask: @escaping @Sendable (MobilePlayer) throws -> Value) async throws -> Value {
+        let native = try await library.player()
+        let account = servedAccount
+        return try await Work.aside {
+            native.serveFrom(account: account)
+            return try ask(native)
+        }
+    }
 
     private func work(
         _ action: @escaping @MainActor (MobilePlayer) async throws -> Void,
@@ -796,7 +826,8 @@ final class Features {
     }
 
     func cachedArtwork(_ track: Track, bucket: ArtworkBucket) -> UIImage? {
-        artworks.cached(artworkRequest(track, bucket: bucket))
+        if track.isServed { return cachedServedCover(track.uri, bucket: bucket) }
+        return artworks.cached(artworkRequest(track, bucket: bucket))
     }
 
     func cachedPortrait(_ mbid: String, bucket: ArtworkBucket) -> UIImage? {
@@ -812,6 +843,7 @@ final class Features {
     }
 
     func artwork(_ track: Track, bucket: ArtworkBucket) async -> UIImage? {
+        if track.isServed { return await servedCover(track.uri, known: nil, bucket: bucket) }
         let id = track.id
         let request = artworkRequest(track, bucket: bucket)
         guard let native = try? await library.player() else { return nil }
@@ -819,10 +851,30 @@ final class Features {
     }
 
     func unkeptArtwork(_ track: Track, bucket: ArtworkBucket) async -> UIImage? {
+        if track.isServed { return await servedCover(track.uri, known: nil, bucket: bucket) }
         let id = track.id
         let request = artworkRequest(track, bucket: bucket)
         guard let native = try? await library.player() else { return nil }
         return await artworks.unkept(request, identifying: { try native.artworkPicture(id: id) }, reading: { try native.picture(picture: $0) })
+    }
+
+    private func servedRequest(_ uri: String, bucket: ArtworkBucket) -> ArtworkRequest {
+        ArtworkRequest(subject: .served(uri), revision: 0, generation: servedGeneration, bucket: bucket)
+    }
+
+    func cachedServedCover(_ uri: String, bucket: ArtworkBucket) -> UIImage? {
+        artworks.cached(servedRequest(uri, bucket: bucket))
+    }
+
+    func servedCover(_ uri: String, known: String?, bucket: ArtworkBucket) async -> UIImage? {
+        let request = servedRequest(uri, bucket: bucket)
+        let side = UInt32(bucket.rawValue)
+        guard let native = try? await library.player() else { return nil }
+        let account = servedAccount
+        return await artworks.image(request) {
+            native.serveFrom(account: account)
+            return try native.servedCover(uri: uri, known: known, side: side)
+        }
     }
 
     func portrait(_ mbid: String, bucket: ArtworkBucket) async -> UIImage? {

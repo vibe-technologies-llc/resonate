@@ -67,7 +67,20 @@ sealed interface Screen : NavKey {
 
     @Serializable data object Sync : Screen
 
+    @Serializable data object Server : Screen
+
+    @Serializable
+    data class ServedArtist(val uri: String, val name: String, val cover: String? = null) : Screen
+
+    @Serializable
+    data class ServedAlbum(
+        val uri: String,
+        val name: String,
+        val artist: String = "",
+        val cover: String? = null,
+    ) : Screen
+
     @Serializable data object Appearance : Screen
 }
 
-val rootScreens = listOf(Screen.Home, Screen.Library, Screen.Search)
+val rootScreens = listOf(Screen.Home, Screen.Library, Screen.Search, Screen.Server)

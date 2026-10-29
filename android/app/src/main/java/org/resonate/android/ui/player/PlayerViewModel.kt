@@ -20,6 +20,7 @@ import org.resonate.android.nativecore.SleepTimer
 import org.resonate.android.nativecore.Snapshot
 import org.resonate.android.nativecore.Track
 import org.resonate.android.nativecore.Transport
+import org.resonate.android.served
 import org.resonate.android.ui.Repeat
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.queueLanding
@@ -168,7 +169,7 @@ class PlayerViewModel(private val resonate: Resonate) : ViewModel() {
     }
 
     fun saveAsPlaylist(name: String) {
-        val rows = library.queue.value.map { it.id }
+        val rows = library.queue.value.filterNot { it.served }.map { it.id }
         resonate.attempt(viewModelScope) { native ->
             withContext(Dispatchers.IO) {
                 val id = native.createPlaylist(name)

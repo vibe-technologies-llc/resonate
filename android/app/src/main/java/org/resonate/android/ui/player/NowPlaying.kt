@@ -88,6 +88,8 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.launch
 import org.resonate.android.ArtworkSizes
 import org.resonate.android.nativecore.Track
+import org.resonate.android.rowKey
+import org.resonate.android.served
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.Repeat
 import org.resonate.android.ui.clock
@@ -97,7 +99,7 @@ import org.resonate.android.ui.components.Picture
 import org.resonate.android.ui.components.favourite
 import org.resonate.android.ui.components.openAlbumOf
 import org.resonate.android.ui.components.openArtistOf
-import org.resonate.android.ui.components.rememberArtwork
+import org.resonate.android.ui.components.rememberCover
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.quality
 import org.resonate.android.ui.shownArtist
@@ -137,7 +139,7 @@ fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
             throw cancelled
         }
     }
-    val sample = rememberArtwork(track?.id, track?.artRevision ?: 0u, ArtworkSizes.edgeFor(96))
+    val sample = rememberCover(track, ArtworkSizes.edgeFor(96))
     val seed = rememberSeedOf(sample)
     val dragState = rememberDraggableState { delta ->
         dragged += delta
@@ -188,7 +190,7 @@ fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
                             label = "player pane",
                         ) { shown ->
                             when {
-                                shown == Pane.LYRICS && track != null ->
+                                shown == Pane.LYRICS && track != null && !track.served ->
                                     LyricsPane(track, Modifier.fillMaxSize())
                                 else -> Cover(track, Modifier.fillMaxSize())
                             }
@@ -259,7 +261,7 @@ private fun Cover(track: Track?, modifier: Modifier) {
             modifier = Modifier.size(side),
         ) {
             Picture(
-                rememberArtwork(track?.id, track?.artRevision ?: 0u, edge),
+                rememberCover(track, edge),
                 Modifier.fillMaxSize(),
                 shape = MaterialTheme.shapes.extraLarge,
             )
@@ -321,7 +323,7 @@ private fun ColumnScope.Controls(
         AnimatedContent(
             track,
             transitionSpec = { fadeIn() togetherWith fadeOut() },
-            contentKey = { it?.id },
+            contentKey = { it?.rowKey },
             modifier = Modifier.weight(1f),
             label = "player titles",
         ) { shown ->
@@ -332,7 +334,7 @@ private fun ColumnScope.Controls(
                     maxLines = 1,
                     modifier =
                         Modifier.clickable(
-                                enabled = shown != null && shown.album.isNotBlank(),
+                                enabled = shown != null && !shown.served && shown.album.isNotBlank(),
                                 onClickLabel = "Go to album",
                             ) {
                                 shown?.let {
@@ -349,7 +351,7 @@ private fun ColumnScope.Controls(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier =
-                        Modifier.clickable(enabled = shown != null, onClickLabel = "Go to artist") {
+                        Modifier.clickable(enabled = shown != null && !shown.served, onClickLabel = "Go to artist") {
                             shown?.let {
                                 expansion.collapse()
                                 navigator.openArtistOf(it)
@@ -364,7 +366,7 @@ private fun ColumnScope.Controls(
             onCheckedChange = { enabled ->
                 track?.let { resonate.favourite(it, enabled, sheets, scope) }
             },
-            enabled = track != null,
+            enabled = track != null && !track.served,
         ) {
             Icon(
                 if (favourite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
@@ -542,7 +544,14 @@ private fun PlayerActions(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
     ) {
-        ActionToggle(Icons.Rounded.Lyrics, "Lyrics", pane == Pane.LYRICS, onLyrics, Modifier.weight(1f))
+        ActionToggle(
+            Icons.Rounded.Lyrics,
+            "Lyrics",
+            pane == Pane.LYRICS,
+            onLyrics,
+            Modifier.weight(1f),
+            enabled = playing?.track?.served != true,
+        )
         ActionToggle(Icons.AutoMirrored.Rounded.QueueMusic, "Queue", false, onQueue, Modifier.weight(1f))
         ActionToggle(
             Icons.Rounded.Speaker,
@@ -573,10 +582,12 @@ private fun ActionToggle(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     description: String = label,
+    enabled: Boolean = true,
 ) {
     ToggleButton(
         checked = checked,
         onCheckedChange = { onClick() },
+        enabled = enabled,
         colors = FilledTonalToggleButtonDefaults.colors(),
         modifier = modifier.widthIn(min = 48.dp).semantics { contentDescription = description },
     ) {

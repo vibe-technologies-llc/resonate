@@ -74,12 +74,11 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Later: Sources and providers
 - [L] A Subsonic server is browsed and played in place on the desktop (the command line and the
-  window's Server pane, with the server's covers) and the phones' boundary can browse, queue and
-  open it, but neither phone has a screen for it (the Android Compose and iOS SwiftUI browsers and
-  their mini-player and lock-screen rows, which today name a served song from what the browse
-  returned and draw no cover of its own, are not built), a served song is not a library row so it
-  is neither favourited, counted as a listen nor kept in a saved queue, and TIDAL, hifi-api and
-  Monochrome are still only asked for a file to keep
+  window's Server pane, with the server's covers) and on both phones (a Server tab while an account
+  is on and online is, with the server's covers in the pane, the queue, the mini-player, the lock
+  screen and Now Playing), a served song is not a library row so it is neither favourited, counted
+  as a listen nor kept in a saved queue, and TIDAL, hifi-api and Monochrome are still only asked
+  for a file to keep
 - [M · blocked: services] The Bandcamp and Discogs links an `Identity` carries are read by nothing;
   no provider asks either
 - [M · blocked: servers] Subsonic matches a recording id or ISRC but not the release-track id the

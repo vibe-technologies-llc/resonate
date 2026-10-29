@@ -42,6 +42,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.resonate.android.ArtworkSizes
 import org.resonate.android.nativecore.Track
+import org.resonate.android.served
 import org.resonate.android.ui.LocalResonate
 
 @Stable
@@ -84,6 +85,21 @@ fun rememberArtwork(song: ULong?, revision: ULong, edgePx: Int): Bitmap? {
     return bitmap
 }
 
+@Composable
+fun rememberServedCover(uri: String, cover: String?, edgePx: Int): Bitmap? {
+    val served = LocalResonate.current.features.served
+    val bucket = ArtworkSizes.edgeFor(edgePx)
+    val cached = remember(uri, bucket) { served.cached(uri, bucket) }
+    val bitmap by
+        produceState(cached, uri, cover, bucket) { value = served.bitmap(uri, cover, bucket) ?: cached }
+    return bitmap
+}
+
+@Composable
+fun rememberCover(track: Track?, edgePx: Int): Bitmap? =
+    if (track?.served == true) rememberServedCover(track.uri, null, edgePx)
+    else rememberArtwork(track?.id, track?.artRevision ?: 0u, edgePx)
+
 private class DrawnSong {
     var song: ULong? = null
 }
@@ -112,7 +128,7 @@ fun Artwork(
 ) {
     val edge = with(LocalDensity.current) { size.roundToPx() }
     Picture(
-        bitmap = rememberArtwork(track?.id, track?.artRevision ?: 0u, edge),
+        bitmap = rememberCover(track, edge),
         modifier = modifier.size(size),
         shape = shape,
         placeholder = placeholder,
@@ -146,7 +162,7 @@ fun WideArtwork(
     BoxWithConstraints(modifier.fillMaxWidth().aspectRatio(1f)) {
         val edge = with(LocalDensity.current) { maxWidth.roundToPx() }
         Picture(
-            bitmap = rememberArtwork(track?.id, track?.artRevision ?: 0u, edge),
+            bitmap = rememberCover(track, edge),
             modifier = Modifier.fillMaxSize(),
             shape = shape,
             placeholder = placeholder,

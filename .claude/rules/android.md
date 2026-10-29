@@ -324,7 +324,7 @@ whatever the choice, so changing it never rebuilds the content below; it provide
 colours follow the chosen theme rather than the phone's. Widgets and the launcher keep following the
 system.
 
-**The shell** (`ResonateApp`): the roots are Home, Library and Search (`rootScreens`) in a
+**The shell** (`ResonateApp`): the roots are Home, Library, Search and, while a Subsonic account is served, Server (`rootScreens`) in a
 `NavigationSuiteScaffold`, a bottom bar on a phone and a rail on a wide window; Settings is a page,
 opened from the gear (`SettingsAction`) in each root's header. Each root has its own Navigation 3
 back stack (`Navigator`), kept across Activity recreation with the selected root: choosing the
@@ -1175,6 +1175,41 @@ desktop does (`tried`, `misses`): an offer zeroes the misses, nothing heard from
 counts one, a refusal or cancel neither; `poll_wanted_due` answers the unheld wants due by the
 desktop's `Want::due_at` (`RETRY_WAITS`, `POLL_AGAIN_AFTER`, given up at `TRIES_BEFORE_GIVING_UP`),
 and `next_wanted_due` the earliest of those times among them (unix seconds), for a front end's timer.
+
+## A Subsonic server
+
+**The Server tab browses and plays a Subsonic server in place** (`mobile.md`'s *A Subsonic server in
+place*; `Served.kt`, `ui/server/`). `Served` (`LibraryFeatures.served`) derives the account from the
+download accounts and the online switch: the first Subsonic account that is on and ready
+(`ProviderAccountBook.servedAccount`; only that one is served where several are kept) while online
+is on, else none. `Served.begin` hands each change to `serve_from` (so the slot the player's own
+`Sources` read on every open follows the account), and every browse binds it again first
+(`Resonate.asked`, `serve_from` being idempotent for the same server), so a read never races the
+collector. **The tab is `Screen.Server`, the fourth of `rootScreens`**, listed in the bar only while
+`Served.serving` (`ResonateApp` filters the items; the stack and index exist always so the others
+keep theirs), and leaving it when the account goes (`selectAtRoot(Home)`; a tab restored after the
+process died lands on Home until the accounts are read). Its pages are `Screen.ServedArtist` and
+`Screen.ServedAlbum`, each a `CollectionPage` over a `Loaded` read (`servedRead`: loading, ready, or
+the failure reported on the notice with *Try again*, the boundary's sentence, since a `Loaded.Failed`
+page says to check it; a changed account reads again). The root lists the artists with a search
+field that asks the server on the keyboard's search (`served_search`: artists, albums and songs in
+sections); an artist page is its header (Play and Shuffle over the artist's songs) and a shelf of
+album cards; an album page is the library album's, numbered by the server's track number, a row
+playing the album from it. Every row, card and page has *Play*, *Play next* and *Add to queue* in a
+menu; an album or artist is expanded to its songs off the main thread (`served_song_uris`, in
+`ServerActions`) before the controller or the queue is given them, since a network call must not
+hold the ordered worker. **A served song plays through the controller as a library one does**:
+`Playback.playServed` sets media items whose id is the song's uri, `RustMediaPlayer.handleSetMediaItems`
+reads such ids (`servedMediaId`, which `BrowseIds.trackOf` leaves out) and calls `load_served`.
+**A served row has id 0**, told by `Track.served` (id 0 and a `subsonic:` uri); everything keyed by
+song id keys it by `Track.pictureKey` (its uri) or `Track.rowKey` (its queue row) instead, and
+`findTrack(0)` is nothing. Its cover is `Served.bitmap` (`served_cover`, four at a time, decoded at
+the bucket drawn into a 24 MiB `LruCache` keyed by uri and bucket, a failure remembered until the
+account moves) drawn by `Artwork`, `WideArtwork` and Now Playing through `rememberCover`, and the
+session's thumbnail is the same bitmap (`artworkBitmap`), so the media notification, the lock screen,
+the mini-player and the widgets show it. A served row's song sheet offers only the player's own
+entries and *Remove from queue*; the player's lyrics button, favourite heart and the title links are
+off; *Save queue as playlist* leaves served rows out (`ServedTest`, `ServerWordsTest`).
 
 ## Device sync
 

@@ -40,7 +40,7 @@ class RustMediaPlayer(private val context: Context, private val library: Library
     private var snapshotAt = 0L
     private var tracks = emptyList<Track>()
     private var artwork: ByteArray? = null
-    private var artworkId: ULong? = null
+    private var artworkKey: String? = null
     private var resumeAfterFocus = false
     private var playlist: BuiltPlaylist? = null
     private val coverVersion = MutableStateFlow(0)
@@ -105,7 +105,7 @@ class RustMediaPlayer(private val context: Context, private val library: Library
                 ResonateWidgets.publish(
                     context,
                     value,
-                    artwork.takeIf { artworkId == value?.current?.id },
+                    artwork.takeIf { artworkKey == value?.current?.pictureKey },
                 )
                 if (moved || jumped) invalidateState()
             }
@@ -130,15 +130,15 @@ class RustMediaPlayer(private val context: Context, private val library: Library
                     Triple(value?.current, generation, version)
                 }
                 .distinctUntilChangedBy { (track, generation, version) ->
-                    listOf(track?.id, track?.artRevision, generation, version)
+                    listOf(track?.pictureKey, track?.queueId, track?.artRevision, generation, version)
                 }
                 .collectLatest { (track, _, _) ->
                     artwork = null
-                    artworkId = null
+                    artworkKey = null
                     invalidateState()
                     if (track != null) {
                         artwork = library.features.mediaArtwork(track)
-                        artworkId = track.id
+                        artworkKey = track.pictureKey
                         ResonateWidgets.publish(context, snapshot, artwork)
                         invalidateState()
                     }
@@ -153,7 +153,9 @@ class RustMediaPlayer(private val context: Context, private val library: Library
             else
                 value?.queueIndex?.toInt()?.takeIf { index ->
                     val track = tracks.getOrNull(index)
-                    track != null && track.id == value.current?.id && track.id == artworkId
+                    track != null &&
+                        track.pictureKey == value.current?.pictureKey &&
+                        track.pictureKey == artworkKey
                 }
         playlist
             ?.takeIf { it.tracks === tracks && it.cover === cover && it.coverIndex == coverIndex }
@@ -241,6 +243,15 @@ class RustMediaPlayer(private val context: Context, private val library: Library
         startIndex: Int,
         startPositionMs: Long,
     ): ListenableFuture<*> {
+        val served = mediaItems.mapNotNull { servedMediaId(it.mediaId) }
+        if (served.isNotEmpty() && served.size == mediaItems.size) {
+            library.request {
+                it.loadServed(served, startIndex.coerceIn(served.indices).toUInt(), false)
+                if (startPositionMs > 0) it.seek(startPositionMs.toULong())
+            }
+            return Futures.immediateVoidFuture()
+        }
+
         val (ids, start) = BrowseIds.playable(mediaItems.map { it.mediaId }, startIndex)
         if (ids.isEmpty()) return Futures.immediateVoidFuture()
 
@@ -369,7 +380,7 @@ private fun Snapshot?.playsOrLoads() =
 
 fun Track.mediaItem(artwork: ByteArray? = null): MediaItem =
     MediaItem.Builder()
-        .setMediaId(id.toString())
+        .setMediaId(if (served) uri else id.toString())
         .setUri(uri)
         .setMediaMetadata(
             MediaMetadata.Builder()

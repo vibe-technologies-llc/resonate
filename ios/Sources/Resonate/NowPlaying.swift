@@ -22,7 +22,7 @@ final class NowPlaying {
     private unowned let library: Library
     private var native: MobilePlayer?
     private var interruptions = InterruptionPolicy()
-    private var artworkFor: (track: UInt64, revision: UInt64)?
+    private var artworkFor: (track: String, revision: UInt64)?
     private var artwork: MPMediaItemArtwork?
     private var lockScreen: LockScreenArtwork?
     private var artworkTrack: Track?
@@ -348,8 +348,8 @@ final class NowPlaying {
             enableCommands(for: nil)
             return
         }
-        if artworkFor?.track != track.id || artworkFor?.revision != track.artRevision {
-            artworkFor = (track.id, track.artRevision)
+        if artworkFor?.track != track.pictureKey || artworkFor?.revision != track.artRevision {
+            artworkFor = (track.pictureKey, track.artRevision)
             artworkTrack = track
             artwork = nil
             lockScreen = nil
@@ -411,7 +411,7 @@ final class NowPlaying {
     }
 
     private func loadArtwork(_ track: Track) {
-        let id = track.id
+        let id = track.pictureKey
         let revision = track.artRevision
         let scale = Self.screenScale
         let asking: @MainActor (ArtworkBucket) -> Void = { [weak self] bucket in self?.fetchArtwork(bucket) }
@@ -427,7 +427,7 @@ final class NowPlaying {
 
     private func fetchArtwork(_ bucket: ArtworkBucket) {
         guard let track = artworkTrack, let held = lockScreen else { return }
-        let id = track.id
+        let id = track.pictureKey
         let revision = track.artRevision
         let features = library.features
         Task {
