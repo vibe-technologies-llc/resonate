@@ -203,11 +203,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   24-bit 192 kHz; encoding the ring to FLAC on the way out, or handing an untouched file over as it
   is, is not done
 
-## Later: Equaliser and DSP extras
-- [S] The listening test of restoration, the resampler and dither is reached from `resonate abx
-  --of` and the phones' boundary (`begin_setting_test`) alone: the window's *Listening test* group
-  and both phones' *Listening test* sections still offer the equaliser against its bypass only
-
 ## Later: Lyrics
 - [L · blocked: gpui] The sung line cannot grow as it lights: gpui 0.2.2 on Linux draws a glyph on a
   whole pixel vertically (`SUBPIXEL_VARIANTS_Y = 1`) and cosmic-text hints every size, so a type

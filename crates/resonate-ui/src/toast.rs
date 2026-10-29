@@ -143,6 +143,12 @@ pub(crate) fn dismiss(cx: &mut App) {
     withdraw(cx);
 }
 
+#[cfg(test)]
+pub(crate) fn showing_text(cx: &App) -> Option<String> {
+    let toast = cx.try_global::<Toaster>()?.showing.as_ref()?;
+    Some(said_with_its_count(&toast.notice, toast.times))
+}
+
 pub(crate) fn is_showing(cx: &App) -> bool {
     cx.try_global::<Toaster>()
         .and_then(|toaster| toaster.showing.as_ref())

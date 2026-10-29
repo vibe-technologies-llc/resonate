@@ -17,7 +17,7 @@ use resonate_engine::{
 use crate::{
     Error, MobilePlayer, Result,
     equaliser::EqualiserCurve,
-    playback::{LossyRestoration, ResamplingPhase, ResamplingQuality},
+    playback::{LossyRestoration, PlaybackPreferences, ResamplingPhase, ResamplingQuality},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -51,8 +51,32 @@ pub struct TestStanding {
     pub chance_percent: f64,
     pub significant: bool,
     pub verdicts: Vec<bool>,
-    pub residual_db: f64,
+    pub levels: TestLevels,
     pub heard: Option<TestArm>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, uniffi::Enum)]
+pub enum TestLevels {
+    Matched { residual_db: f64 },
+    Alike,
+    MeasuredAlike,
+    Lowered { arm: TestArm, db: f64 },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum SettingKind {
+    Restoration,
+    Resampling,
+    Dither,
+}
+
+const DITHER_AS_PLAYED: TestedDither = TestedDither::Shaped;
+
+fn arm_named(arm: Arm) -> TestArm {
+    match arm {
+        Arm::A => TestArm::A,
+        Arm::B => TestArm::B,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -215,10 +239,17 @@ impl ListeningTest {
         }))
     }
 
-    fn residual_db(&self) -> f64 {
+    fn levels(&self) -> TestLevels {
         match &self.compared {
-            Compared::Equaliser(arms) => arms.residual_db(),
-            Compared::Setting { .. } => 0.0,
+            Compared::Equaliser(arms) => TestLevels::Matched {
+                residual_db: arms.residual_db(),
+            },
+            Compared::Setting { contest, .. } if contest.is_flat_in_level() => TestLevels::Alike,
+            Compared::Setting { lowered, .. } if lowered.by.is_none() => TestLevels::MeasuredAlike,
+            Compared::Setting { lowered, .. } => TestLevels::Lowered {
+                arm: arm_named(lowered.arm),
+                db: f64::from(lowered.by.millibels().abs()) / 100.0,
+            },
         }
     }
 }
@@ -259,7 +290,7 @@ impl ListeningTest {
                 .verdicts()
                 .map(|verdict| verdict == Verdict::Right)
                 .collect(),
-            residual_db: self.residual_db(),
+            levels: self.levels(),
             heard: running.heard,
         }
     }
@@ -276,6 +307,37 @@ impl ListeningTest {
 pub fn listening_test_lengths() -> Vec<u32> {
     let usual = TRIALS_BY_DEFAULT as u32;
     vec![usual / 2, usual, usual * 2]
+}
+
+#[uniffi::export]
+pub fn setting_test_by_default(
+    kind: SettingKind,
+    preferences: PlaybackPreferences,
+) -> TestedSetting {
+    match kind {
+        SettingKind::Restoration => TestedSetting::Restoration {
+            a: preferences.restoration,
+            b: if preferences.restoration == LossyRestoration::Off {
+                LossyRestoration::Extend
+            } else {
+                LossyRestoration::Off
+            },
+        },
+        SettingKind::Resampling => TestedSetting::Resampling {
+            a_quality: preferences.quality,
+            a_phase: preferences.phase,
+            b_quality: if preferences.quality == ResamplingQuality::Fast {
+                ResamplingQuality::VeryHigh
+            } else {
+                ResamplingQuality::Fast
+            },
+            b_phase: preferences.phase,
+        },
+        SettingKind::Dither => TestedSetting::Dither {
+            a: DITHER_AS_PLAYED,
+            b: TestedDither::Off,
+        },
+    }
 }
 
 #[uniffi::export]
@@ -438,7 +500,9 @@ mod tests {
         assert_eq!(standing.planned, 16);
         assert_eq!(standing.answered, 0);
         assert!(!standing.finished);
-        assert!(standing.residual_db <= 0.1);
+        assert!(
+            matches!(standing.levels, TestLevels::Matched { residual_db } if residual_db <= 0.1)
+        );
         assert_eq!(standing.heard, None);
         assert!(standing.verdicts.is_empty());
     }
@@ -629,5 +693,121 @@ mod tests {
                 },
             }
         );
+    }
+
+    fn setting_test_of(contest: Contest, lowered: Lowered) -> ListeningTest {
+        ListeningTest::comparing(4, 7, Compared::Setting { contest, lowered }).expect("a session")
+    }
+
+    #[test]
+    fn a_setting_test_says_how_its_levels_were_matched() {
+        let flat = Contest::Dithering {
+            a: Dithering {
+                kind: DitherKind::Triangular,
+                shaping: NoiseShaping::Threshold,
+            },
+            b: Dithering {
+                kind: DitherKind::None,
+                shaping: NoiseShaping::None,
+            },
+        };
+        let measured = Contest::Restoration {
+            a: Restoration::Off,
+            b: Restoration::Extend,
+        };
+        let by = resonate_core::Trim::from_millibels(12).expect("a trim");
+
+        assert_eq!(
+            setting_test_of(flat, Lowered::NOTHING).standing().levels,
+            TestLevels::Alike
+        );
+        assert_eq!(
+            setting_test_of(measured, Lowered::NOTHING)
+                .standing()
+                .levels,
+            TestLevels::MeasuredAlike
+        );
+        assert_eq!(
+            setting_test_of(measured, Lowered { arm: Arm::B, by })
+                .standing()
+                .levels,
+            TestLevels::Lowered {
+                arm: TestArm::B,
+                db: 0.12
+            }
+        );
+    }
+
+    #[test]
+    fn a_setting_test_begins_against_the_opposite_of_what_the_phone_has_set() {
+        let preferences = PlaybackPreferences {
+            restoration: LossyRestoration::Off,
+            quality: ResamplingQuality::Fast,
+            phase: ResamplingPhase::Minimum,
+            ..PlaybackPreferences::default()
+        };
+        let extended = PlaybackPreferences {
+            restoration: LossyRestoration::Repair,
+            quality: ResamplingQuality::High,
+            ..preferences.clone()
+        };
+
+        assert_eq!(
+            setting_test_by_default(SettingKind::Restoration, preferences.clone()),
+            TestedSetting::Restoration {
+                a: LossyRestoration::Off,
+                b: LossyRestoration::Extend,
+            }
+        );
+        assert_eq!(
+            setting_test_by_default(SettingKind::Restoration, extended.clone()),
+            TestedSetting::Restoration {
+                a: LossyRestoration::Repair,
+                b: LossyRestoration::Off,
+            }
+        );
+        assert_eq!(
+            setting_test_by_default(SettingKind::Resampling, preferences),
+            TestedSetting::Resampling {
+                a_quality: ResamplingQuality::Fast,
+                a_phase: ResamplingPhase::Minimum,
+                b_quality: ResamplingQuality::VeryHigh,
+                b_phase: ResamplingPhase::Minimum,
+            }
+        );
+        assert_eq!(
+            setting_test_by_default(SettingKind::Resampling, extended),
+            TestedSetting::Resampling {
+                a_quality: ResamplingQuality::High,
+                a_phase: ResamplingPhase::Minimum,
+                b_quality: ResamplingQuality::Fast,
+                b_phase: ResamplingPhase::Minimum,
+            }
+        );
+        assert_eq!(
+            setting_test_by_default(SettingKind::Dither, PlaybackPreferences::default()),
+            TestedSetting::Dither {
+                a: TestedDither::Shaped,
+                b: TestedDither::Off,
+            }
+        );
+    }
+
+    #[test]
+    fn the_engines_refusals_of_a_test_are_told_in_sentences_a_phone_shows() {
+        for error in [
+            resonate_engine::Error::NothingToAudition,
+            resonate_engine::Error::ArmsAlike,
+            resonate_engine::Error::LevelsUnmeasured,
+            resonate_engine::Error::LevelsTooFarApart { millibels: 5000 },
+        ] {
+            let said = Error::Player(error).to_string();
+
+            assert!(!said.ends_with('.'), "{said} reads as a sentence");
+            assert!(
+                !said.contains("millibel"),
+                "{said} speaks the engine's language"
+            );
+        }
     }
 }

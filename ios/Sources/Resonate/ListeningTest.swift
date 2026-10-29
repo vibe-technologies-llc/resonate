@@ -13,19 +13,39 @@ final class ListeningTestState {
     private(set) var test: ListeningTest?
     private(set) var standing: TestStanding?
     private(set) var beginning = false
+    private(set) var testing = ListeningTesting.equaliser
+    private(set) var against: TestedSetting?
+    private(set) var running = ListeningTesting.equaliser
 
     init(library: Library) {
         self.library = library
     }
 
+    func choose(_ chosen: ListeningTesting, preferences: PlaybackPreferences?) {
+        guard test == nil, !beginning else { return }
+        testing = chosen
+        against = chosen.kind.flatMap { kind in preferences.map { settingTestByDefault(kind: kind, preferences: $0) } }
+    }
+
+    func set(against setting: TestedSetting) {
+        against = setting
+    }
+
     func begin(_ trials: UInt32, curve: EqualiserCurve) {
         guard test == nil, !beginning else { return }
+        let tested = testing
+        let setting = tested == .equaliser ? nil : against
+        if tested != .equaliser && setting == nil { return }
         beginning = true
         Task {
             defer { beginning = false }
             do {
                 let player = try await library.player()
-                let made = try await Work.aside { try player.beginListeningTest(curve: curve, trials: trials) }
+                let made = try await Work.aside { () throws -> ListeningTest in
+                    if let setting { return try player.beginSettingTest(setting: setting, trials: trials) }
+                    return try player.beginListeningTest(curve: curve, trials: trials)
+                }
+                running = tested
                 test = made
                 standing = made.standing()
             } catch {
@@ -103,15 +123,84 @@ struct ListeningTestSection: View {
                 }
                 Button(standing.finished ? "Done" : "End the test", systemImage: "stop.fill") { testing.end() }
             } else {
+                Picker(
+                    "Test",
+                    selection: Binding(
+                        get: { testing.testing },
+                        set: { testing.choose($0, preferences: library.preferences) }
+                    )
+                ) {
+                    ForEach(ListeningTesting.allCases, id: \.self) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .disabled(testing.beginning)
+                if testing.testing != .equaliser, let against = testing.against {
+                    AgainstPickers(setting: against) { testing.set(against: $0) }
+                }
                 ForEach(testing.lengths, id: \.self) { trials in
-                    Button("Begin \(trials) trials", systemImage: "play.fill") { testing.begin(trials, curve: curve) }
+                    Button(
+                        testing.beginning ? ListeningTestWords.beginning(testing.testing) : "Begin \(trials) trials",
+                        systemImage: "play.fill"
+                    ) { testing.begin(trials, curve: curve) }
                         .disabled(testing.beginning)
                 }
             }
         } header: {
             Text("Listening test")
         } footer: {
-            Text(ListeningTestWords.howItWorks)
+            Text((testing.standing == nil ? testing.testing : testing.running).howItWorks)
+        }
+    }
+}
+
+private struct AgainstPickers: View {
+    let setting: TestedSetting
+    let choose: (TestedSetting) -> Void
+
+    var body: some View {
+        Text(ListeningTestWords.playedAs(setting)).font(.subheadline)
+        switch setting {
+        case .restoration(let a, let b):
+            Picker(
+                "B is",
+                selection: Binding(get: { b }, set: { choose(.restoration(a: a, b: $0)) })
+            ) {
+                ForEach(LossyRestoration.every.filter { $0 != a }, id: \.self) {
+                    Text(ListeningTestWords.restorationLabel($0)).tag($0)
+                }
+            }
+        case .resampling(let aQuality, let aPhase, let bQuality, let bPhase):
+            Picker(
+                "B's quality",
+                selection: Binding(
+                    get: { bQuality },
+                    set: { choose(.resampling(aQuality: aQuality, aPhase: aPhase, bQuality: $0, bPhase: bPhase)) }
+                )
+            ) {
+                ForEach(ResamplingQuality.every, id: \.self) {
+                    Text(ListeningTestWords.qualityLabel($0)).tag($0)
+                }
+            }
+            Picker(
+                "B's phase",
+                selection: Binding(
+                    get: { bPhase },
+                    set: { choose(.resampling(aQuality: aQuality, aPhase: aPhase, bQuality: bQuality, bPhase: $0)) }
+                )
+            ) {
+                ForEach(ResamplingPhase.every, id: \.self) {
+                    Text(ListeningTestWords.phaseLabel($0)).tag($0)
+                }
+            }
+        case .dither(let a, let b):
+            Picker(
+                "B is",
+                selection: Binding(get: { b }, set: { choose(.dither(a: a, b: $0)) })
+            ) {
+                ForEach(ListeningTestWords.ditherChoices.filter { $0 != a }, id: \.self) {
+                    Text(ListeningTestWords.ditherLabel($0)).tag($0)
+                }
+            }
         }
     }
 }

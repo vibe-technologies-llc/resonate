@@ -112,7 +112,7 @@ impl fmt::Display for ReceivedOp {
 #[derive(Debug, Error, uniffi::Error)]
 #[uniffi(flat_error)]
 pub enum Error {
-    #[error("{}", crate::failure::of_a_command(.0.cause()))]
+    #[error("{}", crate::failure::of_a_player(.0))]
     Player(#[from] resonate_engine::Error),
     #[error("{}", crate::failure::of_a_read(.0))]
     Decode(#[from] resonate_codec::Error),

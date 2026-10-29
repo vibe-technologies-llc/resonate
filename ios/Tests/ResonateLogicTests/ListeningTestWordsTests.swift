@@ -10,7 +10,8 @@ import Testing
         planned: UInt32 = 16,
         heard: TestArm? = nil,
         significant: Bool = false,
-        chance: Double = 100
+        chance: Double = 100,
+        levels: TestLevels = .matched(residualDb: 0.0123)
     ) -> TestStanding {
         TestStanding(
             planned: planned,
@@ -20,7 +21,7 @@ import Testing
             chancePercent: chance,
             significant: significant,
             verdicts: verdicts,
-            residualDb: 0.0123,
+            levels: levels,
             heard: heard
         )
     }
@@ -60,5 +61,31 @@ import Testing
         #expect(ListeningTestWords.last(standing([false, true])) == "The last one was right")
         #expect(ListeningTestWords.last(standing([])) == nil)
         #expect(ListeningTestWords.last(standing([true, true], planned: 2)) == nil)
+    }
+
+    @Test func aSettingTestSaysHowItsLevelsWereMatched() {
+        #expect(ListeningTestWords.heard(standing([], heard: .a, levels: .alike)) == "Both play at one level. Hearing A")
+        #expect(
+            ListeningTestWords.heard(standing([], levels: .measuredAlike))
+                == "Measured through both, the two play at one level. Hearing nothing chosen yet"
+        )
+        #expect(
+            ListeningTestWords.heard(standing([], heard: .b, levels: .lowered(arm: .b, db: 0.12)))
+                == "B lowered by 0.12 dB to match the other. Hearing B"
+        )
+    }
+
+    @Test func aSettingIsNamedAsPlayedAndEachTestSaysWhatIsCompared() {
+        #expect(ListeningTestWords.playedAs(.restoration(a: .off, b: .extend)) == "A is Off")
+        #expect(
+            ListeningTestWords.playedAs(.resampling(aQuality: .veryHigh, aPhase: .minimum, bQuality: .fast, bPhase: .minimum))
+                == "A is Very high · Minimum"
+        )
+        #expect(ListeningTestWords.playedAs(.dither(a: .shaped, b: .off)) == "A is Triangular, shaped")
+        #expect(Set(ListeningTesting.allCases.map(\.howItWorks)).count == ListeningTesting.allCases.count)
+        #expect(ListeningTestWords.beginning(.restoration) == "Measuring…")
+        #expect(ListeningTestWords.beginning(.dither) == "Starting…")
+        #expect(ListeningTesting.equaliser.kind == nil)
+        #expect(ListeningTesting.resampling.kind == .resampling)
     }
 }

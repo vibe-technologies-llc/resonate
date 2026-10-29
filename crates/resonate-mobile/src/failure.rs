@@ -92,6 +92,26 @@ pub(crate) const fn of_a_command(cause: Cause) -> &'static str {
     }
 }
 
+pub(crate) const fn of_a_player(error: &resonate_engine::Error) -> &'static str {
+    use resonate_engine::Error as Player;
+
+    match error {
+        Player::NothingToAudition => {
+            "Play a song first: the test is heard on one playing, and a DSD stream sent as it is cannot be switched within"
+        }
+        Player::ArmsAlike => {
+            "A and B would sound the same on this stream, so there is nothing to tell apart"
+        }
+        Player::LevelsUnmeasured => {
+            "A and B could not be measured against each other, so the test cannot level them"
+        }
+        Player::LevelsTooFarApart { .. } => {
+            "A and B play too far apart in loudness to be matched, so the test cannot level them"
+        }
+        other => of_a_command(other.cause()),
+    }
+}
+
 pub(crate) const fn of_a_read(read: &resonate_codec::Error) -> &'static str {
     match Cause::of_a_read(read) {
         Cause::Unreadable => "The audio file couldn't be found or read",

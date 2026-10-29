@@ -196,7 +196,13 @@ the object never touches the engine itself and a front end holds one per run. Re
 `Error::ListeningTest*` sentences; the core errors it cannot name pass as `Domain`. The object
 compares either the equaliser's `Arms` or a setting (`Compared`): `begin_setting_test` takes a
 `TestedSetting` to the engine's audition (`eq.md`), measuring restoration's levels on the caller's
-thread, and the engine's refusals pass as `Error::Player`.
+thread, and the engine's refusals pass as `Error::Player`, worded by `failure::of_a_player`
+(`NothingToAudition`, `ArmsAlike`, `LevelsUnmeasured` and `LevelsTooFarApart` each their sentence, the
+rest by `Cause`). `TestStanding.levels` says how the arms were levelled (`TestLevels`), and
+`setting_test_by_default(SettingKind, PlaybackPreferences)` is the `TestedSetting` a phone begins
+from: A the preferences' restoration, or quality and phase, or the dither the phones play
+(triangular under `Threshold`, `TestedDither::Shaped`), B the opposite (extend or off, fast or very
+high with the phase kept, no dither). Both phones draw the choice (`eq.md`'s *The phones*).
 
 ## Lyrics
 

@@ -65,7 +65,7 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   datagram path alone; the link local multicast group and a peer dialled by a link local address with
   its scope have not crossed a real interface (nor an IPv6-only network)
 - [S · blocked: a device] The listening test is proved on the host alone (`resonate abx`'s session and
-  keys, the boundary's object and the phones' wording): the commands it sends are checked at the
+  keys, the boundary's object, the window's group under the test platform and the phones' wording): the commands it sends are checked at the
   engine's published settings, but no run has been heard on PipeWire with a real song, nor the
   sections driven on an emulator or an iPhone
 - [M · blocked: hardware] A microphone recording not proved against real sound reaching a microphone

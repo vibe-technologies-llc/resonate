@@ -402,9 +402,10 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
 
 ## The listening test
 
-A level-matched ABX of the equaliser against a bypass of itself, in the Equaliser category's
-*Listening test* group (`Group::Abx`, `views/settings/abx.rs`); the arithmetic is
-`resonate-core::abx`, windowless and tested.
+A level-matched ABX of the equaliser against a bypass of itself, or of lossy restoration, the
+resampler or dither against another setting, in the Equaliser category's *Listening test* group
+(`Group::Abx`, `views/settings/abx.rs`); the arithmetic is `resonate-core::abx`, windowless and
+tested.
 
 - **A is the chain as set, B its bypass, each lowered and neither raised.** `Arms::matched(profile,
   rate)` measures `mean_gain_db` (the mean power of `Profile::response`, preamp included, over the
@@ -429,8 +430,33 @@ A level-matched ABX of the equaliser against a bypass of itself, in the Equalise
   (a toast says so), uses the shown profile `at_rate` the stream rate, and its state
   (`RootView::audition`) lives for the run only.
 - **The pane shows what the listener needs and no more**: the trial and score with the chance of
-  that by guessing, a line of verdicts per trial, the residual level in dB, and which arm is
+  that by guessing, a line of verdicts per trial, how the levels were matched, and which arm is
   playing; an X is heard but never named, and the verdict of the last answer is shown after it.
+- **The window chooses what is tested before it begins** (`Testing`: *Equaliser*, *Restoration*,
+  *Resampler*, *Dither*, a `Choice` row whose note says what A and B are for that test). For a
+  setting A is what the engine's `OutputSettings` say (`Player::output_settings`), shown as a
+  reading, and B is chips of the values the listener picks (`Chosen`, one `Option` per
+  setting): restoration, the resampler's quality and phase, the dither's kind and noise shaping,
+  each defaulting to the CLI's opposite (extend or off, fast or very high, none or triangular; phase
+  and shaping the settings'). `Chosen::contest` is the `Contest` and nothing else decides it. The
+  test (`ListeningTest`, a `Session` and a `Subject`: the equaliser's `Arms` and sink, or a
+  `Contest` and its `Lowered`) begins on the background executor (`begin_the_audition`): restoration
+  measures the song through both arms (`Player::levels_of_the_contest`, with a stop flag the
+  `Measuring` handle sets when it is dropped), then `Command::Audition` of A is requested and its
+  answer waited for (`AUDITION_BEGUN_WITHIN`, 10 s), so a refusal begins nothing. While it runs the
+  begin buttons give way to a greyed *Measuring…* (*Starting…* for the others, which need no
+  measuring) and a *Stop*, which drops the handle and sends `Audition(None)`. A refusal is a toast
+  (`abx::refusal`) in the window's wording: `NothingToAudition` *Play a song first…*, `ArmsAlike`
+  *A and B would sound the same on this stream…*, `LevelsUnmeasured` and `LevelsTooFarApart` that
+  the test cannot level them, anything else `toast::would_not_do` of `Cause` (so a
+  `Cause::NothingToCompare` reads as it does for any command). While a setting is heard the pane
+  says how its levels were matched (*Both play at one level* for the resampler and dither,
+  *Measured through both…* or *B lowered by 0.12 dB to match the other* for restoration) in place of
+  the equaliser's residual; hearing an arm sends the `Audition` with that arm and ending sends
+  `Audition(None)` (the equaliser's end is `tell_the_engine`)
+  (`each_test_is_the_contest_of_the_settings_against_the_arm_chosen`,
+  `a_test_of_a_setting_with_nothing_playing_is_refused_in_a_toast_and_begins_nothing`,
+  `a_test_being_measured_shows_it_and_can_be_stopped_before_it_begins`).
 - **`resonate abx FILE [--trials N]` runs the same session on stdin keys** (`crates/resonate/src/abx.rs`):
   one song, repeated by the track (`RepeatMode::Track`), on the real output; it waits for the first
   `OutputChanged` to learn the sink and the negotiated rate, takes the profile the settings bind to
@@ -518,7 +544,7 @@ A level-matched ABX of the equaliser against a bypass of itself, in the Equalise
   `hear_in_listening_test(test, A|B|X)` sends `SetEqualisation` of the arm as the fallback, `enabled`
   whatever the switch says; `ListeningTest::answer(A|B)` answers whether it was right (a finished
   test is `ListeningTestFinished`) and `standing()` is the whole `TestStanding` (planned, answered,
-  right, finished, `chance_percent`, `significant`, the verdicts, the residual and the arm heard,
+  right, finished, `chance_percent`, `significant`, the verdicts, the levels and the arm heard,
   none for X); `end_listening_test()` sends the preferences' own `Equalisation` back
   (`PlaybackPreferences::equalisation`, the one `commands` builds). Both phones draw it in the
   equaliser page after the room correction with the desktop's wording (Android `ListeningTestSection`,
@@ -533,7 +559,19 @@ A level-matched ABX of the equaliser against a bypass of itself, in the Equalise
   `residual_db` 0) and begins the audition at A, refused as the engine refuses
   (`Error::Player`, `a_setting_test_is_refused_while_nothing_plays`); hearing an arm sends the
   `Audition`, and `end_listening_test()` sends `Audition(None)` before the preferences' curve.
-  Neither phone draws it yet (`FEATURES.md`).
+  `TestStanding.levels` is a `TestLevels` (`Matched { residual_db }` for the equaliser, `Alike` for a
+  flat setting, `MeasuredAlike`, `Lowered { arm, db }`), which replaced the equaliser's bare
+  residual so a front end words how each test was levelled; `setting_test_by_default(kind,
+  preferences)` makes the `TestedSetting` a phone begins from, A the preferences' restoration,
+  quality and phase (dither as the engine plays it, triangular under `Threshold`, which the phones
+  never change: `TestedDither::Shaped`) and B their opposite, so no front end keeps the rule. An
+  engine refusal reads as the sentences above (`failure::of_a_player`, so `Error::Player` shows
+  *A and B would sound the same…* where it showed only the cause). Both phones' *Listening test*
+  sections choose *Equaliser*, *Restoration*, *Resampler* or *Dither* (`Testing`, `ListeningTesting`),
+  show A and chips or a menu for B (A is left out of B's restoration and dither choices, which would
+  render alike), call `begin_setting_test` off the main thread with *Measuring…* on the begin
+  buttons for restoration and *Starting…* for the rest, and word the levels as the window does
+  (`ListeningTestViewTest`, `ListeningTestWordsTests`).
 
 ## Room correction
 
