@@ -172,6 +172,7 @@ pub enum SettingKey {
     BluetoothWake,
     BluetoothLead,
     BluetoothAwake,
+    Renderers,
     Buffer,
     Volume,
     Theme,
@@ -257,7 +258,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 101] = [
+    pub const ALL: [Self; 102] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -277,6 +278,7 @@ impl SettingKey {
         Self::BluetoothWake,
         Self::BluetoothLead,
         Self::BluetoothAwake,
+        Self::Renderers,
         Self::Buffer,
         Self::Volume,
         Self::Theme,
@@ -416,6 +418,7 @@ pub enum Setting {
     },
     Convolution(Option<PathBuf>),
     SpeakerAngle(SpeakerAngle),
+    Renderers(bool),
     Resume(bool),
     HistoryKept(HistoryKept),
     SkipUnderRepeat(SkipUnderRepeat),
@@ -528,6 +531,7 @@ impl Setting {
             Self::EqualiserMeasurerFor { .. } => SettingKey::EqualiserMeasurerFor,
             Self::Convolution(_) => SettingKey::Convolution,
             Self::SpeakerAngle(_) => SettingKey::SpeakerAngle,
+            Self::Renderers(_) => SettingKey::Renderers,
             Self::Resume(_) => SettingKey::Resume,
             Self::HistoryKept(_) => SettingKey::HistoryKept,
             Self::SkipUnderRepeat(_) => SettingKey::SkipUnderRepeat,
@@ -909,6 +913,7 @@ pub struct Stored {
     pub last_settings_category: SettingsCategory,
     pub presence: Presence,
     pub present: Arc<dyn Present>,
+    pub renderers: Option<Arc<dyn Renderers>>,
     pub synchronised: Synchronised,
     pub syncing: Option<Arc<dyn Syncing>>,
     pub reads_as_a_code: Option<fn(&str) -> bool>,
@@ -952,6 +957,11 @@ fn millis(duration: Duration) -> u64 {
 
 pub trait Present: Send + Sync {
     fn follow(&self, presence: &Presence);
+}
+
+pub trait Renderers: Send + Sync {
+    fn looking(&self) -> bool;
+    fn look(&self, on: bool);
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

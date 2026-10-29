@@ -486,7 +486,12 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `DISCARD_TIMEOUT` = stalled, stream rebuilt. A seek while paused reopens instead (a graph not
   calling `process` can never acknowledge); a pause landing after an in-place seek is the same case
   caught late (`Unanswered::NothingPulling`, not a stall). A sink switch still reopens; a
-  renegotiation reshapes where the backend can (below).
+  renegotiation reshapes where the backend can (below). **A stream holding seconds past the ring
+  is rebound instead, and paused unfaded:** where `SinkStream::downstream` is `Downstream::Seconds`
+  (a network renderer, `upnp.md`) a discard would reach the ear only after what the device holds,
+  so `reuses_stream` refuses and the seek rebinds on a fresh stream; a pause stands such a stream
+  down at once with no fade in the ring, so the device's own pause cuts and its buffer resumes
+  as it was (`Output::holds_seconds_downstream`).
 - **A rebind on the same device reshapes the stream it holds instead of reopening it, where the
   backend can.** `rebind` retires the output `Retire::HandingOnItsStream`: the old ring fades out
   as ever, but once quiet its stream (active, not deaf; drained or asked to drain included, which
@@ -1227,7 +1232,9 @@ Invariants from file to sink. Callback contract: `realtime.md`.
 - **A device turning its own volume can take the slider; the stream then stays bit-perfect at any
   volume.** `device-volume` (off by default) = `EngineConfig::device_volume`. `Attenuator::of` weighs
   it against `SinkInfo::turns_its_own_volume` (route says `route.hw-volume` is `Yes`, never
-  `Unsaid`); `Attenuator::leaves` = the volume the stream still applies (`Volume::MAX` where the
+  `Unsaid`), and a port saying `HardwareVolume::Always` takes it whatever `device-volume` says
+  (`SinkInfo::always_turns_its_own_volume`: a network renderer, whose stream volume is heard a
+  buffer late); `Attenuator::leaves` = the volume the stream still applies (`Volume::MAX` where the
   device takes it; a ReplayGain adjustment stays the stream's). `PipeWire::set_device_volume` sets
   `Route` on the `Device` (what pipewire-pulse writes for a desktop slider; node `Props` would be the
   adapter's software volume), **keeping balance and mute**. **The slider starts where the device is**

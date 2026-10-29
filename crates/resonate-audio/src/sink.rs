@@ -123,6 +123,7 @@ pub enum HardwareVolume {
     Unsaid,
     No,
     Yes,
+    Always,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -171,9 +172,18 @@ impl SinkInfo {
     }
 
     pub fn turns_its_own_volume(&self) -> bool {
+        self.port.as_ref().is_some_and(|port| {
+            matches!(
+                port.hardware_volume,
+                HardwareVolume::Yes | HardwareVolume::Always
+            )
+        })
+    }
+
+    pub fn always_turns_its_own_volume(&self) -> bool {
         self.port
             .as_ref()
-            .is_some_and(|port| port.hardware_volume == HardwareVolume::Yes)
+            .is_some_and(|port| port.hardware_volume == HardwareVolume::Always)
     }
 
     pub fn is_bluetooth(&self) -> bool {

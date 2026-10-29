@@ -249,6 +249,8 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   beside the sound server's sinks, for the window, its zones and `play` (`upnp.md`). Off, nothing is
   multicast; a `sink` or `--sink` naming a renderer (`upnp:` and its UDN) searches anyway, waiting
   for the first answer so the engine's first survey holds it, and so does `sinks --renderers`.
+  The settings pane's device list switches it in the running window (`Setting::Renderers`,
+  `Rendering::switch`), the window holding a resting network from the start.
 - `speaker-angle`: whole degrees 5 to 90 (`resonate_core::SpeakerAngle`, 30 unless set; held by
   `At::within`, a value outside it costs the key alone): how far to either side of the front the
   speakers stand when `convolution` names a SOFA set (`eq.md`); the start reads the set at it

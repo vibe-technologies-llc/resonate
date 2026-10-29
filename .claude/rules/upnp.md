@@ -3,6 +3,7 @@ paths:
   - "crates/resonate-upnp/**"
   - "crates/resonate/src/rendering.rs"
   - "crates/resonate/src/zoning.rs"
+  - "crates/resonate-ui/src/views/settings/output.rs"
 ---
 
 # Network renderers (UPnP AV)
@@ -28,13 +29,21 @@ dev-dependency, for the end-to-end test.
   every one of them, and a zone of the window binds one as it binds any device (`Command::SetSink`,
   `--sink`, the settings pane's device list). Handing the renderer the source file's URL instead
   would bypass all of that and give it a timeline of its own. What it costs: the renderer holds its
-  own clock and buffer, so a seek, pause or volume change in the ring reaches the ear only after
-  what the renderer already holds (`FEATURES.md`).
+  own clock and buffer, so whatever is rendered into the ring reaches the ear only after what the
+  renderer already holds; a seek, a pause and the volume are steered past that buffer (*Past the
+  renderer's buffer*), an equaliser or ReplayGain change is not (`FEATURES.md`).
+- **Why not the untouched file:** `Backend::open` is handed an `AudioSource` of the ring's PCM, never
+  the file, and everything that names what plays (the queue, the boundary between rows, position,
+  sleep, the heard frame) is the engine's reading of that ring. Handing a renderer the file's own
+  address where `GetProtocolInfo` lists its format would bit-perfectly play the file, but beside the
+  engine rather than through it: the engine would go on pulling a ring nobody hears, and gapless
+  rows, the equaliser and the zone handover would silently stop applying. A bit-perfect PCM stream
+  already reaches a renderer whenever the plan is `BitPerfect`; what is left (`FEATURES.md`) is
+  FLAC-encoding that PCM on the way out to spare the network, which fits the seam.
 - **A renderer's node name is `upnp:` and its UDN** (`RENDERER_NODES`, `Renderer::node_name`), so a
   `sink` key or `--sink` names it across runs and replugs as a PipeWire `node.name` does; its
-  `SinkInfo` is `is_hardware`, never default, `Plugged::Unsaid`, with `HardwareVolume::Yes` where it
-  has RenderingControl (so `device-volume` sends `SetVolume`/`SetMute`, on a `resonate-upnp-turns`
-  thread so the engine never waits on the network) and the volume `GetVolume` read at discovery.
+  `SinkInfo` is `is_hardware`, never default, `Plugged::Unsaid`, with `HardwareVolume::Always` where
+  it has RenderingControl and the volume `GetVolume` read at discovery.
 
 ## Finding and describing
 
@@ -52,6 +61,11 @@ dev-dependency, for the end-to-end test.
   S16 and S24 stereo at 44.1 to 192 kHz; `audio/L16` alone is `Carriage::L16` at the rates it lists
   (44.1 and 48 kHz where none), S16 stereo; neither is `Error::TakesNoPcm` and the device is not
   listed. A renderer with no ConnectionManager, or one that will not answer it, is offered WAVE.
+- **A `Network` may rest.** `Network::resting` binds nothing and sends nothing (only the
+  `resonate-upnp-turns` thread runs); `Network::look` starts the stream server once and a
+  `resonate-upnp-search` thread, `Network::rest` stops searching and forgets every renderer, each
+  told `SinkChange::Removed`. `Network::start` is `resting` and `look` together. So the window can
+  hold a network behind every zone's `Beside` from the start and the settings pane switch it.
 - **Searched again every `Searching::every` (60 s)**; a renderer missing from
   `SEARCHES_MISSED_BEFORE_GONE` (2) searches in a row is `SinkChange::Removed`, a new UDN `Added`,
   a known UDN at a new address replaced under its id. `FirstSearch::Awaited` searches before
@@ -104,11 +118,37 @@ identifies the listener), reads a declared, chunked or close-delimited body, and
 - No reshape (`Unreshapable::Unsupported`): a new format is a new address and a new
   `SetAVTransportURI`.
 
+## Past the renderer's buffer
+
+- **A renderer's stream says it holds seconds** (`SinkStream::holding(Downstream::Seconds)`, a
+  `resonate-audio` vocabulary every other backend leaves at `Moments`), and the engine reads it two
+  ways (`audio.md`): a seek while playing rebinds on a fresh stream instead of discarding the ring
+  in place, and a pause stands the stream down at once with no fade written into the ring. A
+  discard in place would only change what the renderer is fed next, after the seconds it holds; a
+  fade before a pause would sit in its buffer and be heard as a dip once it resumed.
+- **A fresh stream stops the renderer first.** Each stream takes the renderer's `Lane` (one per
+  UDN, `Holders`): a `Mutex` holding which stream steers it. `stream::open` takes it, sends `Stop`
+  where another stream held it (the renderer drops its buffer) and `SetAVTransportURI` with the new
+  address under the lock; a `Watch` sends `Play`, `Pause` and `GetPositionInfo` only while its
+  stream still holds the lane (`Hold::steer`), and its closing `Stop` only where it lets go of a
+  lane it held (`Hold::let_go`). So a retiring stream's late pause or stop never reaches the stream
+  that replaced it, whichever closes first.
+- **A pause is the renderer's own `Pause`**, heard at once; the feed stops pulling, so on `Play` the
+  renderer resumes the very buffer it held and the ring continues it frame for frame.
+- **The volume is always the renderer's** (`HardwareVolume::Always`, which `Attenuator::of` hands
+  the volume whatever `device-volume` says): `SetVolume`/`SetMute` go out on the
+  `resonate-upnp-turns` thread the moment the slider moves, never waiting on the network, and the
+  stream stays at unity (`BitPerfect` where the plan is).
+
 ## In the binary
 
 `rendering::Rendering` holds the one `Network` a run uses. It searches only where the `renderers`
 key is on (off by default: nothing is multicast unasked), `sinks --renderers` asks, or the sink
-wanted names a renderer; the last two wait for the first search. `Rendering::player` is how `play`,
+wanted names a renderer; the last two wait for the first search. The window always holds one
+(`Rendering::for_the_window`, resting where none of those asks), so the settings pane's device
+list can switch it: `Rendering::switch` hands `resonate-ui` a `Renderers` (`looking`, `look`), the
+switch row under the devices calls it and stores `Setting::Renderers`, and renderers appear in
+or leave the list through the sink changes `Beside` forwards. `Rendering::player` is how `play`,
 the window and every zone (`zoning::Opener`) build a `Player`: PipeWire inside `Beside` where a
 network is held, `Player::with_sources` where not. `sinks` lists the renderers with *the network*
 as what drives them.
@@ -121,5 +161,11 @@ address once played and answers `RelTime` from what it read. It holds discovery 
 offered (`a_renderer_answering_the_search_is_described_and_listed_as_a_sink`), the call order and
 escaping, a drain told, the volume turned and the served bytes exactly as written
 (`a_stream_on_a_renderer_is_offered_by_address_played_paused_drained_and_stopped_and_fetched_as_written`),
-and a WAVE played through a real `Player` reaching the renderer bit for bit
-(`a_song_played_through_the_engine_to_a_renderer_reaches_it_bit_for_bit`).
+a WAVE played through a real `Player` reaching the renderer bit for bit
+(`a_song_played_through_the_engine_to_a_renderer_reaches_it_bit_for_bit`), a pause and a volume
+change reaching it within `SOONER_THAN` (400 ms) and the song resuming bit for bit after the pause
+(`a_pause_and_a_volume_change_reach_a_renderer_at_once_and_the_song_resumes_bit_for_bit`), and a
+seek sending `Stop`, `SetAVTransportURI` with a fresh address and `Play` within it, the new fetch
+carrying the song from where it landed and nothing before
+(`a_seek_on_a_renderer_stops_it_and_offers_a_fresh_address_starting_where_it_landed`). The fake
+stops reading a fetch on `Stop` and fetches each new address afresh, as a renderer does.

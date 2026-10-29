@@ -19,7 +19,8 @@ use resonate_audio::{
     SinkChange, SinkId, SinkInfo, SinkResult, SinkStream, StreamEvent, StreamRequest, Surveyor,
 };
 use resonate_core::{
-    ChannelLayout, Gain, MediaLocation, SampleFormat, SampleRate, StreamSpec, TrackId, Volume,
+    ChannelLayout, Frames, Gain, MediaLocation, SampleFormat, SampleRate, StreamSpec, TrackId,
+    Volume,
 };
 use resonate_engine::{Command, EngineConfig, Event, NodeName, Player, QueueItem};
 use resonate_upnp::{Beside, FirstSearch, Network, Searching};
@@ -40,12 +41,17 @@ const RATE: u32 = 44_100;
 
 const STRIDE: usize = 4;
 
+const SOONER_THAN: Duration = Duration::from_millis(400);
+
+const PAST_THE_FADE_IN: Duration = Duration::from_millis(50);
+
 #[derive(Default)]
 struct Heard {
     calls: Vec<(String, String)>,
     offered: Option<String>,
+    offers: Vec<String>,
     fetched: Vec<u8>,
-    fetching: bool,
+    fetching: Option<String>,
     fetch_ended: bool,
     searches: usize,
 }
@@ -230,7 +236,15 @@ fn answer(mut stream: TcpStream, heard: &Arc<Mutex<Heard>>) {
         }
         "GetVolume" => "<CurrentVolume>40</CurrentVolume>".to_owned(),
         "SetAVTransportURI" => {
-            heard.lock().offered = between(&body, "<CurrentURI>", "</CurrentURI>");
+            let mut heard = heard.lock();
+            heard.offered = between(&body, "<CurrentURI>", "</CurrentURI>");
+            if let Some(offered) = heard.offered.clone() {
+                heard.offers.push(offered);
+            }
+            String::new()
+        }
+        "Stop" => {
+            heard.lock().fetching = None;
             String::new()
         }
         "Play" => {
@@ -273,14 +287,16 @@ fn clock(heard: Duration) -> String {
 fn fetch(heard: &Arc<Mutex<Heard>>) {
     let offered = {
         let mut heard = heard.lock();
-        if heard.fetching {
+        let Some(offered) = heard.offered.clone() else {
+            return;
+        };
+        if heard.fetching.as_ref() == Some(&offered) {
             return;
         }
-        heard.fetching = true;
-        heard.offered.clone()
-    };
-    let Some(offered) = offered else {
-        return;
+        heard.fetching = Some(offered.clone());
+        heard.fetched.clear();
+        heard.fetch_ended = false;
+        offered
     };
     let heard = Arc::clone(heard);
     thread::spawn(move || {
@@ -294,23 +310,29 @@ fn fetch(heard: &Arc<Mutex<Heard>>) {
         let mut buffer = [0; 4096];
         let mut head_ends = None;
         loop {
-            match stream.read(&mut buffer) {
+            let read = match stream.read(&mut buffer) {
                 Ok(0) | Err(_) => break,
-                Ok(read) => {
-                    if head_ends.is_some() {
-                        heard.lock().fetched.extend_from_slice(&buffer[..read]);
-                    } else {
-                        held.extend_from_slice(&buffer[..read]);
-                        if let Some(at) = held.windows(4).position(|window| window == b"\r\n\r\n") {
-                            assert!(held.starts_with(b"HTTP/1.1 200 OK\r\n"));
-                            head_ends = Some(at + 4);
-                            heard.lock().fetched.extend_from_slice(&held[at + 4..]);
-                        }
-                    }
+                Ok(read) => read,
+            };
+            let mut heard = heard.lock();
+            if heard.fetching.as_ref() != Some(&offered) {
+                return;
+            }
+            if head_ends.is_some() {
+                heard.fetched.extend_from_slice(&buffer[..read]);
+            } else {
+                held.extend_from_slice(&buffer[..read]);
+                if let Some(at) = held.windows(4).position(|window| window == b"\r\n\r\n") {
+                    assert!(held.starts_with(b"HTTP/1.1 200 OK\r\n"));
+                    head_ends = Some(at + 4);
+                    heard.fetched.extend_from_slice(&held[at + 4..]);
                 }
             }
         }
-        heard.lock().fetch_ended = true;
+        let mut heard = heard.lock();
+        if heard.fetching.as_ref() == Some(&offered) {
+            heard.fetch_ended = true;
+        }
     });
 }
 
@@ -431,7 +453,7 @@ fn a_renderer_answering_the_search_is_described_and_listed_as_a_sink() {
         SampleFormat::F32
     )));
     let port = sink.port.expect("a renderer names where it is");
-    assert_eq!(port.hardware_volume, HardwareVolume::Yes);
+    assert_eq!(port.hardware_volume, HardwareVolume::Always);
     let volume = Volume::heard_at(port.volume.expect("the renderer's volume was read"));
     assert!((volume.get() - 0.4).abs() < 1e-4);
     assert_eq!(
@@ -586,6 +608,47 @@ fn music(frames: usize) -> Vec<u8> {
     pcm
 }
 
+fn playing_on(network: &Arc<Network>) -> Player {
+    let played = Arc::clone(network);
+    Player::with_backend(
+        EngineConfig {
+            sink: Some(NodeName::new(format!("upnp:{UDN}"))),
+            buffer: Duration::from_millis(200),
+            ..EngineConfig::default()
+        },
+        move |_| Ok(Box::new(Beside::over(Box::new(NoGraph::new()), played))),
+    )
+    .expect("a player")
+}
+
+fn loaded(player: &Player, path: &Path) {
+    player
+        .send(Command::Load {
+            items: vec![queued(path)],
+            start_at: 0,
+            autoplay: true,
+        })
+        .expect("loads");
+}
+
+fn finished(player: &Player) {
+    let since = Instant::now();
+    loop {
+        match player.events().recv_timeout(LOOKS_EVERY) {
+            Ok(Event::QueueFinished) => return,
+            Ok(Event::Failed { error, .. } | Event::Waiting { error, .. }) => {
+                panic!("the song did not play: {error}")
+            }
+            Ok(_) | Err(_) => {}
+        }
+        assert!(since.elapsed() < WAITED_AT_MOST, "the song never finished");
+    }
+}
+
+fn pcm_bytes(heard: Duration) -> usize {
+    (heard.as_secs_f64() * f64::from(RATE)) as usize * STRIDE
+}
+
 #[test]
 fn a_song_played_through_the_engine_to_a_renderer_reaches_it_bit_for_bit() {
     let fake = Fake::start();
@@ -594,35 +657,10 @@ fn a_song_played_through_the_engine_to_a_renderer_reaches_it_bit_for_bit() {
     let tree = Tree::new();
     let pcm = music(RATE as usize * 3 / 4);
     let path = tree.write("song.wav", &wave_file(&pcm));
-    let played = Arc::clone(&network);
-    let player = Player::with_backend(
-        EngineConfig {
-            sink: Some(NodeName::new(format!("upnp:{UDN}"))),
-            buffer: Duration::from_millis(200),
-            ..EngineConfig::default()
-        },
-        move |_| Ok(Box::new(Beside::over(Box::new(NoGraph::new()), played))),
-    )
-    .expect("a player");
+    let player = playing_on(&network);
 
-    player
-        .send(Command::Load {
-            items: vec![queued(&path)],
-            start_at: 0,
-            autoplay: true,
-        })
-        .expect("loads");
-    let since = Instant::now();
-    loop {
-        match player.events().recv_timeout(LOOKS_EVERY) {
-            Ok(Event::QueueFinished) => break,
-            Ok(Event::Failed { error, .. } | Event::Waiting { error, .. }) => {
-                panic!("the song did not play: {error}")
-            }
-            Ok(_) | Err(_) => {}
-        }
-        assert!(since.elapsed() < WAITED_AT_MOST, "the song never finished");
-    }
+    loaded(&player, &path);
+    finished(&player);
     fake.until("the fetch to take the whole song", |heard| {
         contains(&heard.fetched, &pcm)
     });
@@ -634,6 +672,112 @@ fn a_song_played_through_the_engine_to_a_renderer_reaches_it_bit_for_bit() {
         "SetAVTransportURI",
         "Play"
     ]));
+}
+
+#[test]
+fn a_pause_and_a_volume_change_reach_a_renderer_at_once_and_the_song_resumes_bit_for_bit() {
+    let fake = Fake::start();
+    let network =
+        Arc::new(Network::start(fake.searching(), FirstSearch::Awaited).expect("searches"));
+    let tree = Tree::new();
+    let pcm = music(RATE as usize * 3 / 2);
+    let path = tree.write("song.wav", &wave_file(&pcm));
+    let player = playing_on(&network);
+
+    loaded(&player, &path);
+    fake.until("half a second to be fetched", |heard| {
+        heard.fetched.len() >= WAVE_HEADER_BYTES + pcm_bytes(Duration::from_millis(500))
+    });
+    let paused_at = Instant::now();
+    player.send(Command::Pause).expect("pauses");
+    fake.until("the renderer to be paused", |heard| {
+        heard.body_of("Pause").is_some()
+    });
+    let pausing_took = paused_at.elapsed();
+    let turned_at = Instant::now();
+    player
+        .send(Command::SetVolume(Volume::new(0.5).expect("a volume")))
+        .expect("turns");
+    fake.until("the renderer to be turned", |heard| {
+        heard
+            .body_of("SetVolume")
+            .is_some_and(|body| body.contains("<DesiredVolume>50</DesiredVolume>"))
+    });
+    let turning_took = turned_at.elapsed();
+    player.send(Command::Play).expect("plays on");
+    finished(&player);
+    fake.until("the fetch to take the whole song", |heard| {
+        contains(&heard.fetched, &pcm)
+    });
+
+    let heard = fake.heard.lock();
+    assert!(
+        pausing_took < SOONER_THAN,
+        "the pause took {pausing_took:?} to reach the renderer"
+    );
+    assert!(
+        turning_took < SOONER_THAN,
+        "the volume took {turning_took:?} to reach the renderer"
+    );
+    assert_eq!(heard.offers.len(), 1, "a pause asked for a new address");
+    let actions = heard.actions();
+    let paused = actions.iter().position(|action| *action == "Pause");
+    let played_again = actions.iter().rposition(|action| *action == "Play");
+    assert!(paused < played_again, "{actions:?}");
+}
+
+#[test]
+fn a_seek_on_a_renderer_stops_it_and_offers_a_fresh_address_starting_where_it_landed() {
+    let fake = Fake::start();
+    let network =
+        Arc::new(Network::start(fake.searching(), FirstSearch::Awaited).expect("searches"));
+    let tree = Tree::new();
+    let pcm = music(RATE as usize * 3);
+    let path = tree.write("song.wav", &wave_file(&pcm));
+    let player = playing_on(&network);
+    let lands_at = Duration::from_secs(2);
+
+    loaded(&player, &path);
+    fake.until("a quarter second to be fetched", |heard| {
+        heard.fetched.len() >= WAVE_HEADER_BYTES + pcm_bytes(Duration::from_millis(250))
+    });
+    let sought_at = Instant::now();
+    player
+        .send(Command::Seek(Frames::from_duration(
+            lands_at,
+            SampleRate::HZ_44100,
+        )))
+        .expect("seeks");
+    fake.until("a second address to be fetched", |heard| {
+        heard.offers.len() >= 2 && heard.fetching == heard.offers.last().cloned()
+    });
+    let seeking_took = sought_at.elapsed();
+    finished(&player);
+    let rest = &pcm[pcm_bytes(lands_at + PAST_THE_FADE_IN)..];
+    fake.until("the fetch to take the song from where it landed", |heard| {
+        contains(&heard.fetched, rest)
+    });
+
+    let heard = fake.heard.lock();
+    assert!(
+        seeking_took < SOONER_THAN,
+        "the seek took {seeking_took:?} to reach the renderer"
+    );
+    assert_ne!(heard.offers[0], heard.offers[1]);
+    let actions = heard.actions();
+    let stopped = actions
+        .iter()
+        .position(|action| *action == "Stop")
+        .expect("the renderer was stopped");
+    assert_eq!(
+        actions[stopped..stopped + 3],
+        ["Stop", "SetAVTransportURI", "Play"],
+        "{actions:?}"
+    );
+    assert!(
+        heard.fetched.len() - WAVE_HEADER_BYTES <= pcm.len() - pcm_bytes(lands_at),
+        "the fresh address carried more than lies past where the seek landed"
+    );
 }
 
 fn queued(path: &Path) -> QueueItem {

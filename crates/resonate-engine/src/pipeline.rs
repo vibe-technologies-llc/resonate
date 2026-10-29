@@ -102,7 +102,9 @@ pub enum Attenuator {
 
 impl Attenuator {
     pub fn of(config: &EngineConfig, sink: &SinkInfo) -> Self {
-        if config.device_volume && sink.turns_its_own_volume() {
+        if sink.always_turns_its_own_volume()
+            || (config.device_volume && sink.turns_its_own_volume())
+        {
             Self::Device
         } else {
             Self::Stream
@@ -952,6 +954,20 @@ mod tests {
             OutputMode::Converted,
             "the device was handed the volume with the setting off"
         );
+    }
+
+    #[test]
+    fn a_device_that_always_turns_its_own_volume_takes_it_with_the_setting_off() {
+        let cd = spec(SampleRate::HZ_44100, SampleFormat::S16);
+        let renderer = turning_its_own(
+            HardwareVolume::Always,
+            sink(&[SampleRate::HZ_44100], &[SampleFormat::S16]),
+        );
+
+        let handed = plan(cd, &renderer, &half_volume());
+
+        assert_eq!(handed.mode, OutputMode::BitPerfect);
+        assert!(handed.gain.is_none());
     }
 
     #[test]
