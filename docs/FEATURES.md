@@ -106,11 +106,13 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   is never a FLAC
 
 ## Later: Equaliser and DSP extras
-- [S] A SOFA HRIR set is read at the fixed speaker angles (30 degrees either side of the front, no
-  elevation) from the nearest measurement of a `SimpleFreeFieldHRIR`-shaped set: another angle
-  for the speakers, an interpolation between measurements, a head turned, a multi-emitter
-  (`MultiSpeakerBRIR`) or netCDF-3 classic set, and a set past the phones' 64 MiB response limit
-  are not read
+- [S] A SOFA HRIR set is not read for speakers at an elevation, by an interpolation that surrounds
+  the point (a triangulation of the sphere, or magnitude and delay blended apart; the blend is an
+  inverse-distance weighting of up to three measurements within 15 degrees), for a head turned, for
+  a `MultiSpeakerBRIR` measured with the listener off the origin (`ListenerPosition` is ignored),
+  from a netCDF-3 64-bit data file (CDF-5) or past the phones' 64 MiB response limit; the desktop
+  pane offers five speaker angles (the file takes any from 5 to 90 degrees) and the phones' pages
+  offer none (the boundary has `set_speaker_angle`)
 - [M] *Fit the preamp*'s solved bound leaves the whole signal's node to the level alone: with it,
   the tone model's solution passed the decode of transients through a phase-turning curve (an
   allpass pair over noise and over a kick, hat and pads, by up to 0.38 dB), so broadband music

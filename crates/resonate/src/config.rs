@@ -15,8 +15,9 @@ use clap::ValueEnum as _;
 #[cfg(any(feature = "ui", test))]
 use resonate_core::Appearance;
 use resonate_core::{
-    Accent, AppId, ArtistsDrawn, Icon, Pictured, Presence, ScrollbarMode, Shown, SpectrumBands,
-    SpectrumFalls, SpectrumFloor, SpectrumTilt, SyncedSongs, TextSize, Theme, Trim, Volume,
+    Accent, AppId, ArtistsDrawn, Icon, Pictured, Presence, ScrollbarMode, Shown, SpeakerAngle,
+    SpectrumBands, SpectrumFalls, SpectrumFloor, SpectrumTilt, SyncedSongs, TextSize, Theme, Trim,
+    Volume,
 };
 use resonate_engine::{
     Crossfeed, DitherKind, FilterPhase, NoiseShaping, PreviousRestarts, Quality, ReplayGainMode,
@@ -38,6 +39,9 @@ const LOCK_SUFFIX: &str = ".lock";
 const BLUETOOTH_LEAD_MS: RangeInclusive<u64> = 0..=5_000;
 
 const BLUETOOTH_AWAKE_S: RangeInclusive<u64> = 0..=3 * 60 * 60;
+
+const SPEAKER_ANGLE_DEGREES: RangeInclusive<u64> =
+    SpeakerAngle::NARROWEST_DEGREES as u64..=SpeakerAngle::WIDEST_DEGREES as u64;
 
 const STAGING_SUFFIX: &str = ".new";
 
@@ -177,6 +181,7 @@ pub struct Config {
     pub minimum_length: Option<MinimumLength>,
     pub file_dropped: Option<bool>,
     pub convolution: Option<PathBuf>,
+    pub speaker_angle: Option<SpeakerAngle>,
     pub subsonic: Option<String>,
     pub subsonic_user: Option<String>,
     pub subsonic_password: Option<String>,
@@ -297,6 +302,7 @@ impl fmt::Debug for Config {
             minimum_length,
             file_dropped,
             convolution,
+            speaker_angle,
             subsonic,
             subsonic_user,
             subsonic_password,
@@ -403,6 +409,7 @@ impl fmt::Debug for Config {
             .field("minimum_length", minimum_length)
             .field("file_dropped", file_dropped)
             .field("convolution", convolution)
+            .field("speaker_angle", speaker_angle)
             .field("subsonic", subsonic)
             .field("subsonic_user", subsonic_user)
             .field("subsonic_password", &withheld(subsonic_password.as_ref()))
@@ -602,6 +609,10 @@ impl Config {
     #[cfg(feature = "ui")]
     pub fn reduces_motion(&self) -> bool {
         self.reduced_motion.unwrap_or(false)
+    }
+
+    pub fn speaker_angle(&self) -> SpeakerAngle {
+        self.speaker_angle.unwrap_or_default()
     }
 
     #[cfg(feature = "ui")]
@@ -948,6 +959,12 @@ impl Config {
             }
             ConfigKey::FileDropped => config.file_dropped = Some(at.boolean(value)?),
             ConfigKey::Convolution => config.convolution = a_path(at.string(value)?),
+            ConfigKey::SpeakerAngle => {
+                let degrees = at.within(value, &SPEAKER_ANGLE_DEGREES)?;
+                let degrees = u8::try_from(degrees).map_err(|_| at.rejected())?;
+                config.speaker_angle =
+                    Some(SpeakerAngle::from_degrees(degrees).map_err(|_| at.rejected())?);
+            }
             ConfigKey::Subsonic => config.subsonic = given(at.string(value)?),
             ConfigKey::SubsonicUser => config.subsonic_user = given(at.string(value)?),
             ConfigKey::SubsonicPassword => {
@@ -2661,6 +2678,22 @@ mod tests {
             load(Some(&scratch.path)).expect("it reads back").quality,
             Some(Quality::VeryHigh)
         );
+    }
+
+    #[test]
+    fn a_speaker_angle_is_read_in_whole_degrees_and_held_to_what_a_pair_of_speakers_can_be() {
+        let config = read("speaker-angle = 45").expect("a known angle");
+        assert_eq!(config.speaker_angle().degrees(), 45);
+        assert_eq!(Config::default().speaker_angle(), SpeakerAngle::STANDARD);
+
+        for refused in [
+            "speaker-angle = 4",
+            "speaker-angle = 91",
+            "speaker-angle = -30",
+            "speaker-angle = \"wide\"",
+        ] {
+            assert!(read(refused).is_err(), "{refused}");
+        }
     }
 
     #[test]

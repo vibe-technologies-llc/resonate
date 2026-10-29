@@ -166,6 +166,39 @@ impl fmt::Display for Q {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SpeakerAngle(u8);
+
+impl SpeakerAngle {
+    pub const NARROWEST_DEGREES: u8 = 5;
+    pub const WIDEST_DEGREES: u8 = 90;
+
+    pub const STANDARD: Self = Self(30);
+
+    pub const fn from_degrees(degrees: u8) -> Result<Self> {
+        if degrees < Self::NARROWEST_DEGREES || degrees > Self::WIDEST_DEGREES {
+            return Err(Error::SpeakerAngleOutOfRange(degrees as u16));
+        }
+        Ok(Self(degrees))
+    }
+
+    pub const fn degrees(self) -> u8 {
+        self.0
+    }
+}
+
+impl Default for SpeakerAngle {
+    fn default() -> Self {
+        Self::STANDARD
+    }
+}
+
+impl fmt::Display for SpeakerAngle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Preamp(i32);
 

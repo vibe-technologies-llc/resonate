@@ -336,6 +336,10 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
                 .transpose()?;
             (ConfigKey::Convolution, held.map(Into::into))
         }
+        Setting::SpeakerAngle(angle) => (
+            ConfigKey::SpeakerAngle,
+            Some(i64::from(angle.degrees()).into()),
+        ),
         Setting::Subsonic(given) => given_or_cleared(ConfigKey::Subsonic, given),
         Setting::SubsonicUser(given) => given_or_cleared(ConfigKey::SubsonicUser, given),
         Setting::SubsonicPassword(given) => given_or_cleared(ConfigKey::SubsonicPassword, given),
@@ -468,6 +472,7 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::MusicFolder => ConfigKey::MusicFolder,
         SettingKey::FileDropped => ConfigKey::FileDropped,
         SettingKey::Convolution => ConfigKey::Convolution,
+        SettingKey::SpeakerAngle => ConfigKey::SpeakerAngle,
         SettingKey::Subsonic => ConfigKey::Subsonic,
         SettingKey::SubsonicUser => ConfigKey::SubsonicUser,
         SettingKey::SubsonicPassword => ConfigKey::SubsonicPassword,
@@ -533,7 +538,7 @@ const fn replay_gain_text(mode: ReplayGainMode) -> &'static str {
 mod tests {
     use std::{env, ffi::OsStr, fs, os::unix::ffi::OsStrExt as _, process};
 
-    use resonate_core::{Accent, AppId, Pictured, Presence, Shown, TextSize, Theme};
+    use resonate_core::{Accent, AppId, Pictured, Presence, Shown, SpeakerAngle, TextSize, Theme};
 
     use super::*;
 
@@ -661,6 +666,26 @@ mod tests {
         assert_eq!(bindings.for_sink(Some(&sink)), Some((None, &Binding::Own)));
 
         let _ = fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn a_speaker_angle_the_pane_chooses_reads_back_and_one_put_back_is_gone() {
+        let folder = env::temp_dir().join(format!("resonate-settings-angle-{}", process::id()));
+        let path = folder.join("config.toml");
+        let file = File::at(path.clone());
+        let wide = SpeakerAngle::from_degrees(45).expect("an angle");
+
+        file.apply(&[SettingChange::Store(Setting::SpeakerAngle(wide))])
+            .expect("a writable temporary directory");
+        let chosen = config::load(Some(&path)).expect("the file reads back");
+
+        file.apply(&[SettingChange::Forget(SettingKey::SpeakerAngle)])
+            .expect("a writable temporary directory");
+        let forgotten = config::load(Some(&path)).expect("the file reads back");
+        let _ = fs::remove_dir_all(folder);
+
+        assert_eq!(chosen.speaker_angle(), wide);
+        assert_eq!(forgotten.speaker_angle(), SpeakerAngle::STANDARD);
     }
 
     #[test]

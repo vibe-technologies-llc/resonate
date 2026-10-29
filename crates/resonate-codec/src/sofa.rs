@@ -5,26 +5,40 @@ use std::{
 };
 
 use hdf5_reader::{Dataset, Datatype, Hdf5File, OpenOptions, SliceInfo, SliceInfoElem};
-use resonate_core::{Frames, MediaLocation, SampleRate};
+use resonate_core::{Frames, MediaLocation, SampleRate, SpeakerAngle};
 use thiserror::Error;
 
-use crate::{Error, Result, Sources};
+use crate::{
+    Error, Result, Sources,
+    netcdf::{
+        self, Classic, ClassicFault, FIRST_OFFSET_VERSION, Kind, Pick, SECOND_OFFSET_VERSION,
+    },
+};
 
 const SIGNATURE: [u8; 8] = *b"\x89HDF\r\n\x1a\n";
 
 pub const SOFA_BYTES_AT_MOST: u64 = 128 << 20;
 
 const MEASUREMENTS_AT_MOST: u64 = 1 << 20;
+const EMITTERS_AT_MOST: u64 = 1 << 16;
 const RATES_AT_MOST: u64 = 1 << 20;
 const EARS: u64 = 2;
 const COORDINATES: u64 = 3;
 const NEAREST_WITHIN_DEGREES: f64 = 45.0;
-const SPEAKER_AZIMUTH_DEGREES: f64 = 30.0;
+const EXACT_WITHIN_DEGREES: f64 = 0.5;
+const NEIGHBOURS_WITHIN_DEGREES: f64 = 15.0;
+const NEIGHBOURS_AT_MOST: usize = 3;
+const ONSET_AT_FRACTION_OF_PEAK: f64 = 0.1;
 const CHUNK_CACHE_BYTES: usize = 16 << 20;
 const CHUNK_BYTES_AT_MOST: usize = 64 << 20;
 const SINGLE_PRECISION_BYTES: u8 = 4;
 const DOUBLE_PRECISION_BYTES: u8 = 8;
 const RADIANS: &str = "rad";
+const FRONT: Direction = Direction {
+    front: 1.0,
+    left: 0.0,
+    up: 0.0,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Hrir {
@@ -40,6 +54,12 @@ pub enum Member {
     Delay,
     PositionType,
     PositionUnits,
+    EmitterPosition,
+    EmitterType,
+    EmitterUnits,
+    ListenerView,
+    ViewType,
+    ViewUnits,
 }
 
 impl Member {
@@ -51,6 +71,19 @@ impl Member {
             Self::Delay => "Data.Delay",
             Self::PositionType => "SourcePosition:Type",
             Self::PositionUnits => "SourcePosition:Units",
+            Self::EmitterPosition => "EmitterPosition",
+            Self::EmitterType => "EmitterPosition:Type",
+            Self::EmitterUnits => "EmitterPosition:Units",
+            Self::ListenerView => "ListenerView",
+            Self::ViewType => "ListenerView:Type",
+            Self::ViewUnits => "ListenerView:Units",
+        }
+    }
+
+    const fn attribute_name(self) -> &'static str {
+        match self {
+            Self::PositionType | Self::EmitterType | Self::ViewType => "Type",
+            _ => "Units",
         }
     }
 }
@@ -86,10 +119,11 @@ pub enum Side {
 }
 
 impl Side {
-    const fn azimuth_degrees(self) -> f64 {
+    fn azimuth_degrees(self, angle: SpeakerAngle) -> f64 {
+        let degrees = f64::from(angle.degrees());
         match self {
-            Self::Left => SPEAKER_AZIMUTH_DEGREES,
-            Self::Right => -SPEAKER_AZIMUTH_DEGREES,
+            Self::Left => degrees,
+            Self::Right => -degrees,
         }
     }
 }
@@ -115,6 +149,15 @@ pub enum Fault {
         source: Box<hdf5_reader::error::Error>,
     },
 
+    #[error("the netCDF header could not be read")]
+    ClassicOpen {
+        #[source]
+        source: ClassicFault,
+    },
+
+    #[error("the file is netCDF version {version}, and only classic versions 1 and 2 are read")]
+    ClassicVersion { version: u8 },
+
     #[error("could not {op} {member}")]
     Hdf5 {
         member: Member,
@@ -123,13 +166,20 @@ pub enum Fault {
         source: Box<hdf5_reader::error::Error>,
     },
 
+    #[error("could not read {member} of the netCDF file")]
+    Classic {
+        member: Member,
+        #[source]
+        source: ClassicFault,
+    },
+
     #[error("the set has no {member}")]
     MemberMissing { member: Member },
 
     #[error("{member} is not made of floating point numbers")]
     NotFloating { member: Member },
 
-    #[error("{member} has the shape {dims:?}, which a free-field HRIR set does not")]
+    #[error("{member} has the shape {dims:?}, which a head-related set does not")]
     ShapeNotUsable { member: Member, dims: Vec<u64> },
 
     #[error("the set holds no measurements")]
@@ -140,6 +190,9 @@ pub enum Fault {
 
     #[error("the set holds {measurements} measurements, more than {at_most} are read")]
     TooManyMeasurements { measurements: u64, at_most: u64 },
+
+    #[error("the set holds {emitters} emitters, more than {at_most} are read")]
+    TooManyEmitters { emitters: u64, at_most: u64 },
 
     #[error("the source positions are neither spherical nor cartesian")]
     PositionTypeUnknown,
@@ -158,6 +211,7 @@ pub fn read_hrir(
     sources: &Sources,
     location: &MediaLocation,
     longest: Duration,
+    angle: SpeakerAngle,
 ) -> Result<Option<Hrir>> {
     let unread = |source| Error::Io {
         location: location.clone(),
@@ -171,7 +225,7 @@ pub fn read_hrir(
         Err(source) if source.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
         Err(source) => return Err(unread(source)),
     }
-    if bytes != SIGNATURE {
+    if !is_container(&bytes) {
         return Ok(None);
     }
 
@@ -181,17 +235,22 @@ pub fn read_hrir(
         .read_to_end(&mut bytes)
         .map_err(unread)?;
 
-    read_hrir_bytes(bytes, longest).map_err(|source| Error::Sofa {
+    read_hrir_bytes(bytes, longest, angle).map_err(|source| Error::Sofa {
         location: location.clone(),
         source,
     })
 }
 
+fn is_container(bytes: &[u8]) -> bool {
+    bytes.starts_with(&SIGNATURE) || netcdf::version_of(bytes).is_some()
+}
+
 pub fn read_hrir_bytes(
     bytes: Vec<u8>,
     longest: Duration,
+    angle: SpeakerAngle,
 ) -> std::result::Result<Option<Hrir>, Fault> {
-    if !bytes.starts_with(&SIGNATURE) {
+    if !is_container(&bytes) {
         return Ok(None);
     }
     let held = bytes.len() as u64;
@@ -202,22 +261,149 @@ pub fn read_hrir_bytes(
         });
     }
 
-    let options = OpenOptions::default()
-        .with_chunk_cache_bytes(CHUNK_CACHE_BYTES)
-        .with_max_chunk_bytes(CHUNK_BYTES_AT_MOST);
-    let file = Hdf5File::from_vec_with_options(bytes, options).map_err(|source| Fault::Open {
-        source: Box::new(source),
-    })?;
-
-    Set::of(&file)?.stereo_pair(longest).map(Some)
+    let container = Container::of(bytes)?;
+    Set::of(&container)?.stereo_pair(longest, angle).map(Some)
 }
 
-struct Set {
+enum Container {
+    Hdf5(Hdf5File),
+    Classic(Classic),
+}
+
+impl Container {
+    fn of(bytes: Vec<u8>) -> std::result::Result<Self, Fault> {
+        if bytes.starts_with(&SIGNATURE) {
+            let options = OpenOptions::default()
+                .with_chunk_cache_bytes(CHUNK_CACHE_BYTES)
+                .with_max_chunk_bytes(CHUNK_BYTES_AT_MOST);
+            return Hdf5File::from_vec_with_options(bytes, options)
+                .map(Self::Hdf5)
+                .map_err(|source| Fault::Open {
+                    source: Box::new(source),
+                });
+        }
+        match netcdf::version_of(&bytes) {
+            Some(FIRST_OFFSET_VERSION | SECOND_OFFSET_VERSION) => Classic::of(bytes)
+                .map(Self::Classic)
+                .map_err(|source| Fault::ClassicOpen { source }),
+            Some(version) => Err(Fault::ClassicVersion { version }),
+            None => Err(Fault::ClassicOpen {
+                source: ClassicFault::Truncated { at: 0, wanted: 4 },
+            }),
+        }
+    }
+
+    fn find(&self, member: Member) -> std::result::Result<Option<Variable<'_>>, Fault> {
+        match self {
+            Self::Hdf5(file) => match file.dataset(member.name()) {
+                Ok(dataset) => Ok(Some(Variable::Hdf5(Box::new(dataset)))),
+                Err(source) if is_missing(&source) => Ok(None),
+                Err(source) => Err(Fault::Hdf5 {
+                    member,
+                    op: Access::Locate,
+                    source: Box::new(source),
+                }),
+            },
+            Self::Classic(classic) => Ok(classic.variable(member.name()).map(Variable::Classic)),
+        }
+    }
+
+    fn locate(&self, member: Member) -> std::result::Result<Variable<'_>, Fault> {
+        self.find(member)?.ok_or(Fault::MemberMissing { member })
+    }
+}
+
+enum Variable<'a> {
+    Hdf5(Box<Dataset>),
+    Classic(netcdf::Variable<'a>),
+}
+
+impl Variable<'_> {
+    fn shape(&self) -> Vec<u64> {
+        match self {
+            Self::Hdf5(dataset) => dataset.shape().to_vec(),
+            Self::Classic(variable) => variable.shape(),
+        }
+    }
+
+    fn floating_bytes(&self) -> Option<u8> {
+        match self {
+            Self::Hdf5(dataset) => match dataset.dtype() {
+                Datatype::FloatingPoint { size, .. } => Some(*size),
+                _ => None,
+            },
+            Self::Classic(variable) => match variable.kind() {
+                Kind::Float => Some(SINGLE_PRECISION_BYTES),
+                Kind::Double => Some(DOUBLE_PRECISION_BYTES),
+                _ => None,
+            },
+        }
+    }
+
+    fn attribute(&self, member: Member) -> std::result::Result<Option<String>, Fault> {
+        let unread = |source| Fault::Hdf5 {
+            member,
+            op: Access::Attribute,
+            source: Box::new(source),
+        };
+        match self {
+            Self::Hdf5(dataset) => {
+                let attribute = match dataset.attribute(member.attribute_name()) {
+                    Ok(attribute) => attribute,
+                    Err(source) if is_missing(&source) => return Ok(None),
+                    Err(source) => return Err(unread(source)),
+                };
+                attribute.read_string().map(Some).map_err(unread)
+            }
+            Self::Classic(variable) => {
+                Ok(variable.text(member.attribute_name()).map(str::to_owned))
+            }
+        }
+    }
+
+    fn numbers(&self, member: Member, picks: &[Pick]) -> std::result::Result<Vec<f64>, Fault> {
+        let Some(size) = self.floating_bytes() else {
+            return Err(Fault::NotFloating { member });
+        };
+        match self {
+            Self::Hdf5(dataset) => hdf5_numbers(dataset, member, size, picks),
+            Self::Classic(variable) => variable
+                .numbers(picks)
+                .map_err(|source| Fault::Classic { member, source }),
+        }
+    }
+
+    fn is_bounded(&self, member: Member, at_most: u64) -> std::result::Result<(), Fault> {
+        let shape = self.shape();
+        let elements = shape
+            .iter()
+            .try_fold(1_u64, |held, dim| held.checked_mul(*dim));
+        match elements {
+            Some(elements) if elements <= at_most => Ok(()),
+            _ => Err(Fault::ShapeNotUsable {
+                member,
+                dims: shape,
+            }),
+        }
+    }
+}
+
+struct Set<'a> {
     rate: SampleRate,
-    impulses: Dataset,
+    impulses: Variable<'a>,
     samples: u64,
-    directions: Vec<Option<Direction>>,
+    placing: Placing,
     delays: Option<Delays>,
+}
+
+enum Placing {
+    Measured {
+        directions: Vec<Option<Direction>>,
+    },
+    Speakers {
+        view: u64,
+        emitters: Vec<Option<Direction>>,
+    },
 }
 
 struct Delays {
@@ -225,21 +411,56 @@ struct Delays {
     samples: Vec<f64>,
 }
 
-impl Set {
-    fn of(file: &Hdf5File) -> std::result::Result<Self, Fault> {
-        let rate = rate_of(file)?;
+#[derive(Clone, Copy)]
+struct Positions {
+    member: Member,
+    kind: Member,
+    units: Member,
+    kind_unsaid: Option<Coordinates>,
+    trailing_one: bool,
+}
 
-        let impulses = locate(file, Member::Impulses)?;
-        let (measurements, samples) = match *impulses.shape() {
-            [measurements, EARS, samples] => (measurements, samples),
-            ref dims => {
+impl Positions {
+    const SOURCE: Self = Self {
+        member: Member::SourcePosition,
+        kind: Member::PositionType,
+        units: Member::PositionUnits,
+        kind_unsaid: None,
+        trailing_one: false,
+    };
+    const EMITTER: Self = Self {
+        member: Member::EmitterPosition,
+        kind: Member::EmitterType,
+        units: Member::EmitterUnits,
+        kind_unsaid: None,
+        trailing_one: true,
+    };
+    const VIEW: Self = Self {
+        member: Member::ListenerView,
+        kind: Member::ViewType,
+        units: Member::ViewUnits,
+        kind_unsaid: Some(Coordinates::Cartesian),
+        trailing_one: true,
+    };
+}
+
+impl<'a> Set<'a> {
+    fn of(container: &'a Container) -> std::result::Result<Self, Fault> {
+        let rate = rate_of(container)?;
+
+        let impulses = container.locate(Member::Impulses)?;
+        let shape = impulses.shape();
+        let (measurements, samples, emitters) = match *shape.as_slice() {
+            [measurements, EARS, samples] => (measurements, samples, None),
+            [measurements, EARS, emitters, samples] => (measurements, samples, Some(emitters)),
+            _ => {
                 return Err(Fault::ShapeNotUsable {
                     member: Member::Impulses,
-                    dims: dims.to_vec(),
+                    dims: shape,
                 });
             }
         };
-        if measurements == 0 {
+        if measurements == 0 || emitters == Some(0) {
             return Err(Fault::NoMeasurements);
         }
         if samples == 0 {
@@ -252,19 +473,37 @@ impl Set {
             });
         }
 
-        let directions = directions_of(file, measurements)?;
-        let delays = delays_of(file, measurements)?;
+        let placing = match emitters {
+            None => Placing::Measured {
+                directions: directions_of(container, Positions::SOURCE, measurements)?,
+            },
+            Some(emitters) if emitters > EMITTERS_AT_MOST => {
+                return Err(Fault::TooManyEmitters {
+                    emitters,
+                    at_most: EMITTERS_AT_MOST,
+                });
+            }
+            Some(emitters) => Placing::Speakers {
+                view: view_of(container, measurements)?,
+                emitters: directions_of(container, Positions::EMITTER, emitters)?,
+            },
+        };
+        let delays = delays_of(container, measurements)?;
 
         Ok(Self {
             rate,
             impulses,
             samples,
-            directions,
+            placing,
             delays,
         })
     }
 
-    fn stereo_pair(&self, longest: Duration) -> std::result::Result<Hrir, Fault> {
+    fn stereo_pair(
+        &self,
+        longest: Duration,
+        angle: SpeakerAngle,
+    ) -> std::result::Result<Hrir, Fault> {
         let most =
             usize::try_from(Frames::from_duration(longest, self.rate).get()).unwrap_or(usize::MAX);
         let frames = usize::try_from(self.samples)
@@ -276,8 +515,7 @@ impl Set {
 
         let mut ears = Vec::with_capacity(4);
         for side in [Side::Left, Side::Right] {
-            let measurement = self.nearest(side)?;
-            ears.extend(self.ears_at(measurement, frames, most)?);
+            ears.extend(self.ears_of(side, angle, frames, most)?);
         }
 
         let length = ears.iter().map(Vec::len).max().unwrap_or(0);
@@ -290,53 +528,69 @@ impl Set {
         })
     }
 
-    fn nearest(&self, side: Side) -> std::result::Result<u64, Fault> {
-        let wanted = Direction::heard_from(side.azimuth_degrees(), 0.0);
-        self.directions
-            .iter()
-            .enumerate()
-            .filter_map(|(index, direction)| {
-                direction.map(|direction| (index, direction.degrees_from(wanted)))
-            })
-            .filter(|(_, apart)| *apart <= NEAREST_WITHIN_DEGREES)
-            .min_by(|(_, apart), (_, other)| apart.total_cmp(other))
-            .map(|(index, _)| index as u64)
-            .ok_or(Fault::NoMeasurementNear {
-                side,
-                within: NEAREST_WITHIN_DEGREES,
-            })
-    }
-
-    fn ears_at(
+    fn ears_of(
         &self,
-        measurement: u64,
+        side: Side,
+        angle: SpeakerAngle,
         frames: usize,
         most: usize,
     ) -> std::result::Result<Vec<Vec<f64>>, Fault> {
-        let selection = SliceInfo {
-            selections: vec![
-                SliceInfoElem::Index(measurement),
-                SliceInfoElem::Slice {
-                    start: 0,
-                    end: EARS,
-                    step: 1,
-                },
-                SliceInfoElem::Slice {
-                    start: 0,
-                    end: frames as u64,
-                    step: 1,
-                },
-            ],
-        };
-        let values = numbers(&self.impulses, Member::Impulses, Some(&selection))?;
+        let wanted = Direction::heard_from(side.azimuth_degrees(angle), 0.0);
+        match &self.placing {
+            Placing::Measured { directions } => {
+                let mut contributions = Vec::new();
+                for (measurement, weight) in neighbours_of(directions, wanted, side)? {
+                    let picks = [
+                        Pick::At(measurement),
+                        Pick::Span {
+                            start: 0,
+                            end: EARS,
+                        },
+                        Pick::Span {
+                            start: 0,
+                            end: frames as u64,
+                        },
+                    ];
+                    let responses = self.responses(&picks, measurement, frames, most)?;
+                    contributions.push((weight, responses));
+                }
+                Ok(blended(contributions, most))
+            }
+            Placing::Speakers { view, emitters } => {
+                let (emitter, _) = nearest_of(emitters, wanted, side)?;
+                let picks = [
+                    Pick::At(*view),
+                    Pick::Span {
+                        start: 0,
+                        end: EARS,
+                    },
+                    Pick::At(emitter),
+                    Pick::Span {
+                        start: 0,
+                        end: frames as u64,
+                    },
+                ];
+                self.responses(&picks, *view, frames, most)
+            }
+        }
+    }
+
+    fn responses(
+        &self,
+        picks: &[Pick],
+        row: u64,
+        frames: usize,
+        most: usize,
+    ) -> std::result::Result<Vec<Vec<f64>>, Fault> {
+        let values = self.impulses.numbers(Member::Impulses, picks)?;
         if values.len() != frames * EARS as usize {
             return Err(Fault::ShapeNotUsable {
                 member: Member::Impulses,
-                dims: self.impulses.shape().to_vec(),
+                dims: self.impulses.shape(),
             });
         }
 
-        let delays = self.delays_at(measurement)?;
+        let delays = self.delays_at(row)?;
         Ok(values
             .chunks_exact(frames)
             .zip(delays)
@@ -369,15 +623,143 @@ impl Set {
     }
 }
 
-fn rate_of(file: &Hdf5File) -> std::result::Result<SampleRate, Fault> {
-    let dataset = locate(file, Member::SamplingRate)?;
-    bounded(&dataset, Member::SamplingRate, RATES_AT_MOST)?;
-    let hertz = numbers(&dataset, Member::SamplingRate, None)?
+fn apart_from(directions: &[Option<Direction>], wanted: Direction) -> Vec<(u64, f64)> {
+    let mut apart: Vec<(u64, f64)> = directions
+        .iter()
+        .enumerate()
+        .filter_map(|(index, direction)| {
+            direction.map(|direction| (index as u64, direction.degrees_from(wanted)))
+        })
+        .collect();
+    apart.sort_by(|(_, apart), (_, other)| apart.total_cmp(other));
+    apart
+}
+
+fn nearest_of(
+    directions: &[Option<Direction>],
+    wanted: Direction,
+    side: Side,
+) -> std::result::Result<(u64, f64), Fault> {
+    directions
+        .iter()
+        .enumerate()
+        .filter_map(|(index, direction)| {
+            direction.map(|direction| (index as u64, direction.degrees_from(wanted)))
+        })
+        .filter(|(_, apart)| *apart <= NEAREST_WITHIN_DEGREES)
+        .min_by(|(_, apart), (_, other)| apart.total_cmp(other))
+        .ok_or(Fault::NoMeasurementNear {
+            side,
+            within: NEAREST_WITHIN_DEGREES,
+        })
+}
+
+fn neighbours_of(
+    directions: &[Option<Direction>],
+    wanted: Direction,
+    side: Side,
+) -> std::result::Result<Vec<(u64, f64)>, Fault> {
+    let (nearest, distance) = nearest_of(directions, wanted, side)?;
+    if distance <= EXACT_WITHIN_DEGREES {
+        return Ok(vec![(nearest, 1.0)]);
+    }
+
+    let chosen: Vec<(u64, f64)> = apart_from(directions, wanted)
+        .into_iter()
+        .take(NEIGHBOURS_AT_MOST)
+        .enumerate()
+        .filter(|(place, (_, apart))| *place == 0 || *apart <= NEIGHBOURS_WITHIN_DEGREES)
+        .map(|(_, held)| held)
+        .collect();
+    let closeness: Vec<f64> = chosen
+        .iter()
+        .map(|(_, apart)| 1.0 / (apart * apart))
+        .collect();
+    let total: f64 = closeness.iter().sum();
+    Ok(chosen
+        .iter()
+        .zip(closeness)
+        .map(|((measurement, _), closeness)| (*measurement, closeness / total))
+        .collect())
+}
+
+fn blended(mut contributions: Vec<(f64, Vec<Vec<f64>>)>, most: usize) -> Vec<Vec<f64>> {
+    if contributions.len() == 1 {
+        return contributions
+            .pop()
+            .map(|(_, ears)| ears)
+            .unwrap_or_default();
+    }
+    (0..EARS as usize)
+        .map(|ear| {
+            let parts: Vec<(f64, &[f64])> = contributions
+                .iter()
+                .map(|(weight, ears)| (*weight, ears[ear].as_slice()))
+                .collect();
+            aligned_sum(&parts, most)
+        })
+        .collect()
+}
+
+fn onset_of(response: &[f64]) -> usize {
+    let peak = response
+        .iter()
+        .fold(0.0_f64, |peak, tap| peak.max(tap.abs()));
+    if peak == 0.0 {
+        return 0;
+    }
+    let threshold = peak * ONSET_AT_FRACTION_OF_PEAK;
+    response
+        .iter()
+        .position(|tap| tap.abs() >= threshold)
+        .unwrap_or(0)
+}
+
+fn aligned_sum(parts: &[(f64, &[f64])], most: usize) -> Vec<f64> {
+    let onsets: Vec<usize> = parts
+        .iter()
+        .map(|(_, response)| onset_of(response))
+        .collect();
+    let target = parts
+        .iter()
+        .zip(&onsets)
+        .map(|((weight, _), onset)| weight * *onset as f64)
+        .sum::<f64>()
+        .round() as isize;
+    let shifts: Vec<isize> = onsets
+        .iter()
+        .map(|onset| target - *onset as isize)
+        .collect();
+
+    let length = parts
+        .iter()
+        .zip(&shifts)
+        .map(|((_, response), shift)| (response.len() as isize + shift).max(0) as usize)
+        .max()
+        .unwrap_or(0)
+        .min(most);
+    let mut sum = vec![0.0; length];
+    for ((weight, response), shift) in parts.iter().zip(&shifts) {
+        for (index, tap) in response.iter().enumerate() {
+            let at = index as isize + shift;
+            if (0..length as isize).contains(&at) {
+                sum[at as usize] += weight * tap;
+            }
+        }
+    }
+    sum
+}
+
+fn rate_of(container: &Container) -> std::result::Result<SampleRate, Fault> {
+    let variable = container.locate(Member::SamplingRate)?;
+    variable.is_bounded(Member::SamplingRate, RATES_AT_MOST)?;
+    let hertz = variable
+        .numbers(Member::SamplingRate, &[])?
         .first()
         .copied()
         .ok_or_else(|| Fault::ShapeNotUsable {
             member: Member::SamplingRate,
-            dims: dataset.shape().to_vec(),
+            dims: variable.shape(),
         })?;
 
     let whole = hertz.round();
@@ -388,19 +770,34 @@ fn rate_of(file: &Hdf5File) -> std::result::Result<SampleRate, Fault> {
 }
 
 fn directions_of(
-    file: &Hdf5File,
-    measurements: u64,
+    container: &Container,
+    positions: Positions,
+    rows: u64,
 ) -> std::result::Result<Vec<Option<Direction>>, Fault> {
-    let dataset = locate(file, Member::SourcePosition)?;
-    if *dataset.shape() != [measurements, COORDINATES] {
+    let variable = container.locate(positions.member)?;
+    directions_in(&variable, positions, rows)
+}
+
+fn directions_in(
+    variable: &Variable<'_>,
+    positions: Positions,
+    rows: u64,
+) -> std::result::Result<Vec<Option<Direction>>, Fault> {
+    let shape = variable.shape();
+    let held = match *shape.as_slice() {
+        [held, COORDINATES] => held == rows,
+        [held, COORDINATES, 1] => held == rows && positions.trailing_one,
+        _ => false,
+    };
+    if !held {
         return Err(Fault::ShapeNotUsable {
-            member: Member::SourcePosition,
-            dims: dataset.shape().to_vec(),
+            member: positions.member,
+            dims: shape,
         });
     }
 
-    let coordinates = Coordinates::of(&dataset)?;
-    let values = numbers(&dataset, Member::SourcePosition, None)?;
+    let coordinates = Coordinates::of(variable, positions)?;
+    let values = variable.numbers(positions.member, &[])?;
     Ok(values
         .as_chunks::<{ COORDINATES as usize }>()
         .0
@@ -409,29 +806,51 @@ fn directions_of(
         .collect())
 }
 
-fn delays_of(file: &Hdf5File, measurements: u64) -> std::result::Result<Option<Delays>, Fault> {
-    let dataset = match file.dataset(Member::Delay.name()) {
-        Ok(dataset) => dataset,
-        Err(source) if is_missing(&source) => return Ok(None),
-        Err(source) => {
-            return Err(Fault::Hdf5 {
-                member: Member::Delay,
-                op: Access::Locate,
-                source: Box::new(source),
+fn view_of(container: &Container, measurements: u64) -> std::result::Result<u64, Fault> {
+    let Some(variable) = container.find(Member::ListenerView)? else {
+        return Ok(0);
+    };
+    let rows = match *variable.shape().as_slice() {
+        [rows, COORDINATES] | [rows, COORDINATES, 1] if rows == 1 || rows == measurements => rows,
+        _ => {
+            return Err(Fault::ShapeNotUsable {
+                member: Member::ListenerView,
+                dims: variable.shape(),
             });
         }
     };
-    let rows = match *dataset.shape() {
+    if rows == 1 {
+        return Ok(0);
+    }
+
+    let views = directions_in(&variable, Positions::VIEW, rows)?;
+    Ok(views
+        .iter()
+        .enumerate()
+        .filter_map(|(index, view)| view.map(|view| (index as u64, view.degrees_from(FRONT))))
+        .min_by(|(_, apart), (_, other)| apart.total_cmp(other))
+        .map_or(0, |(index, _)| index))
+}
+
+fn delays_of(
+    container: &Container,
+    measurements: u64,
+) -> std::result::Result<Option<Delays>, Fault> {
+    let Some(variable) = container.find(Member::Delay)? else {
+        return Ok(None);
+    };
+    let shape = variable.shape();
+    let rows = match *shape.as_slice() {
         [EARS] => 1,
         [rows, EARS] if rows == 1 || rows == measurements => rows,
-        ref dims => {
+        _ => {
             return Err(Fault::ShapeNotUsable {
                 member: Member::Delay,
-                dims: dims.to_vec(),
+                dims: shape,
             });
         }
     };
-    let samples = numbers(&dataset, Member::Delay, None)?;
+    let samples = variable.numbers(Member::Delay, &[])?;
     Ok(Some(Delays { rows, samples }))
 }
 
@@ -442,13 +861,15 @@ enum Coordinates {
 }
 
 impl Coordinates {
-    fn of(dataset: &Dataset) -> std::result::Result<Self, Fault> {
-        let kind = text(dataset, Member::PositionType)?.ok_or(Fault::MemberMissing {
-            member: Member::PositionType,
-        })?;
+    fn of(variable: &Variable<'_>, positions: Positions) -> std::result::Result<Self, Fault> {
+        let Some(kind) = variable.attribute(positions.kind)? else {
+            return positions.kind_unsaid.ok_or(Fault::MemberMissing {
+                member: positions.kind,
+            });
+        };
         match kind.trim().to_ascii_lowercase().as_str() {
             "spherical" => {
-                let units = text(dataset, Member::PositionUnits)?.unwrap_or_default();
+                let units = variable.attribute(positions.units)?.unwrap_or_default();
                 let angle = units.split(',').next().unwrap_or_default();
                 let radians = angle.trim().to_ascii_lowercase().starts_with(RADIANS);
                 Ok(Self::Spherical { radians })
@@ -508,76 +929,33 @@ impl Direction {
     }
 }
 
-fn locate(file: &Hdf5File, member: Member) -> std::result::Result<Dataset, Fault> {
-    file.dataset(member.name()).map_err(|source| {
-        if is_missing(&source) {
-            Fault::MemberMissing { member }
-        } else {
-            Fault::Hdf5 {
-                member,
-                op: Access::Locate,
-                source: Box::new(source),
-            }
-        }
-    })
-}
-
-fn text(dataset: &Dataset, member: Member) -> std::result::Result<Option<String>, Fault> {
-    let name = match member {
-        Member::PositionType => "Type",
-        _ => "Units",
-    };
-    let attribute = match dataset.attribute(name) {
-        Ok(attribute) => attribute,
-        Err(source) if is_missing(&source) => return Ok(None),
-        Err(source) => {
-            return Err(Fault::Hdf5 {
-                member,
-                op: Access::Attribute,
-                source: Box::new(source),
-            });
-        }
-    };
-    attribute
-        .read_string()
-        .map(Some)
-        .map_err(|source| Fault::Hdf5 {
-            member,
-            op: Access::Attribute,
-            source: Box::new(source),
-        })
-}
-
-fn bounded(dataset: &Dataset, member: Member, at_most: u64) -> std::result::Result<(), Fault> {
-    let elements = dataset
-        .shape()
-        .iter()
-        .try_fold(1_u64, |held, dim| held.checked_mul(*dim));
-    match elements {
-        Some(elements) if elements <= at_most => Ok(()),
-        _ => Err(Fault::ShapeNotUsable {
-            member,
-            dims: dataset.shape().to_vec(),
-        }),
-    }
-}
-
-fn numbers(
+fn hdf5_numbers(
     dataset: &Dataset,
     member: Member,
-    selection: Option<&SliceInfo>,
+    size: u8,
+    picks: &[Pick],
 ) -> std::result::Result<Vec<f64>, Fault> {
-    let Datatype::FloatingPoint { size, .. } = dataset.dtype() else {
-        return Err(Fault::NotFloating { member });
-    };
+    let selection = (!picks.is_empty()).then(|| SliceInfo {
+        selections: picks
+            .iter()
+            .map(|pick| match *pick {
+                Pick::At(index) => SliceInfoElem::Index(index),
+                Pick::Span { start, end } => SliceInfoElem::Slice {
+                    start,
+                    end,
+                    step: 1,
+                },
+            })
+            .collect(),
+    });
     let unread = |source| Fault::Hdf5 {
         member,
         op: Access::Read,
         source: Box::new(source),
     };
-    match *size {
+    match size {
         SINGLE_PRECISION_BYTES => {
-            let array = match selection {
+            let array = match &selection {
                 Some(selection) => dataset.read_slice::<f32>(selection),
                 None => dataset.read_array::<f32>(),
             }
@@ -585,7 +963,7 @@ fn numbers(
             Ok(array.iter().map(|value| f64::from(*value)).collect())
         }
         DOUBLE_PRECISION_BYTES => {
-            let array = match selection {
+            let array = match &selection {
                 Some(selection) => dataset.read_slice::<f64>(selection),
                 None => dataset.read_array::<f64>(),
             }
@@ -616,8 +994,10 @@ mod tests {
     };
 
     use super::*;
+    use crate::netcdf::written;
 
     const LONG_ENOUGH: Duration = Duration::from_secs(10);
+    const STANDARD: SpeakerAngle = SpeakerAngle::STANDARD;
     const FRAMES: usize = 6;
 
     #[derive(Clone, Copy)]
@@ -637,6 +1017,7 @@ mod tests {
         single: bool,
         compressed: bool,
         delay: Option<Vec<f64>>,
+        taps: Option<fn(usize, usize, usize) -> f64>,
     }
 
     impl Fixture {
@@ -651,6 +1032,7 @@ mod tests {
                 single: false,
                 compressed: false,
                 delay: None,
+                taps: None,
             }
         }
 
@@ -662,12 +1044,75 @@ mod tests {
             (measurement * 100 + ear * 10 + frame + 1) as f64 / 1000.0
         }
 
+        fn tap_at(&self, measurement: usize, ear: usize, frame: usize) -> f64 {
+            self.taps.map_or_else(
+                || Self::tap(measurement, ear, frame),
+                |taps| taps(measurement, ear, frame),
+            )
+        }
+
+        fn classic_bytes(&self, wide_offsets: bool, records: bool) -> Vec<u8> {
+            let measurements = self.measurements() as u32;
+            let samples = self.samples as u32;
+            let first = if records { 0 } else { measurements };
+            let mut variables = vec![
+                written::Column {
+                    name: "Data.IR",
+                    dimensions: vec![0, 1, 2],
+                    attributes: Vec::new(),
+                    doubles: !self.single,
+                    values: self.impulses(),
+                },
+                written::Column {
+                    name: "SourcePosition",
+                    dimensions: vec![0, 3],
+                    attributes: vec![
+                        ("Type", self.kind.unwrap_or("spherical").to_owned()),
+                        ("Units", "degree, degree, metre".to_owned()),
+                    ],
+                    doubles: true,
+                    values: self.positions(),
+                },
+                written::Column {
+                    name: "Data.SamplingRate",
+                    dimensions: vec![4],
+                    attributes: Vec::new(),
+                    doubles: true,
+                    values: vec![self.rate],
+                },
+            ];
+            if let Some(delay) = &self.delay {
+                variables.push(written::Column {
+                    name: "Data.Delay",
+                    dimensions: vec![5, 1],
+                    attributes: Vec::new(),
+                    doubles: true,
+                    values: delay.clone(),
+                });
+            }
+            let delays = self.delay.as_ref().map_or(1, |delay| delay.len() / 2) as u32;
+            written::File {
+                wide_offsets,
+                dimensions: vec![
+                    ("M", first),
+                    ("R", self.ears as u32),
+                    ("N", samples),
+                    ("C", 3),
+                    ("I", 1),
+                    ("D", delays),
+                ],
+                records: if records { measurements } else { 0 },
+                variables,
+            }
+            .bytes()
+        }
+
         fn impulses(&self) -> Vec<f64> {
             let mut values = Vec::new();
             for measurement in 0..self.directions.len() {
                 for ear in 0..self.ears as usize {
                     for frame in 0..self.samples {
-                        values.push(Self::tap(measurement, ear, frame));
+                        values.push(self.tap_at(measurement, ear, frame));
                     }
                 }
             }
@@ -749,7 +1194,7 @@ mod tests {
         }
 
         fn read(&self) -> std::result::Result<Option<Hrir>, Fault> {
-            read_hrir_bytes(self.bytes(), LONG_ENOUGH)
+            read_hrir_bytes(self.bytes(), LONG_ENOUGH, STANDARD)
         }
 
         fn expected(&self, left: usize, right: usize) -> Vec<Vec<f64>> {
@@ -757,7 +1202,7 @@ mod tests {
                 .iter()
                 .map(|(measurement, ear)| {
                     (0..self.samples)
-                        .map(|frame| Self::tap(*measurement, *ear, frame))
+                        .map(|frame| self.tap_at(*measurement, *ear, frame))
                         .collect()
                 })
                 .collect()
@@ -895,7 +1340,7 @@ mod tests {
         let mut fixture = Fixture::new(&SURROUND);
         fixture.samples = 100;
 
-        let hrir = read_hrir_bytes(fixture.bytes(), Duration::from_millis(1))
+        let hrir = read_hrir_bytes(fixture.bytes(), Duration::from_millis(1), STANDARD)
             .expect("a set")
             .expect("a SOFA file");
 
@@ -954,17 +1399,17 @@ mod tests {
     #[test]
     fn bytes_that_are_not_a_container_of_this_kind_are_not_a_set() {
         assert!(
-            read_hrir_bytes(Vec::new(), LONG_ENOUGH)
+            read_hrir_bytes(Vec::new(), LONG_ENOUGH, STANDARD)
                 .expect("no fault")
                 .is_none()
         );
         assert!(
-            read_hrir_bytes(b"RIFF....WAVEfmt ".to_vec(), LONG_ENOUGH)
+            read_hrir_bytes(b"RIFF....WAVEfmt ".to_vec(), LONG_ENOUGH, STANDARD)
                 .expect("no fault")
                 .is_none()
         );
         assert!(matches!(
-            read_hrir_bytes(SIGNATURE.to_vec(), LONG_ENOUGH),
+            read_hrir_bytes(SIGNATURE.to_vec(), LONG_ENOUGH, STANDARD),
             Err(Fault::Open { .. })
         ));
     }
@@ -974,13 +1419,13 @@ mod tests {
         let whole = Fixture::new(&SURROUND).bytes();
 
         for length in 0..whole.len() {
-            let _ = read_hrir_bytes(whole[..length].to_vec(), LONG_ENOUGH);
+            let _ = read_hrir_bytes(whole[..length].to_vec(), LONG_ENOUGH, STANDARD);
         }
         for index in 0..whole.len() {
             for pattern in [0x00, 0xff, 0x80] {
                 let mut marked = whole.clone();
                 marked[index] = pattern;
-                let _ = read_hrir_bytes(marked, LONG_ENOUGH);
+                let _ = read_hrir_bytes(marked, LONG_ENOUGH, STANDARD);
             }
         }
     }
@@ -995,13 +1440,18 @@ mod tests {
         fs::write(&other, b"RIFF\0\0\0\0WAVE").expect("a wave");
         let sources = Sources::local();
 
-        let read = read_hrir(&sources, &MediaLocation::local(&set), LONG_ENOUGH);
-        let left = read_hrir(&sources, &MediaLocation::local(&other), LONG_ENOUGH);
+        let read = read_hrir(&sources, &MediaLocation::local(&set), LONG_ENOUGH, STANDARD);
+        let left = read_hrir(
+            &sources,
+            &MediaLocation::local(&other),
+            LONG_ENOUGH,
+            STANDARD,
+        );
         let broken = {
             let mut bytes = fs::read(&set).expect("the set");
             bytes.truncate(40);
             fs::write(&set, bytes).expect("a cut set");
-            read_hrir(&sources, &MediaLocation::local(&set), LONG_ENOUGH)
+            read_hrir(&sources, &MediaLocation::local(&set), LONG_ENOUGH, STANDARD)
         };
         let _ = fs::remove_dir_all(&folder);
 
@@ -1023,12 +1473,317 @@ mod tests {
 
         assert!(!seeds.is_empty());
         for seed in seeds {
-            let read = read_hrir_bytes(fs::read(&seed).expect("a seed"), LONG_ENOUGH);
+            let read = read_hrir_bytes(fs::read(&seed).expect("a seed"), LONG_ENOUGH, STANDARD);
 
             let hrir = read.expect("a set").expect("a SOFA file");
             assert_eq!(hrir.rate, SampleRate::HZ_48000, "{}", seed.display());
             assert_eq!(hrir.responses.len(), 4);
             assert!(hrir.responses.iter().all(|ear| ear.len() == 10));
         }
+    }
+
+    fn impulse_at_frame_one(_: usize, _: usize, frame: usize) -> f64 {
+        f64::from(u8::from(frame == 1))
+    }
+
+    fn impulse_by_measurement(measurement: usize, _: usize, frame: usize) -> f64 {
+        let at = if measurement.is_multiple_of(2) { 1 } else { 3 };
+        f64::from(u8::from(frame == at))
+    }
+
+    fn rounded(response: &[f64]) -> Vec<f64> {
+        response
+            .iter()
+            .map(|tap| (tap * 1000.0).round() / 1000.0)
+            .collect()
+    }
+
+    fn angle(degrees: u8) -> SpeakerAngle {
+        SpeakerAngle::from_degrees(degrees).expect("an angle")
+    }
+
+    #[test]
+    fn a_speaker_angle_the_listener_sets_chooses_the_measurements_at_that_angle() {
+        let fixture = Fixture::new(&[(30.0, 0.0), (45.0, 0.0), (330.0, 0.0), (315.0, 0.0)]);
+
+        let standard = read_hrir_bytes(fixture.bytes(), LONG_ENOUGH, STANDARD)
+            .expect("a set")
+            .expect("a SOFA file");
+        let wide = read_hrir_bytes(fixture.bytes(), LONG_ENOUGH, angle(45))
+            .expect("a set")
+            .expect("a SOFA file");
+
+        assert_eq!(standard.responses, fixture.expected(0, 2));
+        assert_eq!(wide.responses, fixture.expected(1, 3));
+    }
+
+    #[test]
+    fn a_set_with_nothing_near_the_angle_asked_is_refused_though_it_holds_the_standard_one() {
+        let fixture = Fixture::new(&[(30.0, 0.0), (330.0, 0.0)]);
+
+        let refused = read_hrir_bytes(fixture.bytes(), LONG_ENOUGH, angle(85));
+
+        assert!(matches!(
+            refused,
+            Err(Fault::NoMeasurementNear {
+                side: Side::Left,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn two_measurements_either_side_of_a_speaker_are_blended_with_their_onsets_aligned() {
+        let mut fixture = Fixture::new(&[(20.0, 0.0), (40.0, 0.0), (340.0, 0.0), (320.0, 0.0)]);
+        fixture.taps = Some(impulse_by_measurement);
+
+        let hrir = fixture.read().expect("a set").expect("a SOFA file");
+
+        for response in &hrir.responses {
+            assert_eq!(rounded(response)[..5], [0.0, 0.0, 1.0, 0.0, 0.0]);
+        }
+    }
+
+    #[test]
+    fn a_nearer_measurement_weighs_more_and_the_onset_follows_its_weight() {
+        let mut fixture = Fixture::new(&[(25.0, 0.0), (40.0, 0.0), (335.0, 0.0), (320.0, 0.0)]);
+        fixture.taps = Some(impulse_by_measurement);
+
+        let hrir = fixture.read().expect("a set").expect("a SOFA file");
+
+        assert_eq!(rounded(&hrir.responses[0])[..4], [0.0, 1.0, 0.0, 0.0]);
+        assert_eq!(rounded(&hrir.responses[3])[..4], [0.0, 1.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn a_measurement_within_half_a_degree_is_taken_whole_and_a_far_one_is_not_blended_in() {
+        let mut near = Fixture::new(&[(30.2, 0.0), (36.0, 0.0), (330.0, 0.0), (324.0, 0.0)]);
+        near.taps = Some(impulse_by_measurement);
+        let mut far = Fixture::new(&[(25.0, 0.0), (0.0, 0.0), (335.0, 0.0), (0.0, 0.0)]);
+        far.taps = Some(impulse_by_measurement);
+
+        let exact = near.read().expect("a set").expect("a SOFA file");
+        let alone = far.read().expect("a set").expect("a SOFA file");
+
+        assert_eq!(exact.responses, near.expected(0, 2));
+        assert_eq!(alone.responses, far.expected(0, 2));
+    }
+
+    #[test]
+    fn a_blend_keeps_the_difference_between_the_ears_that_the_delays_make() {
+        let mut fixture = Fixture::new(&[(20.0, 0.0), (40.0, 0.0), (340.0, 0.0), (320.0, 0.0)]);
+        fixture.taps = Some(impulse_at_frame_one);
+        fixture.delay = Some(vec![0.0, 3.0, 0.0, 3.0, 0.0, 3.0, 0.0, 3.0]);
+
+        let hrir = fixture.read().expect("a set").expect("a SOFA file");
+
+        assert_eq!(rounded(&hrir.responses[0])[1], 1.0);
+        assert_eq!(rounded(&hrir.responses[1])[4], 1.0);
+    }
+
+    #[test]
+    fn a_classic_netcdf_file_reads_as_the_same_set_in_hdf5_does() {
+        let fixture = Fixture::new(&SURROUND);
+
+        let hdf5 = fixture.read().expect("a set").expect("a SOFA file");
+        let narrow = read_hrir_bytes(fixture.classic_bytes(false, false), LONG_ENOUGH, STANDARD)
+            .expect("a set")
+            .expect("a SOFA file");
+        let wide = read_hrir_bytes(fixture.classic_bytes(true, false), LONG_ENOUGH, STANDARD)
+            .expect("a set")
+            .expect("a SOFA file");
+
+        assert_eq!(narrow, hdf5);
+        assert_eq!(wide, hdf5);
+    }
+
+    #[test]
+    fn a_classic_file_keeping_its_measurements_as_records_single_precision_and_delayed_reads_too() {
+        let mut fixture = Fixture::new(&SURROUND);
+        fixture.single = true;
+        fixture.delay = Some(vec![0.0, 3.0]);
+
+        let hdf5 = fixture.read().expect("a set").expect("a SOFA file");
+        let records = read_hrir_bytes(fixture.classic_bytes(false, true), LONG_ENOUGH, STANDARD)
+            .expect("a set")
+            .expect("a SOFA file");
+
+        assert_eq!(records, hdf5);
+        assert!(records.responses.iter().all(|ear| ear.len() == FRAMES + 3));
+    }
+
+    #[test]
+    fn a_classic_file_is_blended_like_any_other() {
+        let mut fixture = Fixture::new(&[(20.0, 0.0), (40.0, 0.0), (340.0, 0.0), (320.0, 0.0)]);
+        fixture.taps = Some(impulse_by_measurement);
+
+        let hrir = read_hrir_bytes(fixture.classic_bytes(true, false), LONG_ENOUGH, STANDARD)
+            .expect("a set")
+            .expect("a SOFA file");
+
+        assert_eq!(rounded(&hrir.responses[2])[..5], [0.0, 0.0, 1.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn a_netcdf_version_this_reader_does_not_know_and_a_header_that_lies_are_refused() {
+        let mut other = Fixture::new(&SURROUND).classic_bytes(false, false);
+        other[3] = 5;
+        let mut lying = Fixture::new(&SURROUND).classic_bytes(false, false);
+        lying[8..12].copy_from_slice(&0x0000_00ff_u32.to_be_bytes());
+
+        let version = read_hrir_bytes(other, LONG_ENOUGH, STANDARD);
+        let header = read_hrir_bytes(lying, LONG_ENOUGH, STANDARD);
+
+        assert!(matches!(version, Err(Fault::ClassicVersion { version: 5 })));
+        assert!(matches!(header, Err(Fault::ClassicOpen { .. })));
+    }
+
+    #[test]
+    fn a_classic_file_cut_short_or_marked_anywhere_is_refused_or_read_and_never_panics() {
+        let whole = Fixture::new(&SURROUND).classic_bytes(false, false);
+
+        for length in 0..whole.len() {
+            let _ = read_hrir_bytes(whole[..length].to_vec(), LONG_ENOUGH, STANDARD);
+        }
+        for index in 0..whole.len() {
+            for pattern in [0x00, 0xff, 0x80] {
+                let mut marked = whole.clone();
+                marked[index] = pattern;
+                let _ = read_hrir_bytes(marked, LONG_ENOUGH, STANDARD);
+            }
+        }
+    }
+
+    struct Brir {
+        views: Vec<(f64, f64, f64)>,
+        emitters: Vec<(f64, f64)>,
+        view_kind: Option<&'static str>,
+    }
+
+    impl Brir {
+        fn tap(view: usize, emitter: usize, ear: usize, frame: usize) -> f64 {
+            (view * 1000 + emitter * 100 + ear * 10 + frame + 1) as f64 / 10_000.0
+        }
+
+        fn bytes(&self) -> Vec<u8> {
+            let (views, emitters) = (self.views.len(), self.emitters.len());
+            let mut taps = Vec::new();
+            for view in 0..views {
+                for ear in 0..2 {
+                    for emitter in 0..emitters {
+                        for frame in 0..FRAMES {
+                            taps.push(Self::tap(view, emitter, ear, frame));
+                        }
+                    }
+                }
+            }
+            let positions: Vec<f64> = self
+                .emitters
+                .iter()
+                .flat_map(|(azimuth, elevation)| [*azimuth, *elevation, 1.0])
+                .collect();
+            let looking: Vec<f64> = self
+                .views
+                .iter()
+                .flat_map(|(front, left, up)| [*front, *left, *up])
+                .collect();
+
+            let impulses = DatasetBuilder::typed_data(
+                "Data.IR",
+                vec![views as u64, 2, emitters as u64, FRAMES as u64],
+                &taps,
+            )
+            .expect("impulses");
+            let emitting = DatasetBuilder::typed_data(
+                "EmitterPosition",
+                vec![emitters as u64, 3, 1],
+                &positions,
+            )
+            .expect("emitters")
+            .attribute(AttributeBuilder::fixed_string("Type", "spherical"))
+            .attribute(AttributeBuilder::fixed_string(
+                "Units",
+                "degree, degree, metre",
+            ));
+            let rate = DatasetBuilder::typed_data("Data.SamplingRate", vec![1], &[48_000.0])
+                .expect("rate");
+            let mut view =
+                DatasetBuilder::typed_data("ListenerView", vec![views as u64, 3], &looking)
+                    .expect("views");
+            if let Some(kind) = self.view_kind {
+                view = view.attribute(AttributeBuilder::fixed_string("Type", kind));
+            }
+
+            Hdf5Builder::new()
+                .dataset(impulses)
+                .dataset(emitting)
+                .dataset(rate)
+                .dataset(view)
+                .into_plan()
+                .expect("a plan")
+                .encode(WriteOptions::default())
+                .expect("bytes")
+        }
+
+        fn expected(&self, view: usize, left: usize, right: usize) -> Vec<Vec<f64>> {
+            [(left, 0), (left, 1), (right, 0), (right, 1)]
+                .iter()
+                .map(|(emitter, ear)| {
+                    (0..FRAMES)
+                        .map(|frame| Self::tap(view, *emitter, *ear, frame))
+                        .collect()
+                })
+                .collect()
+        }
+    }
+
+    #[test]
+    fn a_set_of_speakers_is_read_at_the_view_facing_the_front_and_the_emitters_at_the_angle() {
+        let set = Brir {
+            views: vec![(0.0, 1.0, 0.0), (1.0, 0.0, 0.0), (0.0, -1.0, 0.0)],
+            emitters: vec![(110.0, 0.0), (30.0, 0.0), (330.0, 0.0), (250.0, 0.0)],
+            view_kind: None,
+        };
+
+        let hrir = read_hrir_bytes(set.bytes(), LONG_ENOUGH, STANDARD)
+            .expect("a set")
+            .expect("a SOFA file");
+
+        assert_eq!(hrir.rate, SampleRate::HZ_48000);
+        assert_eq!(hrir.responses, set.expected(1, 1, 2));
+    }
+
+    #[test]
+    fn a_set_of_speakers_is_read_at_the_angle_asked_and_its_views_may_say_their_kind() {
+        let set = Brir {
+            views: vec![(0.0, 1.0, 0.0), (1.0, 0.0, 0.0)],
+            emitters: vec![(45.0, 0.0), (315.0, 0.0), (30.0, 0.0), (330.0, 0.0)],
+            view_kind: Some("cartesian"),
+        };
+
+        let hrir = read_hrir_bytes(set.bytes(), LONG_ENOUGH, angle(45))
+            .expect("a set")
+            .expect("a SOFA file");
+
+        assert_eq!(hrir.responses, set.expected(1, 0, 1));
+    }
+
+    #[test]
+    fn a_set_of_speakers_with_no_emitter_near_the_speaker_is_refused() {
+        let set = Brir {
+            views: vec![(1.0, 0.0, 0.0)],
+            emitters: vec![(180.0, 0.0), (120.0, 0.0)],
+            view_kind: None,
+        };
+
+        let refused = read_hrir_bytes(set.bytes(), LONG_ENOUGH, STANDARD);
+
+        assert!(matches!(
+            refused,
+            Err(Fault::NoMeasurementNear {
+                side: Side::Left,
+                ..
+            })
+        ));
     }
 }
