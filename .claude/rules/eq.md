@@ -267,9 +267,16 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   about 15 ms for a profile and 75 ms with a ten-second response (it was 28 and 320 ms here), since
   the near window is summed by `resonate_dsp::response_of`, which shares the points among
   `available_parallelism` scoped threads once taps times points pass `TURNS_WORTH_A_THREAD` (2^24),
-  as `Impulse::heard_at` does for the whole response; a solved bound costs about a millisecond a
-  song where the partition cost microseconds, so `Loudest::weigh` calls `bound_beside(peaks,
-  loudest_yet)`, which solves no moment that cannot raise what the fold already holds. The old
+  as `Impulse::heard_at` does for the whole response. A solved bound costs about 0.36 ms a song
+  and a fold about 50 us a song (`cargo bench -p resonate-analysis --bench bound`: twelve songs
+  under six curves, a thousand songs folded; 1.2 ms and 156 us before) where the partition costs
+  microseconds: the simplex prices the spans against each node's shares laid node by node over the
+  contiguous spans it passes (`Tones::reaches`), so the sums run across spans and vectorise, it
+  passes over every node whose dual weight is exactly zero (four in five of them), and the entering
+  column is summed with its rows interleaved. Each is the same additions in the same order, so
+  every bound is bit for bit what it was (`RESONATE_BENCH_BOUNDS=<file>` writes the bench's bounds
+  to compare). `Loudest::weigh` calls `bound_beside(peaks, loudest_yet)`, which solves no moment
+  that cannot raise what the fold already holds. The old
   estimate, the true peak times the mean gain weighted by each band's energy, is gone: a loud
   sustained band hid the quiet band where the peak gathered. `Loudest::weigh` takes the peaks.
 - **The set is the catalog's kept bands plus the queue's unmeasured songs, bounded.**

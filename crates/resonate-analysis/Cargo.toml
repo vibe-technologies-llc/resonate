@@ -15,5 +15,9 @@ smallvec.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 
+[[bench]]
+name = "bound"
+harness = false
+
 [lints]
 workspace = true

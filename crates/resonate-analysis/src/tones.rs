@@ -24,6 +24,40 @@ pub(crate) struct Tones {
     spans: Vec<(f64, f64)>,
     starts: Vec<usize>,
     passed: Vec<(usize, f64)>,
+    reaches: Vec<Reach>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct Reach {
+    first: usize,
+    shares: Vec<f64>,
+}
+
+impl Reach {
+    fn of(node: usize, starts: &[usize], passed: &[(usize, f64)]) -> Self {
+        let points = starts.len() - 1;
+        let share_at = |point: usize| {
+            passed[starts[point]..starts[point + 1]]
+                .iter()
+                .find(|(passing, _)| *passing == node)
+                .map(|(_, share)| *share)
+        };
+        let reached: Vec<usize> = (0..points)
+            .filter(|point| share_at(*point).is_some())
+            .collect();
+        let (Some(first), Some(last)) = (reached.first(), reached.last()) else {
+            return Self {
+                first: 0,
+                shares: Vec::new(),
+            };
+        };
+        Self {
+            first: *first,
+            shares: (*first..=*last)
+                .map(|point| share_at(point).unwrap_or(0.0))
+                .collect(),
+        }
+    }
 }
 
 impl Tones {
@@ -59,10 +93,14 @@ impl Tones {
             }
             starts.push(passed.len());
         }
+        let reaches = (0..NODES)
+            .map(|node| Reach::of(node, &starts, &passed))
+            .collect();
         Self {
             spans,
             starts,
             passed,
+            reaches,
         }
     }
 
@@ -87,6 +125,8 @@ pub(crate) struct Solving<'a> {
     inverse: Box<[[f64; NODES]; NODES]>,
     values: Heights,
     room: Vec<f64>,
+    covered: Vec<f64>,
+    covered_kept: Vec<f64>,
 }
 
 impl<'a> Solving<'a> {
@@ -116,6 +156,8 @@ impl<'a> Solving<'a> {
             basis: std::array::from_fn(|node| points + node),
             inverse,
             values: heights,
+            covered: vec![0.0; points],
+            covered_kept: vec![0.0; points],
         }
     }
 
@@ -161,31 +203,31 @@ impl<'a> Solving<'a> {
             .sum()
     }
 
-    fn priced(&self, apart: &[f64], weights: &Heights) -> (Option<usize>, f64) {
+    fn priced(&mut self, apart: &[f64], weights: &Heights) -> (Option<usize>, f64) {
         let points = self.tones.points();
         let largest = apart.iter().copied().fold(0.0_f64, f64::max);
         let kept = weights.map(|weight| weight.max(0.0));
+        self.cover(weights, &kept);
         let mut best = (GAINED_AT_LEAST * largest.max(1.0), None);
-        let mut scale: f64 = 1.0;
-        for (point, wanted) in apart.iter().enumerate().take(points) {
-            let mut covered = 0.0;
-            let mut covered_kept = 0.0;
-            for (node, share) in self.covered_at(point) {
-                covered += weights[*node] * share;
-                covered_kept += kept[*node] * share;
-            }
+        for (point, (wanted, covered)) in apart.iter().zip(&self.covered).enumerate().take(points) {
             let gained = wanted - covered;
             if gained > best.0 {
                 best = (gained, Some(point));
             }
-            if *wanted > 0.0 {
-                scale = if covered_kept > 0.0 {
-                    scale.max(wanted / covered_kept)
+        }
+        let scale = apart
+            .iter()
+            .zip(&self.covered_kept)
+            .take(points)
+            .filter(|(wanted, _)| **wanted > 0.0)
+            .map(|(wanted, covered_kept)| {
+                if *covered_kept > 0.0 {
+                    wanted / covered_kept
                 } else {
                     f64::INFINITY
-                };
-            }
-        }
+                }
+            })
+            .fold(1.0, f64::max);
         for (node, weight) in weights.iter().enumerate() {
             if -weight > best.0 {
                 best = (-weight, Some(points + node));
@@ -200,6 +242,28 @@ impl<'a> Solving<'a> {
             best.1.filter(|variable| !self.basis.contains(variable)),
             scale * paid,
         )
+    }
+
+    fn cover(&mut self, weights: &Heights, kept: &Heights) {
+        self.covered.fill(0.0);
+        self.covered_kept.fill(0.0);
+        for (node, reach) in self.tones.reaches.iter().enumerate() {
+            let weight = weights[node];
+            if !self.covering[node] || weight == 0.0 {
+                continue;
+            }
+            let span = reach.first..reach.first + reach.shares.len();
+            for (covered, share) in self.covered[span.clone()].iter_mut().zip(&reach.shares) {
+                *covered += weight * share;
+            }
+            let kept = kept[node];
+            if kept == 0.0 {
+                continue;
+            }
+            for (covered_kept, share) in self.covered_kept[span].iter_mut().zip(&reach.shares) {
+                *covered_kept += kept * share;
+            }
+        }
     }
 
     fn weights(&self, apart: &[f64]) -> Heights {
@@ -219,19 +283,14 @@ impl<'a> Solving<'a> {
 
     fn column(&self, variable: usize) -> Heights {
         let points = self.tones.points();
-        let mut column = [0.0; NODES];
-        if variable >= points {
-            let node = variable - points;
-            for (row, held) in column.iter_mut().zip(self.inverse.iter()) {
-                *row = held[node];
-            }
-            return column;
+        if let Some(node) = variable.checked_sub(points) {
+            return std::array::from_fn(|row| self.inverse[row][node]);
         }
-        for (row, held) in column.iter_mut().zip(self.inverse.iter()) {
-            *row = self
-                .covered_at(variable)
-                .map(|(node, share)| held[*node] * share)
-                .sum();
+        let mut column = [-0.0; NODES];
+        for (node, share) in self.covered_at(variable) {
+            for (row, held) in column.iter_mut().zip(self.inverse.iter()) {
+                *row += held[*node] * share;
+            }
         }
         column
     }
