@@ -365,4 +365,6 @@ class EqualiserViewModel(private val resonate: Resonate) : ViewModel() {
     fun speakAt(angle: Int) = resonate.features.room.speakAt(angle)
 
     fun raiseTo(elevation: Int) = resonate.features.room.raiseTo(elevation)
+
+    fun turnTo(yaw: Int) = resonate.features.room.turnTo(yaw)
 }

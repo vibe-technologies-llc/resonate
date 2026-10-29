@@ -2914,6 +2914,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             convolution: config.convolution.clone(),
             speaker_angle: config.speaker_angle(),
             speaker_elevation: config.speaker_elevation(),
+            head_yaw: config.head_yaw(),
             music_folder: config.music_folder.clone(),
             file_dropped: config.files_what_is_dropped(),
             window_buttons: config.window_buttons(),

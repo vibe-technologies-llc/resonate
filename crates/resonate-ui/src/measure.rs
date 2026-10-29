@@ -1,11 +1,16 @@
 use resonate_engine::{DspError, NodeName};
 use resonate_eq::{Error as EqError, Response};
-use resonate_listen::{Error as ListenError, Listening};
+use resonate_listen::{Error as ListenError, Hearing, Listening};
 use thiserror::Error;
 
 pub trait Measures: Send + Sync {
-    fn measure(&self, through: Option<&NodeName>, from: &Listening)
-    -> Result<Response, Unmeasured>;
+    fn measure(
+        &self,
+        through: Option<&NodeName>,
+        from: &Listening,
+        hearing: &Hearing,
+        calibration: Option<&Response>,
+    ) -> Result<Response, Unmeasured>;
 }
 
 #[derive(Debug, Error)]
@@ -26,6 +31,10 @@ impl Unmeasured {
             self,
             Self::Heard(heard) if matches!(**heard, ListenError::NothingHeard)
         ) || matches!(self, Self::Deconvolved(DspError::NothingHeard))
+    }
+
+    pub(crate) fn is_stopped(&self) -> bool {
+        matches!(self, Self::Heard(heard) if matches!(**heard, ListenError::Stopped))
     }
 
     pub(crate) fn is_a_missing_output(&self) -> bool {
@@ -59,5 +68,15 @@ mod tests {
         assert!(quiet.is_silence() && deaf.is_silence());
         assert!(!no_output.is_silence() && no_output.is_a_missing_output());
         assert!(!quiet.is_a_missing_output());
+    }
+
+    #[test]
+    fn a_sweep_the_listener_stopped_is_told_apart_from_one_that_failed() {
+        let stopped = Unmeasured::Heard(Box::new(ListenError::Stopped));
+        let quiet = Unmeasured::Heard(Box::new(ListenError::NothingHeard));
+
+        assert!(stopped.is_stopped());
+        assert!(!quiet.is_stopped());
+        assert!(!stopped.is_silence());
     }
 }

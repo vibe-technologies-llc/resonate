@@ -99,29 +99,24 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   the vault: `jxl-encoder` 0.3.4, the latest, refuses the first and rebuilds the second one byte long
 
 ## Later: Equaliser and DSP extras
-- [S] A SOFA HRIR set is not read for a head turned, for a `MultiSpeakerBRIR` measured with the
-  listener off the origin (`ListenerPosition` is ignored), from a netCDF-3 64-bit data file (CDF-5)
-  or past the phones' 64 MiB response limit; the interpolation triangulates the sixteen nearest
-  measurements within 30 degrees and is a true interpolation only where one triangle of them
-  surrounds the speaker, so a set measured at one elevation alone, or asked for a direction past
-  its outermost row, falls back to the inverse-distance blend of up to three measurements within 15
-  degrees, and a set of speakers (`MultiSpeakerBRIR`) takes its nearest emitter and interpolates
-  nothing; the interpolation blends in the time domain with the onsets aligned, not magnitude and
-  delay apart, which a coarse set (a measurement every thirty degrees) smears
+- [S] A phone refuses a SOFA set past 64 MiB (`IMPULSE_BYTES_AT_MOST`) though the desktop reads an
+  HDF5 one of up to 8 GiB by the ranges it needs: the limit is the boundary's, a document read whole
+  into a Kotlin `ByteArray` or Swift `Data`, copied across the boundary and staged as a file, and
+  lifting it needs a chunked staging call and a document read in chunks in both pickers; a netCDF-3
+  classic file is still read whole (up to 128 MiB) on every target, and a head's pitch and roll
+  (`ListenerView` past its heading) and a `ListenerPosition` in units other than metres are not read
 - [M] *Fit the preamp*'s solved bound prices every node under the whole signal's at its steady
   gain, so broadband music under a curve moving many bands still bounds one to three and a half
   decibels over its decode; weighing each node by its band's transient gain (the L1 of the near
   response filtered to it) was measured too loose under a dispersive correction (a random burst of
   taps 6 to 12 dB looser), and a transient gain read from what music a band holds, not the worst
   any music could, is not built
-- [S] The phones' *Measure* (a sweep through an `AudioTrack` or an `AVAudioPlayerNode` of its
+- [S · blocked: hardware] The phones' *Measure* (a sweep through an `AudioTrack` or an `AVAudioPlayerNode` of its
   own beside the engine, recorded by the microphone and fitted by `fit_recorded_sweep`; `eq.md`) is
   proved on the host against a known filter, and its Kotlin on the JVM, but not heard through a real
   phone's speaker and microphone: the iOS path is built and not run, the Android path was run end to end on an
   emulator, whose virtual microphone proves the path and says nothing of the sound, and neither phone corrects its own microphone or speaker
-  except by a calibration file the listener has; the window's *Measure* cannot be stopped part way
-  (eight seconds of sweep and two of tail) and takes no calibration file (the command's
-  `--calibration`) nor a name for the profile (it keeps `measured`)
+  except by a calibration file the listener has
 - [M] Lossy restoration was tuned and tested on ffmpeg's own MP3, AAC and Vorbis encodes of
   synthetic tones, walls and music-like notes at several bitrates, not on a breadth of real music
   per codec and bitrate and not on other encoders (Fraunhofer, Apple, Nero, libfdk); the thresholds

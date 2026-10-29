@@ -563,11 +563,11 @@ right speaker's response* and *Cancel*; the right file chosen, both are read as 
 kept through `keep_binaural_room_correction` (`RoomCorrectionState.chooseRight`, `eq.md`'s *Crossfeed
 and binaural responses*; `RoomPairNamesTest`). Choosing,
 applying, forgetting and restoring run one at a time under one mutex. **The section ends in the
-speaker angle and elevation** (`SpeakerSetting`, `RoomView.angle` and `elevation`, bounds from
-`speaker_limits()`): each a stepper and the desktop's chips, sent as `set_speaker_angle` and
-`set_speaker_elevation` (a set that will not read there leaves the pair standing and the failure
-on the banner) and kept in `playback` as `speaker-angle` and `speaker-elevation`, sent at start
-before the kept response is read (`eq.md`).
+speaker angle, elevation and the head turned** (`SpeakerSetting`, `RoomView.angle`, `elevation` and
+`yaw`, bounds from `speaker_limits()`): each a stepper and the desktop's chips, sent as
+`set_speaker_angle`, `set_speaker_elevation` and `set_head_yaw` (a set that will not read there
+leaves the trio standing and the failure on the banner) and kept in `playback` as `speaker-angle`,
+`speaker-elevation` and `head-yaw`, sent at start before the kept response is read (`eq.md`).
 
 **The listening test tests a setting as well as the equaliser** (`ListeningTestSection`,
 `ListeningTestView.kt`, after the room correction; `eq.md`'s *The phones*): `FilterChip`s choose

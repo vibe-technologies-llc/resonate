@@ -339,7 +339,8 @@ fn measure(
         (measuring::SWEEP_FOR + measuring::HEARD_AFTER_THE_SWEEP).as_secs()
     );
 
-    let heard: Response = measuring::measured_by(&Room { through, from })?;
+    let heard: Response =
+        measuring::measured_by(&Room { through, from }, &resonate_listen::Hearing::new())?;
     let measured = match wanted.calibration.as_deref() {
         Some(file) => measuring::calibrated(&heard, &Store::response_in(file)?.response)?,
         None => heard,

@@ -8,7 +8,8 @@ use std::{
 use parking_lot::Mutex;
 use resonate_codec::Sources;
 use resonate_core::{
-    AUDIO_EXTENSIONS, HRIR_EXTENSIONS, MediaLocation, SpeakerAngle, SpeakerElevation, Speakers,
+    AUDIO_EXTENSIONS, HRIR_EXTENSIONS, HeadYaw, MediaLocation, SpeakerAngle, SpeakerElevation,
+    Speakers,
 };
 use resonate_engine::{
     Command, Impulse, PairedReadError, binaural_wave, read_binaural_pair, read_impulse,
@@ -53,6 +54,8 @@ pub struct SpeakerLimits {
     pub angle_standard_degrees: u8,
     pub elevation_least_degrees: i16,
     pub elevation_most_degrees: i16,
+    pub yaw_least_degrees: i16,
+    pub yaw_most_degrees: i16,
 }
 
 #[uniffi::export]
@@ -63,6 +66,8 @@ pub fn speaker_limits() -> SpeakerLimits {
         angle_standard_degrees: SpeakerAngle::STANDARD.degrees(),
         elevation_least_degrees: i16::from(SpeakerElevation::LOWEST_DEGREES),
         elevation_most_degrees: i16::from(SpeakerElevation::HIGHEST_DEGREES),
+        yaw_least_degrees: i16::from(HeadYaw::RIGHTMOST_DEGREES),
+        yaw_most_degrees: i16::from(HeadYaw::LEFTMOST_DEGREES),
     }
 }
 
@@ -363,6 +368,18 @@ impl MobilePlayer {
         })
     }
 
+    pub fn head_yaw(&self) -> i16 {
+        i16::from(self.room.speakers().yaw.degrees())
+    }
+
+    pub fn set_head_yaw(&self, degrees: i16) -> Result<Option<RoomCorrection>> {
+        let yaw = HeadYaw::from_degrees(degrees)?;
+        self.speak_at(Speakers {
+            yaw,
+            ..self.room.speakers()
+        })
+    }
+
     pub fn forget_room_correction(&self) -> Result<()> {
         self.command(Command::SetConvolution(None))?;
         self.room.apply(None);
@@ -629,6 +646,27 @@ mod tests {
         assert!(!player_elevation(limits.elevation_least_degrees - 1));
         assert!(!player_elevation(limits.elevation_most_degrees + 1));
         assert_eq!(limits.angle_standard_degrees, 30);
+
+        let player_yaw = |degrees: i16| HeadYaw::from_degrees(degrees).is_ok();
+        assert!(player_yaw(limits.yaw_least_degrees));
+        assert!(player_yaw(limits.yaw_most_degrees));
+        assert!(!player_yaw(limits.yaw_least_degrees - 1));
+        assert!(!player_yaw(limits.yaw_most_degrees + 1));
+    }
+
+    #[test]
+    fn the_head_yaw_a_listener_sets_is_the_one_a_set_is_read_at() {
+        let folder = folder("yaw");
+        let room = Room::under(folder.clone());
+        let sources = Sources::local();
+        room.keep(&head_related_set(), "sofa", &sources)
+            .expect("a kept set");
+        room.speak_at(Speakers::STANDARD.turned_to(HeadYaw::from_degrees(90).expect("a yaw")));
+
+        let refused = room.keep(&head_related_set(), "sofa", &sources);
+
+        assert!(matches!(refused, Err(Error::Decode(_))));
+        assert_eq!(fs::read_dir(&folder).expect("a listing").count(), 1);
     }
 
     #[test]
