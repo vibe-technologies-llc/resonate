@@ -131,6 +131,21 @@ pub enum Reframing {
     NotHeld,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Compacting {
+    Beside { jxl: PathBuf, was: u64, now: u64 },
+    Foretold { was: u64, now: u64 },
+    NoSmaller,
+    Unproven,
+    NotHeld,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Placing {
+    Foretelling,
+    Landing,
+}
+
 pub struct Taking<'a> {
     pub sources: &'a Sources,
     pub location: &'a MediaLocation,
@@ -708,6 +723,13 @@ impl Vault {
         })
     }
 
+    fn standing_in_place_of(&self, path: &Path) -> Option<PathBuf> {
+        if path.is_file() {
+            return None;
+        }
+        self.held_cover(named(path)?)
+    }
+
     fn held_cover(&self, key: VaultKey) -> Option<PathBuf> {
         PICTURE_EXTENSIONS
             .into_iter()
@@ -715,8 +737,81 @@ impl Vault {
             .find(|path| path.is_file())
     }
 
+    pub fn foretell_compacting(&self, path: &Path) -> Result<Compacting> {
+        self.compacting(path, Placing::Foretelling)
+    }
+
+    pub fn compact_cover(&self, path: &Path) -> Result<Compacting> {
+        self.compacting(path, Placing::Landing)
+    }
+
+    fn compacting(&self, path: &Path, placing: Placing) -> Result<Compacting> {
+        self.inside(path)?;
+        let Some(key) = named(path) else {
+            return Ok(Compacting::NotHeld);
+        };
+        if kept_as_it_came(path) != Some(ImageFormat::Jpeg) || !path.is_file() {
+            return Ok(Compacting::NotHeld);
+        }
+        let jpeg = self.read_inside(path)?;
+        let mut digest = Digest::default();
+        digest.note(&jpeg);
+        if digest.settled() != key {
+            return Ok(Compacting::NotHeld);
+        }
+
+        let was = jpeg.len() as u64;
+        let target = self.cover_path(key, COVER_EXTENSION);
+        if target.is_file() {
+            let standing = self.read_inside(&target)?;
+            if transcoded::reconstructs(&standing, &jpeg) {
+                return Ok(Compacting::Beside {
+                    now: standing.len() as u64,
+                    jxl: target,
+                    was,
+                });
+            }
+        }
+
+        let Some(transcoded) = transcoded::of(&jpeg) else {
+            return Ok(Compacting::Unproven);
+        };
+        let now = transcoded.bytes.len() as u64;
+        if now >= was {
+            return Ok(Compacting::NoSmaller);
+        }
+        if placing == Placing::Foretelling {
+            return Ok(if transcoded::reconstructs(&transcoded.bytes, &jpeg) {
+                Compacting::Foretold { was, now }
+            } else {
+                Compacting::Unproven
+            });
+        }
+
+        let staging = self.staged(COVER_EXTENSION)?;
+        self.written_inside(&staging, &transcoded.bytes)?;
+        let written = self.read_inside(&staging)?;
+        if !transcoded::reconstructs(&written, &jpeg) {
+            tracing::warn!(
+                path = %path.display(),
+                "a transcoded JPEG cover did not reconstruct byte for byte and stays a JPEG"
+            );
+            self.discard(&staging)?;
+            return Ok(Compacting::Unproven);
+        }
+
+        let now = self.landed(&staging, &target)?;
+        Ok(Compacting::Beside {
+            jxl: target,
+            was,
+            now,
+        })
+    }
+
     pub fn picture(&self, path: &Path) -> Result<CoverArt> {
         self.inside(path)?;
+        let standing_in_place = self.standing_in_place_of(path);
+        let path = standing_in_place.as_deref().unwrap_or(path);
         if let Some(format) = kept_as_it_came(path) {
             return Ok(CoverArt {
                 format,

@@ -228,7 +228,7 @@ the next way (a warning, not an error). It lands as `covers/xx/<key>.jxl`, **the
 the original JPEG's bytes**, so `verify_cover` checks a transcoded cover by hashing the JPEG it
 reconstructs against its own file name. No schema step: the catalog names a cover by key and path, and
 the object keeps the `.jxl` name; an older build opening one decodes its pixels (as a PNG). A cover
-kept as a JPEG before the transcode stays a JPEG (nothing weighs covers again; `FEATURES.md`).
+kept as a JPEG before the transcode is swapped by `vault --compact` (below).
 - **Default, not a setting**: measured on photographic baseline JPEGs the JXL is 12 to 23 % smaller
   from 300 px (4:4:4 -17 to -23 %, 4:2:0 -12 to -16 %, grey -15 to -21 %), ~+10 % on a 128 px cover
   (kept as the JPEG by the size test), and a transcode and its read-back cost 10 to 300 ms
@@ -250,6 +250,28 @@ kept as a JPEG before the transcode stays a JPEG (nothing weighs covers again; `
   everything before it, and `reconstructed` refuses a JXL that declares reconstruction data but
   lacks a matching seal (`Error::PictureRead { op: Reconstruct }`) before the reconstruction runs
   (`a_transcoded_cover_with_one_bit_flipped_or_cut_short_no_longer_reads_back`).
+
+**`vault --compact` weighs the covers an older build kept as JPEGs again.** `Vault::compact_cover`
+takes a `.jpg` cover whose bytes still hash to its name (else `Compacting::NotHeld`), runs the same
+`transcoded::of`, size test and read-back proof as `keep_cover` on a staged file (`Vault::staged`,
+held under `writer::Held` like any staging file) and lands the JXL beside the JPEG under the same
+key: `Compacting::Beside { jxl, was, now }`, or `NoSmaller` / `Unproven` with the JPEG untouched.
+**Two copies under one key is the only state a stop can leave, and both read**: `Library`'s
+`compact_the_vault_covers` (under the `Walk` guard, like `--prune`) then, per cover, points every
+album with that `cover_key` at the JXL in one transaction (`settle_the_cover`) and only after it
+commits takes the JPEG away (`Vault::forget`), so the catalog never names a file that is gone. A
+stop before the transaction leaves albums on the JPEG with the JXL beside it; a stop after it leaves
+albums on the JXL with the JPEG beside it; `--prune` keeps both (it goes by key), `verify_cover`
+passes both, and the next pass finds the JXL standing (`Beside` again, proved against the JPEG,
+never re-encoded; one that does not reconstruct is replaced) and finishes. **`picture` of a path
+whose file is gone answers from the file standing under its key**, so a window holding the JPEG's
+path across the swap still draws. Without `--apply` the transcode and its proof run in memory and
+nothing is written (`Compacted { covers, was, now, kept, left }`: swapped, bytes before and after,
+left JPEGs, failures). Tests: `the_jpeg_covers_an_older_build_kept_are_swapped_for_smaller_forms_that_hand_back_the_same_jpegs`,
+`a_swap_stopped_after_the_smaller_form_landed_leaves_both_forms_reading_and_the_next_pass_finishes`,
+`a_smaller_form_that_does_not_give_the_jpeg_back_is_replaced_and_never_left_standing_in_its_place`
+(vault) and the three `OlderCovers` tests in `resonate-library/tests/library.rs`. The window has
+no vault maintenance group, so the pass is the command line's alone.
 
 **The vault decodes a pixel-lossless JXL back to PNG, and a transcoded one to its JPEG, so
 `resonate-ui` is unchanged.** `Vault::picture` answers the first as `CoverArt { format: Png, bytes }`

@@ -90,8 +90,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   track
 
 ## Later: The vault
-- [S] A JPEG cover kept as a JPEG before the transcode (`vault.md`) is not weighed again: a vault
-  made by an older build keeps every one at its larger size until it is pruned and imported afresh
 - [L · blocked: flacenc] `flacenc` 0.5.1, the latest, caps the Rice parameter at 14, the rate at 96
   kHz and the depth at 24 bits: a 24-bit rip loses to `flac -8` by ~15 % and is kept; a 192 kHz rip
   is never a FLAC

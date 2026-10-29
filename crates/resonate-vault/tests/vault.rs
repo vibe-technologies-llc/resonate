@@ -15,8 +15,8 @@ use resonate_codec::{
 };
 use resonate_core::{AudioBuffer, MediaLocation, SampleData, SampleFormat, SourceId, StreamSpec};
 use resonate_vault::{
-    Error, Form, Halt, Keeping, Kept, Reframing, Refusal, Replacing, Taking, Vault, VaultFiles,
-    VaultKey,
+    Compacting, Error, Form, Halt, Keeping, Kept, Reframing, Refusal, Replacing, Taking, Vault,
+    VaultFiles, VaultKey,
 };
 
 const RATE: u32 = 44_100;
@@ -2256,4 +2256,191 @@ fn a_chained_ogg_vorbis_is_kept_with_every_link_it_decodes_to() {
 #[test]
 fn a_lossless_stream_that_turns_is_kept_as_it_came_where_one_flac_cannot_hold_it() {
     a_turning_stream_is_kept_as_it_came(&["-c:a", "flac", "-f", "ogg"], "turning-flac.ogg");
+}
+
+fn kept_as_an_older_build_kept_it(vault: &Vault, art: &CoverArt) -> PathBuf {
+    let held = vault.keep_cover(art).expect("a kept cover");
+    let older = held.path.with_extension("jpg");
+    if held.path != older {
+        fs::remove_file(&held.path).expect("the newer form taken away");
+        fs::write(&older, &art.bytes).expect("the JPEG an older build kept");
+    }
+    older
+}
+
+fn jpegs_an_older_build_kept(vault: &Vault) -> Vec<(CoverArt, PathBuf)> {
+    [
+        landscape(320, 240, 85),
+        landscape(400, 300, 70),
+        landscape(640, 480, 90),
+    ]
+    .into_iter()
+    .map(|art| {
+        let path = kept_as_an_older_build_kept_it(vault, &art);
+        (art, path)
+    })
+    .collect()
+}
+
+#[test]
+fn the_jpeg_covers_an_older_build_kept_are_swapped_for_smaller_forms_that_hand_back_the_same_jpegs()
+{
+    let tree = Tree::new();
+    let vault = tree.vault();
+    let small = photographed(16, 16);
+    let kept_small = kept_as_an_older_build_kept_it(&vault, &small);
+    let older = jpegs_an_older_build_kept(&vault);
+    let before = vault.holding().expect("a counted vault");
+    assert_eq!(before.covers, 4);
+
+    let mut foretold = 0;
+    for (_, path) in &older {
+        match vault.foretell_compacting(path).expect("a foretold swap") {
+            Compacting::Foretold { was, now } => {
+                assert!(now < was);
+                foretold += was - now;
+            }
+            other => panic!("a photographic JPEG was not foretold a smaller form: {other:?}"),
+        }
+        assert!(path.is_file(), "a foretelling took the JPEG away");
+        assert!(!path.with_extension("jxl").exists(), "a foretelling landed");
+    }
+    assert_eq!(vault.holding().expect("a counted vault"), before);
+
+    let mut saved = 0;
+    for (art, path) in &older {
+        let Compacting::Beside { jxl, was, now } =
+            vault.compact_cover(path).expect("a compacted cover")
+        else {
+            panic!("a photographic JPEG was not compacted");
+        };
+        assert_eq!(jxl, path.with_extension("jxl"));
+        assert_eq!(was, art.bytes.len() as u64);
+        assert!(now < was);
+        saved += was - now;
+
+        assert_eq!(&vault.picture(&jxl).expect("the new form"), art);
+        assert!(vault.verify_cover(&jxl).expect("a readable cover"));
+        assert!(vault.forget(path).expect("the JPEG taken away"));
+        assert_eq!(
+            &vault.picture(path).expect("a path an album still names"),
+            art
+        );
+        assert_eq!(&vault.picture(&jxl).expect("the new form"), art);
+    }
+    assert_eq!(saved, foretold);
+
+    let after = vault.holding().expect("a counted vault");
+    assert_eq!(after.covers, 4);
+    assert_eq!(after.cover_bytes, before.cover_bytes - saved);
+    assert_eq!(
+        vault.compact_cover(&kept_small).expect("a weighed cover"),
+        Compacting::NoSmaller
+    );
+    assert_eq!(
+        fs::read(&kept_small).expect("a cover left alone"),
+        small.bytes
+    );
+    assert_eq!(
+        vault
+            .staging_a_sweep_would_take()
+            .expect("a counted staging"),
+        0
+    );
+    assert_eq!(vault.covers().expect("listed covers").len(), 4);
+}
+
+#[test]
+fn a_swap_stopped_after_the_smaller_form_landed_leaves_both_forms_reading_and_the_next_pass_finishes()
+ {
+    let tree = Tree::new();
+    let vault = tree.vault();
+    let art = landscape(320, 240, 85);
+    let older = kept_as_an_older_build_kept_it(&vault, &art);
+
+    let Compacting::Beside { jxl, .. } = vault.compact_cover(&older).expect("a compacted cover")
+    else {
+        panic!("a photographic JPEG was not compacted");
+    };
+    assert_eq!(vault.picture(&older).expect("the JPEG"), art);
+    assert_eq!(vault.picture(&jxl).expect("the new form"), art);
+    assert!(vault.verify_cover(&older).expect("a readable cover"));
+    assert!(vault.verify_cover(&jxl).expect("a readable cover"));
+    assert_eq!(vault.covers().expect("listed covers").len(), 2);
+
+    let landed = fs::read(&jxl).expect("the landed form");
+    let again = vault.compact_cover(&older).expect("a compacted cover");
+    assert!(matches!(&again, Compacting::Beside { jxl: standing, .. } if *standing == jxl));
+    assert_eq!(fs::read(&jxl).expect("the landed form"), landed);
+    assert_eq!(
+        vault
+            .staging_a_sweep_would_take()
+            .expect("a counted staging"),
+        0
+    );
+
+    assert!(vault.forget(&older).expect("the JPEG taken away"));
+    assert_eq!(vault.covers().expect("listed covers").len(), 1);
+    assert_eq!(
+        vault.picture(&older).expect("a path an album still names"),
+        art
+    );
+}
+
+#[test]
+fn a_smaller_form_that_does_not_give_the_jpeg_back_is_replaced_and_never_left_standing_in_its_place()
+ {
+    let tree = Tree::new();
+    let vault = tree.vault();
+    let art = landscape(320, 240, 85);
+    let older = kept_as_an_older_build_kept_it(&vault, &art);
+    let Compacting::Beside { jxl, .. } = vault.compact_cover(&older).expect("a compacted cover")
+    else {
+        panic!("a photographic JPEG was not compacted");
+    };
+
+    let whole = fs::read(&jxl).expect("the landed form");
+    let mut flipped = whole.clone();
+    flipped[whole.len() / 2] ^= 0x10;
+    fs::write(&jxl, &flipped).expect("a damaged form");
+    assert!(!vault.verify_cover(&jxl).expect("a readable cover"));
+
+    let Compacting::Beside { jxl: mended, .. } =
+        vault.compact_cover(&older).expect("a compacted cover")
+    else {
+        panic!("a damaged form was not replaced");
+    };
+    assert_eq!(mended, jxl);
+    assert_eq!(fs::read(&jxl).expect("the mended form"), whole);
+    assert!(vault.verify_cover(&jxl).expect("a readable cover"));
+}
+
+#[test]
+fn a_jpeg_cover_whose_bytes_are_not_its_name_or_which_no_transcode_beats_is_left_alone() {
+    let tree = Tree::new();
+    let vault = tree.vault();
+    let art = landscape(320, 240, 85);
+    let older = kept_as_an_older_build_kept_it(&vault, &art);
+
+    let other = landscape(320, 240, 60);
+    fs::write(&older, &other.bytes).expect("a JPEG under another's name");
+    assert_eq!(
+        vault.compact_cover(&older).expect("a weighed cover"),
+        Compacting::NotHeld
+    );
+    assert_eq!(fs::read(&older).expect("a cover left alone"), other.bytes);
+    assert!(!older.with_extension("jxl").exists());
+
+    let png = picture(40, 40);
+    let kept = vault.keep_cover(&png).expect("a kept cover");
+    assert_eq!(
+        vault.compact_cover(&kept.path).expect("a weighed cover"),
+        Compacting::NotHeld
+    );
+
+    let outside = tree.write("outside.jpg", &art.bytes);
+    assert!(matches!(
+        vault.compact_cover(&outside),
+        Err(Error::OutsideTheVault { .. })
+    ));
 }

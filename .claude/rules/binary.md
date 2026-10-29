@@ -194,6 +194,8 @@ them no type). Decoders: `audio.md`.
   (`Library::let_go_of_vault_covers`), and the run ends well unless something went unreached. A WAVE
   object packed as one zstd frame naming no length (`Vault::packed_before_the_frames`) is counted,
   and with `--apply` repacked in frames from itself (`Vault::reframe`), whatever else failed.
+- **`vault --compact`** (conflicting with the other modes) swaps the JPEG covers an earlier build kept
+  for byte-exact JXL transcodes where smaller; a preview until `--apply` (`vault.md`).
 
 ## Settings
 
