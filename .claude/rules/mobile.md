@@ -381,7 +381,11 @@ phones* (`equaliser.rs`); `playback.rs` sends it with the other sound preference
   A refused `AudioOutputUnitStart` or stop is a `StreamEvent::Refused` carrying the `OSStatus`, so the
   engine's failure names the operation and the status (an inactive session, an interruption not yet
   ended). The output thread sleeps until a command or a moved latency (`Routing::route_changed`) wakes it, and polls every 10 ms only while draining. The render callback writes the source's bytes straight into the system's buffer and zeroes a short
-  fill; the stream clock is the reported latency. Drain waits that latency after the ring empties.
+  fill; the stream clock is the reported latency, and a fill is stamped at the buffer's
+  `AudioTimeStamp::mHostTime` (where `HostTimeValid`, read in nanoseconds through the
+  `mach_timebase_info` read at open, against `mach_absolute_time` in the callback) plus that latency
+  less the buffer's own frames (the `ioBufferDuration` the host time already counts; `realtime.md`).
+  Drain waits that latency after the ring empties.
   `close` returns once the output thread has disposed the unit (waiting at most 3 s), so a rebind
   never opens the next unit beside a living one, and an open waits at most as long for the unit
   (`UNIT_WITHIN`): a media-services stall in `AudioComponentInstanceNew` is a timed-out open that

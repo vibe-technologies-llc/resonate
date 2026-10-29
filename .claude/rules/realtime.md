@@ -70,14 +70,24 @@ rest on this discipline alone):
 - `resonate-listen/src/recording.rs`: the recording's `AudioSink`: preallocated `AtomicU32` run of
   f32 bits + atomic count, `Relaxed` stores, one `Release` publish, `Acquire` reads.
 
-**Every callback stamps what it fills.** `AudioSource::fill_stamped(dst, Stamp)` (`resonate-audio`;
-`fill` is the default for a source that reads none) hands the source the `Moment` the callback ran
-(`Moment`: nanoseconds on one process-wide monotonic clock, `Moment::start_the_clock` called by
-`ring` so the clock's first read is never on the RT thread) and the stream frames ahead of the
-fill's first (`StreamClock::stamp`: the latency the clock last read). PipeWire's `Cycle::run`
-stamps after `note_latency`, Oboe's `rendered` stamps each chunk with the frames of the chunks
-before it added, RemoteIO's `Rendering::fill` stamps with the route's latency. The ring consumer
-(`filled_from`) writes a `RingStamp` (the ring frame it took first, the moment that frame is heard,
+**Every callback stamps what it fills, from the device's own timestamp.**
+`AudioSource::fill_stamped(dst, Stamp)` (`resonate-audio`; `fill` is the default for a source that reads none) hands the source a `Moment` and the stream
+frames between it and the fill's first being heard (`Moment`: nanoseconds on one process-wide monotonic clock, `Moment::start_the_clock` called by
+`ring` so the clock's first read is never on the RT thread). **A callback runs some way into its cycle, so
+the moment it ran is not when its cycle began**: each backend hands `StreamClock::stamp_by` a
+`DeviceTime` (its own clock read now, the moment on that clock its reading names, the frames between
+that moment and the fill's first being heard), which `DeviceTime::stamp` lands on `Moment`'s clock
+by the distance between the two readings, so no clock is converted into another; a backend with no
+reading falls back to `StreamClock::stamp` (now, plus the latency the clock last read). PipeWire's
+`Cycle::run` reads `pw_time.now` (the driver's cycle start, `CLOCK_MONOTONIC`) against
+`clock_gettime(Monotonic)` and the stream frames `note_latency` just published; Oboe's callback reads
+`getTimestamp(CLOCK_MONOTONIC)` (a frame the device presented and when) and `getFramesWritten`,
+landing the fill's first frame as far past that moment as it lies past that frame
+(`oboe_frames::heard_by_the_device`), and `rendered` stamps each chunk with the frames of the chunks
+before it added; RemoteIO's `render` reads the buffer's `mHostTime` against `mach_absolute_time`
+and `Rendering::fill` stamps it with the route's latency less the buffer's frames. An Oboe stream
+whose API gives no timestamp (OpenSL ES) or a RemoteIO stamp without a valid host time falls back. The ring consumer
+(`filled_from`) writes a `RingStamp` (the moment the stamp was `taken`, the ring frame it took first, the moment that frame is heard,
 the moment the next fill's first frame is, the frames pulled, whether music flowed from the fill's
 start) into a seqlock of atomics (`StampSlot`, one writer, the reader retrying a torn read) under
 its discard epoch; `RingProducer::stamp` answers only the current epoch's. A ring held in step

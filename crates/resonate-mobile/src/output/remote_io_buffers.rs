@@ -13,13 +13,26 @@ use std::{
     slice,
 };
 
-use objc2_core_audio_types::AudioBufferList;
+use objc2_core_audio_types::{AudioBufferList, AudioTimeStamp, AudioTimeStampFlags};
 
-use super::remote_io_fill::Rendering;
+use super::remote_io_fill::{HostTime, Rendering};
 
 pub(crate) const RENDERED: i32 = 0;
 
-pub(crate) unsafe fn rendered(rendering: NonNull<c_void>, buffers: *mut AudioBufferList) -> i32 {
+pub(crate) fn host_time_of(time: &AudioTimeStamp, now: u64) -> Option<HostTime> {
+    (time.mFlags.contains(AudioTimeStampFlags::HostTimeValid) && time.mHostTime != 0).then_some(
+        HostTime {
+            now,
+            of_the_buffer: time.mHostTime,
+        },
+    )
+}
+
+pub(crate) unsafe fn rendered(
+    rendering: NonNull<c_void>,
+    buffers: *mut AudioBufferList,
+    host: Option<HostTime>,
+) -> i32 {
     let rendering = unsafe { rendering.cast::<Rendering>().as_mut() };
     let Some(buffers) = (unsafe { buffers.as_mut() }) else {
         return RENDERED;
@@ -29,7 +42,7 @@ pub(crate) unsafe fn rendered(rendering: NonNull<c_void>, buffers: *mut AudioBuf
         return RENDERED;
     };
     let bytes = unsafe { slice::from_raw_parts_mut(data.as_ptr(), buffer.mDataByteSize as usize) };
-    rendering.fill(bytes);
+    rendering.fill(bytes, host);
     RENDERED
 }
 
@@ -94,7 +107,7 @@ mod tests {
         let mut memory = [0x11_u8; 24];
         let mut list = list_over(memory.as_mut_ptr().cast(), 16);
 
-        let answer = unsafe { rendered(handed(&mut rendering), &mut list) };
+        let answer = unsafe { rendered(handed(&mut rendering), &mut list, None) };
 
         assert_eq!(answer, RENDERED);
         assert_eq!(&memory[..16], &[0xAB; 16]);
@@ -107,7 +120,7 @@ mod tests {
         let mut memory = [0x11_u8; 16];
         let mut list = list_over(memory.as_mut_ptr().cast(), 16);
 
-        unsafe { rendered(handed(&mut rendering), &mut list) };
+        unsafe { rendered(handed(&mut rendering), &mut list, None) };
 
         assert_eq!(&memory[..6], &[0xAB; 6]);
         assert_eq!(&memory[6..], &[0; 10]);
@@ -120,7 +133,7 @@ mod tests {
         let mut memory = [0x11_u8; 16];
         let mut list = list_over(memory.as_mut_ptr().cast(), 16);
 
-        unsafe { rendered(handed(&mut rendering), &mut list) };
+        unsafe { rendered(handed(&mut rendering), &mut list, None) };
 
         assert_eq!(memory, [0; 16]);
         assert!(empty.load(Ordering::Acquire));
@@ -131,7 +144,7 @@ mod tests {
     {
         let (mut rendering, empty) = rendering(16);
 
-        let answer = unsafe { rendered(handed(&mut rendering), std::ptr::null_mut()) };
+        let answer = unsafe { rendered(handed(&mut rendering), std::ptr::null_mut(), None) };
 
         assert_eq!(answer, RENDERED);
         assert_eq!(rendering.source().fill(&mut [0; 4]), 4);
@@ -143,7 +156,7 @@ mod tests {
         let (mut rendering, empty) = rendering(16);
         let mut list = list_over(std::ptr::null_mut(), 16);
 
-        let answer = unsafe { rendered(handed(&mut rendering), &mut list) };
+        let answer = unsafe { rendered(handed(&mut rendering), &mut list, None) };
 
         assert_eq!(answer, RENDERED);
         assert_eq!(rendering.source().fill(&mut [0; 16]), 16);
@@ -156,10 +169,37 @@ mod tests {
         let mut memory = [0x11_u8; 8];
         let mut list = list_over(memory.as_mut_ptr().cast(), 0);
 
-        unsafe { rendered(handed(&mut rendering), &mut list) };
+        unsafe { rendered(handed(&mut rendering), &mut list, None) };
 
         assert_eq!(memory, [0x11; 8]);
         assert!(empty.load(Ordering::Acquire));
+    }
+
+    fn timed(host: u64, flags: AudioTimeStampFlags) -> AudioTimeStamp {
+        let mut time: AudioTimeStamp = unsafe { std::mem::zeroed() };
+        time.mHostTime = host;
+        time.mFlags = flags;
+        time
+    }
+
+    #[test]
+    fn a_render_reads_the_host_time_only_where_the_system_says_it_is_valid() {
+        let valid = timed(
+            7_000,
+            AudioTimeStampFlags::HostTimeValid | AudioTimeStampFlags::SampleTimeValid,
+        );
+        let unsaid = timed(7_000, AudioTimeStampFlags::SampleTimeValid);
+        let unset = timed(0, AudioTimeStampFlags::HostTimeValid);
+
+        assert_eq!(
+            host_time_of(&valid, 6_500),
+            Some(HostTime {
+                now: 6_500,
+                of_the_buffer: 7_000
+            })
+        );
+        assert_eq!(host_time_of(&unsaid, 6_500), None);
+        assert_eq!(host_time_of(&unset, 6_500), None);
     }
 
     #[test]

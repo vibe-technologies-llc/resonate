@@ -853,7 +853,11 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   joining moment, before stopping the outgoing zone, so the incoming one has faded in, aligned,
   before the other fades out
   (`a_zone_handed_the_song_lands_its_first_frame_on_the_frame_the_other_is_heard_at`: a fake
-  graph stamping a steady clock, the two zones within two frames; one or none in practice). The
+  graph whose callbacks run up to 3.3 ms late by amounts varying per zone and per cycle while the
+  `DeviceTime` each hands `StreamClock::stamp_by` names its cycle's true start, the two zones within
+  two frames; stamped with the moment each callback ran instead, they are some twenty frames apart).
+  Both zones are aligned on their devices' own timestamps (`realtime.md`), so a callback's lateness
+  is taken out and they meet as closely as those timestamps are true. The
   `Handover` handle names the row and frame handed over and `wait` joins
   the thread; a dropped handle detaches it, which logs a failure itself. MPRIS follows from each
   zone's published state (`mpris.md`)

@@ -191,7 +191,8 @@ playing song reopens at once where its plan moves, and every later song opens at
 emulator offers no exclusive stream and no bit-perfect mixer, so it proves the mixed fallback alone
 (`TESTING.md`). DoP is not offered (`FEATURES.md`). The output thread waits on its commands as
 `output/waits.rs` says: 10 ms while draining, 100 ms while streaming (the latency is read again
-each time) and 500 ms otherwise, in which a device error is still noticed. An open waits at most
+each time; the callback stamps each fill from Oboe's own `getTimestamp(CLOCK_MONOTONIC)` and
+`getFramesWritten` instead, `realtime.md`) and 500 ms otherwise, in which a device error is still noticed. An open waits at most
 `OPEN_WITHIN` (3 s) for the stream thread, so a stalled `open_stream` on a route change is a
 timed-out open the engine parks, not a blocked engine thread, and the late stream closes itself
 (`an_open_that_never_answers_times_out_instead_of_blocking`).

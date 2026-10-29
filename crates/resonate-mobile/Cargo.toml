@@ -37,6 +37,7 @@ unicode-normalization.workspace = true
 
 [target.'cfg(target_os = "android")'.dependencies]
 oboe.workspace = true
+rustix = { workspace = true, features = ["time"] }
 
 [target.'cfg(target_os = "ios")'.dependencies]
 objc2-audio-toolbox.workspace = true

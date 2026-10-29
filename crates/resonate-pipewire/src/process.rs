@@ -17,7 +17,9 @@ use std::{
 
 use libspa::utils::Fraction;
 use pipewire::stream::Stream;
-use resonate_core::{Ratio, SampleRate, StreamSpec};
+use resonate_audio::DeviceTime;
+use resonate_core::{Frames, Ratio, SampleRate, StreamSpec};
+use rustix::time::{ClockId, clock_gettime};
 
 use crate::{AudioSink, AudioSource, GraphTime, Stamp, StreamClock, format::WireWord};
 
@@ -25,6 +27,7 @@ const PADDED_WORD: usize = 4;
 const PACKED_WORD: usize = 3;
 const FEEDS_HANDED_AT_ONCE: usize = 1;
 const FEEDS_SPENT_AT_ONCE: usize = 2;
+const NANOS_A_SECOND: u64 = 1_000_000_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Taken {
@@ -188,8 +191,8 @@ impl Cycle {
     }
 
     pub(crate) fn run(&self, stream: &Stream, source: &mut dyn AudioSource) {
-        self.note_latency(stream);
-        let stamp = self.clock.stamp();
+        let device = self.note_latency(stream);
+        let stamp = self.clock.stamp_by(device);
 
         let Some(mut buffer) = stream.dequeue_buffer() else {
             return;
@@ -262,13 +265,9 @@ impl Cycle {
         u64::from(buffers).saturating_mul(self.last_filled.load(Ordering::Relaxed))
     }
 
-    fn note_latency(&self, stream: &Stream) {
-        let Ok(time) = stream.time() else {
-            return;
-        };
-        let Some(tick) = ticking(time.rate()) else {
-            return;
-        };
+    fn note_latency(&self, stream: &Stream) -> Option<DeviceTime> {
+        let time = stream.time().ok()?;
+        let tick = ticking(time.rate())?;
         let ahead = GraphTime {
             delay: time.delay(),
             buffered: time.buffered(),
@@ -276,7 +275,25 @@ impl Cycle {
             tick,
         };
         self.clock.note(ahead, self.rate);
+        cycle_began(time.now(), monotonic_now(), ahead.downstream(self.rate))
     }
+}
+
+fn monotonic_now() -> u64 {
+    let now = clock_gettime(ClockId::Monotonic);
+    u64::try_from(now.tv_sec)
+        .unwrap_or(0)
+        .saturating_mul(NANOS_A_SECOND)
+        .saturating_add(u64::try_from(now.tv_nsec).unwrap_or(0))
+}
+
+fn cycle_began(cycle: i64, now: u64, ahead: Frames) -> Option<DeviceTime> {
+    let read_at = u64::try_from(cycle).ok().filter(|cycle| *cycle > 0)?;
+    Some(DeviceTime {
+        clock_now: now,
+        read_at,
+        ahead,
+    })
 }
 
 fn asked_for(frames: u64, frame: NonZeroUsize, room: usize) -> usize {
@@ -326,7 +343,9 @@ fn ticking(rate: Fraction) -> Option<Ratio> {
 #[cfg(test)]
 #[allow(clippy::indexing_slicing, clippy::expect_used)]
 mod tests {
-    use resonate_core::{ChannelLayout, Frames, SampleFormat};
+    use std::{thread, time::Duration};
+
+    use resonate_core::{ChannelLayout, SampleFormat};
 
     use super::*;
     use crate::Moment;
@@ -566,6 +585,33 @@ mod tests {
         let stamped = source.stamped.expect("the ring was handed a stamp");
         assert_eq!(stamped.ahead, Frames(505));
         assert!(stamped.at >= before);
+    }
+
+    #[test]
+    fn a_fill_is_stamped_at_the_moment_its_cycle_began_however_late_the_callback_runs() {
+        const LATE_BY: Duration = Duration::from_millis(3);
+        const READS_APART_BY: Duration = Duration::from_micros(50);
+        let clock = StreamClock::behind_by(Frames(505));
+        Moment::start_the_clock();
+        thread::sleep(LATE_BY);
+        let began = monotonic_now() - LATE_BY.as_nanos() as u64;
+        let called = Moment::now();
+
+        let stamp = clock.stamp_by(cycle_began(began as i64, monotonic_now(), clock.latency()));
+
+        let late_by = called.nanos().saturating_sub(stamp.at.nanos());
+        assert_eq!(stamp.ahead, Frames(505));
+        assert!(
+            late_by + READS_APART_BY.as_nanos() as u64 >= LATE_BY.as_nanos() as u64,
+            "the stamp was taken {late_by} ns before the callback ran, not when the cycle began"
+        );
+        assert!(late_by < 2 * LATE_BY.as_nanos() as u64);
+    }
+
+    #[test]
+    fn a_graph_naming_no_cycle_start_leaves_the_stamp_to_the_clock() {
+        assert_eq!(cycle_began(0, 1_000, Frames(64)), None);
+        assert_eq!(cycle_began(-5, 1_000, Frames(64)), None);
     }
 
     #[test]

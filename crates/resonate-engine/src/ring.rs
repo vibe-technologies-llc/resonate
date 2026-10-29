@@ -39,7 +39,7 @@ pub enum Entering {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RingStamp {
-    pub called: Moment,
+    pub taken: Moment,
     pub read: u64,
     pub heard: Moment,
     pub next: Moment,
@@ -51,7 +51,7 @@ pub struct RingStamp {
 struct StampSlot {
     sequence: AtomicU64,
     epoch: AtomicU64,
-    called: AtomicU64,
+    taken: AtomicU64,
     read: AtomicU64,
     heard: AtomicU64,
     next: AtomicU64,
@@ -66,7 +66,7 @@ impl StampSlot {
             .store(sequence.wrapping_add(1), Ordering::Relaxed);
         fence(Ordering::Release);
         self.epoch.store(epoch, Ordering::Relaxed);
-        self.called.store(stamp.called.nanos(), Ordering::Relaxed);
+        self.taken.store(stamp.taken.nanos(), Ordering::Relaxed);
         self.read.store(stamp.read, Ordering::Relaxed);
         self.heard.store(stamp.heard.nanos(), Ordering::Relaxed);
         self.next.store(stamp.next.nanos(), Ordering::Relaxed);
@@ -88,7 +88,7 @@ impl StampSlot {
             }
             let epoch = self.epoch.load(Ordering::Relaxed);
             let stamp = RingStamp {
-                called: Moment::from_nanos(self.called.load(Ordering::Relaxed)),
+                taken: Moment::from_nanos(self.taken.load(Ordering::Relaxed)),
                 read: self.read.load(Ordering::Relaxed),
                 heard: Moment::from_nanos(self.heard.load(Ordering::Relaxed)),
                 next: Moment::from_nanos(self.next.load(Ordering::Relaxed)),
@@ -922,7 +922,7 @@ impl RingConsumer {
     fn note_when_it_is_heard(&self, stamp: Stamp, held_back: usize, frames: usize) {
         let first = stamp.first_heard(self.rate);
         let stamp = RingStamp {
-            called: stamp.at,
+            taken: stamp.at,
             read: self.taken_from.unwrap_or(self.read),
             heard: first.after_frames(held_back as f64, self.rate),
             next: first.after_frames(frames as f64, self.rate),

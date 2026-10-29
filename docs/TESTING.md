@@ -8,9 +8,10 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   offers 48 kHz alone), nor DoP against a DAC that decodes it
 
 - [S · blocked: hardware] A zone handover's alignment is proved against a fake graph whose
-  callbacks stamp a steady clock (within two frames); no two devices here are heard side by side,
-  so how closely two real sound cards meet (their own latency readings, callback lateness and clock
-  drift over the overlap) has not been measured
+  callbacks run late by varying amounts while their device timestamps stay true (within two
+  frames); no two devices here are heard side by side, so how closely two real sound cards meet
+  (how true their own timestamps and latency readings are, and clock drift over the overlap) has
+  not been measured
 
 - [S · blocked: hardware] Android zones on two outputs are proved on the host alone: no USB DAC or
   Bluetooth device is attached here, so whether Android plays two Oboe streams asking two device ids

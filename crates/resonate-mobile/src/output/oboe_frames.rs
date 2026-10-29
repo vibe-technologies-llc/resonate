@@ -8,12 +8,40 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use resonate_audio::{AudioSource, Stamp};
-use resonate_core::Frames;
+use resonate_audio::{AudioSource, DeviceTime, Stamp};
+use resonate_core::{Frames, SampleRate};
 
 pub(crate) const FRAME_CAPACITY: usize = 4096;
 const WIDEST_FRAME_BYTES: usize = 8;
 pub(crate) const RENDER_BYTES: usize = FRAME_CAPACITY * WIDEST_FRAME_BYTES;
+const NANOS_A_SECOND: i128 = 1_000_000_000;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Presented {
+    pub(crate) frame: i64,
+    pub(crate) at: i64,
+}
+
+pub(crate) fn heard_by_the_device(
+    written: i64,
+    presented: Presented,
+    now: u64,
+    rate: SampleRate,
+) -> Option<DeviceTime> {
+    if presented.at <= 0 || presented.frame < 0 {
+        return None;
+    }
+    let after = i128::from(written)
+        .saturating_sub(i128::from(presented.frame))
+        .saturating_mul(NANOS_A_SECOND)
+        .checked_div(i128::from(rate.hz()))?;
+    let read_at = u64::try_from(i128::from(presented.at).saturating_add(after)).ok()?;
+    Some(DeviceTime {
+        clock_now: now,
+        read_at,
+        ahead: Frames::ZERO,
+    })
+}
 
 pub(crate) trait Word: Copy {
     const BYTES: usize;
@@ -191,6 +219,41 @@ mod tests {
         let (frames, empty) = rendered_from::<(f32, f32)>(Vec::new(), 2);
         assert_eq!(frames, vec![(0.0, 0.0), (0.0, 0.0)]);
         assert!(empty);
+    }
+
+    #[test]
+    fn the_first_frame_written_is_heard_as_far_past_the_presented_frame_as_it_lies_behind_it() {
+        let presented = Presented {
+            frame: 48_000,
+            at: 5_000_000_000,
+        };
+
+        let reading = heard_by_the_device(48_480, presented, 5_002_000_000, SampleRate::HZ_48000);
+        let ahead_of_it =
+            heard_by_the_device(47_520, presented, 5_002_000_000, SampleRate::HZ_48000);
+
+        assert_eq!(
+            reading,
+            Some(DeviceTime {
+                clock_now: 5_002_000_000,
+                read_at: 5_010_000_000,
+                ahead: Frames::ZERO,
+            })
+        );
+        assert_eq!(
+            ahead_of_it.map(|reading| reading.read_at),
+            Some(4_990_000_000)
+        );
+    }
+
+    #[test]
+    fn a_device_that_has_presented_nothing_yet_leaves_the_stamp_to_the_clock() {
+        let unread = Presented { frame: 0, at: 0 };
+
+        assert_eq!(
+            heard_by_the_device(256, unread, 1_000, SampleRate::HZ_48000),
+            None
+        );
     }
 
     #[test]

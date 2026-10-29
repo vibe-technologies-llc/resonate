@@ -350,7 +350,7 @@ mod tests {
 
         let handed = fake.rendering.lock().expect("a rendering was handed over");
         let mut bytes = [0_u8; 8];
-        unsafe { &mut *handed.as_ptr() }.fill(&mut bytes);
+        unsafe { &mut *handed.as_ptr() }.fill(&mut bytes, None);
         assert_eq!(bytes, [0xCD; 8]);
         assert!(held.given.load(Ordering::Acquire));
     }

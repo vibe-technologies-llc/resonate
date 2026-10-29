@@ -2101,7 +2101,7 @@ impl Engine {
 
         let sink = output.plan.stream.rate;
         let kept = stamp.pulled.saturating_mul(PULLS_RELEASED_AHEAD_BY);
-        let lead = stamp.next.nanos().saturating_sub(stamp.called.nanos());
+        let lead = stamp.next.nanos().saturating_sub(stamp.taken.nanos());
         let soonest = stamp
             .next
             .max(Moment::from_nanos(

@@ -9,7 +9,7 @@ use std::{
 use crossbeam_channel::Receiver;
 use resonate_core::{Frames, Ratio, SampleRate, StreamSpec};
 
-use crate::{AudioSource, Error, Moment, Operation, Result, SinkId, Stamp, Words};
+use crate::{AudioSource, DeviceTime, Error, Moment, Operation, Result, SinkId, Stamp, Words};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct GraphTime {
@@ -82,6 +82,10 @@ impl StreamClock {
             at: Moment::now(),
             ahead: self.latency(),
         }
+    }
+
+    pub fn stamp_by(&self, device: Option<DeviceTime>) -> Stamp {
+        device.map_or_else(|| self.stamp(), DeviceTime::stamp)
     }
 }
 
@@ -327,6 +331,26 @@ mod tests {
             Frames(1_632),
             "the buffers filled and not yet taken by the graph were left out of the reading"
         );
+    }
+
+    #[test]
+    fn a_stamp_reads_the_devices_time_where_it_has_one_and_the_clocks_latency_where_not() {
+        let clock = StreamClock::behind_by(Frames(512));
+        let reading = DeviceTime {
+            clock_now: 1_000_000,
+            read_at: 2_000_000,
+            ahead: Frames(96),
+        };
+        let before = Moment::now();
+
+        let read = clock.stamp_by(Some(reading));
+        let unread = clock.stamp_by(None);
+
+        assert_eq!(read.ahead, Frames(96));
+        assert!(read.at >= before.after(Duration::from_millis(1)));
+        assert!(read.at <= Moment::now().after(Duration::from_millis(1)));
+        assert_eq!(unread.ahead, Frames(512));
+        assert!(unread.at >= before);
     }
 
     #[test]

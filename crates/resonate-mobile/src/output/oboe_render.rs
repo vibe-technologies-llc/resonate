@@ -18,12 +18,16 @@ use oboe::{
     AudioOutputCallback, AudioOutputStreamSafe, DataCallbackResult, IsChannelCount, IsFormat,
     IsFrameType,
 };
-use resonate_audio::StreamClock;
+use resonate_audio::{DeviceTime, StreamClock};
+use resonate_core::SampleRate;
+use rustix::time::{ClockId, clock_gettime};
 
 use super::{
     handover::Fed,
-    oboe_frames::{Frame, rendered},
+    oboe_frames::{Frame, Presented, heard_by_the_device, rendered},
 };
+
+const NANOS_A_SECOND: u64 = 1_000_000_000;
 
 pub(crate) struct Rendering<S> {
     pub(crate) fed: Fed,
@@ -31,7 +35,30 @@ pub(crate) struct Rendering<S> {
     pub(crate) failed: Arc<AtomicBool>,
     pub(crate) bytes: Box<[u8]>,
     pub(crate) clock: Arc<StreamClock>,
+    pub(crate) rate: SampleRate,
     pub(crate) shape: PhantomData<S>,
+}
+
+fn monotonic_now() -> u64 {
+    let now = clock_gettime(ClockId::Monotonic);
+    u64::try_from(now.tv_sec)
+        .unwrap_or(0)
+        .saturating_mul(NANOS_A_SECOND)
+        .saturating_add(u64::try_from(now.tv_nsec).unwrap_or(0))
+}
+
+fn device_time_of(stream: &mut dyn AudioOutputStreamSafe, rate: SampleRate) -> Option<DeviceTime> {
+    let written = stream.get_frames_written();
+    let presented = stream.get_timestamp(ClockId::Monotonic as i32).ok()?;
+    heard_by_the_device(
+        written,
+        Presented {
+            frame: presented.position,
+            at: presented.timestamp,
+        },
+        monotonic_now(),
+        rate,
+    )
 }
 
 impl<T, C> AudioOutputCallback for Rendering<(T, C)>
@@ -45,10 +72,10 @@ where
 
     fn on_audio_ready(
         &mut self,
-        _: &mut dyn AudioOutputStreamSafe,
+        stream: &mut dyn AudioOutputStreamSafe,
         frames: &mut [<(T, C) as IsFrameType>::Type],
     ) -> DataCallbackResult {
-        let stamp = self.clock.stamp();
+        let stamp = self.clock.stamp_by(device_time_of(stream, self.rate));
         if rendered(
             self.fed.source(),
             &mut self.bytes,
