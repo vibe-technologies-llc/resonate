@@ -72,8 +72,9 @@ pub use crate::{
     error::{Error, Result, StoreOp},
     logging::{LogLevel, Logbook, keep_log},
     measurement::{
-        BuiltInTarget, MeasurementFit, MeasurementOffers, MeasurementTarget, fit_measurement,
-        measurement_offers,
+        BuiltInTarget, MeasurementFit, MeasurementOffers, MeasurementSweep, MeasurementTarget,
+        fit_measurement, fit_recorded_sweep, measurement_offers, measurement_rate_for,
+        measurement_sweep,
     },
     playback::{
         GainMode, LossyRestoration, PlaybackPreferences, ResamplingPhase, ResamplingQuality,

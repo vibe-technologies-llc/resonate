@@ -1394,7 +1394,24 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   target, the error before and after, lines passed over, values held to the limits. The decisions
   (`MeasurementAim`, `MeasurementView`, `Measurement.profileName`, `Measurement.told`) are
   `ResonateLogic`'s (`MeasurementTests`); `MeasuredCorrectionState` only reads files and calls the
-  boundary, and refuses a second fit while one runs.
+  boundary, and refuses a second fit while one runs. **The room is measured from the same section**
+  (*Measure your room*, `MeasuredCorrectionState.measure`, `Sweeping.swift`; `eq.md`'s *A
+  measurement of your own*): it asks `Microphone.allowed()` (refused: the section says so and offers
+  *Open Settings*, `MeasurementView.denied`), pauses a playing engine as Listen does and runs
+  `Microphone.sweep`, which sets the session to `.playAndRecord` and `.measurement` through
+  `NowPlaying.beginListening`, reads the input's rate (`OpenSweep.inputRate`), asks
+  `measurement_sweep(rate)` for that rate (the tap cannot be at another rate than the hardware's, so
+  the iPhone's own rate is used, whatever the boundary would choose for an output) and opens one
+  `AVAudioEngine` that taps the input into a `ClipSink` and plays the sweep from an
+  `AVAudioPlayerNode` into its main mixer, so playing and recording start together and the sweep
+  never passes Resonate's RemoteIO engine; the recording is `recorded_frames` long, waited for with
+  three seconds of grace (`Microphone.filled`, shared with Listen), then the engine is closed and the
+  session given back. *Stop* cancels the task, which ends the wait with `CancellationError`. The
+  samples go to `fit_recorded_sweep` on `Work.aside` with the aim and the optional *Microphone
+  calibration…* file (`MeasurementCalibration`, held in `MeasurementView` until forgotten), the curve
+  is adopted as a fitted measurement is, named `Measured`. The state (`sounded`, `heard`,
+  `turnedAway`, `finished`) is `ResonateLogic`'s (`MeasurementTests`); the engine and session are
+  built and checked by `ios/check-build.py` but not run on this host (`FEATURES.md`).
 - **Room correction** is the equaliser page's last section (`RoomCorrection.swift`): choosing an
   audio file reads at most 64 MiB and one byte on `Work.aside` and keeps it through
   `keep_room_correction`, then switches it on; the switch, the response's channels, rate and length

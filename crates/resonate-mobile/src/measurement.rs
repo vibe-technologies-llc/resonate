@@ -1,5 +1,7 @@
 use std::fmt;
 
+use resonate_core::SampleRate;
+use resonate_dsp::Sweep;
 use resonate_eq::{BuiltIn, Fitting, LARGEST_MEASUREMENT, Response, fit, read_response};
 
 use crate::{
@@ -11,6 +13,7 @@ use crate::{
 pub enum MeasuredFile {
     Measurement,
     Target,
+    Calibration,
 }
 
 impl fmt::Display for MeasuredFile {
@@ -18,6 +21,7 @@ impl fmt::Display for MeasuredFile {
         f.write_str(match self {
             Self::Measurement => "measurement",
             Self::Target => "target",
+            Self::Calibration => "calibration",
         })
     }
 }
@@ -39,6 +43,13 @@ pub struct MeasurementOffers {
 pub enum MeasurementTarget {
     BuiltIn { name: String },
     Document { bytes: Vec<u8> },
+}
+
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct MeasurementSweep {
+    pub rate: u32,
+    pub samples: Vec<f32>,
+    pub recorded_frames: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
@@ -94,6 +105,30 @@ pub fn measurement_offers() -> MeasurementOffers {
     }
 }
 
+const MEASURED_AT_RATES: [u32; 2] = [44_100, 48_000];
+const MEASURED_AT_OTHERWISE: u32 = 48_000;
+
+#[uniffi::export]
+pub fn measurement_rate_for(output_rate: u32) -> u32 {
+    if MEASURED_AT_RATES.contains(&output_rate) {
+        output_rate
+    } else {
+        MEASURED_AT_OTHERWISE
+    }
+}
+
+#[uniffi::export]
+pub fn measurement_sweep(rate: u32) -> Result<MeasurementSweep> {
+    let sweep = sweep_at(rate)?;
+    let recorded_frames = (sweep.heard_for().as_secs_f64() * f64::from(rate)).round() as u64;
+
+    Ok(MeasurementSweep {
+        rate,
+        samples: sweep.samples().to_vec(),
+        recorded_frames,
+    })
+}
+
 #[uniffi::export]
 pub fn fit_measurement(
     measurement: Vec<u8>,
@@ -102,15 +137,64 @@ pub fn fit_measurement(
 ) -> Result<MeasurementFit> {
     let reading = read_response(&measurement)
         .map_err(|source| Error::measurement(MeasuredFile::Measurement, source))?;
+
+    fitted(&reading.response, reading.passed_over, &target, name)
+}
+
+#[uniffi::export]
+pub fn fit_recorded_sweep(
+    recorded: Vec<f32>,
+    rate: u32,
+    calibration: Option<Vec<u8>>,
+    target: MeasurementTarget,
+    name: String,
+) -> Result<MeasurementFit> {
+    let sweep = sweep_at(rate)?;
+    let levels = sweep
+        .heard_as(&recorded)
+        .and_then(|heard| heard.response())
+        .map_err(|source| Error::Sweep { source })?;
+    let heard = Response::from_levels(
+        levels
+            .into_iter()
+            .map(|level| (level.hertz, level.decibels)),
+    )
+    .map_err(|source| Error::measurement(MeasuredFile::Measurement, source))?;
+
+    let measured = match calibration {
+        None => heard,
+        Some(bytes) => {
+            let microphone = read_response(&bytes)
+                .map_err(|source| Error::measurement(MeasuredFile::Calibration, source))?
+                .response;
+            heard
+                .calibrated_by(&microphone)
+                .map_err(|source| Error::measurement(MeasuredFile::Measurement, source))?
+        }
+    };
+
+    fitted(&measured, 0, &target, name)
+}
+
+fn sweep_at(rate: u32) -> Result<Sweep> {
+    Sweep::for_measuring(SampleRate::new(rate)?).map_err(|source| Error::Sweep { source })
+}
+
+fn fitted(
+    measured: &Response,
+    passed_over: usize,
+    target: &MeasurementTarget,
+    name: String,
+) -> Result<MeasurementFit> {
     let goal = target.response()?;
 
-    let fitted = fit(&reading.response, &goal, &Fitting::default()).map_err(|source| {
-        let file = out_of_reach(&reading.response, &source);
+    let fitted = fit(measured, &goal, &Fitting::default()).map_err(|source| {
+        let file = out_of_reach(measured, &source);
         Error::measurement(file, source)
     })?;
 
     let mut loaded = imported(&fitted.profile, name);
-    loaded.passed_over = u32::try_from(reading.passed_over).unwrap_or(u32::MAX);
+    loaded.passed_over = u32::try_from(passed_over).unwrap_or(u32::MAX);
 
     Ok(MeasurementFit {
         bands: u32::try_from(loaded.curve.bands.len()).unwrap_or(u32::MAX),
@@ -323,5 +407,178 @@ mod tests {
             told,
             "The measurement is within 0.0 dB of the target, so there is nothing to correct"
         );
+    }
+
+    const SMOOTHING: f64 = 0.3;
+    const DELAY_FRAMES: usize = 211;
+
+    fn through_a_lowpass(rate: u32) -> (Vec<f32>, MeasurementSweep) {
+        let sweep = measurement_sweep(rate).expect("a sweep");
+        let total = sweep.recorded_frames as usize;
+        let mut held = 0.0_f64;
+        let mut heard = vec![0.0_f32; DELAY_FRAMES];
+        for at in 0..total - DELAY_FRAMES {
+            let sample = sweep.samples.get(at).copied().unwrap_or(0.0);
+            held = SMOOTHING * f64::from(sample) + (1.0 - SMOOTHING) * held;
+            heard.push(held as f32);
+        }
+        (heard, sweep)
+    }
+
+    fn lowpass_db(hertz: f64, rate: u32) -> f64 {
+        let turn = 2.0 * std::f64::consts::PI * hertz / f64::from(rate);
+        let real = 1.0 - (1.0 - SMOOTHING) * turn.cos();
+        let imaginary = (1.0 - SMOOTHING) * turn.sin();
+        20.0 * (SMOOTHING / real.hypot(imaginary)).log10()
+    }
+
+    fn the_filter_as_a_calibration(rate: u32) -> Vec<u8> {
+        (0..150)
+            .map(|step| {
+                let hertz = 20.0 * 1.05_f64.powi(step);
+                format!("{hertz:.2},{:.3}\n", lowpass_db(hertz, rate))
+            })
+            .fold(String::from("frequency,raw\n"), |text, line| text + &line)
+            .into_bytes()
+    }
+
+    #[test]
+    fn a_sweep_is_measured_at_the_outputs_rate_where_it_is_one_a_microphone_takes_and_at_48_khz_else()
+     {
+        assert_eq!(measurement_rate_for(44_100), 44_100);
+        assert_eq!(measurement_rate_for(48_000), 48_000);
+        assert_eq!(measurement_rate_for(96_000), 48_000);
+        assert_eq!(measurement_rate_for(0), 48_000);
+        assert!(measurement_sweep(measurement_rate_for(22_050)).is_ok());
+    }
+
+    #[test]
+    fn a_sweep_is_handed_out_at_the_rate_asked_and_says_how_long_to_record() {
+        for rate in [44_100, 48_000, 96_000] {
+            let sweep = measurement_sweep(rate).expect("a sweep");
+
+            assert_eq!(sweep.rate, rate);
+            assert_eq!(sweep.samples.len() as u64, u64::from(rate) * 8);
+            assert_eq!(sweep.recorded_frames, u64::from(rate) * 10);
+            assert!(
+                sweep
+                    .samples
+                    .iter()
+                    .all(|sample| sample.abs() <= 0.1 + 1e-6)
+            );
+        }
+    }
+
+    #[test]
+    fn a_sweep_through_a_known_filter_is_fitted_as_the_desktops_measurement_is() {
+        for rate in [44_100, 48_000] {
+            let (heard, sweep) = through_a_lowpass(rate);
+            let played =
+                Sweep::for_measuring(SampleRate::new(rate).expect("a rate")).expect("a sweep");
+            assert_eq!(sweep.samples, played.samples());
+
+            let phone =
+                fit_recorded_sweep(heard.clone(), rate, None, built_in("flat"), "Room".into())
+                    .expect("a fit");
+
+            let levels = played
+                .heard_as(&heard)
+                .and_then(|heard| heard.response())
+                .expect("a response");
+            let measured = Response::from_levels(
+                levels
+                    .into_iter()
+                    .map(|level| (level.hertz, level.decibels)),
+            )
+            .expect("a response");
+            for hertz in [100.0, 1_000.0, 6_000.0, 10_000.0] {
+                let off = (measured.at(hertz) - lowpass_db(hertz, rate)).abs();
+                assert!(off < 0.5, "{hertz} Hz is {off:.2} dB off at {rate}");
+            }
+            let desktop = fit(
+                &measured,
+                &Store::goal_named("flat").expect("a built-in"),
+                &Fitting::default(),
+            )
+            .expect("a fit");
+
+            assert_eq!(phone.imported, imported(&desktop.profile, "Room".into()));
+            assert_eq!(phone.off_by_db_before, desktop.off_by_db_before as f32);
+            assert!(phone.off_by_db_after < phone.off_by_db_before * 0.5);
+            assert!(
+                phone
+                    .imported
+                    .curve
+                    .bands
+                    .iter()
+                    .any(|band| band.gain_db > 2.0 && band.frequency_hz > 2_000.0),
+                "the treble the filter took away is lifted"
+            );
+        }
+    }
+
+    #[test]
+    fn a_microphone_calibration_is_taken_off_what_it_heard() {
+        let (heard, _) = through_a_lowpass(48_000);
+
+        let raw = fit_recorded_sweep(heard.clone(), 48_000, None, built_in("flat"), String::new())
+            .expect("a fit");
+        let calibrated = fit_recorded_sweep(
+            heard,
+            48_000,
+            Some(the_filter_as_a_calibration(48_000)),
+            built_in("flat"),
+            String::new(),
+        )
+        .expect("a fit");
+
+        assert!(raw.off_by_db_before > 1.0, "{}", raw.off_by_db_before);
+        assert!(
+            calibrated.off_by_db_before < 0.2,
+            "{}",
+            calibrated.off_by_db_before
+        );
+    }
+
+    #[test]
+    fn a_calibration_that_will_not_read_is_refused_naming_it() {
+        let (heard, _) = through_a_lowpass(48_000);
+
+        let told = fit_recorded_sweep(
+            heard,
+            48_000,
+            Some(b"nothing here\n".to_vec()),
+            built_in("flat"),
+            String::new(),
+        )
+        .expect_err("a refusal")
+        .to_string();
+
+        assert_eq!(
+            told,
+            "No line of the calibration file reads as a frequency and a level"
+        );
+    }
+
+    #[test]
+    fn a_recording_that_heard_nothing_or_too_little_or_a_rate_too_slow_is_told_in_words() {
+        let told = |recorded: Vec<f32>, rate: u32| {
+            fit_recorded_sweep(recorded, rate, None, built_in("flat"), String::new())
+                .expect_err("a refusal")
+                .to_string()
+        };
+
+        assert_eq!(
+            told(vec![0.0; 480_000], 48_000),
+            "Nothing of the sweep was heard: raise the volume or bring the microphone nearer"
+        );
+        assert_eq!(
+            told(vec![0.0; 1_000], 48_000),
+            "The recording held 1000 frames and the sweep alone was 384000, so it was cut short"
+        );
+        assert!(told(vec![0.0; 480_000], 32_000).starts_with(
+            "A sweep up to 20 kHz needs a rate above 40 kHz and this one runs at 32 kHz"
+        ));
+        assert!(measurement_sweep(32_000).is_err());
     }
 }

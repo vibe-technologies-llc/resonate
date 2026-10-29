@@ -1,3 +1,4 @@
+use resonate_dsp::Error as Dsp;
 use resonate_engine::{Cause, CommandKind, Event, PlaybackState, PlayerState, QueueRows};
 use resonate_eq::Error as Eq;
 use resonate_library::{Error as Library, LookupOp};
@@ -168,6 +169,23 @@ pub(crate) fn of_a_measurement(file: MeasuredFile, source: &Eq) -> String {
             )
         }
         _ => format!("The {file} file could not be read"),
+    }
+}
+
+pub(crate) fn of_a_sweep(source: &Dsp) -> String {
+    match source {
+        Dsp::SweepBand { rate, .. } => {
+            format!("A sweep up to 20 kHz needs a rate above 40 kHz and this one runs at {rate}")
+        }
+        Dsp::HeardTooShort { heard, played } => format!(
+            "The recording held {heard} frames and the sweep alone was {played}, so it was cut short"
+        ),
+        Dsp::HeardTooLong { .. } => "The recording of the sweep was too long to measure".to_owned(),
+        Dsp::NothingHeard => {
+            "Nothing of the sweep was heard: raise the volume or bring the microphone nearer"
+                .to_owned()
+        }
+        _ => "The sweep could not be measured".to_owned(),
     }
 }
 

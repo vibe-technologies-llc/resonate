@@ -534,6 +534,22 @@ under a progress bar while it runs. `MeasurementView` holds the offers, the aim 
 runs, and a refusal reaches the status line as the boundary's sentence
 (`MeasurementAimTest`). The section does not show before the offers are read.
 
+**The room is measured from the same section** (*Measure*, `EqualiserViewModel.measureRoom`,
+`SweepRecorder.kt`; `eq.md`'s *A measurement of your own*): it asks `Host.allowMicrophone` (refused:
+the section says so and offers *Open Settings*, `MeasurementView.denied`), pauses a playing engine
+(`LibraryRepository.pauseForRecording`, which Listen shares), asks `measurement_rate_for` of
+`AudioTrack.getNativeOutputSampleRate` and `measurement_sweep` of that, and `SweepRecorder.measure`
+plays the sweep through a short-lived `AudioTrack` of its own (`MODE_STATIC`, float mono, media
+usage) while an `AudioRecord` (`UNPROCESSED` where `PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED` says
+the phone has it, else `MIC`; float mono at the same rate) fills `recorded_frames` on the IO
+dispatcher, the sweep never passing the engine and so the equaliser and room correction in force.
+Both are released in `finally`, so *Stop* (which cancels the job; the read loop checks every tenth of
+a second) and a failure leave nothing open. The recording goes to `fit_recorded_sweep` on
+`Dispatchers.Default` with the aim and the optional *Microphone calibration…* file
+(`Calibration`, kept in `MeasurementView` until forgotten), and the fitted curve is committed as a
+fitted measurement is, named `Measured`, with `fitSentence`. A second *Measure* is refused while one
+runs (`MeasurementView.sounding`, `MeasurementAimTest`).
+
 **Room correction is the equaliser page's last section** (`RoomCorrectionSection`, `RoomCorrectionState.kt`):
 *Choose a response…* opens the system document picker for audio (`ACTION_OPEN_DOCUMENT`), the chosen
 file is read up to 64 MiB and one byte (the boundary refuses the byte) and kept through

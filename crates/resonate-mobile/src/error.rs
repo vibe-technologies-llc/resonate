@@ -183,6 +183,11 @@ pub enum Error {
         #[source]
         source: Box<resonate_eq::Error>,
     },
+    #[error("{}", crate::failure::of_a_sweep(source))]
+    Sweep {
+        #[source]
+        source: resonate_dsp::Error,
+    },
     #[error("No built-in target is called {name}")]
     UnknownTarget { name: String },
     #[error("this service does not recognise the account")]

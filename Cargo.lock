@@ -6048,6 +6048,7 @@ dependencies = [
  "resonate-audio",
  "resonate-codec",
  "resonate-core",
+ "resonate-dsp",
  "resonate-engine",
  "resonate-eq",
  "resonate-library",

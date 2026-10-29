@@ -20,11 +20,24 @@ public enum MeasurementAim: Equatable, Sendable {
     }
 }
 
+public struct MeasurementCalibration: Equatable, Sendable {
+    public let name: String
+    public let bytes: Data
+
+    public init(name: String, bytes: Data) {
+        self.name = name
+        self.bytes = bytes
+    }
+}
+
 public struct MeasurementView: Equatable, Sendable {
     public let offers: MeasurementOffers
     public var aim: MeasurementAim?
     public var fitting: Bool
     public var said: String?
+    public var sounding = false
+    public var calibration: MeasurementCalibration?
+    public var denied = false
 
     public static func of(_ offers: MeasurementOffers) -> MeasurementView {
         let first = offers.targets.first { $0.recommended } ?? offers.targets.first
@@ -42,16 +55,45 @@ public struct MeasurementView: Equatable, Sendable {
         return next
     }
 
+    public func calibrated(by calibration: MeasurementCalibration?) -> MeasurementView {
+        var next = self
+        next.calibration = calibration
+        return next
+    }
+
     public func begun() -> MeasurementView {
         var next = self
         next.fitting = true
         next.said = nil
+        next.denied = false
+        return next
+    }
+
+    public func sounded() -> MeasurementView {
+        var next = begun()
+        next.sounding = true
+        return next
+    }
+
+    public func heard() -> MeasurementView {
+        var next = self
+        next.sounding = false
+        return next
+    }
+
+    public func turnedAway() -> MeasurementView {
+        var next = self
+        next.fitting = false
+        next.sounding = false
+        next.said = nil
+        next.denied = true
         return next
     }
 
     public func finished(saying said: String?) -> MeasurementView {
         var next = self
         next.fitting = false
+        next.sounding = false
         next.said = said ?? self.said
         return next
     }

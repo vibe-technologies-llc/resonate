@@ -1,12 +1,14 @@
 package org.resonate.android.ui.equaliser
 
 import android.content.ContentResolver
+import android.content.Context
 import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +25,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.resonate.android.OutputRoute
 import org.resonate.android.RoomView
+import org.resonate.android.SweepRecorder
 import org.resonate.android.readUpTo
 import org.resonate.android.nativecore.EqualiserCurve
 import org.resonate.android.nativecore.EqualiserPreset
@@ -36,8 +39,11 @@ import org.resonate.android.nativecore.equaliserFrequencies
 import org.resonate.android.nativecore.equaliserLimits
 import org.resonate.android.nativecore.equaliserPresets
 import org.resonate.android.nativecore.fitMeasurement
+import org.resonate.android.nativecore.fitRecordedSweep
 import org.resonate.android.nativecore.listeningTestLengths
 import org.resonate.android.nativecore.measurementOffers
+import org.resonate.android.nativecore.measurementRateFor
+import org.resonate.android.nativecore.measurementSweep
 import org.resonate.android.nativecore.parseEqProfile
 import org.resonate.android.nativecore.responseCurve
 import org.resonate.android.nativecore.settingTestByDefault
@@ -50,6 +56,7 @@ data class EqualiserInfo(
 )
 
 private const val RESPONSE_POINTS = 256u
+private const val MEASURED_PROFILE = "Measured"
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class EqualiserViewModel(private val resonate: Resonate) : ViewModel() {
@@ -217,6 +224,58 @@ class EqualiserViewModel(private val resonate: Resonate) : ViewModel() {
         }
     }
 
+    fun calibrateFrom(resolver: ContentResolver, uri: Uri) {
+        val offers = measuring.value.offers ?: return
+        resonate.attempt(viewModelScope) { _ ->
+            val read = withContext(Dispatchers.IO) { resolver.readUpTo(uri, offers.bytesAtMost) }
+            measuring.update { it.calibratedBy(Calibration(read.name, read.bytes)) }
+        }
+    }
+
+    fun forgetCalibration() = measuring.update { it.calibratedBy(null) }
+
+    private var sweeping: Job? = null
+
+    fun measureRoom(context: Context) {
+        val view = measuring.value
+        val offers = view.offers ?: return
+        val aim = view.aim ?: return
+        if (view.fitting) return
+        measuring.update { it.sounded() }
+        sweeping =
+            resonate.attempt(viewModelScope) { native ->
+                try {
+                    if (!resonate.host.allowMicrophone()) {
+                        measuring.update { it.turnedAway() }
+                        return@attempt
+                    }
+                    library.pauseForRecording()
+                    val rate = withContext(Dispatchers.Default) { measurementRateFor(SweepRecorder.outputRate()) }
+                    val sweep = withContext(Dispatchers.Default) { measurementSweep(rate) }
+                    val recorded = SweepRecorder.measure(context, sweep)
+                    measuring.update { it.heard() }
+                    val fit =
+                        withContext(Dispatchers.Default) {
+                            fitRecordedSweep(
+                                recorded.toList(),
+                                sweep.rate,
+                                view.calibration?.bytes,
+                                aim.target(),
+                                MEASURED_PROFILE,
+                            )
+                        }
+                    commit(fit.imported.curve)
+                    measuring.update { it.finished(fitSentence(fit, aim.label(offers.targets))) }
+                } finally {
+                    measuring.update { it.finished(null) }
+                }
+            }
+    }
+
+    fun stopMeasuring() {
+        sweeping?.cancel()
+    }
+
     fun chooseTesting(tested: Testing) {
         val view = testing.value
         if (view.run != null || view.beginning) return
@@ -281,6 +340,7 @@ class EqualiserViewModel(private val resonate: Resonate) : ViewModel() {
     }
 
     override fun onCleared() {
+        sweeping?.cancel()
         endTest()
     }
 

@@ -12,17 +12,30 @@ sealed interface Aim {
     class Document(val name: String, val bytes: ByteArray) : Aim
 }
 
+class Calibration(val name: String, val bytes: ByteArray)
+
 data class MeasurementView(
     val offers: MeasurementOffers?,
     val aim: Aim?,
     val fitting: Boolean,
     val said: String?,
+    val sounding: Boolean = false,
+    val calibration: Calibration? = null,
+    val denied: Boolean = false,
 ) {
     fun aimed(at: Aim) = copy(aim = at)
 
-    fun begun() = copy(fitting = true, said = null)
+    fun calibratedBy(by: Calibration?) = copy(calibration = by)
 
-    fun finished(said: String?) = copy(fitting = false, said = said ?: this.said)
+    fun begun() = copy(fitting = true, said = null, denied = false)
+
+    fun sounded() = begun().copy(sounding = true)
+
+    fun heard() = copy(sounding = false)
+
+    fun turnedAway() = copy(fitting = false, sounding = false, said = null, denied = true)
+
+    fun finished(said: String?) = copy(fitting = false, sounding = false, said = said ?: this.said)
 
     companion object {
         val unread = MeasurementView(offers = null, aim = null, fitting = false, said = null)

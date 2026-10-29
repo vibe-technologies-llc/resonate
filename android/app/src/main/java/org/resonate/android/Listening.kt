@@ -13,7 +13,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.resonate.android.nativecore.HeardAnswer
 import org.resonate.android.nativecore.HeardSong
-import org.resonate.android.nativecore.Transport
 
 class Listening(
     private val library: LibraryRepository,
@@ -159,8 +158,7 @@ class Listening(
         asking: () -> Unit,
     ): Outcome {
         if (!allowed()) return Outcome.Denied
-        val state = library.snapshot.value?.transport
-        if (state == Transport.PLAYING || state == Transport.LOADING) library.request { it.pause() }
+        library.pauseForRecording()
         val clip =
             try {
                 Microphone.record(ListenPlan.CLIP_SECONDS)

@@ -25,6 +25,7 @@ resonate-monochrome.workspace = true
 resonate-audio.workspace = true
 resonate-codec.workspace = true
 resonate-core.workspace = true
+resonate-dsp.workspace = true
 resonate-engine.workspace = true
 resonate-eq.workspace = true
 objc2-core-audio-types.workspace = true

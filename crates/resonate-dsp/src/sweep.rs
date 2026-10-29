@@ -9,6 +9,10 @@ pub const SHORTEST_SWEEP: Duration = Duration::from_millis(500);
 pub const LONGEST_SWEEP: Duration = Duration::from_secs(60);
 pub const FRAMES_HEARD_AT_MOST: usize = 1 << 24;
 pub const POINTS_PER_OCTAVE: usize = 48;
+pub const MEASURED_FROM_HZ: u32 = 20;
+pub const MEASURED_TO_HZ: u32 = 20_000;
+pub const MEASURED_FOR: Duration = Duration::from_secs(8);
+pub const HEARD_AFTER_THE_SWEEP: Duration = Duration::from_secs(2);
 
 const LEVEL: f64 = 0.1;
 const FADED_OVER: Duration = Duration::from_millis(20);
@@ -78,6 +82,14 @@ impl Sweep {
             to_hz,
             played,
         })
+    }
+
+    pub fn for_measuring(rate: SampleRate) -> Result<Self> {
+        Self::new(rate, MEASURED_FROM_HZ, MEASURED_TO_HZ, MEASURED_FOR)
+    }
+
+    pub fn heard_for(&self) -> Duration {
+        self.length() + HEARD_AFTER_THE_SWEEP
     }
 
     pub fn samples(&self) -> &[f32] {
@@ -285,6 +297,21 @@ mod tests {
             .filter(|level| level.hertz >= low && level.hertz <= high)
             .map(|level| (level.decibels - known_db(level.hertz)).abs())
             .fold(0.0, f64::max)
+    }
+
+    #[test]
+    fn a_sweep_for_measuring_is_the_band_and_length_a_room_is_measured_with_at_any_rate() {
+        for rate in [SampleRate::HZ_44100, SampleRate::HZ_48000] {
+            let sweep = Sweep::for_measuring(rate).expect("a sweep that fits the rate");
+
+            assert_eq!(sweep.band(), (MEASURED_FROM_HZ, MEASURED_TO_HZ));
+            assert_eq!(sweep.length(), MEASURED_FOR);
+            assert_eq!(sweep.heard_for(), MEASURED_FOR + HEARD_AFTER_THE_SWEEP);
+        }
+        assert!(matches!(
+            Sweep::for_measuring(SampleRate::new(32_000).expect("a rate")),
+            Err(Error::SweepBand { .. })
+        ));
     }
 
     #[test]
