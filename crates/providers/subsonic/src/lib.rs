@@ -9,19 +9,26 @@ use std::{
 };
 
 use md5::{Digest, Md5};
-use resonate_core::{Mbid, SourceId};
+use resonate_core::{Mbid, MediaLocation, SourceId};
 pub use resonate_fetch::Patience;
 use resonate_fetch::{
-    Ranged, Trusted, asking_agent, asking_to_resume, configured, downloading_agent, escaped,
-    is_a_document, retry_after_of, unreached,
+    Ranged, Seeking, Trusted, asking_agent, asking_to_resume, configured, downloading_agent,
+    escaped, is_a_document, retry_after_of, unreached,
 };
 use resonate_providers::{
     Choosing, Delivery, Error, Extension, Held, Identity, Listed, Obtained, Opening, Pacing,
     Provider, ProviderOp, Reopened, Result, is_a_page,
 };
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, de::DeserializeOwned};
 use serde_json::Value;
 use ureq::{Agent, Body, http};
+
+pub use crate::served::{
+    Album, AlbumSongs, Artist, ArtistAlbums, Found, Id, Named, Song, Streamed,
+};
+use crate::served::{AlbumDoc, ArtistDoc, ArtistsDoc, FoundDoc, SongDoc, id_spelt, readable};
+
+mod served;
 
 const SUBSONIC: &str = "subsonic";
 const SPOKEN_AS: &str = "1.16.1";
@@ -37,6 +44,8 @@ const UNAVAILABLE: u16 = 503;
 const NOT_AS_HELD: [u16; 2] = [412, 416];
 const LARGEST_ANSWER: u64 = 4 * 1024 * 1024;
 const OK: &str = "ok";
+const AS_STORED: &str = "raw";
+const BROWSED_AT_MOST: usize = 20;
 const REST: &str = "rest";
 const ACCOUNT_REFUSALS: [u16; 9] = [20, 30, 40, 41, 42, 43, 44, 50, 60];
 
@@ -70,32 +79,6 @@ fn downloading(patience: Patience) -> Agent {
         configured(patience.answered_within, Trusted::SystemStoreToo).build(),
         patience.broken_off_after,
     )
-}
-
-fn songs_readable<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> std::result::Result<Vec<Song>, D::Error> {
-    let listed = Option::<Vec<Value>>::deserialize(deserializer)?.unwrap_or_default();
-    Ok(listed
-        .into_iter()
-        .filter_map(|song| {
-            serde_json::from_value(song)
-                .inspect_err(|error| {
-                    tracing::debug!(%error, "a Subsonic song that does not read is passed over");
-                })
-                .ok()
-        })
-        .collect())
-}
-
-fn id_spelt<'de, D: Deserializer<'de>>(deserializer: D) -> std::result::Result<String, D::Error> {
-    match Value::deserialize(deserializer)? {
-        Value::String(id) => Ok(id),
-        Value::Number(id) => Ok(id.to_string()),
-        _ => Err(serde::de::Error::custom(
-            "a song id is a string or a number",
-        )),
-    }
 }
 
 fn isrcs_readable<'de, D: Deserializer<'de>>(
@@ -137,7 +120,15 @@ struct Response {
     #[serde(default)]
     error: Option<Refusal>,
     #[serde(default, rename = "searchResult3")]
-    found: Option<Found>,
+    found: Option<Value>,
+    #[serde(default)]
+    artists: Option<Value>,
+    #[serde(default)]
+    artist: Option<Value>,
+    #[serde(default)]
+    album: Option<Value>,
+    #[serde(default)]
+    song: Option<Value>,
 }
 
 #[derive(Deserialize)]
@@ -146,13 +137,13 @@ struct Refusal {
 }
 
 #[derive(Default, Deserialize)]
-struct Found {
-    #[serde(default, deserialize_with = "songs_readable")]
-    song: Vec<Song>,
+struct Listings {
+    #[serde(default, deserialize_with = "readable")]
+    song: Vec<Listing>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
-struct Song {
+struct Listing {
     #[serde(deserialize_with = "id_spelt")]
     id: String,
     #[serde(default)]
@@ -169,7 +160,7 @@ struct Song {
     duration: Option<u64>,
 }
 
-impl Song {
+impl Listing {
     fn listed(&self) -> Listed<'_> {
         Listed {
             isrcs: self.isrc.iter().map(String::as_str).collect(),
@@ -187,7 +178,11 @@ impl Song {
     }
 }
 
-fn weighed(identity: &Identity, songs: &[Song], choosing: &mut Choosing<Song>) -> Option<Song> {
+fn weighed(
+    identity: &Identity,
+    songs: &[Listing],
+    choosing: &mut Choosing<Listing>,
+) -> Option<Listing> {
     let by_recording = identity
         .recording
         .as_ref()
@@ -363,7 +358,106 @@ impl Subsonic {
             })
     }
 
-    fn searched(&self, words: &str, offset: usize, deadline: Instant) -> Result<Vec<Song>> {
+    pub fn source_id(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn browsed(&self, method: &str, asked: &[(&str, &str)]) -> Result<Response> {
+        let op = ProviderOp::Browse;
+        let deadline = Instant::now() + self.patience.answered_within;
+        let url = self.url(method, asked);
+        let response = self.called_within(&self.asking, op, &url, Some(deadline), None)?;
+        let bytes = self.read_whole(op, response)?;
+        self.answered(&bytes, op)
+    }
+
+    pub fn artists(&self) -> Result<Vec<Artist>> {
+        let answered = self.browsed("getArtists", &[])?;
+        let artists: Option<ArtistsDoc> = self.part(answered.artists, ProviderOp::Browse)?;
+        Ok(artists.unwrap_or_default().artists())
+    }
+
+    pub fn artist(&self, id: &Id) -> Result<ArtistAlbums> {
+        let answered = self.browsed("getArtist", &[("id", id.as_str())])?;
+        let artist: Option<ArtistDoc> = self.part(answered.artist, ProviderOp::Browse)?;
+        artist
+            .and_then(ArtistDoc::with_albums)
+            .ok_or_else(|| self.unreadable(ProviderOp::Browse))
+    }
+
+    pub fn album(&self, id: &Id) -> Result<AlbumSongs> {
+        let answered = self.browsed("getAlbum", &[("id", id.as_str())])?;
+        let album: Option<AlbumDoc> = self.part(answered.album, ProviderOp::Browse)?;
+        album
+            .and_then(AlbumDoc::with_songs)
+            .ok_or_else(|| self.unreadable(ProviderOp::Browse))
+    }
+
+    pub fn song(&self, id: &Id) -> Result<Song> {
+        let answered = self.browsed("getSong", &[("id", id.as_str())])?;
+        let song: Option<SongDoc> = self.part(answered.song, ProviderOp::Browse)?;
+        song.and_then(SongDoc::song)
+            .ok_or_else(|| self.unreadable(ProviderOp::Browse))
+    }
+
+    pub fn search(&self, words: &str) -> Result<Found> {
+        let at_most = BROWSED_AT_MOST.to_string();
+        let answered = self.browsed(
+            "search3",
+            &[
+                ("query", words),
+                ("artistCount", &at_most),
+                ("albumCount", &at_most),
+                ("songCount", &at_most),
+            ],
+        )?;
+        let found: Option<FoundDoc> = self.part(answered.found, ProviderOp::Browse)?;
+        Ok(found.unwrap_or_default().found())
+    }
+
+    pub fn songs_of(&self, named: &Named) -> Result<Vec<Song>> {
+        match named {
+            Named::Song(id) => Ok(vec![self.song(id)?]),
+            Named::Album(id) => Ok(self.album(id)?.songs),
+            Named::Artist(id) => {
+                let mut songs = Vec::new();
+                for album in self.artist(id)?.albums {
+                    songs.extend(self.album(&album.id)?.songs);
+                }
+                Ok(songs)
+            }
+        }
+    }
+
+    pub fn location_of(&self, named: &Named) -> MediaLocation {
+        named.location(&self.source)
+    }
+
+    pub fn named_by(&self, location: &MediaLocation) -> Option<Named> {
+        Named::read(location, &self.source)
+    }
+
+    pub fn streamed(&self, id: &Id) -> Result<Streamed> {
+        let op = ProviderOp::Stream;
+        let url = self.url("stream", &[("id", id.as_str()), ("format", AS_STORED)]);
+        let response = self.called_within(&self.downloading, op, &url, None, None)?;
+        let media_type = response.body().mime_type().map(str::to_owned);
+        if is_a_document(media_type.as_deref()) {
+            let bytes = self.read_whole(op, response)?;
+            return Err(self.refusal_in(&bytes, op));
+        }
+        Ok(Streamed {
+            reader: Seeking::continuing(
+                self.downloading.clone(),
+                url,
+                response,
+                self.patience.resumed_after,
+            ),
+            media_type,
+        })
+    }
+
+    fn searched(&self, words: &str, offset: usize, deadline: Instant) -> Result<Vec<Listing>> {
         let op = ProviderOp::Search;
         let url = self.url(
             "search3",
@@ -380,7 +474,7 @@ impl Subsonic {
         self.read(&bytes, op)
     }
 
-    fn found(&self, identity: &Identity) -> Result<Option<Song>> {
+    fn found(&self, identity: &Identity) -> Result<Option<Listing>> {
         let deadline = Instant::now() + self.patience.answered_within;
         let mut choosing = Choosing::default();
         let wordings = identity.wordings();
@@ -414,7 +508,22 @@ impl Subsonic {
         Ok(chosen)
     }
 
-    fn read(&self, bytes: &[u8], op: ProviderOp) -> Result<Vec<Song>> {
+    fn read(&self, bytes: &[u8], op: ProviderOp) -> Result<Vec<Listing>> {
+        let found: Option<Listings> = self.part(self.answered(bytes, op)?.found, op)?;
+        Ok(found.unwrap_or_default().song)
+    }
+
+    fn part<T: DeserializeOwned>(&self, part: Option<Value>, op: ProviderOp) -> Result<Option<T>> {
+        part.map(|part| {
+            serde_json::from_value(part).map_err(|error| {
+                tracing::debug!(%error, "a part of a Subsonic answer was not the document expected");
+                self.unreadable(op)
+            })
+        })
+        .transpose()
+    }
+
+    fn answered(&self, bytes: &[u8], op: ProviderOp) -> Result<Response> {
         let answer: Answer = serde_json::from_slice(bytes).map_err(|error| {
             tracing::debug!(%error, "a Subsonic answer was not the document expected");
             if is_a_page(bytes) {
@@ -435,11 +544,11 @@ impl Subsonic {
                 Error::TurnedAway { provider, op, code }
             });
         }
-        Ok(answer.response.found.unwrap_or_default().song)
+        Ok(answer.response)
     }
 
     fn refusal_in(&self, bytes: &[u8], op: ProviderOp) -> Error {
-        match self.read(bytes, op) {
+        match self.answered(bytes, op) {
             Err(error) => error,
             Ok(_) => self.unreadable(op),
         }

@@ -10,6 +10,8 @@ pub enum ProviderOp {
     Search,
     Playback,
     Download,
+    Browse,
+    Stream,
 }
 
 #[derive(Debug, Error)]

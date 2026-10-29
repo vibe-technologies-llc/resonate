@@ -149,6 +149,11 @@ impl Accounts {
 }
 
 #[cfg(feature = "online")]
+pub fn server_named(config: &Config) -> Option<Subsonic> {
+    Accounts::of(config).subsonic.map(Subsonic::at)
+}
+
+#[cfg(feature = "online")]
 fn given(value: Option<&str>) -> Option<String> {
     value
         .map(str::trim)

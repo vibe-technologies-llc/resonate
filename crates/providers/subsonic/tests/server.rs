@@ -1,5 +1,5 @@
 use std::{
-    io::{BufRead, BufReader, Read, Write},
+    io::{BufRead, BufReader, Read, Seek, SeekFrom, Write},
     net::{TcpListener, TcpStream},
     sync::Arc,
     thread,
@@ -11,7 +11,7 @@ use resonate_core::{Isrc, Mbid};
 use resonate_providers::{
     Delivery, Error, Identity, Obtained, Opened, Opening, Provider, ProviderOp,
 };
-use resonate_subsonic::{Patience, Server, Subsonic};
+use resonate_subsonic::{Id, Named, Patience, Server, Subsonic};
 
 const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
 const ECHOES_ISRC: &str = "GBN9Y1100089";
@@ -88,6 +88,8 @@ struct Asked {
     query: Option<String>,
     offset: Option<usize>,
     from: Option<usize>,
+    id: Option<String>,
+    format: Option<String>,
 }
 
 fn asked_from(target: &str, range: Option<&str>) -> Asked {
@@ -104,6 +106,8 @@ fn asked_from(target: &str, range: Option<&str>) -> Asked {
         method: path.rsplit('/').next().unwrap_or_default().to_owned(),
         query: parameter("query"),
         offset: parameter("songOffset").and_then(|offset| offset.parse().ok()),
+        id: parameter("id"),
+        format: parameter("format"),
         from: range
             .and_then(|range| range.strip_prefix("bytes="))
             .and_then(|range| range.trim_end_matches('-').parse().ok()),
@@ -510,4 +514,196 @@ fn a_download_that_keeps_coming_is_read_however_long_it_takes_in_all() {
 
     assert!(started.elapsed() > IMPATIENT);
     assert_eq!(delivered, Some(("floyd".to_owned(), AUDIO.to_vec())));
+}
+
+fn ok(body: &str) -> Canned {
+    Canned::json(format!(
+        r#"{{"subsonic-response":{{"status":"ok","version":"1.16.1",{body}}}}}"#
+    ))
+}
+
+fn not_held() -> Canned {
+    Canned::json(
+        r#"{"subsonic-response":{"status":"failed","version":"1.16.1","error":{"code":70,"message":"not found"}}}"#
+            .to_owned(),
+    )
+}
+
+fn id(id: &str) -> Id {
+    Id::new(id).expect("an id")
+}
+
+fn a_served_library(asked: &Asked) -> Canned {
+    match (asked.method.as_str(), asked.id.as_deref()) {
+        ("getArtists", _) => ok(
+            r#""artists":{"index":[{"name":"P","artist":[{"id":"ar-1","name":"Pink Floyd","albumCount":1},{"id":["odd"]}]}]}"#,
+        ),
+        ("getArtist", Some("ar-1")) => ok(
+            r#""artist":{"id":"ar-1","name":"Pink Floyd","album":[{"id":"al-1","name":"Meddle","artist":"Pink Floyd","year":1971,"songCount":2}]}"#,
+        ),
+        ("getAlbum", Some("al-1")) => ok(
+            r#""album":{"id":"al-1","name":"Meddle","artist":"Pink Floyd","song":[{"id":"so-1","title":"One of These Days","track":1,"discNumber":1,"duration":357,"suffix":"flac"},{"id":6,"title":"Echoes","track":6,"duration":1412,"suffix":"flac"}]}"#,
+        ),
+        ("getSong", Some("so-1")) => ok(
+            r#""song":{"id":"so-1","title":"One of These Days","album":"Meddle","suffix":"flac"}"#,
+        ),
+        ("search3", _) => ok(
+            r#""searchResult3":{"artist":[{"id":"ar-1","name":"Pink Floyd"}],"album":[{"id":"al-1","name":"Meddle"}],"song":[{"id":6,"title":"Echoes"}]}"#,
+        ),
+        _ => not_held(),
+    }
+}
+
+#[test]
+fn a_servers_artists_albums_and_songs_are_browsed_by_their_ids() {
+    let fake = Fake::serving(|asked, _| a_served_library(asked));
+    let subsonic = fake.subsonic();
+
+    let artists = subsonic.artists().expect("the artists");
+    let albums = subsonic.artist(&artists[0].id).expect("an artist");
+    let songs = subsonic.album(&albums.albums[0].id).expect("an album");
+    let found = subsonic.search("Meddle").expect("a search");
+
+    assert_eq!(
+        artists.len(),
+        1,
+        "a listing that does not read is passed over"
+    );
+    assert_eq!(artists[0].name, "Pink Floyd");
+    assert_eq!(artists[0].albums, Some(1));
+    assert_eq!(albums.artist.name, "Pink Floyd");
+    assert_eq!(albums.albums[0].name, "Meddle");
+    assert_eq!(albums.albums[0].year, Some(1971));
+    assert_eq!(albums.albums[0].songs, Some(2));
+    assert_eq!(songs.album.name, "Meddle");
+    assert_eq!(
+        songs
+            .songs
+            .iter()
+            .map(|song| (song.id.as_str(), song.title.as_str(), song.track))
+            .collect::<Vec<_>>(),
+        [
+            ("so-1", "One of These Days", Some(1)),
+            ("6", "Echoes", Some(6))
+        ]
+    );
+    assert_eq!(songs.songs[1].length, Some(Duration::from_secs(1412)));
+    assert_eq!(found.artists[0].id, id("ar-1"));
+    assert_eq!(found.albums[0].id, id("al-1"));
+    assert_eq!(found.songs[0].id, id("6"));
+}
+
+#[test]
+fn an_album_or_an_artist_named_by_its_location_is_the_songs_it_holds_in_order() {
+    let fake = Fake::serving(|asked, _| a_served_library(asked));
+    let subsonic = fake.subsonic();
+    let named = |uri: &str| {
+        subsonic
+            .named_by(&resonate_core::MediaLocation::from_uri(uri).expect("a uri"))
+            .expect("a location the server names")
+    };
+    let ids = |named: &Named| {
+        subsonic
+            .songs_of(named)
+            .expect("the songs")
+            .into_iter()
+            .map(|song| song.id)
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(ids(&named("subsonic:album/al-1")), [id("so-1"), id("6")]);
+    assert_eq!(ids(&named("subsonic:artist/ar-1")), [id("so-1"), id("6")]);
+    assert_eq!(ids(&named("subsonic:track/so-1")), [id("so-1")]);
+    assert_eq!(
+        subsonic.location_of(&Named::Song(id("6"))).to_uri(),
+        "subsonic:track/6"
+    );
+}
+
+#[test]
+fn an_album_the_server_does_not_hold_is_turned_away_by_its_code() {
+    let fake = Fake::serving(|asked, _| a_served_library(asked));
+
+    assert!(matches!(
+        fake.subsonic().album(&id("al-404")),
+        Err(Error::TurnedAway {
+            op: ProviderOp::Browse,
+            code: 70,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn a_song_is_streamed_as_stored_and_a_seek_back_asks_the_server_from_there() {
+    let fake = Fake::serving(|asked, _| match asked.from {
+        Some(from) => Canned::audio_from(from),
+        None => Canned::audio(),
+    });
+
+    let mut streamed = fake.subsonic().streamed(&id("so-6")).expect("a stream");
+    let mut head = [0_u8; 4];
+    streamed.read_exact(&mut head).expect("the head reads");
+    let landed = streamed.seek(SeekFrom::Start(1)).expect("a seek back");
+    let mut rest = Vec::new();
+    streamed.read_to_end(&mut rest).expect("the rest reads");
+    let asked: Vec<_> = fake
+        .heard
+        .lock()
+        .iter()
+        .map(|asked| {
+            (
+                asked.method.clone(),
+                asked.id.clone(),
+                asked.format.clone(),
+                asked.from,
+            )
+        })
+        .collect();
+
+    assert_eq!(streamed.length(), Some(AUDIO.len() as u64));
+    assert_eq!(streamed.media_type.as_deref(), Some("audio/flac"));
+    assert_eq!(&head, b"fLaC");
+    assert_eq!(landed, 1);
+    assert_eq!(rest, AUDIO[1..]);
+    let stream = |from| {
+        (
+            "stream".to_owned(),
+            Some("so-6".to_owned()),
+            Some("raw".to_owned()),
+            from,
+        )
+    };
+    assert_eq!(asked, [stream(None), stream(Some(1))]);
+}
+
+#[test]
+fn a_seek_a_little_ahead_reads_on_rather_than_asking_again_and_one_past_the_end_reads_nothing() {
+    let fake = Fake::serving(|_, _| Canned::audio());
+
+    let mut streamed = fake.subsonic().streamed(&id("so-6")).expect("a stream");
+    streamed.seek(SeekFrom::Current(4)).expect("a seek ahead");
+    let mut word = [0_u8; 3];
+    streamed.read_exact(&mut word).expect("it reads on");
+    streamed.seek(SeekFrom::End(0)).expect("a seek to the end");
+    let mut past = Vec::new();
+    streamed.read_to_end(&mut past).expect("nothing more");
+
+    assert_eq!(&word, &AUDIO[4..7]);
+    assert!(past.is_empty());
+    assert_eq!(fake.heard().len(), 1);
+}
+
+#[test]
+fn an_error_document_answering_a_stream_is_the_refusal_it_carries() {
+    let fake = Fake::serving(|_, _| not_held());
+
+    assert!(matches!(
+        fake.subsonic().streamed(&id("so-404")),
+        Err(Error::TurnedAway {
+            op: ProviderOp::Stream,
+            code: 70,
+            ..
+        })
+    ));
 }

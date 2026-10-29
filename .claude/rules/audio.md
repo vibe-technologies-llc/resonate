@@ -317,7 +317,9 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `LARGEST_READ_ASKED`, 1 MiB), reads into it and returns it, and the caller copies the bytes out
   once (the thread may outlive the call, so it never holds the caller's slice)
   (`the_bytes_a_deadlined_stream_serves_are_the_bytes_the_source_held_whatever_the_buffer_asked_with`).
-  The local source, vault objects included, is never behind it.
+  The local source, vault objects included, is never behind it. **A network stream of known length
+  is seekable** (the Subsonic source's `resonate_fetch::Seeking` asks by `Range`; `providers.md`),
+  so it is probed off its head and seeked in place, never spooled.
 - **Every track opens off the engine thread.** `Engine::start` hands the row to an `Opening` (a
   `resonate-track-open` thread running `Unwrapped::open`) while the engine answers commands
   (play/pause change whether it plays once landed, seek moves where it starts, stop/load/skip drop

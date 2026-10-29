@@ -78,12 +78,11 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   stereo state
 
 ## Later: Sources and providers
-- [L] A server's library cannot be browsed or played, only wanted songs fetched: Subsonic, TIDAL,
-  hifi-api and Monochrome deliver a file to keep, and the catalog is the local source's alone, though
-  the playing side is ready (`Sources` opens any other provider off the engine thread under
-  `OPENED_WITHIN` and `READ_WITHIN`, `Player::media` reads a queue row of any source). A Subsonic
-  (Navidrome, Jellyfin's Subsonic API) source with its own catalog, browsed and played in place, is
-  what a listener with a home server would reach first
+- [L] A Subsonic server is browsed and played in place only from the command line: the window has
+  no pane to browse it (`resonate subsonic` lists, `play`/`queue` take its URIs, and a window launched
+  or queued onto plays them, but nothing in the window lists the server), the phones reach it only
+  to fetch wanted songs, its songs carry no cover beyond what the stream holds, and TIDAL, hifi-api
+  and Monochrome are still only asked for a file to keep
 - [M · blocked: services] The Bandcamp and Discogs links an `Identity` carries are read by nothing;
   no provider asks either
 - [M · blocked: servers] Subsonic matches a recording id or ISRC but not the release-track id the

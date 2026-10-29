@@ -222,9 +222,18 @@ impl Ranged {
     }
 
     pub fn opened(agent: Agent, url: String, resumed_after: Duration) -> Result<Self, Unfetched> {
+        Self::opened_from(agent, url, 0, resumed_after)
+    }
+
+    pub fn opened_from(
+        agent: Agent,
+        url: String,
+        from: u64,
+        resumed_after: Duration,
+    ) -> Result<Self, Unfetched> {
         let mut tried = 0;
         let answered = loop {
-            match asked(&agent, &url, 0, None) {
+            match asked(&agent, &url, from, None) {
                 Ok(answered) => break answered,
                 Err(Unfetched::AskedLater { asked_for, .. }) if tried < RESUMES_AT_MOST => {
                     tried += 1;
@@ -247,8 +256,8 @@ impl Ranged {
             reader: answered.reader,
             length: answered.length,
             validator: None,
-            read: 0,
-            from: 0,
+            read: from,
+            from,
             broken: 0,
             resumed_after,
         })

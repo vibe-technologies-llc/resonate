@@ -27,6 +27,7 @@ mod playlists;
 mod providers;
 mod readout;
 mod reloading;
+mod served;
 #[cfg(feature = "ui")]
 mod settings;
 mod share;
@@ -106,6 +107,7 @@ use crate::{
     input::{Action, Pressed},
     online::Asking,
     readout::Readout,
+    served::Served,
     table::Table,
 };
 
@@ -331,6 +333,7 @@ fn run() -> Result<()> {
         }) => play(&cli, &config, files, sleep.as_deref(), transport),
         Some(Sub::Queue(wanted)) => queue_onto_a_running_player(&cli, &config, wanted),
         Some(Sub::Players) => players(),
+        Some(Sub::Subsonic(wanted)) => served::browse(&config, wanted),
         Some(Sub::Playlists {
             order,
             reverse,
@@ -439,11 +442,11 @@ fn held_over(vault: Option<&Arc<Vault>>) -> Sources {
     sources
 }
 
-fn playing_from(library: Option<&Library>) -> Arc<Sources> {
+fn playing_from(library: Option<&Library>, served: &Served) -> Arc<Sources> {
     let Some(library) = library else {
-        return Arc::new(Sources::local());
+        return Arc::new(served.sources(Sources::local()));
     };
-    Arc::new(library.sources().hinted_by(library.hinting()))
+    Arc::new(served.sources(library.sources().hinted_by(library.hinting())))
 }
 
 fn open_library(cli: &Cli, config: &Config) -> Result<Library> {
@@ -2107,7 +2110,10 @@ fn play(
     let asleep = spec.map(sleep::Sleep::read).transpose()?;
     let library = catalog(cli, config);
 
-    let items = mpris::claimed_by(library.as_deref(), queue_items(arguments));
+    let items = mpris::claimed_by(
+        library.as_deref(),
+        queue_items_served(arguments, &Served::of(config)),
+    );
     if items.is_empty() {
         return Err(if arguments.is_empty() {
             Error::NoFileNamed
@@ -2135,7 +2141,7 @@ fn queue_onto_a_running_player(cli: &Cli, config: &Config, wanted: &QueueArgs) -
     }
     let rows = match wanted.playlist.as_deref() {
         Some(name) => playlist_rows(cli, config, name)?,
-        None => queue_items(&wanted.files)
+        None => queue_items_served(&wanted.files, &Served::of(config))
             .into_iter()
             .map(|item| (item.location, item.span))
             .collect(),
@@ -2304,7 +2310,7 @@ fn play_queue(
         asleep,
         place,
     } = opening;
-    let sources = playing_from(library.as_deref());
+    let sources = playing_from(library.as_deref(), &Served::of(config));
     let mut engine = engine_config(cli, config);
     if let Some(percent) = transport.volume {
         engine.volume = at_percent(percent)?;
@@ -2734,7 +2740,12 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     if settings_of_its_own(&cli).is_empty()
         && let Some(window) = Running::a_window().ok().flatten()
     {
-        return handed_to(&window, &cli.files, &mpris::tuning_of(&cli));
+        return handed_to(
+            &window,
+            &cli.files,
+            &mpris::tuning_of(&cli),
+            &Served::of(&config),
+        );
     }
     let places = resonate_ui::Places {
         config: settings_path(&cli)?,
@@ -2742,7 +2753,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
         equaliser: config::equaliser_dir()?,
     };
     let settings = settings::File::at(places.config.clone());
-    let sources = playing_from(Some(&library));
+    let sources = playing_from(Some(&library), &Served::of(&config));
     let player = Player::with_sources(engine_config(&cli, &config), Arc::clone(&sources))?;
     let player = Arc::new(match config::analyses_dir() {
         Some(dir) => player.keeping_analyses(resonate_engine::KeptAnalyses::at(dir)),
@@ -2750,7 +2761,12 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     });
     confirm_sink(&player, wanted_sink(&cli, &config).as_ref());
     let keeps = resuming(&config, Some(&library));
-    queue(&player, &cli.files, keeps.then(|| library.as_ref()))?;
+    queue(
+        &player,
+        &cli.files,
+        keeps.then(|| library.as_ref()),
+        &Served::of(&config),
+    )?;
 
     let (asked_to_quit, quitting) = bounded(1);
     let (attending, attention) = crossbeam_channel::unbounded();
@@ -2949,12 +2965,13 @@ fn handed_to(
     window: &Running,
     arguments: &[OsString],
     tuning: &[(resonate_mpris::Tunable, String)],
+    served: &Served,
 ) -> Result<()> {
     if let Err(error) = window.tune(tuning) {
         tracing::warn!(%error, "the window already open did not take the settings given");
         told!("the window already open did not take the settings given for this run");
     }
-    let rows: Vec<_> = queue_items(arguments)
+    let rows: Vec<_> = queue_items_served(arguments, served)
         .into_iter()
         .map(|item| (item.location, item.span))
         .collect();
@@ -2984,10 +3001,15 @@ fn launch(cli: Cli, config: Config, _library: Arc<Library>) -> Result<()> {
 }
 
 #[cfg(feature = "ui")]
-fn queue(player: &Player, arguments: &[OsString], kept: Option<&Library>) -> Result<()> {
+fn queue(
+    player: &Player,
+    arguments: &[OsString],
+    kept: Option<&Library>,
+    served: &Served,
+) -> Result<()> {
     if !arguments.is_empty() {
         player.send(Command::Load {
-            items: mpris::claimed_by(kept, queue_items(arguments)),
+            items: mpris::claimed_by(kept, queue_items_served(arguments, served)),
             start_at: 0,
             autoplay: true,
         })?;
@@ -3114,7 +3136,11 @@ fn from_here(path: &Path) -> PathBuf {
 }
 
 fn queue_items(arguments: &[OsString]) -> Vec<QueueItem> {
-    let sources = Sources::local();
+    queue_items_served(arguments, &Served::default())
+}
+
+fn queue_items_served(arguments: &[OsString], served: &Served) -> Vec<QueueItem> {
+    let sources = served.sources(Sources::local());
     let mut minting = Unclaimed::beside(&[]);
     let mut items = Vec::with_capacity(arguments.len());
 
@@ -3132,6 +3158,14 @@ fn queue_items(arguments: &[OsString]) -> Vec<QueueItem> {
                 location,
                 span,
             });
+            continue;
+        }
+        if let Some(songs) = served.songs_at(&location) {
+            items.extend(
+                songs
+                    .into_iter()
+                    .map(|song| QueueItem::whole(minting.mint(), song)),
+            );
             continue;
         }
         items.extend(items_of(&sources, location, &mut minting));

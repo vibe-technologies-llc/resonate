@@ -4,6 +4,7 @@ paths:
   - "crates/resonate-fetch/**/*.rs"
   - "crates/providers/**/*.rs"
   - "crates/resonate/src/providers.rs"
+  - "crates/resonate/src/served.rs"
   - "crates/resonate-library/src/supply.rs"
   - "crates/resonate-library/src/filed.rs"
 ---
@@ -278,6 +279,12 @@ plumbing, so a `ureq` bump is made once:
   counts from `from`, so a break-off later resumes at the absolute offset (`Ranged::into_resumed`)
   (`a_keyed_download_opened_with_what_is_held_is_asked_from_there_and_read_on`,
   `a_keyed_download_whose_length_is_not_what_is_held_is_read_again_from_the_start`).
+- **`Seeking` is a stream a decoder can seek**: it reads on the first answer, and a seek moves
+  only its place; the next read asks `Range: bytes=<place>-` (`Ranged::opened_from`, so it resumes
+  as any `Ranged` does), except a seek at most `SKIPPED_RATHER_THAN_ASKED` (256 KiB) ahead, which
+  reads on and discards. Its length is the first answer's `Content-Length`; a read at or past it
+  answers nothing without asking (`a_seek_a_little_ahead_reads_on_rather_than_asking_again_and_one_past_the_end_reads_nothing`).
+  A server ignoring `Range` is read from its start past the place (`asked`'s `WHOLE`).
 - `escaped` (every byte but the unreserved percent-encoded), `is_a_document` (`text/`, JSON or XML:
   an error document, never a song).
 - **One odd listing never fails the answer**: each provider reads its list through a `*_readable`
@@ -343,6 +350,42 @@ given and `online` is on.
   password and salt; User-Agent bare; `Server`'s `Debug` prints `<withheld>`. `status: failed` is
   `Error::Unwelcome` where the code concerns the account (`ACCOUNT_REFUSALS`), else
   `Error::TurnedAway` (70, a song the server lacks).
+
+## A Subsonic server played in place
+
+The same server is also a source of its own: its catalog is the server's, browsed through the API,
+never copied into `resonate-library` (the local source's catalog alone). `SourceId` `subsonic`.
+
+- **What the server holds is named by a location** (`resonate_subsonic::Named`, `served.rs`):
+  `subsonic:track/<id>` a song, `subsonic:album/<id>` and `subsonic:artist/<id>` what they hold, the
+  key read back by `Named::read` (`a_song_album_or_artist_is_named_by_a_location_that_reads_back_as_itself`).
+  Only a song is ever a queue row.
+- **Browsing is four calls**: `artists` (`getArtists`), `artist` (`getArtist`, its albums), `album`
+  (`getAlbum`, its songs), `search` (`search3`, up to `BROWSED_AT_MOST` of each kind), with `song`
+  (`getSong`); `songs_of` turns any `Named` into its songs in the server's order, an artist's
+  album by album. Each is one paced request under `Patience::answered_within`, `ProviderOp::Browse`,
+  the answer read part by part (`part`) through the same `readable`/`id_spelt` tolerance as a search,
+  a number written as text read too (`a_servers_artists_albums_and_songs_are_browsed_by_their_ids`,
+  `an_album_or_an_artist_named_by_its_location_is_the_songs_it_holds_in_order`). The public
+  vocabulary (`Artist`, `Album`, `Song`, `Id`, `ArtistAlbums`, `AlbumSongs`, `Found`) is built by
+  hand from private documents, as every provider's is.
+- **A song is streamed as stored**: `streamed` asks `stream` with `format=raw`, so the server never
+  transcodes and a lossless file stays bit-accurate; an answer naming a document is the refusal it
+  carries (`ProviderOp::Stream`). The `Streamed` it answers names the `Content-Type` (the decoder's
+  hint, since the key carries no extension) and is a `resonate_fetch::Seeking`
+  (`a_song_is_streamed_as_stored_and_a_seek_back_asks_the_server_from_there`).
+- **The binary makes it a `MediaProvider`** (`served.rs`, under `online`, since no provider crate
+  may see `resonate-codec`): `Served::of` builds it from the same `subsonic*` settings and `online`
+  switch the provider registry reads (`providers::server_named`); `Served::sources` adds
+  `ServedSongs` to every `Sources` that plays (`playing_from`: `play`, the window and its zones) and
+  to the one reading arguments, so a `subsonic:` URI is the server's only where one is named
+  (`a_song_uri_is_a_file_here_unless_a_server_is_named_and_then_it_is_queued_as_named`). A stream of
+  known length is seekable, so `Sources`' deadlines apply and nothing is spooled; one that would not
+  open is `codec::Error::Io` carrying the seam's error. `Served::songs_at` expands an album or artist
+  argument into its songs as `queue_items_served` reads it
+  (`an_album_on_the_server_is_queued_as_its_songs_and_each_decodes_as_streamed_bit_for_bit`,
+  `a_streamed_song_seeks_back_and_decodes_on_from_where_it_landed`). A queued row's tags are what
+  `Player::media` probes off the stream's head.
 
 ## A TIDAL account
 
