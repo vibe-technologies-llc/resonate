@@ -109,8 +109,14 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   its main lobe, is still weighed on the 2 048 points with the curve's fixed shares: an echo or a
   reverberant tail longer than that window has comb teeth between the points, which only the
   shares' slack covers (the near window is an envelope over every bin)
-- [M] AutoEq is the only online correction source, fetched one device at a time; a measurement of
-  the listener's own is fitted to a target on every front end, but only from a file
+- [M] A measurement of the listener's own is taken live only by `resonate eq --measure` on the
+  desktop: the window's Equaliser pane and both phones (a microphone permission and a sweep through
+  the route in use) still fit a measurement from a file alone
+- [S] AutoEq is the only online correction source. The one keyless public source of measurements
+  found, squig.link (`/data/phone_book.json` and REW text per device, the CrinGraph tool's
+  convention every squig site copies), has no documented API or terms and names no rig or
+  compensation, so a correction fitted toward a target from it would be a guess about the rig
+  (`eq.md`); a download of its text already fits through `--fit-measurement`
 - [M] Lossy restoration was tuned and tested on ffmpeg's own MP3, AAC and Vorbis encodes of
   synthetic tones, walls and music-like notes at several bitrates, not on a breadth of real music
   per codec and bitrate and not on other encoders (Fraunhofer, Apple, Nero, libfdk); the thresholds

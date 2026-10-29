@@ -5696,6 +5696,7 @@ dependencies = [
  "resonate-codec",
  "resonate-core",
  "resonate-discord",
+ "resonate-dsp",
  "resonate-engine",
  "resonate-eq",
  "resonate-inbox",
@@ -5892,7 +5893,9 @@ name = "resonate-listen"
 version = "0.2.0"
 dependencies = [
  "crossbeam-channel",
+ "resonate-audio",
  "resonate-core",
+ "resonate-dsp",
  "resonate-pipewire",
  "thiserror 2.0.21",
  "tracing",

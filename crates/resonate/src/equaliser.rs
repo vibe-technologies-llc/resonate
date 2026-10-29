@@ -3,15 +3,21 @@ use std::{path::Path, sync::Arc};
 use resonate_core::{SampleRate, eq::Profile};
 use resonate_engine::NodeName;
 use resonate_eq::{
-    Binding, BuiltIn, Catalogue, Corrected, DeviceId, Fitting, Kept, Measured, ProfileName, Store,
-    search_preferring, suggest_preferring,
+    Binding, BuiltIn, Catalogue, Corrected, Device, DeviceId, Fitted, Fitting, Kept, Measured,
+    ProfileName, Response, Store, fit, search_preferring, suggest_preferring,
 };
+use resonate_listen::Listening;
 use resonate_mpris::Reloadable;
 use resonate_pipewire::PipeWire;
 
 use crate::{
-    Cli, ConfigKey, Error, Result, SINK_TIMEOUT, cli::EqArgs, config, config::Config, online,
-    reloading, select_sink, table::Table,
+    Cli, ConfigKey, Error, Result, SINK_TIMEOUT,
+    cli::EqArgs,
+    config,
+    config::Config,
+    measuring::{self, Room},
+    online, reloading, select_sink,
+    table::Table,
 };
 
 const DRAWN_AT: SampleRate = SampleRate::HZ_48000;
@@ -20,6 +26,7 @@ const EVERY_OTHER_DEVICE: &str = "every other device";
 const ITS_OWN_CURVE: &str = "its own curve";
 const UNREADABLE: &str = "unreadable";
 const NOTHING_TO_SHOW: &str = "—";
+const MEASURED_LIVE: &str = "measured";
 
 fn counted(read: resonate_eq::Result<Option<Profile>>) -> (String, String) {
     match read {
@@ -73,6 +80,20 @@ fn performed(cli: &Cli, config: &Config, wanted: &EqArgs, settings: &Path) -> Re
     }
     if let Some(device) = wanted.fetch.as_deref() {
         return fetch(&store, settings, config, bound.as_ref(), wanted, device);
+    }
+    if let Some(text) = wanted.fetch_every.as_deref() {
+        return fetch_every(&store, config, text);
+    }
+    if wanted.measure {
+        let through = crate::wanted_sink(cli, config);
+        return measure(
+            &store,
+            settings,
+            config,
+            through.as_ref(),
+            bound.as_ref(),
+            wanted,
+        );
     }
     if let Some(to) = wanted.export.as_deref() {
         return export(&store, config, bound.as_ref(), wanted, to);
@@ -213,16 +234,60 @@ fn fit_measurement(
     wanted: &EqArgs,
     from: &Path,
 ) -> Result<()> {
-    let target = wanted
-        .target
-        .as_deref()
-        .unwrap_or(BuiltIn::HarmanOverEar2018.name());
+    let target = target_of(wanted);
     let goal = Store::goal_named(target)?;
     let Measured {
         fitted,
         layout,
         passed_over,
     } = Store::fit_file(from, &goal, &Fitting::default())?;
+    let called = wanted.profile.as_deref().map(named).transpose()?;
+    let name = Store::name_for_import(from, called.as_ref());
+
+    keep_fitted(
+        store,
+        settings,
+        sink,
+        wanted,
+        &Fit {
+            fitted: &fitted,
+            target,
+            origin: format!("the {} {}", layout.label(), from.display()),
+            passed_over,
+            name,
+        },
+    )
+}
+
+fn target_of(wanted: &EqArgs) -> &str {
+    wanted
+        .target
+        .as_deref()
+        .unwrap_or(BuiltIn::HarmanOverEar2018.name())
+}
+
+struct Fit<'a> {
+    fitted: &'a Fitted,
+    target: &'a str,
+    origin: String,
+    passed_over: usize,
+    name: ProfileName,
+}
+
+fn keep_fitted(
+    store: &Store,
+    settings: &Path,
+    sink: Option<&NodeName>,
+    wanted: &EqArgs,
+    kept: &Fit,
+) -> Result<()> {
+    let Fit {
+        fitted,
+        target,
+        origin,
+        passed_over,
+        name,
+    } = kept;
     let bands = fitted.profile.bands().len();
     let told = format!(
         "{bands} bands fitted toward {target}, {:.1} dB off before and {:.1} dB after",
@@ -231,32 +296,123 @@ fn fit_measurement(
 
     if wanted.own {
         store.keep_own(sink.map(NodeName::as_str), &fitted.profile)?;
-        said!(
-            "shaped {} from the {} {}: {told}",
-            spoken_own(sink),
-            layout.label(),
-            from.display()
-        );
-        measurement_passed_over(passed_over);
+        said!("shaped {} from {origin}: {told}", spoken_own(sink));
+        measurement_passed_over(*passed_over);
         return bound_as(settings, sink, &Binding::Own);
     }
 
-    let called = wanted.profile.as_deref().map(named).transpose()?;
-    let name = Store::name_for_import(from, called.as_ref());
-    let held = store.holds(&name);
-    store.keep(&name, &fitted.profile)?;
-    replaced_if(held, &name);
-    said!(
-        "kept {name} from the {} {}: {told}",
-        layout.label(),
-        from.display()
-    );
-    measurement_passed_over(passed_over);
+    let held = store.holds(name);
+    store.keep(name, &fitted.profile)?;
+    replaced_if(held, name);
+    said!("kept {name} from {origin}: {told}");
+    measurement_passed_over(*passed_over);
 
     if wanted.r#for.is_some() {
         return bind(store, settings, sink, name.as_str());
     }
     Ok(())
+}
+
+fn measure(
+    store: &Store,
+    settings: &Path,
+    config: &Config,
+    through: Option<&NodeName>,
+    sink: Option<&NodeName>,
+    wanted: &EqArgs,
+) -> Result<()> {
+    let target = target_of(wanted);
+    let goal = Store::goal_named(target)?;
+    let from = match wanted.microphone.as_deref() {
+        None => config.listen_from.clone().unwrap_or_default(),
+        Some("") => Listening::Microphone(None),
+        Some(name) => Listening::Microphone(Some(NodeName::new(name.to_owned()))),
+    };
+    let heard_from = match &from {
+        Listening::Desktop => "what the desktop plays".to_owned(),
+        Listening::Microphone(None) => "the default microphone".to_owned(),
+        Listening::Microphone(Some(name)) => name.to_string(),
+    };
+    told!(
+        "playing a sweep through {} and listening to {heard_from} for {} s",
+        through.map_or("the default output", NodeName::as_str),
+        (measuring::SWEEP_FOR + measuring::HEARD_AFTER_THE_SWEEP).as_secs()
+    );
+
+    let heard: Response = measuring::measured_by(&Room { through, from })?;
+    let measured = match wanted.calibration.as_deref() {
+        Some(file) => measuring::calibrated(&heard, &Store::response_in(file)?.response)?,
+        None => heard,
+    };
+    if let Some(to) = wanted.keep_measurement.as_deref() {
+        std::fs::write(to, measuring::as_csv(&measured)).map_err(|source| {
+            Error::WriteMeasurement {
+                path: to.to_path_buf(),
+                source,
+            }
+        })?;
+        said!("wrote the measurement to {}", to.display());
+    }
+
+    let fitted = fit(&measured, &goal, &Fitting::default())?;
+    let called = wanted.profile.as_deref().map(named).transpose()?;
+    let name = called.unwrap_or_else(|| ProfileName::after(MEASURED_LIVE));
+
+    keep_fitted(
+        store,
+        settings,
+        sink,
+        wanted,
+        &Fit {
+            fitted: &fitted,
+            target,
+            origin: "the sweep it measured".to_owned(),
+            passed_over: 0,
+            name,
+        },
+    )
+}
+
+fn fetch_every(store: &Store, config: &Config, text: &str) -> Result<()> {
+    let (corrections, catalogue) = asked(config)?;
+    let devices: Vec<&Device> = search_preferring(&catalogue, text, None)
+        .into_iter()
+        .filter_map(|found| catalogue.device(found))
+        .collect();
+    if devices.is_empty() {
+        said!("nothing measured answers to that");
+        return Ok(());
+    }
+
+    let ids: Vec<DeviceId> = devices.iter().map(|device| device.id.clone()).collect();
+    let mut kept = 0;
+    for (device, fetched) in devices.into_iter().zip(corrections.profiles(&ids)) {
+        match fetched.profile {
+            Ok(Some(profile)) => {
+                let name = ProfileName::after(&named_by_measurer(device));
+                let held = store.holds(&name);
+                store.keep(&name, &profile)?;
+                replaced_if(held, &name);
+                said!("kept {name}, {} bands", profile.bands().len());
+                kept += 1;
+            }
+            Ok(None) => said!("{}: no correction is held", device.shown()),
+            Err(error) => {
+                tracing::warn!(%error, device = %fetched.device, "a correction could not be fetched");
+                said!("{}: it could not be fetched", device.shown());
+            }
+        }
+    }
+
+    said!("kept {kept} of {} corrections", ids.len());
+    Ok(())
+}
+
+fn named_by_measurer(device: &Device) -> String {
+    match device.rig.as_deref() {
+        Some(rig) => format!("{} ({} on {rig})", device.label, device.measured_by),
+        None => format!("{} ({})", device.label, device.measured_by),
+    }
 }
 
 fn measurement_passed_over(passed_over: usize) {
@@ -945,6 +1101,92 @@ mod tests {
             ])
             .is_ok()
         );
+    }
+
+    #[test]
+    fn the_same_headphones_from_two_measurers_are_kept_under_names_that_tell_them_apart() {
+        let by = |measured_by: &str, rig: Option<&str>| Device {
+            id: DeviceId::new("a/over-ear/HIFIMAN Ananda").expect("a path"),
+            label: "HIFIMAN Ananda".to_owned(),
+            measured_by: measured_by.to_owned(),
+            rig: rig.map(str::to_owned),
+        };
+
+        assert_eq!(
+            named_by_measurer(&by("oratory1990", None)),
+            "HIFIMAN Ananda (oratory1990)"
+        );
+        assert_eq!(
+            named_by_measurer(&by("crinacle", Some("GRAS 43AG-7"))),
+            "HIFIMAN Ananda (crinacle on GRAS 43AG-7)"
+        );
+    }
+
+    fn refused(arguments: &[&str]) -> bool {
+        Cli::try_parse_from(["resonate", "eq"].iter().chain(arguments)).is_err()
+    }
+
+    #[test]
+    fn a_live_measurement_takes_the_targets_and_names_of_a_file_and_the_microphone_it_hears_with() {
+        let wanted = asked(&[
+            "--measure",
+            "--microphone",
+            "--target",
+            "flat",
+            "--keep-measurement",
+            "m.csv",
+            "--calibration",
+            "mic.cal",
+            "--profile",
+            "mine",
+            "--for",
+            DEVICE,
+        ]);
+
+        assert!(wanted.measure);
+        assert_eq!(wanted.microphone.as_deref(), Some(""));
+        assert_eq!(wanted.target.as_deref(), Some("flat"));
+        assert_eq!(wanted.keep_measurement, Some(PathBuf::from("m.csv")));
+        assert_eq!(wanted.calibration, Some(PathBuf::from("mic.cal")));
+        assert_eq!(
+            asked(&["--measure", "--microphone", "usb-mic"])
+                .microphone
+                .as_deref(),
+            Some("usb-mic")
+        );
+        assert!(asked(&["--measure", "--own"]).own);
+
+        for refused_alone in [
+            &["--microphone"][..],
+            &["--keep-measurement", "m.csv"],
+            &["--calibration", "mic.cal"],
+            &["--measure", "--import", "p.txt"],
+            &["--measure", "--fetch", "a/b/C"],
+            &["--measure", "--fit-measurement", "m.txt"],
+            &["--measure", "--list"],
+            &["--measure", "--on"],
+            &["--measure", "--fetch-every", "hd 650"],
+        ] {
+            assert!(refused(refused_alone), "{refused_alone:?} was taken");
+        }
+    }
+
+    #[test]
+    fn every_measurers_correction_of_a_device_is_asked_for_by_itself_and_nothing_beside_it() {
+        assert_eq!(
+            asked(&["--fetch-every", "hd 650"]).fetch_every.as_deref(),
+            Some("hd 650")
+        );
+
+        for refused_beside in [
+            &["--fetch-every", "hd 650", "--fetch", "a/b/C"][..],
+            &["--fetch-every", "hd 650", "--find", "hd 650"],
+            &["--fetch-every", "hd 650", "--profile", "mine"],
+            &["--fetch-every", "hd 650", "--for", DEVICE],
+            &["--fetch-every", "hd 650", "--fit-measurement", "m.txt"],
+        ] {
+            assert!(refused(refused_beside), "{refused_beside:?} was taken");
+        }
     }
 
     #[test]

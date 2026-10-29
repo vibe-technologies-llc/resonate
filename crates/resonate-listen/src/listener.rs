@@ -10,8 +10,8 @@ use std::{
 use crossbeam_channel::Receiver;
 use resonate_core::{ChannelLayout, SampleFormat, SampleRate, StreamSpec};
 use resonate_pipewire::{
-    CaptureRequest, CaptureStream, Capturing, Microphone, NodeName, PipeWire, StreamEvent,
-    StreamState,
+    AudioSource, CaptureRequest, CaptureStream, Capturing, LatencyRequest, MediaRole, Microphone,
+    NodeName, PipeWire, SinkStream, StreamEvent, StreamRequest, StreamState,
 };
 
 use crate::{
@@ -25,6 +25,10 @@ const LOOKS_EVERY: Duration = Duration::from_millis(40);
 const GIVES_UP_AFTER_MORE_THAN_ASKED: Duration = Duration::from_secs(4);
 const ENUMERATES_WITHIN: Duration = Duration::from_secs(2);
 const STREAM_NAME: &str = "Listening";
+const PLAYING_NAME: &str = "Measuring";
+const BYTES_PER_SAMPLE: usize = size_of::<f32>();
+const BYTES_PER_FRAME: usize = HEARD_IN_CHANNELS * BYTES_PER_SAMPLE;
+const HEARD_IN_CHANNELS: usize = 2;
 pub const CLIP_BY_DEFAULT: Duration = Duration::from_secs(12);
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -111,6 +115,60 @@ impl Listener {
     }
 
     pub fn record(&self, from: &Listening, length: Duration, hearing: &Hearing) -> Result<Clip> {
+        self.recorded(from, length, hearing, |_| Ok(None))
+    }
+
+    pub fn play_and_record(
+        &self,
+        played: &[f32],
+        through: Option<&NodeName>,
+        from: &Listening,
+        length: Duration,
+        hearing: &Hearing,
+    ) -> Result<Clip> {
+        let playing = Played::of(played);
+        self.recorded(from, length, hearing, |pipewire| {
+            let sink = match through {
+                Some(name) => pipewire
+                    .enumerate_sinks(ENUMERATES_WITHIN)
+                    .map_err(|source| Error::capture(CaptureOp::Connect, source))?
+                    .into_iter()
+                    .find(|sink| &sink.name == name)
+                    .map(|sink| sink.id)
+                    .ok_or_else(|| Error::NoSuchSink { name: name.clone() })?,
+                None => pipewire
+                    .default_sink(ENUMERATES_WITHIN)
+                    .map_err(|source| Error::capture(CaptureOp::Connect, source))?
+                    .map(|sink| sink.id)
+                    .ok_or(Error::NoOutput)?,
+            };
+            let request = StreamRequest {
+                target: Some(sink),
+                spec: StreamSpec::new(HEARD_AT, HEARD_IN, SampleFormat::F32),
+                latency: LatencyRequest::Auto,
+                role: MediaRole::Music,
+                media_name: PLAYING_NAME.to_owned(),
+                force_graph_rate: false,
+                no_convert: false,
+                realtime: true,
+            };
+            let stream = pipewire
+                .open(&request, Box::new(playing))
+                .map_err(|source| Error::capture(CaptureOp::Play, source))?;
+            stream.set_active(true).map_err(|source| Error::Output {
+                source: Box::new(source),
+            })?;
+            Ok(Some(stream))
+        })
+    }
+
+    fn recorded(
+        &self,
+        from: &Listening,
+        length: Duration,
+        hearing: &Hearing,
+        accompanied_by: impl FnOnce(&PipeWire) -> Result<Option<SinkStream>>,
+    ) -> Result<Clip> {
         let spec = StreamSpec::new(HEARD_AT, HEARD_IN, SampleFormat::F32);
         let channels = usize::from(spec.channel_count().get());
         let frames = (length.as_secs_f64() * f64::from(HEARD_AT.hz())).round() as usize;
@@ -137,6 +195,15 @@ impl Listener {
             )
             .map_err(|source| Error::capture(CaptureOp::Open, source))?;
 
+        let accompanying = match accompanied_by(&pipewire) {
+            Ok(stream) => stream,
+            Err(error) => {
+                let _ = opened.stop();
+                let _ = pipewire.shutdown();
+                return Err(error);
+            }
+        };
+
         let capturing = Capture {
             pipewire: &pipewire,
             request: &request,
@@ -148,9 +215,39 @@ impl Listener {
             .map(CaptureStream::stop)
             .transpose()
             .map_err(|source| Error::capture(CaptureOp::Stop, source));
+        drop(accompanying);
         let _ = pipewire.shutdown();
 
         finished(stopped, hearing.stopped(), recording.taken(), spec)
+    }
+}
+
+struct Played {
+    mono: std::sync::Arc<[f32]>,
+    at: usize,
+}
+
+impl Played {
+    fn of(samples: &[f32]) -> Self {
+        Self {
+            mono: samples.into(),
+            at: 0,
+        }
+    }
+}
+
+impl AudioSource for Played {
+    fn fill(&mut self, dst: &mut [u8]) -> usize {
+        let whole = dst.len() / BYTES_PER_FRAME * BYTES_PER_FRAME;
+        let frames = dst.get_mut(..whole).unwrap_or_default();
+        for frame in frames.as_chunks_mut::<BYTES_PER_FRAME>().0 {
+            let sample = self.mono.get(self.at).copied().unwrap_or(0.0);
+            self.at = self.at.saturating_add(1);
+            for word in frame.as_chunks_mut::<BYTES_PER_SAMPLE>().0 {
+                *word = sample.to_le_bytes();
+            }
+        }
+        whole
     }
 }
 
@@ -365,6 +462,25 @@ mod tests {
             finished(Ok(Some(())), true, vec![0.5, 0.5], stereo()),
             Err(Error::Stopped)
         ));
+    }
+
+    #[test]
+    fn what_is_played_fills_both_channels_in_whole_frames_and_then_falls_silent() {
+        let mut played = Played::of(&[0.5, -0.25]);
+        let mut block = [0xff_u8; 3 * BYTES_PER_FRAME + 3];
+
+        let filled = played.fill(&mut block);
+
+        assert_eq!(filled, 3 * BYTES_PER_FRAME);
+        let words: Vec<f32> = block
+            .get(..filled)
+            .unwrap_or_default()
+            .as_chunks::<BYTES_PER_SAMPLE>()
+            .0
+            .iter()
+            .map(|word| f32::from_le_bytes(*word))
+            .collect();
+        assert_eq!(words, vec![0.5, 0.5, -0.25, -0.25, 0.0, 0.0]);
     }
 
     #[test]

@@ -13,6 +13,7 @@ mod recall;
 mod remix;
 mod resample;
 mod restore;
+mod sweep;
 
 pub use crate::{
     chain::{Back, Chain, ChainBuilder, Front},
@@ -29,6 +30,9 @@ pub use crate::{
     remix::Remix,
     resample::{Quality, Resampler, ResamplerConfig, SincParams},
     restore::{Restoration, Restore, RestoreConfig, Tuning},
+    sweep::{
+        FRAMES_HEARD_AT_MOST, Heard, LONGEST_SWEEP, Level, POINTS_PER_OCTAVE, SHORTEST_SWEEP, Sweep,
+    },
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

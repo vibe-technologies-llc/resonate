@@ -1,6 +1,7 @@
 use std::{f64::consts::TAU, thread, time::Duration};
 
 use resonate_core::{ChannelLayout, SampleFormat, SampleRate, StreamSpec};
+use resonate_dsp::Sweep;
 use resonate_listen::{Clip, Hearing, Listener, Listening};
 use resonate_pipewire::{
     AudioSource, Error, LatencyRequest, MediaRole, PipeWire, SinkInfo, StreamRequest,
@@ -107,4 +108,42 @@ fn what_the_desktop_plays_is_heard_through_its_monitor() {
         "the tone reads {tone:.1} dB against {elsewhere:.1} dB elsewhere"
     );
     assert!(clip.length() >= HEARD_FOR - Duration::from_millis(50));
+}
+
+#[test]
+fn a_sweep_played_to_the_desktop_is_heard_through_its_monitor_and_deconvolves_to_a_response() {
+    let Some((pipewire, _)) = daemon() else {
+        return;
+    };
+    let _ = pipewire.shutdown();
+    let sweep = Sweep::new(SampleRate::HZ_48000, 20, 20_000, Duration::from_secs(3))
+        .expect("a sweep that fits the rate");
+
+    let clip = Listener::new("resonate-listen-tests")
+        .play_and_record(
+            sweep.samples(),
+            None,
+            &Listening::Desktop,
+            sweep.length() + Duration::from_secs(1),
+            &Hearing::new(),
+        )
+        .expect("the sweep is heard");
+
+    let heard = sweep
+        .heard_as(&clip.mono())
+        .expect("the monitor heard the sweep");
+    let response = heard.response().expect("a response");
+    let at_a_kilohertz = response
+        .iter()
+        .min_by(|a, b| {
+            (a.hertz - 1_000.0)
+                .abs()
+                .total_cmp(&(b.hertz - 1_000.0).abs())
+        })
+        .expect("a point near a kilohertz");
+    assert!(
+        (-12.0..6.0).contains(&at_a_kilohertz.decibels),
+        "the monitor reads {:.1} dB at a kilohertz",
+        at_a_kilohertz.decibels
+    );
 }

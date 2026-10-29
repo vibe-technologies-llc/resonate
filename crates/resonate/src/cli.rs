@@ -605,6 +605,7 @@ pub struct VaultArgs {
 
 #[derive(Debug, Args)]
 #[command(group(ArgGroup::new("looking").args(["find", "suggest"]).multiple(true)))]
+#[command(group(ArgGroup::new("measuring").args(["fit_measurement", "measure"]).multiple(true)))]
 pub struct EqArgs {
     #[arg(
         long,
@@ -676,9 +677,56 @@ pub struct EqArgs {
 
     #[arg(
         long,
+        conflicts_with_all = ["on", "off", "import", "export", "find", "fetch", "fetch_every", "suggest", "list", "forget", "forget_own", "unbind", "fit_measurement"],
+        help = "Measure the output and the microphone yourself and fit a correction to what \
+                comes back, as --fit-measurement fits a file: a logarithmic sweep from 20 Hz \
+                to 20 kHz is played through the output --sink (or the configured or default \
+                one), straight to the device and past the equaliser, while a microphone \
+                records it, and the recording is deconvolved to a frequency response. Quiet \
+                is best, and the microphone should sit where the head would. Kept as a \
+                profile named by --profile, else `measured`, bound to the device --for names, \
+                or kept as its own curve with --own"
+    )]
+    pub measure: bool,
+
+    #[arg(
+        long,
+        value_name = "NAME",
+        num_args = 0..=1,
+        default_missing_value = "",
+        requires = "measure",
+        help = "Record --measure with this microphone, by the node.name `resonate listen \
+                --microphones` prints, or the default one where none is named. With the flag \
+                absent it is `listen-from`, which is the desktop's own monitor unless set: \
+                that measures the signal path to the output, not a room or a transducer"
+    )]
+    pub microphone: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "FILE",
+        requires = "measure",
+        help = "Also write what --measure measured as a CSV of frequency and decibels, which \
+                --fit-measurement reads again"
+    )]
+    pub keep_measurement: Option<PathBuf>,
+
+    #[arg(
+        long,
+        value_name = "FILE",
+        requires = "measure",
+        help = "The microphone's own response, in the formats a measurement is read from (the \
+                calibration file a measurement microphone comes with is REW's), taken off what \
+                --measure heard so the fit corrects the output and not the microphone. Without \
+                it the microphone is taken to be flat"
+    )]
+    pub calibration: Option<PathBuf>,
+
+    #[arg(
+        long,
         value_name = "NAME|FILE",
-        requires = "fit_measurement",
-        help = "What --fit-measurement fits toward: flat, harman-over-ear-2018 or \
+        requires = "measuring",
+        help = "What --fit-measurement or --measure fits toward: flat, harman-over-ear-2018 or \
                 harman-in-ear-2019, or a file in the same formats as a measurement. With none \
                 it is harman-over-ear-2018"
     )]
@@ -719,6 +767,19 @@ pub struct EqArgs {
                 answers to it clearly enough to be worth guessing at"
     )]
     pub suggest: bool,
+
+    #[arg(
+        long,
+        value_name = "TEXT",
+        allow_hyphen_values = true,
+        conflicts_with_all = ["for", "on", "off", "profile", "import", "export", "find", "fetch", "suggest", "list", "forget", "own", "forget_own", "unbind", "fit_measurement", "measure"],
+        help = "Fetch the correction every measurer made for the devices whose name holds \
+                every one of these words, at most as many as --find lists, and keep each as \
+                `<device> (<measurer>)`, so the same headphones from several measurers can be \
+                tried against one another. A device the source holds no correction for is \
+                said and passed over"
+    )]
+    pub fetch_every: Option<String>,
 
     #[arg(
         long,

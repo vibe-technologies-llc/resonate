@@ -20,7 +20,7 @@ pub use crate::{
         LARGEST_MEASUREMENT, Layout, POINTS_AT_LEAST, Point, Reading as ResponseReading, Response,
         read_response,
     },
-    provider::{Corrected, Corrections, Uncorrected},
+    provider::{Corrected, Corrections, Fetched, Uncorrected},
     store::{Binding, Kept, Measured, OWN_FOLDER, ProfileName, Store},
     targets::BuiltIn,
 };

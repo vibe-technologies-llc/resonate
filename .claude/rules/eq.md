@@ -14,6 +14,9 @@ paths:
   - "crates/resonate-codec/src/sofa.rs"
   - "crates/resonate-codec/src/netcdf.rs"
   - "crates/resonate-online/src/autoeq.rs"
+  - "crates/resonate-dsp/src/sweep.rs"
+  - "crates/resonate-listen/src/listener.rs"
+  - "crates/resonate/src/measuring.rs"
   - "crates/resonate-core/src/abx.rs"
   - "crates/resonate-ui/src/views/settings/abx.rs"
   - "crates/resonate/src/abx.rs"
@@ -750,6 +753,45 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   (`a_file_that_will_not_read_is_refused_in_a_sentence_naming_which_file`). The fit is CPU work and
   synchronous, so a phone calls it off its main thread. Neither phone keeps the profile as a file:
   the result becomes the curve in use, as any import does, and is kept as the curve's text.
+- **The desktop measures live: `resonate eq --measure`** (`measuring.rs`), then the same fit a file
+  goes through. The phones' room correction measures nothing (`room.rs` keeps a response file), so
+  the sweep is the desktop's own. `resonate_dsp::Sweep` is an exponential sine sweep from 20 Hz to
+  20 kHz over `SWEEP_FOR` (8 s) at 48 kHz, 0.1 of full scale (-20 dBFS) with 20 ms Hann fades, refused
+  as `Error::SweepBand` (not below half the rate) or `SweepLength` (500 ms to a minute).
+  `Listener::play_and_record` (`resonate-listen`, still reaching core, audio and pipewire alone)
+  opens the capture first, then a playback stream of its own on the output `--sink`, the settings
+  or the default names (`NoSuchSink`, `NoOutput`), straight to the device: the sweep never passes
+  the engine, so the equaliser, convolver and crossfeed in force do not touch it. It is the
+  `Listener::record` loop with the playback held beside it (`recorded`), so a lost capture reopens
+  as in listening, and records `HEARD_AFTER_THE_SWEEP` (2 s) past the sweep for the room's tail.
+  **Deconvolution is regularised spectral division** (`Sweep::heard_as`): the recording's mono mix
+  over the sweep's, `Y * conj(X) / (|X|^2 + 1e-6 * max |X|^2)` on a transform at least recorded
+  plus sweep long (a recording over 2^24 frames is `HeardTooLong`, shorter than the sweep
+  `HeardTooShort`, silent `NothingHeard`). The impulse's peak is found wherever it lies, so the
+  latency of output and microphone and their clocks' offset change nothing but `delay_frames`; the
+  impulse is gated from 5 ms before the peak to 400 ms after, the last quarter Hann-tapered, which
+  cuts the sweep's distortion products (they precede the impulse) and leaves a room's tail past
+  400 ms unmeasured. `Heard::response` reads 48 points an octave off a transform of at least
+  2^17 bins, and `measuring::measured_by` hands them to `Response::from_points`: a measurement of
+  no kind a file lacks. The level is whatever the chain gave; the fit sets it by the mid band.
+  **The microphone is taken flat unless a calibration says otherwise**: `--calibration FILE` is read
+  as any measurement and taken off the response point by point (`measuring::calibrated`);
+  without it the fit corrects the microphone too, which the command's help says.
+  `--keep-measurement FILE` writes the response as the headed CSV `frequency,raw`, which
+  `--fit-measurement` reads back (`Layout::Headed`); `--microphone [NODE]` names the microphone
+  (none: `listen-from`, the desktop's own monitor unless set, which measures the path to the output
+  and no room), `--target`, `--profile`, `--for` and `--own` are `--fit-measurement`'s, and the
+  profile is `measured` unless named. `measuring::Rig` is the seam (`Room` the real output and
+  microphone): a fake output and capture in-process prove the whole path
+  (`a_sweep_through_a_fake_output_and_microphone_measures_the_filter_between_them`: a delayed
+  one-pole low-pass read within 0.5 dB from 100 Hz to 10 kHz;
+  `what_is_measured_live_goes_through_the_fit_a_file_goes_through`;
+  `a_microphones_own_response_is_taken_off_what_it_heard`), under the deconvolution's own
+  (`a_sweep_through_a_known_filter_is_deconvolved_to_that_filters_response`,
+  `the_delay_between_playing_and_hearing_changes_nothing_but_the_delay`, `resonate-dsp`).
+  `resonate-listen --test capture` plays a sweep through the desktop's monitor against a real
+  daemon and skips without one. Not built: the window's pane and the phones, which still fit from a
+  file (`FEATURES.md`).
 
 ## AutoEq
 
@@ -786,6 +828,27 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   changed together, then the file; `a_preferred_measurer_is_chosen_from_the_equaliser_pane_and_worn_at_once`,
   `a_measurer_is_chosen_for_the_device_in_use_alone_and_worn_at_once`)
   (`the_pane_suggests_from_the_measurer_the_settings_prefer_before_the_fixed_ranking`).
+- **The whole index is one request, and several devices are fetched in one ask.** The index lists
+  every measurer's row of every device, so a search of a model lists them all
+  (`search`), and `Corrections::catalogue` is fetched once and held for the run (`Arc`) and in the
+  catalog for thirty days. A profile is a file per device, so `Corrected::profiles(&[DeviceId])`
+  asks each in turn (the host is paced, one queue) and answers a `Fetched` per device, a refusal
+  or a miss of one leaving the rest asked. `resonate eq --fetch-every TEXT` is the front end of it:
+  it keeps the correction every measurer made for every device whose name holds the words (at most
+  `FOUND_AT_MOST`) as `<label> (<measurer>[ on <rig>])`, so the same headphones from several
+  measurers can be set against each other in the ABX. It conflicts with every other action. A
+  loopback server proves the one index request, the two measurers listed beside each other, the
+  fetched and the missing device told apart, and a User-Agent of `resonate/<version>` alone
+  (`the_whole_index_is_asked_for_once_and_lists_every_measurer_of_a_model_beside_the_others`).
+- **AutoEq stays the one online source, by decision.** The only keyless public source of
+  measurements found with a regular shape is squig.link: `/data/phone_book.json` (brands, phones,
+  `file`) and `/data/<file> L.txt` / `R.txt` in REW text, which `read_response` already reads; every
+  squig site of the CrinGraph tool shares the layout. It is a convention of a tool, not a published
+  API: no terms, no stability promise, and the files carry no rig or compensation, so fitting one
+  toward Harman would be a guess about a rig (`A guess is never written`). A listener who downloads
+  a file uses `--fit-measurement`. Another source lands as a `Corrections` impl beside `AutoEq`
+  once one documents its API and its rig; `Corrected::catalogue` still draws only the first source
+  that answers, and would merge then.
 - **Cached in catalog and process**: `corrections_index`, `corrections_kept` are tables of `V1` (first
   `CHECK (id = 1)`; `library.md`). Ages are `resonate-online`
   constants (index 30 days, device 90); a device with nothing is kept as a miss. `Remembered` is

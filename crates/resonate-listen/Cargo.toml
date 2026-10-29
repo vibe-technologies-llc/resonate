@@ -11,7 +11,11 @@ tracing.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 crossbeam-channel.workspace = true
+resonate-audio.workspace = true
 resonate-pipewire.workspace = true
+
+[dev-dependencies]
+resonate-dsp.workspace = true
 
 [lints]
 workspace = true

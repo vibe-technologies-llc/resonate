@@ -21,6 +21,7 @@ mod lasting;
 mod launcher;
 mod listen;
 mod mcp;
+mod measuring;
 mod mpris;
 mod online;
 mod playlists;
