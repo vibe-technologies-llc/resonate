@@ -108,13 +108,13 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   response filtered to it) was measured too loose under a dispersive correction (a random burst of
   taps 6 to 12 dB looser), and a transient gain read from what music a band holds, not the worst
   any music could, is not built
-- [M] A measurement of the listener's own is taken live by `resonate eq --measure` and by
-  *Measure* in the window's Equaliser pane, and the phones still fit a measurement from a file
-  alone: each has a microphone path for Listen (Kotlin's `AudioRecord`, Swift's `AVAudioEngine`
-  input) but neither has a playback of its own beside the engine to send a sweep through past the
-  equaliser and the room correction in force (through the engine's output they would colour it),
-  and the boundary has no call fitting a recorded sweep; the window's *Measure* cannot be stopped
-  part way (eight seconds of sweep and two of tail) and takes no calibration file (the command's
+- [S] The phones' *Measure* (a sweep through an `AudioTrack` or an `AVAudioPlayerNode` of its
+  own beside the engine, recorded by the microphone and fitted by `fit_recorded_sweep`; `eq.md`) is
+  proved on the host against a known filter, and its Kotlin on the JVM, but not heard through a real
+  phone's speaker and microphone: the iOS path is built and not run, the Android path was run end to end on an
+  emulator, whose virtual microphone proves the path and says nothing of the sound, and neither phone corrects its own microphone or speaker
+  except by a calibration file the listener has; the window's *Measure* cannot be stopped part way
+  (eight seconds of sweep and two of tail) and takes no calibration file (the command's
   `--calibration`) nor a name for the profile (it keeps `measured`)
 - [M] Lossy restoration was tuned and tested on ffmpeg's own MP3, AAC and Vorbis encodes of
   synthetic tones, walls and music-like notes at several bitrates, not on a breadth of real music
@@ -170,9 +170,14 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   its main lobe, is still weighed on the 2 048 points with the curve's fixed shares: an echo or a
   reverberant tail longer than that window has comb teeth between the points, which only the
   shares' slack covers (the near window is an envelope over every bin)
-- [M] A measurement of the listener's own is taken live only by `resonate eq --measure` on the
-  desktop: the window's Equaliser pane and both phones (a microphone permission and a sweep through
-  the route in use) still fit a measurement from a file alone
+- [S] The phones' *Measure* (a sweep through an `AudioTrack` or an `AVAudioPlayerNode` of its
+  own beside the engine, recorded by the microphone and fitted by `fit_recorded_sweep`; `eq.md`) is
+  proved on the host against a known filter, and its Kotlin on the JVM, but not heard through a real
+  phone's speaker and microphone: the iOS path is built and not run, the Android path was run end to end on an
+  emulator, whose virtual microphone proves the path and says nothing of the sound, and neither phone corrects its own microphone or speaker
+  except by a calibration file the listener has; the window's *Measure* cannot be stopped part way
+  (eight seconds of sweep and two of tail) and takes no calibration file (the command's
+  `--calibration`) nor a name for the profile (it keeps `measured`)
 - [S] AutoEq is the only online correction source. The one keyless public source of measurements
   found, squig.link (`/data/phone_book.json` and REW text per device, the CrinGraph tool's
   convention every squig site copies), has no documented API or terms and names no rig or

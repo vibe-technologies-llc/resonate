@@ -82,6 +82,22 @@ impl Response {
         (points.len() >= 2).then_some(Self { points })
     }
 
+    pub fn from_levels(levels: impl IntoIterator<Item = (f64, f64)>) -> Result<Self> {
+        let points = levels
+            .into_iter()
+            .map(|(hertz, decibels)| Point { hertz, decibels })
+            .collect();
+        Self::from_points(points).ok_or(Error::NoMeasuredPoints)
+    }
+
+    pub fn calibrated_by(&self, microphone: &Self) -> Result<Self> {
+        Self::from_levels(
+            self.points
+                .iter()
+                .map(|point| (point.hertz, point.decibels - microphone.at(point.hertz))),
+        )
+    }
+
     pub fn points(&self) -> &[Point] {
         &self.points
     }
@@ -468,6 +484,28 @@ mod tests {
             Err(Error::MeasurementTooLarge {
                 limit: LARGEST_MEASUREMENT
             })
+        ));
+    }
+
+    #[test]
+    fn levels_become_a_response_and_a_calibration_is_taken_off_point_by_point() {
+        let heard = Response::from_levels((0..40).map(|step| (20.0 * 1.2_f64.powi(step), 3.0)))
+            .expect("a response");
+        let microphone =
+            Response::from_levels((0..40).map(|step| (20.0 * 1.2_f64.powi(step), 1.0)))
+                .expect("a response");
+
+        let calibrated = heard.calibrated_by(&microphone).expect("a response");
+
+        assert!(
+            calibrated
+                .points()
+                .iter()
+                .all(|point| (point.decibels - 2.0).abs() < 1e-9)
+        );
+        assert!(matches!(
+            Response::from_levels([(100.0, f64::NAN)]),
+            Err(Error::NoMeasuredPoints)
         ));
     }
 }

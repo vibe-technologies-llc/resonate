@@ -90,4 +90,39 @@ import Testing
         #expect(!failed.fitting)
         #expect(failed.said == nil)
     }
+
+    @Test func aRoomMeasuredSoundsThenFitsAndEndsWithItsSentenceOrNone() {
+        let earlier = MeasurementView.of(offers).finished(saying: "Fitted earlier").turnedAway()
+
+        let sounding = earlier.sounded()
+        let fitting = sounding.heard()
+        let done = fitting.finished(saying: "Fitted now")
+        let stopped = sounding.finished(saying: nil)
+
+        #expect(sounding.sounding && sounding.fitting)
+        #expect(sounding.said == nil)
+        #expect(!sounding.denied)
+        #expect(!fitting.sounding && fitting.fitting)
+        #expect(!done.fitting && !done.sounding)
+        #expect(done.said == "Fitted now")
+        #expect(!stopped.fitting && !stopped.sounding)
+        #expect(stopped.said == nil)
+    }
+
+    @Test func aMicrophoneRefusedLeavesTheMeasurementIdleAndSaysSoApartFromTheSentence() {
+        let refused = MeasurementView.of(offers).sounded().turnedAway()
+
+        #expect(refused.denied)
+        #expect(!refused.fitting && !refused.sounding)
+        #expect(refused.said == nil)
+        #expect(!refused.sounded().denied)
+    }
+
+    @Test func aCalibrationIsKeptUntilForgottenAndSurvivesAMeasurement() {
+        let calibration = MeasurementCalibration(name: "mic.csv", bytes: Data([1]))
+        let view = MeasurementView.of(offers).calibrated(by: calibration)
+
+        #expect(view.sounded().finished(saying: "done").calibration == calibration)
+        #expect(view.calibrated(by: nil).calibration == nil)
+    }
 }

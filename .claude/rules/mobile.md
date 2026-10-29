@@ -57,7 +57,12 @@ is called is `UnknownTarget { name }`. `fit_measurement` takes the measurement's
 `MeasurementTarget` (a built-in's name or a document's bytes), is synchronous CPU work for the
 caller to run off its main thread, and `measurement_offers()` hands over the built-ins and the byte
 limit (`eq.md`'s *A measurement of your own*). Its result field is `imported`, not `import`, a Swift
-keyword.
+keyword. **A live measurement is two calls and a rate**: `measurement_rate_for(output_rate)`,
+`measurement_sweep(rate)` (a `MeasurementSweep` of `rate`, `samples` and `recorded_frames`) and
+`fit_recorded_sweep(recorded, rate, calibration, target, name)`, which fit what a phone's microphone
+heard of the sweep played beside the engine (`eq.md`). A recording that cannot be measured is
+`Error::Sweep { source }`, the `resonate_dsp::Error` worded by `failure::of_a_sweep`, and a
+calibration file that will not read is `Error::Measurement` naming `MeasuredFile::Calibration`.
 
 ## A failure is told by its cause
 

@@ -282,7 +282,7 @@ enum Microphone {
 
         let heard: Result<[Float], any Swift.Error>
         do {
-            heard = .success(try await filled(opened, within: seconds + graceSeconds))
+            heard = .success(try await filled(opened.sink, within: seconds + graceSeconds))
         } catch {
             heard = .failure(error)
         }
@@ -291,8 +291,7 @@ enum Microphone {
         return HeardClip(samples: try heard.get(), rate: UInt32(opened.rate.rounded()))
     }
 
-    private static func filled(_ opened: OpenMicrophone, within givenUpAfter: TimeInterval) async throws -> [Float] {
-        let sink = opened.sink
+    static func filled(_ sink: ClipSink, within givenUpAfter: TimeInterval) async throws -> [Float] {
         let deadline = Task.detached {
             guard (try? await Task.sleep(for: .seconds(givenUpAfter))) != nil else { return }
             sink.finish()

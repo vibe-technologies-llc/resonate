@@ -1008,9 +1008,32 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   any other failure are told in words apart (`missed_the_room`)
   (`a_room_measured_in_the_pane_is_fitted_kept_and_shown_as_the_profile_it_became`,
   `a_room_that_was_not_heard_leaves_nothing_kept_and_says_so`,
-  `measure_in_the_equaliser_pane_plays_the_sweep_and_keeps_the_fit_as_a_profile`). Not built: the
-  phones, which have a microphone path for Listen and no playback of their own beside the engine
-  (`FEATURES.md`), and a calibration, a name or a stop for the window's run.
+  `measure_in_the_equaliser_pane_plays_the_sweep_and_keeps_the_fit_as_a_profile`). The phones
+  measure through the same sweep and deconvolution (below); a calibration, a name or a stop for the
+  window's run is not built (`FEATURES.md`).
+- **The shared pieces live below the two front ends.** `Sweep::for_measuring(rate)` (20 Hz to 20 kHz
+  over `MEASURED_FOR`, 8 s), `Sweep::heard_for` (the sweep plus `HEARD_AFTER_THE_SWEEP`, 2 s) and the
+  constants are `resonate-dsp`'s, and `Response::from_levels` (a `Level`'s hertz and decibels as a
+  response, `NoMeasuredPoints` for none) and `Response::calibrated_by` (a microphone's response taken
+  off point by point) are `resonate-eq`'s, so the binary's `measuring::measured_by` and `calibrated`
+  and the boundary's `fit_recorded_sweep` call the same code
+  (`levels_become_a_response_and_a_calibration_is_taken_off_point_by_point`).
+- **The phones measure through a sweep of their own beside the engine** (`resonate-mobile/src/measurement.rs`,
+  `mobile.md`): `measurement_rate_for(output_rate)` (the output's rate where it is 44.1 or 48 kHz, else
+  48 kHz), `measurement_sweep(rate)` (the sweep's samples, the `rate` and `recorded_frames`, how many
+  frames to record to hear its 2 s tail) and `fit_recorded_sweep(recorded, rate, calibration, target,
+  name)`, which deconvolves the mono recording with `Sweep::heard_as`, takes the optional calibration
+  file (read as any measurement, `MeasuredFile::Calibration`) off the response and fits it toward the
+  target as `fit_measurement` does (`fitted`, one function behind both), answering a `MeasurementFit`
+  the phone loads as an import. The sweep never passes the engine, so the equaliser, convolver and
+  crossfeed in force do not colour it: Android plays it through a short-lived `AudioTrack` and iOS
+  through an `AVAudioPlayerNode` on the engine that also taps the input, each with the player paused
+  (`android.md`, `ios.md`). A recording that is silent, shorter than the sweep or at a rate under
+  40 kHz is `Error::Sweep`, worded by `failure::of_a_sweep`
+  (`a_sweep_through_a_known_filter_is_fitted_as_the_desktops_measurement_is`: a delayed one-pole
+  low-pass read within 0.5 dB at 44.1 and 48 kHz, the fit equal to the desktop's of the same levels;
+  `a_microphone_calibration_is_taken_off_what_it_heard`,
+  `a_recording_that_heard_nothing_or_too_little_or_a_rate_too_slow_is_told_in_words`).
 
 ## AutoEq
 

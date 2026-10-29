@@ -102,4 +102,43 @@ class MeasurementAimTest {
         assertNull(failed.said)
         assertEquals(done.copy(fitting = false), done.finished(null))
     }
+
+    @Test
+    fun aRoomMeasuredSoundsThenFitsAndEndsWithItsSentenceOrNone() {
+        val view = MeasurementView.of(offers).copy(said = "Fitted earlier", denied = true)
+
+        val sounding = view.sounded()
+        val fitting = sounding.heard()
+        val done = fitting.finished("Fitted now")
+        val stopped = sounding.finished(null)
+
+        assertTrue(sounding.sounding && sounding.fitting)
+        assertNull(sounding.said)
+        assertFalse(sounding.denied)
+        assertFalse(fitting.sounding)
+        assertTrue(fitting.fitting)
+        assertFalse(done.fitting || done.sounding)
+        assertEquals("Fitted now", done.said)
+        assertFalse(stopped.fitting || stopped.sounding)
+        assertNull(stopped.said)
+    }
+
+    @Test
+    fun aMicrophoneRefusedLeavesTheMeasurementIdleAndSaysSoApartFromTheSentence() {
+        val refused = MeasurementView.of(offers).sounded().turnedAway()
+
+        assertTrue(refused.denied)
+        assertFalse(refused.fitting || refused.sounding)
+        assertNull(refused.said)
+        assertFalse(refused.sounded().denied)
+    }
+
+    @Test
+    fun aCalibrationIsKeptUntilForgottenAndSurvivesAMeasurement() {
+        val calibration = Calibration("mic.csv", byteArrayOf(1))
+        val view = MeasurementView.of(offers).calibratedBy(calibration)
+
+        assertEquals("mic.csv", view.sounded().finished("done").calibration?.name)
+        assertNull(view.calibratedBy(null).calibration)
+    }
 }

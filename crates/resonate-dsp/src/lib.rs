@@ -31,7 +31,8 @@ pub use crate::{
     resample::{Quality, Resampler, ResamplerConfig, SincParams},
     restore::{Restoration, Restore, RestoreConfig, Tuning},
     sweep::{
-        FRAMES_HEARD_AT_MOST, Heard, LONGEST_SWEEP, Level, POINTS_PER_OCTAVE, SHORTEST_SWEEP, Sweep,
+        FRAMES_HEARD_AT_MOST, HEARD_AFTER_THE_SWEEP, Heard, LONGEST_SWEEP, Level, MEASURED_FOR,
+        MEASURED_FROM_HZ, MEASURED_TO_HZ, POINTS_PER_OCTAVE, SHORTEST_SWEEP, Sweep,
     },
 };
 

@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use resonate_core::SampleRate;
 use resonate_dsp::Sweep;
-use resonate_eq::{Error as EqError, Point, Response};
+use resonate_eq::{Error as EqError, Response};
 use resonate_listen::{Hearing, Listener, Listening};
 use resonate_pipewire::NodeName;
 use thiserror::Error as ThisError;
@@ -10,10 +10,8 @@ use thiserror::Error as ThisError;
 use crate::{Error, Result};
 
 pub const MEASURED_AT: SampleRate = SampleRate::HZ_48000;
-pub const SWEEP_FROM_HZ: u32 = 20;
-pub const SWEEP_TO_HZ: u32 = 20_000;
-pub const SWEEP_FOR: Duration = Duration::from_secs(8);
-pub const HEARD_AFTER_THE_SWEEP: Duration = Duration::from_secs(2);
+pub const SWEEP_FOR: Duration = resonate_dsp::MEASURED_FOR;
+pub const HEARD_AFTER_THE_SWEEP: Duration = resonate_dsp::HEARD_AFTER_THE_SWEEP;
 
 const APP_NAME: &str = "Resonate";
 const CSV_HEADER: &str = "frequency,raw";
@@ -94,34 +92,22 @@ impl Rig for Room<'_> {
 }
 
 pub fn measured_by(rig: &dyn Rig) -> std::result::Result<Response, Unheard> {
-    let sweep = Sweep::new(MEASURED_AT, SWEEP_FROM_HZ, SWEEP_TO_HZ, SWEEP_FOR)?;
-    let heard_for = sweep.length() + HEARD_AFTER_THE_SWEEP;
+    let sweep = Sweep::for_measuring(MEASURED_AT)?;
+    let heard_for = sweep.heard_for();
 
     let recorded = rig.sound(&sweep, heard_for)?;
     let levels = sweep.heard_as(&recorded)?.response()?;
 
-    let points = levels
-        .into_iter()
-        .map(|level| Point {
-            hertz: level.hertz,
-            decibels: level.decibels,
-        })
-        .collect();
-    Response::from_points(points)
-        .ok_or(EqError::NoMeasuredPoints)
-        .map_err(Unheard::from)
+    Response::from_levels(
+        levels
+            .into_iter()
+            .map(|level| (level.hertz, level.decibels)),
+    )
+    .map_err(Unheard::from)
 }
 
 pub fn calibrated(heard: &Response, microphone: &Response) -> Result<Response> {
-    let points = heard
-        .points()
-        .iter()
-        .map(|point| Point {
-            hertz: point.hertz,
-            decibels: point.decibels - microphone.at(point.hertz),
-        })
-        .collect();
-    Response::from_points(points).ok_or(Error::Eq(EqError::NoMeasuredPoints))
+    heard.calibrated_by(microphone).map_err(Error::Eq)
 }
 
 pub fn as_csv(response: &Response) -> String {
@@ -137,7 +123,7 @@ pub fn as_csv(response: &Response) -> String {
 mod tests {
     use std::f64::consts::PI;
 
-    use resonate_eq::{Fitting, Layout, POINTS_AT_LEAST, fit, read_response};
+    use resonate_eq::{Fitting, Layout, POINTS_AT_LEAST, Point, fit, read_response};
 
     use super::*;
 

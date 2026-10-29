@@ -388,6 +388,11 @@ class LibraryRepository(private val context: Context) {
         actions.trySend(action)
     }
 
+    fun pauseForRecording() {
+        val state = snapshot.value?.transport
+        if (state == Transport.PLAYING || state == Transport.LOADING) request { it.pause() }
+    }
+
     fun saveNow() {
         request { native -> native.save() }
     }
