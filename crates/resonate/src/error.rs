@@ -170,7 +170,7 @@ impl fmt::Display for Named {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 105] = [
+    pub const ALL: [Self; 106] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
