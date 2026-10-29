@@ -73,16 +73,33 @@ impl Applied {
             return Ok(self.profile.impulse_responses(frames, rate));
         };
         let taps = correction.at(rate).map_err(corrects)?;
-        Ok(taps
+        let mut by_correction: Vec<std::vec::IntoIter<Vec<f64>>> = taps
             .iter()
-            .flat_map(|channel| {
+            .map(|channel| {
                 let mut input = vec![0.0; frames];
                 for (slot, tap) in input.iter_mut().zip(channel) {
                     *slot = *tap;
                 }
-                self.profile.filtered(&input, rate)
+                self.profile.filtered(&input, rate).into_iter()
+            })
+            .collect();
+        let groups = by_correction.first().map_or(0, ExactSizeIterator::len);
+        Ok((0..groups)
+            .flat_map(|_| {
+                by_correction
+                    .iter_mut()
+                    .filter_map(Iterator::next)
+                    .collect::<Vec<_>>()
             })
             .collect())
+    }
+
+    pub fn correction_frames(&self, rate: SampleRate) -> Result<usize> {
+        let Some(correction) = &self.correction else {
+            return Ok(0);
+        };
+        let taps = correction.at(rate).map_err(corrects)?;
+        Ok(taps.iter().map(Vec::len).max().unwrap_or(0))
     }
 
     pub fn peak_db(&self, rate: SampleRate) -> Result<f64> {

@@ -17,6 +17,7 @@ mod spectrogram;
 mod spectrum;
 mod split;
 mod steps;
+mod tones;
 mod verdict;
 mod watch;
 mod weighing;

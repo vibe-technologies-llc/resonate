@@ -47,7 +47,7 @@ impl Loudest {
     }
 
     pub fn weigh(&mut self, gains: &BandGains, peaks: &BandPeaks) {
-        self.peak = self.peak.max(gains.bound(peaks));
+        self.peak = self.peak.max(gains.bound_beside(peaks, self.peak));
         self.measured += 1;
     }
 

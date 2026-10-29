@@ -74,8 +74,8 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
   band could show to those probes (`shortfall`), so the figure is the continuous peak or over it;
   the whole signal's peak is instead the true peak of the tile (`TruePeakMeter::at`, the decode's
   own meter, taken a tile at a time). **Moments** (`peaks::grouped`): each tile is widened to the
-  loudest of each node over its two neighbours each way (a tenth of a second, what the fit's
-  `G_soon` spans, `eq.md`), the tiles are paired down to at most 1 024, then gathered loudest
+  loudest of each node over its two neighbours each way (a tenth of a second, so the fit's
+  `G_near` may span a fifth of a second around a delay, `eq.md`), the tiles are paired down to at most 1 024, then gathered loudest
   first: a tile joins the moment it raises least (the largest rise of a node over the moment's,
   relative to the moment's, times the tile's whole peak over the song's), or starts one while
   fewer than `MOMENTS_KEPT` (8) stand; the tolerance a tile may raise a moment by is bisected to

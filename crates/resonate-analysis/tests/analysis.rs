@@ -882,7 +882,46 @@ fn corrections() -> Vec<(&'static str, Arc<Impulse>)> {
             "a linear phase low pass",
             impulse(low_pass_taps(2_000.0, 255)),
         ),
+        (
+            "a linear phase lift of the bass a third of a second long",
+            impulse(lifting_the_bass_in_linear_phase(LIFTED_OVER_TAPS)),
+        ),
     ]
+}
+
+const LIFTED_OVER_TAPS: usize = 16_383;
+
+fn lifting_the_bass_in_linear_phase(taps: usize) -> Vec<f64> {
+    let centre = taps / 2;
+    low_pass_taps(200.0, taps)
+        .into_iter()
+        .enumerate()
+        .map(|(at, tap)| if at == centre { tap + 1.0 } else { tap })
+        .collect()
+}
+
+fn bass_then_treble() -> Vec<i32> {
+    (0..(RATE * 4) as usize)
+        .flat_map(|frame| {
+            let seconds = frame as f64 / f64::from(RATE);
+            let low = if seconds < 1.5 {
+                (std::f64::consts::TAU * BOOSTED_AT_HZ * seconds).sin()
+                    * 0.45
+                    * faded(seconds).min(faded(1.5 - seconds))
+            } else {
+                0.0
+            };
+            let high = if seconds >= 2.5 {
+                (std::f64::consts::TAU * SOUNDED_ELSEWHERE_HZ * seconds).sin()
+                    * 0.9
+                    * faded(seconds - 2.5).min(faded(4.0 - seconds))
+            } else {
+                0.0
+            };
+            let sample = ((low + high) * 32_767.0) as i32;
+            [sample, sample]
+        })
+        .collect()
 }
 
 fn low_pass_taps(cutoff_hz: f64, taps: usize) -> Vec<f64> {
@@ -923,6 +962,10 @@ fn the_bound_still_holds_over_what_the_decode_measures_with_a_correction_in_the_
             tree.wave("band.wav", RATE, 16, &kick_hat_bass_and_pads()),
         ),
         ("clicks", tree.wave("clicks.wav", RATE, 16, &clicks())),
+        (
+            "bass then treble",
+            tree.wave("apart.wav", RATE, 16, &bass_then_treble()),
+        ),
     ];
     let curves = [
         ("no curve", Arc::new(Profile::flat())),
@@ -1072,7 +1115,7 @@ fn broadband_music_under_a_curve_moving_every_octave_is_bounded_within_a_few_dec
         let bounded = decibels_of_the_bound(&gains_under(&curve), &studied);
 
         assert!(bounded >= decoded - 0.02, "{bounded} under {decoded}");
-        assert!(bounded < decoded + 4.5, "{bounded} against {decoded}");
+        assert!(bounded < decoded + 3.75, "{bounded} against {decoded}");
     }
 }
 
@@ -1087,6 +1130,29 @@ fn a_tone_beside_a_narrow_boost_is_bounded_near_its_decode() {
     let bounded = decibels_of_the_bound(&gains_under(&narrow), &studied);
 
     assert!(bounded >= decoded - 0.02, "{bounded} under {decoded}");
-    assert!(bounded < decoded + 3.0, "{bounded} against {decoded}");
-    assert!(bounded < 1.5, "{bounded}");
+    assert!(bounded < decoded + 0.5, "{bounded} against {decoded}");
+    assert!(bounded < -0.5, "{bounded}");
+}
+
+#[test]
+fn music_heard_apart_through_a_late_linear_phase_lift_is_bounded_moment_by_moment() {
+    let tree = Tree::new();
+    let apart = tree.wave("apart.wav", RATE, 16, &bass_then_treble());
+    let studied = study(&Sources::local(), &apart, None, &Watch::default()).expect("a study");
+    let lift = Arc::new(
+        Impulse::new(
+            SampleRate::HZ_44100,
+            vec![lifting_the_bass_in_linear_phase(LIFTED_OVER_TAPS * 2 + 1)],
+        )
+        .expect("an impulse"),
+    );
+
+    for curve in [Arc::new(Profile::flat()), boosting_the_bass()] {
+        let applied = Applied::from(curve).corrected_by(Some(Arc::clone(&lift)));
+        let decoded = peak_db_through_chain(&applied, &apart);
+        let bounded = decibels_of_the_bound(&bounded_under(&applied), &studied);
+
+        assert!(bounded >= decoded - 0.02, "{bounded} under {decoded}");
+        assert!(bounded < decoded + 1.0, "{bounded} against {decoded}");
+    }
 }

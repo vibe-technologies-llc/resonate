@@ -105,15 +105,16 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] An HRIR set in SOFA (a netCDF-4 file over HDF5) is not read: a pure-Rust HDF5 reader would
   have to choose the measurement nearest a direction and resample it to the stream, so a set is
   first cut to a four-channel WAV elsewhere
-- [M] *Fit the preamp*'s kept-figure bound still sits 2 to 6 dB over the decode for broadband
-  music under a curve that moves many bands, and a band whose skirt reaches a narrow boost pays a
-  little of it: each node's share of a frequency is fixed by the curve, not fitted to the song's
-  peaks (solving the tone model's dual per song would let a quiet band carry a boost it borders)
-- [M] *Fit the preamp*'s kept-figure bound pays a linear-phase room correction whole from the
-  song's peaks, because a moment holds only a tenth of a second each way and the response's main
-  lobe sits half its length later (shifting each moment by the response's delay would let the
-  anchors and the nodes meet in one moment again); the fit runs the response's own taps against
-  every point it weighs, about a second for a ten-second response on this machine
+- [M] *Fit the preamp*'s solved bound leaves the whole signal's node to the level alone: with it,
+  the tone model's solution passed the decode of transients through a phase-turning curve (an
+  allpass pair over noise and over a kick, hat and pads, by up to 0.38 dB), so broadband music
+  still bounds one to three and a half decibels over its decode; weighing each node by its own
+  transient gain over its band (the L1 of the near response filtered to it) would let the whole
+  node back in
+- [M] *Fit the preamp*'s ring, what the chain's response holds outside the fifth of a second around
+  its main lobe, is still weighed on the 2 048 points with the curve's fixed shares: an echo or a
+  reverberant tail longer than that window has comb teeth between the points, which only the
+  shares' slack covers (the near window is an envelope over every bin)
 - [M] AutoEq is the only online correction source, fetched one device at a time; a measurement of
   the listener's own is fitted to a target on every front end, but only from a file
 - [M] Lossy restoration was tuned and tested on ffmpeg's own MP3, AAC and Vorbis encodes of

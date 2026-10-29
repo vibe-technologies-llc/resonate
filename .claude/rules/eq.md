@@ -4,6 +4,8 @@ paths:
   - "crates/resonate-eq/targets/*.csv"
   - "crates/resonate-analysis/src/headroom.rs"
   - "crates/resonate-analysis/src/applied.rs"
+  - "crates/resonate-analysis/src/bands.rs"
+  - "crates/resonate-analysis/src/tones.rs"
   - "crates/resonate-core/src/eq.rs"
   - "crates/resonate-dsp/src/eq.rs"
   - "crates/resonate-dsp/src/convolve.rs"
@@ -176,7 +178,7 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   exactly; each term is bounded by the node's peak times its *reach*, and the tree is searched
   bottom up for the cheapest partition (`cheapest`), so broadband music pays one peak for a span
   the curve moves alike instead of the peaks of every band in it as if they fell together. A node's
-  reach at level `c` is `max over f of share_S(f) * |G_soon(f) - c|`, `G` the complex response
+  reach at level `c` is `max over f of share_S(f) * |G_near(f) - c|`, `G` the complex response
   (`Applied::heard_at`, phase counts; per-channel bands count on the channel they reach furthest,
   the correction's response multiplied in)
   on 2 048 points from 1 Hz to Nyquist plus every band's centre. `share_S(f)` is the bank's own
@@ -187,37 +189,73 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   so a steady tone anywhere is bounded at its own response, and a node pays for a frequency in its
   skirt only by the share of it the node holds. The levels are 0, 1 and eight geometric steps from
   the curve's quietest gain (at least 0.25) to its loudest; each moment takes its least level and
-  the bound is the loudest moment's. **Time**: a moment holds every node's peak over its stretch
-  widened by a tenth of a second each way, so the first tenth of a second of the impulse response
-  (`Applied::impulse_responses`, the correction's taps run through the profile's biquads, its last
-  quarter tapered by a raised cosine) is `G_soon`, and the
-  rest (`G - G_soon`) is bounded apart (`ringing`, at level 0) by the loudest of each node over all
-  the moments, so a narrow band low down that rings past a moment is paid for by whatever the song
-  holds near it. **What is rigorous and what is not**: the sum over a partition is exact, the
-  moments hold every stretch with its neighbours, the codes round up and the ring is bounded by the
-  whole song, but `|G - c| * peak` bounds a term's peak exactly only for a steady tone or a
-  sustained sum of tones; a transient through a resonant or phase-turning curve can pass it by up
-  to the filter's L1-to-peak ratio (about 4/π for a narrow resonance), the band peaks are read at
-  each sample and its cubic midpoint scaled by a tone's shortfall at the band's reach, the bank is
-  zero-phase only to within its margin (`analysis.md`), and the bank's response is taken at the
-  fit rate though the study ran at the file's. The slack the sum over nodes leaves has covered
-  every such case measured: the bound holds over the decode across seven songs and thirteen curves
-  (`the_bound_holds_over_what_the_decode_measures_whatever_the_curve_and_where_the_music_sounds`),
-  and under six corrections (a boosting pair of taps, a lowpassing one, an echo, a dispersive burst,
-  a response held back 0.3 s, a linear-phase low pass) beside four curves and five songs
-  (`the_bound_still_holds_over_what_the_decode_measures_with_a_correction_in_the_chain`),
-  and fits as the boost takes it where a song's peaks gather in a boosted band
+  the bound is the loudest moment's. **The solved bound** (`tones.rs`): the partition is one
+  feasible answer of the tone model's dual, so each moment and level is also solved exactly as a
+  linear programme, `min sum lambda_S * P_S` subject to `sum lambda_S * B_S(span) >= D(span)` over
+  346 spans (24 an octave from 1 Hz to Nyquist, each span's `B_S` the least of its two edges, a node's
+  response being unimodal, `D` the most `|G_near - c|` reaches inside it), by a revised simplex from
+  the slack basis (`Solving`, warm across levels, 57 rows); any dual it stops at is made feasible
+  by scaling and so is an answer, it stops within `SETTLED_WITHIN` (0.1 %) of the primal, gives up
+  once the primal passes what a level already holds, and a level whose loudest single tone
+  (`heard_alone`) cannot win is never solved; the moment takes the least of the partition and the
+  solution. This lets a quiet band carry a boost it borders instead of the loud band whose skirt
+  reaches it, and a mixed weighting of nodes no partition offers. **`D` is an envelope, not a
+  sample**: the near response is transformed on `ENVELOPE_BINS_A_TAP` (32) bins a tap and each
+  bin pays `|Z - c| + (pi/N)|Z'| + (pi/N)^2/2 * sum (tau - e)^2 |h|` (its value, slope and a bound on
+  its curvature), so a comb's teeth between points (an echo inside the window) are paid in full.
+  **The whole signal's node is left out of the programme**: its peak is paid through the level
+  alone (`c * x` is exact), since with it the solution passed the decode of transients through a
+  phase-turning curve by up to 0.38 dB (`turned`, an allpass pair over noise and over a kick, hat
+  and pads); nodes of up to fifteen bands stayed over every decode. **Time**: a moment holds every
+  node's peak over its stretch widened by a tenth of a second each way, so the response may be
+  split around a delay `d`: the chain's impulse response (`Applied::impulse_responses`, the
+  correction's taps run through the profile's biquads, the whole correction long) is searched for
+  its loudest tap `e`, and a window of a fifth of a second holding `e` outside its tapered quarters
+  is placed where it holds the most energy (`Soon::within`; it starts at 0 for a profile alone);
+  that window is `G_near`, measured against `c * e^(-i w e)` (the level delayed to the main lobe),
+  and both meet the moment that holds `t - d` for `d` the window's middle. The rest (`G - G_near`) is
+  bounded apart (`ringing`, at level 0, on the 2 048 points and their fixed shares) by the loudest of
+  each node over all the moments. A linear-phase correction's main lobe, half its length late, is
+  therefore paid moment by moment
+  (`a_correction_whose_energy_comes_late_is_bounded_where_its_main_lobe_meets_the_music`,
+  `music_heard_apart_through_a_late_linear_phase_lift_is_bounded_moment_by_moment`), and a causal
+  curve's ring is paid within twice the span it was. `Applied::impulse_responses` orders its
+  responses as `heard_at` does (profile group outer, correction channel inner), so near and whole
+  are subtracted channel for channel. **What is rigorous and what is not**: the sum over a
+  partition is exact, the moments hold every stretch with its neighbours, the codes round up, the
+  near envelope holds between bins and the ring is bounded by the whole song, but `|G - c| * peak`
+  bounds a term's peak exactly only for a steady tone or a sustained sum of tones; a transient
+  through a resonant or phase-turning curve can pass it by up to the filter's L1-to-peak ratio, the
+  band peaks are read at each sample and its cubic midpoint scaled by a tone's shortfall at the
+  band's reach, the bank is zero-phase only to within its margin (`analysis.md`), and the bank's
+  response is taken at the fit rate though the study ran at the file's. **Measured** over eight
+  songs (a tone low and high, bursts, beats, noise, a band, clicks, bass then treble) under
+  thirteen curves with no correction and four curves under each of nine corrections (the six
+  below, a 32 767-tap linear-phase low pass, the same length of linear-phase bass lift, and that
+  lift padded to ten seconds), 375 cases with the decode above -20 dBFS: the bound sat 3.21 dB over
+  the decode on average before, 2.87 with the window split around the main lobe and 2.02 solved
+  (1.66, 1.64 and 0.98 with no correction; 3.49, 1.95 and 1.25 under the bass lift), never under
+  it (0.03 dB at least). The bound holds over the decode across eight songs and thirteen curves
+  (`the_bound_holds_over_what_the_decode_measures_whatever_the_curve_and_where_the_music_sounds`)
+  and under seven corrections (a boosting pair of taps, a lowpassing one, an echo, a dispersive
+  burst, a response held back 0.3 s, a short linear-phase low pass and a linear-phase bass lift a
+  third of a second long) beside four curves and six songs
+  (`the_bound_still_holds_over_what_the_decode_measures_with_a_correction_in_the_chain`), and fits
+  as the boost takes it where a song's peaks gather in a boosted band
   (`a_song_whose_peaks_gather_in_a_boosted_band_passes_the_estimate_and_not_the_bound`). **What
-  stays loose**: a correction whose energy comes after a tenth of a second (a linear-phase design
-  delays its main lobe by half its length) leaves `G_soon` empty and is paid for whole from the
-  song's peaks at level 0, the cost of not shifting a moment by the response's delay
-  (`a_correction_whose_energy_comes_late_is_paid_for_from_the_whole_song`); a song with every band busy under a curve that moves many of them still bounds a
-  few decibels over its decode (a node's terms are summed apart and the shares are fixed by the
-  curve, not fitted to the song), and a band whose skirt reaches a narrow boost pays a little of it
-  (`broadband_music_under_a_curve_moving_every_octave_is_bounded_within_a_few_decibels_of_its_decode`,
-  `a_tone_beside_a_narrow_boost_is_bounded_near_its_decode`). The old estimate, the true peak times
-  the mean gain weighted by each band's energy, is gone: a loud sustained band hid the quiet band
-  where the peak gathered. `Loudest::weigh` takes the peaks.
+  stays loose**: broadband music under a curve that moves many bands still bounds one to three and
+  a half decibels over its decode, since every node's term is summed apart
+  (`broadband_music_under_a_curve_moving_every_octave_is_bounded_within_a_few_decibels_of_its_decode`);
+  a tone beside a narrow boost is bounded within half a decibel
+  (`a_tone_beside_a_narrow_boost_is_bounded_near_its_decode`). **Cost**: `BandGains::of` takes
+  about 15 ms for a profile and 75 ms with a ten-second response (it was 28 and 320 ms here), since
+  the near window is summed by `resonate_dsp::response_of`, which shares the points among
+  `available_parallelism` scoped threads once taps times points pass `TURNS_WORTH_A_THREAD` (2^24),
+  as `Impulse::heard_at` does for the whole response; a solved bound costs about a millisecond a
+  song where the partition cost microseconds, so `Loudest::weigh` calls `bound_beside(peaks,
+  loudest_yet)`, which solves no moment that cannot raise what the fold already holds. The old
+  estimate, the true peak times the mean gain weighted by each band's energy, is gone: a loud
+  sustained band hid the quiet band where the peak gathered. `Loudest::weigh` takes the peaks.
 - **The set is the catalog's kept bands plus the queue's unmeasured songs, bounded.**
   `Library::loudest_kept(profile, rate)` folds every kept measure in one read (`Loudest::measured`
   counts them); `Library::unmeasured(cuts)` is the cuts no kept measure of the right length
