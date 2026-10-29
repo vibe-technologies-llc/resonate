@@ -42,20 +42,26 @@ pub(crate) use self::oboe::Routing;
 pub(crate) use self::remote_io_state::Routing;
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-pub(crate) struct Routing;
+pub(crate) struct Routing {
+    requested: std::sync::atomic::AtomicI32,
+}
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 impl Routing {
     pub(crate) fn new() -> Self {
-        Self
+        Self {
+            requested: std::sync::atomic::AtomicI32::new(0),
+        }
     }
 
     pub(crate) fn serving(_: resonate_audio::SinkId) -> Self {
-        Self
+        Self::new()
     }
 
-    pub(crate) fn select(&self, _: i32) -> bool {
-        false
+    pub(crate) fn select(&self, device: i32) -> bool {
+        self.requested
+            .store(device, std::sync::atomic::Ordering::Relaxed);
+        true
     }
 
     pub(crate) fn actual(&self) -> i32 {
@@ -63,7 +69,7 @@ impl Routing {
     }
 
     pub(crate) fn requested(&self) -> i32 {
-        0
+        self.requested.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub(crate) fn route_changed(&self, _: u32, _: f64) -> bool {

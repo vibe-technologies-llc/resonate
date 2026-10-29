@@ -332,11 +332,7 @@ final class Library {
                 let stored = preferencesStore.read(for: route)
                 try await Work.inOrder { try opened.configurePlayback(preferences: stored) }
                 preferences = stored
-                volume = preferencesStore.volume
-                if volume < 1 {
-                    let kept = volume
-                    try await Work.inOrder { try opened.setVolume(volume: kept) }
-                }
+                volume = try await Work.inOrder { opened.zones().first { $0.shown }?.volume ?? 1 }
                 native = opened
                 opened.watchPlayer(watch: PlayerWake(self))
                 Task.detached(priority: .utility) { [support] in Backup.leaveOutDerived(in: support) }
@@ -970,8 +966,6 @@ final class Library {
             if let owed = volumeOwed {
                 volumeOwed = nil
                 send(volume: owed)
-            } else {
-                preferencesStore.volume = level
             }
         }
     }

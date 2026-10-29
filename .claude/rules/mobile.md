@@ -398,7 +398,7 @@ for. Every call the phones made before addresses the zone shown (`Playing::playe
 command the shown one); the snapshot names it (`Snapshot.zone`) with `Zones::revision`
 (`zones_revision`), so a front end reads a zone's queue again when another is shown, though its
 revision may equal the last. `zones()` lists each zone as a `PlayerZone` (id, name, route, requested
-device, shown, transport and the title it plays), `show_zone`, `add_zone(name, device, route)` (a
+device, shown, volume, transport and the title it plays), `show_zone`, `add_zone(name, device, route)` (a
 blank name is *Zone N*), `rename_zone` (blank is `ZoneUnnamed`), `remove_zone` (the first is
 `FirstZoneStays`; its listen is settled and its catalog rows go), `select_zone_output(zone, device,
 route)` and `hand_over_to(zone)`, which hands the shown zone's song to another through
@@ -415,15 +415,31 @@ refused every other zone a `SetSink`); its device is the id it was added or boun
 the room correction applied is sent to it once open. iOS has one route: every zone's RemoteIO unit
 plays into it (`FEATURES.md`).
 
+**A device another zone holds bit-perfect is refused, as the desktop refuses it** (`audio.md`'s
+`Zones::holding`): each zone's sink being its own, `Zones::send` never sees two zones on one sink, so
+the boundary compares the Android device ids. `Playing::holder_of(asking, device)` takes the zones
+`Zones::holding` names (a zone whose settings prefer bit-perfect and whose output mode is
+`BitPerfect` or `Repacked`) and finds one whose `Routing` requested `device`, or (for a device other
+than 0, the system's choice) opened on it (`reaches`); `add_zone`, `select_zone_output`,
+`select_output` and `hand_over_to` refuse it with `resonate_engine::Error::DeviceHeld { by }`
+(`Cause::HeldByAnotherZone`'s sentence), a handover also where the holder is the zone handing over
+and means to sound (`handover_clashes`, the engine's own rule). Two zones on a mixed device share it,
+and a zone that turns bit-perfect after another chose the device is not undone, as on the desktop;
+iOS holds no device per zone (one route) and refuses nothing (`OUTPUTS_ARE_HELD_PER_DEVICE`). The host's
+`Routing` remembers the device selected so the rule is proved there
+(`a_device_another_zone_holds_bit_perfect_is_refused_to_every_way_of_binding_a_zone_to_it`,
+`a_device_is_reached_by_the_choice_made_or_the_one_the_system_gave`,
+`a_handover_onto_a_held_device_is_refused_unless_the_holder_is_the_zone_handing_over_and_silent`).
+
 **Each zone's queue is kept under its `ZoneId`**: the catalog's step 18
 (`ZONES_KEEP_THEIR_OWN_QUEUES`) made `zones` (id, name, route), `zone_queue` and `zone_resume`
 (keyed to `zones(id)` with `ON DELETE CASCADE`; `zone_queue.track` references `documents`, so
 forgetting and handing over songs reach it as they reach `queue`). The first zone keeps `queue` and
-`resume` (sync's handoff reads them), its `zones` row holding only a name or route given;
+`resume`, its `zones` row holding only a name, route or volume given;
 `save_queue_of`, `save_place_of`, `resume_of` and `place_among_rows` read either through `QueueKept`.
 `save` saves every zone; `MobilePlayer::new` resumes the first zone, then opens each kept zone at the
-system's device with its kept queue paused (`restore_zones`); the front end binds a kept route to the
-device it now names (`select_zone_output`). A song gone or deleted leaves every zone's queue
+system's device with its kept queue paused and at its kept volume (`restore_zones`); the front end
+binds a kept route to the device it now names (`select_zone_output`). A song gone or deleted leaves every zone's queue
 (`drop_from_queue`), and `documents_moved` saves and resumes each zone holding a moved song. One
 `resonate-watch` thread follows each zone's events, counting that zone's listening and telling the
 watch (`watching::keep(player, zone)`; it ends when the zone's engine goes)
@@ -433,8 +449,24 @@ watch (`watching::keep(player, zone)`; it ends when the zone's engine goes)
 `the_song_handed_to_another_zone_plays_there_and_leaves_the_zone_it_came_from`,
 `a_route_serving_another_zone_announces_its_own_sink`).
 
+**Each zone's volume is kept beside its device**, as the desktop's: the catalog's step 19
+(`ZONES_KEEP_THEIR_VOLUME`) gave `zones` a `volume` (0 to 1, full by default). `save` keeps a zone's
+volume (`keep_volume_of`) when the engine's has moved more than `VOLUME_KEPT_WITHIN` from the one
+last kept, upserting the zone's row without touching its name or route (so the first zone, which has
+no row until something is given, gets one only when its volume leaves full); `MobilePlayer::new`
+starts the first zone's engine at it (`first_zones_volume`) and `zone_opened` opens each later zone
+at its row's, so `set_volume`, which addresses the zone shown, is each zone's own and survives the
+next start. `PlayerZone.volume` hands it to a front end; iOS reads its slider's first position from it and keeps no
+volume preference of its own
+(`each_zones_volume_is_kept_where_it_moved_and_a_zone_opens_at_the_volume_it_was_kept_at`,
+`the_first_zone_reopens_at_the_volume_kept_beside_it_and_full_without_one`,
+`a_catalog_of_before_zones_kept_their_volume_gains_a_full_one_for_each`).
+
 **A handover to another device is sync's**: the phones already continue another device's queue
-(`sync_continue_from`, into the zone shown) and offer theirs (the first zone's, `FEATURES.md`).
+(`sync_continue_from`, into the zone shown) and offer the zone shown's queue and place
+(`DocumentCatalog::resumption` reads the shown zone's `QueueKept` through the `shown` cell `Playing`
+shares with it, the first zone's `queue` and `resume` while it is shown;
+`a_handoff_offers_the_queue_and_place_of_the_zone_shown_and_not_the_first_zones`).
 
 ## TIDAL sign-in
 

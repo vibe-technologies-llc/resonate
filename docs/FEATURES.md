@@ -21,14 +21,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   `build-std`
 
 ## Playback and output
-- [S · 0.4.0] A phone offers its other devices only its first zone's queue to continue: sync's
-  handoff reads the first zone's saved place (`DocumentCatalog::resumption` over `queue` and
-  `resume`), never the zone shown, so a song handed to a second zone cannot be continued elsewhere
-- [S · 0.4.0] A phone keeps no zone's volume: a zone reopens at full volume at the next start, where
-  the desktop keeps each zone's volume beside its device
-- [S · 0.4.0] Two Android zones are never refused one output: each zone reports a sink of its own,
-  so two zones bound to one USB DAC both ask the bit-perfect mixer for it and Android decides,
-  where the desktop refuses a device another zone holds bit-perfect
 - [S · 0.4.0] A handover between zones is aligned on the moment each callback ran plus the latency
   its stream clock last read, not on the device's own timestamp (`pw_time.now` with its `delay`,
   Oboe's `getTimestamp`, RemoteIO's `AudioTimeStamp`), so two zones meet only as closely as a

@@ -228,18 +228,6 @@ let interactionNotAllowed: Int32 = -25308
         #expect(read.quality == defaultPlaybackPreferences().quality)
     }
 
-    @Test func theVolumeIsOneUntilSetAndHeldBetweenSilenceAndFull() {
-        #expect(store.volume == 1)
-
-        store.volume = 0.25
-        #expect(store.volume == 0.25)
-
-        defaults.first.set(7.0, forKey: "player-volume")
-        #expect(store.volume == 1)
-        defaults.first.set(-3.0, forKey: "player-volume")
-        #expect(store.volume == 0)
-    }
-
     @Test func aCurveIsKeptAsTextAndKeepsItsNameAndBands() {
         let curve = EqualiserCurve(
             name: "My headphones",

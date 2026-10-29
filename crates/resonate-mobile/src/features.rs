@@ -268,8 +268,13 @@ pub(crate) fn named_on_the_phone(id: u64, track: &Track) -> Result<TrackToAsk> {
 #[uniffi::export]
 impl MobilePlayer {
     pub fn select_output(&self, device: i32) -> Result<()> {
-        let routing = self.playing.zoned(self.playing.shown())?.routing.clone();
-        if device < 0 || !routing.select(device) {
+        let shown = self.playing.shown();
+        let routing = self.playing.zoned(shown)?.routing.clone();
+        if device < 0 {
+            return Err(Error::OutputUnavailable);
+        }
+        self.playing.refusing_a_device_held(shown, device)?;
+        if !routing.select(device) {
             return Err(Error::OutputUnavailable);
         }
         self.command(resonate_engine::Command::SetSink(None))

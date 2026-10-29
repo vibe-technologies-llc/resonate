@@ -243,8 +243,12 @@ impl MobilePlayer {
             },
         )?);
         let routing = Arc::new(output::Routing::new());
-        let player = output::player(EngineConfig::default(), Arc::clone(&sources), &routing)?;
         let kept = catalog.kept_zones()?;
+        let config = EngineConfig {
+            volume: zoning::first_zones_volume(&kept),
+            ..EngineConfig::default()
+        };
+        let player = output::player(config, Arc::clone(&sources), &routing)?;
         let engines: Box<zoning::Engines> = {
             let sources = Arc::clone(&sources);
             Box::new(
@@ -553,6 +557,7 @@ impl MobilePlayer {
 
 impl MobilePlayer {
     fn save_zone(&self, zone: &resonate_engine::Zone) -> Result<()> {
+        self.keep_volume_of(zone)?;
         let zoned = self.playing.zoned(zone.id)?;
         let mut saved = zoned.saved.lock();
         let (place, rows) = {

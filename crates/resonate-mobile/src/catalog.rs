@@ -168,6 +168,10 @@ CREATE TABLE zone_queue (
 ) STRICT;
 ";
 
+const ZONES_KEEP_THEIR_VOLUME: &str = "
+ALTER TABLE zones ADD COLUMN volume REAL NOT NULL DEFAULT 1.0 CHECK (volume >= 0.0 AND volume <= 1.0);
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     LISTENS_NAME_THEIR_ORIGIN,
@@ -187,6 +191,7 @@ const MIGRATIONS: &[&str] = &[
     STUDIES_KEEP_WHERE_THEIR_PEAKS_GATHER,
     PEAKS_KEPT_AS_ONE_MOMENT_ARE_MEASURED_AGAIN,
     ZONES_KEEP_THEIR_OWN_QUEUES,
+    ZONES_KEEP_THEIR_VOLUME,
 ];
 
 #[cfg(test)]
@@ -722,19 +727,21 @@ impl Catalog {
             .optional()
             .map_err(|source| Error::store(StoreOp::Read, source))?
             .unwrap_or((0, 0));
-        let (at, position) = place_among_rows_of(&connection, zone, at, position)
+        let (at, position) = place_among_rows(&connection, zone, at, position)
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         Ok((ids, at as u32, position))
     }
 }
 
-struct QueueKept {
+pub(crate) struct QueueKept {
     cleared: &'static str,
     row: &'static str,
     place: &'static str,
     rows: &'static str,
-    read_place: &'static str,
+    pub(crate) read_place: &'static str,
     among: &'static str,
+    pub(crate) held: &'static str,
+    pub(crate) window: &'static str,
 }
 
 impl QueueKept {
@@ -745,6 +752,8 @@ impl QueueKept {
         rows: "SELECT track FROM queue WHERE ?1 = ?1 ORDER BY position",
         read_place: "SELECT row_at, position_ms FROM resume WHERE id = 1 AND ?1 = ?1",
         among: "SELECT (SELECT count(*) FROM queue WHERE position < ?2), EXISTS(SELECT 1 FROM queue WHERE position = ?2), (SELECT count(*) FROM queue) WHERE ?1 = ?1",
+        held: "SELECT count(*) FROM queue q JOIN documents d ON d.id = q.track WHERE ?1 = ?1",
+        window: "FROM queue q JOIN documents d ON d.id = q.track WHERE ?1 = ?1 ORDER BY q.position LIMIT ?2 OFFSET ?3",
     };
 
     const ANOTHER: Self = Self {
@@ -754,9 +763,11 @@ impl QueueKept {
         rows: "SELECT track FROM zone_queue WHERE zone = ?1 ORDER BY position",
         read_place: "SELECT row_at, position_ms FROM zone_resume WHERE zone = ?1",
         among: "SELECT (SELECT count(*) FROM zone_queue WHERE zone = ?1 AND position < ?2), EXISTS(SELECT 1 FROM zone_queue WHERE zone = ?1 AND position = ?2), (SELECT count(*) FROM zone_queue WHERE zone = ?1)",
+        held: "SELECT count(*) FROM zone_queue q JOIN documents d ON d.id = q.track WHERE q.zone = ?1",
+        window: "FROM zone_queue q JOIN documents d ON d.id = q.track WHERE q.zone = ?1 ORDER BY q.position LIMIT ?2 OFFSET ?3",
     };
 
-    const fn of(zone: ZoneId) -> &'static Self {
+    pub(crate) const fn of(zone: ZoneId) -> &'static Self {
         if zone.is_first() {
             &Self::FIRST
         } else {
@@ -766,14 +777,6 @@ impl QueueKept {
 }
 
 pub(crate) fn place_among_rows(
-    connection: &rusqlite::Connection,
-    row_at: i64,
-    position_ms: u64,
-) -> rusqlite::Result<(usize, u64)> {
-    place_among_rows_of(connection, ZoneId::FIRST, row_at, position_ms)
-}
-
-fn place_among_rows_of(
     connection: &rusqlite::Connection,
     zone: ZoneId,
     row_at: i64,
@@ -837,6 +840,8 @@ mod tests {
         env, fs,
         time::{SystemTime, UNIX_EPOCH},
     };
+
+    use resonate_core::Volume;
 
     use super::*;
 
@@ -1257,6 +1262,50 @@ mod tests {
         assert_eq!(after_retitle, 1);
         assert_eq!(after_touch, 0);
         drop(held);
+        drop(opened);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn a_catalog_of_before_zones_kept_their_volume_gains_a_full_one_for_each() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock")
+            .as_nanos();
+        let path = env::temp_dir().join(format!("resonate-mobile-volumes-{unique}.sqlite"));
+        let connection = Connection::open(&path).expect("a database");
+        connection
+            .create_scalar_function(
+                "folded",
+                1,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
+            )
+            .expect("the fold");
+        for step in &MIGRATIONS[..laid_before(ZONES_KEEP_THEIR_VOLUME)] {
+            connection.execute_batch(step).expect("an earlier version");
+        }
+        connection
+            .execute_batch(
+                "INSERT INTO zones (id, name, route) VALUES (2, 'Kitchen', 'v1:usb:dac')",
+            )
+            .expect("a zone of before");
+        connection
+            .pragma_update(
+                None,
+                "user_version",
+                u32::try_from(laid_before(ZONES_KEEP_THEIR_VOLUME)).expect("a count"),
+            )
+            .expect("its stamp");
+        drop(connection);
+
+        let opened = Catalog::open(&path).expect("migrated");
+        let kept = opened.kept_zones().expect("the zones");
+        let refused = opened.0.lock().execute("UPDATE zones SET volume = 1.5", []);
+
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].volume, Volume::MAX);
+        assert!(refused.is_err());
         drop(opened);
         let _ = fs::remove_file(path);
     }

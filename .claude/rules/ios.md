@@ -424,7 +424,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   lands after the snapshot that changed the song, counting 0 rows until then) stayed off on the
   watch until something else rewrote the info, while the phone's lock screen, reading the commands
   live, showed it.
-- **The Processing page's *Player volume* is the engine's own trim, kept by `Library.setVolume` (`player-volume` in the `playback` suite) and sent again when the player opens; the slider reads `Library.volume`, which moves with the finger, not the polled snapshot. A drag sends one `set_volume` at a time and the latest level after it (`volumeOwed`), wakes no poll, and is kept in the defaults once the sends catch up, so a drag never floods the transport's lane.
+- **The Processing page's *Player volume* is the engine's own trim of the zone shown, kept by the boundary beside the zone (`mobile.md`'s *Zones*), never by a preference of the app's; the slider reads `Library.volume`, which starts from the shown zone's `PlayerZone.volume` when the player opens and then moves with the finger, not the polled snapshot. A drag sends one `set_volume` at a time and the latest level after it (`volumeOwed`), wakes no poll, so a drag never floods the transport's lane.
 - **Reduce Motion is honoured by every animation, not by the three motion-heavy views alone.** An
   implicit animation goes through `.motion(_:calm:value:)` (`Appearance.swift`: none, or the calm
   fade given, under Reduce Motion), an explicit one is `withAnimation(reduceMotion ? nil : …)`, a

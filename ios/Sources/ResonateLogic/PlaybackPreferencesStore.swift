@@ -11,8 +11,6 @@ public struct PlaybackPreferencesStore: Sendable {
     private static let routeCurveNamesKey = "equaliser-curve-name-for"
     private static let routeNamesKey = "equaliser-route-names"
 
-    private static let volumeKey = "player-volume"
-
     private let suiteName: String
 
     public init(suite: String = PlaybackPreferencesStore.suite) {
@@ -20,11 +18,6 @@ public struct PlaybackPreferencesStore: Sendable {
     }
 
     private var storage: UserDefaults { UserDefaults(suiteName: suiteName) ?? .standard }
-
-    public var volume: Float {
-        get { storage.object(forKey: Self.volumeKey) == nil ? 1 : min(max(storage.float(forKey: Self.volumeKey), 0), 1) }
-        nonmutating set { storage.set(newValue, forKey: Self.volumeKey) }
-    }
 
     public func read(for route: OutputRoute?) -> PlaybackPreferences {
         var preferences = read()

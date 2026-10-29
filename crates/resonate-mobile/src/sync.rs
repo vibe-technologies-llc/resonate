@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -15,7 +15,7 @@ use parking_lot::Mutex;
 use resonate_codec::{Sources, probe_scanned};
 use resonate_core::{
     AUDIO_EXTENSIONS, Answer, Answered as Learnt, Frames, Mbid, MediaLocation, Recording,
-    Resumable, Resumption, SampleRate, SharedPrint, TrackId, WholeFile, folded_letters,
+    Resumable, Resumption, SampleRate, SharedPrint, TrackId, WholeFile, ZoneId, folded_letters,
     naming::named_within, title_words,
 };
 use resonate_engine::Command;
@@ -95,6 +95,7 @@ struct DocumentCatalog {
     landings: AtomicU64,
     indexed: Mutex<Option<(u64, Arc<Indexed>)>>,
     sheets: Arc<KeptSheets>,
+    shown: Arc<AtomicU32>,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -579,6 +580,7 @@ impl MobilePlayer {
             landings: AtomicU64::new(0),
             indexed: Mutex::new(None),
             sheets: Arc::clone(&self.services.lyrics),
+            shown: self.playing.shown_zone_cell(),
         });
         let settings = Settings {
             server: if config.nearby_only {
@@ -1319,39 +1321,34 @@ impl Catalog for DocumentCatalog {
     }
 
     fn resumption(&self) -> Answered<Option<Resumed>> {
+        let zone = ZoneId::new(self.shown.load(Ordering::Acquire)).unwrap_or(ZoneId::FIRST);
+        let kept = catalog::QueueKept::of(zone);
         let connection = self.catalog.0.lock();
         let Some((row_at, position_ms)) = connection
-            .query_row(
-                "SELECT row_at, position_ms FROM resume WHERE id = 1",
-                [],
-                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
-            )
+            .query_row(kept.read_place, [zone.get()], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+            })
             .optional()
             .map_err(unavailable)?
         else {
             return Ok(None);
         };
         let held: i64 = connection
-            .query_row(
-                "SELECT count(*) FROM queue q JOIN documents d ON d.id = q.track",
-                [],
-                |row| row.get(0),
-            )
+            .query_row(kept.held, [zone.get()], |row| row.get(0))
             .map_err(unavailable)?;
         let held = usize::try_from(held).unwrap_or_default();
         let (playing, position_ms) =
-            catalog::place_among_rows(&connection, row_at, position_ms.max(0) as u64)
+            catalog::place_among_rows(&connection, zone, row_at, position_ms.max(0) as u64)
                 .map_err(unavailable)?;
         let window = Resumed::window_around(playing, held);
         let rows = connection
-            .prepare(&format!(
-                "SELECT {RECORDING_COLUMNS} FROM queue q JOIN documents d ON d.id = q.track ORDER BY q.position LIMIT ?1 OFFSET ?2"
-            ))
+            .prepare(&format!("SELECT {RECORDING_COLUMNS} {}", kept.window))
             .and_then(|mut query| {
                 query
-                    .query_map([window.len() as i64, window.start as i64], |row| {
-                        recording_at(row, 0)
-                    })?
+                    .query_map(
+                        params![zone.get(), window.len() as i64, window.start as i64],
+                        |row| recording_at(row, 0),
+                    )?
                     .collect::<rusqlite::Result<Vec<_>>>()
             })
             .map_err(unavailable)?;
@@ -1946,6 +1943,7 @@ mod tests {
             landings: AtomicU64::new(0),
             indexed: Mutex::new(None),
             sheets: Arc::clone(&player.services.lyrics),
+            shown: player.playing.shown_zone_cell(),
         }
     }
 
@@ -3113,5 +3111,95 @@ mod tests {
         assert_eq!(resumed.rows[resumed.at as usize].title, "Song 600");
         assert_eq!(resumed.position, Duration::from_secs(90));
         assert!(resumed.rows.len() <= 500);
+    }
+
+    #[test]
+    fn a_handoff_offers_the_queue_and_place_of_the_zone_shown_and_not_the_first_zones() {
+        let folder = folder("zone-handoff");
+        let player = player(&folder);
+        let first: Vec<u64> = ["One", "Two"]
+            .iter()
+            .map(|title| {
+                song(
+                    &player,
+                    &format!("content://test/{title}.flac"),
+                    title,
+                    None,
+                )
+                .id
+            })
+            .collect();
+        let kitchen: Vec<u64> = ["Three", "Four", "Five"]
+            .iter()
+            .map(|title| {
+                song(
+                    &player,
+                    &format!("content://test/{title}.flac"),
+                    title,
+                    None,
+                )
+                .id
+            })
+            .collect();
+        let zone = ZoneId::new(2).expect("a second zone");
+        player
+            .catalog
+            .keep_zone(&crate::zoning::KeptZone {
+                id: zone,
+                name: "Kitchen".into(),
+                route: String::new(),
+                volume: resonate_core::Volume::MAX,
+            })
+            .expect("a kept zone");
+        player
+            .catalog
+            .save_queue_of(ZoneId::FIRST, &first, 1, 20_000)
+            .expect("the first zone's queue");
+        player
+            .catalog
+            .save_queue_of(zone, &kitchen, 2, 40_000)
+            .expect("the kitchen's queue");
+        let documents = documents_of(&player, &folder);
+
+        let from_the_first = documents
+            .resumption()
+            .expect("answered")
+            .expect("a resumption");
+        player
+            .playing
+            .shown_zone_cell()
+            .store(zone.get(), Ordering::Release);
+        let from_the_kitchen = documents
+            .resumption()
+            .expect("answered")
+            .expect("a resumption");
+        player.playing.shown_zone_cell().store(9, Ordering::Release);
+        let from_a_zone_without_a_queue = documents.resumption().expect("answered");
+
+        let _ = fs::remove_dir_all(folder);
+        assert_eq!(
+            from_the_first
+                .rows
+                .iter()
+                .map(|row| row.title.as_str())
+                .collect::<Vec<_>>(),
+            vec!["One", "Two"]
+        );
+        assert_eq!(from_the_first.rows[from_the_first.at as usize].title, "Two");
+        assert_eq!(from_the_first.position, Duration::from_secs(20));
+        assert_eq!(
+            from_the_kitchen
+                .rows
+                .iter()
+                .map(|row| row.title.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Three", "Four", "Five"]
+        );
+        assert_eq!(
+            from_the_kitchen.rows[from_the_kitchen.at as usize].title,
+            "Five"
+        );
+        assert_eq!(from_the_kitchen.position, Duration::from_secs(40));
+        assert!(from_a_zone_without_a_queue.is_none());
     }
 }
