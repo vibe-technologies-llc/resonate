@@ -444,7 +444,7 @@ impl MobilePlayer {
     pub fn load_served(&self, uris: Vec<String>, start_at: u32, autoplay: bool) -> Result<()> {
         let items = self.served_items(uris, &QueueRows::default())?;
         if !autoplay {
-            return self.command(Command::Resume(paused(items, start_at as usize)));
+            return self.command_landed(Command::Resume(paused(items, start_at as usize)));
         }
         self.command(Command::Load {
             items,

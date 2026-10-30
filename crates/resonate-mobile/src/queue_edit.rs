@@ -80,6 +80,15 @@ impl MobilePlayer {
             .collect()
     }
 
+    pub(crate) fn command_landed(&self, command: Command) -> Result<()> {
+        let landing = self
+            .playing
+            .player_of(self.playing.shown())?
+            .settle(command)?;
+
+        Ok(landing.wait_for(EDIT_ANSWERED_WITHIN)?)
+    }
+
     pub(crate) fn edit_queue(
         &self,
         edit: impl FnOnce(&Queued, &PlayerState) -> Result<Option<Command>>,

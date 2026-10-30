@@ -423,7 +423,10 @@ mod tests {
 
         let taps = read.at(read.rate()).expect("taps");
         let firsts: Vec<f64> = taps.iter().map(|channel| channel[0]).collect();
-        for (heard, wanted) in firsts.iter().zip([0.1, 0.2, 0.1, 0.2]) {
+        for (heard, wanted) in firsts
+            .iter()
+            .zip([0.4 / 3.0, 0.7 / 3.0, 0.5 / 3.0, 0.8 / 3.0])
+        {
             assert!((heard - wanted).abs() < 1e-9, "{firsts:?}");
         }
     }

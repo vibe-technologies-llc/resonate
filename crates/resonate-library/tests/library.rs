@@ -23572,11 +23572,11 @@ fn turning_metered(when: TurnsMetered) -> Result<TurningMetered> {
 #[test]
 fn an_offer_found_as_the_connection_turned_metered_is_not_opened_until_it_is_not() -> Result<()> {
     let TurningMetered {
+        _tree,
         library,
         metering,
         opened,
         providers,
-        ..
     } = turning_metered(TurnsMetered::WhenAsked)?;
 
     let polling = library.poll(providers, PollOptions::default())?;
@@ -23598,6 +23598,7 @@ fn an_offer_found_as_the_connection_turned_metered_is_not_opened_until_it_is_not
 fn a_download_under_way_stops_reading_when_the_connection_turns_metered_and_finishes_when_it_is_not()
 -> Result<()> {
     let TurningMetered {
+        _tree,
         library,
         metering,
         providers,

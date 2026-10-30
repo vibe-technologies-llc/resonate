@@ -123,6 +123,13 @@ writes nothing** (`place_to_save`): a place of 0 would rewrite the queue over th
 reached, and the previous place stays true until the new row publishes
 (`a_save_waits_for_the_row_opening_to_publish_its_place`).
 
+**A paused load waits to land, and its refusal is still told by the snapshot.** `load` and
+`load_served` without autoplay send `Command::Resume` through `command_landed` (`Player::settle`),
+which waits for the engine to publish the queue and leaves a refusal an announced event, so the next
+queue edit reads the revision the load made and never meets `QueueChanged`
+(`a_queue_holding_served_songs_is_kept_with_their_names_and_resumed_from_their_uris`,
+`a_failure_the_engine_reports_is_told_by_one_snapshot_and_by_no_other`). An autoplaying load is not waited for.
+
 ## The catalog does not hold the transport
 
 Nothing the transport needs waits on the catalog's one connection. `snapshot` copies the engine's

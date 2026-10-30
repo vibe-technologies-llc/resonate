@@ -339,12 +339,13 @@ impl PollProgress {
         }
     }
 
-    fn waits_out_the_meter(&self, gate: &Gate) {
+    fn waits_out_the_meter(&self, gate: &Gate) -> bool {
         while gate.is_shut() && !self.is_cancelled() {
             self.waits_on_the_meter(true);
             gate.wait_while_shut(HEEDED_EVERY);
         }
         self.waits_on_the_meter(false);
+        gate.is_shut()
     }
 
     pub fn is_cancelled(&self) -> bool {
@@ -1179,8 +1180,8 @@ impl<'a> Lanes<'a> {
 
     fn offer_landed(&self, want: &Want, delivered: Delivered) -> Result<Offer> {
         let progress = self.progress;
-        progress.waits_out_the_meter(&self.library.download_gate());
-        if progress.is_cancelled() {
+        let held_by_the_meter = progress.waits_out_the_meter(&self.library.download_gate());
+        if held_by_the_meter && progress.is_cancelled() {
             return Ok(Offer::Settled(Flow::Stop));
         }
         progress.opens_from(want.id, &delivered.provider);

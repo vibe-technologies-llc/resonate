@@ -409,7 +409,7 @@ impl MobilePlayer {
             })
             .collect::<Result<Vec<_>>>()?;
         if !autoplay {
-            return self.command(Command::Resume(Resumption {
+            return self.command_landed(Command::Resume(Resumption {
                 rows: items
                     .into_iter()
                     .map(|item| Resumable {
