@@ -56,15 +56,15 @@ sudo dnf install git rpm-build cargo rust clang gcc pkgconf-pkg-config pipewire-
   wayland-devel libxkbcommon-devel libxkbcommon-x11-devel fontconfig-devel \
   freetype-devel vulkan-headers vulkan-loader-devel
 mkdir -p "$HOME/rpmbuild/SOURCES"
-git archive --format=tar.gz --prefix=resonate-0.2.0/ HEAD \
-  -o "$HOME/rpmbuild/SOURCES/resonate-0.2.0.tar.gz"
+git archive --format=tar.gz --prefix=resonate-0.3.0/ HEAD \
+  -o "$HOME/rpmbuild/SOURCES/resonate-0.3.0.tar.gz"
 rpmbuild -ba packaging/resonate.spec
-sudo dnf install "$HOME"/rpmbuild/RPMS/$(uname -m)/resonate-0.2.0-1.fc44.$(uname -m).rpm
+sudo dnf install "$HOME"/rpmbuild/RPMS/$(uname -m)/resonate-0.3.0-1.fc44.$(uname -m).rpm
 ```
 
 The spec builds the default feature set and installs the launcher, icon, metainfo, man pages and
 shell completions. The build needs access to crates.io for Cargo's locked dependencies.
-Publishing a GitHub release tagged `v0.2.0` or `0.2.0` builds the Fedora 44 x86_64 RPM and attaches
+Publishing a GitHub release tagged `v0.3.0` or `0.3.0` builds the Fedora 44 x86_64 RPM and attaches
 it and the source RPM to that release. The tag must match the spec version. No release is
 published yet.
 

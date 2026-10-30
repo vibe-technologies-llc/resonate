@@ -1,6 +1,6 @@
 pkgname=resonate
 _pkgname=resonate
-_version=0.2.0
+_version=0.3.0
 pkgver=${_version//-/}
 pkgrel=1
 pkgdesc='A high-fidelity music player with native PipeWire output (needs an x86-64-v3 CPU)'
