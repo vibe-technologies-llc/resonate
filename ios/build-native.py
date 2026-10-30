@@ -110,11 +110,11 @@ library = target / TRIPLE / args.profile / LIBRARY
 
 host = os.environ.copy()
 host.update(CARGO_TARGET_DIR=str(target), RUSTFLAGS="")
-run([cargo, "build", "--locked", "-p", "resonate-bindgen"], host)
+run([cargo, "build", "--locked", "--release", "-p", "resonate-bindgen"], host)
 bindings = target / "bindings"
 shutil.rmtree(bindings, ignore_errors=True)
 bindings.mkdir(parents=True)
-bindgen = [str(target / "debug/resonate-bindgen"), "generate", "--language", "swift", "--no-format", "--config", "crates/resonate-mobile/uniffi.toml", "--out-dir", str(bindings)]
+bindgen = [str(target / "release/resonate-bindgen"), "generate", "--language", "swift", "--no-format", "--config", "crates/resonate-mobile/uniffi.toml", "--out-dir", str(bindings)]
 try:
     run(bindgen + ["--library", str(library)], host)
 except subprocess.CalledProcessError:
