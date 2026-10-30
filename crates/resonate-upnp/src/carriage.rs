@@ -18,6 +18,13 @@ const RATES_OFFERED: [SampleRate; 6] = [
 
 const FLAC_RATES_UNSAID_AT_MOST_HZ: u32 = 96_000;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum FlacUnsaid {
+    #[default]
+    UpTo96kHz,
+    AnyRate,
+}
+
 const L16_RATES_UNSAID: [SampleRate; 2] = [SampleRate::HZ_44100, SampleRate::HZ_48000];
 
 const CHANNELS_AT_MOST: u8 = 8;
@@ -114,7 +121,7 @@ impl Carriage {
         self.wrapping.extension()
     }
 
-    pub(crate) fn accepted_by(sink: &str) -> Vec<Self> {
+    pub(crate) fn accepted_by(sink: &str, flac_unsaid: FlacUnsaid) -> Vec<Self> {
         let mut flac = Seen::default();
         let mut wave = Seen::default();
         let mut l16 = Seen::default();
@@ -139,17 +146,17 @@ impl Carriage {
 
         let mut carriages = Vec::new();
         if flac.entries > 0 {
-            let carriage = flac.carriage(Wrapping::Flac, &RATES_OFFERED);
+            let carriage = flac.carriage(Wrapping::Flac, &RATES_OFFERED, flac_unsaid);
             if !carriage.rates.is_empty() {
                 carriages.push(carriage);
             }
         }
         if wave.entries > 0 {
             wave.rates.clear();
-            carriages.push(wave.carriage(Wrapping::Wave, &RATES_OFFERED));
+            carriages.push(wave.carriage(Wrapping::Wave, &RATES_OFFERED, flac_unsaid));
         }
         if l16.entries > 0 {
-            carriages.push(l16.carriage(Wrapping::L16, &L16_RATES_UNSAID));
+            carriages.push(l16.carriage(Wrapping::L16, &L16_RATES_UNSAID, flac_unsaid));
         }
         carriages
     }
@@ -183,10 +190,15 @@ impl Seen {
         }
     }
 
-    fn carriage(self, wrapping: Wrapping, unsaid: &[SampleRate]) -> Carriage {
+    fn carriage(
+        self,
+        wrapping: Wrapping,
+        unsaid: &[SampleRate],
+        flac_unsaid: FlacUnsaid,
+    ) -> Carriage {
         let stated = !self.rates.is_empty();
         let mut rates = if stated { self.rates } else { unsaid.to_vec() };
-        if wrapping == Wrapping::Flac && !stated {
+        if wrapping == Wrapping::Flac && !stated && flac_unsaid == FlacUnsaid::UpTo96kHz {
             rates.retain(|rate| rate.hz() <= FLAC_RATES_UNSAID_AT_MOST_HZ);
         }
         let counts = if self.counts.is_empty() {
@@ -250,6 +262,10 @@ pub(crate) fn unite(carriages: &[Carriage]) -> (Vec<SinkFormats>, Vec<SampleRate
 mod tests {
     use super::*;
 
+    fn accepted(sink: &str) -> Vec<Carriage> {
+        Carriage::accepted_by(sink, FlacUnsaid::default())
+    }
+
     fn stereo(rate: SampleRate, format: SampleFormat) -> StreamSpec {
         StreamSpec::new(rate, ChannelLayout::Stereo, format)
     }
@@ -262,7 +278,7 @@ mod tests {
         let flac = "http-get:*:audio/wav:*,http-get:*:audio/x-flac:*,http-get:*:audio/flac:*";
 
         let wrappings = |sink| {
-            Carriage::accepted_by(sink)
+            accepted(sink)
                 .iter()
                 .map(Carriage::wrapping)
                 .collect::<Vec<_>>()
@@ -275,16 +291,16 @@ mod tests {
         assert!(wrappings("http-get:*:audio/mpeg:*").is_empty());
 
         assert_eq!(
-            Carriage::accepted_by(l16)[0].rates(),
+            accepted(l16)[0].rates(),
             [SampleRate::HZ_48000, SampleRate::HZ_44100]
         );
-        assert_eq!(Carriage::accepted_by(bare)[0].rates(), L16_RATES_UNSAID);
+        assert_eq!(accepted(bare)[0].rates(), L16_RATES_UNSAID);
     }
 
     #[test]
     fn a_carriage_takes_sixteen_and_twenty_four_bit_stereo_and_only_what_the_renderer_said_beyond()
     {
-        let wave = &Carriage::accepted_by("http-get:*:audio/wav:*")[0];
+        let wave = &accepted("http-get:*:audio/wav:*")[0];
 
         assert!(wave.carries(stereo(SampleRate::HZ_96000, SampleFormat::S24)));
         assert!(!wave.carries(stereo(SampleRate::HZ_96000, SampleFormat::F32)));
@@ -294,29 +310,50 @@ mod tests {
             SampleFormat::S16
         )));
 
-        let l16 = &Carriage::accepted_by("http-get:*:audio/L16;rate=44100;channels=2:*")[0];
+        let l16 = &accepted("http-get:*:audio/L16;rate=44100;channels=2:*")[0];
         assert!(!l16.carries(stereo(SampleRate::HZ_44100, SampleFormat::S24)));
         assert!(!l16.carries(stereo(SampleRate::HZ_48000, SampleFormat::S16)));
     }
 
     #[test]
     fn flac_is_offered_up_to_ninety_six_kilohertz_unless_the_renderer_states_a_higher_rate() {
-        let flac = &Carriage::accepted_by("http-get:*:audio/flac:*")[0];
+        let flac = &accepted("http-get:*:audio/flac:*")[0];
 
         assert!(flac.carries(stereo(SampleRate::HZ_96000, SampleFormat::S24)));
         assert!(!flac.carries(stereo(SampleRate::HZ_192000, SampleFormat::S16)));
 
-        let stated = &Carriage::accepted_by(
-            "http-get:*:audio/flac;rate=96000:*,http-get:*:audio/flac;rate=192000:*",
-        )[0];
+        let stated =
+            &accepted("http-get:*:audio/flac;rate=96000:*,http-get:*:audio/flac;rate=192000:*")[0];
         assert!(stated.carries(stereo(SampleRate::HZ_192000, SampleFormat::S24)));
         assert!(stated.carries(stereo(SampleRate::HZ_96000, SampleFormat::S24)));
         assert!(!stated.carries(stereo(SampleRate::HZ_44100, SampleFormat::S24)));
     }
 
     #[test]
+    fn a_renderer_vouched_for_is_offered_flac_at_every_rate_but_one_that_states_rates_keeps_them() {
+        let said = "http-get:*:audio/flac:*,http-get:*:audio/wav:*";
+        let vouched = &Carriage::accepted_by(said, FlacUnsaid::AnyRate)[0];
+
+        assert_eq!(vouched.wrapping(), Wrapping::Flac);
+        assert_eq!(vouched.rates(), RATES_OFFERED);
+        assert!(vouched.carries(stereo(SampleRate::HZ_192000, SampleFormat::S24)));
+        assert!(!vouched.carries(StreamSpec::new(
+            SampleRate::HZ_48000,
+            ChannelLayout::Surround51,
+            SampleFormat::S24
+        )));
+
+        let stated =
+            &Carriage::accepted_by("http-get:*:audio/flac;rate=48000:*", FlacUnsaid::AnyRate)[0];
+        assert_eq!(stated.rates(), [SampleRate::HZ_48000]);
+
+        let wave = &Carriage::accepted_by("http-get:*:audio/wav:*", FlacUnsaid::AnyRate)[0];
+        assert_eq!(wave.wrapping(), Wrapping::Wave);
+    }
+
+    #[test]
     fn channels_beyond_stereo_are_offered_only_where_the_protocol_info_states_them() {
-        let said = Carriage::accepted_by(
+        let said = accepted(
             "http-get:*:audio/flac;channels=2:*,http-get:*:audio/flac;channels=6:*,http-get:*:audio/flac;channels=3:*",
         );
         let flac = &said[0];
@@ -341,7 +378,7 @@ mod tests {
 
     #[test]
     fn what_several_wrappings_carry_is_united_and_the_rates_sorted() {
-        let carriages = Carriage::accepted_by(
+        let carriages = accepted(
             "http-get:*:audio/flac:*,http-get:*:audio/wav:*,http-get:*:audio/L16;rate=44100;channels=2:*",
         );
         let (formats, rates) = unite(&carriages);

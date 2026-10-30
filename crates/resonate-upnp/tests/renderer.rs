@@ -28,7 +28,7 @@ use resonate_engine::{
     Command, EngineConfig, Equalisation, Event, Levelling, NodeName, Player, Preamp,
     Profile as EqProfile, QueueItem, ReplayGainMode,
 };
-use resonate_upnp::{Beside, FirstSearch, Network, Searching};
+use resonate_upnp::{Beside, FirstSearch, Network, Searching, Udn, Vouched};
 
 const UDN: &str = "uuid:fake-renderer";
 
@@ -1480,4 +1480,109 @@ fn a_rate_flac_cannot_carry_is_sent_as_wave_to_a_renderer_taking_both() {
     assert_eq!(&heard.fetched[..4], b"RIFF");
     let packed = packed_words(&Pattern::expected(2, frames));
     assert_eq!(&heard.fetched[WAVE_HEADER_BYTES..], packed.as_slice());
+}
+
+const FLAC_ALONE: &str = "http-get:*:audio/mpeg:*,http-get:*:audio/flac:*";
+
+fn network_vouching(fake: &Fake, vouched: Vouched) -> Network {
+    let network = Network::resting(fake.searching()).expect("rests");
+    network.vouch(vouched);
+    network.look(FirstSearch::Awaited).expect("searches");
+    network
+}
+
+fn high_flac() -> StreamSpec {
+    StreamSpec::new(
+        SampleRate::HZ_192000,
+        ChannelLayout::Stereo,
+        SampleFormat::S24,
+    )
+}
+
+#[test]
+fn a_renderer_taking_flac_alone_is_offered_it_above_ninety_six_kilohertz_only_when_the_listener_vouches()
+ {
+    for vouched in [
+        Vouched::default(),
+        Vouched::flac_at_any_rate([Udn::new("uuid:another-renderer")]),
+    ] {
+        let fake = Fake::with(Profile {
+            sink: FLAC_ALONE,
+            openhome: false,
+        });
+        let network = network_vouching(&fake, vouched);
+        let sink = the_renderer(&network);
+        let backend = Beside::over(Box::new(NoGraph::new()), Arc::new(network));
+
+        assert!(!sink.supports(high_flac()));
+        assert!(sink.supports(StreamSpec::new(
+            SampleRate::HZ_96000,
+            ChannelLayout::Stereo,
+            SampleFormat::S24
+        )));
+        assert!(pattern_stream(&backend, &sink, high_flac(), 1_000).is_err());
+        assert_eq!(fake.heard.lock().offered, None);
+    }
+
+    let fake = Fake::with(Profile {
+        sink: FLAC_ALONE,
+        openhome: false,
+    });
+    let network = network_vouching(&fake, Vouched::flac_at_any_rate([Udn::new(UDN)]));
+    let sink = the_renderer(&network);
+    let backend = Beside::over(Box::new(NoGraph::new()), Arc::new(network));
+    let frames = 192_000 / 3;
+
+    assert!(sink.supports(high_flac()));
+    assert!(!sink.supports(StreamSpec::new(
+        SampleRate::HZ_192000,
+        ChannelLayout::Surround51,
+        SampleFormat::S24
+    )));
+
+    let stream =
+        pattern_stream(&backend, &sink, high_flac(), frames).expect("the renderer takes it");
+    stream.set_active(true).expect("plays");
+    stream.drain().expect("drains");
+    fake.until("the fetch to end once drained", |heard| heard.fetch_ended);
+    stream.close().expect("closes");
+
+    let tree = Tree::new();
+    let heard = fake.heard.lock();
+    let offered = heard.offered.as_deref().expect("an address was offered");
+    assert!(offered.ends_with(".flac"), "offered {offered}");
+    assert_eq!(heard.fetched.get(..4), Some(&b"fLaC"[..]));
+    assert_eq!(
+        decoded(&tree, &heard.fetched, SampleFormat::S24),
+        Pattern::expected(2, frames)
+    );
+}
+
+#[test]
+fn a_vouched_renderer_taking_flac_and_wave_is_sent_flac_at_a_rate_it_would_otherwise_be_sent_as_wave()
+ {
+    let fake = Fake::with(Profile {
+        sink: FLAC_AND_WAVE,
+        openhome: false,
+    });
+    let network = network_vouching(&fake, Vouched::flac_at_any_rate([Udn::new(UDN)]));
+    let sink = the_renderer(&network);
+    let backend = Beside::over(Box::new(NoGraph::new()), Arc::new(network));
+    let frames = 192_000 / 4;
+
+    let stream =
+        pattern_stream(&backend, &sink, high_flac(), frames).expect("the renderer takes it");
+    stream.set_active(true).expect("plays");
+    stream.drain().expect("drains");
+    fake.until("the fetch to end once drained", |heard| heard.fetch_ended);
+    stream.close().expect("closes");
+
+    let tree = Tree::new();
+    let heard = fake.heard.lock();
+    let offered = heard.offered.as_deref().expect("an address was offered");
+    assert!(offered.ends_with(".flac"), "offered {offered}");
+    assert_eq!(
+        decoded(&tree, &heard.fetched, SampleFormat::S24),
+        Pattern::expected(2, frames)
+    );
 }

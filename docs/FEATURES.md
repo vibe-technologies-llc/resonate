@@ -136,13 +136,14 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   the player serves) would be one more sink kind beside them
 - [L] The phones reach no network renderer at all, though their zones open over the same `Backend`
   seam the desktop's renderers sit behind
-- [S] A UPnP renderer is sent FLAC above 96 kHz only where its protocol info states the rate
-  (`audio/flac;rate=192000`); one that says nothing is offered FLAC up to 96 kHz, so a streamer
-  taking FLAC alone has 176.4 and 192 kHz material resampled to 96 kHz by the engine though it
-  might decode the rate, and one taking WAVE is sent uncompressed PCM, about 9 Mbit/s at 24-bit
-  192 kHz. Channels beyond stereo are offered only where the protocol info states `channels=N` (a
-  renderer saying nothing is folded down), and handing the untouched file over does not fit the
-  sink seam (`upnp.md`)
+- [S] A UPnP renderer that states no rate is sent FLAC above 96 kHz only where the listener names
+  it in `flac-above-96k-for` (`upnp.md`): the settings pane has no row for it, and nothing learns
+  which renderers decode 176.4 and 192 kHz FLAC, since the protocol info does not say and a
+  renderer that cannot play a stream gives no answer a try could read, so the default stays 96 kHz
+  (and the fake renderer's tests are all the proof the vouched rates have, no streamer having
+  confirmed any); one taking WAVE is sent uncompressed PCM, about 9 Mbit/s at 24-bit 192 kHz.
+  Channels beyond stereo are offered only where the protocol info states `channels=N` (a renderer
+  saying nothing is folded down), and handing the untouched file over does not fit the sink seam
 - [L · blocked: Apple] AirPlay 2 cannot be played to: its pairing, encryption and buffered audio
   are Apple's own, with no published specification to build against
 

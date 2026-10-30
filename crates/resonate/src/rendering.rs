@@ -21,7 +21,11 @@ impl Rendering {
         } else {
             FirstSearch::Behind
         };
-        match Network::start(Searching::on_the_network(), first) {
+        let network = Network::resting(Searching::on_the_network()).and_then(|network| {
+            network.vouch(config.renderers_vouched_for());
+            network.look(first).map(|()| network)
+        });
+        match network {
             Ok(network) => Self(Some(Arc::new(network))),
             Err(error) => {
                 tracing::warn!(%error, "the network could not be searched for renderers");
@@ -40,6 +44,7 @@ impl Rendering {
                 return Self(None);
             }
         };
+        network.vouch(config.renderers_vouched_for());
         if names_one || config.looks_for_renderers() {
             let first = if names_one {
                 FirstSearch::Awaited

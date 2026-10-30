@@ -21,6 +21,6 @@ pub use crate::{
     error::{Action, Asked, Error, FlacOp, Result, SearchOp, ServeOp},
     located::Located,
     network::{FirstSearch, Network, Searching},
-    renderer::{RENDERER_NODES, Renderer, Udn},
+    renderer::{RENDERER_NODES, Renderer, Udn, Vouched},
     ssdp::{RENDERER_TYPE, SSDP},
 };

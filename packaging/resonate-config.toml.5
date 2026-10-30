@@ -191,6 +191,15 @@ Boolean. Search the local network for UPnP media renderers and list each as an o
 sound server's, so a zone or \fBsink\fR can play to it. A \fBsink\fR naming one
 (\fBupnp:\fR and its UDN) searches whatever this says. The settings pane's device list switches
 it. Default: false.
+.TP
+.B flac-above-96k-for
+Array of renderer names (\fBupnp:\fR and the UDN, as \fBresonate sinks \-\-renderers\fR lists them).
+A renderer whose protocol info lists FLAC without stating a rate is offered FLAC up to 96 kHz, the
+engine resampling what is above; one named here is offered FLAC at every rate (up to 192 kHz) as
+if it had stated them, so it is sent 176.4 and 192 kHz material as it is. Name a renderer only
+once it is known to decode the rate: one that cannot play the stream stays silent, and removing
+the name restores the 96 kHz limit. A renderer that states its rates, or takes WAVE and no FLAC,
+is not affected. Default: empty.
 .SH ONLINE
 .TP
 .B online

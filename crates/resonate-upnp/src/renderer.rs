@@ -1,10 +1,11 @@
-use std::{fmt, time::Duration};
+use std::{collections::BTreeSet, fmt, time::Duration};
 
 use resonate_audio::NodeName;
 use resonate_core::{StreamSpec, Volume};
 
 use crate::{
     Action, Carriage, Error, Located, Result,
+    carriage::FlacUnsaid,
     description::{self, Service},
     soap::{self, Answered, escaped},
 };
@@ -34,9 +35,36 @@ impl Udn {
     }
 }
 
+impl Udn {
+    pub fn from_node(node: &NodeName) -> Option<Self> {
+        node.as_str().strip_prefix(RENDERER_NODES).map(Self::new)
+    }
+}
+
 impl fmt::Display for Udn {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Vouched {
+    flac_at_any_rate: BTreeSet<Udn>,
+}
+
+impl Vouched {
+    pub fn flac_at_any_rate(renderers: impl IntoIterator<Item = Udn>) -> Self {
+        Self {
+            flac_at_any_rate: renderers.into_iter().collect(),
+        }
+    }
+
+    fn flac_unsaid_for(&self, udn: &Udn) -> FlacUnsaid {
+        if self.flac_at_any_rate.contains(udn) {
+            FlacUnsaid::AnyRate
+        } else {
+            FlacUnsaid::UpTo96kHz
+        }
     }
 }
 
@@ -74,13 +102,19 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn reached(location: Located) -> Result<Self> {
+    pub fn reached(location: Located, vouched: &Vouched) -> Result<Self> {
         let described = description::described(&location)?;
+        let flac_unsaid = vouched.flac_unsaid_for(&described.udn);
+        if flac_unsaid == FlacUnsaid::AnyRate {
+            tracing::info!(udn = %described.udn, "FLAC is offered at any rate the renderer does not state, as the listener vouched");
+        }
         let carriages = match described.connection.as_ref() {
             Some(connection) => match soap::call(connection, Action::GetProtocolInfo, &[]) {
                 Ok(answered) => {
-                    let carriages =
-                        Carriage::accepted_by(answered.named("Sink").unwrap_or_default());
+                    let carriages = Carriage::accepted_by(
+                        answered.named("Sink").unwrap_or_default(),
+                        flac_unsaid,
+                    );
                     if carriages.is_empty() {
                         return Err(Error::TakesNoCarriage);
                     }
@@ -88,10 +122,10 @@ impl Renderer {
                 }
                 Err(error) => {
                     tracing::debug!(%error, udn = %described.udn, "a renderer did not say what it takes; WAVE is offered");
-                    Carriage::accepted_by(WAVE_ASSUMED)
+                    Carriage::accepted_by(WAVE_ASSUMED, flac_unsaid)
                 }
             },
-            None => Carriage::accepted_by(WAVE_ASSUMED),
+            None => Carriage::accepted_by(WAVE_ASSUMED, flac_unsaid),
         };
         let openhome = described.openhome_volume.map(|service| {
             let steps = soap::call(&service, Action::Characteristics, &[])
