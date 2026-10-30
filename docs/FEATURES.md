@@ -64,6 +64,14 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Device sync
 
 ## Equaliser and DSP
+- [M · 0.4.0] *Fit the preamp*'s solved bound prices every node under the whole signal's at its steady
+  gain, so broadband music under a curve moving many bands still bounds one to three and a half
+  decibels over its decode (3.6 dB on average over eight real songs, 0.2 to 5.9); a transient
+  gain per node was measured too loose under a dispersive correction, a level of its own for every
+  node of the tree and finer anchor levels moved nothing, and 64 moments in place of 8 moved the
+  real songs 0.3 dB (`eq.md`), so a tighter bound likely needs a figure the study does not keep, one
+  that says how far apart in time the bands' peaks fall (a stored format, so a migration), not a
+  better reading of the peaks
 
 ## Search
 - [M · blocked: service] A pasted Spotify, TIDAL or Apple Music playlist link lists only the songs its
@@ -74,7 +82,7 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   lyric text (LRCLIB's text search finds none)
 
 ## Identification
-- [S · 0.3.0] libopus at 64 kbps is still missed on 12 of 426 library tracks (quiet masters, a
+- [S · 0.4.0] libopus at 64 kbps is still missed on 12 of 426 library tracks (quiet masters, a
   significance of 1.6 to 11.3 against 12) with the bands weighed by their coherence under the
   rounding; a smaller `ROUNDING_NOISE_TURNS` than 0.5 is untried, and the sources of 397 of the
   426 tracks are not yet weighed with those weights (the 29 weighed read 3.9 at most)
@@ -105,14 +113,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   the vault: `jxl-encoder` 0.3.4, the latest, refuses the first and rebuilds the second one byte long
 
 ## Later: Equaliser and DSP extras
-- [M] *Fit the preamp*'s solved bound prices every node under the whole signal's at its steady
-  gain, so broadband music under a curve moving many bands still bounds one to three and a half
-  decibels over its decode (3.6 dB on average over eight real songs, 0.2 to 5.9); a transient
-  gain per node was measured too loose under a dispersive correction, a level of its own for every
-  node of the tree and finer anchor levels moved nothing, and 64 moments in place of 8 moved the
-  real songs 0.3 dB (`eq.md`), so a tighter bound likely needs a figure the study does not keep, one
-  that says how far apart in time the bands' peaks fall (a stored format, so a migration), not a
-  better reading of the peaks
 - [S · blocked: hardware] The phones' *Measure* (a sweep through an `AudioTrack` or an `AVAudioPlayerNode` of its
   own beside the engine, recorded by the microphone and fitted by `fit_recorded_sweep`; `eq.md`) is
   proved on the host against a known filter, and its Kotlin on the JVM, but not heard through a real
