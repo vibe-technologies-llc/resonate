@@ -189,6 +189,10 @@ CREATE TABLE served_rows (
 ) STRICT;
 ";
 
+const LISTENS_NAME_THE_SERVED_SONG_THEY_HEARD: &str = "
+ALTER TABLE listens ADD COLUMN served TEXT;
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     LISTENS_NAME_THEIR_ORIGIN,
@@ -210,6 +214,7 @@ const MIGRATIONS: &[&str] = &[
     ZONES_KEEP_THEIR_OWN_QUEUES,
     ZONES_KEEP_THEIR_VOLUME,
     QUEUES_KEEP_SONGS_PLAYED_IN_PLACE,
+    LISTENS_NAME_THE_SERVED_SONG_THEY_HEARD,
 ];
 
 #[cfg(test)]
@@ -822,6 +827,7 @@ impl Catalog {
                                     .map(|length| length.max(0) as u64),
                                 format: row.get(7)?,
                                 cover: row.get(8)?,
+                                favourite: None,
                             },
                             rate: row.get(9)?,
                         }),

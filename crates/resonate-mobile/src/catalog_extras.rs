@@ -137,7 +137,7 @@ const THE_ALBUMS_MOST_LISTENED_TO: &str = "SELECT d.album_key, min(d.album), min
 
 const THE_ARTISTS_MOST_LISTENED_TO: &str = "SELECT folded(d.artist), min(d.artist), '', count(*), coalesce(sum(l.heard_ms), 0) AS listened FROM listens l JOIN documents d ON d.id = l.track WHERE d.missing = 0 AND d.artist != '' AND l.counted = 1 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400) GROUP BY folded(d.artist) ORDER BY listened DESC, count(*) DESC, min(d.artist) COLLATE NOCASE LIMIT ?2";
 
-const LISTENING_BY_QUARTER_HOUR: &str = "SELECT l.began / ?2 AS quarter, count(*), coalesce(sum(l.heard_ms), 0) FROM listens l JOIN documents d ON d.id = l.track WHERE d.missing = 0 AND l.counted = 1 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400) GROUP BY quarter";
+const LISTENING_BY_QUARTER_HOUR: &str = "SELECT l.began / ?2 AS quarter, count(*), coalesce(sum(l.heard_ms), 0) FROM listens l LEFT JOIN documents d ON d.id = l.track WHERE (d.missing = 0 OR l.served IS NOT NULL) AND l.counted = 1 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400) GROUP BY quarter";
 
 const SHARES_SHOWN_AT_MOST: u32 = 8;
 
@@ -149,7 +149,7 @@ const THE_GENRES_HELD: &str = "SELECT min(genre), count(*), coalesce(sum(duratio
 
 const THE_DECADES_HELD: &str = "SELECT (cast(substr(date, 1, 4) AS INTEGER) / 10) * 10, count(*), coalesce(sum(duration_ms), 0) FROM documents WHERE missing = 0 AND substr(date, 1, 4) GLOB '[0-9][0-9][0-9][0-9]' AND cast(substr(date, 1, 4) AS INTEGER) >= 1000 GROUP BY 1 ORDER BY count(*) DESC, 1 LIMIT ?1";
 
-const THE_SONGS_HEARD: &str = "SELECT count(DISTINCT l.track), min(l.began) FROM listens l JOIN documents d ON d.id = l.track WHERE d.missing = 0 AND l.counted = 1 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400)";
+const THE_SONGS_HEARD: &str = "SELECT count(DISTINCT l.track) + count(DISTINCT l.served), min(l.began) FROM listens l LEFT JOIN documents d ON d.id = l.track WHERE (d.missing = 0 OR l.served IS NOT NULL) AND l.counted = 1 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400)";
 
 fn kilohertz(hertz: i64) -> String {
     let kilohertz = hertz as f64 / 1000.0;
@@ -290,7 +290,7 @@ impl Catalog {
     pub(crate) fn statistics(&self, days: u32) -> Result<LibraryStatistics> {
         let connection = self.0.lock();
         let (songs, albums, artists, duration_ms) = connection.query_row("SELECT count(*), count(DISTINCT album || char(0) || album_artist), count(DISTINCT artist), coalesce(sum(duration_ms), 0) FROM documents WHERE missing = 0", [], |row| Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64, row.get::<_, i64>(2)? as u64, row.get::<_, i64>(3)? as u64))).map_err(|source| Error::store(StoreOp::Read, source))?;
-        let (plays, listened_ms) = connection.query_row("SELECT count(*), coalesce(sum(l.heard_ms), 0) FROM listens l JOIN documents d ON d.id = l.track WHERE d.missing = 0 AND l.counted = 1 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400)", [days], |row| Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64))).map_err(|source| Error::store(StoreOp::Read, source))?;
+        let (plays, listened_ms) = connection.query_row("SELECT count(*), coalesce(sum(l.heard_ms), 0) FROM listens l LEFT JOIN documents d ON d.id = l.track WHERE (d.missing = 0 OR l.served IS NOT NULL) AND l.counted = 1 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400)", [days], |row| Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64))).map_err(|source| Error::store(StoreOp::Read, source))?;
         let mut query = connection.prepare("SELECT d.* FROM documents d JOIN listens l ON l.track = d.id WHERE d.missing = 0 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400) AND l.counted = 1 GROUP BY d.id ORDER BY sum(l.heard_ms) DESC, count(*) DESC, d.title LIMIT 25").map_err(|source| Error::store(StoreOp::Read, source))?;
         let top_tracks = query
             .query_map([days], read)

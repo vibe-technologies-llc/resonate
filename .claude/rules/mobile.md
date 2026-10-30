@@ -588,6 +588,27 @@ scheme and keying its cover by the uri
 `served_songs_are_queued_named_and_opened_by_the_players_sources`,
 `a_blank_account_serves_nothing_and_a_uri_of_another_kind_is_invalid`).
 
+**A song played in place is a counted listen, and the service's own mark is its star.** `store_counting`
+writes a listen of a served row (`Served::names`) with `track` NULL and `listens.served` its URI (the
+catalog's step 21, `LISTENS_NAME_THE_SERVED_SONG_THEY_HEARD`), counted like a document's (the same
+`Listening` thresholds) and settled on the same row as it grows. `statistics(days)`'s `plays` and
+`listened_ms`, `listening_detail`'s days and `songs_heard` read `(d.missing = 0 OR l.served IS NOT NULL)`
+over a `LEFT JOIN documents`, so a served listen is in the totals and the days; the top songs, albums
+and artists name documents and leave it out, and the scrobbler and the sync ledger join `documents` and
+never see it, as on the desktop (`library.md`'s *The count is the catalog's*)
+(`a_song_played_in_place_is_a_counted_listen_in_the_totals_and_the_days_and_told_to_no_one`).
+`ServedSong.favourite` is `Some` only where the service keeps a mark (`PlaysInPlace::keeps_favourites`;
+a song the service did not say is starred reads `Some(false)`) and `ServedService.favourites` says the
+same of the service. `favour_served_song(uri, favoured)` needs online, a served song uri and the
+service, writes the mark through `PlaysInPlace::favour` (a refusal is `failure_of`'s sentence; a service
+with none is `ProviderUnreadable`), and only then records it in `Served::marked`, which every later
+browse and the playing row's `Track.favourite` read over what the service said, until the accounts
+change. Nothing is rated into a file or synced (`providers.md`'s *A song played in place is a
+favourite in the service's own mark*)
+(`a_song_is_starred_and_unstarred_by_the_services_own_call_and_drawn_so_until_the_accounts_move`,
+`a_service_with_an_account_marks_its_songs_and_one_without_draws_no_star`,
+`a_star_is_refused_for_a_uri_that_is_no_song_and_while_online_is_off`).
+
 ## Hosted services on the phones
 
 **`configure_hosted_services(enabled)` is the desktop's `hosted-services` on a phone** (default on, kept

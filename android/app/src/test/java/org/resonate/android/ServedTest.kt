@@ -7,6 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.resonate.android.nativecore.DownloadAccount
 import org.resonate.android.nativecore.MusicProvider
+import org.resonate.android.nativecore.ServedService
 import org.resonate.android.nativecore.Track
 
 class ServedTest {
@@ -132,5 +133,16 @@ class ServedTest {
         assertEquals("monochrome:track/7", row.pictureKey)
         assertEquals(3uL, row.rowKey)
         assertEquals(9uL, document.rowKey)
+    }
+
+    @Test
+    fun aServedRowIsDrawnAStarOnlyWhereItsServiceKeepsFavourites() {
+        val services =
+            listOf(ServedService("subsonic", "Subsonic", true), ServedService("monochrome", "Monochrome", false))
+
+        assertTrue(services.marksFavouritesOf(track(0uL, "subsonic:track/1")))
+        assertFalse(services.marksFavouritesOf(track(0uL, "monochrome:track/7")))
+        assertFalse(services.marksFavouritesOf(track(0uL, "tidal:track/7")))
+        assertFalse(emptyList<ServedService>().marksFavouritesOf(track(0uL, "subsonic:track/1")))
     }
 }

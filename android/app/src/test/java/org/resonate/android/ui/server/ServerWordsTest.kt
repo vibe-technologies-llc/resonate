@@ -15,7 +15,7 @@ class ServerWordsTest {
         album: String? = "Moon Safari",
         track: UInt? = null,
         milliseconds: ULong? = 215_000uL,
-    ) = ServedSong("subsonic:track/1", title, artist, album, track, milliseconds, null, null)
+    ) = ServedSong("subsonic:track/1", title, artist, album, track, milliseconds, null, null, null)
 
     @Test
     fun anArtistCountsItsAlbumsWhenTheServerSaysHowMany() {

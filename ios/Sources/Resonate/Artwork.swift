@@ -347,6 +347,9 @@ struct FavouriteButton: View {
     var body: some View {
         if !track.isServed {
             heart
+        } else if library.features.served.keepsFavourites(of: track) {
+            ServedStar(uri: track.uri, title: track.title, favourite: track.favourite)
+                .id(track.uri)
         }
     }
 

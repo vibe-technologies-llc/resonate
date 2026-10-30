@@ -150,6 +150,16 @@ struct ServedSongRow: View {
     let play: () -> Void
 
     var body: some View {
+        HStack(spacing: 8) {
+            row
+            if let favourite = song.favourite {
+                ServedStar(uri: song.uri, title: song.shownTitle, favourite: favourite)
+            }
+        }
+        .servedActions(song.uri)
+    }
+
+    private var row: some View {
         Button(action: play) {
             if let number {
                 HStack(spacing: 12) {
@@ -173,7 +183,46 @@ struct ServedSongRow: View {
             }
         }
         .buttonStyle(.plain)
-        .servedActions(song.uri)
+    }
+}
+
+struct ServedStar: View {
+    @Environment(Library.self) private var library
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let uri: String
+    let title: String
+    @State private var starred: Bool
+    @State private var tapped = 0
+
+    init(uri: String, title: String, favourite: Bool) {
+        self.uri = uri
+        self.title = title
+        _starred = State(initialValue: favourite)
+    }
+
+    var body: some View {
+        Button {
+            tapped += 1
+            let enabled = !starred
+            starred = enabled
+            Task {
+                do {
+                    try await library.features.favourServed(uri, enabled)
+                } catch {
+                    starred = !enabled
+                    library.report(error)
+                }
+            }
+        } label: {
+            Image(systemName: starred ? "star.fill" : "star")
+                .foregroundStyle(starred ? Color.yellow : Color.secondary)
+                .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
+                .symbolEffect(.bounce, value: reduceMotion ? 0 : tapped)
+                .touchTarget()
+        }
+        .buttonStyle(.plain)
+        .sensoryFeedback(.selection, trigger: tapped)
+        .accessibilityLabel(starred ? "Remove \(title) from favourites" : "Add \(title) to favourites")
     }
 }
 

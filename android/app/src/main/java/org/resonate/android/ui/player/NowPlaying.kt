@@ -89,6 +89,7 @@ import kotlinx.coroutines.launch
 import org.resonate.android.ArtworkSizes
 import org.resonate.android.nativecore.Track
 import org.resonate.android.rowKey
+import org.resonate.android.marksFavouritesOf
 import org.resonate.android.served
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.Repeat
@@ -319,6 +320,7 @@ private fun ColumnScope.Controls(
     val sheets = LocalSheets.current
     val expansion = LocalPlayerExpansion.current
     val scope = rememberCoroutineScope()
+    val services by resonate.features.served.services.collectAsStateWithLifecycle()
     Row(verticalAlignment = Alignment.CenterVertically) {
         AnimatedContent(
             track,
@@ -366,7 +368,7 @@ private fun ColumnScope.Controls(
             onCheckedChange = { enabled ->
                 track?.let { resonate.favourite(it, enabled, sheets, scope) }
             },
-            enabled = track != null && !track.served,
+            enabled = track != null && (!track.served || services.marksFavouritesOf(track)),
         ) {
             Icon(
                 if (favourite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,

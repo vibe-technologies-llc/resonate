@@ -17,7 +17,7 @@ private func song(
     track: UInt32? = nil,
     durationMs: UInt64? = 215_000
 ) -> ServedSong {
-    ServedSong(uri: "subsonic:track/1", title: title, artist: artist, album: album, track: track, durationMs: durationMs, format: nil, cover: nil)
+    ServedSong(uri: "subsonic:track/1", title: title, artist: artist, album: album, track: track, durationMs: durationMs, format: nil, cover: nil, favourite: nil)
 }
 
 @Suite struct ServedTrackTests {
@@ -108,9 +108,9 @@ private func song(
 }
 
 @Suite struct ServedChoiceTests {
-    private let subsonic = ServedService(scheme: "subsonic", title: "Subsonic")
-    private let tidal = ServedService(scheme: "tidal", title: "TIDAL")
-    private let monochrome = ServedService(scheme: "monochrome", title: "Monochrome")
+    private let subsonic = ServedService(scheme: "subsonic", title: "Subsonic", favourites: true)
+    private let tidal = ServedService(scheme: "tidal", title: "TIDAL", favourites: true)
+    private let monochrome = ServedService(scheme: "monochrome", title: "Monochrome", favourites: false)
 
     @Test func theFirstServiceIsChosenAndOneServiceOffersNoChoice() {
         let one = ServedChoice(services: [tidal])
@@ -121,6 +121,15 @@ private func song(
         #expect(!one.choosing)
         #expect(none.chosen == nil)
         #expect(none.service == nil)
+    }
+
+    @Test func aServedSongIsStarredOnlyWhereItsServiceKeepsFavourites() {
+        let choice = ServedChoice(services: [subsonic, monochrome])
+
+        #expect(choice.keepsFavourites(of: servedTrack("subsonic:track/1")))
+        #expect(!choice.keepsFavourites(of: servedTrack("monochrome:track/1")))
+        #expect(!choice.keepsFavourites(of: servedTrack("tidal:track/1")))
+        #expect(!ServedChoice().keepsFavourites(of: servedTrack("subsonic:track/1")))
     }
 
     @Test func aChoiceIsKeptWhileItsServiceStaysServed() {
