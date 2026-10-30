@@ -59,6 +59,7 @@ const STREAMED_READ_AT_MOST: usize = CHUNK_BYTES_AT_MOST;
 const SINGLE_PRECISION_BYTES: u8 = 4;
 const DOUBLE_PRECISION_BYTES: u8 = 8;
 const RADIANS: &str = "rad";
+const POLE_AT_MOST_LENGTH: f64 = 1e-9;
 const FRONT: Direction = Direction {
     front: 1.0,
     left: 0.0,
@@ -90,6 +91,9 @@ pub enum Member {
     ListenerView,
     ViewType,
     ViewUnits,
+    ListenerUp,
+    UpType,
+    UpUnits,
     ListenerPosition,
     ListenerPositionType,
     ListenerPositionUnits,
@@ -110,6 +114,9 @@ impl Member {
             Self::ListenerView => "ListenerView",
             Self::ViewType => "ListenerView:Type",
             Self::ViewUnits => "ListenerView:Units",
+            Self::ListenerUp => "ListenerUp",
+            Self::UpType => "ListenerUp:Type",
+            Self::UpUnits => "ListenerUp:Units",
             Self::ListenerPosition => "ListenerPosition",
             Self::ListenerPositionType => "ListenerPosition:Type",
             Self::ListenerPositionUnits => "ListenerPosition:Units",
@@ -121,6 +128,7 @@ impl Member {
             Self::PositionType
             | Self::EmitterType
             | Self::ViewType
+            | Self::UpType
             | Self::ListenerPositionType => "Type",
             _ => "Units",
         }
@@ -236,6 +244,9 @@ pub enum Fault {
     #[error("the source positions are neither spherical nor cartesian")]
     PositionTypeUnknown,
 
+    #[error("{member} is in a unit of length this reader does not know")]
+    LengthUnitUnknown { member: Member },
+
     #[error("a rate of {hertz} Hz is not one a stream can run at")]
     RateNotUsable { hertz: f64 },
 
@@ -268,16 +279,15 @@ pub fn read_hrir(
         return Ok(None);
     }
 
-    if bytes.starts_with(&SIGNATURE)
-        && media.stream.is_seekable()
+    if media.stream.is_seekable()
         && let Some(length) = media.stream.byte_len()
     {
-        return read_hrir_streamed(media.stream, length, longest, speakers).map_err(|source| {
-            Error::Sofa {
+        return read_hrir_streamed(media.stream, length, &bytes, longest, speakers).map_err(
+            |source| Error::Sofa {
                 location: location.clone(),
                 source,
-            }
-        });
+            },
+        );
     }
 
     let room = SOFA_BYTES_AT_MOST + 1 - SIGNATURE.len() as u64;
@@ -299,10 +309,11 @@ fn is_container(bytes: &[u8]) -> bool {
 fn read_hrir_streamed(
     stream: Box<dyn MediaStream>,
     length: u64,
+    head: &[u8],
     longest: Duration,
     speakers: Speakers,
 ) -> std::result::Result<Option<Hrir>, Fault> {
-    let container = Container::streamed(stream, length)?;
+    let container = Container::streamed(stream, length, head)?;
     Set::of(&container)?
         .stereo_pair(longest, speakers)
         .map(Some)
@@ -336,14 +347,37 @@ enum Container {
 }
 
 impl Container {
-    fn streamed(stream: Box<dyn MediaStream>, length: u64) -> std::result::Result<Self, Fault> {
+    fn streamed(
+        stream: Box<dyn MediaStream>,
+        length: u64,
+        head: &[u8],
+    ) -> std::result::Result<Self, Fault> {
         if length > SOFA_STREAMED_BYTES_AT_MOST {
             return Err(Fault::TooLarge {
                 bytes: length,
                 at_most: SOFA_STREAMED_BYTES_AT_MOST,
             });
         }
+        if head.starts_with(&SIGNATURE) {
+            return Self::hdf5_streamed(stream, length);
+        }
+        match netcdf::version_of(head) {
+            Some(FIRST_OFFSET_VERSION | SECOND_OFFSET_VERSION | WIDE_DATA_VERSION) => {
+                Classic::over(stream, length)
+                    .map(Self::Classic)
+                    .map_err(|source| Fault::ClassicOpen { source })
+            }
+            Some(version) => Err(Fault::ClassicVersion { version }),
+            None => Err(Fault::ClassicOpen {
+                source: ClassicFault::Truncated { at: 0, wanted: 4 },
+            }),
+        }
+    }
 
+    fn hdf5_streamed(
+        stream: Box<dyn MediaStream>,
+        length: u64,
+    ) -> std::result::Result<Self, Fault> {
         let stream = Mutex::new(stream);
         let storage = RangeRequestStorage::new(length, move |offset, wanted| {
             let end = u64::try_from(wanted)
@@ -503,7 +537,7 @@ enum Placing {
 }
 
 struct Room {
-    views: Vec<Option<Direction>>,
+    views: Vec<Option<Pose>>,
     emitters: Vec<Option<Direction>>,
     points: Vec<Option<Direction>>,
     listener: Option<Listener>,
@@ -514,21 +548,45 @@ struct Listener {
     points: Vec<Option<Direction>>,
 }
 
+#[derive(Clone, Copy)]
+struct Pose {
+    front: Direction,
+    up: Option<Direction>,
+}
+
+impl Pose {
+    fn carry(self, from_the_head: Direction) -> Option<Direction> {
+        let left = self.up.unwrap_or(UP).cross(self.front);
+        if left.length() <= POLE_AT_MOST_LENGTH {
+            return None;
+        }
+        let left = left.unit();
+        let up = self.front.cross(left);
+        Some(
+            self.front
+                .scaled(from_the_head.front)
+                .plus(left.scaled(from_the_head.left))
+                .plus(up.scaled(from_the_head.up)),
+        )
+    }
+}
+
 impl Room {
-    fn facing(&self, yaw: f64) -> (u64, f64) {
+    fn seen(&self, yaw: f64, azimuth: f64, elevation: f64) -> (u64, Direction) {
+        let from_the_head = Direction::heard_from(azimuth - yaw, elevation);
         if self.views.len() == 1 {
-            return (0, yaw);
+            return (0, from_the_head);
         }
         let heading = Direction::heard_from(yaw, 0.0);
         self.views
             .iter()
             .enumerate()
-            .filter_map(|(index, view)| {
-                view.map(|view| (index as u64, view, view.degrees_from(heading)))
+            .filter_map(|(index, pose)| {
+                pose.map(|pose| (index as u64, pose, pose.front.degrees_from(heading)))
             })
             .min_by(|(.., apart), (.., other)| apart.total_cmp(other))
-            .map_or((0, yaw), |(index, view, _)| {
-                (index, wrapped(yaw - azimuth_of(view)))
+            .map_or((0, from_the_head), |(index, pose, _)| {
+                (index, pose.carry(from_the_head).unwrap_or(from_the_head))
             })
     }
 
@@ -583,14 +641,21 @@ impl Positions {
         member: Member::ListenerView,
         kind: Member::ViewType,
         units: Member::ViewUnits,
-        kind_unsaid: Some(Coordinates::Cartesian),
+        kind_unsaid: Some(Coordinates::Cartesian { metres: 1.0 }),
+        trailing_one: true,
+    };
+    const UP: Self = Self {
+        member: Member::ListenerUp,
+        kind: Member::UpType,
+        units: Member::UpUnits,
+        kind_unsaid: Some(Coordinates::Cartesian { metres: 1.0 }),
         trailing_one: true,
     };
     const LISTENER: Self = Self {
         member: Member::ListenerPosition,
         kind: Member::ListenerPositionType,
         units: Member::ListenerPositionUnits,
-        kind_unsaid: Some(Coordinates::Cartesian),
+        kind_unsaid: Some(Coordinates::Cartesian { metres: 1.0 }),
         trailing_one: false,
     };
 }
@@ -699,8 +764,7 @@ impl<'a> Set<'a> {
                 Ok(blended(contributions, most, Blend::MagnitudeAndDelay))
             }
             Placing::Speakers(room) => {
-                let (view, residual) = room.facing(yaw);
-                let wanted = Direction::heard_from(azimuth - residual, elevation);
+                let (view, wanted) = room.seen(yaw, azimuth, elevation);
                 let emitters = room.emitters_seen_from(view);
                 let neighbours = neighbours_of(&emitters, wanted, side)?;
                 let contributions = self.contributions(&neighbours, Some(view), frames, most)?;
@@ -1271,7 +1335,7 @@ fn positions_in(
         });
     }
 
-    let coordinates = Coordinates::of(variable, positions)?;
+    let coordinates = Coordinates::of(variable, positions, reach)?;
     let values = variable.numbers(positions.member, &[])?;
     Ok(values
         .as_chunks::<{ COORDINATES as usize }>()
@@ -1287,7 +1351,7 @@ fn positions_in(
 fn views_of(
     container: &Container,
     measurements: u64,
-) -> std::result::Result<Vec<Option<Direction>>, Fault> {
+) -> std::result::Result<Vec<Option<Pose>>, Fault> {
     let Some(variable) = container.find(Member::ListenerView)? else {
         return Ok(vec![None]);
     };
@@ -1304,7 +1368,37 @@ fn views_of(
         return Ok(vec![None]);
     }
 
-    directions_in(&variable, Positions::VIEW, rows)
+    let fronts = directions_in(&variable, Positions::VIEW, rows)?;
+    let ups = ups_of(container, measurements, rows)?;
+    Ok(fronts
+        .into_iter()
+        .zip(ups)
+        .map(|(front, up)| front.map(|front| Pose { front, up }))
+        .collect())
+}
+
+fn ups_of(
+    container: &Container,
+    measurements: u64,
+    views: u64,
+) -> std::result::Result<Vec<Option<Direction>>, Fault> {
+    let Some(variable) = container.find(Member::ListenerUp)? else {
+        return Ok(vec![None; views as usize]);
+    };
+    let rows = match *variable.shape().as_slice() {
+        [rows, COORDINATES] | [rows, COORDINATES, 1] if rows == 1 || rows == measurements => rows,
+        _ => {
+            return Err(Fault::ShapeNotUsable {
+                member: Member::ListenerUp,
+                dims: variable.shape(),
+            });
+        }
+    };
+    let ups = directions_in(&variable, Positions::UP, rows)?;
+    if rows == 1 {
+        return Ok(vec![ups[0]; views as usize]);
+    }
+    Ok(ups)
 }
 
 fn points_of(
@@ -1360,33 +1454,69 @@ fn delays_of(
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Coordinates {
-    Spherical { radians: bool },
-    Cartesian,
+    Spherical { radians: bool, metres: f64 },
+    Cartesian { metres: f64 },
 }
 
 impl Coordinates {
-    fn of(variable: &Variable<'_>, positions: Positions) -> std::result::Result<Self, Fault> {
-        let Some(kind) = variable.attribute(positions.kind)? else {
-            return positions.kind_unsaid.ok_or(Fault::MemberMissing {
+    fn of(
+        variable: &Variable<'_>,
+        positions: Positions,
+        reach: Reach,
+    ) -> std::result::Result<Self, Fault> {
+        let units = variable.attribute(positions.units)?.unwrap_or_default();
+        let components: Vec<&str> = units.split(',').map(str::trim).collect();
+        let coordinates = match variable.attribute(positions.kind)? {
+            None => positions.kind_unsaid.ok_or(Fault::MemberMissing {
                 member: positions.kind,
-            });
+            })?,
+            Some(kind) => match kind.trim().to_ascii_lowercase().as_str() {
+                "spherical" => Self::Spherical {
+                    radians: components[0].to_ascii_lowercase().starts_with(RADIANS),
+                    metres: 1.0,
+                },
+                "cartesian" => Self::Cartesian { metres: 1.0 },
+                _ => return Err(Fault::PositionTypeUnknown),
+            },
         };
-        match kind.trim().to_ascii_lowercase().as_str() {
-            "spherical" => {
-                let units = variable.attribute(positions.units)?.unwrap_or_default();
-                let angle = units.split(',').next().unwrap_or_default();
-                let radians = angle.trim().to_ascii_lowercase().starts_with(RADIANS);
-                Ok(Self::Spherical { radians })
+        match reach {
+            Reach::Direction => Ok(coordinates),
+            Reach::Point => coordinates.measured_in(&components, positions.units),
+        }
+    }
+
+    fn measured_in(self, components: &[&str], member: Member) -> std::result::Result<Self, Fault> {
+        let unknown = Fault::LengthUnitUnknown { member };
+        match self {
+            Self::Spherical { radians, .. } => {
+                let metres = match components {
+                    [_, _, radius] => metres_in(radius).ok_or(unknown)?,
+                    _ => 1.0,
+                };
+                Ok(Self::Spherical { radians, metres })
             }
-            "cartesian" => Ok(Self::Cartesian),
-            _ => Err(Fault::PositionTypeUnknown),
+            Self::Cartesian { .. } => {
+                let mut scales = components
+                    .iter()
+                    .filter(|unit| !unit.is_empty())
+                    .map(|unit| metres_in(unit));
+                let Some(first) = scales.next() else {
+                    return Ok(self);
+                };
+                let metres = first.ok_or(Fault::LengthUnitUnknown { member })?;
+                if scales.any(|scale| scale != Some(metres)) {
+                    return Err(unknown);
+                }
+                Ok(Self::Cartesian { metres })
+            }
         }
     }
 
     fn point(self, position: &[f64; COORDINATES as usize]) -> Option<Direction> {
         let &[first, second, third] = position;
         match self {
-            Self::Spherical { radians } => {
+            Self::Spherical { radians, metres } => {
+                let third = third * metres;
                 let (azimuth, elevation) = if radians {
                     (first.to_degrees(), second.to_degrees())
                 } else {
@@ -1399,10 +1529,10 @@ impl Coordinates {
                     up: heard.up * third,
                 })
             }
-            Self::Cartesian => Some(Direction {
-                front: first,
-                left: second,
-                up: third,
+            Self::Cartesian { metres } => Some(Direction {
+                front: first * metres,
+                left: second * metres,
+                up: third * metres,
             }),
         }
         .filter(|point| point.is_finite())
@@ -1411,12 +1541,12 @@ impl Coordinates {
     fn direction(self, position: &[f64; COORDINATES as usize]) -> Option<Direction> {
         let &[first, second, third] = position;
         match self {
-            Self::Spherical { radians: false } => Some(Direction::heard_from(first, second)),
-            Self::Spherical { radians: true } => Some(Direction::heard_from(
+            Self::Spherical { radians: false, .. } => Some(Direction::heard_from(first, second)),
+            Self::Spherical { radians: true, .. } => Some(Direction::heard_from(
                 first.to_degrees(),
                 second.to_degrees(),
             )),
-            Self::Cartesian => Direction::along(first, second, third),
+            Self::Cartesian { .. } => Direction::along(first, second, third),
         }
         .filter(|direction| direction.is_finite())
     }
@@ -1450,6 +1580,22 @@ impl Direction {
             left: left / length,
             up: up / length,
         })
+    }
+
+    fn scaled(self, by: f64) -> Self {
+        Self {
+            front: self.front * by,
+            left: self.left * by,
+            up: self.up * by,
+        }
+    }
+
+    fn plus(self, other: Self) -> Self {
+        Self {
+            front: self.front + other.front,
+            left: self.left + other.left,
+            up: self.up + other.up,
+        }
     }
 
     fn dot(self, other: Self) -> f64 {
@@ -1500,6 +1646,18 @@ impl Direction {
     fn degrees_from(self, other: Self) -> f64 {
         let alike = self.dot(other);
         alike.clamp(-1.0, 1.0).acos().to_degrees()
+    }
+}
+
+fn metres_in(unit: &str) -> Option<f64> {
+    match unit.to_ascii_lowercase().as_str() {
+        "m" | "metre" | "metres" | "meter" | "meters" => Some(1.0),
+        "cm" | "centimetre" | "centimetres" | "centimeter" | "centimeters" => Some(0.01),
+        "mm" | "millimetre" | "millimetres" | "millimeter" | "millimeters" => Some(0.001),
+        "km" | "kilometre" | "kilometres" | "kilometer" | "kilometers" => Some(1000.0),
+        "ft" | "foot" | "feet" => Some(0.3048),
+        "in" | "inch" | "inches" => Some(0.0254),
+        _ => None,
     }
 }
 
@@ -2242,6 +2400,9 @@ mod tests {
         view_kind: Option<&'static str>,
         listener: Option<(f64, f64, f64)>,
         ranges: Vec<f64>,
+        ups: Option<Vec<(f64, f64, f64)>>,
+        listener_units: Option<&'static str>,
+        emitter_units: &'static str,
     }
 
     impl Brir {
@@ -2292,10 +2453,7 @@ mod tests {
             )
             .expect("emitters")
             .attribute(AttributeBuilder::fixed_string("Type", "spherical"))
-            .attribute(AttributeBuilder::fixed_string(
-                "Units",
-                "degree, degree, metre",
-            ));
+            .attribute(AttributeBuilder::fixed_string("Units", self.emitter_units));
             let rate = DatasetBuilder::typed_data("Data.SamplingRate", vec![1], &[48_000.0])
                 .expect("rate");
             let mut view =
@@ -2311,9 +2469,22 @@ mod tests {
                 .dataset(rate)
                 .dataset(view);
             if let Some((front, left, up)) = self.listener {
-                plan = plan.dataset(
+                let mut listener =
                     DatasetBuilder::typed_data("ListenerPosition", vec![1, 3], &[front, left, up])
-                        .expect("listener"),
+                        .expect("listener");
+                if let Some(units) = self.listener_units {
+                    listener = listener.attribute(AttributeBuilder::fixed_string("Units", units));
+                }
+                plan = plan.dataset(listener);
+            }
+            if let Some(ups) = &self.ups {
+                let tilted: Vec<f64> = ups
+                    .iter()
+                    .flat_map(|(front, left, up)| [*front, *left, *up])
+                    .collect();
+                plan = plan.dataset(
+                    DatasetBuilder::typed_data("ListenerUp", vec![ups.len() as u64, 3], &tilted)
+                        .expect("ups"),
                 );
             }
             plan.into_plan()
@@ -2342,6 +2513,9 @@ mod tests {
             view_kind: None,
             listener: None,
             ranges: Vec::new(),
+            ups: None,
+            listener_units: None,
+            emitter_units: "degree, degree, metre",
         };
 
         let hrir = read_hrir_bytes(set.bytes(), LONG_ENOUGH, STANDARD)
@@ -2360,6 +2534,9 @@ mod tests {
             view_kind: Some("cartesian"),
             listener: None,
             ranges: Vec::new(),
+            ups: None,
+            listener_units: None,
+            emitter_units: "degree, degree, metre",
         };
 
         let hrir = read_hrir_bytes(set.bytes(), LONG_ENOUGH, angle(45))
@@ -2377,6 +2554,9 @@ mod tests {
             view_kind: None,
             listener: None,
             ranges: Vec::new(),
+            ups: None,
+            listener_units: None,
+            emitter_units: "degree, degree, metre",
         };
 
         let refused = read_hrir_bytes(set.bytes(), LONG_ENOUGH, STANDARD);
@@ -2602,6 +2782,9 @@ mod tests {
             view_kind: None,
             listener,
             ranges,
+            ups: None,
+            listener_units: None,
+            emitter_units: "degree, degree, metre",
         }
     }
 
@@ -2717,6 +2900,130 @@ mod tests {
         );
     }
 
+    fn pitched(degrees: f64, toward: f64) -> (f64, f64, f64) {
+        let heard = Direction::heard_from(toward, degrees);
+        (heard.front, heard.left, heard.up)
+    }
+
+    #[test]
+    fn a_head_pitched_in_the_measurement_moves_each_speaker_by_the_pitch() {
+        let set = room(
+            vec![pitched(30.0, 0.0), pitched(30.0, 90.0)],
+            vec![(33.69, 25.66), (326.31, 25.66), (30.0, 0.0), (330.0, 0.0)],
+            None,
+            Vec::new(),
+        );
+
+        let hrir = read_hrir_bytes(set.bytes(), LONG_ENOUGH, STANDARD)
+            .expect("a set")
+            .expect("a SOFA file");
+
+        assert_eq!(hrir.responses, set.expected(0, 0, 1));
+    }
+
+    #[test]
+    fn a_head_rolled_in_the_measurement_lifts_one_ear_s_speaker_and_lowers_the_other() {
+        let roll = 30.0_f64.to_radians();
+        let mut set = room(
+            vec![(1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
+            vec![
+                (90.0, 30.0),
+                (270.0, 30.0),
+                (90.0, -30.0),
+                (270.0, -30.0),
+                (90.0, 0.0),
+                (270.0, 0.0),
+            ],
+            None,
+            Vec::new(),
+        );
+        set.ups = Some(vec![(0.0, -roll.sin(), roll.cos()), (0.0, 0.0, 1.0)]);
+
+        let rolled = read_hrir_bytes(set.bytes(), LONG_ENOUGH, angle(90))
+            .expect("a set")
+            .expect("a SOFA file");
+        set.ups = None;
+        let upright = read_hrir_bytes(set.bytes(), LONG_ENOUGH, angle(90))
+            .expect("a set")
+            .expect("a SOFA file");
+
+        assert_eq!(rolled.responses, set.expected(0, 0, 3));
+        assert_eq!(upright.responses, set.expected(0, 4, 5));
+    }
+
+    #[test]
+    fn one_up_vector_for_every_view_and_one_that_cannot_stand_beside_its_view_are_read() {
+        let roll = 30.0_f64.to_radians();
+        let mut set = room(
+            vec![(1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
+            vec![(90.0, 30.0), (270.0, -30.0), (90.0, 0.0), (270.0, 0.0)],
+            None,
+            Vec::new(),
+        );
+        set.ups = Some(vec![(0.0, -roll.sin(), roll.cos())]);
+
+        let shared = read_hrir_bytes(set.bytes(), LONG_ENOUGH, angle(90))
+            .expect("a set")
+            .expect("a SOFA file");
+        set.ups = Some(vec![(0.0, 0.0, 1.0); 3]);
+        let refused = read_hrir_bytes(set.bytes(), LONG_ENOUGH, angle(90));
+
+        assert_eq!(shared.responses, set.expected(0, 0, 1));
+        assert!(matches!(
+            refused,
+            Err(Fault::ShapeNotUsable {
+                member: Member::ListenerUp,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn a_listener_position_in_centimetres_stands_where_the_same_one_in_metres_does() {
+        let mut metres = room_with_the_listener_at(Some((1.0, 0.0, 0.0)));
+        let mut centimetres = room_with_the_listener_at(Some((100.0, 0.0, 0.0)));
+        metres.listener_units = Some("metre");
+        centimetres.listener_units = Some("centimetre");
+
+        let near = read_hrir_bytes(metres.bytes(), LONG_ENOUGH, STANDARD)
+            .expect("a set")
+            .expect("a SOFA file");
+        let far = read_hrir_bytes(centimetres.bytes(), LONG_ENOUGH, STANDARD)
+            .expect("a set")
+            .expect("a SOFA file");
+
+        assert_eq!(far, near);
+        assert_eq!(far.responses, centimetres.expected(0, 0, 1));
+    }
+
+    #[test]
+    fn emitters_whose_range_is_in_millimetres_are_measured_against_a_listener_in_metres() {
+        let mut set = room_with_the_listener_at(Some((1.0, 0.0, 0.0)));
+        set.ranges = set.ranges.iter().map(|range| range * 1000.0).collect();
+        set.emitter_units = "degree, degree, millimetre";
+
+        let hrir = read_hrir_bytes(set.bytes(), LONG_ENOUGH, STANDARD)
+            .expect("a set")
+            .expect("a SOFA file");
+
+        assert_eq!(hrir.responses, set.expected(0, 0, 1));
+    }
+
+    #[test]
+    fn a_listener_position_in_a_unit_of_length_no_one_knows_is_refused() {
+        let mut set = room_with_the_listener_at(Some((1.0, 0.0, 0.0)));
+        set.listener_units = Some("parsec");
+
+        let refused = read_hrir_bytes(set.bytes(), LONG_ENOUGH, STANDARD);
+
+        assert!(matches!(
+            refused,
+            Err(Fault::LengthUnitUnknown {
+                member: Member::ListenerPositionUnits
+            })
+        ));
+    }
+
     struct Counting {
         inner: io::Cursor<Vec<u8>>,
         read: Arc<std::sync::atomic::AtomicU64>,
@@ -2773,7 +3080,14 @@ mod tests {
     }
 
     fn read_counting(fixture: &Fixture, seekable: bool, speakers: Speakers) -> (Hrir, u64, usize) {
-        let bytes = fixture.bytes();
+        read_counting_bytes(fixture.bytes(), seekable, speakers)
+    }
+
+    fn read_counting_bytes(
+        bytes: Vec<u8>,
+        seekable: bool,
+        speakers: Speakers,
+    ) -> (Hrir, u64, usize) {
         let size = bytes.len();
         let read = Arc::new(std::sync::atomic::AtomicU64::new(0));
         let source = resonate_core::SourceId::new("counted").expect("a name");
@@ -2811,6 +3125,95 @@ mod tests {
     }
 
     #[test]
+    fn a_seekable_classic_set_is_read_from_the_measurements_chosen_alone_and_as_a_stream_that_cannot_seek_does()
+     {
+        let mut fixture = Fixture::new(&every_ten_degrees());
+        fixture.samples = 4096;
+
+        for version in [1, 2, 5] {
+            let bytes = fixture.classic_bytes(version, false);
+
+            let (streamed, bytes_streamed, size) =
+                read_counting_bytes(bytes.clone(), true, STANDARD);
+            let (whole, bytes_whole, _) = read_counting_bytes(bytes, false, STANDARD);
+
+            assert_eq!(streamed, whole);
+            assert_eq!(streamed.responses, fixture.expected(3, 33));
+            assert!(bytes_whole >= size as u64);
+            assert!(
+                bytes_streamed * 4 < size as u64,
+                "{bytes_streamed} of {size}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_seekable_classic_set_keeping_its_measurements_as_records_is_read_as_the_whole_one_is() {
+        let mut fixture = Fixture::new(&every_ten_degrees());
+        fixture.samples = 4096;
+        fixture.single = true;
+        fixture.delay = Some(vec![0.0, 3.0]);
+        let bytes = fixture.classic_bytes(1, true);
+
+        let (streamed, bytes_streamed, size) = read_counting_bytes(bytes.clone(), true, STANDARD);
+        let whole = read_hrir_bytes(bytes, LONG_ENOUGH, STANDARD)
+            .expect("a set")
+            .expect("a SOFA file");
+
+        assert_eq!(streamed, whole);
+        assert!(bytes_streamed * 4 < size as u64);
+    }
+
+    #[test]
+    fn a_seekable_classic_file_of_a_version_no_one_reads_is_refused_before_its_body_is_read() {
+        let mut bytes = Fixture::new(&SURROUND).classic_bytes(1, false);
+        bytes[3] = 3;
+        let size = bytes.len() as u64;
+        let counted = Counting {
+            inner: io::Cursor::new(bytes.clone()),
+            read: Arc::default(),
+            seekable: true,
+        };
+
+        let refused =
+            read_hrir_streamed(Box::new(counted), size, &bytes[..8], LONG_ENOUGH, STANDARD);
+
+        assert!(matches!(refused, Err(Fault::ClassicVersion { version: 3 })));
+    }
+
+    #[test]
+    fn a_seekable_classic_file_cut_short_is_refused_and_one_that_lies_about_its_header_never_panics()
+     {
+        let whole = Fixture::new(&SURROUND).classic_bytes(1, false);
+        let read = |bytes: Vec<u8>| {
+            let size = bytes.len() as u64;
+            let head = bytes[..bytes.len().min(8)].to_vec();
+            read_hrir_streamed(
+                Box::new(Counting {
+                    inner: io::Cursor::new(bytes),
+                    read: Arc::default(),
+                    seekable: true,
+                }),
+                size,
+                &head,
+                LONG_ENOUGH,
+                STANDARD,
+            )
+        };
+
+        for length in 4..whole.len() {
+            assert!(read(whole[..length].to_vec()).is_err());
+        }
+        for index in 0..whole.len() {
+            for pattern in [0x00, 0xff, 0x80] {
+                let mut marked = whole.clone();
+                marked[index] = pattern;
+                let _ = read(marked);
+            }
+        }
+    }
+
+    #[test]
     fn a_seekable_set_declared_longer_than_the_streamed_limit_is_refused_before_a_byte_is_read() {
         struct Endless;
 
@@ -2840,6 +3243,7 @@ mod tests {
         let refused = read_hrir_streamed(
             Box::new(Endless),
             SOFA_STREAMED_BYTES_AT_MOST + 1,
+            &SIGNATURE,
             LONG_ENOUGH,
             STANDARD,
         );

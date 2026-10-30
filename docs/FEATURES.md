@@ -112,9 +112,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   the vault: `jxl-encoder` 0.3.4, the latest, refuses the first and rebuilds the second one byte long
 
 ## Later: Equaliser and DSP extras
-- [S] A netCDF-3 classic SOFA file is still read whole (up to 128 MiB) on every target, and a
-  head's pitch and roll (`ListenerView` past its heading) and a `ListenerPosition` in units other
-  than metres are not read
 - [M] *Fit the preamp*'s solved bound prices every node under the whole signal's at its steady
   gain, so broadband music under a curve moving many bands still bounds one to three and a half
   decibels over its decode (3.6 dB on average over eight real songs, 0.2 to 5.9); a transient
