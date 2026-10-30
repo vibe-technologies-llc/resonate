@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     io, mem,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
@@ -62,6 +62,7 @@ struct Shared {
     holders: Holders,
     known: Mutex<Known>,
     vouched: Mutex<Vouched>,
+    located: Mutex<BTreeSet<Located>>,
     round: Mutex<()>,
     listeners: Mutex<Vec<Sender<SinkChange>>>,
     turns: Sender<Turn>,
@@ -75,6 +76,8 @@ struct Known {
 
 struct Held {
     renderer: Arc<Renderer>,
+    aliases: BTreeSet<Located>,
+    heard: bool,
     missed: u8,
 }
 
@@ -98,6 +101,7 @@ impl Network {
             holders: Holders::default(),
             known: Mutex::new(Known::default()),
             vouched: Mutex::new(Vouched::default()),
+            located: Mutex::new(BTreeSet::new()),
             round: Mutex::new(()),
             listeners: Mutex::new(Vec::new()),
             turns,
@@ -116,6 +120,26 @@ impl Network {
 
     pub fn vouch(&self, vouched: Vouched) {
         *self.shared.vouched.lock() = vouched;
+    }
+
+    pub fn locate(&self, location: Located) -> Result<()> {
+        self.shared.located.lock().insert(location.clone());
+        if self.is_looking() {
+            self.shared.reach(&location)?;
+        }
+        Ok(())
+    }
+
+    pub fn unlocate(&self, location: &Located) {
+        if !self.shared.located.lock().remove(location) {
+            return;
+        }
+        let gone = self.shared.known.lock().retire_unheard_at(location);
+        self.shared.announce(&gone);
+    }
+
+    pub fn located(&self) -> Vec<Located> {
+        self.shared.located.lock().iter().cloned().collect()
     }
 
     pub fn look(&self, first: FirstSearch) -> Result<()> {
@@ -276,33 +300,57 @@ impl Shared {
 
     fn round(&self) -> Result<()> {
         let _one_at_a_time = self.round.lock();
-        let found = ssdp::search(self.searching.to, self.searching.within)?;
+        let addresses = self.located();
+        let found = match ssdp::search(self.searching.to, self.searching.within) {
+            Ok(found) => Some(found),
+            Err(error) if !addresses.is_empty() => {
+                tracing::warn!(%error, "the network could not be searched, the renderers given by address are still reached");
+                None
+            }
+            Err(error) => return Err(error),
+        };
+        let heard: &[Located] = found.as_deref().unwrap_or_default();
 
-        let held_at: Vec<(SinkId, Located)> = self
-            .known
-            .lock()
-            .held
-            .iter()
-            .map(|(id, held)| (*id, held.renderer.location().clone()))
-            .collect();
-        let mut seen: Vec<SinkId> = Vec::new();
+        let mut seen: Vec<(SinkId, bool)> = Vec::new();
         let mut reached = Vec::new();
         let vouched = self.vouched.lock().clone();
-        for location in found {
-            if let Some((id, _)) = held_at.iter().find(|(_, at)| *at == location) {
-                seen.push(*id);
+        let by_address = addresses.iter().filter(|at| !heard.contains(at));
+        for location in heard.iter().chain(by_address) {
+            let sighted = heard.contains(location);
+            if let Some(id) = self.known.lock().holding_at(location) {
+                seen.push((id, sighted));
                 continue;
             }
             match Renderer::reached(location.clone(), &vouched) {
-                Ok(renderer) => reached.push(renderer),
+                Ok(renderer) => reached.push((renderer, sighted)),
                 Err(error) => {
-                    tracing::debug!(%error, %location, "a device answering the search is not a renderer this player can stream to");
+                    tracing::debug!(%error, %location, "a device at an address is not a renderer this player can stream to");
                 }
             }
         }
 
-        let changes = self.known.lock().settle(reached, &seen);
+        let mut known = self.known.lock();
+        if found.is_none() {
+            seen.extend(known.held.keys().map(|id| (*id, false)));
+        }
+        let changes = known.settle(reached, &seen, found.is_some());
+        drop(known);
         self.announce(&changes);
+        Ok(())
+    }
+
+    fn located(&self) -> Vec<Located> {
+        self.located.lock().iter().cloned().collect()
+    }
+
+    fn reach(&self, location: &Located) -> Result<()> {
+        if self.known.lock().holding_at(location).is_some() {
+            return Ok(());
+        }
+        let vouched = self.vouched.lock().clone();
+        let renderer = Renderer::reached(location.clone(), &vouched)?;
+        let change = self.known.lock().admit(renderer, false).1;
+        self.announce(&change.into_iter().collect::<Vec<_>>());
         Ok(())
     }
 
@@ -319,30 +367,67 @@ impl Shared {
 }
 
 impl Known {
-    fn settle(&mut self, reached: Vec<Renderer>, seen: &[SinkId]) -> Vec<SinkChange> {
-        let mut changes = Vec::new();
-        let mut kept: Vec<SinkId> = seen.to_vec();
-        for renderer in reached {
-            let same = self
-                .held
-                .iter()
-                .find(|(_, held)| held.renderer.udn() == renderer.udn())
-                .map(|(id, _)| *id);
-            let id = if let Some(id) = same {
-                id
-            } else {
-                let id = SinkId::new(RENDERER_IDS_FROM.saturating_add(self.next));
-                self.next = self.next.saturating_add(1);
-                changes.push(SinkChange::Added(id));
-                id
+    fn holding_at(&self, location: &Located) -> Option<SinkId> {
+        self.held
+            .iter()
+            .find(|(_, held)| {
+                held.renderer.location() == location || held.aliases.contains(location)
+            })
+            .map(|(id, _)| *id)
+    }
+
+    fn admit(&mut self, renderer: Renderer, heard: bool) -> (SinkId, Option<SinkChange>) {
+        let same = self
+            .held
+            .iter()
+            .find(|(_, held)| held.renderer.udn() == renderer.udn())
+            .map(|(id, _)| *id);
+        let (id, change, mut aliases) =
+            match same.and_then(|id| self.held.remove(&id).map(|held| (id, held))) {
+                Some((id, held)) => {
+                    let mut aliases = held.aliases;
+                    if held.renderer.location() != renderer.location() {
+                        aliases.insert(held.renderer.location().clone());
+                    }
+                    (id, None, aliases)
+                }
+                None => {
+                    let id = SinkId::new(RENDERER_IDS_FROM.saturating_add(self.next));
+                    self.next = self.next.saturating_add(1);
+                    (id, Some(SinkChange::Added(id)), BTreeSet::new())
+                }
             };
-            self.held.insert(
-                id,
-                Held {
-                    renderer: Arc::new(renderer),
-                    missed: 0,
-                },
-            );
+        aliases.remove(renderer.location());
+        self.held.insert(
+            id,
+            Held {
+                renderer: Arc::new(renderer),
+                aliases,
+                heard,
+                missed: 0,
+            },
+        );
+        (id, change)
+    }
+
+    fn settle(
+        &mut self,
+        reached: Vec<(Renderer, bool)>,
+        seen: &[(SinkId, bool)],
+        searched: bool,
+    ) -> Vec<SinkChange> {
+        let mut changes = Vec::new();
+        let mut kept: Vec<SinkId> = seen.iter().map(|(id, _)| *id).collect();
+        if searched {
+            for (id, heard) in seen {
+                if let Some(held) = self.held.get_mut(id) {
+                    held.heard = *heard;
+                }
+            }
+        }
+        for (renderer, heard) in reached {
+            let (id, change) = self.admit(renderer, heard);
+            changes.extend(change);
             kept.push(id);
         }
         self.held.retain(|id, held| {
@@ -358,6 +443,17 @@ impl Known {
             true
         });
         changes
+    }
+
+    fn retire_unheard_at(&mut self, location: &Located) -> Vec<SinkChange> {
+        let Some(id) = self.holding_at(location) else {
+            return Vec::new();
+        };
+        if self.held.get(&id).is_some_and(|held| held.heard) {
+            return Vec::new();
+        }
+        self.held.remove(&id);
+        vec![SinkChange::Removed(id)]
     }
 }
 

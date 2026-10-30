@@ -192,6 +192,11 @@ sound server's, so a zone or \fBsink\fR can play to it. A \fBsink\fR naming one
 (\fBupnp:\fR and its UDN) searches whatever this says. The settings pane's device list switches
 it. Default: false.
 .TP
+.B renderers-at
+Array of \fBhttp://\fR addresses of UPnP renderers' device descriptions, such as
+\fBhttp://192.168.1.20:49152/description.xml\fR, for a network that drops the multicast search.
+Each is reached whenever the network is looked at, whatever the search finds. Default: empty.
+.TP
 .B flac-above-96k-for
 Array of renderer names (\fBupnp:\fR and the UDN, as \fBresonate sinks \-\-renderers\fR lists them).
 A renderer whose protocol info lists FLAC without stating a rate is offered FLAC up to 96 kHz, the

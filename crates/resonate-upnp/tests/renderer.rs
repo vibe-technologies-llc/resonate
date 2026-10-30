@@ -28,7 +28,7 @@ use resonate_engine::{
     Command, EngineConfig, Equalisation, Event, Levelling, NodeName, Player, Preamp,
     Profile as EqProfile, QueueItem, ReplayGainMode,
 };
-use resonate_upnp::{Beside, FirstSearch, Network, Searching, Udn, Vouched};
+use resonate_upnp::{Beside, FirstSearch, Located, Neighbours, Network, Searching, Udn, Vouched};
 
 const UDN: &str = "uuid:fake-renderer";
 
@@ -131,6 +131,7 @@ impl Heard {
 
 struct Fake {
     search_at: SocketAddr,
+    described_at: SocketAddr,
     heard: Arc<Mutex<Heard>>,
 }
 
@@ -159,7 +160,11 @@ impl Fake {
             }
         });
 
-        Self { search_at, heard }
+        Self {
+            search_at,
+            described_at,
+            heard,
+        }
     }
 
     fn searching(&self) -> Searching {
@@ -169,6 +174,14 @@ impl Fake {
             every: Duration::from_secs(3_600),
             serving_on: IpAddr::V4(Ipv4Addr::LOCALHOST),
         }
+    }
+
+    fn description_address(&self) -> Located {
+        Located::parse(&format!(
+            "http://{}/device/description.xml",
+            self.described_at
+        ))
+        .expect("the fake's description address reads")
     }
 
     fn until(&self, what: &str, done: impl Fn(&Heard) -> bool) {
@@ -1585,4 +1598,183 @@ fn a_vouched_renderer_taking_flac_and_wave_is_sent_flac_at_a_rate_it_would_other
         decoded(&tree, &heard.fetched, SampleFormat::S24),
         Pattern::expected(2, frames)
     );
+}
+
+struct Deaf {
+    held: UdpSocket,
+}
+
+impl Deaf {
+    fn start() -> Self {
+        Self {
+            held: UdpSocket::bind("127.0.0.1:0").expect("a loopback socket nobody answers on"),
+        }
+    }
+
+    fn searching(&self, every: Duration) -> Searching {
+        Searching {
+            to: self.held.local_addr().expect("the silent address"),
+            within: Duration::from_millis(100),
+            every,
+            serving_on: IpAddr::V4(Ipv4Addr::LOCALHOST),
+        }
+    }
+}
+
+fn refused_search() -> Searching {
+    Searching {
+        to: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
+        within: Duration::from_millis(100),
+        every: Duration::from_secs(3_600),
+        serving_on: IpAddr::V4(Ipv4Addr::LOCALHOST),
+    }
+}
+
+fn nobody_listening_at() -> Located {
+    let free = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+    let at = free.local_addr().expect("its address");
+    drop(free);
+    Located::parse(&format!("http://{at}/description.xml")).expect("reads")
+}
+
+fn changes_of(network: &Network) -> Receiver<SinkChange> {
+    Neighbours::subscribe(network)
+}
+
+#[test]
+fn a_renderer_given_by_the_address_of_its_description_is_listed_though_the_search_hears_nothing() {
+    let fake = Fake::start();
+    let deaf = Deaf::start();
+    let network = Network::resting(deaf.searching(Duration::from_secs(3_600))).expect("rests");
+
+    network
+        .locate(fake.description_address())
+        .expect("a resting network only holds the address");
+    assert!(network.sinks().is_empty());
+    assert!(fake.heard.lock().actions().is_empty());
+    network.look(FirstSearch::Awaited).expect("looks");
+    let sink = the_renderer(&network);
+
+    assert_eq!(sink.name, NodeName::new(format!("upnp:{UDN}")));
+    assert_eq!(sink.description, NAME);
+    assert!(sink.supports(stereo_sixteen()));
+    assert_eq!(fake.heard.lock().searches, 0);
+    assert_eq!(network.located(), [fake.description_address()]);
+}
+
+#[test]
+fn a_renderer_given_by_address_stays_through_every_search_that_misses_it_and_is_described_once() {
+    let fake = Fake::start();
+    let deaf = Deaf::start();
+    let network = Network::resting(deaf.searching(Duration::from_millis(60))).expect("rests");
+    network
+        .locate(fake.description_address())
+        .expect("holds the address");
+    network.look(FirstSearch::Awaited).expect("looks");
+    let sink = the_renderer(&network);
+
+    thread::sleep(Duration::from_millis(900));
+
+    assert_eq!(the_renderer(&network).id, sink.id);
+    assert_eq!(
+        fake.heard
+            .lock()
+            .actions()
+            .iter()
+            .filter(|action| **action == "GetProtocolInfo")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn an_address_given_to_a_looking_network_lists_the_renderer_at_once_and_forgetting_it_removes_it() {
+    let fake = Fake::start();
+    let deaf = Deaf::start();
+    let network = Network::start(
+        deaf.searching(Duration::from_secs(3_600)),
+        FirstSearch::Awaited,
+    )
+    .expect("looks");
+    let changes = changes_of(&network);
+    assert!(network.sinks().is_empty());
+
+    network
+        .locate(fake.description_address())
+        .expect("the renderer is described");
+    let sink = the_renderer(&network);
+    network.unlocate(&fake.description_address());
+
+    assert_eq!(changes.try_recv(), Ok(SinkChange::Added(sink.id)));
+    assert_eq!(changes.try_recv(), Ok(SinkChange::Removed(sink.id)));
+    assert!(network.sinks().is_empty());
+    assert!(network.located().is_empty());
+}
+
+#[test]
+fn a_renderer_both_found_by_the_search_and_given_by_address_is_listed_once_and_kept_when_the_address_goes()
+ {
+    let fake = Fake::start();
+    let network = Network::resting(fake.searching()).expect("rests");
+    network
+        .locate(fake.description_address())
+        .expect("holds the address");
+    network.look(FirstSearch::Awaited).expect("looks");
+    let sink = the_renderer(&network);
+
+    network.unlocate(&fake.description_address());
+
+    assert_eq!(the_renderer(&network).id, sink.id);
+}
+
+#[test]
+fn an_address_that_is_not_answering_is_refused_to_a_looking_network_and_still_held_for_the_next_search()
+ {
+    let deaf = Deaf::start();
+    let network = Network::start(
+        deaf.searching(Duration::from_secs(3_600)),
+        FirstSearch::Awaited,
+    )
+    .expect("looks");
+    let nobody = nobody_listening_at();
+
+    let refused = network.locate(nobody.clone());
+
+    assert!(refused.is_err());
+    assert_eq!(network.located(), [nobody]);
+    assert!(network.sinks().is_empty());
+}
+
+#[test]
+fn a_network_that_cannot_send_its_search_still_reaches_the_renderers_given_by_address() {
+    let fake = Fake::start();
+    let network = Network::resting(refused_search()).expect("rests");
+
+    assert!(network.look(FirstSearch::Awaited).is_err());
+    network
+        .locate(fake.description_address())
+        .expect("holds the address");
+    network
+        .look(FirstSearch::Awaited)
+        .expect("a search that fails is no failure where an address is held");
+
+    assert_eq!(the_renderer(&network).description, NAME);
+}
+
+#[test]
+fn resting_forgets_the_renderers_and_keeps_the_addresses_to_reach_again() {
+    let fake = Fake::start();
+    let deaf = Deaf::start();
+    let network = Network::resting(deaf.searching(Duration::from_secs(3_600))).expect("rests");
+    network
+        .locate(fake.description_address())
+        .expect("holds the address");
+    network.look(FirstSearch::Awaited).expect("looks");
+    assert_eq!(network.sinks().len(), 1);
+
+    network.rest();
+    assert!(network.sinks().is_empty());
+    network.look(FirstSearch::Awaited).expect("looks again");
+
+    assert_eq!(the_renderer(&network).description, NAME);
 }

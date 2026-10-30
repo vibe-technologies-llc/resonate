@@ -27,7 +27,7 @@ use resonate_eq::{Binding, ProfileName};
 use resonate_library::{HistoryKept, Layout, MinimumLength, MusicExtensions, MusicFilters};
 use resonate_listen::Listening;
 use resonate_pipewire::NodeName;
-use resonate_upnp::{Udn, Vouched};
+use resonate_upnp::{Located, Udn, Vouched};
 use toml_edit::{DocumentMut, Item, Table};
 
 use crate::{
@@ -157,6 +157,7 @@ pub struct Config {
     pub resume: Option<bool>,
     pub renderers: Option<bool>,
     pub flac_above_96k_for: BTreeSet<NodeName>,
+    pub renderers_at: BTreeSet<Located>,
     pub history_kept: Option<HistoryKept>,
     pub organise_as: Option<Layout>,
     pub notify: Option<bool>,
@@ -284,6 +285,7 @@ impl fmt::Debug for Config {
             resume,
             renderers,
             flac_above_96k_for,
+            renderers_at,
             history_kept,
             organise_as,
             notify,
@@ -397,6 +399,7 @@ impl fmt::Debug for Config {
             .field("resume", resume)
             .field("renderers", renderers)
             .field("flac_above_96k_for", flac_above_96k_for)
+            .field("renderers_at", renderers_at)
             .field("history_kept", history_kept)
             .field("organise_as", organise_as)
             .field("notify", notify)
@@ -612,6 +615,10 @@ impl Config {
 
     pub fn renderers_vouched_for(&self) -> Vouched {
         Vouched::flac_at_any_rate(self.flac_above_96k_for.iter().filter_map(Udn::from_node))
+    }
+
+    pub const fn renderers_at(&self) -> &BTreeSet<Located> {
+        &self.renderers_at
     }
 
     pub fn history_kept(&self) -> HistoryKept {
@@ -1050,6 +1057,7 @@ impl Config {
             ConfigKey::Resume => config.resume = Some(at.boolean(value)?),
             ConfigKey::Renderers => config.renderers = Some(at.boolean(value)?),
             ConfigKey::FlacAbove96kFor => config.flac_above_96k_for = node_names(at, value)?,
+            ConfigKey::RenderersAt => config.renderers_at = renderer_addresses(at, value)?,
             ConfigKey::HistoryKept => {
                 config.history_kept = Some(match value.as_integer() {
                     Some(days) => HistoryKept::for_days(days).ok_or_else(|| at.rejected())?,
@@ -1269,6 +1277,29 @@ fn node_names(at: At<'_>, value: &Item) -> Result<BTreeSet<NodeName>> {
                 .ok_or_else(|| at.mistyped(ValueKind::Text))
         })
         .collect()
+}
+
+fn renderer_addresses(at: At<'_>, value: &Item) -> Result<BTreeSet<Located>> {
+    let array = value
+        .as_array()
+        .ok_or_else(|| at.mistyped(ValueKind::Array))?;
+    let mut addresses = BTreeSet::new();
+
+    for named in array {
+        let address = named.as_str().ok_or_else(|| at.mistyped(ValueKind::Text))?;
+        match Located::parse(address) {
+            Ok(located) => {
+                addresses.insert(located);
+            }
+            Err(error) if address.trim().is_empty() => {
+                tracing::debug!(%error, "ignoring a blank renderer address");
+            }
+            Err(error) => {
+                tracing::warn!(%error, address, path = %at.path.display(), "ignoring a renderer address that is not an http address");
+            }
+        }
+    }
+    Ok(addresses)
 }
 
 fn measurers(at: At<'_>, value: &Item) -> Result<BTreeMap<NodeName, String>> {
@@ -2341,6 +2372,36 @@ mod tests {
             error,
             Error::ConfigType {
                 key: ConfigKey::FlacAbove96kFor,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn the_renderer_addresses_are_the_http_addresses_named_and_nothing_is_held_by_default() {
+        let config = read(
+            r#"renderers-at = ["http://192.168.1.20:49152/desc.xml", " http://[fe80::1]:80/d ", "", "https://secure/", "renderer"]"#,
+        )
+        .expect("a well formed document");
+
+        assert_eq!(
+            config
+                .renderers_at()
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            [
+                "http://192.168.1.20:49152/desc.xml",
+                "http://[fe80::1]:80/d"
+            ]
+        );
+        assert!(Config::default().renderers_at().is_empty());
+
+        let error = read("renderers-at = [7]").expect_err("a number is not an address");
+        assert!(matches!(
+            error,
+            Error::ConfigType {
+                key: ConfigKey::RenderersAt,
                 ..
             }
         ));

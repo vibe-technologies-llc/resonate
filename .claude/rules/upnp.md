@@ -109,6 +109,24 @@ dev-dependency, for the end-to-end test.
   `resonate-upnp-search` thread, `Network::rest` stops searching and forgets every renderer, each
   told `SinkChange::Removed`. `Network::start` is `resting` and `look` together. So the window can
   hold a network behind every zone's `Beside` from the start and the settings pane switch it.
+- **A renderer may be given by the address of its description** (`Network::locate(Located)`,
+  `unlocate`, `located`): a network that drops multicast, or an iPhone without the multicast
+  entitlement, hears no SSDP answer, so the listener types the `Located` the search would have
+  yielded. A `Network` holds the set whatever it does: resting keeps it (`rest` forgets the
+  renderers, never the addresses), and every round reaches each address its search did not
+  already give, through the same `Renderer::reached` (the description fetch, `GetProtocolInfo`,
+  the vouch) and the same `Known::admit`, so a renderer found both ways is one sink under one id
+  and a known UDN at a new address is replaced as ever. `locate` on a looking network reaches the
+  address at once and returns why it could not (`Error::Network`, `Error::NotARenderer`, ...): the
+  address stays held and is tried again each round, so a renderer powered off at the time
+  appears when it is on. A held address's renderer is never `SEARCHES_MISSED_BEFORE_GONE`'s to
+  drop, since the search would not have found it anyway; a renderer is dropped when its address
+  is, at once (`unlocate`) unless the search heard it too (`Held::heard`), and an address the
+  renderer was described at before it moved (`Held::aliases`) still counts as held, so a
+  multi-homed renderer given by one address and found at another is not described again every
+  round. A search that cannot be sent (no multicast route, the iOS refusal) is a warning, not a
+  failed round, where an address is held: the addresses are reached, nothing is counted missed,
+  and with none held it is `Error::Search` as before. Cast has no counterpart (`cast.md`).
 - **Searched again every `Searching::every` (60 s)**; a renderer missing from
   `SEARCHES_MISSED_BEFORE_GONE` (2) searches in a row is `SinkChange::Removed`, a new UDN `Added`,
   a known UDN at a new address replaced under its id. `FirstSearch::Awaited` searches before
@@ -256,7 +274,12 @@ wanted names a renderer; the last two wait for the first search. The window alwa
 (`Rendering::for_the_window`, resting where none of those asks), so the settings pane's device
 list can switch it: `Rendering::switch` hands `resonate-ui` a `Renderers` (`looking`, `look`), the
 switch row under the devices calls it and stores `Setting::Renderers`, and renderers appear in
-or leave the list through the sink changes `Beside` forwards. `Rendering::player` is how `play`,
+or leave the list through the sink changes `Beside` forwards. The `renderers-at` key (`binary.md`) holds the addresses of renderers the search cannot hear:
+`Kinds::resting` hands each to `Network::locate` while the network rests, so they are reached
+whenever it looks (the key `renderers`, a `sink` naming a renderer, `sinks --renderers`), and
+`sinks --renderer-at URL` adds one for a run and asks the network to look. Addresses do not make
+the network look by themselves: a looking network also multicasts the search (*Finding and
+describing*). `Rendering::player` is how `play`,
 the window and every zone (`zoning::Opener`) build a `Player`: PipeWire inside `Beside` where a
 network is held, `Player::with_sources` where not. `sinks` lists the renderers with *the network*
 as what drives them.
@@ -284,7 +307,8 @@ as one sink and refuses it to a second while the first holds it bit-perfect (`au
   one while the boundary searches all the same, as sync does (`android.md`). iOS
   refuses multicast from an app's own socket without `com.apple.developer.networking.multicast`,
   which a free signing cannot carry, so an iPhone signed so finds no renderer (`ios.md`,
-  `FEATURES.md`). The renderer's answers and the stream the renderer fetches are unicast.
+  `FEATURES.md`): an iPhone with no search answer takes a renderer by address all the same
+  (`FEATURES.md` for the screen that has yet to ask for one). The renderer's answers and the stream the renderer fetches are unicast.
 
 `crates/resonate-mobile/src/rendering.rs` proves it over a fake on loopback (an SSDP answer, a
 description with AVTransport alone, SOAP recording actions): the search lists the renderer, a zone
@@ -341,3 +365,20 @@ nothing, and a vouched renderer taking FLAC and WAVE is sent FLAC where it would
 its volume in steps of `VolumeMax` and is turned and muted through `Volume` alone, with no
 RenderingControl call and no `Playlist` call
 (`a_renderer_offering_openhome_volume_is_turned_through_it_and_its_playlist_is_left_alone`).
+
+A renderer given by address is proved against the same fake with a search that hears nothing (a
+socket nobody answers on): listed once the resting network looks and no search answered
+(`a_renderer_given_by_the_address_of_its_description_is_listed_though_the_search_hears_nothing`),
+kept and described once through searches that miss it
+(`a_renderer_given_by_address_stays_through_every_search_that_misses_it_and_is_described_once`),
+added to a looking network and removed with its address, each told
+(`an_address_given_to_a_looking_network_lists_the_renderer_at_once_and_forgetting_it_removes_it`),
+one sink where the search and the address both reach it and kept when the address goes
+(`a_renderer_both_found_by_the_search_and_given_by_address_is_listed_once_and_kept_when_the_address_goes`),
+an address nobody answers at refused yet held
+(`an_address_that_is_not_answering_is_refused_to_a_looking_network_and_still_held_for_the_next_search`),
+a search that cannot be sent no failure where an address is held
+(`a_network_that_cannot_send_its_search_still_reaches_the_renderers_given_by_address`), and rest
+forgetting the renderers and keeping the addresses
+(`resting_forgets_the_renderers_and_keeps_the_addresses_to_reach_again`); the boundary's twin is
+`a_renderer_added_by_address_is_listed_where_the_search_hears_nothing_and_forgotten_with_it`.

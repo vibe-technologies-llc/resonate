@@ -98,6 +98,7 @@ use resonate_pipewire::{
     HardwareVolume, NodeName, PipeWire, Plugged, SinkFormats, SinkInfo, Words,
 };
 use resonate_providers::Providers;
+use resonate_upnp::Located;
 use tracing_subscriber::{
     EnvFilter, filter::ParseError, fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _,
 };
@@ -186,7 +187,10 @@ fn run() -> Result<()> {
     let config = config::load(cli.config.as_deref())?;
 
     match &cli.command {
-        Some(Sub::Sinks { renderers }) => list_sinks(&cli, &config, *renderers),
+        Some(Sub::Sinks {
+            renderers,
+            renderers_at,
+        }) => list_sinks(&cli, &config, *renderers, renderers_at),
         Some(Sub::Explain { path }) => explain(&cli, &config, &local_path(path)),
         Some(Sub::Info { path, graph }) => info::print(
             &local_path(path),
@@ -598,10 +602,24 @@ fn broken_down(failed: Failures) -> String {
     }
 }
 
-fn list_sinks(cli: &Cli, config: &Config, renderers: bool) -> Result<()> {
+fn with_renderer_addresses(config: &Config, addresses: &[String]) -> Result<Config> {
+    let mut config = config.clone();
+    for address in addresses {
+        let located = Located::parse(address).map_err(|source| Error::RendererAddress {
+            address: address.clone(),
+            source: Box::new(source),
+        })?;
+        config.renderers_at.insert(located);
+    }
+    Ok(config)
+}
+
+fn list_sinks(cli: &Cli, config: &Config, renderers: bool, renderers_at: &[String]) -> Result<()> {
     let pipewire = PipeWire::start("Resonate")?;
     let mut sinks = pipewire.enumerate_sinks(SINK_TIMEOUT)?;
-    sinks.extend(Rendering::of(config, wanted_sink(cli, config).as_ref(), renderers).sinks());
+    let config = with_renderer_addresses(config, renderers_at)?;
+    let asked = renderers || !renderers_at.is_empty();
+    sinks.extend(Rendering::of(&config, wanted_sink(cli, &config).as_ref(), asked).sinks());
 
     let mut table = Table::new(vec![
         "",
