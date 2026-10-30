@@ -71,7 +71,7 @@ pub use crate::{
     sheet::{Placing, SheetEdit, SheetField, SheetScope, SheetText},
     sofa::{
         Access as SofaAccess, Fault as SofaFault, Hrir, Member as SofaMember, SOFA_BYTES_AT_MOST,
-        Side as SofaSide, read_hrir, read_hrir_bytes,
+        SOFA_STREAMED_BYTES_AT_MOST, Side as SofaSide, read_hrir, read_hrir_bytes,
     },
     source::{
         FormatHint, Hinting, LocalFiles, Media, MediaProvider, MediaStream, Reading, Sources,

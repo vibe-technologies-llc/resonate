@@ -1,15 +1,16 @@
 use std::{
     fmt, fs,
+    io::Write,
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
 };
 
 use parking_lot::Mutex;
-use resonate_codec::Sources;
+use resonate_codec::{SOFA_STREAMED_BYTES_AT_MOST, Sources};
 use resonate_core::{
     AUDIO_EXTENSIONS, HRIR_EXTENSIONS, HeadYaw, MediaLocation, SpeakerAngle, SpeakerElevation,
-    Speakers,
+    Speakers, writer::Held,
 };
 use resonate_engine::{
     Command, Impulse, PairedReadError, binaural_wave, read_binaural_pair, read_impulse,
@@ -18,10 +19,35 @@ use resonate_engine::{
 use crate::{Error, MobilePlayer, Result};
 
 pub const IMPULSE_BYTES_AT_MOST: usize = 64 * 1024 * 1024;
+pub const IMPULSE_CHUNK_BYTES: u32 = 1024 * 1024;
 const KEPT_STEM: &str = "room-correction";
 const CANDIDATE_STEM: &str = "room-correction-candidate";
 const LEFT_STEM: &str = "room-correction-candidate-left";
 const RIGHT_STEM: &str = "room-correction-candidate-right";
+
+#[uniffi::export]
+pub fn room_correction_chunk_bytes() -> u32 {
+    IMPULSE_CHUNK_BYTES
+}
+
+fn staged_bytes_at_most(extension: &str) -> u64 {
+    if HRIR_EXTENSIONS.contains(&extension) {
+        SOFA_STREAMED_BYTES_AT_MOST
+    } else {
+        IMPULSE_BYTES_AT_MOST as u64
+    }
+}
+
+fn admitted(extension: &str) -> Result<String> {
+    let extension = extension.to_ascii_lowercase();
+    if AUDIO_EXTENSIONS.contains(&extension.as_str())
+        || HRIR_EXTENSIONS.contains(&extension.as_str())
+    {
+        Ok(extension)
+    } else {
+        Err(Error::ImpulseExtension)
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub enum ImpulseOp {
@@ -85,10 +111,18 @@ impl RoomCorrection {
     }
 }
 
+struct Staging {
+    held: Held,
+    path: PathBuf,
+    written: u64,
+    at_most: u64,
+}
+
 pub(crate) struct Room {
     folder: PathBuf,
     applied: Mutex<Option<Arc<Impulse>>>,
     speakers: Mutex<Speakers>,
+    staging: Mutex<Option<Staging>>,
 }
 
 impl Room {
@@ -97,6 +131,7 @@ impl Room {
             folder,
             applied: Mutex::new(None),
             speakers: Mutex::new(Speakers::STANDARD),
+            staging: Mutex::new(None),
         }
     }
 
@@ -174,12 +209,7 @@ impl Room {
     }
 
     fn stage_as(&self, stem: &str, bytes: &[u8], extension: &str) -> Result<PathBuf> {
-        let extension = extension.to_ascii_lowercase();
-        if !AUDIO_EXTENSIONS.contains(&extension.as_str())
-            && !HRIR_EXTENSIONS.contains(&extension.as_str())
-        {
-            return Err(Error::ImpulseExtension);
-        }
+        let extension = admitted(extension)?;
         if bytes.len() > IMPULSE_BYTES_AT_MOST {
             return Err(Error::ImpulseTooLarge);
         }
@@ -245,15 +275,82 @@ impl Room {
 
     fn keep(&self, bytes: &[u8], extension: &str, sources: &Sources) -> Result<Impulse> {
         let candidate = self.stage(bytes, extension)?;
-        let impulse = match read(sources, &candidate, self.speakers()) {
+        self.settle(&candidate, sources)
+    }
+
+    fn settle(&self, candidate: &Path, sources: &Sources) -> Result<Impulse> {
+        let impulse = match read(sources, candidate, self.speakers()) {
             Ok(impulse) => impulse,
             Err(error) => {
-                let _ = fs::remove_file(&candidate);
+                let _ = fs::remove_file(candidate);
                 return Err(error);
             }
         };
-        self.promote(&candidate)?;
+        self.promote(candidate)?;
         Ok(impulse)
+    }
+
+    fn begin_staging(&self, extension: &str) -> Result<()> {
+        let extension = admitted(extension)?;
+        self.abandon_staging()?;
+        self.drop_candidates()?;
+        let path = self.folder.join(format!("{CANDIDATE_STEM}.{extension}"));
+        let held = Held::made(&path).map_err(|source| Error::ImpulseFile {
+            op: ImpulseOp::Keep,
+            source,
+        })?;
+        *self.staging.lock() = Some(Staging {
+            held,
+            path,
+            written: 0,
+            at_most: staged_bytes_at_most(&extension),
+        });
+        Ok(())
+    }
+
+    fn stage_chunk(&self, chunk: &[u8]) -> Result<()> {
+        let mut staging = self.staging.lock();
+        let open = staging.as_mut().ok_or(Error::ImpulseNotStaged)?;
+        let written = open.written.saturating_add(chunk.len() as u64);
+        let appended = if written > open.at_most {
+            Err(Error::ImpulseTooLarge)
+        } else {
+            let mut file = open.held.file();
+            file.write_all(chunk).map_err(|source| Error::ImpulseFile {
+                op: ImpulseOp::Keep,
+                source,
+            })
+        };
+        match appended {
+            Ok(()) => {
+                open.written = written;
+                Ok(())
+            }
+            Err(error) => {
+                if let Some(refused) = staging.take() {
+                    let _ = fs::remove_file(&refused.path);
+                }
+                Err(error)
+            }
+        }
+    }
+
+    fn finish_staging(&self, sources: &Sources) -> Result<Impulse> {
+        let staged = self.staging.lock().take().ok_or(Error::ImpulseNotStaged)?;
+        let impulse = self.settle(&staged.path, sources)?;
+        drop(staged);
+        Ok(impulse)
+    }
+
+    fn abandon_staging(&self) -> Result<()> {
+        let abandoned = self.staging.lock().take();
+        if let Some(abandoned) = abandoned {
+            fs::remove_file(&abandoned.path).map_err(|source| Error::ImpulseFile {
+                op: ImpulseOp::Remove,
+                source,
+            })?;
+        }
+        Ok(())
     }
 }
 
@@ -298,6 +395,23 @@ impl MobilePlayer {
     ) -> Result<RoomCorrection> {
         let impulse = self.room.keep(&bytes, &extension, &self.sources)?;
         Ok(RoomCorrection::of(&impulse))
+    }
+
+    pub fn begin_room_correction(&self, extension: String) -> Result<()> {
+        self.room.begin_staging(&extension)
+    }
+
+    pub fn stage_room_correction(&self, chunk: Vec<u8>) -> Result<()> {
+        self.room.stage_chunk(&chunk)
+    }
+
+    pub fn finish_room_correction(&self) -> Result<RoomCorrection> {
+        let impulse = self.room.finish_staging(&self.sources)?;
+        Ok(RoomCorrection::of(&impulse))
+    }
+
+    pub fn abandon_room_correction(&self) -> Result<()> {
+        self.room.abandon_staging()
     }
 
     pub fn keep_binaural_room_correction(
@@ -413,6 +527,7 @@ pub(crate) fn wave(samples: &[i16]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use hdf5_writer::{AttributeBuilder, DatasetBuilder, Hdf5Builder, WriteOptions};
+    use resonate_core::writer::{self, Writer};
 
     use super::*;
 
@@ -590,6 +705,168 @@ mod tests {
         );
         assert_eq!(RoomCorrection::of(&impulse).channels, 4);
         assert_eq!(RoomCorrection::of(&impulse).rate, 48_000);
+        assert_eq!(fs::read_dir(&folder).expect("a listing").count(), 1);
+    }
+
+    const LARGE_SET_MEASUREMENTS: usize = 2_560;
+    const LARGE_SET_TAPS: usize = 2_048;
+
+    fn a_set_larger_than_a_whole_read_allows() -> Vec<u8> {
+        let mut impulses = Vec::with_capacity(LARGE_SET_MEASUREMENTS * 2 * LARGE_SET_TAPS);
+        let mut positions = Vec::with_capacity(LARGE_SET_MEASUREMENTS * 3);
+        for measurement in 0..LARGE_SET_MEASUREMENTS {
+            for ear in 0..2 {
+                for frame in 0..LARGE_SET_TAPS {
+                    impulses.push(f64::from(ear + 1) / 10.0 * f64::from(frame == 0));
+                }
+            }
+            positions.extend_from_slice(&[
+                if measurement % 2 == 0 { 30.0 } else { 330.0 },
+                0.0,
+                1.0,
+            ]);
+        }
+        Hdf5Builder::new()
+            .dataset(
+                DatasetBuilder::typed_data(
+                    "Data.IR",
+                    vec![LARGE_SET_MEASUREMENTS as u64, 2, LARGE_SET_TAPS as u64],
+                    &impulses,
+                )
+                .expect("taps"),
+            )
+            .dataset(
+                DatasetBuilder::typed_data(
+                    "SourcePosition",
+                    vec![LARGE_SET_MEASUREMENTS as u64, 3],
+                    &positions,
+                )
+                .expect("positions")
+                .attribute(AttributeBuilder::fixed_string("Type", "spherical")),
+            )
+            .dataset(
+                DatasetBuilder::typed_data("Data.SamplingRate", vec![1], &[48_000.0])
+                    .expect("rate"),
+            )
+            .into_plan()
+            .expect("a plan")
+            .encode(WriteOptions::default())
+            .expect("bytes")
+    }
+
+    #[test]
+    fn a_set_past_the_whole_read_limit_is_staged_in_chunks_and_kept() {
+        let folder = folder("chunked");
+        let room = Room::under(folder.clone());
+        let sources = Sources::local();
+        let set = a_set_larger_than_a_whole_read_allows();
+        assert!(set.len() > IMPULSE_BYTES_AT_MOST);
+
+        room.begin_staging("SOFA").expect("staging begun");
+        for chunk in set.chunks(IMPULSE_CHUNK_BYTES as usize) {
+            room.stage_chunk(chunk).expect("a chunk staged");
+        }
+        let impulse = room.finish_staging(&sources).expect("a kept set");
+
+        assert_eq!(
+            room.kept().expect("a listing"),
+            Some(folder.join("room-correction.sofa"))
+        );
+        assert_eq!(
+            fs::metadata(folder.join("room-correction.sofa"))
+                .expect("a file")
+                .len(),
+            set.len() as u64
+        );
+        assert_eq!(RoomCorrection::of(&impulse).channels, 4);
+        assert_eq!(fs::read_dir(&folder).expect("a listing").count(), 1);
+    }
+
+    #[test]
+    fn a_staged_file_is_held_until_it_is_finished_or_abandoned() {
+        let folder = folder("held");
+        let room = Room::under(folder.clone());
+        let sources = Sources::local();
+        let candidate = folder.join("room-correction-candidate.sofa");
+
+        room.begin_staging("sofa").expect("staging begun");
+        room.stage_chunk(&head_related_set()).expect("a chunk");
+
+        assert_eq!(writer::writer_of(&candidate, 0), Writer::Living);
+
+        room.abandon_staging().expect("abandoned");
+
+        assert!(!candidate.exists());
+        assert!(matches!(
+            room.stage_chunk(b"late"),
+            Err(Error::ImpulseNotStaged)
+        ));
+        assert!(matches!(
+            room.finish_staging(&sources),
+            Err(Error::ImpulseNotStaged)
+        ));
+    }
+
+    #[test]
+    fn a_staging_past_what_its_kind_allows_is_dropped_and_the_kept_one_stands() {
+        let folder = folder("chunked-refused");
+        let room = Room::under(folder.clone());
+        let sources = Sources::local();
+        room.keep(&wave(&[i16::MAX, 0, 0, 0]), "wav", &sources)
+            .expect("a kept response");
+        let chunk = vec![0; IMPULSE_CHUNK_BYTES as usize];
+
+        let named = room.begin_staging("txt");
+        room.begin_staging("wav").expect("staging begun");
+        let mut refused = Ok(());
+        for _ in 0..=IMPULSE_BYTES_AT_MOST / chunk.len() {
+            refused = refused.and_then(|()| room.stage_chunk(&chunk));
+        }
+
+        assert!(matches!(named, Err(Error::ImpulseExtension)));
+        assert!(matches!(refused, Err(Error::ImpulseTooLarge)));
+        assert!(matches!(
+            room.finish_staging(&sources),
+            Err(Error::ImpulseNotStaged)
+        ));
+        assert_eq!(
+            room.kept().expect("a listing"),
+            Some(folder.join("room-correction.wav"))
+        );
+        assert_eq!(fs::read_dir(&folder).expect("a listing").count(), 1);
+    }
+
+    #[test]
+    fn a_staged_file_that_does_not_read_is_dropped_and_the_kept_one_stands() {
+        let folder = folder("chunked-unreadable");
+        let room = Room::under(folder.clone());
+        let sources = Sources::local();
+        room.keep(&wave(&[i16::MAX, 0, 0, 0]), "wav", &sources)
+            .expect("a kept response");
+
+        room.begin_staging("wav").expect("staging begun");
+        room.stage_chunk(b"not a wave at all").expect("a chunk");
+        let refused = room.finish_staging(&sources);
+
+        assert!(refused.is_err());
+        assert_eq!(
+            room.kept().expect("a listing"),
+            Some(folder.join("room-correction.wav"))
+        );
+        assert_eq!(fs::read_dir(&folder).expect("a listing").count(), 1);
+    }
+
+    #[test]
+    fn a_new_staging_replaces_one_left_open() {
+        let folder = folder("chunked-replaced");
+        let room = Room::under(folder.clone());
+
+        room.begin_staging("wav").expect("staging begun");
+        room.stage_chunk(b"half of something").expect("a chunk");
+        room.begin_staging("sofa").expect("staging begun again");
+
+        assert!(!folder.join("room-correction-candidate.wav").exists());
+        assert!(folder.join("room-correction-candidate.sofa").exists());
         assert_eq!(fs::read_dir(&folder).expect("a listing").count(), 1);
     }
 

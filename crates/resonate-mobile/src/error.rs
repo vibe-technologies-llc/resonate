@@ -316,8 +316,10 @@ pub enum Error {
     TagNumber,
     #[error("A room correction file must be an audio file")]
     ImpulseExtension,
-    #[error("The room correction file is larger than 64 MiB")]
+    #[error("The room correction file is larger than a phone keeps")]
     ImpulseTooLarge,
+    #[error("No room correction file is being staged")]
+    ImpulseNotStaged,
     #[error("The file holds no response room correction can use")]
     NoImpulse,
     #[error("The two speaker responses are not a pair: {source}")]

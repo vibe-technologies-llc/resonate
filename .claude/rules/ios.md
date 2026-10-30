@@ -1426,12 +1426,13 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   `turnedAway`, `finished`) is `ResonateLogic`'s (`MeasurementTests`); the engine and session are
   built and checked by `ios/check-build.py` but not run on this host (`FEATURES.md`).
 - **Room correction** is the equaliser page's last section (`RoomCorrection.swift`): choosing an
-  audio file reads at most 64 MiB and one byte on `Work.aside` and keeps it through
-  `keep_room_correction`, then switches it on; the switch, the response's channels, rate and length
+  audio or SOFA file reads it in `roomCorrectionChunkBytes()` chunks on `Work.aside` and stages it
+  through `beginRoomCorrection`, `stageRoomCorrection` and `finishRoomCorrection` (a failure calls
+  `abandonRoomCorrection`), never held whole, then switches it on; the switch, the response's channels, rate and length
   and *Forget the response* follow (`eq.md`'s *Room correction*). *Choose a pair…* takes the left
   speaker's file (`RoomCorrectionState.left`), then *Choose the right speaker's response…* the
-  right's (or *Cancel*), each its own `fileImporter` on its own button, and keeps both through
-  `keep_binaural_room_correction`; the name is `ResonateLogic`'s `RoomPair.name` (`RoomPairTests`).
+  right's (or *Cancel*), each its own `fileImporter` on its own button, and keeps both, read whole
+  up to 64 MiB, through `keep_binaural_room_correction`; the name is `ResonateLogic`'s `RoomPair.name` (`RoomPairTests`).
   One response serves every output. The section ends in a `Stepper` each for the speaker angle,
   elevation and the head turned (`RoomCorrectionState.speak(at:)`, `raise(to:)`, `turn(to:)`, bounds
   from `speakerLimits()`, kept in `playback` as `speaker-angle`, `speaker-elevation` and `head-yaw`,

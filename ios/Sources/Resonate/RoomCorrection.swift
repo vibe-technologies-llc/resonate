@@ -71,10 +71,8 @@ final class RoomCorrectionState {
             defer { reading = false }
             do {
                 let native = try await library.player()
-                let largest = Self.largest
-                let bytes = try await Work.aside { try Self.contents(of: url, atMost: largest) }
                 let kept = try await Work.aside {
-                    try native.keepRoomCorrection(bytes: bytes, extension: extensionName)
+                    try Self.staged(url, as: extensionName, by: native)
                 }
                 self.kept = kept
                 name = named
@@ -213,6 +211,28 @@ final class RoomCorrectionState {
     private func remember(on: Bool) {
         self.on = on
         settings.set(on, forKey: Self.onKey)
+    }
+
+    nonisolated private static func staged(
+        _ url: URL,
+        as extensionName: String,
+        by native: MobilePlayer
+    ) throws -> RoomCorrection {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        try native.beginRoomCorrection(extension: extensionName)
+        do {
+            let chunkBytes = Int(roomCorrectionChunkBytes())
+            while let chunk = try handle.read(upToCount: chunkBytes), !chunk.isEmpty {
+                try native.stageRoomCorrection(chunk: chunk)
+            }
+            return try native.finishRoomCorrection()
+        } catch {
+            try? native.abandonRoomCorrection()
+            throw error
+        }
     }
 
     nonisolated private static func contents(of url: URL, atMost largest: Int) throws -> Data {
