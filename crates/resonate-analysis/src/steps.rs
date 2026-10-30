@@ -32,6 +32,15 @@ const AAC_SHORT_HOP: usize = 128;
 const AAC_SHORTS: usize = 8;
 const AAC_SHORTS_START: usize = 448;
 const AAC_FLAT_END: usize = 1_472;
+const SCALE_FACTOR_BANDS_KNOWN_AT: [u32; 2] = [44_100, 48_000];
+const LONG_SCALE_FACTOR_BANDS: [usize; 50] = [
+    0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 48, 56, 64, 72, 80, 88, 96, 108, 120, 132, 144, 160,
+    176, 196, 216, 240, 264, 292, 320, 352, 384, 416, 448, 480, 512, 544, 576, 608, 640, 672, 704,
+    736, 768, 800, 832, 864, 896, 928, 1_024,
+];
+const SHORT_SCALE_FACTOR_BANDS: [usize; 15] =
+    [0, 4, 8, 12, 16, 20, 28, 36, 44, 56, 68, 80, 96, 112, 128];
+const SCALE_FACTOR_BAND_WEIGHT: f32 = 4.0;
 
 const VORBIS_LONG_HOP: usize = 1_024;
 const VORBIS_SHORT_HOP: usize = 128;
@@ -76,6 +85,7 @@ pub struct Steps {
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct Tally {
     sum: Complex<f64>,
+    banded: Complex<f64>,
     count: u64,
     mass: f64,
     spread: f64,
@@ -85,6 +95,7 @@ impl Tally {
     pub(crate) fn counted(on: u64, count: u64) -> Self {
         Self {
             sum: Complex::new(on as f64, 0.0),
+            banded: Complex::default(),
             count,
             mass: count as f64,
             spread: count as f64,
@@ -94,14 +105,28 @@ impl Tally {
     pub(crate) fn weighed(phase: Complex<f32>, weight: f32) -> Self {
         Self {
             sum: Complex::new(f64::from(phase.re), f64::from(phase.im)),
+            banded: Complex::default(),
             count: u64::from(weight > 0.0),
             mass: f64::from(weight),
             spread: f64::from(weight * weight),
         }
     }
 
+    fn banded(phase: Complex<f32>, weight: f32) -> Self {
+        Self {
+            sum: Complex::default(),
+            banded: Complex::new(f64::from(phase.re), f64::from(phase.im)),
+            ..Self::weighed(phase, weight)
+        }
+    }
+
+    fn reach(self) -> f64 {
+        self.sum.norm() + self.banded.norm()
+    }
+
     pub(crate) fn add(&mut self, other: Self) {
         self.sum += other.sum;
+        self.banded += other.banded;
         self.count += other.count;
         self.mass += other.mass;
         self.spread += other.spread;
@@ -119,15 +144,15 @@ impl Tally {
         if self.mass <= 0.0 {
             0.0
         } else {
-            self.sum.norm() / self.mass
+            self.reach() / self.mass
         }
     }
 
-    fn rayleigh(self) -> f64 {
+    pub(crate) fn rayleigh(self) -> f64 {
         if self.spread <= 0.0 {
             0.0
         } else {
-            self.sum.norm_sqr() / self.spread
+            self.reach() * self.reach() / self.spread
         }
     }
 }
@@ -224,6 +249,7 @@ pub(crate) fn phased(
     }
     Tally {
         sum: Complex::new(f64::from(sum.re), f64::from(sum.im)),
+        banded: Complex::default(),
         count: u64::from(count),
         mass: f64::from(mass),
         spread: f64::from(spread),
@@ -279,6 +305,7 @@ pub(crate) trait Grid {
     const FRAMES_A_SEARCH: usize;
     const CONFIRMED_FRAMES: usize;
     const MID_AND_SIDE: bool;
+    const UNDOES: bool = false;
 
     fn band(rate: u32) -> Option<Band>;
 
@@ -311,6 +338,17 @@ pub(crate) trait Grid {
     fn searched(_: usize) -> bool {
         true
     }
+
+    fn undone(&mut self, _: u64, _: &[&[f32]]) -> Option<Tally> {
+        None
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Pass {
+    Searching,
+    Confirming,
+    Undoing,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -455,9 +493,23 @@ impl<G: Grid> Stepping<G> {
         self.held_from += gone as u64;
     }
 
-    fn tally_frame(&mut self, start: usize, shape: usize, searching: bool) -> Tally {
+    fn tally_frame(&mut self, start: usize, shape: usize, pass: Pass) -> Tally {
         let mut chosen = Tally::default();
         let mut chosen_strength = -1.0_f64;
+        if pass == Pass::Undoing
+            && let Some(grid) = self.grid.as_mut()
+        {
+            let at = self.held_from + start as u64;
+            let lanes: Vec<&[f32]> = self.held[..usize::from(self.paired) + 1]
+                .iter()
+                .map(|lane| &lane[start..start + G::SPAN])
+                .collect();
+            if let Some(tally) = grid.undone(at, &lanes) {
+                chosen_strength = tally.rayleigh();
+                chosen = tally;
+            }
+        }
+        let searching = pass == Pass::Searching;
         for kind in (0..G::KINDS).filter(|kind| !searching || G::searched(*kind)) {
             let tally = self.tally_kind(start, shape, kind);
             let strength = tally.rayleigh();
@@ -499,10 +551,10 @@ impl<G: Grid> Stepping<G> {
         grid.tally(lines, &self.left, right)
     }
 
-    fn tally_run(&mut self, start: usize, frames: usize, shape: usize, searching: bool) -> Tally {
+    fn tally_run(&mut self, start: usize, frames: usize, shape: usize, pass: Pass) -> Tally {
         let mut tally = Tally::default();
         for frame in 0..frames {
-            tally.add(self.tally_frame(start + frame * G::HOP, shape, searching));
+            tally.add(self.tally_frame(start + frame * G::HOP, shape, pass));
         }
         tally
     }
@@ -521,7 +573,7 @@ impl<G: Grid> Stepping<G> {
         for shape in 0..G::SHAPES {
             for residue in 0..G::RESIDUES {
                 found[shape * G::RESIDUES + residue] =
-                    self.tally_run(start + residue, G::FRAMES_A_SEARCH, shape, true);
+                    self.tally_run(start + residue, G::FRAMES_A_SEARCH, shape, Pass::Searching);
             }
         }
         if let Some(grid) = self.grid.as_mut() {
@@ -575,35 +627,56 @@ impl<G: Grid> Stepping<G> {
             .checked_sub(G::RESIDUES + G::CONTROL_SHIFT + G::SPAN)
             .map_or(0, |left| left / G::HOP + 1)
             .min(G::CONFIRMED_FRAMES);
-        let rate = self.rate;
-        let steps = candidates
+        let best = candidates
             .iter()
             .map(|candidate| {
-                let lattice =
-                    self.tally_run(start + candidate.residue, frames, candidate.shape, false);
-                if let Some(grid) = self.grid.as_mut() {
-                    grid.forget();
-                }
-                let control = self.tally_run(
-                    start + candidate.residue + G::CONTROL_SHIFT,
-                    frames,
-                    candidate.shape,
-                    false,
-                );
-                if let Some(grid) = self.grid.as_mut() {
-                    grid.forget();
-                }
-                Steps {
-                    coding: G::CODING,
-                    rate,
-                    lattice: lattice.resultant() as f32,
-                    control: control.resultant() as f32,
-                    coefficients: lattice.effective(),
-                }
+                (
+                    candidate,
+                    self.measured(start, frames, candidate, Pass::Confirming),
+                )
             })
-            .max_by(|one, other| one.lattice.total_cmp(&other.lattice))
+            .max_by(|one, other| one.1.lattice.total_cmp(&other.1.lattice));
+        let steps = best
+            .map(|(candidate, confirmed)| {
+                if G::UNDOES {
+                    let undone = self.measured(start, frames, candidate, Pass::Undoing);
+                    if undone.lattice > confirmed.lattice {
+                        return undone;
+                    }
+                }
+                confirmed
+            })
             .filter(|steps| steps.coefficients > 0);
         self.stage = Stage::Done(steps);
+    }
+
+    fn measured(
+        &mut self,
+        start: usize,
+        frames: usize,
+        candidate: &Candidate,
+        pass: Pass,
+    ) -> Steps {
+        let lattice = self.tally_run(start + candidate.residue, frames, candidate.shape, pass);
+        if let Some(grid) = self.grid.as_mut() {
+            grid.forget();
+        }
+        let control = self.tally_run(
+            start + candidate.residue + G::CONTROL_SHIFT,
+            frames,
+            candidate.shape,
+            pass,
+        );
+        if let Some(grid) = self.grid.as_mut() {
+            grid.forget();
+        }
+        Steps {
+            coding: G::CODING,
+            rate: self.rate,
+            lattice: lattice.resultant() as f32,
+            control: control.resultant() as f32,
+            coefficients: lattice.effective(),
+        }
     }
 
     pub(crate) fn finished(mut self) -> Option<Steps> {
@@ -810,9 +883,81 @@ pub(crate) struct Aac {
     short_band: Band,
     shorts: Vec<f32>,
     phases: Phases,
+    long_groups: Vec<Range<usize>>,
+    short_groups: Vec<Range<usize>>,
+    eight: bool,
 }
 
 impl Aac {
+    fn groups(rate: u32, band: &Band, short_band: &Band) -> (Vec<Range<usize>>, Vec<Range<usize>>) {
+        if !SCALE_FACTOR_BANDS_KNOWN_AT.contains(&rate) {
+            return (Vec::new(), Vec::new());
+        }
+        let within = |edges: &[usize], band: &Band| {
+            edges
+                .windows(2)
+                .filter(|pair| pair[0] >= band.first && pair[1] <= band.past)
+                .map(|pair| pair[0] - band.first..pair[1] - band.first)
+                .collect::<Vec<_>>()
+        };
+        let long = within(
+            &LONG_SCALE_FACTOR_BANDS,
+            &Band {
+                first: 0,
+                past: band.past,
+            },
+        )
+        .into_iter()
+        .filter(|group| group.start >= band.first)
+        .collect();
+        let width = short_band.width();
+        let short = within(&SHORT_SCALE_FACTOR_BANDS, short_band);
+        let shorts = (0..AAC_SHORTS)
+            .flat_map(|window| {
+                short
+                    .iter()
+                    .map(move |group| window * width + group.start..window * width + group.end)
+            })
+            .collect();
+        (long, shorts)
+    }
+
+    fn normed(&self, left: &[f32], right: Option<&[f32]>) -> Tally {
+        let groups = if self.eight {
+            &self.short_groups
+        } else {
+            &self.long_groups
+        };
+        let mut tally = Tally::default();
+        let mut add = |power: f32| {
+            let (phase, _, weight) = self.phases.of(power.sqrt());
+            tally.add(Tally::banded(
+                phase * SCALE_FACTOR_BAND_WEIGHT,
+                weight * SCALE_FACTOR_BAND_WEIGHT,
+            ));
+        };
+        for group in groups {
+            let left = &left[group.clone()];
+            match right {
+                Some(right) => {
+                    let (mut one, mut other, mut mid, mut side) = (0.0, 0.0, 0.0, 0.0);
+                    for (a, b) in left.iter().zip(&right[group.clone()]) {
+                        one += a * a;
+                        other += b * b;
+                        mid += (a + b) * (a + b);
+                        side += (a - b) * (a - b);
+                    }
+                    add(one);
+                    add(other);
+                    add(mid / 4.0);
+                    add(side / 4.0);
+                }
+                None => add(left.iter().map(|value| value * value).sum()),
+            }
+        }
+        tally
+    }
+
     fn windows() -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {
         let long = [
             sine_window(2 * AAC_HOP),
@@ -856,19 +1001,26 @@ impl Grid for Aac {
         (rate <= HIGHEST_AAC_RATE).then(|| Band::of(rate, AAC_HOP, AAC_FROM_HZ, AAC_TO_HZ))
     }
 
-    fn new(rate: u32, _: &Band) -> Self {
+    fn new(rate: u32, band: &Band) -> Self {
         let (longs, shorts) = Self::windows();
+        let short_band = Band::of(rate, AAC_SHORT_HOP, AAC_FROM_HZ, AAC_TO_HZ);
+        let (long_groups, short_groups) = Self::groups(rate, band, &short_band);
         Self {
             long: Mdct::new(AAC_HOP, longs),
             short: Mdct::new(AAC_SHORT_HOP, shorts),
-            short_band: Band::of(rate, AAC_SHORT_HOP, AAC_FROM_HZ, AAC_TO_HZ),
+            short_band,
             shorts: vec![0.0; AAC_SHORT_HOP],
             phases: Phases::new(QUARTER_OCTAVE_STEPS, STEPS_RAMP),
+            long_groups,
+            short_groups,
+            eight: false,
         }
     }
 
     fn tally(&self, lines: Range<usize>, left: &[f32], right: Option<&[f32]>) -> Tally {
-        phased(&self.phases, lines, left, right, Self::MID_AND_SIDE)
+        let mut tally = phased(&self.phases, lines, left, right, Self::MID_AND_SIDE);
+        tally.add(self.normed(left, right));
+        tally
     }
 
     fn coefficients(&mut self, _: usize, samples: &[f32], _: u64, shape: usize, into: &mut [f32]) {
@@ -883,6 +1035,7 @@ impl Grid for Aac {
         into: &mut [f32],
     ) -> Range<usize> {
         let Taking { shape, kind, .. } = taking;
+        self.eight = matches!(AAC_BLOCKS[kind], AacBlock::Eight);
         match AAC_BLOCKS[kind] {
             AacBlock::Long => {
                 self.long.coefficients(samples, shape, into);
@@ -1227,7 +1380,7 @@ pub(crate) mod tests {
             for skipped in [0, 300] {
                 let steps = stepped::<Aac>(&left, &right, skipped).expect("weighed");
 
-                assert!(steps.lattice > 0.2, "{shape} {skipped} {steps:?}");
+                assert!(steps.lattice > 0.15, "{shape} {skipped} {steps:?}");
                 assert!(steps.control < steps.lattice / 10.0, "{steps:?}");
                 assert_eq!(steps.coding, Coding::Aac);
             }

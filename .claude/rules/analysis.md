@@ -231,7 +231,20 @@ could change (stored studies and kept analyses are weighed against it).
   grid.
   - `Aac`: 1 024-line MDCT, sine and Kaiser-Bessel (α 4) windows, every 1 024 residues, 4..16 kHz
     in L, R, mid and side (a band may be coded either way), 4 frames a search, 400 confirmed,
-    control 576 off, rates up to 96 kHz.
+    control 576 off, rates up to 96 kHz. **Scale-factor band norms are read beside the lines** at
+    44.1 and 48 kHz, the rates whose band layout `LONG_SCALE_FACTOR_BANDS` (49 bands) and
+    `SHORT_SCALE_FACTOR_BANDS` (14 a window) hold: perceptual noise substitution fills a band with
+    noise scaled to a norm of exactly its scale factor, `2^(k/4)` on the lines' own lattice, so the
+    noise lines are free but the band's norm is on the steps (one faac `-q 100` master: its lines read
+    0.034 over 412 000 effective, the norms of its bands 0.34 over 26 000, the genuine source 0.007).
+    Each whole band inside the grid's span gives `‖band‖` in L, R, mid and side as one observation
+    weighed `SCALE_FACTOR_BAND_WEIGHT` (4). A coded band's norm is `S·√Σq^(8/3)`, on the lattice at
+    another phase than a q-1 line (two lines of 1 sit a whole step over one), so the norms are summed
+    apart from the lines: a `Tally` carries the lines' resultant and the norms' (`Tally::banded`),
+    and its lattice is `(|Σ lines| + |Σ norms|) / Σ w` (the effective count over both). Summed into
+    one resultant, ffmpeg's AAC at 128 and 256 kbps lost a master whose norms and lines point apart
+    (0.46 read 0.037); norms of dense bands alone (nine of ten lines heard) found 33 faac `-q 100`
+    masters, all of them 36.
   - `Mp3` (`granules.rs`): the hybrid filterbank of ISO 11172-3 run forward: the polyphase
     analysis with the standard's window (`SYNTHESIS_WINDOW`, Table B.3's integers over 65 536,
     divided by 32; the 64-row matrixing folded to 32 terms), the 18-line MDCT of 36 subband samples
@@ -279,11 +292,43 @@ could change (stored studies and kept analyses are weighed against it).
     lattice, each band weighed by how far its norm stands over the 16-bit rounding of its lines (a
     smoothstep 6 to 10 octaves over it). Eight kinds (the frame before long or short, this one long
     or short, inter or intra), searched on the long inter kind alone (`Grid::searched`), 960
-    residues, 21 bands up to 20 kHz, L and R, 8 frames a search, 400 confirmed, control 540 off;
-    48 kHz only, the rate every Opus decoder gives. The pitch post-filter is left in place: frames
-    it touched weigh as noise, the rest keep the lattice (libopus at its default complexity read
-    0.63 at 128 kbps where its complexity 4, which turns the post-filter off, read 0.64)
+    residues, 21 bands up to 20 kHz, L and R, 16 frames a search, 400 confirmed, control 540 off;
+    48 kHz only, the rate every Opus decoder gives
     (`band_energies_on_the_coarse_and_fine_steps_of_their_prediction_are_found_and_free_ones_are_not`).
+  - **The best Opus candidate is confirmed again with the pitch post-filter undone**
+    (`Grid::UNDOES`, `Grid::undone`, `Pass::Undoing`; `celt::Undoing`, `pitch.rs`). A decoder runs
+    a comb `y(n) = x(n) + G·Σ taps·y(n - T ± k)` over each frame's output (RFC 6716 4.3.7.1; `T`
+    15..1 022, `G` = 3/32 times 1..8, three tapsets) before the de-emphasis, so a filtered frame's
+    band energies are off their steps by far more than a fine step (with libopus at complexity 5
+    and over, a loud master read 0.10 where complexity 4, which has no pre-filter, read 0.90). The
+    re-emphasised decode is the comb's output, so `x = y - G·Σ taps·y(n - T ± k)` (FIR on what is
+    held) gives back what the MDCT coded. In the output frame the previous frame's filter holds
+    the first 120 samples, the two cross over the next 120 under the square of the overlap window
+    (`own_share`) and the frame's own holds the rest and the next frame's first 120, so a frame's
+    energies want its filter and the one before: each confirmed frame is a link in a chain
+    (`Undoing::next`, broken by any other position or `forget`), the filter chosen for one frame
+    the one undone over the next one's start and its energies the next one's prediction. The period
+    is found as the encoder found it, from the decode: `Pitch` is libopus's pitch analysis
+    (`pitch_downsample`'s halving, fourth-order whitening and added zero, `pitch_search`'s coarse
+    and fine correlation and `remove_doubling`'s submultiples, continuity on the previous period
+    and gain) over the 1 024 samples before the frame's own region and the 960 of it; it gave the
+    period the stream carried in 61% of filtered frames and within 2 in 90% (read from libopus's
+    `OPUS_GET_PITCH` on one master). Candidates are no filter and each period within
+    `PERIODS_EITHER_SIDE` (2) of it under every tapset and each gain up to one step over the
+    encoder's own (`0.7·` the analysis's gain, quantised as libopus quantises it), and no filter
+    at all where that gain is under `ENCODER_FILTERS_FROM` (0.2, libopus's lowest threshold for
+    turning its pre-filter on; without it loud white noise read a significance of 4.1); the frame takes
+    the one whose energies sit strongest on the steps (`|Σ|²/Σw²`), over two histories where the
+    previous frame was filtered: the chain's, and a fresh one with no filter before, so a wrong
+    choice does not stay wrong (the chain alone found 0.03 on a master the oracle's periods read
+    0.69 on; the fresh history put it at 0.40). The comb is linear, so each lag `T - 4..T + 4` is
+    one MDCT of the shifted, crossfaded signal, a candidate's spectrum is the tapset's sum of
+    them, and each gain's band powers are `‖h‖² - 2G⟨h, c⟩ + G²‖c‖²`. The choice among about a
+    hundred candidates lifts chance on a genuine source (significance 3.2 at most before, 4.1 with
+    the undoing, under the verdict's 12; any gain at all read 6.5),
+    and the undone reading replaces the plain one only where its lattice is higher. The search stays
+    plain, so `Opus` takes 16 frames a search (8 left a 64 kbps master and one decoded to 44.1 kHz
+    on another offset, though undone at its own it read 0.29 over 14 000 bands).
 - **A decode taken to another rate is weighed brought back.** `Weighing` runs the three grids at
   the stream's rate and feeds the first two channels through a `Resampler` (`Quality::Balanced`,
   linear phase) to each rate in `BROUGHT_BACK_TO`, running `Aac` and `Mp3` there at
@@ -312,10 +357,12 @@ could change (stored studies and kept analyses are weighed against it).
   and the kept analysis (`WRITTEN_AS` 5, the peaks over moments after the print; 4: one moment; 3: a count, then coding name,
   rate, lattice, control and coefficients each, the last now the effective count); `track_studies`
   stores only the verdict (no basis column), so the change moved `JUDGED_UNDER` to 4 and every
-  study is weighed again; MP2, Opus and the low rates brought back moved it to 5. Cost: about 2 s a track over the decode (3.9 s to 5.9 s for a 3:33 FLAC
+  study is weighed again; MP2, Opus and the low rates brought back moved it to 5, the post-filter undone and the band norms to 6. Cost: about 2 s a track over the decode (3.9 s to 5.9 s for a 3:33 FLAC
   on a loaded machine, 0.9 s to 3.3 s for 40 s at 96 kHz, which runs two resamplers), fixed
-  whatever its length, since every grid is done within its first 20 s
-  (`coefficients_on_the_quantiser_steps_are_found_at_any_frame_offset_and_free_ones_are_not`,
+  whatever its length, since every grid is done within its first 20 s; the band norms added 0.7 s
+  a track to `Aac` alone (118 s to 144 s for the 36 sources, two cores at the lowest priority on a
+  loaded machine) and the undoing and 16 frames a search 0.4 s to `Opus` alone (7.1 s to 22.7 s
+  for the 36 sources) (`coefficients_on_the_quantiser_steps_are_found_at_any_frame_offset_and_free_ones_are_not`,
   `lines_on_the_quantiser_steps_are_found_through_the_hybrid_filterbank_at_any_offset`,
   `residues_on_vorbis_floor_are_found_on_any_short_block_grid_and_free_ones_are_not`, and in
   `tests/references.rs` the ffmpeg AAC, faac and fdkaac, dithered and hi-res, resampled AAC, LAME,
@@ -346,21 +393,23 @@ could change (stored studies and kept analyses are weighed against it).
   moved: 9 tracks are called (7 before), the two new ones (an MP3 rip at 0.023 and one at 0.080 from
   48 kHz) already `Fake` by their wall. The statistics tried before (band levels, 100 Hz holes, the
   side channel, the top octave's swing, coefficients at the 16-bit floor on AAC's grid) separated
-  nothing. No Apple or FhG encode weighed (none on this machine). The faac misses are its
-  perceptual noise substitution, on by default: noise scaled to a band energy fills bands and takes
-  most of the weight off the coded lines (`--pns 0` finds the three misses tried at 0.27 to 0.67,
-  and one read at its own frame offset gives 0.003 with it). Leaving out bands whose norm sits on
-  the quarter-octave lattice (a noise band's norm is its scale factor's) only where the band is
-  dense, mirrored at half a step so no phase is favoured, with 8 frames a search, found 29 of 36 at
-  `-q 100` where 28 were (this corpus), as many as 8 frames a search alone, for twice the AAC
-  search, and was not kept. **MP2**
+  nothing. No Apple or FhG encode weighed (none on this machine). The faac misses were its
+  perceptual noise substitution, on by default (`--pns 0` found the three tried): read as band
+  norms beside the lines (`Aac`, above), a second corpus of 36 (40 s from 0:40 of each, 28 at 44.1
+  kHz and 8 at 48, chosen evenly through the library) went from 29 to 36 at `-q 100` and 33 to 36
+  at `-q 200`, `-b 64` and `-b 160` 36 and 36, ffmpeg's AAC at 128 and 256 kbps 36 and 36; the
+  sources read a significance of 3.3 at most either way (lattice 0.022 at most, on 18 000
+  effective, under the count the verdict asks). **MP2**
   (`subbands.rs`, above): twolame at 128, 192, 256 and 384 kbps and ffmpeg's MP2 encoder at 256
   kbps 36 of 36 each (0.84 to 1.0), twolame at 256 kbps dithered (triangular), taken to 96 kHz and
   taken to 32 kHz 36 of 36 each; the sources read 0.0013 at most. **Opus** lowpasses at 20 kHz at
   any bitrate, so its wall alone said `Suspect`; its band energies on their predicted steps
   (`celt.rs`, above) find libopus at 64 kbps in 31 of 36, at 128 and 192 kbps in 30 (lattice up to
-  0.92), at 128 kbps decoded to 44.1 kHz and brought back in 28; the misses are the loud masters
-  the other codings miss (one reads 0.14 at its own offset where a found one reads 0.62). The
+  0.92), at 128 kbps decoded to 44.1 kHz and brought back in 28. With the post-filter undone and 16
+  frames a search, the second corpus went from 32 to 35 at 64 kbps, 34 to 35 at 128 and 192 kbps
+  and 33 to 36 decoded to 44.1 kHz (the median significance of a found master from about 50 to
+  80; counted before `ENCODER_FILTERS_FROM` was added, not counted again since); the one left is a quiet choral master with too few bands over the rounding (2 000 where a
+  loud one has 16 000), and the sources read a significance of 4.1 at most (3.2 plain). The
   sources read 0.032 at most on 8 800 bands (a significance of 3). An earlier direct search of
   the energies against a lattice of their own found nothing, as the prediction carries every
   frame's energy off any fixed grid. The whole library (462 tracks, their first 45 s) calls the
