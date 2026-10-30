@@ -477,7 +477,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   before this was done carry no mark: nothing tells them from the listener's own.
 
 The views follow Android's screens and wording (`android.md`), with three tabs, Library, Settings
-and Search, and a Server tab while a service that plays in place is served (below) (`Tab(role: .search)`, which iOS sets apart at the trailing edge and turns into the search
+and Search, and a Server page in Settings while a service that plays in place is served (below) (`Tab(role: .search)`, which iOS sets apart at the trailing edge and turns into the search
 field; `Root.search` has its own stack). **Songs is a page of the Library tab and the queue is
 Now Playing's Up next, neither a tab**: *All songs*, Favourites' and the
 empty states' *Browse songs* push `Destination.songs` onto the Library stack alone
@@ -1259,7 +1259,7 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
 
 ## Services played in place
 
-- **The Server tab browses and plays every service that plays in place** (`mobile.md`'s *Services
+- **The Server page (`Destination.server`, a row under Settings' Connected services) browses and plays every service that plays in place** (`mobile.md`'s *Services
   played in place*; `ServerViews.swift`, `ResonateLogic/Served.swift`). `Features.servedAccounts`
   is `ProviderAccounts.served(online:hosted:)`: the download accounts on and ready, none while
   online is off, and a hosted Monochrome or hifi-api (`DownloadAccount.isHosted`) left out while

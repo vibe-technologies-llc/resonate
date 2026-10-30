@@ -698,7 +698,7 @@ final class Library {
     }
 
     func play(_ rows: [Track], selected: Track) {
-        play(rows, at: rows.firstIndex { $0.id == selected.id } ?? 0)
+        play(rows, at: rows.firstIndex { $0.id == selected.id } ?? 0, shuffle: snapshot?.shuffle == true)
     }
 
     func shuffle(_ rows: [Track]) {

@@ -30,6 +30,7 @@ struct SettingsView: View {
     private static let onlineWords = "Online features internet network artwork covers lyrics enrichment music search"
     private static let enrichmentWords = "Artwork and details automatically portraits Wi-Fi missing covers"
     private static let providerWords = "Download providers TIDAL Subsonic Monochrome"
+    private static let serverWords = "Server Subsonic Navidrome TIDAL Monochrome browse stream"
     private static let scrobblingWords = "Scrobbling ListenBrainz Last.fm"
     private static let erasingWords = "Erase all data reset everything delete start over"
     private static let historyWords = "Keep search history recent searches privacy"
@@ -79,6 +80,11 @@ struct SettingsView: View {
                     if shown(Self.providerWords) {
                         NavigationLink(value: Destination.providers) {
                             ToolRow(title: "Download providers", detail: providersDetail(features.downloadAccounts), symbol: "arrow.down.circle")
+                        }
+                    }
+                    if features.serving, shown(Self.serverWords) {
+                        NavigationLink(value: Destination.server) {
+                            ToolRow(title: "Server", detail: "Browse and play from your connected server", symbol: "server.rack")
                         }
                     }
                     if shown(Self.scrobblingWords) {

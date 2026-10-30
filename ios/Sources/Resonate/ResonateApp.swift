@@ -38,7 +38,7 @@ struct ResonateApp: App {
 }
 
 enum Root: String, Hashable, Codable {
-    case library, settings, search, server
+    case library, settings, search
 }
 
 enum Destination: Hashable, Codable {
@@ -58,6 +58,7 @@ enum Destination: Hashable, Codable {
     case providers
     case scrobbling
     case sync
+    case server
     case output
     case sound
     case processing
@@ -159,14 +160,12 @@ final class Navigation {
     }
 
     func restore(_ kept: KeptNavigation) {
-        tab = kept.tab == .server ? .library : kept.tab
-        paths = kept.paths.filter { $0.key != .server }
+        tab = kept.tab
+        paths = kept.paths
     }
 
     func leaveServer() {
-        guard tab == .server || paths[.server] != nil else { return }
-        if tab == .server { tab = .library }
-        paths[.server] = nil
+        paths[.settings]?.removeAll { $0 == .server }
     }
 
     func drop(_ gone: Set<Destination>) {
@@ -234,7 +233,7 @@ extension Destination {
 
     var belongsToSettings: Bool {
         switch self {
-        case .sound, .processing, .output, .scrobbling, .providers, .sync, .folders, .appearance, .background: true
+        case .sound, .processing, .output, .scrobbling, .providers, .sync, .server, .folders, .appearance, .background: true
         default: false
         }
     }
@@ -279,11 +278,6 @@ struct RootView: View {
         TabView(selection: $navigation.tab) {
             Tab("Library", systemImage: "music.note.house", value: Root.library) {
                 stack(.library) { LibraryView() }
-            }
-            if library.features.serving {
-                Tab("Server", systemImage: "server.rack", value: Root.server) {
-                    stack(.server) { ServerView() }
-                }
             }
             Tab("Settings", systemImage: "gearshape", value: Root.settings) {
                 stack(.settings) { SettingsView() }
@@ -476,6 +470,7 @@ struct DestinationView: View {
         case .providers: ProviderView()
         case .scrobbling: ScrobblingView()
         case .sync: SyncView()
+        case .server: ServerView()
         case .output: OutputView()
         case .sound: SoundSettingsView()
         case .processing: ProcessingView()
