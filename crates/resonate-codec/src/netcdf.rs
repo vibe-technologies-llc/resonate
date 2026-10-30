@@ -1,4 +1,12 @@
+use std::{
+    borrow::Cow,
+    io::{self, SeekFrom},
+};
+
+use parking_lot::Mutex;
 use thiserror::Error;
+
+use crate::MediaStream;
 
 const MAGIC: &[u8; 3] = b"CDF";
 const ABSENT: u32 = 0;
@@ -13,6 +21,9 @@ const DIMENSION_BYTES_AT_LEAST: u64 = 2 * WORD_BYTES;
 const ATTRIBUTE_BYTES_AT_LEAST: u64 = 3 * WORD_BYTES;
 const VARIABLE_BYTES_AT_LEAST: u64 = 7 * WORD_BYTES;
 const RECORD_DIMENSION_LENGTH: u64 = 0;
+const HEADER_FIRST_READ: u64 = 64 << 10;
+const HEADER_BYTES_AT_MOST: u64 = 16 << 20;
+const RANGE_BYTES_AT_MOST: u64 = 64 << 20;
 
 pub(crate) const FIRST_OFFSET_VERSION: u8 = 1;
 pub(crate) const SECOND_OFFSET_VERSION: u8 = 2;
@@ -52,6 +63,16 @@ pub enum ClassicFault {
 
     #[error("a variable is not made of floating point numbers")]
     NotFloating,
+
+    #[error("the source could not serve the {wanted} bytes at byte {at}: {kind}")]
+    Unread {
+        at: u64,
+        wanted: u64,
+        kind: io::ErrorKind,
+    },
+
+    #[error("a read of {length} bytes is more than the {at_most} one range is held to")]
+    RangeTooLong { length: u64, at_most: u64 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -216,9 +237,58 @@ struct Header {
     begin: u64,
 }
 
-#[derive(Debug)]
+enum Store {
+    Held(Vec<u8>),
+    Ranged(Mutex<Box<dyn MediaStream>>),
+}
+
+impl Store {
+    fn range(&self, begin: u64, length: u64, size: u64) -> Result<Cow<'_, [u8]>, ClassicFault> {
+        let end = begin
+            .checked_add(length)
+            .ok_or(ClassicFault::SizeOverflow)?;
+        if end > size {
+            return Err(ClassicFault::DataPastFile {
+                begin,
+                length,
+                size,
+            });
+        }
+        match self {
+            Self::Held(bytes) => Ok(Cow::Borrowed(&bytes[begin as usize..end as usize])),
+            Self::Ranged(stream) => read_range(&mut **stream.lock(), begin, length).map(Cow::Owned),
+        }
+    }
+}
+
+fn read_range(stream: &mut dyn MediaStream, at: u64, wanted: u64) -> Result<Vec<u8>, ClassicFault> {
+    if wanted > RANGE_BYTES_AT_MOST {
+        return Err(ClassicFault::RangeTooLong {
+            length: wanted,
+            at_most: RANGE_BYTES_AT_MOST,
+        });
+    }
+    let unread = |source: io::Error| ClassicFault::Unread {
+        at,
+        wanted,
+        kind: source.kind(),
+    };
+    let mut held = vec![0; wanted as usize];
+    stream.seek(SeekFrom::Start(at)).map_err(unread)?;
+    stream.read_exact(&mut held).map_err(unread)?;
+    Ok(held)
+}
+
+struct Layout {
+    dimensions: Vec<Dimension>,
+    variables: Vec<Header>,
+    records: u64,
+    record_bytes: u64,
+}
+
 pub(crate) struct Classic {
-    bytes: Vec<u8>,
+    store: Store,
+    size: u64,
     dimensions: Vec<Dimension>,
     variables: Vec<Header>,
     records: u64,
@@ -235,7 +305,51 @@ pub(crate) fn version_of(bytes: &[u8]) -> Option<u8> {
 
 impl Classic {
     pub(crate) fn of(bytes: Vec<u8>) -> Result<Self, ClassicFault> {
-        let mut cursor = Cursor::new(&bytes, MAGIC.len());
+        let layout = Layout::of(&bytes)?;
+        let size = bytes.len() as u64;
+        Ok(Self::laid(layout, Store::Held(bytes), size))
+    }
+
+    pub(crate) fn over(mut stream: Box<dyn MediaStream>, size: u64) -> Result<Self, ClassicFault> {
+        let mut wanted = HEADER_FIRST_READ;
+        loop {
+            let held = wanted.min(size);
+            let prefix = read_range(&mut *stream, 0, held)?;
+            match Layout::of(&prefix) {
+                Ok(layout) => {
+                    return Ok(Self::laid(layout, Store::Ranged(Mutex::new(stream)), size));
+                }
+                Err(fault) if held >= size || wanted >= HEADER_BYTES_AT_MOST => return Err(fault),
+                Err(_) => wanted = wanted.saturating_mul(2).min(HEADER_BYTES_AT_MOST),
+            }
+        }
+    }
+
+    fn laid(layout: Layout, store: Store, size: u64) -> Self {
+        Self {
+            store,
+            size,
+            dimensions: layout.dimensions,
+            variables: layout.variables,
+            records: layout.records,
+            record_bytes: layout.record_bytes,
+        }
+    }
+
+    pub(crate) fn variable(&self, name: &str) -> Option<Variable<'_>> {
+        self.variables
+            .iter()
+            .find(|header| header.name == name)
+            .map(|header| Variable {
+                classic: self,
+                header,
+            })
+    }
+}
+
+impl Layout {
+    fn of(bytes: &[u8]) -> Result<Self, ClassicFault> {
+        let mut cursor = Cursor::new(bytes, MAGIC.len());
         let version = cursor.take(1)?[0];
         let wide_offsets = matches!(version, SECOND_OFFSET_VERSION | WIDE_DATA_VERSION);
         let extended = version == WIDE_DATA_VERSION;
@@ -256,22 +370,11 @@ impl Classic {
         let record_bytes = record_bytes_of(&dimensions, &variables)?;
 
         Ok(Self {
-            bytes,
             dimensions,
             variables,
             records,
             record_bytes,
         })
-    }
-
-    pub(crate) fn variable(&self, name: &str) -> Option<Variable<'_>> {
-        self.variables
-            .iter()
-            .find(|header| header.name == name)
-            .map(|header| Variable {
-                classic: self,
-                header,
-            })
     }
 }
 
@@ -447,7 +550,7 @@ impl Variable<'_> {
         let shape = self.shape();
         let ranges = ranges_of(&shape, picks)?;
         let size = kind.bytes();
-        let file = self.classic.bytes.len() as u64;
+        let file = self.classic.size;
         let elements = ranges
             .iter()
             .try_fold(1_u64, |held, (start, end)| held.checked_mul(end - start))
@@ -523,19 +626,7 @@ impl Variable<'_> {
     fn append(&self, values: &mut Vec<f64>, begin: u64, count: u64) -> Result<(), ClassicFault> {
         let size = self.header.kind.bytes();
         let length = count.checked_mul(size).ok_or(ClassicFault::SizeOverflow)?;
-        let file = self.classic.bytes.len() as u64;
-        let past = ClassicFault::DataPastFile {
-            begin,
-            length,
-            size: file,
-        };
-        let end = begin
-            .checked_add(length)
-            .ok_or(ClassicFault::SizeOverflow)?;
-        if end > file {
-            return Err(past);
-        }
-        let raw = &self.classic.bytes[begin as usize..end as usize];
+        let raw = self.classic.store.range(begin, length, self.classic.size)?;
         match self.header.kind {
             Kind::Float => values.extend(
                 raw.as_chunks::<4>()
@@ -746,6 +837,7 @@ pub(crate) mod written {
 #[cfg(test)]
 mod tests {
     use super::{written::*, *};
+    use crate::Reading;
 
     fn grid() -> File {
         File {
@@ -988,6 +1080,123 @@ mod tests {
                 }
             }
         }
+    }
+
+    fn ranged(bytes: Vec<u8>) -> Result<Classic, ClassicFault> {
+        let size = bytes.len() as u64;
+        Classic::over(Box::new(Reading::new(io::Cursor::new(bytes))), size)
+    }
+
+    #[test]
+    fn a_file_read_by_ranges_reads_back_as_the_whole_one_does() {
+        for version in [1, 2, 5] {
+            let mut file = grid();
+            file.version = version;
+            let bytes = file.bytes();
+
+            let whole = Classic::of(bytes.clone()).expect("a classic file");
+            let by_ranges = ranged(bytes).expect("a classic file");
+
+            for name in ["single", "double"] {
+                let (one, other) = (
+                    whole.variable(name).unwrap(),
+                    by_ranges.variable(name).unwrap(),
+                );
+                assert_eq!(one.shape(), other.shape());
+                assert_eq!(one.numbers(&[]), other.numbers(&[]));
+            }
+            assert_eq!(
+                by_ranges
+                    .variable("single")
+                    .unwrap()
+                    .numbers(&[Pick::At(1), Pick::Span { start: 1, end: 3 }]),
+                Ok(vec![5.0, 6.0])
+            );
+        }
+    }
+
+    #[test]
+    fn a_header_longer_than_the_first_read_is_read_by_reading_more() {
+        let mut file = grid();
+        file.variables[0].attributes = vec![("Notes", "x".repeat(3 * HEADER_FIRST_READ as usize))];
+
+        let classic = ranged(file.bytes()).expect("a classic file");
+
+        assert_eq!(
+            classic.variable("double").unwrap().numbers(&[]),
+            Ok(vec![0.25, 0.5, 0.75])
+        );
+    }
+
+    #[test]
+    fn a_header_past_what_one_is_held_to_is_refused() {
+        let mut file = grid();
+        file.variables[0].attributes =
+            vec![("Notes", "x".repeat(HEADER_BYTES_AT_MOST as usize + 1))];
+
+        assert!(ranged(file.bytes()).is_err());
+    }
+
+    #[test]
+    fn a_file_read_by_ranges_that_is_cut_short_or_marked_is_refused_or_read_and_never_panics() {
+        let whole = grid().bytes();
+
+        for length in 0..whole.len() {
+            if let Ok(classic) = ranged(whole[..length].to_vec())
+                && let Some(single) = classic.variable("single")
+            {
+                let _ = single.numbers(&[]);
+            }
+        }
+        for index in 0..whole.len() {
+            for pattern in [0x00, 0xff, 0x80, 0x7f] {
+                let mut marked = whole.clone();
+                marked[index] = pattern;
+                if let Ok(classic) = ranged(marked) {
+                    for held in ["single", "double"] {
+                        if let Some(variable) = classic.variable(held) {
+                            let _ = variable.numbers(&[]);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_range_that_cannot_be_served_is_a_fault_naming_it() {
+        struct Failing;
+
+        impl io::Read for Failing {
+            fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+                Err(io::Error::from(io::ErrorKind::TimedOut))
+            }
+        }
+
+        impl io::Seek for Failing {
+            fn seek(&mut self, _: SeekFrom) -> io::Result<u64> {
+                Ok(0)
+            }
+        }
+
+        impl MediaStream for Failing {
+            fn is_seekable(&self) -> bool {
+                true
+            }
+
+            fn byte_len(&self) -> Option<u64> {
+                Some(64)
+            }
+        }
+
+        assert_eq!(
+            Classic::over(Box::new(Failing), 64).err(),
+            Some(ClassicFault::Unread {
+                at: 0,
+                wanted: 64,
+                kind: io::ErrorKind::TimedOut
+            })
+        );
     }
 
     #[test]

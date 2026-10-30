@@ -633,8 +633,8 @@ tested.
   `a_staged_file_is_held_until_it_is_finished_or_abandoned`,
   `a_staging_past_what_its_kind_allows_is_dropped_and_the_kept_one_stands`,
   `a_staged_file_that_does_not_read_is_dropped_and_the_kept_one_stands`,
-  `a_new_staging_replaces_one_left_open`). A netCDF-3 set is still read whole and refused past
-  128 MiB by the reader though it stages; `keep_room_correction` and the binaural pair's two files
+  `a_new_staging_replaces_one_left_open`). A seekable netCDF-3 set is read by ranges as an HDF5 one is, so
+  it too is held as the file alone; `keep_room_correction` and the binaural pair's two files
   keep the 64 MiB whole-bytes call. `apply_room_correction(on)` sends `SetConvolution` with
   the kept response or none, answering its channels, rate and length; `kept_room_correction` answers the same description without sending anything, so a page shows the response with correction off; `forget_room_correction`
   clears and deletes it. iOS keeps `room-correction` (on) and `room-correction-name` in the
@@ -726,24 +726,32 @@ The stereo image, apart from the transducer: both are stereo-only, off by defaul
   CDF-1, CDF-2 (64-bit offsets) and CDF-5 (64-bit data: 64-bit counts and lengths, 32-bit
   dimension ids, the unsigned and 64-bit integer types, which a SOFA set never reads as numbers), by
   `netcdf.rs`, a reader of our own (no C library):
-  `Classic::of` walks the header (dimensions, attributes, variables), every count checked against
-  the bytes left before anything is allocated, every name text, every dimension named by a variable
+  `Classic::of` (bytes held) and `Classic::over` (a seekable stream) walk the header (dimensions,
+  attributes, variables), every count checked against the bytes left before anything is allocated, every name text, every dimension named by a variable
   declared, the record dimension first; `Variable::numbers` takes a `Pick` (an index or a span) a
   dimension and reads only the elements picked, big-endian float and double, a record variable
-  stepping by the record size, every offset checked against the file (`ClassicFault`); a `CDF`
+  stepping by the record size, every offset checked against the file (`ClassicFault`; a range the
+  source cannot serve is `Unread` with the `io::ErrorKind`, one over 64 MiB `RangeTooLong`); a `CDF`
   file of another version is `SofaFault::ClassicVersion`. The one `Variable` enum of
-  `sofa.rs` serves both, so a set is read by the same code from either. **An HDF5 set from a
-  seekable source is read by ranges, not whole** (`Container::streamed`): the stream goes behind
-  `hdf5-reader`'s `RangeRequestStorage` (a seek and a `read_exact` of the range asked, a range past
-  the file or over `STREAMED_READ_AT_MOST`, 64 MiB, refused before it is allocated), so a set is
-  held only as the superblock, headers, chunk index and the measurements picked are, up to
-  `SOFA_STREAMED_BYTES_AT_MOST` (8 GiB, `SofaFault::TooLarge`); a netCDF-3 file, or a stream that
-  cannot seek, is one `Vec` of at most `SOFA_BYTES_AT_MOST` (128 MiB). Reading `Data.IR` takes only the
+  `sofa.rs` serves both, so a set is read by the same code from either. **A set from a
+  seekable source is read by ranges, not whole** (`Container::streamed`, told the first eight bytes
+  by `read_hrir`): an HDF5 stream goes behind `hdf5-reader`'s `RangeRequestStorage` (a seek and a
+  `read_exact` of the range asked, a range past the file or over `STREAMED_READ_AT_MOST`, 64 MiB,
+  refused before it is allocated), so a set is held only as the superblock, headers, chunk index and
+  the measurements picked are; a netCDF-3 stream goes behind `Classic::over`, which reads a 64 KiB
+  prefix and doubles it while the header does not parse inside it (up to 16 MiB, else the last
+  fault), keeps the stream and then seeks to each run of floats a `Pick` selects, the header's
+  `begin` and the file's size bounding every range; either is held up to
+  `SOFA_STREAMED_BYTES_AT_MOST` (8 GiB, `SofaFault::TooLarge`); a stream that
+  cannot seek is one `Vec` of at most `SOFA_BYTES_AT_MOST` (128 MiB). Reading `Data.IR` takes only the
   measurements chosen, as hyperslabs or runs, never the whole set
   (`a_seekable_set_is_read_from_the_measurements_chosen_alone_and_a_stream_that_cannot_seek_is_read_whole`
-  counts the bytes the source served: under a quarter of the file), and every file-declared shape is
+  counts the bytes the source served: under a quarter of the file, and
+  `a_seekable_classic_set_is_read_from_the_measurements_chosen_alone_and_as_a_stream_that_cannot_seek_does`
+  the same for CDF-1, 2 and 5; `netcdf.rs`'s `a_header_longer_than_the_first_read_is_read_by_reading_more`),
+  and every file-declared shape is
   checked before a read (`Data.IR` exactly `[M, 2, N]`, or `[M, 2, E, N]` for a speaker set,
-  `SourcePosition` exactly `[M, 3]`, `EmitterPosition` `[E, 3]` or `[E, 3, 1]`, `ListenerView` `[M, 3]`
+  `SourcePosition` exactly `[M, 3]`, `EmitterPosition` `[E, 3]` or `[E, 3, 1]`, `ListenerView` and `ListenerUp` `[M, 3]`
   or `[1, 3]`, `ListenerPosition` `[M, 3]` or `[1, 3]`, `Data.Delay` `[2]`, `[1, 2]` or `[M, 2]`, `Data.SamplingRate` at most a million
   numbers, `M` at most a million, `E` at most 65 536, the response cut at `LONGEST_IMPULSE`).
   **Where the speakers stand is three settings, one `Speakers`** (`resonate_core::eq`): a
@@ -817,17 +825,30 @@ The stereo image, apart from the transducer: both are stereo-only, off by defaul
   (`MultiSpeakerBRIR`, `Data.IR` of four dimensions) is read at one listener view and its emitters
   interpolated like measurements: the view (`ListenerView`, spherical or cartesian, cartesian where
   it names no `Type`) nearest the head's heading (`HeadYaw` degrees from the front) is the one read,
-  and the head's turn from that view's own azimuth (all of it where there is one view or none
-  named) moves the lookup the other way; each speaker is then asked of the emitters
+  and the lookup is the speaker as the level, turned head hears it carried into that view's own
+  frame (`Room::seen`, `Pose::carry`: the view is the front, `ListenerUp`, or the vertical where the
+  set has none, the up, orthogonalised; so a measured head's pitch and roll are honoured, and a view
+  along the vertical, with no frame, falls back to the yaw alone; all of the turn where there is one
+  view or none named, a single view's own orientation not read)
+  (`a_head_pitched_in_the_measurement_moves_each_speaker_by_the_pitch`,
+  `a_head_rolled_in_the_measurement_lifts_one_ear_s_speaker_and_lowers_the_other`,
+  `one_up_vector_for_every_view_and_one_that_cannot_stand_beside_its_view_are_read`); each speaker is then asked of the emitters
   (`EmitterPosition`) as a measurement is (`neighbours_of`: the exact one, a triangle, the ring or
   the nearest), within 45 degrees or `NoMeasurementNear`
   (`a_speaker_between_two_emitters_takes_both_by_where_it_stands`,
   `a_head_turned_in_a_room_is_read_at_the_view_it_faces_and_what_is_left_of_the_turn_moves_the_lookup`).
   **The listener stands where `ListenerPosition` says** (`[1, 3]`, or the `[M, 3]` row of the view
-  read; cartesian where it names no `Type`, metres): an emitter's direction is its position less the
+  read; cartesian where it names no `Type`): an emitter's direction is its position less the
   listener's, taken with its radius (`Coordinates::point`; a spherical emitter's third coordinate),
   and a listener at the origin, or none, leaves the directions as the emitters' own
-  (`a_listener_off_the_origin_hears_each_emitter_from_where_it_stands`). `SourcePosition:Type` (and the
+  (`a_listener_off_the_origin_hears_each_emitter_from_where_it_stands`). **A length is read in its
+  own unit** wherever a position is taken as a point (the listener's and the emitters', never a
+  direction): `metres_in` knows metre, centimetre, millimetre, kilometre, foot and inch by name or
+  symbol, a cartesian `Units` naming one unit for every axis (all axes alike) and a spherical one
+  naming it as its third component, none naming metres, any other `LengthUnitUnknown`
+  (`a_listener_position_in_centimetres_stands_where_the_same_one_in_metres_does`,
+  `emitters_whose_range_is_in_millimetres_are_measured_against_a_listener_in_metres`,
+  `a_listener_position_in_a_unit_of_length_no_one_knows_is_refused`). `SourcePosition:Type` (and the
   emitter's, the view's) is `spherical` (azimuth counterclockwise from the front, elevation, in
   degrees unless `Units` names radians) or `cartesian` (front, left, up), anything else
   `PositionTypeUnknown` and a missing `Type` `MemberMissing` (not for the view). The left speaker's
