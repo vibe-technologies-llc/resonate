@@ -113,6 +113,7 @@ pub(crate) enum Group {
     ResonateKey,
     Subsonic,
     Tidal,
+    Served,
     Resuming,
     History,
     Repeating,
@@ -151,7 +152,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 66] = [
+    pub(crate) const ALL: [Self; 67] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -183,6 +184,7 @@ impl Group {
         Self::ResonateKey,
         Self::Subsonic,
         Self::Tidal,
+        Self::Served,
         Self::Resuming,
         Self::History,
         Self::Repeating,
@@ -252,6 +254,7 @@ impl Group {
             | Self::ResonateKey
             | Self::Subsonic
             | Self::Tidal
+            | Self::Served
             | Self::Resuming
             | Self::History
             | Self::Repeating
@@ -318,6 +321,7 @@ impl Group {
             Self::Subsonic => "A Subsonic server",
             Self::ResonateKey => "Resonate server key",
             Self::Tidal => "A TIDAL account",
+            Self::Served => "Browsing a service",
             Self::Resuming => "Resuming",
             Self::History => "Listening history",
             Self::Repeating => "Repeating a track",
@@ -393,6 +397,7 @@ impl Group {
             Self::Subsonic => SUBSONIC_HINT,
             Self::ResonateKey => RESONATE_KEY_HINT,
             Self::Tidal => TIDAL_HINT,
+            Self::Served => SERVED_HINT,
             Self::Resuming => RESUMING_HINT,
             Self::History => HISTORY_HINT,
             Self::Repeating => REPEATING_HINT,
@@ -525,6 +530,10 @@ impl Group {
             Self::ResonateKey => {
                 "resonate server key secret hifi-api hifi token password download wants missing \
                  fill obtain account bearer tecnio gateway"
+            }
+            Self::Served => {
+                "server pane browse play in place stream subsonic navidrome tidal monochrome \
+                 hifi-api resonate service artists albums search open"
             }
             Self::Tidal => {
                 "tidal streaming service subscription provider download wants missing fill \
@@ -678,6 +687,7 @@ impl Group {
                 SettingKey::SubsonicPassword,
             ],
             Self::ResonateKey => &[SettingKey::HifiSecret],
+            Self::Served => &[],
             Self::Tidal => &[
                 SettingKey::TidalClientId,
                 SettingKey::TidalClientSecret,
@@ -1028,6 +1038,9 @@ pub(crate) const VAULT_HINT: &str = "A managed archive this build writes itself.
 pub(crate) const SUBSONIC_HINT: &str = "A server of your own the tracks marked wanted are \
                                         also filled from, matched by the recording's \
                                         MusicBrainz id or its ISRC.";
+
+pub(crate) const SERVED_HINT: &str = "Opens the pane that browses and plays what a service of \
+                                       yours holds, in place and with nothing downloaded.";
 
 pub(crate) const RESONATE_KEY_HINT: &str = "The key your Resonate server lists. With it the \
                                             tracks marked wanted are also asked of that server, \

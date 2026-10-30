@@ -1216,8 +1216,11 @@ is never named.
   a `found_row` per song (press = `want_found`) via `restate_the_listing`/`beyond_the_listing`, which
   answers nothing until the listing is whole; a page query narrows them via `still_answering`.
 - **The server pane browses whichever services play in place and is there only while one is set.**
-  `Pane::Server` (`Section::Collection`, `Icon::Server`, key `server`) is drawn in the sidebar, and
-  `set_pane` lands on it, only while `ServerModel::is_open` (a service the live `Online` sets, online
+  `Pane::Server` (`Icon::Server`, key `server`) is in no sidebar row and not in `Pane::BROWSE`, so
+  the pane keys pass it over; it is reached from Settings' Library category, the *Browsing a
+  service* group (`Group::Served`, no key, `served_group`), whose *Open the server* button calls
+  `choose_pane(Pane::Server)` while `ServerModel::is_open` and otherwise says no service is set up.
+  `set_pane` lands on it only while `ServerModel::is_open` (a service the live `Online` sets, online
   on); the remembered tab never lands on it at start. The window reaches the services through the
   `Serving` seam on `Lookups` (`ResonateApp::serving`): a `Fn(&Online) -> Vec<Arc<dyn Serves>>` the
   binary fills (`providers.md`), each `Serves` naming its `scheme` and `title`; `Serves` is gpui-free vocabulary

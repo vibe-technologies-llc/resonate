@@ -244,6 +244,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         }
         Group::Bands
         | Group::Abx
+        | Group::Served
         | Group::Pairing
         | Group::SyncDevices
         | Group::Updating
@@ -321,6 +322,7 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         | Group::ResonateKey
         | Group::Subsonic
         | Group::Tidal
+        | Group::Served
         | Group::RoomCorrection
         | Group::Abx
         | Group::Resuming

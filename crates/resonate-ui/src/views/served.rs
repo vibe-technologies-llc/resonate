@@ -1070,6 +1070,14 @@ mod tests {
         assert_eq!(Failure::of(&unreadable), Failure::Unreadable);
     }
 
+    fn open_the_server(driven: &mut Driven) {
+        driven.click("tab-settings");
+        driven.focus(|root| &root.finding);
+        driven.cx.simulate_input("server pane browse");
+        driven.settle();
+        driven.click("open-server");
+    }
+
     #[gpui::test]
     fn the_server_is_a_pane_only_while_an_account_is_given_and_online_is_on(
         cx: &mut TestAppContext,
@@ -1081,7 +1089,7 @@ mod tests {
         let mut driven = Driven::serving(cx, vec![Arc::new(Held)], an_account());
         assert!(driven.read(|root, cx| root.server.read(cx).is_open()));
 
-        driven.click("tab-server");
+        open_the_server(&mut driven);
         assert_eq!(driven.read(|root, _| root.pane), Pane::Server);
     }
 
@@ -1090,7 +1098,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::serving(cx, vec![Arc::new(Held)], an_account());
-        driven.click("tab-server");
+        open_the_server(&mut driven);
         driven.until(|root, cx| matches!(root.server.read(cx).page(), Page::Read(_)));
 
         driven.click("server-row-0");
@@ -1122,7 +1130,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::serving(cx, vec![Arc::new(Favoured)], an_account());
-        driven.click("tab-server");
+        open_the_server(&mut driven);
         driven.until(
             |root, cx| matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 4),
         );
@@ -1148,7 +1156,7 @@ mod tests {
             favoured: Arc::default(),
         };
         let mut driven = Driven::serving(cx, vec![Arc::new(kept)], an_account());
-        driven.click("tab-server");
+        open_the_server(&mut driven);
         driven.until(
             |root, cx| matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 5),
         );
@@ -1174,7 +1182,7 @@ mod tests {
             favoured: Arc::clone(&favoured),
         };
         let mut driven = Driven::serving(cx, vec![Arc::new(kept)], an_account());
-        driven.click("tab-server");
+        open_the_server(&mut driven);
         driven.until(
             |root, cx| matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 5),
         );
@@ -1215,7 +1223,7 @@ mod tests {
     ) {
         let mut driven =
             Driven::serving(cx, vec![Arc::new(Held), Arc::new(Searched)], an_account());
-        driven.click("tab-server");
+        open_the_server(&mut driven);
         driven.until(
             |root, cx| matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 1),
         );
