@@ -15,7 +15,11 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   paid team on request, and a free signing cannot carry it
 - [M · blocked: Apple] iOS zones share one output: `AVAudioSession` sends the app to one route at
   a time, so a second zone adds a queue of its own and a handover but no second room (both zones'
-  RemoteIO units mix into that route)
+  RemoteIO units mix into that route) unless it plays on a network renderer, which the next entry
+  keeps from a free signing
+- [M · blocked: Apple] An iPhone signed for free finds no network renderer: the SSDP search is
+  multicast from the library's own socket, which needs the `com.apple.developer.networking.multicast`
+  entitlement Apple grants a paid team on request
 - [M · blocked: rust nightly] Pointer authentication (an `arm64e` slice) is not adopted: the Rust
   library builds for `aarch64-apple-ios` on stable, and `arm64e-apple-ios` needs a nightly
   `build-std`
@@ -134,8 +138,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   (`resonate-upnp`, a sink beside PipeWire's); Google Cast v2 (TLS on port 8009, protobuf
   `CastMessage` framing, mDNS `_googlecast._tcp`, the Default Media Receiver loading an address
   the player serves) would be one more sink kind beside them
-- [L] The phones reach no network renderer at all, though their zones open over the same `Backend`
-  seam the desktop's renderers sit behind
+- [M] A renderer is reached only through SSDP's multicast search: none can be added by the address
+  of its description (`Located` handed to the `Network` and held whatever the searches miss), which
+  an iPhone without the multicast entitlement and a network that drops multicast would need
 - [S] A UPnP renderer is sent FLAC above 96 kHz only where its protocol info states the rate
   (`audio/flac;rate=192000`); one that says nothing is offered FLAC up to 96 kHz, so a streamer
   taking FLAC alone has 176.4 and 192 kHz material resampled to 96 kHz by the engine though it

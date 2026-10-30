@@ -189,6 +189,11 @@ CREATE TABLE served_rows (
 ) STRICT;
 ";
 
+const ZONES_KEEP_THEIR_RENDERER: &str = "
+ALTER TABLE zones ADD COLUMN renderer TEXT;
+ALTER TABLE zones ADD COLUMN renderer_name TEXT;
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     LISTENS_NAME_THEIR_ORIGIN,
@@ -210,6 +215,7 @@ const MIGRATIONS: &[&str] = &[
     ZONES_KEEP_THEIR_OWN_QUEUES,
     ZONES_KEEP_THEIR_VOLUME,
     QUEUES_KEEP_SONGS_PLAYED_IN_PLACE,
+    ZONES_KEEP_THEIR_RENDERER,
 ];
 
 #[cfg(test)]

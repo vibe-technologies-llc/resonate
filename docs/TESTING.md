@@ -26,6 +26,12 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `setPreferredMixerAttributes` taking a format, an exclusive open at the song's rate, nor the bytes
   reaching a DAC unaltered has been heard
 
+- [S · blocked: hardware] A phone's zone on a network renderer is proved on the host alone, over a
+  fake renderer on loopback: no renderer is on this network and neither phone ran it, so the
+  search over Wi-Fi (Android's `MulticastLock` held), a renderer fetching the phone's stream across
+  the network, playback with the screen off (no Wi-Fi lock is taken) and an iPhone's search being
+  refused without the multicast entitlement have not been seen
+
 ## iOS
 - [S · blocked: iPhone] The RemoteIO `CoreAudio` toolbox (the unsafe `AudioComponentInstanceNew`,
   `AudioUnitSetProperty`, `AudioOutputUnitStart` and sibling calls) and `render`'s `extern "C-unwind"`

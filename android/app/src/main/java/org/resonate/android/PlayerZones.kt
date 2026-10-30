@@ -28,6 +28,8 @@ object ZonePlan {
 
     fun mayRemove(zone: UInt): Boolean = zone != FIRST_ZONE
 
+    fun heardOn(rendererName: String?, device: String): String = rendererName ?: device
+
     fun line(output: String, transport: Transport, playing: String?): String {
         val doing =
             when (transport) {
@@ -86,6 +88,8 @@ class PlayerZones(private val library: LibraryRepository) {
     fun remove(zone: UInt) = changed { it.removeZone(zone) }
 
     fun handOverTo(zone: UInt) = changed { it.handOverTo(zone) }
+
+    fun playOn(zone: UInt, renderer: String?) = changed { it.selectZoneRenderer(zone, renderer) }
 
     private fun changed(change: (MobilePlayer) -> Unit) {
         library.request { native ->

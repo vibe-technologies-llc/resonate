@@ -29,12 +29,13 @@ public enum ZonePlan {
         zone != first
     }
 
-    public static func line(_ transport: Transport, playing: String?) -> String {
-        switch transport {
+    public static func line(_ transport: Transport, playing: String?, on renderer: String? = nil) -> String {
+        let doing = switch transport {
         case .playing: playing.map { "Playing \($0)" } ?? "Playing"
         case .loading: "Opening a song"
         case .paused: playing.map { "Paused on \($0)" } ?? "Paused"
         case .stopped: "Stopped"
         }
+        return renderer.map { "\($0) · \(doing)" } ?? doing
     }
 }

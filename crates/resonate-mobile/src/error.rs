@@ -165,6 +165,15 @@ pub enum Error {
     DownloadTooLarge,
     #[error("this audio output is unavailable")]
     OutputUnavailable,
+    #[error("Renderers on the network cannot be played to from this phone")]
+    RenderersUnreachable,
+    #[error("The network could not be searched for renderers")]
+    RendererSearch {
+        #[source]
+        source: Box<resonate_upnp::Error>,
+    },
+    #[error("That renderer is no longer on the network")]
+    UnknownRenderer,
     #[error("the destination descriptor is invalid")]
     InvalidDescriptor,
     #[error("The downloaded file is not the song asked for: its length differs")]

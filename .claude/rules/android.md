@@ -378,6 +378,17 @@ reads the zones when `zone` or `zones_revision` moves and every eighth tick whil
 notification and widgets read the snapshot, so they follow the zone shown (`ZonePlanTest`,
 `QueueReadsTest`).
 
+**A zone may play on a network renderer** (`upnp.md`'s *On the phones*). The sheet's *Network
+renderers* section is a *Find renderers* row with a switch (`NetworkRenderers.look`, kept as the
+`renderers` preference, off by default, and applied at `initialize` by `begin`, which never turns a
+search off: a zone kept on a renderer had the boundary search already); its supporting line counts
+those found, read every two seconds while the switch is on and the sheet open. Each zone's menu has
+*Play on a renderer* (a dialog of the renderers found, a radio on the one it plays to, each with its
+host) and, on one, *Play on this phone*; the row names the renderer before the device
+(`ZonePlan.heardOn`). The *Audio output* page takes its zone off a renderer before binding the device.
+Kotlin holds a `WifiManager.MulticastLock` (`resonate-renderers`, apart from sync's) exactly while the
+boundary searches, released at `stop`.
+
 **The queue sheet** lists the devices that handed off (one row), History, the playing row and Up
 next; a handle drags a row (`Reorder`, its rows counted from Up next's first row as it stood when the
 drag began, so a song ending mid-drag moves the row dragged; a drop over a list that changed meanwhile

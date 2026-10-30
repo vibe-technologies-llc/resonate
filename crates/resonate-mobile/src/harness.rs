@@ -24,6 +24,7 @@ use resonate_core::{
     ChannelLayout, Frames, Gain, Resumable, Resumption, SampleFormat, SampleRate, TrackId, ZoneId,
 };
 use resonate_engine::{Command, EngineConfig, Player};
+use resonate_upnp::{Network, Searching};
 
 use crate::{
     Documents, MobilePlayer, PlaybackPreferences, Snapshot, Track,
@@ -31,7 +32,8 @@ use crate::{
     documents::{DOCUMENT_NOT_FOUND, DOCUMENT_REFUSED, GrantedFiles, location},
     downloads::Downloads,
     features::Services,
-    output::Routing,
+    output::{self, Routing},
+    rendering::Rendering,
     sync::Syncing,
     zoning::{Engines, Playing},
 };
@@ -209,7 +211,15 @@ impl Harness {
         Self::over(Device::Speakers)
     }
 
+    pub(crate) fn beside_renderers(searching: Searching) -> Self {
+        Self::beside(Device::Speakers, Rendering::resting(searching))
+    }
+
     fn over(device: Device) -> Self {
+        Self::beside(device, Rendering::default())
+    }
+
+    fn beside(device: Device, rendering: Rendering) -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let folder = env::temp_dir().join(format!(
             "resonate-mobile-queue-{}-{}",
@@ -226,11 +236,13 @@ impl Harness {
         let sources = Arc::new(served.sources(Sources::local().and(Arc::new(
             GrantedFiles::new(documents, "content").expect("a granted provider"),
         ))));
+        let network = rendering.network();
         let engines: Box<Engines> = {
             let sources = Arc::clone(&sources);
+            let network = network.clone();
             Box::new(
                 move |zone: ZoneId, config: EngineConfig, _: &Arc<Routing>| {
-                    engine_over(device, zone, config, Arc::clone(&sources))
+                    engine_over(device, zone, config, Arc::clone(&sources), network.clone())
                 },
             )
         };
@@ -239,6 +251,7 @@ impl Harness {
             ZoneId::FIRST,
             EngineConfig::default(),
             Arc::clone(&sources),
+            network,
         )
         .expect("an engine over the backend");
         let player = MobilePlayer {
@@ -254,6 +267,7 @@ impl Harness {
             room: crate::room::Room::under(std::env::temp_dir()),
             tagging: crate::tagging::Tagging::under(std::env::temp_dir()),
             served,
+            rendering,
         };
 
         let songs = SONGS
@@ -365,6 +379,7 @@ fn engine_over(
     zone: ZoneId,
     config: EngineConfig,
     sources: Arc<Sources>,
+    network: Option<Arc<Network>>,
 ) -> resonate_engine::Result<Player> {
     Player::with_sources_and_backend(config, sources, move |_| {
         let (announces, changes) = unbounded();
@@ -379,7 +394,7 @@ fn engine_over(
                 sink: SinkId::new(zone.get()),
             }),
         };
-        Ok(backend)
+        Ok(output::beside(backend, network))
     })
 }
 

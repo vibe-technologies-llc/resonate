@@ -28,6 +28,7 @@ resonate-core.workspace = true
 resonate-dsp.workspace = true
 resonate-engine.workspace = true
 resonate-eq.workspace = true
+resonate-upnp.workspace = true
 objc2-core-audio-types.workspace = true
 rusqlite.workspace = true
 thiserror.workspace = true

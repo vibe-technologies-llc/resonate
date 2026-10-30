@@ -97,7 +97,7 @@
 	<key>UISupportsDocumentBrowser</key>
 	<false/>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Resonate finds your other devices on this network and keeps them in step, sending songs directly between them.</string>
+	<string>Resonate finds your other devices on this network and keeps them in step, sending songs directly between them, and plays to the streamers and amplifiers you choose on it.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Resonate listens for a few seconds when you ask it to name the song playing around you.</string>
 	<key>CFBundleURLTypes</key>

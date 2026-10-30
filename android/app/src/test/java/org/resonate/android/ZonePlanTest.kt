@@ -46,6 +46,12 @@ class ZonePlanTest {
     }
 
     @Test
+    fun aZoneOnARendererIsHeardOnItAndOtherwiseOnItsDevice() {
+        assertEquals("Living room streamer", ZonePlan.heardOn("Living room streamer", "Topping"))
+        assertEquals("Topping", ZonePlan.heardOn(null, "Topping"))
+    }
+
+    @Test
     fun theSongIsHandedOnlyToAnotherZoneAndOnlyWhenTheShownOneHoldsAQueue() {
         assertTrue(ZonePlan.mayHandOverTo(2u, 1u, shownHolds = true))
         assertFalse(ZonePlan.mayHandOverTo(1u, 1u, shownHolds = true))

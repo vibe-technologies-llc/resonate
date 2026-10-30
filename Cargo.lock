@@ -6061,6 +6061,7 @@ dependencies = [
  "resonate-subsonic",
  "resonate-sync",
  "resonate-tidal",
+ "resonate-upnp",
  "rtrb",
  "rusqlite",
  "rustix",

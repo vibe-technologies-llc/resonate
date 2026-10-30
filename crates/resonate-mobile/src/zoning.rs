@@ -10,7 +10,7 @@ use parking_lot::Mutex;
 use resonate_audio::SinkId;
 use resonate_core::{Volume, ZoneId, ZoneName};
 use resonate_engine::{
-    Command, EngineConfig, Listening, Opening, Opens, PlaybackState, Player, Zone, Zones,
+    Command, EngineConfig, Listening, NodeName, Opening, Opens, PlaybackState, Player, Zone, Zones,
 };
 use rusqlite::params;
 
@@ -19,7 +19,7 @@ use crate::{
     catalog::Catalog,
     documents::document_uri,
     output::{self, OutputFormat, OutputMixer},
-    transport_of,
+    rendering, transport_of,
 };
 
 const SYSTEM_DEFAULT_DEVICE: i32 = 0;
@@ -36,30 +36,42 @@ pub(crate) struct Zoned {
     pub(crate) waiting: Mutex<Option<String>>,
     pub(crate) saved: Mutex<Option<SavedPlace>>,
     pub(crate) listening: Mutex<(Listening, Option<i64>)>,
+    pub(crate) renderer: Mutex<Option<KeptRenderer>>,
     route: Mutex<String>,
     volume: Mutex<Volume>,
 }
 
 impl Zoned {
-    fn new(routing: Arc<output::Routing>, route: String, volume: Volume) -> Self {
+    fn new(
+        routing: Arc<output::Routing>,
+        route: String,
+        volume: Volume,
+        renderer: Option<KeptRenderer>,
+    ) -> Self {
         Self {
             routing,
             failure: Mutex::new(None),
             waiting: Mutex::new(None),
             saved: Mutex::new(None),
             listening: Mutex::new((Listening::default(), None)),
+            renderer: Mutex::new(renderer),
             route: Mutex::new(route),
             volume: Mutex::new(volume),
         }
     }
 
-    fn kept(&self, id: ZoneId, name: &ZoneName) -> KeptZone {
+    pub(crate) fn kept(&self, id: ZoneId, name: &ZoneName) -> KeptZone {
         KeptZone {
             id,
             name: name.as_str().to_owned(),
             route: self.route.lock().clone(),
             volume: *self.volume.lock(),
+            renderer: self.renderer.lock().clone(),
         }
+    }
+
+    pub(crate) fn wanted_sink(&self) -> Option<NodeName> {
+        rendering::sink_of(self.renderer.lock().as_ref())
     }
 }
 
@@ -90,16 +102,28 @@ struct Opener {
     engines: Box<Engines>,
     zoned: Arc<Mutex<BTreeMap<ZoneId, Arc<Zoned>>>>,
     outputs: Arc<Outputs>,
-    bound: Mutex<BTreeMap<ZoneId, (i32, String)>>,
+    bound: Mutex<BTreeMap<ZoneId, Bound>>,
+}
+
+#[derive(Default)]
+struct Bound {
+    device: i32,
+    route: String,
+    renderer: Option<KeptRenderer>,
 }
 
 impl Opens for Opener {
     fn open(&self, opening: &Opening, alongside: &Player) -> resonate_engine::Result<Arc<Player>> {
-        let (device, route) = self.bound.lock().remove(&opening.id).unwrap_or_default();
+        let Bound {
+            device,
+            route,
+            renderer,
+        } = self.bound.lock().remove(&opening.id).unwrap_or_default();
         let routing = Arc::new(output::Routing::serving(SinkId::new(opening.id.get())));
         routing.select(device);
         self.outputs.followed_by(&routing);
         let config = EngineConfig {
+            sink: rendering::sink_of(renderer.as_ref()).or_else(|| opening.sink.clone()),
             volume: opening.volume,
             ..alongside
                 .output_settings()
@@ -109,7 +133,7 @@ impl Opens for Opener {
         let player = (self.engines)(opening.id, config, &routing)?;
         self.zoned.lock().insert(
             opening.id,
-            Arc::new(Zoned::new(routing, route, opening.volume)),
+            Arc::new(Zoned::new(routing, route, opening.volume, renderer)),
         );
         Ok(Arc::new(player))
     }
@@ -136,12 +160,13 @@ impl Playing {
     ) -> Self {
         let route = kept.map(|kept| kept.route.clone()).unwrap_or_default();
         let volume = kept.map_or(Volume::MAX, |kept| kept.volume);
+        let renderer = kept.and_then(|kept| kept.renderer.clone());
         let name = kept
             .and_then(|kept| ZoneName::given(&kept.name))
             .unwrap_or_else(|| ZoneName::first_given_to(ZoneId::FIRST));
         let zoned = Arc::new(Mutex::new(BTreeMap::from([(
             ZoneId::FIRST,
-            Arc::new(Zoned::new(routing, route, volume)),
+            Arc::new(Zoned::new(routing, route, volume, renderer)),
         )])));
         let outputs = Arc::new(Outputs::default());
         let opener = Arc::new(Opener {
@@ -286,9 +311,20 @@ impl Playing {
             .collect()
     }
 
-    fn bind_on_opening(&self, zone: ZoneId, device: i32, route: String) {
+    pub(crate) fn wanted_sink(&self, zone: ZoneId) -> Result<Option<NodeName>> {
+        Ok(self.zoned(zone)?.wanted_sink())
+    }
+
+    fn bind_on_opening(&self, zone: ZoneId, device: i32, kept: &KeptZone) {
         if let Some(opener) = &self.opener {
-            opener.bound.lock().insert(zone, (device, route));
+            opener.bound.lock().insert(
+                zone,
+                Bound {
+                    device,
+                    route: kept.route.clone(),
+                    renderer: kept.renderer.clone(),
+                },
+            );
         }
     }
 }
@@ -299,6 +335,12 @@ const fn reaches(requested: i32, actual: i32, asked: i32) -> bool {
 
 fn handover_clashes(held_by: ZoneId, from: ZoneId, sounding: bool) -> bool {
     held_by != from || sounding
+}
+
+pub(crate) fn first_zones_sink(kept: &[KeptZone]) -> Option<NodeName> {
+    kept.iter()
+        .find(|zone| zone.id.is_first())
+        .and_then(|zone| rendering::sink_of(zone.renderer.as_ref()))
 }
 
 pub(crate) fn first_zones_volume(kept: &[KeptZone]) -> Volume {
@@ -313,13 +355,22 @@ pub(crate) struct KeptZone {
     pub(crate) name: String,
     pub(crate) route: String,
     pub(crate) volume: Volume,
+    pub(crate) renderer: Option<KeptRenderer>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct KeptRenderer {
+    pub(crate) node: String,
+    pub(crate) name: String,
 }
 
 impl Catalog {
     pub(crate) fn kept_zones(&self) -> Result<Vec<KeptZone>> {
         let connection = self.0.lock();
         let mut query = connection
-            .prepare("SELECT id, name, route, volume FROM zones ORDER BY id")
+            .prepare(
+                "SELECT id, name, route, volume, renderer, renderer_name FROM zones ORDER BY id",
+            )
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let rows = query
             .query_map([], |row| {
@@ -328,6 +379,8 @@ impl Catalog {
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
                     row.get::<_, f32>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
                 ))
             })
             .map_err(|source| Error::store(StoreOp::Read, source))?
@@ -335,12 +388,16 @@ impl Catalog {
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         Ok(rows
             .into_iter()
-            .filter_map(|(id, name, route, volume)| {
+            .filter_map(|(id, name, route, volume, node, renderer_name)| {
                 Some(KeptZone {
                     id: ZoneId::new(id)?,
                     name,
                     route,
                     volume: Volume::new(volume).unwrap_or(Volume::MAX),
+                    renderer: node.map(|node| KeptRenderer {
+                        name: renderer_name.unwrap_or_else(|| node.clone()),
+                        node,
+                    }),
                 })
             })
             .collect())
@@ -350,8 +407,15 @@ impl Catalog {
         self.0
             .lock()
             .execute(
-                "INSERT INTO zones(id, name, route, volume) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(id) DO UPDATE SET name = excluded.name, route = excluded.route",
-                params![zone.id.get(), zone.name, zone.route, zone.volume.get()],
+                "INSERT INTO zones(id, name, route, volume, renderer, renderer_name) VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(id) DO UPDATE SET name = excluded.name, route = excluded.route, renderer = excluded.renderer, renderer_name = excluded.renderer_name",
+                params![
+                    zone.id.get(),
+                    zone.name,
+                    zone.route,
+                    zone.volume.get(),
+                    zone.renderer.as_ref().map(|renderer| renderer.node.as_str()),
+                    zone.renderer.as_ref().map(|renderer| renderer.name.as_str()),
+                ],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         Ok(())
@@ -361,8 +425,15 @@ impl Catalog {
         self.0
             .lock()
             .execute(
-                "INSERT INTO zones(id, name, route, volume) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(id) DO UPDATE SET volume = excluded.volume",
-                params![zone.id.get(), zone.name, zone.route, zone.volume.get()],
+                "INSERT INTO zones(id, name, route, volume, renderer, renderer_name) VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(id) DO UPDATE SET volume = excluded.volume",
+                params![
+                    zone.id.get(),
+                    zone.name,
+                    zone.route,
+                    zone.volume.get(),
+                    zone.renderer.as_ref().map(|renderer| renderer.node.as_str()),
+                    zone.renderer.as_ref().map(|renderer| renderer.name.as_str()),
+                ],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         Ok(())
@@ -389,9 +460,13 @@ pub struct PlayerZone {
     pub volume: f32,
     pub transport: Transport,
     pub playing: Option<String>,
+    #[uniffi(default)]
+    pub renderer: Option<String>,
+    #[uniffi(default)]
+    pub renderer_name: Option<String>,
 }
 
-fn zone_named(zone: u32) -> Result<ZoneId> {
+pub(crate) fn zone_named(zone: u32) -> Result<ZoneId> {
     ZoneId::new(zone).ok_or(Error::NoZone { zone })
 }
 
@@ -479,7 +554,8 @@ impl MobilePlayer {
         }
         *zoned.route.lock() = route;
         self.catalog.keep_zone(&zoned.kept(id, &name))?;
-        self.playing.send_to(id, Command::SetSink(None))
+        self.playing
+            .send_to(id, Command::SetSink(zoned.wanted_sink()))
     }
 
     pub fn hand_over_to(&self, zone: u32) -> Result<()> {
@@ -520,6 +596,7 @@ impl MobilePlayer {
             name: name.as_str().to_owned(),
             route,
             volume: Volume::MAX,
+            renderer: None,
         };
 
         self.playing.refusing_a_device_held(id, device)?;
@@ -532,10 +609,16 @@ impl MobilePlayer {
 
     fn player_zone(&self, zone: &Zone, shown: ZoneId) -> PlayerZone {
         let state = zone.player.state();
-        let route = self
+        let (route, device, renderer) = self
             .playing
             .zoned(zone.id)
-            .map(|zoned| (zoned.route.lock().clone(), zoned.routing.requested()))
+            .map(|zoned| {
+                (
+                    zoned.route.lock().clone(),
+                    zoned.routing.requested(),
+                    zoned.renderer.lock().clone(),
+                )
+            })
             .unwrap_or_default();
         let volume = state.volume.get();
         let playing = state.current.and_then(|current| {
@@ -545,11 +628,19 @@ impl MobilePlayer {
             self.catalog.track_uri(&uri).ok().map(|track| track.title)
         });
 
+        let renderer_name = renderer.as_ref().map(|renderer| {
+            self.rendering
+                .named(&renderer.node)
+                .unwrap_or_else(|| renderer.name.clone())
+        });
+
         PlayerZone {
             id: zone.id.get(),
             name: zone.name.as_str().to_owned(),
-            route: route.0,
-            device: route.1,
+            route,
+            device,
+            renderer: renderer.map(|renderer| renderer.node),
+            renderer_name,
             shown: zone.id == shown,
             volume,
             transport: transport_of(state.playback),
@@ -557,10 +648,14 @@ impl MobilePlayer {
         }
     }
 
-    fn zone_opened(&self, zones: &Arc<Zones>, kept: &KeptZone, device: i32) -> Result<Zone> {
+    pub(crate) fn zone_opened(
+        &self,
+        zones: &Arc<Zones>,
+        kept: &KeptZone,
+        device: i32,
+    ) -> Result<Zone> {
         let name = ZoneName::given(&kept.name).unwrap_or_else(|| ZoneName::first_given_to(kept.id));
-        self.playing
-            .bind_on_opening(kept.id, device, kept.route.clone());
+        self.playing.bind_on_opening(kept.id, device, kept);
 
         let zone = zones.open(&Opening {
             id: kept.id,
@@ -806,6 +901,7 @@ mod tests {
             name: "Study".into(),
             route: String::new(),
             volume: Volume::new(0.4).expect("a volume"),
+            renderer: None,
         };
         let zones = harness.player.playing.zones().expect("the zones");
         let study = harness
@@ -836,6 +932,7 @@ mod tests {
             name: "Zone".into(),
             route: String::new(),
             volume: Volume::new(volume).expect("a volume"),
+            renderer: None,
         };
 
         assert_eq!(first_zones_volume(&[]), Volume::MAX);
@@ -940,6 +1037,7 @@ mod tests {
                 name: "Study".into(),
                 route: String::new(),
                 volume: Volume::MAX,
+                renderer: None,
             }]
         );
 

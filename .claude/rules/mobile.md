@@ -410,6 +410,11 @@ phones* (`equaliser.rs`); `playback.rs` sends it with the other sound preference
   the engine parks, not a blocked engine thread, and the late unit is disposed by its own thread.
 - **Elsewhere** (host tests): PipeWire through `Player::with_sources`.
 
+On both phones `output::beside` wraps the platform's backend in `resonate_upnp::Beside` over the one
+`Network` a `MobilePlayer` holds (`rendering.rs`), so every zone's engine also lists the renderers
+found; the host build leaves PipeWire unwrapped and its tests wrap their fake backends instead
+(`upnp.md`'s *On the phones*).
+
 ## Zones
 
 **The boundary owns a `Zones`, never one player** (`zoning.rs`, `audio.md`'s zones). `Playing` holds
@@ -435,7 +440,16 @@ never one sink to `Zones::holder_of` (the phones' system mixes, and one zone's b
 refused every other zone a `SetSink`); its device is the id it was added or bound with (Oboe's
 `setDeviceId`, 0 the system's choice), its engine the first zone's `OutputSettings::applied_to`, and
 the room correction applied is sent to it once open. iOS has one route: every zone's RemoteIO unit
-plays into it (`FEATURES.md`).
+plays into it (`FEATURES.md`), so a renderer is the only other room an iPhone's zone reaches.
+
+**A zone may play on a network renderer** (`upnp.md`'s *On the phones*): `Zoned.renderer` is the one it
+was bound to, and every `SetSink` the boundary sends (`select_output`, `select_zone_output`, the
+`rebind` of `output_route_changed`) sends the zone's wanted sink (`Zoned::wanted_sink`: the
+renderer's node, else none), so choosing an Android device or a route reset never takes a zone off
+its renderer; `select_zone_renderer(zone, None)` does. The catalog's step 21
+(`ZONES_KEEP_THEIR_RENDERER`) gave `zones` a `renderer` (the node) and `renderer_name`, kept by
+`keep_zone`; a zone reopens wanting it (`Bound`, and `first_zones_sink` for the first) and
+`MobilePlayer::new` searches where any kept zone names one.
 
 **A device another zone holds bit-perfect is refused, as the desktop refuses it** (`audio.md`'s
 `Zones::holding`): each zone's sink being its own, `Zones::send` never sees two zones on one sink, so

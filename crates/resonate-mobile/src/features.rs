@@ -277,7 +277,9 @@ impl MobilePlayer {
         if !routing.select(device) {
             return Err(Error::OutputUnavailable);
         }
-        self.command(resonate_engine::Command::SetSink(None))
+        self.command(resonate_engine::Command::SetSink(
+            self.playing.wanted_sink(shown)?,
+        ))
     }
 
     pub fn output_device(&self) -> i32 {
@@ -290,8 +292,9 @@ impl MobilePlayer {
         self.follow_the_formats(self.playing.route_changed(rate, latency_ms))?;
         if rebind {
             for zone in self.playing.listed() {
+                let sink = self.playing.wanted_sink(zone.id)?;
                 self.playing
-                    .send_to(zone.id, resonate_engine::Command::SetSink(None))?;
+                    .send_to(zone.id, resonate_engine::Command::SetSink(sink))?;
             }
         }
         Ok(())
