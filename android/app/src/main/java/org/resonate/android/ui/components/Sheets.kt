@@ -136,6 +136,13 @@ fun Resonate.favourite(
     sheets: Sheets,
     scope: CoroutineScope,
 ) {
+    if (track.served) {
+        attempt(scope) { native ->
+            features.served.bind(native)
+            withContext(Dispatchers.IO) { native.favourServedSong(track.uri, enabled) }
+        }
+        return
+    }
     library.setFavourite(track.id, enabled)
     if (!enabled) return
     scope.launch {

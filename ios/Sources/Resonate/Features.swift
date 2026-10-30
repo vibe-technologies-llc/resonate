@@ -212,6 +212,10 @@ final class Features {
         }
     }
 
+    func favourServed(_ uri: String, _ favourite: Bool) async throws {
+        try await serverAnswer { try $0.favourServedSong(uri: uri, favoured: favourite) }
+    }
+
     private func work(
         _ action: @escaping @MainActor (MobilePlayer) async throws -> Void,
         finally: @escaping @MainActor () -> Void = {}

@@ -3,6 +3,7 @@ package org.resonate.android.ui.server
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -13,9 +14,17 @@ import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.StarBorder
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
@@ -154,7 +163,36 @@ fun ServedSongRow(
                 ServedCover(song.uri, song.cover, Sizes.rowArt)
             }
         },
-        trailing = { ServedMenu(song.uri, actions, "Options for ${song.shownTitle}") },
+        trailing = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ServedStar(song, actions)
+                ServedMenu(song.uri, actions, "Options for ${song.shownTitle}")
+            }
+        },
         modifier = Modifier.testTag("served-song"),
     )
+}
+
+@Composable
+fun ServedStar(song: ServedSong, actions: ServerActions) {
+    if (song.favourite == null) return
+    var starred by remember(song.uri, song.favourite) { mutableStateOf(song.favourite == true) }
+    IconToggleButton(
+        checked = starred,
+        onCheckedChange = { enabled ->
+            starred = enabled
+            actions.favour(song.uri, enabled) { starred = !enabled }
+        },
+        modifier = Modifier.testTag("served-star"),
+    ) {
+        Icon(
+            if (starred) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+            contentDescription =
+                if (starred) "Remove ${song.shownTitle} from favourites"
+                else "Add ${song.shownTitle} to favourites",
+            tint =
+                if (starred) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }

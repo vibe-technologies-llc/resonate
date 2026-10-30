@@ -538,7 +538,7 @@ rows read via `Player::media` like any unscanned row.
   path, span start 0), so its plays and time are in `statistics` and `listening_by_day` without
   pretending it is a row: no row's path is a URI, so `credit_the_unheld` never takes it, and no
   service is told it (`a_song_played_in_place_counts_as_a_listen_against_its_uri_and_never_as_a_row`);
-  it is never a favourite (`docs/FEATURES.md`);
+  it is never a favourite of the catalog's (the service's own mark is `providers.md`'s);
   `history::credit_the_unheld` runs after the prune of every scan a row arrived in: a play whose
   path and start now name a row becomes a `listens` row stamped when heard, **under its own id where
   that is free and with its origin**, so a listen already told to devices and services stays at or

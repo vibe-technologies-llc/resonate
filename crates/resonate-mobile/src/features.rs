@@ -704,16 +704,26 @@ impl MobilePlayer {
         }
         let connection = self.catalog.0.lock();
         match counted {
-            Some(Counting::Counts(played)) if crate::served::Served::names(&played.location) => {
-                *visit = None;
-            }
             Some(Counting::Counts(played)) => {
                 let now = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs()
                     .min(i64::MAX as u64) as i64;
-                let inserted = connection.execute("INSERT INTO listens(track, began, heard_ms, counted) SELECT id, ?2, ?3, 1 FROM documents WHERE uri = ?1", params![crate::documents::document_uri(&played.location)?, now.saturating_sub(played.heard.as_secs() as i64), milliseconds(played.heard).min(i64::MAX as u64) as i64]).map_err(|source| Error::store(StoreOp::Write, source))?;
+                let began = now.saturating_sub(played.heard.as_secs() as i64);
+                let heard_ms = milliseconds(played.heard).min(i64::MAX as u64) as i64;
+                let inserted = if crate::served::Served::names(&played.location) {
+                    connection.execute(
+                        "INSERT INTO listens(track, began, heard_ms, counted, served) VALUES (NULL, ?2, ?3, 1, ?1)",
+                        params![played.location.to_uri(), began, heard_ms],
+                    )
+                } else {
+                    connection.execute(
+                        "INSERT INTO listens(track, began, heard_ms, counted) SELECT id, ?2, ?3, 1 FROM documents WHERE uri = ?1",
+                        params![crate::documents::document_uri(&played.location)?, began, heard_ms],
+                    )
+                }
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
                 *visit = (inserted > 0).then(|| connection.last_insert_rowid());
             }
             Some(Counting::Hears(played) | Counting::Settles(played)) => {

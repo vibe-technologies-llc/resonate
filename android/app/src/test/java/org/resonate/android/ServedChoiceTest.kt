@@ -6,9 +6,9 @@ import org.junit.Test
 import org.resonate.android.nativecore.ServedService
 
 class ServedChoiceTest {
-    private val subsonic = ServedService("subsonic", "Subsonic")
-    private val tidal = ServedService("tidal", "TIDAL")
-    private val monochrome = ServedService("monochrome", "Monochrome")
+    private val subsonic = ServedService("subsonic", "Subsonic", true)
+    private val tidal = ServedService("tidal", "TIDAL", true)
+    private val monochrome = ServedService("monochrome", "Monochrome", false)
 
     @Test
     fun nothingIsChosenWhereNothingIsServed() {

@@ -33,6 +33,18 @@ class ServerActions(private val resonate: Resonate, private val scope: Coroutine
     fun playFrom(songs: List<ServedSong>, index: Int) =
         resonate.playback.playServed(songs.map { it.uri }, index)
 
+    fun favour(uri: String, enabled: Boolean, undo: () -> Unit) {
+        resonate.attempt(scope) { native ->
+            resonate.features.served.bind(native)
+            try {
+                withContext(Dispatchers.IO) { native.favourServedSong(uri, enabled) }
+            } catch (failure: Exception) {
+                undo()
+                throw failure
+            }
+        }
+    }
+
     private fun expanded(uri: String, then: (List<String>) -> Unit) {
         resonate.attempt(scope) { native ->
             resonate.features.served.bind(native)

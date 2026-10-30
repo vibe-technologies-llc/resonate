@@ -22,6 +22,7 @@ pub(crate) const PLAYED_IN_PLACE: [&str; 5] =
 pub struct ServedService {
     pub scheme: String,
     pub title: String,
+    pub favourites: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
@@ -52,6 +53,7 @@ pub struct ServedSong {
     pub duration_ms: Option<u64>,
     pub format: Option<String>,
     pub cover: Option<String>,
+    pub favourite: Option<bool>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, uniffi::Record)]
@@ -119,6 +121,10 @@ impl Service {
                 .map(|length| u64::try_from(length.as_millis()).unwrap_or(u64::MAX)),
             format: song.suffix,
             cover: cover_name(song.cover),
+            favourite: self
+                .plays
+                .keeps_favourites()
+                .then(|| song.favourite.unwrap_or(false)),
         }
     }
 
@@ -156,6 +162,7 @@ type Slot = Arc<RwLock<Vec<Service>>>;
 pub(crate) struct Served {
     slot: Slot,
     known: Mutex<BTreeMap<MediaLocation, ServedSong>>,
+    marked: Mutex<BTreeMap<MediaLocation, bool>>,
 }
 
 impl Served {
@@ -222,15 +229,28 @@ impl Served {
         }
         *held = services;
         self.known.lock().clear();
+        self.marked.lock().clear();
     }
 
-    fn remember(&self, songs: &[ServedSong]) {
+    fn remember(&self, songs: &mut [ServedSong]) {
+        let marked = self.marked.lock();
         let mut known = self.known.lock();
         for song in songs {
-            if let Some(location) = MediaLocation::from_uri(&song.uri) {
-                known.insert(location, song.clone());
+            let Some(location) = MediaLocation::from_uri(&song.uri) else {
+                continue;
+            };
+            if let (Some(favourite), Some(mark)) = (&mut song.favourite, marked.get(&location)) {
+                *favourite = *mark;
             }
+            known.insert(location, song.clone());
         }
+    }
+
+    fn mark(&self, location: MediaLocation, favoured: bool) {
+        if let Some(song) = self.known.lock().get_mut(&location) {
+            song.favourite = Some(favoured);
+        }
+        self.marked.lock().insert(location, favoured);
     }
 
     pub(crate) fn names(location: &MediaLocation) -> bool {
@@ -250,12 +270,13 @@ impl Served {
                 duration_ms: None,
                 format: None,
                 cover: None,
+                favourite: self.marked.lock().get(location).copied(),
             }
         })
     }
 
     pub(crate) fn kept(&self, songs: &[ServedSong]) {
-        self.remember(songs);
+        self.remember(&mut songs.to_vec());
     }
 
     pub(crate) fn track_of(&self, item: &QueueItem) -> Track {
@@ -271,6 +292,7 @@ impl Served {
             duration_ms: song.duration_ms.unwrap_or_default(),
             codec: song.format.unwrap_or_default(),
             track_number: song.track,
+            favourite: song.favourite.unwrap_or(false),
             queue_id: Some(item.id.get()),
             ..Track::default()
         }
@@ -306,6 +328,7 @@ impl MobilePlayer {
             .map(|service| ServedService {
                 scheme: service.plays.scheme().as_str().to_owned(),
                 title: service.plays.title().to_owned(),
+                favourites: service.plays.keeps_favourites(),
             })
             .collect()
     }
@@ -317,8 +340,8 @@ impl MobilePlayer {
             .plays
             .first_page()
             .map_err(|error| service.refused(&error))?;
-        let found = service.found_of(first);
-        self.served.remember(&found.songs);
+        let mut found = service.found_of(first);
+        self.served.remember(&mut found.songs);
         Ok(found)
     }
 
@@ -350,8 +373,9 @@ impl MobilePlayer {
             .plays
             .songs_of(&named)
             .map_err(|error| service.refused(&error))?;
-        let songs: Vec<ServedSong> = held.into_iter().map(|song| service.song_of(song)).collect();
-        self.served.remember(&songs);
+        let mut songs: Vec<ServedSong> =
+            held.into_iter().map(|song| service.song_of(song)).collect();
+        self.served.remember(&mut songs);
         Ok(songs)
     }
 
@@ -362,8 +386,8 @@ impl MobilePlayer {
             .plays
             .search(&words)
             .map_err(|error| service.refused(&error))?;
-        let found = service.found_of(found);
-        self.served.remember(&found.songs);
+        let mut found = service.found_of(found);
+        self.served.remember(&mut found.songs);
         Ok(found)
     }
 
@@ -378,11 +402,11 @@ impl MobilePlayer {
             .plays
             .songs_of(&named)
             .map_err(|error| service.refused(&error))?;
-        let songs: Vec<ServedSong> = songs
+        let mut songs: Vec<ServedSong> = songs
             .into_iter()
             .map(|song| service.song_of(song))
             .collect();
-        self.served.remember(&songs);
+        self.served.remember(&mut songs);
         Ok(songs.into_iter().map(|song| song.uri).collect())
     }
 
@@ -400,6 +424,21 @@ impl MobilePlayer {
             .plays
             .cover(&cover, side)
             .map_err(|error| service.refused(&error))
+    }
+
+    pub fn favour_served_song(&self, uri: String, favoured: bool) -> Result<()> {
+        self.require_online()?;
+        let service = self.served.serving(&uri)?;
+        let Named::Song(id) = service.named(&uri)? else {
+            return Err(Error::InvalidUri);
+        };
+        let location = MediaLocation::from_uri(&uri).ok_or(Error::InvalidUri)?;
+        service
+            .plays
+            .favour(&id, favoured)
+            .map_err(|error| service.refused(&error))?;
+        self.served.mark(location, favoured);
+        Ok(())
     }
 
     pub fn load_served(&self, uris: Vec<String>, start_at: u32, autoplay: bool) -> Result<()> {
@@ -544,7 +583,10 @@ mod tests {
     };
 
     use resonate_codec::probe;
-    use resonate_core::ZoneId;
+    use resonate_core::{
+        ChannelLayout, Frames, SampleFormat, SampleRate, StreamSpec, TrackId, ZoneId,
+    };
+    use resonate_engine::{PlaybackState, PlayerState, TrackState};
 
     use super::*;
     use crate::{
@@ -559,7 +601,9 @@ mod tests {
     const MONOCHROME_SEARCH: &str = r#"{"tracks":[{"trackId":77,"title":"Echoes","artistNames":["Pink Floyd"],"duration":2000,"playable":true},{"trackId":78,"title":"Unplayable","playable":false}]}"#;
     const PICTURE: &[u8] = b"\xFF\xD8 a picture";
 
-    fn answered(stream: TcpStream) {
+    const STARRED: &str = r#"{"subsonic-response":{"status":"ok","version":"1.16.1"}}"#;
+
+    fn answered(stream: TcpStream, asked_log: &Mutex<Vec<String>>) {
         let mut reader = BufReader::new(stream);
         let mut asked = String::new();
         if reader.read_line(&mut asked).is_err() {
@@ -573,7 +617,11 @@ mod tests {
                 Ok(_) => {}
             }
         }
-        let (kind, body): (&str, Vec<u8>) = if asked.contains("/getArtists") {
+        asked_log.lock().push(asked.clone());
+        let (kind, body): (&str, Vec<u8>) = if asked.contains("/star") || asked.contains("/unstar")
+        {
+            ("application/json", STARRED.into())
+        } else if asked.contains("/getArtists") {
             ("application/json", ARTISTS.into())
         } else if asked.contains("/getArtist") {
             ("application/json", ARTIST.into())
@@ -603,15 +651,21 @@ mod tests {
         harness
     }
 
-    fn fake() -> String {
+    fn fake_asked() -> (String, Arc<Mutex<Vec<String>>>) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("a local port");
         let server = format!("http://{}", listener.local_addr().expect("a bound address"));
+        let asked = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&asked);
         thread::spawn(move || {
             for stream in listener.incoming().flatten() {
-                answered(stream);
+                answered(stream, &log);
             }
         });
-        server
+        (server, asked)
+    }
+
+    fn fake() -> String {
+        fake_asked().0
     }
 
     fn of(provider: MusicProvider, server: String) -> DownloadAccount {
@@ -732,10 +786,12 @@ mod tests {
                 ServedService {
                     scheme: "subsonic".to_owned(),
                     title: "Subsonic".to_owned(),
+                    favourites: true,
                 },
                 ServedService {
                     scheme: "monochrome".to_owned(),
                     title: "Monochrome".to_owned(),
+                    favourites: false,
                 },
             ]
         );
@@ -942,6 +998,215 @@ mod tests {
             .load_served(vec!["subsonic:album/al-1".to_owned()], 0, true);
 
         assert!(matches!(loaded, Err(Error::InvalidUri)));
+    }
+
+    fn listened_to(harness: &Harness, uri: &str, seconds: u64) {
+        let rows = harness
+            .player
+            .playing
+            .player()
+            .expect("an open player")
+            .queued()
+            .rows;
+        let id: TrackId = rows.get(0).expect("a queue row").id;
+        let rate = SampleRate::HZ_44100;
+        let frames = |count: u64| Frames(u64::from(rate.hz()) * count);
+
+        for position in [0, seconds / 2, seconds] {
+            let state = PlayerState {
+                playback: PlaybackState::Playing,
+                current: Some(TrackState {
+                    id,
+                    source: StreamSpec::new(rate, ChannelLayout::Stereo, SampleFormat::S16),
+                    position: frames(position),
+                    duration: Some(frames(seconds)),
+                }),
+                queue_position: Some(0),
+                ..PlayerState::default()
+            };
+            harness
+                .player
+                .count_listening(ZoneId::FIRST, &state, &rows)
+                .expect("a listen counted");
+        }
+        assert_eq!(
+            harness.player.queue().expect("the queue")[0].uri,
+            uri,
+            "the queue holds the song heard"
+        );
+    }
+
+    #[test]
+    fn a_song_played_in_place_is_a_counted_listen_in_the_totals_and_the_days_and_told_to_no_one() {
+        let harness = online();
+        harness.player.serve_from(vec![account()]);
+        let uri = "subsonic:track/so-1".to_owned();
+        harness
+            .player
+            .served_songs("subsonic:album/al-1".to_owned())
+            .expect("the songs");
+        harness
+            .player
+            .load_served(vec![uri.clone()], 0, false)
+            .expect("a paused load");
+        harness.settled(|_| harness.player.queue().is_ok_and(|queue| queue.len() == 1));
+
+        listened_to(&harness, &uri, 4);
+        harness.player.finish_listening().expect("a listen settled");
+
+        let statistics = harness.player.statistics(0).expect("the statistics");
+        let detail = harness
+            .player
+            .listening_detail(0, 10, "UTC".to_owned(), 0)
+            .expect("the detail");
+        let kept: Vec<(Option<i64>, Option<String>, i64, i64)> = {
+            let connection = harness.player.catalog.0.lock();
+            let mut query = connection
+                .prepare("SELECT track, served, heard_ms, counted FROM listens ORDER BY id")
+                .expect("a query");
+            query
+                .query_map([], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+                })
+                .expect("listens")
+                .collect::<rusqlite::Result<_>>()
+                .expect("rows")
+        };
+
+        assert_eq!(kept, [(None, Some(uri), 4_000, 1)]);
+        assert_eq!(statistics.plays, 1);
+        assert_eq!(statistics.listened_ms, 4_000);
+        assert!(statistics.top_tracks.is_empty());
+        assert_eq!(detail.songs_heard, 1);
+        assert_eq!(detail.days.iter().map(|day| day.plays).sum::<u64>(), 1);
+        assert!(detail.artists.is_empty() && detail.albums.is_empty());
+        assert!(
+            harness
+                .player
+                .catalog
+                .0
+                .lock()
+                .query_row(
+                    "SELECT count(*) FROM listens l JOIN documents d ON d.id = l.track",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .is_ok_and(|joined| joined == 0)
+        );
+    }
+
+    #[test]
+    fn a_service_with_an_account_marks_its_songs_and_one_without_draws_no_star() {
+        let harness = online();
+        harness.player.serve_from(vec![account(), monochrome()]);
+
+        let services = harness.player.served_services();
+        let starring = harness
+            .player
+            .served_songs("subsonic:album/al-1".to_owned())
+            .expect("the songs");
+        let unstarring = harness
+            .player
+            .served_search("monochrome".to_owned(), "echoes".to_owned())
+            .expect("a search")
+            .songs;
+
+        assert_eq!(
+            services
+                .iter()
+                .map(|service| service.favourites)
+                .collect::<Vec<_>>(),
+            [true, false]
+        );
+        assert_eq!(starring[0].favourite, Some(false));
+        assert_eq!(unstarring[0].favourite, None);
+        assert!(matches!(
+            harness
+                .player
+                .favour_served_song(unstarring[0].uri.clone(), true),
+            Err(Error::ProviderUnreadable { .. })
+        ));
+    }
+
+    #[test]
+    fn a_song_is_starred_and_unstarred_by_the_services_own_call_and_drawn_so_until_the_accounts_move()
+     {
+        let harness = online();
+        let (server, asked) = fake_asked();
+        harness
+            .player
+            .serve_from(vec![of(MusicProvider::Subsonic, server)]);
+        let uri = "subsonic:track/so-1".to_owned();
+        harness
+            .player
+            .served_songs("subsonic:album/al-1".to_owned())
+            .expect("the songs");
+        harness
+            .player
+            .load_served(vec![uri.clone()], 0, false)
+            .expect("a paused load");
+        harness.settled(|_| harness.player.queue().is_ok_and(|queue| queue.len() == 1));
+
+        harness
+            .player
+            .favour_served_song(uri.clone(), true)
+            .expect("a star");
+        let starred = harness
+            .player
+            .served_songs("subsonic:album/al-1".to_owned())
+            .expect("the songs again");
+        let playing = harness.player.queue().expect("the queue");
+
+        harness
+            .player
+            .favour_served_song(uri.clone(), false)
+            .expect("a star taken out");
+        let unstarred = harness
+            .player
+            .served_songs("subsonic:album/al-1".to_owned())
+            .expect("the songs once more");
+
+        let calls: Vec<String> = asked
+            .lock()
+            .iter()
+            .filter(|call| call.contains("/star") || call.contains("/unstar"))
+            .cloned()
+            .collect();
+
+        assert_eq!(calls.len(), 2);
+        assert!(
+            calls[0].contains("/star?") && calls[0].contains("id=so-1"),
+            "{calls:?}"
+        );
+        assert!(
+            calls[1].contains("/unstar?") && calls[1].contains("id=so-1"),
+            "{calls:?}"
+        );
+        assert_eq!(starred[0].favourite, Some(true));
+        assert_eq!(starred[1].favourite, Some(false));
+        assert!(playing[0].favourite);
+        assert_eq!(unstarred[0].favourite, Some(false));
+    }
+
+    #[test]
+    fn a_star_is_refused_for_a_uri_that_is_no_song_and_while_online_is_off() {
+        let harness = online();
+        harness.player.serve_from(vec![account()]);
+
+        let album = harness
+            .player
+            .favour_served_song("subsonic:album/al-1".to_owned(), true);
+        let document = harness
+            .player
+            .favour_served_song("content://test/a.wav".to_owned(), true);
+        harness.player.configure_online(false);
+        let offline = harness
+            .player
+            .favour_served_song("subsonic:track/so-1".to_owned(), true);
+
+        assert!(matches!(album, Err(Error::InvalidUri)));
+        assert!(matches!(document, Err(Error::InvalidUri)));
+        assert!(matches!(offline, Err(Error::OnlineOff)));
     }
 
     struct Mixing;

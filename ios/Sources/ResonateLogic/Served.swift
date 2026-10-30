@@ -40,6 +40,10 @@ public struct ServedChoice: Equatable, Sendable {
 
     public var choosing: Bool { services.count > 1 }
 
+    public func keepsFavourites(of track: Track) -> Bool {
+        services.contains { $0.scheme == PlayedInPlace.scheme(of: track.uri) && $0.favourites }
+    }
+
     public var service: ServedService? { services.first { $0.scheme == chosen } }
 
     public mutating func offer(_ offered: [ServedService]) {

@@ -42,6 +42,9 @@ val Track.pictureKey: String
 val Track.rowKey: ULong
     get() = if (served) queueId ?: 0uL else id
 
+fun List<ServedService>.marksFavouritesOf(track: Track): Boolean =
+    any { it.scheme == track.uri.substringBefore(':', "") && it.favourites }
+
 fun servedMediaId(uri: String): String? = uri.takeIf(::isServedUri)
 
 private val DownloadAccount.hosted: Boolean

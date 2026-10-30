@@ -1297,8 +1297,12 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   `NowPlaying` hands the same picture to `MPNowPlayingInfoCenter`; `ServedCoverView` draws a cover
   the browse names by its own cover name. A served row has no heart, no lyrics, no details, analysis,
   share, tags, playlist or album and artist links (`SongPages`, `SongDestinations`,
-  `FavouriteButton`, `LyricsPane`, the queue row's menu and *Save queue as playlist* leave it out),
-  and removing one from the queue offers no Undo (`ServedTests`).
+  `LyricsPane`, the queue row's menu and *Save queue as playlist* leave it out),
+  and removing one from the queue offers no Undo (`ServedTests`). **Its listens are counted by the
+  boundary and its star is the service's own mark** (`mobile.md`): a song row whose
+  `ServedSong.favourite` is not nil, and `FavouriteButton` for a served row whose service
+  `keepsFavourites(of:)`, draw `ServedStar`, toggled at once and put back with the notice if
+  `Features.favourServed` (`favour_served_song`) fails; the heart of a library row is untouched.
 
 ## Listen
 
