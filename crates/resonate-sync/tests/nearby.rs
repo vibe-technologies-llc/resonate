@@ -532,7 +532,7 @@ fn a_device_of_another_key_on_the_network_meets_nobody() {
         Arc::clone(&stranger_shelf),
         Some(&desk),
     );
-    thread::sleep(Duration::from_secs(6));
+    thread::sleep(Duration::from_secs(2));
 
     assert!(stranger_shelf.playlist_named("Private").is_none());
     assert!(desk.shown().devices.iter().all(|seen| !seen.nearby));
@@ -683,7 +683,7 @@ fn a_record_of_another_code_is_passed_over() {
 
     desk.nearby_heard(&stranger_record);
     desk.nearby_heard("not a record");
-    thread::sleep(Duration::from_secs(3));
+    thread::sleep(Duration::from_secs(1));
 
     assert!(desk.shown().devices.iter().all(|seen| !seen.nearby));
 

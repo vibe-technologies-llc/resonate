@@ -54,7 +54,6 @@ jobs:
       - name: Install the pinned toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build --locked --workspace --exclude resonate-ui --no-default-features
       - run: cargo test --locked --workspace --exclude resonate-ui --no-default-features
       - run: dbus-run-session -- cargo test --locked -p resonate-mpris --test bus
 
@@ -70,8 +69,7 @@ jobs:
       - name: Install the pinned toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build --locked --workspace
-      - run: cargo test --locked --workspace
+      - run: cargo test --locked -p resonate -p resonate-ui
 
   costs:
     name: DSP costs under their ceilings

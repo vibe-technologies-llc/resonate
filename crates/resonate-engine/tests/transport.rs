@@ -10993,7 +10993,7 @@ fn a_seek_back_across_a_turn_reopens_the_output_for_the_format_it_lands_in() -> 
 }
 
 const AUDITIONED_RING: Duration = Duration::from_millis(500);
-const AUDITIONS_PULLED_TIMES_REAL_TIME: u32 = 2;
+const AUDITIONS_PULLED_TIMES_REAL_TIME: u32 = 8;
 const AUDITIONED_SECONDS: usize = 6;
 const A_PERIOD_HOLDS_ITS_PEAK_WITHIN: f64 = 0.03;
 const A_STEP_MAY_PASS_THE_SINE_BY: f64 = 1.05;

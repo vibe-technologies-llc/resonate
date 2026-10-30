@@ -14,8 +14,11 @@ paths:
 - **`.github/workflows/ci.yml` runs what `CLAUDE.md`'s command list runs, and nothing it does not**
   (push to `master`, pull requests, `workflow_dispatch`; `archlinux` containers): clippy (default
   features, the workspace headless, the binary without `ui` and with each feature alone, so code
-  dead without a feature is warned), headless and whole-workspace builds and tests (the headless job
-  reruns the MPRIS bus tests under `dbus-run-session`, which a plain `cargo test` skips), the DSP
+  dead without a feature is warned), headless tests of every crate but the window (the job
+  reruns the MPRIS bus tests under `dbus-run-session`, which a plain `cargo test` skips) and, in
+  the whole-workspace job, only the tests of `resonate` and `resonate-ui`, the two crates whose
+  default features the headless job does not build; no job runs `cargo build` before `cargo test`,
+  which builds what it needs, and library crates set `doctest = false` since none holds a doctest, the DSP
   bench under its ceilings, the layering refusals, the fuzz build, the sync server's package
   (`server-package`). A command added to `CLAUDE.md` goes into the workflow; a crate added to the
   layering refusals gets a line. The layering job has four shapes: `refuse`, `refuse_headless` (no
@@ -48,6 +51,14 @@ by name), then instruments x86_64 emulators at API 33, the minimum, and API 36, 
 included, each run's report and result XML uploaded as `resonate-android-tests-api-<level>` whether or not it passed, since the log names no failing test. The Gradle task compiles ARM64 and x86_64 Rust libraries with baseline CPU settings, NDK
 28.2 and 16 KB ELF alignment, running the host binding tool against Android ELF metadata, so no
 Linux sound server or GUI libraries are needed.
+
+## Faster local test runs
+
+`.config/nextest.toml` configures `cargo nextest run --workspace --exclude resonate-ui
+--no-default-features`, which runs each test as its own process across every test binary at once
+where `cargo test` runs the binaries one after another; `dbus-run-session -- cargo nextest run -p
+resonate-mpris --test bus` replaces the bus line. CI keeps `cargo test`, and nextest is installed by
+the listener, never by a script.
 
 ## Profiles and target
 

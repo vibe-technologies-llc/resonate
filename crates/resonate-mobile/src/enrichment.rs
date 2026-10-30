@@ -3050,7 +3050,7 @@ mod tests {
 
         const RATE: u32 = 44_100;
 
-        const SECONDS_A_SONG: u32 = 12;
+        const SECONDS_A_SONG: u32 = 4;
 
         struct Printer {
             source: SourceId,

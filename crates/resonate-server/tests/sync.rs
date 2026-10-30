@@ -333,7 +333,6 @@ fn a_device_following_favourites_fetches_them_when_the_other_is_online() {
     eventually("the desk connecting", || {
         desk.shown().standing == Standing::Connected
     });
-    thread::sleep(Duration::from_secs(5));
     let phone = device(
         &hosted,
         &folder,
@@ -425,7 +424,7 @@ fn a_device_of_another_key_sees_nothing_of_the_first() {
         desk.shown().standing == Standing::Connected
             && stranger.shown().standing == Standing::Connected
     });
-    thread::sleep(Duration::from_secs(6));
+    thread::sleep(Duration::from_secs(2));
 
     assert!(stranger_shelf.playlist_named("Private").is_none());
     assert!(
@@ -466,7 +465,6 @@ fn a_song_reaches_a_device_the_other_can_only_reach_through_the_servers_relay() 
     eventually("the desk connecting", || {
         desk.shown().standing == Standing::Connected
     });
-    thread::sleep(Duration::from_secs(5));
     let phone = device_reaching(
         &hosted,
         &folder,

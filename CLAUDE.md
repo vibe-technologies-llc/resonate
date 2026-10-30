@@ -188,6 +188,8 @@ Invariants the layering protects (the rules files have the rest):
   for each of `ui`, `online`, `mcp`, `discord`, `sync`: code dead without a feature is warned.
 - `dbus-run-session -- cargo test -p resonate-mpris --test bus`: the bus tests on a session bus of
   their own; under a plain `cargo test` they skip without one.
+- `cargo nextest run --workspace --exclude resonate-ui --no-default-features`: the same tests with every test
+  process in parallel across binaries (`build.md`); not installed by any script.
 - `rust-formatter` formats, `rust-formatter --check` checks; never `cargo fmt`. CI cannot run it.
 - `RESONATE_BENCH_CEILINGS=1 cargo bench -p resonate-dsp --bench stages [<words>]`: every DSP stage
   against `benches/ceilings.tsv`; a stage added to the bench is added to the file.
