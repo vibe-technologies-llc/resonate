@@ -22,6 +22,7 @@ mod launcher;
 mod listen;
 mod mcp;
 mod measuring;
+mod metered;
 mod mpris;
 mod online;
 mod playlists;
@@ -478,6 +479,7 @@ fn open_library_with(cli: &Cli, config: &Config, vault: Option<&Arc<Vault>>) -> 
     stop_telling_what_has_no_account(&library, config);
     age_the_history(&library, config.history_kept());
     library.deliver_into(delivery_folder(config));
+    library.stall_downloads_by(metered::for_downloads(config));
     library.trash_through(trashing::the_desktops());
     Ok(library)
 }

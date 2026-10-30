@@ -213,6 +213,25 @@ needs `--system-talk-name=org.bluez` (`packaging.md`)
 (`bus.rs`'s `a_headsets_press_reaches_the_transport_through_the_player_registered_with_bluez`: under
 `dbus-run-session` with `DBUS_SYSTEM_BUS_ADDRESS` at the session bus and a stand-in `org.bluez`).
 
+## Is the connection metered
+
+`metered.rs`'s `watch_the_meter(Metering)` reads NetworkManager's `Metered` property
+(`org.freedesktop.NetworkManager` at `/org/freedesktop/NetworkManager`) over the system bus and
+reports it into a `resonate_core::Metering`: 1 (yes) and 3 (guess yes) are `Meter::Metered`, 2 and
+4 `Unmetered`, 0 and any other number `Unknown` (`meter_of_network_manager`). It subscribes to the
+manager's `PropertiesChanged` before the first read, and does that first read on the caller's
+thread, so a lookup made straight after is already gated; the rest runs on `resonate-metered`. A
+change that names `Metered` is taken from the signal, one that only invalidates it is read again.
+**No system bus ends the watch** (`Err` at once, the connection stays `Unknown`). **It is asked only
+where `org.freedesktop.NetworkManager` has an owner** (`Error::NobodyOwns` otherwise), as BlueZ is,
+because a call to the name would D-Bus-activate a NetworkManager the listener keeps stopped; a
+manager that is not there or does not answer reports `Unknown` and is asked again after `ASKED_AGAIN_AFTER` (a minute), so one
+that starts later is found. The crate only reports; what a metered connection stops is the
+binary's (`binary.md`). Proved under `dbus-run-session` with `DBUS_SYSTEM_BUS_ADDRESS` at the
+session bus and a stand-in manager (`bus.rs`'s `the_meter_follows_what_network_manager_says_of_the_connection`,
+`a_connection_is_not_metered_where_no_network_manager_answers`); the values a real manager sends
+for a hotspot have not been seen (`docs/TESTING.md`).
+
 ## The client
 
 **The interface is how a second `resonate` reaches a first, and the serving crate speaks it.**

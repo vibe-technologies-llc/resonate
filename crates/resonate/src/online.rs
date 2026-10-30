@@ -27,6 +27,8 @@ use resonate_online::{
 
 #[cfg(feature = "online")]
 use crate::config::{self, LastfmAccount};
+#[cfg(feature = "online")]
+use crate::metered;
 use crate::{Error, Result, config::Config};
 
 #[cfg(feature = "online")]
@@ -57,7 +59,11 @@ fn identity(contact: Option<String>) -> Identity {
 
 #[cfg(feature = "online")]
 fn client(config: &Config) -> Arc<Client> {
-    let client = CLIENT.get_or_init(|| Arc::new(Client::introduced(introduction(config).clone())));
+    let client = CLIENT.get_or_init(|| {
+        Arc::new(
+            Client::introduced(introduction(config).clone()).gated_by(metered::for_lookups(config)),
+        )
+    });
     client.reach(REACHING.load(Ordering::Relaxed));
     Arc::clone(client)
 }

@@ -208,6 +208,12 @@ Boolean. False stops every network request. Default: true.
 .B enrich-after-scan
 Boolean. Ask the reference about albums and artists once a scan has finished. Default: true.
 .TP
+.B enrich-on-metered
+Boolean. Let the lookups of metadata, covers, portraits, lyrics and equaliser corrections go out while the connection is metered, as NetworkManager reports it. False skips them until it is not; a connection that cannot be told is taken as not metered. Default: false.
+.TP
+.B stall-downloads-on-metered
+Boolean. Hold the downloads of the providers back while the connection is metered, as NetworkManager reports it, and go on when it is not or this is turned off. A song played in place from a server is not a download. Default: false.
+.TP
 .B study
 Boolean. Study each track a lookup finds: its spectrum, loudness and print. Default: true.
 .TP

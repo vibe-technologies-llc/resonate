@@ -5905,6 +5905,7 @@ dependencies = [
  "chardetng",
  "encoding_rs",
  "jiff",
+ "parking_lot 0.13.0",
  "proptest",
  "thiserror 2.0.21",
  "unicode-normalization",

@@ -85,7 +85,7 @@ impl Embed {
             match isrc_of(client, track) {
                 Ok(Some(isrc)) => song.names.isrcs.push(isrc),
                 Ok(None) => {}
-                Err(error @ Error::Offline { .. }) => return Err(error),
+                Err(error @ (Error::Offline { .. } | Error::Metered { .. })) => return Err(error),
                 Err(error) => {
                     tracing::debug!(%error, "TIDAL's song pages are not asked further; the strict search names the rest");
                     answering = false;

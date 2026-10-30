@@ -91,6 +91,23 @@ away**: `StillArriving` counts `refused`, the want stays unstamped and due.
   or failed before any claim is `owes_a_poll` (`a_cancelled_poll_is_not_nudged_and_owes_nothing`,
   `a_poll_nudged_before_it_was_cancelled_owes_another`). `PollProgress` keeps a lane per want asked
   (`asking_all`, `provider_of`, `received_for`).
+- **A metered connection holds a poll's downloads when `stall-downloads-on-metered` is on.**
+  `Library::stall_downloads_by(Gate)` (set by the binary at open from `metered::for_downloads`; the
+  gate is shut only while `Meter::Metered`, so off, unknown and unmetered hold nothing). A lane waits
+  in `PollProgress::waits_out_the_meter` at three places: after claiming a want and before
+  announcing it (so it is not shown as searching), before opening an
+  offer, and before each chunk `Pumped` takes from the delivery thread. The last stops the channel
+  being drained, the delivery thread blocks on the full channel, the network read stops, and
+  `Silence`'s clock starts again after the wait, so a hold is never a `Stalled` delivery nor a
+  miss; a connection that was cut meanwhile is the reader's to resume (`Ranged`, `RESUMES_AT_MOST`,
+  Subsonic, Monochrome, a keyed hifi-api) or an `unkept` the next poll takes again (TIDAL's
+  segments are whole). A cancel ends the wait; `PollProgress::is_waiting_on_the_meter` is what a front end
+  reads (the window does not yet). A want not yet claimed is untouched, still `due`; a poll with nothing to claim
+  closes as before. **Playing a song in place is not a download**: `PlaysInPlace` never meets the
+  gate (`a_queued_download_waits_while_the_connection_is_metered_and_goes_on_when_it_is_not`,
+  `an_offer_found_as_the_connection_turned_metered_is_not_opened_until_it_is_not`,
+  `a_download_under_way_stops_reading_when_the_connection_turns_metered_and_finishes_when_it_is_not`,
+  `a_connection_that_cannot_be_told_is_not_a_reason_to_hold_a_download`).
 - **A pressed song is searched for while its release is read.** `Library::foresee` (`foresight.rs`)
   asks the registry (`Providers::first`, every provider, never a narrowed registry) from the
   `Found` alone: recording, release, every code, title, credit, release title and length; no disc,

@@ -43,6 +43,9 @@ pub enum Error {
     #[error("{name} is already owned by another player")]
     NameTaken { name: OwnedWellKnownName },
 
+    #[error("{name} has no owner on the bus")]
+    NobodyOwns { name: OwnedWellKnownName },
+
     #[error("{reading} is not a volume between zero and one")]
     NotAVolume { reading: f64 },
 

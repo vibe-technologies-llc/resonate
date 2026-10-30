@@ -293,6 +293,7 @@ impl MobilePlayer {
             served,
             rendering,
         });
+        this.downloads.stall_by(this.services.downloads.clone());
         this.resume_saved_in(ZoneId::FIRST)?;
         watching::keep(&this, ZoneId::FIRST);
         this.restore_zones(&kept)?;

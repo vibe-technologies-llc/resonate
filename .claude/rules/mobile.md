@@ -522,6 +522,20 @@ with `Range`; `android.md`'s *A download that breaks off resumes* has the whole 
 `MobilePlayer::new` is `Downloads::under`, and `Downloads::default()` (no folder) keeps nothing.
 `Held::resumed` (core) is the lock on an existing partial that does not empty it.
 
+## Metered connections on the phones
+
+The boundary holds the same two gates as the desktop's `metered.rs`, over one `Metering` in
+`Services`: `report_connection(ConnectionMeter)` is how a phone says what its network is (`Unknown`
+where it cannot tell, which is not metered), `configure_enrich_on_metered(allowed)` (default off,
+so lookups are skipped while metered) and `configure_stall_downloads_on_metered(stalls)` (default
+off) are the two switches, and `downloads_wait_on_the_meter()` says whether a download is
+waiting. The lookup gate is on the one `Client` (`online.md`) and ends an enrichment pass
+`Offline`; `Downloads::waits_out_the_meter` holds `find` before it searches and `download` before
+each chunk, ends on a cancel, and leaves the partial for the next job to resume. A song played in
+place is not a download. Neither phone reports its network yet: the Android
+`ConnectivityManager` callback, the iOS `NWPathMonitor`, the two switches and the waiting line are
+recorded in `docs/FEATURES.md`.
+
 ## Reading document rows
 
 `catalog::read` takes a document row by position, the first columns of `documents` in `V1`'s

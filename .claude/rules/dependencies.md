@@ -38,7 +38,8 @@ here, add it there.
   never PipeWire, GPUI, MPRIS or Discord IPC; PipeWire is a Linux-target dependency of the engine and `resonate-listen`. The listener/recogniser vocabulary builds on Android;
   PipeWire capture is compiled only for Linux.
 - `resonate-core`: no symphonia, pipewire, gpui, serde (else `resonate-dsp` stops being a leaf).
-  Has `encoding_rs`, `chardetng` (the shared text reader, `rust-style.md`) and `jiff` (`Calendar`).
+  Has `encoding_rs`, `chardetng` (the shared text reader, `rust-style.md`), `jiff` (`Calendar`) and
+  `parking_lot` (`Metering`, whose `Gate` a waiting thread sleeps on).
 - `resonate-codec`, `-dsp`, `-pipewire` never depend on each other. `-dsp` stays off `resonate-eq`
   (the arithmetic is `resonate-core::eq`). `-analysis` reaches `-dsp` for `TruePeakMeter` and the
   Shazam signature's `Resampler`.

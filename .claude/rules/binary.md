@@ -331,6 +331,14 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   scrobbled; `Config`'s `Debug` and `Accounts`' print none of them.
 - `history-kept`: `forever` or whole days; every command opening the catalog first forgets listens
   and skipped time older than that.
+- **`enrich-on-metered` (off) and `stall-downloads-on-metered` (off)** are read through
+  `metered.rs`: one process-wide `Metering` fed by `resonate_mpris::watch_the_meter` (started the
+  first time a gate that could be shut is handed out, never for a command that asks nothing), two
+  `Gate`s on it (`for_lookups` is shut while metered unless `enrich-on-metered`, handed to the one
+  `online::client`; `for_downloads` is shut while metered when `stall-downloads-on-metered`, handed
+  to every `open_library_with`). The file is read once at start (the settings pane has no row for either yet,
+  `docs/FEATURES.md`). Neither key has a flag. `online = false` outranks both, and a build
+  without `online` has no lookups to gate (`providers.md`, `online.md`).
 - `enrich-after-scan` off leaves the reference to `enrich`, the Library card's *Look up*. `study` off starts no study pool from a lookup. `fetch-lyrics` off asks LRCLIB
   only as a track plays. `identify-by-sound`: `online::fingerprinters` always puts `ByEar` behind
   the AcoustID printer; it answers only while the switch is on (an `Arc<AtomicBool>` shared with it,

@@ -40,6 +40,23 @@ counted play), only under a token or session the listener signed in for.
   (`Setting::Online` calls `online::reach`). The binary also keeps it in `online::REACHING`, set on
   the process client every time it is handed out, so a switch turned off before the client was first
   made still holds. Every seam's error reads `Offline` as `NetworkDown`.
+- **A metered connection stops the lookups unless the listener allows them.** `Client::gated_by`
+  takes a `resonate_core::Gate` (a `Metering` plus a switch), the one the binary builds from
+  `enrich-on-metered` (shut while metered by default; `metered.rs` there) and the phones from
+  `configure_enrich_on_metered`. `exchange` reads it beside `reach`, before and after taking a
+  turn: a shut gate is `Error::Metered { host, op }` with nothing sent, read everywhere `Offline`
+  is (library `Unreachable` on `NetworkDown`, which ends a pass; the lyric, eq and listen
+  vocabularies' unreachable; `tidal.rs` and `youtube.rs` stop asking further). **`Host::is_an_enrichment`
+  draws the line**: every host is gated except ListenBrainz and Last.fm (a counted play is the
+  listener's own record, not enrichment) and Shazam and AudD (the listener asked to listen). A
+  listener's own search gated the same as a pass's, so a metered connection answers a typed search
+  with the same refusal until the switch is on; the yielding twin shares the gate. **Unknown is not
+  metered**: a gate is shut only by `Meter::Metered`, never `Unknown` or `Unmetered`, so a build
+  with no detector, a machine with no NetworkManager and a fresh `Client` behave as before
+  (`a_metered_connection_stops_a_lookup_before_anything_is_sent`,
+  `a_lookup_is_asked_when_metered_lookups_are_allowed_or_the_connection_is_not_metered`,
+  `a_metered_connection_leaves_scrobbling_and_listening_alone`). The phones' enrichment pass reads
+  the same gate through `Asking::is_reaching` and ends `Offline`, not unreachable.
 - **Pacing reserves a slot (no sleep after a call), one queue per process.** `Client::pace`
   reserves from a `Pacing` (`BTreeMap<Host, Instant>` behind a `parking_lot::Mutex`): next slot =
   later of now and last slot + host interval, written back under the lock, slept towards outside

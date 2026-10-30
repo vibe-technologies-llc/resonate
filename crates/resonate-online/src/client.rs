@@ -12,6 +12,7 @@ use std::{
 
 use flate2::{Compression, write::GzEncoder};
 use parking_lot::{Condvar, Mutex, RwLock};
+use resonate_core::Gate;
 use resonate_fetch::retry_after;
 use resonate_library::LookupOp;
 use serde::de::DeserializeOwned;
@@ -461,6 +462,7 @@ pub struct Client {
     pacing: Pacing,
     clock: Arc<dyn Clock>,
     reaching: Arc<AtomicBool>,
+    metered: Gate,
     standing: Standing,
 }
 
@@ -507,6 +509,7 @@ impl Client {
             pacing,
             clock,
             reaching: Arc::new(AtomicBool::new(true)),
+            metered: Gate::open(),
             standing: Standing::Listener,
         }
     }
@@ -518,12 +521,26 @@ impl Client {
             pacing: self.pacing.clone(),
             clock: Arc::clone(&self.clock),
             reaching: Arc::clone(&self.reaching),
+            metered: self.metered.clone(),
             standing: Standing::Yielding,
         }
     }
 
     pub fn user_agent(&self) -> String {
         self.introduction.user_agent()
+    }
+
+    pub fn gated_by(mut self, metered: Gate) -> Self {
+        self.metered = metered;
+        self
+    }
+
+    pub fn is_held_by_the_meter(&self, host: Host) -> bool {
+        host.is_an_enrichment() && self.is_lookup_held_by_the_meter()
+    }
+
+    pub fn is_lookup_held_by_the_meter(&self) -> bool {
+        self.metered.is_shut()
     }
 
     pub fn reach(&self, on: bool) {
@@ -667,6 +684,16 @@ impl Client {
         Ok(Some(read))
     }
 
+    fn reachable(&self, host: Host, op: LookupOp) -> Result<()> {
+        if !self.is_reaching() {
+            return Err(Error::Offline { host, op });
+        }
+        if self.is_held_by_the_meter(host) {
+            return Err(Error::Metered { host, op });
+        }
+        Ok(())
+    }
+
     fn exchange(
         &self,
         host: Host,
@@ -679,13 +706,9 @@ impl Client {
         let owed = self.pacing.retries_owed(host);
         let mut retried = 0;
         loop {
-            if !self.is_reaching() {
-                return Err(Error::Offline { host, op });
-            }
+            self.reachable(host, op)?;
             self.pace(host);
-            if !self.is_reaching() {
-                return Err(Error::Offline { host, op });
-            }
+            self.reachable(host, op)?;
             let introduced = self.introduction.user_agent_to(host);
             let sent = match sending {
                 Sending::Get { authorization } => self.got(url, &introduced, authorization),
@@ -856,6 +879,7 @@ mod tests {
         thread::JoinHandle,
     };
 
+    use resonate_core::{Meter, Metering};
     use ureq::http::HeaderValue;
 
     use super::*;
@@ -1254,6 +1278,124 @@ mod tests {
 
         client.reach(true);
         assert_eq!(fetched_by(&client, vec![FINE]).0, 200);
+    }
+
+    fn metered_client(shut: bool, meter: Meter) -> (Client, Gate, Metering) {
+        let metering = Metering::new();
+        metering.report(meter);
+        let gate = Gate::new(metering.clone(), shut);
+        let client = Client::on_clock(
+            Introduction::as_(&identity(None)),
+            Faked::new(),
+            Carried::Plain,
+        )
+        .gated_by(gate.clone());
+        (client, gate, metering)
+    }
+
+    fn asked_of(client: &Client, host: Host) -> Result<u16> {
+        let (url, served) = serving(vec![FINE]);
+        let answered = client
+            .exchange(
+                host,
+                LookupOp::FindRecording,
+                &url,
+                Sending::Get {
+                    authorization: None,
+                },
+            )
+            .map(|response| response.status().as_u16());
+        if answered.is_ok() {
+            served.join().expect("the server");
+        }
+        answered
+    }
+
+    #[test]
+    fn a_metered_connection_stops_a_lookup_before_anything_is_sent() {
+        let (client, _, _) = metered_client(true, Meter::Metered);
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+        listener
+            .set_nonblocking(true)
+            .expect("a listener that does not wait");
+        let url = format!(
+            "http://{}/",
+            listener.local_addr().expect("a bound address")
+        );
+
+        let refused = client.exchange(
+            Host::MusicBrainz,
+            LookupOp::FindRecording,
+            &url,
+            Sending::Get {
+                authorization: None,
+            },
+        );
+
+        assert!(matches!(
+            refused,
+            Err(Error::Metered {
+                host: Host::MusicBrainz,
+                ..
+            })
+        ));
+        assert!(listener.accept().is_err(), "a metered client connected");
+    }
+
+    #[test]
+    fn a_lookup_is_asked_when_metered_lookups_are_allowed_or_the_connection_is_not_metered() {
+        let (allowed, _, _) = metered_client(false, Meter::Metered);
+        let (unmetered, _, _) = metered_client(true, Meter::Unmetered);
+        let (unknown, _, _) = metered_client(true, Meter::Unknown);
+
+        assert_eq!(asked_of(&allowed, Host::MusicBrainz).expect("asked"), 200);
+        assert_eq!(asked_of(&unmetered, Host::MusicBrainz).expect("asked"), 200);
+        assert_eq!(asked_of(&unknown, Host::MusicBrainz).expect("asked"), 200);
+    }
+
+    #[test]
+    fn a_lookup_follows_the_connection_and_the_setting_as_they_change() {
+        let (client, gate, metering) = metered_client(true, Meter::Metered);
+
+        assert!(client.is_held_by_the_meter(Host::Lrclib));
+
+        metering.report(Meter::Unmetered);
+        assert!(!client.is_held_by_the_meter(Host::Lrclib));
+
+        metering.report(Meter::Metered);
+        assert!(client.is_held_by_the_meter(Host::Lrclib));
+
+        gate.shut_while_metered(false);
+        assert!(!client.is_held_by_the_meter(Host::Lrclib));
+    }
+
+    #[test]
+    fn a_background_client_is_held_by_the_same_meter() {
+        let (client, _, _) = metered_client(true, Meter::Metered);
+        let yielding = client.yielding();
+
+        assert!(yielding.is_held_by_the_meter(Host::CoverArtArchive));
+    }
+
+    #[test]
+    fn a_metered_connection_leaves_scrobbling_and_listening_alone() {
+        let (client, _, _) = metered_client(true, Meter::Metered);
+
+        for host in [Host::ListenBrainz, Host::LastFm, Host::Shazam, Host::Audd] {
+            assert!(!client.is_held_by_the_meter(host), "{host:?}");
+            assert_eq!(asked_of(&client, host).expect("asked"), 200, "{host:?}");
+        }
+        for host in [
+            Host::MusicBrainz,
+            Host::CoverArtArchive,
+            Host::Commons,
+            Host::Lrclib,
+            Host::AutoEq,
+            Host::AcoustId,
+            Host::Deezer,
+        ] {
+            assert!(client.is_held_by_the_meter(host), "{host:?}");
+        }
     }
 
     fn fetched(clock: &Arc<Faked>, answers: Vec<Answer>) -> (u16, usize) {

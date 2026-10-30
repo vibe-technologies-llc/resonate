@@ -20,9 +20,10 @@ use std::{
 
 use parking_lot::Mutex;
 use resonate_core::{
-    AlbumId, ChannelLayout, FrameSpan, Frames, KeptZone, MediaLocation, PlaylistId, QueueStamp,
-    ReleaseTrackId, Reordered, Resumable, Resumption, SampleFormat, SampleRate, SourceId, Span,
-    StreamSpec, TrackId, Volume, WantId, ZoneId, ZoneName,
+    AlbumId, ChannelLayout, FrameSpan, Frames, Gate as MeteredGate, KeptZone, MediaLocation, Meter,
+    Metering, PlaylistId, QueueStamp, ReleaseTrackId, Reordered, Resumable, Resumption,
+    SampleFormat, SampleRate, SourceId, Span, StreamSpec, TrackId, Volume, WantId, ZoneId,
+    ZoneName,
 };
 use resonate_library::{
     Aged, Album, AlbumLink, AlbumMatch, AlbumNames, AlbumOrder, AlbumQuery, Artist, ArtistFound,
@@ -23353,6 +23354,282 @@ fn a_delivery_with_no_vault_is_filed_in_the_music_folder_and_joins_the_album_it_
     let again = library.track(held)?.expect("the row a rescan kept");
     assert_eq!(again.album_id, Some(album.id));
     assert_eq!(library.wants()?[0].held, Some(held));
+    Ok(())
+}
+
+const WHOLE_SONG_FRAMES: usize = 40_000;
+
+fn san_tropez_bytes() -> Vec<u8> {
+    Wav::new().frames(WHOLE_SONG_FRAMES).build()
+}
+
+fn san_tropez_wanted_into_the_music_folder() -> Result<(Tree, Library)> {
+    let (tree, library) = scanned_orbits()?;
+    wanted_san_tropez(&library)?;
+    library.deliver_into(Some(DeliveryFolder {
+        path: tree.path().to_path_buf(),
+        layout: Layout::default(),
+    }));
+    Ok((tree, library))
+}
+
+fn san_tropez_offered() -> Arc<Offering> {
+    Arc::new(Offering::new(
+        "shop",
+        Delivering::Bytes {
+            key: "track/55391743",
+            extension: "wav",
+            bytes: san_tropez_bytes(),
+        },
+    ))
+}
+
+const THE_POLL_HAS_WAITED: Duration = Duration::from_millis(400);
+
+#[test]
+fn a_queued_download_waits_while_the_connection_is_metered_and_goes_on_when_it_is_not() -> Result<()>
+{
+    let (_tree, library) = san_tropez_wanted_into_the_music_folder()?;
+    let metering = Metering::new();
+    metering.report(Meter::Metered);
+    library.stall_downloads_by(MeteredGate::new(metering.clone(), true));
+    let shop = san_tropez_offered();
+
+    let polling = library.poll(shop.registered(), PollOptions::default())?;
+    let progress = Arc::clone(polling.progress());
+    thread::sleep(THE_POLL_HAS_WAITED);
+
+    assert!(progress.is_waiting_on_the_meter());
+    assert!(shop.asked().is_empty(), "a stalled poll asked a provider");
+    assert_eq!(progress.snapshot().offered, 0);
+    assert_eq!(library.wants()?[0].tried, None);
+    assert_eq!(library.wants()?[0].misses, 0);
+
+    metering.report(Meter::Unmetered);
+    let summary = polling.join()?;
+
+    assert!(!progress.is_waiting_on_the_meter());
+    assert_eq!(shop.asked().len(), 1);
+    assert_eq!(summary.stats.kept, 1);
+    assert!(library.wants()?[0].held.is_some());
+    Ok(())
+}
+
+#[test]
+fn a_queued_download_goes_on_when_the_listener_turns_the_setting_off() -> Result<()> {
+    let (_tree, library) = san_tropez_wanted_into_the_music_folder()?;
+    let metering = Metering::new();
+    metering.report(Meter::Metered);
+    let gate = MeteredGate::new(metering, true);
+    library.stall_downloads_by(gate.clone());
+    let shop = san_tropez_offered();
+
+    let polling = library.poll(shop.registered(), PollOptions::default())?;
+    let progress = Arc::clone(polling.progress());
+    thread::sleep(THE_POLL_HAS_WAITED);
+    assert!(progress.is_waiting_on_the_meter());
+
+    gate.shut_while_metered(false);
+    let summary = polling.join()?;
+
+    assert_eq!(summary.stats.kept, 1);
+    Ok(())
+}
+
+#[test]
+fn a_connection_that_cannot_be_told_is_not_a_reason_to_hold_a_download() -> Result<()> {
+    let (_tree, library) = san_tropez_wanted_into_the_music_folder()?;
+    library.stall_downloads_by(MeteredGate::new(Metering::new(), true));
+    let shop = san_tropez_offered();
+
+    let summary = library
+        .poll(shop.registered(), PollOptions::default())?
+        .join()?;
+
+    assert_eq!(summary.stats.kept, 1);
+    Ok(())
+}
+
+#[test]
+fn a_metered_connection_holds_nothing_back_unless_the_setting_asks() -> Result<()> {
+    let (_tree, library) = san_tropez_wanted_into_the_music_folder()?;
+    let metering = Metering::new();
+    metering.report(Meter::Metered);
+    library.stall_downloads_by(MeteredGate::new(metering, false));
+    let shop = san_tropez_offered();
+
+    let summary = library
+        .poll(shop.registered(), PollOptions::default())?
+        .join()?;
+
+    assert_eq!(summary.stats.kept, 1);
+    Ok(())
+}
+
+#[test]
+fn a_poll_cancelled_while_it_waits_for_the_connection_ends_without_asking() -> Result<()> {
+    let (_tree, library) = san_tropez_wanted_into_the_music_folder()?;
+    let metering = Metering::new();
+    metering.report(Meter::Metered);
+    library.stall_downloads_by(MeteredGate::new(metering, true));
+    let shop = san_tropez_offered();
+
+    let polling = library.poll(shop.registered(), PollOptions::default())?;
+    thread::sleep(THE_POLL_HAS_WAITED);
+    polling.cancel();
+    let summary = polling.join()?;
+
+    assert!(summary.cancelled);
+    assert!(shop.asked().is_empty());
+    assert_eq!(summary.stats.kept, 0);
+    Ok(())
+}
+
+enum TurnsMetered {
+    WhenAsked,
+    WhenToldTo,
+}
+
+struct ReadsSlowly {
+    inner: io::Cursor<Vec<u8>>,
+}
+
+impl io::Read for ReadsSlowly {
+    fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
+        thread::sleep(Duration::from_millis(150));
+        self.inner.read(into)
+    }
+}
+
+struct TurnsMeteredDuring {
+    source: SourceId,
+    metering: Metering,
+    when: TurnsMetered,
+    opened: Arc<AtomicUsize>,
+}
+
+impl Provider for TurnsMeteredDuring {
+    fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn find(&self, _identity: &Identity) -> ProvidedResult<Obtained> {
+        let bytes = san_tropez_bytes();
+        let opened = Arc::clone(&self.opened);
+        let opening = match self.when {
+            TurnsMetered::WhenAsked => {
+                self.metering.report(Meter::Metered);
+                Opening::new(move || {
+                    opened.fetch_add(1, Ordering::SeqCst);
+                    Opening::ready(io::Cursor::new(bytes)).open()
+                })
+            }
+            TurnsMetered::WhenToldTo => Opening::new(move || {
+                opened.fetch_add(1, Ordering::SeqCst);
+                Opening::ready(ReadsSlowly {
+                    inner: io::Cursor::new(bytes),
+                })
+                .open()
+            }),
+        };
+        Ok(Obtained::Found(Delivery::Stream {
+            key: "track/55391743".into(),
+            extension: Extension::new("wav")?,
+            opening,
+        }))
+    }
+}
+
+struct TurningMetered {
+    _tree: Tree,
+    library: Library,
+    metering: Metering,
+    opened: Arc<AtomicUsize>,
+    providers: Arc<Providers>,
+}
+
+fn turning_metered(when: TurnsMetered) -> Result<TurningMetered> {
+    let (tree, library) = san_tropez_wanted_into_the_music_folder()?;
+    let metering = Metering::new();
+    library.stall_downloads_by(MeteredGate::new(metering.clone(), true));
+    let opened = Arc::new(AtomicUsize::new(0));
+    let provider = Arc::new(TurnsMeteredDuring {
+        source: SourceId::new("shop").expect("a nameable source"),
+        metering: metering.clone(),
+        when,
+        opened: Arc::clone(&opened),
+    });
+    let providers = Arc::new(Providers::none().and(provider as Arc<dyn Provider>));
+    Ok(TurningMetered {
+        _tree: tree,
+        library,
+        metering,
+        opened,
+        providers,
+    })
+}
+
+#[test]
+fn an_offer_found_as_the_connection_turned_metered_is_not_opened_until_it_is_not() -> Result<()> {
+    let TurningMetered {
+        library,
+        metering,
+        opened,
+        providers,
+        ..
+    } = turning_metered(TurnsMetered::WhenAsked)?;
+
+    let polling = library.poll(providers, PollOptions::default())?;
+    let progress = Arc::clone(polling.progress());
+    thread::sleep(THE_POLL_HAS_WAITED);
+
+    assert!(progress.is_waiting_on_the_meter());
+    assert_eq!(opened.load(Ordering::SeqCst), 0);
+
+    metering.report(Meter::Unmetered);
+    let summary = polling.join()?;
+
+    assert_eq!(opened.load(Ordering::SeqCst), 1);
+    assert_eq!(summary.stats.kept, 1);
+    Ok(())
+}
+
+#[test]
+fn a_download_under_way_stops_reading_when_the_connection_turns_metered_and_finishes_when_it_is_not()
+-> Result<()> {
+    let TurningMetered {
+        library,
+        metering,
+        providers,
+        ..
+    } = turning_metered(TurnsMetered::WhenToldTo)?;
+
+    let polling = library.poll(providers, PollOptions::default())?;
+    let progress = Arc::clone(polling.progress());
+    let began = Instant::now();
+    while progress.received() == 0 {
+        assert!(began.elapsed() < Duration::from_secs(10), "nothing arrived");
+        thread::sleep(Duration::from_millis(2));
+    }
+    metering.report(Meter::Metered);
+    thread::sleep(THE_POLL_HAS_WAITED);
+    let received = progress.received();
+
+    assert!(progress.is_waiting_on_the_meter());
+    assert!(
+        received > 0,
+        "nothing was read before the connection turned"
+    );
+    assert!(received < san_tropez_bytes().len() as u64);
+
+    thread::sleep(THE_POLL_HAS_WAITED);
+    assert_eq!(progress.received(), received);
+
+    metering.report(Meter::Unmetered);
+    let summary = polling.join()?;
+
+    assert_eq!(summary.stats.kept, 1);
+    assert_eq!(summary.stats.late, 0);
     Ok(())
 }
 
