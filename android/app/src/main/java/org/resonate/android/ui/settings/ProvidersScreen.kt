@@ -4,6 +4,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.SignalCellularAlt
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -23,10 +24,14 @@ class ProvidersViewModel(resonate: Resonate) : ViewModel() {
 
     val book = features.providerAccounts
     val hostedServices = features.hostedServices
+    val stallDownloadsOnMetered = features.stallDownloadsOnMetered
 
     fun turn(id: Long, on: Boolean) = features.turnProviderAccount(id, on)
 
     fun setHostedServices(enabled: Boolean) = features.setHostedServices(enabled)
+
+    fun setStallDownloadsOnMetered(enabled: Boolean) =
+        features.setStallDownloadsOnMetered(enabled)
 }
 
 @Composable
@@ -35,6 +40,7 @@ fun ProvidersScreen() {
     val navigator = LocalNavigator.current
     val book by model.book.collectAsStateWithLifecycle()
     val hostedServices by model.hostedServices.collectAsStateWithLifecycle()
+    val stallDownloadsOnMetered by model.stallDownloadsOnMetered.collectAsStateWithLifecycle()
     Page("Download sources") { padding ->
         val all = book
         if (all == null) {
@@ -56,6 +62,16 @@ fun ProvidersScreen() {
                     checked = hostedServices,
                     onCheckedChange = model::setHostedServices,
                     modifier = Modifier.testTag("setting-hosted-services"),
+                )
+            }
+            item(key = "stall-downloads-on-metered") {
+                SwitchRow(
+                    title = "Wait on a metered connection",
+                    icon = Icons.Rounded.SignalCellularAlt,
+                    supporting = "Downloads pause until the network is not metered",
+                    checked = stallDownloadsOnMetered,
+                    onCheckedChange = model::setStallDownloadsOnMetered,
+                    modifier = Modifier.testTag("setting-stall-downloads-on-metered"),
                 )
             }
             item(key = "sources-header") { SectionHeader("Your sources") }

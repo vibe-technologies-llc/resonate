@@ -20,6 +20,7 @@ import androidx.compose.material.icons.rounded.ImageSearch
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.SignalCellularAlt
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.Button
@@ -61,6 +62,7 @@ class LibraryToolsViewModel(private val resonate: Resonate) : ViewModel() {
     val online = features.online
     val automatic = enrichment.automatic
     val unmeteredOnly = enrichment.unmeteredOnly
+    val enrichOnMetered = features.enrichOnMetered
     val status = enrichment.status
     val coversAskedAgain = enrichment.coversAskedAgain
     val recognitionKey = features.recognitionKey
@@ -84,6 +86,8 @@ class LibraryToolsViewModel(private val resonate: Resonate) : ViewModel() {
     fun setUnmeteredOnly(enabled: Boolean) {
         enrichment.setUnmeteredOnly(enabled)
     }
+
+    fun setEnrichOnMetered(enabled: Boolean) = features.setEnrichOnMetered(enabled)
 
     fun refreshAll() {
         enrichment.refresh()
@@ -129,6 +133,7 @@ fun LibraryToolsScreen() {
     val online by model.online.collectAsStateWithLifecycle()
     val automatic by model.automatic.collectAsStateWithLifecycle()
     val unmeteredOnly by model.unmeteredOnly.collectAsStateWithLifecycle()
+    val enrichOnMetered by model.enrichOnMetered.collectAsStateWithLifecycle()
     val status by model.status.collectAsStateWithLifecycle()
     val covers by model.coversAskedAgain.collectAsStateWithLifecycle()
     val storedKey by model.recognitionKey.collectAsStateWithLifecycle()
@@ -175,6 +180,17 @@ fun LibraryToolsScreen() {
                     checked = unmeteredOnly,
                     onCheckedChange = model::setUnmeteredOnly,
                     enabled = online && automatic,
+                )
+            }
+            item(key = "metered") {
+                SwitchRow(
+                    title = "Look up on a metered connection",
+                    icon = Icons.Rounded.SignalCellularAlt,
+                    supporting = "Ask for covers and details even when the network is metered",
+                    checked = enrichOnMetered,
+                    onCheckedChange = model::setEnrichOnMetered,
+                    enabled = online,
+                    modifier = Modifier.testTag("setting-enrich-on-metered"),
                 )
             }
             item(key = "status") {

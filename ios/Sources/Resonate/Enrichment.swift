@@ -252,6 +252,9 @@ struct EnrichmentSection: View {
                 ToolRow(title: "Only on Wi-Fi", detail: "Wait for a network that is not metered", symbol: "wifi")
             }
             .disabled(!enrichment.automatic)
+            Toggle(isOn: Binding(get: { library.features.enrichOnMetered }, set: { library.features.setEnrichOnMetered($0) })) {
+                ToolRow(title: "Look up on a metered connection", detail: "Ask for covers and details even when the network is metered", symbol: "antenna.radiowaves.left.and.right")
+            }
             Button { enrichment.lookAgainForCovers() } label: {
                 ToolRow(
                     title: "Look again for missing covers",

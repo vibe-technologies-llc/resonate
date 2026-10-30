@@ -45,6 +45,7 @@ import org.resonate.android.nativecore.SavedSearch
 import org.resonate.android.nativecore.AnalysisReport
 import org.resonate.android.nativecore.ArtistInformation
 import org.resonate.android.nativecore.AutoEqDevice
+import org.resonate.android.nativecore.ConnectionMeter
 import org.resonate.android.nativecore.DownloadAccount
 import org.resonate.android.nativecore.HandedOff
 import org.resonate.android.nativecore.LibraryStatistics
@@ -202,6 +203,10 @@ class LibraryFeatures(private val context: Context, private val library: Library
             .stateIn(derivedScope, SharingStarted.Eagerly, null)
     val online = MutableStateFlow(settings.getBoolean("online", true))
     val hostedServices = MutableStateFlow(settings.getBoolean("hosted-services", true))
+    val enrichOnMetered = MutableStateFlow(settings.getBoolean("enrich-on-metered", false))
+    val stallDownloadsOnMetered =
+        MutableStateFlow(settings.getBoolean("stall-downloads-on-metered", false))
+    val downloadsWaitOnTheMeter = MutableStateFlow(false)
     val served = Served(library, scope, online, providerAccounts, hostedServices)
     val folders = MutableStateFlow<List<MusicFolder>>(emptyList())
     val organising = FolderOrganising(context, library, settings, scope, ::rereadSongs)
@@ -271,6 +276,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             ?.apply { setReferenceCounted(false) }
     }
     @Volatile private var unmetered = false
+    @Volatile private var connection = ConnectionMeter.UNKNOWN
     @Volatile private var foreground = true
     private val landingRefused = mutableMapOf<ULong, RefusedLanding>()
 
@@ -365,6 +371,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
         native.configureOnline(online.value)
         native.configureHostedServices(hostedServices.value)
+        native.configureEnrichOnMetered(enrichOnMetered.value)
+        native.configureStallDownloadsOnMetered(stallDownloadsOnMetered.value)
         served.begin(native)
         enrichment.initialize(online.value)
         downloads.recover(native)
@@ -418,6 +426,22 @@ class LibraryFeatures(private val context: Context, private val library: Library
             native.configureHostedServices(enabled)
             hostedServices.value = enabled
             settings.edit().putBoolean("hosted-services", enabled).commit()
+        }
+    }
+
+    fun setEnrichOnMetered(enabled: Boolean) {
+        work { native ->
+            native.configureEnrichOnMetered(enabled)
+            enrichOnMetered.value = enabled
+            settings.edit().putBoolean("enrich-on-metered", enabled).commit()
+        }
+    }
+
+    fun setStallDownloadsOnMetered(enabled: Boolean) {
+        work { native ->
+            native.configureStallDownloadsOnMetered(enabled)
+            stallDownloadsOnMetered.value = enabled
+            settings.edit().putBoolean("stall-downloads-on-metered", enabled).commit()
         }
     }
 
@@ -575,14 +599,16 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     networkCapabilities: NetworkCapabilities,
                 ) {
                     networkChanged(
-                        networkCapabilities.hasCapability(
-                            NetworkCapabilities.NET_CAPABILITY_NOT_METERED
+                        ConnectionMeters.of(
+                            networkCapabilities.hasCapability(
+                                NetworkCapabilities.NET_CAPABILITY_NOT_METERED
+                            )
                         )
                     )
                 }
 
                 override fun onLost(network: Network) {
-                    networkChanged(false)
+                    networkChanged(ConnectionMeters.of(null))
                 }
             }
         try {
@@ -595,12 +621,19 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     }
 
-    private fun networkChanged(free: Boolean) {
-        if (free == unmetered) return
+    private fun networkChanged(meter: ConnectionMeter) {
+        connection = meter
+        val free = meter == ConnectionMeter.UNMETERED
+        val changed = free != unmetered
         unmetered = free
-        enrichment.networkChanged(free)
-        downloads.wantsChanged()
-        work { it.syncNetwork(free) }
+        work { native ->
+            native.reportConnection(connection)
+            if (changed) {
+                enrichment.networkChanged(free)
+                downloads.wantsChanged()
+                native.syncNetwork(free)
+            }
+        }
     }
 
     private suspend fun pollSync() {
@@ -1231,6 +1264,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         outputStream.value = native.outputStream()
         routes.streamOn(device)
         if (downloading.value) downloads.follow(native)
+        downloadsWaitOnTheMeter.value = downloading.value && native.downloadsWaitOnTheMeter()
         if (analysisBusy.value) analysisProgress.value = native.analysisProgress()
     }
 
@@ -1645,6 +1679,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
         hearBeacons(false)
         renderers.stop()
         unmetered = false
+        connection = ConnectionMeter.UNKNOWN
+        downloadsWaitOnTheMeter.value = false
         transferring.value = false
         syncHandoffs.value = emptyList()
         analysisRequest.incrementAndGet()

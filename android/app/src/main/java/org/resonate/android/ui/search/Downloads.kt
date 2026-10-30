@@ -59,6 +59,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import org.resonate.android.DownloadPlan
 import org.resonate.android.MusicDocuments
 import org.resonate.android.MusicFolder
 import org.resonate.android.nativecore.SearchSong
@@ -69,18 +70,27 @@ import org.resonate.android.ui.counted
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 
-data class DownloadShown(val status: String, val running: Boolean)
+data class DownloadShown(
+    val status: String,
+    val running: Boolean,
+    val meterLine: String? = null,
+)
 
 class Downloads(private val resonate: Resonate, private val scope: CoroutineScope) {
     private val features = resonate.features
     private val dismissed = MutableStateFlow<String?>(null)
 
     val shown: StateFlow<DownloadShown?> =
-        combine(features.downloading, features.downloadStatus, dismissed) { running, status, hidden ->
+        combine(
+                features.downloading,
+                features.downloadStatus,
+                dismissed,
+                features.downloadsWaitOnTheMeter,
+            ) { running, status, hidden, waiting ->
                 when {
                     status == null -> null
                     !running && status == hidden -> null
-                    else -> DownloadShown(status, running)
+                    else -> DownloadShown(status, running, DownloadPlan.meterLine(waiting))
                 }
             }
             .stateIn(scope, SharingStarted.WhileSubscribed(5_000), null)
@@ -183,7 +193,11 @@ fun DownloadCard(downloads: Downloads, modifier: Modifier = Modifier) {
                 },
                 supportingContent =
                     if (current.running) {
-                        { DownloadedBytes(downloads) }
+                        {
+                            val line = current.meterLine
+                            if (line != null) Text(line, Modifier.testTag("download-meter-line"))
+                            else DownloadedBytes(downloads)
+                        }
                     } else null,
                 trailingContent = {
                     if (current.running) {

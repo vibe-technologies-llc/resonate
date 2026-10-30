@@ -532,9 +532,19 @@ off) are the two switches, and `downloads_wait_on_the_meter()` says whether a do
 waiting. The lookup gate is on the one `Client` (`online.md`) and ends an enrichment pass
 `Offline`; `Downloads::waits_out_the_meter` holds `find` before it searches and `download` before
 each chunk, ends on a cancel, and leaves the partial for the next job to resume. A song played in
-place is not a download. Neither phone reports its network yet: the Android
-`ConnectivityManager` callback, the iOS `NWPathMonitor`, the two switches and the waiting line are
-recorded in `docs/FEATURES.md`.
+place is not a download.
+
+Each phone reports its network and keeps the two switches (`enrich-on-metered` and
+`stall-downloads-on-metered`, both off, in the phone's own settings store, handed to the boundary at
+start and on a change). Android's default-network callback reports a network without
+`NET_CAPABILITY_NOT_METERED` as `Metered`, one with it as `Unmetered` and `onLost` as `Unknown`
+(`ConnectionMeters.of`); iOS's `NWPathMonitor` reports an expensive or constrained satisfied path as
+`Metered`, another satisfied path as `Unmetered` and an unsatisfied one as `Unknown`
+(`ConnectionMeters.of(satisfied:expensive:constrained:)`). Each phone reports every path change, the
+latest meter read when the call runs, and polls `downloads_wait_on_the_meter()` beside its download
+progress to show the waiting line *Waiting for a network that is not metered*; the switches sit beside
+*Only on Wi-Fi* (library tools) and the hosted-services switch (download sources), which are the
+phone's own gates and stay.
 
 ## Reading document rows
 

@@ -4,23 +4,11 @@ Gaps: what is not built, a limit by design, an unsupported format or a behaviour
 reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Android parity
-- [M · 0.2.0] Android does not tell the boundary its network is metered: register
-  `ConnectivityManager.registerDefaultNetworkCallback`, report `onCapabilitiesChanged` without
-  `NET_CAPABILITY_NOT_METERED` as `ConnectionMeter.Metered`, with it as `Unmetered`, `onLost` as
-  `Unknown` (`MobilePlayer.reportConnection`), keep the two switches (`enrich-on-metered`, off;
-  `stall-downloads-on-metered`, off) in the settings store and hand them to
-  `configureEnrichOnMetered` and `configureStallDownloadsOnMetered` at start, and show
-  `downloadsWaitOnTheMeter()` on the download screen (`mobile.md`'s *Metered connections*)
 - [M · blocked: hardware] Android offers no DoP: a marked stream needs the USB bit-perfect mixer at a
   32-bit word (Oboe-rs has no packed 24-bit one) and a DAC that decodes it to prove the markers
   arrive untouched
 
 ## iOS parity
-- [M · 0.2.0] iOS does not tell the boundary its network is metered: an `NWPathMonitor`
-  `pathUpdateHandler` reports `path.isExpensive || path.isConstrained` as `ConnectionMeter.Metered`,
-  a satisfied path otherwise as `Unmetered` and an unsatisfied one as `Unknown`
-  (`MobilePlayer.reportConnection`); the two switches and the waiting line wait on the same
-  settings page and download screen as Android's
 - [M · 0.2.0] The iOS icon ignores the system's icon appearances: the primary `Icon` and each accent
   alternate are one flat PNG (`ios/icons.py`, the gradient and the mark baked together), so a
   home screen set to Dark, Clear or Tinted derives its variant from that flat picture and the

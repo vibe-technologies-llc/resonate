@@ -76,6 +76,8 @@ final class Features {
     var hostedServices: Bool {
         didSet { servedChanged() }
     }
+    private(set) var enrichOnMetered: Bool
+    private(set) var stallDownloadsOnMetered: Bool
     var statistics: LibraryStatistics?
     var listeningDetail: ListeningDetail?
     private(set) var listenedCovers = ListenedCovers()
@@ -156,6 +158,7 @@ final class Features {
     @ObservationIgnored private var landing: Task<Void, Never>?
     @ObservationIgnored private var landedSongs = 0
     @ObservationIgnored private(set) var unmetered = false
+    @ObservationIgnored private var connection = ConnectionMeter.unknown
     @ObservationIgnored private var artRevision: UInt64?
     @ObservationIgnored var foreground = true {
         didSet {
@@ -173,6 +176,8 @@ final class Features {
         self.library = library
         online = settings.object(forKey: "online") == nil ? true : settings.bool(forKey: "online")
         hostedServices = settings.object(forKey: "hosted-services") == nil ? true : settings.bool(forKey: "hosted-services")
+        enrichOnMetered = settings.bool(forKey: "enrich-on-metered")
+        stallDownloadsOnMetered = settings.bool(forKey: "stall-downloads-on-metered")
         syncFolder = settings.string(forKey: "sync-folder")
     }
 
@@ -243,6 +248,8 @@ final class Features {
         room.restore(native)
         native.configureOnline(enabled: online)
         native.configureHostedServices(enabled: hostedServices)
+        native.configureEnrichOnMetered(allowed: enrichOnMetered)
+        native.configureStallDownloadsOnMetered(stalls: stallDownloadsOnMetered)
         Task { [weak self] in
             await self?.readSecrets()
             self?.begin(native)
@@ -378,6 +385,26 @@ final class Features {
             await MainActor.run {
                 self?.hostedServices = enabled
                 self?.settings.set(enabled, forKey: "hosted-services")
+            }
+        }
+    }
+
+    func setEnrichOnMetered(_ enabled: Bool) {
+        work { [weak self] native in
+            native.configureEnrichOnMetered(allowed: enabled)
+            await MainActor.run {
+                self?.enrichOnMetered = enabled
+                self?.settings.set(enabled, forKey: "enrich-on-metered")
+            }
+        }
+    }
+
+    func setStallDownloadsOnMetered(_ enabled: Bool) {
+        work { [weak self] native in
+            native.configureStallDownloadsOnMetered(stalls: enabled)
+            await MainActor.run {
+                self?.stallDownloadsOnMetered = enabled
+                self?.settings.set(enabled, forKey: "stall-downloads-on-metered")
             }
         }
     }
@@ -662,8 +689,12 @@ final class Features {
         guard network == nil else { return }
         let monitor = NWPathMonitor()
         monitor.pathUpdateHandler = { @Sendable [weak self] path in
-            let free = path.status == .satisfied && !path.isExpensive && !path.isConstrained
-            Task { @MainActor in self?.networkChanged(free) }
+            let meter = ConnectionMeters.of(
+                satisfied: path.status == .satisfied,
+                expensive: path.isExpensive,
+                constrained: path.isConstrained
+            )
+            Task { @MainActor in self?.networkChanged(meter) }
         }
         monitor.start(queue: DispatchQueue(label: "org.resonate.network"))
         network = monitor
@@ -676,13 +707,19 @@ final class Features {
         }
     }
 
-    private func networkChanged(_ free: Bool) {
-        guard free != unmetered else { return }
+    private func networkChanged(_ meter: ConnectionMeter) {
+        connection = meter
+        let free = meter == .unmetered
+        let changed = free != unmetered
         unmetered = free
         work { [weak self] native in
+            let latest = self?.connection ?? meter
+            try await Work.inSync { native.reportConnection(meter: latest) }
+            guard changed else { return }
             try await Work.inSync { native.syncNetwork(unmetered: free) }
             await self?.announceNearby(native)
         }
+        guard changed else { return }
         enrichment.networkChanged(free: free)
         if free { downloads.wantsChanged() }
     }
