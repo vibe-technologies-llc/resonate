@@ -1,0 +1,25 @@
+[package]
+name = "resonate-cast"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+crossbeam-channel.workspace = true
+mdns-sd.workspace = true
+parking_lot.workspace = true
+resonate-audio.workspace = true
+resonate-core.workspace = true
+resonate-upnp.workspace = true
+rustls = { workspace = true, features = ["ring", "tls12"] }
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+rcgen.workspace = true
+resonate-codec.workspace = true
+resonate-engine.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

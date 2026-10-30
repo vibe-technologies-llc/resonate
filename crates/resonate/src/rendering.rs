@@ -1,5 +1,6 @@
-use std::sync::Arc;
+use std::{sync::Arc, thread};
 
+use resonate_cast::{CAST_NODES, Casting, Searching as CastSearching};
 use resonate_codec::Sources;
 use resonate_engine::{EngineConfig, NodeName, Player, SinkError, SinkInfo};
 use resonate_pipewire::PipeWire;
@@ -8,7 +9,55 @@ use resonate_upnp::{Beside, FirstSearch, Network, RENDERER_NODES, Searching};
 use crate::config::Config;
 
 #[derive(Clone, Default)]
-pub(crate) struct Rendering(Option<Arc<Network>>);
+pub(crate) struct Rendering(Option<Kinds>);
+
+#[derive(Clone)]
+struct Kinds {
+    upnp: Arc<Network>,
+    cast: Arc<Casting>,
+}
+
+impl Kinds {
+    fn resting() -> Option<Self> {
+        let upnp = Network::resting(Searching::on_the_network())
+            .inspect_err(|error| {
+                tracing::warn!(%error, "UPnP renderers on the network cannot be played to");
+            })
+            .ok()?;
+        let cast = Casting::resting(CastSearching::on_the_network())
+            .inspect_err(|error| {
+                tracing::warn!(%error, "Cast receivers on the network cannot be played to");
+            })
+            .ok()?;
+        Some(Self {
+            upnp: Arc::new(upnp),
+            cast: Arc::new(cast),
+        })
+    }
+
+    fn look(&self, first: FirstSearch) {
+        let (upnp, cast) = thread::scope(|scope| {
+            let cast = scope.spawn(|| self.cast.look(first));
+            (self.upnp.look(first), cast.join())
+        });
+        if let Err(error) = upnp {
+            tracing::warn!(%error, "the network could not be searched for UPnP renderers");
+        }
+        match cast {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                tracing::warn!(%error, "the network could not be browsed for Cast receivers");
+            }
+            Err(_) => tracing::warn!("browsing for Cast receivers panicked"),
+        }
+    }
+
+    #[cfg(feature = "ui")]
+    fn rest(&self) {
+        self.upnp.rest();
+        self.cast.rest();
+    }
+}
 
 impl Rendering {
     pub(crate) fn of(config: &Config, wanted: Option<&NodeName>, asked: bool) -> Self {
@@ -21,49 +70,42 @@ impl Rendering {
         } else {
             FirstSearch::Behind
         };
-        match Network::start(Searching::on_the_network(), first) {
-            Ok(network) => Self(Some(Arc::new(network))),
-            Err(error) => {
-                tracing::warn!(%error, "the network could not be searched for renderers");
-                Self(None)
-            }
+        let kinds = Kinds::resting();
+        if let Some(kinds) = &kinds {
+            kinds.look(first);
         }
+        Self(kinds)
     }
 
     #[cfg(feature = "ui")]
     pub(crate) fn for_the_window(config: &Config, wanted: Option<&NodeName>) -> Self {
         let names_one = wanted.is_some_and(names_a_renderer);
-        let network = match Network::resting(Searching::on_the_network()) {
-            Ok(network) => network,
-            Err(error) => {
-                tracing::warn!(%error, "renderers on the network cannot be played to");
-                return Self(None);
-            }
-        };
-        if names_one || config.looks_for_renderers() {
-            let first = if names_one {
+        let kinds = Kinds::resting();
+        if let Some(kinds) = &kinds
+            && (names_one || config.looks_for_renderers())
+        {
+            kinds.look(if names_one {
                 FirstSearch::Awaited
             } else {
                 FirstSearch::Behind
-            };
-            if let Err(error) = network.look(first) {
-                tracing::warn!(%error, "the network could not be searched for renderers");
-            }
+            });
         }
-        Self(Some(Arc::new(network)))
+        Self(kinds)
     }
 
     #[cfg(feature = "ui")]
     pub(crate) fn switch(&self) -> Option<Arc<dyn resonate_ui::Renderers>> {
         self.0
             .as_ref()
-            .map(|network| Arc::new(Switch(Arc::clone(network))) as Arc<dyn resonate_ui::Renderers>)
+            .map(|kinds| Arc::new(Switch(kinds.clone())) as Arc<dyn resonate_ui::Renderers>)
     }
 
     pub(crate) fn sinks(&self) -> Vec<SinkInfo> {
-        self.0
-            .as_ref()
-            .map_or_else(Vec::new, |network| network.sinks())
+        self.0.as_ref().map_or_else(Vec::new, |kinds| {
+            let mut sinks = kinds.upnp.sinks();
+            sinks.extend(kinds.cast.sinks());
+            sinks
+        })
     }
 
     pub(crate) fn player(
@@ -71,36 +113,37 @@ impl Rendering {
         engine: EngineConfig,
         sources: Arc<Sources>,
     ) -> resonate_engine::Result<Player> {
-        let Some(network) = self.0.as_ref().map(Arc::clone) else {
+        let Some(kinds) = self.0.clone() else {
             return Player::with_sources(engine, sources);
         };
         Player::with_sources_and_backend(engine, sources, move |config| {
             let graph = PipeWire::start(&config.app_name).map_err(SinkError::from)?;
-            Ok(Box::new(Beside::over(Box::new(graph), network)))
+            Ok(Box::new(
+                Beside::over(Box::new(graph), kinds.upnp).and(kinds.cast),
+            ))
         })
     }
 }
 
 pub(crate) fn names_a_renderer(sink: &NodeName) -> bool {
-    sink.as_str().starts_with(RENDERER_NODES)
+    let name = sink.as_str();
+    name.starts_with(RENDERER_NODES) || name.starts_with(CAST_NODES)
 }
 
 #[cfg(feature = "ui")]
-struct Switch(Arc<Network>);
+struct Switch(Kinds);
 
 #[cfg(feature = "ui")]
 impl resonate_ui::Renderers for Switch {
     fn looking(&self) -> bool {
-        self.0.is_looking()
+        self.0.upnp.is_looking() || self.0.cast.is_looking()
     }
 
     fn look(&self, on: bool) {
-        if !on {
+        if on {
+            self.0.look(FirstSearch::Behind);
+        } else {
             self.0.rest();
-            return;
-        }
-        if let Err(error) = self.0.look(FirstSearch::Behind) {
-            tracing::warn!(%error, "the network could not be searched for renderers");
         }
     }
 }

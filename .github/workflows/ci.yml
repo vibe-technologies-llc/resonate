@@ -173,6 +173,9 @@ jobs:
           only resonate-upnp resonate-core resonate-audio
           check "resonate-upnp outside its tests" "$(held_by -p resonate-upnp -e normal)" \
             pipewire libspa gpui ureq serde rustls
+          only resonate-cast resonate-core resonate-audio resonate-upnp
+          check "resonate-cast outside its tests" "$(held_by -p resonate-cast -e normal)" \
+            pipewire libspa gpui ureq serde serde_json
           refuse resonate-bindgen resonate-core resonate-engine pipewire gpui
           refuse resonate-analysis gpui resonate-engine resonate-library ureq
           refuse resonate-discord gpui resonate-library ureq

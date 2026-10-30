@@ -57,6 +57,11 @@ here, add it there.
   FLAC stream, pure Rust, the vault's own encoder), `parking_lot`,
   `crossbeam-channel`, `thiserror` and `tracing`; no PipeWire, gpui, `ureq`, serde or rustls (a
   renderer is plain HTTP on the local network, `upnp.md`). The engine is its dev-dependency alone.
+- `resonate-cast`: core, `resonate-audio` and `resonate-upnp` (the paced stream, `cast.md`) alone,
+  with `rustls` (`ring`, `tls12`: a receiver's TLS), `mdns-sd`, `parking_lot`,
+  `crossbeam-channel`, `thiserror` and `tracing`; no PipeWire, gpui, `ureq`, serde or `serde_json`
+  (its protobuf and JSON are hand-written, so the binary without `online` still casts). The engine,
+  codec, `rcgen` and `serde_json` are its dev-dependencies alone.
 - `resonate-sync`: core alone among workspace crates; no library, engine, gpui, `ureq`, serde.
   Reached by the binary (behind `sync`), `resonate-mobile` and `resonate-server` alone; `resonate-server`
   reaches core, `resonate-sync` and, for its hifi-api gateway, `resonate-tidal` with the seam and
@@ -157,6 +162,9 @@ here, add it there.
   space's peer certificate, and the server tests' self-signed one. **`rustls-pki-types`** (`std`):
   PEM reading (`sync-server-certificate`, the server's chain and key). `rustls` takes `ring` there
   for the provider QUIC needs. The wire is hand-encoded, so no serde.
+- **`mdns-sd`** (`async`): pure Rust, its own daemon thread. `resonate-sync`'s Bonjour awaits its
+  events on the sync runtime; `resonate-cast` browses `_googlecast._tcp` with blocking receives on
+  a thread of its own, the `async` feature unused there but unified with sync's.
 - **`jiff`**: `resonate-core`'s, the one zone database (`Calendar`): `std`, `tz-system` (the
   desktop's zone, `Calendar::local`) and `tzdb-zoneinfo` (a zone by name from `/usr/share/zoneinfo`:
   Linux, Flatpak, iOS). The phones add `tzdb-bundle-always`, and Android `tzdb-concatenated`, as
@@ -180,7 +188,8 @@ here, add it there.
   pledged frames, and `the_encoders_an_object_is_stamped_for_are_the_ones_this_build_runs` pins the
   encoder's output; the pure-Rust `ruzstd` encodes to roughly level 11 at best, so a switch would
   weigh every vaulted WAVE again at a worse ratio. The decoder side (`Unpacking`) is the same crate.
-- **`ring`** (C and assembly): the provider rustls runs on for `ureq` (`resonate-fetch`) and `quinn`,
+- **`ring`** (C and assembly): the provider rustls runs on for `ureq` (`resonate-fetch`), `quinn`
+  and a Cast receiver's TLS (`resonate-cast`, so also in the binary without `online` or `sync`),
   linked whether or not `resonate-sync` names it; `resonate-sync` uses the same crate directly for
   sealing, HKDF, SHA-256, randomness and the peer signature check rather than link a second provider.
 - **`md-5` 0.10** beside the workspace's 0.11: `ape-decoder` and `flacenc` take it; **`miniz_oxide`

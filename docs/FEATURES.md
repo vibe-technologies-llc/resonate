@@ -130,10 +130,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   complex`)
 
 ## Later: Network output
-- [L] A stereo behind Chromecast cannot be played to: the desktop reaches UPnP AV renderers alone
-  (`resonate-upnp`, a sink beside PipeWire's); Google Cast v2 (TLS on port 8009, protobuf
-  `CastMessage` framing, mDNS `_googlecast._tcp`, the Default Media Receiver loading an address
-  the player serves) would be one more sink kind beside them
 - [L] The phones reach no network renderer at all, though their zones open over the same `Backend`
   seam the desktop's renderers sit behind
 - [S] A UPnP renderer is sent FLAC above 96 kHz only where its protocol info states the rate
@@ -143,6 +139,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   192 kHz. Channels beyond stereo are offered only where the protocol info states `channels=N` (a
   renderer saying nothing is folded down), and handing the untouched file over does not fit the
   sink seam (`upnp.md`)
+- [S] A Google Cast receiver is offered stereo FLAC up to 96 kHz alone, the Default Media Receiver's
+  published support: Cast asks no device what it decodes, so a TV or soundbar with Cast built in
+  has surround folded down to stereo and anything above 96 kHz resampled (`cast.md`)
 - [L · blocked: Apple] AirPlay 2 cannot be played to: its pairing, encryption and buffered audio
   are Apple's own, with no published specification to build against
 

@@ -31,9 +31,9 @@ const NOT_ALLOWED: &[u8] =
     b"HTTP/1.1 405 Method Not Allowed\r\nAllow: GET, HEAD\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct Token(u64);
+pub struct Token(u64);
 
-pub(crate) struct Server {
+pub struct Server {
     serving_on: IpAddr,
     port: u16,
     feeds: Mutex<BTreeMap<Token, Arc<Feed>>>,
@@ -42,7 +42,7 @@ pub(crate) struct Server {
 }
 
 impl Server {
-    pub(crate) fn start(serving_on: IpAddr) -> Result<Arc<Self>> {
+    pub fn start(serving_on: IpAddr) -> Result<Arc<Self>> {
         let failed = |op| move |source| Error::Serve { op, source };
 
         let listener =
@@ -70,18 +70,18 @@ impl Server {
         Ok(server)
     }
 
-    pub(crate) fn offer(&self, feed: Arc<Feed>) -> Token {
+    pub fn offer(&self, feed: Arc<Feed>) -> Token {
         let count = self.minted.fetch_add(1, Ordering::Relaxed);
         let token = Token(self.keys.hash_one(count));
         self.feeds.lock().insert(token, feed);
         token
     }
 
-    pub(crate) fn withdraw(&self, token: Token) {
+    pub fn withdraw(&self, token: Token) {
         self.feeds.lock().remove(&token);
     }
 
-    pub(crate) fn address_toward(
+    pub fn address_toward(
         &self,
         renderer: SocketAddr,
         token: Token,

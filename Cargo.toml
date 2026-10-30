@@ -4,6 +4,7 @@ members = [
     "crates/resonate",
     "crates/resonate-analysis",
     "crates/resonate-audio",
+    "crates/resonate-cast",
     "crates/resonate-mobile",
     "crates/resonate-bindgen",
     "crates/resonate-core",
@@ -243,6 +244,7 @@ clap = {
 
 resonate-analysis = { version = "0.2.0", path = "crates/resonate-analysis" }
 resonate-audio = { version = "0.2.0", path = "crates/resonate-audio" }
+resonate-cast = { version = "0.2.0", path = "crates/resonate-cast" }
 resonate-core = { version = "0.2.0", path = "crates/resonate-core" }
 resonate-codec = { version = "0.2.0", path = "crates/resonate-codec" }
 resonate-discord = { version = "0.2.0", path = "crates/resonate-discord" }

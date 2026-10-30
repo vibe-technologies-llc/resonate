@@ -424,7 +424,7 @@ impl Group {
         match self {
             Self::Device => {
                 "sink output card dac headphones speakers pipewire profile pro audio upnp dlna \
-                 renderer network streamer"
+                 renderer network streamer chromecast google cast receiver"
             }
             Self::DeviceVolume => {
                 "hardware mixer amplifier alsa route loudness slider system volume bit perfect \

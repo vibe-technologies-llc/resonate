@@ -1363,10 +1363,10 @@ Invariants from file to sink. Callback contract: `realtime.md`.
 
 Sink identities, formats, timing, stream control and backend traits live in `resonate-audio`;
 it reaches core, not a device API. A network renderer is one more sink behind the same traits:
-`resonate-upnp::Beside` wraps the PipeWire backend and adds the renderers it finds, so the engine
-plays to one with its queue, gapless handover, DSP and position unchanged, while the renderer
-pulls a paced live WAVE and its own clock, read back through `GetPositionInfo`, sets the latency
-(`upnp.md`). PipeWire implements the traits in its own crate and reexports
+`resonate-upnp::Beside` wraps the PipeWire backend and adds the UPnP renderers and Google Cast
+receivers it finds, so the engine plays to one with its queue, gapless handover, DSP and position
+unchanged, while the device pulls a paced live stream and its own clock, read back through
+`GetPositionInfo` or a media `GET_STATUS`, sets the latency (`upnp.md`, `cast.md`). PipeWire implements the traits in its own crate and reexports
 the moved vocabulary for existing callers. The engine has a PipeWire dependency only outside
 Android; Android constructs it with `Player::with_sources_and_backend`.
 

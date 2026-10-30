@@ -5794,6 +5794,7 @@ dependencies = [
  "crossbeam-channel",
  "parking_lot 0.13.0",
  "png 0.18.1",
+ "resonate-cast",
  "resonate-codec",
  "resonate-core",
  "resonate-discord",
@@ -5855,6 +5856,25 @@ name = "resonate-bindgen"
 version = "0.2.0"
 dependencies = [
  "uniffi",
+]
+
+[[package]]
+name = "resonate-cast"
+version = "0.2.0"
+dependencies = [
+ "crossbeam-channel",
+ "mdns-sd",
+ "parking_lot 0.13.0",
+ "rcgen",
+ "resonate-audio",
+ "resonate-codec",
+ "resonate-core",
+ "resonate-engine",
+ "resonate-upnp",
+ "rustls",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]

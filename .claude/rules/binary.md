@@ -257,9 +257,10 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   explicit playback or file operations.
 - **A path key reads blank as unset and `~` as the home folder** (`config::a_path`: `library`,
   `vault`, `inbox`, `music-folder`, `convolution`); `~name` stays as written.
-- `renderers` (off unless set): search the local network for UPnP media renderers and list each
-  beside the sound server's sinks, for the window, its zones and `play` (`upnp.md`). Off, nothing is
-  multicast; a `sink` or `--sink` naming a renderer (`upnp:` and its UDN) searches anyway, waiting
+- `renderers` (off unless set): search the local network for UPnP media renderers and browse it
+  for Google Cast receivers, and list each beside the sound server's sinks, for the window, its
+  zones and `play` (`upnp.md`, `cast.md`). Off, nothing is multicast; a `sink` or `--sink` naming
+  a renderer (`upnp:` and its UDN) or a receiver (`cast:` and its id) searches anyway, waiting
   for the first answer so the engine's first survey holds it, and so does `sinks --renderers`.
   The settings pane's device list switches it in the running window (`Setting::Renderers`,
   `Rendering::switch`), the window holding a resting network from the start.

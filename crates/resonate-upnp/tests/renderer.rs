@@ -546,7 +546,7 @@ fn a_stream_on_a_renderer_is_offered_by_address_played_paused_drained_and_stoppe
     let network =
         Arc::new(Network::start(fake.searching(), FirstSearch::Awaited).expect("searches"));
     let sink = the_renderer(&network);
-    let backend = Beside::over(Box::new(NoGraph::new()), Arc::clone(&network));
+    let backend = Beside::over(Box::new(NoGraph::new()), Arc::<Network>::clone(&network));
     let half_a_second = RATE as usize / 2 * STRIDE;
 
     let stream = backend
