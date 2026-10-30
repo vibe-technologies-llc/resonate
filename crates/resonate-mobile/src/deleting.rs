@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, io::Read};
+use std::{
+    collections::BTreeMap,
+    io::Read,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use rusqlite::{OptionalExtension, Transaction};
 
@@ -8,6 +12,7 @@ use crate::{
     catalog_extras::unreferenced_picture_dropped,
     documents::{document_uri, location},
     rewriting::crc_of,
+    sync::{RECORDING_COLUMNS, recording_at},
     vanished::{handed_over, referring_tables},
 };
 
@@ -256,9 +261,11 @@ impl Catalog {
         let mut connection = self.0.lock();
         let referring = referring_tables(&connection)?;
         let transaction = connection.transaction().map_err(write_error)?;
+        let now = nanos_now();
         let mut forgotten = 0;
         for id in ids {
             let picture = picture_of(&transaction, *id as i64).map_err(read_error)?;
+            deletion_noted(&transaction, *id as i64, now).map_err(write_error)?;
             forgotten += forgotten_in(&transaction, &referring, *id as i64).map_err(write_error)?;
             if let Some(picture) = picture {
                 unreferenced_picture_dropped(&transaction, picture).map_err(write_error)?;
@@ -286,6 +293,38 @@ impl Catalog {
         transaction.commit().map_err(write_error)?;
         Ok(copies.len())
     }
+}
+
+fn nanos_now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| {
+            i64::try_from(since.as_nanos()).unwrap_or(i64::MAX)
+        })
+}
+
+fn deletion_noted(transaction: &Transaction<'_>, id: i64, now: i64) -> rusqlite::Result<()> {
+    let recording = transaction
+        .query_row(
+            &format!("SELECT {RECORDING_COLUMNS} FROM documents d WHERE d.id = ?1"),
+            [id],
+            |row| recording_at(row, 0),
+        )
+        .optional()?;
+    if let Some(recording) = recording {
+        for key in [recording.key(), recording.named_key()] {
+            transaction.execute(
+                "INSERT OR REPLACE INTO songs_deleted (recording, deleted) VALUES (?1, ?2)",
+                rusqlite::params![key.as_str(), now],
+            )?;
+        }
+    }
+    transaction.execute(
+        "INSERT OR REPLACE INTO songs_deleted (recording, deleted)
+         SELECT recording, ?2 FROM songs_received WHERE track = ?1",
+        [id, now],
+    )?;
+    Ok(())
 }
 
 fn picture_of(transaction: &Transaction<'_>, id: i64) -> rusqlite::Result<Option<i64>> {
@@ -378,5 +417,28 @@ mod tests {
         assert_eq!(ids, vec![songs[0].id, songs[1].id]);
         assert_eq!(at, 1);
         assert_eq!(position, 0);
+    }
+
+    fn deletions_remembered(catalog: &Catalog) -> i64 {
+        catalog
+            .0
+            .lock()
+            .query_row("SELECT count(*) FROM songs_deleted", [], |row| row.get(0))
+            .expect("a count")
+    }
+
+    #[test]
+    fn a_song_forgotten_is_remembered_as_deleted_here_and_one_folded_into_its_twin_is_not() {
+        let (catalog, songs) = queued(&["A", "B", "C"], 0, 0);
+
+        catalog
+            .fold_into(songs[0].id, &[songs[1].id])
+            .expect("folded");
+
+        assert_eq!(deletions_remembered(&catalog), 0);
+
+        catalog.forget(&[songs[2].id]).expect("forgotten");
+
+        assert!(deletions_remembered(&catalog) > 0);
     }
 }

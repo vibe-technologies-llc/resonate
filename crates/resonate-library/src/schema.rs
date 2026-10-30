@@ -18,6 +18,7 @@ const MIGRATIONS: &[&str] = &[
     A_STUDY_KEEPS_WHERE_ITS_PEAKS_GATHER,
     A_ZONE_KEEPS_ITS_OWN_QUEUE,
     PEAKS_KEPT_AS_ONE_MOMENT_ARE_MEASURED_AGAIN,
+    A_SONG_DELETED_HERE_IS_REMEMBERED,
 ];
 
 const STAMPS: [SchemaFingerprint; MIGRATIONS.len() + 1] = stamps();
@@ -109,6 +110,13 @@ ALTER TABLE track_studies ADD COLUMN band_peaks BLOB;
 
 const PEAKS_KEPT_AS_ONE_MOMENT_ARE_MEASURED_AGAIN: &str = "
 UPDATE track_studies SET band_peaks = NULL WHERE length(band_peaks) = 58;
+";
+
+const A_SONG_DELETED_HERE_IS_REMEMBERED: &str = "
+CREATE TABLE songs_deleted (
+    recording TEXT PRIMARY KEY,
+    deleted   INTEGER NOT NULL
+) STRICT;
 ";
 
 const A_RELEASE_KEEPS_ITS_CREDIT: &str = "

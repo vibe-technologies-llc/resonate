@@ -62,6 +62,7 @@ pub struct Inside {
     pub dies_after_crediting: bool,
     pub resumed: Option<Resumed>,
     pub deleted_by_hand: Vec<String>,
+    pub deleted_here: Vec<String>,
     pub answers: Vec<Answered>,
     pub takes_no_answers: bool,
     pub covers: BTreeMap<String, Vec<u8>>,
@@ -494,6 +495,23 @@ impl Catalog for Shelf {
         let inside = self.inside.lock();
         Ok(Self::holds_song(&inside, recording)
             && !inside.deleted_by_hand.contains(&recording.title))
+    }
+
+    fn deleted_here(&self, recording: &Recording) -> Result<bool, Refused> {
+        Ok(self.inside.lock().deleted_here.contains(&recording.title))
+    }
+
+    fn forgive_deletion(&self, recording: &Recording) -> Result<(), Refused> {
+        self.inside
+            .lock()
+            .deleted_here
+            .retain(|title| *title != recording.title);
+        Ok(())
+    }
+
+    fn forgive_deletions(&self) -> Result<(), Refused> {
+        self.inside.lock().deleted_here.clear();
+        Ok(())
     }
 
     fn held_as(&self, recording: &Recording) -> Result<Option<Recording>, Refused> {

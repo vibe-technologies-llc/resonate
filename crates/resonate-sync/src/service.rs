@@ -32,7 +32,7 @@ use tokio::{
 use crate::{
     Catalog, Change, DeviceId, Error, Handoff, Ledger, LocalPlaylistId, Platform, Result, SyncKey,
     key::{Derived, PAIRING_LINK, hex, random_bytes},
-    ledger::{Follow, Me},
+    ledger::{Follow, Me, lacked},
     merge::one_recording_a_song,
     nearby::{
         BEACON_EVERY, Bonjour, Found, LARGEST_BEACON, Nearby, addresses_here,
@@ -2420,6 +2420,8 @@ impl Syncing {
     async fn forced(&mut self) -> Result<()> {
         let ledger = Arc::clone(&self.running.ledger);
         blocking(move || ledger.lock().forget_refusals()).await?;
+        let catalog = Arc::clone(&self.running.catalog);
+        blocking(move || catalog.forgive_deletions().map_err(Error::Catalog)).await?;
         self.wait = FIRST_RETRY;
         self.followed.clear();
         self.covers_asked.clear();
@@ -2719,7 +2721,7 @@ async fn followed_songs(running: &Arc<Running>, connection: &Connection) -> Resu
         if follow.everything {
             let mut missing = Vec::new();
             for recording in one_recording_a_song(holdings.into_iter().map(|held| held.recording)) {
-                if !catalog.holds(&recording).map_err(Error::Catalog)? {
+                if lacked(catalog, &recording)? {
                     missing.push(recording);
                 }
             }

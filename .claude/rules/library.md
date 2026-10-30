@@ -17,7 +17,7 @@ rows read via `Player::media` like any unscanned row.
 - **Schema = one `V1`, the baseline of 0.1.0, and a `MIGRATIONS` chain after it.** `V1` is the first
   release's schema as one SQL batch and is never edited, since a stamped catalog of a release would be
   stranded; a change appends a step to `MIGRATIONS` (`listens` naming the device and listen a remote
-  listen came from is the first, `songs_received` the second, forgetting the read stamp of every learnt group whose songs carry no length the third, `retagged_sheets` the fourth, `offered_steps` the fifth, `track_studies.band_levels` the sixth, `release_credits` the seventh, an album whose release landed exactly before that table made due again by setting its `answered` to 1, so the next lookup lands its credit and the release is shared, the eighth: `a_release_landed_before_its_credit_was_kept_is_asked_again_and_one_with_its_credit_is_not`; `unheld_listens` keeping the listen's own id, `elsewhere` and origin the ninth; the `songs_received_go_with_their_file` trigger, dropping a path's `songs_received` rows once its last `tracks` row goes, the tenth: `sync.md`; `track_studies.band_peaks`, each band's own peak beside `band_levels`, the eleventh: `eq.md`; the `zone` column of the three resume tables and the `zones` table, the twelfth (below); clearing the 58-byte peaks of the layout that kept one moment, so they are measured again over moments, the thirteenth: `analysis.md`). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
+  listen came from is the first, `songs_received` the second, forgetting the read stamp of every learnt group whose songs carry no length the third, `retagged_sheets` the fourth, `offered_steps` the fifth, `track_studies.band_levels` the sixth, `release_credits` the seventh, an album whose release landed exactly before that table made due again by setting its `answered` to 1, so the next lookup lands its credit and the release is shared, the eighth: `a_release_landed_before_its_credit_was_kept_is_asked_again_and_one_with_its_credit_is_not`; `unheld_listens` keeping the listen's own id, `elsewhere` and origin the ninth; the `songs_received_go_with_their_file` trigger, dropping a path's `songs_received` rows once its last `tracks` row goes, the tenth: `sync.md`; `track_studies.band_peaks`, each band's own peak beside `band_levels`, the eleventh: `eq.md`; the `zone` column of the three resume tables and the `zones` table, the twelfth (below); clearing the 58-byte peaks of the layout that kept one moment, so they are measured again over moments, the thirteenth: `analysis.md`; `songs_deleted`, the recording keys of songs the listener deleted from the app, the fourteenth: `sync.md`). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
   `fingerprint_of(V1)` (the stamp 0.1.0 wrote) and `STAMPS[n + 1]` hashes `STAMPS[n]` over step `n`'s
   text, in a `const fn`; `SCHEMA_FINGERPRINT` is the last. `lay_out`: `UNSTAMPED` writes `V1` and
   every step; this build's stamp opens; a stamp that is an earlier `STAMPS` entry runs the steps after
@@ -1308,7 +1308,12 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   told to nobody twice:
   `a_track_deleted_and_restored_gets_back_its_listens_as_they_were_and_tells_none_of_them_again`), drop every `tracks`
   row at it (plays, listens, studies cascade), then `store::sweep_orphans` and
-  `alternatives::settle`. A vault object no row names leaves the vault; one that will not go
+  `alternatives::settle`. **A deletion is remembered for the sync**: before the rows go the same
+  transaction notes the keys of each row and of its `songs_received` rows in `songs_deleted` (the
+  fourteenth migration step; `synced::note_deleted`), so a followed playlist or favourite does not
+  fetch the song back from another device; folding a copy (`Why::Folded`) notes nothing, and the
+  mark is forgiven by *Sync now* or once the song is held again (`sync.md`)
+  (`a_song_deleted_from_the_app_is_remembered_and_one_folded_into_its_twin_is_not`). A vault object no row names leaves the vault; one that will not go
   waits for `prune_the_vault`. The window asks first (`ui.md`).
   (`deleting_a_track_removes_its_file_and_its_row_and_leaves_the_rest`,
   `deleting_a_track_takes_its_lyrics_and_the_sheet_that_cuts_it_alone_and_the_folder_it_emptied_and_keeps_the_listens`,

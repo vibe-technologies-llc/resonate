@@ -1379,6 +1379,38 @@ impl Catalog for DocumentCatalog {
         self.waiting_as(&connection, recording).map_err(unavailable)
     }
 
+    fn deleted_here(&self, recording: &Recording) -> Answered<bool> {
+        let connection = self.catalog.0.lock();
+        connection
+            .query_row(
+                "SELECT 1 FROM songs_deleted WHERE recording IN (?1, ?2)",
+                params![recording.key().as_str(), recording.named_key().as_str()],
+                |_| Ok(()),
+            )
+            .optional()
+            .map(|row| row.is_some())
+            .map_err(unavailable)
+    }
+
+    fn forgive_deletion(&self, recording: &Recording) -> Answered<()> {
+        let connection = self.catalog.0.lock();
+        connection
+            .execute(
+                "DELETE FROM songs_deleted WHERE recording IN (?1, ?2)",
+                params![recording.key().as_str(), recording.named_key().as_str()],
+            )
+            .map(drop)
+            .map_err(unavailable)
+    }
+
+    fn forgive_deletions(&self) -> Answered<()> {
+        let connection = self.catalog.0.lock();
+        connection
+            .execute("DELETE FROM songs_deleted", [])
+            .map(drop)
+            .map_err(unavailable)
+    }
+
     fn held_as(&self, recording: &Recording) -> Answered<Option<Recording>> {
         let connection = self.catalog.0.lock();
         let Some(id) = self.resolved_in(&connection, recording)? else {

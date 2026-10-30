@@ -1218,6 +1218,43 @@ fn a_copy_numbered_beside_its_song_is_folded_into_it_and_one_that_differs_is_lef
     Ok(())
 }
 
+#[test]
+fn a_song_deleted_from_the_app_is_remembered_and_one_folded_into_its_twin_is_not() -> Result<()> {
+    let tree = Tree::new();
+    let trash = Tree::new();
+    let original = tree.song("Echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let copy = tree.root.join("Echoes (1).wav");
+    fs::copy(&original, &copy).expect("a copy");
+    let gone = tree.song("Fearless.wav", "Fearless", "Pink Floyd", "Meddle");
+    let library = Library::open_in_memory()?;
+    library.trash_into(Some(trash.root.clone()));
+    scan(&library, &tree.root)?;
+    let echoes = song("Echoes", "Pink Floyd", "Meddle");
+    let fearless = song("Fearless", "Pink Floyd", "Meddle");
+
+    let found = library.numbered_copies()?;
+    library.fold_copies(&found.numbered)?;
+
+    assert!(!library.deleted_recording(&echoes)?);
+
+    let doomed = library.track_at(&gone, None)?.expect("scanned");
+    library.delete_tracks(&[doomed.id])?;
+
+    assert!(library.deleted_recording(&fearless)?);
+    assert!(!library.deleted_recording(&echoes)?);
+
+    library.forgive_deleted_recording(&fearless)?;
+
+    assert!(!library.deleted_recording(&fearless)?);
+
+    let doomed = library.track_at(&original, None)?.expect("scanned");
+    library.delete_tracks(&[doomed.id])?;
+    library.forgive_deleted_recordings()?;
+
+    assert!(!library.deleted_recording(&echoes)?);
+    Ok(())
+}
+
 fn answers_of(answered: &[Answered]) -> Vec<(&str, &Answer)> {
     let mut answers = answered
         .iter()

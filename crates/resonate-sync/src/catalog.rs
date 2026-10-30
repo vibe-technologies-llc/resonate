@@ -140,6 +140,20 @@ pub trait Catalog: Send + Sync + 'static {
 
     fn holds(&self, recording: &Recording) -> Result<bool, Refused>;
 
+    fn deleted_here(&self, recording: &Recording) -> Result<bool, Refused> {
+        let _ = recording;
+        Ok(false)
+    }
+
+    fn forgive_deletion(&self, recording: &Recording) -> Result<(), Refused> {
+        let _ = recording;
+        Ok(())
+    }
+
+    fn forgive_deletions(&self) -> Result<(), Refused> {
+        Ok(())
+    }
+
     fn held_as(&self, recording: &Recording) -> Result<Option<Recording>, Refused> {
         let _ = recording;
         Ok(None)

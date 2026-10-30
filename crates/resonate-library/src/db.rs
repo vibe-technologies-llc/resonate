@@ -46,7 +46,7 @@ use crate::{
     Track, TrackQuery, TrackToAsk, Uncovered, Undoable, Unfinished, UnheldRelease, Vault, VaultKey,
     VaultObject, Verdict, Waits, Want, Window, Word, alternatives, answers,
     copies::{self, Copies, NumberedCopy},
-    deleted::{self, Deleted, Removal, Trashes},
+    deleted::{self, Deleted, Removal, Trashes, Why},
     elsewhere, enrich, enriched,
     filed::{AlbumToFile, DeliveryFolder},
     foresight::Foresight,
@@ -2257,10 +2257,14 @@ impl Library {
         })?;
         self.inner.playlists_changed();
         let copies: Vec<TrackId> = numbered.iter().map(NumberedCopy::copy_id).collect();
-        self.delete_tracks(&copies)
+        self.remove_tracks(&copies, Why::Folded)
     }
 
     pub fn delete_tracks(&self, tracks: &[TrackId]) -> Result<Deleted> {
+        self.remove_tracks(tracks, Why::Deleted)
+    }
+
+    fn remove_tracks(&self, tracks: &[TrackId], why: Why) -> Result<Deleted> {
         let _walk = self.walk_the_tree()?;
         let files = self
             .inner
@@ -2291,7 +2295,7 @@ impl Library {
 
         let forgotten = self
             .inner
-            .write(|transaction| deleted::forget_files(transaction, &gone))?;
+            .write(|transaction| deleted::forget_files(transaction, &gone, why))?;
         done.tracks = forgotten.tracks;
         if let Some(vault) = self.vault().cloned() {
             for object in self
@@ -2665,6 +2669,18 @@ impl Library {
 
     pub fn holds_recording(&self, recording: &resonate_core::Recording) -> Result<bool> {
         synced::holds(&self.inner, self.vault().map(AsRef::as_ref), recording)
+    }
+
+    pub fn deleted_recording(&self, recording: &resonate_core::Recording) -> Result<bool> {
+        synced::deleted_here(&self.inner, recording)
+    }
+
+    pub fn forgive_deleted_recording(&self, recording: &resonate_core::Recording) -> Result<()> {
+        synced::forgive_deletion(&self.inner, recording)
+    }
+
+    pub fn forgive_deleted_recordings(&self) -> Result<()> {
+        synced::forgive_deletions(&self.inner)
     }
 
     pub fn held_as(

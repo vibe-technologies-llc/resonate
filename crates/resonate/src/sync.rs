@@ -611,6 +611,24 @@ impl Catalog for Catalogued {
             .map_err(|error| refused(&error))
     }
 
+    fn deleted_here(&self, recording: &Recording) -> Answered<bool> {
+        self.library
+            .deleted_recording(recording)
+            .map_err(|error| refused(&error))
+    }
+
+    fn forgive_deletion(&self, recording: &Recording) -> Answered<()> {
+        self.library
+            .forgive_deleted_recording(recording)
+            .map_err(|error| refused(&error))
+    }
+
+    fn forgive_deletions(&self) -> Answered<()> {
+        self.library
+            .forgive_deleted_recordings()
+            .map_err(|error| refused(&error))
+    }
+
     fn held_as(&self, recording: &Recording) -> Answered<Option<Recording>> {
         self.library
             .held_as(recording)
@@ -1545,6 +1563,34 @@ mod tests {
         let _ = fs::remove_dir_all(&folder);
         assert!(hidden);
         assert!(!deleted);
+    }
+
+    #[test]
+    fn a_song_deleted_through_the_library_is_marked_for_the_sync_and_forgiven_by_it() {
+        let (folder, library) = held_song();
+        let trash = folder.join("trash");
+        fs::create_dir_all(&trash).expect("a trash");
+        library.trash_into(Some(trash));
+        let track = library
+            .track_at(&folder.join("held.wav"), None)
+            .expect("read")
+            .expect("catalogued");
+        let catalog = Catalogued {
+            library: Arc::new(library),
+        };
+
+        let before = catalog.deleted_here(&heard("Held")).expect("asked");
+        catalog.library.delete_tracks(&[track.id]).expect("deleted");
+        let after = catalog.deleted_here(&heard("Held")).expect("asked");
+        let held = catalog.holds(&heard("Held")).expect("asked");
+        catalog.forgive_deletions().expect("forgiven");
+        let forgiven = catalog.deleted_here(&heard("Held")).expect("asked");
+
+        let _ = fs::remove_dir_all(&folder);
+        assert!(!before);
+        assert!(after);
+        assert!(!held);
+        assert!(!forgiven);
     }
 
     fn kept_songs(titles: &[&str]) -> (PathBuf, Library, Vec<resonate_core::MediaLocation>) {

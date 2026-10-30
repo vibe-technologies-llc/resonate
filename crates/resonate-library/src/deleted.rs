@@ -11,7 +11,7 @@ use resonate_codec::the_folder_a_cue_names;
 use resonate_core::{MediaLocation, TrackId};
 use rusqlite::{Connection, OptionalExtension as _, Transaction, params};
 
-use crate::{Error, Result, StoreOp, TrashOp, alternatives, scan, store, trash};
+use crate::{Error, Result, StoreOp, TrashOp, alternatives, scan, store, synced, trash};
 
 const LYRICS_EXTENSION: &str = "lrc";
 
@@ -38,6 +38,12 @@ pub enum Removal {
 
 pub trait Trashes: Send + Sync {
     fn trash(&self, file: &Path) -> Removal;
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Why {
+    Deleted,
+    Folded,
 }
 
 pub(crate) struct Forgotten {
@@ -149,7 +155,7 @@ fn cuts_only(sheet: &Path, folder: &Path, file: &Path, beside: &[PathBuf]) -> bo
     cuts_the_file
 }
 
-pub(crate) fn forget_files(tx: &Transaction<'_>, files: &[PathBuf]) -> Result<Forgotten> {
+pub(crate) fn forget_files(tx: &Transaction<'_>, files: &[PathBuf], why: Why) -> Result<Forgotten> {
     let mut forgotten = Forgotten {
         tracks: 0,
         vault_keys: AHashSet::new(),
@@ -168,6 +174,10 @@ pub(crate) fn forget_files(tx: &Transaction<'_>, files: &[PathBuf]) -> Result<Fo
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
             .map_err(|source| Error::store(StoreOp::Query, source))?;
         forgotten.vault_keys.extend(held);
+
+        if why == Why::Deleted {
+            synced::note_deleted(tx, &named)?;
+        }
 
         tx.execute(LISTENS_KEPT_AS_UNHELD, params![named])
             .map_err(|source| Error::store(StoreOp::Insert, source))?;

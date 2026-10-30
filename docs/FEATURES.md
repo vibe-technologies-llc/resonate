@@ -61,17 +61,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Providers and network
 
-## Device sync
-- [L · 0.3.0] A song the listener deletes from the app is indistinguishable from one lost behind its
-  back: `Catalog::holds` turns false and the next follow or *Sync now* fetches it again while a
-  followed playlist or a favourite still names it (`sync.md`), so the only way to keep it off one
-  device, a phone short of space say, is to drop it from the playlist or unfavourite it, which
-  changes every device. Keep the fetch for a file that disappears behind the app's back, and have
-  the app's own delete record a per-device mark that `Ledger::wanted` honours: never synced, so no
-  cross-device tombstone for songs, cleared by *Sync now* or by the song being added again. Check
-  first whether the delete command already leaves one; the catalogs of the desktop and both
-  phones each keep it (a migration step), behind the `Catalog` seam
-
 ## Equaliser and DSP
 - [M · 0.4.0] *Fit the preamp*'s solved bound prices every node under the whole signal's at its steady
   gain, so broadband music under a curve moving many bands still bounds one to three and a half

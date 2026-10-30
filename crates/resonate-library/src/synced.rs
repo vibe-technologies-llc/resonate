@@ -737,6 +737,70 @@ pub(crate) fn holds(inner: &Inner, vault: Option<&Vault>, recording: &Recording)
     })
 }
 
+pub(crate) fn note_deleted(tx: &Transaction<'_>, path: &str) -> Result<()> {
+    let now = store::to_nanos(SystemTime::now());
+    let mut statement = tx
+        .prepare_cached(&format!(
+            "SELECT {RECORDING_COLUMNS} FROM tracks t {RECORDING_JOINS} WHERE t.path = ?1"
+        ))
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    let named = statement
+        .query_map(params![path], |row| recording_at(row, 0))
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    for recording in named.into_iter().flatten() {
+        for key in [recording.key(), recording.named_key()] {
+            tx.execute(
+                "INSERT OR REPLACE INTO songs_deleted (recording, deleted) VALUES (?1, ?2)",
+                params![key.as_str(), now],
+            )
+            .map_err(|source| Error::store(StoreOp::Insert, source))?;
+        }
+    }
+    tx.execute(
+        "INSERT OR REPLACE INTO songs_deleted (recording, deleted)
+         SELECT recording, ?2 FROM songs_received WHERE path = ?1",
+        params![path, now],
+    )
+    .map_err(|source| Error::store(StoreOp::Insert, source))?;
+    Ok(())
+}
+
+pub(crate) fn deleted_here(inner: &Inner, recording: &Recording) -> Result<bool> {
+    inner.read(|connection| {
+        connection
+            .query_row(
+                "SELECT 1 FROM songs_deleted WHERE recording IN (?1, ?2)",
+                params![recording.key().as_str(), recording.named_key().as_str()],
+                |_| Ok(()),
+            )
+            .optional()
+            .map(|row| row.is_some())
+            .map_err(|source| Error::store(StoreOp::Query, source))
+    })
+}
+
+pub(crate) fn forgive_deletion(inner: &Inner, recording: &Recording) -> Result<()> {
+    inner.write(|transaction| {
+        transaction
+            .execute(
+                "DELETE FROM songs_deleted WHERE recording IN (?1, ?2)",
+                params![recording.key().as_str(), recording.named_key().as_str()],
+            )
+            .map(drop)
+            .map_err(|source| Error::store(StoreOp::Delete, source))
+    })
+}
+
+pub(crate) fn forgive_deletions(inner: &Inner) -> Result<()> {
+    inner.write(|transaction| {
+        transaction
+            .execute("DELETE FROM songs_deleted", [])
+            .map(drop)
+            .map_err(|source| Error::store(StoreOp::Delete, source))
+    })
+}
+
 pub(crate) fn same_file_held(
     inner: &Inner,
     vault: Option<&Vault>,

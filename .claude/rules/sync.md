@@ -538,6 +538,26 @@ will not open is left out of the holdings.
   `a_hidden_song_is_held_so_no_follow_fetches_it_again_and_one_deleted_by_hand_is_not`). `Ledger::wanted` therefore asks `holds` of every entry of a followed playlist and every
   favoured song, never trusting `here`, which only says the catalog listed the song at the last look
   (`a_song_deleted_by_hand_is_wanted_again_while_its_playlist_and_favourite_stay`).
+- **A song deleted from the app stays off that device.** The app's own delete (the desktop's
+  `Library::delete_tracks`, the phones' `forget_deleted_songs`, which both phones call) records a
+  per-device mark in the catalog, `songs_deleted` (recording key and when, never synced, so no
+  cross-device tombstone for songs): the keys (`Recording::key` and `named_key`) of the row deleted
+  and every key `songs_received` noted against its file, the spellings a sender's ledger names it by
+  (`synced::note_deleted`, `deleting.rs`'s `deletion_noted`), written in the delete's own
+  transaction before the row and its `songs_received` go. **Folding a numbered or identical copy
+  into its twin marks nothing** (`deleted::Why::Folded`, `fold_into`: the song is still held), and
+  neither does a file found gone, which is the lost file the entry above fetches again. A
+  recording the sender names with a spelling no key of the deleted row or `songs_received` covers
+  can still be fetched again, as it was before the mark. The seam is `Catalog::deleted_here`,
+  `forgive_deletion` and `forgive_deletions` (defaults: never marked, nothing to forgive); the one rule is
+  `ledger::lacked`, which `Ledger::wanted` and the `everything` follow both use: a marked song is
+  never lacked, and a marked song that is held (restored from the trash and scanned, landed again by an
+  asked fetch) has its mark forgiven, so a later loss is fetched again. **Force clears every mark**
+  (`forced` calls `forgive_deletions` beside `forget_refusals`), so *Sync now* is the way to ask a
+  deleted song back, and an explicit fetch (`Command::Fetch`) ignores the mark
+  (`a_song_deleted_from_the_app_stays_off_the_device_and_one_lost_behind_its_back_is_wanted`,
+  `a_song_deleted_from_the_app_and_held_again_is_forgiven_and_wanted_when_lost_once_more`,
+  `a_song_deleted_from_the_app_is_not_followed_and_sync_now_clears_the_mark`).
 - **`Shown.transfers` keeps at most `TRANSFERS_SHOWN_AT_MOST` (200)**, the oldest landed or
   failed dropped first. A row is one song from one device however either side keys it
   (`Transfer::names`, `names_the_same_song_as`). **A follow lists every song it will fetch as `Waiting` at once**

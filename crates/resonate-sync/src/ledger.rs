@@ -3052,7 +3052,7 @@ impl Ledger {
         }
         let mut still_wanted = Vec::with_capacity(wanted.len());
         for recording in one_recording_a_song(wanted.into_values()) {
-            if !catalog.holds(&recording).map_err(Error::Catalog)? {
+            if lacked(catalog, &recording)? {
                 still_wanted.push(recording);
             }
         }
@@ -3723,6 +3723,21 @@ const fn platform_of(tag: i64) -> Platform {
         2 => Platform::Ios,
         _ => Platform::Other,
     }
+}
+
+pub(crate) fn lacked(catalog: &dyn Catalog, recording: &Recording) -> Result<bool> {
+    if !catalog.deleted_here(recording).map_err(Error::Catalog)? {
+        return catalog
+            .holds(recording)
+            .map(|held| !held)
+            .map_err(Error::Catalog);
+    }
+    if catalog.holds(recording).map_err(Error::Catalog)? {
+        catalog
+            .forgive_deletion(recording)
+            .map_err(Error::Catalog)?;
+    }
+    Ok(false)
 }
 
 #[cfg(test)]

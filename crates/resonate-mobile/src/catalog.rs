@@ -198,6 +198,13 @@ ALTER TABLE zones ADD COLUMN renderer TEXT;
 ALTER TABLE zones ADD COLUMN renderer_name TEXT;
 ";
 
+const SONGS_DELETED_HERE_ARE_REMEMBERED: &str = "
+CREATE TABLE songs_deleted (
+    recording TEXT PRIMARY KEY,
+    deleted   INTEGER NOT NULL
+) STRICT;
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     LISTENS_NAME_THEIR_ORIGIN,
@@ -221,6 +228,7 @@ const MIGRATIONS: &[&str] = &[
     QUEUES_KEEP_SONGS_PLAYED_IN_PLACE,
     LISTENS_NAME_THE_SERVED_SONG_THEY_HEARD,
     ZONES_KEEP_THEIR_RENDERER,
+    SONGS_DELETED_HERE_ARE_REMEMBERED,
 ];
 
 #[cfg(test)]

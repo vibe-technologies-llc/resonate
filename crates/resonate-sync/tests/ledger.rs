@@ -307,6 +307,91 @@ fn a_song_deleted_by_hand_is_wanted_again_while_its_playlist_and_favourite_stay(
 }
 
 #[test]
+fn a_song_deleted_from_the_app_stays_off_the_device_and_one_lost_behind_its_back_is_wanted() {
+    let mut desk = Device::new("Desk", &["A", "B"]);
+    let mut phone = Device::new("Phone", &["A", "B"]);
+    desk.shelf.make_playlist("Summer", &["A", "B"]);
+    sync(&mut desk, &mut phone);
+    let (on_phone, _) = phone.shelf.playlist_named("Summer").expect("arrived");
+    phone
+        .ledger
+        .keep_songs_of(
+            LocalPlaylistId {
+                id: on_phone,
+                created: on_phone * 1000,
+            },
+            true,
+        )
+        .expect("kept");
+    let playlists = Follow {
+        playlists: true,
+        ..Follow::default()
+    };
+
+    phone.shelf.inside.lock().deleted_by_hand = vec!["A".into(), "B".into()];
+    phone.shelf.inside.lock().deleted_here = vec!["A".into()];
+    phone.shelf.moved();
+    phone.send();
+
+    let wanted = phone
+        .ledger
+        .wanted(playlists, &phone.shelf)
+        .expect("wanted")
+        .into_iter()
+        .map(|recording| recording.title)
+        .collect::<Vec<_>>();
+
+    assert_eq!(wanted, ["B"]);
+    assert_eq!(phone.shelf.inside.lock().deleted_here, ["A"]);
+    assert_eq!(titles(&phone, "Summer"), ["A", "B"]);
+}
+
+#[test]
+fn a_song_deleted_from_the_app_and_held_again_is_forgiven_and_wanted_when_lost_once_more() {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut phone = Device::new("Phone", &["A"]);
+    desk.shelf.make_playlist("Summer", &["A"]);
+    sync(&mut desk, &mut phone);
+    let (on_phone, _) = phone.shelf.playlist_named("Summer").expect("arrived");
+    phone
+        .ledger
+        .keep_songs_of(
+            LocalPlaylistId {
+                id: on_phone,
+                created: on_phone * 1000,
+            },
+            true,
+        )
+        .expect("kept");
+    let playlists = Follow {
+        playlists: true,
+        ..Follow::default()
+    };
+
+    phone.shelf.inside.lock().deleted_here = vec!["A".into()];
+
+    assert!(
+        phone
+            .ledger
+            .wanted(playlists, &phone.shelf)
+            .expect("wanted")
+            .is_empty()
+    );
+    assert!(phone.shelf.inside.lock().deleted_here.is_empty());
+
+    phone.shelf.inside.lock().deleted_by_hand = vec!["A".into()];
+
+    assert_eq!(
+        phone
+            .ledger
+            .wanted(playlists, &phone.shelf)
+            .expect("wanted")
+            .len(),
+        1
+    );
+}
+
+#[test]
 fn a_song_known_by_its_mbid_in_a_playlist_and_by_its_tags_as_a_favourite_is_wanted_once() {
     let mut desk = Device::new("Desk", &[]);
     let mut phone = Device::new("Phone", &[]);
