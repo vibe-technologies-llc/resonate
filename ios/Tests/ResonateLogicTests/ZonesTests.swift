@@ -34,4 +34,9 @@ import Testing
         #expect(ZonePlan.line(.paused, playing: nil) == "Paused")
         #expect(ZonePlan.line(.stopped, playing: "Echoes") == "Stopped")
     }
+
+    @Test func aZoneOnARendererNamesItBeforeWhatItIsDoing() {
+        #expect(ZonePlan.line(.playing, playing: "Echoes", on: "Living room streamer") == "Living room streamer · Playing Echoes")
+        #expect(ZonePlan.line(.paused, playing: nil, on: nil) == "Paused")
+    }
 }

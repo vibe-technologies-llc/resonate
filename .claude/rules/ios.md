@@ -461,7 +461,18 @@ sync seals its records and talks QUIC (TLS) of its own.
   that shows it, saying what it plays (`ZonePlan.line`), with a context menu of *Hand the song over
   here*, *Rename* and *Remove* (also its swipe; not the first, confirmed), and *Add a zone*. iOS
   holds one route, so a zone is added at the system's device with no route and the footer says the
-  zones share that output (`FEATURES.md`). `Library.zones` is read when `zone` or `zones_revision`
+  zones share that output unless one plays on a renderer (`FEATURES.md`). Its *Network renderers*
+  section is a *Find renderers* toggle (`Library.lookForRenderers`, kept as `renderers` in the
+  `library-features` defaults, off by default and applied when the player opens; a failed search
+  there never fails the opening), counting those found, read every two seconds while it is on and
+  the sheet open (`readRenderers`); each zone's menu has *Play on a renderer* (`RendererPicker`, a
+  list of the renderers found with a check on the one the zone plays to) and, on one, *Play on this
+  iPhone* (`playZone`), and the row names the renderer before what it plays (`ZonePlan.line`'s
+  `on:`). `NSLocalNetworkUsageDescription` names the renderers beside sync. **An iPhone signed for
+  free finds none**: the SSDP search is multicast from the library's own socket, which needs the
+  `com.apple.developer.networking.multicast` entitlement Apple grants a paid team on request, so it
+  is not in `Resonate.entitlements` (a free signing would refuse the profile) and the search is
+  expected to be refused (`FEATURES.md`; not yet seen on a device). `Library.zones` is read when `zone` or `zones_revision`
   moves and every eighth tick while there are several (`ZonesListed`), and after each change the
   sheet makes (`changeZones`); the lock screen reads the snapshot, so it follows the zone shown
   (`ZonesTests`).

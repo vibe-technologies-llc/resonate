@@ -156,6 +156,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             },
         )
     val zones = PlayerZones(library)
+    val renderers = NetworkRenderers(context, library, settings)
     val outputStream = MutableStateFlow<OutputStream?>(null)
     val outputs = MutableStateFlow<List<AudioOutput>>(emptyList())
     val selectedOutput = MutableStateFlow(0)
@@ -292,6 +293,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     fun initialize(native: MobilePlayer) {
         room.restore(native)
         zones.bindRoutes(native, outputsNow())
+        renderers.begin(native)
         routes.start()
         tags.initialize(native)
         providerAccounts.value =
@@ -1413,7 +1415,11 @@ class LibraryFeatures(private val context: Context, private val library: Library
 
     fun selectOutput(id: Int) {
         library.request { native ->
-            native.selectZoneOutput(native.shownZone(), id, ZonePlan.routeOf(id, outputsNow()))
+            val shown = native.shownZone()
+            if (native.zones().any { it.id == shown && it.renderer != null }) {
+                native.selectZoneRenderer(shown, null)
+            }
+            native.selectZoneOutput(shown, id, ZonePlan.routeOf(id, outputsNow()))
             zones.reread(native)
             selectedOutput.value = id
         }
@@ -1637,6 +1643,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
         network = null
         hearBeacons(false)
+        renderers.stop()
         unmetered = false
         transferring.value = false
         syncHandoffs.value = emptyList()

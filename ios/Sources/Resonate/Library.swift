@@ -243,6 +243,8 @@ final class Library {
     @ObservationIgnored private var queueUnreadable: QueueListed?
     @ObservationIgnored private var queueReadAt = ContinuousClock.now
     private(set) var zones: [PlayerZone] = []
+    private(set) var renderers: [NetworkRenderer] = []
+    private(set) var lookingForRenderers = false
     @ObservationIgnored private var zonesListed: ZonesListed?
     @ObservationIgnored private var zoneTicks = 0
     @ObservationIgnored private var volumeSending = false
@@ -333,6 +335,11 @@ final class Library {
                 try await Work.inOrder { try opened.configurePlayback(preferences: stored) }
                 preferences = stored
                 volume = try await Work.inOrder { opened.zones().first { $0.shown }?.volume ?? 1 }
+                let looks = Self.rendererSettings.bool(forKey: Self.looksForRenderersKey)
+                lookingForRenderers = try await Work.inOrder {
+                    if looks { try? opened.lookForRenderers(on: true) }
+                    return opened.lookingForRenderers()
+                }
                 native = opened
                 opened.watchPlayer(watch: PlayerWake(self))
                 Task.detached(priority: .utility) { [support] in Backup.leaveOutDerived(in: support) }
@@ -476,6 +483,30 @@ final class Library {
     func handOver(to zone: PlayerZone) {
         changeZones { try $0.handOverTo(zone: zone.id) }
     }
+
+    func lookForRenderers(_ on: Bool) {
+        request({ native in
+            try native.lookForRenderers(on: on)
+            return (native.lookingForRenderers(), native.renderers())
+        }) { [self] read in
+            Self.rendererSettings.set(on, forKey: Self.looksForRenderersKey)
+            lookingForRenderers = read.0
+            renderers = read.1
+        }
+    }
+
+    func readRenderers() {
+        request({ $0.renderers() }) { [self] found in
+            if found != renderers { renderers = found }
+        }
+    }
+
+    func playZone(_ zone: PlayerZone, on renderer: NetworkRenderer?) {
+        changeZones { try $0.selectZoneRenderer(zone: zone.id, renderer: renderer?.node) }
+    }
+
+    static let looksForRenderersKey = "renderers"
+    static let rendererSettings = UserDefaults(suiteName: "library-features") ?? .standard
 
     private func changeZones(_ change: @escaping @Sendable (MobilePlayer) throws -> Void) {
         nudgePoll()

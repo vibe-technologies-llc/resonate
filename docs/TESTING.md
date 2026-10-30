@@ -32,6 +32,12 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   endless `LIVE` FLAC from the player's address, how `currentTime` runs on it, and the TLS 1.2
   handshake of an older receiver have not been heard
 
+- [S · blocked: hardware] A phone's zone on a network renderer is proved on the host alone, over a
+  fake renderer on loopback: no renderer is on this network and neither phone ran it, so the
+  search over Wi-Fi (Android's `MulticastLock` held), a renderer fetching the phone's stream across
+  the network, playback with the screen off (no Wi-Fi lock is taken) and an iPhone's search being
+  refused without the multicast entitlement have not been seen
+
 ## iOS
 - [S · blocked: iPhone] The RemoteIO `CoreAudio` toolbox (the unsafe `AudioComponentInstanceNew`,
   `AudioUnitSetProperty`, `AudioOutputUnitStart` and sibling calls) and `render`'s `extern "C-unwind"`

@@ -4,6 +4,8 @@ paths:
   - "crates/resonate/src/rendering.rs"
   - "crates/resonate/src/zoning.rs"
   - "crates/resonate-ui/src/views/settings/output.rs"
+  - "crates/resonate-mobile/src/rendering.rs"
+  - "crates/resonate-mobile/src/output/mod.rs"
 ---
 
 # Network renderers (UPnP AV)
@@ -258,6 +260,39 @@ or leave the list through the sink changes `Beside` forwards. `Rendering::player
 the window and every zone (`zoning::Opener`) build a `Player`: PipeWire inside `Beside` where a
 network is held, `Player::with_sources` where not. `sinks` lists the renderers with *the network*
 as what drives them.
+
+## On the phones
+
+The phones reach renderers through the same seam: `resonate-mobile` holds one `Network` per
+`MobilePlayer` (`rendering::Rendering`, resting from the start, `Searching::on_the_network`), and
+`output::player` builds every zone's engine over `Beside` wrapping Oboe or RemoteIO, so a renderer is
+one more sink to each zone as on the desktop, with the same queue, DSP, handover, clock and volume.
+Renderer sink ids come from the one `Network`, so `Zones::send` sees two zones asking one renderer
+as one sink and refuses it to a second while the first holds it bit-perfect (`audio.md`).
+
+- **The boundary** (`mobile.md`'s *Zones*): `look_for_renderers(on)` is `look(FirstSearch::Behind)`
+  or `rest` (`RenderersUnreachable` where no `Network` could be made, `RendererSearch` where the
+  stream server could not start), `looking_for_renderers`, `renderers()` (a `NetworkRenderer` per
+  renderer known: `node`, the `upnp:` node name; `name`; `host`), and
+  `select_zone_renderer(zone, node)`, which refuses a node not listed (`UnknownRenderer`), sends
+  `SetSink` with the node (or none) and keeps it beside the zone. `PlayerZone` carries `renderer`
+  and `renderer_name` (the name the network gives now, else the one kept). Nothing searches unasked:
+  a phone's *Find renderers* switch is off by default, and `MobilePlayer::new` searches only where a
+  zone was kept on a renderer, which the engine follows once the search finds it.
+- **Multicast on the phones.** Android sends an app's SSDP but its Wi-Fi may filter multicast
+  arriving unless a `MulticastLock` is held; the answers to a search are unicast, and Kotlin holds
+  one while the boundary searches all the same, as sync does (`android.md`). iOS
+  refuses multicast from an app's own socket without `com.apple.developer.networking.multicast`,
+  which a free signing cannot carry, so an iPhone signed so finds no renderer (`ios.md`,
+  `FEATURES.md`). The renderer's answers and the stream the renderer fetches are unicast.
+
+`crates/resonate-mobile/src/rendering.rs` proves it over a fake on loopback (an SSDP answer, a
+description with AVTransport alone, SOAP recording actions): the search lists the renderer, a zone
+bound to it is sent `SetAVTransportURI` and `Play`, keeps it in the catalog, stays on it through a
+route reset, and leaves it (`Stop`) when bound to none, and resting forgets it
+(`a_renderer_found_on_the_network_is_listed_and_a_zone_bound_to_it_plays_there_and_is_kept`); a
+zone kept on a renderer reopens wanting it and names it as kept until it is found
+(`a_zone_kept_on_a_renderer_reopens_wanting_it_and_names_it_as_kept_until_it_is_found`).
 
 ## Proof
 

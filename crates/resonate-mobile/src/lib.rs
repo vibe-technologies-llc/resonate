@@ -26,6 +26,7 @@ mod playback;
 mod playlist_files;
 mod playlists;
 mod queue_edit;
+mod rendering;
 #[cfg(test)]
 mod resuming_tests;
 mod rewriting;
@@ -82,6 +83,7 @@ pub use crate::{
         GainMode, LossyRestoration, PlaybackPreferences, ResamplingPhase, ResamplingQuality,
         SleepTimer, default_playback_preferences,
     },
+    rendering::NetworkRenderer,
     rewriting::DocumentRewriting,
     saved_searches::{SavedSearch, SearchOrder, search_order_reads_descending},
     watching::PlayerWatch,
@@ -227,6 +229,7 @@ pub struct MobilePlayer {
     room: room::Room,
     tagging: tagging::Tagging,
     served: served::Served,
+    rendering: rendering::Rendering,
 }
 
 #[uniffi::export]
@@ -250,16 +253,22 @@ impl MobilePlayer {
         )?);
         let routing = Arc::new(output::Routing::new());
         let kept = catalog.kept_zones()?;
+        let rendering = rendering::Rendering::on_the_network();
+        if kept.iter().any(|zone| zone.renderer.is_some()) {
+            rendering.look_behind();
+        }
         let config = EngineConfig {
             volume: zoning::first_zones_volume(&kept),
+            sink: zoning::first_zones_sink(&kept),
             ..EngineConfig::default()
         };
-        let player = output::player(config, Arc::clone(&sources), &routing)?;
+        let network = rendering.network();
+        let player = output::player(config, Arc::clone(&sources), &routing, network.clone())?;
         let engines: Box<zoning::Engines> = {
             let sources = Arc::clone(&sources);
             Box::new(
                 move |_: ZoneId, config: EngineConfig, routing: &Arc<output::Routing>| {
-                    output::player(config, Arc::clone(&sources), routing)
+                    output::player(config, Arc::clone(&sources), routing, network.clone())
                 },
             )
         };
@@ -282,6 +291,7 @@ impl MobilePlayer {
             room: room::Room::under(PathBuf::from(&folder)),
             tagging: tagging::Tagging::under(PathBuf::from(&folder)),
             served,
+            rendering,
         });
         this.resume_saved_in(ZoneId::FIRST)?;
         watching::keep(&this, ZoneId::FIRST);

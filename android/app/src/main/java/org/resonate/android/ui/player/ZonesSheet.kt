@@ -25,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -41,7 +42,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
 import org.resonate.android.ZonePlan
+import org.resonate.android.nativecore.NetworkRenderer
 import org.resonate.android.nativecore.PlayerZone
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.settings.ConfirmDialog
@@ -57,8 +60,17 @@ fun ZonesSheet(onDismiss: () -> Unit) {
     val outputs by features.outputs.collectAsStateWithLifecycle()
     var renaming by remember { mutableStateOf<PlayerZone?>(null) }
     var removing by remember { mutableStateOf<PlayerZone?>(null) }
+    var choosing by remember { mutableStateOf<PlayerZone?>(null) }
+    val looking by features.renderers.looking.collectAsStateWithLifecycle()
+    val renderers by features.renderers.listed.collectAsStateWithLifecycle()
     val shown = zones.firstOrNull { it.shown }?.id
     LaunchedEffect(Unit) { features.refreshOutputs() }
+    LaunchedEffect(looking) {
+        while (looking) {
+            features.renderers.refresh()
+            delay(RENDERERS_READ_EVERY_MS)
+        }
+    }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             Modifier.navigationBarsPadding().padding(bottom = 16.dp).verticalScroll(rememberScrollState())
@@ -78,13 +90,15 @@ fun ZonesSheet(onDismiss: () -> Unit) {
                 zones.forEach { zone ->
                     ZoneRow(
                         zone = zone,
-                        output = outputNamed(outputs, zone.device),
+                        output = ZonePlan.heardOn(zone.rendererName, outputNamed(outputs, zone.device)),
                         mayHandOver =
                             shown != null && ZonePlan.mayHandOverTo(zone.id, shown, queue.isNotEmpty()),
                         onShow = { features.zones.show(zone.id) },
                         onHandOver = { features.zones.handOverTo(zone.id) },
                         onRename = { renaming = zone },
                         onRemove = { removing = zone },
+                        onChooseRenderer = { choosing = zone },
+                        onPlayOnPhone = { features.zones.playOn(zone.id, null) },
                     )
                 }
             }
@@ -104,7 +118,35 @@ fun ZonesSheet(onDismiss: () -> Unit) {
                     Text("Add a zone on $title")
                 }
             }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Network renderers",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+            )
+            ListItem(
+                onClick = { features.renderers.look(!looking) },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                supportingContent = {
+                    Text(
+                        if (looking) "${renderers.size} found on this network"
+                        else "Streamers and amplifiers on this network, as outputs for a zone"
+                    )
+                },
+                trailingContent = { Switch(checked = looking, onCheckedChange = null) },
+            ) {
+                Text("Find renderers")
+            }
         }
+    }
+    choosing?.let { zone ->
+        RendererDialog(
+            zone = zone,
+            renderers = renderers,
+            looking = looking,
+            choose = { features.zones.playOn(zone.id, it.node) },
+            dismiss = { choosing = null },
+        )
     }
     renaming?.let { zone ->
         RenameZoneDialog(zone, save = { features.zones.rename(zone.id, it) }, dismiss = { renaming = null })
@@ -130,6 +172,8 @@ private fun ZoneRow(
     onHandOver: () -> Unit,
     onRename: () -> Unit,
     onRemove: () -> Unit,
+    onChooseRenderer: () -> Unit,
+    onPlayOnPhone: () -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
     ListItem(
@@ -150,6 +194,22 @@ private fun ZoneRow(
                             onClick = {
                                 menu = false
                                 onHandOver()
+                            },
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = { Text("Play on a renderer") },
+                        onClick = {
+                            menu = false
+                            onChooseRenderer()
+                        },
+                    )
+                    if (zone.renderer != null) {
+                        DropdownMenuItem(
+                            text = { Text("Play on this phone") },
+                            onClick = {
+                                menu = false
+                                onPlayOnPhone()
                             },
                         )
                     }
@@ -208,4 +268,45 @@ private fun RenameZoneDialog(zone: PlayerZone, save: (String) -> Unit, dismiss: 
     )
 }
 
+@Composable
+private fun RendererDialog(
+    zone: PlayerZone,
+    renderers: List<NetworkRenderer>,
+    looking: Boolean,
+    choose: (NetworkRenderer) -> Unit,
+    dismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text("Play ${zone.name} on") },
+        text = {
+            when {
+                !looking -> Text("Turn on Find renderers to look for them on this network")
+                renderers.isEmpty() -> Text("No renderer has answered on this network yet")
+                else ->
+                    Column(Modifier.selectableGroup()) {
+                        renderers.forEach { renderer ->
+                            ListItem(
+                                selected = renderer.node == zone.renderer,
+                                onClick = {
+                                    choose(renderer)
+                                    dismiss()
+                                },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                leadingContent = {
+                                    RadioButton(selected = renderer.node == zone.renderer, onClick = null)
+                                },
+                                supportingContent = { Text(renderer.host) },
+                            ) {
+                                Text(renderer.name)
+                            }
+                        }
+                    }
+            }
+        },
+        confirmButton = { TextButton(onClick = dismiss) { Text("Close") } },
+    )
+}
+
 private const val ZONE_NAME_AT_MOST = 64
+private const val RENDERERS_READ_EVERY_MS = 2_000L

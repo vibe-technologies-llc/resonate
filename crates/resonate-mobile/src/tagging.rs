@@ -492,6 +492,7 @@ mod tests {
             room: crate::room::Room::under(std::env::temp_dir()),
             tagging: Tagging::under(std::env::temp_dir()),
             served: crate::served::Served::default(),
+            rendering: crate::rendering::Rendering::default(),
         }
     }
 

@@ -27,7 +27,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `mcp.md` | resonate-mcp, the binary's `mcp.rs` | the transport, refusals against failures, the tools, the resources and their seam |
 | `sync.md` | resonate-sync, the binary's `sync.rs`, `synced.rs`, the sync panes | the pairing key and what it derives, the wire, the ledger, the seam, peers and transfers, devices meeting on one network |
 | `server.md` | resonate-server, `packaging/server/**` | what the server keeps, sessions, presence, punching, limits, deployment |
-| `upnp.md` | resonate-upnp, the binary's `rendering.rs`, `zoning.rs`, the output settings pane | network renderers: a renderer as a sink beside PipeWire's, the `Neighbours` seam, a resting network and its switch, SSDP, the description, SOAP, the paced live stream, seek, pause and volume past its buffer, the renderer's clock |
+| `upnp.md` | resonate-upnp, the binary's `rendering.rs`, `zoning.rs`, the output settings pane, the phones' `rendering.rs` and `output/mod.rs` | network renderers: a renderer as a sink beside PipeWire's, Oboe's and RemoteIO's, the `Neighbours` seam, a resting network and its switch, SSDP, the description, SOAP, the paced live stream, seek, pause and volume past its buffer, the renderer's clock, multicast on the phones |
 | `cast.md` | resonate-cast, the binary's `rendering.rs` | Google Cast receivers: one more sink kind beside UPnP's, the mDNS browse, TLS and the hand-written `CastMessage` and JSON, the Default Media Receiver's launch and load, the receiver's clock, the volume |
 | `discord.md` | resonate-discord, `core::presence`, the binary's `discord.rs`, the Desktop groups | the gate, the seam, the frame, what an activity says and how often |
 | `release.md` | `.github/workflows/release.yml`, `packaging/**`, the root manifest, `docs/ROADMAP.md` | versions and their spelling per ecosystem, branches, tags, the release assets, the signing secrets |
@@ -95,7 +95,7 @@ resonate            bin: CLI, tracing, wiring
   ├── providers/tidal     resonate-tidal, the listener's subscription  [`online`]
   └── resonate-core       domain vocabulary
 
-resonate-mobile      cdylib/staticlib: the phones' boundary (Kotlin and Swift) and document catalog, over playback, analysis, lyrics, library seams, online, providers and sync
+resonate-mobile      cdylib/staticlib: the phones' boundary (Kotlin and Swift) and document catalog, over playback, network renderers, analysis, lyrics, library seams, online, providers and sync
 resonate-bindgen     bin: host tool generating Kotlin and Swift from native metadata
 resonate-server      bin: keeps sealed sync records and introduces devices, over resonate-sync's wire
 ```

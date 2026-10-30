@@ -34,6 +34,7 @@ use std::sync::Arc;
 
 use resonate_codec::Sources;
 use resonate_engine::{EngineConfig, Player};
+use resonate_upnp::Network;
 
 pub use self::formats::{OutputFormat, OutputMixer, OutputStream};
 #[cfg(target_os = "android")]
@@ -96,10 +97,11 @@ pub(crate) fn player(
     config: EngineConfig,
     sources: Arc<Sources>,
     routing: &Arc<Routing>,
+    network: Option<Arc<Network>>,
 ) -> resonate_engine::Result<Player> {
     let routing = Arc::clone(routing);
     Player::with_sources_and_backend(config, sources, move |_| {
-        Ok(Box::new(oboe::AndroidAudio::new(routing)))
+        Ok(beside(Box::new(oboe::AndroidAudio::new(routing)), network))
     })
 }
 
@@ -108,10 +110,11 @@ pub(crate) fn player(
     config: EngineConfig,
     sources: Arc<Sources>,
     routing: &Arc<Routing>,
+    network: Option<Arc<Network>>,
 ) -> resonate_engine::Result<Player> {
     let routing = Arc::clone(routing);
     Player::with_sources_and_backend(config, sources, move |_| {
-        Ok(Box::new(remote_io::IosAudio::new(routing)))
+        Ok(beside(Box::new(remote_io::IosAudio::new(routing)), network))
     })
 }
 
@@ -120,6 +123,18 @@ pub(crate) fn player(
     config: EngineConfig,
     sources: Arc<Sources>,
     _: &Arc<Routing>,
+    _: Option<Arc<Network>>,
 ) -> resonate_engine::Result<Player> {
     Player::with_sources(config, sources)
+}
+
+#[cfg(any(target_os = "android", target_os = "ios", test))]
+pub(crate) fn beside(
+    phone: Box<dyn resonate_audio::Backend>,
+    network: Option<Arc<Network>>,
+) -> Box<dyn resonate_audio::Backend> {
+    match network {
+        Some(network) => Box::new(resonate_upnp::Beside::over(phone, network)),
+        None => phone,
+    }
 }
