@@ -22,7 +22,7 @@ struct DownloadProgress: View {
                 NavigationLink {
                     DownloadsView()
                 } label: {
-                    DownloadSummary(jobs: downloads.jobs)
+                    DownloadSummary(jobs: downloads.jobs, waitsOnTheMeter: downloads.waitsOnTheMeter)
                 }
             }
         }
@@ -31,6 +31,7 @@ struct DownloadProgress: View {
 
 struct DownloadSummary: View {
     let jobs: [DownloadJob]
+    var waitsOnTheMeter = false
 
     var body: some View {
         let running = jobs.filter(\.state.inFlight)
@@ -41,6 +42,11 @@ struct DownloadSummary: View {
             Text(detail(running: running.count, waiting: waiting))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+            if let line = ConnectionMeters.line(waiting: waitsOnTheMeter) {
+                Text(line)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
             if !running.isEmpty {
                 if fractions.isEmpty {
                     ProgressView().progressViewStyle(.linear)
@@ -73,6 +79,12 @@ struct DownloadsView: View {
                     systemImage: "arrow.down.circle",
                     description: Text("Songs you download from Online search or Saved for later appear here.")
                 )
+            }
+            if let line = ConnectionMeters.line(waiting: downloads.waitsOnTheMeter) {
+                Section {
+                    Label(line, systemImage: "antenna.radiowaves.left.and.right")
+                        .foregroundStyle(.secondary)
+                }
             }
             ForEach(downloads.jobs) { DownloadJobRow(job: $0) }
             if let folder = downloads.rememberedFolder {
@@ -318,6 +330,13 @@ struct ProviderView: View {
                 }
             } footer: {
                 Text("A Monochrome or hifi-api provider with no server address is asked at the hosted service unless this is off.")
+            }
+            Section {
+                Toggle(isOn: Binding(get: { library.features.stallDownloadsOnMetered }, set: { library.features.setStallDownloadsOnMetered($0) })) {
+                    Text("Wait on a metered connection")
+                }
+            } footer: {
+                Text("Downloads pause until the network is not metered: cellular, a Personal Hotspot or Low Data Mode.")
             }
             ForEach(MusicProvider.every, id: \.self) { provider in
                 ProviderSection(saved: providers.account(provider), on: providers.isOn(provider))

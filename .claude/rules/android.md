@@ -1319,7 +1319,13 @@ pairing code stays hidden until *Show pairing code* is pressed; its text is abse
 accessibility tree while hidden. **A computer is paired by the system camera or any QR scanner**: the manifest's `MainActivity` filter takes `VIEW` of `resonate://pair` (`DEFAULT` and `BROWSABLE`, which a scanner needs), `opening` hands the link to `LibraryFeatures.offerPairing` (`sync_code_in_link`), and `PairingOffer` asks *Join these devices?*, naming the code, before `joinSync` (which also turns sync on; one made before the settings are read waits in `joinWaiting`) and opens the sync page, as iOS does. Resonate never touches the camera. `song_uris` lists every document's URI, hidden ones included.
 
 `ACCESS_NETWORK_STATE` lets the default-network callback report `NET_CAPABILITY_NOT_METERED`; songs
-move only on an unmetered network unless mobile data is allowed. While sync runs Kotlin holds a
+move only on an unmetered network unless mobile data is allowed. The same callback
+(`LibraryFeatures.watchNetwork`, registered at start and unregistered in `stop`) tells the boundary
+the network through `ConnectionMeters.of` and `report_connection`; *Look up on a metered connection*
+(`enrich-on-metered`, Library tools) and *Wait on a metered connection* (`stall-downloads-on-metered`,
+Download sources) are handed to `configureEnrichOnMetered` and `configureStallDownloadsOnMetered` at
+start and on a change, and `tick` reads `downloadsWaitOnTheMeter()` while a download runs so the
+download card says *Waiting for a network that is not metered* (`DownloadPlan.meterLine`). While sync runs Kotlin holds a
 `WifiManager.MulticastLock` (`CHANGE_WIFI_MULTICAST_STATE`, released when sync stops and when the
 repository closes), so beacons and Bonjour from devices on the same network are heard (`sync.md`'s *Nearby*); the status text counts them when the server is away and a
 playlist's menu offers fetching from a nearby device whatever the server's standing. Kotlin polls the status every two

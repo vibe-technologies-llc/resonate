@@ -28,8 +28,8 @@ struct SettingsView: View {
     @State private var search = ""
     @State private var confirmingErase = false
     private static let onlineWords = "Online features internet network artwork covers lyrics enrichment music search"
-    private static let enrichmentWords = "Artwork and details automatically portraits Wi-Fi missing covers"
-    private static let providerWords = "Download providers TIDAL Subsonic Monochrome"
+    private static let enrichmentWords = "Artwork and details automatically portraits Wi-Fi metered connection cellular missing covers"
+    private static let providerWords = "Download providers TIDAL Subsonic Monochrome metered connection cellular wait"
     private static let serverWords = "Server Subsonic Navidrome TIDAL Monochrome browse stream"
     private static let scrobblingWords = "Scrobbling ListenBrainz Last.fm"
     private static let erasingWords = "Erase all data reset everything delete start over"

@@ -1126,7 +1126,9 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   (`enrich-unmetered`, off by default), while the path `NWPathMonitor` reports is expensive or
   constrained, for a song landing from a download or another device as for any other start; a
   metered network then stops the pass. Both keys live in the `library-features`
-  suite. Each start also seeks the playing song, and `Features.tick` hands every song change to
+  suite. *Look up on a metered connection* (`enrich-on-metered`, off) sits beside it and
+  `Features.setEnrichOnMetered` hands it to `configure_enrich_on_metered`; the boundary's gate, not
+  this one, decides what a lookup may ask. Each start also seeks the playing song, and `Features.tick` hands every song change to
   `Enrichment.playing`, which calls `seek_enrichment` while a pass runs. A song a download landed
   (`Enrichment.landed`) is looked up before the rest by the boundary itself, in a running pass
   and in every later one (`android.md`'s *A download is looked up first*).
@@ -1206,6 +1208,13 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
 - **Accounts are one keychain item**: `download-accounts`, a JSON list of every provider's account
   (provider name, server, user, password, client ID, secret, refresh token); the switched-off
   providers are `download-providers-off` in `library-features`.
+- **The network is reported, and downloads may wait on it**: `Features.watchNetwork`'s
+  `NWPathMonitor` hands every path to `ConnectionMeters.of(satisfied:expensive:constrained:)` (an
+  unsatisfied path is `Unknown`, an expensive or constrained one `Metered`, else `Unmetered`) and
+  `Features.networkChanged` calls `report_connection` with the latest. *Wait on a metered connection*
+  (`stall-downloads-on-metered`, off, Download providers) is `configure_stall_downloads_on_metered`;
+  the 250 ms poll reads `downloads_wait_on_the_meter()` into `DownloadQueue.waitsOnTheMeter`, and the
+  Downloads screen and its summary say *Waiting for a network that is not metered*.
 - **Progress is polled every 250 ms while a job runs** (`download_progress`): a percentage where the
   provider gave a length, else the bytes received. A job is assigned only when the poll changed it (`update`), so a job finding, validating or stalled redraws nothing. Cancel calls `cancel_download` for that job
   alone; a failed or cancelled job deletes only the document it created and shows the boundary's

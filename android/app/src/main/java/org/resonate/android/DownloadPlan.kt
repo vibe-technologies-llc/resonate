@@ -77,6 +77,9 @@ object DownloadPlan {
     fun nextBatch(jobs: List<DownloadJob>): List<DownloadJob> =
         if (jobs.all { it.state.settled }) emptyList() else jobs
 
+    fun meterLine(waiting: Boolean): String? =
+        if (waiting) "Waiting for a network that is not metered" else null
+
     fun waitForWants(dueAtSeconds: Long, nowSeconds: Long): Long =
         ((dueAtSeconds - nowSeconds) * 1000L).coerceIn(WANTS_ASKED_AT_LEAST_MS, WANTS_ASKED_EVERY_MS)
 

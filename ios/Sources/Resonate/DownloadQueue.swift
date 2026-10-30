@@ -29,6 +29,7 @@ final class DownloadQueue {
         didSet { findHeld() }
     }
     private(set) var held: Set<String> = []
+    private(set) var waitsOnTheMeter = false
     var awaitingFolder: [SearchSong] = []
     var missedProvider = false
     var asksForWants: Bool {
@@ -372,12 +373,14 @@ final class DownloadQueue {
                 guard let self else { return }
                 let ids = jobs.filter(\.state.inFlight).map(\.id)
                 guard !ids.isEmpty else {
+                    waitsOnTheMeter = false
                     polling = nil
                     return
                 }
-                let read = (try? await Work.aside {
-                    ids.compactMap { id in native.downloadProgress(job: id).map { (id, $0) } }
-                }) ?? []
+                let (read, waiting) = (try? await Work.aside {
+                    (ids.compactMap { id in native.downloadProgress(job: id).map { (id, $0) } }, native.downloadsWaitOnTheMeter())
+                }) ?? ([], false)
+                if waitsOnTheMeter != waiting { waitsOnTheMeter = waiting }
                 for (id, progress) in read { update(id) { $0.follow(progress) } }
                 showProgress()
             }
