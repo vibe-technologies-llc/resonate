@@ -57,6 +57,7 @@ pub enum ConfigKey {
     Resume,
     Renderers,
     FlacAbove96kFor,
+    RenderersAt,
     HistoryKept,
     SkipRepeatsQueue,
     PreviousRestarts,
@@ -174,7 +175,7 @@ impl fmt::Display for Named {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 110] = [
+    pub const ALL: [Self; 111] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -222,6 +223,7 @@ impl ConfigKey {
         Self::Resume,
         Self::Renderers,
         Self::FlacAbove96kFor,
+        Self::RenderersAt,
         Self::HistoryKept,
         Self::SkipRepeatsQueue,
         Self::PreviousRestarts,
@@ -338,6 +340,7 @@ impl ConfigKey {
             Self::Resume => "resume",
             Self::Renderers => "renderers",
             Self::FlacAbove96kFor => "flac-above-96k-for",
+            Self::RenderersAt => "renderers-at",
             Self::HistoryKept => "history-kept",
             Self::OrganiseAs => "organise-as",
             Self::Notify => "notify",
@@ -563,6 +566,13 @@ pub enum Error {
 
     #[error("no zone {zone} is on the session bus; resonate players lists the zones running")]
     NoSuchZone { zone: ZoneAsked },
+
+    #[error("{address} is not an http address a renderer can be reached at")]
+    RendererAddress {
+        address: String,
+        #[source]
+        source: Box<resonate_upnp::Error>,
+    },
 
     #[error("no playlist named {0}")]
     NoSuchPlaylist(PlaylistName),

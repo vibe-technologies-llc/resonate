@@ -25,6 +25,11 @@ impl Kinds {
             })
             .ok()?;
         upnp.vouch(config.renderers_vouched_for());
+        for address in config.renderers_at() {
+            if let Err(error) = upnp.locate(address.clone()) {
+                tracing::warn!(%error, %address, "a renderer given by address could not be held");
+            }
+        }
         let cast = Casting::resting(CastSearching::on_the_network())
             .inspect_err(|error| {
                 tracing::warn!(%error, "Cast receivers on the network cannot be played to");

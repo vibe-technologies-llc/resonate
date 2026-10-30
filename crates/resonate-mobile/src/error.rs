@@ -172,6 +172,11 @@ pub enum Error {
         #[source]
         source: Box<resonate_upnp::Error>,
     },
+    #[error("That address is not one a renderer can be reached at")]
+    RendererAddress {
+        #[source]
+        source: Box<resonate_upnp::Error>,
+    },
     #[error("That renderer is no longer on the network")]
     UnknownRenderer,
     #[error("the destination descriptor is invalid")]

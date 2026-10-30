@@ -264,6 +264,13 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   for the first answer so the engine's first survey holds it, and so does `sinks --renderers`.
   The settings pane's device list switches it in the running window (`Setting::Renderers`,
   `Rendering::switch`), the window holding a resting network from the start.
+- `renderers-at` (empty unless set): array of `http://` addresses of UPnP renderers' descriptions
+  (`http://192.168.1.20:49152/description.xml`) the search cannot hear, a network that drops
+  multicast being the case; a blank or non-http entry is ignored with a warning, a non-text entry
+  costs the key alone (`Config::renderers_at`, `Network::locate`; `upnp.md`). Held by every run,
+  reached whenever the network looks, and written by hand: the settings pane has no row for it.
+  `sinks --renderer-at URL` (repeatable) adds one for the run and, like `--renderers`, looks;
+  an unreadable one is `Error::RendererAddress`. Cast receivers have no counterpart (`FEATURES.md`).
 - `flac-above-96k-for` (empty unless set): array of renderer names (`upnp:` and the UDN, as
   `sinks --renderers` lists them; others and blanks ignored, a non-text entry costs the key alone)
   that are sent FLAC above 96 kHz though their protocol info states no rate

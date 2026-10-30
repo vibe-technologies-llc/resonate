@@ -1050,6 +1050,15 @@ pub enum Sub {
                     says"
         )]
         renderers: bool,
+
+        #[arg(
+            long = "renderer-at",
+            value_name = "URL",
+            help = "Reach the UPnP media renderer whose description is at this http address as \
+                    well, searching the network too: for a network that drops multicast; \
+                    repeatable, and the renderers-at key holds addresses for every run"
+        )]
+        renderers_at: Vec<String>,
     },
 
     #[command(about = "Scan library roots and exit. With no paths, rescans every registered root")]

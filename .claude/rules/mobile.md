@@ -449,7 +449,10 @@ renderer's node, else none), so choosing an Android device or a route reset neve
 its renderer; `select_zone_renderer(zone, None)` does. The catalog's step 22
 (`ZONES_KEEP_THEIR_RENDERER`) gave `zones` a `renderer` (the node) and `renderer_name`, kept by
 `keep_zone`; a zone reopens wanting it (`Bound`, and `first_zones_sink` for the first) and
-`MobilePlayer::new` searches where any kept zone names one.
+`MobilePlayer::new` searches where any kept zone names one. A renderer the search cannot hear is
+added by the address of its description (`add_renderer_address`, `remove_renderer_address`,
+`renderer_addresses`; `upnp.md`'s *On the phones*): the `Network` holds the addresses, the host
+keeps the list and adds it again at start.
 
 **A device another zone holds bit-perfect is refused, as the desktop refuses it** (`audio.md`'s
 `Zones::holding`): each zone's sink being its own, `Zones::send` never sees two zones on one sink, so

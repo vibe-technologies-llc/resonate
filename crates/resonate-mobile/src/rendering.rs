@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use resonate_engine::{Command, NodeName};
-use resonate_upnp::{FirstSearch, Network, Searching};
+use resonate_upnp::{FirstSearch, Located, Network, Searching};
 
 use crate::{
     Error, MobilePlayer, Result,
@@ -65,6 +65,12 @@ pub(crate) fn sink_of(renderer: Option<&KeptRenderer>) -> Option<NodeName> {
     renderer.map(|renderer| NodeName::new(renderer.node.as_str()))
 }
 
+fn renderer_address(source: resonate_upnp::Error) -> Error {
+    Error::RendererAddress {
+        source: Box::new(source),
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct NetworkRenderer {
     pub node: String,
@@ -88,6 +94,30 @@ impl MobilePlayer {
             .map_err(|source| Error::RendererSearch {
                 source: Box::new(source),
             })
+    }
+
+    pub fn add_renderer_address(&self, address: String) -> Result<()> {
+        let network = self
+            .rendering
+            .network()
+            .ok_or(Error::RenderersUnreachable)?;
+        let located = Located::parse(&address).map_err(renderer_address)?;
+        network.locate(located).map_err(renderer_address)
+    }
+
+    pub fn remove_renderer_address(&self, address: String) -> Result<()> {
+        let network = self
+            .rendering
+            .network()
+            .ok_or(Error::RenderersUnreachable)?;
+        network.unlocate(&Located::parse(&address).map_err(renderer_address)?);
+        Ok(())
+    }
+
+    pub fn renderer_addresses(&self) -> Vec<String> {
+        self.rendering.network().map_or_else(Vec::new, |network| {
+            network.located().iter().map(ToString::to_string).collect()
+        })
     }
 
     pub fn looking_for_renderers(&self) -> bool {
@@ -150,6 +180,7 @@ mod tests {
 
     struct Fake {
         search_at: SocketAddr,
+        described_at: SocketAddr,
         actions: Arc<Mutex<Vec<String>>>,
     }
 
@@ -170,7 +201,11 @@ mod tests {
                 }
             });
 
-            Self { search_at, actions }
+            Self {
+                search_at,
+                described_at,
+                actions,
+            }
         }
 
         fn searching(&self) -> Searching {
@@ -180,6 +215,10 @@ mod tests {
                 every: Duration::from_secs(3_600),
                 serving_on: IpAddr::V4(Ipv4Addr::LOCALHOST),
             }
+        }
+
+        fn description_address(&self) -> String {
+            format!("http://{}/description.xml", self.described_at)
         }
 
         fn heard(&self, action: &str) -> usize {
@@ -376,6 +415,46 @@ mod tests {
 
         assert!(!harness.player.looking_for_renderers());
         assert!(harness.player.renderers().is_empty());
+    }
+
+    #[test]
+    fn a_renderer_added_by_address_is_listed_where_the_search_hears_nothing_and_forgotten_with_it()
+    {
+        let fake = Fake::start();
+        let silence = UdpSocket::bind("127.0.0.1:0").expect("a socket nobody answers on");
+        let harness = Harness::beside_renderers(Searching {
+            to: silence.local_addr().expect("its address"),
+            within: Duration::from_millis(100),
+            ..fake.searching()
+        });
+
+        harness
+            .player
+            .add_renderer_address(fake.description_address())
+            .expect("a resting network holds the address");
+        let held = harness.player.renderer_addresses();
+        let unlisted = harness.player.renderers();
+        harness.player.look_for_renderers(true).expect("looking");
+        let renderer = found(&harness);
+
+        assert_eq!(held, [fake.description_address()]);
+        assert!(unlisted.is_empty());
+        assert_eq!(renderer.node, format!("upnp:{UDN}"));
+        assert_eq!(renderer.host, "127.0.0.1");
+
+        harness
+            .player
+            .remove_renderer_address(fake.description_address())
+            .expect("forgotten");
+
+        assert!(harness.player.renderers().is_empty());
+        assert!(harness.player.renderer_addresses().is_empty());
+        assert!(matches!(
+            harness
+                .player
+                .add_renderer_address("https://not-http/".to_owned()),
+            Err(Error::RendererAddress { .. })
+        ));
     }
 
     #[test]
