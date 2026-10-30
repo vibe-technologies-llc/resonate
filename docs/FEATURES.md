@@ -103,10 +103,12 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   (`ListenerView` past its heading) and a `ListenerPosition` in units other than metres are not read
 - [M] *Fit the preamp*'s solved bound prices every node under the whole signal's at its steady
   gain, so broadband music under a curve moving many bands still bounds one to three and a half
-  decibels over its decode; weighing each node by its band's transient gain (the L1 of the near
-  response filtered to it) was measured too loose under a dispersive correction (a random burst of
-  taps 6 to 12 dB looser), and a transient gain read from what music a band holds, not the worst
-  any music could, is not built
+  decibels over its decode (3.6 dB on average over eight real songs, 0.2 to 5.9); a transient
+  gain per node was measured too loose under a dispersive correction, a level of its own for every
+  node of the tree and finer anchor levels moved nothing, and 64 moments in place of 8 moved the
+  real songs 0.3 dB (`eq.md`), so a tighter bound likely needs a figure the study does not keep, one
+  that says how far apart in time the bands' peaks fall (a stored format, so a migration), not a
+  better reading of the peaks
 - [S · blocked: hardware] The phones' *Measure* (a sweep through an `AudioTrack` or an `AVAudioPlayerNode` of its
   own beside the engine, recorded by the microphone and fitted by `fit_recorded_sweep`; `eq.md`) is
   proved on the host against a known filter, and its Kotlin on the JVM, but not heard through a real
