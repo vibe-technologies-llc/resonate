@@ -9,16 +9,15 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   arrive untouched
 
 ## iOS parity
-- [M · 0.2.0] The iOS icon ignores the system's icon appearances: the primary `Icon` and each accent
-  alternate are one flat PNG (`ios/icons.py`, the gradient and the mark baked together), so a
-  home screen set to Dark, Clear or Tinted derives its variant from that flat picture and the
-  mark and ground come out muddy, inverted or in colours the theme never chose. Draw the layers
-  apart (the mark alone on transparency, the accent gradient as the ground), a dark variant on a
-  near-black ground, and a greyscale tinted variant whose mark is the bright layer on a black
-  ground, so the system's tint lands on the mark and the ground stays dark; check whether xtool
-  can carry them (an `Assets.car` or Icon Composer `.icon` is Xcode's `actool`, which Linux lacks;
-  the plist's `CFBundleIcons` has no appearance keys), and if it cannot, write the catalog by hand
-  the way `app-intents.py` writes Siri's metadata; each accent alternate takes its own variants
+- [L · blocked: xtool] The iOS icon has no appearance variants of its own: Dark, Clear and Tinted
+  come from a compiled `Assets.car` (an `AppIcon` set with dark and tinted renditions, or an Icon
+  Composer `.icon`, whichever `actool` compiles, which only Xcode has), and xtool 1.24 turns
+  `iconPath` into loose PNGs and compiles no catalog, so the system derives every look from the
+  flat drawing (full-bleed, mark bright on a near-black ground, so the derived looks read; the
+  tint lands on the greyscale and loses each accent's hue). A real variant set needs a catalog
+  written by hand the way `app-intents.py` writes Siri's metadata (the CoreUI format is
+  undocumented and nothing here can read one back without a device), each accent alternate
+  carrying its own variants
 - [M · blocked: xtool] iOS has no widget: a WidgetKit extension xtool builds is linked empty and,
   linked whole, traps in `ExtensionFoundation` before a widget registers (xtool issue 313)
 - [M · blocked: Apple] iOS has no CarPlay: the CarPlay audio entitlement is granted by Apple to a

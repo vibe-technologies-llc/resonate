@@ -65,6 +65,18 @@ def draw_icons(into, accents):
     icons.check_declared(repository, {icon.name for icon in into.glob("*.png")})
 
 
+def draw_primary_icon(destination):
+    packaged = (repository / "packaging/resonate.svg").read_text()
+    source = destination.with_suffix(".svg")
+    source.write_text(icons.full_bleed(packaged))
+    run(["rsvg-convert", "--width", "1024", "--height", "1024", "--background-color", "#16181d",
+         "--output", str(destination), str(source)], os.environ.copy())
+    source.unlink()
+    run(["ffmpeg", "-v", "error", "-y", "-i", str(destination), "-pix_fmt", "rgb24", "-update", "1",
+         str(destination.with_name("Icon.rgb.png"))], os.environ.copy())
+    destination.with_name("Icon.rgb.png").replace(destination)
+
+
 def swift_accents(accents):
     rows = ",\n".join(f'        ResonateAccent(name: "{name}", hex: 0x{colour:06x})' for name, colour in accents.items())
     return SWIFT_ACCENTS.format(rows=rows)
@@ -119,3 +131,4 @@ shutil.copy2(library, generated / "lib")
 accents = icons.resonate_accents(repository)
 (generated / "ResonateNative/Accents.swift").write_text(swift_accents(accents))
 draw_icons(generated / "icons", accents)
+draw_primary_icon(repository / "ios/Resonate/Icon.png")

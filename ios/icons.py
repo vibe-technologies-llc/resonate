@@ -4,6 +4,9 @@ import re
 
 ACCENTS = ("mauve", "blue", "teal", "green", "amber", "peach", "red")
 PACKAGED_STOPS = ('stop-color="#6ea8fe"', 'stop-color="#63d29b"')
+ROUNDED_GROUND = '<rect width="128" height="128" rx="28" fill="#16181d"/>'
+FULL_BLEED_GROUND = '<rect width="128" height="128" fill="#16181d"/>'
+BAKED_RING = '<rect x="2" y="2" width="124" height="124" rx="26" fill="none" stroke="#1e2128" stroke-width="4"/>'
 ICON_SIDES = (("", 1024), ("@2x", 120), ("@3x", 180))
 PRIMARY_ICON = "Icon"
 ICON_RESOURCE = re.compile(r"^\s*-\s*Generated/icons/(\S+\.png)\s*$", re.MULTILINE)
@@ -41,6 +44,18 @@ def lifted(colour, toward_white):
     return (raised[0] << 16) | (raised[1] << 8) | raised[2]
 
 
+def replaced_once(drawing, old, new):
+    held = drawing.count(old)
+    if held != 1:
+        raise Unreadable(f"packaging/resonate.svg holds {old} {held} times, not once")
+    return drawing.replace(old, new)
+
+
+def full_bleed(packaged):
+    grounded = replaced_once(packaged, ROUNDED_GROUND, FULL_BLEED_GROUND)
+    return replaced_once(grounded, BAKED_RING, "")
+
+
 def recoloured(drawing, stops, colours):
     for stop, colour in zip(stops, colours):
         held = drawing.count(stop)
@@ -51,7 +66,7 @@ def recoloured(drawing, stops, colours):
 
 
 def drawn(packaged, colour, toward_white):
-    return recoloured(packaged, PACKAGED_STOPS, (lifted(colour, toward_white), colour))
+    return recoloured(full_bleed(packaged), PACKAGED_STOPS, (lifted(colour, toward_white), colour))
 
 
 def icon_names(accents):

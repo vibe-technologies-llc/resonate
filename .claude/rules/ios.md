@@ -34,7 +34,7 @@ header and a module map that links `resonate_mobile`), `ResonateNative` (the bin
 It also reads the Resonate palette's seven accents out of `resonate-ui`'s `theme.rs` (the `RESONATE`
 flavour) and `launcher.rs`'s `LIFTED_TOWARD_WHITE`, writes them as `ResonateAccent.every`
 (`Generated/ResonateNative/Accents.swift`), and draws `packaging/resonate.svg` recoloured as the
-desktop's launcher does (light stop the accent lifted toward white, deep stop the accent) into
+desktop's launcher does (light stop the accent lifted toward white, deep stop the accent) with the ground full-bleed and the baked-in ring left out (`icons.full_bleed`: the system's own mask rounds the corners, and a drawn ring showed as a second outline in the Clear and Tinted looks; the mark stays bright on a near-black ground so the greyscale the system tints keeps its contrast), and `Resonate/Icon.png`, the primary, from the same drawing in the packaged colours, into
 `Generated/icons/Icon<Accent>{,@2x,@3x}.png` (1024, 120, 180 px) with `rsvg-convert`; `xtool.yml`'s
 `resources` copies them to the bundle root and `Info.plist`'s `CFBundleIcons` names each as an
 alternate icon beside the primary `Icon`. The drawing is `ios/icons.py`, which `build-native.py`

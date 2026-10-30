@@ -50,6 +50,35 @@ class Recolouring(unittest.TestCase):
             icons.recoloured(twice, icons.PACKAGED_STOPS, (0, 0))
 
 
+class FullBleed(unittest.TestCase):
+    def test_the_ground_fills_the_square_and_the_ring_is_gone(self):
+        drawing = icons.full_bleed(PACKAGED)
+
+        self.assertIn(icons.FULL_BLEED_GROUND, drawing)
+        self.assertNotIn(icons.ROUNDED_GROUND, drawing)
+        self.assertNotIn(icons.BAKED_RING, drawing)
+        self.assertNotIn("rx=", drawing)
+
+    def test_the_mark_is_untouched(self):
+        mark = PACKAGED[PACKAGED.index("<g transform"):]
+
+        self.assertIn(mark, icons.full_bleed(PACKAGED))
+
+    def test_every_accent_is_drawn_full_bleed(self):
+        drawing = icons.drawn(PACKAGED, 0x112233, 0.5)
+
+        self.assertNotIn("rx=", drawing)
+        self.assertNotIn(icons.BAKED_RING, drawing)
+
+    def test_a_drawing_whose_ground_moved_is_refused_by_name(self):
+        with self.assertRaisesRegex(icons.Unreadable, "0 times"):
+            icons.full_bleed(PACKAGED.replace('rx="28"', 'rx="30"'))
+
+    def test_a_drawing_whose_ring_moved_is_refused_by_name(self):
+        with self.assertRaisesRegex(icons.Unreadable, "0 times"):
+            icons.full_bleed(PACKAGED.replace(icons.BAKED_RING, ""))
+
+
 class Declarations(unittest.TestCase):
     def test_there_are_twenty_one_icons(self):
         self.assertEqual(len(icons.icon_names(icons.ACCENTS)), 21)
