@@ -54,7 +54,7 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   track's last block neither keeps nor replaces it, so the track the decoder selected is the one
   asked); declared length is counted from each packet's TOC byte (`Segment::opus_music`, for the
   counted track only), trusted only if nothing escaped the count. **Seeks start early** (`PRE_ROLL`, 19 200 frames: CELT
-  predicts band energy from the previous frame) and discard those frames. **AAC seeks start
+  predicts band energy from the previous frame) and discard those frames, never earlier than the track's own `start_ts` (an Ogg Opus file whose first granule is a few frames past zero, as ffmpeg writes one given a start offset, refuses a seek before its first packet as `OutOfRange`, which made Previous on such a song fail). **AAC seeks start
   early too** (`AAC_PRE_ROLL`, four packets: the MDCT overlaps the previous packet, so a landing
   with no lead-in plays a fade-in), and every jump of a spliced M4A is a seek. The roll is taken in
   timestamps (`Timeline::rolled_back`), so it may reach into the priming but never before the

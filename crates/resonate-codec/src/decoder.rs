@@ -1477,9 +1477,16 @@ impl Decoder {
             Held::Coded(coded) => coded,
         };
         let lead_in = pre_roll(info.codec);
-        let asked = timeline
-            .timestamp(to)
-            .map(|ts| timeline.rolled_back(ts, lead_in));
+        let starts_at = coded
+            .reader
+            .tracks()
+            .iter()
+            .find(|track| track.id == coded.track.0)
+            .map(|track| track.start_ts);
+        let asked = timeline.timestamp(to).map(|ts| {
+            let rolled = timeline.rolled_back(ts, lead_in);
+            starts_at.map_or(rolled, |start| rolled.max(start))
+        });
         let to = match asked {
             Some(_) => to,
             None => to.saturating_sub(lead_in),

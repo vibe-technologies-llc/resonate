@@ -3258,6 +3258,47 @@ fn a_stereo_opus_stream_of_mono_packets_decodes_to_both_channels_at_libopus_s_le
 }
 
 #[test]
+fn an_opus_stream_starting_a_little_after_zero_seeks_back_to_its_start() {
+    let tree = Tree::new();
+    let Some((path, _)) = shaped(
+        &tree,
+        BROADCAST,
+        "offset.opus",
+        &[
+            "-c:a",
+            "libopus",
+            "-b:a",
+            "128k",
+            "-output_ts_offset",
+            "0.0005",
+        ],
+    ) else {
+        return;
+    };
+
+    let (mut decoder, info) = Decoder::open(&Sources::local(), &MediaLocation::local(&path))
+        .expect("a well-formed file opens");
+    let duration = info.duration.expect("an Opus file names its length");
+    let mut block = AudioBuffer::empty(info.spec);
+    assert_eq!(
+        decoder.next_block(&mut block).expect("a first block"),
+        DecodeStatus::Decoded
+    );
+
+    for target in [Frames(duration.get() / 2), Frames::ZERO, Frames(100)] {
+        let landed = decoder.seek(target).expect("a seek inside the file");
+
+        assert_eq!(landed, target);
+        assert_eq!(
+            decoder
+                .next_block(&mut block)
+                .expect("a block after the seek"),
+            DecodeStatus::Decoded
+        );
+    }
+}
+
+#[test]
 fn a_seek_into_opus_hears_what_decoding_from_the_start_hears_there() {
     let tree = Tree::new();
     let Some((path, _)) = shaped(
