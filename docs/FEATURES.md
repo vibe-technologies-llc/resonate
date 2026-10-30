@@ -60,13 +60,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   lyric text (LRCLIB's text search finds none)
 
 ## Identification
-- [M · 0.3.0] faac at `-q 100` misses 8 of 36 loud masters (28 found) and libopus 5 to 8 of 36
-  (at 64, 128 and 192 kbps and decoded to 44.1 kHz), the same masters: faac's noise substitution
-  fills bands with noise that takes most of the weight off the coded lines (`--pns 0` finds the
-  three tried), and leaving dense bands whose norm sits on the lattice out found one more for twice
-  the search; in Opus one miss reads 0.14 at its own frame offset against 0.62 for a found master,
-  the likely cause the frames its pitch post-filter touched, which undoing wants each frame's
-  period, gain and taps searched for
+- [S · 0.3.0] libopus misses one quiet choral master of 36 at 64, 128 and 192 kbps even with its
+  pitch post-filter undone: 2 000 bands stand over the 16-bit rounding where a loud master has
+  16 000, so its lattice (0.05 to 0.14) never reaches the significance of 12; reading quieter bands
+  wants a weight that does not lift the genuine sources (4.1 at most now)
 - [M · blocked: encoders] The quantiser steps are weighed only on the encoders this machine has
   (ffmpeg's AAC and MP2, faac, LAME, libvorbis, ffmpeg's Vorbis, twolame and libopus; fdk AAC on an
   earlier one): no Apple or FhG AAC, no FhG or other MP3 encoder and no aoTuV Vorbis; fdk AAC at 320

@@ -11,6 +11,7 @@ mod kept;
 mod levels;
 mod loudness;
 mod peaks;
+mod pitch;
 mod print;
 mod reduce;
 mod signature;
