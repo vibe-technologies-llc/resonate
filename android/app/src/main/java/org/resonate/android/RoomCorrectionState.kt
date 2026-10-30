@@ -12,6 +12,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.RoomCorrection
+import org.resonate.android.nativecore.roomCorrectionChunkBytes
 import org.resonate.android.nativecore.speakerLimits
 
 private const val ON_KEY = "room-correction"
@@ -86,8 +87,7 @@ class RoomCorrectionState(
             try {
                 val native = library.native()
                 val name = resolver.displayNameOf(uri)
-                val bytes = withContext(Dispatchers.IO) { read(uri) }
-                val kept = native.keepRoomCorrection(bytes, roomExtension(name))
+                val kept = withContext(Dispatchers.IO) { stage(native, uri, roomExtension(name)) }
                 val stem = roomStem(name)
                 settings.edit().putString(NAME_KEY, stem).apply()
                 view.value = view.value.copy(kept = kept, name = stem)
@@ -189,6 +189,24 @@ class RoomCorrectionState(
     private fun remember(on: Boolean) {
         settings.edit().putBoolean(ON_KEY, on).apply()
         view.value = view.value.copy(on = on)
+    }
+
+    private fun stage(native: MobilePlayer, uri: Uri, extension: String): RoomCorrection {
+        native.beginRoomCorrection(extension)
+        try {
+            resolver.openInputStream(uri)?.use { input ->
+                val chunk = ByteArray(roomCorrectionChunkBytes().toInt())
+                while (true) {
+                    val count = input.read(chunk)
+                    if (count < 0) break
+                    native.stageRoomCorrection(chunk.copyOf(count))
+                }
+            }
+            return native.finishRoomCorrection()
+        } catch (failure: Exception) {
+            native.abandonRoomCorrection()
+            throw failure
+        }
     }
 
     private fun read(uri: Uri): ByteArray =

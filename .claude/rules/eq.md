@@ -604,7 +604,25 @@ tested.
   `IMPULSE_BYTES_AT_MOST` (64 MiB, `ImpulseTooLarge`), stages the bytes as
   `room-correction-candidate.*` in the player's folder, reads them back through `read_impulse`
   over the local provider, and only a response that reads replaces any `room-correction.*`; one
-  that holds no response (`NoImpulse`) is dropped and the kept response stands; `apply_room_correction(on)` sends `SetConvolution` with
+  that holds no response (`NoImpulse`) is dropped and the kept response stands. **A single file
+  crosses the boundary in chunks, never whole** (`begin_room_correction(extension)`,
+  `stage_room_correction(chunk)`, `finish_room_correction()`, `abandon_room_correction()`;
+  `room_correction_chunk_bytes()` is the 1 MiB chunk the front ends read by, so neither keeps a
+  number of its own): the chunks append to `room-correction-candidate.*`, held under
+  `writer::Held` from `begin` to `finish` or `abandon` (a candidate has no listener's name in it,
+  so `named_within` has nothing to cut), a second `begin` replacing an open one, and a staging
+  that passes its kind's limit (`SOFA_STREAMED_BYTES_AT_MOST`, 8 GiB, for a `.sofa`;
+  `IMPULSE_BYTES_AT_MOST` for audio) is deleted with `ImpulseTooLarge`, as is one `finish` cannot
+  read (the kept response stands). A chunk with nothing begun is `ImpulseNotStaged`. The
+  reader then takes an HDF5 set by ranges as on the desktop, so a phone holds a large set as the
+  file alone, never as a `ByteArray` or `Data`
+  (`a_set_past_the_whole_read_limit_is_staged_in_chunks_and_kept`,
+  `a_staged_file_is_held_until_it_is_finished_or_abandoned`,
+  `a_staging_past_what_its_kind_allows_is_dropped_and_the_kept_one_stands`,
+  `a_staged_file_that_does_not_read_is_dropped_and_the_kept_one_stands`,
+  `a_new_staging_replaces_one_left_open`). A netCDF-3 set is still read whole and refused past
+  128 MiB by the reader though it stages; `keep_room_correction` and the binaural pair's two files
+  keep the 64 MiB whole-bytes call. `apply_room_correction(on)` sends `SetConvolution` with
   the kept response or none, answering its channels, rate and length; `kept_room_correction` answers the same description without sending anything, so a page shows the response with correction off; `forget_room_correction`
   clears and deletes it. iOS keeps `room-correction` (on) and `room-correction-name` in the
   `playback` suite and applies the response at start, a missing file turning correction off with a notice (`RoomCorrectionState`, the equaliser page's
@@ -835,8 +853,8 @@ The stereo image, apart from the transducer: both are stereo-only, off by defaul
   either moves (a set that will not read at the new place leaves the pair and the correction
   standing). `speaker_limits()` hands the front ends the bounds and the standard angle
   (`SpeakerLimits`, the yaw's included), so neither phone keeps a number of its own. A phone still
-  refuses a set past `IMPULSE_BYTES_AT_MOST` (64 MiB): that is the bytes crossing the boundary,
-  not the reader (`FEATURES.md`). **Both phones' Room correction
+  stages a set in chunks, so a large HDF5 set keeps as it does on the desktop; only the binaural
+  pair's two files cross whole, up to `IMPULSE_BYTES_AT_MOST` (64 MiB). **Both phones' Room correction
   sections offer the three**: Android a `SpeakerSetting` each (a `ListItem` with the reading and
   `IconButton`s of `Icons.Rounded.Remove` and `Add` stepping a degree, then `FilterChip`s of the
   desktop's presets; the head's turn at -45, -20, 0, 20, 45), kept as `speaker-angle`,

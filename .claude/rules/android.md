@@ -552,14 +552,15 @@ runs (`MeasurementView.sounding`, `MeasurementAimTest`).
 
 **Room correction is the equaliser page's last section** (`RoomCorrectionSection`, `RoomCorrectionState.kt`):
 *Choose a response…* opens the system document picker for audio (`ACTION_OPEN_DOCUMENT`), the chosen
-file is read up to 64 MiB and one byte (the boundary refuses the byte) and kept through
-`keep_room_correction`, then switched on; the switch, the response's channels, rate and length and
+file is read in `room_correction_chunk_bytes()` chunks off the main thread and staged through
+`begin_room_correction`, `stage_room_correction` and `finish_room_correction` (a failure calls
+`abandon_room_correction`), never held whole, then switched on; the switch, the response's channels, rate and length and
 *Forget the response* (confirmed) follow, as `eq.md`'s *Room correction* says. `room-correction` (on)
 and `room-correction-name` live in the `playback` preferences, as iOS's suite; the kept response is
 applied at start (`initialize`), a missing file turning correction off with a notice. *Choose a
 pair* opens `ActivityResultContracts.OpenDocument` of audio for the left speaker's file, kept in
 `RoomView.left` (`RoomHalf`: its URI and display name) while the section shows it with *Choose the
-right speaker's response* and *Cancel*; the right file chosen, both are read as the single one is and
+right speaker's response* and *Cancel*; the right file chosen, both are read whole, up to 64 MiB and one byte, and
 kept through `keep_binaural_room_correction` (`RoomCorrectionState.chooseRight`, `eq.md`'s *Crossfeed
 and binaural responses*; `RoomPairNamesTest`). Choosing,
 applying, forgetting and restoring run one at a time under one mutex. **The section ends in the

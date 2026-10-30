@@ -95,12 +95,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   the vault: `jxl-encoder` 0.3.4, the latest, refuses the first and rebuilds the second one byte long
 
 ## Later: Equaliser and DSP extras
-- [S] A phone refuses a SOFA set past 64 MiB (`IMPULSE_BYTES_AT_MOST`) though the desktop reads an
-  HDF5 one of up to 8 GiB by the ranges it needs: the limit is the boundary's, a document read whole
-  into a Kotlin `ByteArray` or Swift `Data`, copied across the boundary and staged as a file, and
-  lifting it needs a chunked staging call and a document read in chunks in both pickers; a netCDF-3
-  classic file is still read whole (up to 128 MiB) on every target, and a head's pitch and roll
-  (`ListenerView` past its heading) and a `ListenerPosition` in units other than metres are not read
+- [S] A netCDF-3 classic SOFA file is still read whole (up to 128 MiB) on every target, and a
+  head's pitch and roll (`ListenerView` past its heading) and a `ListenerPosition` in units other
+  than metres are not read
 - [M] *Fit the preamp*'s solved bound prices every node under the whole signal's at its steady
   gain, so broadband music under a curve moving many bands still bounds one to three and a half
   decibels over its decode; weighing each node by its band's transient gain (the L1 of the near
