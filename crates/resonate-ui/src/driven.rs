@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     env, fs,
     num::NonZeroUsize,
     path::{Path, PathBuf},
@@ -434,6 +435,7 @@ impl Driven {
                 notify: Arc::new(AtomicBool::new(false)),
                 by_sound: Arc::new(AtomicBool::new(false)),
                 lyrics_by_the_locale: Arc::new(AtomicBool::new(false)),
+                flac_above_96k_for: BTreeSet::new(),
                 convolution: None,
                 speaker_angle: SpeakerAngle::STANDARD,
                 speaker_elevation: SpeakerElevation::LEVEL,

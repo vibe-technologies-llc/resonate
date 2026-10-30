@@ -72,12 +72,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   such file type); `.oga` alone could be mapped to Vorbis by hand
 
 ## Providers and network
-- [M · 0.2.0] The settings pane has no row for `enrich-on-metered` or `stall-downloads-on-metered`:
-  add a *Metered connections* group to the Online category (two `switch_row`s, `Setting` and
-  `SettingKey` variants, `resonate_ui::Online` fields filled in `main.rs`, `Group` entries in
-  `find.rs` and `defaults.rs`), apply both live through the `metered.rs` gates'
-  `shut_while_metered` from `SettingChange`, and show a waiting line while
-  `PollProgress::is_waiting_on_the_meter` holds
 
 ## Device sync
 
@@ -160,14 +154,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] A renderer is reached only through SSDP's multicast search: none can be added by the address
   of its description (`Located` handed to the `Network` and held whatever the searches miss), which
   an iPhone without the multicast entitlement and a network that drops multicast would need
-- [S] A UPnP renderer that states no rate is sent FLAC above 96 kHz only where the listener names
-  it in `flac-above-96k-for` (`upnp.md`): the settings pane has no row for it, and nothing learns
-  which renderers decode 176.4 and 192 kHz FLAC, since the protocol info does not say and a
-  renderer that cannot play a stream gives no answer a try could read, so the default stays 96 kHz
-  (and the fake renderer's tests are all the proof the vouched rates have, no streamer having
-  confirmed any); one taking WAVE is sent uncompressed PCM, about 9 Mbit/s at 24-bit 192 kHz.
-  Channels beyond stereo are offered only where the protocol info states `channels=N` (a renderer
-  saying nothing is folded down), and handing the untouched file over does not fit the sink seam
+- [S] A renderer named in the settings pane's *High-rate FLAC to renderers* group is sent FLAC above
+  96 kHz from the next start, not at once: `Network::vouch` is read when a renderer is described and
+  does not re-describe one already found, so the window cannot apply a switch live (`upnp.md`)
 - [S] A Google Cast receiver is offered stereo FLAC up to 96 kHz alone, the Default Media Receiver's
   published support: Cast asks no device what it decodes, so a TV or soundbar with Cast built in
   has surround folded down to stereo and anything above 96 kHz resampled (`cast.md`)

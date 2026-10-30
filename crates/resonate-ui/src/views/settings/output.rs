@@ -36,6 +36,17 @@ const RENDERERS_NOTE: &str = "Looking asks the local network every minute for UP
                               each one beside the devices above. Off, nothing is sent to the \
                               network.";
 
+const FLAC_RENDERERS_NOTE: &str = "A renderer switched on here is sent FLAC at 176.4 and 192 kHz as \
+                                   well, which one that states no rates is otherwise not. Switch \
+                                   it on only if it decodes them: a renderer that cannot play a \
+                                   stream goes silent rather than saying so. Read when the \
+                                   renderer is next found, so from the next start.";
+
+const NO_RENDERERS_TO_NAME: &str = "No UPnP renderer is listed. Look for renderers on the \
+                                    network above, and each one found can be named here.";
+
+const NOT_ON_THE_NETWORK: &str = "Not on the network now";
+
 const AWAY: &str = "The device named in the settings file is not in the graph, so the system \
                     default is playing until it appears.";
 
@@ -493,6 +504,93 @@ impl RootView {
                 ))
                 .child(note(RENDERERS_NOTE))
             })
+    }
+
+    pub(super) fn flac_renderers_group(&mut self, cx: &mut Context<Self>) -> Div {
+        let named = cx.global::<ResonateApp>().flac_above_96k_for.clone();
+        let listed: Vec<(NodeName, String)> = self
+            .player
+            .read(cx)
+            .sinks()
+            .iter()
+            .filter(|sink| sink.name.names_a_upnp_renderer())
+            .map(|sink| (sink.name.clone(), sink.description.clone()))
+            .collect();
+        let away: Vec<NodeName> = named
+            .iter()
+            .filter(|name| listed.iter().all(|(listed, _)| listed != *name))
+            .cloned()
+            .collect();
+
+        let mut body = kit::section_body();
+        for (name, description) in listed {
+            let vouched = named.contains(&name);
+            body = body.child(self.vouching_row(name, description, vouched, cx));
+        }
+        for name in away {
+            body = body.child(self.vouching_row(name.clone(), name.as_str().to_owned(), true, cx));
+        }
+        body.when(named.is_empty() && !self.a_renderer_is_listed(cx), |body| {
+            body.child(note(NO_RENDERERS_TO_NAME))
+        })
+        .child(note(FLAC_RENDERERS_NOTE))
+    }
+
+    fn a_renderer_is_listed(&self, cx: &Context<Self>) -> bool {
+        self.player
+            .read(cx)
+            .sinks()
+            .iter()
+            .any(|sink| sink.name.names_a_upnp_renderer())
+    }
+
+    fn vouching_row(
+        &self,
+        name: NodeName,
+        description: String,
+        vouched: bool,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let id = format!("flac-above-96k-{}", name.as_str());
+        let under = if self.a_renderer_is_listed_as(&name, cx) {
+            name.as_str().to_owned()
+        } else {
+            NOT_ON_THE_NETWORK.to_owned()
+        };
+
+        self.in_the_ring_at(
+            id.clone(),
+            switch_row(description, under, vouched, id),
+            move |this, _, cx| this.vouch_for(name.clone(), !vouched, cx),
+            cx,
+        )
+    }
+
+    fn a_renderer_is_listed_as(&self, name: &NodeName, cx: &Context<Self>) -> bool {
+        self.player
+            .read(cx)
+            .sinks()
+            .iter()
+            .any(|sink| &sink.name == name)
+    }
+
+    pub(crate) fn vouch_for(&mut self, renderer: NodeName, vouched: bool, cx: &mut Context<Self>) {
+        let mut named = cx.global::<ResonateApp>().flac_above_96k_for.clone();
+        if vouched {
+            named.insert(renderer);
+        } else {
+            named.remove(&renderer);
+        }
+        cx.update_global::<ResonateApp, _>(|global, _| {
+            global.flac_above_96k_for.clone_from(&named);
+        });
+        self.store(&Setting::FlacAbove96kFor(named), cx);
+        cx.notify();
+    }
+
+    pub(crate) fn vouch_for_none(&mut self, cx: &mut Context<Self>) {
+        cx.update_global::<ResonateApp, _>(|global, _| global.flac_above_96k_for.clear());
+        cx.notify();
     }
 
     pub(super) fn look_for_renderers(&mut self, on: bool, cx: &mut Context<Self>) {

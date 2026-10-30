@@ -83,6 +83,7 @@ impl Category {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Group {
     Device,
+    FlacRenderers,
     DeviceVolume,
     SampleRate,
     GraphRate,
@@ -118,6 +119,7 @@ pub(crate) enum Group {
     PreviousButton,
     Lookups,
     AfterScan,
+    Metered,
     Studies,
     Lyrics,
     Contact,
@@ -149,7 +151,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 64] = [
+    pub(crate) const ALL: [Self; 66] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -157,6 +159,7 @@ impl Group {
         Self::Buffer,
         Self::Dop,
         Self::Bluetooth,
+        Self::FlacRenderers,
         Self::Resampler,
         Self::Dither,
         Self::NoiseShaping,
@@ -186,6 +189,7 @@ impl Group {
         Self::PreviousButton,
         Self::Lookups,
         Self::AfterScan,
+        Self::Metered,
         Self::Studies,
         Self::Lyrics,
         Self::Contact,
@@ -219,6 +223,7 @@ impl Group {
     pub(crate) const fn category(self) -> Category {
         match self {
             Self::Device
+            | Self::FlacRenderers
             | Self::DeviceVolume
             | Self::SampleRate
             | Self::GraphRate
@@ -251,7 +256,9 @@ impl Group {
             | Self::History
             | Self::Repeating
             | Self::PreviousButton => Category::Library,
-            Self::Lookups | Self::AfterScan | Self::Lyrics | Self::Contact => Category::Online,
+            Self::Lookups | Self::AfterScan | Self::Metered | Self::Lyrics | Self::Contact => {
+                Category::Online
+            }
             Self::Studies | Self::Recognition | Self::Listening => Category::Recognition,
             Self::Submitting | Self::Lastfm => Category::Scrobbling,
             Self::Syncing
@@ -281,6 +288,7 @@ impl Group {
     pub(crate) const fn title(self) -> &'static str {
         match self {
             Self::Device => "Playback device",
+            Self::FlacRenderers => "High-rate FLAC to renderers",
             Self::DeviceVolume => "Hardware volume",
             Self::SampleRate => "Sample rate",
             Self::GraphRate => "Graph rate",
@@ -316,6 +324,7 @@ impl Group {
             Self::PreviousButton => "The previous button",
             Self::Lookups => "Reference lookups",
             Self::AfterScan => "After a scan",
+            Self::Metered => "Metered connections",
             Self::Studies => "Studying tracks",
             Self::Lyrics => "Fetching lyrics",
             Self::Contact => "Contact",
@@ -350,6 +359,7 @@ impl Group {
     pub(crate) const fn hint(self) -> &'static str {
         match self {
             Self::Device => DEVICE_HINT,
+            Self::FlacRenderers => FLAC_RENDERERS_HINT,
             Self::DeviceVolume => DEVICE_VOLUME_HINT,
             Self::SampleRate => SAMPLE_RATE_HINT,
             Self::GraphRate => GRAPH_RATE_HINT,
@@ -389,6 +399,7 @@ impl Group {
             Self::PreviousButton => PREVIOUS_HINT,
             Self::Lookups => ONLINE_HINT,
             Self::AfterScan => AFTER_SCAN_HINT,
+            Self::Metered => METERED_HINT,
             Self::Studies => STUDIES_HINT,
             Self::Lyrics => LYRICS_HINT,
             Self::Contact => CONTACT_HINT,
@@ -422,6 +433,10 @@ impl Group {
 
     pub(crate) const fn also_called(self) -> &'static str {
         match self {
+            Self::FlacRenderers => {
+                "upnp dlna renderer streamer network flac 96 176 192 khz high resolution rate \
+                 vouch decode lossless wave uncompressed"
+            }
             Self::Device => {
                 "sink output card dac headphones speakers pipewire profile pro audio upnp dlna \
                  renderer network streamer chromecast google cast receiver"
@@ -529,6 +544,10 @@ impl Group {
                 "musicbrainz network internet covers lyrics lrclib better lyrics betterlyrics offline"
             }
             Self::AfterScan => "enrich automatic handover",
+            Self::Metered => {
+                "metered mobile data hotspot tethering bandwidth cap networkmanager download \
+                 stall lookups enrich wait pause"
+            }
             Self::Studies => {
                 "analyse analysis decode fake lossless transcode verdict loudness true peak \
                  fingerprint cpu cores shazam sound identify unnamed untagged"
@@ -613,6 +632,7 @@ impl Group {
     pub(crate) const fn keys(self) -> &'static [SettingKey] {
         match self {
             Self::Device => &[SettingKey::Sink, SettingKey::Renderers],
+            Self::FlacRenderers => &[SettingKey::FlacAbove96kFor],
             Self::DeviceVolume => &[SettingKey::DeviceVolume],
             Self::SampleRate => &[SettingKey::BitPerfect],
             Self::GraphRate => &[SettingKey::ForceGraphRate],
@@ -672,6 +692,10 @@ impl Group {
             Self::PreviousButton => &[SettingKey::PreviousRestarts],
             Self::Lookups => &[SettingKey::Online],
             Self::AfterScan => &[SettingKey::EnrichAfterScan],
+            Self::Metered => &[
+                SettingKey::EnrichOnMetered,
+                SettingKey::StallDownloadsOnMetered,
+            ],
             Self::Studies => &[SettingKey::Study, SettingKey::IdentifyBySound],
             Self::Lyrics => &[SettingKey::FetchLyrics, SettingKey::LyricsByTheLocale],
             Self::Contact => &[SettingKey::Contact],
@@ -1082,6 +1106,22 @@ pub(crate) const AFTER_SCAN_HINT: &str = "Whether a scan that finishes hands ove
                                           pressed here or in the Library card, or when resonate \
                                           enrich runs.";
 
+pub(crate) const METERED_HINT: &str = "What a connection NetworkManager reports as metered, a \
+                                       phone's hotspot or a capped plan, may spend. Lookups to \
+                                       the reference are skipped while it is metered unless \
+                                       allowed; a provider's download goes on unless held, and \
+                                       waits for an unmetered connection when it is. A song \
+                                       played in place is neither. A connection that cannot be \
+                                       told is not metered.";
+
+pub(crate) const FLAC_RENDERERS_HINT: &str = "A UPnP renderer that does not state the rates it \
+                                              decodes is sent FLAC up to 96 kHz, and what is above \
+                                              is resampled down to it. A renderer named here is \
+                                              sent 176.4 and 192 kHz FLAC as they are. Nothing \
+                                              can ask a renderer what it decodes, so only you can \
+                                              say; the name is read when the renderer is next \
+                                              found, from the next start.";
+
 pub(crate) const STUDIES_HINT: &str = "Whether a lookup also decodes every track once, on half \
                                        the machine's cores, to judge whether its lossless claim \
                                        holds, measure its loudness and true peak and take its \
@@ -1260,6 +1300,20 @@ mod tests {
                 .sum::<usize>(),
             Group::ALL.len()
         );
+    }
+
+    #[test]
+    fn the_metered_switches_sit_in_online_and_the_renderers_flac_beside_the_device() {
+        assert_eq!(Group::Metered.category(), Category::Online);
+        assert_eq!(Group::FlacRenderers.category(), Category::Output);
+        assert_eq!(
+            Group::Metered.keys(),
+            &[
+                SettingKey::EnrichOnMetered,
+                SettingKey::StallDownloadsOnMetered
+            ]
+        );
+        assert_eq!(Group::FlacRenderers.keys(), &[SettingKey::FlacAbove96kFor]);
     }
 
     #[test]

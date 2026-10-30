@@ -1645,6 +1645,15 @@ is never named.
   all*/*Clear selection* greyed where they would change nothing. Minimum: seconds field, 0 to 600,
   applied on Enter or leaving (a positive minimum excludes tracks of unknown length); a refused number
   stays in the field and toasts; Escape restores the held value.
+- **Metered connections and the renderers' FLAC are groups of their own.** `Group::Metered` (Online)
+  is two `switch_row`s, `enrich-on-metered` and `stall-downloads-on-metered`, held in
+  `ResonateApp::online` (`Online::{enrich_on_metered, stall_downloads_on_metered}`) and applied live
+  by the binary from the `SettingChange` (`binary.md`); it draws a line while
+  `Library::is_waiting_on_the_meter` (the poll's `PollProgress`) holds, and its mark puts both off.
+  `Group::FlacRenderers` (Output) is a `switch_row` per sink whose `NodeName::names_a_upnp_renderer`
+  holds, then one per name in `ResonateApp::flac_above_96k_for` that no sink answers (so a renderer
+  that has left can still be unnamed); it stores the whole set as `Setting::FlacAbove96kFor`, says it
+  is read from the next start, and its mark empties the set.
 - **The library's folders are one box, and the primary one is chosen in it.** `Group::Folders`
   (*Music folders*, Library category) lists every root as a card: a radio, the folder, a
   `PRIMARY` badge on the chosen one and the forget mark. Pressing a card's radio or name makes that

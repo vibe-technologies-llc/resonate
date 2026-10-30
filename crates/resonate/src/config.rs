@@ -548,7 +548,7 @@ impl Config {
         self.enrich_after_scan.unwrap_or(true)
     }
 
-    #[cfg(any(feature = "online", test))]
+    #[cfg(any(feature = "online", feature = "ui", test))]
     pub fn enriches_on_metered(&self) -> bool {
         self.enrich_on_metered.unwrap_or(false)
     }

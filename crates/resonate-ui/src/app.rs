@@ -1,5 +1,6 @@
 use std::{
     cell::RefCell,
+    collections::BTreeSet,
     num::NonZeroUsize,
     path::PathBuf,
     rc::Rc,
@@ -192,6 +193,7 @@ pub struct ResonateApp {
     pub notify: Arc<AtomicBool>,
     pub by_sound: Arc<AtomicBool>,
     pub lyrics_by_the_locale: Arc<AtomicBool>,
+    pub flac_above_96k_for: BTreeSet<NodeName>,
     pub convolution: Option<PathBuf>,
     pub speaker_angle: SpeakerAngle,
     pub speaker_elevation: SpeakerElevation,
@@ -1070,6 +1072,7 @@ pub fn run(
             notify: Arc::clone(&stored.notify),
             by_sound: Arc::clone(&stored.by_sound),
             lyrics_by_the_locale: Arc::clone(&stored.lyrics_by_the_locale),
+            flac_above_96k_for: stored.flac_above_96k_for.clone(),
             convolution: stored.convolution.clone(),
             speaker_angle: stored.speaker_angle,
             speaker_elevation: stored.speaker_elevation,

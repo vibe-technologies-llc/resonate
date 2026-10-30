@@ -5316,6 +5316,12 @@ impl LibraryModel {
             .is_some_and(|progress| progress.is_cancelled())
     }
 
+    pub fn is_waiting_on_the_meter(&self) -> bool {
+        self.work
+            .polling()
+            .is_some_and(|progress| progress.is_waiting_on_the_meter())
+    }
+
     pub fn poll_stats(&self) -> Option<PollStats> {
         self.work.polling().map(|progress| progress.snapshot())
     }

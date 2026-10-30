@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fmt, mem,
     path::{Path, PathBuf},
     sync::{
@@ -173,6 +173,7 @@ pub enum SettingKey {
     BluetoothLead,
     BluetoothAwake,
     Renderers,
+    FlacAbove96kFor,
     Buffer,
     Volume,
     Theme,
@@ -180,6 +181,8 @@ pub enum SettingKey {
     TextSize,
     Online,
     EnrichAfterScan,
+    EnrichOnMetered,
+    StallDownloadsOnMetered,
     Study,
     FetchLyrics,
     LyricsByTheLocale,
@@ -260,7 +263,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 104] = [
+    pub const ALL: [Self; 107] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -281,6 +284,7 @@ impl SettingKey {
         Self::BluetoothLead,
         Self::BluetoothAwake,
         Self::Renderers,
+        Self::FlacAbove96kFor,
         Self::Buffer,
         Self::Volume,
         Self::Theme,
@@ -288,6 +292,8 @@ impl SettingKey {
         Self::TextSize,
         Self::Online,
         Self::EnrichAfterScan,
+        Self::EnrichOnMetered,
+        Self::StallDownloadsOnMetered,
         Self::Study,
         Self::FetchLyrics,
         Self::LyricsByTheLocale,
@@ -396,6 +402,8 @@ pub enum Setting {
     TextSize(TextSize),
     Online(bool),
     EnrichAfterScan(bool),
+    EnrichOnMetered(bool),
+    StallDownloadsOnMetered(bool),
     Study(bool),
     FetchLyrics(bool),
     LyricsByTheLocale(bool),
@@ -424,6 +432,7 @@ pub enum Setting {
     SpeakerAngle(SpeakerAngle),
     SpeakerElevation(SpeakerElevation),
     Renderers(bool),
+    FlacAbove96kFor(BTreeSet<NodeName>),
     HeadYaw(HeadYaw),
     Resume(bool),
     HistoryKept(HistoryKept),
@@ -517,6 +526,8 @@ impl Setting {
             Self::TextSize(_) => SettingKey::TextSize,
             Self::Online(_) => SettingKey::Online,
             Self::EnrichAfterScan(_) => SettingKey::EnrichAfterScan,
+            Self::EnrichOnMetered(_) => SettingKey::EnrichOnMetered,
+            Self::StallDownloadsOnMetered(_) => SettingKey::StallDownloadsOnMetered,
             Self::Study(_) => SettingKey::Study,
             Self::FetchLyrics(_) => SettingKey::FetchLyrics,
             Self::LyricsByTheLocale(_) => SettingKey::LyricsByTheLocale,
@@ -539,6 +550,7 @@ impl Setting {
             Self::SpeakerAngle(_) => SettingKey::SpeakerAngle,
             Self::SpeakerElevation(_) => SettingKey::SpeakerElevation,
             Self::Renderers(_) => SettingKey::Renderers,
+            Self::FlacAbove96kFor(_) => SettingKey::FlacAbove96kFor,
             Self::HeadYaw(_) => SettingKey::HeadYaw,
             Self::Resume(_) => SettingKey::Resume,
             Self::HistoryKept(_) => SettingKey::HistoryKept,
@@ -603,6 +615,8 @@ impl Setting {
 pub struct Online {
     pub enabled: bool,
     pub after_scan: bool,
+    pub enrich_on_metered: bool,
+    pub stall_downloads_on_metered: bool,
     pub studies: bool,
     pub lyrics: bool,
     pub contact: String,
@@ -664,6 +678,8 @@ impl fmt::Debug for Online {
         let Self {
             enabled,
             after_scan,
+            enrich_on_metered,
+            stall_downloads_on_metered,
             studies,
             lyrics,
             contact,
@@ -688,6 +704,8 @@ impl fmt::Debug for Online {
         f.debug_struct("Online")
             .field("enabled", enabled)
             .field("after_scan", after_scan)
+            .field("enrich_on_metered", enrich_on_metered)
+            .field("stall_downloads_on_metered", stall_downloads_on_metered)
             .field("studies", studies)
             .field("lyrics", lyrics)
             .field("contact", &withheld(contact))
@@ -901,6 +919,7 @@ pub struct Stored {
     pub notify: Arc<AtomicBool>,
     pub by_sound: Arc<AtomicBool>,
     pub lyrics_by_the_locale: Arc<AtomicBool>,
+    pub flac_above_96k_for: BTreeSet<NodeName>,
     pub convolution: Option<PathBuf>,
     pub speaker_angle: SpeakerAngle,
     pub speaker_elevation: SpeakerElevation,

@@ -102,7 +102,7 @@ away**: `StillArriving` counts `refused`, the want stays unstamped and due.
   miss; a connection that was cut meanwhile is the reader's to resume (`Ranged`, `RESUMES_AT_MOST`,
   Subsonic, Monochrome, a keyed hifi-api) or an `unkept` the next poll takes again (TIDAL's
   segments are whole). A cancel ends the wait; `PollProgress::is_waiting_on_the_meter` is what a front end
-  reads (the window does not yet). A want not yet claimed is untouched, still `due`; a poll with nothing to claim
+  reads (the settings pane's *Metered connections* group says so through `Library::is_waiting_on_the_meter`). A want not yet claimed is untouched, still `due`; a poll with nothing to claim
   closes as before. **Playing a song in place is not a download**: `PlaysInPlace` never meets the
   gate (`a_queued_download_waits_while_the_connection_is_metered_and_goes_on_when_it_is_not`,
   `an_offer_found_as_the_connection_turned_metered_is_not_opened_until_it_is_not`,

@@ -267,8 +267,11 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
 - `flac-above-96k-for` (empty unless set): array of renderer names (`upnp:` and the UDN, as
   `sinks --renderers` lists them; others and blanks ignored, a non-text entry costs the key alone)
   that are sent FLAC above 96 kHz though their protocol info states no rate
-  (`Config::renderers_vouched_for`, `Network::vouch`; `upnp.md`). Written by hand: the settings pane
-  has no row for it, and a flag would name a device for one run only.
+  (`Config::renderers_vouched_for`, `Network::vouch`; `upnp.md`). The settings pane's *High-rate FLAC to
+  renderers* group (Output) is a switch per UPnP renderer listed and per name already in the key
+  that is not on the network now, written as `Setting::FlacAbove96kFor` (the whole set; an empty
+  one takes the key out of the file); it is read at start, so a change lands from the next start.
+  A flag would name a device for one run only.
 - `speaker-angle`: whole degrees 5 to 90 (`resonate_core::SpeakerAngle`, 30 unless set; held by
   `At::within`, a value outside it costs the key alone): how far to either side of the front the
   speakers stand when `convolution` names a SOFA set (`eq.md`); the start reads the set at it
@@ -336,8 +339,12 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   first time a gate that could be shut is handed out, never for a command that asks nothing), two
   `Gate`s on it (`for_lookups` is shut while metered unless `enrich-on-metered`, handed to the one
   `online::client`; `for_downloads` is shut while metered when `stall-downloads-on-metered`, handed
-  to every `open_library_with`). The file is read once at start (the settings pane has no row for either yet,
-  `docs/FEATURES.md`). Neither key has a flag. `online = false` outranks both, and a build
+  to every `open_library_with`). The settings pane's *Metered connections* group (Online) has a
+  switch for each, written as `Setting::EnrichOnMetered` and `Setting::StallDownloadsOnMetered`
+  and applied live: `settings::File::apply` calls `metered::allow_lookups` and
+  `metered::stall_downloads` (a forgotten key is the default again) on the same gates, which
+  wake what waits on them. The group says while `PollProgress::is_waiting_on_the_meter` holds that
+  downloads wait. Neither key has a flag. `online = false` outranks both, and a build
   without `online` has no lookups to gate (`providers.md`, `online.md`).
 - `enrich-after-scan` off leaves the reference to `enrich`, the Library card's *Look up*. `study` off starts no study pool from a lookup. `fetch-lyrics` off asks LRCLIB
   only as a track plays. `identify-by-sound`: `online::fingerprinters` always puts `ByEar` behind

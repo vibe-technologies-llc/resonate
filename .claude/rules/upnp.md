@@ -46,7 +46,7 @@ dev-dependency, for the end-to-end test.
   rows, the equaliser and the zone handover would silently stop applying. A bit-perfect PCM stream
   reaches a renderer whenever the plan is `BitPerfect`, and where the renderer takes FLAC that PCM is
   encoded on the way out to spare the network (*The stream*), which fits the seam.
-- **A renderer's node name is `upnp:` and its UDN** (`RENDERER_NODES`, `Renderer::node_name`), so a
+- **A renderer's node name is `upnp:` and its UDN** (`RENDERER_NODES`, re-exported from `resonate-audio`; `Renderer::node_name`), so a
   `sink` key or `--sink` names it across runs and replugs as a PipeWire `node.name` does; its
   `SinkInfo` is `is_hardware`, never default, `Plugged::Unsaid`, with `HardwareVolume::Always` where
   it has RenderingControl or OpenHome's `Volume` and the volume read at discovery.
@@ -92,7 +92,11 @@ dev-dependency, for the end-to-end test.
   sink's formats are fixed when it is listed, before any stream; a try-and-fall-back would put
   silence in front of the listener at the first 192 kHz song of every session and need the engine
   to reopen on another format. The setting is the listener stating what the protocol info does not
-  (the same word `rate=` is), visible in the file, and removing the name restores the limit. No
+  (the same word `rate=` is), visible in the file, and removing the name restores the limit; the
+  settings pane's *High-rate FLAC to renderers* group writes it, a switch per renderer, read from
+  the next start since `vouch` does not re-describe one already found (`RENDERER_NODES` and
+  `NodeName::names_a_upnp_renderer` live in `resonate-audio`, so the window tells a renderer's sink
+  without reaching this crate). No
   hardware has confirmed which renderers decode the rate: the proof is a fake renderer's, not a
   streamer's.
 - **Channels are offered where the protocol info states them, never guessed.** A `channels=N`

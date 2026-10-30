@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, fmt, time::Duration};
 
-use resonate_audio::NodeName;
+use resonate_audio::{NodeName, RENDERER_NODES};
 use resonate_core::{StreamSpec, Volume};
 
 use crate::{
@@ -9,8 +9,6 @@ use crate::{
     description::{self, Service},
     soap::{self, Answered, escaped},
 };
-
-pub const RENDERER_NODES: &str = "upnp:";
 
 const INSTANCE: (&str, &str) = ("InstanceID", "0");
 
