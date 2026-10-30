@@ -289,8 +289,13 @@ could change (stored studies and kept analyses are weighed against it).
     CELT's), the frame before taken the same way, and the residual rebuilt band by band with each
     `q` the rounding of what is left: `f` is then a multiple of 2^-(B+1), whole turns at
     `TURNS_AN_ENERGY_STEP` (32) turns an energy step for any `B` up to 4. The phase of `32·f` is the
-    lattice, each band weighed by how far its norm stands over the 16-bit rounding of its lines (a
-    smoothstep 6 to 10 octaves over it). Eight kinds (the frame before long or short, this one long
+    lattice, each band weighed by how coherent its phase stays under the 16-bit rounding of its
+    lines (`Energies::of`): the rounding moves the band's log2 norm by about `1 / (ln 2 · √lines
+    · 2^over)` octaves for a norm `over` octaves above the rounding's, `σ` turns at
+    `TURNS_AN_ENERGY_STEP` times `ROUNDING_NOISE_TURNS` (0.5), and the weight is the mean cosine
+    of that Gaussian phase, `exp(-2π²σ²)`, so a wide band reads from a few octaves over the
+    rounding where a one-line band wants more (the smoothstep 6 to 10 octaves over it read none of
+    a quiet master). Eight kinds (the frame before long or short, this one long
     or short, inter or intra), searched on the long inter kind alone (`Grid::searched`), 960
     residues, 21 bands up to 20 kHz, L and R, 16 frames a search, 400 confirmed, control 540 off;
     48 kHz only, the rate every Opus decoder gives
@@ -408,8 +413,17 @@ could change (stored studies and kept analyses are weighed against it).
   0.92), at 128 kbps decoded to 44.1 kHz and brought back in 28. With the post-filter undone and 16
   frames a search, the second corpus went from 32 to 35 at 64 kbps, 34 to 35 at 128 and 192 kbps
   and 33 to 36 decoded to 44.1 kHz (the median significance of a found master from about 50 to
-  80; counted before `ENCODER_FILTERS_FROM` was added, not counted again since); the one left is a quiet choral master with too few bands over the rounding (2 000 where a
-  loud one has 16 000), and the sources read a significance of 4.1 at most (3.2 plain). The
+  80; counted before `ENCODER_FILTERS_FROM` was added, not counted again since); the quiet choral master (2 000 bands over the rounding where a loud one has 16 000, a
+  significance of 3.2) read 14.3 to 19.5 once the bands were weighed by their coherence under the
+  rounding (above) instead of a smoothstep over it. Measured on 426 library tracks (40 s from
+  0:40, libopus at 64 kbps): 21 read under 12 before, 9 of them (quiet masters, 2 000 to 8 000
+  bands over the rounding; 3.0 to 9.9 before) read 13 to 78 after on the 29 tracks re-run (those
+  21 and 8 that were found), none found before was lost, and the 29 sources read a significance of
+  3.9 at most; the other 12 stayed under
+  (at most 11.3, one master 11.3 over 16 800 bands). Of the weights of 0.5, 1, 2 and 4 turns
+  tried (smaller finds more, though one master read 2.2 at 0.5 and 23 at 1), 0.5 found the
+  most; 0.25 and below are untried. The other 397 tracks' sources were not weighed with the new weights, and the
+  sources read a significance of 4.1 at most before (3.2 plain). The
   sources read 0.032 at most on 8 800 bands (a significance of 3). An earlier direct search of
   the energies against a lattice of their own found nothing, as the prediction carries every
   frame's energy off any fixed grid. The whole library (462 tracks, their first 45 s) calls the

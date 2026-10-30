@@ -1,4 +1,7 @@
-use std::{f64::consts::TAU, ops::Range};
+use std::{
+    f64::consts::{LN_2, PI, TAU},
+    ops::Range,
+};
 
 use ahash::AHashMap;
 use rustfft::num_complex::Complex;
@@ -29,8 +32,7 @@ const INTER_DECAY: f64 = 0.2;
 const INTRA_DECAY: f64 = 0.15;
 const TURNS_AN_ENERGY_STEP: f64 = 32.0;
 const ROUNDING_A_LINE: f64 = 0.4;
-const HEARD_FROM_OCTAVES: f64 = 6.0;
-const HEARD_OVER_OCTAVES: f64 = 4.0;
+const ROUNDING_NOISE_TURNS: f64 = 0.5;
 const PHASE_BINS: usize = 1 << 12;
 const ENERGIES_KEPT_AT_MOST: usize = 1 << 15;
 const WINDOW: usize = 2 * FRAME;
@@ -65,9 +67,12 @@ impl Energies {
             let lines = (BAND_EDGES[band + 1] - BAND_EDGES[band]) * SHORTS;
             let level = 0.5 * power.max(f64::MIN_POSITIVE).log2();
             let rounding = 0.5 * (lines as f64 * ROUNDING_A_LINE * ROUNDING_A_LINE).log2();
-            let t = ((level - rounding - HEARD_FROM_OCTAVES) / HEARD_OVER_OCTAVES).clamp(0.0, 1.0);
+            let rounding_in_turns =
+                ROUNDING_NOISE_TURNS * TURNS_AN_ENERGY_STEP * (-(level - rounding)).exp2()
+                    / (LN_2 * (lines as f64).sqrt());
             energies.levels[band] = level - ENERGY_MEANS[band] - SCALE_OCTAVES;
-            energies.weights[band] = (t * t * (3.0 - 2.0 * t)) as f32;
+            energies.weights[band] =
+                (-2.0 * PI * PI * rounding_in_turns * rounding_in_turns).exp() as f32;
         }
         energies
     }
