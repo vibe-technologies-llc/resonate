@@ -74,6 +74,18 @@ pub struct Carriage {
 }
 
 impl Carriage {
+    pub const fn new(
+        wrapping: Wrapping,
+        rates: Vec<SampleRate>,
+        layouts: Vec<ChannelLayout>,
+    ) -> Self {
+        Self {
+            wrapping,
+            rates,
+            layouts,
+        }
+    }
+
     pub const fn wrapping(&self) -> Wrapping {
         self.wrapping
     }

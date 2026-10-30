@@ -28,7 +28,7 @@ const NOT_ENDED: u64 = u64::MAX;
 
 const NANOS_A_SECOND: u128 = 1_000_000_000;
 
-pub(crate) struct Feed {
+pub struct Feed {
     spec: StreamSpec,
     carriage: Carriage,
     source: Mutex<Option<Box<dyn AudioSource>>>,
@@ -42,7 +42,7 @@ pub(crate) struct Feed {
 }
 
 impl Feed {
-    pub(crate) fn new(
+    pub fn new(
         spec: StreamSpec,
         carriage: Carriage,
         source: Box<dyn AudioSource>,
@@ -62,28 +62,28 @@ impl Feed {
         }
     }
 
-    pub(crate) fn set_active(&self, active: bool) {
+    pub fn set_active(&self, active: bool) {
         self.active.store(active, Ordering::Release);
     }
 
-    pub(crate) fn drain(&self) {
+    pub fn drain(&self) {
         self.draining.store(true, Ordering::Release);
     }
 
-    pub(crate) fn close(&self) {
+    pub fn close(&self) {
         self.closed.store(true, Ordering::Release);
     }
 
-    pub(crate) fn ended_at(&self) -> Option<u64> {
+    pub fn ended_at(&self) -> Option<u64> {
         Some(self.ended_at.load(Ordering::Acquire)).filter(|frames| *frames != NOT_ENDED)
     }
 
-    pub(crate) fn frames_of(&self, heard: Duration) -> u64 {
+    pub fn frames_of(&self, heard: Duration) -> u64 {
         let frames = heard.as_nanos() * u128::from(self.spec.rate.hz()) / NANOS_A_SECOND;
         u64::try_from(frames).unwrap_or(u64::MAX)
     }
 
-    pub(crate) fn heard_through(&self, heard: Duration) {
+    pub fn heard_through(&self, heard: Duration) {
         let served = self.served.load(Ordering::Acquire);
         let ahead = served.saturating_sub(self.frames_of(heard));
         let rate = NonZeroU32::new(self.spec.rate.hz()).unwrap_or(NonZeroU32::MIN);

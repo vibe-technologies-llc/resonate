@@ -26,6 +26,12 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `setPreferredMixerAttributes` taking a format, an exclusive open at the song's rate, nor the bytes
   reaching a DAC unaltered has been heard
 
+- [S · blocked: hardware] No Google Cast receiver has been played to: the Cast stream is proved
+  against a loopback fake alone (`resonate-cast/tests/receiver.rs`), and no Chromecast, Nest
+  speaker or speaker group is on the network here, so whether the Default Media Receiver takes an
+  endless `LIVE` FLAC from the player's address, how `currentTime` runs on it, and the TLS 1.2
+  handshake of an older receiver have not been heard
+
 ## iOS
 - [S · blocked: iPhone] The RemoteIO `CoreAudio` toolbox (the unsafe `AudioComponentInstanceNew`,
   `AudioUnitSetProperty`, `AudioOutputUnitStart` and sibling calls) and `render`'s `extern "C-unwind"`

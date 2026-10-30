@@ -16,14 +16,17 @@ dev-dependency, for the end-to-end test.
 
 ## A renderer is a sink, not a zone kind
 
-- **`Beside` is a `resonate-audio::Backend` that wraps another and adds the renderers to it.** Its
-  surveyor answers the wrapped backend's sinks and then every renderer known (`Network::sinks`); its
-  opener sends a request whose `target` a renderer owns (`Network::owns`: ids from
-  `RENDERER_IDS_FROM`, `0xF000_0000`, above any PipeWire global) to `Network::open` and the rest to
-  the wrapped one; sink changes from both arrive on one channel (a `resonate-upnp-sinks` thread
-  selecting over the two). A survey failing in the wrapped backend fails whole, renderers and all:
-  answering the renderers alone made a lost graph look like a list whose first sink was a renderer,
-  which the engine then chose.
+- **`Beside` is a `resonate-audio::Backend` that wraps another and adds network sinks to it,** each
+  kind a `Neighbours` (`owns`, `sinks`, `subscribe`, `open`, `turn_volume`, `turn_mute`):
+  UPnP's `Network` and Cast's `Casting` (`cast.md`), composed as
+  `Beside::over(inner, network).and(casting)`. Its surveyor answers the wrapped backend's sinks
+  and then every neighbour's; its opener and volume send a request whose `target` a neighbour
+  owns (`Network::owns`: ids from `RENDERER_IDS_FROM`, `0xF000_0000`, above any PipeWire global;
+  Cast's sit below, from `0xE000_0000`) to that neighbour and the rest to the wrapped one; sink
+  changes from all arrive on one channel (a `resonate-upnp-sinks` thread selecting over them). A
+  survey failing in the wrapped backend fails whole, renderers and all: answering the renderers
+  alone made a lost graph look like a list whose first sink was a renderer, which the engine then
+  chose.
 - **Why a backend and not a zone driven by URL:** the engine's queue, gapless handover, DSP, ring,
   volume and position all live on the far side of `Backend`, so a renderer as one more sink keeps
   every one of them, and a zone of the window binds one as it binds any device (`Command::SetSink`,
@@ -121,8 +124,9 @@ identifies the listener), reads a declared, chunked or close-delimited body, and
 
 ## The stream
 
-- **The renderer pulls a live FLAC, WAVE or L16 the player serves, paced at the ring's real time.** One
-  `Server` per `Network` (`resonate-upnp-serve`, a `TcpListener` on `Searching::serving_on`, all
+- **The renderer pulls a live FLAC, WAVE or L16 the player serves, paced at the ring's real time.**
+  `Server`, `Feed` and `Carriage::new` are public because a Cast receiver pulls the very same
+  stream (`cast.md`). One `Server` per `Network` (`resonate-upnp-serve`, a `TcpListener` on `Searching::serving_on`, all
   addresses by default) offers each stream under `/resonate/<token>.<flac|wav|pcm>`, the token a
   `RandomState` hash so another machine cannot guess one; the address handed to the renderer is the
   local address the system routes toward it (`address_toward`). `Network::open` refuses a spec the
@@ -243,7 +247,8 @@ spoken, on purpose:
 
 ## In the binary
 
-`rendering::Rendering` holds the one `Network` a run uses. It searches only where the `renderers`
+`rendering::Rendering` holds the one `Network` a run uses, beside the one `Casting` (`cast.md`),
+both looking or resting together. It searches only where the `renderers`
 key is on (off by default: nothing is multicast unasked), `sinks --renderers` asks, or the sink
 wanted names a renderer; the last two wait for the first search. The window always holds one
 (`Rendering::for_the_window`, resting where none of those asks), so the settings pane's device

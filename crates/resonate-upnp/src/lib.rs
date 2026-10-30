@@ -16,11 +16,13 @@ mod wave;
 mod wire;
 
 pub use crate::{
-    beside::Beside,
+    beside::{Beside, Neighbours},
     carriage::{Carriage, Wrapping},
     error::{Action, Asked, Error, FlacOp, Result, SearchOp, ServeOp},
+    feed::Feed,
     located::Located,
     network::{FirstSearch, Network, Searching},
     renderer::{RENDERER_NODES, Renderer, Udn, Vouched},
+    serve::{Server, Token},
     ssdp::{RENDERER_TYPE, SSDP},
 };

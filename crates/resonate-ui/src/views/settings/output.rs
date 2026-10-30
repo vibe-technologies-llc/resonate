@@ -31,8 +31,10 @@ const DEVICE_NOTE: &str = "A device chosen here is played through whatever the d
                            desktop's own choice.";
 
 const RENDERERS_NOTE: &str = "Looking asks the local network every minute for UPnP and DLNA \
-                              renderers (a streamer, a networked amplifier) and lists each one \
-                              beside the devices above. Off, nothing is sent to the network.";
+                              renderers (a streamer, a networked amplifier) and browses it for \
+                              Google Cast receivers (a Chromecast, a smart speaker), and lists \
+                              each one beside the devices above. Off, nothing is sent to the \
+                              network.";
 
 const AWAY: &str = "The device named in the settings file is not in the graph, so the system \
                     default is playing until it appears.";

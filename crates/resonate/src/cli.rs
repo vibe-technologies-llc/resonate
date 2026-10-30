@@ -1045,8 +1045,9 @@ pub enum Sub {
     Sinks {
         #[arg(
             long,
-            help = "Search the local network for UPnP media renderers too and list them beside \
-                    the sound server's sinks, whatever the renderers key says"
+            help = "Search the local network for UPnP media renderers and Google Cast receivers \
+                    too and list them beside the sound server's sinks, whatever the renderers key \
+                    says"
         )]
         renderers: bool,
     },

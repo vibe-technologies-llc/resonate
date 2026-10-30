@@ -16,7 +16,7 @@ use resonate_audio::{
 use resonate_core::{Gain, Volume};
 
 use crate::{
-    Error, Located, Renderer, Result, ServeOp, Vouched, carriage,
+    Error, Located, Neighbours, Renderer, Result, ServeOp, Vouched, carriage,
     serve::Server,
     ssdp,
     stream::{self, Holders},
@@ -225,6 +225,36 @@ impl Network {
             .get(&sink)
             .map(|held| Arc::clone(&held.renderer))
             .ok_or(Error::NoSuchRenderer(sink))
+    }
+}
+
+impl Neighbours for Network {
+    fn owns(&self, sink: SinkId) -> bool {
+        Self::owns(sink)
+    }
+
+    fn sinks(&self) -> Vec<SinkInfo> {
+        Self::sinks(self)
+    }
+
+    fn subscribe(&self) -> Receiver<SinkChange> {
+        Self::subscribe(self)
+    }
+
+    fn open(
+        &self,
+        request: &StreamRequest,
+        source: Box<dyn AudioSource>,
+    ) -> SinkResult<SinkStream> {
+        Self::open(self, request, source)
+    }
+
+    fn turn_volume(&self, sink: SinkId, gain: Gain) -> SinkResult<()> {
+        Ok(Self::turn_volume(self, sink, gain)?)
+    }
+
+    fn turn_mute(&self, sink: SinkId, muted: bool) -> SinkResult<()> {
+        Ok(Self::turn_mute(self, sink, muted)?)
     }
 }
 
