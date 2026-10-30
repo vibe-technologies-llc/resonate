@@ -21,6 +21,14 @@ const LOOKUPS_NOTE: &str = "MusicBrainz for what a release and an artist are, th
                             Archive for a cover, Wikimedia Commons for a portrait, LRCLIB and \
                             Better Lyrics for lyrics. Nothing sent identifies you unless a contact is given below.";
 
+const METERED_NOTE: &str = "A connection NetworkManager reports as metered, a phone's hotspot or \
+                            a capped plan, is the one these switches are about; one it cannot \
+                            tell is taken as not metered. A song played in place is neither \
+                            skipped nor held.";
+
+const WAITING_ON_THE_METER: &str = "The connection is metered: downloads wait for one that is \
+                                    not, and go on by themselves when it changes.";
+
 const NEXT_START_NOTE: &str = "Turned on for the next start; nothing is reached until then.";
 
 const KEY_NOTE: &str = "Used from the next start by the lookup, which names by ear what nothing \
@@ -161,6 +169,53 @@ impl RootView {
             move |this, _, cx| this.set_after_scan(!after_scan, cx),
             cx,
         ))
+    }
+
+    pub(super) fn metered_group(&mut self, cx: &mut Context<Self>) -> Div {
+        let online = &cx.global::<ResonateApp>().online;
+        let enriches = online.enrich_on_metered;
+        let stalls = online.stall_downloads_on_metered;
+        let waiting = self.library.read(cx).is_waiting_on_the_meter();
+
+        kit::section_body()
+            .child(self.in_the_ring(
+                "enrich-on-metered",
+                switch_row(
+                    "Look things up on a metered connection",
+                    "Off, the reference is not asked while the connection is metered",
+                    enriches,
+                    "enrich-on-metered",
+                ),
+                move |this, _, cx| this.set_enrich_on_metered(!enriches, cx),
+                cx,
+            ))
+            .child(self.in_the_ring(
+                "stall-downloads-on-metered",
+                switch_row(
+                    "Hold downloads while the connection is metered",
+                    "Off, a provider's downloads go on whatever the connection",
+                    stalls,
+                    "stall-downloads-on-metered",
+                ),
+                move |this, _, cx| this.set_stall_downloads_on_metered(!stalls, cx),
+                cx,
+            ))
+            .child(note(METERED_NOTE))
+            .when(waiting, |body| body.child(note(WAITING_ON_THE_METER)))
+    }
+
+    pub(crate) fn set_enrich_on_metered(&mut self, enriches: bool, cx: &mut Context<Self>) {
+        cx.update_global::<ResonateApp, _>(|global, _| global.online.enrich_on_metered = enriches);
+        self.store(&Setting::EnrichOnMetered(enriches), cx);
+        cx.notify();
+    }
+
+    pub(crate) fn set_stall_downloads_on_metered(&mut self, stalls: bool, cx: &mut Context<Self>) {
+        cx.update_global::<ResonateApp, _>(|global, _| {
+            global.online.stall_downloads_on_metered = stalls;
+        });
+        self.store(&Setting::StallDownloadsOnMetered(stalls), cx);
+        cx.notify();
     }
 
     pub(super) fn studies_group(&mut self, cx: &mut Context<Self>) -> Div {

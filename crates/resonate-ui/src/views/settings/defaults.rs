@@ -15,6 +15,8 @@ use crate::{Synchronised, Tabs, WindowButtons, views::settings::find::Group};
 
 pub(crate) const ONLINE: bool = true;
 pub(crate) const ENRICH_AFTER_SCAN: bool = true;
+pub(crate) const ENRICH_ON_METERED: bool = false;
+pub(crate) const STALL_DOWNLOADS_ON_METERED: bool = false;
 pub(crate) const STUDY: bool = true;
 pub(crate) const BY_SOUND: bool = false;
 pub(crate) const FETCH_LYRICS: bool = true;
@@ -47,6 +49,9 @@ pub(crate) struct Standing {
     pub(crate) appearance: Appearance,
     pub(crate) online: bool,
     pub(crate) after_scan: bool,
+    pub(crate) enrich_on_metered: bool,
+    pub(crate) stall_downloads_on_metered: bool,
+    pub(crate) flac_renderers_named: bool,
     pub(crate) studies: bool,
     pub(crate) by_sound: bool,
     pub(crate) lyrics: bool,
@@ -94,6 +99,9 @@ impl Standing {
             appearance: Appearance::DEFAULT,
             online: ONLINE,
             after_scan: ENRICH_AFTER_SCAN,
+            enrich_on_metered: ENRICH_ON_METERED,
+            stall_downloads_on_metered: STALL_DOWNLOADS_ON_METERED,
+            flac_renderers_named: false,
             studies: STUDY,
             by_sound: BY_SOUND,
             lyrics: FETCH_LYRICS,
@@ -165,6 +173,11 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::BoundTo => worn.equaliser.binds_anything(),
         Group::Lookups => standing.online != ONLINE,
         Group::AfterScan => standing.after_scan != ENRICH_AFTER_SCAN,
+        Group::Metered => {
+            standing.enrich_on_metered != ENRICH_ON_METERED
+                || standing.stall_downloads_on_metered != STALL_DOWNLOADS_ON_METERED
+        }
+        Group::FlacRenderers => standing.flac_renderers_named,
         Group::Studies => standing.studies != STUDY || standing.by_sound != BY_SOUND,
         Group::Lyrics => {
             standing.lyrics != FETCH_LYRICS || standing.lyrics_by_the_locale != LYRICS_BY_THE_LOCALE
@@ -279,6 +292,8 @@ pub(crate) fn puts_back(group: Group) -> Vec<Command> {
         | Group::Measured
         | Group::Lookups
         | Group::AfterScan
+        | Group::Metered
+        | Group::FlacRenderers
         | Group::Studies
         | Group::Lyrics
         | Group::Contact
@@ -490,6 +505,27 @@ mod tests {
             Group::AfterScan,
             &Standing {
                 after_scan: false,
+                ..built.clone()
+            }
+        ));
+        assert!(differs(
+            Group::Metered,
+            &Standing {
+                enrich_on_metered: true,
+                ..built.clone()
+            }
+        ));
+        assert!(differs(
+            Group::Metered,
+            &Standing {
+                stall_downloads_on_metered: true,
+                ..built.clone()
+            }
+        ));
+        assert!(differs(
+            Group::FlacRenderers,
+            &Standing {
+                flac_renderers_named: true,
                 ..built.clone()
             }
         ));

@@ -31,6 +31,16 @@ pub fn for_lookups(config: &Config) -> Gate {
     LOOKUPS.clone()
 }
 
+#[cfg(all(feature = "ui", feature = "online"))]
+pub fn allow_lookups(allowed: bool) {
+    shut_while_metered(&LOOKUPS, !allowed);
+}
+
+#[cfg(feature = "ui")]
+pub fn stall_downloads(stalls: bool) {
+    shut_while_metered(&DOWNLOADS, stalls);
+}
+
 pub fn for_downloads(config: &Config) -> Gate {
     shut_while_metered(&DOWNLOADS, config.stalls_downloads_on_metered());
     DOWNLOADS.clone()

@@ -407,6 +407,7 @@ impl RootView {
     fn group(&mut self, group: Group, standing: &Standing, cx: &mut Context<Self>) -> Div {
         let body = match group {
             Group::Device => self.device_group(cx),
+            Group::FlacRenderers => self.flac_renderers_group(cx),
             Group::DeviceVolume => self.device_volume_group(cx),
             Group::SampleRate => self.sample_rate_group(cx),
             Group::GraphRate => self.graph_rate_group(cx),
@@ -442,6 +443,7 @@ impl RootView {
             Group::PreviousButton => self.previous_group(cx),
             Group::Lookups => self.lookups_group(cx),
             Group::AfterScan => self.after_scan_group(cx),
+            Group::Metered => self.metered_group(cx),
             Group::Studies => self.studies_group(cx),
             Group::Lyrics => self.lyrics_group(cx),
             Group::Contact => self.contact_group(cx),
@@ -559,6 +561,11 @@ impl RootView {
             Group::BoundTo => self.unbind_every_device(cx),
             Group::Lookups => self.set_online(defaults::ONLINE, cx),
             Group::AfterScan => self.set_after_scan(defaults::ENRICH_AFTER_SCAN, cx),
+            Group::Metered => {
+                self.set_enrich_on_metered(defaults::ENRICH_ON_METERED, cx);
+                self.set_stall_downloads_on_metered(defaults::STALL_DOWNLOADS_ON_METERED, cx);
+            }
+            Group::FlacRenderers => self.vouch_for_none(cx),
             Group::Studies => {
                 self.set_studies(defaults::STUDY, cx);
                 self.set_by_sound(defaults::BY_SOUND, cx);
@@ -644,6 +651,10 @@ impl RootView {
             .renderers
             .as_ref()
             .is_some_and(|renderers| renderers.looking());
+        let enrich_on_metered = cx.global::<ResonateApp>().online.enrich_on_metered;
+        let stall_downloads_on_metered =
+            cx.global::<ResonateApp>().online.stall_downloads_on_metered;
+        let flac_renderers_named = !cx.global::<ResonateApp>().flac_above_96k_for.is_empty();
         let by_sound = cx.global::<ResonateApp>().by_sound.load(Ordering::Acquire);
         let lyrics_by_the_locale = cx
             .global::<ResonateApp>()
@@ -707,6 +718,9 @@ impl RootView {
             appearance: theme::worn(),
             online,
             after_scan,
+            enrich_on_metered,
+            stall_downloads_on_metered,
+            flac_renderers_named,
             studies,
             by_sound,
             lyrics,

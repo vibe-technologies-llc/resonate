@@ -15,7 +15,7 @@ use crate::{
     ConfigKey,
     cli::{DitherArg, FilterPhaseArg, NoiseShapingArg, QualityArg},
     config::{self, Editing},
-    online,
+    metered, online,
 };
 
 const MILLIBELS_PER_DECIBEL: f64 = 100.0;
@@ -107,6 +107,18 @@ impl Settings for File {
                 }
                 SettingChange::Forget(SettingKey::Contact) => online::introduce(None),
                 SettingChange::Store(Setting::Online(on)) => online::reach(*on),
+                #[cfg(feature = "online")]
+                SettingChange::Store(Setting::EnrichOnMetered(allowed)) => {
+                    metered::allow_lookups(*allowed);
+                }
+                #[cfg(feature = "online")]
+                SettingChange::Forget(SettingKey::EnrichOnMetered) => metered::allow_lookups(false),
+                SettingChange::Store(Setting::StallDownloadsOnMetered(stalls)) => {
+                    metered::stall_downloads(*stalls);
+                }
+                SettingChange::Forget(SettingKey::StallDownloadsOnMetered) => {
+                    metered::stall_downloads(false);
+                }
                 _ => {}
             }
         }
@@ -183,6 +195,10 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
         Setting::EnrichAfterScan(after_scan) => {
             (ConfigKey::EnrichAfterScan, Some((*after_scan).into()))
         }
+        Setting::EnrichOnMetered(allowed) => (ConfigKey::EnrichOnMetered, Some((*allowed).into())),
+        Setting::StallDownloadsOnMetered(stalls) => {
+            (ConfigKey::StallDownloadsOnMetered, Some((*stalls).into()))
+        }
         Setting::Study(studies) => (ConfigKey::Study, Some((*studies).into())),
         Setting::FetchLyrics(fetches) => (ConfigKey::FetchLyrics, Some((*fetches).into())),
         Setting::LyricsByTheLocale(chooses) => {
@@ -235,6 +251,17 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
         ),
         Setting::Equaliser(on) => (ConfigKey::Equaliser, Some((*on).into())),
         Setting::Renderers(on) => (ConfigKey::Renderers, Some((*on).into())),
+        Setting::FlacAbove96kFor(renderers) => (
+            ConfigKey::FlacAbove96kFor,
+            (!renderers.is_empty()).then(|| {
+                Value::Array(
+                    renderers
+                        .iter()
+                        .map(|renderer| renderer.as_str())
+                        .collect::<Array>(),
+                )
+            }),
+        ),
         Setting::Resume(keeps) => (ConfigKey::Resume, Some((*keeps).into())),
         Setting::HistoryKept(kept) => (
             ConfigKey::HistoryKept,
@@ -427,6 +454,8 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::TextSize => ConfigKey::TextSize,
         SettingKey::Online => ConfigKey::Online,
         SettingKey::EnrichAfterScan => ConfigKey::EnrichAfterScan,
+        SettingKey::EnrichOnMetered => ConfigKey::EnrichOnMetered,
+        SettingKey::StallDownloadsOnMetered => ConfigKey::StallDownloadsOnMetered,
         SettingKey::Study => ConfigKey::Study,
         SettingKey::FetchLyrics => ConfigKey::FetchLyrics,
         SettingKey::LyricsByTheLocale => ConfigKey::LyricsLanguageFromLocale,
@@ -448,6 +477,7 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::EqualiserMeasurer => ConfigKey::EqualiserMeasurer,
         SettingKey::EqualiserMeasurerFor => ConfigKey::EqualiserMeasurerFor,
         SettingKey::Renderers => ConfigKey::Renderers,
+        SettingKey::FlacAbove96kFor => ConfigKey::FlacAbove96kFor,
         SettingKey::Resume => ConfigKey::Resume,
         SettingKey::HistoryKept => ConfigKey::HistoryKept,
         SettingKey::OrganiseAs => ConfigKey::OrganiseAs,
@@ -545,7 +575,7 @@ const fn replay_gain_text(mode: ReplayGainMode) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use std::{env, ffi::OsStr, fs, os::unix::ffi::OsStrExt as _, process};
+    use std::{collections::BTreeSet, env, ffi::OsStr, fs, os::unix::ffi::OsStrExt as _, process};
 
     use resonate_core::{
         Accent, AppId, HeadYaw, Pictured, Presence, Shown, SpeakerAngle, SpeakerElevation,
@@ -818,6 +848,63 @@ mod tests {
 
         assert_eq!(named, Some(inbox));
         assert_eq!(forgotten, None);
+    }
+
+    #[test]
+    fn the_metered_switches_read_back_and_one_forgotten_is_the_default_again() {
+        let folder = env::temp_dir().join(format!("resonate-settings-metered-{}", process::id()));
+        let path = folder.join("config.toml");
+        let file = File::at(path.clone());
+
+        file.apply(&[
+            SettingChange::Store(Setting::EnrichOnMetered(true)),
+            SettingChange::Store(Setting::StallDownloadsOnMetered(true)),
+        ])
+        .expect("a writable temporary directory");
+        let allowed = config::load(Some(&path)).expect("the file reads back");
+        file.apply(&[
+            SettingChange::Forget(SettingKey::EnrichOnMetered),
+            SettingChange::Forget(SettingKey::StallDownloadsOnMetered),
+        ])
+        .expect("a writable temporary directory");
+        let forgotten = config::load(Some(&path)).expect("the file reads back");
+        let _ = fs::remove_dir_all(folder);
+
+        assert!(allowed.enriches_on_metered());
+        assert!(allowed.stalls_downloads_on_metered());
+        assert_eq!(forgotten.enrich_on_metered, None);
+        assert_eq!(forgotten.stall_downloads_on_metered, None);
+        assert!(!forgotten.enriches_on_metered());
+        assert!(!forgotten.stalls_downloads_on_metered());
+    }
+
+    #[test]
+    fn renderers_the_pane_names_for_flac_read_back_as_vouched_and_none_left_clears_the_key() {
+        let folder = env::temp_dir().join(format!("resonate-settings-flac-{}", process::id()));
+        let path = folder.join("config.toml");
+        let file = File::at(path.clone());
+        let named: BTreeSet<NodeName> = [
+            NodeName::new("upnp:uuid:streamer"),
+            NodeName::new("upnp:uuid:amplifier"),
+        ]
+        .into();
+
+        file.apply(&[SettingChange::Store(Setting::FlacAbove96kFor(
+            named.clone(),
+        ))])
+        .expect("a writable temporary directory");
+        let read = config::load(Some(&path)).expect("the file reads back");
+        file.apply(&[SettingChange::Store(Setting::FlacAbove96kFor(
+            BTreeSet::new(),
+        ))])
+        .expect("a writable temporary directory");
+        let emptied = fs::read_to_string(&path).expect("the file");
+        let cleared = config::load(Some(&path)).expect("the file reads back");
+        let _ = fs::remove_dir_all(folder);
+
+        assert_eq!(read.flac_above_96k_for, named);
+        assert!(cleared.flac_above_96k_for.is_empty());
+        assert!(!emptied.contains("flac-above-96k-for"), "{emptied}");
     }
 
     #[test]

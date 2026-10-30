@@ -10,8 +10,8 @@ pub use crate::{
     error::{Error, Operation, Result},
     moment::{DeviceTime, Moment, Stamp},
     sink::{
-        CardProfile, HardwareVolume, NodeName, Plugged, ProfileIndex, SinkChange, SinkFormats,
-        SinkId, SinkInfo, SinkPort, Words,
+        CardProfile, HardwareVolume, NodeName, Plugged, ProfileIndex, RENDERER_NODES, SinkChange,
+        SinkFormats, SinkId, SinkInfo, SinkPort, Words,
     },
     source::AudioSource,
     stream::{

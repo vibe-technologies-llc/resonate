@@ -15,6 +15,8 @@ mod stream;
 mod wave;
 mod wire;
 
+pub use resonate_audio::RENDERER_NODES;
+
 pub use crate::{
     beside::{Beside, Neighbours},
     carriage::{Carriage, Wrapping},
@@ -22,7 +24,7 @@ pub use crate::{
     feed::Feed,
     located::Located,
     network::{FirstSearch, Network, Searching},
-    renderer::{RENDERER_NODES, Renderer, Udn, Vouched},
+    renderer::{Renderer, Udn, Vouched},
     serve::{Server, Token},
     ssdp::{RENDERER_TYPE, SSDP},
 };

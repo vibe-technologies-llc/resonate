@@ -40,6 +40,8 @@ impl fmt::Display for ProfileIndex {
     }
 }
 
+pub const RENDERER_NODES: &str = "upnp:";
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NodeName(Box<str>);
 
@@ -50,6 +52,10 @@ impl NodeName {
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    pub fn names_a_upnp_renderer(&self) -> bool {
+        self.0.starts_with(RENDERER_NODES)
     }
 }
 
@@ -615,6 +621,13 @@ mod tests {
 
         assert_eq!(chosen.channels, ChannelLayout::Surround51);
         assert_eq!(chosen.format, SampleFormat::S16);
+    }
+
+    #[test]
+    fn a_node_named_by_a_renderers_prefix_is_a_upnp_renderer_and_a_sound_servers_is_not() {
+        assert!(NodeName::new("upnp:uuid:streamer").names_a_upnp_renderer());
+        assert!(!NodeName::new("alsa_output.desk").names_a_upnp_renderer());
+        assert!(!NodeName::new("cast:living-room").names_a_upnp_renderer());
     }
 
     #[test]

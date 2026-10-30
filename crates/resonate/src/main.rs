@@ -2898,6 +2898,8 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             online: resonate_ui::Online {
                 enabled: config.online_enabled(),
                 after_scan: config.enriches_after_scan(),
+                enrich_on_metered: config.enriches_on_metered(),
+                stall_downloads_on_metered: config.stalls_downloads_on_metered(),
                 studies: config.studies(),
                 lyrics: config.fetches_lyrics(),
                 contact: config.contact.clone().unwrap_or_default(),
@@ -2939,6 +2941,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             notify,
             by_sound,
             lyrics_by_the_locale,
+            flac_above_96k_for: config.flac_above_96k_for.clone(),
             convolution: config.convolution.clone(),
             speaker_angle: config.speaker_angle(),
             speaker_elevation: config.speaker_elevation(),
