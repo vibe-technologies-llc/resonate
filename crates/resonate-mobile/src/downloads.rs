@@ -7,7 +7,7 @@ use std::{
     path::Path,
     sync::{
         Arc, Weak,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
         mpsc::{self, RecvTimeoutError},
     },
     thread,
@@ -15,7 +15,7 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use resonate_core::{Isrc, Mbid, SourceId};
+use resonate_core::{Gate, Isrc, Mbid, SourceId};
 use resonate_library::ANSWERS_WITHIN;
 use resonate_providers::{
     Asking, Authorizing, Away, Client, Delivered, Delivery, Identity, Obtained, PlaysInPlace,
@@ -56,6 +56,8 @@ pub(crate) struct Downloads {
     sign_ins: AtomicU64,
     refreshed: Arc<Mutex<Option<String>>>,
     hosted_services_declined: AtomicBool,
+    stalling: Mutex<Gate>,
+    waiting: AtomicUsize,
 }
 
 struct SigningIn {
@@ -393,6 +395,21 @@ enum Unopened {
     Failed(Error),
 }
 
+struct Waiting<'a>(&'a AtomicUsize);
+
+impl<'a> Waiting<'a> {
+    fn begin(count: &'a AtomicUsize) -> Self {
+        count.fetch_add(1, Ordering::AcqRel);
+        Self(count)
+    }
+}
+
+impl Drop for Waiting<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
 impl Downloads {
     pub(crate) fn under(folder: &Path) -> Self {
         let partials = Partials::under(folder);
@@ -401,6 +418,29 @@ impl Downloads {
             partials: Some(partials),
             ..Self::default()
         }
+    }
+
+    pub(crate) fn stall_by(&self, gate: Gate) {
+        *self.stalling.lock() = gate;
+    }
+
+    pub(crate) fn are_waiting(&self) -> bool {
+        self.waiting.load(Ordering::Acquire) > 0
+    }
+
+    fn waits_out_the_meter(&self, job: &Job) -> Result<()> {
+        let gate = self.stalling.lock().clone();
+        if !gate.is_shut() {
+            return Ok(());
+        }
+        let _waiting = Waiting::begin(&self.waiting);
+        while gate.is_shut() {
+            if job.is_cancelled() {
+                return Err(Error::DownloadCancelled);
+            }
+            gate.wait_while_shut(HEEDED_EVERY);
+        }
+        Ok(())
     }
 
     pub(crate) fn begin(&self, song: SearchSong) -> u64 {
@@ -582,6 +622,12 @@ impl Downloads {
             };
         }
         job.received.store(0, Ordering::Release);
+        if let Err(waited_out) = self.waits_out_the_meter(job) {
+            return Searched {
+                offer: job.settled(Err(waited_out)),
+                tried: Tried::Unheard,
+            };
+        }
 
         let heard = Arc::new(Mutex::new(Vec::new()));
         let mut asked = Vec::new();
@@ -732,6 +778,9 @@ impl Downloads {
         let copied = loop {
             if job.is_cancelled() {
                 break Err(Error::DownloadCancelled);
+            }
+            if let Err(cancelled) = self.waits_out_the_meter(job) {
+                break Err(cancelled);
             }
             if !reaching() {
                 break Err(Error::OnlineOff);
@@ -1097,6 +1146,8 @@ mod tests {
         time::{Instant, SystemTime, UNIX_EPOCH},
     };
 
+    use resonate_core::{Meter, Metering};
+
     use super::*;
 
     const ECHOES_ISRC: &str = "GBN9Y1100065";
@@ -1323,6 +1374,132 @@ mod tests {
         );
 
         assert!(matches!(searched.offer, Err(Error::DownloadCancelled)));
+    }
+
+    fn stalled_while_metered() -> (Downloads, Metering) {
+        let metering = Metering::new();
+        metering.report(Meter::Metered);
+        let downloads = Downloads::default();
+        downloads.stall_by(Gate::new(metering.clone(), true));
+        (downloads, metering)
+    }
+
+    const WAITED_LONG_ENOUGH: Duration = Duration::from_millis(400);
+
+    #[test]
+    fn a_find_waits_while_the_connection_is_metered_and_goes_on_when_it_is_not() {
+        let (downloads, metering) = stalled_while_metered();
+        let downloads = Arc::new(downloads);
+        let job = downloads.begin(echoes());
+        let server = monochrome_serving(b"fLaC", Duration::ZERO);
+
+        let finding = {
+            let downloads = Arc::clone(&downloads);
+            thread::spawn(move || {
+                found(
+                    &downloads,
+                    job,
+                    vec![account(MusicProvider::Monochrome, &server)],
+                )
+            })
+        };
+        thread::sleep(WAITED_LONG_ENOUGH);
+
+        assert!(downloads.are_waiting());
+        assert!(!finding.is_finished());
+
+        metering.report(Meter::Unmetered);
+        let searched = finding.join().expect("the find ends");
+
+        assert!(searched.offer.is_ok());
+        assert!(!downloads.are_waiting());
+    }
+
+    #[test]
+    fn a_download_stops_reading_while_the_connection_is_metered_and_finishes_when_it_is_not() {
+        const AUDIO: &[u8] = b"fLaC waited for a connection that is not metered";
+        let downloads = Arc::new(Downloads::default());
+        let job = downloads.begin(echoes());
+        let server = monochrome_serving(AUDIO, Duration::ZERO);
+        found(
+            &downloads,
+            job,
+            vec![account(MusicProvider::Monochrome, &server)],
+        )
+        .offer
+        .expect("an offer");
+        let metering = Metering::new();
+        metering.report(Meter::Metered);
+        downloads.stall_by(Gate::new(metering.clone(), true));
+        let (path, file) = destination("metered");
+
+        let copying = {
+            let downloads = Arc::clone(&downloads);
+            thread::spawn(move || {
+                downloads.download(&downloads.job(job).expect("the job"), file, &reaching)
+            })
+        };
+        thread::sleep(WAITED_LONG_ENOUGH);
+
+        assert!(downloads.are_waiting());
+        assert!(!copying.is_finished());
+        assert_eq!(
+            downloads.progress(job).map(|progress| progress.received),
+            Some(0)
+        );
+
+        metering.report(Meter::Unmetered);
+        let copied = copying.join().expect("the copy ends");
+
+        assert_eq!(copied.expect("the song downloads"), AUDIO.len() as u64);
+        assert_eq!(std::fs::read(&path).expect("the written song"), AUDIO);
+        assert!(!downloads.are_waiting());
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn a_cancel_is_heard_by_a_download_waiting_for_the_connection() {
+        let (downloads, _metering) = stalled_while_metered();
+        let downloads = Arc::new(downloads);
+        let job = downloads.begin(echoes());
+
+        let finding = {
+            let downloads = Arc::clone(&downloads);
+            thread::spawn(move || {
+                let began = Instant::now();
+                let searched = found(
+                    &downloads,
+                    job,
+                    vec![account(MusicProvider::Monochrome, &unreached_address())],
+                );
+                (searched, began.elapsed())
+            })
+        };
+        thread::sleep(WAITED_LONG_ENOUGH);
+        downloads.cancel(job);
+        let (searched, took) = finding.join().expect("the find ends");
+
+        assert!(matches!(searched.offer, Err(Error::DownloadCancelled)));
+        assert!(took < WAITED_LONG_ENOUGH + CANCEL_HEARD_WITHIN, "{took:?}");
+        assert!(!downloads.are_waiting());
+    }
+
+    #[test]
+    fn a_connection_that_cannot_be_told_holds_no_download() {
+        let downloads = Downloads::default();
+        downloads.stall_by(Gate::new(Metering::new(), true));
+        let job = downloads.begin(echoes());
+        let server = monochrome_serving(b"fLaC", Duration::ZERO);
+
+        let searched = found(
+            &downloads,
+            job,
+            vec![account(MusicProvider::Monochrome, &server)],
+        );
+
+        assert!(searched.offer.is_ok());
+        assert!(!downloads.are_waiting());
     }
 
     #[test]

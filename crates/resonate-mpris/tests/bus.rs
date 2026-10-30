@@ -6,7 +6,7 @@ use std::{
     process::{self, Command as Process},
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
     },
     thread,
     time::{Duration, Instant, UNIX_EPOCH},
@@ -16,8 +16,8 @@ use crossbeam_channel::{Receiver, Sender, unbounded};
 use parking_lot::Mutex;
 use resonate_codec::{Error as CodecError, Result as CodecResult};
 use resonate_core::{
-    ChannelLayout, FrameSpan, Frames, Gain, MediaLocation, PlaylistId, SampleFormat, SampleRate,
-    SourceId, TrackId, Volume, ZoneId,
+    ChannelLayout, FrameSpan, Frames, Gain, MediaLocation, Meter, Metering, PlaylistId,
+    SampleFormat, SampleRate, SourceId, TrackId, Volume, ZoneId,
 };
 use resonate_engine::{
     AudioSource, Backend, Command, EngineConfig, Media, MediaProvider, NodeName, Opener, Placement,
@@ -28,6 +28,7 @@ use resonate_engine::{
 use resonate_mpris::{
     Heard, Host, Mpris, Opened, PlaybackStatus, PlayerName, PlaylistInfo, PlaylistOrder, Playlists,
     Queueing, ROWS_A_CALL, Reloadable, Reloaded, Running, Seeking, Session, Tunable, Tuned,
+    watch_the_meter,
 };
 use zbus::{
     OwnedObjectPath, OwnedVariant,
@@ -67,6 +68,8 @@ const NOTIFICATIONS: &str = "org.freedesktop.Notifications";
 const NOTIFICATIONS_PATH: &str = "/org/freedesktop/Notifications";
 const RAISED: u32 = 41;
 const SYSTEM_BUS_TOO: &str = r#"DBUS_SYSTEM_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" exec "$@""#;
+const NETWORK_MANAGER: &str = "org.freedesktop.NetworkManager";
+const NETWORK_MANAGER_PATH: &str = "/org/freedesktop/NetworkManager";
 const BLUEZ: &str = "org.bluez";
 const FIRST_ADAPTER: &str = "/org/bluez/hci0";
 const PLUGGED_IN_LATER: &str = "/org/bluez/hci1";
@@ -3317,4 +3320,103 @@ fn a_queued_row_carrying_a_picture_is_described_with_a_cover_the_desktop_can_ope
             .is_none(),
         "the playing row, carrying no picture, was named the next row's cover"
     );
+}
+
+struct NetworkManager {
+    metered: Arc<AtomicU32>,
+}
+
+#[interface(name = "org.freedesktop.NetworkManager")]
+impl NetworkManager {
+    #[zbus(property)]
+    fn metered(&self) -> u32 {
+        self.metered.load(Ordering::SeqCst)
+    }
+}
+
+fn network_manager_on_the_bus(first: u32) -> (Connection, Arc<AtomicU32>) {
+    let metered = Arc::new(AtomicU32::new(first));
+    let manager = connection::Builder::system()
+        .and_then(|builder| builder.name(NETWORK_MANAGER))
+        .and_then(|builder| {
+            builder.serve_at(
+                NETWORK_MANAGER_PATH,
+                NetworkManager {
+                    metered: Arc::clone(&metered),
+                },
+            )
+        })
+        .and_then(connection::Builder::build)
+        .expect("a stand-in NetworkManager on the private bus");
+    (manager, metered)
+}
+
+fn manager_says(manager: &Connection, changed: Option<u32>, invalidated: &[&str]) {
+    let fields: HashMap<String, OwnedVariant> = changed
+        .map(|value| ("Metered".to_owned(), OwnedVariant::from(value)))
+        .into_iter()
+        .collect();
+    manager
+        .emit_signal(
+            None::<&str>,
+            NETWORK_MANAGER_PATH,
+            PROPERTIES,
+            "PropertiesChanged",
+            &(NETWORK_MANAGER, fields, invalidated.to_vec()),
+        )
+        .expect("the stand-in NetworkManager announces a change");
+}
+
+fn becomes(metering: &Metering, wanted: Meter) {
+    let deadline = Instant::now() + PATIENCE;
+    while metering.meter() != wanted {
+        assert!(
+            Instant::now() < deadline,
+            "the connection stayed {:?}, not {wanted:?}",
+            metering.meter()
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn the_meter_follows_what_network_manager_says_of_the_connection() {
+    if !on_a_bus_of_its_own("the_meter_follows_what_network_manager_says_of_the_connection") {
+        return;
+    }
+    let (manager, metered) = network_manager_on_the_bus(1);
+    let metering = Metering::new();
+
+    watch_the_meter(metering.clone()).expect("the system bus is reached");
+    assert_eq!(metering.meter(), Meter::Metered);
+
+    metered.store(2, Ordering::SeqCst);
+    manager_says(&manager, Some(2), &[]);
+    becomes(&metering, Meter::Unmetered);
+
+    metered.store(3, Ordering::SeqCst);
+    manager_says(&manager, Some(3), &[]);
+    becomes(&metering, Meter::Metered);
+
+    metered.store(4, Ordering::SeqCst);
+    manager_says(&manager, None, &["Metered"]);
+    becomes(&metering, Meter::Unmetered);
+
+    metered.store(0, Ordering::SeqCst);
+    manager_says(&manager, Some(0), &[]);
+    becomes(&metering, Meter::Unknown);
+}
+
+#[test]
+fn a_connection_is_not_metered_where_no_network_manager_answers() {
+    if !on_a_bus_of_its_own("a_connection_is_not_metered_where_no_network_manager_answers") {
+        return;
+    }
+    let metering = Metering::new();
+
+    watch_the_meter(metering.clone()).expect("the system bus is reached");
+    thread::sleep(SETTLE);
+
+    assert_eq!(metering.meter(), Meter::Unknown);
+    assert!(!metering.is_metered());
 }

@@ -7,13 +7,15 @@ use std::{
 use parking_lot::Mutex;
 use resonate_analysis::{Finding, Watch};
 use resonate_codec::{ImageFormat, probe};
-use resonate_core::{Chromaprint, Mbid, TrackId, folded_letters, words_of_a_name};
+use resonate_core::{
+    Chromaprint, Gate, Mbid, Meter, Metering, TrackId, folded_letters, words_of_a_name,
+};
 use resonate_engine::{Counting, Tapped};
 use resonate_library::{
     Fingerprints, HeardAs, LookupOp, Printed, RecordingAsked, RecordingMatch, RecordingRelease,
     Reference, SongLink, Sounded, TrackToAsk, Wording, agreement, in_the_order_worth_offering,
 };
-use resonate_online::{Identity, Online};
+use resonate_online::{Client, Identity, Online};
 use resonate_providers::A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY;
 use rusqlite::params;
 
@@ -29,6 +31,9 @@ use crate::{
 
 pub(crate) struct Services {
     pub(crate) online: Online,
+    pub(crate) metering: Metering,
+    pub(crate) lookups: Gate,
+    pub(crate) downloads: Gate,
     pub(crate) auto_eq: resonate_online::AutoEq,
     pub(crate) lyrics: Arc<KeptSheets>,
     analysis: Mutex<Option<Arc<Watch>>>,
@@ -40,11 +45,19 @@ pub(crate) struct Services {
 
 impl Default for Services {
     fn default() -> Self {
-        let online = Online::new(Identity::of_this_build());
+        let metering = Metering::new();
+        let lookups = Gate::new(metering.clone(), true);
+        let downloads = Gate::new(metering.clone(), false);
+        let online = Online::with_client(Arc::new(
+            Client::new(Identity::of_this_build()).gated_by(lookups.clone()),
+        ));
         online.client().reach(false);
         let auto_eq = resonate_online::AutoEq::new(Arc::clone(online.client()), None);
         Self {
             online,
+            metering,
+            lookups,
+            downloads,
             auto_eq,
             lyrics: Arc::default(),
             analysis: Mutex::new(None),
@@ -52,6 +65,24 @@ impl Default for Services {
             analyses: Mutex::new(BTreeMap::new()),
             searching: crate::search::Searching::default(),
             watching: crate::watching::Watching::default(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, uniffi::Enum)]
+pub enum ConnectionMeter {
+    #[default]
+    Unknown,
+    Unmetered,
+    Metered,
+}
+
+impl From<ConnectionMeter> for Meter {
+    fn from(meter: ConnectionMeter) -> Self {
+        match meter {
+            ConnectionMeter::Unknown => Self::Unknown,
+            ConnectionMeter::Unmetered => Self::Unmetered,
+            ConnectionMeter::Metered => Self::Metered,
         }
     }
 }
@@ -318,6 +349,22 @@ impl MobilePlayer {
 
     pub fn configure_online(&self, enabled: bool) {
         self.services.online.client().reach(enabled);
+    }
+
+    pub fn report_connection(&self, meter: ConnectionMeter) {
+        self.services.metering.report(meter.into());
+    }
+
+    pub fn configure_enrich_on_metered(&self, allowed: bool) {
+        self.services.lookups.shut_while_metered(!allowed);
+    }
+
+    pub fn configure_stall_downloads_on_metered(&self, stalls: bool) {
+        self.services.downloads.shut_while_metered(stalls);
+    }
+
+    pub fn downloads_wait_on_the_meter(&self) -> bool {
+        self.downloads.are_waiting()
     }
 
     pub fn filtered_tracks(

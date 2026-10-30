@@ -15,7 +15,7 @@ use ahash::{AHashMap, AHashSet};
 use parking_lot::{Condvar, Mutex};
 use resonate_codec::{Hinting, Likeness, Popularity, Sources, StandIn};
 use resonate_core::{
-    AlbumId, ArtistId, ChannelCount, ChannelLayout, Chromaprint, FrameSpan, Frames, KeptZone,
+    AlbumId, ArtistId, ChannelCount, ChannelLayout, Chromaprint, FrameSpan, Frames, Gate, KeptZone,
     ListenId, MediaLocation, PlaylistId, QueueStamp, ReleaseTrackId, Reordered, Resumable,
     Resumption, SampleFormat, SampleRate, Span, StreamSpec, TrackId, Volume, WantId, ZoneId,
     ZoneName,
@@ -693,6 +693,7 @@ pub(crate) struct Inner {
     walked: Mutex<Vec<Step>>,
     offering: AtomicBool,
     delivering_into: Mutex<Option<DeliveryFolder>>,
+    stalling: Mutex<Gate>,
     trash_home: Mutex<Option<PathBuf>>,
     trashes: Mutex<Option<Arc<dyn Trashes>>>,
     music_filters: Mutex<MusicFilters>,
@@ -1385,6 +1386,14 @@ impl Library {
         *self.inner.delivering_into.lock() = folder;
     }
 
+    pub fn stall_downloads_by(&self, gate: Gate) {
+        *self.inner.stalling.lock() = gate;
+    }
+
+    pub(crate) fn download_gate(&self) -> Gate {
+        self.inner.stalling.lock().clone()
+    }
+
     pub(crate) fn delivering_into(&self) -> Option<DeliveryFolder> {
         self.inner.delivering_into.lock().clone()
     }
@@ -1552,6 +1561,7 @@ impl Library {
                 walked: Mutex::new(Vec::new()),
                 offering: AtomicBool::new(false),
                 delivering_into: Mutex::new(None),
+                stalling: Mutex::new(Gate::open()),
                 trash_home: Mutex::new(None),
                 trashes: Mutex::new(None),
                 music_filters: Mutex::new(MusicFilters::default()),

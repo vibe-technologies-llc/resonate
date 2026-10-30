@@ -49,6 +49,10 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   manifest's own permissions have never been in the path
 
 ## Providers and network
+- [S · blocked: NetworkManager] `resonate-mpris`'s `metered.rs` has only been run against a
+  stand-in `org.freedesktop.NetworkManager` on a private bus: the `Metered` values a real manager
+  sends for a phone hotspot or a connection the listener marked metered, and that it announces a
+  change as a `PropertiesChanged` on the manager object, were taken from its documentation
 - [S · blocked: network] That the hosted hifi service still answers a request carrying neither
   `Origin` nor `Referer` is proved by its gated live test alone (`RESONATE_HIFI_LIVE_TESTS`), which
   nothing here has run

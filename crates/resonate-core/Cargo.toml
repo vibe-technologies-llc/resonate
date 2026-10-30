@@ -9,6 +9,7 @@ bytemuck.workspace = true
 chardetng.workspace = true
 encoding_rs.workspace = true
 jiff.workspace = true
+parking_lot.workspace = true
 thiserror.workspace = true
 unicode-normalization.workspace = true
 

@@ -18,7 +18,7 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use parking_lot::Mutex;
 use resonate_codec::Sources;
-use resonate_core::{Frames, MediaLocation, SampleRate, SourceId, WantId};
+use resonate_core::{Frames, Gate, MediaLocation, SampleRate, SourceId, WantId};
 use resonate_providers::{
     Answer, Asking, Away, Delivered, Delivery, Identity, Opened, Opening, Providers,
     TURNED_TO_APART, WAITED_ON_AFTER_AN_OFFER,
@@ -192,6 +192,7 @@ pub struct PollProgress {
     lanes: Mutex<Vec<Lane>>,
     rereading: Mutex<Rereading>,
     cancelled: AtomicBool,
+    waiting_on_the_meter: AtomicBool,
 }
 
 impl PollProgress {
@@ -325,6 +326,27 @@ impl PollProgress {
         self.cancelled.store(true, Ordering::Relaxed);
     }
 
+    pub fn is_waiting_on_the_meter(&self) -> bool {
+        self.waiting_on_the_meter.load(Ordering::Relaxed)
+    }
+
+    fn waits_on_the_meter(&self, waiting: bool) {
+        let before = self.waiting_on_the_meter.swap(waiting, Ordering::Relaxed);
+        if waiting && !before {
+            tracing::info!("downloads wait while the connection is metered");
+        } else if before && !waiting {
+            tracing::info!("downloads go on");
+        }
+    }
+
+    fn waits_out_the_meter(&self, gate: &Gate) {
+        while gate.is_shut() && !self.is_cancelled() {
+            self.waits_on_the_meter(true);
+            gate.wait_while_shut(HEEDED_EVERY);
+        }
+        self.waits_on_the_meter(false);
+    }
+
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Relaxed)
     }
@@ -394,7 +416,13 @@ fn landed(
         Delivery::Stream {
             extension, opening, ..
         } => {
-            let mut pumped = match Pumped::from(opening, progress, want.id, Silence::of(options)) {
+            let mut pumped = match Pumped::from(
+                opening,
+                progress,
+                want.id,
+                Silence::of(options),
+                library.download_gate(),
+            ) {
                 Ok(pumped) => pumped,
                 Err(source) => return Err(Error::ThreadSpawn { source }),
             };
@@ -470,6 +498,7 @@ impl Silence {
 
 struct Pumped<'a> {
     want: WantId,
+    gate: Gate,
     chunks: Receiver<Pumping>,
     held: Vec<u8>,
     read: usize,
@@ -487,6 +516,7 @@ impl<'a> Pumped<'a> {
         progress: &'a PollProgress,
         want: WantId,
         silence: Silence,
+        gate: Gate,
     ) -> io::Result<Self> {
         let (sender, chunks) = mpsc::sync_channel(CHUNKS_AHEAD);
         thread::Builder::new()
@@ -495,6 +525,7 @@ impl<'a> Pumped<'a> {
 
         Ok(Self {
             want,
+            gate,
             chunks,
             held: Vec::new(),
             read: 0,
@@ -556,6 +587,10 @@ impl Read for Pumped<'_> {
             }
             if self.ended {
                 return Ok(0);
+            }
+            self.progress.waits_out_the_meter(&self.gate);
+            if self.progress.is_cancelled() {
+                return Err(io::Error::from(io::ErrorKind::ConnectionAborted));
             }
             self.held = self.next_chunk()?;
             self.progress.received_more(self.want, self.held.len());
@@ -681,8 +716,14 @@ fn filed_in_the_music_folder(
         Delivery::Stream {
             extension, opening, ..
         } => {
-            let mut pumped = Pumped::from(opening, progress, want.id, Silence::of(landing.options))
-                .map_err(|source| Error::ThreadSpawn { source })?;
+            let mut pumped = Pumped::from(
+                opening,
+                progress,
+                want.id,
+                Silence::of(landing.options),
+                library.download_gate(),
+            )
+            .map_err(|source| Error::ThreadSpawn { source })?;
             let outcome = filed::filed(library, &into, want, &mut pumped, extension.as_str());
             if let Some(unopened) = pumped.unopened.take() {
                 return Ok(Landed::Unopened(unopened));
@@ -935,6 +976,12 @@ impl<'a> Lanes<'a> {
             }
             match self.claim() {
                 Ok(Claim::Want(want, forgotten)) => {
+                    self.progress
+                        .waits_out_the_meter(&self.library.download_gate());
+                    if self.progress.is_cancelled() {
+                        self.released();
+                        return;
+                    }
                     let claimed = self.claimed(want, forgotten);
                     let mut rounds = Rounds::first();
                     let flow = match self.asked(&claimed, &mut rounds) {
@@ -1132,6 +1179,10 @@ impl<'a> Lanes<'a> {
 
     fn offer_landed(&self, want: &Want, delivered: Delivered) -> Result<Offer> {
         let progress = self.progress;
+        progress.waits_out_the_meter(&self.library.download_gate());
+        if progress.is_cancelled() {
+            return Ok(Offer::Settled(Flow::Stop));
+        }
         progress.opens_from(want.id, &delivered.provider);
         progress.offered.fetch_add(1, Ordering::Relaxed);
         let taken_from = delivered.taken_from();

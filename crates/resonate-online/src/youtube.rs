@@ -119,7 +119,7 @@ fn continued(
         let document = match answered {
             Ok(Some(document)) => document,
             Ok(None) => break,
-            Err(error @ Error::Offline { .. }) => return Err(error),
+            Err(error @ (Error::Offline { .. } | Error::Metered { .. })) => return Err(error),
             Err(error) => {
                 tracing::debug!(%error, "YouTube's continuation was not read; the page's own uploads stand");
                 break;

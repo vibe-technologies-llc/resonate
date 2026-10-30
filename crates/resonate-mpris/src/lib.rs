@@ -8,6 +8,7 @@ mod host;
 mod icons;
 mod idle;
 mod interfaces;
+mod metered;
 mod notify;
 mod playlists;
 mod remote;
@@ -24,6 +25,7 @@ pub use crate::{
         Reloaded, Tunable, Tuned,
     },
     icons::tell_the_icons_changed,
+    metered::{meter_of_network_manager, watch_the_meter},
     remote::{
         Described, PlayerName, Queueing, ROWS_A_CALL, Running, Seeking, Session, Standing,
         ZoneAsked,

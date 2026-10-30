@@ -38,6 +38,8 @@ pub enum ConfigKey {
     TextSize,
     Online,
     EnrichAfterScan,
+    EnrichOnMetered,
+    StallDownloadsOnMetered,
     Study,
     FetchLyrics,
     LyricsLanguageFromLocale,
@@ -171,7 +173,7 @@ impl fmt::Display for Named {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 107] = [
+    pub const ALL: [Self; 109] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -200,6 +202,8 @@ impl ConfigKey {
         Self::TextSize,
         Self::Online,
         Self::EnrichAfterScan,
+        Self::EnrichOnMetered,
+        Self::StallDownloadsOnMetered,
         Self::Study,
         Self::FetchLyrics,
         Self::LyricsLanguageFromLocale,
@@ -311,6 +315,8 @@ impl ConfigKey {
             Self::TextSize => "text-size",
             Self::Online => "online",
             Self::EnrichAfterScan => "enrich-after-scan",
+            Self::EnrichOnMetered => "enrich-on-metered",
+            Self::StallDownloadsOnMetered => "stall-downloads-on-metered",
             Self::Study => "study",
             Self::FetchLyrics => "fetch-lyrics",
             Self::LyricsLanguageFromLocale => "lyrics-language-from-locale",

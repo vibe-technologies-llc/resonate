@@ -35,6 +35,13 @@ pub enum Host {
 }
 
 impl Host {
+    pub const fn is_an_enrichment(self) -> bool {
+        !matches!(
+            self,
+            Self::ListenBrainz | Self::LastFm | Self::Shazam | Self::Audd
+        )
+    }
+
     pub fn base(self) -> &'static str {
         match self {
             Self::MusicBrainz => "https://musicbrainz.org/ws/2",
@@ -77,6 +84,9 @@ pub enum Error {
 
     #[error("{host:?} was not asked for {op:?}, the network being switched off")]
     Offline { host: Host, op: LookupOp },
+
+    #[error("{host:?} was not asked for {op:?}, the connection being metered")]
+    Metered { host: Host, op: LookupOp },
 
     #[error("{host:?} refused {op:?} with status {status}")]
     Refused {
@@ -134,7 +144,7 @@ impl Error {
                 provider,
                 cause: source,
             },
-            Self::Offline { .. } => resonate_eq::Error::Unreachable {
+            Self::Offline { .. } | Self::Metered { .. } => resonate_eq::Error::Unreachable {
                 provider,
                 cause: switched_off(),
             },
@@ -155,7 +165,7 @@ impl Error {
                 provider,
                 cause: source,
             },
-            Self::Offline { .. } => resonate_lyrics::Error::Unreachable {
+            Self::Offline { .. } | Self::Metered { .. } => resonate_lyrics::Error::Unreachable {
                 provider,
                 cause: switched_off(),
             },
@@ -174,7 +184,7 @@ impl Error {
 impl Error {
     pub fn into_listen_error(self, service: SourceId) -> resonate_listen::Error {
         match self {
-            Self::Unreachable { .. } | Self::Offline { .. } => {
+            Self::Unreachable { .. } | Self::Offline { .. } | Self::Metered { .. } => {
                 resonate_listen::Error::Unreachable { service }
             }
             Self::Refused { status, .. } => resonate_listen::Error::Refused { service, status },
@@ -188,7 +198,7 @@ impl From<Error> for resonate_library::Error {
     fn from(error: Error) -> Self {
         match error {
             Error::Unreachable { op, source, .. } => Self::Unreachable { op, source },
-            Error::Offline { op, .. } => Self::Unreachable {
+            Error::Offline { op, .. } | Error::Metered { op, .. } => Self::Unreachable {
                 op,
                 source: switched_off(),
             },

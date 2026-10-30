@@ -4,11 +4,23 @@ Gaps: what is not built, a limit by design, an unsupported format or a behaviour
 reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Android parity
+- [M · 0.2.0] Android does not tell the boundary its network is metered: register
+  `ConnectivityManager.registerDefaultNetworkCallback`, report `onCapabilitiesChanged` without
+  `NET_CAPABILITY_NOT_METERED` as `ConnectionMeter.Metered`, with it as `Unmetered`, `onLost` as
+  `Unknown` (`MobilePlayer.reportConnection`), keep the two switches (`enrich-on-metered`, off;
+  `stall-downloads-on-metered`, off) in the settings store and hand them to
+  `configureEnrichOnMetered` and `configureStallDownloadsOnMetered` at start, and show
+  `downloadsWaitOnTheMeter()` on the download screen (`mobile.md`'s *Metered connections*)
 - [M · blocked: hardware] Android offers no DoP: a marked stream needs the USB bit-perfect mixer at a
   32-bit word (Oboe-rs has no packed 24-bit one) and a DAC that decodes it to prove the markers
   arrive untouched
 
 ## iOS parity
+- [M · 0.2.0] iOS does not tell the boundary its network is metered: an `NWPathMonitor`
+  `pathUpdateHandler` reports `path.isExpensive || path.isConstrained` as `ConnectionMeter.Metered`,
+  a satisfied path otherwise as `Unmetered` and an unsatisfied one as `Unknown`
+  (`MobilePlayer.reportConnection`); the two switches and the waiting line wait on the same
+  settings page and download screen as Android's
 - [M · blocked: xtool] iOS has no widget: a WidgetKit extension xtool builds is linked empty and,
   linked whole, traps in `ExtensionFoundation` before a widget registers (xtool issue 313)
 - [M · blocked: Apple] iOS has no CarPlay: the CarPlay audio entitlement is granted by Apple to a
@@ -46,6 +58,12 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   such file type); `.oga` alone could be mapped to Vorbis by hand
 
 ## Providers and network
+- [M · 0.2.0] The settings pane has no row for `enrich-on-metered` or `stall-downloads-on-metered`:
+  add a *Metered connections* group to the Online category (two `switch_row`s, `Setting` and
+  `SettingKey` variants, `resonate_ui::Online` fields filled in `main.rs`, `Group` entries in
+  `find.rs` and `defaults.rs`), apply both live through the `metered.rs` gates'
+  `shut_while_metered` from `SettingChange`, and show a waiting line while
+  `PollProgress::is_waiting_on_the_meter` holds
 
 ## Device sync
 

@@ -15,6 +15,7 @@ mod id;
 mod identity;
 mod link;
 mod media;
+mod metered;
 pub mod naming;
 pub mod path_text;
 mod presence;
@@ -62,6 +63,7 @@ pub use crate::{
         AUDIO_EXTENSIONS, HRIR_EXTENSIONS, Locator, MediaLocation, PICTURE_EXTENSIONS, SourceId,
         names_a_picture, names_audio, uri_escaped, uri_unescaped,
     },
+    metered::{Gate, Meter, Metering},
     presence::{AppId, Icon, Pictured, Presence, Shown},
     print::Chromaprint,
     recorded::{Recording, RecordingKey, title_words},

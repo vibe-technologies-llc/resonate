@@ -131,6 +131,8 @@ pub struct Config {
     pub text_size: Option<TextSize>,
     pub online: Option<bool>,
     pub enrich_after_scan: Option<bool>,
+    pub enrich_on_metered: Option<bool>,
+    pub stall_downloads_on_metered: Option<bool>,
     pub study: Option<bool>,
     pub fetch_lyrics: Option<bool>,
     pub lyrics_language_from_locale: Option<bool>,
@@ -255,6 +257,8 @@ impl fmt::Debug for Config {
             text_size,
             online,
             enrich_after_scan,
+            enrich_on_metered,
+            stall_downloads_on_metered,
             study,
             fetch_lyrics,
             lyrics_language_from_locale,
@@ -365,6 +369,8 @@ impl fmt::Debug for Config {
             .field("text_size", text_size)
             .field("online", online)
             .field("enrich_after_scan", enrich_after_scan)
+            .field("enrich_on_metered", enrich_on_metered)
+            .field("stall_downloads_on_metered", stall_downloads_on_metered)
             .field("study", study)
             .field("fetch_lyrics", fetch_lyrics)
             .field("lyrics_language_from_locale", lyrics_language_from_locale)
@@ -536,6 +542,15 @@ impl Config {
 
     pub fn enriches_after_scan(&self) -> bool {
         self.enrich_after_scan.unwrap_or(true)
+    }
+
+    #[cfg(any(feature = "online", test))]
+    pub fn enriches_on_metered(&self) -> bool {
+        self.enrich_on_metered.unwrap_or(false)
+    }
+
+    pub fn stalls_downloads_on_metered(&self) -> bool {
+        self.stall_downloads_on_metered.unwrap_or(false)
     }
 
     pub fn studies(&self) -> bool {
@@ -936,6 +951,10 @@ impl Config {
             }
             ConfigKey::Online => config.online = Some(at.boolean(value)?),
             ConfigKey::EnrichAfterScan => config.enrich_after_scan = Some(at.boolean(value)?),
+            ConfigKey::EnrichOnMetered => config.enrich_on_metered = Some(at.boolean(value)?),
+            ConfigKey::StallDownloadsOnMetered => {
+                config.stall_downloads_on_metered = Some(at.boolean(value)?);
+            }
             ConfigKey::Study => config.study = Some(at.boolean(value)?),
             ConfigKey::FetchLyrics => config.fetch_lyrics = Some(at.boolean(value)?),
             ConfigKey::LyricsLanguageFromLocale => {
@@ -2394,6 +2413,14 @@ mod tests {
         let config = read("enrich-after-scan = false").expect("a well formed document");
         assert_eq!(config.enrich_after_scan, Some(false));
         assert!(!config.enriches_after_scan());
+
+        assert!(!config.enriches_on_metered());
+        assert!(!config.stalls_downloads_on_metered());
+
+        let config = read("enrich-on-metered = true\nstall-downloads-on-metered = true")
+            .expect("a well formed document");
+        assert!(config.enriches_on_metered());
+        assert!(config.stalls_downloads_on_metered());
 
         let error = read("online = \"yes\"").expect_err("a string is not a boolean");
         assert!(

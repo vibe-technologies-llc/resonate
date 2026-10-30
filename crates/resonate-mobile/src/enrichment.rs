@@ -120,7 +120,7 @@ impl Asking {
     }
 
     fn is_reaching(&self) -> bool {
-        self.client.is_reaching()
+        self.client.is_reaching() && !self.client.is_lookup_held_by_the_meter()
     }
 }
 
