@@ -307,7 +307,20 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   a half decibels over its decode, since every node's term is summed apart
   (`broadband_music_under_a_curve_moving_every_octave_is_bounded_within_a_few_decibels_of_its_decode`);
   a tone beside a narrow boost is bounded within half a decibel
-  (`a_tone_beside_a_narrow_boost_is_bounded_near_its_decode`). **Cost**: `BandGains::of` takes
+  (`a_tone_beside_a_narrow_boost_is_bounded_near_its_decode`). **Measured and dropped, by
+  what they moved**: a level of its own for every node of the partition's tree, so a node pays
+  its offset from its parent's level once, on its own peak (exact, `|c_S - c_parent| * P_S`), and
+  its children pay their reach from that level (a tree search over 50 levels, the offsets
+  telescoping to the leaves' levels), left the solved bound's mean unchanged over 389 cases (eight
+  songs under sixteen curves and five curves under seven corrections; the bound is bit for bit
+  the same over eight real songs under six curves) and the partition alone 0.02 dB tighter,
+  since the programme already prices a span by whichever node is cheapest; twenty-four levels
+  between the quietest gain and the loudest in place of eight moved the mean 0.004 dB. Over those
+  eight real songs (flat-spectrum masters under a bass boost, a smile, a tilt, a ragged curve, a
+  boost and cut and an allpass pair) the bound sat 3.6 dB over the decode on average (0.2 to 5.9),
+  and keeping 64 moments in place of 8 moved it to 3.3: the slack is the tone model's, which
+  adds every node's peak as if they fell together, and what a node's peak says of the others
+  is all the figures hold. **Cost**: `BandGains::of` takes
   about 15 ms for a profile and 75 ms with a ten-second response (it was 28 and 320 ms here), since
   the near window is summed by `resonate_dsp::response_of`, which shares the points among
   `available_parallelism` scoped threads once taps times points pass `TURNS_WORTH_A_THREAD` (2^24),
