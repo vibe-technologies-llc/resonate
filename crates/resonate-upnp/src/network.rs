@@ -16,7 +16,7 @@ use resonate_audio::{
 use resonate_core::{Gain, Volume};
 
 use crate::{
-    Error, Located, Renderer, Result, ServeOp, carriage,
+    Error, Located, Renderer, Result, ServeOp, Vouched, carriage,
     serve::Server,
     ssdp,
     stream::{self, Holders},
@@ -61,6 +61,7 @@ struct Shared {
     server: Mutex<Option<Arc<Server>>>,
     holders: Holders,
     known: Mutex<Known>,
+    vouched: Mutex<Vouched>,
     round: Mutex<()>,
     listeners: Mutex<Vec<Sender<SinkChange>>>,
     turns: Sender<Turn>,
@@ -96,6 +97,7 @@ impl Network {
             server: Mutex::new(None),
             holders: Holders::default(),
             known: Mutex::new(Known::default()),
+            vouched: Mutex::new(Vouched::default()),
             round: Mutex::new(()),
             listeners: Mutex::new(Vec::new()),
             turns,
@@ -110,6 +112,10 @@ impl Network {
             shared,
             looking: Mutex::new(None),
         })
+    }
+
+    pub fn vouch(&self, vouched: Vouched) {
+        *self.shared.vouched.lock() = vouched;
     }
 
     pub fn look(&self, first: FirstSearch) -> Result<()> {
@@ -251,12 +257,13 @@ impl Shared {
             .collect();
         let mut seen: Vec<SinkId> = Vec::new();
         let mut reached = Vec::new();
+        let vouched = self.vouched.lock().clone();
         for location in found {
             if let Some((id, _)) = held_at.iter().find(|(_, at)| *at == location) {
                 seen.push(*id);
                 continue;
             }
-            match Renderer::reached(location.clone()) {
+            match Renderer::reached(location.clone(), &vouched) {
                 Ok(renderer) => reached.push(renderer),
                 Err(error) => {
                     tracing::debug!(%error, %location, "a device answering the search is not a renderer this player can stream to");

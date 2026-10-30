@@ -54,6 +54,7 @@ pub enum ConfigKey {
     HeadYaw,
     Resume,
     Renderers,
+    FlacAbove96kFor,
     HistoryKept,
     SkipRepeatsQueue,
     PreviousRestarts,
@@ -171,7 +172,7 @@ impl fmt::Display for Named {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 107] = [
+    pub const ALL: [Self; 108] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -216,6 +217,7 @@ impl ConfigKey {
         Self::HeadYaw,
         Self::Resume,
         Self::Renderers,
+        Self::FlacAbove96kFor,
         Self::HistoryKept,
         Self::SkipRepeatsQueue,
         Self::PreviousRestarts,
@@ -329,6 +331,7 @@ impl ConfigKey {
             Self::HeadYaw => "head-yaw",
             Self::Resume => "resume",
             Self::Renderers => "renderers",
+            Self::FlacAbove96kFor => "flac-above-96k-for",
             Self::HistoryKept => "history-kept",
             Self::OrganiseAs => "organise-as",
             Self::Notify => "notify",

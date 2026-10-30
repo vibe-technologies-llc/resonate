@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     env, fmt,
     fs::{self, File, OpenOptions},
     io::{self, Write as _},
@@ -27,6 +27,7 @@ use resonate_eq::{Binding, ProfileName};
 use resonate_library::{HistoryKept, Layout, MinimumLength, MusicExtensions, MusicFilters};
 use resonate_listen::Listening;
 use resonate_pipewire::NodeName;
+use resonate_upnp::{Udn, Vouched};
 use toml_edit::{DocumentMut, Item, Table};
 
 use crate::{
@@ -153,6 +154,7 @@ pub struct Config {
     pub equaliser_measurer_for: BTreeMap<NodeName, String>,
     pub resume: Option<bool>,
     pub renderers: Option<bool>,
+    pub flac_above_96k_for: BTreeSet<NodeName>,
     pub history_kept: Option<HistoryKept>,
     pub organise_as: Option<Layout>,
     pub notify: Option<bool>,
@@ -277,6 +279,7 @@ impl fmt::Debug for Config {
             equaliser_measurer_for,
             resume,
             renderers,
+            flac_above_96k_for,
             history_kept,
             organise_as,
             notify,
@@ -387,6 +390,7 @@ impl fmt::Debug for Config {
             .field("equaliser_measurer_for", equaliser_measurer_for)
             .field("resume", resume)
             .field("renderers", renderers)
+            .field("flac_above_96k_for", flac_above_96k_for)
             .field("history_kept", history_kept)
             .field("organise_as", organise_as)
             .field("notify", notify)
@@ -589,6 +593,10 @@ impl Config {
 
     pub fn looks_for_renderers(&self) -> bool {
         self.renderers.unwrap_or(false)
+    }
+
+    pub fn renderers_vouched_for(&self) -> Vouched {
+        Vouched::flac_at_any_rate(self.flac_above_96k_for.iter().filter_map(Udn::from_node))
     }
 
     pub fn history_kept(&self) -> HistoryKept {
@@ -1022,6 +1030,7 @@ impl Config {
             ConfigKey::Equaliser => config.equaliser = Some(at.boolean(value)?),
             ConfigKey::Resume => config.resume = Some(at.boolean(value)?),
             ConfigKey::Renderers => config.renderers = Some(at.boolean(value)?),
+            ConfigKey::FlacAbove96kFor => config.flac_above_96k_for = node_names(at, value)?,
             ConfigKey::HistoryKept => {
                 config.history_kept = Some(match value.as_integer() {
                     Some(days) => HistoryKept::for_days(days).ok_or_else(|| at.rejected())?,
@@ -1226,6 +1235,21 @@ fn bindings(at: At<'_>, value: &Item) -> Result<BTreeMap<NodeName, Binding>> {
         by_sink.insert(NodeName::new(named), binding);
     }
     Ok(by_sink)
+}
+
+fn node_names(at: At<'_>, value: &Item) -> Result<BTreeSet<NodeName>> {
+    let array = value
+        .as_array()
+        .ok_or_else(|| at.mistyped(ValueKind::Array))?;
+    array
+        .iter()
+        .map(|named| {
+            named
+                .as_str()
+                .map(|named| NodeName::new(named.trim()))
+                .ok_or_else(|| at.mistyped(ValueKind::Text))
+        })
+        .collect()
 }
 
 fn measurers(at: At<'_>, value: &Item) -> Result<BTreeMap<NodeName, String>> {
@@ -2275,6 +2299,32 @@ mod tests {
             Some("Rtings")
         );
         assert_eq!(Config::default().equaliser_measurer_for(None), None);
+    }
+
+    #[test]
+    fn the_renderers_vouched_for_are_the_upnp_nodes_named_and_nothing_is_vouched_by_default() {
+        let config = read(
+            r#"flac-above-96k-for = ["upnp:uuid:one", " upnp:uuid:two ", "", "alsa_output.dac"]"#,
+        )
+        .expect("a well formed document");
+
+        assert_eq!(
+            config.renderers_vouched_for(),
+            Vouched::flac_at_any_rate([Udn::new("uuid:one"), Udn::new("uuid:two")])
+        );
+        assert_eq!(
+            Config::default().renderers_vouched_for(),
+            Vouched::default()
+        );
+
+        let error = read("flac-above-96k-for = [7]").expect_err("a number is not a name");
+        assert!(matches!(
+            error,
+            Error::ConfigType {
+                key: ConfigKey::FlacAbove96kFor,
+                ..
+            }
+        ));
     }
 
     #[test]

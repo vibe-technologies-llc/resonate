@@ -263,6 +263,11 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   for the first answer so the engine's first survey holds it, and so does `sinks --renderers`.
   The settings pane's device list switches it in the running window (`Setting::Renderers`,
   `Rendering::switch`), the window holding a resting network from the start.
+- `flac-above-96k-for` (empty unless set): array of renderer names (`upnp:` and the UDN, as
+  `sinks --renderers` lists them; others and blanks ignored, a non-text entry costs the key alone)
+  that are sent FLAC above 96 kHz though their protocol info states no rate
+  (`Config::renderers_vouched_for`, `Network::vouch`; `upnp.md`). Written by hand: the settings pane
+  has no row for it, and a flag would name a device for one run only.
 - `speaker-angle`: whole degrees 5 to 90 (`resonate_core::SpeakerAngle`, 30 unless set; held by
   `At::within`, a value outside it costs the key alone): how far to either side of the front the
   speakers stand when `convolution` names a SOFA set (`eq.md`); the start reads the set at it

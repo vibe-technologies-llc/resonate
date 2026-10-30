@@ -69,9 +69,27 @@ dev-dependency, for the end-to-end test.
   channels are, never guessed: a renderer listing `audio/flac` alone is offered FLAC to 96 kHz and
   the engine resamples what is above to a rate it is offered, a lower-fidelity choice made only
   because the renderer did not say it decodes more, where one that also takes WAVE is sent
-  the rate bit for bit as WAVE, and one stating `audio/flac;rate=192000` is sent 192 kHz FLAC. `Renderer::carriage_for(spec)` is the first carriage
+  the rate bit for bit as WAVE, and one stating `audio/flac;rate=192000` is sent 192 kHz FLAC.
+  The listener can state the rate for a renderer that does not (*A renderer vouched for*). `Renderer::carriage_for(spec)` is the first carriage
   carrying a stream's rate, word and layout, so FLAC wins wherever it can carry what WAVE would,
   and `SinkInfo::formats` is the carriages' formats united.
+- **A renderer vouched for is offered FLAC at every rate it does not state.** The `flac-above-96k-for`
+  setting (`binary.md`) names renderers (`upnp:` and the UDN, as `sinks --renderers` lists them);
+  `Network::vouch(Vouched::flac_at_any_rate(..))` hands the crate their UDNs (`Udn::from_node`), and
+  `Renderer::reached` reads the protocol info with `FlacUnsaid::AnyRate` for those, so their
+  `audio/flac` entry carries 44.1 to 192 kHz as one stating the rates would, and FLAC wins over WAVE
+  there (`carriage_for`). It changes nothing else: stated rates stay as stated, channels are still
+  only those stated, WAVE and L16 are untouched, and a renderer not named keeps the 96 kHz limit.
+  `vouch` is read when a renderer is described, so it is called before `look` (the binary does) and
+  does not re-describe a renderer already found. **Why a listener's word and not an attempt:** a
+  renderer that cannot decode a rate usually accepts `SetAVTransportURI` and `Play` and then
+  stops, errors or sits silent, with nothing a protocol answer distinguishes from a pause, and the
+  sink's formats are fixed when it is listed, before any stream; a try-and-fall-back would put
+  silence in front of the listener at the first 192 kHz song of every session and need the engine
+  to reopen on another format. The setting is the listener stating what the protocol info does not
+  (the same word `rate=` is), visible in the file, and removing the name restores the limit. No
+  hardware has confirmed which renderers decode the rate: the proof is a fake renderer's, not a
+  streamer's.
 - **Channels are offered where the protocol info states them, never guessed.** A `channels=N`
   parameter on any entry of a wrapping (1 to 8) adds that count's layouts (`layouts_of`: the named
   layout and, where the count has a different unnamed one, `Discrete(n)`); a wrapping naming none
@@ -275,7 +293,11 @@ FLAC bit for bit and 192 kHz is offered as WAVE
 `audio/flac;rate=` 176.4, 192 and 352.8 kHz is sent FLAC that returns bit for bit through the codec
 crate, whose STREAMINFO names the rate, and through the `flac` tool (CRCs included) where installed,
 a short last block of 100 frames and one of 16-bit size included
-(`flac_above_ninety_six_kilohertz_is_sent_where_the_renderer_states_the_rate_and_comes_back_bit_for_bit`); an OpenHome renderer reads
+(`flac_above_ninety_six_kilohertz_is_sent_where_the_renderer_states_the_rate_and_comes_back_bit_for_bit`); a renderer taking FLAC alone and stating no rate is offered up to 96 kHz, a renderer named to
+`Network::vouch` is sent 192 kHz FLAC that returns bit for bit, a vouch for another UDN changes
+nothing, and a vouched renderer taking FLAC and WAVE is sent FLAC where it would be sent WAVE
+(`a_renderer_taking_flac_alone_is_offered_it_above_ninety_six_kilohertz_only_when_the_listener_vouches`,
+`a_vouched_renderer_taking_flac_and_wave_is_sent_flac_at_a_rate_it_would_otherwise_be_sent_as_wave`); an OpenHome renderer reads
 its volume in steps of `VolumeMax` and is turned and muted through `Volume` alone, with no
 RenderingControl call and no `Playlist` call
 (`a_renderer_offering_openhome_volume_is_turned_through_it_and_its_playlist_is_left_alone`).
