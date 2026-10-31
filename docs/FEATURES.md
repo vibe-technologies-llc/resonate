@@ -9,6 +9,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   arrive untouched
 
 ## iOS parity
+- [M · 0.4.0] The now playing section on iOS needs better animations and its bugs fixed: the
+  handover between songs, the cover, the progress and the controls should move as `motion.md` says
+  the desktop's do, and the section's defects are to be found on a device and fixed
 - [L · blocked: xtool] The iOS icon has no appearance variants of its own: Dark, Clear and Tinted
   come from a compiled `Assets.car` (an `AppIcon` set with dark and tinted renditions, or an Icon
   Composer `.icon`, whichever `actool` compiles, which only Xcode has), and xtool 1.24 turns
@@ -74,6 +77,19 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [L · 0.4.0] Windows has no installer, start-menu entry or file associations from `MIME_TYPES`, no
   Authenticode signing (no secrets exist), no winget or scoop manifest, and the executable carries no
   icon (the accent-following icon is a Linux theme file)
+- [M · 0.4.0] Windows on ARM64 is not built: the archive is x86-64-v3 alone
+
+## Accessibility
+- [L · 0.4.0] Accessibility is not yet robust on desktop or mobile, and WCAG conformance is not
+  claimed: the desktop tree, the Compose screens and the SwiftUI app need an audit against WCAG
+  (names, roles and values, focus order and visible focus, contrast in every palette and accent,
+  target sizes, text scaling, reduced motion, no information by colour alone), the fixes the audit
+  finds, and a check that holds each result
+
+## Enrichment
+- [M · 0.4.0] Clicking enrichment shows no detailed statistics of what it is doing: the pass counts
+  what landed (`EnrichProgress`) and `EnrichSummary` carries its totals, but the listener sees no
+  breakdown of what the pass is doing, outcome by outcome, while it runs or after
 
 ## Playback and output
 - [M · blocked: pipewire-rs] A rebind or turn inside a row that moves the rate while
@@ -205,6 +221,3 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Later: Listen and recognition
 - [M · blocked: Shazam] Reached through an undocumented endpoint (`amp.shazam.com`); a change on its
   side stops recognition
-
-## Later: Windows
-- [M] Windows on ARM64 is not built: the archive is x86-64-v3 alone
