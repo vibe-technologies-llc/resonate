@@ -75,8 +75,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   permission bits, pseudo-terminals)
 - [S · 0.4.0] The recycle bin is reached through `trash` on a thread the binary did not put in an
   apartment: whether a deletion from a WASAPI-hosting process works is unproven
-- [S · 0.4.0] `Platform::Windows` is not in the sync wire: a Windows device is told to its peers as
-  `Other`, shown as *Device*
 - [L · 0.4.0] Windows has no installer, start-menu entry or file associations from `MIME_TYPES`, no
   Authenticode signing (no secrets exist), no winget or scoop manifest, and the executable carries no
   icon (the accent-following icon is a Linux theme file)

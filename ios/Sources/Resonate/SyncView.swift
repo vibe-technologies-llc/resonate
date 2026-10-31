@@ -703,13 +703,14 @@ extension DevicePlatform {
         case .linux: "Linux"
         case .android: "Android"
         case .ios: "iOS"
+        case .windows: "Windows"
         case .other: nil
         }
     }
 
     var symbol: String {
         switch self {
-        case .linux: "desktopcomputer"
+        case .linux, .windows: "desktopcomputer"
         case .android, .ios: "iphone"
         case .other: "questionmark.square.dashed"
         }

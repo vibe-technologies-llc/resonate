@@ -1463,6 +1463,7 @@ pub fn decoded_candidates(bytes: &[u8]) -> Result<Vec<SocketAddr>> {
 const PLATFORM_LINUX: u8 = 0;
 const PLATFORM_ANDROID: u8 = 1;
 const PLATFORM_IOS: u8 = 2;
+const PLATFORM_WINDOWS: u8 = 3;
 const PLATFORM_OTHER: u8 = 255;
 
 pub fn encoded_bundle(changes: &[Change]) -> Vec<u8> {
@@ -1485,6 +1486,7 @@ pub fn encoded_change(change: &Change) -> Vec<u8> {
                 Platform::Linux => PLATFORM_LINUX,
                 Platform::Android => PLATFORM_ANDROID,
                 Platform::Ios => PLATFORM_IOS,
+                Platform::Windows => PLATFORM_WINDOWS,
                 Platform::Other => PLATFORM_OTHER,
             });
             writer.stamp(note.stamp);
@@ -1616,6 +1618,7 @@ fn decoded_change(bytes: &[u8], answers: &[u8]) -> Result<Option<Change>> {
                 PLATFORM_LINUX => Platform::Linux,
                 PLATFORM_ANDROID => Platform::Android,
                 PLATFORM_IOS => Platform::Ios,
+                PLATFORM_WINDOWS => Platform::Windows,
                 _ => Platform::Other,
             },
             stamp: reader.stamp()?,
@@ -2480,6 +2483,7 @@ mod tests {
             Platform::Linux,
             Platform::Android,
             Platform::Ios,
+            Platform::Windows,
             Platform::Other,
         ] {
             assert_eq!(

@@ -126,7 +126,7 @@ private fun iconFor(device: SyncedDevice): ImageVector =
     when (device.platform) {
         DevicePlatform.ANDROID -> Icons.Rounded.PhoneAndroid
         DevicePlatform.IOS -> Icons.Rounded.PhoneIphone
-        DevicePlatform.LINUX -> Icons.Rounded.Computer
+        DevicePlatform.LINUX, DevicePlatform.WINDOWS -> Icons.Rounded.Computer
         DevicePlatform.OTHER -> Icons.Rounded.Devices
     }
 

@@ -23,6 +23,7 @@ pub enum Platform {
     Linux,
     Android,
     Ios,
+    Windows,
     Other,
 }
 
@@ -32,6 +33,7 @@ impl Platform {
             Platform::Linux => "Linux",
             Platform::Android => "Android",
             Platform::Ios => "iOS",
+            Platform::Windows => "Windows",
             Platform::Other => "Device",
         }
     }

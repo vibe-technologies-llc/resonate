@@ -43,7 +43,7 @@ const DEVICE_NAME: &str = "Windows";
 #[cfg(all(feature = "sync", not(windows)))]
 const THIS_PLATFORM: Platform = Platform::Linux;
 #[cfg(all(feature = "sync", windows))]
-const THIS_PLATFORM: Platform = Platform::Other;
+const THIS_PLATFORM: Platform = Platform::Windows;
 #[cfg(all(feature = "sync", not(windows)))]
 const HOST_NAME: &str = "/proc/sys/kernel/hostname";
 #[cfg(feature = "sync")]
@@ -1212,6 +1212,7 @@ impl resonate_ui::Syncing for Running {
                         Platform::Linux => resonate_ui::SyncedPlatform::Linux,
                         Platform::Android => resonate_ui::SyncedPlatform::Android,
                         Platform::Ios => resonate_ui::SyncedPlatform::Ios,
+                        Platform::Windows => resonate_ui::SyncedPlatform::Windows,
                         Platform::Other => resonate_ui::SyncedPlatform::Other,
                     },
                     online: device.online,

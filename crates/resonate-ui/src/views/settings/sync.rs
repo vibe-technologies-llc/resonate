@@ -322,7 +322,7 @@ fn scanned(link: &str) -> Div {
 fn device_mark(platform: SyncedPlatform, online: bool) -> Div {
     let icon = match platform {
         SyncedPlatform::Android | SyncedPlatform::Ios => Icon::Phone,
-        SyncedPlatform::Linux | SyncedPlatform::Other => Icon::Computer,
+        SyncedPlatform::Linux | SyncedPlatform::Windows | SyncedPlatform::Other => Icon::Computer,
     };
     let colour = if online {
         theme::accent()
@@ -345,6 +345,7 @@ const fn platform_name(platform: SyncedPlatform) -> Option<&'static str> {
         SyncedPlatform::Linux => Some("Linux"),
         SyncedPlatform::Android => Some("Android"),
         SyncedPlatform::Ios => Some("iOS"),
+        SyncedPlatform::Windows => Some("Windows"),
         SyncedPlatform::Other => None,
     }
 }
