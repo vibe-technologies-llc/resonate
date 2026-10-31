@@ -1,0 +1,22 @@
+[package]
+name = "resonate-wasapi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+doctest = false
+
+[dependencies]
+crossbeam-channel.workspace = true
+resonate-audio.workspace = true
+resonate-core.workspace = true
+tracing.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+parking_lot.workspace = true
+thread-priority = { version = "3.1.1", default-features = false }
+wasapi = "0.26.0"
+
+[lints]
+workspace = true

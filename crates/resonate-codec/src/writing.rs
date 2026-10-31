@@ -4,10 +4,6 @@ use std::{
     fmt,
     fs::{self, File, Metadata, OpenOptions},
     io::{self, BufReader, Read, Seek, SeekFrom, Write},
-    os::unix::{
-        ffi::OsStrExt as _,
-        fs::{self as unix_fs, FileExt as _, MetadataExt as _},
-    },
     path::{Path, PathBuf},
     process,
     sync::atomic::{AtomicU64, Ordering},
@@ -26,10 +22,12 @@ use lofty::{
     tag::{ItemKey, ItemValue, Tag, TagExt as _, TagItem, TagType},
 };
 use resonate_core::{
-    Decibels, MediaLocation, naming,
+    Decibels, MediaLocation,
+    file_facts::{self, FileStamp},
+    naming, os_bytes,
+    positioned::FileExt as _,
     writer::{self, Held, Writer},
 };
-use rustix::fs::XattrFlags;
 
 use crate::{
     CoverArt, Error, Picturing, Result, TagSet,
@@ -924,34 +922,30 @@ struct Saving<'a> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Taken {
-    device: u64,
-    inode: u64,
-    length: u64,
-    modified: (i64, i64),
-}
+struct Taken(FileStamp);
 
 impl Taken {
     fn of(path: &Path) -> io::Result<Self> {
-        rustix::fs::access(path, rustix::fs::Access::WRITE_OK)?;
-        let held = fs::metadata(path)?;
-        Ok(Self {
-            device: held.dev(),
-            inode: held.ino(),
-            length: held.len(),
-            modified: (held.mtime(), held.mtime_nsec()),
-        })
+        ensure_writable(path)?;
+        FileStamp::at(path).map(Self)
     }
 
     fn still_stands(self, path: &Path) -> bool {
-        fs::metadata(path).is_ok_and(|held| {
-            Self {
-                device: held.dev(),
-                inode: held.ino(),
-                length: held.len(),
-                modified: (held.mtime(), held.mtime_nsec()),
-            } == self
-        })
+        FileStamp::at(path).is_ok_and(|held| held == self.0)
+    }
+}
+
+#[cfg(unix)]
+fn ensure_writable(path: &Path) -> io::Result<()> {
+    rustix::fs::access(path, rustix::fs::Access::WRITE_OK)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn ensure_writable(path: &Path) -> io::Result<()> {
+    match fs::metadata(path)?.permissions().readonly() {
+        true => Err(io::ErrorKind::PermissionDenied.into()),
+        false => Ok(()),
     }
 }
 
@@ -1372,6 +1366,7 @@ fn landed_by(
 }
 
 static STAGED: AtomicU64 = AtomicU64::new(0);
+#[cfg(unix)]
 const ATTRIBUTE_READS_AT_MOST: usize = 4;
 const STAGED_BY_AND_COUNTED: char = '-';
 const LONGEST_LETTER_BYTES: usize = 4;
@@ -1419,12 +1414,13 @@ fn staged_in(folder: &Path, path: &Path) -> PathBuf {
 }
 
 fn staged_by(path: &Path, staged: &OsStr) -> Option<u32> {
-    let stem = path.file_stem()?.as_bytes();
-    let extension = path.extension().map(OsStr::as_bytes).unwrap_or_default();
-    let unsuffixed = staged
-        .as_bytes()
+    let stem = os_bytes::bytes_of(path.file_stem()?);
+    let stem = stem.as_ref();
+    let extension = path.extension().map(os_bytes::bytes_of).unwrap_or_default();
+    let staged_bytes = os_bytes::bytes_of(staged);
+    let unsuffixed = staged_bytes
         .strip_prefix(b".")?
-        .strip_suffix(extension)?
+        .strip_suffix(extension.as_ref())?
         .strip_suffix(b".")?;
     let dot = unsuffixed.iter().rposition(|byte| *byte == b'.')?;
     let (kept, stamp) = (&unsuffixed[..dot], &unsuffixed[dot + 1..]);
@@ -1468,18 +1464,46 @@ fn sweep_what_a_dead_writer_staged(path: &Path) {
 fn settled_over(staged: &Path, path: &Path) -> std::result::Result<(), Unsettled> {
     let standing = fs::metadata(path)?;
     File::open(staged)?.sync_all()?;
-    if standing.nlink() > 1 || !carries_what_the_file_did(&standing, path, staged) {
+    if has_other_names(&standing) || !carries_what_the_file_did(&standing, path, staged) {
         return WholeCopy::named_beside(staged, path)?.written_back();
     }
 
     fs::rename(staged, path)?;
     if let Some(folder) = path.parent() {
-        File::open(folder)?.sync_all()?;
+        file_facts::sync_directory(folder)?;
     }
     Ok(())
 }
 
+#[cfg(unix)]
+fn has_other_names(standing: &Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt as _;
+
+    standing.nlink() > 1
+}
+
+#[cfg(windows)]
+fn has_other_names(_: &Metadata) -> bool {
+    false
+}
+
+#[cfg(windows)]
 pub fn carries_what_the_file_did(standing: &Metadata, path: &Path, staged: &Path) -> bool {
+    match fs::set_permissions(staged, standing.permissions()) {
+        Ok(()) => true,
+        Err(error) => {
+            tracing::debug!(%error, path = %path.display(), "a copy cannot carry the mode the file held");
+            false
+        }
+    }
+}
+
+#[cfg(unix)]
+pub fn carries_what_the_file_did(standing: &Metadata, path: &Path, staged: &Path) -> bool {
+    use std::os::unix::fs::{self as unix_fs, MetadataExt as _};
+
+    use rustix::fs::XattrFlags;
+
     let owned = unix_fs::chown(staged, Some(standing.uid()), Some(standing.gid()));
     let moded = fs::set_permissions(staged, standing.permissions());
     let attributed = attributes_of(path).and_then(|attributes| {
@@ -1504,7 +1528,10 @@ pub fn carries_what_the_file_did(standing: &Metadata, path: &Path, staged: &Path
     }
 }
 
+#[cfg(unix)]
 fn attributes_of(path: &Path) -> io::Result<Vec<(OsString, Vec<u8>)>> {
+    use std::os::unix::ffi::OsStrExt as _;
+
     let listed = match read_sized(
         || rustix::fs::listxattr_query(path),
         |buffer| rustix::fs::listxattr(path, buffer),
@@ -1528,6 +1555,7 @@ fn attributes_of(path: &Path) -> io::Result<Vec<(OsString, Vec<u8>)>> {
         .collect()
 }
 
+#[cfg(unix)]
 fn read_sized(
     sized: impl Fn() -> rustix::io::Result<usize>,
     read: impl Fn(&mut [u8]) -> rustix::io::Result<usize>,
@@ -1547,6 +1575,7 @@ fn read_sized(
     Err(rustix::io::Errno::RANGE.into())
 }
 
+#[cfg(unix)]
 fn unsupported(error: &io::Error) -> bool {
     error.raw_os_error() == Some(rustix::io::Errno::NOTSUP.raw_os_error())
 }
@@ -1640,6 +1669,8 @@ fn guessed_in(
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    use std::os::unix::{ffi::OsStrExt as _, fs as unix_fs, fs::MetadataExt as _};
     use std::{
         env, fs,
         io::Cursor,
@@ -1650,6 +1681,8 @@ mod tests {
     };
 
     use lofty::ogg::tag::VorbisComments;
+    #[cfg(unix)]
+    use rustix::fs::XattrFlags;
 
     use super::*;
     use crate::{
@@ -1732,6 +1765,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_copy_a_dead_writer_staged_beside_a_track_whose_name_is_not_text_is_swept() {
         const NEVER_A_PROCESS: u32 = 999_999_999;
 
@@ -2011,6 +2045,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_write_lands_through_a_staged_copy_and_a_failed_one_leaves_the_file_as_it_was() {
         use std::os::unix::fs::MetadataExt as _;
 
@@ -2149,6 +2184,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_file_in_a_folder_nothing_may_be_created_in_is_written_all_the_same() {
         use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
 
@@ -2240,6 +2276,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn an_edit_the_padding_holds_lands_in_the_file_itself_rather_than_a_copy() {
         let folder = Folder::new();
         let location = folder.holding("echoes.flac", &flac());
@@ -2305,6 +2342,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_tag_after_the_audio_of_a_wave_file_is_rewritten_in_place_whatever_the_size_of_the_file() {
         let folder = Folder::new();
         let location = folder.holding(
@@ -2354,6 +2392,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn an_edit_a_leading_id3_tag_has_room_for_lands_in_the_file_itself() {
         let folder = Folder::new();
         let location = folder.holding("echoes.mp3", &mp3());
@@ -2402,6 +2441,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_head_outgrowing_its_room_is_given_room_at_the_head_and_lands_in_the_file_itself() {
         let folder = Folder::new();
         let location = folder.holding("echoes.flac", &flac());
@@ -2631,6 +2671,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn an_opus_edit_the_comment_has_room_for_lands_in_its_header_pages_alone() {
         let folder = Folder::new();
         let location = folder.holding("echoes.opus", &opus());
@@ -2784,7 +2825,7 @@ mod tests {
             .expect("the folder")
             .flatten()
             .map(|entry| entry.file_name())
-            .filter(|named| named.as_bytes().starts_with(b"."))
+            .filter(|named| os_bytes::bytes_of(named).starts_with(b"."))
             .collect();
         assert!(left.is_empty(), "{left:?}");
     }
@@ -3411,6 +3452,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_track_reached_through_a_link_is_written_where_the_link_points_and_stays_a_link() {
         let folder = Folder::new();
         let target = folder.holding("echoes.flac", &flac());
@@ -3430,6 +3472,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_track_with_two_names_keeps_both_and_both_read_the_write() {
         let folder = Folder::new();
         let first = folder.holding("echoes.flac", &flac());
@@ -3457,6 +3500,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_tracks_extended_attributes_survive_a_write() {
         const NAME: &str = "user.resonate.kept";
 

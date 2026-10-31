@@ -2,9 +2,9 @@ use std::time::Duration;
 
 use resonate_core::SampleRate;
 use resonate_dsp::Sweep;
+use resonate_engine::NodeName;
 use resonate_eq::{Error as EqError, Response};
 use resonate_listen::{Hearing, Listener, Listening};
-use resonate_pipewire::NodeName;
 use thiserror::Error as ThisError;
 
 use crate::{Error, Result};

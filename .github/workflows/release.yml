@@ -184,6 +184,27 @@ jobs:
           path: assets/*.pkg.tar.zst
           if-no-files-found: error
 
+  windows-zip:
+    name: Windows archive
+    needs: release
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.ref }}
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+      - name: Build the archive
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+        run: ./packaging/windows/build.ps1 -Version $env:VERSION -Output assets
+      - uses: actions/upload-artifact@v4
+        with:
+          name: resonate-windows-zip
+          path: assets/*.zip
+          if-no-files-found: error
+
   android-apk:
     name: Signed Android APK
     needs: release
@@ -241,7 +262,7 @@ jobs:
 
   publish:
     name: Checksums and assets
-    needs: [release, fedora-rpm, ubuntu-deb, arch-package, android-apk]
+    needs: [release, fedora-rpm, ubuntu-deb, arch-package, windows-zip, android-apk]
     if: ${{ !cancelled() && needs.release.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15

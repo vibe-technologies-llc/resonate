@@ -17,7 +17,10 @@ mod info;
 mod input;
 mod lastfm;
 mod lasting;
-#[cfg(feature = "ui")]
+#[cfg(all(feature = "ui", unix))]
+mod launcher;
+#[cfg(all(feature = "ui", windows))]
+#[path = "windows_launcher.rs"]
 mod launcher;
 mod listen;
 mod mcp;
@@ -34,6 +37,10 @@ mod served;
 #[cfg(feature = "ui")]
 mod settings;
 mod share;
+#[cfg(unix)]
+mod signals;
+#[cfg(windows)]
+#[path = "interrupts.rs"]
 mod signals;
 mod sleep;
 #[cfg(feature = "ui")]
@@ -42,6 +49,7 @@ mod stats;
 mod studies;
 mod submitting;
 mod suggest;
+mod surveyed;
 mod sync;
 mod table;
 mod trashing;
@@ -78,9 +86,10 @@ use resonate_core::{
     StreamSpec, Volume, ZoneId, names_audio,
 };
 use resonate_engine::{
-    BluetoothWake, Command, Counting, Decoded, EngineConfig, Event, Impulse, Keep, Keeping,
-    Levelling, Listening, OutputPlan, Placement, Player, PlayerState, QueueItem, Queued,
-    RepeatMode, Unclaimed, Until, plan_output, read_impulse, resolve_replay_gain, stamp_of,
+    BluetoothWake, Command, Counting, Decoded, EngineConfig, Event, HardwareVolume, Impulse, Keep,
+    Keeping, Levelling, Listening, NodeName, OutputPlan, Placement, Player, PlayerState, Plugged,
+    QueueItem, Queued, RepeatMode, SinkError, SinkFormats, SinkInfo, Unclaimed, Until, Words,
+    plan_output, read_impulse, resolve_replay_gain, stamp_of,
 };
 #[cfg(feature = "ui")]
 use resonate_engine::{Opens, Zones};
@@ -94,9 +103,6 @@ use resonate_library::{
     folded_letters,
 };
 use resonate_mpris::{PlayerName, Queueing, Reloadable, Running, Standing, ZoneAsked};
-use resonate_pipewire::{
-    HardwareVolume, NodeName, PipeWire, Plugged, SinkFormats, SinkInfo, Words,
-};
 use resonate_providers::Providers;
 use resonate_upnp::Located;
 use tracing_subscriber::{
@@ -564,7 +570,7 @@ fn select_sink(sinks: Vec<SinkInfo>, wanted: Option<&NodeName>) -> Result<SinkIn
         return sinks
             .into_iter()
             .find(|sink| sink.is_default)
-            .ok_or(Error::Sink(resonate_pipewire::Error::NoSink));
+            .ok_or(Error::Sink(SinkError::NoSink));
     };
     sinks
         .into_iter()
@@ -633,8 +639,7 @@ fn list_sinks(
     renderers_at: &[String],
     cast_at: &[String],
 ) -> Result<()> {
-    let pipewire = PipeWire::start("Resonate")?;
-    let mut sinks = pipewire.enumerate_sinks(SINK_TIMEOUT)?;
+    let mut sinks = surveyed::sinks()?;
     let config = with_receiver_addresses(config, renderers_at, cast_at)?;
     let asked = if renderers {
         Asked::Network
@@ -696,7 +701,6 @@ fn list_sinks(
     }
 
     said_on!("{}", table.render());
-    pipewire.shutdown()?;
     Ok(())
 }
 
@@ -1614,15 +1618,13 @@ fn explain(cli: &Cli, config: &Config, path: &Path) -> Result<()> {
     let sources = sources_over(vault_already_kept(cli, config).as_ref());
     let info = resonate_codec::probe(&sources, &MediaLocation::local(path))?;
 
-    let pipewire = PipeWire::start("Resonate")?;
     let wanted = wanted_sink(cli, config);
-    let sink = select_sink(pipewire.enumerate_sinks(SINK_TIMEOUT)?, wanted.as_ref())?;
+    let sink = select_sink(surveyed::sinks()?, wanted.as_ref())?;
     let config = engine_config(cli, config);
     let replay_gain =
         resolve_replay_gain(config.replay_gain, config.levelling, &info.tags.replay_gain);
     let decoded = Decoded::of(&info, None);
     let plan = plan_output(decoded, &sink, &config, replay_gain);
-    pipewire.shutdown()?;
 
     said!("source: {}", info.spec);
     if let Packing::DopMarked(rate) = info.packing {
@@ -3403,7 +3405,9 @@ fn sheet_cuts(sources: &Sources, path: &Path) -> Vec<(MediaLocation, FrameSpan)>
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, os::unix::fs::symlink, process};
+    #[cfg(unix)]
+    use std::os::unix::fs::symlink;
+    use std::{fs, process};
 
     use resonate_codec::{Media, MediaProvider};
     use resonate_core::SourceId;
@@ -3720,6 +3724,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_uri_names_the_same_file_a_path_through_the_same_link_does() {
         let folder = env::temp_dir().join(format!("resonate-uri-{}", process::id()));
         let real = folder.join("real");

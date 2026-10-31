@@ -34,6 +34,53 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   library builds for `aarch64-apple-ios` on stable, and `arm64e-apple-ios` needs a nightly
   `build-std`
 
+## Windows parity
+- [M · blocked: hardware] Nothing of the Windows build has been heard or seen on a Windows machine:
+  it is cross-checked (`cargo xwin`), its portable halves are tested on Linux and a hosted runner
+  builds and tests it, but WASAPI shared and exclusive playback at every rate and word, device
+  hot-plug, the render cycle's timing, the window under per-monitor DPI and IME, the recycle bin
+  and the terminal keys have never run on real hardware or a real audio endpoint
+- [L · 0.4.0] Windows has no media transport: the System Media Transport Controls (media keys, the
+  volume overlay and lock screen, track and cover metadata) need a native crate behind
+  `resonate-mpris`'s `Host` seam, since `resonate-mpris` finds no session bus and the player runs
+  without one
+- [M · 0.4.0] A running window cannot be reached on Windows: `queue`, `sleep`, `players`, `launch`,
+  `eq` reloads and `mcp` ride the session bus's `Running`, which has no Windows transport (a named
+  pipe with a lock file for discovery would carry the same calls)
+- [M · 0.4.0] Windows has no capture: `resonate-listen`'s `Listener` lists no microphone and refuses
+  to record, so listening to the desktop, recognition by ear and room measurement are unavailable;
+  WASAPI loopback and capture endpoints would fill it
+- [M · 0.4.0] The WASAPI stream stamps what it fills with the wall clock and the buffer's padding,
+  not `IAudioClock`'s position against the performance counter, so a handover between zones lands
+  within a period of the other zone rather than within a few frames; reading the counter needs a
+  safe wrapper that does not exist yet
+- [M · 0.4.0] A WASAPI stream cannot be reshaped (a rate, word or priority change closes and opens
+  it), has no endpoint volume or mute (`Unsupported`), learns of devices by a two-second poll and
+  runs at the thread priority `thread-priority` sets rather than an MMCSS class
+- [S · 0.4.0] The output pane, `sinks --help` and the settings text still name PipeWire on Windows
+- [M · 0.4.0] Windows has no toast notifications with transport actions, no idle inhibit
+  (`SetThreadExecutionState`) while playing and no metered-network detector (`NetworkCostType`)
+- [S · 0.4.0] Discord's presence cannot reach Discord on Windows: its IPC there is the named pipe
+  `\\.\pipe\discord-ipc-N`, and the crate has only the Unix socket
+- [M · 0.4.0] Windows file names are not weighed by the organiser and the naming cut: reserved names
+  (`CON`, `NUL`), trailing dots and spaces, case-insensitive collisions and `MAX_PATH` are not
+  checked, NTFS alternate streams and ACLs are not carried by a tag write, and a folder mounted into
+  another drive's tree is not noticed as a volume
+- [S · 0.4.0] A `Held` file's lock is mandatory on Windows (`LockFileEx`): every reader of a held
+  journal, staging file or whole copy needs auditing for a read that would meet `ERROR_LOCK_VIOLATION`
+- [S · 0.4.0] The spool reads no free space on Windows (`room_on_disc` is unknown), so a stream too
+  long for the disc fills it before being refused
+- [M · 0.4.0] The integration suites of the library, the codec's encoded files, the vault and the
+  binary's terminal and signal tests are Unix-only; each needs a Windows counterpart (symlinks,
+  permission bits, pseudo-terminals)
+- [S · 0.4.0] The recycle bin is reached through `trash` on a thread the binary did not put in an
+  apartment: whether a deletion from a WASAPI-hosting process works is unproven
+- [S · 0.4.0] `Platform::Windows` is not in the sync wire: a Windows device is told to its peers as
+  `Other`, shown as *Device*
+- [L · 0.4.0] Windows has no installer, start-menu entry or file associations from `MIME_TYPES`, no
+  Authenticode signing (no secrets exist), no winget or scoop manifest, and the executable carries no
+  icon (the accent-following icon is a Linux theme file)
+
 ## Playback and output
 - [M · blocked: pipewire-rs] A rebind or turn inside a row that moves the rate while
   `force-graph-rate` pins it (on by default), or switches the pin, still reopens the PipeWire stream:
@@ -164,3 +211,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Later: Listen and recognition
 - [M · blocked: Shazam] Reached through an undocumented endpoint (`amp.shazam.com`); a change on its
   side stops recognition
+
+## Later: Windows
+- [M] Windows on ARM64 is not built: the archive is x86-64-v3 alone

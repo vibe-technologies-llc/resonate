@@ -53,6 +53,7 @@ mod sung;
 mod supply;
 mod synced;
 mod take_in;
+#[cfg(unix)]
 mod trash;
 mod undo;
 mod unreplacing;

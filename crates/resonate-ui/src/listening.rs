@@ -142,6 +142,8 @@ fn stage_after(error: &ListenError) -> Stage {
         | ListenError::Output { .. }
         | ListenError::NoSuchSink { .. }
         | ListenError::NoOutput => Stage::CaptureFailed,
+        #[cfg(windows)]
+        ListenError::Unavailable => Stage::CaptureFailed,
         ListenError::Unreachable { .. } => Stage::Unreached,
         ListenError::Refused { .. }
         | ListenError::Unreadable { .. }
@@ -466,6 +468,10 @@ fn noted(error: &ListenError) {
         | ListenError::NoSuchSink { .. }
         | ListenError::NoOutput => {
             tracing::warn!(%error, "nothing could be listened to");
+        }
+        #[cfg(windows)]
+        ListenError::Unavailable => {
+            tracing::warn!(%error, "this platform cannot listen yet");
         }
         ListenError::Unreachable { .. }
         | ListenError::Refused { .. }

@@ -1,3 +1,5 @@
+#![cfg(target_os = "linux")]
+
 use std::{f64::consts::TAU, thread, time::Duration};
 
 use resonate_core::{ChannelLayout, SampleFormat, SampleRate, StreamSpec};

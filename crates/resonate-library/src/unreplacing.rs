@@ -1,10 +1,17 @@
 use std::{fs, io, path::Path};
 
+#[cfg(unix)]
 use rustix::{
     fs::{CWD, RenameFlags, renameat_with},
     io::Errno,
 };
 
+#[cfg(windows)]
+pub(crate) fn renamed_over_nothing(from: &Path, to: &Path) -> io::Result<()> {
+    linked_over_nothing(from, to)
+}
+
+#[cfg(unix)]
 pub(crate) fn renamed_over_nothing(from: &Path, to: &Path) -> io::Result<()> {
     match renameat_with(CWD, from, CWD, to, RenameFlags::NOREPLACE) {
         Ok(()) => Ok(()),

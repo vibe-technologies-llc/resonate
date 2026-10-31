@@ -3,7 +3,7 @@ use std::sync::LazyLock;
 use gpui::SharedString;
 use parking_lot::RwLock;
 
-const BODY_LADDER: [&str; 8] = [
+const BODY_LADDER: [&str; 10] = [
     "Inter",
     "Adwaita Sans",
     "Cantarell",
@@ -12,9 +12,11 @@ const BODY_LADDER: [&str; 8] = [
     "Source Sans 3",
     "Liberation Sans",
     "DejaVu Sans",
+    "Segoe UI Variable",
+    "Segoe UI",
 ];
 
-const MONOSPACE_LADDER: [&str; 8] = [
+const MONOSPACE_LADDER: [&str; 10] = [
     "JetBrains Mono",
     "Adwaita Mono",
     "Fira Mono",
@@ -23,6 +25,8 @@ const MONOSPACE_LADDER: [&str; 8] = [
     "Noto Sans Mono",
     "Liberation Mono",
     "DejaVu Sans Mono",
+    "Cascadia Mono",
+    "Consolas",
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]

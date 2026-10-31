@@ -1,3 +1,4 @@
+#![cfg(unix)]
 #![cfg(feature = "mcp")]
 
 use std::{

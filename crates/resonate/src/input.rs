@@ -5,7 +5,10 @@ use std::{
 };
 
 use crossbeam_channel::{Receiver, Sender, bounded};
-use parking_lot::{Mutex, Once};
+#[cfg(unix)]
+use parking_lot::Mutex;
+use parking_lot::Once;
+#[cfg(unix)]
 use rustix::termios::{self, LocalModes, OptionalActions, SpecialCodeIndex, Termios};
 
 use crate::{
@@ -56,7 +59,11 @@ const RUBOUT: u8 = 0x7f;
 const BACKSPACE: u8 = 0x08;
 const TYPED: u8 = b':';
 
+#[cfg(unix)]
 static SAVED: Mutex<Option<Termios>> = Mutex::new(None);
+
+#[cfg(windows)]
+static RAW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 static HOOKED: Once = Once::new();
 
@@ -69,12 +76,19 @@ pub enum Pressed {
 
 pub struct KeyAtATime;
 
+#[cfg(unix)]
 pub fn played_in_the_background() -> bool {
     let stdin = io::stdin();
     termios::isatty(&stdin)
         && termios::tcgetpgrp(&stdin).is_ok_and(|in_front| in_front != rustix::process::getpgrp())
 }
 
+#[cfg(windows)]
+pub const fn played_in_the_background() -> bool {
+    false
+}
+
+#[cfg(unix)]
 impl KeyAtATime {
     pub fn where_a_terminal() -> Option<Self> {
         let stdin = io::stdin();
@@ -95,6 +109,21 @@ impl KeyAtATime {
     }
 }
 
+#[cfg(windows)]
+impl KeyAtATime {
+    pub fn where_a_terminal() -> Option<Self> {
+        use std::io::IsTerminal as _;
+
+        if !io::stdin().is_terminal() {
+            return None;
+        }
+        crossterm::terminal::enable_raw_mode().ok()?;
+        RAW.store(true, std::sync::atomic::Ordering::Release);
+        restore_the_terminal_on_a_panic();
+        Some(Self)
+    }
+}
+
 impl Drop for KeyAtATime {
     fn drop(&mut self) {
         restore_the_terminal();
@@ -105,17 +134,29 @@ fn restore_the_terminal_on_a_panic() {
     HOOKED.call_once(|| {
         let reported = panic::take_hook();
         panic::set_hook(Box::new(move |panicked| {
-            if let Some(mut held) = SAVED.try_lock()
-                && let Some(saved) = held.take()
-            {
-                let _ = termios::tcsetattr(io::stdin(), OptionalActions::Now, &saved);
-            }
+            restore_without_waiting();
             reported(panicked);
         }));
     });
 }
 
-#[cfg(feature = "online")]
+#[cfg(unix)]
+fn restore_without_waiting() {
+    if let Some(mut held) = SAVED.try_lock()
+        && let Some(saved) = held.take()
+    {
+        let _ = termios::tcsetattr(io::stdin(), OptionalActions::Now, &saved);
+    }
+}
+
+#[cfg(windows)]
+fn restore_without_waiting() {
+    if RAW.swap(false, std::sync::atomic::Ordering::AcqRel) {
+        let _ = crossterm::terminal::disable_raw_mode();
+    }
+}
+
+#[cfg(all(feature = "online", unix))]
 pub fn a_line_unechoed() -> io::Result<String> {
     let stdin = io::stdin();
     let unechoed = termios::isatty(&stdin)
@@ -138,9 +179,63 @@ pub fn a_line_unechoed() -> io::Result<String> {
     read.map(|_| line.trim_end_matches(['\r', '\n']).to_owned())
 }
 
+#[cfg(all(feature = "online", windows))]
+pub fn a_line_unechoed() -> io::Result<String> {
+    use std::io::IsTerminal as _;
+
+    if !io::stdin().is_terminal() {
+        let mut line = String::new();
+        io::stdin().read_line(&mut line)?;
+        return Ok(line.trim_end_matches(['\r', '\n']).to_owned());
+    }
+    crossterm::terminal::enable_raw_mode()?;
+    RAW.store(true, std::sync::atomic::Ordering::Release);
+    restore_the_terminal_on_a_panic();
+    let typed = typed_unechoed();
+    restore_the_terminal();
+    typed
+}
+
+#[cfg(all(feature = "online", windows))]
+fn typed_unechoed() -> io::Result<String> {
+    use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers, read};
+
+    let mut line = String::new();
+    loop {
+        let Event::Key(key) = read()? else {
+            continue;
+        };
+        if key.kind == KeyEventKind::Release {
+            continue;
+        }
+        match key.code {
+            KeyCode::Enter => return Ok(line),
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                crate::signals::interrupted();
+                return Ok(line);
+            }
+            KeyCode::Char(letter) => line.push(letter),
+            KeyCode::Backspace => {
+                line.pop();
+            }
+            _ => {}
+        }
+    }
+}
+
+#[cfg(unix)]
 pub fn restore_the_terminal() {
     if let Some(saved) = SAVED.lock().take()
         && let Err(error) = termios::tcsetattr(io::stdin(), OptionalActions::Now, &saved)
+    {
+        tracing::warn!(%error, "the terminal was left reading a key at a time");
+    }
+}
+
+#[cfg(windows)]
+pub fn restore_the_terminal() {
+    if RAW.swap(false, std::sync::atomic::Ordering::AcqRel)
+        && let Err(error) = crossterm::terminal::disable_raw_mode()
     {
         tracing::warn!(%error, "the terminal was left reading a key at a time");
     }
@@ -227,51 +322,104 @@ pub fn lines() -> Receiver<Pressed> {
 
 pub fn keys() -> Receiver<Pressed> {
     listening(|send| {
-        let mut stdin = io::stdin().lock();
         let mut keyed = Keyed::default();
-        loop {
-            let (pressed, taken) = match stdin.fill_buf() {
-                Ok([]) => return,
-                Ok(read) => (keyed.read(read), read.len()),
-                Err(error) if error.kind() == ErrorKind::Interrupted => continue,
-                Err(_) => return,
-            };
-            stdin.consume(taken);
-
-            for pressed in pressed {
-                if send.send(pressed).is_err() {
-                    return;
-                }
-            }
-        }
+        chunks(|read| {
+            keyed
+                .read(read)
+                .into_iter()
+                .all(|pressed| send.send(pressed).is_ok())
+        });
     })
 }
 
 pub fn strokes() -> Receiver<char> {
     listening(|send| {
-        let mut stdin = io::stdin().lock();
         let mut struck = Struck::default();
-        loop {
-            let (strokes, taken) = match stdin.fill_buf() {
-                Ok([]) => return,
-                Ok(read) => (
-                    read.iter()
-                        .filter_map(|byte| struck.stroke(*byte))
-                        .collect::<Vec<_>>(),
-                    read.len(),
-                ),
-                Err(error) if error.kind() == ErrorKind::Interrupted => continue,
-                Err(_) => return,
-            };
-            stdin.consume(taken);
-
-            for stroke in strokes {
-                if send.send(stroke).is_err() {
-                    return;
-                }
-            }
-        }
+        chunks(|read| {
+            read.iter()
+                .filter_map(|byte| struck.stroke(*byte))
+                .collect::<Vec<_>>()
+                .into_iter()
+                .all(|stroke| send.send(stroke).is_ok())
+        });
     })
+}
+
+fn stdin_chunks(mut feed: impl FnMut(&[u8]) -> bool) {
+    let mut stdin = io::stdin().lock();
+    loop {
+        let (kept_going, taken) = match stdin.fill_buf() {
+            Ok([]) => return,
+            Ok(read) => (feed(read), read.len()),
+            Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+            Err(_) => return,
+        };
+        stdin.consume(taken);
+        if !kept_going {
+            return;
+        }
+    }
+}
+
+#[cfg(unix)]
+fn chunks(feed: impl FnMut(&[u8]) -> bool) {
+    stdin_chunks(feed);
+}
+
+#[cfg(windows)]
+fn chunks(feed: impl FnMut(&[u8]) -> bool) {
+    if RAW.load(std::sync::atomic::Ordering::Acquire) {
+        key_events_as_bytes(feed);
+    } else {
+        stdin_chunks(feed);
+    }
+}
+
+#[cfg(windows)]
+fn key_events_as_bytes(mut feed: impl FnMut(&[u8]) -> bool) {
+    use crossterm::event::{Event, KeyEventKind, read};
+
+    while let Ok(event) = read() {
+        let Event::Key(key) = event else {
+            continue;
+        };
+        if key.kind == KeyEventKind::Release {
+            continue;
+        }
+        if is_an_interrupt(&key) {
+            crate::signals::interrupted();
+            continue;
+        }
+        let bytes = bytes_of(&key);
+        if !bytes.is_empty() && !feed(&bytes) {
+            return;
+        }
+    }
+}
+
+#[cfg(windows)]
+fn is_an_interrupt(key: &crossterm::event::KeyEvent) -> bool {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL)
+}
+
+#[cfg(windows)]
+fn bytes_of(key: &crossterm::event::KeyEvent) -> Vec<u8> {
+    use crossterm::event::KeyCode;
+
+    let control = |byte: u8| vec![ESCAPE, INTRODUCER, byte];
+    match key.code {
+        KeyCode::Char(letter) => letter.to_string().into_bytes(),
+        KeyCode::Enter => vec![b'\n'],
+        KeyCode::Esc => vec![ESCAPE],
+        KeyCode::Backspace => vec![RUBOUT],
+        KeyCode::Up => control(UP),
+        KeyCode::Down => control(DOWN),
+        KeyCode::Right => control(RIGHT),
+        KeyCode::Left => control(LEFT),
+        _ => Vec::new(),
+    }
 }
 
 #[derive(Default)]

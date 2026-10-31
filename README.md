@@ -1,7 +1,7 @@
 # Resonate
 
-A music player for audio enthusiasts, targeting Linux first, with high-fidelity, high-performance
-playback as the guiding constraint.
+A music player for audio enthusiasts, targeting Linux first (with a Windows port), with
+high-fidelity, high-performance playback as the guiding constraint.
 
 - A **native PipeWire client** rather than a PulseAudio or ALSA compatibility layer. It reads the
   rates a sink advertises, switches the graph to the source's own rate where the hardware takes it,
@@ -30,7 +30,8 @@ playback as the guiding constraint.
 - Optional **Discord presence** and a **Model Context Protocol** server that hands the catalog and
   the running player to a language model.
 
-Until the first release is published, build from source.
+On Windows the sound goes through WASAPI instead (see *Windows* below). Until the first release is
+published, build from source.
 
 ## Building
 
@@ -41,6 +42,24 @@ cargo build --release --workspace --exclude resonate-ui --no-default-features   
 
 The binary's features are `ui`, `online`, `mcp` and `discord`, all on by default. Turning `online`
 off leaves the audio stack with no HTTP client; the window's toolkit still brings its own.
+
+## Windows
+
+A release archive, `resonate-<version>-x86_64_v3-windows.zip`, holds `resonate.exe` and needs nothing
+installed. To build it, install the MSVC build tools and a current Rust, then:
+
+```
+./packaging/windows/build.ps1
+```
+
+Settings live in `%APPDATA%\resonate\config.toml`, the catalog and everything else in
+`%LOCALAPPDATA%\resonate`. `resonate sinks` lists every output twice: the plain name plays through
+the Windows mixer, the same name marked *(WASAPI exclusive)* takes the device for Resonate alone at
+the song's own rate and word. Desktop integration (media keys, notifications), microphone and
+loopback capture, Discord and remote control of a running window are not on Windows yet; the
+roadmap lists them (`docs/FEATURES.md`). Nothing here has been heard on a real Windows machine yet.
+
+## Building on Linux
 
 The audio stack needs PipeWire and a C toolchain for its bindings; the window adds Wayland,
 xkbcommon, Vulkan, fontconfig and freetype. On Arch that is

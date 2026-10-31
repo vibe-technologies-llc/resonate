@@ -1,9 +1,9 @@
 use std::{fmt, io, path::PathBuf, result};
 
 use resonate_core::MediaLocation;
+use resonate_engine::NodeName;
 use resonate_library::{PassKind, PlaylistName};
 use resonate_mpris::{PlayerName, ZoneAsked};
-use resonate_pipewire::NodeName;
 use thiserror::Error;
 
 use crate::{cli::AbxOfArg, sleep::Spoken, suggest::SuggestionName};
@@ -444,7 +444,7 @@ impl fmt::Display for ValueKind {
     }
 }
 
-#[cfg(feature = "ui")]
+#[cfg(all(feature = "ui", unix))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum IconOp {
     Read,
@@ -518,7 +518,7 @@ pub enum Error {
         source: io::Error,
     },
 
-    #[cfg(feature = "ui")]
+    #[cfg(all(feature = "ui", unix))]
     #[error("{op:?} failed on the application's icon at {path}", path = path.display())]
     Icon {
         op: IconOp,
@@ -772,7 +772,7 @@ pub enum Error {
     Mpris(#[from] resonate_mpris::Error),
 
     #[error(transparent)]
-    Sink(#[from] resonate_pipewire::Error),
+    Sink(#[from] resonate_engine::SinkError),
 
     #[error(transparent)]
     Listen(#[from] resonate_listen::Error),

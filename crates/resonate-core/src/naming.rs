@@ -1,35 +1,40 @@
 use std::{
+    borrow::Cow,
     ffi::{OsStr, OsString},
-    os::unix::ffi::{OsStrExt as _, OsStringExt as _},
 };
+
+use crate::os_bytes;
 
 pub const NAME_BYTES_AT_MOST: usize = 255;
 
-pub fn cut_to_leave(name: &OsStr, room: usize) -> &OsStr {
+pub fn cut_to_leave(name: &OsStr, room: usize) -> Cow<'_, OsStr> {
     let budget = NAME_BYTES_AT_MOST.saturating_sub(room);
-    let bytes = name.as_bytes();
+    let bytes = os_bytes::bytes_of(name);
     if bytes.len() <= budget {
-        return name;
+        return Cow::Borrowed(name);
     }
 
-    let end = match std::str::from_utf8(bytes) {
+    let end = match std::str::from_utf8(&bytes) {
         Ok(text) => (0..=budget)
             .rev()
             .find(|at| text.is_char_boundary(*at))
             .unwrap_or_default(),
         Err(_) => budget,
     };
-    OsStr::from_bytes(&bytes[..end])
+    Cow::Owned(os_bytes::os_string_from(
+        bytes.get(..end).unwrap_or_default().to_vec(),
+    ))
 }
 
 pub fn named_within(before: &str, name: &OsStr, after: impl AsRef<OsStr>) -> OsString {
-    let after = after.as_ref().as_bytes();
+    let after = os_bytes::bytes_of(after.as_ref());
     let kept = cut_to_leave(name, before.len() + after.len());
+    let kept = os_bytes::bytes_of(&kept);
     let mut named = Vec::with_capacity(before.len() + kept.len() + after.len());
     named.extend_from_slice(before.as_bytes());
-    named.extend_from_slice(kept.as_bytes());
-    named.extend_from_slice(after);
-    OsString::from_vec(named)
+    named.extend_from_slice(&kept);
+    named.extend_from_slice(&after);
+    os_bytes::os_string_from(named)
 }
 
 #[cfg(test)]

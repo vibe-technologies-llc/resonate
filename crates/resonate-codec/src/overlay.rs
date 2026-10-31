@@ -2,11 +2,11 @@ use std::{
     collections::BTreeMap,
     fs::File,
     io::{self, Read, Seek, SeekFrom, Write},
-    os::unix::fs::FileExt as _,
     path::Path,
 };
 
 use lofty::io::{Length, Truncate};
+use resonate_core::positioned::FileExt as _;
 
 use crate::journal::{Change, Undo};
 

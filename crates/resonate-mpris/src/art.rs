@@ -1,10 +1,9 @@
 use std::{
     collections::VecDeque,
     env,
-    fs::{self, DirBuilder, OpenOptions},
+    fs::{self, OpenOptions},
     hash::{DefaultHasher, Hash as _, Hasher as _},
     io::{self, Write as _},
-    os::unix::fs::{DirBuilderExt as _, OpenOptionsExt as _},
     path::{Path, PathBuf},
     process,
     sync::{
@@ -24,12 +23,15 @@ const COVERS_KEPT: usize = 8;
 
 const QUEUED_COVERS_KEPT: usize = 32;
 
+#[cfg(unix)]
 const RUNNING_PROCESSES: &str = "/proc";
 
 const RUNTIME_FOLDER: &str = "XDG_RUNTIME_DIR";
 
+#[cfg(unix)]
 const OURS_ALONE: u32 = 0o700;
 
+#[cfg(unix)]
 const READ_BY_US_ALONE: u32 = 0o600;
 
 const STAGED: &str = ".laying";
@@ -253,6 +255,10 @@ impl Default for Folder {
     }
 }
 
+#[cfg(windows)]
+fn sweep_the_departed(_: &Path) {}
+
+#[cfg(unix)]
 fn sweep_the_departed(temporary: &Path) {
     let Ok(entries) = fs::read_dir(temporary) else {
         return;
@@ -268,6 +274,7 @@ fn sweep_the_departed(temporary: &Path) {
     }
 }
 
+#[cfg(any(unix, test))]
 fn laid_down_by(name: &str) -> Option<u32> {
     let rest = name.strip_prefix(FOLDER)?.strip_prefix('-')?;
     let (pid, count) = rest.split_once('-')?;
@@ -275,8 +282,16 @@ fn laid_down_by(name: &str) -> Option<u32> {
     pid.parse().ok()
 }
 
+#[cfg(unix)]
 fn made_ours(folder: &Path) -> io::Result<()> {
+    use std::{fs::DirBuilder, os::unix::fs::DirBuilderExt as _};
+
     DirBuilder::new().mode(OURS_ALONE).create(folder)
+}
+
+#[cfg(windows)]
+fn made_ours(folder: &Path) -> io::Result<()> {
+    fs::DirBuilder::new().create(folder)
 }
 
 fn lay_down(path: &Path, bytes: &[u8]) -> io::Result<()> {
@@ -302,14 +317,22 @@ fn staging_for(path: &Path) -> PathBuf {
 }
 
 fn write_staged(staged: &Path, bytes: &[u8]) -> io::Result<()> {
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(READ_BY_US_ALONE)
-        .open(staged)?;
+    let mut options = OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    restrict_to_us(&mut options);
+    let mut file = options.open(staged)?;
     file.write_all(bytes)
 }
+
+#[cfg(unix)]
+fn restrict_to_us(options: &mut OpenOptions) {
+    use std::os::unix::fs::OpenOptionsExt as _;
+
+    options.mode(READ_BY_US_ALONE);
+}
+
+#[cfg(windows)]
+fn restrict_to_us(_: &mut OpenOptions) {}
 
 #[cfg(test)]
 mod tests {
@@ -489,6 +512,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn the_folder_a_cover_is_laid_in_is_readable_by_this_user_alone() {
         use std::os::unix::fs::PermissionsExt as _;
 

@@ -12,7 +12,6 @@ crate-type = ["cdylib", "rlib"]
 crc32fast.workspace = true
 crossbeam-channel.workspace = true
 parking_lot.workspace = true
-rtrb.workspace = true
 resonate-analysis.workspace = true
 resonate-library.workspace = true
 resonate-listen.workspace = true

@@ -6,10 +6,7 @@ use resonate_server::{
     gateway_tls, listening, pem, serving,
 };
 use resonate_sync::wire::LARGEST_RECORD;
-use tokio::{
-    net::TcpListener,
-    signal::unix::{SignalKind, signal},
-};
+use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
 const SECONDS_PER_DAY: u64 = 24 * 60 * 60;
@@ -278,16 +275,31 @@ fn run(args: Args) -> Result<(), Error> {
                 None => std::future::pending().await,
             }
         };
-        let mut terminated = signal(SignalKind::terminate()).map_err(Error::Signals)?;
+        let terminated = termination()?;
         tokio::select! {
             () = server.serve(endpoint.clone()) => {}
             () = serving_hifi => {}
             bound = serving_web => bound?,
             _ = tokio::signal::ctrl_c() => tracing::info!("asked to stop"),
-            _ = terminated.recv() => tracing::info!("asked to stop"),
+            () = terminated => tracing::info!("asked to stop"),
         }
         endpoint.close(0_u32.into(), b"stopping");
         endpoint.wait_idle().await;
         Ok(())
     })
+}
+
+#[cfg(unix)]
+fn termination() -> Result<impl std::future::Future<Output = ()>, Error> {
+    use tokio::signal::unix::{SignalKind, signal};
+
+    let mut terminated = signal(SignalKind::terminate()).map_err(Error::Signals)?;
+    Ok(async move {
+        terminated.recv().await;
+    })
+}
+
+#[cfg(windows)]
+fn termination() -> Result<impl std::future::Future<Output = ()>, Error> {
+    Ok(std::future::pending::<()>())
 }

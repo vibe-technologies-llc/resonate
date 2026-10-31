@@ -1,16 +1,16 @@
 use std::{
     fs,
-    os::unix::fs::MetadataExt as _,
     path::{Path, PathBuf},
 };
 
 use ahash::{AHashMap, AHashSet};
+use resonate_core::file_facts;
 use rusqlite::{Connection, Transaction, params};
 
 use crate::{Error, Result, StoreOp, scan::walked_from, store};
 
 pub fn device(path: &Path) -> Option<u64> {
-    fs::metadata(path).ok().map(|metadata| metadata.dev())
+    file_facts::volume_of(path)
 }
 
 #[derive(Default)]

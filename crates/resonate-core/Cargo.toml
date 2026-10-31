@@ -16,6 +16,10 @@ parking_lot.workspace = true
 thiserror.workspace = true
 unicode-normalization.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+jiff = { workspace = true, features = ["tzdb-bundle-platform"] }
+same-file.workspace = true
+
 [target.'cfg(target_os = "android")'.dependencies]
 jiff = { workspace = true, features = ["tzdb-bundle-always", "tzdb-concatenated"] }
 

@@ -3,7 +3,9 @@ paths:
   - "crates/resonate-engine/**/*.rs"
   - "crates/resonate-mobile/src/output/oboe_render.rs"
   - "crates/resonate-mobile/src/output/oboe_frames.rs"
-  - "crates/resonate-mobile/src/output/handover.rs"
+  - "crates/resonate-audio/src/handover.rs"
+  - "crates/resonate-wasapi/src/fill.rs"
+  - "crates/resonate-wasapi/src/render.rs"
   - "crates/resonate-mobile/src/output/remote_io_render.rs"
   - "crates/resonate-mobile/src/output/remote_io_buffers.rs"
   - "crates/resonate-mobile/src/output/remote_io_fill.rs"
@@ -34,7 +36,7 @@ In the RT modules and everything they call:
   off-thread via an SPSC queue whose atomic overflow counter surfaces as `RtFault::Dropped`. Only
   `Underrun` and `Dropped` exist (what the ring raises), so `collect_faults` matches exhaustively.
 
-Nine RT modules, each headed `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic,
+Twelve RT modules, each headed `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic,
 clippy::unreachable, clippy::indexing_slicing)]` (allocation, locks, `assert!`, unguarded division
 rest on this discipline alone):
 
@@ -42,12 +44,23 @@ rest on this discipline alone):
   Oboe frames of whichever shape the stream opened in (`f32`, `i16` or `i32`, mono or stereo:
   `rendered` over a `Frame`, compiled on the host too); short fills zero the rest and publish
   completion/failure through atomics.
-- `resonate-mobile/src/output/handover.rs`: the phones' reshape. `Fed` is the callback's source and
-  two preallocated one-way `rtrb` queues (one handed in, two spent), as `process::Fed` is
-  PipeWire's: `Fed::source` pops a handed source first thing in each callback, swaps it in and
-  pushes the old one onto the way back, so the callback never drops a source (it takes nothing while
-  the way back is full). `Handing`, on the stream's side, lets the spent go and reports room.
-  Oboe's `Rendering` and RemoteIO's `Rendering` both read `Fed::source`.
+- `resonate-audio/src/handover.rs`: the reshape of the backends that cannot move the engine's ring
+  into an open stream. `Fed` is the callback's source and two preallocated one-way `rtrb` queues
+  (one handed in, two spent), as `process::Fed` is PipeWire's: `Fed::source` pops a handed source
+  first thing in each callback, swaps it in and pushes the old one onto the way back, so the callback
+  never drops a source (it takes nothing while the way back is full). `Handing`, on the stream's
+  side, lets the spent go and reports room. Oboe's `Rendering`, RemoteIO's `Rendering` and WASAPI's
+  `Playing` all read `Fed::source` (`resonate-mobile` reexports it as `output::handover`).
+- `resonate-wasapi/src/fill.rs` and `render.rs`: the WASAPI render cycle (`windows.md`).
+  `fill_buffer` takes the quantum the device has room for out of the source into a scratch buffer
+  allocated when the stream opened, zeroes a short fill, shifts a 24-bit word against the top of its
+  32-bit container and reports how many frames were music; `Playing::cycle` then hands the scratch
+  to `AudioRenderClient::write_to_device`, which is `GetBuffer`, a copy and `ReleaseBuffer`, so the
+  cycle allocates nothing. `fill.rs` is portable and tested on every host. The cycle runs on the
+  stream's own thread, woken by the endpoint's event, and publishes the buffer's padding through
+  `StreamClock::note`; unlike the three callbacks above it is a loop on a thread the crate owns,
+  not a function the system calls, so a panic would end that stream's thread only (`panic = "abort"`
+  makes it the process in a release build all the same).
 - `resonate-mobile/src/output/remote_io_render.rs`, `remote_io_buffers.rs` and `remote_io_fill.rs`:
   the RemoteIO render callback (`render`, which catches a panic through `guarded` and aborts) hands the system's own
   interleaved float buffer (`rendered`, reading the buffer list) to `Rendering::fill`, which fills it

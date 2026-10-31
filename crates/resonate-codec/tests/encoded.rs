@@ -1,7 +1,8 @@
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt as _;
 use std::{
     env, fs,
     io::{self, Cursor, Read, Seek, SeekFrom},
-    os::unix::fs::MetadataExt as _,
     path::{Path, PathBuf},
     process::{self, Command, Stdio},
     sync::{
@@ -3459,6 +3460,7 @@ fn read_by_ffmpeg_without_a_complaint(path: &Path) -> bool {
 }
 
 #[test]
+#[cfg(unix)]
 fn an_ogg_comment_grown_and_shrunk_keeps_its_audio_and_lands_in_place_once_it_has_room() {
     for (name, codec) in [
         ("rewritten.opus", ["-c:a", "libopus"]),

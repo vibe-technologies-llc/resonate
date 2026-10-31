@@ -2,8 +2,7 @@ use std::{sync::Arc, thread};
 
 use resonate_cast::{CAST_NODES, Casting, Searching as CastSearching};
 use resonate_codec::Sources;
-use resonate_engine::{EngineConfig, NodeName, Player, SinkError, SinkInfo};
-use resonate_pipewire::PipeWire;
+use resonate_engine::{EngineConfig, NodeName, Player, SinkInfo, desktop_backend};
 use resonate_upnp::{Beside, FirstSearch, Network, RENDERER_NODES, Searching};
 
 use crate::config::Config;
@@ -161,10 +160,8 @@ impl Rendering {
             return Player::with_sources(engine, sources);
         };
         Player::with_sources_and_backend(engine, sources, move |config| {
-            let graph = PipeWire::start(&config.app_name).map_err(SinkError::from)?;
-            Ok(Box::new(
-                Beside::over(Box::new(graph), kinds.upnp).and(kinds.cast),
-            ))
+            let graph = desktop_backend(&config.app_name)?;
+            Ok(Box::new(Beside::over(graph, kinds.upnp).and(kinds.cast)))
         })
     }
 }

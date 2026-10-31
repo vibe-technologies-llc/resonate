@@ -3,7 +3,6 @@ use std::{
     ffi::OsStr,
     fs, io,
     path::{Path, PathBuf},
-    time::SystemTime,
 };
 
 use ahash::AHashSet;
@@ -11,7 +10,7 @@ use resonate_codec::the_folder_a_cue_names;
 use resonate_core::{MediaLocation, TrackId};
 use rusqlite::{Connection, OptionalExtension as _, Transaction, params};
 
-use crate::{Error, Result, StoreOp, TrashOp, alternatives, scan, store, synced, trash};
+use crate::{Error, Result, StoreOp, alternatives, scan, store, synced};
 
 const LYRICS_EXTENSION: &str = "lrc";
 
@@ -77,6 +76,15 @@ pub(crate) fn removed(
         return through.trash(path);
     }
 
+    sent_to_the_hand_written_trash(path, data_home)
+}
+
+#[cfg(unix)]
+fn sent_to_the_hand_written_trash(path: &Path, data_home: Option<&Path>) -> Removal {
+    use std::time::SystemTime;
+
+    use crate::{TrashOp, trash};
+
     match trash::send(path, data_home, SystemTime::now()) {
         Ok(()) => Removal::Removed,
         Err(Error::Trash {
@@ -86,6 +94,17 @@ pub(crate) fn removed(
         }) if source.kind() == io::ErrorKind::NotFound => Removal::AlreadyGone,
         Err(error) => {
             tracing::warn!(path = %path.display(), %error, "a file asked to be deleted could not be moved to the trash");
+            Removal::Kept
+        }
+    }
+}
+
+#[cfg(windows)]
+fn sent_to_the_hand_written_trash(path: &Path, _: Option<&Path>) -> Removal {
+    match fs::symlink_metadata(path) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Removal::AlreadyGone,
+        _ => {
+            tracing::warn!(path = %path.display(), "a file asked to be deleted has no trash to go to");
             Removal::Kept
         }
     }

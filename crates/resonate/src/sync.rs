@@ -36,9 +36,15 @@ use crate::config::Config;
 #[cfg(feature = "sync")]
 use crate::{Error, Result, config, error::ConfigKey};
 
-#[cfg(feature = "sync")]
+#[cfg(all(feature = "sync", not(windows)))]
 const DEVICE_NAME: &str = "Linux";
-#[cfg(feature = "sync")]
+#[cfg(all(feature = "sync", windows))]
+const DEVICE_NAME: &str = "Windows";
+#[cfg(all(feature = "sync", not(windows)))]
+const THIS_PLATFORM: Platform = Platform::Linux;
+#[cfg(all(feature = "sync", windows))]
+const THIS_PLATFORM: Platform = Platform::Other;
+#[cfg(all(feature = "sync", not(windows)))]
 const HOST_NAME: &str = "/proc/sys/kernel/hostname";
 #[cfg(feature = "sync")]
 const CONNECTED_WITHIN: Duration = Duration::from_secs(15);
@@ -333,7 +339,7 @@ fn started(
         me: Me::called(
             config.sync_device.as_deref().unwrap_or_default(),
             &host_name(),
-            Platform::Linux,
+            THIS_PLATFORM,
             DEVICE_NAME,
         ),
         follow,
@@ -1312,9 +1318,14 @@ impl resonate_ui::Syncing for Running {
     }
 }
 
-#[cfg(feature = "sync")]
+#[cfg(all(feature = "sync", not(windows)))]
 fn host_name() -> String {
     fs::read_to_string(HOST_NAME).unwrap_or_default()
+}
+
+#[cfg(all(feature = "sync", windows))]
+fn host_name() -> String {
+    std::env::var("COMPUTERNAME").unwrap_or_default()
 }
 
 #[cfg(all(test, feature = "sync"))]

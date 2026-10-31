@@ -368,7 +368,7 @@ fn refusals_carried(sent: Option<&Sent>, wanted: Option<&Activity>) -> u32 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::{
         env, fs,

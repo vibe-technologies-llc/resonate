@@ -12,6 +12,7 @@ members = [
     "crates/resonate-discord",
     "crates/resonate-dsp",
     "crates/resonate-pipewire",
+    "crates/resonate-wasapi",
     "crates/resonate-engine",
     "crates/resonate-eq",
     "crates/resonate-fetch",
@@ -79,6 +80,10 @@ bytemuck = { version = "1.25.2", default-features = false }
 crossbeam-channel = { version = "0.5.17", default-features = false, features = ["std"] }
 futures-channel = { version = "0.3.34", default-features = false, features = ["alloc"] }
 signal-hook = { version = "0.4.6", default-features = false, features = ["iterator"] }
+same-file = "1.0.6"
+ctrlc = { version = "3.5.2", default-features = false, features = ["termination"] }
+crossterm = { version = "0.29.0", default-features = false, features = ["events", "windows"] }
+trash = { version = "5.2.9", default-features = false, features = ["coinit_apartmentthreaded"] }
 rtrb = { version = "0.4.1", default-features = false, features = ["std"] }
 smallvec = { version = "1.16.4", default-features = false, features = ["union", "const_generics"] }
 unicode-segmentation = { version = "1.13.3", default-features = false }
@@ -250,6 +255,7 @@ resonate-codec = { version = "0.3.0", path = "crates/resonate-codec" }
 resonate-discord = { version = "0.3.0", path = "crates/resonate-discord" }
 resonate-dsp = { version = "0.3.0", path = "crates/resonate-dsp" }
 resonate-pipewire = { version = "0.3.0", path = "crates/resonate-pipewire" }
+resonate-wasapi = { version = "0.3.0", path = "crates/resonate-wasapi" }
 resonate-engine = { version = "0.3.0", path = "crates/resonate-engine" }
 resonate-eq = { version = "0.3.0", path = "crates/resonate-eq" }
 resonate-fetch = { version = "0.3.0", path = "crates/resonate-fetch" }

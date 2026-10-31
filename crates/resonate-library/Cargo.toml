@@ -18,11 +18,13 @@ resonate-core.workspace = true
 resonate-vault.workspace = true
 resonate-providers.workspace = true
 rusqlite.workspace = true
-rustix.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 unicode-normalization.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+rustix.workspace = true
 
 [dev-dependencies]
 image.workspace = true

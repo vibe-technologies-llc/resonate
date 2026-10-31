@@ -4,12 +4,12 @@ use std::time::Duration;
 
 #[cfg(feature = "ui")]
 use resonate_codec::{CoverArt, ImageFormat};
+use resonate_engine::NodeName;
 use resonate_listen::{CLIP_BY_DEFAULT, Hearing, Listener, Listening};
 #[cfg(feature = "ui")]
 use resonate_listen::{Heard, PictureFormat};
 #[cfg(feature = "ui")]
 use resonate_mpris::{Teller, Told};
-use resonate_pipewire::NodeName;
 
 use crate::{Error, Result, config::Config, info::pairs, online};
 

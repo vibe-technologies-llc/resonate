@@ -120,6 +120,9 @@ them no type). Decoders: `audio.md`.
 
 ## Signals and the terminal
 
+On Windows the interrupts, the key reader and the settings folders are other modules (`windows.md`);
+what follows describes Unix, where `signals.rs` and termios are used.
+
 - **Hang-up leaves, like an interrupt.** `signals::ASKING_TO_LEAVE` = `SIGINT`, `SIGTERM`, `SIGHUP`,
   watched by `quit_when_told` and `cancel_when_told`; a hang-up also tells `said` nobody reads where
   stdout is a terminal (`tests/signals.rs`).
@@ -207,7 +210,7 @@ them no type). Decoders: `audio.md`.
 
 ## Settings
 
-From `$XDG_CONFIG_HOME/resonate/config.toml` or `--config <FILE>` (must exist, unlike the XDG path).
+From `$XDG_CONFIG_HOME/resonate/config.toml` (`%APPDATA%\resonate\config.toml` on Windows) or `--config <FILE>` (must exist, unlike the XDG path).
 CLI flag > file > `EngineConfig` defaults; an unknown key warns via `tracing`. Every key is a
 `ConfigKey` variant (`ConfigKey::ALL`): a bad value names its key without prose in an error. Keys
 with a flag: the `global` ones plus `volume`; the rest only pane and file. Defaults and meanings:

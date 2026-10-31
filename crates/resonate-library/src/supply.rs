@@ -4,7 +4,6 @@ use std::{
     fs::{self, File},
     io::{self, Read},
     num::NonZeroUsize,
-    os::unix::fs::MetadataExt as _,
     path::Path,
     sync::{
         Arc,
@@ -18,7 +17,7 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use parking_lot::Mutex;
 use resonate_codec::Sources;
-use resonate_core::{Frames, Gate, MediaLocation, SampleRate, SourceId, WantId};
+use resonate_core::{Frames, Gate, MediaLocation, SampleRate, SourceId, WantId, file_facts};
 use resonate_providers::{
     Answer, Asking, Away, Delivered, Delivery, Identity, Opened, Opening, Providers,
     TURNED_TO_APART, WAITED_ON_AFTER_AN_OFFER,
@@ -121,9 +120,7 @@ fn last_changed(path: &Path) -> Option<SystemTime> {
 }
 
 fn status_changed(metadata: &fs::Metadata) -> Option<SystemTime> {
-    let seconds = u64::try_from(metadata.ctime()).ok()?;
-    let nanos = u32::try_from(metadata.ctime_nsec()).ok()?;
-    SystemTime::UNIX_EPOCH.checked_add(Duration::new(seconds, nanos))
+    file_facts::changed_at(metadata)
 }
 
 #[derive(Clone, Copy, Debug)]

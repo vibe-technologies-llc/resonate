@@ -13,33 +13,37 @@ pub enum CaptureOp {
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     #[error("capturing sound failed at {op:?}")]
     Capture {
         op: CaptureOp,
         #[source]
-        source: Box<resonate_pipewire::Error>,
+        source: Box<resonate_audio::Error>,
     },
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     #[error("playing through the output failed")]
     Output {
         #[source]
         source: Box<resonate_audio::Error>,
     },
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     #[error("no output is named {name}")]
-    NoSuchSink { name: resonate_pipewire::NodeName },
+    NoSuchSink { name: resonate_audio::NodeName },
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     #[error("the graph has no output to play through")]
     NoOutput,
+
+    #[cfg(windows)]
+    #[error("this platform has no capture yet")]
+    Unavailable,
 
     #[error("nothing reached the recording before it was given up on")]
     NothingHeard,
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     #[error("the listening was stopped")]
     Stopped,
 
@@ -57,11 +61,11 @@ pub enum Error {
 }
 
 impl Error {
-    #[cfg(target_os = "linux")]
-    pub fn capture(op: CaptureOp, source: resonate_pipewire::Error) -> Self {
+    #[cfg(any(target_os = "linux", windows))]
+    pub fn capture(op: CaptureOp, source: impl Into<resonate_audio::Error>) -> Self {
         Self::Capture {
             op,
-            source: Box::new(source),
+            source: Box::new(source.into()),
         }
     }
 }

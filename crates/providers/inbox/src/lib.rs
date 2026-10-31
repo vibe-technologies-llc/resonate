@@ -1,13 +1,12 @@
 use std::{
     collections::BTreeMap,
     fs, io,
-    os::unix::fs::MetadataExt as _,
     path::{Path, PathBuf},
     time::{Duration, Instant, SystemTime},
 };
 
 use parking_lot::Mutex;
-use resonate_core::{SourceId, names_audio};
+use resonate_core::{SourceId, file_facts, names_audio};
 use resonate_providers::{Delivery, Error, Identity, Obtained, Provider, ProviderOp, Result};
 
 const INBOX: &str = "inbox";
@@ -72,9 +71,7 @@ impl Stamp {
 }
 
 fn changed_at(metadata: &fs::Metadata) -> Option<SystemTime> {
-    let seconds = u64::try_from(metadata.ctime()).ok()?;
-    let nanos = u32::try_from(metadata.ctime_nsec()).ok()?;
-    SystemTime::UNIX_EPOCH.checked_add(Duration::new(seconds, nanos))
+    file_facts::changed_at(metadata)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

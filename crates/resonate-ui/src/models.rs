@@ -2,7 +2,6 @@ use std::{
     borrow::Cow,
     fs, mem,
     num::{NonZeroU32, NonZeroUsize},
-    os::unix::fs::MetadataExt as _,
     path::{Path, PathBuf},
     slice,
     sync::Arc,
@@ -7137,11 +7136,9 @@ fn landed_since(folder: &Path, tried: SystemTime) -> bool {
             .ok()
             .filter(fs::Metadata::is_file)
             .and_then(|held| {
-                let changed = u64::try_from(held.ctime()).ok().map(|seconds| {
-                    SystemTime::UNIX_EPOCH
-                        + Duration::new(seconds, u32::try_from(held.ctime_nsec()).unwrap_or(0))
-                });
-                held.modified().ok().max(changed)
+                held.modified()
+                    .ok()
+                    .max(resonate_core::file_facts::changed_at(&held))
             })
             .is_some_and(|touched| touched > tried)
     })

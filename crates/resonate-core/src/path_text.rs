@@ -1,11 +1,11 @@
 use std::{
     borrow::Cow,
-    ffi::OsString,
     iter::Peekable,
-    os::unix::ffi::{OsStrExt as _, OsStringExt as _},
     path::{Path, PathBuf},
     str::Chars,
 };
+
+use crate::os_bytes;
 
 const ESCAPE: char = '\u{FDD0}';
 const HEX_DIGITS: u32 = 2;
@@ -19,7 +19,7 @@ pub fn encoded(path: &Path) -> Cow<'_, str> {
     }
 
     let mut text = String::with_capacity(path.as_os_str().len());
-    for chunk in path.as_os_str().as_bytes().utf8_chunks() {
+    for chunk in os_bytes::bytes_of(path.as_os_str()).utf8_chunks() {
         for letter in chunk.valid().chars() {
             if letter == ESCAPE {
                 text.push(ESCAPE);
@@ -52,7 +52,7 @@ pub fn decoded(text: &str) -> PathBuf {
             push_letter(&mut bytes, ESCAPE);
         }
     }
-    PathBuf::from(OsString::from_vec(bytes))
+    PathBuf::from(os_bytes::os_string_from(bytes))
 }
 
 fn push_letter(bytes: &mut Vec<u8>, letter: char) {
@@ -72,12 +72,10 @@ fn byte_after_escape(letters: &mut Peekable<Chars<'_>>) -> Option<u8> {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::OsStr;
-
     use super::*;
 
     fn named(bytes: &[u8]) -> PathBuf {
-        PathBuf::from(OsStr::from_bytes(bytes))
+        PathBuf::from(os_bytes::os_string_from(bytes.to_vec()))
     }
 
     #[test]
@@ -90,6 +88,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_path_that_is_not_utf8_comes_back_byte_for_byte() {
         for bytes in [
             &b"/music/caf\xe9.flac"[..],
@@ -101,11 +100,15 @@ mod tests {
             let path = named(bytes);
             let text = encoded(&path);
 
-            assert_eq!(decoded(&text).as_os_str().as_bytes(), bytes);
+            assert_eq!(
+                os_bytes::bytes_of(decoded(&text).as_os_str()).as_ref(),
+                bytes
+            );
         }
     }
 
     #[test]
+    #[cfg(unix)]
     fn two_paths_never_share_a_text() {
         let lookalike = PathBuf::from(format!("/music/{ESCAPE}E9.flac"));
         let real = named(b"/music/\xe9.flac");
@@ -116,10 +119,22 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn the_text_of_a_folder_is_a_prefix_of_the_text_of_what_lies_in_it() {
         let folder = named(b"/music/caf\xe9");
         let file = folder.join("a.flac");
 
         assert!(encoded(&file).starts_with(&*encoded(&folder)));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn a_path_with_a_lone_surrogate_comes_back_unit_for_unit() {
+        use std::{ffi::OsString, os::windows::ffi::OsStringExt as _};
+
+        let path = PathBuf::from(OsString::from_wide(&[0x43, 0x3A, 0x5C, 0xD800, 0x2E, 0x66]));
+        let text = encoded(&path);
+
+        assert_eq!(decoded(&text), path);
     }
 }

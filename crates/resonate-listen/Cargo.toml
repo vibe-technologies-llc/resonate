@@ -17,6 +17,9 @@ crossbeam-channel.workspace = true
 resonate-audio.workspace = true
 resonate-pipewire.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+resonate-audio.workspace = true
+
 [dev-dependencies]
 resonate-dsp.workspace = true
 

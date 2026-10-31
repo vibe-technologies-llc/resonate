@@ -1,10 +1,11 @@
 use std::{
     fs::File,
     io::{self, BufReader, Read, Seek, SeekFrom},
-    os::unix::fs::FileExt as _,
     path::Path,
     sync::Arc,
 };
+
+use resonate_core::positioned::FileExt as _;
 
 const RIFF: &[u8; 4] = b"RIFF";
 const RIFF_HEADER: u64 = 8;

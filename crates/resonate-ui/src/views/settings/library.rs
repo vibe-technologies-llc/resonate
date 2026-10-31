@@ -674,11 +674,17 @@ impl RootView {
     }
 }
 
+#[cfg(unix)]
+const HOME_VARIABLE: &str = "HOME";
+
+#[cfg(windows)]
+const HOME_VARIABLE: &str = "USERPROFILE";
+
 fn spelt_out_from_home(typed: &str) -> PathBuf {
-    let home = std::env::var_os("HOME").filter(|home| !home.is_empty());
+    let home = std::env::var_os(HOME_VARIABLE).filter(|home| !home.is_empty());
     match (typed.strip_prefix('~'), home) {
-        (Some(rest), Some(home)) if rest.is_empty() || rest.starts_with('/') => {
-            PathBuf::from(home).join(rest.trim_start_matches('/'))
+        (Some(rest), Some(home)) if rest.is_empty() || rest.starts_with(['/', '\\']) => {
+            PathBuf::from(home).join(rest.trim_start_matches(['/', '\\']))
         }
         _ => PathBuf::from(typed),
     }

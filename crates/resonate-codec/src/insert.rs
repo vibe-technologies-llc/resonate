@@ -1,4 +1,6 @@
-use std::{fs::File, io, os::unix::fs::FileExt as _, path::Path};
+use std::{fs::File, io, path::Path};
+
+use resonate_core::positioned::FileExt as _;
 
 use crate::journal::{Change, Undo};
 

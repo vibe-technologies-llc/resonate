@@ -202,9 +202,26 @@ jobs:
           reached_by_the_binary_alone resonate-mcp
           reached_by_the_binary_alone resonate-discord
           refuse_headless resonate serde_json gpui ureq quinn tokio
+          refuse resonate-pipewire resonate-wasapi
+          refuse resonate-wasapi resonate-codec resonate-dsp resonate-pipewire pipewire libspa gpui
+          only resonate-wasapi resonate-core resonate-audio
+          check "resonate on Windows" "$(held_by -p resonate --target x86_64-pc-windows-msvc)" \
+            resonate-pipewire pipewire libspa wayland-client wayland-protocols rustix
           check "resonate-mobile on iOS" "$(held_by -p resonate-mobile --target aarch64-apple-ios)" \
             resonate-pipewire pipewire libspa gpui resonate-mpris resonate-discord oboe
           exit "$failed"
+
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --locked --workspace --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire -- -D warnings
+      - run: cargo test --locked --workspace --exclude resonate-ui --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --no-default-features
 
   server-package:
     name: Sync server package

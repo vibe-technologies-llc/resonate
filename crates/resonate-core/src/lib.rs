@@ -7,6 +7,7 @@ mod channel;
 mod date;
 pub mod eq;
 mod error;
+pub mod file_facts;
 mod fold;
 mod format;
 mod hints;
@@ -17,7 +18,9 @@ mod link;
 mod media;
 mod metered;
 pub mod naming;
+pub mod os_bytes;
 pub mod path_text;
+pub mod positioned;
 mod presence;
 mod print;
 mod quantise;
@@ -31,6 +34,8 @@ pub mod text;
 mod time;
 pub mod titles;
 mod volume;
+#[cfg(any(windows, test))]
+mod windows_uri;
 pub mod writer;
 mod zone;
 

@@ -7,7 +7,9 @@ paths:
 
 # The session bus
 
-`resonate-mpris`: MPRIS, notifications, idle inhibit, playlists (`library.md` has the seam), and
+`resonate-mpris` also compiles for Windows, where there is no session bus: its portal trash and
+the permission and `/proc` parts of its cover folder are Unix, and the binary treats a missing bus
+as it does on a Linux machine with none (`windows.md`). It is MPRIS, notifications, idle inhibit, playlists (`library.md` has the seam), and
 the client a second `resonate` reaches a first through.
 
 ## What it sees

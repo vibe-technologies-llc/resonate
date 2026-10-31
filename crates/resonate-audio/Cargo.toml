@@ -10,6 +10,7 @@ doctest = false
 [dependencies]
 crossbeam-channel.workspace = true
 resonate-core.workspace = true
+rtrb.workspace = true
 thiserror.workspace = true
 
 [lints]

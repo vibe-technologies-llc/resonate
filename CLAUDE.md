@@ -32,16 +32,18 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `discord.md` | resonate-discord, `core::presence`, the binary's `discord.rs`, the Desktop groups | the gate, the seam, the frame, what an activity says and how often |
 | `release.md` | `.github/workflows/release.yml`, `packaging/**`, the root manifest, `docs/ROADMAP.md` | versions and their spelling per ecosystem, branches, tags, the release assets, the signing secrets |
 | `packaging.md` | `packaging/**` | the Arch, Fedora, DEB and Flatpak payloads, the x86-64-v3 release baseline and the pre-release spellings |
+| `windows.md` | resonate-wasapi, core's `os_bytes`, `file_facts`, `positioned`, `windows_uri`, the binary's `interrupts.rs`, `packaging/windows/**` | the WASAPI backend (shared and exclusive as two sinks), the filesystem and path seams under the shared crates, interrupts and keys, what is not on Windows yet |
 
 ## Project
 
-Resonate: a music player for audio enthusiasts, Linux first; high-fidelity, high-performance
+Resonate: a music player for audio enthusiasts, Linux first, with a Windows port; high-fidelity, high-performance
 playback is the guiding constraint.
 
 - A **native PipeWire client** (not PulseAudio/ALSA compatibility) that reads the sink's advertised
   rates and **resamples itself at high quality**, so lossless sources stay bit-accurate where the
   hardware allows.
 - A **GPUI** front end, native on Wayland.
+- A **Windows** build of the same window and engine, playing through WASAPI (`windows.md`).
 - An **Android 13+ Jetpack Compose** front end (Material 3), with the same Rust playback engine,
   opened and run from the `android/` project in Android Studio.
 - An **iOS 26+ SwiftUI** front end on the same engine and boundary, built, signed and installed from
@@ -63,7 +65,7 @@ added or a standing rule of how work is done moves.
 
 ## Architecture
 
-Thirty crates. `resonate-core` is the only universal dependency; `resonate-codec`,
+Thirty-one crates. `resonate-core` is the only universal dependency; `resonate-codec`,
 `resonate-dsp` and `resonate-pipewire` never depend on each other; `resonate-engine` joins them.
 
 ```
@@ -77,7 +79,8 @@ resonate            bin: CLI, tracing, wiring
   │     ├── resonate-codec    decode to PCM  (symphonia)
   │     ├── resonate-dsp      resample, gain, dither
   │     ├── resonate-audio    backend contracts, sink vocabulary and streams
-  │     └── resonate-pipewire Linux sink enumeration, negotiation, stream
+  │     ├── resonate-pipewire Linux sink enumeration, negotiation, stream
+  │     └── resonate-wasapi   Windows endpoints, shared and exclusive streams
   ├── resonate-upnp       UPnP AV renderers on the network as sinks beside PipeWire's
   ├── resonate-cast       Google Cast receivers as sinks beside them, over UPnP's paced stream
   ├── resonate-online     MusicBrainz, covers, portraits, lyrics, AutoEq  [`online`]
@@ -177,6 +180,9 @@ Invariants the layering protects (the rules files have the rest):
   (`run-ios` skill), never `xtool dev run`, which drops the metadata. `python3 ios/install.py` does
   it all in one run, fetching the latest xtool AppImage first. Not in CI: the Darwin SDK comes
   from the listener's Xcode download.
+
+- `RUSTFLAGS= cargo xwin check --target x86_64-pc-windows-msvc --workspace --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire`:
+  the Windows build, cross-checked from Linux (`windows.md`); CI runs it natively in the `windows` job.
 
 - `cargo build|test --workspace --exclude resonate-ui --no-default-features`: the workspace without GPUI, the
   usual inner loop (the only way to keep gpui out); `resonate-ui` is a default member so a bare

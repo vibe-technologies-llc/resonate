@@ -1,4 +1,6 @@
-use std::{io, time::Duration};
+#[cfg(unix)]
+use std::io;
+use std::time::Duration;
 
 use resonate_core::TrackId;
 use resonate_engine::{Asleep, PlaybackState, Player, PlayerState, RepeatMode, TrackState, Until};
@@ -18,9 +20,9 @@ pub struct Readout {
 }
 
 impl Readout {
-    pub const fn over(live: bool) -> Self {
+    pub fn over(live: bool) -> Self {
         Self {
-            live,
+            live: live && understands_escapes(),
             drawn: false,
             typing: String::new(),
         }
@@ -111,10 +113,29 @@ pub fn line_of(state: &PlayerState, billed: &str, typing: &str) -> String {
     line
 }
 
+#[cfg(unix)]
+const fn understands_escapes() -> bool {
+    true
+}
+
+#[cfg(windows)]
+fn understands_escapes() -> bool {
+    crossterm::ansi_support::supports_ansi()
+}
+
+#[cfg(unix)]
 fn columns() -> Option<usize> {
     rustix::termios::tcgetwinsize(io::stdout())
         .ok()
         .map(|size| usize::from(size.ws_col))
+        .filter(|columns| *columns > 0)
+}
+
+#[cfg(windows)]
+fn columns() -> Option<usize> {
+    crossterm::terminal::size()
+        .ok()
+        .map(|(columns, _)| usize::from(columns))
         .filter(|columns| *columns > 0)
 }
 

@@ -15,6 +15,8 @@ use resonate_codec::Sources;
 use resonate_core::{FrameSpan, MediaLocation};
 #[cfg(target_os = "linux")]
 use resonate_pipewire::PipeWire;
+#[cfg(windows)]
+use resonate_wasapi::Wasapi;
 
 use crate::{
     Backend, Command, Contest, ContestLevels, CoverArt, Engine, EngineConfig, Error, Event,
@@ -25,6 +27,18 @@ use crate::{
 };
 
 const EVENT_SLOTS: usize = 256;
+
+#[cfg(target_os = "linux")]
+pub fn desktop_backend(app_name: &str) -> Result<Box<dyn Backend>> {
+    let backend = PipeWire::start(app_name).map_err(resonate_audio::Error::from)?;
+    Ok(Box::new(backend))
+}
+
+#[cfg(windows)]
+pub fn desktop_backend(app_name: &str) -> Result<Box<dyn Backend>> {
+    let backend = Wasapi::start(app_name)?;
+    Ok(Box::new(backend))
+}
 
 pub struct Player {
     commands: Option<Sender<Request>>,
@@ -37,17 +51,14 @@ pub struct Player {
 }
 
 impl Player {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     pub fn new(config: EngineConfig) -> Result<Self> {
         Self::with_sources(config, Arc::new(Sources::local()))
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     pub fn with_sources(config: EngineConfig, sources: Arc<Sources>) -> Result<Self> {
-        Self::spawn(config, sources, |config| {
-            let backend = PipeWire::start(&config.app_name).map_err(resonate_audio::Error::from)?;
-            Ok(Box::new(backend))
-        })
+        Self::spawn(config, sources, |config| desktop_backend(&config.app_name))
     }
 
     pub fn with_backend<F>(config: EngineConfig, open: F) -> Result<Self>

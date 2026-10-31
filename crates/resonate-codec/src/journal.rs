@@ -1,15 +1,16 @@
 use std::{
+    borrow::Cow,
     ffi::OsStr,
     fs::{self, File, OpenOptions},
     io::{self, Write as _},
-    os::unix::{ffi::OsStrExt as _, fs::FileExt as _},
     path::{Path, PathBuf},
     process,
     sync::atomic::{AtomicU64, Ordering},
 };
 
 use resonate_core::{
-    naming,
+    file_facts, naming, os_bytes,
+    positioned::FileExt as _,
     writer::{self, Held, Writer},
 };
 
@@ -79,7 +80,7 @@ impl Undo {
             let mut file = held.file();
             file.write_all(&encoded(name, stood, lands, shifted, changes))?;
             file.sync_all()?;
-            File::open(folder)?.sync_all()?;
+            file_facts::sync_directory(folder)?;
             Ok(held)
         });
         match written {
@@ -157,7 +158,7 @@ impl Left {
 }
 
 struct KeptBy<'n> {
-    track: &'n [u8],
+    track: Cow<'n, [u8]>,
     cut: bool,
     writer: u32,
     left: Left,
@@ -165,9 +166,9 @@ struct KeptBy<'n> {
 
 impl KeptBy<'_> {
     fn names(&self, track: &OsStr) -> bool {
-        let named = track.as_bytes();
-        let kept = self.track;
-        named == kept || (self.cut && !kept.is_empty() && named.starts_with(kept))
+        let named = os_bytes::bytes_of(track);
+        let kept = self.track.as_ref();
+        named.as_ref() == kept || (self.cut && !kept.is_empty() && named.starts_with(kept))
     }
 }
 
@@ -177,18 +178,22 @@ fn was_cut(kept: &OsStr) -> bool {
     kept.len() + LONGEST_LETTER_BYTES > naming::NAME_BYTES_AT_MOST
 }
 
-fn stamped_with<'n>(kept: &'n OsStr, suffix: &str) -> Option<(&'n [u8], u32)> {
-    let unsuffixed = kept
-        .as_bytes()
-        .strip_prefix(b".")?
-        .strip_suffix(suffix.as_bytes())?;
+fn stamped_with<'n>(kept: &'n OsStr, suffix: &str) -> Option<(Cow<'n, [u8]>, u32)> {
+    let bytes = os_bytes::bytes_of(kept);
+    let unsuffixed = bytes.strip_prefix(b".")?.strip_suffix(suffix.as_bytes())?;
     let dot = unsuffixed.iter().rposition(|byte| *byte == b'.')?;
     let (track, stamp) = (&unsuffixed[..dot], &unsuffixed[dot + 1..]);
     let (writer, counted) = str::from_utf8(stamp)
         .ok()?
         .split_once(KEPT_BY_AND_COUNTED)?;
     counted.parse::<u64>().ok()?;
-    Some((track, writer.parse().ok()?))
+    let writer = writer.parse().ok()?;
+    let window = 1..1 + track.len();
+    let track = match bytes {
+        Cow::Borrowed(whole) => Cow::Borrowed(whole.get(window)?),
+        Cow::Owned(whole) => Cow::Owned(whole.get(window)?.to_vec()),
+    };
+    Some((track, writer))
 }
 
 fn kept_by(kept: &OsStr) -> Option<KeptBy<'_>> {
@@ -248,7 +253,7 @@ impl WholeCopy {
         let length = stood_beside(staged, track)?;
 
         fs::rename(staged, &copy)?;
-        if let Err(error) = File::open(folder).and_then(|folder| folder.sync_all()) {
+        if let Err(error) = file_facts::sync_directory(folder) {
             let _ = fs::rename(&copy, staged);
             return Err(error);
         }
@@ -270,7 +275,7 @@ impl WholeCopy {
         bound_beside(staged, &track)?;
 
         fs::rename(staged, &copy)?;
-        if let Err(error) = File::open(folder).and_then(|folder| folder.sync_all()) {
+        if let Err(error) = file_facts::sync_directory(folder) {
             let _ = fs::rename(&copy, staged);
             return Err(error);
         }
@@ -428,7 +433,8 @@ enum Bound {
 }
 
 fn bound_beside(staged: &Path, track: &Path) -> io::Result<()> {
-    let named = track.as_os_str().as_bytes();
+    let named = os_bytes::bytes_of(track.as_os_str());
+    let named = named.as_ref();
     let mut record = named.to_vec();
     record.extend_from_slice(&(named.len() as u64).to_le_bytes());
     record.extend_from_slice(&hashed(named).to_le_bytes());
@@ -463,7 +469,10 @@ fn bound_of(copy: &File) -> io::Result<(u64, Bound)> {
     if hashed(&track) != check {
         return Ok((held, Bound::Unreadable));
     }
-    Ok((held, Bound::Away(PathBuf::from(OsStr::from_bytes(&track)))))
+    Ok((
+        held,
+        Bound::Away(PathBuf::from(os_bytes::os_string_from(track))),
+    ))
 }
 
 fn stood_beside(staged: &Path, track: &Path) -> io::Result<u64> {
@@ -601,7 +610,8 @@ pub(crate) fn hashed(bytes: &[u8]) -> u64 {
 }
 
 fn encoded(track: &OsStr, stood: u64, lands: u64, shifted: u64, changes: &[Change<'_>]) -> Vec<u8> {
-    let name = track.as_bytes();
+    let name = os_bytes::bytes_of(track);
+    let name = name.as_ref();
     let mut bytes = MAGIC.to_vec();
     bytes.extend_from_slice(&(name.len() as u64).to_le_bytes());
     bytes.extend_from_slice(name);
@@ -663,7 +673,8 @@ pub(crate) fn decoded(folder: &Path, bytes: &[u8]) -> Option<Kept> {
         return None;
     }
     let length = reader.counted()?;
-    let name = OsStr::from_bytes(reader.taken(length)?);
+    let name = os_bytes::os_string_from(reader.taken(length)?.to_vec());
+    let name = name.as_os_str();
     if Path::new(name).file_name() != Some(name) {
         return None;
     }
@@ -726,12 +737,14 @@ pub fn mend_a_cut_short_write(journal: &Path) -> io::Result<Mended> {
 
 fn track_named_by(folder: &Path, kept: &KeptBy<'_>) -> io::Result<Option<PathBuf>> {
     if !kept.cut {
-        return Ok(Some(folder.join(OsStr::from_bytes(kept.track))));
+        return Ok(Some(
+            folder.join(os_bytes::os_string_from(kept.track.to_vec())),
+        ));
     }
     let mut named = fs::read_dir(folder)?
         .flatten()
         .map(|entry| entry.file_name())
-        .filter(|name| !name.as_bytes().starts_with(b".") && kept.names(name));
+        .filter(|name| !os_bytes::bytes_of(name).starts_with(b".") && kept.names(name));
     Ok(match (named.next(), named.next()) {
         (Some(only), None) => Some(folder.join(only)),
         _ => None,
@@ -963,6 +976,8 @@ pub(crate) fn mend_what_a_dead_writer_left(track: &Path) {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    use std::os::unix::ffi::OsStrExt as _;
     use std::{env, slice};
 
     use super::*;
@@ -1006,6 +1021,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_whole_copy_beside_a_track_whose_name_is_not_text_is_named_cut_short_and_written_back() {
         let folder = Folder::new("written-back-bytes");
         let name = OsStr::from_bytes(b"Br\xe9the.flac");

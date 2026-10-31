@@ -19,6 +19,13 @@ The listener approved one exception: `resonate-mobile` admits UniFFI scaffolding
 owned-descriptor bridge and the iOS RemoteIO unit at the native boundary (`mobile.md`). Its explicit crate lints keep
 `result_large_err` denied. No other crate weakens `unsafe_code = "forbid"`.
 
+Windows reaches its COM and Win32 calls through safe wrapper crates only, so `unsafe_code = "forbid"`
+holds there: `wasapi` (`resonate-wasapi`'s device enumeration and render client), `thread-priority`
+(its stream thread), `ctrlc` and `crossterm` (the binary's interrupts and key reading), `trash` (the
+recycle bin), `same-file` (core's same-entry test). Each is a `cfg(windows)` target dependency, so
+none is built elsewhere; the layering job refuses PipeWire, Wayland, `rustix` and `signal-hook`
+from the Windows tree of the binary.
+
 ## gpui
 
 - **gpui and `gpui_platform` are git dependencies of Zed's `main`, pinned by `rev`**, since the
@@ -33,7 +40,7 @@ owned-descriptor bridge and the iOS RemoteIO unit at the native boundary (`mobil
 A `cargo tree`-visible boundary is a `refuse` or `only` line in the CI layering job; add a boundary
 here, add it there.
 
-- `resonate-audio`: core, crossbeam-channel and thiserror alone; no PipeWire, codec, DSP or UI.
+- `resonate-audio`: core, crossbeam-channel, `rtrb` (the handover) and thiserror alone; no PipeWire, codec, DSP or UI.
   The engine reexports these contracts; the Linux adapter implements them. `resonate-mobile` (Android and iOS) composes engine, codec, audio, library, analysis, lyrics, online, network providers and `resonate-upnp`,
   never PipeWire, GPUI, MPRIS or Discord IPC; PipeWire is a Linux-target dependency of the engine and `resonate-listen`. The listener/recogniser vocabulary builds on Android;
   PipeWire capture is compiled only for Linux.

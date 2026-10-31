@@ -21,11 +21,21 @@ pub(crate) fn one_window_at_a_time() -> Option<Starting> {
 fn lock_path() -> PathBuf {
     match env::var_os("XDG_RUNTIME_DIR").filter(|dir| !dir.is_empty()) {
         Some(runtime) => PathBuf::from(runtime).join(LOCK_NAME),
-        None => env::temp_dir().join(format!(
-            "resonate-starting-{}.lock",
-            rustix::process::getuid().as_raw()
-        )),
+        None => env::temp_dir().join(unshared_lock_name()),
     }
+}
+
+#[cfg(unix)]
+fn unshared_lock_name() -> String {
+    format!(
+        "resonate-starting-{}.lock",
+        rustix::process::getuid().as_raw()
+    )
+}
+
+#[cfg(windows)]
+fn unshared_lock_name() -> String {
+    LOCK_NAME.to_owned()
 }
 
 fn taken(path: &Path, waits_at_most: Duration) -> Option<Starting> {

@@ -1,13 +1,11 @@
 use std::{
     borrow::Cow,
-    ffi::OsString,
     fmt,
-    os::unix::ffi::{OsStrExt as _, OsStringExt as _},
     path::{Path, PathBuf},
     sync::{Arc, OnceLock},
 };
 
-use crate::{Error, FrameSpan, Frames, Result};
+use crate::{Error, FrameSpan, Frames, Result, os_bytes};
 
 const LOCAL: &str = "local";
 const SOURCE_NAME_LIMIT: usize = 32;
@@ -175,7 +173,7 @@ impl MediaLocation {
     pub fn to_uri(&self) -> String {
         match &self.locator {
             Locator::Path(path) => {
-                format!("{FILE_SCHEME}{}", uri_escaped(path.as_os_str().as_bytes()))
+                format!("{FILE_SCHEME}{}", uri_rest_of_path(path))
             }
             Locator::Key(key) => {
                 format!(
@@ -230,14 +228,11 @@ impl MediaLocation {
                 .split_once(PATH_ENDS)
                 .map_or(encoded, |(path, _)| path);
             let encoded = without_prefix_in_any_case(encoded, FILE_LOCALHOST).unwrap_or(encoded);
-            if !encoded.starts_with(KEY_SEPARATOR) {
-                return None;
-            }
-            let path = uri_unescaped(encoded)?;
+            let path = local_path_of(uri_unescaped(encoded)?)?;
             if path.contains(&NO_PATH_HOLDS) {
                 return None;
             }
-            return Some(Self::local(OsString::from_vec(path)));
+            return Some(Self::local(os_bytes::os_string_from(path)));
         }
 
         let (scheme, key) = uri.split_once(SOURCE_SEPARATOR)?;
@@ -262,6 +257,29 @@ fn without_prefix_in_any_case<'a>(text: &'a str, prefix: &str) -> Option<&'a str
     let head = text.get(..prefix.len())?;
     head.eq_ignore_ascii_case(prefix)
         .then(|| &text[prefix.len()..])
+}
+
+#[cfg(unix)]
+fn uri_rest_of_path(path: &Path) -> String {
+    uri_escaped(&os_bytes::bytes_of(path.as_os_str()))
+}
+
+#[cfg(windows)]
+fn uri_rest_of_path(path: &Path) -> String {
+    crate::windows_uri::uri_rest_of(&os_bytes::bytes_of(path.as_os_str()))
+}
+
+#[cfg(unix)]
+fn local_path_of(decoded: Vec<u8>) -> Option<Vec<u8>> {
+    decoded
+        .first()
+        .is_some_and(|first| char::from(*first) == KEY_SEPARATOR)
+        .then_some(decoded)
+}
+
+#[cfg(windows)]
+fn local_path_of(decoded: Vec<u8>) -> Option<Vec<u8>> {
+    crate::windows_uri::path_of_uri_rest(&decoded)
 }
 
 pub fn uri_escaped(text: &[u8]) -> String {
@@ -454,10 +472,9 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_path_that_is_not_utf8_survives_the_uri_it_is_written_as() {
-        use std::os::unix::ffi::OsStrExt as _;
-
-        let named = PathBuf::from(std::ffi::OsStr::from_bytes(b"/music/caf\xe9.flac"));
+        let named = PathBuf::from(os_bytes::os_string_from(b"/music/caf\xe9.flac".to_vec()));
         let uri = MediaLocation::local(&named).to_uri();
 
         assert_eq!(uri, "file:///music/caf%E9.flac");

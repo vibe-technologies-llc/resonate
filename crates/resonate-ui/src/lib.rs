@@ -3,6 +3,10 @@ mod keys;
 mod analysis;
 mod analysis_plot;
 mod app;
+#[cfg(target_os = "linux")]
+mod clipboard;
+#[cfg(not(target_os = "linux"))]
+#[path = "clipboard_gpui.rs"]
 mod clipboard;
 mod downloads;
 mod drawing;

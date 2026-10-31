@@ -20,10 +20,12 @@ paths:
   default features the headless job does not build; no job runs `cargo build` before `cargo test`,
   which builds what it needs, and library crates set `doctest = false` since none holds a doctest, the DSP
   bench under its ceilings, the layering refusals, the fuzz build, the sync server's package
-  (`server-package`). A command added to `CLAUDE.md` goes into the workflow; a crate added to the
+  (`server-package`), and the `windows` job (`windows-latest`: clippy of the workspace but the phones'
+  boundary, its binding tool and PipeWire, then the tests of every crate but the window; `windows.md`). A command added to `CLAUDE.md` goes into the workflow; a crate added to the
   layering refusals gets a line. The layering job has four shapes: `refuse`, `refuse_headless` (no
   default features), `only` (the workspace crates a crate may reach), `reached_by_the_binary_alone`
-  (`cargo tree -i`; `online`, `mcp`, `discord`); `resonate-mpris`'s direct normal edges are checked
+  (`cargo tree -i`; `online`, `mcp`, `discord`), and one `cargo tree --target x86_64-pc-windows-msvc`
+  refusal that holds PipeWire, Wayland and `rustix` out of the binary's Windows tree; `resonate-mpris`'s direct normal edges are checked
   for `resonate-codec`. `RUSTFLAGS` is emptied over `target-cpu=native`. The formatter is local
   only: a hosted runner cannot install `rust-formatter`.
 - **`release.yml` builds the release assets and runs on a `v*` tag push or a manual run** (input
@@ -32,7 +34,8 @@ paths:
   (pre-release when the tag has `-rc`, `-beta` or `-alpha`). Parallel jobs follow: `fedora-rpm` (`fedora:44`,
   player and server RPMs and SRPMs), `ubuntu-deb` (`ubuntu:24.04`, rustup stable,
   `packaging/deb/build.sh`), `arch-package` (`archlinux:latest`, `makepkg` as a build user from a
-  `git archive` of the tag, the `packaging/release/` recipes) and `android-apk`; `publish` collects
+  `git archive` of the tag, the `packaging/release/` recipes), `windows-zip` (`windows-latest`,
+  `packaging/windows/build.ps1`) and `android-apk`; `publish` collects
   every artifact, writes `SHA256SUMS`, uploads all to the release and publishes it, since a published
   release is immutable. All of it is x86-64-v3
   (`packaging.md`). Secrets, set once in the repository: `ANDROID_KEYSTORE_BASE64` (the release

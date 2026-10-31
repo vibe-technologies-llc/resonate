@@ -1,3 +1,5 @@
+#![cfg(target_os = "linux")]
+
 use std::{
     env, fs,
     path::{Path, PathBuf},

@@ -3,7 +3,6 @@ use std::{
     ffi::{OsStr, OsString},
     fs::{self, File, OpenOptions},
     io::{self, Read as _, Write as _},
-    os::unix::ffi::{OsStrExt as _, OsStringExt as _},
     path::{self, Component, Path, PathBuf},
     process,
     sync::atomic::{AtomicU64, Ordering},
@@ -11,7 +10,9 @@ use std::{
 };
 
 use resonate_codec::carries_what_the_file_did;
-use resonate_core::{FrameSpan, Frames, MediaLocation, SampleRate, TextEncoding, naming, text};
+use resonate_core::{
+    FrameSpan, Frames, MediaLocation, SampleRate, TextEncoding, naming, os_bytes, text,
+};
 
 use crate::{Error, PlaylistEntry, PlaylistFormat, Result, m3u, pls, xspf};
 
@@ -367,13 +368,27 @@ pub fn unescaped(encoded: &str) -> Option<PathBuf> {
         return None;
     }
 
-    Some(PathBuf::from(OsString::from_vec(decoded)))
+    Some(PathBuf::from(os_bytes::os_string_from(decoded)))
+}
+
+#[cfg(windows)]
+const fn forward_slashed(byte: u8) -> u8 {
+    match byte {
+        b'\\' => b'/',
+        other => other,
+    }
+}
+
+#[cfg(unix)]
+const fn forward_slashed(byte: u8) -> u8 {
+    byte
 }
 
 pub fn escaped(path: &Path) -> String {
     let mut encoded = String::with_capacity(path.as_os_str().len());
 
-    for &byte in path.as_os_str().as_bytes() {
+    for &byte in os_bytes::bytes_of(path.as_os_str()).iter() {
+        let byte = forward_slashed(byte);
         let character = byte as char;
         if character.is_ascii_alphanumeric() || UNRESERVED.contains(&character) || character == '/'
         {
@@ -593,6 +608,9 @@ const fn hex(byte: u8) -> Option<u8> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    use std::os::unix::ffi::OsStrExt as _;
+
     use super::*;
 
     #[test]
@@ -626,6 +644,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn an_exported_playlist_replacing_a_file_keeps_the_mode_the_file_had() {
         use std::os::unix::fs::PermissionsExt as _;
 
@@ -685,6 +704,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_file_whose_name_is_not_text_is_written_as_a_uri_that_reads_back_byte_for_byte() {
         let beside = Path::new("/music");
         let file = Path::new(OsStr::from_bytes(b"/music/caf\xe9.wav"));

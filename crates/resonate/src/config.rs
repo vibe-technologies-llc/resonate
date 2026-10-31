@@ -5,7 +5,6 @@ use std::{
     io::{self, Write as _},
     net::SocketAddr,
     ops::RangeInclusive,
-    os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _},
     path::{Path, PathBuf},
     process,
     sync::atomic::{AtomicU64, Ordering},
@@ -18,16 +17,15 @@ use resonate_core::Appearance;
 use resonate_core::{
     Accent, AppId, ArtistsDrawn, HeadYaw, Icon, Pictured, Presence, ScrollbarMode, Shown,
     SpeakerAngle, SpeakerElevation, Speakers, SpectrumBands, SpectrumFalls, SpectrumFloor,
-    SpectrumTilt, SyncedSongs, TextSize, Theme, Trim, Volume,
+    SpectrumTilt, SyncedSongs, TextSize, Theme, Trim, Volume, file_facts,
 };
 use resonate_engine::{
-    Crossfeed, DitherKind, FilterPhase, NoiseShaping, PreviousRestarts, Quality, ReplayGainMode,
-    Restoration, SkipUnderRepeat,
+    Crossfeed, DitherKind, FilterPhase, NodeName, NoiseShaping, PreviousRestarts, Quality,
+    ReplayGainMode, Restoration, SkipUnderRepeat,
 };
 use resonate_eq::{Binding, ProfileName};
 use resonate_library::{HistoryKept, Layout, MinimumLength, MusicExtensions, MusicFilters};
 use resonate_listen::Listening;
-use resonate_pipewire::NodeName;
 use resonate_upnp::{Located, Udn, Vouched};
 use toml_edit::{DocumentMut, Item, Table};
 
@@ -47,8 +45,10 @@ const SPEAKER_ANGLE_DEGREES: RangeInclusive<u64> =
 
 const STAGING_SUFFIX: &str = ".new";
 
+#[cfg(unix)]
 const READ_BY_ITS_OWNER_ALONE: u32 = 0o600;
 
+#[cfg(unix)]
 const ITS_OWNERS_BITS: u32 = 0o700;
 
 static STAGED: AtomicU64 = AtomicU64::new(0);
@@ -57,9 +57,39 @@ fn xdg_dir(var: &str, fallback: &str) -> Option<PathBuf> {
     if let Some(dir) = env::var_os(var).filter(|dir| !dir.is_empty()) {
         return Some(PathBuf::from(dir));
     }
-    env::var_os("HOME")
+    known_folder(var).or_else(|| home_dir().map(|home| home.join(fallback)))
+}
+
+#[cfg(unix)]
+const HOME_VARIABLE: &str = "HOME";
+
+#[cfg(windows)]
+const HOME_VARIABLE: &str = "USERPROFILE";
+
+fn home_dir() -> Option<PathBuf> {
+    env::var_os(HOME_VARIABLE)
         .filter(|home| !home.is_empty())
-        .map(|home| PathBuf::from(home).join(fallback))
+        .map(PathBuf::from)
+}
+
+#[cfg(unix)]
+fn known_folder(_: &str) -> Option<PathBuf> {
+    None
+}
+
+#[cfg(windows)]
+fn known_folder(var: &str) -> Option<PathBuf> {
+    env::var_os(windows_variable_for(var))
+        .filter(|dir| !dir.is_empty())
+        .map(PathBuf::from)
+}
+
+#[cfg(any(windows, test))]
+fn windows_variable_for(var: &str) -> &'static str {
+    match var {
+        "XDG_CONFIG_HOME" => "APPDATA",
+        _ => "LOCALAPPDATA",
+    }
 }
 
 pub fn data_dir() -> Result<PathBuf> {
@@ -68,7 +98,7 @@ pub fn data_dir() -> Result<PathBuf> {
         .ok_or(Error::NoDataDir)
 }
 
-#[cfg(feature = "ui")]
+#[cfg(all(feature = "ui", unix))]
 pub fn icon_theme_dir() -> Result<PathBuf> {
     xdg_dir("XDG_DATA_HOME", ".local/share")
         .map(|dir| dir.join("icons").join("hicolor"))
@@ -1553,8 +1583,11 @@ fn write(target: &Path, text: &str) -> Result<()> {
     })
 }
 
-fn laid_down(target: &Path, staged: &Path, text: &str) -> io::Result<()> {
-    let mut file = OpenOptions::new()
+#[cfg(unix)]
+fn staged_for_its_owner_alone(staged: &Path, target: &Path) -> io::Result<File> {
+    use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
+
+    let file = OpenOptions::new()
         .write(true)
         .create_new(true)
         .mode(READ_BY_ITS_OWNER_ALONE)
@@ -1563,11 +1596,21 @@ fn laid_down(target: &Path, staged: &Path, text: &str) -> io::Result<()> {
         let owners = standing.permissions().mode() & ITS_OWNERS_BITS;
         file.set_permissions(fs::Permissions::from_mode(owners))?;
     }
+    Ok(file)
+}
+
+#[cfg(windows)]
+fn staged_for_its_owner_alone(staged: &Path, _: &Path) -> io::Result<File> {
+    OpenOptions::new().write(true).create_new(true).open(staged)
+}
+
+fn laid_down(target: &Path, staged: &Path, text: &str) -> io::Result<()> {
+    let mut file = staged_for_its_owner_alone(staged, target)?;
     file.write_all(text.as_bytes())?;
     file.sync_all()?;
     fs::rename(staged, target)?;
     if let Some(parent) = target.parent() {
-        File::open(parent)?.sync_all()?;
+        file_facts::sync_directory(parent)?;
     }
     Ok(())
 }
@@ -1600,14 +1643,26 @@ fn a_path(text: &str) -> Option<PathBuf> {
     let text = given(text)?;
     let under_home = match text.strip_prefix(HOME) {
         Some("") => Some(""),
-        Some(rest) => rest.strip_prefix('/'),
+        Some(rest) => rest
+            .strip_prefix('/')
+            .or_else(|| separated_by_the_platform(rest)),
         None => None,
     };
-    let home = env::var_os("HOME").filter(|home| !home.is_empty());
+    let home = home_dir();
     match (under_home, home) {
-        (Some(rest), Some(home)) => Some(PathBuf::from(home).join(rest)),
+        (Some(rest), Some(home)) => Some(home.join(rest)),
         _ => Some(PathBuf::from(text)),
     }
+}
+
+#[cfg(windows)]
+fn separated_by_the_platform(rest: &str) -> Option<&str> {
+    rest.strip_prefix('\\')
+}
+
+#[cfg(unix)]
+fn separated_by_the_platform(_: &str) -> Option<&str> {
+    None
 }
 
 fn layout(text: &str) -> Option<Layout> {
@@ -1697,6 +1752,13 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn windows_keeps_settings_in_roaming_data_and_everything_else_in_local_data() {
+        assert_eq!(windows_variable_for("XDG_CONFIG_HOME"), "APPDATA");
+        assert_eq!(windows_variable_for("XDG_DATA_HOME"), "LOCALAPPDATA");
+        assert_eq!(windows_variable_for("XDG_CACHE_HOME"), "LOCALAPPDATA");
+    }
 
     fn read(text: &str) -> Result<Config> {
         let mut refusals = Vec::new();
@@ -3005,6 +3067,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn the_settings_file_is_its_owners_alone_from_the_first_write_and_after_a_wider_one() {
         use std::os::unix::fs::PermissionsExt as _;
 
@@ -3030,6 +3093,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_symlinked_file_is_written_through_the_link_and_keeps_its_mode() {
         use std::os::unix::fs::{PermissionsExt as _, symlink};
 

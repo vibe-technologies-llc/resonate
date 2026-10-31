@@ -1,8 +1,7 @@
 use std::{
     env,
-    fs::{self, File, OpenOptions},
+    fs::{File, OpenOptions},
     io::{self, Read, Seek, SeekFrom},
-    os::unix::fs::FileExt as _,
     path::{Path, PathBuf},
     process,
     sync::{
@@ -14,14 +13,26 @@ use std::{
 };
 
 use parking_lot::{Condvar, Mutex};
+use resonate_core::positioned::FileExt as _;
 use thiserror::Error;
 
 use crate::source::{FormatHint, Media, MediaStream};
 
 pub(crate) const SPOOLED_ON_DISC_AT_MOST: u64 = 8 << 30;
 const COPIED_AT_A_TIME: usize = 64 << 10;
+#[cfg(unix)]
 const CHOSEN_TEMPORARY_FOLDER: &str = "TMPDIR";
+#[cfg(unix)]
 const KEPT_ON_DISC: &str = "/var/tmp";
+#[cfg(windows)]
+const DELETE_ACCESS: u32 = 0x0001_0000;
+#[cfg(windows)]
+const GENERIC_READ: u32 = 0x8000_0000;
+#[cfg(windows)]
+const GENERIC_WRITE: u32 = 0x4000_0000;
+#[cfg(windows)]
+const DELETE_ON_CLOSE: u32 = 0x0400_0000;
+#[cfg(unix)]
 const LEFT_FREE_ON_DISC: u64 = 256 << 20;
 
 static NAMED: AtomicU64 = AtomicU64::new(0);
@@ -213,6 +224,12 @@ impl Spool {
     }
 }
 
+#[cfg(windows)]
+fn room_on_disc(_: &File) -> Option<u64> {
+    None
+}
+
+#[cfg(unix)]
 fn room_on_disc(file: &File) -> Option<u64> {
     let stat = rustix::fs::fstatvfs(file).ok()?;
     Some(
@@ -238,6 +255,12 @@ fn ceiling_for(
     Ok(at_most.min(room))
 }
 
+#[cfg(windows)]
+pub(crate) fn spooled_under() -> Vec<PathBuf> {
+    vec![env::temp_dir()]
+}
+
+#[cfg(unix)]
 pub(crate) fn spooled_under() -> Vec<PathBuf> {
     let chosen = env::var_os(CHOSEN_TEMPORARY_FOLDER).filter(|dir| !dir.is_empty());
     let on_disc = chosen.is_none().then(|| PathBuf::from(KEPT_ON_DISC));
@@ -259,6 +282,23 @@ fn unnamed_file_under(folders: &[PathBuf]) -> io::Result<File> {
     Err(refused)
 }
 
+#[cfg(windows)]
+fn unnamed_file_in(folder: &Path) -> io::Result<File> {
+    use std::os::windows::fs::OpenOptionsExt as _;
+
+    let path = folder.join(format!(
+        "resonate-spool-{}-{}",
+        process::id(),
+        NAMED.fetch_add(1, Ordering::Relaxed)
+    ));
+    OpenOptions::new()
+        .access_mode(DELETE_ACCESS | GENERIC_READ | GENERIC_WRITE)
+        .create_new(true)
+        .custom_flags(DELETE_ON_CLOSE)
+        .open(&path)
+}
+
+#[cfg(unix)]
 fn unnamed_file_in(folder: &Path) -> io::Result<File> {
     let path = folder.join(format!(
         "resonate-spool-{}-{}",
@@ -270,7 +310,7 @@ fn unnamed_file_in(folder: &Path) -> io::Result<File> {
         .write(true)
         .create_new(true)
         .open(&path)?;
-    fs::remove_file(&path)?;
+    std::fs::remove_file(&path)?;
     Ok(file)
 }
 
@@ -350,7 +390,7 @@ impl MediaStream for Unspooled {
 
 #[cfg(test)]
 mod tests {
-    use std::{io::Cursor, time::Duration};
+    use std::{fs, io::Cursor, time::Duration};
 
     use super::*;
 
@@ -428,6 +468,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_spool_is_kept_on_disc_unless_a_temporary_folder_was_chosen() {
         let folders = spooled_under();
 

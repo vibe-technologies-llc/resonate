@@ -1,15 +1,11 @@
 use std::{
     cell::OnceCell,
     cmp::Ordering as Ranking,
-    ffi::{OsStr, OsString},
+    ffi::OsStr,
     fmt, fs,
     io::{self, Read as _},
     iter, mem,
     num::NonZeroU32,
-    os::unix::{
-        ffi::{OsStrExt as _, OsStringExt as _},
-        fs::MetadataExt as _,
-    },
     path::{Path, PathBuf},
     process,
     sync::{
@@ -26,7 +22,7 @@ use resonate_codec::{
     DEEPEST_FOLDER_A_SHEET_NAMES, carries_what_the_file_did, the_folder_a_cue_names,
 };
 use resonate_core::{
-    AlbumId, MediaLocation, TrackId, names_a_picture,
+    AlbumId, MediaLocation, TrackId, file_facts, names_a_picture, os_bytes,
     writer::{self, Held, Writer},
 };
 use rusqlite::{Connection, OptionalExtension as _, Statement, Transaction, params};
@@ -1004,11 +1000,7 @@ fn case_flipped(name: &str) -> Option<String> {
 }
 
 fn names_one_file(first: &Path, second: &Path) -> bool {
-    let (Ok(first), Ok(second)) = (fs::symlink_metadata(first), fs::symlink_metadata(second))
-    else {
-        return false;
-    };
-    first.dev() == second.dev() && first.ino() == second.ino()
+    file_facts::is_the_same_entry(first, second)
 }
 
 struct Claiming {
@@ -1451,11 +1443,11 @@ impl<'a> Planner<'a> {
             }));
         }
 
-        let held = fs::symlink_metadata(to).ok()?;
-        let Ok(standing) = fs::symlink_metadata(from) else {
+        fs::symlink_metadata(to).ok()?;
+        if fs::symlink_metadata(from).is_err() {
             return Some(InTheWay::Stands(Refusal::SourceGone));
-        };
-        if standing.dev() == held.dev() && standing.ino() == held.ino() {
+        }
+        if file_facts::is_the_same_entry(from, to) {
             return None;
         }
         if already_copied(from, to) {
@@ -2289,11 +2281,16 @@ fn copying(library: &Library, from: &Path, to: &Path) -> Result<()> {
 }
 
 fn noted_staging(library: &Library, landing: &Path) -> Result<PathBuf> {
-    let name = landing.file_name().map(OsStr::as_bytes).unwrap_or_default();
-    let kept = &name[..name.len().min(COMPONENT_BYTES - STAGED.len())];
+    let name = landing
+        .file_name()
+        .map(os_bytes::bytes_of)
+        .unwrap_or_default();
+    let kept = name
+        .get(..name.len().min(COMPONENT_BYTES - STAGED.len()))
+        .unwrap_or_default();
     let mut staging = kept.to_vec();
     staging.extend_from_slice(STAGED.as_bytes());
-    let staged = landing.with_file_name(OsString::from_vec(staging));
+    let staged = landing.with_file_name(os_bytes::os_string_from(staging));
     library.staging(&staged)?;
     Ok(staged)
 }
@@ -2483,10 +2480,7 @@ pub(crate) fn staged_writes(connection: &Connection) -> Result<Vec<StagedWrite>>
 }
 
 fn is_the_same_file(one: &Path, other: &Path) -> bool {
-    let (Ok(one), Ok(other)) = (fs::symlink_metadata(one), fs::symlink_metadata(other)) else {
-        return false;
-    };
-    one.dev() == other.dev() && one.ino() == other.ino()
+    file_facts::is_the_same_entry(one, other)
 }
 
 fn listed_as_named(path: &Path) -> bool {
@@ -2497,10 +2491,7 @@ fn listed_as_named(path: &Path) -> bool {
 }
 
 fn is_the_same_folder(one: &Path, other: &Path) -> bool {
-    let (Ok(one), Ok(other)) = (fs::metadata(one), fs::metadata(other)) else {
-        return false;
-    };
-    one.dev() == other.dev() && one.ino() == other.ino()
+    file_facts::is_the_same_folder(one, other)
 }
 
 fn another_link_of(from: &Path, to: &Path) -> bool {
@@ -2532,7 +2523,7 @@ fn already_copied(from: &Path, to: &Path) -> bool {
     };
     let alike = source.is_file()
         && copy.is_file()
-        && source.dev() != copy.dev()
+        && file_facts::volume_of(from) != file_facts::volume_of(to)
         && source.len() == copy.len()
         && source
             .modified()
@@ -3051,10 +3042,10 @@ fn taken_away(folder: &Path) -> Pruning {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
     use std::{
-        env,
-        os::unix::fs::PermissionsExt as _,
-        slice,
+        env, slice,
         sync::atomic::{AtomicU64, Ordering as Counting},
     };
 
@@ -4446,6 +4437,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_rewritten_sheet_keeps_the_mode_and_attributes_of_the_one_it_replaced() {
         const NAME: &str = "user.resonate.kept";
 
@@ -4474,6 +4466,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_file_copied_whole_carries_its_time_mode_and_attributes() {
         const NAME: &str = "user.resonate.kept";
 

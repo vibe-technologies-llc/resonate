@@ -8,10 +8,9 @@ use resonate_eq::{
 };
 use resonate_listen::Listening;
 use resonate_mpris::Reloadable;
-use resonate_pipewire::PipeWire;
 
 use crate::{
-    Cli, ConfigKey, Error, Result, SINK_TIMEOUT,
+    Cli, ConfigKey, Error, Result,
     cli::EqArgs,
     config,
     config::Config,
@@ -730,12 +729,10 @@ fn measurer_missed(asked_for: Option<&str>, chosen: &str) -> Option<String> {
 }
 
 fn suggested(cli: &Cli, config: &Config, wanted: &EqArgs) -> Result<()> {
-    let pipewire = PipeWire::start("Resonate")?;
     let sink = select_sink(
-        pipewire.enumerate_sinks(SINK_TIMEOUT)?,
+        crate::surveyed::sinks()?,
         crate::wanted_sink(cli, config).as_ref(),
     )?;
-    pipewire.shutdown()?;
 
     said!("sink:   {} ({})", sink.description, sink.name);
 

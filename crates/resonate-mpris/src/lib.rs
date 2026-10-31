@@ -15,8 +15,11 @@ mod remote;
 mod service;
 mod track;
 mod tracklist;
+#[cfg(unix)]
 mod trash;
 
+#[cfg(unix)]
+pub use crate::trash::{Trashing, trash_through_the_portal};
 pub use crate::{
     caret::{Blinking, caret_blinking},
     error::{BusOp, Error, Result},
@@ -32,5 +35,4 @@ pub use crate::{
     },
     service::{Mpris, Teller, Told},
     track::{PlaybackStatus, utc_stamp},
-    trash::{Trashing, trash_through_the_portal},
 };

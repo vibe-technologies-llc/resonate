@@ -53,6 +53,8 @@ pub use resonate_dsp::{
     ReplayGainMode, Restoration, SincParams, Speaker, TruePeakMeter, Tuning,
 };
 
+#[cfg(any(target_os = "linux", windows))]
+pub use crate::player::desktop_backend;
 pub use crate::{
     audition::{Audition, Contest, ContestLevels, Dithering, Lowered, Resampling, levels_of},
     catalog::{ArtRead, TagsRead},

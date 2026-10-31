@@ -5,6 +5,7 @@ paths:
   - "crates/resonate-codec/**/*.rs"
   - "crates/resonate-dsp/**/*.rs"
   - "crates/resonate-pipewire/**/*.rs"
+  - "crates/resonate-wasapi/**/*.rs"
 ---
 
 # The audio path
@@ -1367,8 +1368,11 @@ it reaches core, not a device API. A network renderer is one more sink behind th
 receivers it finds, so the engine plays to one with its queue, gapless handover, DSP and position
 unchanged, while the device pulls a paced live stream and its own clock, read back through
 `GetPositionInfo` or a media `GET_STATUS`, sets the latency (`upnp.md`, `cast.md`). PipeWire implements the traits in its own crate and reexports
-the moved vocabulary for existing callers. The engine has a PipeWire dependency only outside
-Android; Android constructs it with `Player::with_sources_and_backend`.
+the moved vocabulary for existing callers. The engine has a PipeWire dependency on Linux
+alone and a WASAPI one (`resonate-wasapi`, `windows.md`) on Windows alone; `engine::desktop_backend`
+is the one place either is named, handed to the binary so `sinks`, `explain`, `eq --suggest` and
+the renderers' `Beside` survey and wrap whichever the platform has. Android constructs its backend with
+`Player::with_sources_and_backend`.
 
 A source registry may supply a writable spool folder with `Sources::spooling_under`. Only that
 folder is tried when supplied; the Linux default remains `TMPDIR`, else `/var/tmp` then the

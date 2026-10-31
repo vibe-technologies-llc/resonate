@@ -200,6 +200,26 @@ fn every_release_recipe_builds_for_x86_64_v3_alone() {
 }
 
 #[test]
+fn the_windows_recipe_builds_for_x86_64_v3_and_reads_its_version_from_cargo() {
+    let script = packaging("windows/build.ps1");
+
+    assert!(
+        script.contains("x86-64-v3") && !script.contains("target-cpu=native"),
+        "the Windows recipe builds for another target than x86-64-v3"
+    );
+    assert!(
+        script.contains("Cargo.toml") && script.contains("-x86_64_v3-windows"),
+        "the Windows recipe must read the workspace version and name its asset for v3"
+    );
+    assert!(
+        !script
+            .lines()
+            .any(|line| line.trim_start().starts_with("$Version = \"0")),
+        "the Windows recipe hard-codes a version"
+    );
+}
+
+#[test]
 fn no_release_recipe_builds_a_debug_package() {
     for spec in ["resonate.spec", "server/resonate-server.spec"] {
         assert!(
