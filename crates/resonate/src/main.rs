@@ -5,6 +5,8 @@ mod said;
 
 mod abx;
 mod analyse;
+#[cfg(windows)]
+mod awake;
 mod cli;
 mod config;
 mod discord;
@@ -2429,6 +2431,11 @@ fn play_queue(
         &player,
     );
     let presenter = discord::start(&player, library.as_ref(), config);
+    #[cfg(windows)]
+    let _awake = {
+        let playing = Arc::clone(&player);
+        awake::start(move || vec![Arc::clone(&playing)])
+    };
     let submitting = library
         .as_ref()
         .map(|library| submitting::start(config, library, &player));
@@ -2889,6 +2896,15 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     zoning::restore(&zones, &library, &kept_zones);
     let listens = listen::in_the_window(&config, opener.teller());
     let presenter = Arc::new(discord::start(&player, Some(&library), &config));
+    #[cfg(windows)]
+    let _awake = {
+        let zones = Arc::downgrade(&zones);
+        awake::start(move || {
+            zones.upgrade().map_or_else(Vec::new, |zones| {
+                zones.listed().into_iter().map(|zone| zone.player).collect()
+            })
+        })
+    };
     let submitting = submitting::start(&config, &library, &player);
     let syncing = sync::start(&config, Some(&places.config), &library);
     let outcome = resonate_ui::run(

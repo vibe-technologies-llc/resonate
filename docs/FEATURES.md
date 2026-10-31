@@ -57,8 +57,8 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M · 0.4.0] A WASAPI stream cannot be reshaped (a rate, word or priority change closes and opens
   it), has no endpoint volume or mute (`Unsupported`), learns of devices by a two-second poll and
   runs at the thread priority `thread-priority` sets rather than an MMCSS class
-- [M · 0.4.0] Windows has no toast notifications with transport actions, no idle inhibit
-  (`SetThreadExecutionState`) while playing and no metered-network detector (`NetworkCostType`)
+- [M · 0.4.0] Windows has no toast notifications with transport actions and no metered-network
+  detector (`NetworkCostType`)
 - [M · 0.4.0] A Windows path past `MAX_PATH` (260) is not weighed by the organiser, NTFS alternate
   streams and ACLs are not carried by a tag write, and a folder mounted into another drive's tree is
   not noticed as a volume

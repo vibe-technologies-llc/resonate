@@ -21,7 +21,7 @@ owned-descriptor bridge and the iOS RemoteIO unit at the native boundary (`mobil
 
 Windows reaches its COM and Win32 calls through safe wrapper crates only, so `unsafe_code = "forbid"`
 holds there: `wasapi` (`resonate-wasapi`'s device enumeration and render client), `thread-priority`
-(its stream thread), `interprocess` (Discord's named pipe), `ctrlc` and `crossterm` (the binary's interrupts and key reading), `fs4` (the spool's free space), `trash` (the
+(its stream thread), `interprocess` (Discord's named pipe), `keepawake` (the machine awake while playing), `ctrlc` and `crossterm` (the binary's interrupts and key reading), `fs4` (the spool's free space), `trash` (the
 recycle bin), `same-file` (core's same-entry test). Each is a `cfg(windows)` target dependency, so
 none is built elsewhere; the layering job refuses PipeWire, Wayland, `rustix` and `signal-hook`
 from the Windows tree of the binary.

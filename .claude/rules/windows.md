@@ -7,6 +7,7 @@ paths:
   - "crates/resonate-core/src/windows_uri.rs"
   - "crates/resonate/src/interrupts.rs"
   - "crates/resonate/src/windows_launcher.rs"
+  - "crates/resonate/src/awake.rs"
   - "crates/resonate-listen/src/unavailable.rs"
   - "crates/resonate-discord/src/pipe.rs"
   - "crates/resonate-ui/src/system.rs"
@@ -137,9 +138,17 @@ man page say "the sound system".
 - **Any user may create a pipe of that name**, so a squatter on a shared machine could learn what
   plays; the Unix socket's owner check has no counterpart yet.
 
+## Awake while playing
+
+`awake.rs` (`resonate-awake` thread, the binary's, since `resonate-mpris` finds no bus) looks at
+every zone's player each second (`play`: its one player; the window: `Zones::listed`, through a weak
+handle) and holds a `keepawake::KeepAwake` (display and idle, as the portal's `IDLE`/`SUSPEND` do on
+Linux) while any is `Playing` or `Buffering`. `SetThreadExecutionState` belongs to the thread that
+set it, so the hold is made and dropped on that thread alone; dropping `Awake` stops and joins it.
+
 ## Not on Windows yet
 
-The MPRIS service, notifications, idle inhibit, network metering and `Running` (so `queue`, `sleep`
+The MPRIS service, notifications, network metering and `Running` (so `queue`, `sleep`
 and `players` against a running window) answer "no bus": `resonate-mpris` compiles but finds no
 session bus, and the binary carries on without it as it does on a Linux machine with none. Capture
 (`resonate-listen`) is a `Listener` that lists no microphone and refuses to record

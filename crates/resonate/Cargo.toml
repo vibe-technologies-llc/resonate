@@ -60,6 +60,7 @@ signal-hook.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 ctrlc.workspace = true
+keepawake.workspace = true
 crossterm.workspace = true
 trash.workspace = true
 
