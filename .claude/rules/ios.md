@@ -612,7 +612,14 @@ every route change (a pair of headphones at the same rate included), not from th
   scrolls to the playing row only while it is on screen. In the player the list takes the full width
   (the player's gutter undone), since its rows carry their own insets; empty, it says so.
   Rows reorder with `onMove` (SwiftUI's convention, which `move_in_queue` takes as is) and swipe to
-  remove by queue id; the player's More menu holds a *Queue* section while the queue holds a row:
+  remove by queue id. **Playing next and Continue playing are one drag domain** (`joinedRows`: one
+  `ForEach` of the asked rows, a non-movable *Continue playing* heading and the rest;
+  `RowMoves.joined` maps the shown offsets back to queue places), because `move_rows` decides from
+  the row before the landing whether a moved row is asked or in order, so a row dropped among the
+  asked rows is asked and one dropped after the heading's first song is in order; a row dropped
+  directly at either side of the heading lands after the last asked row and so is asked. A row
+  outside the asked ones also offers *Move to Playing next* in its context menu (`NextPlacement`,
+  not offered for the row already first after them); the player's More menu holds a *Queue* section while the queue holds a row:
   *Save queue as playlist* and *Clear queue* (confirmed; it keeps the playing row). Play next and Add to queue are a
   song row's leading swipe and context-menu actions, and for a whole collection its toolbar's
   `CollectionMenu` (`CollectionQueueActions`: Play next, Add to queue, Add to playlist; inside the
@@ -971,6 +978,20 @@ in; it never opens on another colour first.
   scales the blurred field up.
 - **A song change crossfades** the old field into the new over 1.2 s, eased in and out, in the shader;
   a change mid-fade starts from the blend then on screen.
+  **Only a change the listener sees fades**: a palette that arrives while the scene is not active
+  (`BackdropView`'s `fades`, `FieldBlend.show(fading: false)`) is shown at rest at once, and the
+  cover's handover is skipped the same way (`ArtworkView.present`, `Handover`'s `.handover(value:)`
+  modifier, all keyed on `scenePhase == .active`). The fade is timed by the wall clock, which runs
+  while the display link is stopped, so a song that changed in another app finished its fade unseen
+  and the cover then animated alone on coming back; now the field and the cover both arrive already
+  changed.
+- **Now Playing's intensity** (`AppearanceState.nowPlayingIntensity`, `nowPlayingIntensity` in the
+  `appearance` defaults, 0.5, Settings › Appearance › Background › Now Playing) darkens or enriches
+  the cover's field: `BackdropTone.nowPlaying(dark:intensity:)` leaves the tone as it was at 0.5 and
+  moves the top lightness, chroma and vignette toward darker (down to half the dark tone's lightness,
+  three quarters of the light tone's, 0.6 of its chroma) or livelier (lightness up 12 %, chroma up
+  50 %, a lighter vignette). It applies to the moving `BackdropView`s (Now Playing, lyrics,
+  visualizer), never to the still collection pages or the app background (*Strength*).
 - **Energy** is the RMS of the visualizer tap (`Features.heardLevel`, worked out off the main thread
   with the read, `HeardSignal`), with a 120 ms attack and a 600 ms
   release, raising drift speed and blob size by at most a quarter. Paused, energy falls to zero and
@@ -1011,10 +1032,10 @@ in; it never opens on another colour first.
   where it stands (`AmbientMotion.frozen`), so it neither jumps to another frame when Now Playing
   opens nor when it closes; *Moving background* off, or Reduce Motion, draws the still moment.
   `ThemedPage` on each stack's root and every `DestinationView` hides the scroll content background
-  and sets that background. It stays frozen too (no display link, no render) while a page that draws its own backdrop is the top of the tab's stack (`Navigation.coversAmbient`: an album, artist, playlist, lyrics or visualizer page, as well as Now Playing and the whole Search tab, so nothing changes, redraws or re-evaluates in the first frames of the search field's widening). `AppearanceState` keeps three settings in the `appearance` defaults,
+  and sets that background. It stays frozen too (no display link, no render) while a page that draws its own backdrop is the top of the tab's stack (`Navigation.coversAmbient`: an album, artist, playlist, lyrics or visualizer page, as well as Now Playing and the whole Search tab, so nothing changes, redraws or re-evaluates in the first frames of the search field's widening). `AppearanceState` keeps four settings in the `appearance` defaults,
   edited in Settings › Appearance › Background (`BackgroundView`, `Destination.background`, a page of
   its own beside `AppearanceView`): `themedBackground` (on), `movingBackground` (on; off draws the
-  still frame), `backgroundStrength` (0.4). A plain list's rows draw their own opaque fill, so each
+  still frame), `backgroundStrength` (0.4), and `nowPlayingIntensity` (0.5, a section of its own on that page). A plain list's rows draw their own opaque fill, so each
   one is `themedRows()` (a clear `listRowBackground` while the background is on), keeping
   separators; a new plain list does the same. A grouped page (`ThemedList`, `ThemedForm`, which wrap
   `List` and `Form`) tints its cards instead, `themedCards()` filling each with `Color.themedCard`

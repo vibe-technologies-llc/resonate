@@ -83,6 +83,21 @@ public struct QueueParts: Sendable {
     }
 }
 
+public struct NextPlacement: Sendable {
+    private let playing: Int
+    private let next: Range<Int>
+
+    public init(playing: Int, next: Range<Int>) {
+        self.playing = playing
+        self.next = next
+    }
+
+    public func takes(_ index: Int) -> Int? {
+        guard index != playing, !next.contains(index), index != next.upperBound else { return nil }
+        return next.upperBound
+    }
+}
+
 public enum FilterChip: Identifiable, Sendable {
     case favourites
     case unplayed

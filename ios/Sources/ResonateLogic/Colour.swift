@@ -136,6 +136,30 @@ public struct BackdropTone: Equatable, Sendable {
         self.vignette = vignette
     }
 
+    public static let neutralIntensity: Float = 0.5
+    private static let brightestTop: Float = 0.95
+
+    public func at(intensity: Float, darkening: Float) -> BackdropTone {
+        let lean = (min(max(intensity, 0), 1) - Self.neutralIntensity) * 2
+        guard lean != 0 else { return self }
+        let darker = max(-lean, 0)
+        let livelier = max(lean, 0)
+        let dimming = 1 - darkening * darker
+        let top = min((lightnessFloor + lightnessRange) * dimming * (1 + 0.12 * livelier), max(Self.brightestTop, lightnessFloor + lightnessRange))
+        let floor = lightnessFloor * dimming
+
+        return BackdropTone(
+            lightnessFloor: floor,
+            lightnessRange: top - floor,
+            chroma: chroma * (1 - 0.4 * darker + 0.5 * livelier),
+            vignette: max(vignette + 0.15 * darker - 0.08 * livelier, 0)
+        )
+    }
+
+    public static func nowPlaying(dark isDark: Bool, intensity: Float) -> BackdropTone {
+        isDark ? Self.dark.at(intensity: intensity, darkening: 0.5) : Self.light.at(intensity: intensity, darkening: 0.25)
+    }
+
     public static func ambient(dark isDark: Bool, strength: Float) -> BackdropTone {
         let held = min(max(strength, 0), 1)
 
@@ -172,8 +196,16 @@ public struct FieldBlend: Sendable {
         leavingPacked = shownPacked
     }
 
-    public mutating func show(_ palette: Palette, at now: TimeInterval) -> Bool {
+    public mutating func show(_ palette: Palette, at now: TimeInterval, fading: Bool = true) -> Bool {
         guard palette != shown else { return false }
+        guard fading else {
+            shown = palette
+            leaving = palette
+            shownPacked = FieldUniforms.packed(palette)
+            leavingPacked = shownPacked
+            began = -.infinity
+            return true
+        }
         let reached = Self.eased(progress(at: now))
 
         leaving = leaving.blended(toward: shown, by: reached)

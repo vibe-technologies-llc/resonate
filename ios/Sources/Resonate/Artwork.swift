@@ -21,6 +21,7 @@ struct ArtworkView: View {
     @Environment(Library.self) private var library
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var phase
     let track: Track?
     var corner: CGFloat = 12
     var circle = false
@@ -167,7 +168,8 @@ struct ArtworkView: View {
     private func present(_ shown: UIImage?, of track: Track) {
         let anotherSong = pictured != track.pictureKey
         pictured = shown == nil ? nil : track.pictureKey
-        guard handsOver, anotherSong, let current = image, !reduceMotion else {
+        if phase != .active { leaving = nil }
+        guard handsOver, anotherSong, let current = image, !reduceMotion, phase == .active else {
             image = shown
             return
         }

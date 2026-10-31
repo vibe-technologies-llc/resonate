@@ -282,3 +282,28 @@ import Testing
         }
     }
 }
+
+@Suite struct NextPlacementTests {
+    @Test func aSongAfterTheAskedRowsMovesToJustPastThem() {
+        let placing = NextPlacement(playing: 3, next: 4..<6)
+
+        #expect(placing.takes(9) == 6)
+        #expect(placing.takes(1) == 6)
+    }
+
+    @Test func withNothingAskedASongMovesToJustAfterThePlayingRow() {
+        let placing = NextPlacement(playing: 3, next: 4..<4)
+
+        #expect(placing.takes(8) == 4)
+        #expect(placing.takes(0) == 4)
+    }
+
+    @Test func theSongsAlreadyThereAndTheOneAtTheEdgeAreNotMoved() {
+        let placing = NextPlacement(playing: 3, next: 4..<6)
+
+        #expect(placing.takes(3) == nil)
+        #expect(placing.takes(4) == nil)
+        #expect(placing.takes(5) == nil)
+        #expect(placing.takes(6) == nil)
+    }
+}

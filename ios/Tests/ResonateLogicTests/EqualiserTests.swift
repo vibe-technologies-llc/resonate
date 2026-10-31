@@ -322,6 +322,25 @@ actor Failing {
         #expect(move.to == 0)
     }
 
+    @Test func aJoinedMoveSkipsTheHeadingBetweenTheTwoRuns() {
+        let down = RowMoves.joined(offset: 4, destination: 0, joint: 2, within: 10)
+        let up = RowMoves.joined(offset: 0, destination: 5, joint: 2, within: 10)
+
+        #expect(down?.from == 13 && down?.to == 10)
+        #expect(up?.from == 10 && up?.to == 14)
+    }
+
+    @Test func aJoinedDestinationAtEitherSideOfTheHeadingIsTheSameQueuePlace() {
+        let above = RowMoves.joined(offset: 4, destination: 2, joint: 2, within: 0)
+        let below = RowMoves.joined(offset: 4, destination: 3, joint: 2, within: 0)
+
+        #expect(above?.to == 2 && below?.to == 2)
+    }
+
+    @Test func theHeadingItselfIsNeverMoved() {
+        #expect(RowMoves.joined(offset: 2, destination: 0, joint: 2, within: 0) == nil)
+    }
+
     @Test func aPlaylistMoveDownwardLandsOneEarlierBecauseTheRowLeavesFirst() {
         #expect(RowMoves.playlist(from: 2, destination: 5) == 4)
         #expect(RowMoves.playlist(from: 0, destination: 1) == 0)

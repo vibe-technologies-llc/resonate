@@ -186,6 +186,19 @@ import Testing
         #expect(blend.progress(at: 0) == 0)
     }
 
+    @Test func aPaletteShownWithoutFadingIsAtRestAtOnceEvenMidFade() {
+        var blend = FieldBlend(first)
+        _ = blend.show(second, at: 10)
+
+        let settled = blend.show(third, at: 10.3, fading: false)
+
+        #expect(settled)
+        #expect(!blend.fading(at: 10.3))
+        #expect(blend.progress(at: 10.3) == 1)
+        #expect(blend.shownPacked.0 == FieldUniforms.packed(third).0)
+        #expect(blend.leavingPacked.0 == FieldUniforms.packed(third).0)
+    }
+
     @Test func theShownAndLeavingPalettesArePackedForTheShader() {
         var blend = FieldBlend(first)
 
@@ -306,6 +319,38 @@ import Testing
         #expect(abs(none.lightnessFloor - 0.96) < 1e-6)
         #expect(abs(full.lightnessFloor - 0.80) < 1e-6)
         #expect(full.lightnessRange > none.lightnessRange)
+    }
+
+    @Test func theMiddleIntensityIsTheToneAsItWas() {
+        #expect(BackdropTone.nowPlaying(dark: true, intensity: 0.5) == BackdropTone.dark)
+        #expect(BackdropTone.nowPlaying(dark: false, intensity: 0.5) == BackdropTone.light)
+    }
+
+    @Test func aLowerIntensityIsDarkerAndDullerWithAHeavierVignette() {
+        for isDark in [true, false] {
+            let base = BackdropTone.nowPlaying(dark: isDark, intensity: 0.5)
+            let dimmed = BackdropTone.nowPlaying(dark: isDark, intensity: 0)
+
+            #expect(dimmed.lightnessFloor + dimmed.lightnessRange < base.lightnessFloor + base.lightnessRange)
+            #expect(dimmed.chroma < base.chroma)
+            #expect(dimmed.vignette > base.vignette)
+        }
+    }
+
+    @Test func aHigherIntensityIsBrighterAndRicherWithALighterVignette() {
+        for isDark in [true, false] {
+            let base = BackdropTone.nowPlaying(dark: isDark, intensity: 0.5)
+            let vivid = BackdropTone.nowPlaying(dark: isDark, intensity: 1)
+
+            #expect(vivid.lightnessFloor + vivid.lightnessRange > base.lightnessFloor + base.lightnessRange)
+            #expect(vivid.chroma > base.chroma)
+            #expect(vivid.vignette < base.vignette)
+        }
+    }
+
+    @Test func anIntensityOutsideZeroToOneIsHeldToIt() {
+        #expect(BackdropTone.nowPlaying(dark: true, intensity: 9) == BackdropTone.nowPlaying(dark: true, intensity: 1))
+        #expect(BackdropTone.nowPlaying(dark: true, intensity: -9) == BackdropTone.nowPlaying(dark: true, intensity: 0))
     }
 
     @Test func aStrengthOutsideZeroToOneIsHeldToIt() {

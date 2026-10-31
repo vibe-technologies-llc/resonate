@@ -58,7 +58,7 @@ struct BackdropView: View {
     private func field(_ palette: Palette) -> some View {
         switch rendering {
         case .metal(let gpu) where moving:
-            MeshBackdrop(gpu: gpu, heard: library.features.heardLevel, palette: palette, motion: motion, tone: tone, playing: sounding)
+            MeshBackdrop(gpu: gpu, heard: library.features.heardLevel, palette: palette, motion: motion, tone: tone, playing: sounding, fades: phase == .active)
         case .metal(let gpu):
             StillBackdrop(gpu: gpu, palette: palette, tone: tone)
         case .gradient, .loading:
@@ -85,7 +85,8 @@ struct BackdropView: View {
     }
 
     private var tone: BackdropTone {
-        scheme == .dark ? .dark : .light
+        let intensity = moving ? Float(AppearanceState.shared.nowPlayingIntensity) : BackdropTone.neutralIntensity
+        return .nowPlaying(dark: scheme == .dark, intensity: intensity)
     }
 
     private var motion: BackdropMotion {
@@ -732,6 +733,7 @@ private struct MeshBackdrop: UIViewRepresentable {
     let motion: BackdropMotion
     let tone: BackdropTone
     let playing: Bool
+    let fades: Bool
 
     func makeCoordinator() -> BackdropRenderer {
         BackdropRenderer(gpu: gpu, palette: palette, heard: heard)
@@ -742,7 +744,7 @@ private struct MeshBackdrop: UIViewRepresentable {
     }
 
     func updateUIView(_ view: BackdropMetalView, context: Context) {
-        context.coordinator.wear(tone: tone, playing: playing, still: motion == .still, palette: palette)
+        context.coordinator.wear(tone: tone, playing: playing, still: motion == .still, palette: palette, fading: fades)
         view.motion = motion
         view.redrawIfStill()
     }
@@ -1044,7 +1046,7 @@ final class BackdropRenderer: Sendable {
         held = Mutex(Held(blend: FieldBlend(palette)))
     }
 
-    func wear(tone: BackdropTone, playing: Bool, still: Bool, palette: Palette) {
+    func wear(tone: BackdropTone, playing: Bool, still: Bool, palette: Palette, fading: Bool) {
         let now = CACurrentMediaTime()
 
         held.withLock { held in
@@ -1052,7 +1054,7 @@ final class BackdropRenderer: Sendable {
             held.tone = tone
             held.playing = playing
             held.still = still
-            if held.blend.show(palette, at: now) || reshaped { held.forgetPlaceholder() }
+            if held.blend.show(palette, at: now, fading: fading) || reshaped { held.forgetPlaceholder() }
         }
     }
 

@@ -51,7 +51,7 @@ struct MiniPlayer: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentTransition(reduceMotion ? .identity : .opacity)
-                .motion(Handover.animation, value: track?.pictureKey)
+                .handover(value: track?.pictureKey)
             } else {
                 Spacer(minLength: 0)
             }
@@ -335,7 +335,7 @@ struct MovingCover: View {
             .transaction(value: slot) { moved in
                 if moved.animation == nil, !reduceMotion { moved.animation = Self.settlesOnItsSlot }
             }
-            .motion(Handover.animation, value: track?.pictureKey)
+            .handover(value: track?.pictureKey)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onChange(of: slot, initial: true) { _, now in
                 if large, now.width > 0, now.width != edge { edge = now.width }
@@ -374,7 +374,7 @@ struct PlayerTitles: View {
         HStack(alignment: .center, spacing: 12) {
             words
                 .contentTransition(.opacity)
-                .motion(Handover.animation, value: track?.pictureKey)
+                .handover(value: track?.pictureKey)
             Spacer(minLength: 0)
             if let track { FavouriteButton(track: track).font(.title2) }
         }
@@ -462,7 +462,7 @@ struct CompactTitles: View {
                 .anchorPreference(key: CoverSlot.self, value: .bounds) { [.compact: $0] }
             words
                 .contentTransition(.opacity)
-                .motion(Handover.animation, value: track?.pictureKey)
+                .handover(value: track?.pictureKey)
             Spacer(minLength: 0)
             if let track { FavouriteButton(track: track).font(.title3) }
         }
@@ -1201,6 +1201,7 @@ struct QueueSections: View {
                     heardAtMost: heard,
                     aheadAtMost: ahead
                 )
+                let placing = NextPlacement(playing: playing, next: parts.next)
                 if playing > 0 {
                     Section {
                         QueueHeading(title: "History")
@@ -1209,35 +1210,42 @@ struct QueueSections: View {
                                 heard += Self.widenedBy
                             }
                         }
-                        rowsOf(rows, parts.history).opacity(Self.heardFaded)
+                        rowsOf(rows, parts.history, placing: placing).opacity(Self.heardFaded)
                     }
                 }
                 Section {
                     QueueHeading(title: "Now playing").id(playingRowId)
                     QueueRow(row: rows[playing], current: true, edited: $edited)
                 }
-                if !parts.next.isEmpty {
+                if parts.next.isEmpty {
+                    Section {
+                        QueueHeading(title: "Up next")
+                        if parts.rest.isEmpty, parts.beyond == 0 {
+                            Text("Nothing more to play").secondaryInk()
+                        } else {
+                            rowsOf(rows, parts.rest, placing: placing)
+                        }
+                        if parts.beyond > 0 {
+                            further(parts.beyond)
+                        }
+                    }
+                } else {
                     Section {
                         QueueHeading(title: "Playing next")
-                        rowsOf(rows, parts.next)
-                    }
-                }
-                Section {
-                    QueueHeading(title: parts.next.isEmpty ? "Up next" : "Continue playing")
-                    if parts.rest.isEmpty, parts.beyond == 0 {
-                        Text("Nothing more to play").secondaryInk()
-                    } else {
-                        rowsOf(rows, parts.rest)
-                    }
-                    if parts.beyond > 0 {
-                        further(parts.beyond)
+                        joinedRows(rows, parts, placing: placing)
+                        if parts.rest.isEmpty, parts.beyond == 0 {
+                            Text("Nothing more to play").secondaryInk()
+                        }
+                        if parts.beyond > 0 {
+                            further(parts.beyond)
+                        }
                     }
                 }
             } else {
                 let shown = min(rows.count, ahead)
                 Section {
                     QueueHeading(title: "Up next")
-                    rowsOf(rows, 0..<shown)
+                    rowsOf(rows, 0..<shown, placing: nil)
                     if rows.count > shown {
                         further(rows.count - shown)
                     }
@@ -1266,9 +1274,9 @@ struct QueueSections: View {
         .accessibilityHint("Shows more of the queue")
     }
 
-    private func rowsOf(_ rows: [Track], _ range: Range<Int>) -> some View {
-        ForEach(rows[range], id: \.queueId) { row in
-            QueueRow(row: row, current: false, edited: $edited)
+    private func rowsOf(_ rows: [Track], _ range: Range<Int>, placing: NextPlacement?) -> some View {
+        ForEach(range.map { QueueEntry.row(rows[$0], at: $0) }) { entry in
+            queueRow(entry, placing: placing)
         }
         .onMove { offsets, destination in
             guard let moved = offsets.first else { return }
@@ -1279,6 +1287,67 @@ struct QueueSections: View {
         .onDelete { offsets in
             edited += 1
             for offset in offsets.sorted(by: >) { library.removeFromQueue(rows[range.lowerBound + offset]) }
+        }
+    }
+
+    private func joinedRows(_ rows: [Track], _ parts: QueueParts, placing: NextPlacement) -> some View {
+        let joint = parts.next.count
+        let lower = parts.next.lowerBound
+        let entries = parts.next.map { QueueEntry.row(rows[$0], at: $0) } + [QueueEntry.joint] + parts.rest.map { QueueEntry.row(rows[$0], at: $0) }
+
+        return ForEach(entries) { entry in
+            switch entry {
+            case .row:
+                queueRow(entry, placing: placing)
+            case .joint:
+                QueueHeading(title: "Continue playing")
+                    .moveDisabled(true)
+                    .deleteDisabled(true)
+            }
+        }
+        .onMove { offsets, destination in
+            guard let moved = offsets.first,
+                let move = RowMoves.joined(offset: moved, destination: destination, joint: joint, within: lower)
+            else { return }
+            edited += 1
+            library.moveInQueue(from: move.from, to: move.to)
+        }
+        .onDelete { offsets in
+            edited += 1
+            for offset in offsets.sorted(by: >) where offset != joint {
+                library.removeFromQueue(rows[lower + (offset < joint ? offset : offset - 1)])
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func queueRow(_ entry: QueueEntry, placing: NextPlacement?) -> some View {
+        if case .row(let row, let index) = entry {
+            QueueRow(
+                row: row,
+                current: false,
+                edited: $edited,
+                moveToNext: placing?.takes(index).map { target in
+                    { library.moveInQueue(from: index, to: target) }
+                }
+            )
+        }
+    }
+}
+
+enum QueueEntry: Identifiable {
+    enum ID: Hashable {
+        case row(UInt64?)
+        case joint
+    }
+
+    case row(Track, at: Int)
+    case joint
+
+    var id: ID {
+        switch self {
+        case .row(let track, _): .row(track.queueId)
+        case .joint: .joint
         }
     }
 }
@@ -1301,6 +1370,7 @@ struct QueueRow: View {
     let row: Track
     let current: Bool
     @Binding var edited: Int
+    var moveToNext: (() -> Void)?
     @State private var choosingPlaylist = false
 
     var body: some View {
@@ -1316,6 +1386,14 @@ struct QueueRow: View {
             .tint(.red)
         }
         .contextMenu {
+            if let moveToNext {
+                Section {
+                    Button("Move to Playing next", systemImage: "text.line.first.and.arrowtriangle.forward") {
+                        edited += 1
+                        moveToNext()
+                    }
+                }
+            }
             if !row.isServed {
                 Section {
                     Button(favourite ? "Remove from favourites" : "Add to favourites", systemImage: favourite ? "heart.slash" : "heart") {

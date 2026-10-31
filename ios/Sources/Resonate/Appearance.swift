@@ -13,7 +13,9 @@ final class AppearanceState {
     private static let backgroundKey = "themedBackground"
     private static let movingKey = "movingBackground"
     private static let strengthKey = "backgroundStrength"
+    private static let intensityKey = "nowPlayingIntensity"
     static let defaultStrength = 0.4
+    static let defaultIntensity = Double(BackdropTone.neutralIntensity)
 
     @ObservationIgnored private let settings = UserDefaults(suiteName: "appearance") ?? .standard
 
@@ -40,6 +42,10 @@ final class AppearanceState {
         didSet { settings.set(backgroundStrength, forKey: Self.strengthKey) }
     }
 
+    var nowPlayingIntensity: Double {
+        didSet { settings.set(nowPlayingIntensity, forKey: Self.intensityKey) }
+    }
+
     private init() {
         let kept = settings.string(forKey: Self.accentKey)
         let chosen = ResonateAccent.every.first { $0.name == kept }
@@ -49,6 +55,7 @@ final class AppearanceState {
         themedBackground = settings.object(forKey: Self.backgroundKey) as? Bool ?? true
         movingBackground = settings.object(forKey: Self.movingKey) as? Bool ?? true
         backgroundStrength = settings.object(forKey: Self.strengthKey) as? Double ?? Self.defaultStrength
+        nowPlayingIntensity = settings.object(forKey: Self.intensityKey) as? Double ?? Self.defaultIntensity
         iconChange = Task { [weak self] in
             guard let self else { return }
             await showIcon(of: accent)
@@ -223,7 +230,21 @@ enum Handover {
     static let animation = Animation.timingCurve(0.5, 0, 0.5, 1, duration: 0.28)
 }
 
+private struct HandedOver<Value: Equatable>: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var phase
+    let value: Value
+
+    func body(content: Content) -> some View {
+        content.animation(reduceMotion || phase != .active ? nil : Handover.animation, value: value)
+    }
+}
+
 extension View {
+    func handover<Value: Equatable>(value: Value) -> some View {
+        modifier(HandedOver(value: value))
+    }
+
     func motion<Value: Equatable>(_ animation: Animation?, calm: Animation? = nil, value: Value) -> some View {
         modifier(CalmedAnimation(animation: animation, calm: calm, value: value))
     }
@@ -250,6 +271,25 @@ struct BackgroundView: View {
                 }
             } footer: {
                 Text("A slow field in the accent colour behind every page, drawn as Now Playing draws the cover's. Reduce Motion keeps it still, and Low Power Mode slows it.")
+            }
+            Section {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Intensity")
+                    HStack(spacing: 12) {
+                        Text("Darker").font(.caption).foregroundStyle(.secondary)
+                        Slider(value: $appearance.nowPlayingIntensity, in: 0...1)
+                            .accessibilityLabel("Now Playing intensity")
+                            .accessibilityValue(Text(appearance.nowPlayingIntensity, format: .percent.precision(.fractionLength(0))))
+                        Text("Vibrant").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                if appearance.nowPlayingIntensity != AppearanceState.defaultIntensity {
+                    Button("Reset to default") { appearance.nowPlayingIntensity = AppearanceState.defaultIntensity }
+                }
+            } header: {
+                Text("Now Playing")
+            } footer: {
+                Text("How dark or vivid the cover's colours are behind Now Playing, its lyrics and the visualizer.")
             }
         }
         .navigationTitle("Background")
