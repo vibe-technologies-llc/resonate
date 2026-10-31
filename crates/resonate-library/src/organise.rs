@@ -33,7 +33,7 @@ use crate::{
     filed,
     paged::{Paging, ROWS_A_PAGE},
     pass::{Cancelling, OrganiseHandle, PassHandle, PassKind},
-    scan, sheeted, store, unreplacing, volumes,
+    scan, sheeted, store, unreplacing,
 };
 
 pub const DEFAULT_LAYOUT: &str = "{albumartist}/{album}/{disc}{track} {title}";
@@ -48,6 +48,7 @@ const COMPARED_AT_ONCE: usize = 1 << 20;
 const SEGMENT_SEPARATOR: char = '/';
 const SEPARATOR_STANDS_IN: char = '-';
 const REFUSED_BY_A_PORTABLE_VOLUME: [char; 8] = ['\\', ':', '*', '?', '"', '<', '>', '|'];
+#[cfg(not(windows))]
 const PORTABLE_VOLUMES: [&str; 10] = [
     "vfat", "msdos", "exfat", "ntfs", "ntfs3", "fuseblk", "fat", "cifs", "smb3", "smbfs",
 ];
@@ -447,7 +448,7 @@ impl Naming {
 
     #[cfg(not(windows))]
     pub(crate) fn of(root: &Path) -> Self {
-        match fs::read_to_string(volumes::MOUNT_TABLE) {
+        match fs::read_to_string(crate::volumes::MOUNT_TABLE) {
             Ok(table) => Self::in_table(&table, root),
             Err(error) => {
                 tracing::debug!(%error, "no mount table to say what a root's volume will take");
@@ -456,8 +457,9 @@ impl Naming {
         }
     }
 
+    #[cfg(not(windows))]
     fn in_table(table: &str, root: &Path) -> Self {
-        let mounted = volumes::mount_points_in(table)
+        let mounted = crate::volumes::mount_points_in(table)
             .filter(|(point, _)| root.starts_with(point))
             .max_by_key(|(point, _)| point.components().count());
 
@@ -3221,6 +3223,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn a_root_on_a_windows_volume_is_named_in_what_that_volume_takes() {
         let table = "/dev/nvme0n1p2 / ext4 rw,relatime 0 0\n\
