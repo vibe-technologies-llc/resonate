@@ -1,25 +1,21 @@
 use std::{
     env, fs,
-    io::{self, Read},
+    io::{self, Read, Write},
     os::unix::{
         fs::{FileTypeExt, MetadataExt},
         net::UnixStream,
     },
     path::{Path, PathBuf},
-    process,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use resonate_core::AppId;
-use serde::{Deserialize, Serialize};
 
 use crate::{
-    Error, IpcOp, JsonOp, Result,
-    activity::Activity,
-    frame::{Frame, Opcode, split_frame, write_frame},
+    Error, IpcOp, Result,
+    session::{self, ANSWERS_WITHIN, Wire},
 };
 
-const PROTOCOL: u8 = 1;
 const SOCKETS_PER_FOLDER: u8 = 10;
 const SOCKET_STEM: &str = "discord-ipc-";
 const SHARED_TEMPORARY: &str = "/tmp";
@@ -37,13 +33,7 @@ const SANDBOXES: [&str; 12] = [
     "snap.discord-canary",
     "snap.discord-ptb",
 ];
-const ANSWERS_WITHIN: Duration = Duration::from_secs(2);
 const READ_AT_ONCE: usize = 4096;
-const READY_WITHIN: Duration = Duration::from_secs(5);
-const SET_ACTIVITY: &str = "SET_ACTIVITY";
-const DISPATCH: &str = "DISPATCH";
-const READY: &str = "READY";
-const ERROR: &str = "ERROR";
 
 pub(crate) fn candidates(runtime: Option<&Path>, temporary: Option<&Path>) -> Vec<PathBuf> {
     let mut folders: Vec<&Path> = Vec::new();
@@ -78,51 +68,62 @@ fn held_by(socket: &fs::Metadata, user: u32) -> bool {
     socket.file_type().is_socket() && socket.uid() == user
 }
 
-#[derive(Serialize)]
-struct Handshake {
-    v: u8,
-    client_id: String,
+pub(crate) type Session = session::Session<Socket>;
+
+pub(crate) struct Socket(UnixStream);
+
+impl Write for Socket {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        self.0.write(buffer)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.0.flush()
+    }
 }
 
-#[derive(Serialize)]
-struct Command<'a> {
-    cmd: &'static str,
-    args: Arguments<'a>,
-    nonce: String,
+impl Wire for Socket {
+    fn receive(&mut self, within: Duration, into: &mut Vec<u8>) -> Result<()> {
+        configured(self.0.set_read_timeout(Some(within)))?;
+        self.read_some(into)
+    }
+
+    fn poll(&mut self, into: &mut Vec<u8>) -> Result<()> {
+        configured(self.0.set_nonblocking(true))?;
+        let received = self.read_some(into);
+        configured(self.0.set_nonblocking(false))?;
+        received
+    }
 }
 
-#[derive(Serialize)]
-struct Arguments<'a> {
-    pid: u32,
-    activity: Option<&'a Activity>,
-}
-
-#[derive(Deserialize)]
-struct ReplyDoc {
-    #[serde(default)]
-    cmd: Option<String>,
-    #[serde(default)]
-    evt: Option<String>,
-    #[serde(default)]
-    data: Option<FaultDoc>,
-}
-
-#[derive(Deserialize)]
-struct FaultDoc {
-    #[serde(default)]
-    code: Option<i64>,
-}
-
-#[derive(Deserialize)]
-struct CloseDoc {
-    #[serde(default)]
-    code: i64,
-}
-
-pub(crate) struct Session {
-    stream: UnixStream,
-    nonce: u64,
-    received: Vec<u8>,
+impl Socket {
+    fn read_some(&mut self, into: &mut Vec<u8>) -> Result<()> {
+        let mut chunk = [0; READ_AT_ONCE];
+        match self.0.read(&mut chunk) {
+            Ok(0) => Err(Error::Socket {
+                op: IpcOp::Read,
+                source: io::ErrorKind::UnexpectedEof.into(),
+            }),
+            Ok(read) => {
+                into.extend_from_slice(&chunk[..read]);
+                Ok(())
+            }
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::WouldBlock
+                        | io::ErrorKind::TimedOut
+                        | io::ErrorKind::Interrupted
+                ) =>
+            {
+                Ok(())
+            }
+            Err(source) => Err(Error::Socket {
+                op: IpcOp::Read,
+                source,
+            }),
+        }
+    }
 }
 
 impl Session {
@@ -157,7 +158,7 @@ impl Session {
     }
 
     pub(crate) fn open(path: &Path, app: AppId) -> Result<Self> {
-        Self::ours(path)?;
+        ours(path)?;
         let stream = UnixStream::connect(path).map_err(|source| Error::Socket {
             op: IpcOp::Connect,
             source,
@@ -167,156 +168,21 @@ impl Session {
                 .set_read_timeout(Some(ANSWERS_WITHIN))
                 .and_then(|()| stream.set_write_timeout(Some(ANSWERS_WITHIN))),
         )?;
-
-        let mut session = Self {
-            stream,
-            nonce: 0,
-            received: Vec::new(),
-        };
-        let handshake = Handshake {
-            v: PROTOCOL,
-            client_id: app.to_string(),
-        };
-        session.send(Opcode::Handshake, &encoded(&handshake)?)?;
-        session.await_ready()?;
-        Ok(session)
+        Self::begin(Socket(stream), app)
     }
+}
 
-    fn ours(path: &Path) -> Result<()> {
-        let held = fs::metadata(path).map_err(|source| Error::Socket {
-            op: IpcOp::Connect,
-            source,
-        })?;
-        if held_by(&held, rustix::process::getuid().as_raw()) {
-            Ok(())
-        } else {
-            Err(Error::NotOurs {
-                path: path.to_path_buf(),
-            })
-        }
-    }
-
-    pub(crate) fn set(&mut self, activity: Option<&Activity>) -> Result<()> {
-        self.nonce = self.nonce.wrapping_add(1);
-        let command = Command {
-            cmd: SET_ACTIVITY,
-            args: Arguments {
-                pid: process::id(),
-                activity,
-            },
-            nonce: self.nonce.to_string(),
-        };
-        self.send(Opcode::Frame, &encoded(&command)?)
-    }
-
-    pub(crate) fn drain(&mut self) -> Result<()> {
-        while let Some(frame) = self.waiting()? {
-            self.answer(frame)?;
-        }
+fn ours(path: &Path) -> Result<()> {
+    let held = fs::metadata(path).map_err(|source| Error::Socket {
+        op: IpcOp::Connect,
+        source,
+    })?;
+    if held_by(&held, rustix::process::getuid().as_raw()) {
         Ok(())
-    }
-
-    fn await_ready(&mut self) -> Result<()> {
-        let deadline = Instant::now() + READY_WITHIN;
-        while let Some(frame) = self.next_frame_by(deadline)? {
-            if frame.opcode == Opcode::Frame {
-                let reply: ReplyDoc = decoded(&frame.body)?;
-                match (reply.cmd.as_deref(), reply.evt.as_deref()) {
-                    (Some(DISPATCH), Some(READY)) => return Ok(()),
-                    (_, Some(ERROR)) => {
-                        return Err(Error::Refused {
-                            code: reply.data.and_then(|fault| fault.code).unwrap_or_default(),
-                        });
-                    }
-                    _ => {}
-                }
-            } else {
-                self.answer(frame)?;
-            }
-        }
-        Err(Error::Socket {
-            op: IpcOp::Read,
-            source: io::ErrorKind::TimedOut.into(),
+    } else {
+        Err(Error::NotOurs {
+            path: path.to_path_buf(),
         })
-    }
-
-    fn next_frame_by(&mut self, deadline: Instant) -> Result<Option<Frame>> {
-        loop {
-            if let Some(frame) = split_frame(&mut self.received)? {
-                return Ok(Some(frame));
-            }
-            let left = deadline.saturating_duration_since(Instant::now());
-            if left.is_zero() {
-                return Ok(None);
-            }
-            configured(self.stream.set_read_timeout(Some(left.min(ANSWERS_WITHIN))))?;
-            self.receive()?;
-        }
-    }
-
-    fn answer(&mut self, frame: Frame) -> Result<()> {
-        match frame.opcode {
-            Opcode::Ping => self.send(Opcode::Pong, &frame.body),
-            Opcode::Close => {
-                let close: CloseDoc = decoded(&frame.body)?;
-                Err(Error::Closed { code: close.code })
-            }
-            Opcode::Frame => {
-                let reply: ReplyDoc = decoded(&frame.body)?;
-                match (reply.evt.as_deref(), reply.data) {
-                    (Some(ERROR), Some(FaultDoc { code: Some(code) })) => {
-                        Err(Error::Refused { code })
-                    }
-                    _ => Ok(()),
-                }
-            }
-            Opcode::Handshake | Opcode::Pong => Ok(()),
-        }
-    }
-
-    fn waiting(&mut self) -> Result<Option<Frame>> {
-        if let Some(frame) = split_frame(&mut self.received)? {
-            return Ok(Some(frame));
-        }
-
-        configured(self.stream.set_nonblocking(true))?;
-        let received = self.receive();
-        configured(self.stream.set_nonblocking(false))?;
-        received?;
-
-        split_frame(&mut self.received)
-    }
-
-    fn receive(&mut self) -> Result<()> {
-        let mut chunk = [0; READ_AT_ONCE];
-        match self.stream.read(&mut chunk) {
-            Ok(0) => Err(Error::Socket {
-                op: IpcOp::Read,
-                source: io::ErrorKind::UnexpectedEof.into(),
-            }),
-            Ok(read) => {
-                self.received.extend_from_slice(&chunk[..read]);
-                Ok(())
-            }
-            Err(error)
-                if matches!(
-                    error.kind(),
-                    io::ErrorKind::WouldBlock
-                        | io::ErrorKind::TimedOut
-                        | io::ErrorKind::Interrupted
-                ) =>
-            {
-                Ok(())
-            }
-            Err(source) => Err(Error::Socket {
-                op: IpcOp::Read,
-                source,
-            }),
-        }
-    }
-
-    fn send(&mut self, opcode: Opcode, body: &[u8]) -> Result<()> {
-        write_frame(&mut self.stream, opcode, body)
     }
 }
 
@@ -327,39 +193,29 @@ fn configured(result: io::Result<()>) -> Result<()> {
     })
 }
 
-fn encoded(value: &impl Serialize) -> Result<Vec<u8>> {
-    serde_json::to_vec(value).map_err(|source| Error::Json {
-        op: JsonOp::Encode,
-        source,
-    })
-}
-
-fn decoded<'a, T: Deserialize<'a>>(body: &'a [u8]) -> Result<T> {
-    serde_json::from_slice(body).map_err(|source| Error::Json {
-        op: JsonOp::Decode,
-        source,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use std::{
         fs,
         io::Write,
         os::unix::net::UnixListener,
+        process,
         sync::{
             atomic::{AtomicU32, Ordering},
             mpsc,
         },
         thread,
-        time::SystemTime,
+        time::{Instant, SystemTime},
     };
 
     use resonate_core::{Pictured, Presence, Shown};
     use serde_json::{Value, json};
 
     use super::*;
-    use crate::{activity::Playing, frame::read_frame};
+    use crate::{
+        activity::{Activity, Playing},
+        frame::{Frame, Opcode, read_frame, write_frame},
+    };
 
     const APP: &str = "1234567890123456789";
     static FOLDERS: AtomicU32 = AtomicU32::new(0);

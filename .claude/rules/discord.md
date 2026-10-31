@@ -41,7 +41,7 @@ Binary only (`discord` feature); `cargo tree -p resonate-discord` stays free of 
   refused the same payload): `due` re-offers it after `SENT_AGAIN_AFTER_A_REFUSAL` doubled per
   refusal up to `SENT_AGAIN_AT_MOST`; a changed activity goes on normal spacing
   (`refusals_carried`).
-- **Socket search**: `$XDG_RUNTIME_DIR`, `$TMPDIR`, `/tmp`, each plain and under every `SANDBOXES`
+- **Socket search** (Unix; Windows tries the ten pipes, `windows.md`): `$XDG_RUNTIME_DIR`, `$TMPDIR`, `/tmp`, each plain and under every `SANDBOXES`
   folder (Flatpak and Snap layouts for Discord, Canary, PTB, Vesktop), `discord-ipc-0` to `-9`,
   last answerer first. `find_among` passes over a socket refusing the client (other `Close` code,
   handshake `ERROR`, unreadable frame) so a sibling is reached; only 4000 ends the search. Nothing

@@ -81,6 +81,7 @@ crossbeam-channel = { version = "0.5.17", default-features = false, features = [
 futures-channel = { version = "0.3.34", default-features = false, features = ["alloc"] }
 signal-hook = { version = "0.4.6", default-features = false, features = ["iterator"] }
 same-file = "1.0.6"
+interprocess = { version = "2.4.7", default-features = false }
 ctrlc = { version = "3.5.2", default-features = false, features = ["termination"] }
 crossterm = { version = "0.29.0", default-features = false, features = ["events", "windows"] }
 trash = { version = "5.2.9", default-features = false, features = ["coinit_apartmentthreaded"] }

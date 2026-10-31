@@ -60,8 +60,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [S · 0.4.0] The output pane, `sinks --help` and the settings text still name PipeWire on Windows
 - [M · 0.4.0] Windows has no toast notifications with transport actions, no idle inhibit
   (`SetThreadExecutionState`) while playing and no metered-network detector (`NetworkCostType`)
-- [S · 0.4.0] Discord's presence cannot reach Discord on Windows: its IPC there is the named pipe
-  `\\.\pipe\discord-ipc-N`, and the crate has only the Unix socket
 - [M · 0.4.0] Windows file names are not weighed by the organiser and the naming cut: reserved names
   (`CON`, `NUL`), trailing dots and spaces, case-insensitive collisions and `MAX_PATH` are not
   checked, NTFS alternate streams and ACLs are not carried by a tag write, and a folder mounted into

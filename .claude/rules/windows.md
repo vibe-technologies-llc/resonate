@@ -8,7 +8,7 @@ paths:
   - "crates/resonate/src/interrupts.rs"
   - "crates/resonate/src/windows_launcher.rs"
   - "crates/resonate-listen/src/unavailable.rs"
-  - "crates/resonate-discord/src/unreached.rs"
+  - "crates/resonate-discord/src/pipe.rs"
   - "packaging/windows/**"
 ---
 
@@ -106,13 +106,26 @@ settle. `unsafe_code = "forbid"` holds: every Win32 and COM call goes through a 
   mode swallows Ctrl-C as a key, which `interrupted()` turns back into the interrupt. A piped stdin
   is read as bytes. `Readout` draws only where `crossterm::ansi_support::supports_ansi()` holds.
 
+## Discord
+
+- **The IPC is the named pipe `\\.\pipe\discord-ipc-0` to `-9`** (`pipe.rs`, `interprocess`'s
+  overlapped `DuplexPipeStream`), the same `Session` as the Unix socket's: `session.rs` holds the
+  handshake, frames and replies over a `Wire` (`receive` within a time, `poll` without waiting) and
+  `socket.rs` and `pipe.rs` are the two wires. A reader thread (`resonate-discord-pipe`) feeds
+  chunks to a channel, since a pipe handle has no read timeout and `PIPE_NOWAIT` reports an empty
+  pipe as `ERROR_NO_DATA`, which `std` reads as a broken pipe; the thread ends when the pipe closes
+  or, after the session is dropped, when Discord next sends. The overlapped handle lets the reader
+  and a write run at once.
+- **Any user may create a pipe of that name**, so a squatter on a shared machine could learn what
+  plays; the Unix socket's owner check has no counterpart yet.
+
 ## Not on Windows yet
 
 The MPRIS service, notifications, idle inhibit, network metering and `Running` (so `queue`, `sleep`
 and `players` against a running window) answer "no bus": `resonate-mpris` compiles but finds no
 session bus, and the binary carries on without it as it does on a Linux machine with none. Capture
 (`resonate-listen`) is a `Listener` that lists no microphone and refuses to record
-(`Error::Unavailable`). Discord's IPC is a stub that never finds Discord (`unreached.rs`). The
+(`Error::Unavailable`). The
 launcher's icon-follows-the-accent is a no-op. All of it is on the roadmap.
 
 ## Release

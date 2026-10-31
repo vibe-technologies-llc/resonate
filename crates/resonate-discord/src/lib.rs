@@ -1,12 +1,12 @@
 mod activity;
 mod error;
-#[cfg_attr(windows, allow(dead_code))]
 mod frame;
 mod publish;
+mod session;
 #[cfg(unix)]
 mod socket;
 #[cfg(windows)]
-#[path = "unreached.rs"]
+#[path = "pipe.rs"]
 mod socket;
 
 use std::sync::Arc;
