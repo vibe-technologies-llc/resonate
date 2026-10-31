@@ -938,18 +938,18 @@ dependencies = [
 
 [[package]]
 name = "hdf5-core"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a99d8268adc8ac44bc0939deed382cb2ef65a34c37b4e565d5cd22a9f17d1195"
+checksum = "7a63dbc099be18254ce9e517e1c126a2bc3ccba869ac71cf9b1fc0660a074877"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "hdf5-reader"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb073d61938f895013f22ea894d587f3ee3e8c4a9f380aec578d0b4a5a6d0261"
+checksum = "5a31a2bcdb170e66e25cd009b4c9241bd41844ab54102ea521d0dfd769614503"
 dependencies = [
  "flate2",
  "hdf5-core",
