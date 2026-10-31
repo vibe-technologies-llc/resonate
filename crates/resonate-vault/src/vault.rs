@@ -16,7 +16,7 @@ use resonate_codec::{
     TagSet, probe,
 };
 use resonate_core::{
-    AudioBuffer, FrameSpan, Frames, MediaLocation, SampleFormat, StreamSpec,
+    AudioBuffer, FrameSpan, Frames, MediaLocation, SampleFormat, StreamSpec, file_facts,
     writer::{self, Held, Writer},
 };
 
@@ -1677,7 +1677,7 @@ fn staged_by(path: &Path) -> StagedBy {
 }
 
 fn settled_folder(folder: &Path) {
-    let settled = File::open(folder).and_then(|opened| opened.sync_all());
+    let settled = file_facts::sync_directory(folder);
     if let Err(error) = settled {
         tracing::warn!(folder = %folder.display(), %error, "an object landed but its folder could not be made durable");
     }

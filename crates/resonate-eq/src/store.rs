@@ -11,6 +11,7 @@ use std::{
 
 use resonate_core::{
     eq::Profile,
+    file_facts,
     naming::{self, NAME_BYTES_AT_MOST},
     text::{self, TextEncoding, UTF8_BOM},
     writer::{self, Held, Writer},
@@ -269,7 +270,7 @@ impl Store {
                 .parent()
                 .filter(|folder| !folder.as_os_str().is_empty())
             {
-                Some(folder) => fs::File::open(folder)?.sync_all(),
+                Some(folder) => file_facts::sync_directory(folder),
                 None => Ok(()),
             }
         });

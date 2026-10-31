@@ -87,6 +87,10 @@ settle. `unsafe_code = "forbid"` holds: every Win32 and COM call goes through a 
 - **A held file's lock is mandatory on Windows** (`LockFileEx`): `writer_of` still asks the lock
   first and a dead writer's is released by the system; with no `/proc` the pid stamp reads as
   living where the lock cannot be asked.
+- **A file or directory is synced through `file_facts`**: `sync_file` opens a Windows file for
+  writing (`FlushFileBuffers` refuses a read-only handle) and `sync_directory` is a no-op there (a
+  directory cannot be opened as a file), so no writer calls `File::open(folder)` or syncs a
+  read-only `File::open`.
 - **Every root is `Naming::Portable` on Windows** (`Naming::of` reads no mount table there): the
   organiser writes the characters NTFS refuses as `-` and keeps a reserved device name apart
   (`library.md`). Trailing dots and spaces are trimmed from every component on every platform, and a

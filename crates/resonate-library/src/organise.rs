@@ -2729,9 +2729,8 @@ fn staged_over(library: &Library, sheet: &Path, written: &[u8]) -> Result<()> {
             if let Ok(standing) = fs::metadata(sheet) {
                 carries_what_the_file_did(&standing, sheet, &staged);
             }
-            fs::File::open(&staged)
+            file_facts::sync_file(&staged)
         })
-        .and_then(|opened| opened.sync_all())
         .map_err(landing)
         .and_then(|()| {
             fs::rename(&staged, sheet).map_err(|source| Error::Move {
@@ -2818,7 +2817,7 @@ fn settle(landed: &[Move]) {
 }
 
 pub(crate) fn settled_folder(folder: &Path) {
-    if let Err(source) = fs::File::open(folder).and_then(|opened| opened.sync_all()) {
+    if let Err(source) = file_facts::sync_directory(folder) {
         let error = Error::Move {
             op: MoveOp::Settle,
             path: folder.to_path_buf(),

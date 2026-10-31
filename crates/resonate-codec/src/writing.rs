@@ -1463,7 +1463,7 @@ fn sweep_what_a_dead_writer_staged(path: &Path) {
 
 fn settled_over(staged: &Path, path: &Path) -> std::result::Result<(), Unsettled> {
     let standing = fs::metadata(path)?;
-    File::open(staged)?.sync_all()?;
+    file_facts::sync_file(staged)?;
     if has_other_names(&standing) || !carries_what_the_file_did(&standing, path, staged) {
         return WholeCopy::named_beside(staged, path)?.written_back();
     }
@@ -1581,7 +1581,7 @@ fn unsupported(error: &io::Error) -> bool {
 }
 
 fn written_back_from_elsewhere(staged: &Path, path: &Path) -> std::result::Result<(), Unsettled> {
-    File::open(staged)?.sync_all()?;
+    file_facts::sync_file(staged)?;
     WholeCopy::kept_elsewhere(staged, path)?.written_back()
 }
 

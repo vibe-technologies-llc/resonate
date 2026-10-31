@@ -14,7 +14,7 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use resonate_codec::renamed_cue;
 use resonate_core::{
-    names_a_picture, names_audio, naming,
+    file_facts, names_a_picture, names_audio, naming,
     writer::{self, Held, Writer},
 };
 
@@ -662,9 +662,7 @@ fn land(
     let staged = staged_beside(&whole);
     let held = Held::taken_over(&staged).map_err(|error| unwritable(&error))?;
     let outcome = content.staged_at(&staged, &held).and_then(|bytes| {
-        File::open(&staged)
-            .and_then(|file| file.sync_all())
-            .map_err(|_| Passing::Unverified)?;
+        file_facts::sync_file(&staged).map_err(|_| Passing::Unverified)?;
         place(&staged, content, &whole).map(|stood| (stood, bytes))
     });
     let _ = fs::remove_file(&staged);

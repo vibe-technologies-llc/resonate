@@ -62,8 +62,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M · 0.4.0] A Windows path past `MAX_PATH` (260) is not weighed by the organiser, NTFS alternate
   streams and ACLs are not carried by a tag write, and a folder mounted into another drive's tree is
   not noticed as a volume
-- [S · 0.4.0] A `Held` file's lock is mandatory on Windows (`LockFileEx`): every reader of a held
-  journal, staging file or whole copy needs auditing for a read that would meet `ERROR_LOCK_VIOLATION`
+- [S · 0.4.0] A `Held` file's lock is mandatory on Windows (`LockFileEx`): the writers were audited
+  (each writes through `Held::file`, and syncs and renames work under the lock), but a reader that
+  reopens a held journal, staging file or whole copy by path (the tag writer's verification of its
+  staged copy, `WholeCopy` mending) would meet `ERROR_LOCK_VIOLATION` and has not been run
 - [M · 0.4.0] The integration suites of the library, the codec's encoded files, the vault and the
   binary's terminal and signal tests are Unix-only; each needs a Windows counterpart (symlinks,
   permission bits, pseudo-terminals)

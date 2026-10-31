@@ -151,6 +151,16 @@ pub fn sync_directory(_: &Path) -> io::Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
+pub fn sync_file(path: &Path) -> io::Result<()> {
+    fs::File::open(path)?.sync_all()
+}
+
+#[cfg(windows)]
+pub fn sync_file(path: &Path) -> io::Result<()> {
+    fs::OpenOptions::new().write(true).open(path)?.sync_all()
+}
+
 #[cfg(test)]
 mod tests {
     use std::{env, fs, process};

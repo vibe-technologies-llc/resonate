@@ -11,7 +11,7 @@ use std::{
 
 use resonate_codec::carries_what_the_file_did;
 use resonate_core::{
-    FrameSpan, Frames, MediaLocation, SampleRate, TextEncoding, naming, os_bytes, text,
+    FrameSpan, Frames, MediaLocation, SampleRate, TextEncoding, file_facts, naming, os_bytes, text,
 };
 
 use crate::{Error, PlaylistEntry, PlaylistFormat, Result, m3u, pls, xspf};
@@ -581,8 +581,8 @@ fn settled_folder_of(path: &Path) -> io::Result<()> {
         .parent()
         .filter(|folder| !folder.as_os_str().is_empty())
     {
-        Some(folder) => fs::File::open(folder)?.sync_all(),
-        None => fs::File::open(".")?.sync_all(),
+        Some(folder) => file_facts::sync_directory(folder),
+        None => file_facts::sync_directory(Path::new(".")),
     }
 }
 
