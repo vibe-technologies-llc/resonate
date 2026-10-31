@@ -1060,6 +1060,16 @@ pub enum Sub {
                     addresses for every run"
         )]
         renderers_at: Vec<String>,
+
+        #[arg(
+            long = "cast-at",
+            value_name = "IP[:PORT]",
+            help = "Reach the Google Cast receiver at this IP address (port 8009 unless one is \
+                    given), sending no search to the network unless --renderers asks for one: \
+                    for a network that drops multicast; repeatable, and the cast-at key holds \
+                    addresses for every run"
+        )]
+        cast_at: Vec<String>,
     },
 
     #[command(about = "Scan library roots and exit. With no paths, rescans every registered root")]

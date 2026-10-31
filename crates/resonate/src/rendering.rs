@@ -1,10 +1,10 @@
-use std::{collections::BTreeSet, sync::Arc, thread};
+use std::{sync::Arc, thread};
 
 use resonate_cast::{CAST_NODES, Casting, Searching as CastSearching};
 use resonate_codec::Sources;
 use resonate_engine::{EngineConfig, NodeName, Player, SinkError, SinkInfo};
 use resonate_pipewire::PipeWire;
-use resonate_upnp::{Beside, FirstSearch, Network, RENDERER_NODES, Searching, Udn, Vouched};
+use resonate_upnp::{Beside, FirstSearch, Network, RENDERER_NODES, Searching};
 
 use crate::config::Config;
 
@@ -35,6 +35,11 @@ impl Kinds {
                 tracing::warn!(%error, "Cast receivers on the network cannot be played to");
             })
             .ok()?;
+        for address in config.cast_at() {
+            if let Err(error) = cast.locate(*address) {
+                tracing::warn!(%error, %address, "a Cast receiver given by address could not be held");
+            }
+        }
         Some(Self {
             upnp: Arc::new(upnp),
             cast: Arc::new(cast),
@@ -59,15 +64,26 @@ impl Kinds {
     }
 
     fn reach_addresses(&self, first: FirstSearch) {
-        if let Err(error) = self.upnp.look_at_addresses(first) {
+        let (upnp, cast) = thread::scope(|scope| {
+            let cast = scope.spawn(|| self.cast.look_at_addresses(first));
+            (self.upnp.look_at_addresses(first), cast.join())
+        });
+        if let Err(error) = upnp {
             tracing::warn!(%error, "the renderers given by address could not be reached");
+        }
+        match cast {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                tracing::warn!(%error, "the Cast receivers given by address could not be reached");
+            }
+            Err(_) => tracing::warn!("reaching Cast receivers by address panicked"),
         }
     }
 
     #[cfg(feature = "ui")]
     fn rest(&self) {
         self.upnp.stop_multicasting();
-        self.cast.rest();
+        self.cast.stop_browsing();
     }
 }
 
@@ -82,7 +98,7 @@ impl Rendering {
     pub(crate) fn of(config: &Config, wanted: Option<&NodeName>, asked: Asked) -> Self {
         let names_one = wanted.is_some_and(names_a_renderer);
         let searches = asked == Asked::Network || names_one || config.looks_for_renderers();
-        let reaches = asked == Asked::Addresses || !config.renderers_at().is_empty();
+        let reaches = asked == Asked::Addresses || config.holds_receiver_addresses();
         if !(searches || reaches) {
             return Self(None);
         }
@@ -114,7 +130,7 @@ impl Rendering {
             };
             if names_one || config.looks_for_renderers() {
                 kinds.look(first);
-            } else if !config.renderers_at().is_empty() {
+            } else if config.holds_receiver_addresses() {
                 kinds.reach_addresses(first);
             }
         }
@@ -157,6 +173,12 @@ pub(crate) fn names_a_renderer(sink: &NodeName) -> bool {
     let name = sink.as_str();
     name.starts_with(RENDERER_NODES) || name.starts_with(CAST_NODES)
 }
+
+#[cfg(feature = "ui")]
+use std::collections::BTreeSet;
+
+#[cfg(feature = "ui")]
+use resonate_upnp::{Udn, Vouched};
 
 #[cfg(feature = "ui")]
 struct Switch(Kinds);

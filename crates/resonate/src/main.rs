@@ -190,7 +190,8 @@ fn run() -> Result<()> {
         Some(Sub::Sinks {
             renderers,
             renderers_at,
-        }) => list_sinks(&cli, &config, *renderers, renderers_at),
+            cast_at,
+        }) => list_sinks(&cli, &config, *renderers, renderers_at, cast_at),
         Some(Sub::Explain { path }) => explain(&cli, &config, &local_path(path)),
         Some(Sub::Info { path, graph }) => info::print(
             &local_path(path),
@@ -602,25 +603,42 @@ fn broken_down(failed: Failures) -> String {
     }
 }
 
-fn with_renderer_addresses(config: &Config, addresses: &[String]) -> Result<Config> {
+fn with_receiver_addresses(
+    config: &Config,
+    renderers_at: &[String],
+    cast_at: &[String],
+) -> Result<Config> {
     let mut config = config.clone();
-    for address in addresses {
+    for address in renderers_at {
         let located = Located::parse(address).map_err(|source| Error::RendererAddress {
             address: address.clone(),
             source: Box::new(source),
         })?;
         config.renderers_at.insert(located);
     }
+    for address in cast_at {
+        let receiver =
+            resonate_cast::receiver_address(address).ok_or_else(|| Error::CastAddress {
+                address: address.clone(),
+            })?;
+        config.cast_at.insert(receiver);
+    }
     Ok(config)
 }
 
-fn list_sinks(cli: &Cli, config: &Config, renderers: bool, renderers_at: &[String]) -> Result<()> {
+fn list_sinks(
+    cli: &Cli,
+    config: &Config,
+    renderers: bool,
+    renderers_at: &[String],
+    cast_at: &[String],
+) -> Result<()> {
     let pipewire = PipeWire::start("Resonate")?;
     let mut sinks = pipewire.enumerate_sinks(SINK_TIMEOUT)?;
-    let config = with_renderer_addresses(config, renderers_at)?;
+    let config = with_receiver_addresses(config, renderers_at, cast_at)?;
     let asked = if renderers {
         Asked::Network
-    } else if renderers_at.is_empty() {
+    } else if renderers_at.is_empty() && cast_at.is_empty() {
         Asked::Nothing
     } else {
         Asked::Addresses

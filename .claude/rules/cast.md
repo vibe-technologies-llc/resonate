@@ -51,6 +51,23 @@ and codec are dev-dependencies, for the end-to-end tests.
 - **`Finding::Listed` reaches a fixed list instead of browsing**, which is how the tests name a
   receiver on the loopback without multicast. `Searching::within` (2 s) is how long
   `FirstSearch::Awaited` collects records before `Casting::start` answers.
+- **A receiver may be given by its address** (`Casting::locate(SocketAddr)`, `unlocate`, `located`;
+  the binary's `cast-at`): its mDNS `id` is not on the wire (`GET_STATUS` does not carry it), so
+  the receiver is named by where it is, `CastId::at` (`at-192-168-1-20-8009`, so the sink
+  `cast:at-192-168-1-20-8009`) and `Found::at` titles it with the IP. `Casting::look_at_addresses`
+  starts the stream server and a `resonate-cast-browse` thread with no daemon, which reaches every
+  held address at once and again every `ADDRESSES_TRIED_AGAIN_EVERY` (60 s), so a receiver
+  powered off then appears when it is on; a held address is never dropped for being quiet.
+  `look` on such a casting starts the browse beside it, `stop_browsing` stops the browse and
+  drops the receivers only it heard (or rests where no address is held), `is_looking` is the browse
+  and `is_reaching` either. **One receiver, one sink:** an address is skipped where a receiver is
+  already held at it, and a browsed record at a held address is skipped, so a receiver the mDNS
+  browse names and an address names is listed once, under the name the address gives it; adding an
+  address for a receiver the browse already lists changes nothing
+  (`a_receiver_given_by_address_is_reached_without_a_browse_and_named_by_where_it_is`,
+  `an_address_given_to_a_receiver_already_listed_makes_no_second_sink`,
+  `a_casting_that_stops_browsing_keeps_the_receivers_given_by_address_and_drops_the_rest`).
+  No Cast receiver has been addressed so (`TESTING.md`'s Cast entry).
 - **`Casting` rests like `Network`**: `resting` runs only the `resonate-cast-turns` thread;
   `look` starts the stream server once, the daemon and the browse thread; `rest` stops browsing,
   shuts the daemon down and forgets every receiver, each told `SinkChange::Removed`.

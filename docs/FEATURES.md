@@ -134,9 +134,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   complex`)
 
 ## Later: Network output
-- [M] A Google Cast receiver cannot be added by host and port: its identity is the mDNS `id`
-  and `ca` record, which a `GET_STATUS` over TLS does not carry, so `Casting` has no counterpart of
-  `Network::locate` (`cast.md`)
+- [S] A Google Cast receiver is given by IP address alone (`cast-at`, `sinks --cast-at`), not by a
+  host name, and is named by where it is (`cast:at-<ip>-<port>`), not by its mDNS `id`, which a
+  `GET_STATUS` over TLS does not carry: a `sink` key naming the mDNS id does not find it while its
+  address is held, and the phones have no Cast at all (`cast.md`)
 - [S] Nothing learns which renderers decode 176.4 and 192 kHz FLAC, since the protocol info does not say
   and a renderer that cannot play a stream gives no answer a try could read, so the default stays 96 kHz
   (the fake renderer's tests are all the proof the vouched rates have, no streamer having confirmed any);

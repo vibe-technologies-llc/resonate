@@ -58,6 +58,7 @@ pub enum ConfigKey {
     Renderers,
     FlacAbove96kFor,
     RenderersAt,
+    CastAt,
     HistoryKept,
     SkipRepeatsQueue,
     PreviousRestarts,
@@ -175,7 +176,7 @@ impl fmt::Display for Named {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 111] = [
+    pub const ALL: [Self; 112] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -224,6 +225,7 @@ impl ConfigKey {
         Self::Renderers,
         Self::FlacAbove96kFor,
         Self::RenderersAt,
+        Self::CastAt,
         Self::HistoryKept,
         Self::SkipRepeatsQueue,
         Self::PreviousRestarts,
@@ -341,6 +343,7 @@ impl ConfigKey {
             Self::Renderers => "renderers",
             Self::FlacAbove96kFor => "flac-above-96k-for",
             Self::RenderersAt => "renderers-at",
+            Self::CastAt => "cast-at",
             Self::HistoryKept => "history-kept",
             Self::OrganiseAs => "organise-as",
             Self::Notify => "notify",
@@ -573,6 +576,9 @@ pub enum Error {
         #[source]
         source: Box<resonate_upnp::Error>,
     },
+
+    #[error("{address} is not an IP address a Cast receiver can be reached at")]
+    CastAddress { address: String },
 
     #[error("no playlist named {0}")]
     NoSuchPlaylist(PlaylistName),

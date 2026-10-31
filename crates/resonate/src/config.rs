@@ -3,6 +3,7 @@ use std::{
     env, fmt,
     fs::{self, File, OpenOptions},
     io::{self, Write as _},
+    net::SocketAddr,
     ops::RangeInclusive,
     os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _},
     path::{Path, PathBuf},
@@ -158,6 +159,7 @@ pub struct Config {
     pub renderers: Option<bool>,
     pub flac_above_96k_for: BTreeSet<NodeName>,
     pub renderers_at: BTreeSet<Located>,
+    pub cast_at: BTreeSet<SocketAddr>,
     pub history_kept: Option<HistoryKept>,
     pub organise_as: Option<Layout>,
     pub notify: Option<bool>,
@@ -286,6 +288,7 @@ impl fmt::Debug for Config {
             renderers,
             flac_above_96k_for,
             renderers_at,
+            cast_at,
             history_kept,
             organise_as,
             notify,
@@ -400,6 +403,7 @@ impl fmt::Debug for Config {
             .field("renderers", renderers)
             .field("flac_above_96k_for", flac_above_96k_for)
             .field("renderers_at", renderers_at)
+            .field("cast_at", cast_at)
             .field("history_kept", history_kept)
             .field("organise_as", organise_as)
             .field("notify", notify)
@@ -619,6 +623,14 @@ impl Config {
 
     pub const fn renderers_at(&self) -> &BTreeSet<Located> {
         &self.renderers_at
+    }
+
+    pub const fn cast_at(&self) -> &BTreeSet<SocketAddr> {
+        &self.cast_at
+    }
+
+    pub fn holds_receiver_addresses(&self) -> bool {
+        !(self.renderers_at.is_empty() && self.cast_at.is_empty())
     }
 
     pub fn history_kept(&self) -> HistoryKept {
@@ -1058,6 +1070,7 @@ impl Config {
             ConfigKey::Renderers => config.renderers = Some(at.boolean(value)?),
             ConfigKey::FlacAbove96kFor => config.flac_above_96k_for = node_names(at, value)?,
             ConfigKey::RenderersAt => config.renderers_at = renderer_addresses(at, value)?,
+            ConfigKey::CastAt => config.cast_at = cast_addresses(at, value)?,
             ConfigKey::HistoryKept => {
                 config.history_kept = Some(match value.as_integer() {
                     Some(days) => HistoryKept::for_days(days).ok_or_else(|| at.rejected())?,
@@ -1296,6 +1309,29 @@ fn renderer_addresses(at: At<'_>, value: &Item) -> Result<BTreeSet<Located>> {
             }
             Err(error) => {
                 tracing::warn!(%error, address, path = %at.path.display(), "ignoring a renderer address that is not an http address");
+            }
+        }
+    }
+    Ok(addresses)
+}
+
+fn cast_addresses(at: At<'_>, value: &Item) -> Result<BTreeSet<SocketAddr>> {
+    let array = value
+        .as_array()
+        .ok_or_else(|| at.mistyped(ValueKind::Array))?;
+    let mut addresses = BTreeSet::new();
+
+    for named in array {
+        let address = named.as_str().ok_or_else(|| at.mistyped(ValueKind::Text))?;
+        match resonate_cast::receiver_address(address) {
+            Some(receiver) => {
+                addresses.insert(receiver);
+            }
+            None if address.trim().is_empty() => {
+                tracing::debug!("ignoring a blank Cast receiver address");
+            }
+            None => {
+                tracing::warn!(address, path = %at.path.display(), "ignoring a Cast receiver address that is not an IP address");
             }
         }
     }
@@ -2402,6 +2438,33 @@ mod tests {
             error,
             Error::ConfigType {
                 key: ConfigKey::RenderersAt,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn the_cast_addresses_are_the_ip_addresses_named_with_the_cast_port_unless_given() {
+        let config = read(
+            r#"cast-at = ["192.168.1.30", " 192.168.1.31:8010 ", "[fe80::1]", "", "living-room.local"]"#,
+        )
+        .expect("a well formed document");
+
+        assert_eq!(
+            config
+                .cast_at()
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            ["192.168.1.30:8009", "192.168.1.31:8010", "[fe80::1]:8009"]
+        );
+        assert!(Config::default().cast_at().is_empty());
+
+        let error = read("cast-at = [7]").expect_err("a number is not an address");
+        assert!(matches!(
+            error,
+            Error::ConfigType {
+                key: ConfigKey::CastAt,
                 ..
             }
         ));

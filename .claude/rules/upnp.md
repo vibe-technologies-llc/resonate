@@ -147,7 +147,7 @@ dev-dependency, for the end-to-end test.
   multi-homed renderer given by one address and found at another is not described again every
   round. A search that cannot be sent (no multicast route, the iOS refusal) is a warning, not a
   failed round, where an address is held: the addresses are reached, nothing is counted missed,
-  and with none held it is `Error::Search` as before. Cast has no counterpart (`cast.md`).
+  and with none held it is `Error::Search` as before. Cast's addresses are `Casting::locate` (`cast.md`).
 - **Searched again every `Searching::every` (60 s)**; a renderer missing from
   `SEARCHES_MISSED_BEFORE_GONE` (2) searches in a row is `SinkChange::Removed`, a new UDN `Added`,
   a known UDN at a new address replaced under its id. `FirstSearch::Awaited` searches before

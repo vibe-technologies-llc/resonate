@@ -1,13 +1,13 @@
 use std::{
-    collections::{BTreeMap, btree_map::Entry},
+    collections::{BTreeMap, BTreeSet, btree_map::Entry},
     io, iter, mem,
-    net::{IpAddr, Ipv4Addr},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
     thread,
     time::{Duration, Instant},
 };
 
-use crossbeam_channel::{Receiver, Sender, TryRecvError, unbounded};
+use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, TryRecvError, unbounded};
 use mdns_sd::{ServiceDaemon, ServiceEvent};
 use parking_lot::Mutex;
 use resonate_audio::{
@@ -30,6 +30,8 @@ const RECEIVER_IDS_FROM: u32 = 0xE000_0000;
 const RECEIVER_IDS_UNDER: u32 = 0xF000_0000;
 
 const BROWSE_WAKES_EVERY: Duration = Duration::from_millis(250);
+
+const ADDRESSES_TRIED_AGAIN_EVERY: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Finding {
@@ -62,6 +64,7 @@ pub struct Casting {
 struct Looking {
     stop: Sender<()>,
     daemon: Option<ServiceDaemon>,
+    browsing: bool,
 }
 
 struct Shared {
@@ -69,6 +72,7 @@ struct Shared {
     server: Mutex<Option<Arc<Server>>>,
     lanes: Lanes,
     known: Mutex<Known>,
+    located: Mutex<BTreeSet<SocketAddr>>,
     listeners: Mutex<Vec<Sender<SinkChange>>>,
     turns: Sender<Turn>,
 }
@@ -99,6 +103,7 @@ impl Casting {
             server: Mutex::new(None),
             lanes: Lanes::default(),
             known: Mutex::new(Known::default()),
+            located: Mutex::new(BTreeSet::new()),
             listeners: Mutex::new(Vec::new()),
             turns,
         });
@@ -116,57 +121,52 @@ impl Casting {
 
     pub fn look(&self, first: FirstSearch) -> Result<()> {
         let mut looking = self.looking.lock();
+        match looking.take() {
+            Some(held) if held.browsing => {
+                *looking = Some(held);
+                return Ok(());
+            }
+            Some(held) => {
+                let _ = held.stop.send(());
+            }
+            None => {}
+        }
+        self.begin(&mut looking, first, true)
+    }
+
+    pub fn look_at_addresses(&self, first: FirstSearch) -> Result<()> {
+        let mut looking = self.looking.lock();
         if looking.is_some() {
             return Ok(());
         }
-        {
-            let mut server = self.shared.server.lock();
-            if server.is_none() {
-                *server =
-                    Some(Server::start(self.shared.searching.serving_on).map_err(Error::served)?);
-            }
-        }
+        self.begin(&mut looking, first, false)
+    }
 
-        let (stop, stopped) = unbounded();
-        let (daemon, browsing) = match &self.shared.searching.finding {
-            Finding::Bonjour => {
-                let browsed = |source| Error::Browse {
-                    source: Box::new(source),
-                };
-                let daemon = ServiceDaemon::new().map_err(browsed)?;
-                let browsing = daemon.browse(CAST_SERVICE).map_err(browsed)?;
-                (Some(daemon), Some(browsing))
-            }
-            Finding::Listed(_) => (None, None),
-        };
-
-        if first == FirstSearch::Awaited {
-            self.shared.first_round(browsing.as_ref());
+    pub fn stop_browsing(&self) {
+        let mut looking = self.looking.lock();
+        if !looking.as_ref().is_some_and(|held| held.browsing) {
+            return;
         }
-        let searched = Arc::clone(&self.shared);
-        thread::Builder::new()
-            .name("resonate-cast-browse".to_owned())
-            .spawn(move || {
-                if first == FirstSearch::Behind {
-                    searched.first_round(browsing.as_ref());
-                }
-                searched.browse_until(&stopped, browsing.as_ref());
-            })
-            .map_err(spawn_failed)?;
-        *looking = Some(Looking { stop, daemon });
-        Ok(())
+        if self.shared.located.lock().is_empty() {
+            drop(looking);
+            self.rest();
+            return;
+        }
+        if let Some(held) = looking.take() {
+            Self::stop(held);
+        }
+        let gone = self.shared.forget_unlocated();
+        self.shared.announce(&gone);
+        if let Err(error) = self.begin(&mut looking, FirstSearch::Behind, false) {
+            tracing::warn!(%error, "the Cast receivers given by address could not be reached");
+        }
     }
 
     pub fn rest(&self) {
         let Some(looking) = self.looking.lock().take() else {
             return;
         };
-        let _ = looking.stop.send(());
-        if let Some(daemon) = looking.daemon
-            && let Err(error) = daemon.shutdown()
-        {
-            tracing::debug!(%error, "browsing for Cast receivers did not stop cleanly");
-        }
+        Self::stop(looking);
         let gone: Vec<SinkChange> = {
             let mut known = self.shared.known.lock();
             known.named.clear();
@@ -179,7 +179,86 @@ impl Casting {
     }
 
     pub fn is_looking(&self) -> bool {
+        self.looking
+            .lock()
+            .as_ref()
+            .is_some_and(|held| held.browsing)
+    }
+
+    pub fn is_reaching(&self) -> bool {
         self.looking.lock().is_some()
+    }
+
+    pub fn locate(&self, at: SocketAddr) -> Result<()> {
+        self.shared.located.lock().insert(at);
+        if self.is_reaching() {
+            self.shared.reach_address(at)?;
+        }
+        Ok(())
+    }
+
+    pub fn unlocate(&self, at: SocketAddr) {
+        if !self.shared.located.lock().remove(&at) {
+            return;
+        }
+        let gone = self.shared.forget_at(at);
+        self.shared.announce(&gone);
+    }
+
+    pub fn located(&self) -> Vec<SocketAddr> {
+        self.shared.located.lock().iter().copied().collect()
+    }
+
+    fn stop(held: Looking) {
+        let _ = held.stop.send(());
+        if let Some(daemon) = held.daemon
+            && let Err(error) = daemon.shutdown()
+        {
+            tracing::debug!(%error, "browsing for Cast receivers did not stop cleanly");
+        }
+    }
+
+    fn begin(&self, looking: &mut Option<Looking>, first: FirstSearch, browse: bool) -> Result<()> {
+        {
+            let mut server = self.shared.server.lock();
+            if server.is_none() {
+                *server =
+                    Some(Server::start(self.shared.searching.serving_on).map_err(Error::served)?);
+            }
+        }
+
+        let (stop, stopped) = unbounded();
+        let (daemon, browsing) = match (&self.shared.searching.finding, browse) {
+            (Finding::Bonjour, true) => {
+                let browsed = |source| Error::Browse {
+                    source: Box::new(source),
+                };
+                let daemon = ServiceDaemon::new().map_err(browsed)?;
+                let browsing = daemon.browse(CAST_SERVICE).map_err(browsed)?;
+                (Some(daemon), Some(browsing))
+            }
+            _ => (None, None),
+        };
+
+        if first == FirstSearch::Awaited {
+            self.shared.first_round(browsing.as_ref(), browse);
+        }
+        let searched = Arc::clone(&self.shared);
+        thread::Builder::new()
+            .name("resonate-cast-browse".to_owned())
+            .spawn(move || {
+                if first == FirstSearch::Behind {
+                    searched.first_round(browsing.as_ref(), browse);
+                }
+                searched.browse_until(&stopped, browsing.as_ref());
+            })
+            .map_err(spawn_failed)?;
+        *looking = Some(Looking {
+            stop,
+            daemon,
+            browsing: browse,
+        });
+        Ok(())
     }
 
     pub fn receivers(&self) -> Vec<(SinkId, Arc<Device>)> {
@@ -262,7 +341,14 @@ impl Neighbours for Casting {
 }
 
 impl Shared {
-    fn first_round(&self, browsing: Option<&mdns_sd::Receiver<ServiceEvent>>) {
+    fn first_round(&self, browsing: Option<&mdns_sd::Receiver<ServiceEvent>>, browse: bool) {
+        if browse {
+            self.browse_first(browsing);
+        }
+        self.reach_located();
+    }
+
+    fn browse_first(&self, browsing: Option<&mdns_sd::Receiver<ServiceEvent>>) {
         match (&self.searching.finding, browsing) {
             (Finding::Listed(listed), _) => {
                 for found in listed.clone() {
@@ -287,8 +373,13 @@ impl Shared {
         stopped: &Receiver<()>,
         browsing: Option<&mdns_sd::Receiver<ServiceEvent>>,
     ) {
+        let mut tried = Instant::now();
         let Some(browsing) = browsing else {
-            let _ = stopped.recv();
+            while let Err(RecvTimeoutError::Timeout) =
+                stopped.recv_timeout(ADDRESSES_TRIED_AGAIN_EVERY)
+            {
+                self.reach_located();
+            }
             return;
         };
         while let Err(TryRecvError::Empty) = stopped.try_recv() {
@@ -297,7 +388,65 @@ impl Shared {
                 Err(mdns_sd::RecvTimeoutError::Timeout) => {}
                 Err(mdns_sd::RecvTimeoutError::Disconnected) => return,
             }
+            if tried.elapsed() >= ADDRESSES_TRIED_AGAIN_EVERY {
+                tried = Instant::now();
+                self.reach_located();
+            }
         }
+    }
+
+    fn reach_located(&self) {
+        let addresses: Vec<SocketAddr> = self.located.lock().iter().copied().collect();
+        for at in addresses {
+            if let Err(error) = self.reach_address(at) {
+                tracing::debug!(%error, %at, "a Cast receiver given by address could not be reached");
+            }
+        }
+    }
+
+    fn reach_address(&self, at: SocketAddr) -> Result<()> {
+        if self
+            .known
+            .lock()
+            .held
+            .values()
+            .any(|device| device.at() == at)
+        {
+            return Ok(());
+        }
+        let device = Device::reached(Found::at(at))?;
+        self.admit(device, None);
+        Ok(())
+    }
+
+    fn forget_unlocated(&self) -> Vec<SinkChange> {
+        let located = self.located.lock().clone();
+        let mut known = self.known.lock();
+        known.named.clear();
+        let gone: Vec<SinkId> = known
+            .held
+            .iter()
+            .filter(|(_, device)| !located.contains(&device.at()))
+            .map(|(id, _)| *id)
+            .collect();
+        for id in &gone {
+            known.held.remove(id);
+        }
+        gone.into_iter().map(SinkChange::Removed).collect()
+    }
+
+    fn forget_at(&self, at: SocketAddr) -> Vec<SinkChange> {
+        let mut known = self.known.lock();
+        let gone: Vec<SinkId> = known
+            .held
+            .iter()
+            .filter(|(_, device)| device.at() == at && device.id() == &CastId::at(at))
+            .map(|(id, _)| *id)
+            .collect();
+        for id in &gone {
+            known.held.remove(id);
+        }
+        gone.into_iter().map(SinkChange::Removed).collect()
     }
 
     fn take(&self, event: ServiceEvent) {
@@ -313,6 +462,9 @@ impl Shared {
     }
 
     fn reach(&self, found: Found, fullname: Option<String>) {
+        if fullname.is_some() && self.located.lock().contains(&found.at) {
+            return;
+        }
         let known_at = self
             .known
             .lock()
@@ -330,6 +482,10 @@ impl Shared {
             }
         };
 
+        self.admit(device, fullname);
+    }
+
+    fn admit(&self, device: Device, fullname: Option<String>) {
         let change = {
             let mut known = self.known.lock();
             if let Some(fullname) = fullname {

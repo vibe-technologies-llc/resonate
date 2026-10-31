@@ -197,6 +197,9 @@ Array of \fBhttp://\fR addresses of UPnP renderers' device descriptions, such as
 \fBhttp://192.168.1.20:49152/description.xml\fR, for a network that drops the multicast search.
 Each is reached when Resonate starts, whatever \fBrenderers\fR says, and no search is sent to the network unless \fBrenderers\fR is on. Default: empty.
 .TP
+.B cast-at
+Array of IP addresses of Google Cast receivers, each with its port (\fB192.168.1.30:8009\fR) or without it (8009), for a network that drops the multicast browse. A name is not looked up. Each is reached when Resonate starts, whatever \fBrenderers\fR says, and no browse is sent to the network unless \fBrenderers\fR is on. A receiver found by the browse at an address held here is listed once, under the name the address gives it (\fBcast:at-\fR and the address). Default: empty.
+.TP
 .B flac-above-96k-for
 Array of renderer names (\fBupnp:\fR and the UDN, as \fBresonate sinks \-\-renderers\fR lists them).
 A renderer whose protocol info lists FLAC without stating a rate is offered FLAC up to 96 kHz, the

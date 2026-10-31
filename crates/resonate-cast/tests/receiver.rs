@@ -1172,3 +1172,113 @@ fn waited_for_change(changes: &Receiver<SinkChange>, wanted: impl Fn(&SinkChange
     }
     false
 }
+
+fn nothing_listed() -> Searching {
+    Searching {
+        finding: Finding::Listed(Vec::new()),
+        within: Duration::from_millis(300),
+        serving_on: IpAddr::V4(Ipv4Addr::LOCALHOST),
+    }
+}
+
+#[test]
+fn a_receiver_given_by_address_is_reached_without_a_browse_and_named_by_where_it_is() {
+    let fake = Fake::start();
+    let casting = Casting::resting(nothing_listed()).expect("rests");
+    casting.locate(fake.at).expect("holds the address");
+    assert!(casting.sinks().is_empty());
+
+    casting
+        .look_at_addresses(FirstSearch::Awaited)
+        .expect("reaches");
+    let sink = the_receiver(&casting);
+
+    assert_eq!(
+        sink.name,
+        NodeName::new(format!("cast:{}", CastId::at(fake.at)))
+    );
+    assert_eq!(sink.description, "127.0.0.1");
+    assert!(casting.is_reaching());
+    assert!(!casting.is_looking());
+    assert_eq!(casting.located(), [fake.at]);
+}
+
+#[test]
+fn an_address_given_to_a_receiver_already_listed_makes_no_second_sink() {
+    let fake = Fake::start();
+    let casting = Casting::start(fake.searching(), FirstSearch::Awaited).expect("reaches");
+
+    casting.locate(fake.at).expect("already held");
+
+    assert_eq!(casting.sinks().len(), 1);
+}
+
+#[test]
+fn an_address_given_to_a_reaching_casting_lists_the_receiver_and_forgetting_it_removes_it() {
+    let fake = Fake::start();
+    let casting = Casting::resting(nothing_listed()).expect("rests");
+    casting
+        .look_at_addresses(FirstSearch::Awaited)
+        .expect("reaches");
+    let changes = Neighbours::subscribe(&casting);
+
+    casting.locate(fake.at).expect("the receiver is reached");
+    let sink = the_receiver(&casting);
+    casting.unlocate(fake.at);
+
+    assert_eq!(changes.try_recv(), Ok(SinkChange::Added(sink.id)));
+    assert_eq!(changes.try_recv(), Ok(SinkChange::Removed(sink.id)));
+    assert!(casting.sinks().is_empty());
+    assert!(casting.located().is_empty());
+}
+
+#[test]
+fn a_casting_that_stops_browsing_keeps_the_receivers_given_by_address_and_drops_the_rest() {
+    let browsed = Fake::start();
+    let given = Fake::start();
+    let casting = Casting::start(browsed.searching(), FirstSearch::Awaited).expect("reaches");
+    casting.locate(given.at).expect("the receiver is reached");
+    assert_eq!(casting.sinks().len(), 2);
+
+    casting.stop_browsing();
+
+    assert!(!casting.is_looking());
+    assert!(casting.is_reaching());
+    let sink = the_receiver(&casting);
+    assert_eq!(
+        sink.name,
+        NodeName::new(format!("cast:{}", CastId::at(given.at)))
+    );
+}
+
+#[test]
+fn a_casting_with_no_address_that_stops_browsing_rests() {
+    let fake = Fake::start();
+    let casting = Casting::start(fake.searching(), FirstSearch::Awaited).expect("reaches");
+
+    casting.stop_browsing();
+
+    assert!(!casting.is_reaching());
+    assert!(casting.sinks().is_empty());
+}
+
+#[test]
+fn a_casting_reaching_addresses_alone_that_is_asked_to_look_browses_too() {
+    let fake = Fake::start();
+    let other = Fake::start();
+    let searching = Searching {
+        finding: Finding::Listed(vec![other.found()]),
+        ..nothing_listed()
+    };
+    let casting = Casting::resting(searching).expect("rests");
+    casting.locate(fake.at).expect("holds the address");
+    casting
+        .look_at_addresses(FirstSearch::Awaited)
+        .expect("reaches");
+    assert_eq!(casting.sinks().len(), 1);
+
+    casting.look(FirstSearch::Awaited).expect("looks");
+
+    assert!(casting.is_looking());
+    assert_eq!(casting.sinks().len(), 2);
+}

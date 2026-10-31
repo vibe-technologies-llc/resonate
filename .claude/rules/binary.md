@@ -272,7 +272,14 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   is never asked; `renderers` on adds the search beside them, and the settings pane's switch moves
   between the two (`Network::stop_multicasting`). Written by hand: the settings pane has no row for
   it. `sinks --renderer-at URL` (repeatable) adds one for the run and waits for it, searching only
-  where `--renderers` is given too; an unreadable one is `Error::RendererAddress`. Cast receivers have no counterpart (`FEATURES.md`).
+  where `--renderers` is given too; an unreadable one is `Error::RendererAddress`.
+- `cast-at` (empty unless set): array of IP addresses of Google Cast receivers, each `ip:port` or an
+  `ip` taking `CAST_PORT` (8009); a blank or unreadable entry (a name included, nothing is resolved)
+  is ignored with a warning, a non-text entry costs the key alone (`Config::cast_at`,
+  `resonate_cast::receiver_address`, `Casting::locate`; `cast.md`). Held and reached exactly as
+  `renderers-at` is, with no mDNS browse unless `renderers` asks; `sinks --cast-at IP[:PORT]`
+  (repeatable) adds one for the run, an unreadable one `Error::CastAddress`. The settings pane has
+  no row for it.
 - `flac-above-96k-for` (empty unless set): array of renderer names (`upnp:` and the UDN, as
   `sinks --renderers` lists them; others and blanks ignored, a non-text entry costs the key alone)
   that are sent FLAC above 96 kHz though their protocol info states no rate
