@@ -137,9 +137,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] A Google Cast receiver cannot be added by host and port: its identity is the mDNS `id`
   and `ca` record, which a `GET_STATUS` over TLS does not carry, so `Casting` has no counterpart of
   `Network::locate` (`cast.md`)
-- [S] A renderer named in the settings pane's *High-rate FLAC to renderers* group is sent FLAC above
-  96 kHz from the next start, not at once: `Network::vouch` is read when a renderer is described and
-  does not re-describe one already found, so the window cannot apply a switch live (`upnp.md`)
 - [S] Nothing learns which renderers decode 176.4 and 192 kHz FLAC, since the protocol info does not say
   and a renderer that cannot play a stream gives no answer a try could read, so the default stays 96 kHz
   (the fake renderer's tests are all the proof the vouched rates have, no streamer having confirmed any);

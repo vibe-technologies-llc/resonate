@@ -57,7 +57,7 @@ impl Vouched {
         }
     }
 
-    fn flac_unsaid_for(&self, udn: &Udn) -> FlacUnsaid {
+    pub(crate) fn flac_unsaid_for(&self, udn: &Udn) -> FlacUnsaid {
         if self.flac_at_any_rate.contains(udn) {
             FlacUnsaid::AnyRate
         } else {

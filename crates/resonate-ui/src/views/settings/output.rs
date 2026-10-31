@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{collections::BTreeSet, time::Duration};
 
 use gpui::{ClickEvent, Context, Div, SharedString, Stateful, div, prelude::*, px, rgb};
 use resonate_core::{SampleFormat, SampleRate, StreamSpec};
@@ -584,13 +584,21 @@ impl RootView {
         cx.update_global::<ResonateApp, _>(|global, _| {
             global.flac_above_96k_for.clone_from(&named);
         });
+        self.vouch_now(&named, cx);
         self.store(&Setting::FlacAbove96kFor(named), cx);
         cx.notify();
     }
 
     pub(crate) fn vouch_for_none(&mut self, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.flac_above_96k_for.clear());
+        self.vouch_now(&BTreeSet::new(), cx);
         cx.notify();
+    }
+
+    fn vouch_now(&self, named: &BTreeSet<NodeName>, cx: &Context<Self>) {
+        if let Some(renderers) = cx.global::<ResonateApp>().renderers.clone() {
+            renderers.vouch(named);
+        }
     }
 
     pub(super) fn look_for_renderers(&mut self, on: bool, cx: &mut Context<Self>) {

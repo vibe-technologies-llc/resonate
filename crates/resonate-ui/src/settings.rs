@@ -991,6 +991,7 @@ pub trait Present: Send + Sync {
 pub trait Renderers: Send + Sync {
     fn looking(&self) -> bool;
     fn look(&self, on: bool);
+    fn vouch(&self, renderers: &BTreeSet<NodeName>);
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

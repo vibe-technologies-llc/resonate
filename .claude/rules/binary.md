@@ -279,7 +279,8 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   (`Config::renderers_vouched_for`, `Network::vouch`; `upnp.md`). The settings pane's *High-rate FLAC to
   renderers* group (Output) is a switch per UPnP renderer listed and per name already in the key
   that is not on the network now, written as `Setting::FlacAbove96kFor` (the whole set; an empty
-  one takes the key out of the file); it is read at start, so a change lands from the next start.
+  one takes the key out of the file) and applied at once through `Renderers::vouch`, off the window's
+  thread (`upnp.md`).
   A flag would name a device for one run only.
 - `speaker-angle`: whole degrees 5 to 90 (`resonate_core::SpeakerAngle`, 30 unless set; held by
   `At::within`, a value outside it costs the key alone): how far to either side of the front the

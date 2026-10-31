@@ -1,10 +1,10 @@
-use std::{sync::Arc, thread};
+use std::{collections::BTreeSet, sync::Arc, thread};
 
 use resonate_cast::{CAST_NODES, Casting, Searching as CastSearching};
 use resonate_codec::Sources;
 use resonate_engine::{EngineConfig, NodeName, Player, SinkError, SinkInfo};
 use resonate_pipewire::PipeWire;
-use resonate_upnp::{Beside, FirstSearch, Network, RENDERER_NODES, Searching};
+use resonate_upnp::{Beside, FirstSearch, Network, RENDERER_NODES, Searching, Udn, Vouched};
 
 use crate::config::Config;
 
@@ -173,5 +173,11 @@ impl resonate_ui::Renderers for Switch {
         } else {
             self.0.rest();
         }
+    }
+
+    fn vouch(&self, renderers: &BTreeSet<NodeName>) {
+        let vouched = Vouched::flac_at_any_rate(renderers.iter().filter_map(Udn::from_node));
+        let upnp = Arc::clone(&self.0.upnp);
+        thread::spawn(move || upnp.vouch(vouched));
     }
 }

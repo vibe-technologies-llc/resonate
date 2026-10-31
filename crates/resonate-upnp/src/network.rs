@@ -129,7 +129,10 @@ impl Network {
     }
 
     pub fn vouch(&self, vouched: Vouched) {
-        *self.shared.vouched.lock() = vouched;
+        let _one_at_a_time = self.shared.round.lock();
+        let previous = mem::replace(&mut *self.shared.vouched.lock(), vouched);
+        let changes = self.shared.described_again_where_vouching_moved(&previous);
+        self.shared.announce(&changes);
     }
 
     pub fn locate(&self, location: Located) -> Result<()> {
@@ -436,6 +439,34 @@ impl Shared {
         let change = self.known.lock().admit(renderer, false).1;
         self.announce(&change.into_iter().collect::<Vec<_>>());
         Ok(())
+    }
+
+    fn described_again_where_vouching_moved(&self, previous: &Vouched) -> Vec<SinkChange> {
+        let vouched = self.vouched.lock().clone();
+        let moved: Vec<(SinkId, Located, bool)> = self
+            .known
+            .lock()
+            .held
+            .iter()
+            .filter(|(_, held)| {
+                let udn = held.renderer.udn();
+                previous.flac_unsaid_for(udn) != vouched.flac_unsaid_for(udn)
+            })
+            .map(|(id, held)| (*id, held.renderer.location().clone(), held.heard))
+            .collect();
+        let mut changes = Vec::new();
+        for (id, location, heard) in moved {
+            match Renderer::reached(location.clone(), &vouched) {
+                Ok(renderer) => {
+                    let (admitted, _) = self.known.lock().admit(renderer, heard);
+                    changes.push(SinkChange::Reformatted(admitted));
+                }
+                Err(error) => {
+                    tracing::warn!(%error, %location, sink = id.get(), "a renderer could not be described again after the vouching moved");
+                }
+            }
+        }
+        changes
     }
 
     fn retire_unlocated(&self) -> Vec<SinkChange> {

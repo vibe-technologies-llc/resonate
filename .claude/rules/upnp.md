@@ -85,16 +85,21 @@ dev-dependency, for the end-to-end test.
   `audio/flac` entry carries 44.1 to 192 kHz as one stating the rates would, and FLAC wins over WAVE
   there (`carriage_for`). It changes nothing else: stated rates stay as stated, channels are still
   only those stated, WAVE and L16 are untouched, and a renderer not named keeps the 96 kHz limit.
-  `vouch` is read when a renderer is described, so it is called before `look` (the binary does) and
-  does not re-describe a renderer already found. **Why a listener's word and not an attempt:** a
+  `vouch` is read when a renderer is described, so the binary calls it before `look`; called later it
+  describes again each renderer found whose vouching moved (under the round lock, the renderer
+  replaced under its sink id) and announces `SinkChange::Reformatted` for it, which has the engine
+  survey afresh, so a switch applies at once; a stream already open keeps the formats it opened with
+  and a new one takes the new
+  (`vouching_for_a_renderer_already_found_offers_it_high_rate_flac_at_once_and_vouching_it_away_takes_it_back`).
+  **Why a listener's word and not an attempt:** a
   renderer that cannot decode a rate usually accepts `SetAVTransportURI` and `Play` and then
   stops, errors or sits silent, with nothing a protocol answer distinguishes from a pause, and the
   sink's formats are fixed when it is listed, before any stream; a try-and-fall-back would put
   silence in front of the listener at the first 192 kHz song of every session and need the engine
   to reopen on another format. The setting is the listener stating what the protocol info does not
   (the same word `rate=` is), visible in the file, and removing the name restores the limit; the
-  settings pane's *High-rate FLAC to renderers* group writes it, a switch per renderer, read from
-  the next start since `vouch` does not re-describe one already found (`RENDERER_NODES` and
+  settings pane's *High-rate FLAC to renderers* group writes it, a switch per renderer, applied at
+  once through `resonate-ui`'s `Renderers::vouch` (`RENDERER_NODES` and
   `NodeName::names_a_upnp_renderer` live in `resonate-audio`, so the window tells a renderer's sink
   without reaching this crate). No
   hardware has confirmed which renderers decode the rate: the proof is a fake renderer's, not a

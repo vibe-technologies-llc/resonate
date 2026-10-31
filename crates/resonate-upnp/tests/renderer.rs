@@ -1872,3 +1872,32 @@ fn a_network_with_no_address_that_stops_multicasting_rests() {
     assert!(!network.is_reaching());
     assert!(network.sinks().is_empty());
 }
+
+#[test]
+fn vouching_for_a_renderer_already_found_offers_it_high_rate_flac_at_once_and_vouching_it_away_takes_it_back()
+ {
+    let fake = Fake::with(Profile {
+        sink: FLAC_ALONE,
+        openhome: false,
+    });
+    let network = network_vouching(&fake, Vouched::default());
+    let changes = changes_of(&network);
+    let before = the_renderer(&network);
+    assert!(!before.supports(high_flac()));
+
+    network.vouch(Vouched::flac_at_any_rate([Udn::new(UDN)]));
+    let vouched = the_renderer(&network);
+
+    assert_eq!(vouched.id, before.id);
+    assert!(vouched.supports(high_flac()));
+    assert_eq!(changes.try_recv(), Ok(SinkChange::Reformatted(before.id)));
+
+    network.vouch(Vouched::default());
+
+    assert!(!the_renderer(&network).supports(high_flac()));
+    assert_eq!(changes.try_recv(), Ok(SinkChange::Reformatted(before.id)));
+
+    network.vouch(Vouched::default());
+
+    assert!(changes.try_recv().is_err());
+}
