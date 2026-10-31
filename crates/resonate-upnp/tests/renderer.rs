@@ -91,6 +91,7 @@ struct Heard {
     fetching: Option<String>,
     fetch_ended: bool,
     searches: usize,
+    udn: Option<&'static str>,
 }
 
 impl Heard {
@@ -203,18 +204,22 @@ fn answer_searches(ssdp: &UdpSocket, described_at: SocketAddr, heard: &Mutex<Hea
         if !asked.starts_with("M-SEARCH") || !asked.contains("device:MediaRenderer:1") {
             continue;
         }
-        heard.lock().searches += 1;
+        let udn = {
+            let mut held = heard.lock();
+            held.searches += 1;
+            held.udn.unwrap_or(UDN)
+        };
         let answer = format!(
             "HTTP/1.1 200 OK\r\nCACHE-CONTROL: max-age=1800\r\nLOCATION: \
              http://{described_at}/device/description.xml\r\nST: \
              urn:schemas-upnp-org:device:MediaRenderer:1\r\nUSN: \
-             {UDN}::urn:schemas-upnp-org:device:MediaRenderer:1\r\n\r\n"
+             {udn}::urn:schemas-upnp-org:device:MediaRenderer:1\r\n\r\n"
         );
         let _ = ssdp.send_to(answer.as_bytes(), from);
     }
 }
 
-fn description(openhome: bool) -> String {
+fn description(openhome: bool, udn: &str) -> String {
     let extra = if openhome {
         r#"<service><serviceType>urn:av-openhome-org:service:Product:1</serviceType><controlURL>/oh/product</controlURL></service>
       <service><serviceType>urn:av-openhome-org:service:Playlist:1</serviceType><controlURL>/oh/playlist</controlURL></service>
@@ -228,7 +233,7 @@ fn description(openhome: bool) -> String {
   <device>
     <deviceType>urn:schemas-upnp-org:device:MediaRenderer:1</deviceType>
     <friendlyName>{NAME}</friendlyName>
-    <UDN>{UDN}</UDN>
+    <UDN>{udn}</UDN>
     <serviceList>
       <service><serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType><controlURL>control/av</controlURL></service>
       <service><serviceType>urn:schemas-upnp-org:service:RenderingControl:1</serviceType><controlURL>/rc</controlURL></service>
@@ -279,8 +284,11 @@ fn answer(mut stream: TcpStream, heard: &Arc<Mutex<Heard>>) {
     let body = String::from_utf8_lossy(&body).into_owned();
 
     if method == "GET" && path == "/device/description.xml" {
-        let openhome = heard.lock().profile.openhome;
-        let description = description(openhome);
+        let (openhome, udn) = {
+            let held = heard.lock();
+            (held.profile.openhome, held.udn.unwrap_or(UDN))
+        };
+        let description = description(openhome, udn);
         let (first, second) = description.split_at(description.len() / 2);
         let chunked = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: text/xml\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{first}\r\n{:x}\r\n{second}\r\n0\r\n\r\n",
@@ -1777,4 +1785,90 @@ fn resting_forgets_the_renderers_and_keeps_the_addresses_to_reach_again() {
     network.look(FirstSearch::Awaited).expect("looks again");
 
     assert_eq!(the_renderer(&network).description, NAME);
+}
+
+#[test]
+fn a_network_reaching_addresses_alone_sends_no_search_and_lists_the_renderer_given() {
+    let fake = Fake::start();
+    let network = Network::resting(fake.searching()).expect("rests");
+    network
+        .locate(fake.description_address())
+        .expect("holds the address");
+
+    network
+        .look_at_addresses(FirstSearch::Awaited)
+        .expect("reaches");
+    let sink = the_renderer(&network);
+
+    assert_eq!(sink.description, NAME);
+    assert_eq!(fake.heard.lock().searches, 0);
+    assert!(network.is_reaching());
+    assert!(!network.is_looking());
+}
+
+#[test]
+fn an_address_given_to_a_network_reaching_addresses_alone_is_reached_at_once_without_a_search() {
+    let fake = Fake::start();
+    let network = Network::resting(fake.searching()).expect("rests");
+    network
+        .look_at_addresses(FirstSearch::Awaited)
+        .expect("reaches");
+
+    network
+        .locate(fake.description_address())
+        .expect("the renderer is described");
+
+    assert_eq!(the_renderer(&network).description, NAME);
+    assert_eq!(fake.heard.lock().searches, 0);
+}
+
+#[test]
+fn a_network_reaching_addresses_alone_that_is_asked_to_look_searches_the_network_too() {
+    let fake = Fake::start();
+    let network = Network::resting(fake.searching()).expect("rests");
+    network
+        .locate(fake.description_address())
+        .expect("holds the address");
+    network
+        .look_at_addresses(FirstSearch::Awaited)
+        .expect("reaches");
+
+    network.look(FirstSearch::Awaited).expect("looks");
+
+    assert!(network.is_looking());
+    assert!(fake.heard.lock().searches > 0);
+    assert_eq!(network.sinks().len(), 1);
+}
+
+#[test]
+fn a_network_that_stops_multicasting_keeps_the_renderers_given_by_address_and_drops_the_rest() {
+    let heard = Fake::start();
+    let given = Fake::start();
+    given.heard.lock().udn = Some("uuid:renderer-given");
+    let network = Network::resting(heard.searching()).expect("rests");
+    network.look(FirstSearch::Awaited).expect("looks");
+    network
+        .locate(given.description_address())
+        .expect("the renderer is described");
+    assert_eq!(network.sinks().len(), 2);
+
+    network.stop_multicasting();
+
+    assert!(!network.is_looking());
+    assert!(network.is_reaching());
+    let remaining = network.sinks();
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].name, NodeName::new("upnp:uuid:renderer-given"));
+}
+
+#[test]
+fn a_network_with_no_address_that_stops_multicasting_rests() {
+    let fake = Fake::start();
+    let network = Network::start(fake.searching(), FirstSearch::Awaited).expect("looks");
+    assert_eq!(network.sinks().len(), 1);
+
+    network.stop_multicasting();
+
+    assert!(!network.is_reaching());
+    assert!(network.sinks().is_empty());
 }

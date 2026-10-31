@@ -245,6 +245,7 @@ final class Library {
     private(set) var zones: [PlayerZone] = []
     private(set) var renderers: [NetworkRenderer] = []
     private(set) var lookingForRenderers = false
+    private(set) var rendererAddresses: [String] = []
     @ObservationIgnored private var zonesListed: ZonesListed?
     @ObservationIgnored private var zoneTicks = 0
     @ObservationIgnored private var volumeSending = false
@@ -336,10 +337,14 @@ final class Library {
                 preferences = stored
                 volume = try await Work.inOrder { opened.zones().first { $0.shown }?.volume ?? 1 }
                 let looks = Self.rendererSettings.bool(forKey: Self.looksForRenderersKey)
-                lookingForRenderers = try await Work.inOrder {
+                let saved = Self.savedRendererAddresses()
+                let reached = try await Work.inOrder {
+                    for address in saved { try? opened.addRendererAddress(address: address) }
                     if looks { try? opened.lookForRenderers(on: true) }
-                    return opened.lookingForRenderers()
+                    return (opened.lookingForRenderers(), opened.rendererAddresses())
                 }
+                lookingForRenderers = reached.0
+                rendererAddresses = reached.1
                 native = opened
                 opened.watchPlayer(watch: PlayerWake(self))
                 Task.detached(priority: .utility) { [support] in Backup.leaveOutDerived(in: support) }
@@ -495,6 +500,43 @@ final class Library {
         }
     }
 
+    func addRendererAddress(_ address: String) {
+        let typed = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        request({ native in
+            let failure: (any Swift.Error)? = {
+                do {
+                    try native.addRendererAddress(address: typed)
+                    return nil
+                } catch {
+                    return error
+                }
+            }()
+            return RendererAddressesRead(addresses: native.rendererAddresses(), renderers: native.renderers(), failure: failure)
+        }) { [self] read in
+            keepRendererAddresses(read)
+            if let failure = read.failure { report(failure) }
+        }
+    }
+
+    func forgetRendererAddress(_ address: String) {
+        request({ native in
+            try native.removeRendererAddress(address: address)
+            return RendererAddressesRead(addresses: native.rendererAddresses(), renderers: native.renderers(), failure: nil)
+        }) { [self] read in
+            keepRendererAddresses(read)
+        }
+    }
+
+    private func keepRendererAddresses(_ read: RendererAddressesRead) {
+        Self.rendererSettings.set(read.addresses, forKey: Self.rendererAddressesKey)
+        rendererAddresses = read.addresses
+        renderers = read.renderers
+    }
+
+    static func savedRendererAddresses() -> [String] {
+        rendererSettings.stringArray(forKey: rendererAddressesKey) ?? []
+    }
+
     func readRenderers() {
         request({ $0.renderers() }) { [self] found in
             if found != renderers { renderers = found }
@@ -506,6 +548,7 @@ final class Library {
     }
 
     static let looksForRenderersKey = "renderers"
+    static let rendererAddressesKey = "renderer-addresses"
     static let rendererSettings = UserDefaults(suiteName: "library-features") ?? .standard
 
     private func changeZones(_ change: @escaping @Sendable (MobilePlayer) throws -> Void) {
@@ -1915,3 +1958,8 @@ final class FolderCovers {
     }
 }
 
+struct RendererAddressesRead: Sendable {
+    let addresses: [String]
+    let renderers: [NetworkRenderer]
+    let failure: (any Swift.Error)?
+}

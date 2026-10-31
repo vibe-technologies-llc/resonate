@@ -23,6 +23,7 @@ struct ZonesSheet: View {
     @State private var name = ""
     @State private var removing: PlayerZone?
     @State private var choosing: PlayerZone?
+    @State private var addressing = false
 
     var body: some View {
         let shown = library.zones.first(where: \.shown)?.id
@@ -64,12 +65,18 @@ struct ZonesSheet: View {
                         Text("Find renderers")
                         Text(library.lookingForRenderers ? "\(library.renderers.count) found on this network" : "Streamers and amplifiers on this network, as outputs for a zone")
                     }
+                    Button("Add a renderer by address", systemImage: "plus") { addressing = true }
                 } header: {
                     Text("Network renderers")
+                } footer: {
+                    Text(library.rendererAddresses.isEmpty
+                        ? "A network that hides its renderers from a search, or an iPhone signed for free, reaches one by the address of its description."
+                        : "\(library.rendererAddresses.count) added by address.")
                 }
             }
-            .task(id: library.lookingForRenderers) {
-                while library.lookingForRenderers, !Task.isCancelled {
+            .sheet(isPresented: $addressing) { RendererAddressSheet() }
+            .task(id: library.lookingForRenderers || !library.rendererAddresses.isEmpty) {
+                while library.lookingForRenderers || !library.rendererAddresses.isEmpty, !Task.isCancelled {
                     library.readRenderers()
                     try? await Task.sleep(for: .seconds(2))
                 }
@@ -145,11 +152,11 @@ struct RendererPicker: View {
         let playingOn = library.zones.first { $0.id == zone.id }?.renderer
         NavigationStack {
             List {
-                if !library.lookingForRenderers {
-                    Text("Turn on Find renderers to look for them on this network.")
+                if !library.lookingForRenderers, library.rendererAddresses.isEmpty, library.renderers.isEmpty {
+                    Text("Turn on Find renderers, or add one by its address, to reach renderers.")
                         .foregroundStyle(.secondary)
                 } else if library.renderers.isEmpty {
-                    Text("No renderer has answered on this network yet.")
+                    Text("No renderer has answered yet.")
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(library.renderers, id: \.node) { renderer in
@@ -181,5 +188,61 @@ struct RendererPicker: View {
             }
         }
         .presentationDetents([.medium, .large])
+    }
+}
+
+struct RendererAddressSheet: View {
+    @Environment(Library.self) private var library
+    @Environment(\.dismiss) private var dismiss
+    @State private var typed = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    TextField("http://192.168.1.20:49152/description.xml", text: $typed)
+                        .keyboardType(.URL)
+                        .textContentType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .focused($focused)
+                        .submitLabel(.done)
+                        .onSubmit(add)
+                    Button("Add", action: add)
+                        .disabled(typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                } header: {
+                    Text("Description address")
+                }
+                if !library.rendererAddresses.isEmpty {
+                    Section {
+                        ForEach(library.rendererAddresses, id: \.self) { address in
+                            Text(address)
+                                .swipeActions {
+                                    Button("Remove", role: .destructive) { library.forgetRendererAddress(address) }
+                                }
+                        }
+                    } header: {
+                        Text("Added")
+                    }
+                }
+            }
+            .navigationTitle("Add a renderer by address")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(role: .close) { dismiss() }
+                }
+            }
+            .onAppear { focused = true }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func add() {
+        let chosen = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !chosen.isEmpty else { return }
+        library.addRendererAddress(chosen)
+        typed = ""
     }
 }

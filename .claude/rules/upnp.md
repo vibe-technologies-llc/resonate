@@ -113,6 +113,18 @@ dev-dependency, for the end-to-end test.
   `resonate-upnp-search` thread, `Network::rest` stops searching and forgets every renderer, each
   told `SinkChange::Removed`. `Network::start` is `resting` and `look` together. So the window can
   hold a network behind every zone's `Beside` from the start and the settings pane switch it.
+  **Searching the
+  network and reaching addresses are apart**: `Network::look_at_addresses` starts the same thread
+  and server with no multicast (`Looking::multicast` false, read by each round through
+  `Shared::multicasting`, so a round reaches the held addresses and sends no `M-SEARCH`),
+  `look` on such a network turns the search on and runs a round, `stop_multicasting` turns it off
+  again, dropping the renderers only the search heard (`retire_unlocated`; a renderer held by an
+  address stays, its sink id too) or resting where no address is held, `is_looking` is the search
+  alone and `is_reaching` either. `locate` reaches an address at once on a network doing either.
+  (`a_network_reaching_addresses_alone_sends_no_search_and_lists_the_renderer_given`,
+  `a_network_reaching_addresses_alone_that_is_asked_to_look_searches_the_network_too`,
+  `a_network_that_stops_multicasting_keeps_the_renderers_given_by_address_and_drops_the_rest`,
+  `a_network_with_no_address_that_stops_multicasting_rests`).
 - **A renderer may be given by the address of its description** (`Network::locate(Located)`,
   `unlocate`, `located`): a network that drops multicast, or an iPhone without the multicast
   entitlement, hears no SSDP answer, so the listener types the `Located` the search would have
@@ -279,11 +291,12 @@ wanted names a renderer; the last two wait for the first search. The window alwa
 list can switch it: `Rendering::switch` hands `resonate-ui` a `Renderers` (`looking`, `look`), the
 switch row under the devices calls it and stores `Setting::Renderers`, and renderers appear in
 or leave the list through the sink changes `Beside` forwards. The `renderers-at` key (`binary.md`) holds the addresses of renderers the search cannot hear:
-`Kinds::resting` hands each to `Network::locate` while the network rests, so they are reached
-whenever it looks (the key `renderers`, a `sink` naming a renderer, `sinks --renderers`), and
-`sinks --renderer-at URL` adds one for a run and asks the network to look. Addresses do not make
-the network look by themselves: a looking network also multicasts the search (*Finding and
-describing*). `Rendering::player` is how `play`,
+`Kinds::resting` hands each to `Network::locate` while the network rests, and a run holding any
+reaches them at start without a search (`Rendering::of`'s `Asked::Addresses`, the window's
+`for_the_window`): only the key `renderers`, a `sink` naming a renderer or `sinks --renderers`
+multicast, and Cast's browse is mDNS and is never started for an address. `sinks --renderer-at URL`
+adds one for a run and waits for it. The window's switch off is `stop_multicasting` (with Cast
+resting), so a renderer given by address stays listed. `Rendering::player` is how `play`,
 the window and every zone (`zoning::Opener`) build a `Player`: PipeWire inside `Beside` where a
 network is held, `Player::with_sources` where not. `sinks` lists the renderers with *the network*
 as what drives them.
@@ -298,7 +311,7 @@ Renderer sink ids come from the one `Network`, so `Zones::send` sees two zones a
 as one sink and refuses it to a second while the first holds it bit-perfect (`audio.md`).
 
 - **The boundary** (`mobile.md`'s *Zones*): `look_for_renderers(on)` is `look(FirstSearch::Behind)`
-  or `rest` (`RenderersUnreachable` where no `Network` could be made, `RendererSearch` where the
+  or `stop_multicasting` (`RenderersUnreachable` where no `Network` could be made, `RendererSearch` where the
   stream server could not start), `looking_for_renderers`, `renderers()` (a `NetworkRenderer` per
   renderer known: `node`, the `upnp:` node name; `name`; `host`), and
   `select_zone_renderer(zone, node)`, which refuses a node not listed (`UnknownRenderer`), sends
@@ -311,8 +324,14 @@ as one sink and refuses it to a second while the first holds it bit-perfect (`au
   one while the boundary searches all the same, as sync does (`android.md`). iOS
   refuses multicast from an app's own socket without `com.apple.developer.networking.multicast`,
   which a free signing cannot carry, so an iPhone signed so finds no renderer (`ios.md`,
-  `FEATURES.md`): an iPhone with no search answer takes a renderer by address all the same
-  (`FEATURES.md` for the screen that has yet to ask for one). The renderer's answers and the stream the renderer fetches are unicast.
+  `FEATURES.md`): an iPhone with no search answer takes a renderer by address all the same, and
+  `add_renderer_address` starts the network reaching addresses with no search sent
+  (`look_at_addresses`), so neither a free signing nor a network that drops multicast needs the
+  *Find renderers* switch for it; removing the last address with the switch off rests the network
+  (`a_renderer_added_by_address_is_listed_without_a_search_and_forgotten_with_it`,
+  `turning_the_search_off_keeps_the_renderer_given_by_address`). Each phone's zones sheet has an
+  *Add a renderer by address* row (a text field and the list added, each removable), the list kept
+  by Kotlin and Swift (`renderer-addresses`) and added again at start. The renderer's answers and the stream the renderer fetches are unicast.
 
 `crates/resonate-mobile/src/rendering.rs` proves it over a fake on loopback (an SSDP answer, a
 description with AVTransport alone, SOAP recording actions): the search lists the renderer, a zone

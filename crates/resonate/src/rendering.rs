@@ -58,27 +58,46 @@ impl Kinds {
         }
     }
 
+    fn reach_addresses(&self, first: FirstSearch) {
+        if let Err(error) = self.upnp.look_at_addresses(first) {
+            tracing::warn!(%error, "the renderers given by address could not be reached");
+        }
+    }
+
     #[cfg(feature = "ui")]
     fn rest(&self) {
-        self.upnp.rest();
+        self.upnp.stop_multicasting();
         self.cast.rest();
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Asked {
+    Nothing,
+    Addresses,
+    Network,
+}
+
 impl Rendering {
-    pub(crate) fn of(config: &Config, wanted: Option<&NodeName>, asked: bool) -> Self {
+    pub(crate) fn of(config: &Config, wanted: Option<&NodeName>, asked: Asked) -> Self {
         let names_one = wanted.is_some_and(names_a_renderer);
-        if !(asked || names_one || config.looks_for_renderers()) {
+        let searches = asked == Asked::Network || names_one || config.looks_for_renderers();
+        let reaches = asked == Asked::Addresses || !config.renderers_at().is_empty();
+        if !(searches || reaches) {
             return Self(None);
         }
-        let first = if asked || names_one {
+        let first = if asked != Asked::Nothing || names_one {
             FirstSearch::Awaited
         } else {
             FirstSearch::Behind
         };
         let kinds = Kinds::resting(config);
         if let Some(kinds) = &kinds {
-            kinds.look(first);
+            if searches {
+                kinds.look(first);
+            } else {
+                kinds.reach_addresses(first);
+            }
         }
         Self(kinds)
     }
@@ -87,14 +106,17 @@ impl Rendering {
     pub(crate) fn for_the_window(config: &Config, wanted: Option<&NodeName>) -> Self {
         let names_one = wanted.is_some_and(names_a_renderer);
         let kinds = Kinds::resting(config);
-        if let Some(kinds) = &kinds
-            && (names_one || config.looks_for_renderers())
-        {
-            kinds.look(if names_one {
+        if let Some(kinds) = &kinds {
+            let first = if names_one {
                 FirstSearch::Awaited
             } else {
                 FirstSearch::Behind
-            });
+            };
+            if names_one || config.looks_for_renderers() {
+                kinds.look(first);
+            } else if !config.renderers_at().is_empty() {
+                kinds.reach_addresses(first);
+            }
         }
         Self(kinds)
     }

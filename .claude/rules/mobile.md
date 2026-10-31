@@ -458,8 +458,9 @@ its renderer; `select_zone_renderer(zone, None)` does. The catalog's step 22
 `keep_zone`; a zone reopens wanting it (`Bound`, and `first_zones_sink` for the first) and
 `MobilePlayer::new` searches where any kept zone names one. A renderer the search cannot hear is
 added by the address of its description (`add_renderer_address`, `remove_renderer_address`,
-`renderer_addresses`; `upnp.md`'s *On the phones*): the `Network` holds the addresses, the host
-keeps the list and adds it again at start.
+`renderer_addresses`; `upnp.md`'s *On the phones*): the `Network` holds the addresses and reaches
+them with no search, the host keeps the list (the zones sheet's *Add a renderer by address*) and adds
+it again at start; *Find renderers* off only stops the search.
 
 **A device another zone holds bit-perfect is refused, as the desktop refuses it** (`audio.md`'s
 `Zones::holding`): each zone's sink being its own, `Zones::send` never sees two zones on one sink, so

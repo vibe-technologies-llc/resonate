@@ -111,7 +111,7 @@ use crate::{
     input::{Action, Pressed},
     online::Asking,
     readout::Readout,
-    rendering::Rendering,
+    rendering::{Asked, Rendering},
     served::Served,
     table::Table,
 };
@@ -618,7 +618,13 @@ fn list_sinks(cli: &Cli, config: &Config, renderers: bool, renderers_at: &[Strin
     let pipewire = PipeWire::start("Resonate")?;
     let mut sinks = pipewire.enumerate_sinks(SINK_TIMEOUT)?;
     let config = with_renderer_addresses(config, renderers_at)?;
-    let asked = renderers || !renderers_at.is_empty();
+    let asked = if renderers {
+        Asked::Network
+    } else if renderers_at.is_empty() {
+        Asked::Nothing
+    } else {
+        Asked::Addresses
+    };
     sinks.extend(Rendering::of(&config, wanted_sink(cli, &config).as_ref(), asked).sinks());
 
     let mut table = Table::new(vec![
@@ -2359,7 +2365,8 @@ fn play_queue(
     }
     let wanted = wanted_sink(cli, config);
     let player = Arc::new(
-        Rendering::of(config, wanted.as_ref(), false).player(engine, Arc::clone(&sources))?,
+        Rendering::of(config, wanted.as_ref(), Asked::Nothing)
+            .player(engine, Arc::clone(&sources))?,
     );
     confirm_sink(&player, wanted.as_ref());
     let queue = stamp_of(&items);

@@ -29,7 +29,7 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M · blocked: Apple] An iPhone signed for free finds no network renderer: the SSDP search is
   multicast from the library's own socket, which needs the `com.apple.developer.networking.multicast`
   entitlement Apple grants a paid team on request; a renderer given by the address of its
-  description (`add_renderer_address`) is reached without it
+  description (the zones sheet's *Add a renderer by address*) is reached without it
 - [M · blocked: rust nightly] Pointer authentication (an `arm64e` slice) is not adopted: the Rust
   library builds for `aarch64-apple-ios` on stable, and `arm64e-apple-ios` needs a nightly
   `build-std`
@@ -134,13 +134,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   complex`)
 
 ## Later: Network output
-- [S] The phones have no row for a renderer's address: `add_renderer_address`,
-  `remove_renderer_address` and `renderer_addresses` are on the boundary (`upnp.md`), and neither
-  the Compose settings nor the SwiftUI zones sheet calls them, so an iPhone signed for free and a
-  network that drops multicast still find nothing until a screen takes an address and keeps the list
-- [S] A network that drops multicast is still searched: the `renderers` key and `sinks --renderer-at`
-  send the SSDP search before reaching an address, so no listener can be rid of multicast while
-  keeping a renderer by address (`upnp.md`)
 - [M] A Google Cast receiver cannot be added by host and port: its identity is the mDNS `id`
   and `ca` record, which a `GET_STATUS` over TLS does not carry, so `Casting` has no counterpart of
   `Network::locate` (`cast.md`)

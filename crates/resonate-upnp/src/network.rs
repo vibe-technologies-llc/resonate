@@ -2,7 +2,10 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     io, mem,
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     thread,
     time::Duration,
 };
@@ -53,7 +56,12 @@ pub enum FirstSearch {
 
 pub struct Network {
     shared: Arc<Shared>,
-    looking: Mutex<Option<Sender<()>>>,
+    looking: Mutex<Option<Looking>>,
+}
+
+struct Looking {
+    _stop: Sender<()>,
+    multicast: bool,
 }
 
 struct Shared {
@@ -63,6 +71,7 @@ struct Shared {
     known: Mutex<Known>,
     vouched: Mutex<Vouched>,
     located: Mutex<BTreeSet<Located>>,
+    multicasting: AtomicBool,
     round: Mutex<()>,
     listeners: Mutex<Vec<Sender<SinkChange>>>,
     turns: Sender<Turn>,
@@ -102,6 +111,7 @@ impl Network {
             known: Mutex::new(Known::default()),
             vouched: Mutex::new(Vouched::default()),
             located: Mutex::new(BTreeSet::new()),
+            multicasting: AtomicBool::new(false),
             round: Mutex::new(()),
             listeners: Mutex::new(Vec::new()),
             turns,
@@ -124,7 +134,7 @@ impl Network {
 
     pub fn locate(&self, location: Located) -> Result<()> {
         self.shared.located.lock().insert(location.clone());
-        if self.is_looking() {
+        if self.is_reaching() {
             self.shared.reach(&location)?;
         }
         Ok(())
@@ -144,27 +154,51 @@ impl Network {
 
     pub fn look(&self, first: FirstSearch) -> Result<()> {
         let mut looking = self.looking.lock();
+        match looking.as_mut() {
+            Some(Looking {
+                multicast: true, ..
+            }) => return Ok(()),
+            Some(held) => {
+                held.multicast = true;
+                self.shared.multicasting.store(true, Ordering::Release);
+                drop(looking);
+                return self.search_once(first);
+            }
+            None => {}
+        }
+        self.start_server()?;
+        self.shared.multicasting.store(true, Ordering::Release);
+        *looking = Some(self.begin_rounds(first, true)?);
+        Ok(())
+    }
+
+    pub fn look_at_addresses(&self, first: FirstSearch) -> Result<()> {
+        let mut looking = self.looking.lock();
         if looking.is_some() {
             return Ok(());
         }
-        {
-            let mut server = self.shared.server.lock();
-            if server.is_none() {
-                *server = Some(Server::start(self.shared.searching.serving_on)?);
-            }
-        }
-
-        if first == FirstSearch::Awaited {
-            self.shared.round()?;
-        }
-        let (stop, stopped) = unbounded();
-        let searched = Arc::clone(&self.shared);
-        thread::Builder::new()
-            .name("resonate-upnp-search".to_owned())
-            .spawn(move || searched.search_until(&stopped, first))
-            .map_err(spawn_failed)?;
-        *looking = Some(stop);
+        self.start_server()?;
+        self.shared.multicasting.store(false, Ordering::Release);
+        *looking = Some(self.begin_rounds(first, false)?);
         Ok(())
+    }
+
+    pub fn stop_multicasting(&self) {
+        let mut looking = self.looking.lock();
+        let Some(held) = looking.as_mut().filter(|held| held.multicast) else {
+            return;
+        };
+        if self.shared.located.lock().is_empty() {
+            drop(looking);
+            self.rest();
+            return;
+        }
+        held.multicast = false;
+        self.shared.multicasting.store(false, Ordering::Release);
+        drop(looking);
+        let _one_at_a_time = self.shared.round.lock();
+        let gone = self.shared.retire_unlocated();
+        self.shared.announce(&gone);
     }
 
     pub fn rest(&self) {
@@ -180,7 +214,52 @@ impl Network {
     }
 
     pub fn is_looking(&self) -> bool {
+        self.looking
+            .lock()
+            .as_ref()
+            .is_some_and(|held| held.multicast)
+    }
+
+    pub fn is_reaching(&self) -> bool {
         self.looking.lock().is_some()
+    }
+
+    fn start_server(&self) -> Result<()> {
+        let mut server = self.shared.server.lock();
+        if server.is_none() {
+            *server = Some(Server::start(self.shared.searching.serving_on)?);
+        }
+        Ok(())
+    }
+
+    fn begin_rounds(&self, first: FirstSearch, multicast: bool) -> Result<Looking> {
+        if first == FirstSearch::Awaited {
+            self.shared.round()?;
+        }
+        let (stop, stopped) = unbounded();
+        let searched = Arc::clone(&self.shared);
+        thread::Builder::new()
+            .name("resonate-upnp-search".to_owned())
+            .spawn(move || searched.search_until(&stopped, first))
+            .map_err(spawn_failed)?;
+        Ok(Looking {
+            _stop: stop,
+            multicast,
+        })
+    }
+
+    fn search_once(&self, first: FirstSearch) -> Result<()> {
+        match first {
+            FirstSearch::Awaited => self.shared.round(),
+            FirstSearch::Behind => {
+                let searched = Arc::clone(&self.shared);
+                thread::Builder::new()
+                    .name("resonate-upnp-search".to_owned())
+                    .spawn(move || searched.round_or_warn())
+                    .map(drop)
+                    .map_err(spawn_failed)
+            }
+        }
     }
 
     pub fn renderers(&self) -> Vec<(SinkId, Arc<Renderer>)> {
@@ -301,13 +380,18 @@ impl Shared {
     fn round(&self) -> Result<()> {
         let _one_at_a_time = self.round.lock();
         let addresses = self.located();
-        let found = match ssdp::search(self.searching.to, self.searching.within) {
-            Ok(found) => Some(found),
-            Err(error) if !addresses.is_empty() => {
+        let found = match self
+            .multicasting
+            .load(Ordering::Acquire)
+            .then(|| ssdp::search(self.searching.to, self.searching.within))
+        {
+            None => None,
+            Some(Ok(found)) => Some(found),
+            Some(Err(error)) if !addresses.is_empty() => {
                 tracing::warn!(%error, "the network could not be searched, the renderers given by address are still reached");
                 None
             }
-            Err(error) => return Err(error),
+            Some(Err(error)) => return Err(error),
         };
         let heard: &[Located] = found.as_deref().unwrap_or_default();
 
@@ -352,6 +436,25 @@ impl Shared {
         let change = self.known.lock().admit(renderer, false).1;
         self.announce(&change.into_iter().collect::<Vec<_>>());
         Ok(())
+    }
+
+    fn retire_unlocated(&self) -> Vec<SinkChange> {
+        let located = self.located();
+        let mut known = self.known.lock();
+        let gone: Vec<SinkId> = known
+            .held
+            .iter()
+            .filter(|(_, held)| {
+                !located
+                    .iter()
+                    .any(|at| held.renderer.location() == at || held.aliases.contains(at))
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        for id in &gone {
+            known.held.remove(id);
+        }
+        gone.into_iter().map(SinkChange::Removed).collect()
     }
 
     fn announce(&self, changes: &[SinkChange]) {

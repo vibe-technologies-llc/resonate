@@ -86,7 +86,7 @@ impl MobilePlayer {
             .network()
             .ok_or(Error::RenderersUnreachable)?;
         if !on {
-            network.rest();
+            network.stop_multicasting();
             return Ok(());
         }
         network
@@ -102,7 +102,16 @@ impl MobilePlayer {
             .network()
             .ok_or(Error::RenderersUnreachable)?;
         let located = Located::parse(&address).map_err(renderer_address)?;
-        network.locate(located).map_err(renderer_address)
+        let reaching = network.is_reaching();
+        let located = network.locate(located);
+        if !reaching {
+            network
+                .look_at_addresses(FirstSearch::Behind)
+                .map_err(|source| Error::RendererSearch {
+                    source: Box::new(source),
+                })?;
+        }
+        located.map_err(renderer_address)
     }
 
     pub fn remove_renderer_address(&self, address: String) -> Result<()> {
@@ -111,6 +120,9 @@ impl MobilePlayer {
             .network()
             .ok_or(Error::RenderersUnreachable)?;
         network.unlocate(&Located::parse(&address).map_err(renderer_address)?);
+        if network.located().is_empty() && !network.is_looking() {
+            network.rest();
+        }
         Ok(())
     }
 
@@ -161,6 +173,7 @@ mod tests {
     use std::{
         io::{Read, Write},
         net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream, UdpSocket},
+        sync::atomic::{AtomicUsize, Ordering},
         thread,
         time::{Duration, Instant},
     };
@@ -182,6 +195,7 @@ mod tests {
         search_at: SocketAddr,
         described_at: SocketAddr,
         actions: Arc<Mutex<Vec<String>>>,
+        searched: Arc<AtomicUsize>,
     }
 
     impl Fake {
@@ -192,7 +206,9 @@ mod tests {
             let described_at = http.local_addr().expect("the description address");
             let actions = Arc::new(Mutex::new(Vec::new()));
 
-            thread::spawn(move || answer_searches(&ssdp, described_at));
+            let searched = Arc::new(AtomicUsize::new(0));
+            let counted = Arc::clone(&searched);
+            thread::spawn(move || answer_searches(&ssdp, described_at, &counted));
             let heard = Arc::clone(&actions);
             thread::spawn(move || {
                 for stream in http.incoming().flatten() {
@@ -205,6 +221,7 @@ mod tests {
                 search_at,
                 described_at,
                 actions,
+                searched,
             }
         }
 
@@ -219,6 +236,10 @@ mod tests {
 
         fn description_address(&self) -> String {
             format!("http://{}/description.xml", self.described_at)
+        }
+
+        fn searches(&self) -> usize {
+            self.searched.load(Ordering::SeqCst)
         }
 
         fn heard(&self, action: &str) -> usize {
@@ -242,13 +263,14 @@ mod tests {
         }
     }
 
-    fn answer_searches(ssdp: &UdpSocket, described_at: SocketAddr) {
+    fn answer_searches(ssdp: &UdpSocket, described_at: SocketAddr, searched: &AtomicUsize) {
         let mut buffer = [0; 2048];
         while let Ok((read, from)) = ssdp.recv_from(&mut buffer) {
             let asked = String::from_utf8_lossy(&buffer[..read]).into_owned();
             if !asked.starts_with("M-SEARCH") {
                 continue;
             }
+            searched.fetch_add(1, Ordering::SeqCst);
             let answer = format!(
                 "HTTP/1.1 200 OK\r\nLOCATION: http://{described_at}/description.xml\r\nST: \
                  urn:schemas-upnp-org:device:MediaRenderer:1\r\nUSN: {UDN}\r\n\r\n"
@@ -418,29 +440,24 @@ mod tests {
     }
 
     #[test]
-    fn a_renderer_added_by_address_is_listed_where_the_search_hears_nothing_and_forgotten_with_it()
-    {
+    fn a_renderer_added_by_address_is_listed_without_a_search_and_forgotten_with_it() {
         let fake = Fake::start();
-        let silence = UdpSocket::bind("127.0.0.1:0").expect("a socket nobody answers on");
-        let harness = Harness::beside_renderers(Searching {
-            to: silence.local_addr().expect("its address"),
-            within: Duration::from_millis(100),
-            ..fake.searching()
-        });
+        let harness = Harness::beside_renderers(fake.searching());
 
         harness
             .player
             .add_renderer_address(fake.description_address())
-            .expect("a resting network holds the address");
-        let held = harness.player.renderer_addresses();
-        let unlisted = harness.player.renderers();
-        harness.player.look_for_renderers(true).expect("looking");
+            .expect("the address is reached");
         let renderer = found(&harness);
 
-        assert_eq!(held, [fake.description_address()]);
-        assert!(unlisted.is_empty());
+        assert_eq!(
+            harness.player.renderer_addresses(),
+            [fake.description_address()]
+        );
         assert_eq!(renderer.node, format!("upnp:{UDN}"));
         assert_eq!(renderer.host, "127.0.0.1");
+        assert!(!harness.player.looking_for_renderers());
+        assert_eq!(fake.searches(), 0);
 
         harness
             .player
@@ -455,6 +472,25 @@ mod tests {
                 .add_renderer_address("https://not-http/".to_owned()),
             Err(Error::RendererAddress { .. })
         ));
+    }
+
+    #[test]
+    fn turning_the_search_off_keeps_the_renderer_given_by_address() {
+        let fake = Fake::start();
+        let harness = Harness::beside_renderers(fake.searching());
+        harness
+            .player
+            .add_renderer_address(fake.description_address())
+            .expect("the address is reached");
+        harness.player.look_for_renderers(true).expect("looking");
+        found(&harness);
+        assert!(harness.player.looking_for_renderers());
+
+        harness.player.look_for_renderers(false).expect("stopped");
+
+        assert!(!harness.player.looking_for_renderers());
+        assert_eq!(harness.player.renderers().len(), 1);
+        assert_eq!(harness.player.renderer_addresses().len(), 1);
     }
 
     #[test]

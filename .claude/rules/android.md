@@ -387,7 +387,11 @@ those found, read every two seconds while the switch is on and the sheet open. E
 host) and, on one, *Play on this phone*; the row names the renderer before the device
 (`ZonePlan.heardOn`). The *Audio output* page takes its zone off a renderer before binding the device.
 Kotlin holds a `WifiManager.MulticastLock` (`resonate-renderers`, apart from sync's) exactly while the
-boundary searches, released at `stop`.
+boundary searches, released at `stop`. Below the switch, *Add a renderer by address*
+(`RendererAddressDialog`) takes the address of a renderer's description and lists those added, each
+with *Remove*; `NetworkRenderers.add` and `forget` keep the boundary's list in the `renderers`
+preferences as `renderer-addresses` (a string set) and `begin` adds it again, so a renderer
+given by address is listed and offered to a zone with the switch off.
 
 **The queue sheet** lists the devices that handed off (one row), History, the playing row and Up
 next; a handle drags a row (`Reorder`, its rows counted from Up next's first row as it stood when the

@@ -1054,9 +1054,10 @@ pub enum Sub {
         #[arg(
             long = "renderer-at",
             value_name = "URL",
-            help = "Reach the UPnP media renderer whose description is at this http address as \
-                    well, searching the network too: for a network that drops multicast; \
-                    repeatable, and the renderers-at key holds addresses for every run"
+            help = "Reach the UPnP media renderer whose description is at this http address, \
+                    sending no search to the network unless --renderers asks for one: for a \
+                    network that drops multicast; repeatable, and the renderers-at key holds \
+                    addresses for every run"
         )]
         renderers_at: Vec<String>,
     },

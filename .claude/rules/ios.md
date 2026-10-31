@@ -466,7 +466,10 @@ sync seals its records and talks QUIC (TLS) of its own.
   section is a *Find renderers* toggle (`Library.lookForRenderers`, kept as `renderers` in the
   `library-features` defaults, off by default and applied when the player opens; a failed search
   there never fails the opening), counting those found, read every two seconds while it is on and
-  the sheet open (`readRenderers`); each zone's menu has *Play on a renderer* (`RendererPicker`, a
+  the sheet open (`readRenderers`), and an *Add a renderer by address* button (`RendererAddressSheet`: a
+  text field, the list added with a swipe to remove; `Library.addRendererAddress` and
+  `forgetRendererAddress` keep the list as `renderer-addresses` in the same defaults and add it again
+  when the player opens, a free signing's way to a renderer, and reading continues while any is held); each zone's menu has *Play on a renderer* (`RendererPicker`, a
   list of the renderers found with a check on the one the zone plays to) and, on one, *Play on this
   iPhone* (`playZone`), and the row names the renderer before what it plays (`ZonePlan.line`'s
   `on:`). `NSLocalNetworkUsageDescription` names the renderers beside sync. **An iPhone signed for

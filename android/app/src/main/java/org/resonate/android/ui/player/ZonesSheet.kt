@@ -40,6 +40,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
@@ -63,10 +64,12 @@ fun ZonesSheet(onDismiss: () -> Unit) {
     var choosing by remember { mutableStateOf<PlayerZone?>(null) }
     val looking by features.renderers.looking.collectAsStateWithLifecycle()
     val renderers by features.renderers.listed.collectAsStateWithLifecycle()
+    val addresses by features.renderers.addresses.collectAsStateWithLifecycle()
+    var addressing by remember { mutableStateOf(false) }
     val shown = zones.firstOrNull { it.shown }?.id
     LaunchedEffect(Unit) { features.refreshOutputs() }
-    LaunchedEffect(looking) {
-        while (looking) {
+    LaunchedEffect(looking, addresses.isNotEmpty()) {
+        while (looking || addresses.isNotEmpty()) {
             features.renderers.refresh()
             delay(RENDERERS_READ_EVERY_MS)
         }
@@ -137,13 +140,34 @@ fun ZonesSheet(onDismiss: () -> Unit) {
             ) {
                 Text("Find renderers")
             }
+            ListItem(
+                onClick = { addressing = true },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                leadingContent = { Icon(Icons.Rounded.Add, contentDescription = null) },
+                supportingContent = {
+                    Text(
+                        if (addresses.isEmpty()) "For a network that hides its renderers from a search"
+                        else "${addresses.size} added"
+                    )
+                },
+            ) {
+                Text("Add a renderer by address")
+            }
         }
+    }
+    if (addressing) {
+        RendererAddressDialog(
+            addresses = addresses,
+            add = { features.renderers.add(it) },
+            forget = { features.renderers.forget(it) },
+            dismiss = { addressing = false },
+        )
     }
     choosing?.let { zone ->
         RendererDialog(
             zone = zone,
             renderers = renderers,
-            looking = looking,
+            reaching = looking || addresses.isNotEmpty(),
             choose = { features.zones.playOn(zone.id, it.node) },
             dismiss = { choosing = null },
         )
@@ -272,7 +296,7 @@ private fun RenameZoneDialog(zone: PlayerZone, save: (String) -> Unit, dismiss: 
 private fun RendererDialog(
     zone: PlayerZone,
     renderers: List<NetworkRenderer>,
-    looking: Boolean,
+    reaching: Boolean,
     choose: (NetworkRenderer) -> Unit,
     dismiss: () -> Unit,
 ) {
@@ -281,8 +305,9 @@ private fun RendererDialog(
         title = { Text("Play ${zone.name} on") },
         text = {
             when {
-                !looking -> Text("Turn on Find renderers to look for them on this network")
-                renderers.isEmpty() -> Text("No renderer has answered on this network yet")
+                !reaching && renderers.isEmpty() ->
+                    Text("Turn on Find renderers, or add one by its address, to reach renderers")
+                renderers.isEmpty() -> Text("No renderer has answered yet")
                 else ->
                     Column(Modifier.selectableGroup()) {
                         renderers.forEach { renderer ->
@@ -308,5 +333,56 @@ private fun RendererDialog(
     )
 }
 
+@Composable
+private fun RendererAddressDialog(
+    addresses: List<String>,
+    add: (String) -> Unit,
+    forget: (String) -> Unit,
+    dismiss: () -> Unit,
+) {
+    var typed by rememberSaveable { mutableStateOf("") }
+    val focus = remember { FocusRequester() }
+    val added = {
+        val chosen = typed.trim()
+        if (chosen.isNotEmpty()) {
+            add(chosen)
+            typed = ""
+        }
+    }
+    LaunchedEffect(Unit) { focus.requestFocus() }
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text("Add a renderer by address") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                OutlinedTextField(
+                    value = typed,
+                    onValueChange = { typed = it.take(RENDERER_ADDRESS_AT_MOST) },
+                    label = { Text("Description address") },
+                    placeholder = { Text("http://192.168.1.20:49152/description.xml") },
+                    singleLine = true,
+                    keyboardOptions =
+                        KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { added() }),
+                    modifier = Modifier.focusRequester(focus),
+                )
+                addresses.forEach { address ->
+                    ListItem(
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        trailingContent = {
+                            TextButton(onClick = { forget(address) }) { Text("Remove") }
+                        },
+                    ) {
+                        Text(address)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = added, enabled = typed.isNotBlank()) { Text("Add") } },
+        dismissButton = { TextButton(onClick = dismiss) { Text("Close") } },
+    )
+}
+
+private const val RENDERER_ADDRESS_AT_MOST = 512
 private const val ZONE_NAME_AT_MOST = 64
 private const val RENDERERS_READ_EVERY_MS = 2_000L
