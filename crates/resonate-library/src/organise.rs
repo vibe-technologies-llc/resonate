@@ -51,6 +51,39 @@ const REFUSED_BY_A_PORTABLE_VOLUME: [char; 8] = ['\\', ':', '*', '?', '"', '<', 
 const PORTABLE_VOLUMES: [&str; 10] = [
     "vfat", "msdos", "exfat", "ntfs", "ntfs3", "fuseblk", "fat", "cifs", "smb3", "smbfs",
 ];
+const RESERVED_DEVICE_NAMES: [&str; 30] = [
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    "CONIN$",
+    "CONOUT$",
+    "COM1",
+    "COM2",
+    "COM3",
+    "COM4",
+    "COM5",
+    "COM6",
+    "COM7",
+    "COM8",
+    "COM9",
+    "COM\u{b9}",
+    "COM\u{b2}",
+    "COM\u{b3}",
+    "LPT1",
+    "LPT2",
+    "LPT3",
+    "LPT4",
+    "LPT5",
+    "LPT6",
+    "LPT7",
+    "LPT8",
+    "LPT9",
+    "LPT\u{b9}",
+    "LPT\u{b2}",
+    "LPT\u{b3}",
+];
+const DEVICE_NAME_STANDS_APART: char = '_';
 const EXTENSION_SEPARATOR: char = '.';
 const FIRST_PRINTABLE: char = ' ';
 const DELETED_CHARACTER: char = '\u{7f}';
@@ -240,7 +273,7 @@ impl Layout {
                 component.push(EXTENSION_SEPARATOR);
                 component.push_str(extension);
             }
-            path.push(component);
+            path.push(naming.clear_of_devices(component));
         }
 
         Some(path)
@@ -407,6 +440,12 @@ pub enum Naming {
 }
 
 impl Naming {
+    #[cfg(windows)]
+    pub(crate) fn of(_: &Path) -> Self {
+        Self::Portable
+    }
+
+    #[cfg(not(windows))]
     pub(crate) fn of(root: &Path) -> Self {
         match fs::read_to_string(volumes::MOUNT_TABLE) {
             Ok(table) => Self::in_table(&table, root),
@@ -431,6 +470,15 @@ impl Naming {
     fn refuses(self, character: char) -> bool {
         self == Self::Portable && REFUSED_BY_A_PORTABLE_VOLUME.contains(&character)
     }
+
+    fn clear_of_devices(self, mut component: String) -> String {
+        if self == Self::Portable
+            && let Some(at) = device_name_ends_at(&component)
+        {
+            component.insert(at, DEVICE_NAME_STANDS_APART);
+        }
+        component
+    }
 }
 
 fn as_one_component(text: &str, budget: usize, naming: Naming) -> String {
@@ -446,6 +494,18 @@ fn as_one_component(text: &str, budget: usize, naming: Naming) -> String {
 
     let trimmed = without_padding(&written);
     without_padding(largest_prefix_within(trimmed, budget)).to_owned()
+}
+
+fn device_name_ends_at(component: &str) -> Option<usize> {
+    let stem = component
+        .split(EXTENSION_SEPARATOR)
+        .next()
+        .unwrap_or_default()
+        .trim_end_matches(' ');
+    RESERVED_DEVICE_NAMES
+        .iter()
+        .any(|device| device.eq_ignore_ascii_case(stem))
+        .then_some(stem.len())
 }
 
 fn without_padding(text: &str) -> &str {
@@ -3209,6 +3269,39 @@ mod tests {
         assert_eq!(
             as_one_component(title, COMPONENT_BYTES, Naming::Anything),
             title
+        );
+    }
+
+    #[test]
+    fn a_portable_name_never_is_one_of_the_devices_a_windows_volume_reserves() {
+        let layout = read("{artist}/{title}");
+        let by = |artist: &'static str, title: &'static str| Named {
+            album_artist: None,
+            artist: Some(artist),
+            album: None,
+            title,
+            year: None,
+            disc: None,
+            discs: 1,
+            track: None,
+            extension: Some("flac"),
+        };
+
+        assert_eq!(
+            layout.render(&by("Con", "Nul"), Naming::Portable),
+            Some(PathBuf::from("Con_/Nul_.flac"))
+        );
+        assert_eq!(
+            layout.render(&by("Aux ", "com1"), Naming::Portable),
+            Some(PathBuf::from("Aux_/com1_.flac"))
+        );
+        assert_eq!(
+            layout.render(&by("Console", "Nul Nul"), Naming::Portable),
+            Some(PathBuf::from("Console/Nul Nul.flac"))
+        );
+        assert_eq!(
+            layout.render(&by("Con", "Nul"), Naming::Anything),
+            Some(PathBuf::from("Con/Nul.flac"))
         );
     }
 

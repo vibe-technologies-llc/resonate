@@ -1351,8 +1351,11 @@ guard and re-keys a sleeve-keyed album after moves land.
   else a cut name loses its extension and the next scan prunes the file with its plays. A middle
   segment resolving to nothing is skipped; the *last*: `Refusal::Unidentified`. **Volume limits are
   per root**: `Naming::of` finds the root's mount in `/proc/self/mounts`; `vfat`, `msdos`, `exfat`,
-  `ntfs`, `ntfs3`, `fuseblk`, `fat`, `cifs`, `smb3`, `smbfs` give `Naming::Portable`, also writing
-  `\ : * ? " < > |` as `-`. **Derived names obey the 255 bytes**: `noted_staging` cuts the file name
+  `ntfs`, `ntfs3`, `fuseblk`, `fat`, `cifs`, `smb3`, `smbfs` give `Naming::Portable` (and every root on
+  Windows, which has no mount table), also writing `\ : * ? " < > |` as `-` and a component whose stem
+  (up to the first dot, less trailing spaces) is a reserved device (`CON`, `PRN`, `AUX`, `NUL`, `COM1`-`9`,
+  `LPT1`-`9`, the superscript forms, `CONIN$`, `CONOUT$`, any case) with a `_` after the stem, the
+  extension included (`Con_/Nul_.flac`: `a_portable_name_never_is_one_of_the_devices_a_windows_volume_reserves`). **Derived names obey the 255 bytes**: `noted_staging` cuts the file name
   to fit `.resonate-staging`, `a_place_to_park` the stem to fit `.resonate-parked-<pid>`;
   `in_the_way` treats a destination file name over a component as untakeable.
 - **`{albumartist}` falls back to nothing, never `{artist}`** (an album whose tracks disagree has

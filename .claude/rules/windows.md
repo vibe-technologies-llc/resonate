@@ -87,6 +87,10 @@ settle. `unsafe_code = "forbid"` holds: every Win32 and COM call goes through a 
 - **A held file's lock is mandatory on Windows** (`LockFileEx`): `writer_of` still asks the lock
   first and a dead writer's is released by the system; with no `/proc` the pid stamp reads as
   living where the lock cannot be asked.
+- **Every root is `Naming::Portable` on Windows** (`Naming::of` reads no mount table there): the
+  organiser writes the characters NTFS refuses as `-` and keeps a reserved device name apart
+  (`library.md`). Trailing dots and spaces are trimmed from every component on every platform, and a
+  case-insensitive collision is found by the probe `Claims` makes with `file_facts`.
 - **Deleting goes to the recycle bin** (`trashing::RecycleBin` over `trash::delete`); the hand-written
   freedesktop trash and the portal are Unix. A catalog with no trasher keeps the file
   (`Removal::Kept`), never removes it for good.

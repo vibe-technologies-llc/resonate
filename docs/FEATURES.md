@@ -59,10 +59,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   runs at the thread priority `thread-priority` sets rather than an MMCSS class
 - [M · 0.4.0] Windows has no toast notifications with transport actions, no idle inhibit
   (`SetThreadExecutionState`) while playing and no metered-network detector (`NetworkCostType`)
-- [M · 0.4.0] Windows file names are not weighed by the organiser and the naming cut: reserved names
-  (`CON`, `NUL`), trailing dots and spaces, case-insensitive collisions and `MAX_PATH` are not
-  checked, NTFS alternate streams and ACLs are not carried by a tag write, and a folder mounted into
-  another drive's tree is not noticed as a volume
+- [M · 0.4.0] A Windows path past `MAX_PATH` (260) is not weighed by the organiser, NTFS alternate
+  streams and ACLs are not carried by a tag write, and a folder mounted into another drive's tree is
+  not noticed as a volume
 - [S · 0.4.0] A `Held` file's lock is mandatory on Windows (`LockFileEx`): every reader of a held
   journal, staging file or whole copy needs auditing for a read that would meet `ERROR_LOCK_VIOLATION`
 - [M · 0.4.0] The integration suites of the library, the codec's encoded files, the vault and the
