@@ -32,7 +32,7 @@ const GENERIC_READ: u32 = 0x8000_0000;
 const GENERIC_WRITE: u32 = 0x4000_0000;
 #[cfg(windows)]
 const DELETE_ON_CLOSE: u32 = 0x0400_0000;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const LEFT_FREE_ON_DISC: u64 = 256 << 20;
 
 static NAMED: AtomicU64 = AtomicU64::new(0);
@@ -226,7 +226,8 @@ impl Spool {
 
 #[cfg(windows)]
 fn room_on_disc(_: &File) -> Option<u64> {
-    None
+    let available = fs4::available_space(env::temp_dir()).ok()?;
+    Some(available.saturating_sub(LEFT_FREE_ON_DISC))
 }
 
 #[cfg(unix)]

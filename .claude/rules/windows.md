@@ -94,7 +94,8 @@ settle. `unsafe_code = "forbid"` holds: every Win32 and COM call goes through a 
   (`config::known_folder`), unless an `XDG_*` variable is set; `~` is `%USERPROFILE%`. A config is
   not made owner-only (the profile folder is private by inheritance).
 - **The spool is the system temporary folder** and its anonymous file is
-  `FILE_FLAG_DELETE_ON_CLOSE`; free space on the volume is not read.
+  `FILE_FLAG_DELETE_ON_CLOSE`; free space on the temporary folder's volume is read through `fs4` and the
+  ceiling leaves `LEFT_FREE_ON_DISC` of it, as `fstatvfs` does on Unix.
 
 ## The terminal and interrupts
 

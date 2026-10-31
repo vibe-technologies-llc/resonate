@@ -65,8 +65,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   another drive's tree is not noticed as a volume
 - [S · 0.4.0] A `Held` file's lock is mandatory on Windows (`LockFileEx`): every reader of a held
   journal, staging file or whole copy needs auditing for a read that would meet `ERROR_LOCK_VIOLATION`
-- [S · 0.4.0] The spool reads no free space on Windows (`room_on_disc` is unknown), so a stream too
-  long for the disc fills it before being refused
 - [M · 0.4.0] The integration suites of the library, the codec's encoded files, the vault and the
   binary's terminal and signal tests are Unix-only; each needs a Windows counterpart (symlinks,
   permission bits, pseudo-terminals)
