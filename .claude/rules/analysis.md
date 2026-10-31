@@ -292,7 +292,7 @@ could change (stored studies and kept analyses are weighed against it).
     lattice, each band weighed by how coherent its phase stays under the 16-bit rounding of its
     lines (`Energies::of`): the rounding moves the band's log2 norm by about `1 / (ln 2 · √lines
     · 2^over)` octaves for a norm `over` octaves above the rounding's, `σ` turns at
-    `TURNS_AN_ENERGY_STEP` times `ROUNDING_NOISE_TURNS` (0.5), and the weight is the mean cosine
+    `TURNS_AN_ENERGY_STEP` times `ROUNDING_NOISE_TURNS` (0.25), and the weight is the mean cosine
     of that Gaussian phase, `exp(-2π²σ²)`, so a wide band reads from a few octaves over the
     rounding where a one-line band wants more (the smoothstep 6 to 10 octaves over it read none of
     a quiet master). Eight kinds (the frame before long or short, this one long
@@ -422,8 +422,11 @@ could change (stored studies and kept analyses are weighed against it).
   3.9 at most; the other 12 stayed under
   (at most 11.3, one master 11.3 over 16 800 bands). Of the weights of 0.5, 1, 2 and 4 turns
   tried (smaller finds more, though one master read 2.2 at 0.5 and 23 at 1), 0.5 found the
-  most; 0.25 and below are untried. The other 397 tracks' sources were not weighed with the new weights, and the
-  sources read a significance of 4.1 at most before (3.2 plain). The
+  most of those; 0.25 and 0.125 then found one more master of the 467 library tracks cut, encoded
+  and decoded the same way (a library grown from 426: 451 found at 0.5, 452 at 0.25 and at 0.125,
+  15 still missed, none found at 0.5 lost), and none of the 467 sources (the same 40 s, not
+  encoded) was called Opus at 0.25, so 0.25 stands. The sources read a significance of 4.1 at most
+  before (3.2 plain). The
   sources read 0.032 at most on 8 800 bands (a significance of 3). An earlier direct search of
   the energies against a lattice of their own found nothing, as the prediction carries every
   frame's energy off any fixed grid. The whole library (462 tracks, their first 45 s) calls the

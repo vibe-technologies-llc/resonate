@@ -80,10 +80,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   lyric text (LRCLIB's text search finds none)
 
 ## Identification
-- [S · 0.4.0] libopus at 64 kbps is still missed on 12 of 426 library tracks (quiet masters, a
-  significance of 1.6 to 11.3 against 12) with the bands weighed by their coherence under the
-  rounding; a smaller `ROUNDING_NOISE_TURNS` than 0.5 is untried, and the sources of 397 of the
-  426 tracks are not yet weighed with those weights (the 29 weighed read 3.9 at most)
+- [S · 0.4.0] libopus at 64 kbps is still missed on 15 of 467 library tracks (quiet masters) with
+  the bands weighed by their coherence under the rounding at `ROUNDING_NOISE_TURNS` 0.25; 0.125
+  found no more than 0.25, so a smaller weight is exhausted and what is left needs a different
+  figure than the band energies' coherence (`analysis.md`)
 - [M · blocked: encoders] The quantiser steps are weighed only on the encoders this machine has
   (ffmpeg's AAC and MP2, faac, LAME, libvorbis, ffmpeg's Vorbis, twolame and libopus; fdk AAC on an
   earlier one): no Apple or FhG AAC, no FhG or other MP3 encoder and no aoTuV Vorbis; fdk AAC at 320
