@@ -1040,7 +1040,7 @@ pub struct ServedArgs {
 #[derive(Debug, Subcommand)]
 pub enum Sub {
     #[command(
-        about = "Print the sinks PipeWire advertises, and the rates the graph will switch to"
+        about = "Print the sinks the sound system advertises, and the rates it will switch to"
     )]
     Sinks {
         #[arg(

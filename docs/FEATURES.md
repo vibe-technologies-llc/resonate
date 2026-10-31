@@ -57,7 +57,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M · 0.4.0] A WASAPI stream cannot be reshaped (a rate, word or priority change closes and opens
   it), has no endpoint volume or mute (`Unsupported`), learns of devices by a two-second poll and
   runs at the thread priority `thread-priority` sets rather than an MMCSS class
-- [S · 0.4.0] The output pane, `sinks --help` and the settings text still name PipeWire on Windows
 - [M · 0.4.0] Windows has no toast notifications with transport actions, no idle inhibit
   (`SetThreadExecutionState`) while playing and no metered-network detector (`NetworkCostType`)
 - [M · 0.4.0] Windows file names are not weighed by the organiser and the naming cut: reserved names

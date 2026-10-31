@@ -9,6 +9,7 @@ paths:
   - "crates/resonate/src/windows_launcher.rs"
   - "crates/resonate-listen/src/unavailable.rs"
   - "crates/resonate-discord/src/pipe.rs"
+  - "crates/resonate-ui/src/system.rs"
   - "packaging/windows/**"
 ---
 
@@ -105,6 +106,14 @@ settle. `unsafe_code = "forbid"` holds: every Win32 and COM call goes through a 
   readers parse (arrows as `ESC [ A`), so `Keyed` and `Struck` are one state machine on both. Raw
   mode swallows Ctrl-C as a key, which `interrupted()` turns back into the interrupt. A piped stdin
   is read as bytes. `Readout` draws only where `crossterm::ansi_support::supports_ansi()` holds.
+
+## The settings text
+
+The window names its sound system through `system::sound_system!` (`PipeWire`, `Windows`), which
+`concat!` takes into the output pane's hints and notes, so a Windows build never says PipeWire. The
+*Graph rate* and *Bluetooth* groups are PipeWire's own (a graph to switch, a node to keep awake) and
+`Group::is_offered` leaves them out of the pane and the search on Windows. `sinks --help` and the
+man page say "the sound system".
 
 ## Discord
 

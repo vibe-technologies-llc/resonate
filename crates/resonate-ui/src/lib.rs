@@ -30,6 +30,7 @@ mod serving;
 mod settings;
 mod spectrum;
 mod stereo;
+mod system;
 mod theme;
 mod toast;
 mod views;

@@ -11,7 +11,9 @@ use crate::{
     Pane, ResonateApp, Setting,
     icons::{self, Icon},
     listening::{FOLLOWED_EVERY, Following, Found, Stage, TRIES_ON_A_MISS},
-    motion, theme,
+    motion,
+    system::sound_system,
+    theme,
     views::{
         hint::Names,
         kit::{self, Tone},
@@ -296,7 +298,11 @@ impl RootView {
                 self.listen_again("Nothing reached the recording. Is anything playing?", cx)
             }
             Stage::CaptureFailed => self.listen_again(
-                "The recording could not be made. Is the source there for PipeWire to capture?",
+                concat!(
+                    "The recording could not be made. Is the source there for ",
+                    sound_system!(),
+                    " to capture?"
+                ),
                 cx,
             ),
             Stage::Unreached => {

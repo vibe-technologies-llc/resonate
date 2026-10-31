@@ -7,7 +7,9 @@ use resonate_engine::{
 };
 
 use crate::{
-    ResonateApp, Setting, format, theme,
+    ResonateApp, Setting, format,
+    system::sound_system,
+    theme,
     views::{
         focus::by_the_pointer,
         hint::Names,
@@ -20,11 +22,14 @@ use crate::{
 
 const SECONDS_A_MINUTE: u64 = 60;
 
-const NO_SINKS: &str = "No sinks are present in the graph.";
+const NO_SINKS: &str = concat!("No sinks are present in ", sound_system!(), ".");
 
-const BLUETOOTH_NOTE: &str = "Experimental, and only for a device PipeWire names as Bluetooth. \
-                              It spends the headphones' battery to keep their radio up through \
-                              a pause.";
+const BLUETOOTH_NOTE: &str = concat!(
+    "Experimental, and only for a device ",
+    sound_system!(),
+    " names as Bluetooth. It spends the headphones' battery to keep their radio up through a \
+     pause."
+);
 
 const DEVICE_NOTE: &str = "A device chosen here is played through whatever the desktop routes \
                            other sound to; following the system default moves with the \
@@ -55,9 +60,9 @@ const DOP_WARNING: &str = "A DAC that does not decode DoP plays it as full-scale
 
 const UNADVERTISED: &str = "Advertises no format of its own";
 
-const ROUTED: &str = "Whatever PipeWire routes to at the time";
+const ROUTED: &str = concat!("Whatever ", sound_system!(), " routes to at the time");
 
-const ROUTED_NOW: &str = "Whatever PipeWire routes to, which is";
+const ROUTED_NOW: &str = concat!("Whatever ", sound_system!(), " routes to, which is");
 
 const UNPLUGGED: &str = "UNPLUGGED";
 
@@ -193,8 +198,12 @@ impl Choice for SourceRate {
                  44.1 kHz album reaches a DAC untouched rather than resampled to 48 kHz."
             }
             Self::FollowTheGraph => {
-                "The stream opens at the rate PipeWire is already running at, and a file at \
-                 any other rate is resampled here, with the filter chosen under Processing."
+                concat!(
+                    "The stream opens at the rate ",
+                    sound_system!(),
+                    " is already running at, and a file at any other rate is resampled here, \
+                     with the filter chosen under Processing."
+                )
             }
         })
     }

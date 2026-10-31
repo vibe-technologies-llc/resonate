@@ -1,7 +1,7 @@
 use std::cmp::Reverse;
 
 pub(crate) use crate::SettingsCategory as Category;
-use crate::{SettingKey, icons::Icon};
+use crate::{SettingKey, icons::Icon, system::sound_system};
 
 impl Category {
     pub(crate) const fn label(self) -> &'static str {
@@ -76,7 +76,7 @@ impl Category {
     pub(crate) fn groups(self) -> impl Iterator<Item = Group> {
         Group::ALL
             .into_iter()
-            .filter(move |group| group.category() == self)
+            .filter(move |group| group.category() == self && group.is_offered())
     }
 }
 
@@ -221,6 +221,10 @@ impl Group {
         Self::Places,
         Self::Everything,
     ];
+
+    pub(crate) const fn is_offered(self) -> bool {
+        !cfg!(windows) || !matches!(self, Self::GraphRate | Self::Bluetooth)
+    }
 
     pub(crate) const fn category(self) -> Category {
         match self {
@@ -443,7 +447,7 @@ impl Group {
                  vouch decode lossless wave uncompressed"
             }
             Self::Device => {
-                "sink output card dac headphones speakers pipewire profile pro audio upnp dlna \
+                "sink output card dac headphones speakers pipewire wasapi exclusive profile pro audio upnp dlna \
                  renderer network streamer chromecast google cast receiver"
             }
             Self::DeviceVolume => {
@@ -827,6 +831,7 @@ impl Narrowing {
     pub(crate) fn anywhere(&self) -> impl Iterator<Item = Group> + '_ {
         let found: Vec<(Group, AnsweredBy)> = Group::ALL
             .into_iter()
+            .filter(|group| group.is_offered())
             .filter_map(|group| self.reading_of(group).map(|reading| (group, reading)))
             .collect();
         let best_in = |category: Category| {
@@ -918,10 +923,14 @@ pub(crate) const SHAPING_HINT: &str = "Moves the dither noise above towards wher
      notch in the wrong place, so the stream falls back to flat dither rather than shaping it \
      wrongly. `resonate explain` prints the curve that survives beside the target depth.";
 
-pub(crate) const SAMPLE_RATE_HINT: &str = "Which rate the device is opened at. Match the file asks for the file's own rate, so a 96 kHz \
+pub(crate) const SAMPLE_RATE_HINT: &str = concat!(
+    "Which rate the device is opened at. Match the file asks for the file's own rate, so a 96 kHz \
      recording reaches a device that advertises 96 kHz untouched and nothing resamples. Follow the \
-     graph stays on whatever rate PipeWire is already running and resamples into it, which never \
-     interrupts another client but converts every stream whose rate differs.";
+     graph stays on whatever rate ",
+    sound_system!(),
+    " is already running and resamples into it, which never interrupts another client but \
+     converts every stream whose rate differs."
+);
 
 pub(crate) const GRAPH_RATE_HINT: &str = "Whether the stream asks PipeWire to run the whole graph at its rate. Asking is what carries a \
      rate change through to the hardware; leaving it to the daemon lets the graph stay where it is \
@@ -934,7 +943,7 @@ pub(crate) const BUFFER_HINT: &str = "How much decoded audio the player holds ah
                                       sooner and lets a volume or equaliser change be heard \
                                       sooner. A pause and a seek act at once at any depth. It is \
                                       not the device's latency: how much the graph asks for each \
-                                      cycle is PipeWire's to choose, shared with every other \
+                                      cycle is the sound system's to choose, shared with every other \
                                       application on the device. Changing it reopens the stream.";
 
 pub(crate) const BLUETOOTH_HINT: &str = "Wireless headphones power their radio down when nothing \
@@ -1311,7 +1320,10 @@ mod tests {
                 .into_iter()
                 .map(|category| category.groups().count())
                 .sum::<usize>(),
-            Group::ALL.len()
+            Group::ALL
+                .into_iter()
+                .filter(|group| group.is_offered())
+                .count()
         );
     }
 
@@ -1378,7 +1390,13 @@ mod tests {
         for group in Group::ALL {
             assert!(narrowing.allows(group));
         }
-        assert_eq!(narrowing.anywhere().count(), Group::ALL.len());
+        assert_eq!(
+            narrowing.anywhere().count(),
+            Group::ALL
+                .into_iter()
+                .filter(|group| group.is_offered())
+                .count()
+        );
     }
 
     #[test]
