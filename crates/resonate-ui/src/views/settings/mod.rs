@@ -834,7 +834,7 @@ impl RootView {
         control
             .track_focus(&self.controls.at(&named, cx))
             .key_context(CONTROL_CONTEXT)
-            .focus(focus::lit)
+            .focus_visible(focus::lit)
             .on_action(
                 cx.listener(move |this, _: &crate::app::PressControl, window, cx| {
                     press(this, window, cx);
@@ -992,7 +992,7 @@ impl RootView {
         control
             .track_focus(handle)
             .key_context(CONTROL_CONTEXT)
-            .focus(focus::lit)
+            .focus_visible(focus::lit)
             .on_action(
                 cx.listener(move |this, _: &crate::app::PressControl, window, cx| {
                     press(this, window, cx);
@@ -1048,7 +1048,7 @@ impl RootView {
         control
             .track_focus(&self.controls.at(named, cx))
             .key_context(CONTROL_CONTEXT)
-            .focus(focus::picked)
+            .focus_visible(focus::picked)
             .on_action(
                 cx.listener(move |this, _: &crate::app::PressControl, window, cx| {
                     press(this, window, cx);

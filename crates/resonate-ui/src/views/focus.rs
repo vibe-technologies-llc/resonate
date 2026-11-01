@@ -19,7 +19,7 @@ pub(crate) fn ring_of(colour: u32) -> Vec<BoxShadow> {
         offset: point(px(0.0), px(0.0)),
         blur_radius: px(0.0),
         spread_radius: px(theme::FOCUS_RING_WIDTH),
-        inset: true,
+        inset: false,
     }]
 }
 

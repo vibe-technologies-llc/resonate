@@ -732,7 +732,7 @@ impl RootView {
 
         row.track_focus(&self.controls.at(reached, cx))
             .key_context(crate::app::CONTROL_CONTEXT)
-            .focus(focus::lit)
+            .focus_visible(focus::lit)
             .on_action(
                 cx.listener(move |this, _: &crate::app::PressControl, _, cx| {
                     this.route_to(Some(name.clone()), cx);

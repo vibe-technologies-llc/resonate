@@ -449,7 +449,7 @@ impl RootView {
         control
             .track_focus(&self.controls.at(named, cx))
             .key_context(crate::app::CONTROL_CONTEXT)
-            .focus(focus::picked)
+            .focus_visible(focus::picked)
             .on_action(
                 cx.listener(move |this, _: &crate::app::PressControl, _, cx| {
                     this.ask_to_forget_the_folder(root.clone(), cx);

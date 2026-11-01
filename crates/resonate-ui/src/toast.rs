@@ -279,7 +279,7 @@ pub(crate) fn drawn(
                 .when_some(toast.focus.as_ref(), |pill, handle| {
                     pill.track_focus(handle)
                         .key_context(CONTROL_CONTEXT)
-                        .focus(focus::lit)
+                        .focus_visible(focus::lit)
                         .on_action(cx.listener(|_, _: &PressControl, _, cx| dismiss(cx)))
                 })
                 .on_hover(|hovering, _, cx| {

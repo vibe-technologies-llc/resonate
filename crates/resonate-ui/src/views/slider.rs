@@ -266,7 +266,7 @@ impl RootView {
                     })
             })
             .rounded_md()
-            .focus(focus::lit)
+            .focus_visible(focus::lit)
             .group(RAIL_GROUP)
             .flex()
             .when_else(

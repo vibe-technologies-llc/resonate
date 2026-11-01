@@ -225,7 +225,7 @@ pub(crate) fn button_when(
 ) -> Stateful<Div> {
     let (fill, ink, edge) = match tone {
         Tone::Ghost => (theme::UNMARKED, theme::muted(), theme::UNMARKED),
-        Tone::Outlined => (theme::raised(), theme::text(), theme::outline()),
+        Tone::Outlined => (theme::raised(), theme::text(), theme::border()),
         Tone::Primary => (theme::accent(), theme::accent_ink(), theme::UNMARKED),
         Tone::Destructive => (theme::raised(), theme::failure(), theme::failure()),
     };
