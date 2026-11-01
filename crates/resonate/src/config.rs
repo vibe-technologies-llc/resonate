@@ -701,11 +701,6 @@ impl Config {
         self.mouse_navigation.unwrap_or(true)
     }
 
-    #[cfg(test)]
-    pub fn reduces_motion(&self) -> bool {
-        self.reduces_motion_where_the_desktop_asks(false)
-    }
-
     #[cfg(any(feature = "ui", test))]
     pub fn reduces_motion_where_the_desktop_asks(&self, desktop_reduces: bool) -> bool {
         self.reduced_motion.unwrap_or(desktop_reduces)
@@ -2704,11 +2699,15 @@ mod tests {
     #[cfg(feature = "ui")]
     #[test]
     fn motion_is_kept_until_the_file_asks_for_it_reduced() {
-        assert!(!read("").expect("empty is valid").reduces_motion());
+        assert!(
+            !read("")
+                .expect("empty is valid")
+                .reduces_motion_where_the_desktop_asks(false)
+        );
         assert!(
             read("reduced-motion = true")
                 .expect("a boolean is valid")
-                .reduces_motion()
+                .reduces_motion_where_the_desktop_asks(false)
         );
     }
 
