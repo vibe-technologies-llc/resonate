@@ -148,3 +148,16 @@ public struct HeldHeight: Equatable, Sendable {
         }
     }
 }
+
+public enum SliderDrag: Equatable, Sendable {
+    case undecided
+    case sliding
+    case declined
+
+    public static let decidedPast = 8.0
+
+    public func after(across: Double, down: Double) -> SliderDrag {
+        guard self == .undecided, max(abs(across), abs(down)) >= Self.decidedPast else { return self }
+        return abs(down) > abs(across) ? .declined : .sliding
+    }
+}

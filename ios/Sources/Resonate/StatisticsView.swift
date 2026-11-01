@@ -101,7 +101,7 @@ struct StatisticsView: View {
             HeadedSection("Most listened albums") {
                 ForEach(shown(albums, .albums), id: \.key) { album in
                     NavigationLink(value: Destination.album(album.key)) {
-                        CollectionRow(track: cover(of: album, in: \.albums), title: album.name, detail: album.heard)
+                        CollectionRow(track: cover(of: album, in: \.albums), title: album.name, detail: album.heard, measure: .song)
                     }
                     .collectionActions(.album(album.key), artist: album.by)
                 }
@@ -116,7 +116,13 @@ struct StatisticsView: View {
             HeadedSection("Most listened artists") {
                 ForEach(shown(artists, .artists), id: \.key) { artist in
                     NavigationLink(value: Destination.artist(artist.name)) {
-                        CollectionRow(track: cover(of: artist, in: \.artists), title: artist.name, detail: artist.heard, circle: true)
+                        CollectionRow(
+                            track: cover(of: artist, in: \.artists),
+                            title: artist.name,
+                            detail: artist.heard,
+                            circle: true,
+                            measure: .song
+                        )
                     }
                     .collectionActions(.artist(artist.name))
                 }
@@ -154,6 +160,8 @@ enum StatisticsRank: Hashable {
 struct StatTile: View {
     private static let corner: CGFloat = 16
 
+    @ScaledMetric(relativeTo: .caption) private var symbolWidth: CGFloat = 18
+
     let title: String
     let value: String
     let detail: String?
@@ -161,10 +169,14 @@ struct StatTile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Label(title, systemImage: symbol)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-                .labelStyle(.titleAndIcon)
+            Label {
+                Text(title)
+            } icon: {
+                Image(systemName: symbol).frame(width: symbolWidth).accessibilityHidden(true)
+            }
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .labelStyle(.titleAndIcon)
             Text(value)
                 .font(.title2.weight(.semibold))
                 .minimumScaleFactor(0.6)

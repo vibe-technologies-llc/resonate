@@ -443,15 +443,14 @@ struct PlayerTitles: View {
                 .contentTransition(.opacity)
                 .handover(value: track?.pictureKey)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
-                    var seen = tallest
-                    seen.see(width: size.width, height: size.height)
-                    if seen != tallest { tallest = seen }
-                }
-                .frame(minHeight: tallest.height, alignment: .top)
-            Spacer(minLength: 0)
             if let track { FavouriteButton(track: track).font(.title2) }
         }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+            var seen = tallest
+            seen.see(width: size.width, height: size.height)
+            if seen != tallest { tallest = seen }
+        }
+        .frame(minHeight: tallest.height, alignment: .bottom)
     }
 
     private var words: some View {
@@ -578,6 +577,7 @@ struct PlayerScrubber: View {
     @State private var grabs = 0
     @State private var flowing: Double = 0
     @State private var lastReading = LastReading()
+    @State private var heading = SliderDrag.undecided
     @GestureState private var touching = false
 
     private final class LastReading {
@@ -610,7 +610,7 @@ struct PlayerScrubber: View {
                     .frame(height: grabbed ? Self.grabbedHeight : Self.restingHeight)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
-                    .gesture(drag(across: width, of: duration, from: shown))
+                    .simultaneousGesture(drag(across: width, of: duration, from: shown))
             }
             .frame(height: Self.touchHeight)
             .motion(.spring(duration: 0.3, bounce: 0.3), value: grabbed)
@@ -642,6 +642,7 @@ struct PlayerScrubber: View {
         .sensoryFeedback(.impact(weight: .light), trigger: grabs)
         .onChange(of: touching) { _, now in
             guard !now else { return }
+            heading = .undecided
             grabbedAt = nil
             dragging = nil
         }
@@ -690,6 +691,12 @@ struct PlayerScrubber: View {
         DragGesture(minimumDistance: 0)
             .updating($touching) { _, held, _ in held = true }
             .onChanged { change in
+                heading = heading.after(across: change.translation.width, down: change.translation.height)
+                guard heading != .declined else {
+                    if dragging != nil { dragging = nil }
+                    return
+                }
+
                 let start = grabbedAt ?? shown
                 if grabbedAt == nil {
                     grabbedAt = start
@@ -699,10 +706,12 @@ struct PlayerScrubber: View {
                 dragging = min(max(start + moved, 0), duration)
             }
             .onEnded { change in
+                let slid = heading != .declined
+                heading = .undecided
                 grabbedAt = nil
                 let target = dragging
                 dragging = nil
-                guard let target, abs(change.translation.width) >= Self.slightestMove else { return }
+                guard slid, let target, abs(change.translation.width) >= Self.slightestMove else { return }
                 commit(target)
             }
     }
@@ -992,6 +1001,7 @@ struct VolumeRow: View {
     @State private var dragging: Float?
     @State private var grabbedAt: Float?
     @State private var driven = false
+    @State private var heading = SliderDrag.undecided
     @GestureState private var touching = false
 
     var body: some View {
@@ -1018,7 +1028,7 @@ struct VolumeRow: View {
                     .frame(height: grabbed ? Self.grabbedHeight : Self.restingHeight)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
-                    .gesture(drag(across: width, from: shown))
+                    .simultaneousGesture(drag(across: width, from: shown))
             }
             .frame(height: Self.touchHeight)
             .background {
@@ -1037,6 +1047,7 @@ struct VolumeRow: View {
         }
         .onChange(of: touching) { _, now in
             guard !now else { return }
+            heading = .undecided
             grabbedAt = nil
             dragging = nil
         }
@@ -1052,6 +1063,12 @@ struct VolumeRow: View {
         DragGesture(minimumDistance: 0)
             .updating($touching) { _, held, _ in held = true }
             .onChanged { change in
+                heading = heading.after(across: change.translation.width, down: change.translation.height)
+                guard heading != .declined else {
+                    if dragging != nil { dragging = nil }
+                    return
+                }
+
                 let start = grabbedAt ?? shown
                 if grabbedAt == nil { grabbedAt = start }
                 driven = true
@@ -1062,6 +1079,7 @@ struct VolumeRow: View {
                 volume.set(wanted)
             }
             .onEnded { _ in
+                heading = .undecided
                 grabbedAt = nil
                 dragging = nil
             }

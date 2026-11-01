@@ -162,4 +162,22 @@ import Testing
 
         #expect(held.height == 120)
     }
+
+    @Test func aSliderDragIsUndecidedUntilItMovesPastTheThreshold() {
+        #expect(SliderDrag.undecided.after(across: 3, down: 5) == .undecided)
+    }
+
+    @Test func aDragMostlyDownIsLeftToTheCoversDismissal() {
+        #expect(SliderDrag.undecided.after(across: 4, down: 12) == .declined)
+        #expect(SliderDrag.undecided.after(across: -2, down: -9) == .declined)
+    }
+
+    @Test func aDragMostlyAcrossSlides() {
+        #expect(SliderDrag.undecided.after(across: -12, down: 4) == .sliding)
+    }
+
+    @Test func aDecidedDragKeepsItsHeadingWhereverItWandersAfter() {
+        #expect(SliderDrag.sliding.after(across: 0, down: 80) == .sliding)
+        #expect(SliderDrag.declined.after(across: 80, down: 0) == .declined)
+    }
 }

@@ -291,29 +291,53 @@ struct EmptyLibrary: View {
     }
 }
 
+enum CollectionRowMeasure {
+    case collection
+    case song
+}
+
 struct CollectionRow: View {
-    @ScaledMetric(relativeTo: .body) private var artworkEdge: CGFloat = 56
+    @ScaledMetric(relativeTo: .body) private var collectionEdge: CGFloat = 56
+    @ScaledMetric(relativeTo: .body) private var songEdge: CGFloat = 48
     let track: Track?
     let title: AttributedString
     let detail: String
     let circle: Bool
     let disclosed: Bool
+    let measure: CollectionRowMeasure
 
-    init(track: Track?, title: AttributedString, detail: String, circle: Bool = false, disclosed: Bool = false) {
+    init(
+        track: Track?,
+        title: AttributedString,
+        detail: String,
+        circle: Bool = false,
+        disclosed: Bool = false,
+        measure: CollectionRowMeasure = .collection
+    ) {
         self.track = track
         self.title = title
         self.detail = detail
         self.circle = circle
         self.disclosed = disclosed
+        self.measure = measure
     }
 
-    init(track: Track?, title: String, detail: String, circle: Bool = false, disclosed: Bool = false) {
-        self.init(track: track, title: AttributedString(title), detail: detail, circle: circle, disclosed: disclosed)
+    init(
+        track: Track?,
+        title: String,
+        detail: String,
+        circle: Bool = false,
+        disclosed: Bool = false,
+        measure: CollectionRowMeasure = .collection
+    ) {
+        self.init(track: track, title: AttributedString(title), detail: detail, circle: circle, disclosed: disclosed, measure: measure)
     }
 
     var body: some View {
-        HStack(spacing: 14) {
-            ArtworkView(track: track, corner: 10, circle: circle)
+        let asSong = measure == .song
+        let artworkEdge = asSong ? songEdge : collectionEdge
+        HStack(spacing: asSong ? 12 : 14) {
+            ArtworkView(track: track, corner: asSong ? 8 : 10, circle: circle)
                 .frame(width: artworkEdge, height: artworkEdge)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.body.weight(.medium)).titleLines()

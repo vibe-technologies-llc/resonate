@@ -26,10 +26,13 @@ struct HomeView: View {
                 .listRowBackground(Color.clear)
             } else {
                 Section {
-                    NavigationLink(value: Destination.favourites) {
-                        FavouritesCountRow()
+                    ShortcutCards {
+                        NavigationLink(value: Destination.favourites) {
+                            FavouritesCard()
+                        }
+                        .buttonStyle(.plain)
+                        ShuffleAllCard()
                     }
-                    ShuffleAllRow()
                 }
                 HomeMixes()
                 if !recent.isEmpty {
@@ -104,25 +107,20 @@ struct HomeView: View {
     }
 }
 
-private struct ShuffleAllRow: View {
+private struct ShuffleAllCard: View {
     @Environment(Library.self) private var library
-    @ScaledMetric(relativeTo: .body) private var artworkEdge: CGFloat = 56
 
     var body: some View {
         Button {
             library.shuffle(library.allTracks)
         } label: {
-            HStack(spacing: 14) {
-                ShelfTile(symbol: "shuffle", from: .orange, to: .red)
-                    .frame(width: artworkEdge, height: artworkEdge)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Shuffle all").font(.body.weight(.medium))
-                    Text(counted(library.catalogCount, "song")).font(.subheadline).foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-            }
-            .contentShape(.rect)
-            .accessibilityElement(children: .combine)
+            ShortcutCard(
+                title: "Shuffle all",
+                detail: counted(library.catalogCount, "song"),
+                symbol: "shuffle",
+                from: .indigo,
+                to: .blue
+            )
         }
         .buttonStyle(.plain)
         .disabled(library.catalogCount == 0)

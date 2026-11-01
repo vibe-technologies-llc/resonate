@@ -523,7 +523,11 @@ every route change (a pair of headphones at the same rate included), not from th
 
 - **With shuffle on, a song pressed in the Search tab's results plays `Library.allTracks` shuffled from that song**, not the results alone (the results from that song, shuffle on, where it has left the catalog); with it off the results are the queue.
 - **Now Playing** is a full-screen cover zoomed out of the mini player's artwork
-  (`matchedTransitionSource`, `.zoom`), dismissed by dragging down. Its slider (like the volume row's) commits one seek on
+  (`matchedTransitionSource`, `.zoom`), dismissed by dragging down. **A drag on the scrubber or the volume row is the cover's
+  when it goes down**: each slider's `DragGesture` is a `simultaneousGesture` (as the lyrics pane's is) and reads its heading
+  once it has moved 8 pt (`SliderDrag`, `MotionTests`), letting go of a drag mostly down and committing nothing; as an
+  exclusive `.gesture` with no minimum distance, a swipe down that began on either 44 pt band never dismissed the cover.
+  Its slider (like the volume row's) commits one seek on
   release, clears a drag the system cancelled through a `@GestureState` flag, and holds the scrubbed value, bar and times, until the clock comes within 1.5 s of it or four seconds pass (a pause and play straight after a seek keep the engine's lane busy and its snapshots late, and a shorter hold let the bar and times fall back to the old position and then jump to the new), the bar's flowed value set to it as the seek is sent and not moved by a reading that has not reached it.
   **The scrubber's bar flows between readings**: each new position read while playing animates
   the bar linearly to where the song will be one reading later (`ProgressFlow.step`, in
@@ -625,7 +629,10 @@ every route change (a pair of headphones at the same rate included), not from th
   minimum height measured under the available width, reset when the width moves, as a turn of the
   phone does): a two-line title or an album line shifted the scrubber and transport by half the
   difference on every song change while only the cover glided; the block now grows once for the
-  tallest song and then stays.
+  tallest song and then stays. The words and the heart are measured and held as one row and sit at
+  the block's foot, against the scrubber, so the held room falls between the cover and the words;
+  held at the top, a song shorter than the tallest left a gap above the bar and the heart floated
+  in the middle of the block.
   **The quality line holds the last output rate** (`QualityLine.lastOutput`) while the engine reads
   none: between songs there is no stream until the next row binds, and the line lost its *Output*
   part, drew unshrunk and shrank back once the rate returned. The backdrop keeps its own 1.2 s palette crossfade. Under Reduce
@@ -711,7 +718,7 @@ every route change (a pair of headphones at the same rate included), not from th
   it was reached through it. A failed read cuts nothing: a catalog read that fails resumes `wholeCatalog`'s waiters with nothing cut. Now Playing and the sheets are not kept.
 - **Home is the first tab and the one a launch opens** (`Root.home`, `HomeView` in `HomeViews.swift`), Android's
   Home: a title greeting by the hour (`HomeGreeting.of`, `ResonateLogic`, held by `HomeTests`, read again on
-  appearing and coming forward), then *Favourites* and *Shuffle all* (`ShuffleAllRow`, the whole catalog
+  appearing and coming forward), then *Favourites* and *Shuffle all* as two shortcut cards (`ShuffleAllCard`, the whole catalog
   shuffled), *Made for you* (`HomeMixes`: every `SuggestedMix` as a card on a shelf, its covers from
   `SuggestedMix.covers`, which the Suggestions page shares; *See all* is `Destination.suggestions`),
   *Recently added* (`albums(order: .added)`) and *Artists* (`artists(order: .plays)`), twelve each read on
@@ -719,14 +726,18 @@ every route change (a pair of headphones at the same rate included), not from th
   button where there are none) and *Your listening* (`ListeningSummary`: plays, time listened and songs from
   the all-time statistics, a dash while another period is loaded; it opens `Destination.statistics`). An empty
   catalog shows one invitation to add a folder and the playlists. Home's pages push onto its own stack.
-- **The Library tab's *All songs*** is a plain `Button` (the row draws its own chevron, as its
-  neighbours' links do) that clears any filter or mix, shows songs and opens the Songs page: a
-  `simultaneousGesture` tap on a `NavigationLink` there left a tap on the tile doing nothing.
-  **Its rows' icons are one kind of tile** (`ShelfTile`: a white symbol at `.title2` centred on a
-  corner-to-corner gradient of two system colours, 56 pt scaled): Favourites pink and purple, All
-  songs orange and red, Home's *Shuffle all* orange and red. The tile takes no touch
-  (`allowsHitTesting(false)`) and each row is one rectangle (`contentShape(.rect)`), so a tap on the
-  tile opens the page as a tap on the words does; a tap landing on the tile alone opened nothing.
+- **Home's and the Library tab's shortcuts are a pair of cards** (`ShortcutCards`, `ShortcutCard`):
+  one list row with no insets and a clear background, so the two cards run edge to edge with the
+  section cards below, side by side and stacked at accessibility text sizes. A card is a
+  corner-to-corner gradient of two system colours (20 pt continuous corners, a dark scrim toward
+  the foot so the white words hold their contrast), its symbol small at the top and large, tilted
+  and faint, overhanging the bottom trailing corner, and the title and song count at the foot,
+  at least 104 pt tall, scaled: Favourites pink and purple, All songs orange and red, Home's
+  *Shuffle all* indigo and blue. Each card is its own `NavigationLink` or `Button` in
+  `.buttonStyle(.plain)`, since a row holding two controls of the default style fires both on any
+  tap. The Library tab's *All songs* is a `Button` that clears any filter or mix, shows songs and
+  opens the Songs page: a `simultaneousGesture` tap on a `NavigationLink` there left a tap doing
+  nothing. `ShelfTile` (a white symbol on the same gradient) stays the Favourites page's cover.
 - **The Library tab has no selector**: it is a home page (`LibraryView(page: .home)`) of one
   section of shortcuts (Favourites and All songs, the second hidden while searching; Suggestions and
   Statistics are Home's), then playlists, albums and artists as carousels (`PlaylistShelf`, `AlbumShelf`,
@@ -739,9 +750,9 @@ every route change (a pair of headphones at the same rate included), not from th
   a `NavigationLink(value:)` (the search's remembering of the text rides on a simultaneous tap,
   `picked`), never a button appending to `Navigation.paths`: the album page pushed that way from
   the Library tab came in with no slide, and *See all* is a `NavigationLink(value:)` for the same
-  reason. The *Favourites* and *All songs* rows read their counts in views of their
-  own (`FavouritesCountRow`, `SongsCountRow`, from `Library.catalogCount`), so a heart or a
-  catalog read never rebuilds the tab.
+  reason. The *Favourites* and *All songs* cards read their counts in views of their
+  own (`FavouritesCard`, `AllSongsCard`, from `Library.catalogCount`; the Playlists page's
+  Favourites row is `FavouritesCountRow`), so a heart or a catalog read never rebuilds the tab.
 - **Collections** are titled by their entity and drawn over a still backdrop, and grouped in Rust,
   never matched in Swift. `Destination.album` carries the album key: a Library or search hit passes
   `AlbumHit.key`, a song passes `Track.albumPage` (`album_key` of its album, artist and album artist,
@@ -822,14 +833,16 @@ every route change (a pair of headphones at the same rate included), not from th
   queue row, repeats kept).
 - **Statistics is a page of its own** (`StatisticsView.swift`), opened from Home's *Your listening* as
   well as from Library tools. Under the period picker (the tiles and the chart take the period the loaded data was read for, `Features.statisticsDays`, so a pick that is loading or failed never divides one period's total by another's span): tiles
-  (`StatisticsTiles`: time listened and plays, the daily average over the period or, for all time,
+  (`StatisticsTiles`, each title's symbol in a column of one width so the titles line up: time listened and plays, the daily average over the period or, for all time,
   since the first counted play, songs heard of the library, the busiest day, the library's size, albums
   and artists); a bar chart of listening (`ListeningChart`, drawn in SwiftUI: days for a week or month,
   weeks for a year, months for all time, the day cut at the midnight of the phone's zone, `TimeZone.current.identifier` with its offset as the fallback; all time reads every day
   heard, not the last year's, and a year's or all time's end labels and busiest day carry the year) that a tap or a drag
   selects a bar of to read its time and plays (to VoiceOver the chart is one adjustable element: swiping up or down steps the same selection from bar to bar and speaks that period's time and plays); most listened songs, albums and artists, five each
   and *Show more* for twenty-five (albums open `Destination.album(key)`, artists
-  `Destination.artist(name)`, each a `CollectionRow` with the collection's menu and swipe, its cover
+  `Destination.artist(name)`, each a `CollectionRow` with the collection's menu and swipe, measured as
+  a song row (`CollectionRowMeasure.song`: the 48 pt cover and 12 pt gap of `PlayableTrack`) so their
+  words start where the most listened songs' do, its cover
   found with the statistics on `Work.aside`, `ListenedCovers`: an album's `album(key)` artwork song,
   an artist's most played song); and the library in shares (`library_breakdown`: formats, sample
   rates, genres, decades, as bars of the library's songs, independent of the period). With no

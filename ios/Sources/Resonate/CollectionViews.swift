@@ -86,18 +86,21 @@ struct LibraryView: View {
             }
             if page == .home, folded.isEmpty || "favourites".contains(folded) {
                 Section {
-                    NavigationLink(value: Destination.favourites) {
-                        FavouritesCountRow()
-                    }
-                    if folded.isEmpty {
-                        Button {
-                            if library.filtering { library.setFilter(Library.everything) }
-                            navigation.songsGrouping = .songs
-                            navigation.open(.songs)
-                        } label: {
-                            SongsCountRow()
+                    ShortcutCards {
+                        NavigationLink(value: Destination.favourites) {
+                            FavouritesCard()
                         }
                         .buttonStyle(.plain)
+                        if folded.isEmpty {
+                            Button {
+                                if library.filtering { library.setFilter(Library.everything) }
+                                navigation.songsGrouping = .songs
+                                navigation.open(.songs)
+                            } label: {
+                                AllSongsCard()
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
             }
@@ -293,24 +296,100 @@ struct ShelfTile: View {
     }
 }
 
-struct AllSongsRow: View {
-    @ScaledMetric(relativeTo: .body) private var artworkEdge: CGFloat = 56
-    let count: Int
+struct ShortcutCards<Cards: View>: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ViewBuilder let cards: Cards
 
     var body: some View {
-        HStack(spacing: 14) {
-            ShelfTile(symbol: "music.note", from: .orange, to: .red)
-                .frame(width: artworkEdge, height: artworkEdge)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("All songs").font(.body.weight(.medium))
-                Text(counted(count, "song")).font(.subheadline).foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
-            Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
+        let layout = typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: ShortcutCard.spacing))
+            : AnyLayout(HStackLayout(spacing: ShortcutCard.spacing))
+        layout { cards }
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+    }
+}
+
+struct ShortcutCard: View {
+    static let corner: CGFloat = 20
+    static let spacing: CGFloat = 12
+    private static let markOpacity = 0.2
+    private static let markTilt = Angle.degrees(-12)
+    private static let markOverhang: CGFloat = 0.2
+    private static let scrimOpacity = 0.22
+
+    @ScaledMetric(relativeTo: .headline) private var height: CGFloat = 104
+    @ScaledMetric(relativeTo: .headline) private var markSize: CGFloat = 72
+    let title: String
+    let detail: String
+    let symbol: String
+    let from: Color
+    let to: Color
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Self.corner, style: .continuous)
+        VStack(alignment: .leading, spacing: 2) {
+            Image(systemName: symbol)
+                .font(.title3.weight(.semibold))
                 .accessibilityHidden(true)
+            Spacer(minLength: 12)
+            Text(title)
+                .font(.headline)
+                .titleLines()
+            Text(detail)
+                .font(.subheadline.weight(.medium))
+                .opacity(0.85)
+                .titleLines()
         }
-        .contentShape(.rect)
+        .foregroundStyle(.white)
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: height, alignment: .leading)
+        .background {
+            LinearGradient(colors: [from, to], startPoint: .topLeading, endPoint: .bottomTrailing)
+                .overlay {
+                    LinearGradient(colors: [.clear, .black.opacity(Self.scrimOpacity)], startPoint: .center, endPoint: .bottom)
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    Image(systemName: symbol)
+                        .font(.system(size: markSize, weight: .bold))
+                        .foregroundStyle(.white.opacity(Self.markOpacity))
+                        .rotationEffect(Self.markTilt)
+                        .offset(x: markSize * Self.markOverhang, y: markSize * Self.markOverhang)
+                        .accessibilityHidden(true)
+                }
+                .clipShape(shape)
+        }
+        .contentShape(shape)
         .accessibilityElement(children: .combine)
+    }
+}
+
+struct FavouritesCard: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        ShortcutCard(
+            title: "Favourites",
+            detail: counted(library.favouriteTracks.count, "song"),
+            symbol: "heart.fill",
+            from: .pink,
+            to: .purple
+        )
+    }
+}
+
+private struct AllSongsCard: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        ShortcutCard(
+            title: "All songs",
+            detail: counted(library.catalogCount, "song"),
+            symbol: "music.note",
+            from: .orange,
+            to: .red
+        )
     }
 }
 
@@ -1035,13 +1114,5 @@ struct FavouritesCountRow: View {
 
     var body: some View {
         FavouritesRow(count: library.favouriteTracks.count)
-    }
-}
-
-private struct SongsCountRow: View {
-    @Environment(Library.self) private var library
-
-    var body: some View {
-        AllSongsRow(count: library.catalogCount)
     }
 }
