@@ -59,9 +59,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [S · 0.4.0] A volume turned from the Windows mixer reaches the slider by the two-second poll: the
   safe wrapper of `IAudioEndpointVolume` reads and sets only a whole percent and offers no
   `IAudioEndpointVolumeCallback`, so a change is neither told at once nor read finer than a percent
-- [M · 0.4.0] A Windows path past `MAX_PATH` (260) is not weighed by the organiser, NTFS alternate
-  streams and ACLs are not carried by a tag write, and a folder mounted into another drive's tree is
-  not noticed as a volume
 - [M · 0.4.0] The integration suites of the library, the codec's encoded files, the vault and the
   binary's terminal and signal tests are Unix-only; each needs a Windows counterpart (symlinks,
   permission bits, pseudo-terminals)
@@ -69,6 +66,11 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   toasts `resonate-mpris` creates are not shown) or file associations from `MIME_TYPES`, no
   Authenticode signing (no secrets exist), no winget or scoop manifest, and the executable carries no
   icon (the accent-following icon is a Linux theme file)
+- [M · blocked: a vetted safe crate] NTFS alternate streams and ACLs are not carried by a
+  tag write (`carries_what_the_file_did` is Unix only, so a staged copy renamed over a track drops
+  both): `std::fs::copy` carries streams but not the security descriptor and cannot stand in for
+  the writer's own staged copy, and no reviewed safe wrapper of `FindFirstStreamW`, `BackupRead` or
+  `GetNamedSecurityInfoW` exists to take them across
 
 ## Accessibility
 - [M · 0.4.0] The iOS app is portrait-only and iPhone-only, which fails WCAG 1.3.4 (orientation): landscape

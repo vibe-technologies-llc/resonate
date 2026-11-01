@@ -17,7 +17,7 @@ use resonate_core::{
 
 use crate::{
     Error, Library, Want,
-    organise::{self, Layout, Named, Naming},
+    organise::{self, Layout, Named, Refusal, Volume},
     scan, store, take_in, unreplacing,
 };
 
@@ -44,6 +44,7 @@ pub(crate) struct AlbumToFile {
 pub(crate) enum Unfiled {
     NoFolder,
     Unnamed,
+    OutOfReach,
     TooLarge,
     Undecodable,
     NotAsLongAsWanted { heard: Duration },
@@ -95,10 +96,14 @@ pub(crate) fn filed(
         track: Some(want.position),
         extension: Some(extension),
     };
+    let volume = Volume::of(&folder);
     let relative = into
         .layout
-        .render(&named, Naming::of(&folder))
-        .ok_or(Unfiled::Unnamed)?;
+        .rendered_within(&named, volume.naming, &volume.reach)
+        .map_err(|refusal| match refusal {
+            Refusal::OutOfReach => Unfiled::OutOfReach,
+            _ => Unfiled::Unnamed,
+        })?;
     let whole = folder.join(relative);
     let parent = whole.parent().unwrap_or(&folder);
     fs::create_dir_all(parent)?;

@@ -5,6 +5,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(windows)]
+use crate::volume_mounts;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FileStamp {
     device: u64,
@@ -123,22 +126,41 @@ pub fn volume_of(path: &Path) -> Option<u64> {
 
 #[cfg(windows)]
 pub fn volume_of(path: &Path) -> Option<u64> {
-    use std::{
-        hash::{DefaultHasher, Hash as _, Hasher as _},
-        path::Component,
-    };
+    use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 
     fs::metadata(path).ok()?;
-    let Some(Component::Prefix(prefix)) = path.components().next() else {
-        return Some(0);
-    };
+    let real = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+
     let mut hasher = DefaultHasher::new();
-    prefix
-        .as_os_str()
-        .to_string_lossy()
-        .to_ascii_uppercase()
-        .hash(&mut hasher);
+    volume_name_of(&real).hash(&mut hasher);
     Some(hasher.finish())
+}
+
+#[cfg(windows)]
+fn volume_name_of(real: &Path) -> String {
+    use std::path::Component;
+
+    let prefix = match real.components().next() {
+        Some(Component::Prefix(prefix)) => prefix.as_os_str().to_string_lossy().into_owned(),
+        _ => String::new(),
+    };
+    volume_mounts::identity_of(
+        &prefix,
+        volume_mounts::nearest_mounted_volume(real, volume_mounted_at),
+    )
+}
+
+#[cfg(windows)]
+fn volume_mounted_at(folder: &Path) -> Option<std::path::PathBuf> {
+    use std::os::windows::fs::MetadataExt as _;
+
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+
+    let attributes = fs::symlink_metadata(folder).ok()?.file_attributes();
+    if attributes & FILE_ATTRIBUTE_REPARSE_POINT == 0 {
+        return None;
+    }
+    fs::read_link(folder).ok()
 }
 
 #[cfg(unix)]

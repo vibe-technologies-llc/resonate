@@ -35,6 +35,8 @@ mod time;
 pub mod titles;
 mod volume;
 #[cfg(any(windows, test))]
+mod volume_mounts;
+#[cfg(any(windows, test))]
 mod windows_uri;
 pub mod writer;
 mod zone;

@@ -32,6 +32,7 @@ mod pass;
 mod playlist;
 mod pls;
 mod query;
+mod reach;
 mod reference;
 mod renamed;
 mod resumed;

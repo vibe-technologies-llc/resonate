@@ -32,7 +32,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `discord.md` | resonate-discord, `core::presence`, the binary's `discord.rs`, the Desktop groups | the gate, the seam, the frame, what an activity says and how often |
 | `release.md` | `.github/workflows/release.yml`, `packaging/**`, the root manifest, `docs/ROADMAP.md` | versions and their spelling per ecosystem, branches, tags, the release assets, the signing secrets |
 | `packaging.md` | `packaging/**` | the Arch, Fedora, DEB and Flatpak payloads, the x86-64-v3 release baseline and the pre-release spellings |
-| `windows.md` | resonate-wasapi, the Windows capture of resonate-listen, core's `os_bytes`, `file_facts`, `positioned`, `windows_uri`, the binary's `interrupts.rs`, `packaging/windows/**` | the WASAPI backend (shared and exclusive as two sinks), loopback and microphone capture, the filesystem and path seams under the shared crates, interrupts and keys, the window's named pipe, what is not on Windows yet |
+| `windows.md` | resonate-wasapi, the Windows capture of resonate-listen, core's `os_bytes`, `file_facts`, `positioned`, `windows_uri`, `volume_mounts`, the library's `reach.rs`, the binary's `interrupts.rs`, `packaging/windows/**` | the WASAPI backend (shared and exclusive as two sinks), loopback and microphone capture, the filesystem and path seams under the shared crates, interrupts and keys, the window's named pipe, what is not on Windows yet |
 
 ## Project
 

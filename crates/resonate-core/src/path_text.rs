@@ -74,6 +74,7 @@ fn byte_after_escape(letters: &mut Peekable<Chars<'_>>) -> Option<u8> {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
     fn named(bytes: &[u8]) -> PathBuf {
         PathBuf::from(os_bytes::os_string_from(bytes.to_vec()))
     }
