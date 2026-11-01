@@ -104,9 +104,15 @@ final class Navigation {
     var deleting: SongsToDelete?
     @ObservationIgnored private var taggingAfterPlayer: TagEditing?
     var songsGrouping = Grouping.songs
+    var librarySection = LibrarySection.home
 
     func path(_ root: Root) -> Binding<[Destination]> {
         Binding(get: { self.paths[root] ?? [] }, set: { self.paths[root] = $0 })
+    }
+
+    func choose(_ section: LibrarySection) {
+        librarySection = section
+        paths[.library] = []
     }
 
     func editTags(_ tracks: [Track]) {
@@ -146,6 +152,7 @@ final class Navigation {
         nowPlaying = false
         songsGrouping = .songs
         tab = .library
+        librarySection = .home
         paths[.library] = [.songs]
     }
 
@@ -277,7 +284,7 @@ struct RootView: View {
         @Bindable var navigation = navigation
         TabView(selection: $navigation.tab) {
             Tab("Library", systemImage: "music.note.house", value: Root.library) {
-                stack(.library) { LibraryView() }
+                LibraryTab()
             }
             Tab("Settings", systemImage: "gearshape", value: Root.settings) {
                 stack(.settings) { SettingsView() }
@@ -305,10 +312,10 @@ struct RootView: View {
         .modifier(SleepTimerPresentation(presenting: !navigation.nowPlaying))
         .modifier(ZonesPresentation(presenting: !navigation.nowPlaying))
         .sheet(isPresented: $navigation.filters) {
-            FilterSheet()
+            FilterSheet().sheetSized(.long)
         }
         .sheet(item: $navigation.tagging) { editing in
-            TagEditorSheet(tracks: editing.tracks)
+            TagEditorSheet(tracks: editing.tracks).sheetSized(.long)
         }
         .modifier(SharingSheet(presenting: !navigation.nowPlaying))
         .modifier(PairingOffer(presenting: !navigation.nowPlaying))
@@ -319,6 +326,7 @@ struct RootView: View {
         }
         .sheet(isPresented: $navigation.listening) {
             ListenSheet()
+                .sheetSized()
                 .presentationDetents([.medium, .large])
                 .environment(navigation)
         }
@@ -345,10 +353,37 @@ struct RootView: View {
     }
 
     private func stack<Content: View>(_ root: Root, @ViewBuilder content: () -> Content) -> some View {
+        RootStack(root: root, content: content)
+    }
+}
+
+struct RootStack<Content: View>: View {
+    @Environment(Navigation.self) private var navigation
+    let root: Root
+    @ViewBuilder let content: Content
+
+    var body: some View {
         NavigationStack(path: navigation.path(root)) {
-            content()
+            content
                 .modifier(ThemedPage())
                 .navigationDestination(for: Destination.self) { DestinationView(destination: $0).modifier(ThemedPage()) }
+        }
+    }
+}
+
+struct LibraryTab: View {
+    @Environment(\.horizontalSizeClass) private var horizontal
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        switch LibraryArrangement.of(horizontal: SizeClass(horizontal), accessibilityText: typeSize.isAccessibilitySize) {
+        case .stack:
+            RootStack(root: .library) { LibraryView() }
+        case .split:
+            LibrarySplit { section in
+                RootStack(root: .library) { LibrarySectionRoot(section: section) }
+                    .id(section)
+            }
         }
     }
 }

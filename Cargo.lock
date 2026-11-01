@@ -6045,6 +6045,7 @@ dependencies = [
  "tracing-subscriber",
  "trash",
  "unicode-width",
+ "win-resource-builder",
 ]
 
 [[package]]
@@ -9152,6 +9153,18 @@ name = "widestring"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72069c3113ab32ab29e5584db3c6ec55d416895e60715417b5b883a357c3e471"
+
+[[package]]
+name = "win-resource-builder"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa53bcc701086da161e95fba7d4f0a6df52200c7f9f6b8b6af82a7f7af648639"
+dependencies = [
+ "bitflags 2.13.2",
+ "roxmltree 0.21.2",
+ "thiserror 2.0.21",
+ "unicode-normalization",
+]
 
 [[package]]
 name = "win-time-sys"

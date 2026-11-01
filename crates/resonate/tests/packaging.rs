@@ -228,7 +228,7 @@ fn the_windows_recipe_builds_x86_64_v3_and_arm64_and_reads_its_version_from_carg
 }
 
 #[test]
-fn the_release_workflow_attaches_a_windows_archive_for_each_architecture() {
+fn the_release_workflow_attaches_a_windows_archive_and_installer_for_each_architecture() {
     let path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.github/workflows/release.yml");
     let workflow =
@@ -240,8 +240,9 @@ fn the_release_workflow_attaches_a_windows_archive_for_each_architecture() {
         "release.yml does not build the Windows archive for x86_64 and aarch64"
     );
     assert!(
-        workflow.contains("resonate-windows-zip-${{ matrix.architecture }}"),
-        "release.yml's Windows archives would share one artifact name"
+        workflow.contains("resonate-windows-${{ matrix.architecture }}")
+            && workflow.contains("assets/*-setup.exe"),
+        "release.yml's Windows files would share one artifact name or leave the installer out"
     );
 }
 

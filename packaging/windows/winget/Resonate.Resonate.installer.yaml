@@ -1,0 +1,20 @@
+PackageIdentifier: Resonate.Resonate
+PackageVersion: @VERSION@
+InstallerType: inno
+Scope: user
+InstallModes:
+  - interactive
+  - silent
+  - silentWithProgress
+UpgradeBehavior: install
+AppsAndFeaturesEntries:
+  - ProductCode: '@PRODUCT_CODE@'
+Installers:
+  - Architecture: x64
+    InstallerUrl: @X64_INSTALLER_URL@
+    InstallerSha256: @X64_INSTALLER_SHA256@
+  - Architecture: arm64
+    InstallerUrl: @ARM64_INSTALLER_URL@
+    InstallerSha256: @ARM64_INSTALLER_SHA256@
+ManifestType: installer
+ManifestVersion: 1.10.0

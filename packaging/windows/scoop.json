@@ -1,0 +1,25 @@
+{
+    "version": "@VERSION@",
+    "description": "A music player for audio enthusiasts",
+    "homepage": "@REPOSITORY_URL@",
+    "license": "AGPL-3.0-or-later",
+    "architecture": {
+        "64bit": {
+            "url": "@X64_ARCHIVE_URL@",
+            "hash": "@X64_ARCHIVE_SHA256@",
+            "extract_dir": "resonate-@VERSION@-x86_64_v3-windows"
+        },
+        "arm64": {
+            "url": "@ARM64_ARCHIVE_URL@",
+            "hash": "@ARM64_ARCHIVE_SHA256@",
+            "extract_dir": "resonate-@VERSION@-aarch64-windows"
+        }
+    },
+    "bin": "resonate.exe",
+    "shortcuts": [
+        [
+            "resonate.exe",
+            "Resonate"
+        ]
+    ]
+}

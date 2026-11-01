@@ -185,7 +185,7 @@ jobs:
           if-no-files-found: error
 
   windows-zip:
-    name: Windows archive (${{ matrix.architecture }})
+    name: Windows archive and installer (${{ matrix.architecture }})
     needs: release
     runs-on: windows-latest
     timeout-minutes: 90
@@ -202,14 +202,18 @@ jobs:
       - name: Find the C compiler ring assembles ARM64 with
         if: matrix.architecture == 'aarch64'
         run: clang --version
-      - name: Build the archive
+      - name: Build the archive and the installer
         env:
           VERSION: ${{ needs.release.outputs.version }}
+          RESONATE_WINDOWS_PFX_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+          RESONATE_WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         run: ./packaging/windows/build.ps1 -Version $env:VERSION -Architecture ${{ matrix.architecture }} -Output assets
       - uses: actions/upload-artifact@v4
         with:
-          name: resonate-windows-zip-${{ matrix.architecture }}
-          path: assets/*.zip
+          name: resonate-windows-${{ matrix.architecture }}
+          path: |
+            assets/*.zip
+            assets/*-setup.exe
           if-no-files-found: error
 
   android-apk:
@@ -274,11 +278,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.ref }}
       - uses: actions/download-artifact@v4
         with:
           pattern: resonate-*
           path: assets
           merge-multiple: true
+      - name: Fill the winget and Scoop manifests
+        if: needs.windows-zip.result == 'success'
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+          REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: ./packaging/windows/fill-manifests.sh "$VERSION" "$REPOSITORY_URL" assets assets
       - name: Write the checksums
         working-directory: assets
         run: sha256sum -- * > SHA256SUMS

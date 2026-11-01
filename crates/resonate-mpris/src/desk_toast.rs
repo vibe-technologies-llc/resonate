@@ -14,12 +14,12 @@ use crate::{
     Error, Result, WindowsOp,
     apartment::Apartment,
     desktop::Errand,
+    identity::APP_USER_MODEL_ID,
     interfaces::Shared,
     notify::{Shown, pressed},
     toast::{Buttons, document},
 };
 
-const APP_USER_MODEL_ID: &str = "org.resonate.Resonate";
 const GROUP: &str = "resonate";
 const TRACK_TAG: &str = "track";
 const LISTEN_TAG: &str = "listen";

@@ -1,6 +1,7 @@
 ---
 paths:
   - "crates/resonate-ui/**/*.rs"
+  - "ios/Sources/ResonateLogic/Motion.swift"
 ---
 
 # Motion
@@ -70,6 +71,14 @@ bumped per change for animation keys; drops the leaving once `HANDS_OVER` is out
   as a skip does; nothing else moves.
 - **Signal path held between songs**: the engine publishes no current track while the next row
   opens; dropping the path then made the centred title and by-line fall half a line and rise again.
+
+## The phones
+
+The iOS Now Playing takes the vocabulary and the song change as they are (`ios.md`'s *A song change
+hands the cover and the words over*): `MotionSpan` and `MotionCurve` in `ResonateLogic` carry the
+spans and the `settling` and `smooth` curves, proved equal to the closed forms here. The handover is
+as undirected as the desktop's. Reduce Motion is `MotionRendering`: the handover, flips and progress
+land at once and an arrival keeps its fade.
 
 ## Scrollbars
 

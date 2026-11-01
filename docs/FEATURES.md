@@ -9,9 +9,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   arrive untouched
 
 ## iOS parity
-- [M · 0.4.0] The now playing section on iOS needs better animations and its bugs fixed: the
-  handover between songs, the cover, the progress and the controls should move as `motion.md` says
-  the desktop's do, and the section's defects are to be found on a device and fixed
 - [L · blocked: xtool] The iOS icon has no appearance variants of its own: Dark, Clear and Tinted
   come from a compiled `Assets.car` (an `AppIcon` set with dark and tinted renditions, or an Icon
   Composer `.icon`, whichever `actool` compiles, which only Xcode has), and xtool 1.24 turns
@@ -44,8 +41,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   hot-plug, the render cycle's timing, microphone and loopback capture (a loopback endpoint that
   stays silent while nothing plays, a microphone's autoconverted format), the window under
   per-monitor DPI and IME, the recycle bin, the terminal keys, the window's named pipe (its
-  owner-only security descriptor, a client reaching it), the ARM64 archive (cross-built on an x64
-  runner, never started), a toast (whether one shows once a shortcut carries
+  owner-only security descriptor, a client reaching it), the ARM64 files (cross-built on an x64
+  runner, never started), the installer (compiled by Inno Setup for the first time at a release; its
+  Start menu shortcut, file associations and uninstall), a toast (whether one shows once a shortcut carries
   `org.resonate.Resonate`, its image from a `file:///` cover, its three buttons reaching the
   transport, a replacement when the cover lands) and the connection's `NetworkCostType` (a metered
   hotspot, the change event) have never run on real hardware or a real audio endpoint
@@ -65,20 +63,14 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   and `play` needs an audio endpoint the hosted runner lacks. The in-place tag write's inode check,
   the directory-mode tests and the cross-filesystem organise tests are Unix-only for want of a
   stable Windows equivalent (`windows.md`)
-- [L · 0.4.0] Windows has no installer, start-menu entry (whose shortcut must carry the AppUserModelID `org.resonate.Resonate`, else the
-  toasts `resonate-mpris` creates are not shown) or file associations from `MIME_TYPES`, no
-  Authenticode signing (no secrets exist), no winget or scoop manifest, and the executable carries no
-  icon (the accent-following icon is a Linux theme file)
 - [M · blocked: a vetted safe crate] NTFS alternate streams and ACLs are not carried by a
   tag write (`carries_what_the_file_did` is Unix only, so a staged copy renamed over a track drops
   both): `std::fs::copy` carries streams but not the security descriptor and cannot stand in for
   the writer's own staged copy, and no reviewed safe wrapper of `FindFirstStreamW`, `BackupRead` or
   `GetNamedSecurityInfoW` exists to take them across
-
-## Accessibility
-- [M · 0.4.0] The iOS app is portrait-only and iPhone-only, which fails WCAG 1.3.4 (orientation): landscape
-  and iPad layouts for Now Playing, the library and the sheets, with the accessibility-size layouts
-  held in each
+- [S · blocked: certificate] The Windows archives and installers are not Authenticode signed, so
+  SmartScreen warns on a first run: no code-signing certificate exists. `sign.ps1` and `release.yml`
+  sign with `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD` once they are set
 
 ## Playback and output
 - [M · blocked: pipewire-rs] A rebind or turn inside a row that moves the rate while

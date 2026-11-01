@@ -28,6 +28,22 @@ recycle bin), `same-file` (core's same-entry test). Each is a `cfg(windows)` tar
 none is built elsewhere; the layering job refuses PipeWire, Wayland, `rustix` and `signal-hook`
 from the Windows tree of the binary.
 
+The binary's **build script** embeds the Windows version resource with `win-resource-builder`, a
+`[target.'cfg(windows)'.build-dependencies]` entry (with `thiserror`) taken with
+`default-features = false`: Cargo resolves a build dependency's `cfg` against the host, so only a
+Windows host compiles it. It was chosen over `winresource`, `embed-resource` and `tauri-winres`,
+which run `rc.exe` (`llvm-rc` or `windres` elsewhere) and so need a resource compiler on the runner
+and a different one under `cargo xwin`, and over `embedinator`, which panics on bad input. The
+crate writes a checked `.res` file in pure Rust, with golden tests against `llvm-rc`. **Its
+`images` feature is off**: it brings `oxipng`, whose `libdeflater` builds C, and a C build is used
+only where no Rust alternative covers the need. Without it the crate has no icon API and no public
+way to insert a raw resource, so the icon is the binary's own `icon_resources.rs` (about 150 lines
+with its error enum, no dependency): the committed `.ico`'s directory read field by field, each
+image an `RT_ICON` resource numbered from 1, one `RT_GROUP_ICON` whose entries carry those numbers
+where the file held offsets, in the same record layout. Its output was compared byte for byte with
+`images`' own for this icon, once. The two parts are one `.res` file, which both `link.exe` and
+`lld-link` take.
+
 ## gpui
 
 - **gpui and `gpui_platform` are git dependencies of Zed's `main`, pinned by `rev`**, since the

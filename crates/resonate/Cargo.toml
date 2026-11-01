@@ -9,6 +9,10 @@ clap.workspace = true
 clap_complete.workspace = true
 clap_mangen.workspace = true
 
+[target.'cfg(windows)'.build-dependencies]
+thiserror.workspace = true
+win-resource-builder.workspace = true
+
 [features]
 default = ["ui", "online", "mcp", "discord", "sync"]
 discord = ["dep:resonate-discord"]
