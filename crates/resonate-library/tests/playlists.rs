@@ -1,10 +1,7 @@
-#![cfg(unix)]
-
 use std::{
     collections::BTreeSet,
     env, fs,
     num::NonZeroUsize,
-    os,
     path::{Path, PathBuf},
     process,
     sync::atomic::{AtomicU64, Ordering},
@@ -15,6 +12,10 @@ use resonate_core::{FrameSpan, Frames, MediaLocation, PlaylistId, Span};
 use resonate_library::{
     Cut, Direction, Error, Library, PlaylistOrder, Result, ScanOptions, ScanStats,
 };
+
+mod support;
+
+use support::link_to_directory;
 
 const RATE: u32 = 44_100;
 
@@ -450,9 +451,11 @@ fn a_sheet_naming_a_file_through_a_link_the_scan_followed_lands_on_the_catalog_r
     let root = tree.path().join("root");
     tree.write("root/home.wav", &wav(4_410));
     elsewhere.write("far.wav", &wav(4_410));
-    os::unix::fs::symlink(elsewhere.path(), root.join("linked"))
-        .expect("the fixture tree takes a link");
-    os::unix::fs::symlink(&root, tree.path().join("alias")).expect("the fixture tree takes a link");
+    if !link_to_directory(elsewhere.path(), &root.join("linked"))
+        || !link_to_directory(&root, &tree.path().join("alias"))
+    {
+        return Ok(());
+    }
 
     let library = Library::open_in_memory()?;
     scan(&library, &root, true)?;

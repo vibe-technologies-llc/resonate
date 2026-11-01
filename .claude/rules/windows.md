@@ -7,6 +7,7 @@ paths:
   - "crates/resonate-core/src/windows_uri.rs"
   - "crates/resonate-core/src/volume_mounts.rs"
   - "crates/resonate-library/src/reach.rs"
+  - "crates/resonate-library/tests/support/**"
   - "crates/resonate/src/interrupts.rs"
   - "crates/resonate/src/windows_launcher.rs"
   - "crates/resonate/src/awake.rs"
@@ -28,7 +29,7 @@ paths:
 
 The whole workspace but the phones' boundary and PipeWire builds for `x86_64-pc-windows-msvc`
 (`cargo xwin check --target x86_64-pc-windows-msvc --workspace --exclude resonate-mobile --exclude
-resonate-bindgen --exclude resonate-pipewire` on Linux, the `windows` CI job on a hosted runner)
+resonate-bindgen --exclude resonate-pipewire --all-targets` on Linux, the `windows` CI job on a hosted runner)
 and for `aarch64-pc-windows-msvc` (the same command with that target; the `windows-arm64` CI job
 checks it on the hosted x64 runner). No crate has an x86-only path: the DSP's vector code is
 portable Rust the compiler vectorises, so ARM64 needs no fallback. `ring`, which `rustls` brings
@@ -220,6 +221,47 @@ settle. `unsafe_code = "forbid"` holds: every Win32 and COM call goes through a 
   readers parse (arrows as `ESC [ A`), so `Keyed` and `Struck` are one state machine on both. Raw
   mode swallows Ctrl-C as a key, which `interrupted()` turns back into the interrupt. A piped stdin
   is read as bytes. `Readout` draws only where `crossterm::ansi_support::supports_ansi()` holds.
+
+## The integration suites
+
+The `windows` CI job runs every crate's tests, so the integration suites run there as they do on
+Linux; what is Unix-only is gated per test with `#[cfg(unix)]`, never per suite, and clippy runs with
+`--all-targets` so a helper dead on one platform fails the build where it is not gated.
+
+- **Covered on Windows:** `resonate-library`'s `library`, `playlists`, `scanned`, `studies`,
+  `search` and `synced` (the scan, the catalog, enrichment, tag writing, organise, deleting, the
+  vault import, playlists, studies), `resonate-codec`'s `encoded` (every fixture ffmpeg, `flac` and
+  the rest build, each skipped where its tool is absent), `resonate-vault`'s `vault`, and the binary's
+  `signals` (the MCP server answering and leaving when its input closes, `mcp` feature).
+- **A test tree is canonical.** `Tree::new` in `library` and `studies` canonicalises its root, as
+  the scan does (`\\?\C:\...` on Windows), so the paths a test writes are the paths the catalog
+  stores.
+- **A symlink needs a privilege Windows does not always give.** `tests/support::link_to_directory`
+  and `link_to_file` create `symlink_dir`/`symlink_file` and answer `false` (the test returns, with
+  a note on stderr) where the account lacks `SeCreateSymbolicLinkPrivilege` (`ERROR_PRIVILEGE_NOT_HELD`,
+  1314, or `PermissionDenied`) and any other refusal is a panic; `unlink_directory` is `remove_dir`
+  there, since a directory link is taken away as a directory. The hosted runner is an administrator,
+  so the link tests run in CI.
+- **The read-only attribute stands for a file's permission bits.** `forbid_writing`, `allow_writing`
+  and `can_write` set `0o444`/`0o644` on Unix and the read-only attribute on Windows, which
+  `writing::ensure_writable` already reads; the two tag-write failure tests
+  (`a_write_that_fails_is_not_noted_as_one_to_put_back`, the cut-short walk back) run on both.
+- **A file out of reach is held exclusively.** `studies.rs`' `OutOfReach` is `chmod 000` on Unix and
+  an open with `share_mode(0)` held for the pass on Windows; either reads as `Error::Io`, which
+  `is_out_of_reach` takes for the same verdict.
+- **The vault's dedupe-before-staging test swaps the staging folder for a file**, which refuses a
+  staged write on both platforms in place of a closed directory mode.
+- **A loopback pair stands for a socket pair** (`bus.rs`' `connected_pair`): `UnixStream::pair` has
+  no Windows counterpart, and the pipe peer takes any `Read + Write`.
+- **Unix-only on purpose, with the reason:** file names that are not text (`os::unix::ffi`; Windows
+  names are UTF-16 and a lone surrogate is not a name a tagger writes); directory modes (a folder
+  unreadable, unsearchable or unwritable: the read-only attribute on a folder stops nothing and an
+  ACL needs the Win32 API behind `unsafe`); a second filesystem (`/dev/shm`, `st_dev`: the three
+  organise tests that copy across it, and the volume-noting test); the in-place tag write's inode
+  identity (`an_ogg_comment_grown_and_shrunk_...`, `MetadataExt::ino`, no stable Windows file id);
+  the signal tests (`kill -HUP`) and `terminal.rs` (a pseudo-terminal, `setsid`, termios, none of
+  which Windows has before ConPTY, and a Ctrl-C needs `GenerateConsoleCtrlEvent`, which is `unsafe`
+  FFI the workspace forbids).
 
 ## The settings text
 

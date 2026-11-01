@@ -2304,6 +2304,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     fn wave_long_with_a_title_after_the_audio(title: &str) -> Vec<u8> {
         const AUDIO_BYTES: usize = 40 << 20;
 

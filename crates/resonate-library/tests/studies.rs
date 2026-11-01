@@ -1,5 +1,3 @@
-#![cfg(unix)]
-
 use std::{
     env, fs,
     num::NonZeroUsize,
@@ -56,7 +54,9 @@ impl Tree {
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir_all(&root).expect("a writable temporary directory");
-        Self { root }
+        Self {
+            root: root.canonicalize().expect("a canonical path"),
+        }
     }
 
     fn write(&self, name: &str, bytes: &[u8]) -> PathBuf {
@@ -1071,6 +1071,52 @@ fn a_track_that_will_not_decode_is_not_decoded_again_until_it_changes_or_is_aske
     Ok(())
 }
 
+#[cfg(unix)]
+struct OutOfReach(PathBuf);
+
+#[cfg(unix)]
+impl OutOfReach {
+    fn of(path: &Path) -> Option<Self> {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        fs::set_permissions(path, fs::Permissions::from_mode(0o000))
+            .expect("the file's mode changes");
+        let held = Self(path.to_path_buf());
+        fs::File::open(path).is_err().then_some(held)
+    }
+}
+
+#[cfg(unix)]
+impl Drop for OutOfReach {
+    fn drop(&mut self) {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        fs::set_permissions(&self.0, fs::Permissions::from_mode(0o644))
+            .expect("the file's mode changes");
+    }
+}
+
+#[cfg(windows)]
+struct OutOfReach {
+    _exclusive: fs::File,
+}
+
+#[cfg(windows)]
+impl OutOfReach {
+    fn of(path: &Path) -> Option<Self> {
+        use std::os::windows::fs::OpenOptionsExt as _;
+
+        let exclusive = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(path)
+            .expect("the file opens for nobody else");
+        Some(Self {
+            _exclusive: exclusive,
+        })
+    }
+}
+
 #[test]
 fn a_track_whose_file_was_out_of_reach_is_studied_once_it_is_back() -> Result<()> {
     let tree = Tree::new();
@@ -1079,17 +1125,13 @@ fn a_track_whose_file_was_out_of_reach_is_studied_once_it_is_back() -> Result<()
         &song(21_700.0, 6, &[(TITLE, "Away"), (ARTIST, "Ada")]),
     );
     let library = scanned(&tree)?;
-    let mode = |bits: u32| {
-        fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(bits))
-            .expect("the file's mode changes");
-    };
 
-    mode(0o000);
-    if fs::File::open(&path).is_ok() {
+    let Some(out_of_reach) = OutOfReach::of(&path) else {
         return Ok(());
-    }
-    let away = enriched(&library, Silent::new(), Fingerprinters::none())?;
-    mode(0o644);
+    };
+    let away = enriched(&library, Silent::new(), Fingerprinters::none());
+    drop(out_of_reach);
+    let away = away?;
     assert_eq!(away.stats.studied, 0);
 
     let back = enriched(&library, Silent::new(), Fingerprinters::none())?;

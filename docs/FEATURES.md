@@ -59,9 +59,12 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [S · 0.4.0] A volume turned from the Windows mixer reaches the slider by the two-second poll: the
   safe wrapper of `IAudioEndpointVolume` reads and sets only a whole percent and offers no
   `IAudioEndpointVolumeCallback`, so a change is neither told at once nor read finer than a percent
-- [M · 0.4.0] The integration suites of the library, the codec's encoded files, the vault and the
-  binary's terminal and signal tests are Unix-only; each needs a Windows counterpart (symlinks,
-  permission bits, pseudo-terminals)
+- [S · 0.4.0] `terminal.rs` (play's key reader and the terminal it restores on an interrupt, a
+  termination and a hang-up) has no Windows counterpart: it needs a pseudo-terminal, which on Windows
+  is ConPTY, and Ctrl-C through `GenerateConsoleCtrlEvent`, both `unsafe` Win32 the workspace forbids,
+  and `play` needs an audio endpoint the hosted runner lacks. The in-place tag write's inode check,
+  the directory-mode tests and the cross-filesystem organise tests are Unix-only for want of a
+  stable Windows equivalent (`windows.md`)
 - [L · 0.4.0] Windows has no installer, start-menu entry (whose shortcut must carry the AppUserModelID `org.resonate.Resonate`, else the
   toasts `resonate-mpris` creates are not shown) or file associations from `MIME_TYPES`, no
   Authenticode signing (no secrets exist), no winget or scoop manifest, and the executable carries no

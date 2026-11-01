@@ -182,7 +182,7 @@ Invariants the layering protects (the rules files have the rest):
   it all in one run, fetching the latest xtool AppImage first. Not in CI: the Darwin SDK comes
   from the listener's Xcode download.
 
-- `RUSTFLAGS= cargo xwin check --target x86_64-pc-windows-msvc --workspace --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire`:
+- `RUSTFLAGS= cargo xwin check --target x86_64-pc-windows-msvc --workspace --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --all-targets`:
   the Windows build, cross-checked from Linux (`windows.md`); CI runs it natively in the `windows` job.
   The same with `--target aarch64-pc-windows-msvc` is Windows on ARM64 (`rustup target add` first;
   `windows.md` has the `clang` wrapper `ring` needs under xwin); CI's `windows-arm64` job checks it.

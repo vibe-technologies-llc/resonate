@@ -706,11 +706,8 @@ fn a_float_source_is_kept_as_a_compressed_wave_and_reads_back_bit_for_bit() {
     assert_eq!(read, wanted);
 }
 
-#[cfg(unix)]
 #[test]
 fn a_wave_already_in_the_vault_is_deduped_before_anything_is_staged() {
-    use std::os::unix::fs::PermissionsExt;
-
     let tree = Tree::new();
     let samples = signal(FRAMES);
     let first = tree.write("first.wav", &floating(&samples));
@@ -719,7 +716,8 @@ fn a_wave_already_in_the_vault_is_deduped_before_anything_is_staged() {
     let staging = vault.root().join("staging");
 
     let landed = kept(&vault, &Sources::local(), &MediaLocation::local(&first));
-    fs::set_permissions(&staging, fs::Permissions::from_mode(0o500)).expect("a closed staging");
+    fs::remove_dir_all(&staging).expect("the staging folder goes");
+    fs::write(&staging, b"").expect("a file where the staging folder stood");
     let again = vault.keep(&Taking {
         sources: &Sources::local(),
         location: &MediaLocation::local(&second),
@@ -729,7 +727,6 @@ fn a_wave_already_in_the_vault_is_deduped_before_anything_is_staged() {
         replacing: None,
         halt: Halt::NEVER,
     });
-    fs::set_permissions(&staging, fs::Permissions::from_mode(0o700)).expect("restored");
 
     let Ok(Keeping::Kept(again)) = again else {
         panic!("{again:?}");

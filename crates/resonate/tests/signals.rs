@@ -1,10 +1,10 @@
-#![cfg(unix)]
 #![cfg(feature = "mcp")]
 
+#[cfg(unix)]
+use std::os::unix::process::ExitStatusExt as _;
 use std::{
     env, fs,
     io::{BufRead as _, BufReader, Write as _},
-    os::unix::process::ExitStatusExt as _,
     path::PathBuf,
     process::{Child, Command, ExitStatus, Stdio},
     thread,
@@ -12,6 +12,7 @@ use std::{
 };
 
 const LEAVES_WITHIN: Duration = Duration::from_secs(10);
+#[cfg(unix)]
 const HANG_UP: i32 = 1;
 const INITIALIZE: &str = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"signals","version":"0"}}}"#;
 
@@ -60,6 +61,7 @@ fn answered_once(child: &mut Child) {
     assert!(line.contains("\"id\":1"), "the server answered {line:?}");
 }
 
+#[cfg(unix)]
 fn signalled(child: &Child, signal: &str) {
     let sent = Command::new("kill")
         .arg(format!("-{signal}"))
@@ -81,6 +83,7 @@ fn left(child: &mut Child) -> ExitStatus {
     panic!("the server did not leave within {LEAVES_WITHIN:?} of the signal");
 }
 
+#[cfg(unix)]
 #[test]
 fn a_hang_up_is_heard_as_a_request_to_leave_rather_than_killing_the_process() {
     let home = Home::new("hang-up");
@@ -95,4 +98,16 @@ fn a_hang_up_is_heard_as_a_request_to_leave_rather_than_killing_the_process() {
         Some(HANG_UP),
         "the hang-up killed the process with nothing caught"
     );
+}
+
+#[test]
+fn closing_the_input_ends_the_server_with_a_clean_exit() {
+    let home = Home::new("input-closed");
+    let mut child = serving(&home);
+    answered_once(&mut child);
+
+    drop(child.stdin.take());
+    let status = left(&mut child);
+
+    assert!(status.success(), "the server left with {status}");
 }

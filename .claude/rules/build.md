@@ -20,8 +20,10 @@ paths:
   default features the headless job does not build; no job runs `cargo build` before `cargo test`,
   which builds what it needs, and library crates set `doctest = false` since none holds a doctest, the DSP
   bench under its ceilings, the layering refusals, the fuzz build, the sync server's package
-  (`server-package`), the `windows` job (`windows-latest`: clippy of the workspace but the phones'
-  boundary, its binding tool and PipeWire, then the tests of every crate but the window; `windows.md`)
+  (`server-package`), the `windows` job (`windows-latest`: clippy with `--all-targets` of the workspace but the phones'
+  boundary, its binding tool and PipeWire, then the tests of every crate but the window, then the
+  binary's `signals` test with `mcp` on, which `--no-default-features` leaves out; the library,
+  codec, vault and MCP integration suites run there, gated per test; `windows.md`)
   and `windows-arm64` (`cargo check` of the same set for `aarch64-pc-windows-msvc`, never run). A command added to `CLAUDE.md` goes into the workflow; a crate added to the
   layering refusals gets a line. The layering job has four shapes: `refuse`, `refuse_headless` (no
   default features), `only` (the workspace crates a crate may reach), `reached_by_the_binary_alone`
