@@ -66,7 +66,7 @@ A `cargo tree`-visible boundary is a `refuse` or `only` line in the CI layering 
 here, add it there.
 
 - `resonate-audio`: core, crossbeam-channel, `rtrb` (the handover) and thiserror alone; no PipeWire, codec, DSP or UI.
-  The engine reexports these contracts; the Linux adapter implements them. `resonate-mobile` (Android and iOS) composes engine, codec, audio, library, analysis, lyrics, online, network providers and `resonate-upnp`,
+  The engine reexports these contracts; the Linux adapter implements them. `resonate-mobile` (Android and iOS) composes engine, codec, audio, library, analysis, lyrics, online, network providers, `resonate-upnp` and `resonate-cast`,
   never PipeWire, GPUI, MPRIS or Discord IPC; PipeWire is a Linux-target dependency of the engine and `resonate-listen`. The listener/recogniser vocabulary builds on Android;
   PipeWire capture is compiled only for Linux.
 - `resonate-core`: no symphonia, pipewire, gpui, serde (else `resonate-dsp` stops being a leaf).
@@ -92,7 +92,7 @@ here, add it there.
   FLAC stream, pure Rust, the vault's own encoder), `parking_lot`,
   `crossbeam-channel`, `thiserror` and `tracing`; no PipeWire, gpui, `ureq`, serde or rustls (a
   renderer is plain HTTP on the local network, `upnp.md`). The engine is its dev-dependency alone.
-- `resonate-cast`: core, `resonate-audio` and `resonate-upnp` (the paced stream, `cast.md`) alone,
+- `resonate-cast`: core, `resonate-audio` and `resonate-upnp` (the paced stream, `cast.md`) alone, reached by the binary and `resonate-mobile` alone,
   with `rustls` (`ring`, `tls12`: a receiver's TLS), `mdns-sd`, `parking_lot`,
   `crossbeam-channel`, `thiserror` and `tracing`; no PipeWire, gpui, `ureq`, serde or `serde_json`
   (its protobuf and JSON are hand-written, so the binary without `online` still casts). The engine,

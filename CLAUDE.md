@@ -99,7 +99,7 @@ resonate            bin: CLI, tracing, wiring
   ├── resonate-win32      the Win32 and COM calls no safe crate wraps, safe API  (Windows; also under wasapi, codec)
   └── resonate-core       domain vocabulary
 
-resonate-mobile      cdylib/staticlib: the phones' boundary (Kotlin and Swift) and document catalog, over playback, network renderers, analysis, lyrics, library seams, online, providers and sync
+resonate-mobile      cdylib/staticlib: the phones' boundary (Kotlin and Swift) and document catalog, over playback, network renderers (UPnP and Google Cast), analysis, lyrics, library seams, online, providers and sync
 resonate-bindgen     bin: host tool generating Kotlin and Swift from native metadata
 resonate-server      bin: keeps sealed sync records and introduces devices, over resonate-sync's wire
 ```
@@ -108,7 +108,7 @@ resonate-server      bin: keeps sealed sync records and introduces devices, over
 the refusals. Worth knowing: only the binary (and the detached `fuzz/`, for `resonate-mcp`) reaches
 `resonate-mcp` and `resonate-discord`; `resonate-online` is composed by the binary and `resonate-mobile`; a provider crate reaches the seam, core and
 (over the network) `resonate-fetch` alone; `resonate-upnp` reaches core and `resonate-audio` alone (its HTTP
-hand-written over `httparse`, so a build without `online` still plays to a renderer); `resonate-cast` reaches those and `resonate-upnp` alone (its JSON hand-written, so no `serde_json` without `online`); `resonate-listen` reaches core, `resonate-audio` and `resonate-pipewire`
+hand-written over `httparse`, so a build without `online` still plays to a renderer); `resonate-cast` reaches those and `resonate-upnp` alone (its JSON hand-written, so no `serde_json` without `online`) and is reached by the binary and `resonate-mobile` alone; `resonate-listen` reaches core, `resonate-audio` and `resonate-pipewire`
 alone on Linux (its own PipeWire client per recording) and core, `resonate-audio` and the `wasapi` crate on Windows
 (capture and loopback on threads of its own, never `resonate-wasapi`); `resonate-analysis` reaches `resonate-dsp`;
 `resonate-sync` reaches core alone and is reached by the binary, `resonate-mobile` and the server;

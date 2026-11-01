@@ -7,7 +7,7 @@ use std::{
 };
 
 use gpui::{
-    App, BorderStyle, Bounds, Canvas, Context, Div, Hsla, MouseButton, MouseDownEvent,
+    App, BorderStyle, Bounds, Canvas, Context, Div, Entity, Hsla, MouseButton, MouseDownEvent,
     PathPromptOptions, Pixels, Point, ScrollEvent, SharedString, Stateful, Task, Window, canvas,
     div, linear_color_stop, linear_gradient, point, prelude::*, px, quad, relative, rgb, size,
 };
@@ -25,7 +25,7 @@ use resonate_library::Library;
 use resonate_listen::Listening;
 
 use crate::{
-    Bindings, Measurers, Notice, ResonateApp, Setting,
+    Bindings, Measurers, Notice, PlayerModel, ResonateApp, Setting,
     app::{
         BAND_CONTEXT, BandHigher, BandLouder, BandLower, BandNarrower, BandQuieter, BandWider,
         CONTROL_CONTEXT,
@@ -1589,6 +1589,65 @@ impl RootView {
         };
         self.store(&written, cx);
         self.tell_the_engine(cx);
+        cx.notify();
+    }
+
+    pub(crate) fn carry_bindings_to_renamed_sinks(
+        &mut self,
+        player: &Entity<PlayerModel>,
+        cx: &mut Context<Self>,
+    ) {
+        let sinks = player.read(cx).sinks();
+        let bindings = self.equaliser.read(cx).bindings().carried_to(sinks);
+        let measurers = cx.global::<ResonateApp>().measurers.carried_to(sinks);
+        if bindings.is_empty() && measurers.is_empty() {
+            return;
+        }
+
+        for carry in bindings {
+            let Some(binding) = self
+                .equaliser
+                .read(cx)
+                .bindings()
+                .named(Some(&carry.from))
+                .cloned()
+            else {
+                continue;
+            };
+            if !self
+                .equaliser
+                .update(cx, |model, _| model.carry_over(&carry))
+            {
+                continue;
+            }
+            self.store(
+                &Setting::EqualiserFor {
+                    sink: carry.from,
+                    binding: None,
+                },
+                cx,
+            );
+            self.store(
+                &Setting::EqualiserFor {
+                    sink: carry.to,
+                    binding: Some(binding),
+                },
+                cx,
+            );
+            self.tell_the_engine(cx);
+            self.follow_the_binding(cx);
+        }
+        for carry in measurers {
+            let held = cx
+                .global::<ResonateApp>()
+                .measurers
+                .of_the_device(&carry.from)
+                .map(str::to_owned);
+            if let Some(measurer) = held {
+                self.prefer_a_measurer_for(carry.from, None, cx);
+                self.prefer_a_measurer_for(carry.to, Some(measurer), cx);
+            }
+        }
         cx.notify();
     }
 

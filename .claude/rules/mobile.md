@@ -419,9 +419,10 @@ phones* (`equaliser.rs`); `playback.rs` sends it with the other sound preference
 - **Elsewhere** (host tests): PipeWire through `Player::with_sources`.
 
 On both phones `output::beside` wraps the platform's backend in `resonate_upnp::Beside` over the one
-`Network` a `MobilePlayer` holds (`rendering.rs`), so every zone's engine also lists the renderers
-found; the host build leaves PipeWire unwrapped and its tests wrap their fake backends instead
-(`upnp.md`'s *On the phones*).
+`Network` and the one `Casting` a `MobilePlayer` holds (`rendering::Kinds`), so every zone's engine
+also lists the renderers and Google Cast receivers found; the host build leaves PipeWire unwrapped
+and its tests wrap their fake backends instead (`upnp.md`'s *On the phones*, `cast.md`'s *On the
+phones*).
 
 ## Zones
 
@@ -461,7 +462,12 @@ its renderer; `select_zone_renderer(zone, None)` does. The catalog's step 22
 added by the address of its description (`add_renderer_address`, `remove_renderer_address`,
 `renderer_addresses`; `upnp.md`'s *On the phones*): the `Network` holds the addresses and reaches
 them with no search, the host keeps the list (the zones sheet's *Add a renderer by address*) and adds
-it again at start; *Find renderers* off only stops the search.
+it again at start; *Find renderers* off only stops the search. **A Google Cast receiver is a renderer
+to the boundary** (`cast.md`'s *On the phones*): `renderers()` lists both kinds (`NetworkRenderer.kind`),
+`select_zone_renderer` takes either (a node answering as an alias of a listed receiver is kept as
+its current name) and a receiver the search cannot hear is added by `add_receiver_address`,
+`remove_receiver_address` and `receiver_addresses`, the host keeping that list apart
+(`receiver-addresses`) beside the renderers' and adding it again at start.
 
 **A device another zone holds bit-perfect is refused, as the desktop refuses it** (`audio.md`'s
 `Zones::holding`): each zone's sink being its own, `Zones::send` never sees two zones on one sink, so

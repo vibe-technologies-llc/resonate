@@ -2,6 +2,7 @@ use std::{
     env,
     fs::{self, File},
     io::ErrorKind,
+    net::{IpAddr, Ipv4Addr},
     os::fd::IntoRawFd,
     path::{Path, PathBuf},
     process,
@@ -19,12 +20,13 @@ use resonate_audio::{
     AudioSource, Backend, Error as SinkError, NodeName, Opener, SinkChange, SinkFormats, SinkId,
     SinkInfo, SinkResult, SinkStream, StreamClock, StreamRequest, Surveyor, Words,
 };
+use resonate_cast::{Finding, Searching as CastSearching};
 use resonate_codec::Sources;
 use resonate_core::{
     ChannelLayout, Frames, Gain, Resumable, Resumption, SampleFormat, SampleRate, TrackId, ZoneId,
 };
 use resonate_engine::{Command, EngineConfig, Player};
-use resonate_upnp::{Network, Searching};
+use resonate_upnp::Searching;
 
 use crate::{
     Documents, MobilePlayer, PlaybackPreferences, Snapshot, Track,
@@ -33,7 +35,7 @@ use crate::{
     downloads::Downloads,
     features::Services,
     output::{self, Routing},
-    rendering::Rendering,
+    rendering::{Kinds, Rendering},
     sync::Syncing,
     zoning::{Engines, Playing},
 };
@@ -213,7 +215,10 @@ impl Harness {
     }
 
     pub(crate) fn beside_renderers(searching: Searching) -> Self {
-        Self::beside(Device::Speakers, Rendering::resting(searching))
+        Self::beside(
+            Device::Speakers,
+            Rendering::resting(searching, nothing_to_browse()),
+        )
     }
 
     fn over(device: Device) -> Self {
@@ -237,13 +242,13 @@ impl Harness {
         let sources = Arc::new(served.sources(Sources::local().and(Arc::new(
             GrantedFiles::new(documents, "content").expect("a granted provider"),
         ))));
-        let network = rendering.network();
+        let kinds = rendering.kinds();
         let engines: Box<Engines> = {
             let sources = Arc::clone(&sources);
-            let network = network.clone();
+            let kinds = kinds.clone();
             Box::new(
                 move |zone: ZoneId, config: EngineConfig, _: &Arc<Routing>| {
-                    engine_over(device, zone, config, Arc::clone(&sources), network.clone())
+                    engine_over(device, zone, config, Arc::clone(&sources), kinds.clone())
                 },
             )
         };
@@ -252,7 +257,7 @@ impl Harness {
             ZoneId::FIRST,
             EngineConfig::default(),
             Arc::clone(&sources),
-            network,
+            kinds,
         )
         .expect("an engine over the backend");
         let player = MobilePlayer {
@@ -375,12 +380,20 @@ impl Harness {
     }
 }
 
+fn nothing_to_browse() -> CastSearching {
+    CastSearching {
+        finding: Finding::Listed(Vec::new()),
+        within: Duration::from_millis(300),
+        serving_on: IpAddr::V4(Ipv4Addr::LOCALHOST),
+    }
+}
+
 fn engine_over(
     device: Device,
     zone: ZoneId,
     config: EngineConfig,
     sources: Arc<Sources>,
-    network: Option<Arc<Network>>,
+    kinds: Option<Kinds>,
 ) -> resonate_engine::Result<Player> {
     Player::with_sources_and_backend(config, sources, move |_| {
         let (announces, changes) = unbounded();
@@ -395,7 +408,7 @@ fn engine_over(
                 sink: SinkId::new(zone.get()),
             }),
         };
-        Ok(output::beside(backend, network))
+        Ok(output::beside(backend, kinds))
     })
 }
 

@@ -10,8 +10,9 @@ paths:
 Audio, a Nest or Home speaker, a speaker group, a TV with Cast built in): it finds one over mDNS,
 speaks Cast v2 to it and has the Default Media Receiver load an address the player serves. It
 reaches core, `resonate-audio` and `resonate-upnp` alone (the `layering` job's `only` line, and a
-`check` that its normal edges hold no PipeWire, gpui, `ureq`, serde or `serde_json`); the engine
-and codec are dev-dependencies, for the end-to-end tests.
+`check` that its normal edges hold no PipeWire, gpui, `ureq`, serde or `serde_json`) and is reached
+by the binary and `resonate-mobile` alone (the job's loop over `cargo tree -i`); the engine and
+codec are dev-dependencies, for the end-to-end tests.
 
 ## One more sink kind beside UPnP's
 
@@ -92,8 +93,11 @@ and codec are dev-dependencies, for the end-to-end tests.
   A browse that stops keeps the name it gave. A receiver the browse listed first and an address
   names later is one sink under the id. Locks and turns key by address (`Lanes`, the volume
   links), not by id, so a rename does not split a receiver's lane. The browse's record is not
-  asked again to prove the rename: the address was reached already. A name stored elsewhere by
-  node name (the equaliser's binding for `cast:at-...`) is not carried over to `cast:<id>`
+  asked again to prove the rename: the address was reached already. **A name stored elsewhere by
+  node name follows the alias** (`audio.md`, `eq.md`): the engine resolves an equaliser binding
+  through every name the sink answers to, and the window carries a binding, an own curve and a
+  measurer stored under `cast:at-...` to `cast:<id>` once the sink is listed so. The rename does not
+  last past the browse: a record removed reverts the name, which has no alias for the id
   (`FEATURES.md`).
   (`a_receiver_given_by_address_is_reached_without_a_browse_and_named_by_where_it_is`,
   `a_receiver_given_by_host_name_is_resolved_reached_and_named_by_where_it_is`,
@@ -175,6 +179,35 @@ sink named `upnp:` or `cast:` (`names_a_renderer`) look for both, the two first 
 by side, and the settings pane's one switch looks or rests for both. `sinks` lists receivers with
 *the network* as what drives them.
 
+## On the phones
+
+`resonate-mobile` holds one `Casting` beside its one `Network` (`rendering::Kinds`, resting from the
+start, `Searching::on_the_network`), and `output::beside` composes them exactly as the binary does,
+`Beside::over(oboe or remote_io, upnp).and(cast)`, so a receiver is one more sink to every zone
+with the queue, handover, DSP, clock and volume it has on the desktop. A receiver is listed in the
+zones sheet beside the renderers: `renderers()` answers a `NetworkRenderer` per renderer and per
+receiver, its `kind` (`RendererKind::Upnp` or `Cast`) telling them apart, and a receiver's `node`
+is its current `cast:` name (`Casting::sinks`), its `host` the address it is reached at.
+`select_zone_renderer` takes either kind, and a node that is an alias of a listed receiver (a zone
+kept on `cast:at-...` once the browse has named it) is kept under its current name.
+
+- **`look_for_renderers(on)` is one switch for both searches**: SSDP and the mDNS browse, each
+  started or stopped (`stop_multicasting`, `stop_browsing`) and each failing apart
+  (`RendererSearch`, `ReceiverSearch`; the second is attempted whichever the first answered).
+  Android holds the `MulticastLock` it holds for SSDP across the browse, mDNS being multicast too.
+- **A receiver by address or name** (`add_receiver_address`, `remove_receiver_address`,
+  `receiver_addresses`) is `Casting::locate` with `Given::parse` (`ReceiverAddress` where the text
+  is neither an address nor a name), starting `look_at_addresses` when nothing reaches yet, so no
+  mDNS is needed; a receiver that could not be reached stays held, and the call answers
+  `ReceiverUnreached` once a casting is reaching (the first address is reached on the thread
+  `look_at_addresses` starts, as a renderer's is). Each phone keeps the list (`receiver-addresses`) beside `renderer-addresses`
+  and adds it again at start, and the zones sheet has an *Add a receiver by address* row beside
+  *Add a renderer by address* (`mobile.md`'s *Zones*).
+- **An iPhone signed for free browses nothing**: the mDNS browse is multicast from the library's own
+  socket, which needs `com.apple.developer.networking.multicast`, so only the address route works
+  there, as for a renderer (`ios.md`, `FEATURES.md`). The browse's failure is logged and the
+  addresses are still reached.
+
 ## Proof
 
 `crates/resonate-cast/tests/receiver.rs` runs a fake receiver on loopback: TLS under an `rcgen`
@@ -198,4 +231,9 @@ second `mdns-sd` daemon is browsed, reached and listed, and removed once withdra
 (`a_receiver_advertised_over_mdns_is_found_and_gone_once_withdrawn`, skipped where that daemon
 cannot resolve its own record, which is a host with no multicast). The unit tests hold the protobuf
 bytes, the JSON reader's escapes, surrogates and depth limit, the mDNS record's reading and the
-media status entries. No real receiver has been played to (`docs/TESTING.md`).
+media status entries. The phones' side is proved on the host in
+`crates/resonate-mobile/src/rendering.rs` (`a_receiver_given_by_address_is_held_with_no_search_and_forgotten`,
+`a_receiver_address_that_is_neither_an_address_nor_a_name_is_refused_and_a_name_is_held`,
+`one_switch_looks_for_renderers_and_receivers_and_turning_it_off_keeps_the_addresses`), the stream
+itself by this crate's fake. No real receiver has been played to, from a desktop or a phone
+(`docs/TESTING.md`).

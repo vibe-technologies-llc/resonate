@@ -26,10 +26,11 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   a time, so a second zone adds a queue of its own and a handover but no second room (both zones'
   RemoteIO units mix into that route) unless it plays on a network renderer, which the next entry
   keeps from a free signing
-- [M · blocked: Apple] An iPhone signed for free finds no network renderer: the SSDP search is
-  multicast from the library's own socket, which needs the `com.apple.developer.networking.multicast`
-  entitlement Apple grants a paid team on request; a renderer given by the address of its
-  description (the zones sheet's *Add a renderer by address*) is reached without it
+- [M · blocked: Apple] An iPhone signed for free finds no network renderer and no Cast receiver:
+  the SSDP search and the mDNS browse are multicast from the library's own sockets, which needs the
+  `com.apple.developer.networking.multicast` entitlement Apple grants a paid team on request; a
+  renderer given by the address of its description and a receiver given by its address or name (the
+  zones sheet's *Add a renderer by address* and *Add a receiver by address*) are reached without it
 - [M · blocked: rust nightly] Pointer authentication (an `arm64e` slice) is not adopted: the Rust
   library builds for `aarch64-apple-ios` on stable, and `arm64e-apple-ios` needs a nightly
   `build-std`
@@ -163,13 +164,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   complex`)
 
 ## Later: Network output
-- [S] A Google Cast receiver given by address that the browse then hears is renamed `cast:<id>` with
-  `cast:at-<ip>-<port>` kept as a `SinkInfo` alias, and the alias is followed by every match of a
-  stored name against a surveyed sink but not by a map keyed by node name: the equaliser's binding
-  for `cast:at-...` is not carried over to `cast:<id>` (`cast.md`)
-- [L] The phones have no Cast at all: `resonate-mobile` holds `resonate-upnp`'s `Network` alone,
-  so a Cast receiver needs a `Casting` beside it, the `Beside` composition over Oboe and RemoteIO,
-  an address row beside *Add a renderer by address* and the Kotlin and Swift of both (`cast.md`)
+- [S] A Google Cast receiver the browse stops hearing reverts to `cast:at-<ip>-<port>` while its
+  address is held, and nothing remembers the `cast:<id>` it had: an equaliser binding or measurer
+  the window carried to `cast:<id>` is then found by no name until the browse hears the receiver
+  again (`cast.md`)
 - [S] Nothing learns which renderers decode 176.4 and 192 kHz FLAC, since the protocol info does not say
   and a renderer that cannot play a stream gives no answer a try could read, so the default stays 96 kHz
   (the fake renderer's tests are all the proof the vouched rates have, no streamer having confirmed any);

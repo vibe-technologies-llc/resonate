@@ -391,7 +391,12 @@ boundary searches, released at `stop`. Below the switch, *Add a renderer by addr
 (`RendererAddressDialog`) takes the address of a renderer's description and lists those added, each
 with *Remove*; `NetworkRenderers.add` and `forget` keep the boundary's list in the `renderers`
 preferences as `renderer-addresses` (a string set) and `begin` adds it again, so a renderer
-given by address is listed and offered to a zone with the switch off.
+given by address is listed and offered to a zone with the switch off. **Cast receivers are in the
+same section** (`cast.md`'s *On the phones*): *Find renderers* looks for them too (the same
+`MulticastLock`), the dialog of renderers lists them with their host under *Google Cast ·*
+(`ZonePlan.rendererLine`), and *Add a receiver by address* (the same dialog, an address or host
+name) is kept by `NetworkRenderers.addReceiver` and `forgetReceiver` as `receiver-addresses` and
+added again at `begin`.
 
 **The queue sheet** lists the devices that handed off (one row), History, the playing row and Up
 next; a handle drags a row (`Reorder`, its rows counted from Up next's first row as it stood when the
