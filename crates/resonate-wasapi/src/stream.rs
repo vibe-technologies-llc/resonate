@@ -9,8 +9,8 @@ use resonate_audio::{
     handover::{Fed, Handing, fed_from},
 };
 use resonate_core::{Frames, SampleFormat};
+use resonate_win32::PerformanceCounter;
 use wasapi::{ShareMode, StreamMode, WasapiError};
-use win_time_sys::{PerformanceCounter, Timeline};
 
 use crate::{
     device::{backend_error, default_device, device_for, enter_the_apartment, enumerate, wave_of},
@@ -185,7 +185,7 @@ fn play(opening: Opening) {
         clock,
     } = opening;
     let mut priority = Priority::ordinary();
-    priority.set(request.realtime, request.spec.rate);
+    priority.set(request.realtime);
     match start(&target, &request, fed, clock) {
         Ok(playing) => {
             let _ = announced.send(StreamEvent::FormatChanged {
@@ -279,7 +279,7 @@ fn start(
         let frequency = std::num::NonZeroU64::new(audio_clock.get_frequency().ok()?)?;
         Some((audio_clock, frequency))
     });
-    let counter_per_second = PerformanceCounter::ticks_per_second();
+    let counter = PerformanceCounter::of_this_machine().ok();
 
     Ok(Playing {
         client,
@@ -294,7 +294,7 @@ fn start(
         frame_bytes,
         clock,
         audio_clock,
-        counter_per_second,
+        counter,
         written: 0,
         real: 0,
     })
@@ -389,7 +389,7 @@ fn handled(
     match order {
         Order::Reshaped { realtime } => {
             standing.draining = false;
-            priority.set(realtime, playing.rate);
+            priority.set(realtime);
             Handled::Stays
         }
         Order::Command(StreamCommand::Close) => {

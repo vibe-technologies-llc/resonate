@@ -15,15 +15,22 @@ paths:
   `result_large_err = "deny"` do not apply. `forbid` is never downgraded locally; a binding needing
   `unsafe` is raised (it ruled out `pipewire::thread_loop`, whose constructors are `unsafe fn`).
 
-The listener approved one exception: `resonate-mobile` admits UniFFI scaffolding, the
-owned-descriptor bridge and the iOS RemoteIO unit at the native boundary (`mobile.md`). Its explicit crate lints keep
-`result_large_err` denied. No other crate weakens `unsafe_code = "forbid"`.
+The listener approved two exceptions, each one crate whose explicit lints allow `unsafe_code` and
+keep `result_large_err` denied: `resonate-mobile` admits UniFFI scaffolding, the owned-descriptor
+bridge and the iOS RemoteIO unit at the native boundary (`mobile.md`), and `resonate-win32` holds
+the Win32 and COM calls no reviewed safe crate wraps, behind a safe API (`windows.md`'s *The Win32
+exception*). No other crate weakens `unsafe_code = "forbid"`.
 
-Windows reaches its COM and Win32 calls through safe wrapper crates only, so `unsafe_code = "forbid"`
-holds there: `wasapi` (`resonate-wasapi`'s device enumeration, endpoint notifications, render client
-and audio clock; `resonate-listen`'s capture endpoints, loopback capture and measuring playback), `audio_thread_priority` (its stream thread's MMCSS class, without `with_dbus`),
-`thread-priority` (the fallback where MMCSS refuses), `volumecontrol-windows` (the endpoint's volume
-and mute, with `volumecontrol-core`'s trait), `win-time-sys` (the performance counter now), `interprocess` (Discord's named pipe and the window's own, `resonate-mpris`), `keepawake` (the machine awake while playing), `windows` (`resonate-mpris`'s toasts, connection cost and media transport through the Windows Runtime's safe projections, eight features: `Data_Xml_Dom`, `Foundation`, `Media`, `Media_Playback`, `Networking_Connectivity`, `Storage`, `Storage_Streams`, `UI_Notifications`; the `wasapi` crate again for its safe apartment), `ctrlc` and `crossterm` (the binary's interrupts and key reading), `fs4` (the spool's free space), `trash` (the
+`resonate-win32` takes the `windows` crate (the `Win32_*` features it calls, listed in its manifest,
+`Win32_System_Console` only under its `console` feature) and `windows-core` (`std`, for
+`#[implement]` and `HSTRING`), at the `wasapi` crate's versions, so no second copy is built. It
+reaches no workspace crate and is reached by `resonate-wasapi`, `resonate-codec` and the binary
+alone (the binary's tests take `console`); the layering job holds both.
+
+Everywhere else Windows reaches its COM and Win32 calls through safe wrapper crates: `wasapi`
+(`resonate-wasapi`'s device enumeration, endpoint notifications, render client and audio clock;
+`resonate-listen`'s capture endpoints, loopback capture and measuring playback), `thread-priority`
+(the fallback where MMCSS refuses the stream thread), `interprocess` (Discord's named pipe and the window's own, `resonate-mpris`), `keepawake` (the machine awake while playing), `windows` (`resonate-mpris`'s toasts, connection cost and media transport through the Windows Runtime's safe projections, eight features: `Data_Xml_Dom`, `Foundation`, `Media`, `Media_Playback`, `Networking_Connectivity`, `Storage`, `Storage_Streams`, `UI_Notifications`; the `wasapi` crate again for its safe apartment), `ctrlc` and `crossterm` (the binary's interrupts and key reading), `fs4` (the spool's free space), `trash` (the
 recycle bin), `same-file` (core's same-entry test). Each is a `cfg(windows)` target dependency, so
 none is built elsewhere; the layering job refuses PipeWire, Wayland, `rustix` and `signal-hook`
 from the Windows tree of the binary.
@@ -59,7 +66,7 @@ A `cargo tree`-visible boundary is a `refuse` or `only` line in the CI layering 
 here, add it there.
 
 - `resonate-audio`: core, crossbeam-channel, `rtrb` (the handover) and thiserror alone; no PipeWire, codec, DSP or UI.
-  The engine reexports these contracts; the Linux adapter implements them. `resonate-mobile` (Android and iOS) composes engine, codec, audio, library, analysis, lyrics, online, network providers and `resonate-upnp`,
+  The engine reexports these contracts; the Linux adapter implements them. `resonate-mobile` (Android and iOS) composes engine, codec, audio, library, analysis, lyrics, online, network providers, `resonate-upnp` and `resonate-cast`,
   never PipeWire, GPUI, MPRIS or Discord IPC; PipeWire is a Linux-target dependency of the engine and `resonate-listen`. The listener/recogniser vocabulary builds on Android;
   PipeWire capture is compiled only for Linux.
 - `resonate-core`: no symphonia, pipewire, gpui, serde (else `resonate-dsp` stops being a leaf).
@@ -85,7 +92,7 @@ here, add it there.
   FLAC stream, pure Rust, the vault's own encoder), `parking_lot`,
   `crossbeam-channel`, `thiserror` and `tracing`; no PipeWire, gpui, `ureq`, serde or rustls (a
   renderer is plain HTTP on the local network, `upnp.md`). The engine is its dev-dependency alone.
-- `resonate-cast`: core, `resonate-audio` and `resonate-upnp` (the paced stream, `cast.md`) alone,
+- `resonate-cast`: core, `resonate-audio` and `resonate-upnp` (the paced stream, `cast.md`) alone, reached by the binary and `resonate-mobile` alone,
   with `rustls` (`ring`, `tls12`: a receiver's TLS), `mdns-sd`, `parking_lot`,
   `crossbeam-channel`, `thiserror` and `tracing`; no PipeWire, gpui, `ureq`, serde or `serde_json`
   (its protobuf and JSON are hand-written, so the binary without `online` still casts). The engine,

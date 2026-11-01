@@ -466,8 +466,11 @@ sync seals its records and talks QUIC (TLS) of its own.
   section is a *Find renderers* toggle (`Library.lookForRenderers`, kept as `renderers` in the
   `library-features` defaults, off by default and applied when the player opens; a failed search
   there never fails the opening), counting those found, read every two seconds while it is on and
-  the sheet open (`readRenderers`), and an *Add a renderer by address* button (`RendererAddressSheet`: a
-  text field, the list added with a swipe to remove; `Library.addRendererAddress` and
+  the sheet open (`readRenderers`), and an *Add a renderer by address* and *Add a receiver by address* button (`RendererAddressSheet`, an
+  `AddressKind` apart: a text field, the list added with a swipe to remove; a Google Cast receiver
+  takes an address or a host name and its list is kept as `receiver-addresses` beside
+  `renderer-addresses`, `cast.md`'s *On the phones*; an iPhone signed for free browses no receiver
+  either, so the address is its only way to one; `Library.addRendererAddress` and
   `forgetRendererAddress` keep the list as `renderer-addresses` in the same defaults and add it again
   when the player opens, a free signing's way to a renderer, and reading continues while any is held); each zone's menu has *Play on a renderer* (`RendererPicker`, a
   list of the renderers found with a check on the one the zone plays to) and, on one, *Play on this

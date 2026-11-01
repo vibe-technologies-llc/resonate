@@ -8595,6 +8595,69 @@ fn a_profile_bound_to_another_device_does_not_reach_this_one() -> Result<()> {
 }
 
 #[test]
+fn a_profile_bound_under_an_alias_of_the_sink_reaches_it_and_one_under_its_name_still_does()
+-> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+    let path = tree.write("track.wav", &source.file);
+
+    let aliased = SinkInfo {
+        aliases: vec![NodeName::new("alsa_output.under-its-address")],
+        ..sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])
+    };
+    let (player, _graph) = player(vec![aliased.clone()])?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+
+    let boost = |decibels: f64| {
+        Arc::new(
+            Profile::new(
+                Preamp::NONE,
+                vec![Band::new(
+                    BandKind::Peaking,
+                    Frequency::from_hertz(1_000.0).expect("in range"),
+                    BandGain::from_decibels(decibels).expect("in range"),
+                    Q::from_units(1.0).expect("in range"),
+                )],
+            )
+            .expect("one band"),
+        )
+    };
+    let bound_under = |name: &NodeName, profile: Arc<Profile>| {
+        Arc::new(Equalisation {
+            enabled: true,
+            bound: [(name.clone(), profile)].into_iter().collect(),
+            fallback: None,
+        })
+    };
+
+    let under_the_alias = bound_under(&aliased.aliases[0], boost(9.0));
+    player
+        .request(Command::SetEqualisation(Arc::clone(&under_the_alias)))?
+        .wait_for(PATIENCE)?;
+    wait_for(
+        &player,
+        |player| player.state().output.map(|output| output.mode) == Some(OutputMode::Converted),
+        "the profile bound under the alias to reach the sink",
+    );
+
+    let under_the_name = bound_under(&aliased.name, boost(9.0));
+    player
+        .request(Command::SetEqualisation(under_the_name))?
+        .wait_for(PATIENCE)?;
+    wait_for(
+        &player,
+        |player| player.state().output.map(|output| output.mode) == Some(OutputMode::Converted),
+        "the profile bound under the name to reach the sink",
+    );
+    Ok(())
+}
+
+#[test]
 fn the_bytes_the_graph_is_handed_carry_the_correction() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);

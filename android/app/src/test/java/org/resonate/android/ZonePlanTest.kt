@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.resonate.android.nativecore.RendererKind
 import org.resonate.android.nativecore.Transport
 
 class ZonePlanTest {
@@ -49,6 +50,15 @@ class ZonePlanTest {
     fun aZoneOnARendererIsHeardOnItAndOtherwiseOnItsDevice() {
         assertEquals("Living room streamer", ZonePlan.heardOn("Living room streamer", "Topping"))
         assertEquals("Topping", ZonePlan.heardOn(null, "Topping"))
+    }
+
+    @Test
+    fun aCastReceiverIsNamedAsOneBesideItsHostAndAStreamerByItsHostAlone() {
+        assertEquals("192.168.1.20", ZonePlan.rendererLine(RendererKind.UPNP, "192.168.1.20"))
+        assertEquals(
+            "Google Cast · 192.168.1.30",
+            ZonePlan.rendererLine(RendererKind.CAST, "192.168.1.30"),
+        )
     }
 
     @Test

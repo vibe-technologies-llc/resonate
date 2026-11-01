@@ -26,10 +26,11 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   a time, so a second zone adds a queue of its own and a handover but no second room (both zones'
   RemoteIO units mix into that route) unless it plays on a network renderer, which the next entry
   keeps from a free signing
-- [M · blocked: Apple] An iPhone signed for free finds no network renderer: the SSDP search is
-  multicast from the library's own socket, which needs the `com.apple.developer.networking.multicast`
-  entitlement Apple grants a paid team on request; a renderer given by the address of its
-  description (the zones sheet's *Add a renderer by address*) is reached without it
+- [M · blocked: Apple] An iPhone signed for free finds no network renderer and no Cast receiver:
+  the SSDP search and the mDNS browse are multicast from the library's own sockets, which needs the
+  `com.apple.developer.networking.multicast` entitlement Apple grants a paid team on request; a
+  renderer given by the address of its description and a receiver given by its address or name (the
+  zones sheet's *Add a renderer by address* and *Add a receiver by address*) are reached without it
 - [M · blocked: rust nightly] Pointer authentication (an `arm64e` slice) is not adopted: the Rust
   library builds for `aarch64-apple-ios` on stable, and `arm64e-apple-ios` needs a nightly
   `build-std`
@@ -49,25 +50,16 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   hotspot, the change event) and the System Media Transport Controls (whether a `MediaPlayer` with its
   command manager off claims the session for an unpackaged process, the media keys and the overlay's
   buttons, seek bar, shuffle and repeat reaching the transport, the cover read through `StorageFile`,
-  the title, artist and album on the overlay and the lock screen) have never run on real hardware or
-  a real audio endpoint
-- [S · 0.4.0] The WASAPI stream thread joins MMCSS's `Audio` class, not `Pro Audio`:
-  `audio_thread_priority`, the safe wrapper, names its task itself, and no safe wrapper of
-  `AvSetMmThreadCharacteristicsW` takes another
-- [S · 0.4.0] A volume turned from the Windows mixer reaches the slider by the two-second poll: the
-  safe wrapper of `IAudioEndpointVolume` reads and sets only a whole percent and offers no
-  `IAudioEndpointVolumeCallback`, so a change is neither told at once nor read finer than a percent
-- [S · 0.4.0] `terminal.rs` (play's key reader and the terminal it restores on an interrupt, a
-  termination and a hang-up) has no Windows counterpart: it needs a pseudo-terminal, which on Windows
-  is ConPTY, and Ctrl-C through `GenerateConsoleCtrlEvent`, both `unsafe` Win32 the workspace forbids,
-  and `play` needs an audio endpoint the hosted runner lacks. The in-place tag write's inode check,
-  the directory-mode tests and the cross-filesystem organise tests are Unix-only for want of a
-  stable Windows equivalent (`windows.md`)
-- [M · blocked: a vetted safe crate] NTFS alternate streams and ACLs are not carried by a
-  tag write (`carries_what_the_file_did` is Unix only, so a staged copy renamed over a track drops
-  both): `std::fs::copy` carries streams but not the security descriptor and cannot stand in for
-  the writer's own staged copy, and no reviewed safe wrapper of `FindFirstStreamW`, `BackupRead` or
-  `GetNamedSecurityInfoW` exists to take them across
+  the title, artist and album on the overlay and the lock screen), the stream thread in MMCSS's
+  `Pro Audio` class, the endpoint volume's change notification and its scalar level, the console
+  tests under ConPTY, a tag write carrying NTFS alternate streams and the DACL and owner, and a toast
+  shown from the zip under the process's own AppUserModelID have never run on real hardware or a
+  real audio endpoint
+- [S · 0.4.0] A console closed under `play` (`CTRL_CLOSE_EVENT`, the hang-up's counterpart) is not
+  driven by `tests/console.rs`, and the console tests skip where no audio endpoint is listed, which
+  is the hosted runner. The in-place tag write's inode check, the directory-mode tests and the
+  cross-filesystem organise tests are Unix-only for want of a stable Windows equivalent
+  (`windows.md`)
 - [S · blocked: certificate] The Windows archives and installers are not Authenticode signed, so
   SmartScreen warns on a first run: no code-signing certificate exists. `sign.ps1` and `release.yml`
   sign with `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD` once they are set
@@ -172,13 +164,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   complex`)
 
 ## Later: Network output
-- [S] A Google Cast receiver given by address that the browse then hears is renamed `cast:<id>` with
-  `cast:at-<ip>-<port>` kept as a `SinkInfo` alias, and the alias is followed by every match of a
-  stored name against a surveyed sink but not by a map keyed by node name: the equaliser's binding
-  for `cast:at-...` is not carried over to `cast:<id>` (`cast.md`)
-- [L] The phones have no Cast at all: `resonate-mobile` holds `resonate-upnp`'s `Network` alone,
-  so a Cast receiver needs a `Casting` beside it, the `Beside` composition over Oboe and RemoteIO,
-  an address row beside *Add a renderer by address* and the Kotlin and Swift of both (`cast.md`)
+- [S] A Google Cast receiver the browse stops hearing reverts to `cast:at-<ip>-<port>` while its
+  address is held, and nothing remembers the `cast:<id>` it had: an equaliser binding or measurer
+  the window carried to `cast:<id>` is then found by no name until the browse hears the receiver
+  again (`cast.md`)
 - [S] Nothing learns which renderers decode 176.4 and 192 kHz FLAC, since the protocol info does not say
   and a renderer that cannot play a stream gives no answer a try could read, so the default stays 96 kHz
   (the fake renderer's tests are all the proof the vouched rates have, no streamer having confirmed any);

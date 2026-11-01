@@ -929,7 +929,11 @@ The stereo image, apart from the transducer: both are stereo-only, off by defaul
   order-dependent in a value compared sixty times a second). Values behind `Arc`: a publish is a
   refcount bump.
 - **The engine resolves, not the pane**: `select_sink` falls back to the system default, so only the
-  engine knows the opened sink. `Output::bound` records its `SinkInfo` name, `plan_for` takes it;
+  engine knows the opened sink. `Output::bound` records its `SinkInfo`, `plan_for` takes the sink
+  (re-read from the published list where a plan is made again) and `Equalisation::for_sink` finds a
+  binding under any name the sink answers to (`audio.md`'s *A sink may answer to more than one
+  name*; `a_profile_bound_under_an_alias_reaches_the_sink_and_the_name_outranks_the_alias`,
+  `a_profile_bound_under_an_alias_of_the_sink_reaches_it_and_one_under_its_name_still_does`);
   `eq_config` is the one place a name becomes a profile (mirrors `gain_config`). `SetSink` rebinds,
   `Output::open` re-resolves, a default changing under a playing stream is followed
   (`follow_the_sink_it_would_choose`).
@@ -1301,6 +1305,17 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   `Setting::EqualiserFor` and sends the whole resolved `Equalisation`. `Curve` = `Kept(name)` |
   `Own(owner)`; `Bindings::bound_to` answers one, so a device falling back to the fallback's own
   curve shows and edits that curve. A forgotten profile unbinds every device naming it.
+- **A binding under an alias is carried to the sink's name.** `zone_moved` hands each zone's sink
+  list to `RootView::carry_bindings_to_renamed_sinks`: a binding or measurer stored under a name
+  that is an alias of a listed sink whose own name holds none (`Bindings::carried_to`,
+  `Measurers::carried_to`, a `Carry`) is taken off the alias and put on the name, written as
+  `Setting::EqualiserFor` / `EqualiserMeasurerFor` and told to the engine. `EqualiserModel::carry_over`
+  moves an own curve's file with it (`Store::keep_own` under the new name, `forget_own` under the
+  old), a refusal being a toast and the binding left where it was
+  (`a_binding_carried_to_a_renamed_sink_takes_its_kept_profile_and_its_own_curve_with_it`,
+  `a_binding_held_under_an_alias_is_carried_to_the_sinks_name_unless_the_name_holds_one`,
+  `a_measurer_held_under_an_alias_is_carried_to_the_sinks_name`). Only the window carries; a run
+  with no window reads the alias through the engine and rewrites nothing.
 - **Keyboard**: a band moves through its number (`BAND_CONTEXT`, `app::answering_on_a_band`): arrows
   a semitone or half a dB, shift-up/down a notch of Q, via `equaliser::nudged` and the `put` a drag
   uses.

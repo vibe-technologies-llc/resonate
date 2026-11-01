@@ -17,6 +17,7 @@ use crate::{
     Bindings, Measurers,
     measure::{Measures, Unmeasured},
     models::Notice,
+    settings::Carry,
     toast,
 };
 
@@ -652,6 +653,40 @@ impl EqualiserModel {
 
     pub fn measurer_for(&self, sink: Option<&NodeName>) -> Option<&str> {
         self.measurers.for_sink(sink)
+    }
+
+    pub fn carry_over(&mut self, carry: &Carry) -> bool {
+        self.save_now();
+        let Some(binding) = self.bindings.named(Some(&carry.from)).cloned() else {
+            return false;
+        };
+        if binding == Binding::Own
+            && let Err(error) = self.carry_the_own_curve(carry)
+        {
+            self.notice = Some(toast::eq_could_not(
+                "carry the curve to the renamed device",
+                &error,
+            ));
+            return false;
+        }
+
+        self.bindings.bind(Some(&carry.from), None);
+        self.bindings.bind(Some(&carry.to), Some(binding));
+        self.shown = None;
+        self.forget_the_rows();
+        self.gather();
+        true
+    }
+
+    fn carry_the_own_curve(&self, carry: &Carry) -> resonate_eq::Result<()> {
+        let from = Some(carry.from.as_str());
+        if !self.store.own_path(from)?.is_file() {
+            return Ok(());
+        }
+        let curve = self.store.own(from)?;
+        self.store.keep_own(Some(carry.to.as_str()), &curve)?;
+        self.store.forget_own(from)?;
+        Ok(())
     }
 
     pub fn rebound(&mut self, bindings: Bindings) {
@@ -1891,6 +1926,70 @@ mod tests {
         assert!(kept.is_empty());
         assert_eq!(read.load(std::sync::atomic::Ordering::Relaxed), 99);
         assert!(matches!(notice, Some(Notice::Trouble(_))));
+    }
+
+    #[test]
+    fn a_binding_carried_to_a_renamed_sink_takes_its_kept_profile_and_its_own_curve_with_it() {
+        let folder = std::env::temp_dir().join(format!(
+            "resonate-ui-equaliser-carried-{}",
+            std::process::id()
+        ));
+        let store = Store::at(folder.clone());
+        let profile = named("Harman");
+        let address = NodeName::new("cast:at-192-168-1-20-8009");
+        let id = NodeName::new("cast:abc123");
+        let louder = Band {
+            gain: BandGain::from_decibels(6.0).expect("a gain"),
+            ..a_band()
+        };
+        store
+            .keep(
+                &profile,
+                &Profile::new(Preamp::NONE, vec![a_band()]).expect("a profile"),
+            )
+            .expect("the profile is kept");
+        store
+            .keep_own(
+                Some(address.as_str()),
+                &Profile::new(Preamp::NONE, vec![louder]).expect("a profile"),
+            )
+            .expect("the own curve is kept");
+        let mut model = EqualiserModel::new(
+            folder.clone(),
+            Arc::new(Corrected::uncorrected()),
+            Bindings {
+                enabled: true,
+                fallback: None,
+                by_sink: vec![(address.clone(), Binding::Own)],
+            },
+        );
+
+        let carry = Carry {
+            from: address.clone(),
+            to: id.clone(),
+        };
+        let carried = model.carry_over(&carry);
+        let told = model.equalisation();
+        let at_the_new_name = store.own_path(Some(id.as_str())).expect("a path").is_file();
+        let at_the_old_name = store
+            .own_path(Some(address.as_str()))
+            .expect("a path")
+            .is_file();
+
+        let nothing_to_carry = model.carry_over(&carry);
+        let _ = std::fs::remove_dir_all(&folder);
+
+        assert!(carried);
+        assert!(!nothing_to_carry);
+        assert!(at_the_new_name);
+        assert!(!at_the_old_name);
+        assert_eq!(model.bindings().named(Some(&id)), Some(&Binding::Own));
+        assert_eq!(model.bindings().named(Some(&address)), None);
+        assert_eq!(
+            told.bound.get(&id).map(|profile| profile.bands().to_vec()),
+            Some(vec![louder])
+        );
+        assert!(!told.bound.contains_key(&address));
     }
 
     #[test]

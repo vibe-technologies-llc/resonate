@@ -1,6 +1,8 @@
 ---
 paths:
   - "crates/resonate-wasapi/**/*.rs"
+  - "crates/resonate-win32/**"
+  - "crates/resonate/tests/console.rs"
   - "crates/resonate-core/src/os_bytes.rs"
   - "crates/resonate-core/src/file_facts.rs"
   - "crates/resonate-core/src/positioned.rs"
@@ -46,8 +48,44 @@ needs clang on `PATH` (the hosted Windows image has LLVM); under `cargo xwin` on
 puts a wrapper that rewrites `/imsvc <dir>` to `-isystem <dir>` ahead of it on `PATH`.
 Nothing here has been heard on a real Windows machine: this tree was cross-checked and the portable
 parts tested on the host, and `docs/FEATURES.md`'s *Windows parity* lists what only hardware can
-settle. `unsafe_code = "forbid"` holds: every Win32 and COM call goes through a safe wrapper crate
-(`dependencies.md`).
+settle. `unsafe_code = "forbid"` holds everywhere but `resonate-win32`: a Win32 or COM call goes
+through a safe wrapper crate (`dependencies.md`), or through that crate's safe API where none
+exists (*The Win32 exception*, below).
+
+## The Win32 exception
+
+`resonate-win32` is the one crate besides `resonate-mobile` whose lints allow `unsafe_code`
+(approved by the listener, `dependencies.md`). It is empty on every other target (each module is
+`cfg(windows)`), reaches no workspace crate, and hands out a safe API over the `windows` crate:
+
+- **Every `unsafe` block is one call**, its preconditions made true by the wrapper's types rather
+  than said beside it: a name is a `Wide` (UTF-16 ending in its NUL, refused as `NulInName` where
+  the text holds one) that lives across the call; an out-parameter is a local taken `&raw mut`; a
+  handle the system returns is owned by a type that closes it on drop (`StreamSearch` and
+  `FindClose`, `Descriptor` and `LocalFree`, `Attributes` and `DeleteProcThreadAttributeList`,
+  `PseudoConsole` and `ClosePseudoConsole`, `Process` over `OwnedHandle`); a thread-bound handle is
+  `!Send` (`ProAudioClass` holds a `PhantomData<*const ()>`, so it is reverted on the thread that
+  joined).
+- **What it wraps**: `ProAudioClass` (`AvSetMmThreadCharacteristicsW("Pro Audio")`, reverted on
+  drop or `leave`); `PerformanceCounter::of_this_machine` and `performance_counter`
+  (`QueryPerformanceFrequency`, `QueryPerformanceCounter`); `EndpointVolume` (an
+  `IAudioEndpointVolume` by endpoint id through `IMMDeviceEnumerator::GetDevice`: the scalar
+  level as a `Level` clamped to 0..=1, the mute, and `watched`, an `IAudioEndpointVolumeCallback`
+  made with `#[implement]` that only calls the closure it is given, unregistered when its
+  `VolumeWatch` drops); `name_the_process` (`SetCurrentProcessExplicitAppUserModelID`);
+  `carry_alternate_streams` and `carry_security` (below); and, under the `console` feature the
+  binary's tests take, `PseudoConsole` (ConPTY over two `std::io::pipe`s, a process started into
+  it by `CreateProcessW` with the `PSEUDOCONSOLE` attribute, its standard handles invalid so it
+  takes the console's, a quoted command line and a sorted environment block), `Process`,
+  `tell_the_console` (`GenerateConsoleCtrlEvent` to every process on the caller's console) and
+  `console_input_mode` (`GetConsoleMode` of `CONIN$`).
+- **COM is the caller's**: `EndpointVolume::of` makes its enumerator with `CoCreateInstance`, so
+  the thread must already be in an apartment (the WASAPI threads enter the multithreaded one
+  through `wasapi::initialize_mta`); one in none is refused `CO_E_NOTINITIALIZED` as an `Error`.
+- Errors are `Error::{Windows, WindowsOnFile} { op: Op, source: windows_core::Error }`, `Io` for
+  a stream copied through `std`, `NulInName`, `CounterStandsStill`; the command-line quoting and
+  the environment block are its own tests, on a Windows host with `console` on (the workspace's
+  tests turn it on through the binary).
 
 ## The seam is what Linux already had
 
@@ -56,8 +94,8 @@ settle. `unsafe_code = "forbid"` holds: every Win32 and COM call goes through a 
   binary's `surveyed::sinks` (`sinks`, `explain`, `eq --suggest`) and `rendering::Rendering`
   (`Beside` over the backend) use it, so the binary names no PipeWire and its Windows tree holds
   none of PipeWire, Wayland, `rustix` or `signal-hook` (the layering job).
-- **`resonate-wasapi` is `resonate-audio`'s `Backend` over the `wasapi` crate** and reaches core and
-  audio alone. Its portable halves compile and are tested everywhere (`ways`, `formats`, `changes`,
+- **`resonate-wasapi` is `resonate-audio`'s `Backend` over the `wasapi` crate** and reaches core,
+  audio and (on Windows) `resonate-win32` alone. Its portable halves compile and are tested everywhere (`ways`, `formats`, `changes`,
   `fill`, `clock`, `level`, `reshaping`, `watching`); `device`, `stream`, `render`, `priority` and
   `backend` are `cfg(windows)`.
 - **An endpoint is two sinks.** `wasapi:<endpoint id>` plays through the Windows mixer in shared mode
@@ -92,32 +130,35 @@ settle. `unsafe_code = "forbid"` holds: every Win32 and COM call goes through a 
   so a rate, word or layout change genuinely closes the client and opens another, and the engine's
   reopen is that. `StillHandingOver` while the last source is untaken, `NoStream` once the thread
   has ended.
-- **The stream thread is in MMCSS's `Audio` class** (`priority::Priority`, over
-  `audio_thread_priority`, whose safe call names the `Audio` task and not `Pro Audio`) while the
-  request is `realtime`, demoted on the same thread when a reshape lowers it or the thread ends;
-  where MMCSS refuses (the service stopped), `thread-priority`'s `Max` stands in.
+- **The stream thread is in MMCSS's `Pro Audio` class** (`priority::Priority`, over
+  `resonate_win32::ProAudioClass`) while the request is `realtime`, left on the same thread when a
+  reshape lowers it or the thread ends; where MMCSS refuses (the service stopped),
+  `thread-priority`'s `Max` stands in.
 - **Devices are told by the system and checked by a poll.** The watcher thread registers the
   `wasapi` crate's endpoint notification client (added, removed, state, default and property
   changes), whose callbacks only nudge a one-slot channel; `watching::watch` waits on the nudge or
   `Pace::ENDPOINTS`' two seconds, lets a burst settle for 100 ms, surveys once and tells the
   difference through `changes_between` (added, removed, default moved, formats or mix rate moved,
   and `Turned` where the endpoint's volume or mute moved), the one difference computation for both.
-  A refused registration leaves the poll alone. The endpoint volume has no notification here, so a
-  volume turned from the Windows mixer is noticed by the poll, within two seconds.
+  A refused registration leaves the poll alone. **The endpoint volume nudges the same channel**:
+  after every survey the watcher holds one `VolumeWatch` an endpoint listed (`VolumesWatched`,
+  dropped as an endpoint leaves, retried each survey where refused), so a volume or mute turned from
+  the Windows mixer is surveyed within the settle, not the two-second poll.
 - **The endpoint's volume and mute are the device's** (`set_device_volume`, `set_device_mute`, over
-  `volumecontrol-windows`, which wraps `IAudioEndpointVolume` by endpoint id; both sinks of an
-  endpoint turn the one level). Every survey reads it into `SinkPort` (the endpoint's description,
+  `resonate_win32::EndpointVolume` by endpoint id; both sinks of an endpoint turn the one level). Every survey reads it into `SinkPort` (the endpoint's description,
   the level, the mute, and `HardwareVolume::Yes` only where `IAudioMeterInformation`'s hardware
   support says the device turns its own volume, else `No`), so `device-volume` hands the slider to
   the device only where that keeps the stream bit-perfect: in exclusive mode a software endpoint
-  volume is not applied at all, and in shared mode it is the mixer's. The crate speaks the Windows
-  slider's whole percent, and the slider is ours (`level::percent_of` is `Volume::heard_at` in
-  percent, `gain_of` its inverse), so both sliders stand at the same place; a read-back below about
-  a tenth of the way can differ from what was sent by more than `A_DEVICES_HALF_STEP_DB` and moves
-  the slider by under a percent.
+  volume is not applied at all, and in shared mode it is the mixer's. The level is the endpoint's
+  scalar, which is the Windows slider's position, and the slider is ours (`level::scalar_of` is
+  `Volume::heard_at`, `gain_of` its inverse), so both sliders stand at the same place and a level
+  sent reads back within float rounding at any height
+  (`a_level_sent_reads_back_far_within_half_a_devices_step_however_low`): the engine's echo test
+  (`A_DEVICES_HALF_STEP_DB`, `audio.md`) is left only a device's own rounding to absorb.
 - **A stamp is `IAudioClock`'s position against the performance counter** (`render::Playing`): each
   cycle reads `GetPosition` (the device position, in the clock's `GetFrequency` units, and the
-  counter when it was read, in 100 ns) and the counter now (`win-time-sys`'s `PerformanceClock`), and
+  counter when it was read, in 100 ns) and the counter now (`resonate_win32::performance_counter`,
+  its frequency read once as the stream opens; a counter that cannot be read stamps by the padding), and
   `clock::ClockReading::device_time` hands `StreamClock::stamp_by` both in nanoseconds with the
   frames written less those played, so a zone handed a song lands within frames of the other
   (`audio.md`). The same frames are the latency the clock notes and the device position a drain
@@ -155,12 +196,19 @@ settle. `unsafe_code = "forbid"` holds: every Win32 and COM call goes through a 
   needs nothing else: a mounted folder's volume differs from its parent's, a folder below it
   has its parent's (`library.md`). Nothing here reads the volume's serial number, so two volumes
   are told apart by GUID or drive only.
-- **What the tag writer carries to its copy is the mode on Windows**: owner, hard-link count and
-  extended attributes are `cfg(unix)` (`carries_what_the_file_did`), so NTFS alternate streams and
-  ACLs are not carried. No safe crate does it: `std::fs::copy` (`CopyFileExW`) carries streams
-  but not the security descriptor and cannot replace the writer's own staged copy, and the
-  security-descriptor and stream crates on crates.io are young, unreviewed wrappers; the
-  attributes stay in `docs/FEATURES.md`.
+- **What the tag writer carries to its copy on Windows is the alternate streams, the security and
+  the read-only attribute** (`carries_what_the_file_did`'s Windows arm): every named `:name:$DATA`
+  stream `FindFirstStreamW`/`FindNextStreamW` list (the file's own `::$DATA` passed over) is copied
+  into the same name on the staged copy through `std` (a stream is its own file object, so the
+  mandatory lock on the staged copy's data is not crossed); the DACL is read with
+  `GetNamedSecurityInfoW` and laid on the copy with `SetNamedSecurityInfoW`, protected where the
+  file's was (`SE_DACL_PROTECTED`) and otherwise inheriting from the folder as the file did, the
+  owner set only where it differs from the copy's (setting another's needs a privilege); the
+  read-only attribute last, since it would refuse the stream writes. Any of the three refused
+  answers `false`, and the writer then lays a whole copy over the track through its own handle, which
+  keeps every stream and the descriptor because the file stays the file. The hard-link count and
+  extended attributes stay `cfg(unix)`. `std::fs::copy` (`CopyFileExW`) carries streams but not the
+  security descriptor and cannot replace the writer's own staged copy.
 - **A held file's lock is mandatory on Windows** (`LockFileEx`): `writer_of` still asks the lock
   first and a dead writer's is released by the system; with no `/proc` the pid stamp reads as
   living where the lock cannot be asked. **So nothing reads or writes a file its own run holds by
@@ -262,13 +310,25 @@ Linux; what is Unix-only is gated per test with `#[cfg(unix)]`, never per suite,
   no Windows counterpart, and the pipe peer takes any `Read + Write`.
 - **Unix-only on purpose, with the reason:** file names that are not text (`os::unix::ffi`; Windows
   names are UTF-16 and a lone surrogate is not a name a tagger writes); directory modes (a folder
-  unreadable, unsearchable or unwritable: the read-only attribute on a folder stops nothing and an
-  ACL needs the Win32 API behind `unsafe`); a second filesystem (`/dev/shm`, `st_dev`: the three
+  unreadable, unsearchable or unwritable: the read-only attribute on a folder stops nothing, and a
+  denying ACL, which `resonate-win32` could now write, is not written by the tests); a second filesystem (`/dev/shm`, `st_dev`: the three
   organise tests that copy across it, and the volume-noting test); the in-place tag write's inode
   identity (`an_ogg_comment_grown_and_shrunk_...`, `MetadataExt::ino`, no stable Windows file id);
-  the signal tests (`kill -HUP`) and `terminal.rs` (a pseudo-terminal, `setsid`, termios, none of
-  which Windows has before ConPTY, and a Ctrl-C needs `GenerateConsoleCtrlEvent`, which is `unsafe`
-  FFI the workspace forbids).
+  the signal tests (`kill -HUP`) and `terminal.rs` (a pseudo-terminal, `setsid`, termios), whose
+  Windows counterpart is `console.rs`, below.
+- **`console.rs` drives `play` on a pseudo console of its own** (`resonate_win32::PseudoConsole`,
+  the binary's dev-dependency with `console`): it starts `play` on thirty seconds of silence inside
+  ConPTY, waits until the console's input mode has left line input and echo, tells it to leave by
+  a Ctrl-C typed into the console's input (raw mode reads it as a key, `interrupted()` turns it into
+  the interrupt), by `GenerateConsoleCtrlEvent(CTRL_C_EVENT)` or by `CTRL_BREAK_EVENT` (the
+  termination's counterpart; `ctrlc` takes every event), and requires it to leave with no
+  `STATUS_CONTROL_C_EXIT` and line input and echo back. The mode and the events must come from a
+  process on that console, so the test runs itself inside it as an errand
+  (`an_errand_run_inside_the_console`, which does nothing without `RESONATE_CONSOLE_ERRAND`): it
+  prints `console-mode-<n>=<mode>.`, read back off the console's output with the escape sequences
+  stripped, or sends the event. It skips where `resonate sinks` lists no `wasapi:` sink (the hosted
+  runner) or no pseudo console opens; a console closed under `play` (the hang-up's counterpart) is
+  not driven (`docs/FEATURES.md`).
 
 ## The settings text
 
@@ -407,11 +467,13 @@ in no apartment fails `CO_E_NOTINITIALIZED`. Errors are `Error::Windows { op: Wi
   the button's key as its argument and `notify::pressed` turns it into the `Command`, settled on
   the zone, so a press reaches the transport as it does on Linux; a press of a toast left in the
   Action Center after the player has gone cannot be answered.
-- **No process AppUserModelID is set.** `CreateToastNotifierWithId` names the identity, which
-  needs no call of ours (`SetCurrentProcessExplicitAppUserModelID` is `unsafe`). **A toast shows in
-  practice only where a Start-menu shortcut carries that identity** (the `System.AppUserModel.ID`
-  property of a `.lnk` in the Start menu's `Programs`); the zip has none, the installer
-  makes one (*The installer*, below). The identity is one constant, `resonate_mpris::APP_USER_MODEL_ID`
+- **The process carries the identity too.** `CreateToastNotifierWithId` names it, and the
+  binary's `run` calls `resonate_win32::name_the_process(APP_USER_MODEL_ID)`
+  (`SetCurrentProcessExplicitAppUserModelID`) once logging is up, before any window, a refusal
+  logged and played on. **A toast was known to show only where a Start-menu shortcut carries that
+  identity** (the `System.AppUserModel.ID` property of a `.lnk` in the Start menu's `Programs`),
+  which the installer makes (*The installer*, below); whether the process's own identity lets the
+  zip's toasts show without one is not proven on a machine (`docs/FEATURES.md`). The identity is one constant, `resonate_mpris::APP_USER_MODEL_ID`
   (`identity.rs`): `desk_toast.rs` creates its notifier under it and a test holds the installer
   script's shortcut to it.
 - **Which service raises it.** With a session bus (a dbus session on Windows is rare but possible)
@@ -554,8 +616,9 @@ the output name as `/D` definitions the script reads (`the_build_script_compiles
 - **The Start menu shortcut** (`{autoprograms}\Resonate`) carries `AppUserModelID:
   "{#AppUserModelId}"`, defined once at the head of the script as `org.resonate.Resonate`, the
   value of `resonate_mpris::APP_USER_MODEL_ID`, the constant the toast code creates its notifier
-  under. Windows shows a toast only for an identity a Start-menu shortcut carries, so installing is
-  what makes toasts appear; the zip and a Scoop install have no such shortcut
+  under. Windows has shown a toast only for an identity a Start-menu shortcut carries, so installing
+  is the sure way to toasts; the zip and a Scoop install have no such shortcut, and lean on the
+  process's own identity above
   (`the_start_menu_shortcut_carries_the_identity_the_toasts_are_raised_under`).
 - **File associations are the registration Windows allows a program to make**, all under
   `HKCU\Software\Classes`: the ProgID `Resonate.Audio` (name, `DefaultIcon`, `shell\open\command`

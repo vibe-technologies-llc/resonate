@@ -301,14 +301,14 @@ fn the_test(
     status: &OutputStatus,
     trials: usize,
 ) -> Result<Test> {
-    let sink = player
-        .sinks_once_surveyed(SINK_TIMEOUT)
+    let sinks = player.sinks_once_surveyed(SINK_TIMEOUT);
+    let info = sinks
         .iter()
         .find(|sink| sink.id == status.sink)
-        .map(|sink| sink.name.clone())
         .ok_or(Error::AbxNoOutput)?;
+    let sink = info.name.clone();
     let chain = equalisation
-        .for_sink(&sink)
+        .for_sink(info)
         .ok_or_else(|| Error::AbxNothingBound { sink: sink.clone() })?;
 
     Test::begin(trials, clock_seed(), chain, status.negotiated.rate, sink)
@@ -514,11 +514,11 @@ mod tests {
         let sink = NodeName::new("alsa_output.usb");
 
         assert_eq!(
-            heard_a.for_sink(&sink).map(|profile| &**profile),
+            heard_a.for_name(&sink).map(|profile| &**profile),
             Some(&arms_of(&test).a)
         );
         assert_eq!(
-            heard_b.for_sink(&sink).map(|profile| &**profile),
+            heard_b.for_name(&sink).map(|profile| &**profile),
             Some(&arms_of(&test).b)
         );
         assert!(heard_a.enabled && heard_b.enabled);
@@ -533,7 +533,7 @@ mod tests {
         let heard = equalised(test.hearing(Hear::X));
 
         assert_eq!(
-            heard.for_sink(&sink).map(|profile| &**profile),
+            heard.for_name(&sink).map(|profile| &**profile),
             Some(arms_of(&test).profile(x))
         );
     }

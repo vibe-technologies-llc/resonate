@@ -14,13 +14,10 @@ resonate-core.workspace = true
 tracing.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-audio_thread_priority = { version = "0.38.0", default-features = false }
 parking_lot.workspace = true
+resonate-win32.workspace = true
 thread-priority = { version = "3.1.1", default-features = false }
-volumecontrol-core = "0.1.2"
-volumecontrol-windows = { version = "0.1.2", default-features = false, features = ["wasapi"] }
 wasapi = "0.26.0"
-win-time-sys = "0.1.0"
 
 [lints]
 workspace = true

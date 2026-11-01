@@ -29,6 +29,10 @@ public enum ZonePlan {
         zone != first
     }
 
+    public static func rendererLine(host: String, viaCast: Bool) -> String {
+        viaCast ? "Google Cast · \(host)" : host
+    }
+
     public static func line(_ transport: Transport, playing: String?, on renderer: String? = nil) -> String {
         let doing = switch transport {
         case .playing: playing.map { "Playing \($0)" } ?? "Playing"

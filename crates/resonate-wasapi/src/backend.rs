@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     sync::Arc,
     thread::{self, JoinHandle},
     time::Duration,
@@ -10,13 +11,12 @@ use resonate_audio::{
     Backend, Error, Opener, Operation, SinkChange, SinkId, SinkInfo, SinkResult, Surveyor,
 };
 use resonate_core::Gain;
-use volumecontrol_core::AudioDevice as _;
-use volumecontrol_windows::AudioDevice;
+use resonate_win32::{EndpointVolume, Level, VolumeWatch};
 use wasapi::{DeviceEnumerator, DeviceEventCallbacks, DeviceEventRegistration};
 
 use crate::{
     device::{enter_the_apartment, enumerate, level_error},
-    level::percent_of,
+    level::scalar_of,
     stream::{Known, Opens},
     watching::{Pace, watch},
     ways::endpoint_of,
@@ -57,7 +57,7 @@ impl Wasapi {
         })
     }
 
-    fn endpoint_of(&self, sink: SinkId) -> SinkResult<AudioDevice> {
+    fn endpoint_of(&self, sink: SinkId) -> SinkResult<EndpointVolume> {
         let node = self
             .known
             .lock()
@@ -67,7 +67,7 @@ impl Wasapi {
             .ok_or(Error::SinkGone { node: sink })?;
         let (_, endpoint) = endpoint_of(&node).ok_or(Error::SinkGone { node: sink })?;
         enter_the_apartment();
-        AudioDevice::from_id(endpoint).map_err(level_error)
+        EndpointVolume::of(endpoint).map_err(level_error)
     }
 }
 
@@ -81,13 +81,51 @@ fn remember(known: &Known, sinks: &[SinkInfo]) {
 fn watched(first: Vec<SinkInfo>, known: &Known, told: &Sender<SinkChange>, stopped: &Receiver<()>) {
     enter_the_apartment();
     let (nudge, nudged) = bounded(1);
-    let _registration = told_of_endpoints(nudge);
+    let _registration = told_of_endpoints(nudge.clone());
+    let mut volumes = VolumesWatched::default();
+    volumes.follow(&first, &nudge);
     let survey = || {
         let now = enumerate().ok()?;
         remember(known, &now);
+        volumes.follow(&now, &nudge);
         Some(now)
     };
     watch(first, survey, told, &nudged, stopped, Pace::ENDPOINTS);
+}
+
+#[derive(Default)]
+struct VolumesWatched {
+    by_endpoint: BTreeMap<String, VolumeWatch>,
+}
+
+impl VolumesWatched {
+    fn follow(&mut self, sinks: &[SinkInfo], nudge: &Sender<()>) {
+        let endpoints: Vec<&str> = sinks
+            .iter()
+            .filter_map(|sink| endpoint_of(&sink.name).map(|(_, endpoint)| endpoint))
+            .collect();
+        self.by_endpoint
+            .retain(|endpoint, _| endpoints.contains(&endpoint.as_str()));
+        for endpoint in endpoints {
+            if self.by_endpoint.contains_key(endpoint) {
+                continue;
+            }
+            let nudge = nudge.clone();
+            let watched = EndpointVolume::of(endpoint).and_then(|volume| {
+                volume.watched(move || {
+                    let _ = nudge.try_send(());
+                })
+            });
+            match watched {
+                Ok(watch) => {
+                    self.by_endpoint.insert(endpoint.to_owned(), watch);
+                }
+                Err(error) => {
+                    tracing::debug!(%error, endpoint, "the endpoint's volume is followed by the poll alone");
+                }
+            }
+        }
+    }
 }
 
 fn told_of_endpoints(nudge: Sender<()>) -> Option<DeviceEventRegistration> {
@@ -142,12 +180,14 @@ impl Backend for Wasapi {
 
     fn set_device_volume(&self, sink: SinkId, gain: Gain) -> SinkResult<()> {
         self.endpoint_of(sink)?
-            .set_vol(percent_of(gain))
+            .set_level(Level::new(scalar_of(gain)))
             .map_err(level_error)
     }
 
     fn set_device_mute(&self, sink: SinkId, muted: bool) -> SinkResult<()> {
-        self.endpoint_of(sink)?.set_mute(muted).map_err(level_error)
+        self.endpoint_of(sink)?
+            .set_muted(muted)
+            .map_err(level_error)
     }
 
     fn shutdown(mut self: Box<Self>) -> SinkResult<()> {

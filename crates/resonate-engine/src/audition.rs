@@ -3,7 +3,7 @@ use std::{
     time::Duration,
 };
 
-use resonate_audio::NodeName;
+use resonate_audio::{NodeName, SinkId, SinkInfo};
 use resonate_codec::{DecodeStatus, Decoder, Placement, Sources};
 use resonate_core::{
     AppliedGain, AudioBuffer, Frames, SampleData, SampleFormat, StreamSpec, Trim, Volume, abx::Arm,
@@ -175,7 +175,7 @@ impl ContestLevels {
 
 pub(crate) fn plans_of(
     decoded: Decoded,
-    sink: &NodeName,
+    sink: &SinkInfo,
     stream: StreamSpec,
     config: &EngineConfig,
     replay_gain: AppliedGain,
@@ -240,6 +240,22 @@ impl Measured {
     }
 }
 
+fn nameless_sink() -> SinkInfo {
+    SinkInfo {
+        id: SinkId::new(0),
+        name: NodeName::new(""),
+        aliases: Vec::new(),
+        description: String::new(),
+        is_default: false,
+        is_hardware: false,
+        port: None,
+        profile: None,
+        formats: Vec::new(),
+        allowed_rates: Vec::new(),
+        current_rate: None,
+    }
+}
+
 pub fn levels_of(
     sources: &Sources,
     item: &QueueItem,
@@ -265,7 +281,7 @@ pub fn levels_of(
     };
     let (plan_a, plan_b) = plans_of(
         decoded,
-        &NodeName::new(""),
+        &nameless_sink(),
         stream,
         &flat,
         AppliedGain::default(),

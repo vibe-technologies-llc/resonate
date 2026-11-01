@@ -83,7 +83,7 @@ pub use crate::{
         GainMode, LossyRestoration, PlaybackPreferences, ResamplingPhase, ResamplingQuality,
         SleepTimer, default_playback_preferences,
     },
-    rendering::NetworkRenderer,
+    rendering::{NetworkRenderer, RendererKind},
     rewriting::DocumentRewriting,
     saved_searches::{SavedSearch, SearchOrder, search_order_reads_descending},
     watching::PlayerWatch,
@@ -262,13 +262,13 @@ impl MobilePlayer {
             sink: zoning::first_zones_sink(&kept),
             ..EngineConfig::default()
         };
-        let network = rendering.network();
-        let player = output::player(config, Arc::clone(&sources), &routing, network.clone())?;
+        let kinds = rendering.kinds();
+        let player = output::player(config, Arc::clone(&sources), &routing, kinds.clone())?;
         let engines: Box<zoning::Engines> = {
             let sources = Arc::clone(&sources);
             Box::new(
                 move |_: ZoneId, config: EngineConfig, routing: &Arc<output::Routing>| {
-                    output::player(config, Arc::clone(&sources), routing, network.clone())
+                    output::player(config, Arc::clone(&sources), routing, kinds.clone())
                 },
             )
         };

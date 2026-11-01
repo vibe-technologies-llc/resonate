@@ -34,13 +34,13 @@ use std::sync::Arc;
 
 use resonate_codec::Sources;
 use resonate_engine::{EngineConfig, Player};
-use resonate_upnp::Network;
 
 pub use self::formats::{OutputFormat, OutputMixer, OutputStream};
 #[cfg(target_os = "android")]
 pub(crate) use self::oboe::Routing;
 #[cfg(target_os = "ios")]
 pub(crate) use self::remote_io_state::Routing;
+use crate::rendering::Kinds;
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub(crate) struct Routing {
@@ -97,11 +97,11 @@ pub(crate) fn player(
     config: EngineConfig,
     sources: Arc<Sources>,
     routing: &Arc<Routing>,
-    network: Option<Arc<Network>>,
+    kinds: Option<Kinds>,
 ) -> resonate_engine::Result<Player> {
     let routing = Arc::clone(routing);
     Player::with_sources_and_backend(config, sources, move |_| {
-        Ok(beside(Box::new(oboe::AndroidAudio::new(routing)), network))
+        Ok(beside(Box::new(oboe::AndroidAudio::new(routing)), kinds))
     })
 }
 
@@ -110,11 +110,11 @@ pub(crate) fn player(
     config: EngineConfig,
     sources: Arc<Sources>,
     routing: &Arc<Routing>,
-    network: Option<Arc<Network>>,
+    kinds: Option<Kinds>,
 ) -> resonate_engine::Result<Player> {
     let routing = Arc::clone(routing);
     Player::with_sources_and_backend(config, sources, move |_| {
-        Ok(beside(Box::new(remote_io::IosAudio::new(routing)), network))
+        Ok(beside(Box::new(remote_io::IosAudio::new(routing)), kinds))
     })
 }
 
@@ -123,7 +123,7 @@ pub(crate) fn player(
     config: EngineConfig,
     sources: Arc<Sources>,
     _: &Arc<Routing>,
-    _: Option<Arc<Network>>,
+    _: Option<Kinds>,
 ) -> resonate_engine::Result<Player> {
     Player::with_sources(config, sources)
 }
@@ -131,10 +131,10 @@ pub(crate) fn player(
 #[cfg(any(target_os = "android", target_os = "ios", test))]
 pub(crate) fn beside(
     phone: Box<dyn resonate_audio::Backend>,
-    network: Option<Arc<Network>>,
+    kinds: Option<Kinds>,
 ) -> Box<dyn resonate_audio::Backend> {
-    match network {
-        Some(network) => Box::new(resonate_upnp::Beside::over(phone, network)),
+    match kinds {
+        Some(kinds) => Box::new(resonate_upnp::Beside::over(phone, kinds.upnp).and(kinds.cast)),
         None => phone,
     }
 }

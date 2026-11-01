@@ -29,7 +29,8 @@ paths:
   default features), `only` (the workspace crates a crate may reach), `reached_by_the_binary_alone`
   (`cargo tree -i`; `online`, `mcp`, `discord`), and one `cargo tree --target x86_64-pc-windows-msvc`
   refusal that holds PipeWire, Wayland and `rustix` out of the binary's Windows tree; `resonate-mpris`'s direct normal edges are checked
-  for `resonate-codec`. `RUSTFLAGS` is emptied over `target-cpu=native`. The formatter is local
+  for `resonate-codec`, and `resonate-win32`'s Windows tree reaches no workspace crate while only the
+  binary, `resonate-wasapi` and `resonate-codec` reach it directly. `RUSTFLAGS` is emptied over `target-cpu=native`. The formatter is local
   only: a hosted runner cannot install `rust-formatter`.
 - **`release.yml` builds the release assets and runs on a `v*` tag push or a manual run** (input
   `tag`, empty builds artifacts only; `contents: write`). The `release` job holds the tag to

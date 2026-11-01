@@ -26,6 +26,7 @@ rustix.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 fs4.workspace = true
+resonate-win32.workspace = true
 
 [dev-dependencies]
 hdf5-writer.workspace = true

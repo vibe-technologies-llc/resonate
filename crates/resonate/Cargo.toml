@@ -66,6 +66,7 @@ signal-hook.workspace = true
 ctrlc.workspace = true
 keepawake.workspace = true
 crossterm.workspace = true
+resonate-win32.workspace = true
 trash.workspace = true
 
 [dev-dependencies]
@@ -74,6 +75,9 @@ png.workspace = true
 
 [target.'cfg(unix)'.dev-dependencies]
 rustix = { workspace = true, features = ["pty"] }
+
+[target.'cfg(windows)'.dev-dependencies]
+resonate-win32 = { workspace = true, features = ["console"] }
 
 [lints]
 workspace = true

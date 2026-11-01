@@ -32,7 +32,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `discord.md` | resonate-discord, `core::presence`, the binary's `discord.rs`, the Desktop groups | the gate, the seam, the frame, what an activity says and how often |
 | `release.md` | `.github/workflows/release.yml`, `packaging/**`, the root manifest, `docs/ROADMAP.md` | versions and their spelling per ecosystem, branches, tags, the release assets, the signing secrets |
 | `packaging.md` | `packaging/**` | the Arch, Fedora, DEB and Flatpak payloads, the x86-64-v3 release baseline and the pre-release spellings |
-| `windows.md` | resonate-wasapi, the Windows capture of resonate-listen, core's `os_bytes`, `file_facts`, `positioned`, `windows_uri`, `volume_mounts`, the library's `reach.rs`, the binary's `interrupts.rs`, `packaging/windows/**` | the WASAPI backend (shared and exclusive as two sinks), loopback and microphone capture, the filesystem and path seams under the shared crates, interrupts and keys, the window's named pipe, what is not on Windows yet |
+| `windows.md` | resonate-wasapi, resonate-win32, the Windows capture of resonate-listen, core's `os_bytes`, `file_facts`, `positioned`, `windows_uri`, `volume_mounts`, the library's `reach.rs`, the binary's `interrupts.rs`, `packaging/windows/**` | the WASAPI backend (shared and exclusive as two sinks), the Win32 exception, loopback and microphone capture, the filesystem and path seams under the shared crates, interrupts and keys, the window's named pipe, what is not on Windows yet |
 
 ## Project
 
@@ -65,7 +65,7 @@ added or a standing rule of how work is done moves.
 
 ## Architecture
 
-Thirty-one crates. `resonate-core` is the only universal dependency; `resonate-codec`,
+Thirty-two crates. `resonate-core` is the only universal dependency; `resonate-codec`,
 `resonate-dsp` and `resonate-pipewire` never depend on each other; `resonate-engine` joins them.
 
 ```
@@ -96,9 +96,10 @@ resonate            bin: CLI, tracing, wiring
   ├── providers/monochrome resonate-monochrome  [`online`]
   ├── providers/subsonic  resonate-subsonic  [`online`]
   ├── providers/tidal     resonate-tidal, the listener's subscription  [`online`]
+  ├── resonate-win32      the Win32 and COM calls no safe crate wraps, safe API  (Windows; also under wasapi, codec)
   └── resonate-core       domain vocabulary
 
-resonate-mobile      cdylib/staticlib: the phones' boundary (Kotlin and Swift) and document catalog, over playback, network renderers, analysis, lyrics, library seams, online, providers and sync
+resonate-mobile      cdylib/staticlib: the phones' boundary (Kotlin and Swift) and document catalog, over playback, network renderers (UPnP and Google Cast), analysis, lyrics, library seams, online, providers and sync
 resonate-bindgen     bin: host tool generating Kotlin and Swift from native metadata
 resonate-server      bin: keeps sealed sync records and introduces devices, over resonate-sync's wire
 ```
@@ -107,10 +108,12 @@ resonate-server      bin: keeps sealed sync records and introduces devices, over
 the refusals. Worth knowing: only the binary (and the detached `fuzz/`, for `resonate-mcp`) reaches
 `resonate-mcp` and `resonate-discord`; `resonate-online` is composed by the binary and `resonate-mobile`; a provider crate reaches the seam, core and
 (over the network) `resonate-fetch` alone; `resonate-upnp` reaches core and `resonate-audio` alone (its HTTP
-hand-written over `httparse`, so a build without `online` still plays to a renderer); `resonate-cast` reaches those and `resonate-upnp` alone (its JSON hand-written, so no `serde_json` without `online`); `resonate-listen` reaches core, `resonate-audio` and `resonate-pipewire`
+hand-written over `httparse`, so a build without `online` still plays to a renderer); `resonate-cast` reaches those and `resonate-upnp` alone (its JSON hand-written, so no `serde_json` without `online`) and is reached by the binary and `resonate-mobile` alone; `resonate-listen` reaches core, `resonate-audio` and `resonate-pipewire`
 alone on Linux (its own PipeWire client per recording) and core, `resonate-audio` and the `wasapi` crate on Windows
 (capture and loopback on threads of its own, never `resonate-wasapi`); `resonate-analysis` reaches `resonate-dsp`;
-`resonate-sync` reaches core alone and is reached by the binary, `resonate-mobile` and the server.
+`resonate-sync` reaches core alone and is reached by the binary, `resonate-mobile` and the server;
+`resonate-win32` reaches no workspace crate and is reached by `resonate-wasapi`, `resonate-codec` and
+the binary alone, and is with `resonate-mobile` the only crate where `unsafe_code` is allowed.
 
 Invariants the layering protects (the rules files have the rest):
 
@@ -214,7 +217,8 @@ Invariants the layering protects (the rules files have the rest):
   encoded` (ffmpeg, `metaflac`, `wavpack`, `mac`, `lame`); `resonate-dsp --test restoration`
   (ffmpeg); `resonate-library --test library`
   (ffmpeg); `resonate-analysis --test references` (ffmpeg with libvorbis, `fpcalc`, `lame`, and `faac`, `fdkaac`, `twolame` and ffmpeg's libopus where present, each skipped without); `resonate-online --test live` (`RESONATE_ONLINE_TESTS`); `resonate --test terminal`
-  (`setsid`, a pseudo-terminal); `resonate --test dragging` (`RESONATE_DRAG_TESTS`, a hosted KWin, GTK 4
+  (`setsid`, a pseudo-terminal) and, on Windows, `resonate --test console` (ConPTY, an audio
+  endpoint `sinks` lists); `resonate --test dragging` (`RESONATE_DRAG_TESTS`, a hosted KWin, GTK 4
   in python3, `spectacle`); `resonate-mpris --test trash` (`xdg-desktop-portal`, and `bwrap` with `xdg-dbus-proxy` for the
   sandboxed case). `resonate-subsonic`, `-tidal` and `-monochrome` serve fake servers
   on loopback.

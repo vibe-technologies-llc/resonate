@@ -175,6 +175,10 @@ impl SinkInfo {
         &self.name == name || self.aliases.contains(name)
     }
 
+    pub fn names(&self) -> impl Iterator<Item = &NodeName> {
+        std::iter::once(&self.name).chain(&self.aliases)
+    }
+
     pub fn words_for(&self, format: SampleFormat) -> Option<Words> {
         self.formats
             .iter()

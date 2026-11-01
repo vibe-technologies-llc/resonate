@@ -256,6 +256,7 @@ impl RootView {
         self.count_a_play(id, player, cx);
         self.keep_the_queue(id, player, cx);
         self.keep_the_zone(id, player, cx);
+        self.carry_bindings_to_renamed_sinks(player, cx);
         if id != self.switcher.selected() {
             return;
         }

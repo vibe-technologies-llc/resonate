@@ -20,7 +20,7 @@ use resonate_core::{
 };
 use resonate_engine::{
     Crossfeed, DitherKind, FilterPhase, NodeName, NoiseShaping, PreviousRestarts, Quality,
-    ReplayGainMode, Restoration, SkipUnderRepeat,
+    ReplayGainMode, Restoration, SinkInfo, SkipUnderRepeat,
 };
 use resonate_eq::Binding;
 use resonate_library::{Cut, HistoryKept, MinimumLength, MusicExtensions};
@@ -795,6 +795,10 @@ pub struct Measurers {
 }
 
 impl Measurers {
+    pub fn carried_to(&self, sinks: &[SinkInfo]) -> Vec<Carry> {
+        carried_to_the_names_of(|name| self.by_sink.contains_key(name), sinks)
+    }
+
     pub fn for_sink(&self, sink: Option<&NodeName>) -> Option<&str> {
         sink.and_then(|sink| self.by_sink.get(sink))
             .or(self.fallback.as_ref())
@@ -832,7 +836,33 @@ pub struct Bindings {
     pub by_sink: Vec<(NodeName, Binding)>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Carry {
+    pub from: NodeName,
+    pub to: NodeName,
+}
+
+fn carried_to_the_names_of(held: impl Fn(&NodeName) -> bool, sinks: &[SinkInfo]) -> Vec<Carry> {
+    sinks
+        .iter()
+        .filter(|sink| !held(&sink.name))
+        .filter_map(|sink| {
+            sink.aliases
+                .iter()
+                .find(|alias| held(alias))
+                .map(|alias| Carry {
+                    from: alias.clone(),
+                    to: sink.name.clone(),
+                })
+        })
+        .collect()
+}
+
 impl Bindings {
+    pub fn carried_to(&self, sinks: &[SinkInfo]) -> Vec<Carry> {
+        carried_to_the_names_of(|name| self.of_the_device(name).is_some(), sinks)
+    }
+
     fn of_the_device(&self, sink: &NodeName) -> Option<&Binding> {
         self.by_sink
             .iter()
@@ -1240,6 +1270,62 @@ mod tests {
 
     fn kept(name: &str) -> Binding {
         Binding::Profile(ProfileName::new(name).expect("a usable name"))
+    }
+
+    fn sink_answering_to(name: &str, aliases: &[&str]) -> SinkInfo {
+        SinkInfo {
+            id: resonate_engine::SinkId::new(1),
+            name: NodeName::new(name),
+            aliases: aliases.iter().map(|alias| NodeName::new(*alias)).collect(),
+            description: String::new(),
+            is_default: false,
+            is_hardware: true,
+            port: None,
+            profile: None,
+            formats: Vec::new(),
+            allowed_rates: Vec::new(),
+            current_rate: None,
+        }
+    }
+
+    #[test]
+    fn a_binding_held_under_an_alias_is_carried_to_the_sinks_name_unless_the_name_holds_one() {
+        let address = NodeName::new("cast:at-192-168-1-20-8009");
+        let id = NodeName::new("cast:abc123");
+        let sinks = [sink_answering_to(id.as_str(), &[address.as_str()])];
+        let mut bindings = Bindings::default();
+        bindings.bind(Some(&address), Some(kept("HD 650")));
+
+        assert_eq!(
+            bindings.carried_to(&sinks),
+            vec![Carry {
+                from: address.clone(),
+                to: id.clone()
+            }]
+        );
+
+        bindings.bind(Some(&id), Some(Binding::Own));
+        assert_eq!(bindings.carried_to(&sinks), Vec::new());
+
+        let apart = [sink_answering_to("alsa_output.dac", &[])];
+        assert_eq!(Bindings::default().carried_to(&apart), Vec::new());
+    }
+
+    #[test]
+    fn a_measurer_held_under_an_alias_is_carried_to_the_sinks_name() {
+        let address = NodeName::new("cast:at-192-168-1-20-8009");
+        let id = NodeName::new("cast:abc123");
+        let sinks = [sink_answering_to(id.as_str(), &[address.as_str()])];
+        let mut measurers = Measurers::default();
+        measurers.prefer_for(address.clone(), Some("crinacle".to_owned()));
+
+        assert_eq!(
+            measurers.carried_to(&sinks),
+            vec![Carry {
+                from: address,
+                to: id
+            }]
+        );
     }
 
     #[test]
