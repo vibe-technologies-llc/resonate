@@ -11,7 +11,7 @@ use std::{
 };
 
 use ahash::AHashMap;
-use crossbeam_channel::{Receiver, Sender, bounded};
+use crossbeam_channel::{Receiver, Sender, TrySendError, bounded};
 use parking_lot::RwLock;
 use resonate_core::{Frames, TrackId, Volume, ZoneId};
 use resonate_engine::{
@@ -46,7 +46,7 @@ const POLL: Duration = Duration::from_millis(200);
 const HEARD_READ_EVERY: Duration = Duration::from_secs(1);
 const WAITING_TELLS: usize = 4;
 const ANNOUNCE_BUDGET: Duration = Duration::from_millis(100);
-const INSTANCES: u32 = 16;
+pub(crate) const INSTANCES: u32 = 16;
 pub(crate) const ZONE_PREFIX: &str = "zone";
 
 struct Claimed {
@@ -83,7 +83,7 @@ pub struct Teller {
 
 impl Teller {
     pub fn tell(&self, told: Told) {
-        if self.tells.try_send(told).is_err() {
+        if let Err(TrySendError::Full(_)) = self.tells.try_send(told) {
             tracing::debug!("the desktop is still being told the last thing it was");
         }
     }
@@ -91,11 +91,21 @@ impl Teller {
 
 pub struct Mpris {
     tells: Sender<Told>,
+    service: Service,
+    stop: Arc<AtomicBool>,
+    shared: Arc<Shared>,
+}
+
+enum Service {
+    Bus(OnTheBus),
+    #[cfg(windows)]
+    Pipe(crate::pipe::Serving),
+}
+
+struct OnTheBus {
     claimed: Arc<Claimed>,
     connection: Option<Connection>,
-    stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
-    shared: Arc<Shared>,
 }
 
 impl Mpris {
@@ -111,33 +121,122 @@ impl Mpris {
             pictures: Pictures::default(),
             owed: Owed::default(),
         });
+        let stop = Arc::new(AtomicBool::new(false));
+        let (tells, told) = bounded(WAITING_TELLS);
+        let service = Self::served(zone, &shared, playlists, &told, &stop)?;
+
+        Ok(Self {
+            tells,
+            service,
+            stop,
+            shared,
+        })
+    }
+
+    #[cfg(unix)]
+    fn served(
+        zone: ZoneId,
+        shared: &Arc<Shared>,
+        playlists: Option<Arc<dyn Playlists>>,
+        told: &Receiver<Told>,
+        stop: &Arc<AtomicBool>,
+    ) -> Result<Service> {
+        OnTheBus::start(zone, shared, playlists, told, stop).map(Service::Bus)
+    }
+
+    #[cfg(windows)]
+    fn served(
+        zone: ZoneId,
+        shared: &Arc<Shared>,
+        playlists: Option<Arc<dyn Playlists>>,
+        told: &Receiver<Told>,
+        stop: &Arc<AtomicBool>,
+    ) -> Result<Service> {
+        match OnTheBus::start(zone, shared, playlists.clone(), told, stop) {
+            Ok(bus) => Ok(Service::Bus(bus)),
+            Err(error) => {
+                tracing::debug!(%error, "no session bus; the player is served on a pipe");
+                let answering = Arc::new(crate::answering::Answering::over(
+                    Arc::clone(shared),
+                    playlists,
+                ));
+                crate::pipe::Serving::start(zone, answering).map(Service::Pipe)
+            }
+        }
+    }
+
+    pub fn name(&self) -> WellKnownName<'static> {
+        match &self.service {
+            Service::Bus(bus) => bus.claimed.name(),
+            #[cfg(windows)]
+            Service::Pipe(pipe) => pipe.name(),
+        }
+    }
+
+    pub fn unique_name(&self) -> Option<OwnedUniqueName> {
+        match &self.service {
+            Service::Bus(bus) => bus.connection.as_ref()?.unique_name().cloned(),
+            #[cfg(windows)]
+            Service::Pipe(_) => None,
+        }
+    }
+
+    pub fn teller(&self) -> Teller {
+        Teller {
+            tells: self.tells.clone(),
+        }
+    }
+
+    pub fn shutdown(mut self) {
+        self.stop_thread();
+    }
+
+    fn stop_thread(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        match &mut self.service {
+            Service::Bus(bus) => bus.rest(),
+            #[cfg(windows)]
+            Service::Pipe(pipe) => pipe.rest(),
+        }
+        self.shared.pictures.forget();
+    }
+}
+
+impl OnTheBus {
+    fn start(
+        zone: ZoneId,
+        shared: &Arc<Shared>,
+        playlists: Option<Arc<dyn Playlists>>,
+        told: &Receiver<Told>,
+        stop: &Arc<AtomicBool>,
+    ) -> Result<Self> {
         let mut builder = connection::Builder::session()
             .map_err(|source| Error::bus(BusOp::Connect, source))?
             .serve_at(
                 OBJECT_PATH,
                 Root {
-                    shared: Arc::clone(&shared),
+                    shared: Arc::clone(shared),
                 },
             )
             .map_err(|source| Error::bus(BusOp::Serve, source))?
             .serve_at(
                 OBJECT_PATH,
                 PlayerInterface {
-                    shared: Arc::clone(&shared),
+                    shared: Arc::clone(shared),
                 },
             )
             .map_err(|source| Error::bus(BusOp::Serve, source))?
             .serve_at(
                 OBJECT_PATH,
                 TrackList {
-                    shared: Arc::clone(&shared),
+                    shared: Arc::clone(shared),
                 },
             )
             .map_err(|source| Error::bus(BusOp::Serve, source))?
             .serve_at(
                 OBJECT_PATH,
                 OwnInterface {
-                    shared: Arc::clone(&shared),
+                    shared: Arc::clone(shared),
                 },
             )
             .map_err(|source| Error::bus(BusOp::Serve, source))?;
@@ -153,12 +252,11 @@ impl Mpris {
 
         let losses = name_losses(&connection);
         let claimed = Arc::new(Claimed::new(claim(&connection, zone)?));
-        let stop = Arc::new(AtomicBool::new(false));
-        let (tells, told) = bounded(WAITING_TELLS);
         let thread = {
-            let stop = Arc::clone(&stop);
-            let shared = Arc::clone(&shared);
+            let stop = Arc::clone(stop);
+            let shared = Arc::clone(shared);
             let connection = connection.clone();
+            let told = told.clone();
             thread::Builder::new()
                 .name("resonate-mpris".to_owned())
                 .spawn(move || announce(&connection, &shared, playlists.as_ref(), &told, &stop))
@@ -169,42 +267,20 @@ impl Mpris {
                 connection.clone(),
                 zone,
                 Arc::clone(&claimed),
-                Arc::clone(&stop),
+                Arc::clone(stop),
                 losses,
             );
         }
 
         tracing::info!(name = %claimed.name(), "the MPRIS interface is on the session bus");
         Ok(Self {
-            tells,
             claimed,
             connection: Some(connection),
-            stop,
             thread: Some(thread),
-            shared,
         })
     }
 
-    pub fn name(&self) -> WellKnownName<'static> {
-        self.claimed.name()
-    }
-
-    pub fn unique_name(&self) -> Option<OwnedUniqueName> {
-        self.connection.as_ref()?.unique_name().cloned()
-    }
-
-    pub fn teller(&self) -> Teller {
-        Teller {
-            tells: self.tells.clone(),
-        }
-    }
-
-    pub fn shutdown(mut self) {
-        self.stop_thread();
-    }
-
-    fn stop_thread(&mut self) {
-        self.stop.store(true, Ordering::Release);
+    fn rest(&mut self) {
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
@@ -212,7 +288,6 @@ impl Mpris {
             hand_back(&connection, &self.claimed.name());
             let _ = connection.close();
         }
-        self.shared.pictures.forget();
     }
 }
 
@@ -322,7 +397,7 @@ pub(crate) fn bus_name_of(zone: ZoneId) -> String {
     }
 }
 
-fn instance_name(zone: ZoneId, attempt: u32) -> String {
+pub(crate) fn instance_name(zone: ZoneId, attempt: u32) -> String {
     let instance = match attempt {
         1 => format!("{BUS_NAME}.instance{}", process::id()),
         other => format!("{BUS_NAME}.instance{}-{other}", process::id()),

@@ -1,4 +1,11 @@
-use std::{collections::HashMap, fmt, path::Path, time::Duration};
+use std::{
+    collections::HashMap,
+    fmt,
+    io::{Read, Write},
+    path::Path,
+    sync::Arc,
+    time::Duration,
+};
 
 use resonate_core::{FrameSpan, MediaLocation, PlaylistId, TrackId, Volume, ZoneId};
 use resonate_engine::{Asleep, Placement, Until};
@@ -9,54 +16,18 @@ use zbus::{
 
 use crate::{
     BusOp, Error, PlaylistInfo, PlaylistOrder, Reloadable, Result, Tunable,
-    blocking::{Connection, Proxy, connection, fdo::DBusProxy},
-    interfaces::OWN_INTERFACE,
-    service::{BUS_NAME, OBJECT_PATH, ZONE_PREFIX},
-    track::{
-        NO_TRACK, PlaybackStatus, no_track, playlist_of, playlist_path, sleep_asked, sleep_timer,
-        track_of, track_path,
-    },
+    blocking::{Connection, connection},
+    bus_peer::BusPeer,
+    peer::{Peer, PipePeer},
+    service::{BUS_NAME, ZONE_PREFIX},
+    track::{PlaybackStatus, track_of},
+    wire::Act,
 };
 
-const ANSWERS_WITHIN: Duration = Duration::from_secs(2);
-const ROOT: &str = "org.mpris.MediaPlayer2";
-const PLAYER: &str = "org.mpris.MediaPlayer2.Player";
-const RAISE: &str = "Raise";
-const CAN_RAISE: &str = "CanRaise";
-const TRACK_LIST: &str = "org.mpris.MediaPlayer2.TrackList";
-const PLAYLISTS: &str = "org.mpris.MediaPlayer2.Playlists";
-const ADD_TRACK: &str = "AddTrack";
-const REMOVE_TRACK: &str = "RemoveTrack";
-const GET_TRACKS_METADATA: &str = "GetTracksMetadata";
-const GET_PLAYLISTS: &str = "GetPlaylists";
-const ACTIVATE_PLAYLIST: &str = "ActivatePlaylist";
-const SET_SLEEP: &str = "SetSleep";
-const ADD_TRACKS: &str = "AddTracks";
-const RELOCATE: &str = "Relocate";
-const TUNE: &str = "Tune";
-const RELOAD: &str = "Reload";
-const HAND_OVER: &str = "HandOver";
+pub(crate) const ANSWERS_WITHIN: Duration = Duration::from_secs(2);
 const MOVES_A_CALL: usize = 4096;
 pub const ROWS_A_CALL: usize = 128;
-const PLAYING_NEXT: &str = "PlayingNext";
-const ZONE: &str = "Zone";
 const INSTANCE_PREFIX: &str = "instance";
-const PLAY_ORDER: &str = "PlayOrder";
-const PLAY: &str = "Play";
-const PAUSE: &str = "Pause";
-const PLAY_PAUSE: &str = "PlayPause";
-const STOP: &str = "Stop";
-const NEXT: &str = "Next";
-const PREVIOUS: &str = "Previous";
-const SEEK: &str = "Seek";
-const SET_POSITION: &str = "SetPosition";
-const TRACKS: &str = "Tracks";
-const METADATA: &str = "Metadata";
-const POSITION: &str = "Position";
-const VOLUME: &str = "Volume";
-const SHUFFLE: &str = "Shuffle";
-const SLEEP: &str = "Sleep";
-const PLAYBACK_STATUS: &str = "PlaybackStatus";
 const TRACK_ID: &str = "mpris:trackid";
 const LENGTH: &str = "mpris:length";
 const ART_URL: &str = "mpris:artUrl";
@@ -153,16 +124,49 @@ pub struct Standing {
 }
 
 pub struct Running {
-    connection: Connection,
+    peer: Arc<dyn Peer>,
     name: WellKnownName<'static>,
 }
 
 #[derive(Clone)]
-pub struct Session(Connection);
+pub struct Session {
+    bus: Option<Connection>,
+}
 
 impl Session {
     pub fn open() -> Result<Self> {
-        session().map(Self)
+        match session() {
+            Ok(connection) => Ok(Self {
+                bus: Some(connection),
+            }),
+            Err(error) => Self::without_a_bus(error),
+        }
+    }
+
+    #[cfg(unix)]
+    fn without_a_bus(error: Error) -> Result<Self> {
+        Err(error)
+    }
+
+    #[cfg(windows)]
+    fn without_a_bus(error: Error) -> Result<Self> {
+        tracing::debug!(%error, "no session bus; players are looked for on their pipes");
+        Ok(Self { bus: None })
+    }
+
+    fn players(&self) -> Result<Vec<Running>> {
+        let mut players = Vec::new();
+        if let Some(connection) = &self.bus {
+            players.extend(BusPeer::serving(connection)?);
+        }
+        #[cfg(windows)]
+        players.extend(crate::pipe::serving()?);
+        players.sort_by(|first, second| first.0.as_str().cmp(second.0.as_str()));
+
+        Ok(players
+            .into_iter()
+            .map(|(name, peer)| Running { peer, name })
+            .collect())
     }
 }
 
@@ -172,11 +176,7 @@ impl Running {
     }
 
     pub fn found_in(session: &Session) -> Result<Option<Self>> {
-        let connection = session.0.clone();
-        let Some(name) = ours(&connection)?.into_iter().next() else {
-            return Ok(None);
-        };
-        Ok(Some(Self { connection, name }))
+        Ok(session.players()?.into_iter().next())
     }
 
     pub fn listed() -> Result<Vec<Self>> {
@@ -184,15 +184,7 @@ impl Running {
     }
 
     pub fn listed_in(session: &Session) -> Result<Vec<Self>> {
-        let connection = &session.0;
-
-        Ok(ours(connection)?
-            .into_iter()
-            .map(|name| Self {
-                connection: connection.clone(),
-                name,
-            })
-            .collect())
+        session.players()
     }
 
     pub fn named(given: &PlayerName) -> Result<Option<Self>> {
@@ -200,14 +192,10 @@ impl Running {
     }
 
     pub fn named_in(session: &Session, given: &PlayerName) -> Result<Option<Self>> {
-        let connection = session.0.clone();
-        let Some(name) = ours(&connection)?
+        Ok(session
+            .players()?
             .into_iter()
-            .find(|name| answers_to(name.as_str(), given.as_str()))
-        else {
-            return Ok(None);
-        };
-        Ok(Some(Self { connection, name }))
+            .find(|running| answers_to(running.name.as_str(), given.as_str())))
     }
 
     pub fn zoned(asked: &ZoneAsked) -> Result<Option<Self>> {
@@ -215,19 +203,22 @@ impl Running {
     }
 
     pub fn zoned_in(session: &Session, asked: &ZoneAsked) -> Result<Option<Self>> {
-        let connection = &session.0;
-        Ok(ours(connection)?
-            .into_iter()
-            .map(|name| Self {
-                connection: connection.clone(),
-                name,
-            })
-            .find(|running| match asked {
-                ZoneAsked::Numbered(zone) => numbered(running.name.as_str()) == Some(*zone),
-                ZoneAsked::Named(given) => running
-                    .zone()
-                    .is_ok_and(|zone| zone.to_lowercase() == given.to_lowercase()),
-            }))
+        Ok(session.players()?.into_iter().find(|running| match asked {
+            ZoneAsked::Numbered(zone) => numbered(running.name.as_str()) == Some(*zone),
+            ZoneAsked::Named(given) => running
+                .zone()
+                .is_ok_and(|zone| zone.to_lowercase() == given.to_lowercase()),
+        }))
+    }
+
+    pub fn through<S: Read + Write + Send + 'static>(
+        stream: S,
+        name: WellKnownName<'static>,
+    ) -> Result<Self> {
+        Ok(Self {
+            peer: Arc::new(PipePeer::over(stream)?),
+            name,
+        })
     }
 
     pub const fn name(&self) -> &WellKnownName<'static> {
@@ -239,41 +230,29 @@ impl Running {
     }
 
     pub fn hand_over(&self, to: ZoneId) -> Result<()> {
-        self.proxy(OWN_INTERFACE)?
-            .call::<_, _, ()>(HAND_OVER, &(to.get(),))
-            .map_err(|source| Error::bus(BusOp::Call, source))
+        self.peer.hand_over(to)
     }
 
     pub fn zone(&self) -> Result<String> {
-        self.proxy(OWN_INTERFACE)?
-            .get_property(ZONE)
-            .map_err(|source| Error::bus(BusOp::Read, source))
+        self.peer.zone()
     }
 
     pub fn standing(&self) -> Result<Standing> {
         let playback = self.playback()?;
-        let metadata: HashMap<String, OwnedVariant> = self
-            .proxy(PLAYER)?
-            .get_property(METADATA)
-            .map_err(|source| Error::bus(BusOp::Read, source))?;
+        let playing = self.peer.metadata()?;
 
         Ok(Standing {
             name: self.name.clone().into(),
             zone: self.zone().ok(),
             playback,
-            queued: self.tracks()?.len(),
-            title: text(&metadata, TITLE),
-            artist: first(&metadata, ARTIST),
+            queued: self.peer.queued()?.len(),
+            title: playing.as_ref().and_then(|playing| playing.title.clone()),
+            artist: playing.and_then(|playing| playing.artist),
         })
     }
 
     pub fn playback(&self) -> Result<Option<PlaybackStatus>> {
-        let status: String = self
-            .proxy(PLAYER)?
-            .get_property(PLAYBACK_STATUS)
-            .map_err(|source| Error::bus(BusOp::Read, source))?;
-
-        Ok(PlaybackStatus::read(&status))
+        self.peer.playback()
     }
 
     pub fn a_window() -> Result<Option<Self>> {
@@ -286,88 +265,65 @@ impl Running {
     }
 
     pub fn can_raise(&self) -> Result<bool> {
-        self.proxy(ROOT)?
-            .get_property(CAN_RAISE)
-            .map_err(|source| Error::bus(BusOp::Read, source))
+        self.peer.can_raise()
     }
 
     pub fn raise(&self) -> Result<()> {
-        self.told(ROOT, RAISE)
+        self.peer.told(Act::Raise)
     }
 
     pub fn play(&self) -> Result<()> {
-        self.told(PLAYER, PLAY)
+        self.peer.told(Act::Play)
     }
 
     pub fn pause(&self) -> Result<()> {
-        self.told(PLAYER, PAUSE)
+        self.peer.told(Act::Pause)
     }
 
     pub fn play_pause(&self) -> Result<()> {
-        self.told(PLAYER, PLAY_PAUSE)
+        self.peer.told(Act::PlayPause)
     }
 
     pub fn stop(&self) -> Result<()> {
-        self.told(PLAYER, STOP)
+        self.peer.told(Act::Stop)
     }
 
     pub fn next(&self) -> Result<()> {
-        self.told(PLAYER, NEXT)
+        self.peer.told(Act::Next)
     }
 
     pub fn previous(&self) -> Result<()> {
-        self.told(PLAYER, PREVIOUS)
+        self.peer.told(Act::Previous)
     }
 
     pub fn seek(&self, by: Seeking) -> Result<()> {
-        self.proxy(PLAYER)?
-            .call::<_, _, ()>(SEEK, &(by.offset(),))
-            .map_err(|source| Error::bus(BusOp::Call, source))
+        self.peer.seek(by.offset())
     }
 
     pub fn set_position(&self, track: TrackId, position: Duration) -> Result<()> {
-        self.proxy(PLAYER)?
-            .call::<_, _, ()>(SET_POSITION, &(track_path(track), micros_of(position)))
-            .map_err(|source| Error::bus(BusOp::Call, source))
+        self.peer.set_position(track, micros_of(position))
     }
 
     pub fn volume(&self) -> Result<Volume> {
-        let reading: f64 = self
-            .proxy(PLAYER)?
-            .get_property(VOLUME)
-            .map_err(|source| Error::bus(BusOp::Read, source))?;
+        let reading = self.peer.volume()?;
 
         Volume::new(reading as f32).map_err(|_| Error::NotAVolume { reading })
     }
 
     pub fn set_volume(&self, volume: Volume) -> Result<()> {
-        self.proxy(PLAYER)?
-            .set_property(VOLUME, f64::from(volume.get()))
-            .map_err(|source| Error::bus(BusOp::Write, source.into()))
+        self.peer.set_volume(f64::from(volume.get()))
     }
 
     pub fn shuffle(&self) -> Result<bool> {
-        self.proxy(PLAYER)?
-            .get_property(SHUFFLE)
-            .map_err(|source| Error::bus(BusOp::Read, source))
+        self.peer.shuffle()
     }
 
     pub fn metadata(&self) -> Result<Option<Described>> {
-        let fields: HashMap<String, OwnedVariant> = self
-            .proxy(PLAYER)?
-            .get_property(METADATA)
-            .map_err(|source| Error::bus(BusOp::Read, source))?;
-
-        Ok(described(&fields))
+        self.peer.metadata()
     }
 
     pub fn position(&self) -> Result<Duration> {
-        let micros: i64 = self
-            .proxy(PLAYER)?
-            .get_property(POSITION)
-            .map_err(|source| Error::bus(BusOp::Read, source))?;
-
-        Ok(span_of(micros))
+        Ok(span_of(self.peer.position()?))
     }
 
     pub fn rows(&self) -> Result<Vec<Described>> {
@@ -375,42 +331,22 @@ impl Running {
     }
 
     pub fn queued(&self) -> Result<Vec<TrackId>> {
-        Ok(self
-            .tracks()?
-            .iter()
-            .filter_map(|path| track_of(path.as_str()))
-            .collect())
+        self.peer.queued()
     }
 
     pub fn play_order(&self) -> Result<Vec<TrackId>> {
-        let paths: Vec<OwnedObjectPath> = self
-            .proxy(OWN_INTERFACE)?
-            .get_property(PLAY_ORDER)
-            .map_err(|source| Error::bus(BusOp::Read, source))?;
-
-        Ok(paths
-            .iter()
-            .filter_map(|path| track_of(path.as_str()))
-            .collect())
+        self.peer.play_order()
     }
 
     pub fn described(&self, rows: &[TrackId]) -> Result<Vec<Described>> {
         if rows.is_empty() {
             return Ok(Vec::new());
         }
-        let paths: Vec<OwnedObjectPath> = rows.iter().copied().map(track_path).collect();
-        let listed: Vec<HashMap<String, OwnedVariant>> = self
-            .proxy(TRACK_LIST)?
-            .call(GET_TRACKS_METADATA, &(paths,))
-            .map_err(|source| Error::bus(BusOp::Call, source))?;
-
-        Ok(listed.iter().filter_map(described).collect())
+        self.peer.described(rows)
     }
 
     pub fn remove_track(&self, track: TrackId) -> Result<()> {
-        self.proxy(TRACK_LIST)?
-            .call::<_, _, ()>(REMOVE_TRACK, &(track_path(track),))
-            .map_err(|source| Error::bus(BusOp::Call, source))
+        self.peer.remove_track(track)
     }
 
     pub fn playlists(
@@ -422,54 +358,29 @@ impl Running {
     ) -> Result<Vec<PlaylistInfo>> {
         let index = u32::try_from(from).unwrap_or(u32::MAX);
         let max_count = most.map_or(u32::MAX, |most| u32::try_from(most).unwrap_or(u32::MAX));
-        let listed: Vec<(OwnedObjectPath, String, String)> = self
-            .proxy(PLAYLISTS)?
-            .call(GET_PLAYLISTS, &(index, max_count, order.name(), reverse))
-            .map_err(|source| Error::bus(BusOp::Call, source))?;
 
-        Ok(listed
-            .into_iter()
-            .filter_map(|(path, name, _)| {
-                Some(PlaylistInfo {
-                    id: playlist_of(path.as_str())?,
-                    name,
-                })
-            })
-            .collect())
+        self.peer.playlists(order, reverse, index, max_count)
     }
 
     pub fn activate_playlist(&self, playlist: PlaylistId) -> Result<()> {
-        self.proxy(PLAYLISTS)?
-            .call::<_, _, ()>(ACTIVATE_PLAYLIST, &(playlist_path(playlist),))
-            .map_err(|source| Error::bus(BusOp::Call, source))
+        self.peer.activate_playlist(playlist)
     }
 
     pub fn sleep(&self) -> Result<Option<Asleep>> {
-        let (mode, seconds): (String, u64) = self
-            .proxy(OWN_INTERFACE)?
-            .get_property(SLEEP)
-            .map_err(|source| Error::bus(BusOp::Read, source))?;
-
-        Ok(sleep_timer(&mode, seconds))
+        self.peer.sleep()
     }
 
     pub fn set_sleep(&self, until: Option<Until>) -> Result<()> {
-        let (mode, seconds) = sleep_asked(until);
-
-        self.proxy(OWN_INTERFACE)?
-            .call::<_, _, ()>(SET_SLEEP, &(mode, seconds))
-            .map_err(|source| Error::bus(BusOp::Call, source))
+        self.peer.set_sleep(until)
     }
 
     pub fn relocate(&self, moved: &[(MediaLocation, MediaLocation)]) -> Result<()> {
-        let own = self.proxy(OWN_INTERFACE)?;
         for some in moved.chunks(MOVES_A_CALL) {
             let uris: Vec<(String, String)> = some
                 .iter()
                 .map(|(from, to)| (from.to_uri(), to.to_uri()))
                 .collect();
-            own.call::<_, _, ()>(RELOCATE, &(uris,))
-                .map_err(|source| Error::bus(BusOp::Call, source))?;
+            self.peer.relocate(&uris)?;
         }
         Ok(())
     }
@@ -478,29 +389,16 @@ impl Running {
         if settings.is_empty() {
             return Ok(());
         }
-        let pairs: Vec<(&str, &str)> = settings
+        let pairs: Vec<(String, String)> = settings
             .iter()
-            .map(|(setting, value)| (setting.name(), value.as_str()))
+            .map(|(setting, value)| (setting.name().to_owned(), value.clone()))
             .collect();
 
-        self.proxy(OWN_INTERFACE)?
-            .call::<_, _, ()>(TUNE, &(pairs,))
-            .map_err(|source| Error::bus(BusOp::Call, source))
+        self.peer.tune(&pairs)
     }
 
     pub fn reload(&self, group: Reloadable, settings: &Path) -> Result<()> {
-        self.proxy(OWN_INTERFACE)?
-            .call::<_, _, ()>(
-                RELOAD,
-                &(group.name(), settings.to_string_lossy().into_owned()),
-            )
-            .map_err(|source| Error::bus(BusOp::Call, source))
-    }
-
-    fn told(&self, interface: &'static str, method: &'static str) -> Result<()> {
-        self.proxy(interface)?
-            .call::<_, _, ()>(method, &())
-            .map_err(|source| Error::bus(BusOp::Call, source))
+        self.peer.reload(group, settings)
     }
 
     pub fn queue(
@@ -516,105 +414,42 @@ impl Running {
             .iter()
             .map(|(location, span)| location.to_uri_within(*span))
             .collect();
-        let own = self.proxy(OWN_INTERFACE)?;
 
         let mut landed = 0;
         for (nth, chunk) in uris.chunks(ROWS_A_CALL).enumerate().rev() {
             let heard_now = queueing.play && nth == 0;
-            match own.call::<_, _, ()>(ADD_TRACKS, &(chunk, &after, heard_now)) {
+            match self.peer.add_tracks(chunk, after, heard_now) {
                 Ok(()) => landed += chunk.len(),
-                Err(zbus::Error::FDO(refused))
-                    if landed == 0 && matches!(*refused, zbus::fdo::Error::UnknownMethod(_)) =>
-                {
-                    return self.queued_one_by_one(rows, &after, queueing.play);
-                }
-                Err(source) => {
-                    return Err(partway(
-                        landed,
-                        rows.len(),
-                        Error::bus(BusOp::Queue, source),
-                    ));
-                }
+                Err(source) => return Err(partway(landed, rows.len(), source)),
             }
         }
         Ok(rows.len())
     }
 
-    fn queued_one_by_one(
-        &self,
-        rows: &[(MediaLocation, Option<FrameSpan>)],
-        after: &OwnedObjectPath,
-        play: bool,
-    ) -> Result<usize> {
-        let tracks = self.proxy(TRACK_LIST)?;
-        for (place, (location, span)) in rows.iter().enumerate().rev() {
-            let heard_now = play && place == 0;
-            tracks
-                .call_method(
-                    ADD_TRACK,
-                    &(location.to_uri_within(*span), after, heard_now),
-                )
-                .map_err(|source| Error::bus(BusOp::Queue, source))?;
-        }
-        Ok(rows.len())
-    }
-
-    fn landing(&self, at: Placement) -> Result<OwnedObjectPath> {
-        let tracks = self.tracks()?;
+    fn landing(&self, at: Placement) -> Result<Option<TrackId>> {
+        let tracks = self.peer.queued()?;
         let row = match at {
             Placement::At(row) => row.min(tracks.len()),
             Placement::Next => self.after_the_playing(&tracks, 0)?,
-            Placement::Queued => self.after_the_playing(&tracks, self.waiting()?)?,
+            Placement::Queued => self.after_the_playing(&tracks, self.peer.waiting()?)?,
         };
 
         Ok(row
             .checked_sub(1)
-            .and_then(|before| tracks.get(before).cloned())
-            .unwrap_or_else(no_track))
+            .and_then(|before| tracks.get(before).copied()))
     }
 
-    fn after_the_playing(&self, tracks: &[OwnedObjectPath], waiting: usize) -> Result<usize> {
-        Ok(self.playing(tracks)?.map_or(tracks.len(), |at| {
+    fn after_the_playing(&self, tracks: &[TrackId], waiting: usize) -> Result<usize> {
+        let playing = self
+            .peer
+            .metadata()?
+            .and_then(|playing| tracks.iter().position(|track| *track == playing.track));
+
+        Ok(playing.map_or(tracks.len(), |at| {
             at.saturating_add(1)
                 .saturating_add(waiting)
                 .min(tracks.len())
         }))
-    }
-
-    fn waiting(&self) -> Result<usize> {
-        let waiting: u32 = self
-            .proxy(OWN_INTERFACE)?
-            .get_property(PLAYING_NEXT)
-            .map_err(|source| Error::bus(BusOp::Read, source))?;
-
-        Ok(usize::try_from(waiting).unwrap_or(usize::MAX))
-    }
-
-    fn tracks(&self) -> Result<Vec<OwnedObjectPath>> {
-        self.proxy(TRACK_LIST)?
-            .get_property(TRACKS)
-            .map_err(|source| Error::bus(BusOp::Read, source))
-    }
-
-    fn playing(&self, tracks: &[OwnedObjectPath]) -> Result<Option<usize>> {
-        let metadata: HashMap<String, OwnedVariant> = self
-            .proxy(PLAYER)?
-            .get_property(METADATA)
-            .map_err(|source| Error::bus(BusOp::Read, source))?;
-
-        let Some(playing) = metadata
-            .get(TRACK_ID)
-            .and_then(|value| OwnedObjectPath::try_from(value.clone()).ok())
-            .filter(|path| path.as_str() != NO_TRACK)
-        else {
-            return Ok(None);
-        };
-        Ok(tracks.iter().position(|path| *path == playing))
-    }
-
-    fn proxy(&self, interface: &'static str) -> Result<Proxy<'_>> {
-        Proxy::new(&self.connection, self.name.clone(), OBJECT_PATH, interface)
-            .map_err(|source| Error::bus(BusOp::Connect, source))
     }
 }
 
@@ -637,28 +472,7 @@ fn session() -> Result<Connection> {
         .map_err(|source| Error::bus(BusOp::Connect, source))
 }
 
-fn ours(connection: &Connection) -> Result<Vec<WellKnownName<'static>>> {
-    let bus = DBusProxy::new(connection).map_err(|source| Error::bus(BusOp::Find, source))?;
-    let names = bus
-        .list_names()
-        .map_err(|source| Error::bus(BusOp::Find, source.into()))?;
-
-    let mut ours: Vec<&str> = names
-        .iter()
-        .map(|name| name.as_str())
-        .filter(|name| names_this_build(name))
-        .collect();
-    ours.sort_unstable();
-
-    ours.into_iter()
-        .map(|name| {
-            WellKnownName::try_from(name.to_owned())
-                .map_err(|source| Error::bus(BusOp::Find, source))
-        })
-        .collect()
-}
-
-fn names_this_build(name: &str) -> bool {
+pub(crate) fn names_this_build(name: &str) -> bool {
     name == BUS_NAME || name.strip_prefix(BUS_NAME).is_some_and(names_an_instance)
 }
 
@@ -700,7 +514,7 @@ fn span_of(micros: i64) -> Duration {
     Duration::from_micros(micros.max(0).unsigned_abs())
 }
 
-fn described(fields: &HashMap<String, OwnedVariant>) -> Option<Described> {
+pub(crate) fn described(fields: &HashMap<String, OwnedVariant>) -> Option<Described> {
     let path = fields
         .get(TRACK_ID)
         .and_then(|value| OwnedObjectPath::try_from(value.clone()).ok())?;

@@ -150,7 +150,7 @@ impl TrackList {
 
 #[interface(name = "org.mpris.MediaPlayer2.TrackList")]
 impl TrackList {
-    fn get_tracks_metadata(
+    pub(crate) fn get_tracks_metadata(
         &self,
         track_ids: Vec<OwnedObjectPath>,
     ) -> Vec<HashMap<String, OwnedVariant>> {
@@ -210,7 +210,7 @@ impl TrackList {
         })
     }
 
-    fn remove_track(&self, track_id: ObjectPath<'_>) -> fdo::Result<()> {
+    pub(crate) fn remove_track(&self, track_id: ObjectPath<'_>) -> fdo::Result<()> {
         let queue = self.shared.player.queue();
         let Some(row) = Self::row_of(&queue, track_id.as_str()) else {
             return Ok(());
@@ -227,7 +227,7 @@ impl TrackList {
     }
 
     #[zbus(property(emits_changed_signal = "invalidates"))]
-    fn tracks(&self) -> Vec<OwnedObjectPath> {
+    pub(crate) fn tracks(&self) -> Vec<OwnedObjectPath> {
         self.shared
             .player
             .queued()

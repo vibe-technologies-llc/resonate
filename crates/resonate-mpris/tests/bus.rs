@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     env, fs,
     io::Cursor,
+    os::unix::net::UnixStream,
     path::{Path, PathBuf},
     process::{self, Command as Process},
     sync::{
@@ -26,16 +27,16 @@ use resonate_engine::{
     Surveyor, Until, Words,
 };
 use resonate_mpris::{
-    Heard, Host, Mpris, Opened, PlaybackStatus, PlayerName, PlaylistInfo, PlaylistOrder, Playlists,
-    Queueing, ROWS_A_CALL, Reloadable, Reloaded, Running, Seeking, Session, Tunable, Tuned,
-    watch_the_meter,
+    Answering, Call, Error as MprisError, Fault, Heard, Host, Mpris, Opened, PlaybackStatus,
+    PlayerName, PlaylistInfo, PlaylistOrder, Playlists, Queueing, ROWS_A_CALL, Reloadable,
+    Reloaded, Running, Seeking, Session, Tunable, Tuned, watch_the_meter,
 };
 use zbus::{
     OwnedObjectPath, OwnedVariant,
     fdo::ObjectManager,
     interface,
     message::Header,
-    names::{BusName, OwnedUniqueName},
+    names::{BusName, OwnedUniqueName, WellKnownName},
 };
 
 #[path = "../src/blocking.rs"]
@@ -1912,6 +1913,313 @@ fn listed_as(harness: &Harness) -> Running {
         .into_iter()
         .find(|player| held.iter().any(|name| player.name().as_str() == name))
         .unwrap_or_else(|| panic!("none of {held:?} was listed among the players of this build"))
+}
+
+fn piped(harness: &Harness) -> Running {
+    let host = Desktop {
+        quit: Arc::clone(&harness.quit),
+        raised: Arc::clone(&harness.raised),
+        opened: Arc::clone(&harness.opened),
+        tuned: Arc::clone(&harness.tuned),
+        reloaded: Arc::clone(&harness.reloaded),
+        catalog: Arc::clone(&harness.catalog),
+        headsets: false,
+    };
+    let answering = Answering::new(
+        Arc::clone(&harness.player),
+        Arc::new(host),
+        Some(Arc::clone(&harness.shelf) as Arc<dyn Playlists>),
+    );
+    let (near, far) = UnixStream::pair().expect("a pair of connected sockets");
+    thread::spawn(move || answering.serve(far));
+    let name = WellKnownName::try_from("org.mpris.MediaPlayer2.resonate.zone2")
+        .expect("a well known name");
+
+    Running::through(near, name).expect("a client over the pipe")
+}
+
+#[test]
+fn a_player_over_a_pipe_answers_the_transport_calls_and_reads_the_queue_a_client_makes() {
+    let Some(harness) = Harness::start() else {
+        return;
+    };
+    let tree = Tree::new();
+    let paths: Vec<PathBuf> = (0..3)
+        .map(|n| tree.wav(&format!("piped-{n}.wav")))
+        .collect();
+    harness.load_all(&paths);
+    harness.wait_for(Harness::sounding, "playback to start");
+
+    let running = piped(&harness);
+
+    assert!(running.can_raise().expect("CanRaise is served"));
+    running.raise().expect("Raise is served");
+    assert!(harness.raised.load(Ordering::Acquire));
+    assert_eq!(running.zone_number(), ZoneId::new(2));
+    assert!(!running.zone().expect("the zone is named").is_empty());
+
+    running.pause().expect("Pause is served");
+    harness.wait_for(
+        |harness| harness.status() == "Paused",
+        "the pause to reach the transport",
+    );
+    assert_eq!(
+        running.playback().expect("the status is read"),
+        Some(PlaybackStatus::Paused)
+    );
+    running.play_pause().expect("PlayPause is served");
+    harness.wait_for(Harness::sounding, "the toggle to reach the transport");
+    running.next().expect("Next is served");
+    harness.wait_for(
+        |harness| harness.player.state().queue_position == Some(1),
+        "the next row to be the one playing",
+    );
+    running.previous().expect("Previous is served");
+    harness.wait_for(
+        |harness| harness.player.state().queue_position == Some(0),
+        "the row before to be the one playing",
+    );
+
+    let half = Volume::new(0.5).expect("a volume between zero and one");
+    running.set_volume(half).expect("Volume is writable");
+    harness.wait_for(
+        |_| running.volume().is_ok_and(|volume| volume == half),
+        "the volume to settle",
+    );
+    assert!(!running.shuffle().expect("Shuffle is readable"));
+
+    harness.wait_for(
+        |_| {
+            running
+                .metadata()
+                .is_ok_and(|playing| playing.is_some_and(|playing| playing.location.is_some()))
+        },
+        "the tags of the track being played to reach the metadata",
+    );
+    let playing = running
+        .metadata()
+        .expect("Metadata is readable")
+        .expect("a track is playing");
+    assert_eq!(playing.location, Some(MediaLocation::local(&paths[0])));
+    assert_eq!(playing.title.as_deref(), Some("Echoes"));
+    assert_eq!(playing.artist.as_deref(), Some("Pink Floyd"));
+
+    running
+        .seek(Seeking::Forward(Duration::from_secs(10)))
+        .expect("Seek is served");
+    harness.wait_for(
+        |_| {
+            running
+                .position()
+                .is_ok_and(|at| at >= Duration::from_secs(9))
+        },
+        "the seek to move the position",
+    );
+    running
+        .set_position(playing.track, Duration::from_secs(1))
+        .expect("SetPosition is served");
+    harness.wait_for(
+        |_| {
+            running
+                .position()
+                .is_ok_and(|at| at < Duration::from_secs(9))
+        },
+        "the position to be set where it was asked for",
+    );
+
+    running
+        .set_sleep(Some(Until::EndOfQueue))
+        .expect("SetSleep is served");
+    harness.wait_for(
+        |_| {
+            running
+                .sleep()
+                .is_ok_and(|asleep| asleep.is_some_and(|asleep| asleep.until == Until::EndOfQueue))
+        },
+        "the sleep timer to be read back",
+    );
+    running.set_sleep(None).expect("SetSleep is served");
+    harness.wait_for(
+        |_| running.sleep().is_ok_and(|asleep| asleep.is_none()),
+        "the sleep timer to be taken off",
+    );
+
+    harness.wait_for(
+        |_| {
+            running.rows().is_ok_and(|rows| {
+                rows.len() == 3
+                    && rows
+                        .iter()
+                        .all(|row| row.title.as_deref() == Some("Echoes"))
+            })
+        },
+        "the tags of every queued row to be read",
+    );
+    let rows = running.rows().expect("the track list answers");
+    assert_eq!(
+        rows.iter()
+            .map(|row| row.location.clone())
+            .collect::<Vec<_>>(),
+        paths
+            .iter()
+            .map(|path| Some(MediaLocation::local(path)))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        running.play_order().expect("the play order is read").len(),
+        3
+    );
+    assert!(
+        running
+            .playlists(PlaylistOrder::Alphabetical, false, 0, None)
+            .expect("the playlists are listed")
+            .iter()
+            .any(|playlist| playlist.name == "Evening"),
+        "the collection the player was served with was not listed"
+    );
+    let standing = running.standing().expect("the player says how it stands");
+    assert_eq!(standing.queued, 3);
+    assert_eq!(standing.title.as_deref(), Some("Echoes"));
+
+    running
+        .remove_track(rows[1].track)
+        .expect("RemoveTrack is served");
+    assert_eq!(
+        queued_rows(&harness),
+        vec![
+            MediaLocation::local(&paths[0]),
+            MediaLocation::local(&paths[2])
+        ]
+    );
+
+    running.stop().expect("Stop is served");
+    harness.wait_for(
+        |harness| harness.status() == "Stopped",
+        "the stop to reach the transport",
+    );
+    running.play().expect("Play is served");
+    harness.wait_for(Harness::sounding, "the play to reach the transport");
+}
+
+#[test]
+fn files_queued_over_a_pipe_land_where_they_would_over_the_bus() {
+    let Some(harness) = Harness::start() else {
+        return;
+    };
+    let tree = Tree::new();
+    let playing = tree.wav("playing.wav");
+    let rest = tree.wav("rest.wav");
+    harness.load_all(&[playing.clone(), rest.clone()]);
+    harness.wait_for(Harness::sounding, "playback to start");
+
+    let running = piped(&harness);
+    let first = tree.wav("first.wav");
+    let second = tree.wav("second.wav");
+    let rows = [
+        (MediaLocation::local(&first), None),
+        (MediaLocation::local(&second), None),
+    ];
+
+    let queued = running
+        .queue(
+            &rows,
+            Queueing {
+                at: Placement::Queued,
+                play: false,
+            },
+        )
+        .expect("the player takes the rows");
+
+    assert_eq!(queued, 2);
+    assert_eq!(
+        queued_rows(&harness),
+        vec![
+            MediaLocation::local(&playing),
+            MediaLocation::local(&first),
+            MediaLocation::local(&second),
+            MediaLocation::local(&rest),
+        ]
+    );
+    assert_eq!(harness.player.state().queue_position, Some(0));
+}
+
+#[test]
+fn a_run_longer_than_one_call_takes_lands_whole_and_in_order_over_a_pipe() {
+    let Some(harness) = Harness::start() else {
+        return;
+    };
+    let tree = Tree::new();
+    let paths: Vec<PathBuf> = (0..ROWS_A_CALL * 2 + 5)
+        .map(|n| tree.wav(&format!("long-{n}.wav")))
+        .collect();
+    let running = piped(&harness);
+    let rows: Vec<(MediaLocation, Option<FrameSpan>)> = paths
+        .iter()
+        .map(|path| (MediaLocation::local(path), None))
+        .collect();
+
+    let queued = running
+        .queue(
+            &rows,
+            Queueing {
+                at: Placement::At(0),
+                play: false,
+            },
+        )
+        .expect("the player takes the rows");
+
+    assert_eq!(queued, rows.len());
+    assert_eq!(
+        queued_rows(&harness),
+        paths.iter().map(MediaLocation::local).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn settings_and_reloads_handed_over_a_pipe_reach_the_host_and_a_refusal_is_named() {
+    let Some(harness) = Harness::start() else {
+        return;
+    };
+    let running = piped(&harness);
+
+    running
+        .tune(&[
+            (Tunable::Quality, "very-high".to_owned()),
+            (Tunable::BitPerfect, "true".to_owned()),
+        ])
+        .expect("the host takes the settings");
+    let untuned = running.tune(&[(Tunable::Dither, UNTUNABLE.to_owned())]);
+    running
+        .reload(Reloadable::Equaliser, Path::new("/home/a/config.toml"))
+        .expect("the host takes the reload");
+    let unloaded = running.reload(Reloadable::Equaliser, Path::new(ELSEWHERE));
+    let unmoved = running.hand_over(ZoneId::new(2).expect("a second zone"));
+
+    assert_eq!(
+        *harness.tuned.lock(),
+        [
+            (Tunable::Quality, "very-high".to_owned()),
+            (Tunable::BitPerfect, "true".to_owned()),
+        ]
+    );
+    assert_eq!(
+        *harness.reloaded.lock(),
+        [(Reloadable::Equaliser, "/home/a/config.toml".to_owned())]
+    );
+    for (refused, call) in [
+        (untuned, Call::Tune),
+        (unloaded, Call::Reload),
+        (unmoved, Call::HandOver),
+    ] {
+        assert!(
+            matches!(
+                refused,
+                Err(MprisError::Refused { call: refused_call, fault: Fault::InvalidArgs })
+                    if refused_call == call
+            ),
+            "{call:?} was not refused as invalid arguments"
+        );
+    }
 }
 
 #[test]

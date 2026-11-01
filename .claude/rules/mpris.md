@@ -9,7 +9,8 @@ paths:
 
 `resonate-mpris` also compiles for Windows, where there is no session bus: its portal trash and
 the permission and `/proc` parts of its cover folder are Unix, and the binary treats a missing bus
-as it does on a Linux machine with none (`windows.md`). It is MPRIS, notifications, idle inhibit, playlists (`library.md` has the seam), and
+as it does on a Linux machine with none, except that a window is still served and reached on a
+named pipe (*The client's second wire*, `windows.md`). It is MPRIS, notifications, idle inhibit, playlists (`library.md` has the seam), and
 the client a second `resonate` reaches a first through.
 
 ## What it sees
@@ -247,7 +248,7 @@ for a hotspot have not been seen (`docs/TESTING.md`).
   (`PlayingNext` counts them). A run goes in calls of `ROWS_A_CALL` (128) rows, back to front
   against one anchor, so each stays inside the client's 2 s timeout; a failure after some landed is
   `Error::QueuedPartway { landed, asked }`. The fallback adds back to front against one anchor.
-  `Session` is one bus connection a long-lived client (MCP) reuses through `found_in`, `listed_in`
+  `Session` is one bus connection (on Windows none, only the pipe registry) a long-lived client (MCP) reuses through `found_in`, `listed_in`
   and `named_in`; `found`, `listed` and `named` open their own.
 - **`resonate queue --playlist <NAME>` hands a playlist over as its rows** (`ActivatePlaylist`
   replaces a queue). A search-filled playlist is read via `Library::playlist_entries`, so queued as
@@ -270,5 +271,43 @@ for a hotspot have not been seen (`docs/TESTING.md`).
   `Standing` = what one answers about itself (`Option`s: nothing vs empty differ); a player that
   stops answering between listing and read is left out. `PlaybackStatus` lives in `track.rs` beside
   the (lossy) mapping from `PlaybackState`.
+
+## The client's second wire
+
+**`Running` is one API over two wires, as Discord's `Session` is** (`windows.md` for the pipe itself).
+`peer.rs`'s `Peer` trait is every call a client makes, in domain values (`TrackId`, `Described`,
+`Option<Asleep>`, micros as `i64`, `Reloadable`), and `Running` is the composition over it
+(`queue`'s anchor arithmetic and chunking, `standing`, `a_window`, the `Placement` landing); no
+caller learns which wire answered. `bus_peer.rs`'s `BusPeer` is the D-Bus implementation (the
+`AddTracks` to `AddTrack` fallback is inside it); `PipePeer` speaks `wire.rs` over any
+`Read + Write + Send` stream, so the host tests run it over a `UnixStream` pair. `Session` holds an
+`Option<Connection>` and lists the players of every wire it has (the bus's names, on Windows the
+registry's), sorted by name, so `found`, `listed`, `named` and `zoned` are the same on both.
+`Running::through(stream, name)` is the seam a test or another transport enters by.
+
+- **`wire.rs` is hand-written, with no serde.** A frame is a `u32` little-endian length (at most
+  `FRAME_AT_MOST`, 64 MiB, refused before anything is read) and a body: a request is a `Call` tag
+  and its fields, a reply a tag and its value; text is a `u32` length and UTF-8, a count is checked
+  against the bytes left before anything is reserved, an id of zero is `WireFault::ZeroId`. Every
+  `Request` and `Reply` is written and read back in `wire::tests`, and a test holds that each
+  `Call` has a request. A pipe carries the **same calls** as the bus, not a second vocabulary:
+  `Described` crosses as the URI (`to_uri_within`), title, artist, album, length and cover URL the
+  bus's metadata map carries. A reply of the wrong shape is `WireFault::Unexpected { call }`, a
+  refusal is `Error::Refused { call, fault }` with `Fault::{InvalidArgs, NotSupported, Failed}`
+  (the three kinds of `fdo::Error` the bus answers), never text.
+- **`answering.rs`'s `Answering` is the server end**, built over the same `Shared` and the same
+  interface structs the bus serves (`PlayerInterface`, `TrackList`, `OwnInterface`, whose methods
+  are `pub(crate)` for it), so a pipe call and a bus call run the same code: `can_go_next`,
+  "ignored" seeks, `Host::tune`/`reload`/`hand_over` refusals, `Owed` and the read budget of
+  `GetTracksMetadata`. `serve(stream)` answers requests until the peer leaves; a request it cannot
+  read is `InvalidArgs` and an unknown tag `NotSupported` (an older server meeting a newer client),
+  and `close` ends every connection at its next request. It is public so a test can serve a
+  `UnixStream` (`bus.rs`'s `piped`: transport, queue, queueing of a run longer than one call,
+  tune and reload refusals, each through `Running::through`).
+- **A pipe link has a clock the bus has in its connection.** `Link` runs a stream's blocking I/O
+  on a thread and a call waits `ANSWERS_WITHIN`; a timeout or a closed pipe marks the link broken
+  for good, so no later call reads an earlier call's reply (`peer::tests`).
+- **`registry.rs` is the portable discovery** (a held file per player in a folder, `Held` and
+  `writer_of`, tested on every host) and `pipe.rs` the `interprocess` half, `cfg(windows)`.
 
 - **The desktop's own preferences are read once at start** (`preferences.rs`, `desktop_preferences`): `org.freedesktop.appearance` `contrast` and `reduced-motion` over the portal, GNOME's `enable-animations` as the fallback, answered within 300 ms or `Unsaid`; the binary seeds High Contrast and Reduce motion from it only where the listener stored neither (`ui.md`).

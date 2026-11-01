@@ -22,7 +22,7 @@ fn deliver(settings: &Path, group: Option<Reloadable>) {
     let players = match Running::listed() {
         Ok(players) => players,
         Err(error) => {
-            tracing::debug!(%error, "the session bus was not asked which players are running");
+            tracing::debug!(%error, "no one was asked which players are running");
             return;
         }
     };
