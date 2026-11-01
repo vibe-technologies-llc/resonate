@@ -207,7 +207,7 @@ impl RootView {
             .text_size(px(theme::text_sm()))
             .cursor_text()
             .track_focus(&self.controls.holding(FILTER_FRAME, cx))
-            .in_focus(focus::lit)
+            .in_focus(|field| field.border_color(theme::tinted(theme::accent(), 0x99)))
             .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
             .hover(|field| field.border_color(theme::tinted(theme::accent(), 0x99)))
             .child(icons::icon(
