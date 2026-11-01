@@ -79,6 +79,7 @@ const SNAPSHOT_FRAME_SHARE: usize = LARGEST_FRAME / 2;
 const FIRST_REDIAL: Duration = Duration::from_secs(1);
 const LAST_REDIAL: Duration = Duration::from_secs(30);
 const DIAL_BACK_AFTER: Duration = Duration::from_millis(500);
+const DIALS_CROSS_WITHIN: Duration = Duration::from_secs(5);
 const HEARD_FOR: Duration = Duration::from_secs(60);
 const SERVER_ANSWERS_WITHIN: Duration = Duration::from_secs(15);
 const PUNCH_ANSWERED_AT_MOST_EVERY: Duration = Duration::from_secs(10);
@@ -423,6 +424,7 @@ type ToldDigest = [u8; SHA256_OUTPUT_LEN];
 struct Neighbour {
     connection: Connection,
     told: AHashSet<ToldDigest>,
+    met_at: Instant,
 }
 
 #[derive(Default)]
@@ -454,6 +456,15 @@ fn compacted_by_another(asked: &mut Option<u64>, through: u64) -> bool {
 
 fn the_connection_kept(this: DeviceId, other: DeviceId, dialled_here: bool) -> bool {
     dialled_here == (this < other)
+}
+
+fn the_new_connection_kept(
+    this: DeviceId,
+    other: DeviceId,
+    dialled_here: bool,
+    standing_for: Duration,
+) -> bool {
+    standing_for >= DIALS_CROSS_WITHIN || the_connection_kept(this, other, dialled_here)
 }
 
 #[derive(Clone, Copy)]
@@ -2480,7 +2491,12 @@ impl Syncing {
             && standing.connection.stable_id() != connection.stable_id()
             && standing.connection.close_reason().is_none()
         {
-            if !the_connection_kept(self.running.device, device, dialled_here) {
+            if !the_new_connection_kept(
+                self.running.device,
+                device,
+                dialled_here,
+                standing.met_at.elapsed(),
+            ) {
                 connection.close(0_u32.into(), b"met already");
                 return Ok(());
             }
@@ -2501,6 +2517,7 @@ impl Syncing {
                 Neighbour {
                     connection: connection.clone(),
                     told,
+                    met_at: Instant::now(),
                 },
             );
             spawn_tell(device, connection, true, changes);
@@ -2944,6 +2961,29 @@ mod tests {
         assert!(!the_connection_kept(lower, higher, false));
         assert!(the_connection_kept(higher, lower, false));
         assert!(!the_connection_kept(higher, lower, true));
+    }
+
+    #[test]
+    fn a_device_meeting_again_long_after_its_last_connection_is_kept_whoever_dialled() {
+        let lower = DeviceId([1; 16]);
+        let higher = DeviceId([2; 16]);
+        let crossing = DIALS_CROSS_WITHIN / 2;
+
+        assert!(!the_new_connection_kept(lower, higher, false, crossing));
+        assert!(!the_new_connection_kept(higher, lower, true, crossing));
+        assert!(the_new_connection_kept(
+            lower,
+            higher,
+            false,
+            DIALS_CROSS_WITHIN
+        ));
+        assert!(the_new_connection_kept(
+            higher,
+            lower,
+            true,
+            DIALS_CROSS_WITHIN
+        ));
+        assert!(the_new_connection_kept(lower, higher, true, Duration::ZERO));
     }
 
     #[test]

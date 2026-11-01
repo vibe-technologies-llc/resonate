@@ -805,7 +805,15 @@ announce a device, both carrying the same sealed beacon, and either finds the ot
   connection does not meet and carries no records. **Two devices that dial each other at once keep
   one connection**: both keep the one the lower `DeviceId` dialled (`the_connection_kept`) and close
   the other, a redundant meeting telling no snapshot; a connection through the relay that arrives
-  while a direct one stands is closed, the direct one kept.
+  while a direct one stands is closed, the direct one kept. **The orientation settles a race
+  only**: a standing connection met `DIALS_CROSS_WITHIN` (5 s) or longer ago is replaced by the
+  new one whoever dialled (`the_new_connection_kept`), since a device meeting again that late is a
+  new run of it. An iPhone rebuilds sync at every return to the foreground, often after the system
+  took the old run's sockets so no close was ever sent; held to the orientation, a desktop with the
+  lower id turned every new dial away as *met already* and did not dial itself (it still counted
+  the neighbour met) until the dead connection went silent for `PEER_SILENT_FOR` (60 s), and the
+  phone then met it all at once
+  (`a_device_meeting_again_long_after_its_last_connection_is_kept_whoever_dialled`).
 - **After every look, what is owed goes to each neighbour**, less what it was told on this
   connection (`told`: SHA-256 of each encoded change). `owed` is cleared only by the server's
   `Appended`, so the server still gets all of it once back. Nothing is relayed: what came from the
