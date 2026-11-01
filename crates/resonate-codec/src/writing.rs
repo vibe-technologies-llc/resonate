@@ -506,12 +506,11 @@ impl TagSink for FileTags {
                 });
             }
         };
-        let staged = rechunked.as_ref().map(|staged| staged.path.as_path());
-        let written = self.written(path, staged, location, writing, taken);
+        let written = self.written(path, rechunked.as_ref(), location, writing, taken);
         if written.is_err()
-            && let Some(staged) = staged
+            && let Some(staged) = &rechunked
         {
-            let _ = fs::remove_file(staged);
+            let _ = fs::remove_file(&staged.path);
         }
         written
     }
@@ -611,15 +610,17 @@ impl FileTags {
     fn written(
         &self,
         path: &Path,
-        rechunked: Option<&Path>,
+        rechunked: Option<&Staged>,
         location: &MediaLocation,
         writing: Writing<'_>,
         taken: Taken,
     ) -> Result<()> {
-        let mut tagged = opened(rechunked.unwrap_or(path), location)?;
+        let mut tagged = opened_in(read_of(rechunked, path, location)?, location)?;
         let kind = tagged.file_type();
-        let options = WriteOptions::default()
-            .use_id3v23(Counted::holds_id3v2_3(rechunked.unwrap_or(path), kind));
+        let options = WriteOptions::default().use_id3v23(Counted::holds_id3v2_3(
+            &mut read_of(rechunked, path, location)?,
+            kind,
+        ));
         let others = cleared_elsewhere(&tagged, writing.taken);
         if tagged.primary_tag().is_none() {
             let kind = tagged.primary_tag_type();
@@ -1126,7 +1127,7 @@ fn landed(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -> Result<
     mend_what_was_left_in(&crate::spool::spooled_under());
     sweep_what_a_dead_writer_staged(path);
     match cloned_beside(path) {
-        Ok(Some(staged)) => return landed_through(&staged.path, path, location, saving),
+        Ok(Some(staged)) => return landed_through(&staged, path, location, saving),
         Ok(None) => {}
         Err(source) if source.kind() == io::ErrorKind::PermissionDenied => {}
         Err(source) => return Err(unread(source)),
@@ -1136,7 +1137,7 @@ fn landed(path: &Path, location: &MediaLocation, saving: &Saving<'_>) -> Result<
     }
 
     match copied_beside(path, folder_of(path), saving) {
-        Ok(staged) => landed_through(&staged.path, path, location, saving),
+        Ok(staged) => landed_through(&staged, path, location, saving),
         Err(source) if source.kind() == io::ErrorKind::PermissionDenied => {
             landed_from_elsewhere(path, location, saving)
         }
@@ -1150,13 +1151,7 @@ fn landed_from_elsewhere(path: &Path, location: &MediaLocation, saving: &Saving<
         match Staged::elsewhere(&folder, path).and_then(|staged| copied_into(path, staged, saving))
         {
             Ok(staged) => {
-                return landed_by(
-                    &staged.path,
-                    path,
-                    location,
-                    saving,
-                    written_back_from_elsewhere,
-                );
+                return landed_by(&staged, path, location, saving, written_back_from_elsewhere);
             }
             Err(source) => refused = source,
         }
@@ -1306,7 +1301,7 @@ fn landed_in_place(
 }
 
 fn landed_through(
-    staged: &Path,
+    staged: &Staged,
     path: &Path,
     location: &MediaLocation,
     saving: &Saving<'_>,
@@ -1315,16 +1310,14 @@ fn landed_through(
 }
 
 fn landed_by(
-    staged: &Path,
+    staged: &Staged,
     path: &Path,
     location: &MediaLocation,
     saving: &Saving<'_>,
-    settle: fn(&Path, &Path) -> std::result::Result<(), Unsettled>,
+    settle: fn(&Staged, &Path) -> std::result::Result<(), Unsettled>,
 ) -> Result<()> {
-    let written = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(staged)
+    let written = staged
+        .handle()
         .map_err(|source| Error::Io {
             location: location.clone(),
             source,
@@ -1360,7 +1353,7 @@ fn landed_by(
     if let Err(error) = &written
         && !matches!(error, Error::WrittenBackPartway { .. })
     {
-        let _ = fs::remove_file(staged);
+        let _ = fs::remove_file(&staged.path);
     }
     written
 }
@@ -1392,6 +1385,12 @@ impl Staged {
     fn named(staged: PathBuf) -> io::Result<Self> {
         let held = Held::made(&staged)?;
         Ok(Self { path: staged, held })
+    }
+
+    fn handle(&self) -> io::Result<File> {
+        let mut file = self.held.file().try_clone()?;
+        file.rewind()?;
+        Ok(file)
     }
 }
 
@@ -1461,14 +1460,14 @@ fn sweep_what_a_dead_writer_staged(path: &Path) {
     }
 }
 
-fn settled_over(staged: &Path, path: &Path) -> std::result::Result<(), Unsettled> {
+fn settled_over(staged: &Staged, path: &Path) -> std::result::Result<(), Unsettled> {
     let standing = fs::metadata(path)?;
-    file_facts::sync_file(staged)?;
-    if has_other_names(&standing) || !carries_what_the_file_did(&standing, path, staged) {
-        return WholeCopy::named_beside(staged, path)?.written_back();
+    file_facts::sync_file(&staged.path)?;
+    if has_other_names(&standing) || !carries_what_the_file_did(&standing, path, &staged.path) {
+        return WholeCopy::named_beside(&staged.path, &staged.held, path)?.written_back();
     }
 
-    fs::rename(staged, path)?;
+    fs::rename(&staged.path, path)?;
     if let Some(folder) = path.parent() {
         file_facts::sync_directory(folder)?;
     }
@@ -1580,9 +1579,9 @@ fn unsupported(error: &io::Error) -> bool {
     error.raw_os_error() == Some(rustix::io::Errno::NOTSUP.raw_os_error())
 }
 
-fn written_back_from_elsewhere(staged: &Path, path: &Path) -> std::result::Result<(), Unsettled> {
-    file_facts::sync_file(staged)?;
-    WholeCopy::kept_elsewhere(staged, path)?.written_back()
+fn written_back_from_elsewhere(staged: &Staged, path: &Path) -> std::result::Result<(), Unsettled> {
+    file_facts::sync_file(&staged.path)?;
+    WholeCopy::kept_elsewhere(&staged.path, &staged.held, path)?.written_back()
 }
 
 fn front_cover(picture: &CoverArt) -> Picture {
@@ -1608,8 +1607,29 @@ const fn read_back_here(kind: FileType) -> bool {
     )
 }
 
-fn opened(path: &Path, location: &MediaLocation) -> Result<lofty::file::TaggedFile> {
-    opened_as(path, location, ParseOptions::new())
+fn opened_in(file: File, location: &MediaLocation) -> Result<lofty::file::TaggedFile> {
+    read_tagged(guessed_in(file, location, ParseOptions::new())?, location)
+}
+
+fn read_of(staged: Option<&Staged>, path: &Path, location: &MediaLocation) -> Result<File> {
+    match staged {
+        Some(staged) => staged.handle(),
+        None => File::open(path),
+    }
+    .map_err(|source| Error::TagsUnread {
+        location: location.clone(),
+        source: source.into(),
+    })
+}
+
+fn read_tagged(
+    probed: Probe<BufReader<File>>,
+    location: &MediaLocation,
+) -> Result<lofty::file::TaggedFile> {
+    probed.read().map_err(|source| Error::TagsUnread {
+        location: location.clone(),
+        source,
+    })
 }
 
 fn guessed_for_its_tags(file: File, location: &MediaLocation) -> Result<Probe<BufReader<File>>> {
@@ -1620,31 +1640,6 @@ fn guessed_for_its_tags(file: File, location: &MediaLocation) -> Result<Probe<Bu
             .read_properties(false)
             .read_cover_art(false),
     )
-}
-
-fn opened_as(
-    path: &Path,
-    location: &MediaLocation,
-    options: ParseOptions,
-) -> Result<lofty::file::TaggedFile> {
-    guessed_as(path, location, options)?
-        .read()
-        .map_err(|source| Error::TagsUnread {
-            location: location.clone(),
-            source,
-        })
-}
-
-fn guessed_as(
-    path: &Path,
-    location: &MediaLocation,
-    options: ParseOptions,
-) -> Result<Probe<BufReader<File>>> {
-    let file = File::open(path).map_err(|source| Error::TagsUnread {
-        location: location.clone(),
-        source: source.into(),
-    })?;
-    guessed_in(file, location, options)
 }
 
 fn guessed_in(
@@ -2434,6 +2429,64 @@ mod tests {
 
     const BLOCK: u64 = 4096;
 
+    fn opened(path: &Path, location: &MediaLocation) -> Result<lofty::file::TaggedFile> {
+        opened_in(File::open(path).expect("a file"), location)
+    }
+
+    fn read_through(staged: &Staged) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        staged
+            .handle()
+            .expect("a handle on the copy")
+            .read_to_end(&mut bytes)
+            .expect("the copy");
+        bytes
+    }
+
+    #[test]
+    fn a_staged_copy_is_read_and_written_through_its_held_handle_whatever_its_name_now_names() {
+        let folder = Folder::new();
+        let staged = Staged::beside(&folder.root.join("echoes.flac")).expect("a staged copy");
+        staged
+            .held
+            .file()
+            .write_all(b"the staged bytes")
+            .expect("a copy");
+
+        fs::remove_file(&staged.path).expect("the name taken away");
+        fs::write(&staged.path, b"a decoy").expect("a decoy under the name");
+        let mut handle = staged.handle().expect("a handle");
+        handle
+            .write_all(b"THE")
+            .expect("a write through the handle");
+
+        assert_eq!(read_through(&staged), b"THE staged bytes");
+        assert_eq!(fs::read(&staged.path).expect("the decoy"), b"a decoy");
+    }
+
+    #[test]
+    fn a_handle_on_a_staged_copy_starts_at_its_head_wherever_the_copy_was_left() {
+        let folder = Folder::new();
+        let staged = Staged::beside(&folder.root.join("echoes.flac")).expect("a staged copy");
+        staged.held.file().write_all(b"0123456789").expect("a copy");
+
+        let mut first = Vec::new();
+        staged
+            .handle()
+            .expect("a handle")
+            .read_to_end(&mut first)
+            .expect("a read");
+        let mut again = Vec::new();
+        staged
+            .handle()
+            .expect("a handle")
+            .read_to_end(&mut again)
+            .expect("a read");
+
+        assert_eq!(first, b"0123456789");
+        assert_eq!(again, first);
+    }
+
     fn head_length(kind: FileType, path: &Path) -> usize {
         Head::of(kind, &mut File::open(path).expect("a file"))
             .expect("a head")
@@ -2532,8 +2585,10 @@ mod tests {
 
             let staged = copied_beside(&path, &folder.root, &saving).expect("a copy");
 
-            let copy = fs::read(&staged.path).expect("the copy");
-            let head = head_length(kind, &staged.path);
+            let copy = read_through(&staged);
+            let head = Head::of(kind, &mut staged.handle().expect("the copy"))
+                .expect("a head")
+                .length as usize;
             assert!(head > old_head, "{name} was copied with the head it had");
             match kind {
                 FileType::Opus => {
@@ -2545,7 +2600,7 @@ mod tests {
                     "{name} lost audio in the copy"
                 ),
             }
-            let mut file = File::open(&staged.path).expect("the copy");
+            let mut file = staged.handle().expect("the copy");
             let grown = Head::of(kind, &mut file).expect("a head");
             let written = saving
                 .head_written(grown, &mut file)
@@ -3060,7 +3115,7 @@ mod tests {
             .write(&location, just(&[edited(TagField::Title, "Echoes")]))
             .expect("a written FLAC");
 
-        let kept = Counted::read(&path, FileType::Flac)
+        let kept = Counted::read_in(&mut File::open(&path).expect("a file"), FileType::Flac)
             .expect("a readable FLAC")
             .expect("comments");
         let Counted::Commented(kept) = kept else {
@@ -3136,7 +3191,8 @@ mod tests {
             .expect("a counted MP3");
 
         let Some(Counted::Framed(kept)) =
-            Counted::read(&path, FileType::Mpeg).expect("a readable MP3")
+            Counted::read_in(&mut File::open(&path).expect("a file"), FileType::Mpeg)
+                .expect("a readable MP3")
         else {
             panic!("an MP3 read with no ID3v2 tag");
         };
@@ -3173,7 +3229,8 @@ mod tests {
         .expect("a written MP3");
 
         let Some(Counted::Framed(kept)) =
-            Counted::read(&path, FileType::Mpeg).expect("a readable MP3")
+            Counted::read_in(&mut File::open(&path).expect("a file"), FileType::Mpeg)
+                .expect("a readable MP3")
         else {
             panic!("an MP3 read with no ID3v2 tag");
         };

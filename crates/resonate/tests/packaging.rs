@@ -200,7 +200,7 @@ fn every_release_recipe_builds_for_x86_64_v3_alone() {
 }
 
 #[test]
-fn the_windows_recipe_builds_for_x86_64_v3_and_reads_its_version_from_cargo() {
+fn the_windows_recipe_builds_x86_64_v3_and_arm64_and_reads_its_version_from_cargo() {
     let script = packaging("windows/build.ps1");
 
     assert!(
@@ -208,14 +208,40 @@ fn the_windows_recipe_builds_for_x86_64_v3_and_reads_its_version_from_cargo() {
         "the Windows recipe builds for another target than x86-64-v3"
     );
     assert!(
-        script.contains("Cargo.toml") && script.contains("-x86_64_v3-windows"),
-        "the Windows recipe must read the workspace version and name its asset for v3"
+        script.contains("Cargo.toml") && script.contains("$($build.Label)-windows"),
+        "the Windows recipe must read the workspace version and name its asset for the architecture"
+    );
+    assert!(
+        script.contains("x86_64_v3") && script.contains("Label = \"aarch64\""),
+        "the Windows recipe must name the x86-64-v3 archive and the ARM64 one"
+    );
+    assert!(
+        script.contains("aarch64-pc-windows-msvc") && script.contains("target-cpu=generic"),
+        "the Windows recipe must build ARM64 for its own triple at the generic baseline"
     );
     assert!(
         !script
             .lines()
             .any(|line| line.trim_start().starts_with("$Version = \"0")),
         "the Windows recipe hard-codes a version"
+    );
+}
+
+#[test]
+fn the_release_workflow_attaches_a_windows_archive_for_each_architecture() {
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.github/workflows/release.yml");
+    let workflow =
+        fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+
+    assert!(
+        workflow.contains("architecture: [x86_64, aarch64]")
+            && workflow.contains("-Architecture ${{ matrix.architecture }}"),
+        "release.yml does not build the Windows archive for x86_64 and aarch64"
+    );
+    assert!(
+        workflow.contains("resonate-windows-zip-${{ matrix.architecture }}"),
+        "release.yml's Windows archives would share one artifact name"
     );
 }
 

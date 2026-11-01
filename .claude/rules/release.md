@@ -43,9 +43,11 @@ paths:
   `.pkg.tar.zst` (Arch), for the player and the sync server, built with
   `RUSTFLAGS=-C target-cpu=x86-64-v3` over the checkout's `native`. A machine older than v3 builds
   from source.
-- **The Windows archive is `resonate-<version>-x86_64_v3-windows.zip`**: `resonate.exe` built for
-  x86-64-v3, the licence and a README, from `packaging/windows/build.ps1`. It is not signed and has
-  no installer (`windows.md`).
+- **The Windows archives are `resonate-<version>-x86_64_v3-windows.zip` and
+  `resonate-<version>-aarch64-windows.zip`**: `resonate.exe` built for x86-64-v3, or for
+  `aarch64-pc-windows-msvc` at the target's baseline, the licence and a README, from
+  `packaging/windows/build.ps1 -Architecture`. Neither is signed and neither has an installer
+  (`windows.md`).
 - **The APK is a signed release build**: `assembleRelease` under the repository's signing secrets,
   then `apksigner verify` (`build.md` has the job). The keystore is removed at the end of the job
   and its secrets are never echoed.

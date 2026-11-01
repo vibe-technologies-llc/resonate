@@ -19,7 +19,14 @@ paths:
 
 The whole workspace but the phones' boundary and PipeWire builds for `x86_64-pc-windows-msvc`
 (`cargo xwin check --target x86_64-pc-windows-msvc --workspace --exclude resonate-mobile --exclude
-resonate-bindgen --exclude resonate-pipewire` on Linux, the `windows` CI job on a hosted runner).
+resonate-bindgen --exclude resonate-pipewire` on Linux, the `windows` CI job on a hosted runner)
+and for `aarch64-pc-windows-msvc` (the same command with that target; the `windows-arm64` CI job
+checks it on the hosted x64 runner). No crate has an x86-only path: the DSP's vector code is
+portable Rust the compiler vectorises, so ARM64 needs no fallback. `ring`, which `rustls` brings
+in, assembles its ARM64 Windows code with `clang` whatever `CC` says, so a build for that target
+needs clang on `PATH` (the hosted Windows image has LLVM); under `cargo xwin` on Linux the
+`/imsvc` flags xwin passes for `clang-cl` are not understood by that `clang`, so a local check
+puts a wrapper that rewrites `/imsvc <dir>` to `-isystem <dir>` ahead of it on `PATH`.
 Nothing here has been heard on a real Windows machine: this tree was cross-checked and the portable
 parts tested on the host, and `docs/FEATURES.md`'s *Windows parity* lists what only hardware can
 settle. `unsafe_code = "forbid"` holds: every Win32 and COM call goes through a safe wrapper crate
@@ -123,7 +130,21 @@ settle. `unsafe_code = "forbid"` holds: every Win32 and COM call goes through a 
   ACLs are not carried.
 - **A held file's lock is mandatory on Windows** (`LockFileEx`): `writer_of` still asks the lock
   first and a dead writer's is released by the system; with no `/proc` the pid stamp reads as
-  living where the lock cannot be asked.
+  living where the lock cannot be asked. **So nothing reads or writes a file its own run holds by
+  reopening its path**: a read or write of a held file goes through the `Held`'s handle or a
+  `try_clone` of it (the same file object, so the lock's owner), which is correct on Windows by
+  construction and costs nothing on Unix. The tag writer's `Staged::handle` is that clone
+  (rewound to the head) and every stage of a staged copy uses it: the tags read off a rechunked
+  copy, the tags written into it, and `WholeCopy`, which appends its record of the track, binds a
+  copy kept outside the track's folder and lays itself over the track through the handle it was
+  made with, never `File::open` of its name (`a_staged_copy_is_read_and_written_through_its_held_handle_whatever_its_name_now_names`,
+  `a_whole_copy_is_written_back_through_the_handle_it_was_made_from_not_by_reopening_its_path`,
+  both of which take the name away or put a decoy under it, which Unix lets stand while a reopen
+  would find the wrong file). A rename, a sync by name (`FlushFileBuffers` moves no byte range) and
+  a removal work under the lock. The only reads by path are of what no living run holds: mending
+  a dead writer's journal or whole copy, where `writer_of` has said `Gone` first (the system
+  released its lock with its process), and a `.torn` copy, which its own run no longer holds once
+  its `Staged` is dropped.
 - **A file or directory is synced through `file_facts`**: `sync_file` opens a Windows file for
   writing (`FlushFileBuffers` refuses a read-only handle) and `sync_directory` is a no-op there (a
   directory cannot be opened as a file), so no writer calls `File::open(folder)` or syncs a
@@ -134,7 +155,17 @@ settle. `unsafe_code = "forbid"` holds: every Win32 and COM call goes through a 
   case-insensitive collision is found by the probe `Claims` makes with `file_facts`.
 - **Deleting goes to the recycle bin** (`trashing::RecycleBin` over `trash::delete`); the hand-written
   freedesktop trash and the portal are Unix. A catalog with no trasher keeps the file
-  (`Removal::Kept`), never removes it for good.
+  (`Removal::Kept`), never removes it for good. **`trash` enters COM itself, on the thread that
+  calls it** (a thread-local `CoInitializeEx(COINIT_APARTMENTTHREADED)`, the crate's
+  `coinit_apartmentthreaded` feature, which the workspace keeps), and it *panics* if that thread
+  is already in the multithreaded apartment (`RPC_E_CHANGED_MODE`). The shell's `IFileOperation`
+  also wants a single-threaded apartment. A deletion therefore never runs on a caller's thread:
+  `on_a_thread_of_its_own` runs it on a fresh `resonate-recycle` thread inside a `thread::scope`,
+  which no other code has entered an apartment on (the WASAPI stream and capture threads enter
+  the multithreaded one on threads of their own), and a panic there is `Unthreaded::Panicked`,
+  which `RecycleBin` reads as a refusal (`Removal::Kept`) rather than letting it unwind into the
+  caller. The crate leaves the apartment when the thread ends. No `unsafe` and no extra COM
+  call of ours is needed.
 - **Settings are `%APPDATA%\resonate\config.toml`; data and cache are `%LOCALAPPDATA%\resonate`**
   (`config::known_folder`), unless an `XDG_*` variable is set; `~` is `%USERPROFILE%`. A config is
   not made owner-only (the profile folder is private by inheritance).
@@ -237,7 +268,24 @@ launcher's icon-follows-the-accent is a no-op. All of it is on the roadmap.
 
 ## Release
 
-`packaging/windows/build.ps1` builds `-C target-cpu=x86-64-v3` and zips `resonate.exe`, the licence
-and a README as `resonate-<version>-x86_64_v3-windows.zip` (`release.yml`'s `windows-zip`, in the
-`SHA256SUMS`); `crates/resonate/tests/packaging.rs` holds it to v3 and to the manifest's version. It
-is not signed and has no installer.
+`packaging/windows/build.ps1 -Architecture x86_64|aarch64` builds one archive per architecture and
+zips `resonate.exe`, the licence and a README:
+
+- **`x86_64`** (the default) builds `-C target-cpu=x86-64-v3` for the host and names it
+  `resonate-<version>-x86_64_v3-windows.zip`.
+- **`aarch64`** installs the `aarch64-pc-windows-msvc` target, builds `--target` it at `-C
+  target-cpu=generic` (the target's own baseline, ARMv8-A with NEON, written out because a PowerShell
+  variable set to the empty string is removed rather than emptied and so could not replace the
+  checkout's `target-cpu=native`; every Windows 11 ARM64 machine is above it, and a higher floor
+  would buy little over NEON and shut out machines for it) and names it
+  `resonate-<version>-aarch64-windows.zip`.
+
+`release.yml`'s `windows-zip` is a matrix of the two on `windows-latest`, each its own artifact, both
+in the `SHA256SUMS`. The ARM64 archive is **cross-built on the x64 runner**, not on a `windows-11-arm`
+one: the hosted ARM64 runner's availability follows the repository's plan, its image carries fewer
+tools, and a release is immutable, so the more predictable runner builds it; the x64 image already carries the
+MSVC ARM64 tools and LLVM that `ring` needs, and a step runs `clang --version` first so a missing
+compiler fails by name. A cross-built archive is never run in CI, which is why the roadmap still
+lists the ARM64 build among what only hardware settles. `crates/resonate/tests/packaging.rs` holds
+the script to v3, to the ARM64 triple and baseline, to the manifest's version, and the workflow to
+one archive and artifact name per architecture. Neither archive is signed and neither has an installer.

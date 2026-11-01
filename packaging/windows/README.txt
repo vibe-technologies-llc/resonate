@@ -11,4 +11,5 @@ plays through the Windows mixer, and the same name marked "(WASAPI exclusive)" t
 Resonate alone at the song's own rate and word, so nothing in between touches the signal. Choose
 that one for bit-perfect playback; other programs are silent on it while it plays.
 
-Needs a machine with AVX2 (x86-64-v3): a processor from about 2015 onward.
+The x86_64_v3 archive needs a machine with AVX2 (x86-64-v3): a processor from about 2015 onward.
+The aarch64 archive is native to Windows 11 on ARM64.
