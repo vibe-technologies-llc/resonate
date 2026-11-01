@@ -22,6 +22,17 @@ rustix.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 interprocess.workspace = true
+wasapi = "0.26.0"
+windows = {
+    version = "0.62.2",
+    default-features = false,
+    features = [
+        "Data_Xml_Dom",
+        "Foundation",
+        "Networking_Connectivity",
+        "UI_Notifications"
+    ]
+}
 
 [dev-dependencies]
 resonate-codec.workspace = true

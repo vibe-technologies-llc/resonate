@@ -10,7 +10,9 @@ paths:
 `resonate-mpris` also compiles for Windows, where there is no session bus: its portal trash and
 the permission and `/proc` parts of its cover folder are Unix, and the binary treats a missing bus
 as it does on a Linux machine with none, except that a window is still served and reached on a
-named pipe (*The client's second wire*, `windows.md`). It is MPRIS, notifications, idle inhibit, playlists (`library.md` has the seam), and
+named pipe (*The client's second wire*, `windows.md`), song changes are told as toasts and the
+connection's cost is read from `NetworkInformation` (*The desktop's calls*, *Is the connection
+metered*). It is MPRIS, notifications, idle inhibit, playlists (`library.md` has the seam), and
 the client a second `resonate` reaches a first through.
 
 ## What it sees
@@ -148,13 +150,19 @@ and its zone's id and sends every command through `Zones::send` (`audio.md`).
 
 ## The desktop's calls
 
-- **Own connection and thread; the poll only leaves errands.** `notify.rs` raises
-  `org.freedesktop.Notifications` on a track change; `idle.rs` holds the portal's
-  `org.freedesktop.portal.Inhibit` while there is sound; `desktop.rs` makes both on a second
+- **Own connection and thread; the poll only leaves errands.** `notify.rs` is what a notification
+  says on every platform (`Shown`, `ACTIONS`, `pressed`); `desktop.rs`'s `Errands` run on a `Desk`,
+  Linux's `desk_bus.rs` (`notifier.rs` raises `org.freedesktop.Notifications` on a track change) or
+  Windows's `desk_toast.rs` (toasts, `windows.md`: `toast.rs` writes the XML from the same `Shown`
+  and `ACTIONS`, a press is `notify::pressed` again); `idle.rs` holds the portal's
+  `org.freedesktop.portal.Inhibit` while there is sound; `desk_bus.rs` makes both on a second
   connection with `DEADLINE` (2 s) `method_timeout` and a thread reading a bounded channel (on the
   poll thread one unanswered call held every property change 25 s). Inhibit is a *level*:
   `Errands::follow` writes whether the session should be awake into an `AtomicBool` and nudges the
-  thread, whose `Gripping` weighs it after every errand. A failed `Inhibit` still counts as taken.
+  thread, whose `Gripping` weighs it after every errand (a Windows `Desk` ignores it; `awake.rs`
+  of the binary holds the machine awake there). The poll's telling is one function,
+  `tell_the_desktop`, for the bus loop and for Windows's pipe service, which has no bus to publish
+  on and runs only that (`toast_what_plays`). A failed `Inhibit` still counts as taken.
   Either service missing = debug records, never a refusal to start. `trash.rs` is the same kind
   of errand for the catalog's deletes under Flatpak: `trash_through_the_portal` opens the file and
   passes the descriptor to `org.freedesktop.portal.Trash.TrashFile` on a connection of its own
@@ -217,6 +225,12 @@ needs `--system-talk-name=org.bluez` (`packaging.md`)
 `dbus-run-session` with `DBUS_SYSTEM_BUS_ADDRESS` at the session bus and a stand-in `org.bluez`).
 
 ## Is the connection metered
+
+On Windows `costing.rs`'s `watch_the_meter` has the same signature and the same contract (the first
+read made before it returns, `Unknown` where nothing is known) over
+`NetworkInformation::GetInternetConnectionProfile().GetConnectionCost().NetworkCostType()` and its
+`NetworkStatusChanged` event, mapped by `cost::meter_of_network_cost` (`windows.md`). The rest of
+this section is NetworkManager's.
 
 `metered.rs`'s `watch_the_meter(Metering)` reads NetworkManager's `Metered` property
 (`org.freedesktop.NetworkManager` at `/org/freedesktop/NetworkManager`) over the system bus and

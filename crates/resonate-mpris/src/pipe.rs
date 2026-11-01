@@ -111,7 +111,7 @@ impl Serving {
                 .map_err(|source| Error::bus(crate::BusOp::ClaimName, source))?;
             match Self::taking(&folder, &player)? {
                 Some((claim, listener)) => {
-                    return Self::serving(name, player, claim, listener, answering);
+                    return Self::begun(name, player, claim, listener, answering);
                 }
                 None => last = Some(name),
             }
@@ -142,7 +142,7 @@ impl Serving {
         }
     }
 
-    fn serving(
+    fn begun(
         name: WellKnownName<'static>,
         player: String,
         claim: Claim,

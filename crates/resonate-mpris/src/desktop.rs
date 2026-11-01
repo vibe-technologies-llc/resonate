@@ -11,20 +11,16 @@ use std::{
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, TrySendError, bounded};
 use resonate_engine::PlaybackState;
 
-use crate::{
-    BusOp, Error, Result,
-    blocking::{Connection, connection},
-    idle::{Awake, Grip, Gripping},
-    interfaces::Shared,
-    notify::{Notifier, Shown},
-    track::sounding,
-};
+#[cfg(unix)]
+use crate::desk_bus::Desk;
+#[cfg(windows)]
+use crate::desk_toast::Desk;
+use crate::{Error, Result, interfaces::Shared, notify::Shown, track::sounding};
 
-const DEADLINE: Duration = Duration::from_secs(2);
 const FAREWELL: Duration = Duration::from_millis(500);
 const WAITING_ERRANDS: usize = 8;
 
-enum Errand {
+pub(crate) enum Errand {
     Show(Shown),
     Tell(Shown),
     Grip,
@@ -49,11 +45,7 @@ impl Errands {
     }
 
     fn new(shared: &Arc<Shared>) -> Result<Self> {
-        let connection = connection::Builder::session()
-            .map_err(|source| Error::bus(BusOp::Connect, source))?
-            .method_timeout(DEADLINE)
-            .build()
-            .map_err(|source| Error::bus(BusOp::Connect, source))?;
+        let desk = Desk::open()?;
 
         let (asks, errands) = bounded(WAITING_ERRANDS);
         let (finished, done) = bounded(0);
@@ -64,8 +56,7 @@ impl Errands {
         thread::Builder::new()
             .name("resonate-desktop".to_owned())
             .spawn(move || {
-                run(&connection, &shared, &errands, &wanted);
-                let _ = connection.close();
+                desk.run(&shared, &errands, &wanted);
                 drop(finished);
             })
             .map_err(|_| Error::ThreadStopped)?;
@@ -106,42 +97,5 @@ impl Errands {
         if self.done.recv_timeout(FAREWELL) == Err(RecvTimeoutError::Timeout) {
             tracing::debug!("the desktop was left mid-call rather than waited on");
         }
-    }
-}
-
-fn run(
-    connection: &Connection,
-    shared: &Arc<Shared>,
-    errands: &Receiver<Errand>,
-    wanted: &AtomicBool,
-) {
-    let notifier = Notifier::start(connection, shared.host.as_ref());
-    let mut awake = Awake::start(connection, shared.host.as_ref());
-    if let Some(notifier) = notifier.as_ref() {
-        notifier.listen(shared);
-    }
-
-    let mut gripping = Gripping::default();
-    for errand in errands {
-        match (errand, notifier.as_ref()) {
-            (Errand::Show(shown), Some(notifier)) => notifier.show(&shown),
-            (Errand::Tell(shown), Some(notifier)) => notifier.tell(&shown),
-            _ => {}
-        }
-        match (
-            gripping.toward(wanted.load(Ordering::Acquire)),
-            awake.as_mut(),
-        ) {
-            (Some(Grip::Take), Some(awake)) => awake.hold(),
-            (Some(Grip::LetGo), Some(awake)) => awake.release(),
-            _ => {}
-        }
-    }
-
-    if let Some(awake) = awake.as_mut() {
-        awake.release();
-    }
-    if let Some(notifier) = notifier.as_ref() {
-        notifier.hush();
     }
 }

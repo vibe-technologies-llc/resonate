@@ -1,16 +1,30 @@
 mod answering;
+#[cfg(windows)]
+mod apartment;
 mod art;
 mod blocking;
 mod bluez;
 mod bus_peer;
 mod caret;
+#[cfg(any(windows, test))]
+mod cost;
+#[cfg(windows)]
+mod costing;
+#[cfg(unix)]
+mod desk_bus;
+#[cfg(windows)]
+mod desk_toast;
 mod desktop;
 mod error;
 mod host;
 mod icons;
+#[cfg(unix)]
 mod idle;
 mod interfaces;
+#[cfg(unix)]
 mod metered;
+#[cfg(unix)]
+mod notifier;
 mod notify;
 mod peer;
 #[cfg(windows)]
@@ -21,12 +35,20 @@ mod preferences;
 mod registry;
 mod remote;
 mod service;
+#[cfg(any(windows, test))]
+mod toast;
 mod track;
 mod tracklist;
 #[cfg(unix)]
 mod trash;
 mod wire;
 
+#[cfg(windows)]
+pub use crate::costing::watch_the_meter;
+#[cfg(windows)]
+pub use crate::error::WindowsOp;
+#[cfg(unix)]
+pub use crate::metered::{meter_of_network_manager, watch_the_meter};
 #[cfg(unix)]
 pub use crate::trash::{Trashing, trash_through_the_portal};
 pub use crate::{
@@ -38,7 +60,6 @@ pub use crate::{
         Reloaded, Tunable, Tuned,
     },
     icons::tell_the_icons_changed,
-    metered::{meter_of_network_manager, watch_the_meter},
     preferences::{Contrast, Motion, Preferences, desktop_preferences},
     remote::{
         Described, PlayerName, Queueing, ROWS_A_CALL, Running, Seeking, Session, Standing,

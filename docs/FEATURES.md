@@ -44,7 +44,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   hot-plug, the render cycle's timing, microphone and loopback capture (a loopback endpoint that
   stays silent while nothing plays, a microphone's autoconverted format), the window under
   per-monitor DPI and IME, the recycle bin, the terminal keys and the window's named pipe (its
-  owner-only security descriptor, a client reaching it) have never run on real hardware or a real
+  owner-only security descriptor, a client reaching it), a toast (whether one shows once a
+  shortcut carries `org.resonate.Resonate`, its image from a `file:///` cover, its three buttons
+  reaching the transport, a replacement when the cover lands) and the connection's
+  `NetworkCostType` (a metered hotspot, the change event) have never run on real hardware or a real
   audio endpoint
 - [L · 0.4.0] Windows has no media transport: the System Media Transport Controls (media keys, the
   volume overlay and lock screen, track and cover metadata) need a native crate behind
@@ -56,8 +59,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [S · 0.4.0] A volume turned from the Windows mixer reaches the slider by the two-second poll: the
   safe wrapper of `IAudioEndpointVolume` reads and sets only a whole percent and offers no
   `IAudioEndpointVolumeCallback`, so a change is neither told at once nor read finer than a percent
-- [M · 0.4.0] Windows has no toast notifications with transport actions and no metered-network
-  detector (`NetworkCostType`)
 - [M · 0.4.0] A Windows path past `MAX_PATH` (260) is not weighed by the organiser, NTFS alternate
   streams and ACLs are not carried by a tag write, and a folder mounted into another drive's tree is
   not noticed as a volume
@@ -70,7 +71,8 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   permission bits, pseudo-terminals)
 - [S · 0.4.0] The recycle bin is reached through `trash` on a thread the binary did not put in an
   apartment: whether a deletion from a WASAPI-hosting process works is unproven
-- [L · 0.4.0] Windows has no installer, start-menu entry or file associations from `MIME_TYPES`, no
+- [L · 0.4.0] Windows has no installer, start-menu entry (whose shortcut must carry the AppUserModelID `org.resonate.Resonate`, else the
+  toasts `resonate-mpris` creates are not shown) or file associations from `MIME_TYPES`, no
   Authenticode signing (no secrets exist), no winget or scoop manifest, and the executable carries no
   icon (the accent-following icon is a Linux theme file)
 - [M · 0.4.0] Windows on ARM64 is not built: the archive is x86-64-v3 alone

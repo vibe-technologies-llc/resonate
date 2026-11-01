@@ -13,6 +13,11 @@ paths:
   - "crates/resonate-discord/src/pipe.rs"
   - "crates/resonate-mpris/src/pipe.rs"
   - "crates/resonate-mpris/src/registry.rs"
+  - "crates/resonate-mpris/src/apartment.rs"
+  - "crates/resonate-mpris/src/cost.rs"
+  - "crates/resonate-mpris/src/costing.rs"
+  - "crates/resonate-mpris/src/desk_toast.rs"
+  - "crates/resonate-mpris/src/toast.rs"
   - "crates/resonate-ui/src/system.rs"
   - "packaging/windows/**"
 ---
@@ -264,12 +269,60 @@ PipeWire sink is `admit`) and `endpoints.rs` (naming, the listing, the choice of
 - **The desktop names no endpoint.** `Listening::Desktop` carries no sink on either platform, so
   loopback is of the default render endpoint alone.
 
+## Toasts and the metered connection
+
+`resonate-mpris` answers both with the Windows Runtime, through the `windows` crate's safe
+projections (`Windows.UI.Notifications`, `Windows.Data.Xml.Dom`, `Windows.Networking.Connectivity`;
+the features `Data_Xml_Dom`, `Foundation`, `Networking_Connectivity` and `UI_Notifications`, and
+nothing else). `RoInitialize` and `CoInitializeEx` are `unsafe fn`s there, so a thread enters the
+multithreaded apartment through the `wasapi` crate's safe `initialize_mta` (`apartment.rs`'s
+`Apartment`, left on drop), as the render and capture threads do; a Windows Runtime call on a thread
+in no apartment fails `CO_E_NOTINITIALIZED`. Errors are `Error::Windows { op: WindowsOp, source }`.
+
+- **A toast is the song-change notification of Linux, word for word** (`mpris.md`: `Shown`,
+  `Telling::of(attended, notifies)`, so the `notify` setting and the held-back-while-the-window-is-
+  in-front rule are the same code). `desktop.rs`'s `Errands` run on a `Desk`: `desk_bus.rs` is
+  Linux's (the notification server and the idle portal), `desk_toast.rs` Windows's. A Windows `Desk`
+  enters the apartment on the `resonate-desktop` thread, makes a `ToastNotifier` for the
+  AppUserModelID `org.resonate.Resonate` (`ToastNotificationManager::CreateToastNotifierWithId`),
+  and shows each errand: `toast.rs` writes the XML (portable, tested on every host): `ToastGeneric`,
+  the title, then the artist and the album each as a line, the cover as an `appLogoOverride` image
+  at its `file:///C:/...` URI (`art::Pictures` lays it in the temporary folder), `<audio
+  silent="true"/>` and, for a track change, three buttons Previous, Play/Pause and Next
+  (`notify::ACTIONS`, the keys Linux uses) with `activationType="foreground"`. Text is escaped for
+  XML and characters XML 1.0 refuses are left out. A toast is tagged (`track`, or `listen` for what
+  Listen named, which has no buttons) in the group `resonate`, so the second telling when the cover
+  lands replaces the first in the Action Center; teardown hides the track's toast. `ToastNotification::Activated` carries
+  the button's key as its argument and `notify::pressed` turns it into the `Command`, settled on
+  the zone, so a press reaches the transport as it does on Linux; a press of a toast left in the
+  Action Center after the player has gone cannot be answered.
+- **No process AppUserModelID is set.** `CreateToastNotifierWithId` names the identity, which
+  needs no call of ours (`SetCurrentProcessExplicitAppUserModelID` is `unsafe`). **A toast shows in
+  practice only where a Start-menu shortcut carries that identity** (the `System.AppUserModel.ID`
+  property of a `.lnk` in the Start menu's `Programs`); the zip has none and the installer is a
+  separate roadmap entry, so until it exists a toast is created and silently not shown. The
+  installer's shortcut must name `org.resonate.Resonate`.
+- **Which service raises it.** With a session bus (a dbus session on Windows is rare but possible)
+  the poll that serves the bus raises toasts; with none, the pipe's service runs a thread of its
+  own for them (`resonate-toasts`, `toast_what_plays`), the same `snapshot` and `tell_the_desktop`
+  the bus loop uses, so the two never differ in what they say.
+- **The metered connection is `NetworkInformation`** (`costing.rs`): `watch_the_meter(Metering)`,
+  the same function the binary calls on Linux, spawns `resonate-metered`, which enters the
+  apartment, registers `NetworkStatusChanged` and reads
+  `GetInternetConnectionProfile().GetConnectionCost().NetworkCostType()` before it returns (a
+  lookup made straight after is gated), and parks for the rest of the process. The handler reads
+  again on every change. `cost::meter_of_network_cost` (portable, tested everywhere) maps
+  `Unrestricted` to `Unmetered`, `Fixed` and `Variable` to `Metered`, `Unknown` and any other
+  number to `Unknown`; no profile (null) or a failed read reports `Unknown`, so an offline machine
+  never blocks anything. `Roaming`, `OverDataLimit` and `ApproachingDataLimit` of the cost are
+  not read.
+
 ## Not on Windows yet
 
-The MPRIS service, notifications and network metering answer "no bus": `resonate-mpris` compiles
-but finds no session bus, and the binary carries on without it as it does on a Linux machine with
-none (a running window is still reached on its pipe, above). The
-launcher's icon-follows-the-accent is a no-op. All of it is on the roadmap.
+The MPRIS service and the media transport answer "no bus": `resonate-mpris` finds no session bus
+and the binary carries on without it as it does on a Linux machine with none (a running window is
+still reached on its pipe, the machine kept awake by `awake.rs`, toasts and the metered connection
+above). The launcher's icon-follows-the-accent is a no-op. All of it is on the roadmap.
 
 ## Release
 

@@ -37,6 +37,21 @@ pub enum PipeOp {
     List,
 }
 
+#[cfg(windows)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum WindowsOp {
+    Enter,
+    Profile,
+    Cost,
+    Watch,
+    Notifier,
+    Template,
+    Toast,
+    Listen,
+    Show,
+    Hide,
+}
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("{op:?} failed on the message bus")]
@@ -51,6 +66,14 @@ pub enum Error {
         op: PipeOp,
         #[source]
         source: io::Error,
+    },
+
+    #[cfg(windows)]
+    #[error("{op:?} failed in Windows")]
+    Windows {
+        op: WindowsOp,
+        #[source]
+        source: windows::core::Error,
     },
 
     #[error("the player's pipe spoke out of turn")]
@@ -83,6 +106,11 @@ pub enum Error {
 impl Error {
     pub(crate) fn pipe(op: PipeOp, source: io::Error) -> Self {
         Self::Pipe { op, source }
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn windows(op: WindowsOp, source: windows::core::Error) -> Self {
+        Self::Windows { op, source }
     }
 
     pub(crate) fn bus(op: BusOp, source: zbus::Error) -> Self {
