@@ -10062,6 +10062,7 @@ fn a_lookup_fetches_every_track_its_lyrics_and_keeps_them_against_the_file() -> 
 
     let summary = enrich(&library, &fake, false)?;
     assert_eq!(summary.stats.lyrics, 2);
+    assert_eq!(summary.stats.lyrics_missing, 1);
     let mut asked = fake.sung();
     asked.sort_by(|one, other| one.title.cmp(&other.title));
     assert_eq!(
@@ -11421,6 +11422,9 @@ fn an_album_tagged_with_a_release_id_is_asked_for_by_that_id_and_never_searched(
     assert_eq!(summary.stats.albums, 1);
     assert_eq!(summary.stats.releases, 1);
     assert_eq!(summary.stats.matched, 3);
+    assert_eq!(summary.stats.groups, 0);
+    assert_eq!(summary.stats.albums_unmatched, 0);
+    assert_eq!(summary.stats.albums_rejected, 0);
     assert_eq!(only_album(&library)?.missing, 0);
     Ok(())
 }
@@ -11630,7 +11634,10 @@ fn a_match_the_listener_forgets_is_taken_away_and_never_landed_again() -> Result
     );
     assert!(library.refuses(album.id, &mbid(RELEASE))?);
 
-    enrich(&library, &fake, false)?;
+    let again = enrich(&library, &fake, false)?;
+    assert_eq!(again.stats.albums_rejected, 1);
+    assert_eq!(again.stats.albums_unmatched, 0);
+    assert_eq!(again.stats.releases, 0);
     assert_eq!(
         only_album(&library)?.mbid,
         None,
@@ -11886,12 +11893,16 @@ fn a_search_match_is_taken_only_under_the_strict_rule_and_a_near_miss_stamps_ask
         releases: vec![orbits(orbits_rows(), Vec::new())],
         ..Canned::default()
     }));
-    enrich(&library, &fake, false)?;
+    let summary = enrich(&library, &fake, false)?;
     assert_eq!(
         fake.called(LookupOp::FindRelease),
         2,
         "a near miss was not asked again in words"
     );
+    assert_eq!(summary.stats.albums, 1);
+    assert_eq!(summary.stats.albums_unmatched, 1);
+    assert_eq!(summary.stats.releases, 0);
+    assert_eq!(summary.stats.refused, 0);
     assert_eq!(fake.called(LookupOp::Release), 0);
     let album = only_album(&library)?;
     assert_eq!(album.mbid, None);
@@ -12330,8 +12341,11 @@ fn an_album_no_release_matches_is_landed_as_its_release_group_with_a_cover() -> 
     );
 
     assert_eq!(summary.stats.releases, 0);
+    assert_eq!(summary.stats.groups, 1);
+    assert_eq!(summary.stats.albums_unmatched, 0);
     assert_eq!(summary.stats.matched, 0);
     assert_eq!(summary.stats.covers, 1);
+    assert_eq!(summary.stats.covers_missing, 0);
     assert_eq!(summary.stats.refused, 0);
     Ok(())
 }
@@ -13945,6 +13959,7 @@ fn a_portrait_is_fetched_only_where_the_profile_names_an_image_and_none_is_held(
     );
     assert_eq!(summary.stats.artists, 2);
     assert_eq!(summary.stats.portraits, 1);
+    assert_eq!(summary.stats.portraits_missing, 0);
 
     let orbiters = artist_named(&library, "The Orbiters")?;
     assert!(orbiters.has_portrait);
@@ -14013,6 +14028,7 @@ fn a_refusal_counts_and_stamps_asked_and_the_pass_carries_on() -> Result<()> {
     assert_eq!(summary.stopped_by, None);
     assert_eq!(summary.stats.refused, 1);
     assert_eq!(summary.stats.releases, 0);
+    assert_eq!(summary.stats.albums_unmatched, 0);
     assert_eq!(fake.called(LookupOp::Release), 1);
     assert_eq!(fake.called(LookupOp::Cover), 0);
     assert_eq!(fake.called(LookupOp::FindArtist), 1);
@@ -14829,6 +14845,9 @@ fn a_track_with_no_album_is_identified_by_the_isrc_the_file_carries() -> Result<
     assert_eq!(fake.called(LookupOp::Release), 0);
     assert_eq!(summary.stats.tracks, 1);
     assert_eq!(summary.stats.named, 0);
+    assert_eq!(summary.stats.by_isrc, 1);
+    assert_eq!(summary.stats.by_search, 0);
+    assert_eq!(summary.stats.tracks_unmatched, 0);
 
     let held = stored(&database, &file);
     assert_eq!(held.title, "One of These Days");
@@ -14845,6 +14864,41 @@ fn a_track_with_no_album_is_identified_by_the_isrc_the_file_carries() -> Result<
     assert_eq!(tracks[0].artist_id, Some(artist.id));
     assert_eq!(fake.called(LookupOp::FindArtist), 0);
     assert_eq!(fake.called(LookupOp::Artist), 1);
+    Ok(())
+}
+
+#[test]
+fn a_pass_tells_what_it_found_no_strict_match_for_apart_from_what_a_service_refused() -> Result<()>
+{
+    let (_tree, library, _database, _file) = scanned_lone(
+        Wav::new()
+            .text(TITLE, "One of These Days")
+            .text(ARTIST, "The Orbiters"),
+    )?;
+    let fake = Arc::new(Fake::new(Canned::default()));
+    let summary = enrich(&library, &fake, false)?;
+
+    assert_eq!(summary.stats.tracks, 1);
+    assert_eq!(summary.stats.tracks_unmatched, 1);
+    assert_eq!(summary.stats.by_isrc, 0);
+    assert_eq!(summary.stats.by_recording, 0);
+    assert_eq!(summary.stats.by_search, 0);
+    assert_eq!(summary.stats.by_fingerprint, 0);
+    assert_eq!(summary.stats.artists_unmatched, 1);
+    assert_eq!(summary.stats.profiles, 0);
+    assert_eq!(summary.stats.refused, 0);
+
+    let (_tree, library, _database, _file) = scanned_lone(
+        Wav::new()
+            .text(TITLE, "One of These Days")
+            .text(ARTIST, "The Orbiters"),
+    )?;
+    let fake =
+        Arc::new(Fake::new(Canned::default()).faulting(LookupOp::FindRecording, 0, Fault::Refused));
+    let summary = enrich(&library, &fake, false)?;
+
+    assert_eq!(summary.stats.refused, 1);
+    assert_eq!(summary.stats.tracks_unmatched, 0);
     Ok(())
 }
 

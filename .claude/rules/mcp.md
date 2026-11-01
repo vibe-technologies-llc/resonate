@@ -128,6 +128,9 @@ stays in the grammar (`build.rs` reads `cli.rs` featureless) and answers `Error:
   at once; `library_passes` gives each `idle`, `running` (progress), `finished` (summary) or
   `failed` (error chain); `stop_pass` cancels at the next file. `Passes` holds a `Slot` per pass in a
   `RefCell` (one answering thread). Starting a running pass is `Error::AlreadyRunning`.
+  A lookup's `progress` and `stats` hold one count for every `resonate_library::Outcome`
+  (`Outcome::key` names it), so the breakdown the window and `resonate enrich` show reaches a client
+  whole (`a_scan_run_to_its_end_hands_over_to_a_lookup_where_the_settings_ask_for_one`).
 - **Passes start as the CLI starts them.** `start_scan` takes `full` and `follow_links` like
   `resonate scan`. Where `Lookups::after_a_scan` (`enrich-after-scan`) holds and a reference is
   reached, `Passes::carry_on` (asked before every message and on every tick) starts a lookup once the

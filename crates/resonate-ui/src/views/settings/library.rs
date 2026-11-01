@@ -9,8 +9,9 @@ use gpui::{
 };
 use resonate_engine::{Command, PreviousRestarts, SkipUnderRepeat};
 use resonate_library::{
-    Failure, Failures, HistoryKept, ImportStats, ImportSummary, Layout, OrganiseStats,
-    OrganiseSummary, PollStats, RetagStats, RetagSummary, ScanStats, Vault, Wanted, Written,
+    EnrichStats, EnrichSummary, Failure, Failures, HistoryKept, ImportStats, ImportSummary, Layout,
+    OrganiseStats, OrganiseSummary, PollStats, RetagStats, RetagSummary, ScanStats, Vault, Wanted,
+    Written,
 };
 
 use crate::{
@@ -23,7 +24,7 @@ use crate::{
         kit::{self, EndsInAnEllipsis as _, Found as _, Press},
         listing,
         root::RootView,
-        settings::{Choice, action, hugging, named, note, progress, rows, switch_row},
+        settings::{Choice, action, hugging, named, note, progress, reading, rows, switch_row},
         spoken::Spoken as _,
     },
 };
@@ -132,6 +133,10 @@ fn forgets_listens(now: HistoryKept, asked: HistoryKept) -> bool {
         (Some(now), Some(asked)) => asked < now,
     }
 }
+
+const LOOKUP_UNDER_WAY: &str = "THE LOOKUP SO FAR";
+
+const LAST_LOOKUP: &str = "THE LAST LOOKUP";
 
 const DETAILS_NOTE: &str = "Look up asks MusicBrainz about the albums and artists not asked \
                             lately, which a scan does on its own when Online allows it. Refresh \
@@ -512,6 +517,11 @@ impl RootView {
         let held_back = library.is_busy() || library.is_enriching() || !library.can_enrich();
         let enriching = library.is_enriching();
         let stopping = library.is_stopping_enrich();
+        let breakdown = library.enrich_stats().map(|stats| lookup_lines(&stats));
+        let ending = library
+            .looked_up()
+            .filter(|_| !enriching)
+            .and_then(|summary| lookup_ending(&summary));
 
         div()
             .flex()
@@ -529,6 +539,28 @@ impl RootView {
                     .when(enriching, |row| row.child(self.stop_lookup(stopping, cx))),
             )
             .child(note(DETAILS_NOTE))
+            .when_some(
+                breakdown.filter(|lines| !lines.is_empty()),
+                |body, lines| {
+                    body.child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_1p5()
+                            .child(kit::eyebrow(if enriching {
+                                LOOKUP_UNDER_WAY
+                            } else {
+                                LAST_LOOKUP
+                            }))
+                            .children(
+                                lines
+                                    .into_iter()
+                                    .map(|(title, counted)| reading(title, counted)),
+                            ),
+                    )
+                },
+            )
+            .when_some(ending, |body, ending| body.child(note(ending)))
     }
 
     fn rescan(&self, busy: bool, scanning: bool, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -702,6 +734,30 @@ fn waiting_line(waiting: &[crate::RootWaiting]) -> String {
         "Waiting for the pass under way to finish: {}",
         named.join(", ")
     )
+}
+
+fn lookup_lines(stats: &EnrichStats) -> Vec<(&'static str, String)> {
+    stats
+        .told_by_section()
+        .map(|(section, counted)| {
+            let told: Vec<String> = counted
+                .into_iter()
+                .map(|(outcome, count)| format!("{count} {}", outcome.label()))
+                .collect();
+            (section.title(), told.join(" · "))
+        })
+        .collect()
+}
+
+fn lookup_ending(summary: &EnrichSummary) -> Option<String> {
+    match (summary.stopped_by, summary.cancelled) {
+        (Some(op), _) => Some(format!(
+            "The last lookup ended early: MusicBrainz couldn't be reached while looking up {}",
+            op.asked_for()
+        )),
+        (None, true) => Some("The last lookup was stopped early".to_owned()),
+        (None, false) => None,
+    }
 }
 
 fn read_so_far(stats: ScanStats) -> f32 {
@@ -2016,6 +2072,52 @@ mod tests {
         assert_eq!(
             said_under(HistoryKept::Forever),
             HistoryKept::Forever.meaning()
+        );
+    }
+
+    #[test]
+    fn a_lookup_is_told_a_section_at_a_time_with_the_outcomes_it_counted() {
+        let stats = EnrichStats {
+            albums: 12,
+            releases: 8,
+            albums_unmatched: 3,
+            covers: 5,
+            ..EnrichStats::default()
+        };
+
+        assert_eq!(
+            lookup_lines(&stats),
+            vec![
+                (
+                    "Albums",
+                    "12 asked about · 8 matched to a release · 3 with no strict match".to_owned()
+                ),
+                ("Pictures", "5 covers fetched".to_owned()),
+            ]
+        );
+        assert!(lookup_lines(&EnrichStats::default()).is_empty());
+    }
+
+    #[test]
+    fn a_lookup_that_ended_early_says_why_and_one_that_ran_out_says_nothing() {
+        let whole = EnrichSummary::default();
+        let stopped = EnrichSummary {
+            cancelled: true,
+            ..EnrichSummary::default()
+        };
+        let unreached = EnrichSummary {
+            stopped_by: Some(resonate_library::LookupOp::Release),
+            ..EnrichSummary::default()
+        };
+
+        assert_eq!(lookup_ending(&whole), None);
+        assert_eq!(
+            lookup_ending(&stopped).as_deref(),
+            Some("The last lookup was stopped early")
+        );
+        assert!(
+            lookup_ending(&unreached)
+                .is_some_and(|said| said.contains("couldn't be reached while looking up"))
         );
     }
 }

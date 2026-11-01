@@ -9,7 +9,7 @@ use std::{
 
 use resonate_library::{
     Cancelling, EnrichOptions, EnrichProgress, EnrichStats, EnrichSummary, Fingerprinters, Library,
-    PassHandle, PollOptions, PollProgress, PollStats, PollSummary, Reference, ScanOptions,
+    Outcome, PassHandle, PollOptions, PollProgress, PollStats, PollSummary, Reference, ScanOptions,
     ScanProgress, ScanStats, ScanSummary,
 };
 use resonate_providers::Providers;
@@ -88,24 +88,12 @@ impl Told for ScanStats {
 
 impl Told for EnrichStats {
     fn told(&self) -> Value {
-        json!({
-            "albums": self.albums,
-            "releases": self.releases,
-            "matched": self.matched,
-            "covers": self.covers,
-            "tracks": self.tracks,
-            "named": self.named,
-            "artists": self.artists,
-            "portraits": self.portraits,
-            "releases_found": self.releases_found,
-            "refused": self.refused,
-            "studied": self.studied,
-            "fakes": self.fakes,
-            "recognised": self.recognised,
-            "misnamed": self.misnamed,
-            "lyrics": self.lyrics,
-            "songs": self.songs,
-        })
+        Value::Object(
+            Outcome::ALL
+                .into_iter()
+                .map(|outcome| (outcome.key().to_owned(), json!(self.of(outcome))))
+                .collect(),
+        )
     }
 }
 

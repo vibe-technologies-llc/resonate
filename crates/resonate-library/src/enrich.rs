@@ -184,6 +184,19 @@ pub struct EnrichStats {
     pub misnamed: u64,
     pub lyrics: u64,
     pub songs: u64,
+    pub groups: u64,
+    pub albums_unmatched: u64,
+    pub albums_rejected: u64,
+    pub by_isrc: u64,
+    pub by_recording: u64,
+    pub by_search: u64,
+    pub by_fingerprint: u64,
+    pub tracks_unmatched: u64,
+    pub profiles: u64,
+    pub artists_unmatched: u64,
+    pub covers_missing: u64,
+    pub portraits_missing: u64,
+    pub lyrics_missing: u64,
 }
 
 #[derive(Debug, Default)]
@@ -205,6 +218,19 @@ pub struct EnrichProgress {
     misnamed: AtomicU64,
     lyrics: AtomicU64,
     songs: AtomicU64,
+    groups: AtomicU64,
+    albums_unmatched: AtomicU64,
+    albums_rejected: AtomicU64,
+    by_isrc: AtomicU64,
+    by_recording: AtomicU64,
+    by_search: AtomicU64,
+    by_fingerprint: AtomicU64,
+    tracks_unmatched: AtomicU64,
+    profiles: AtomicU64,
+    artists_unmatched: AtomicU64,
+    covers_missing: AtomicU64,
+    portraits_missing: AtomicU64,
+    lyrics_missing: AtomicU64,
     cancelled: AtomicBool,
 }
 
@@ -227,6 +253,19 @@ impl EnrichProgress {
             misnamed: self.misnamed.load(Ordering::Relaxed),
             lyrics: self.lyrics.load(Ordering::Relaxed),
             songs: self.songs.load(Ordering::Relaxed),
+            groups: self.groups.load(Ordering::Relaxed),
+            albums_unmatched: self.albums_unmatched.load(Ordering::Relaxed),
+            albums_rejected: self.albums_rejected.load(Ordering::Relaxed),
+            by_isrc: self.by_isrc.load(Ordering::Relaxed),
+            by_recording: self.by_recording.load(Ordering::Relaxed),
+            by_search: self.by_search.load(Ordering::Relaxed),
+            by_fingerprint: self.by_fingerprint.load(Ordering::Relaxed),
+            tracks_unmatched: self.tracks_unmatched.load(Ordering::Relaxed),
+            profiles: self.profiles.load(Ordering::Relaxed),
+            artists_unmatched: self.artists_unmatched.load(Ordering::Relaxed),
+            covers_missing: self.covers_missing.load(Ordering::Relaxed),
+            portraits_missing: self.portraits_missing.load(Ordering::Relaxed),
+            lyrics_missing: self.lyrics_missing.load(Ordering::Relaxed),
         }
     }
 
@@ -236,6 +275,10 @@ impl EnrichProgress {
 
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Relaxed)
+    }
+
+    fn count(counter: &AtomicU64) {
+        counter.fetch_add(1, Ordering::Relaxed);
     }
 
     pub(crate) fn refuse(&self) {
@@ -504,6 +547,9 @@ fn sing(
             return Sang::Asked;
         }
     };
+    if told.is_none() {
+        EnrichProgress::count(&progress.lyrics_missing);
+    }
     match library.keep_lyrics_of(&asking, told.as_ref()) {
         Ok(true) => {
             progress.lyrics.fetch_add(1, Ordering::Relaxed);
@@ -645,11 +691,10 @@ fn land_unheld_cover(
 ) {
     match found {
         Ok(art) => match library.land_unheld_cover(group, art.as_ref()) {
-            Ok(()) => {
-                if art.is_some() {
-                    progress.covers.fetch_add(1, Ordering::Relaxed);
-                }
-            }
+            Ok(()) => match art {
+                Some(_) => EnrichProgress::count(&progress.covers),
+                None => EnrichProgress::count(&progress.covers_missing),
+            },
             Err(error) => {
                 tracing::warn!(%error, %group, "a cover for a release not held was dropped");
             }
@@ -667,7 +712,10 @@ fn land_cover(
     found: Result<Option<CoverArt>>,
 ) {
     let settled = match found {
-        Ok(None) => true,
+        Ok(None) => {
+            EnrichProgress::count(&progress.covers_missing);
+            true
+        }
         Ok(Some(art)) => match library.land_archive_cover(album, &art) {
             Ok(landed) => {
                 if landed {
@@ -697,7 +745,10 @@ fn land_portrait(
     found: Result<Option<CoverArt>>,
 ) {
     let settled = match found {
-        Ok(None) => true,
+        Ok(None) => {
+            EnrichProgress::count(&progress.portraits_missing);
+            true
+        }
         Ok(Some(art)) => match library.land_portrait(artist, &art) {
             Ok(landed) => {
                 if landed {
@@ -1855,6 +1906,18 @@ impl Pass<'_> {
     }
 
     fn nothing_landed(&self, album: &AlbumToAsk, since: Refusals) -> Result<()> {
+        if self.fruitlessly(since) == Fruitless::Missed {
+            EnrichProgress::count(&self.progress.albums_unmatched);
+        }
+        self.stamp_the_unlanded(album, since)
+    }
+
+    fn rejected_by_the_listener(&self, album: &AlbumToAsk, since: Refusals) -> Result<()> {
+        EnrichProgress::count(&self.progress.albums_rejected);
+        self.stamp_the_unlanded(album, since)
+    }
+
+    fn stamp_the_unlanded(&self, album: &AlbumToAsk, since: Refusals) -> Result<()> {
         self.library
             .stamp_album_asked(album.id, self.fruitlessly(since))?;
         if album.has_release_rows {
@@ -1893,7 +1956,7 @@ impl Pass<'_> {
                 release = %release.id,
                 "the listener said this release is not the album, so it is not landed again"
             );
-            return self.nothing_landed(album, since);
+            return self.rejected_by_the_listener(album, since);
         }
         self.library.land_pressing(album.id, &release, pressing)?;
         self.progress.releases.fetch_add(1, Ordering::Relaxed);
@@ -1944,9 +2007,10 @@ impl Pass<'_> {
                 group = %group.id,
                 "the listener said this release group is not the album, so it is not landed again"
             );
-            return self.nothing_landed(album, since);
+            return self.rejected_by_the_listener(album, since);
         }
         self.library.land_release_group(album.id, group)?;
+        EnrichProgress::count(&self.progress.groups);
         if album.has_release_rows {
             self.rematch(album.id)?;
         }
@@ -2029,10 +2093,20 @@ impl Pass<'_> {
                 return Ok(());
             }
             if let Some((recording, certainty)) = self.along(route, &track)? {
+                EnrichProgress::count(match route {
+                    Route::Isrc => &self.progress.by_isrc,
+                    Route::Recording => &self.progress.by_recording,
+                    Route::Search => &self.progress.by_search,
+                    Route::Fingerprint => &self.progress.by_fingerprint,
+                });
                 return self.take_recording(&track, &recording, certainty, since);
             }
         }
-        self.library.stamp_track_asked(id, self.fruitlessly(since))
+        let fruitlessly = self.fruitlessly(since);
+        if fruitlessly == Fruitless::Missed {
+            EnrichProgress::count(&self.progress.tracks_unmatched);
+        }
+        self.library.stamp_track_asked(id, fruitlessly)
     }
 
     fn along(&self, route: Route, track: &TrackToAsk) -> Result<Option<(Recording, Certainty)>> {
@@ -2239,9 +2313,14 @@ impl Pass<'_> {
         let since = self.refusals();
         let Some(profile) = self.profile_of(&artist)? else {
             self.bill_the_members(&artist)?;
-            return self.library.stamp_artist_asked(id, self.fruitlessly(since));
+            let fruitlessly = self.fruitlessly(since);
+            if fruitlessly == Fruitless::Missed {
+                EnrichProgress::count(&self.progress.artists_unmatched);
+            }
+            return self.library.stamp_artist_asked(id, fruitlessly);
         };
         self.library.land_artist(artist.id, &profile)?;
+        EnrichProgress::count(&self.progress.profiles);
         if let ReleasesRead::Refused = self.discography(artist.id, &profile.mbid)? {
             self.library.stamp_artist_asked(id, Fruitless::Refused)?;
         }

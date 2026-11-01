@@ -621,8 +621,20 @@ rows read via `Player::media` like any unscanned row.
   `LyricText`) and `LookupOp`, every thing a service can be asked. `Reference` answers `Option`s and
   `Vec`s, nothing about how reached; `resonate-online`'s `Online` is the one implementation and only
   the binary reaches it behind `online`. `enrich.rs` is the pass: a `resonate-enrich` thread behind
-  an `EnrichHandle`; `EnrichProgress` counts what landed and answers `is_cancelled` between
-  requests; `EnrichSummary` carries stats, whether cancelled, `stopped_by`. `EnrichOptions`:
+  an `EnrichHandle`; `EnrichProgress` counts outcome by outcome and answers `is_cancelled` between
+  requests; `EnrichSummary` carries stats, whether cancelled, `stopped_by`. **The pass tells what
+  it did outcome by outcome, one counter each** (`EnrichStats`, snapshotted while it runs and
+  carried in the summary): per album asked, matched to a release, to a release group alone, with
+  no strict match, left alone as a release the listener refused; per track, identified by each
+  `Route` (ISRC, recording id, search, fingerprint) or with no strict match; per artist answered
+  or with no exact match; covers and portraits fetched or none to be had; lyrics kept or none held;
+  plus the studies' counts and `refused`. **A refusal is not a miss**: `no strict match` counts
+  only where `Pass::fruitlessly` says `Missed`, so a service refusing is `refused` and nothing
+  else. `outcomes.rs` is the one list (`Outcome::ALL`, each with `key`, `label` and `Section`;
+  `EnrichStats::of`, `told_by_section`): the CLI, MCP and the window read it, so a counter added
+  without an `Outcome` fails the exhaustive `of`, and one with two fails
+  `every_counter_is_one_outcome_and_every_outcome_one_counter`. A metered connection is no counter:
+  the gated client answers `Unreachable`, which ends the pass as `stopped_by`. `EnrichOptions`:
   `refresh`, `at_most` (caps albums, tracks, artists each), `sought`, `studies`, `lyrics`.
   Rematch-only albums go first; the rest is one queue of `Ask`s walked in order, albums first
   because a landing album retires every track under it. `tests/library.rs` drives it via a `Fake`

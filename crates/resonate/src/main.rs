@@ -96,13 +96,13 @@ use resonate_engine::{
 #[cfg(feature = "ui")]
 use resonate_engine::{Opens, Zones};
 use resonate_library::{
-    Aged, Cancelling, Cut, DeliveryFolder, Direction, EnrichOptions, EnrichSummary, Failure,
-    Failures, FileTags, HistoryKept, Kept, Layout, Library, Listen, ListeningService, LookupOp,
-    Missing, MissingTrack, Move, OrganiseOptions, OrganiseSummary, PassHandle, PassKind, Playing,
-    Playlist, PlaylistFormat, PlaylistName, PlaylistOrder, PollOptions, Refusal, Refused,
-    RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, Search, SheetScope, SortOrder,
-    StudyFilter, TRIES_BEFORE_GIVING_UP, UnheldRelease, Vault, VaultFiles, Want, cuts_listed_in,
-    folded_letters,
+    Aged, Cancelling, Cut, DeliveryFolder, Direction, EnrichOptions, EnrichStats, EnrichSummary,
+    Failure, Failures, FileTags, HistoryKept, Kept, Layout, Library, Listen, ListeningService,
+    LookupOp, Missing, MissingTrack, Move, OrganiseOptions, OrganiseSummary, Outcome, PassHandle,
+    PassKind, Playing, Playlist, PlaylistFormat, PlaylistName, PlaylistOrder, PollOptions, Refusal,
+    Refused, RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, Search, SheetScope,
+    SortOrder, StudyFilter, TRIES_BEFORE_GIVING_UP, UnheldRelease, Vault, VaultFiles, Want,
+    cuts_listed_in, folded_letters,
 };
 use resonate_mpris::{PlayerName, Queueing, Reloadable, Running, Standing, ZoneAsked};
 use resonate_providers::Providers;
@@ -844,28 +844,7 @@ fn carrying_on(library: &Library, options: EnrichOptions) -> Result<EnrichOption
 }
 
 fn enriched(summary: &EnrichSummary) -> String {
-    let stats = &summary.stats;
-    let mut told = format!(
-        "albums {} | releases {} | matched {} | covers {} | tracks {} | named {} | artists {} \
-         | portraits {} | releases found {} | refused {}\n\
-         studied {} | fakes {} | recognised {} | misnamed {} | lyrics {} | songs {}\n",
-        stats.albums,
-        stats.releases,
-        stats.matched,
-        stats.covers,
-        stats.tracks,
-        stats.named,
-        stats.artists,
-        stats.portraits,
-        stats.releases_found,
-        stats.refused,
-        stats.studied,
-        stats.fakes,
-        stats.recognised,
-        stats.misnamed,
-        stats.lyrics,
-        stats.songs
-    );
+    let mut told = counted_by_section(&summary.stats);
     if let Some(op) = summary.stopped_by {
         told.push_str(&format!(
             "stopped: the reference could not be reached while asking for {}\n",
@@ -874,6 +853,27 @@ fn enriched(summary: &EnrichSummary) -> String {
     }
     if summary.cancelled {
         told.push_str("cancelled\n");
+    }
+    told
+}
+
+fn counted_by_section(stats: &EnrichStats) -> String {
+    if stats.is_blank() {
+        return "nothing was asked\n".to_owned();
+    }
+    let widest = Outcome::ALL
+        .into_iter()
+        .map(|outcome| stats.of(outcome).to_string().len())
+        .max()
+        .unwrap_or(1);
+
+    let mut told = String::new();
+    for (section, counted) in stats.told_by_section() {
+        told.push_str(section.title());
+        told.push('\n');
+        for (outcome, count) in counted {
+            told.push_str(&format!("  {count:>widest$}  {}\n", outcome.label()));
+        }
     }
     told
 }
@@ -3452,6 +3452,43 @@ mod tests {
 
     use super::*;
     use crate::{cli::RepeatArg, fixtures::silent_wave};
+
+    #[test]
+    fn a_pass_is_told_by_section_with_what_it_counted_and_nothing_it_did_not() {
+        let summary = EnrichSummary {
+            stats: EnrichStats {
+                albums: 12,
+                releases: 8,
+                albums_unmatched: 3,
+                by_isrc: 40,
+                refused: 2,
+                ..EnrichStats::default()
+            },
+            ..EnrichSummary::default()
+        };
+
+        assert_eq!(
+            enriched(&summary),
+            "Albums\n\
+             \x20 12  asked about\n\
+             \x20  8  matched to a release\n\
+             \x20  3  with no strict match\n\
+             Tracks\n\
+             \x20 40  identified by their ISRC\n\
+             Trouble\n\
+             \x20  2  requests a service refused or answered unreadably\n"
+        );
+    }
+
+    #[test]
+    fn a_pass_that_asked_nothing_says_so_and_a_cancelled_one_says_that_too() {
+        let summary = EnrichSummary {
+            cancelled: true,
+            ..EnrichSummary::default()
+        };
+
+        assert_eq!(enriched(&summary), "nothing was asked\ncancelled\n");
+    }
 
     #[test]
     fn a_queue_that_finished_with_every_track_failed_is_no_success() {
