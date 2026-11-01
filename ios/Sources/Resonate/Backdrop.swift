@@ -68,9 +68,17 @@ struct BackdropView: View {
 
     static func prepare(_ track: Track, features: Features) async {
         let key = key(of: track)
-        guard PaletteMemory.recalled(key) == nil, let image = await features.artwork(track, bucket: .tile) else { return }
-        let sampled = await Backdrop.palette(of: image, accent: accentLinear(shownScheme))
-        PaletteMemory.remember(sampled, as: key)
+        let palette: Palette
+        if let recalled = PaletteMemory.recalled(key) {
+            palette = recalled
+        } else {
+            guard let image = await features.artwork(track, bucket: .tile) else { return }
+            palette = await Backdrop.palette(of: image, accent: accentLinear(shownScheme))
+            PaletteMemory.remember(palette, as: key)
+        }
+
+        let tone = BackdropTone.nowPlaying(dark: shownScheme == .dark, intensity: Float(AppearanceState.shared.nowPlayingIntensity))
+        await OpeningPlaceholders.prepare(palette, tone: tone, still: UIAccessibility.isReduceMotionEnabled)
     }
 
     private var paletteRequest: String {
@@ -893,6 +901,7 @@ final class BackdropMetalView: UIView {
     private let renderer: BackdropRenderer
     private var drawer: FieldDrawer?
     private var placeholder: CALayer?
+    private var placeholderAsked = false
     private var drewLiveFrame = false
 
     init(device: any MTLDevice, renderer: BackdropRenderer) {
@@ -941,10 +950,21 @@ final class BackdropMetalView: UIView {
     }
 
     private func showPlaceholder() {
-        guard placeholder == nil, !drewLiveFrame, window != nil, UIApplication.shared.applicationState == .active,
-            let size = FieldSize(bounds.size),
-            let image = renderer.placeholder(aspect: size.aspect, at: CACurrentMediaTime())
+        guard !placeholderAsked, placeholder == nil, !drewLiveFrame, window != nil,
+            UIApplication.shared.applicationState == .active,
+            let size = FieldSize(bounds.size)
         else { return }
+        placeholderAsked = true
+        if let opening = BackdropRenderer.openingSize(of: bounds.size) { OpeningPlaceholders.opened(at: opening) }
+
+        let image = renderer.placeholder(aspect: size.aspect, at: CACurrentMediaTime()) { [weak self] late in
+            self?.layIn(late)
+        }
+        if let image { layIn(image) }
+    }
+
+    private func layIn(_ image: CGImage) {
+        guard placeholder == nil, !drewLiveFrame, window != nil else { return }
         let layer = CALayer()
         layer.frame = bounds
         layer.contents = image
@@ -971,6 +991,7 @@ final class BackdropMetalView: UIView {
         metalLayer?.contentsScale = Self.drawingScale
         if window != nil {
             drewLiveFrame = false
+            placeholderAsked = false
             drawer?.awaitFirstFrame()
             showPlaceholder()
         } else {
@@ -993,6 +1014,52 @@ final class BackdropMetalView: UIView {
             return
         }
         drawer?.run(motion)
+    }
+}
+
+struct OpeningLook: Equatable, Sendable {
+    let palette: Palette
+    let tone: BackdropTone
+    let still: Bool
+    let size: FieldSize
+}
+
+enum OpeningPlaceholders {
+    private static let keptAtMost = 6
+
+    private struct Kept: @unchecked Sendable {
+        let look: OpeningLook
+        let image: CGImage
+    }
+
+    private static let kept = Mutex<[Kept]>([])
+    private static let lastSize = Mutex<FieldSize?>(nil)
+
+    static func recalled(_ look: OpeningLook) -> CGImage? {
+        kept.withLock { kept in kept.last { $0.look == look }?.image }
+    }
+
+    static func keep(_ image: CGImage, as look: OpeningLook) {
+        kept.withLock { kept in
+            kept.removeAll { $0.look == look }
+            kept.append(Kept(look: look, image: image))
+            if kept.count > keptAtMost { kept.removeFirst(kept.count - keptAtMost) }
+        }
+    }
+
+    static func opened(at size: FieldSize) {
+        lastSize.withLock { $0 = size }
+    }
+
+    @concurrent
+    static func prepare(_ palette: Palette, tone: BackdropTone, still: Bool) async {
+        guard case .metal(let gpu) = BackdropPipeline.finished, let size = lastSize.withLock({ $0 }) else { return }
+        let look = OpeningLook(palette: palette, tone: tone, still: still, size: size)
+        guard recalled(look) == nil else { return }
+
+        let uniforms = BackdropRenderer.openingUniforms(of: palette, tone: tone, still: still, size: size)
+        guard let image = await FieldPicture.rendered(by: gpu, uniforms, size: size) else { return }
+        keep(image, as: look)
     }
 }
 
@@ -1087,15 +1154,44 @@ final class BackdropRenderer: Sendable {
         commands.commit()
     }
 
-    func placeholder(aspect: Float, at moment: CFTimeInterval) -> CGImage? {
-        let kept = held.withLock { held in
-            held.kept.flatMap { abs($0.aspect - aspect) < Self.placeholderAspectsAlike ? $0.image : nil }
-        }
-        if let kept { return kept }
+    func placeholder(
+        aspect: Float,
+        at moment: CFTimeInterval,
+        late: @escaping @MainActor @Sendable (CGImage) -> Void
+    ) -> CGImage? {
         guard let size = Self.placeholderSize(aspect: aspect) else { return nil }
 
-        let uniforms = held.withLock { Self.uniforms(of: $0, at: moment, aspect: size.aspect) }
-        return FieldPicture.renderedNow(by: gpu, uniforms, size: size)
+        let asked = held.withLock { held -> (kept: CGImage?, look: OpeningLook?, uniforms: FieldUniforms) in
+            let kept = held.kept.flatMap { abs($0.aspect - aspect) < Self.placeholderAspectsAlike ? $0.image : nil }
+            let opening = held.lastFrame == nil && !held.blend.fading(at: moment)
+            let look = opening ? OpeningLook(palette: held.blend.shown, tone: held.tone, still: held.still, size: size) : nil
+            return (kept, look, Self.uniforms(of: held, at: moment, aspect: size.aspect))
+        }
+        if let kept = asked.kept { return kept }
+        if let look = asked.look, let recalled = OpeningPlaceholders.recalled(look) { return recalled }
+
+        let gpu = gpu
+        Task {
+            guard let image = await FieldPicture.rendered(by: gpu, asked.uniforms, size: size) else { return }
+            if let look = asked.look { OpeningPlaceholders.keep(image, as: look) }
+            await late(image)
+        }
+        return nil
+    }
+
+    static func openingSize(of bounds: CGSize) -> FieldSize? {
+        FieldSize(bounds).flatMap { placeholderSize(aspect: $0.aspect) }
+    }
+
+    static func openingUniforms(of palette: Palette, tone: BackdropTone, still: Bool, size: FieldSize) -> FieldUniforms {
+        FieldUniforms(
+            blend: FieldBlend(palette),
+            time: still ? FieldUniforms.stillMoment : 0,
+            energy: 0,
+            progress: 1,
+            aspect: size.aspect,
+            tone: tone
+        )
     }
 
     func keepPlaceholder(aspect: Float) {
