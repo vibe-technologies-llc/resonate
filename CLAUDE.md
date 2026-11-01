@@ -184,6 +184,8 @@ Invariants the layering protects (the rules files have the rest):
 
 - `RUSTFLAGS= cargo xwin check --target x86_64-pc-windows-msvc --workspace --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire`:
   the Windows build, cross-checked from Linux (`windows.md`); CI runs it natively in the `windows` job.
+  The same with `--target aarch64-pc-windows-msvc` is Windows on ARM64 (`rustup target add` first;
+  `windows.md` has the `clang` wrapper `ring` needs under xwin); CI's `windows-arm64` job checks it.
 
 - `cargo build|test --workspace --exclude resonate-ui --no-default-features`: the workspace without GPUI, the
   usual inner loop (the only way to keep gpui out); `resonate-ui` is a default member so a bare

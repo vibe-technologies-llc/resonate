@@ -20,8 +20,9 @@ paths:
   default features the headless job does not build; no job runs `cargo build` before `cargo test`,
   which builds what it needs, and library crates set `doctest = false` since none holds a doctest, the DSP
   bench under its ceilings, the layering refusals, the fuzz build, the sync server's package
-  (`server-package`), and the `windows` job (`windows-latest`: clippy of the workspace but the phones'
-  boundary, its binding tool and PipeWire, then the tests of every crate but the window; `windows.md`). A command added to `CLAUDE.md` goes into the workflow; a crate added to the
+  (`server-package`), the `windows` job (`windows-latest`: clippy of the workspace but the phones'
+  boundary, its binding tool and PipeWire, then the tests of every crate but the window; `windows.md`)
+  and `windows-arm64` (`cargo check` of the same set for `aarch64-pc-windows-msvc`, never run). A command added to `CLAUDE.md` goes into the workflow; a crate added to the
   layering refusals gets a line. The layering job has four shapes: `refuse`, `refuse_headless` (no
   default features), `only` (the workspace crates a crate may reach), `reached_by_the_binary_alone`
   (`cargo tree -i`; `online`, `mcp`, `discord`), and one `cargo tree --target x86_64-pc-windows-msvc`
@@ -34,10 +35,10 @@ paths:
   (pre-release when the tag has `-rc`, `-beta` or `-alpha`). Parallel jobs follow: `fedora-rpm` (`fedora:44`,
   player and server RPMs and SRPMs), `ubuntu-deb` (`ubuntu:24.04`, rustup stable,
   `packaging/deb/build.sh`), `arch-package` (`archlinux:latest`, `makepkg` as a build user from a
-  `git archive` of the tag, the `packaging/release/` recipes), `windows-zip` (`windows-latest`,
-  `packaging/windows/build.ps1`) and `android-apk`; `publish` collects
+  `git archive` of the tag, the `packaging/release/` recipes), `windows-zip` (`windows-latest`, a matrix of
+  `x86_64` and `aarch64`, each `packaging/windows/build.ps1 -Architecture`) and `android-apk`; `publish` collects
   every artifact, writes `SHA256SUMS`, uploads all to the release and publishes it, since a published
-  release is immutable. All of it is x86-64-v3
+  release is immutable. Everything but the APK and the Windows ARM64 archive is x86-64-v3
   (`packaging.md`). Secrets, set once in the repository: `ANDROID_KEYSTORE_BASE64` (the release
   keystore, base64), `RESONATE_SIGNING_STORE_PASSWORD`, `RESONATE_SIGNING_KEY_ALIAS`,
   `RESONATE_SIGNING_KEY_PASSWORD`. The APK job decodes the keystore to `$RUNNER_TEMP/release.jks`

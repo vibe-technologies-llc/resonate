@@ -75,7 +75,7 @@ cargo clippy -p resonate --all-targets --no-default-features --features <f> -- -
 cargo test  --workspace --exclude resonate-ui --no-default-features   # the usual inner loop
 cargo test  --workspace                                               # everything, gpui included
 RESONATE_BENCH_CEILINGS=1 cargo bench -p resonate-dsp --bench stages  # DSP costs under ceilings
-RUSTFLAGS= cargo xwin check --target x86_64-pc-windows-msvc --workspace --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire   # Windows; CI's `windows` job runs it natively
+RUSTFLAGS= cargo xwin check --target x86_64-pc-windows-msvc --workspace --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire   # Windows; CI's `windows` job runs it natively; `--target aarch64-pc-windows-msvc` is ARM64
 rust-formatter --check                                                # local only; not in CI
 cd fuzz && cargo +nightly fuzz build                                  # the parsers' fuzz targets
 android/gradlew -p android :app:assembleDebug :app:lintDebug :app:testDebugUnitTest

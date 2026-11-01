@@ -2,7 +2,7 @@ use std::{
     borrow::Cow,
     ffi::OsStr,
     fs::{self, File, OpenOptions},
-    io::{self, Write as _},
+    io::{self, Seek as _, SeekFrom, Write as _},
     path::{Path, PathBuf},
     process,
     sync::atomic::{AtomicU64, Ordering},
@@ -225,6 +225,7 @@ pub(crate) struct WholeCopy {
     copy: PathBuf,
     track: PathBuf,
     length: u64,
+    handle: File,
 }
 
 pub(crate) struct Torn {
@@ -244,13 +245,14 @@ impl From<io::Error> for Unsettled {
 }
 
 impl WholeCopy {
-    pub(crate) fn named_beside(staged: &Path, track: &Path) -> io::Result<Self> {
+    pub(crate) fn named_beside(staged: &Path, held: &Held, track: &Path) -> io::Result<Self> {
         let name = track
             .file_name()
             .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
         let folder = folder_of(track);
         let copy = folder.join(kept_name(name, WHOLE_SUFFIX));
-        let length = stood_beside(staged, track)?;
+        let mut handle = held.file().try_clone()?;
+        let length = stood_beside(&mut handle, track)?;
 
         fs::rename(staged, &copy)?;
         if let Err(error) = file_facts::sync_directory(folder) {
@@ -261,18 +263,20 @@ impl WholeCopy {
             copy,
             track: track.to_path_buf(),
             length,
+            handle,
         })
     }
 
-    pub(crate) fn kept_elsewhere(staged: &Path, track: &Path) -> io::Result<Self> {
+    pub(crate) fn kept_elsewhere(staged: &Path, held: &Held, track: &Path) -> io::Result<Self> {
         let track = fs::canonicalize(track)?;
         let name = track
             .file_name()
             .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
         let folder = folder_of(staged);
         let copy = folder.join(kept_name(name, WHOLE_SUFFIX));
-        let length = stood_beside(staged, &track)?;
-        bound_beside(staged, &track)?;
+        let mut handle = held.file().try_clone()?;
+        let length = stood_beside(&mut handle, &track)?;
+        bound_beside(&mut handle, &track)?;
 
         fs::rename(staged, &copy)?;
         if let Err(error) = file_facts::sync_directory(folder) {
@@ -283,22 +287,17 @@ impl WholeCopy {
             copy,
             track,
             length,
+            handle,
         })
     }
 
     pub(crate) fn written_back(self) -> Result<(), Unsettled> {
-        let laid = File::open(&self.copy)
-            .and_then(|copy| {
-                Ok((
-                    copy,
-                    OpenOptions::new()
-                        .read(true)
-                        .write(true)
-                        .open(&self.track)?,
-                ))
-            })
+        let laid = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&self.track)
             .map_err(Laying::Unstarted)
-            .and_then(|(copy, track)| laid_over(&copy, self.length, &track));
+            .and_then(|track| laid_over(&self.handle, self.length, &track));
         match laid {
             Ok(()) => {}
             Err(Laying::Unstarted(source)) => {
@@ -432,7 +431,7 @@ enum Bound {
     Unreadable,
 }
 
-fn bound_beside(staged: &Path, track: &Path) -> io::Result<()> {
+fn bound_beside(copy: &mut File, track: &Path) -> io::Result<()> {
     let named = os_bytes::bytes_of(track.as_os_str());
     let named = named.as_ref();
     let mut record = named.to_vec();
@@ -440,7 +439,7 @@ fn bound_beside(staged: &Path, track: &Path) -> io::Result<()> {
     record.extend_from_slice(&hashed(named).to_le_bytes());
     record.extend_from_slice(AWAY_MAGIC);
 
-    let mut copy = OpenOptions::new().append(true).open(staged)?;
+    copy.seek(SeekFrom::End(0))?;
     copy.write_all(&record)?;
     copy.sync_all()
 }
@@ -475,10 +474,9 @@ fn bound_of(copy: &File) -> io::Result<(u64, Bound)> {
     ))
 }
 
-fn stood_beside(staged: &Path, track: &Path) -> io::Result<u64> {
+fn stood_beside(copy: &mut File, track: &Path) -> io::Result<u64> {
     let stood = Stood::of(&File::open(track)?)?;
-    let mut copy = OpenOptions::new().append(true).open(staged)?;
-    let copy_length = copy.metadata()?.len();
+    let copy_length = copy.seek(SeekFrom::End(0))?;
     copy.write_all(&stood.encoded(copy_length))?;
     copy.sync_all()?;
     Ok(copy_length)
@@ -1064,14 +1062,60 @@ mod tests {
         assert!(!whole.exists(), "the whole copy was left");
     }
 
+    fn staged_holding(staged: &Path, bytes: &[u8]) -> Held {
+        let held = Held::made(staged).expect("a held copy");
+        held.file().write_all(bytes).expect("a tagged copy");
+        held
+    }
+
     fn left_written_back_partway(folder: &Folder, was: &[u8], tagged: &[u8]) -> (PathBuf, PathBuf) {
         let track = folder.0.join("Any Colour You Like.flac");
         let staged = folder.0.join(".Any Colour You Like.staged.flac");
         fs::write(&track, was).expect("a track");
-        fs::write(&staged, tagged).expect("a tagged copy");
+        let held = staged_holding(&staged, tagged);
 
-        let whole = WholeCopy::named_beside(&staged, &track).expect("a whole copy");
+        let whole = WholeCopy::named_beside(&staged, &held, &track).expect("a whole copy");
         (track, whole.copy)
+    }
+
+    #[test]
+    fn a_whole_copy_is_written_back_through_the_handle_it_was_made_from_not_by_reopening_its_path()
+    {
+        let folder = Folder::new("through-the-handle");
+        let was = paged(2, 10, 3);
+        let tagged = paged(2, 50, 9);
+        let track = folder.0.join("Us and Them.flac");
+        let staged = folder.0.join(".Us and Them.staged.flac");
+        fs::write(&track, &was).expect("a track");
+        let held = staged_holding(&staged, &tagged);
+
+        let whole = WholeCopy::named_beside(&staged, &held, &track).expect("a whole copy");
+        fs::remove_file(&whole.copy).expect("the copy's name taken away");
+        let written = whole.written_back();
+
+        assert!(written.is_ok(), "the copy was reopened by its path");
+        assert_eq!(fs::read(&track).expect("the track"), tagged);
+    }
+
+    #[test]
+    fn a_whole_copy_kept_elsewhere_is_bound_to_its_track_through_the_handle() {
+        let folder = Folder::new("bound-through-the-handle");
+        let spool = folder.0.join("spool");
+        let track = folder.0.join("Money.flac");
+        fs::create_dir_all(&spool).expect("a spool folder");
+        fs::write(&track, [1_u8; 8]).expect("a track");
+        let staged = spool.join(staged_elsewhere_name(&track).expect("a staged name"));
+        let held = staged_holding(&staged, &[2_u8; 8]);
+
+        let kept = WholeCopy::kept_elsewhere(&staged, &held, &track).expect("a whole copy");
+        let copy = File::open(&kept.copy).expect("the copy");
+
+        let (_, Bound::Away(bound)) = bound_of(&copy).expect("a bound") else {
+            panic!("the copy names no track");
+        };
+        assert_eq!(bound, fs::canonicalize(&track).expect("the track"));
+        assert!(kept.written_back().is_ok());
+        assert_eq!(fs::read(&track).expect("the track"), [2_u8; 8]);
     }
 
     fn paged(pages: usize, tail: usize, byte: u8) -> Vec<u8> {
@@ -1167,6 +1211,7 @@ mod tests {
         assert!(!names_a_cut_short_write(&ours));
 
         let torn = WholeCopy {
+            handle: File::open(&ours).expect("the copy"),
             copy: ours,
             track: track.clone(),
             length: 8,
@@ -1209,9 +1254,9 @@ mod tests {
         fs::create_dir_all(&spool).expect("a spool folder");
         fs::write(&track, was).expect("a track");
         let staged = spool.join(staged_elsewhere_name(&track).expect("a staged name"));
-        fs::write(&staged, tagged).expect("a tagged copy");
+        let held = staged_holding(&staged, tagged);
 
-        let kept = WholeCopy::kept_elsewhere(&staged, &track).expect("a whole copy");
+        let kept = WholeCopy::kept_elsewhere(&staged, &held, &track).expect("a whole copy");
         let dead = spool.join(format!(
             ".Eclipse.flac.{NEVER_A_PROCESS}{KEPT_BY_AND_COUNTED}0{WHOLE_SUFFIX}"
         ));

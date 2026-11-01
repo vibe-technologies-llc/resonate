@@ -1,4 +1,4 @@
-use std::{fs::File, path::Path};
+use std::fs::File;
 
 use lofty::{
     aac::AacFile,
@@ -58,10 +58,6 @@ impl Counted {
         }
     }
 
-    pub(crate) fn read(path: &Path, kind: FileType) -> Result<Option<Self>, FileParseError> {
-        Self::read_in(&mut File::open(path)?, kind)
-    }
-
     pub(crate) fn read_in(file: &mut File, kind: FileType) -> Result<Option<Self>, FileParseError> {
         let options = ParseOptions::new()
             .read_properties(false)
@@ -113,14 +109,14 @@ impl Counted {
         })
     }
 
-    pub(crate) fn holds_id3v2_3(path: &Path, kind: FileType) -> bool {
+    pub(crate) fn holds_id3v2_3(file: &mut File, kind: FileType) -> bool {
         let framed = matches!(
             kind,
             FileType::Mpeg | FileType::Aac | FileType::Aiff | FileType::Wav
         );
         framed
             && matches!(
-                Self::read(path, kind),
+                Self::read_in(file, kind),
                 Ok(Some(Self::Framed(frames))) if frames.original_version() == Id3v2Version::V3
             )
     }

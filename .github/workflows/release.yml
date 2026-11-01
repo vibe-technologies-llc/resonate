@@ -185,23 +185,30 @@ jobs:
           if-no-files-found: error
 
   windows-zip:
-    name: Windows archive
+    name: Windows archive (${{ matrix.architecture }})
     needs: release
     runs-on: windows-latest
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [x86_64, aarch64]
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.release.outputs.ref }}
       - name: Install the pinned toolchain
         run: rustup toolchain install
+      - name: Find the C compiler ring assembles ARM64 with
+        if: matrix.architecture == 'aarch64'
+        run: clang --version
       - name: Build the archive
         env:
           VERSION: ${{ needs.release.outputs.version }}
-        run: ./packaging/windows/build.ps1 -Version $env:VERSION -Output assets
+        run: ./packaging/windows/build.ps1 -Version $env:VERSION -Architecture ${{ matrix.architecture }} -Output assets
       - uses: actions/upload-artifact@v4
         with:
-          name: resonate-windows-zip
+          name: resonate-windows-zip-${{ matrix.architecture }}
           path: assets/*.zip
           if-no-files-found: error
 

@@ -43,9 +43,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   builds and tests it, but WASAPI shared and exclusive playback at every rate and word, device
   hot-plug, the render cycle's timing, microphone and loopback capture (a loopback endpoint that
   stays silent while nothing plays, a microphone's autoconverted format), the window under
-  per-monitor DPI and IME, the recycle bin, the terminal keys and the window's named pipe (its
-  owner-only security descriptor, a client reaching it) have never run on real hardware or a real
-  audio endpoint
+  per-monitor DPI and IME, the recycle bin, the terminal keys, the window's named pipe (its
+  owner-only security descriptor, a client reaching it) and the ARM64 archive (cross-built on an x64
+  runner, never started) have never run on real hardware or a real audio endpoint
 - [L · 0.4.0] Windows has no media transport: the System Media Transport Controls (media keys, the
   volume overlay and lock screen, track and cover metadata) need a native crate behind
   `resonate-mpris`'s `Host` seam, since `resonate-mpris` finds no session bus and the player runs
@@ -61,19 +61,12 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M · 0.4.0] A Windows path past `MAX_PATH` (260) is not weighed by the organiser, NTFS alternate
   streams and ACLs are not carried by a tag write, and a folder mounted into another drive's tree is
   not noticed as a volume
-- [S · 0.4.0] A `Held` file's lock is mandatory on Windows (`LockFileEx`): the writers were audited
-  (each writes through `Held::file`, and syncs and renames work under the lock), but a reader that
-  reopens a held journal, staging file or whole copy by path (the tag writer's verification of its
-  staged copy, `WholeCopy` mending) would meet `ERROR_LOCK_VIOLATION` and has not been run
 - [M · 0.4.0] The integration suites of the library, the codec's encoded files, the vault and the
   binary's terminal and signal tests are Unix-only; each needs a Windows counterpart (symlinks,
   permission bits, pseudo-terminals)
-- [S · 0.4.0] The recycle bin is reached through `trash` on a thread the binary did not put in an
-  apartment: whether a deletion from a WASAPI-hosting process works is unproven
 - [L · 0.4.0] Windows has no installer, start-menu entry or file associations from `MIME_TYPES`, no
   Authenticode signing (no secrets exist), no winget or scoop manifest, and the executable carries no
   icon (the accent-following icon is a Linux theme file)
-- [M · 0.4.0] Windows on ARM64 is not built: the archive is x86-64-v3 alone
 
 ## Accessibility
 - [M · 0.4.0] The iOS app is portrait-only and iPhone-only, which fails WCAG 1.3.4 (orientation): landscape
