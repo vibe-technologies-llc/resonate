@@ -800,6 +800,10 @@ pub(crate) fn accent_ink() -> u32 {
     ink_over(accent())
 }
 
+pub(crate) fn switch_knob_off() -> u32 {
+    ink_over(outline())
+}
+
 pub(crate) const FOCUS_RING_WIDTH: f32 = 2.0;
 
 pub(crate) fn focus_ring() -> u32 {
@@ -1601,6 +1605,24 @@ mod tests {
         assert_eq!(medium[2].1, TEXT_BASE);
 
         wear(Appearance::DEFAULT);
+    }
+
+    #[test]
+    fn a_switch_knob_thrown_off_stands_off_its_track() {
+        let mut failures = Vec::new();
+
+        for theme in Theme::ALL {
+            let flavour = flavour(theme);
+            let knob = reads_better_on(flavour.outline, flavour.pitch, flavour.paper);
+            let read = contrast(knob, flavour.outline);
+            if read < RING_STANDS_APART {
+                failures.push(format!(
+                    "{theme}: the off knob reads at {read:.2} on its track"
+                ));
+            }
+        }
+
+        nothing_failed(failures);
     }
 
     #[test]
