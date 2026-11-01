@@ -1,12 +1,16 @@
 package org.resonate.android.ui.player
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -69,10 +73,12 @@ import org.resonate.android.ui.components.rememberSelection
 import org.resonate.android.ui.components.SheetRow
 import org.resonate.android.ui.components.TrackRow
 import org.resonate.android.ui.components.rememberReorder
+import org.resonate.android.ui.components.reorderActions
 import org.resonate.android.ui.components.reorderable
 import org.resonate.android.ui.counted
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
+import org.resonate.android.ui.shownTitle
 
 @Composable
 fun QueueSheet(model: PlayerViewModel, onDismiss: () -> Unit) {
@@ -135,20 +141,28 @@ fun QueueSheet(model: PlayerViewModel, onDismiss: () -> Unit) {
             }
         }
         if (queue.size == 0) {
-            Box(Modifier.fillMaxWidth().height(360.dp)) {
-                EmptyState(
-                    Icons.AutoMirrored.Rounded.QueueMusic,
-                    "Your queue is empty",
-                    detail = "Songs you play, play next or add to the queue appear here.",
-                    action = "Browse songs",
-                    onAction = {
-                        scope.launch { state.hide() }.invokeOnCompletion {
-                            onDismiss()
-                            expansion.collapse()
-                            navigator.open(Screen.Library)
-                        }
-                    },
-                )
+            BoxWithConstraints(Modifier.fillMaxWidth().height(EMPTY_QUEUE_HEIGHT)) {
+                val visible = maxHeight
+                Column(
+                    Modifier.fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .heightIn(min = visible),
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    EmptyState(
+                        Icons.AutoMirrored.Rounded.QueueMusic,
+                        "Your queue is empty",
+                        detail = "Songs you play, play next or add to the queue appear here.",
+                        action = "Browse songs",
+                        onAction = {
+                            scope.launch { state.hide() }.invokeOnCompletion {
+                                onDismiss()
+                                expansion.collapse()
+                                navigator.open(Screen.Library)
+                            }
+                        },
+                    )
+                }
             }
             return@ModalBottomSheet
         }
@@ -190,17 +204,20 @@ fun QueueSheet(model: PlayerViewModel, onDismiss: () -> Unit) {
             val standing = (queue.history + listOfNotNull(queue.current)).map { rowKey(it) }.toSet()
             items(reorder.shown.filter { rowKey(it) !in standing }, key = { rowKey(it) }) { track ->
                 val key = rowKey(track)
+                val at = queue.upNext.indexOfFirst { rowKey(it) == key }
+                val absolute = queue.firstUpNext + at
                 Box(reorderable(reorder, key)) {
                     QueueRow(
                         model,
                         track,
-                        onClick = {
-                            val at = queue.upNext.indexOfFirst { rowKey(it) == key }
-                            if (at >= 0) model.jump(queue.firstUpNext + at)
-                        },
+                        onClick = { if (at >= 0) model.jump(absolute) },
                         sheets = sheets,
                         selection = selection.row(key),
-                        handle = { DragHandle(reorder, key) },
+                        onMoveUp = if (at > 0) ({ model.move(absolute, absolute - 1) }) else null,
+                        onMoveDown =
+                            if (at in 0 until queue.upNext.size - 1) ({ model.move(absolute, absolute + 1) })
+                            else null,
+                        handle = { DragHandle(reorder, key, track.shownTitle) },
                     )
                 }
             }
@@ -252,6 +269,8 @@ fun QueueSheet(model: PlayerViewModel, onDismiss: () -> Unit) {
 
 private const val UNREMOVED_AFTER_MS = 2_000L
 
+private val EMPTY_QUEUE_HEIGHT = 360.dp
+
 private fun rowKey(track: Track): String = "q${track.queueId ?: track.id}"
 
 @Composable
@@ -261,6 +280,8 @@ private fun QueueRow(
     onClick: () -> Unit,
     sheets: org.resonate.android.ui.components.Sheets,
     selection: RowSelection,
+    onMoveUp: (() -> Unit)? = null,
+    onMoveDown: (() -> Unit)? = null,
     handle: (@Composable () -> Unit)? = null,
 ) {
     val dismiss = rememberSwipeToDismissBoxState()
@@ -282,6 +303,14 @@ private fun QueueRow(
             }
         },
         enableDismissFromStartToEnd = false,
+        modifier =
+            Modifier.reorderActions(
+                title = track.shownTitle,
+                removal = "queue",
+                onRemove = { model.remove(track) },
+                onMoveUp = onMoveUp,
+                onMoveDown = onMoveDown,
+            ),
     ) {
         Box(Modifier.background(MaterialTheme.colorScheme.surfaceContainerLow)) {
             TrackRow(

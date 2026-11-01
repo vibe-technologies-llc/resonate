@@ -18,6 +18,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import org.resonate.android.ui.components.outlinedTrackColors
 
 enum class SliderLook {
     PLAIN,
@@ -55,7 +56,7 @@ fun CommitSlider(
     }
     val shown = draft ?: value
     val interactions = remember { MutableInteractionSource() }
-    val colors = SliderDefaults.colors()
+    val colors = outlinedTrackColors()
     val labelled =
         modifier.semantics {
             contentDescription = description

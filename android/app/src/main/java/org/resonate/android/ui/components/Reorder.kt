@@ -25,6 +25,13 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.zIndex
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
@@ -168,14 +175,47 @@ fun LazyItemScope.reorderable(reorder: Reorder<*>, key: Any): Modifier {
     else Modifier.animateItem()
 }
 
+fun Modifier.reorderActions(
+    title: String,
+    removal: String,
+    onRemove: () -> Unit,
+    onMoveUp: (() -> Unit)?,
+    onMoveDown: (() -> Unit)?,
+): Modifier = semantics {
+    customActions =
+        listOfNotNull(
+            CustomAccessibilityAction("Remove $title from $removal") {
+                onRemove()
+                true
+            },
+            onMoveUp?.let { up ->
+                CustomAccessibilityAction("Move $title up") {
+                    up()
+                    true
+                }
+            },
+            onMoveDown?.let { down ->
+                CustomAccessibilityAction("Move $title down") {
+                    down()
+                    true
+                }
+            },
+        )
+}
+
 @Composable
-fun DragHandle(reorder: Reorder<*>, key: Any) {
+fun DragHandle(reorder: Reorder<*>, key: Any, title: String) {
     Icon(
         Icons.Rounded.DragHandle,
-        contentDescription = "Reorder",
+        contentDescription = null,
         tint = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier =
             Modifier.padding(12.dp)
+                .semantics {
+                    role = Role.Button
+                    contentDescription = "Reorder $title"
+                    stateDescription = "Drag, or use the row's actions to move it"
+                }
                 .draggable(
                     orientation = Orientation.Vertical,
                     state = rememberDraggableState { reorder.drag(it) },

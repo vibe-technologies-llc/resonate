@@ -150,7 +150,7 @@ fun Resonate.favourite(
             sheets.snackbar.showSnackbar(
                 "Added to favourites",
                 actionLabel = "Add to playlist",
-                duration = SnackbarDuration.Short,
+                duration = SnackbarDuration.Long,
             )
         if (answer == SnackbarResult.ActionPerformed) sheets.addToPlaylist(listOf(track))
     }

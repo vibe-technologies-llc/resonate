@@ -1,7 +1,5 @@
 package org.resonate.android.ui.tools
 
-import android.provider.Settings
-import android.view.accessibility.AccessibilityManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
@@ -59,9 +57,11 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -77,10 +77,11 @@ import org.resonate.android.nativecore.LyricSheet
 import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.components.EmptyState
+import org.resonate.android.ui.components.rememberCalm
 
 private const val FOLLOW_PAUSE_MS = 5_000L
 private const val FOLLOWED_AT = 0.35f
-private const val QUIET_ALPHA = 0.38f
+const val QUIET_ALPHA = 0.85f
 private const val RESTING_SCALE = 0.94f
 
 @Composable
@@ -240,12 +241,18 @@ private fun LyricLine(
     val scale by animateFloatAsState(if (lit || plain) 1f else RESTING_SCALE, spec, label = "line scale")
     val ink = LocalContentColor.current
     val clickable =
-        if (onSeek != null) Modifier.clickable(onClickLabel = "Play from this line", onClick = onSeek)
+        if (onSeek != null)
+            Modifier.clickable(
+                role = Role.Button,
+                onClickLabel = "Play from this line",
+                onClick = onSeek,
+            )
         else Modifier
     Box(
         Modifier.fillMaxWidth()
             .clip(MaterialTheme.shapes.large)
             .then(clickable)
+            .semantics(mergeDescendants = true) { if (lit) stateDescription = "Current line" }
             .padding(vertical = if (blank) 4.dp else 10.dp, horizontal = 8.dp)
     ) {
         Column(
@@ -256,7 +263,7 @@ private fun LyricLine(
             if (!blank) {
                 Text(
                     wiped(text, look.spans, ink),
-                    style = style.copy(fontWeight = FontWeight.Bold),
+                    style = style.copy(fontWeight = if (lit || plain) FontWeight.Bold else FontWeight.Medium),
                     color = ink,
                     textAlign = if (right) TextAlign.End else TextAlign.Start,
                     modifier =
@@ -321,20 +328,3 @@ private fun Modifier.fadedEdges(): Modifier =
                 blendMode = BlendMode.DstIn,
             )
         }
-
-class Calm(val reduced: Boolean, val spoken: Boolean)
-
-@Composable
-fun rememberCalm(): Calm {
-    val context = LocalContext.current
-    return remember(context) {
-        val scale =
-            Settings.Global.getFloat(
-                context.contentResolver,
-                Settings.Global.ANIMATOR_DURATION_SCALE,
-                1f,
-            )
-        val access = context.getSystemService(AccessibilityManager::class.java)
-        Calm(reduced = scale == 0f, spoken = access?.isTouchExplorationEnabled == true)
-    }
-}

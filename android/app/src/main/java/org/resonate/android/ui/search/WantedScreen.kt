@@ -208,7 +208,7 @@ fun WantedScreen() {
                                 sheets.snackbar.showSnackbar(
                                     "Removed “${wanted.song.title}”",
                                     actionLabel = "Undo",
-                                    duration = SnackbarDuration.Short,
+                                    duration = SnackbarDuration.Long,
                                 )
                             if (answer == SnackbarResult.ActionPerformed) {
                                 model.saveAgain(wanted.song)

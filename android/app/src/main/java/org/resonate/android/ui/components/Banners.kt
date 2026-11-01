@@ -34,10 +34,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -48,6 +52,7 @@ import org.resonate.android.ui.counted
 import org.resonate.android.ui.syncActivity
 
 private const val NOTICE_SHOWN_FOR_MS = 6_000L
+private const val PERCENT_STEP = 10
 
 @Composable
 fun Banners(modifier: Modifier = Modifier) {
@@ -64,9 +69,10 @@ fun Banners(modifier: Modifier = Modifier) {
         }
     }
     val failed by resonate.library.statusIsFailure.collectAsState(false)
+    val context = LocalContext.current
     LaunchedEffect(status, failed) {
         val shown = status?.takeUnless { failed } ?: return@LaunchedEffect
-        delay(NOTICE_SHOWN_FOR_MS)
+        delay(recommendedTimeoutMs(context, NOTICE_SHOWN_FOR_MS, withAction = true))
         resonate.library.dismissStatus(shown)
     }
     val activity = syncActivity(sync, asked, now)
@@ -119,14 +125,23 @@ private fun <T : Any> heldWhileLeaving(value: T?): T? {
 
 @Composable
 private fun ProgressBanner(icon: ImageVector, label: String, fraction: Float?, detail: String? = null) {
+    val spoken =
+        listOfNotNull(detail, fraction?.let { "${(it * 100).toInt() / PERCENT_STEP * PERCENT_STEP} percent" })
+            .joinToString(", ")
     Surface(
         color = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
         shape = MaterialTheme.shapes.large,
         modifier =
-            Modifier.fillMaxWidth().padding(start = 12.dp, top = 8.dp, end = 12.dp).semantics {
+            Modifier.fillMaxWidth().padding(start = 12.dp, top = 8.dp, end = 12.dp).semantics(
+                mergeDescendants = true
+            ) {
                 liveRegion = LiveRegionMode.Polite
                 contentDescription = label
+                if (spoken.isNotEmpty()) stateDescription = spoken
+                progressBarRangeInfo =
+                    fraction?.let { ProgressBarRangeInfo(it.coerceIn(0f, 1f), 0f..1f) }
+                        ?: ProgressBarRangeInfo.Indeterminate
             },
     ) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
@@ -148,11 +163,15 @@ private fun ProgressBanner(icon: ImageVector, label: String, fraction: Float?, d
             }
             Spacer(Modifier.size(8.dp))
             if (fraction == null) {
-                LinearWavyProgressIndicator(Modifier.fillMaxWidth().clearAndSetSemantics {})
+                LinearWavyProgressIndicator(
+                    Modifier.fillMaxWidth().clearAndSetSemantics {},
+                    trackColor = bannerTrackOf(MaterialTheme.colorScheme),
+                )
             } else {
                 LinearWavyProgressIndicator(
                     progress = { fraction },
                     modifier = Modifier.fillMaxWidth().clearAndSetSemantics {},
+                    trackColor = bannerTrackOf(MaterialTheme.colorScheme),
                 )
             }
         }

@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -59,6 +61,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.FilledTonalToggleButtonDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -75,9 +78,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.focusable
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -85,6 +93,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import org.resonate.android.ArtworkSizes
 import org.resonate.android.nativecore.Track
@@ -100,12 +109,16 @@ import org.resonate.android.ui.components.Picture
 import org.resonate.android.ui.components.favourite
 import org.resonate.android.ui.components.openAlbumOf
 import org.resonate.android.ui.components.openArtistOf
+import org.resonate.android.ui.components.rememberLargeText
+import org.resonate.android.ui.components.rememberTitleMaxLines
 import org.resonate.android.ui.components.rememberCover
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.quality
 import org.resonate.android.ui.shownArtist
 import org.resonate.android.ui.shownTitle
 import org.resonate.android.ui.theme.ArtworkTheme
+import org.resonate.android.ui.theme.HIGH_CONTRAST
+import org.resonate.android.ui.theme.LocalContrastLevel
 import org.resonate.android.ui.theme.LocalPitchBlack
 import org.resonate.android.ui.theme.rememberSeedOf
 import org.resonate.android.ui.tools.LyricsPane
@@ -119,11 +132,12 @@ private enum class Pane {
 fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
     val playing by model.playing.collectAsStateWithLifecycle()
     val track = playing?.track
-    val strength =
+    val chosenStrength =
         LocalResonate.current.features.appearance.appearance
             .collectAsStateWithLifecycle()
             .value
             .backgroundStrength
+    val strength = if (LocalContrastLevel.current >= HIGH_CONTRAST) 0f else chosenStrength
     val scope = rememberCoroutineScope()
     var height by remember { mutableFloatStateOf(1f) }
     var dragged by remember { mutableFloatStateOf(0f) }
@@ -142,6 +156,8 @@ fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
     }
     val sample = rememberCover(track, ArtworkSizes.edgeFor(96))
     val seed = rememberSeedOf(sample)
+    val keyboard = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { keyboard.requestFocus() } }
     val dragState = rememberDraggableState { delta ->
         dragged += delta
         scope.launch { expansion.follow(1f - dragged / height) }
@@ -159,6 +175,10 @@ fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
                         translationY = (1f - shown) * size.height
                         alpha = (shown * 3f).coerceAtMost(1f)
                     }
+                    .semantics { paneTitle = "Now playing" }
+                    .focusRequester(keyboard)
+                    .playerKeys(model) { playing?.durationMs ?: 0L }
+                    .focusable()
                     .testTag("now-playing"),
         ) {
             Box(
@@ -321,6 +341,7 @@ private fun ColumnScope.Controls(
     val expansion = LocalPlayerExpansion.current
     val scope = rememberCoroutineScope()
     val services by resonate.features.served.services.collectAsStateWithLifecycle()
+    val titleLines = rememberTitleMaxLines()
     Row(verticalAlignment = Alignment.CenterVertically) {
         AnimatedContent(
             track,
@@ -333,10 +354,12 @@ private fun ColumnScope.Controls(
                 Text(
                     shown?.shownTitle.orEmpty(),
                     style = MaterialTheme.typography.headlineSmall,
-                    maxLines = 1,
+                    maxLines = titleLines,
+                    overflow = TextOverflow.Ellipsis,
                     modifier =
                         Modifier.clickable(
                                 enabled = shown != null && !shown.served && shown.album.isNotBlank(),
+                                role = Role.Button,
                                 onClickLabel = "Go to album",
                             ) {
                                 shown?.let {
@@ -344,16 +367,20 @@ private fun ColumnScope.Controls(
                                     navigator.openAlbumOf(it)
                                 }
                             }
-                            .basicMarquee(),
+                            .then(if (titleLines == 1) Modifier.basicMarquee() else Modifier),
                 )
                 Text(
                     shown?.shownArtist.orEmpty(),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
+                    maxLines = titleLines,
                     overflow = TextOverflow.Ellipsis,
                     modifier =
-                        Modifier.clickable(enabled = shown != null && !shown.served, onClickLabel = "Go to artist") {
+                        Modifier.clickable(
+                            enabled = shown != null && !shown.served,
+                            role = Role.Button,
+                            onClickLabel = "Go to artist",
+                        ) {
                             shown?.let {
                                 expansion.collapse()
                                 navigator.openArtistOf(it)
@@ -405,6 +432,8 @@ private fun Scrubber(model: PlayerViewModel, playing: Playing?) {
             enabled = duration > 0,
             modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Song progress" },
             trackHeight = 4.dp,
+            stateText = { "${clock(it.toLong())} of ${clock(duration)}" },
+            skips = model.skipActions(duration),
         )
     }
     val times = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum")
@@ -519,6 +548,7 @@ private fun Volume(model: PlayerViewModel, playing: Playing?) {
             onCommit = model::volume,
             modifier = Modifier.weight(1f).padding(horizontal = 8.dp).semantics { contentDescription = "Volume" },
             trackHeight = 4.dp,
+            stateText = { "${(it * 100).roundToInt()} percent" },
         )
         Icon(
             Icons.AutoMirrored.Rounded.VolumeUp,
@@ -529,6 +559,7 @@ private fun Volume(model: PlayerViewModel, playing: Playing?) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PlayerActions(
     model: PlayerViewModel,
@@ -542,9 +573,12 @@ private fun PlayerActions(
     val remaining by model.sleepRemaining.collectAsStateWithLifecycle()
     val zones by LocalResonate.current.features.zones.listed.collectAsStateWithLifecycle()
     val zoneShown = zones.firstOrNull { it.shown }?.name?.takeIf { zones.size > 1 }
-    Row(
+    val large = rememberLargeText()
+    FlowRow(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        maxItemsInEachRow = if (large) 2 else Int.MAX_VALUE,
     ) {
         ActionToggle(
             Icons.Rounded.Lyrics,

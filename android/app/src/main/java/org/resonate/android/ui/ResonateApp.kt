@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Cloud
@@ -49,6 +50,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
@@ -123,6 +126,9 @@ fun ResonateApp(resonate: Resonate) {
                     .semantics { testTagsAsResourceId = true }
             ) {
                 NavigationSuiteScaffold(
+                    modifier =
+                        if (expansion.shown) Modifier.clearAndSetSemantics { hideFromAccessibility() }
+                        else Modifier,
                     navigationSuiteType = suite,
                     containerColor = MaterialTheme.colorScheme.surface,
                     navigationItems = {
@@ -180,7 +186,9 @@ fun ResonateApp(resonate: Resonate) {
                             Modifier.align(Alignment.BottomCenter),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
-                            SnackbarHost(snackbar, modifier = Modifier.padding(bottom = 8.dp))
+                            if (!expansion.shown) {
+                                SnackbarHost(snackbar, modifier = Modifier.padding(bottom = 8.dp))
+                            }
                             Column(Modifier.onSizeChanged { footerHeight = it.height }) {
                                 Banners()
                                 MiniPlayer(player, expansion)
@@ -188,7 +196,16 @@ fun ResonateApp(resonate: Resonate) {
                         }
                     }
                 }
-                if (expansion.shown) NowPlaying(player, expansion)
+                if (expansion.shown) {
+                    NowPlaying(player, expansion)
+                    SnackbarHost(
+                        snackbar,
+                        modifier =
+                            Modifier.align(Alignment.BottomCenter)
+                                .safeDrawingPadding()
+                                .padding(bottom = 8.dp),
+                    )
+                }
                 SheetHost()
                 PairingOffer()
             }

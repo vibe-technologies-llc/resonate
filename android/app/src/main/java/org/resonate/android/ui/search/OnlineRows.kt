@@ -1,5 +1,6 @@
 package org.resonate.android.ui.search
 
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -115,7 +116,7 @@ fun OnlineSongRow(
     saved: Boolean = false,
 ) {
     ListItem(
-        modifier = modifier.clickable(onClick = onClick).testTag("online-song"),
+        modifier = modifier.clickable(role = Role.Button, onClick = onClick).testTag("online-song"),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         leadingContent = {
             if (number != null) {
@@ -156,7 +157,7 @@ fun OnlineCollectionRow(
     round: Boolean = false,
 ) {
     ListItem(
-        modifier = modifier.clickable(onClick = onClick),
+        modifier = modifier.clickable(role = Role.Button, onClick = onClick),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         leadingContent = {
             if (round) {

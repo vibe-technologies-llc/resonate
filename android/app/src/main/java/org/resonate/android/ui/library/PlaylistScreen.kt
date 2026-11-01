@@ -47,10 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.CustomAccessibilityAction
-import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
@@ -68,6 +65,7 @@ import org.resonate.android.ui.components.rememberArtwork
 import org.resonate.android.ui.components.rememberReorder
 import org.resonate.android.ui.theme.ArtworkTheme
 import org.resonate.android.ui.theme.rememberSeedOf
+import org.resonate.android.ui.components.reorderActions
 import org.resonate.android.ui.components.reorderable
 import org.resonate.android.ui.counted
 import org.resonate.android.ui.navigation.LocalNavigator
@@ -227,7 +225,7 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                             onRemove = { model.remove(entry.position, playlist?.revision) },
                             onMove = { to -> model.move(entry.position, to, playlist?.revision) },
                             selection = selection.row(entry.key),
-                            handle = { DragHandle(reorder, entry.key) },
+                            handle = { DragHandle(reorder, entry.key, entry.track.shownTitle) },
                         )
                     }
                 }
@@ -259,7 +257,7 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                                 sheets.snackbar.showSnackbar(
                                     "Deleted “$name”",
                                     actionLabel = "Undo",
-                                    duration = SnackbarDuration.Short,
+                                    duration = SnackbarDuration.Long,
                                 )
                             if (answer == SnackbarResult.ActionPerformed) model.undoDeletion()
                         }
@@ -353,27 +351,13 @@ private fun PlaylistRow(
             }
         },
         modifier =
-            Modifier.semantics {
-                customActions =
-                    listOfNotNull(
-                        CustomAccessibilityAction("Remove $title from playlist") {
-                            onRemove()
-                            true
-                        },
-                        if (entry.position > 0)
-                            CustomAccessibilityAction("Move $title up") {
-                                onMove(entry.position - 1)
-                                true
-                            }
-                        else null,
-                        if (entry.position < last)
-                            CustomAccessibilityAction("Move $title down") {
-                                onMove(entry.position + 1)
-                                true
-                            }
-                        else null,
-                    )
-            },
+            Modifier.reorderActions(
+                title = title,
+                removal = "playlist",
+                onRemove = onRemove,
+                onMoveUp = if (entry.position > 0) ({ onMove(entry.position - 1) }) else null,
+                onMoveDown = if (entry.position < last) ({ onMove(entry.position + 1) }) else null,
+            ),
     ) {
         Box(Modifier.background(MaterialTheme.colorScheme.surface)) {
             TrackRow(

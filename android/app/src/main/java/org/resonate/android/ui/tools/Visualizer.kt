@@ -19,8 +19,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,6 +37,7 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,6 +71,7 @@ import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.withContext
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.components.Page
+import org.resonate.android.ui.components.rememberCalm
 import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.shownArtist
 import org.resonate.android.ui.shownTitle
@@ -132,9 +142,12 @@ private fun LiveVisual() {
     val resonate = LocalResonate.current
     val features = resonate.features
     val calm = rememberCalm()
+    var paused by rememberSaveable { mutableStateOf(false) }
+    val stopped = paused || calm.spoken
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var heard by remember { mutableStateOf(Heard(List(BAND_COUNT) { 0f }, emptyList(), 0f)) }
-    LaunchedEffect(lifecycle, calm.reduced) {
+    LaunchedEffect(lifecycle, calm.reduced, stopped) {
+        if (stopped) return@LaunchedEffect
         val bands = Bands(BAND_COUNT, WINDOW)
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             features.visualize(true)
@@ -151,7 +164,7 @@ private fun LiveVisual() {
         }
     }
     val turn: State<Float>? =
-        if (calm.reduced) null
+        if (calm.reduced || stopped) null
         else
             rememberInfiniteTransition(label = "visualizer")
                 .animateFloat(
@@ -166,13 +179,33 @@ private fun LiveVisual() {
             Modifier.fillMaxWidth()
                 .aspectRatio(1f)
                 .testTag("visualizer")
-                .semantics { contentDescription = "Live visualisation of the music playing" }
+                .semantics {
+                    contentDescription =
+                        if (stopped) "Visualisation of the music, paused"
+                        else "Live visualisation of the music playing"
+                }
         ) {
-            if (calm.reduced) drawCalmBars(heard.levels, scheme.primary, scheme.tertiary, scheme.surfaceContainerHighest)
+            if (calm.reduced || stopped) drawCalmBars(heard.levels, scheme.primary, scheme.tertiary, scheme.surfaceContainerHighest)
             else drawRing(heard, turn?.value ?: 0f, scheme.primary, scheme.tertiary, scheme.primaryContainer)
         }
         Spacer(Modifier.height(16.dp))
         Canvas(Modifier.fillMaxWidth().height(56.dp)) { drawWave(heard.wave, scheme.secondary) }
+        if (!calm.spoken) {
+            Spacer(Modifier.height(16.dp))
+            FilledTonalButton(
+                onClick = { paused = !paused },
+                contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+                modifier = Modifier.testTag("visualizer-pause"),
+            ) {
+                Icon(
+                    if (paused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
+                    null,
+                    Modifier.size(ButtonDefaults.IconSize),
+                )
+                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                Text(if (paused) "Resume visualiser" else "Pause visualiser")
+            }
+        }
     }
 }
 

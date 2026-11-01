@@ -1360,3 +1360,25 @@ emulators; the local Pixel_10_Pro AVD additionally exercises 16 KB pages. Real h
 remains necessary for Bluetooth, USB DAC and device-fidelity claims. UI checks clear the
 accessibility cache before each poll: an API 36 screenshot can show current controls while the
 cached tree still reports the preceding value. All write tests use copies.
+
+## Accessibility
+
+- **One set of helpers, in `ui/components/Accessibility.kt`.** `rememberCalm()` re-reads on resume and on
+  touch-exploration changes (animator scale zero or a reader exploring means calm); `rememberTitleMaxLines()`
+  gives titles two or three lines above font scale 1.3 (Now Playing's action row wraps to two columns
+  there); `recommendedTimeoutMs` runs a notice's time through `AccessibilityManager`; `outlinedTrackColors()`
+  and `bannerTrackOf` draw inactive tracks at 3:1.
+- **A gesture always has a switch-access equivalent.** `Modifier.reorderActions` (`Reorder.kt`) gives the
+  queue and playlist rows Remove, Move up and Move down; the drag handle is a button named *Reorder
+  <title>*. The scrubber and volume take `stateText` from `CommitSlider` (*1:23 of 4:56*, *40 percent*) and
+  the scrubber ten second skips; `PlayerKeys.kt` binds Space, media play-pause and the arrows on Now Playing.
+- **Now Playing hides what is under it.** While open it has a pane title, the screens behind are hidden from
+  accessibility, and the snackbar host is drawn above it. Pages carry a pane title and a heading.
+- **Contrast follows the system.** `schemeOf` and `ArtworkTheme` take `UiModeManager.contrast` (API 34) joined
+  with the stored *High contrast* switch (the higher wins); Now Playing drops its cover wash at high contrast.
+  Lyrics' quiet ink is `QUIET_ALPHA` 0.85 with the active line bold, held by the contrast test.
+- **Held by** `ThemeContrastTest` (JVM: every accent in light, dark and pitch black, standard and high contrast;
+  text pairs 4.5:1, non-text pairs 3:1, quiet lyric ink 3:1 on four grounds, body text 7:1 at high contrast) and
+  `A11ySweepTest` (instrumented: the Compose accessibility checks over the root tabs and settings, a
+  `fontScale = 2` pass for clipped text and a pass for unnamed clickables); the sweep needs an emulator and has
+  not been run.

@@ -45,9 +45,11 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
@@ -56,6 +58,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import org.resonate.android.rowKey
 import org.resonate.android.ui.components.Artwork
+import org.resonate.android.ui.components.rememberTitleMaxLines
 import org.resonate.android.ui.shownArtist
 import org.resonate.android.ui.shownTitle
 
@@ -75,6 +78,7 @@ fun MiniPlayer(model: PlayerViewModel, expansion: PlayerExpansion, modifier: Mod
         val travel = with(LocalDensity.current) { windowHeight.toPx() }
         var dragged by remember { mutableFloatStateOf(0f) }
         val inset = if (short) SHORT_ARTWORK_INSET else ARTWORK_INSET
+        val titleLines = rememberTitleMaxLines()
         Surface(
             color = MaterialTheme.colorScheme.surfaceContainerHighest,
             shape = RoundedCornerShape(CAPSULE_CORNER),
@@ -92,7 +96,7 @@ fun MiniPlayer(model: PlayerViewModel, expansion: PlayerExpansion, modifier: Mod
                         onDragStarted = { dragged = 0f },
                         onDragStopped = { velocity -> expansion.settle(velocity, dragged) },
                     )
-                    .clickable(onClickLabel = "Open player", onClick = expansion::expand),
+                    .clickable(role = Role.Button, onClickLabel = "Open player", onClick = expansion::expand),
         ) {
             Column {
                 Row(
@@ -121,14 +125,14 @@ fun MiniPlayer(model: PlayerViewModel, expansion: PlayerExpansion, modifier: Mod
                             Text(
                                 shown?.shownTitle.orEmpty(),
                                 style = MaterialTheme.typography.titleSmall,
-                                maxLines = 1,
+                                maxLines = titleLines,
                                 overflow = TextOverflow.Ellipsis,
                             )
                             Text(
                                 shown?.shownArtist.orEmpty(),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
+                                maxLines = titleLines,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
@@ -161,12 +165,14 @@ private fun MiniProgress(model: PlayerViewModel, durationMs: Long) {
         Modifier.fillMaxWidth().padding(horizontal = 8.dp).padding(bottom = 8.dp).semantics {
             contentDescription = "Song progress"
             stateDescription = "${(fraction * 100).toInt()} percent"
+            progressBarRangeInfo = ProgressBarRangeInfo(fraction, 0f..1f)
         }
     ) {
         LinearProgressIndicator(
             progress = { fraction },
             strokeCap = StrokeCap.Round,
             gapSize = 0.dp,
+            trackColor = MaterialTheme.colorScheme.outline,
             drawStopIndicator = {},
             modifier = Modifier.fillMaxWidth().height(3.dp).clip(MaterialTheme.shapes.small),
         )

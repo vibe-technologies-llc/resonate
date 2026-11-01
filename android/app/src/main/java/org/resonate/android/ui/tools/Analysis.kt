@@ -192,7 +192,7 @@ private fun AnalyseControl(model: AnalysisViewModel, busy: Boolean, done: Boolea
             Button(
                 onClick = model::analyse,
                 contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
-                modifier = Modifier.fillMaxWidth().height(56.dp).testTag("analyse"),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("analyse"),
             ) {
                 Icon(Icons.Rounded.Insights, null, Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.width(ButtonDefaults.IconSpacing))

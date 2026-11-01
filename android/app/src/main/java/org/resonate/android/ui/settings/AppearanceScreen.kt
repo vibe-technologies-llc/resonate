@@ -18,6 +18,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Gradient
+import androidx.compose.material.icons.rounded.InvertColors
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.material3.Icon
@@ -54,6 +55,7 @@ import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.SectionHeader
 import org.resonate.android.ui.components.Sizes
+import org.resonate.android.ui.components.outlinedTrackColors
 import org.resonate.android.ui.resonateViewModel
 import org.resonate.android.ui.theme.LocalDarkTheme
 import org.resonate.android.ui.theme.schemeOf
@@ -69,6 +71,8 @@ class AppearanceViewModel(resonate: Resonate) : ViewModel() {
     fun chooseAccent(accent: Accent?) = store.chooseAccent(accent)
 
     fun choosePitchBlack(pitchBlack: Boolean) = store.choosePitchBlack(pitchBlack)
+
+    fun chooseHighContrast(highContrast: Boolean) = store.chooseHighContrast(highContrast)
 
     fun chooseBackgroundStrength(strength: Float) = store.chooseBackgroundStrength(strength)
 }
@@ -112,6 +116,16 @@ fun AppearanceScreen() {
                     modifier = Modifier.testTag("pitch-black"),
                 )
             }
+            item(key = "high-contrast") {
+                SwitchRow(
+                    title = "High contrast",
+                    checked = appearance.highContrast,
+                    onCheckedChange = model::chooseHighContrast,
+                    icon = Icons.Rounded.InvertColors,
+                    supporting = "Stronger colours for text and controls, on top of the phone's own contrast setting",
+                    modifier = Modifier.testTag("high-contrast"),
+                )
+            }
             item(key = "accent") { SectionHeader("Accent colour") }
             item(key = "swatches") { Swatches(appearance, model::chooseAccent) }
             item(key = "note") {
@@ -152,6 +166,7 @@ private fun BackgroundStrength(stored: Float, onCommit: (Float) -> Unit) {
         )
         Slider(
             value = shown,
+            colors = outlinedTrackColors(),
             onValueChange = { draft = it },
             onValueChangeFinished = {
                 draft?.let(onCommit)

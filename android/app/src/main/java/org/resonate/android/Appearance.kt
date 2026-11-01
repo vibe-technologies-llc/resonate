@@ -24,6 +24,7 @@ data class Appearance(
     val mode: ThemeMode = ThemeMode.SYSTEM,
     val accent: Accent? = null,
     val pitchBlack: Boolean = false,
+    val highContrast: Boolean = false,
     val backgroundStrength: Float = Appearance.STRENGTH_DEFAULT,
 ) {
     val accentLabel: String
@@ -56,6 +57,11 @@ class AppearanceStore(private val storage: SharedPreferences) {
         storage.edit().putBoolean(PITCH_BLACK, pitchBlack).apply()
     }
 
+    fun chooseHighContrast(highContrast: Boolean) {
+        mutable.value = mutable.value.copy(highContrast = highContrast)
+        storage.edit().putBoolean(HIGH_CONTRAST, highContrast).apply()
+    }
+
     fun chooseBackgroundStrength(strength: Float) {
         val kept = strength.coerceIn(0f, 1f)
         mutable.value = mutable.value.copy(backgroundStrength = kept)
@@ -68,6 +74,7 @@ class AppearanceStore(private val storage: SharedPreferences) {
                 ?: ThemeMode.SYSTEM,
             accent = Accent.entries.find { it.name == storage.getString(ACCENT, null) },
             pitchBlack = storage.getBoolean(PITCH_BLACK, false),
+            highContrast = storage.getBoolean(HIGH_CONTRAST, false),
             backgroundStrength =
                 storage.getFloat(STRENGTH, Appearance.STRENGTH_DEFAULT).coerceIn(0f, 1f),
         )
@@ -76,6 +83,7 @@ class AppearanceStore(private val storage: SharedPreferences) {
         const val MODE = "theme"
         const val ACCENT = "accent"
         const val PITCH_BLACK = "pitch-black"
+        const val HIGH_CONTRAST = "high-contrast"
         const val STRENGTH = "background-strength"
     }
 }

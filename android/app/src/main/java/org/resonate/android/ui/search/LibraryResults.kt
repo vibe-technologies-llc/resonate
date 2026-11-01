@@ -1,5 +1,6 @@
 package org.resonate.android.ui.search
 
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -721,7 +722,8 @@ private fun AlbumTile(album: AlbumHit, lit: Lit, size: Dp, onClick: () -> Unit) 
     Column(
         Modifier.width(size)
             .clip(MaterialTheme.shapes.large)
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics(mergeDescendants = true) {}
             .testTag("search-album")
     ) {
         SongArtwork(album.artworkTrack, size, shape = MaterialTheme.shapes.large)
@@ -753,7 +755,8 @@ private fun ArtistTile(artist: ArtistHit, lit: Lit, onClick: () -> Unit) {
     Column(
         Modifier.width(Sizes.artistCircle)
             .clip(MaterialTheme.shapes.large)
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics(mergeDescendants = true) {}
             .testTag("search-artist"),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

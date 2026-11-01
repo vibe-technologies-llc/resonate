@@ -317,7 +317,7 @@ private fun ChooserRow(
     onClick: () -> Unit,
 ) {
     ListItem(
-        modifier = Modifier.clickable(enabled = enabled, onClick = onClick),
+        modifier = Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick),
         colors =
             ListItemDefaults.colors(
                 containerColor = Color.Transparent,

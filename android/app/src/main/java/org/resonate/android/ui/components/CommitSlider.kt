@@ -20,6 +20,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -33,12 +37,22 @@ fun CommitSlider(
     enabled: Boolean = true,
     onDraft: (Float?) -> Unit = {},
     trackHeight: Dp? = null,
+    stateText: ((Float) -> String)? = null,
+    skips: List<CustomAccessibilityAction> = emptyList(),
 ) {
     var dragging by remember { mutableStateOf(false) }
     val state = remember(range) { SliderState(value.coerceIn(range), 0, range) }
     SideEffect { if (!dragging) state.value = value.coerceIn(range) }
+    val outlinedColors = outlinedTrackColors()
     val track: @Composable (SliderState) -> Unit =
-        if (trackHeight == null) ({ SliderDefaults.Track(it, enabled = enabled) })
+        if (trackHeight == null)
+            ({
+                SliderDefaults.Track(
+                    it,
+                    enabled = enabled,
+                    colors = outlinedColors,
+                )
+            })
         else ({ slider -> ThinTrack(slider, range, trackHeight, enabled) })
     val interaction = remember { MutableInteractionSource() }
     val thumb: @Composable (SliderState) -> Unit =
@@ -47,7 +61,11 @@ fun CommitSlider(
     Slider(
         state = state,
         enabled = enabled,
-        modifier = modifier,
+        modifier =
+            modifier.semantics {
+                if (stateText != null) stateDescription = stateText(state.value)
+                if (skips.isNotEmpty()) customActions = skips
+            },
         interactionSource = interaction,
         thumb = thumb,
         track = track,
@@ -75,7 +93,7 @@ private fun ThinTrack(
     val span = range.endInclusive - range.start
     val fraction = if (span > 0f) ((slider.value - range.start) / span).coerceIn(0f, 1f) else 0f
     val active = if (enabled) scheme.primary else scheme.onSurface.copy(alpha = 0.38f)
-    val inactive: Color = if (enabled) scheme.secondaryContainer else scheme.onSurface.copy(alpha = 0.12f)
+    val inactive: Color = if (enabled) scheme.outline else scheme.onSurface.copy(alpha = 0.12f)
     Box(Modifier.fillMaxWidth().height(height).clip(CircleShape).background(inactive)) {
         Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().background(active))
     }

@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.resonate.android.nativecore.CrossfeedLevel
+import org.resonate.android.ui.components.outlinedTrackColors
 import org.resonate.android.nativecore.GainMode
 import org.resonate.android.nativecore.LossyRestoration
 import org.resonate.android.nativecore.PlaybackPreferences
@@ -258,6 +259,7 @@ private fun Buffer(stored: Int, onCommit: (Int) -> Unit) {
         )
         Slider(
             state = slider,
+            colors = outlinedTrackColors(),
             onValueChange = {
                 dragging = true
                 slider.value = it

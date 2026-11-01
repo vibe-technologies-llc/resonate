@@ -25,7 +25,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -75,8 +77,14 @@ fun EqualiserGraph(
             .height(GRAPH_HEIGHT)
             .testTag("equaliser-graph")
             .semantics {
-                contentDescription =
-                    "Equaliser response, ${curve.bands.size} bands. Choose a band below to edit it."
+                contentDescription = graphDescription(curve, selected)
+                customActions =
+                    listOf(
+                        CustomAccessibilityAction("Add band") {
+                            add(ADDED_BAND_HERTZ, ADDED_BAND_GAIN_DB)
+                            true
+                        }
+                    )
             }
             .pointerInput(bounds) {
                 awaitEachGesture {
@@ -218,6 +226,18 @@ private fun DrawScope.drawResponse(response: List<Float>, span: Float, line: Col
         line,
         style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
     )
+}
+
+private const val ADDED_BAND_HERTZ = 1000f
+private const val ADDED_BAND_GAIN_DB = 0f
+
+fun graphDescription(curve: EqualiserCurve, selected: Int?): String {
+    val summary = "Equaliser response, ${curve.bands.size} bands."
+    val band = selected?.let { curve.bands.getOrNull(it) }
+    if (selected == null || band == null) return "$summary Choose a band below to edit it."
+    val place = "Band ${selected + 1} of ${curve.bands.size} selected, ${hertzLabel(band.frequencyHz)}"
+    val gain = if (band.filter.usesGain) ", ${signedDb(band.gainDb)}" else ""
+    return "$summary $place$gain."
 }
 
 private val GRAPH_HEIGHT = 240.dp

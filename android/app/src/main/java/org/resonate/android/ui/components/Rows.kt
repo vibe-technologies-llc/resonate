@@ -1,5 +1,6 @@
 package org.resonate.android.ui.components
 
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -86,6 +87,7 @@ fun TrackRow(
     val selecting = selection?.selecting == true
     val selected = selection?.selected == true
     val label = title?.text ?: track.shownTitle
+    val lines = rememberTitleMaxLines()
     ListItem(
         onClick = if (selection != null && selecting) selection.toggle else onClick,
         onLongClick =
@@ -185,7 +187,7 @@ fun TrackRow(
                 }
                 Text(
                     subtitle ?: AnnotatedString(supporting),
-                    maxLines = 1,
+                    maxLines = lines,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -204,7 +206,7 @@ fun TrackRow(
     ) {
         Text(
             title ?: AnnotatedString(track.shownTitle),
-            maxLines = 1,
+            maxLines = lines,
             overflow = TextOverflow.Ellipsis,
             fontWeight = if (playing) FontWeight.SemiBold else null,
         )
@@ -221,16 +223,17 @@ fun CollectionRow(
     titleText: AnnotatedString? = null,
     trailing: (@Composable () -> Unit)? = null,
 ) {
+    val lines = rememberTitleMaxLines()
     ListItem(
         onClick = onClick,
         modifier = modifier,
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         leadingContent = leading,
         supportingContent =
-            supporting?.let { { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
+            supporting?.let { { Text(it, maxLines = lines, overflow = TextOverflow.Ellipsis) } },
         trailingContent = trailing,
     ) {
-        Text(titleText ?: AnnotatedString(title), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(titleText ?: AnnotatedString(title), maxLines = lines, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -342,7 +345,7 @@ fun PlayShuffleButtons(
         Button(
             onClick = onPlay,
             enabled = enabled,
-            modifier = Modifier.weight(1f).height(56.dp),
+            modifier = Modifier.weight(1f).heightIn(min = 56.dp),
             contentPadding = PaddingValues(horizontal = 16.dp),
         ) {
             Icon(
@@ -356,7 +359,7 @@ fun PlayShuffleButtons(
         FilledTonalButton(
             onClick = onShuffle,
             enabled = enabled,
-            modifier = Modifier.weight(1f).height(56.dp),
+            modifier = Modifier.weight(1f).heightIn(min = 56.dp),
             contentPadding = PaddingValues(horizontal = 16.dp),
         ) {
             Icon(

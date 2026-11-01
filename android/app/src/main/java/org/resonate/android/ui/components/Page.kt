@@ -38,6 +38,9 @@ import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
@@ -89,6 +92,7 @@ fun Page(
                     belowPage = (window - page.boundsInRoot().bottom).roundToInt().coerceAtLeast(0)
                 }
                 .padding(bottom = covered)
+                .semantics { paneTitle = title }
                 .nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = MaterialTheme.colorScheme.surface,
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
@@ -122,11 +126,17 @@ private fun PageBar(
     navigation: @Composable () -> Unit,
     actions: @Composable RowScope.() -> Unit,
 ) {
+    val titleLines = rememberTitleMaxLines()
     val titleText: @Composable () -> Unit = {
-        Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(
+            title,
+            maxLines = titleLines,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.semantics { heading() },
+        )
     }
     val subtitleText: (@Composable () -> Unit)? =
-        subtitle?.let { { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) } }
+        subtitle?.let { { Text(it, maxLines = titleLines, overflow = TextOverflow.Ellipsis) } }
     val surface = MaterialTheme.colorScheme.surface
     val colors =
         TopAppBarDefaults.topAppBarColors(containerColor = surface, scrolledContainerColor = surface)

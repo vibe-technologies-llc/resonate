@@ -1,7 +1,9 @@
 package org.resonate.android.ui.theme
 
+import android.app.UiModeManager
 import android.content.Context
 import android.graphics.Bitmap
+import android.os.Build
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.LocalActivity
@@ -15,6 +17,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -22,6 +26,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.materialkolor.DynamicMaterialExpressiveTheme
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamicColorScheme
@@ -37,6 +44,17 @@ val LocalDarkTheme = staticCompositionLocalOf { false }
 
 val LocalPitchBlack = staticCompositionLocalOf { false }
 
+val LocalContrastLevel = staticCompositionLocalOf { STANDARD_CONTRAST }
+
+const val STANDARD_CONTRAST = 0.0
+const val HIGH_CONTRAST = 1.0
+
+fun systemContrastLevel(context: Context): Double {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return STANDARD_CONTRAST
+    val modes = context.getSystemService(UiModeManager::class.java) ?: return STANDARD_CONTRAST
+    return modes.contrast.toDouble().coerceIn(STANDARD_CONTRAST, HIGH_CONTRAST)
+}
+
 @Composable
 fun ResonateTheme(appearance: Appearance, content: @Composable () -> Unit) {
     val context = LocalContext.current
@@ -48,13 +66,27 @@ fun ResonateTheme(appearance: Appearance, content: @Composable () -> Unit) {
         }
     val accent = appearance.accent
     val pitchBlack = dark && appearance.pitchBlack
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    var system by remember(context) { mutableDoubleStateOf(systemContrastLevel(context)) }
+    DisposableEffect(context, lifecycle) {
+        val resumed = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) system = systemContrastLevel(context)
+        }
+        lifecycle.addObserver(resumed)
+        onDispose { lifecycle.removeObserver(resumed) }
+    }
+    val contrast = if (appearance.highContrast) HIGH_CONTRAST else system
     val scheme =
-        remember(accent, dark, pitchBlack, context) {
+        remember(accent, dark, pitchBlack, contrast, context) {
             val seed = accent?.let { Color(0xFF000000.toInt() or it.hex) } ?: wallpaperSeed(context)
-            schemeOf(seed, dark, pitchBlack)
+            schemeOf(seed, dark, pitchBlack, contrast)
         }
     SystemBarsFollow(dark)
-    CompositionLocalProvider(LocalDarkTheme provides dark, LocalPitchBlack provides pitchBlack) {
+    CompositionLocalProvider(
+        LocalDarkTheme provides dark,
+        LocalPitchBlack provides pitchBlack,
+        LocalContrastLevel provides contrast,
+    ) {
         MaterialExpressiveTheme(
             colorScheme = scheme,
             motionScheme = MotionScheme.expressive(),
@@ -66,12 +98,18 @@ fun ResonateTheme(appearance: Appearance, content: @Composable () -> Unit) {
 fun wallpaperSeed(context: Context): Color =
     Color(context.getColor(android.R.color.system_accent1_500))
 
-fun schemeOf(seed: Color, dark: Boolean, pitchBlack: Boolean = false): ColorScheme =
+fun schemeOf(
+    seed: Color,
+    dark: Boolean,
+    pitchBlack: Boolean = false,
+    contrastLevel: Double = STANDARD_CONTRAST,
+): ColorScheme =
     dynamicColorScheme(
         seedColor = seed,
         isDark = dark,
         isAmoled = pitchBlack,
         style = PaletteStyle.TonalSpot,
+        contrastLevel = contrastLevel,
     )
 
 @Composable
@@ -97,6 +135,7 @@ fun ArtworkTheme(seed: Color?, content: @Composable () -> Unit) {
         isDark = LocalDarkTheme.current,
         isAmoled = LocalPitchBlack.current,
         style = PaletteStyle.TonalSpot,
+        contrastLevel = LocalContrastLevel.current,
         animate = true,
         content = content,
     )
