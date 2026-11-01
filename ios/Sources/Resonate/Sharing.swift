@@ -31,6 +31,7 @@ struct SharingSheet: ViewModifier {
             set: { library.features.sharing = $0 }
         )) { shared in
             ActivitySheet(link: shared.url, title: shared.title)
+                .sheetSized()
                 .presentationDetents([.medium, .large])
         }
     }

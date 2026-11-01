@@ -501,7 +501,7 @@ struct StandardTrackMenus: ViewModifier {
                         .tint(.blue)
                 }
                 .contextMenu { TrackMenu(track: track, choosingPlaylist: $choosingPlaylist, queued: $queued) }
-                .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: [track]) }
+                .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: [track]).sheetSized() }
         } else {
             content
         }

@@ -651,7 +651,7 @@ struct CollectionMenu: View {
         }
         .disabled(tracks.isEmpty)
         .sensoryFeedback(.success, trigger: queued)
-        .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: tracks) }
+        .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: tracks).sheetSized() }
     }
 }
 
@@ -1018,7 +1018,7 @@ struct CollectionActions: ViewModifier {
                 Button("Add to queue", systemImage: "text.line.last.and.arrowtriangle.forward") { act { library.addToQueue($0) } }
                     .tint(.orange)
             }
-            .sheet(item: $picked) { PlaylistPicker(tracks: $0.tracks) }
+            .sheet(item: $picked) { PlaylistPicker(tracks: $0.tracks).sheetSized() }
             .sensoryFeedback(.success, trigger: acted)
     }
 

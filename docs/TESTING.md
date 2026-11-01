@@ -90,7 +90,10 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   reader follows are built and read back in tests only (Orca over AT-SPI; gpui's test platform never
   activates the tree), and neither TalkBack on the Compose screens nor VoiceOver on the SwiftUI app
   has read the accessibility work of 0.4.0 (the lyric elements, the adjustable bars, the hidden
-  background under Now Playing, the announcements)
+  background under Now Playing, the announcements), and the iOS landscape and iPad layouts (Now
+  Playing's two columns, the Library tab's split view, the sheets' form and page sizes, and the
+  accessibility-size layouts in each) have been proved by their rules in tests and a clean build,
+  never seen on an iPhone turned on its side or an iPad
 - [S · blocked: a desktop] The desktop's colour scheme and text scale are proved on how a
   value is read alone: no GNOME or KDE session is reachable from the agent shell, so the portal's
   `color-scheme` and `SettingChanged`, GNOME's `text-scaling-factor` and KDE's `font` point size

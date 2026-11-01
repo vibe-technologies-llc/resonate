@@ -70,11 +70,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   Authenticode signing (no secrets exist), no winget or scoop manifest, and the executable carries no
   icon (the accent-following icon is a Linux theme file)
 
-## Accessibility
-- [M · 0.4.0] The iOS app is portrait-only and iPhone-only, which fails WCAG 1.3.4 (orientation): landscape
-  and iPad layouts for Now Playing, the library and the sheets, with the accessibility-size layouts
-  held in each
-
 ## Playback and output
 - [M · blocked: pipewire-rs] A rebind or turn inside a row that moves the rate while
   `force-graph-rate` pins it (on by default), or switches the pin, still reopens the PipeWire stream:

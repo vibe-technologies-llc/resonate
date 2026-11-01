@@ -170,12 +170,8 @@ struct NowPlayingView: View {
     var body: some View {
         let track = library.playingTrack
         NavigationStack {
-            Group {
-                if typeSize.isAccessibilitySize {
-                    ScrollView { layout(track) }
-                } else {
-                    layout(track)
-                }
+            ShapedScreen { shape in
+                arranged(track, PlayerArrangement.of(shape))
             }
             .overlayPreferenceValue(CoverSlot.self) { slots in
                 GeometryReader { proxy in
@@ -207,7 +203,7 @@ struct NowPlayingView: View {
                     )
                 }
             }
-            .sheet(item: $picked) { PlaylistPicker(tracks: $0.tracks) }
+            .sheet(item: $picked) { PlaylistPicker(tracks: $0.tracks).sheetSized() }
             .alert("Save queue as playlist", isPresented: $savingQueue) {
                 PlaylistNameField(confirm: "Save") { library.features.createPlaylist($0, with: library.queue.filter { !$0.isServed }) }
             }
@@ -221,6 +217,65 @@ struct NowPlayingView: View {
             .modifier(SleepTimerPresentation(presenting: true))
             .modifier(ZonesPresentation(presenting: true))
             .modifier(PairingOffer(presenting: true))
+        }
+    }
+
+    @ViewBuilder
+    private func arranged(_ track: Track?, _ arrangement: PlayerArrangement) -> some View {
+        if arrangement.sideBySide {
+            columns(track, scrolls: arrangement.scrolls)
+        } else if arrangement.scrolls {
+            ScrollView { layout(track) }
+        } else {
+            layout(track)
+        }
+    }
+
+    private func columns(_ track: Track?, scrolls: Bool) -> some View {
+        HStack(alignment: .center, spacing: Self.gutter) {
+            if mode == .artwork {
+                LargeArtwork()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                column(scrolls: scrolls) {
+                    PlayerTitles(track: track)
+                    PlayerScrubber()
+                    TransportRow()
+                    SleepCountdown()
+                    VolumeRow()
+                    PlayerModes(mode: mode, choose: choose)
+                }
+            } else {
+                column(scrolls: scrolls) {
+                    CompactTitles(track: track)
+                    PlayerScrubber()
+                    TransportRow()
+                    PlayerModes(mode: mode, choose: choose)
+                }
+                ZStack {
+                    if settled == mode {
+                        focusedContent(track).transition(.opacity)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .padding(.bottom, 8)
+    }
+
+    @ViewBuilder
+    private func column<Content: View>(scrolls: Bool, @ViewBuilder content: () -> Content) -> some View {
+        if scrolls {
+            ScrollView {
+                VStack(spacing: 16) { content() }
+            }
+            .frame(maxWidth: .infinity)
+        } else {
+            VStack(spacing: 16) {
+                Spacer(minLength: 0)
+                content()
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity)
         }
     }
 
@@ -1492,7 +1547,7 @@ struct QueueRow: View {
                 }
             }
         }
-        .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: [row]) }
+        .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: [row]).sheetSized() }
     }
 }
 
@@ -1522,7 +1577,7 @@ struct SleepTimerPresentation: ViewModifier {
             get: { presenting && navigation.sleepTimer },
             set: { navigation.sleepTimer = $0 }
         )) {
-            SleepTimerSheet().presentationDetents([.medium, .large])
+            SleepTimerSheet().sheetSized().presentationDetents([.medium, .large])
         }
     }
 }

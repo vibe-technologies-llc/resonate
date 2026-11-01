@@ -167,7 +167,7 @@ struct PlaylistView: View {
         } message: {
             Text("The music files stay in your library. You can undo this action from a playlist's options.")
         }
-        .sheet(isPresented: $adding) { AddSongsSheet(id: id) }
+        .sheet(isPresented: $adding) { AddSongsSheet(id: id).sheetSized(.long) }
         .fileExporter(
             isPresented: $exporting,
             document: exported,
@@ -177,7 +177,7 @@ struct PlaylistView: View {
             if case .failure(let failure) = result { library.report(failure) }
             exported = nil
         }
-        .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: rows) }
+        .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: rows).sheetSized() }
         .sensoryFeedback(.success, trigger: queued)
     }
 
@@ -382,7 +382,7 @@ struct PlaylistRow: View, Equatable {
             }
         }
         .sensoryFeedback(.success, trigger: queued)
-        .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: [track]) }
+        .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: [track]).sheetSized() }
     }
 
     nonisolated static func == (shown: PlaylistRow, other: PlaylistRow) -> Bool {
