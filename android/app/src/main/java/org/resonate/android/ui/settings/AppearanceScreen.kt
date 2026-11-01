@@ -25,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -75,6 +76,8 @@ class AppearanceViewModel(resonate: Resonate) : ViewModel() {
     fun chooseHighContrast(highContrast: Boolean) = store.chooseHighContrast(highContrast)
 
     fun chooseBackgroundStrength(strength: Float) = store.chooseBackgroundStrength(strength)
+
+    fun chooseNowPlayingIntensity(intensity: Float) = store.chooseNowPlayingIntensity(intensity)
 }
 
 private val ThemeMode.icon
@@ -144,6 +147,18 @@ fun AppearanceScreen() {
                         "At 0 % the player has no coloured background."
                 )
             }
+            item(key = "intensity") {
+                NowPlayingIntensity(
+                    appearance.nowPlayingIntensity,
+                    model::chooseNowPlayingIntensity,
+                )
+            }
+            item(key = "intensity-note") {
+                Footnote(
+                    "How dark or vivid the cover's colours are behind the player and its lyrics. " +
+                        "The middle is the colours as they were."
+                )
+            }
         }
     }
 }
@@ -181,6 +196,51 @@ private fun BackgroundStrength(stored: Float, onCommit: (Float) -> Unit) {
                     }
                     .testTag("background-strength"),
         )
+    }
+}
+
+@Composable
+private fun NowPlayingIntensity(stored: Float, onCommit: (Float) -> Unit) {
+    var draft by remember { mutableStateOf<Float?>(null) }
+    val shown = draft ?: stored
+    Column(Modifier.fillMaxWidth()) {
+        SettingRow(
+            title = "Intensity",
+            icon = Icons.Rounded.InvertColors,
+            trailing = {
+                Text(
+                    "${(shown * 100).roundToInt()} %",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            },
+        )
+        Slider(
+            value = shown,
+            colors = outlinedTrackColors(),
+            onValueChange = { draft = it },
+            onValueChangeFinished = {
+                draft?.let(onCommit)
+                draft = null
+            },
+            modifier =
+                Modifier.fillMaxWidth()
+                    .padding(start = 56.dp, end = Sizes.gutter)
+                    .semantics {
+                        contentDescription = "Player intensity"
+                        stateDescription = "${(shown * 100).roundToInt()} percent"
+                    }
+                    .testTag("now-playing-intensity"),
+        )
+        if (stored != Appearance.INTENSITY_DEFAULT) {
+            TextButton(
+                onClick = { onCommit(Appearance.INTENSITY_DEFAULT) },
+                modifier =
+                    Modifier.padding(start = 48.dp).testTag("now-playing-intensity-reset"),
+            ) {
+                Text("Reset to default")
+            }
+        }
     }
 }
 
