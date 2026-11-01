@@ -58,9 +58,11 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   `IAudioEndpointVolumeCallback`, so a change is neither told at once nor read finer than a percent
 - [M · 0.4.0] Windows has no toast notifications with transport actions and no metered-network
   detector (`NetworkCostType`)
-- [M · 0.4.0] A Windows path past `MAX_PATH` (260) is not weighed by the organiser, NTFS alternate
-  streams and ACLs are not carried by a tag write, and a folder mounted into another drive's tree is
-  not noticed as a volume
+- [M · 0.4.0 · blocked: a vetted safe crate] NTFS alternate streams and ACLs are not carried by a
+  tag write (`carries_what_the_file_did` is Unix only, so a staged copy renamed over a track drops
+  both): `std::fs::copy` carries streams but not the security descriptor and cannot stand in for
+  the writer's own staged copy, and no reviewed safe wrapper of `FindFirstStreamW`, `BackupRead` or
+  `GetNamedSecurityInfoW` exists to take them across
 - [M · 0.4.0] The integration suites of the library, the codec's encoded files, the vault and the
   binary's terminal and signal tests are Unix-only; each needs a Windows counterpart (symlinks,
   permission bits, pseudo-terminals)

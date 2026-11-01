@@ -33,6 +33,7 @@ use crate::{
     filed,
     paged::{Paging, ROWS_A_PAGE},
     pass::{Cancelling, OrganiseHandle, PassHandle, PassKind},
+    reach::{Part, Reach},
     scan, sheeted, store, unreplacing,
 };
 
@@ -235,7 +236,20 @@ impl Layout {
     }
 
     pub fn render(&self, named: &Named<'_>, naming: Naming) -> Option<PathBuf> {
-        let last = self.segments.len().checked_sub(1)?;
+        self.rendered_within(named, naming, &Reach::UNLIMITED).ok()
+    }
+
+    pub(crate) fn rendered_within(
+        &self,
+        named: &Named<'_>,
+        naming: Naming,
+        reach: &Reach,
+    ) -> std::result::Result<PathBuf, Refusal> {
+        let last = self
+            .segments
+            .len()
+            .checked_sub(1)
+            .ok_or(Refusal::Unidentified)?;
         let extension = named.extension.filter(|extension| !extension.is_empty());
         let ahead_of_the_extension =
             extension.and_then(|_| self.segments[last].write_ahead_of_the_extension(named));
@@ -248,7 +262,7 @@ impl Layout {
             extension.len() + EXTENSION_SEPARATOR.len_utf8()
         });
 
-        let mut path = PathBuf::new();
+        let mut parts = Vec::with_capacity(self.segments.len());
         for (index, segment) in self.segments.iter().enumerate() {
             let budget = if index == last {
                 COMPONENT_BYTES.saturating_sub(tail)
@@ -260,24 +274,31 @@ impl Layout {
                 Some(ahead) if index == last => ahead.clone(),
                 _ => segment.write(named),
             };
-            let mut component = as_one_component(&text, budget, naming);
+            let component = as_one_component(&text, budget, naming);
             if component.is_empty() {
                 if index == last {
-                    return None;
+                    return Err(Refusal::Unidentified);
                 }
                 continue;
             }
 
-            if index == last
-                && let Some(extension) = appended
-            {
-                component.push(EXTENSION_SEPARATOR);
-                component.push_str(extension);
-            }
-            path.push(naming.clear_of_devices(component));
+            let kept = match appended {
+                Some(extension) if index == last => format!("{EXTENSION_SEPARATOR}{extension}"),
+                _ => String::new(),
+            };
+            parts.push(Part::new(component, kept));
         }
 
-        Some(path)
+        let weigh = |part: &Part| naming.clear_of_devices(part.whole()).encode_utf16().count();
+        if !reach.fit(&mut parts, weigh) {
+            return Err(Refusal::OutOfReach);
+        }
+
+        let mut path = PathBuf::new();
+        for part in parts {
+            path.push(naming.clear_of_devices(part.whole()));
+        }
+        Ok(path)
     }
 
     fn appended_extension<'a>(&self, named: &Named<'a>) -> Option<&'a str> {
@@ -483,6 +504,30 @@ impl Naming {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Volume {
+    pub(crate) naming: Naming,
+    pub(crate) reach: Reach,
+}
+
+impl Volume {
+    pub(crate) fn of(root: &Path) -> Self {
+        Self {
+            naming: Naming::of(root),
+            reach: Reach::of(root),
+        }
+    }
+}
+
+impl Default for Volume {
+    fn default() -> Self {
+        Self {
+            naming: Naming::default(),
+            reach: Reach::UNLIMITED,
+        }
+    }
+}
+
 fn as_one_component(text: &str, budget: usize, naming: Naming) -> String {
     let mut written = String::with_capacity(text.len());
     for character in text.chars() {
@@ -510,7 +555,7 @@ fn device_name_ends_at(component: &str) -> Option<usize> {
         .then_some(stem.len())
 }
 
-fn without_padding(text: &str) -> &str {
+pub(crate) fn without_padding(text: &str) -> &str {
     text.trim_matches(|character: char| character.is_whitespace() || character == '.')
 }
 
@@ -597,6 +642,7 @@ pub enum Refusal {
     SharesASheet { sheet: PathBuf },
     NamedFromAbove { sheet: PathBuf },
     SourceGone,
+    OutOfReach,
     Unmoved { kind: io::ErrorKind },
 }
 
@@ -781,7 +827,7 @@ fn run(
         }
     }
 
-    let roots: AHashSet<PathBuf> = planner.namings.keys().cloned().collect();
+    let roots: AHashSet<PathBuf> = planner.volumes.keys().cloned().collect();
     let mut plan = planner.settle()?;
     if options.apply {
         apply(library, &mut plan, &roots, progress, Noting::Afresh);
@@ -960,7 +1006,7 @@ struct Planner<'a> {
     layout: &'a Layout,
     progress: &'a OrganiseProgress,
     tracks: Catalogued<'a>,
-    namings: AHashMap<PathBuf, Naming>,
+    volumes: AHashMap<PathBuf, Volume>,
     discs: AHashMap<AlbumId, u32>,
     filed: AHashSet<PathBuf>,
     claimed: Claims,
@@ -1082,7 +1128,7 @@ impl<'a> Planner<'a> {
             layout,
             progress,
             tracks: Catalogued::new(catalog),
-            namings: AHashMap::new(),
+            volumes: AHashMap::new(),
             discs: AHashMap::new(),
             filed: AHashSet::new(),
             claimed: Claims::new(),
@@ -1097,9 +1143,9 @@ impl<'a> Planner<'a> {
     }
 
     fn knows(&mut self, filing: &Filing, album_discs: &AHashMap<i64, u32>) {
-        if !self.namings.contains_key(&filing.root) {
-            self.namings
-                .insert(filing.root.clone(), Naming::of(&filing.root));
+        if !self.volumes.contains_key(&filing.root) {
+            self.volumes
+                .insert(filing.root.clone(), Volume::of(&filing.root));
         }
         if let Some(album) = filing.album {
             let declared = album_discs.get(&(album.get() as i64)).copied().unwrap_or(0);
@@ -1202,9 +1248,12 @@ impl<'a> Planner<'a> {
         let Some(first) = group.first() else {
             return;
         };
-        let Some(rendered) = self.rendered(group) else {
-            self.refuse(first, Refusal::Unidentified);
-            return;
+        let rendered = match self.rendered(group) {
+            Ok(rendered) => rendered,
+            Err(refusal) => {
+                self.refuse(first, refusal);
+                return;
+            }
         };
 
         let destination = as_the_volume_names_it(&first.path, first.root.join(&rendered));
@@ -1319,9 +1368,12 @@ impl<'a> Planner<'a> {
             let Some(first) = member.first() else {
                 continue;
             };
-            let Some(rendered) = self.rendered(member) else {
-                self.refuse_the_sheets(group, tied, Some((&first.path, Refusal::Unidentified)));
-                return;
+            let rendered = match self.rendered(member) {
+                Ok(rendered) => rendered,
+                Err(refusal) => {
+                    self.refuse_the_sheets(group, tied, Some((&first.path, refusal)));
+                    return;
+                }
             };
             if rendered.components().count() < 2 {
                 self.refuse_the_sheets(group, tied, Some((&first.path, Refusal::Loose)));
@@ -1425,32 +1477,42 @@ impl<'a> Planner<'a> {
         });
     }
 
-    fn naming(&self, row: &TrackToFile) -> Naming {
-        self.namings
+    fn volume(&self, row: &TrackToFile) -> Volume {
+        self.volumes
             .get(row.root.as_path())
             .copied()
             .unwrap_or_default()
     }
 
-    fn rendered(&self, group: &[TrackToFile]) -> Option<PathBuf> {
-        let first = group.first()?;
+    fn rendered(&self, group: &[TrackToFile]) -> std::result::Result<PathBuf, Refusal> {
+        let first = group.first().ok_or(Refusal::Unidentified)?;
         if let [only] = group {
-            return self
-                .layout
-                .render(&self.named(only, extension_of(only)), self.naming(only));
+            return self.render_for(only);
         }
 
         let folder = self.one_folder(group)?;
-        Some(folder.join(first.path.file_name()?))
+        let name = first.path.file_name().ok_or(Refusal::Unidentified)?;
+        let whole = folder.join(name);
+        if !self.volume(first).reach.admits(&whole) {
+            return Err(Refusal::OutOfReach);
+        }
+        Ok(whole)
     }
 
-    fn one_folder(&self, group: &[TrackToFile]) -> Option<PathBuf> {
+    fn render_for(&self, row: &TrackToFile) -> std::result::Result<PathBuf, Refusal> {
+        let volume = self.volume(row);
+        self.layout.rendered_within(
+            &self.named(row, extension_of(row)),
+            volume.naming,
+            &volume.reach,
+        )
+    }
+
+    fn one_folder(&self, group: &[TrackToFile]) -> std::result::Result<PathBuf, Refusal> {
         let mut agreed: Option<PathBuf> = None;
         for row in group {
-            let written = self
-                .layout
-                .render(&self.named(row, extension_of(row)), self.naming(row))?;
-            let under = written.parent()?.to_path_buf();
+            let written = self.render_for(row)?;
+            let under = written.parent().ok_or(Refusal::Unidentified)?.to_path_buf();
             match agreed {
                 None => agreed = Some(under),
                 Some(ref held) if *held == under => {}
@@ -1462,12 +1524,12 @@ impl<'a> Planner<'a> {
                         another = %under.display(),
                         "the rows cut out of one file name two folders"
                     );
-                    return None;
+                    return Err(Refusal::Unidentified);
                 }
             }
         }
 
-        agreed
+        agreed.ok_or(Refusal::Unidentified)
     }
 
     fn named<'n>(&self, row: &'n TrackToFile, extension: Option<&'n str>) -> Named<'n> {
@@ -2026,7 +2088,7 @@ fn trailing<'f>(file: &'f Path, stem: &str) -> Option<&'f str> {
 
 fn counted(progress: &OrganiseProgress, refusal: &Refusal) {
     match refusal {
-        Refusal::Unidentified | Refusal::Loose => {
+        Refusal::Unidentified | Refusal::Loose | Refusal::OutOfReach => {
             progress.unidentified.fetch_add(1, Ordering::Relaxed)
         }
         Refusal::Collided { .. }
@@ -3111,6 +3173,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::reach::LEGACY_UNITS_AT_MOST;
 
     #[test]
     fn a_run_is_noted_batch_by_batch_as_its_moves_land_and_a_new_run_starts_the_note_afresh() {
@@ -3304,6 +3367,86 @@ mod tests {
         assert_eq!(
             layout.render(&by("Con", "Nul"), Naming::Anything),
             Some(PathBuf::from("Con/Nul.flac"))
+        );
+    }
+
+    fn a_long_track<'t>(title: &'t str, artist: &'t str, album: &'t str) -> Named<'t> {
+        Named {
+            album_artist: Some(artist),
+            artist: Some(artist),
+            album: Some(album),
+            title,
+            year: None,
+            disc: None,
+            discs: 1,
+            track: Some(3),
+            extension: Some("flac"),
+        }
+    }
+
+    #[test]
+    fn a_destination_whose_whole_path_passes_the_windows_limit_is_cut_to_fit_it_with_its_extension()
+    {
+        let layout = read(DEFAULT_LAYOUT);
+        let reach = Reach::legacy(Path::new(r"C:\Users\someone\Music"));
+        let (artist, album, title) = ("a".repeat(120), "b".repeat(120), "c".repeat(120));
+        let named = a_long_track(&title, &artist, &album);
+
+        let uncut = layout
+            .render(&named, Naming::Portable)
+            .expect("a destination");
+        let cut = layout
+            .rendered_within(&named, Naming::Portable, &reach)
+            .expect("a destination within reach");
+
+        assert!(!reach.admits(&uncut));
+        assert!(reach.admits(&cut));
+        assert!(cut.to_str().expect("text").ends_with(".flac"));
+        assert_eq!(cut.components().count(), 3);
+    }
+
+    #[test]
+    fn a_destination_that_fits_is_the_one_an_unlimited_volume_gets() {
+        let layout = read(DEFAULT_LAYOUT);
+        let reach = Reach::legacy(Path::new(r"C:\Music"));
+        let named = a_long_track("Echoes", "Pink Floyd", "Meddle");
+
+        assert_eq!(
+            layout
+                .rendered_within(&named, Naming::Portable, &reach)
+                .ok(),
+            layout.render(&named, Naming::Portable)
+        );
+    }
+
+    #[test]
+    fn a_cut_is_weighed_after_a_device_name_is_written_apart() {
+        let layout = read("{title}");
+        let root_units = LEGACY_UNITS_AT_MOST - r"\Con.flac".len();
+        let root = format!(r"C:\{}", "r".repeat(root_units - r"C:\".len()));
+        let reach = Reach::legacy(Path::new(&root));
+
+        let cut = layout
+            .rendered_within(&a_long_track("Console", "x", "y"), Naming::Portable, &reach)
+            .expect("a destination within reach");
+
+        assert_eq!(cut, PathBuf::from("Co.flac"));
+        assert!(reach.admits(&cut));
+    }
+
+    #[test]
+    fn a_root_too_deep_for_even_a_letter_a_folder_leaves_the_track_where_it_stands() {
+        let layout = read(DEFAULT_LAYOUT);
+        let root = format!(r"C:\{}", "r".repeat(LEGACY_UNITS_AT_MOST));
+        let reach = Reach::legacy(Path::new(&root));
+
+        assert_eq!(
+            layout.rendered_within(
+                &a_long_track("Echoes", "Pink Floyd", "Meddle"),
+                Naming::Portable,
+                &reach
+            ),
+            Err(Refusal::OutOfReach)
         );
     }
 

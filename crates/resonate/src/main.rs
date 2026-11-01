@@ -1602,6 +1602,7 @@ const fn stands_because(refusal: &Refusal) -> &'static str {
         Refusal::Collided { .. } => "it would collide with",
         Refusal::SharesASheet { .. } => "it would be split from another file named by",
         Refusal::NamedFromAbove { .. } => "it is cut by a sheet in a folder above it,",
+        Refusal::OutOfReach => "its path would be longer than Windows takes",
         Refusal::SourceGone => "it is no longer where the catalog says",
         Refusal::Unmoved { .. } => "the volume refused the move",
     }

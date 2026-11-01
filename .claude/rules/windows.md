@@ -5,6 +5,8 @@ paths:
   - "crates/resonate-core/src/file_facts.rs"
   - "crates/resonate-core/src/positioned.rs"
   - "crates/resonate-core/src/windows_uri.rs"
+  - "crates/resonate-core/src/volume_mounts.rs"
+  - "crates/resonate-library/src/reach.rs"
   - "crates/resonate/src/interrupts.rs"
   - "crates/resonate/src/windows_launcher.rs"
   - "crates/resonate/src/awake.rs"
@@ -123,13 +125,29 @@ settle. `unsafe_code = "forbid"` holds: every Win32 and COM call goes through a 
 - **`file_facts` is every metadata question the Unix tree answered with `MetadataExt`**: `FileStamp`
   (device, inode, length, mtime on Unix; length and mtime on Windows) for the tag writer's
   "unchanged since taken" test, `is_the_same_entry`/`is_the_same_folder` (inode on Unix,
-  `same-file` on Windows), `volume_of` (device on Unix, a hash of the drive prefix on Windows: a
-  folder mounted into another drive's tree is not noticed), `changed_at` (status change on Unix,
+  `same-file` on Windows), `volume_of` (device on Unix; on Windows a hash of the volume's name, below),
+  `changed_at` (status change on Unix,
   modification time on Windows) and `sync_directory` (a no-op on Windows, where a directory cannot
   be opened to be synced).
+- **A volume is named by its GUID where a folder mounts it.** `volume_of` canonicalises the path
+  (so a symlink or junction into another drive reads as the drive it reaches), then walks the
+  canonical path's ancestors, nearest first, for a reparse point (`FILE_ATTRIBUTE_REPARSE_POINT`
+  off `symlink_metadata`, all `std`) whose `read_link` target carries `Volume{GUID}`: that is a
+  volume mounted into a folder, and its GUID names the volume for the path and everything below
+  it. A junction or symlink to an ordinary folder names no volume and is passed over. With no such
+  ancestor the volume is the canonical path's prefix (`\\?\C:`, upper-cased; a `\\?\Volume{GUID}`
+  prefix reads as its GUID, so one volume has one name however the path spells it). The pure part
+  (`volume_mounts`: `VolumeGuid::within`, `nearest_mounted_volume` over a lookup of an ancestor's
+  reparse target, `identity_of`) is compiled and tested on every host. `volumes::is_mounted_among`
+  needs nothing else: a mounted folder's volume differs from its parent's, a folder below it
+  has its parent's (`library.md`). Nothing here reads the volume's serial number, so two volumes
+  are told apart by GUID or drive only.
 - **What the tag writer carries to its copy is the mode on Windows**: owner, hard-link count and
   extended attributes are `cfg(unix)` (`carries_what_the_file_did`), so NTFS alternate streams and
-  ACLs are not carried.
+  ACLs are not carried. No safe crate does it: `std::fs::copy` (`CopyFileExW`) carries streams
+  but not the security descriptor and cannot replace the writer's own staged copy, and the
+  security-descriptor and stream crates on crates.io are young, unreviewed wrappers; the
+  attributes stay in `docs/FEATURES.md`.
 - **A held file's lock is mandatory on Windows** (`LockFileEx`): `writer_of` still asks the lock
   first and a dead writer's is released by the system; with no `/proc` the pid stamp reads as
   living where the lock cannot be asked. **So nothing reads or writes a file its own run holds by
@@ -153,7 +171,19 @@ settle. `unsafe_code = "forbid"` holds: every Win32 and COM call goes through a 
   read-only `File::open`.
 - **Every root is `Naming::Portable` on Windows** (`Naming::of` reads no mount table there): the
   organiser writes the characters NTFS refuses as `-` and keeps a reserved device name apart
-  (`library.md`). Trailing dots and spaces are trimmed from every component on every platform, and a
+  (`library.md`).
+- **The organiser keeps a destination's whole path within `MAX_PATH`.** `Reach::of(root)` is
+  `Reach::legacy` on Windows (211 UTF-16 units: `MAX_PATH` 260 less the terminating NUL, less
+  `ROOM_FOR_DERIVED_NAMES`, 48 units for the staging, parked, delivery and undo names built
+  beside a file) and `Reach::UNLIMITED` elsewhere; it weighs the root (verbatim prefix and trailing
+  separators dropped, UTF-16 units) and every component, and `Reach::fit` takes a letter at a time
+  off the longest component (the extension, protected, never cut) until the whole fits, a
+  destination that cannot fit with a letter a component is `Refusal::OutOfReach`. Why cut rather
+  than write a `\\?\` path: `std` already prefixes a path past the limit itself for the calls our
+  code makes (no manifest or registry switch is involved), so writing would work, but Explorer,
+  the shell's recycle bin, taggers and most other programs open the library by its plain path and
+  fail past 260, and the catalog stores prefix-free paths (`windows_uri` drops `\\?\`) that
+  must stay openable by them. The weighing is in `reach.rs` and tested on every host. Trailing dots and spaces are trimmed from every component on every platform, and a
   case-insensitive collision is found by the probe `Claims` makes with `file_facts`.
 - **Deleting goes to the recycle bin** (`trashing::RecycleBin` over `trash::delete`); the hand-written
   freedesktop trash and the portal are Unix. A catalog with no trasher keeps the file
