@@ -609,10 +609,14 @@ struct PlayerScrubber: View {
                     .trackOutline()
                     .frame(height: grabbed ? Self.grabbedHeight : Self.restingHeight)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .simultaneousGesture(drag(across: width, of: duration, from: shown))
+                    .overlay {
+                        Color.clear
+                            .frame(height: Self.touchHeight)
+                            .contentShape(Rectangle())
+                            .simultaneousGesture(drag(across: width, of: duration, from: shown))
+                    }
             }
-            .frame(height: Self.touchHeight)
+            .frame(height: Self.grabbedHeight)
             .motion(.spring(duration: 0.3, bounce: 0.3), value: grabbed)
             .accessibilityElement()
             .accessibilityLabel("Song position")

@@ -527,6 +527,9 @@ every route change (a pair of headphones at the same rate included), not from th
   when it goes down**: each slider's `DragGesture` is a `simultaneousGesture` (as the lyrics pane's is) and reads its heading
   once it has moved 8 pt (`SliderDrag`, `MotionTests`), letting go of a drag mostly down and committing nothing; as an
   exclusive `.gesture` with no minimum distance, a swipe down that began on either 44 pt band never dismissed the cover.
+  **The scrubber lays out at its grabbed height** (14 pt) and its 44 pt touch area is an overlay
+  hanging past it above and below: laid out at 44 pt with the 7 pt bar centred, it stood about
+  18 pt of empty band between the titles and the bar.
   Its slider (like the volume row's) commits one seek on
   release, clears a drag the system cancelled through a `@GestureState` flag, and holds the scrubbed value, bar and times, until the clock comes within 1.5 s of it or four seconds pass (a pause and play straight after a seek keep the engine's lane busy and its snapshots late, and a shorter hold let the bar and times fall back to the old position and then jump to the new), the bar's flowed value set to it as the seek is sent and not moved by a reading that has not reached it.
   **The scrubber's bar flows between readings**: each new position read while playing animates
