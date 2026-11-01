@@ -27,6 +27,7 @@ pub enum Op {
     EndProcess,
     TellTheConsole,
     ReadConsoleMode,
+    ReadFileIdentity,
 }
 
 #[derive(Debug, thiserror::Error)]

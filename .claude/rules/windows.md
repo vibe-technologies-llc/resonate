@@ -312,10 +312,13 @@ Linux; what is Unix-only is gated per test with `#[cfg(unix)]`, never per suite,
   names are UTF-16 and a lone surrogate is not a name a tagger writes); directory modes (a folder
   unreadable, unsearchable or unwritable: the read-only attribute on a folder stops nothing, and a
   denying ACL, which `resonate-win32` could now write, is not written by the tests); a second filesystem (`/dev/shm`, `st_dev`: the three
-  organise tests that copy across it, and the volume-noting test); the in-place tag write's inode
-  identity (`an_ogg_comment_grown_and_shrunk_...`, `MetadataExt::ino`, no stable Windows file id);
+  organise tests that copy across it, and the volume-noting test);
   the signal tests (`kill -HUP`) and `terminal.rs` (a pseudo-terminal, `setsid`, termios), whose
   Windows counterpart is `console.rs`, below.
+- **A file's identity is its volume serial and file index on Windows.** `resonate_win32::file_identity`
+  (`GetFileInformationByHandle`) stands where Unix reads `dev` and `ino`, so the in-place Ogg comment
+  test (`an_ogg_comment_grown_and_shrunk_...`) proves a shrunk comment lands in the same file on both
+  (`a_file_written_in_place_keeps_its_identity_and_one_renamed_over_it_does_not`).
 - **`console.rs` drives `play` on a pseudo console of its own** (`resonate_win32::PseudoConsole`,
   the binary's dev-dependency with `console`): it starts `play` on thirty seconds of silence inside
   ConPTY, waits until the console's input mode has left line input and echo, tells it to leave by
@@ -327,8 +330,11 @@ Linux; what is Unix-only is gated per test with `#[cfg(unix)]`, never per suite,
   (`an_errand_run_inside_the_console`, which does nothing without `RESONATE_CONSOLE_ERRAND`): it
   prints `console-mode-<n>=<mode>.`, read back off the console's output with the escape sequences
   stripped, or sends the event. It skips where `resonate sinks` lists no `wasapi:` sink (the hosted
-  runner) or no pseudo console opens; a console closed under `play` (the hang-up's counterpart) is
-  not driven (`docs/FEATURES.md`).
+  runner) or no pseudo console opens. **A console closed under `play` is the hang-up's
+  counterpart** (`a_console_closed_under_play_leaves_it`): dropping the `PseudoConsole` is
+  `ClosePseudoConsole`, which sends `CTRL_CLOSE_EVENT` (`ctrlc`'s `termination` feature takes it as
+  the interrupt), and `play` must leave within the test's patience; nothing is asked of the console
+  afterwards, since it is gone.
 
 ## The settings text
 

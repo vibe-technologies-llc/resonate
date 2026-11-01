@@ -325,3 +325,44 @@ fn an_interrupt_leaves_play_with_the_console_as_it_found_it() {
 fn a_break_leaves_play_with_the_console_as_it_found_it() {
     told_to_leave(Telling::Break);
 }
+
+#[test]
+fn a_console_closed_under_play_leaves_it() {
+    if !has_an_audio_endpoint() {
+        eprintln!("skipped: no audio endpoint for play to play to");
+        return;
+    }
+    let Some(console) = Console::open() else {
+        eprintln!("skipped: no pseudo console to give play");
+        return;
+    };
+    let home = Home::new("closed");
+
+    let child = console.playing(&home);
+    let keyed = until(|| {
+        child.exit_code().ok().flatten().is_none() && !console.mode(&home).takes_a_line_at_a_time()
+    });
+    thread::sleep(SETTLED_FOR);
+    let still_playing = child
+        .exit_code()
+        .expect("the child to be waited on")
+        .is_none();
+    let shown_before = console.shown();
+    let Console {
+        console: pseudo,
+        typed,
+        shown: _,
+    } = console;
+    drop(pseudo);
+    drop(typed);
+    let code = left(&child);
+
+    assert!(
+        keyed,
+        "play never took the console a key at a time; it showed:\n{shown_before}"
+    );
+    assert!(
+        still_playing,
+        "play left before its console closed: {code:#x}"
+    );
+}

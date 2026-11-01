@@ -7,6 +7,8 @@ mod endpoint;
 #[cfg(windows)]
 mod error;
 #[cfg(windows)]
+mod files;
+#[cfg(windows)]
 mod identity;
 #[cfg(windows)]
 mod mmcss;
@@ -26,6 +28,7 @@ pub use crate::{
     counter::{PerformanceCounter, performance_counter},
     endpoint::{EndpointVolume, Level, VolumeWatch},
     error::{Error, Op, Result},
+    files::{FileIdentity, file_identity},
     identity::name_the_process,
     mmcss::ProAudioClass,
     security::carry_security,
