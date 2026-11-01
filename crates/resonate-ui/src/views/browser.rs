@@ -10,7 +10,7 @@ use std::{
 use gpui::{
     AnyElement, App, BoxShadow, ClickEvent, Context, Div, ElementId, FontWeight, MouseButton,
     MouseDownEvent, ObjectFit, Pixels, Point, Role, SharedString, Stateful, Window, anchored,
-    deferred, div, hsla, img, point, prelude::*, px, rgb, uniform_list,
+    deferred, div, img, point, prelude::*, px, rgb, uniform_list,
 };
 use resonate_core::{AlbumId, ArtistId, ArtistsDrawn, ReleaseTrackId, Span, TrackId};
 use resonate_engine::Placement;
@@ -535,7 +535,7 @@ impl RootView {
                     .rounded(px(8.0))
                     .group_hover(CELL_GROUP, |frame| {
                         frame.shadow(vec![gpui::BoxShadow {
-                            color: gpui::hsla(0.0, 0.0, 0.0, 0.5),
+                            color: theme::shadow(0.5),
                             offset: gpui::point(px(0.0), px(8.0)),
                             blur_radius: px(24.0),
                             spread_radius: px(0.0),
@@ -2741,7 +2741,7 @@ impl RootView {
                     .when(pressable, |frame| {
                         frame.group_hover(CELL_GROUP, |frame| {
                             frame.shadow(vec![gpui::BoxShadow {
-                                color: gpui::hsla(0.0, 0.0, 0.0, 0.5),
+                                color: theme::shadow(0.5),
                                 offset: gpui::point(px(0.0), px(8.0)),
                                 blur_radius: px(24.0),
                                 spread_radius: px(0.0),
@@ -3739,7 +3739,7 @@ fn detail_card(title: &'static str) -> Stateful<Div> {
         .border_1()
         .border_color(rgb(theme::outline()))
         .shadow(vec![BoxShadow {
-            color: hsla(0.0, 0.0, 0.0, 0.5),
+            color: theme::shadow(0.5),
             offset: point(px(0.0), px(6.0)),
             blur_radius: px(24.0),
             spread_radius: px(0.0),

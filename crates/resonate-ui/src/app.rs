@@ -15,8 +15,8 @@ use gpui::{
     WindowDecorations, WindowOptions, actions, px, size,
 };
 use resonate_core::{
-    Appearance, ArtistsDrawn, FrameSpan, Frames, HeadYaw, MediaLocation, Presence, ScrollbarMode,
-    SpeakerAngle, SpeakerElevation, Spectral, TrackId,
+    Appearance, ArtistsDrawn, DesktopLook, FrameSpan, Frames, HeadYaw, MediaLocation, Presence,
+    ScrollbarMode, SpeakerAngle, SpeakerElevation, Spectral, TrackId,
 };
 use resonate_engine::{
     ArtRead, BitRate, Command, CommandKind, Event, MediaInfo, NodeName, Outcome, OutputSettings,
@@ -947,6 +947,30 @@ pub struct Bus {
     pub raise: Receiver<()>,
     pub attention: Sender<bool>,
     pub followed: Receiver<Followed>,
+    pub look: DesktopLook,
+    pub desktop: Receiver<DesktopLook>,
+}
+
+fn follow_the_desktop_when_told(told: Receiver<DesktopLook>, cx: &mut App) {
+    let waiting = cx.background_executor().clone();
+    cx.spawn(async move |cx| {
+        loop {
+            match told.try_recv() {
+                Ok(look) => {
+                    cx.update(|cx| {
+                        theme::hear_the_desktop(look);
+                        cx.global::<ResonateApp>()
+                            .launcher
+                            .show(AppIcon::of(theme::worn()));
+                        cx.refresh_windows();
+                    });
+                }
+                Err(TryRecvError::Empty) => waiting.timer(QUIT_POLL).await,
+                Err(TryRecvError::Disconnected) => return,
+            }
+        }
+    })
+    .detach();
 }
 
 fn follow_when_told(told: Receiver<Followed>, cx: &mut App) {
@@ -1041,7 +1065,8 @@ pub fn run(
     let copying = Copying::default();
     let copying_when_closed = copying.clone();
     theme::wear(appearance);
-    stored.launcher.show(AppIcon::of(appearance));
+    theme::hear_the_desktop(bus.look);
+    stored.launcher.show(AppIcon::of(theme::worn()));
 
     let failure = Rc::new(RefCell::new(None));
     let recorded = Rc::clone(&failure);
@@ -1115,6 +1140,7 @@ pub fn run(
         close_when_asked(bus.quit, cx);
         raise_when_asked(bus.raise, cx);
         follow_when_told(bus.followed, cx);
+        follow_the_desktop_when_told(bus.desktop, cx);
         quit_once_the_last_window_closes(cx);
 
         let opening_size = stored

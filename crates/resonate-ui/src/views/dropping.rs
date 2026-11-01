@@ -5,8 +5,8 @@ use std::{
 };
 
 use gpui::{
-    AnimationElement, BoxShadow, Context, Div, ExternalPaths, SharedString, Stateful, div, hsla,
-    point, prelude::*, px, relative, rgb, rgba,
+    AnimationElement, BoxShadow, Context, Div, ExternalPaths, SharedString, Stateful, div, point,
+    prelude::*, px, relative, rgb, rgba,
 };
 use parking_lot::Mutex;
 use resonate_core::names_audio;
@@ -562,7 +562,7 @@ impl RootView {
             .border_dashed()
             .border_color(rgb(ink))
             .shadow(vec![BoxShadow {
-                color: hsla(0.0, 0.0, 0.0, 0.5),
+                color: theme::shadow(0.5),
                 offset: point(px(0.0), px(16.0)),
                 blur_radius: px(48.0),
                 spread_radius: px(0.0),
@@ -664,7 +664,7 @@ impl RootView {
                         .border_1()
                         .border_color(rgb(theme::outline()))
                         .shadow(vec![BoxShadow {
-                            color: hsla(0.0, 0.0, 0.0, 0.45),
+                            color: theme::shadow(0.45),
                             offset: point(px(0.0), px(4.0)),
                             blur_radius: px(16.0),
                             spread_radius: px(0.0),

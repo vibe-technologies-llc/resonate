@@ -2,8 +2,8 @@ use std::{collections::VecDeque, time::Duration};
 
 use gpui::{
     Animation, AnimationElement, AnimationExt, App, BoxShadow, Context, Div, FocusHandle, Global,
-    Pixels, SharedString, Task, Window, div, ease_in_out, ease_out_quint, hsla, point, prelude::*,
-    px, rgb,
+    Pixels, SharedString, Task, Window, div, ease_in_out, ease_out_quint, point, prelude::*, px,
+    rgb,
 };
 use resonate_engine::{Cause, CommandKind};
 
@@ -296,7 +296,7 @@ pub(crate) fn drawn(
                 .border_1()
                 .border_color(rgb(theme::outline()))
                 .shadow(vec![BoxShadow {
-                    color: hsla(0.0, 0.0, 0.0, 0.45),
+                    color: theme::shadow(0.45),
                     offset: point(px(0.0), px(4.0)),
                     blur_radius: px(16.0),
                     spread_radius: px(0.0),

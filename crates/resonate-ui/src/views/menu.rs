@@ -8,7 +8,7 @@ use std::{
 use gpui::{
     AnyElement, App, Bounds, BoxShadow, ClickEvent, Context, Div, ElementId, Global, MouseButton,
     MouseDownEvent, Pixels, Point, Role, SharedString, Stateful, Window, anchored, canvas,
-    deferred, div, hsla, point, prelude::*, px, rgb,
+    deferred, div, point, prelude::*, px, rgb,
 };
 use resonate_core::{AlbumId, ArtistId, FrameSpan, MediaLocation, TrackId};
 use resonate_engine::Placement;
@@ -310,7 +310,7 @@ impl RootView {
             .border_1()
             .border_color(rgb(theme::outline()))
             .shadow(vec![BoxShadow {
-                color: hsla(0.0, 0.0, 0.0, 0.5),
+                color: theme::shadow(0.5),
                 offset: point(px(0.0), px(6.0)),
                 blur_radius: px(24.0),
                 spread_radius: px(0.0),

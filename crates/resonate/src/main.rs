@@ -2896,6 +2896,8 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     zoning::restore(&zones, &library, &kept_zones);
     let listens = listen::in_the_window(&config, opener.teller());
     let desktop = the_desktop_asks(&config);
+    let (hears, heard) = crossbeam_channel::unbounded();
+    watch_the_desktop(hears);
     let presenter = Arc::new(discord::start(&player, Some(&library), &config));
     #[cfg(windows)]
     let _awake = {
@@ -3022,6 +3024,8 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
         },
         config.appearance_where_the_desktop_asks(desktop.more_contrast),
         resonate_ui::Bus {
+            look: desktop.look,
+            desktop: heard,
             quit: quitting,
             raise: raising,
             attention: attending,
@@ -3041,11 +3045,14 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
 struct DesktopAsks {
     more_contrast: bool,
     reduces_motion: bool,
+    look: resonate_core::DesktopLook,
 }
 
 #[cfg(feature = "ui")]
 fn the_desktop_asks(config: &Config) -> DesktopAsks {
-    if config.theme.is_some() && config.reduced_motion.is_some() {
+    let follows = config.appearance_where_the_desktop_asks(false).follows;
+    if config.theme.is_some() && config.reduced_motion.is_some() && !follows.scheme && !follows.text
+    {
         return DesktopAsks::default();
     }
 
@@ -3054,6 +3061,29 @@ fn the_desktop_asks(config: &Config) -> DesktopAsks {
     DesktopAsks {
         more_contrast: preferences.contrast == resonate_mpris::Contrast::More,
         reduces_motion: preferences.motion == resonate_mpris::Motion::Reduced,
+        look: look_of(preferences),
+    }
+}
+
+#[cfg(feature = "ui")]
+fn look_of(preferences: resonate_mpris::Preferences) -> resonate_core::DesktopLook {
+    resonate_core::DesktopLook {
+        ground: match preferences.scheme {
+            resonate_mpris::Scheme::Dark => Some(resonate_core::Ground::Dark),
+            resonate_mpris::Scheme::Light => Some(resonate_core::Ground::Light),
+            resonate_mpris::Scheme::Unsaid => None,
+        },
+        text_scale: preferences.text_scale,
+    }
+}
+
+#[cfg(feature = "ui")]
+fn watch_the_desktop(told: crossbeam_channel::Sender<resonate_core::DesktopLook>) {
+    let watching = resonate_mpris::watch_the_desktop(move |preferences| {
+        let _ = told.send(look_of(preferences));
+    });
+    if let Err(error) = watching {
+        tracing::debug!(%error, "the desktop's colour scheme and text scale are read once, at start");
     }
 }
 

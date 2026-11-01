@@ -298,11 +298,28 @@ is never named.
     blue; `dithered` amber; `failure` red; `suspect` peach; `converted`, `lossy` muted grey. One
     colour, one meaning in every palette. `theme::tinted` makes a colour a wash; `theme::selection` is
     the accent worn thin.
-- **Every theme is dark; contrast tests hold each readable.** Seventeen (`Theme::ALL`), High Contrast last (pure black ground, white text, every bar below at 7:1, drawn edges at 4.5:1; `Theme::HighContrast`, `high-contrast`): Resonate's own
-  warm near-black, Midnight, Graphite, AMOLED, Plum, Rosé Pine, Rosé Pine Moon, Catppuccin Mocha,
-  Macchiato, Frappé, Nord, Gruvbox Dark, Tokyo Night, Dracula, One Dark, Solarized Dark. Each carries
-  the same seven accents (`Accent::ALL`: Mauve, Blue, Teal, Green, Amber, Peach, Red) under its own
-  hex.
+- **Seventeen themes are dark and two are light; contrast tests hold each readable.** Nineteen
+  (`Theme::ALL`), the two light ones last: dark are Resonate's own warm near-black, Midnight,
+  Graphite, AMOLED, Plum, Rosé Pine, Rosé Pine Moon, Catppuccin Mocha, Macchiato, Frappé, Nord,
+  Gruvbox Dark, Tokyo Night, Dracula, One Dark, Solarized Dark and High Contrast (pure black
+  ground, white text, every bar below at 7:1, drawn edges at 4.5:1; `high-contrast`); light are
+  Resonate Light (`resonate-light`, warm paper ground, the same mauve native accent) and High
+  Contrast Light (`high-contrast-light`, pure white ground, black text, the same 7:1 and 4.5:1
+  bars). Each carries the same seven accents (`Accent::ALL`: Mauve, Blue, Teal, Green, Amber,
+  Peach, Red) under its own hex; on a light ground they are drawn deep (lightness .26, and .16 in
+  High Contrast Light) because an accent is also text and must reach 4.5:1 (7:1) on the panes.
+  - **A theme has a `Ground` and a counterpart on the other.** `Theme::ground()`, `counterpart()`
+    (High Contrast and High Contrast Light are each other's, Resonate Light's is Resonate, every
+    other dark theme's is Resonate Light) and `on(ground)` (the theme itself where it already
+    stands on that ground) live in core, tested there.
+  - **On a light ground everything that assumed a dark one reads through the ground.** A shadow is
+    `theme::shadow(strength)` (black, its alpha 40 per cent of the dark figure on a light ground;
+    no view builds an `hsla` of its own), a scrim is the palette's own near-ground colour (white-ish
+    on light, `pitch` on dark, the ladder's `scrim` step), the hover step goes *down* from raised
+    on light as it goes up on dark, and ink on an accent is still `ink_over`'s pitch-or-paper pick.
+    The waveform, spectrogram ramp (`surface` through the accent to `text`), visualiser and
+    selection wash are all drawn from palette colours and need nothing of their own. The launcher
+    icon is recoloured from the worn palette's accent as ever (`AppIcon::of(theme::worn())`).
   - **A fresh install wears the palette's own accent** (`native`; `Appearance::DEFAULT` names none);
     the Colour card offers it as a ringed swatch ahead of the seven; choosing none again =
     `Setting::Accent(None)`, removing the `accent` key. Theme cards are `theme_swatch()` wide, four a
@@ -319,11 +336,13 @@ is never named.
     (`THIRD_INK`); Nord's aurora red is drawn a fifth of the way to `nord6`.
 - **A palette is quoted or ramped; hand-writing twenty is how one drifts.** Quoted = a published
   palette's own hexes. Ramped = `ramp` over a `Recipe` (native accent, hue, chroma, alarm, `LitAt`)
-  through a fixed lightness ladder, then all seven accents at the canonical hues. Midnight, Graphite,
-  Plum are recipes. Flavours are `static LazyLock`s. `hsl` is pinned by
-  `a_ramped_palette_reads_back_the_lightness_it_was_asked_for`. The three share the seven *hues* (an
+  through a fixed lightness ladder (`Ladder`: `AFTER_DARK`, `BY_DAYLIGHT`, `IN_FULL_LIGHT`; a recipe
+  names its own), then all seven accents at the canonical hues. Midnight, Graphite, Plum, Resonate
+  Light and High Contrast Light are recipes. Flavours are `static LazyLock`s. `hsl` is pinned by
+  `a_ramped_palette_reads_back_the_lightness_it_was_asked_for`. The five share the seven *hues* (an
   accent is what a colour *means*) but each lights them via its own `LitAt`
-  (`each_ramped_palette_lights_the_accents_its_own_way`).
+  (`each_ramped_palette_lights_the_accents_its_own_way` for the dark three; `LIT_ON_PAPER`,
+  `LIT_ON_WHITE` for the light two, which the contrast tests hold).
 - **Two faces; figures always in the second.** Inter for text, JetBrains Mono for anything compared
   across rows (clocks, rates, counts, bitrates, tag values). `theme::mono` builds the `Font` with
   `tnum`; `kit::figure` is the one way to draw one. Neither face is embedded, so **the drawn family is
@@ -719,6 +738,29 @@ is never named.
     Contrast and Reduce motion from it only where `theme` / `reduced-motion` are not stored
     (`Config::appearance_where_the_desktop_asks`, `reduces_motion_where_the_desktop_asks`). The
     visualiser draws one still frame under reduced motion and has a pause key.
+  - **The colour scheme and the text scale follow the desktop live, and a hand choice ends it.**
+    The same read also takes `color-scheme` (1 dark, 2 light, anything else says nothing) and the
+    text scale (GNOME's `org.gnome.desktop.interface` `text-scaling-factor`, else KDE's
+    `org.kde.kdeglobals.General` `font` point size against its ordinary 10); `watch_the_desktop`
+    listens to the portal's `SettingChanged` for those namespaces on a `resonate-desktop` thread and
+    tells the window each changed `Preferences`, which the binary turns into a
+    `resonate_core::DesktopLook` (`Bus::look` at start, `Bus::desktop` after). `Appearance` is the
+    *chosen* look (`theme`, `accent`, `text_size`, `follows: Following { scheme, text }`) and
+    `Appearance::seen_by(look)` the *worn* one: a following scheme wears `theme.on(ground)`, a
+    following text size `TextSize::nearest(scale)` (the nearest of the five, so no layout is ever
+    drawn at a scale the tests do not hold; below Small and above Largest it clamps), a desktop that
+    says nothing leaves the chosen theme and the hand size as the fallback. `theme::chosen()` is the
+    former and `theme::worn()` what is drawn; `theme::wear` takes the chosen, `theme::hear_the_desktop`
+    the look, and each recomputes under the one lock. The cards and size choices mark the *worn*
+    value; the two switches show the chosen `follows`. **Choosing a palette or a size by hand turns
+    its following off** (writing `theme` and `follow-desktop-scheme = false`, or `text-size` and
+    `follow-desktop-text-size = false`); turning a switch on or off keeps what is worn at that moment
+    as the chosen theme or size, so nothing jumps. **Default**: a switch is on where its choice is not
+    stored (`Config::appearance_where_the_desktop_asks`: `follow-desktop-scheme` true where `theme`
+    is unset, `follow-desktop-text-size` true where `text-size` is unset), so a fresh install on a
+    light, scaled desktop wears Resonate Light at the nearest size and an install with a stored
+    palette or size is as it was. Held by `the_desktop_light_wears_the_counterpart_and_its_scale_the_nearest_size`
+    and `the_desktop_is_not_heard_where_the_listener_wears_a_palette_and_size_of_their_own`.
 - **A playlist row no scan has seen draws as a queued one does.** `views/listing.rs` owns the `Row`
   the queue and playlists panes build: the scanned `Track` where the library has one, `Player::media`
   where not, the file stem only where the file cannot be read. The play count rides on the same `Row`
@@ -1784,7 +1826,8 @@ is never named.
   border when worn. An accent is a round `kit::dot_swatch` with a check in `theme::ink_over`'s ink.
   Appearance is the one category with nothing behind it but the window: a choice is worn via
   `theme::wear`, saved through the `Settings` seam, redrawn by `cx.refresh_windows()`; no `Command`.
-  Groups in order: *Colour*; *Layout* (text size: Small, Medium, Large and Larger, roots of 12, 13.5, 15.5
+  Groups in order: *Colour* (a switch *Follow the desktop's light or dark setting*, the palette cards,
+  the accents); *Layout* (a switch *Follow the desktop's text size*, then the text size: Small, Medium, Large and Larger, roots of 12, 13.5, 15.5
   and 19 against the 13.5 middling one, so Larger reads at 141 per cent, and Largest at 27, 200 per cent); *Motion* (`reduced-motion`,
   `ResonateApp::reduced_motion`, `RootView::reduce_motion`; `motion.md`); *Window buttons* (worn via
   `RootView::show_window_buttons` onto the global, not `theme`); *The volume wheel*

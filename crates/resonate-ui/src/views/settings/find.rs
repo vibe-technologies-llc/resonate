@@ -609,8 +609,12 @@ impl Group {
                 "rich presence status activity cover art album icon asset progress bar elapsed \
                  paused details"
             }
-            Self::Colour => "theme accent palette dark swatch high contrast contrast accessibility",
-            Self::Layout => "text size type scale larger largest smaller density",
+            Self::Colour => {
+                "theme accent palette dark light day night swatch high contrast contrast accessibility follow desktop scheme"
+            }
+            Self::Layout => {
+                "text size type scale larger largest smaller density follow desktop scaling"
+            }
             Self::Motion => {
                 "animation animations reduced reduce motion fade slide glide transition still \
                  vestibular accessibility"
@@ -738,8 +742,12 @@ impl Group {
                 SettingKey::DiscordProgress,
                 SettingKey::DiscordPaused,
             ],
-            Self::Colour => &[SettingKey::Theme, SettingKey::Accent],
-            Self::Layout => &[SettingKey::TextSize],
+            Self::Colour => &[
+                SettingKey::Theme,
+                SettingKey::Accent,
+                SettingKey::FollowDesktopScheme,
+            ],
+            Self::Layout => &[SettingKey::TextSize, SettingKey::FollowDesktopTextSize],
             Self::Motion => &[SettingKey::ReducedMotion],
             Self::WindowButtons => &[SettingKey::MinimiseButton, SettingKey::MaximiseButton],
             Self::VolumeWheel => &[SettingKey::ScrollVolume],

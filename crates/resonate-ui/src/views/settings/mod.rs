@@ -23,7 +23,7 @@ use gpui::{
     AnyElement, ClickEvent, Context, Div, FocusHandle, FontWeight, MouseButton, Pixels, Point,
     Role, SharedString, Stateful, Window, canvas, div, prelude::*, px, relative, rgb,
 };
-use resonate_core::{Appearance, HeadYaw, SpeakerAngle, SpeakerElevation};
+use resonate_core::{Appearance, Following, HeadYaw, SpeakerAngle, SpeakerElevation};
 use resonate_library::DEFAULT_LAYOUT;
 use resonate_listen::{CLIP_BY_DEFAULT, Listening};
 
@@ -560,14 +560,22 @@ impl RootView {
                 Appearance {
                     theme: Appearance::DEFAULT.theme,
                     accent: Appearance::DEFAULT.accent,
-                    ..theme::worn()
+                    follows: Following {
+                        scheme: Appearance::DEFAULT.follows.scheme,
+                        ..theme::chosen().follows
+                    },
+                    ..theme::chosen()
                 },
                 cx,
             ),
             Group::Layout => self.dress(
                 Appearance {
                     text_size: Appearance::DEFAULT.text_size,
-                    ..theme::worn()
+                    follows: Following {
+                        text: Appearance::DEFAULT.follows.text,
+                        ..theme::chosen().follows
+                    },
+                    ..theme::chosen()
                 },
                 cx,
             ),
@@ -729,7 +737,7 @@ impl RootView {
 
         Standing {
             output: self.player.read(cx).output_settings().clone(),
-            appearance: theme::worn(),
+            appearance: theme::chosen(),
             online,
             after_scan,
             enrich_on_metered,
@@ -1058,7 +1066,7 @@ impl RootView {
         theme::wear(dressed);
         cx.global::<ResonateApp>()
             .launcher
-            .show(AppIcon::of(dressed));
+            .show(AppIcon::of(theme::worn()));
         cx.refresh_windows();
     }
 

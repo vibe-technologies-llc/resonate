@@ -179,6 +179,8 @@ pub enum SettingKey {
     Theme,
     Accent,
     TextSize,
+    FollowDesktopScheme,
+    FollowDesktopTextSize,
     Online,
     EnrichAfterScan,
     EnrichOnMetered,
@@ -263,7 +265,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 107] = [
+    pub const ALL: [Self; 109] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -290,6 +292,8 @@ impl SettingKey {
         Self::Theme,
         Self::Accent,
         Self::TextSize,
+        Self::FollowDesktopScheme,
+        Self::FollowDesktopTextSize,
         Self::Online,
         Self::EnrichAfterScan,
         Self::EnrichOnMetered,
@@ -400,6 +404,8 @@ pub enum Setting {
     Theme(Theme),
     Accent(Option<Accent>),
     TextSize(TextSize),
+    FollowDesktopScheme(bool),
+    FollowDesktopTextSize(bool),
     Online(bool),
     EnrichAfterScan(bool),
     EnrichOnMetered(bool),
@@ -524,6 +530,8 @@ impl Setting {
             Self::Theme(_) => SettingKey::Theme,
             Self::Accent(_) => SettingKey::Accent,
             Self::TextSize(_) => SettingKey::TextSize,
+            Self::FollowDesktopScheme(_) => SettingKey::FollowDesktopScheme,
+            Self::FollowDesktopTextSize(_) => SettingKey::FollowDesktopTextSize,
             Self::Online(_) => SettingKey::Online,
             Self::EnrichAfterScan(_) => SettingKey::EnrichAfterScan,
             Self::EnrichOnMetered(_) => SettingKey::EnrichOnMetered,

@@ -1,7 +1,7 @@
 use gpui::{Context, Div, FontWeight, SharedString, Stateful, Window, div, prelude::*, px, rgb};
 use resonate_core::{
-    Accent, Appearance, ScrollbarMode, Spectral, SpectrumBands, SpectrumFalls, SpectrumFloor,
-    SpectrumTilt, TextSize, Theme,
+    Accent, Appearance, Following, ScrollbarMode, Spectral, SpectrumBands, SpectrumFalls,
+    SpectrumFloor, SpectrumTilt, TextSize, Theme,
 };
 
 use crate::{
@@ -21,6 +21,18 @@ const KEEPS_ITS_OWN: &str = "Each palette draws each accent in its own tones, an
 const ITS_OWN: &str = "Whichever accent this palette was built around";
 
 const ITS_OWN_ID: &str = "accent-of-the-palette";
+
+const FOLLOW_SCHEME_ID: &str = "follow-the-desktop-scheme";
+
+const FOLLOW_TEXT_SIZE_ID: &str = "follow-the-desktop-text-size";
+
+const FOLLOW_SCHEME_NOTE: &str = "A palette with a light or dark counterpart is worn as the one the \
+                                  desktop asks for; choosing a palette below wears that palette \
+                                  alone.";
+
+const FOLLOW_TEXT_SIZE_NOTE: &str = "The nearest of the sizes below to the desktop's own text scale; \
+                                     choosing a size below wears that size alone, and it is the one \
+                                     worn when the desktop does not say.";
 
 const MINIMISE_ID: &str = "show-the-minimise-button";
 
@@ -176,6 +188,7 @@ impl Choice for SpectrumFalls {
 impl RootView {
     pub(super) fn colour_group(&mut self, cx: &mut Context<Self>) -> Div {
         let worn = theme::worn();
+        let following = theme::chosen().follows.scheme;
         let mut shelf = div().flex().flex_wrap().gap_2();
         for palette in Theme::ALL {
             shelf = shelf.child(self.palette(palette, worn, cx));
@@ -192,6 +205,18 @@ impl RootView {
         }
 
         kit::section_body()
+            .child(self.in_the_ring(
+                FOLLOW_SCHEME_ID,
+                switch_row(
+                    "Follow the desktop's light or dark setting",
+                    "Wear the light or dark counterpart of the palette as the desktop asks",
+                    following,
+                    FOLLOW_SCHEME_ID,
+                ),
+                move |this, _, cx| this.follow_the_desktop_scheme(!following, cx),
+                cx,
+            ))
+            .child(note(FOLLOW_SCHEME_NOTE))
             .child(kit::field("Theme", shelf))
             .child(kit::field(
                 "Accent",
@@ -209,6 +234,15 @@ impl RootView {
         let dressed = Appearance {
             theme: palette,
             ..worn
+        };
+        let kept = theme::chosen();
+        let wearing = Appearance {
+            theme: palette,
+            follows: Following {
+                scheme: false,
+                ..kept.follows
+            },
+            ..kept
         };
 
         self.in_the_ring(
@@ -249,7 +283,10 @@ impl RootView {
                         )
                         .child(palette.label()),
                 ),
-            move |this, _, cx| this.wear(dressed, &Setting::Theme(palette), cx),
+            move |this, _, cx| {
+                this.wear(wearing, &Setting::Theme(palette), cx);
+                this.store(&Setting::FollowDesktopScheme(false), cx);
+            },
             cx,
         )
     }
@@ -260,8 +297,12 @@ impl RootView {
         worn: Appearance,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
-        let dressed = Appearance { accent, ..worn };
-        let colour = theme::sample(dressed).accent;
+        let shown = Appearance { accent, ..worn };
+        let dressed = Appearance {
+            accent,
+            ..theme::chosen()
+        };
+        let colour = theme::sample(shown).accent;
         let id = accent.map_or(ITS_OWN_ID, Accent::as_str);
         let saying = accent.map_or(ITS_OWN, Accent::label);
 
@@ -279,25 +320,77 @@ impl RootView {
 
     pub(super) fn layout_group(&mut self, cx: &mut Context<Self>) -> Div {
         let worn = theme::worn();
+        let following = theme::chosen().follows.text;
 
-        kit::section_body().child(kit::field(
-            "Text size",
-            self.choices(
-                "text-size",
-                worn.text_size,
+        kit::section_body()
+            .child(self.in_the_ring(
+                FOLLOW_TEXT_SIZE_ID,
+                switch_row(
+                    "Follow the desktop's text size",
+                    "Draw the text at the size nearest the desktop's own text scale",
+                    following,
+                    FOLLOW_TEXT_SIZE_ID,
+                ),
+                move |this, _, cx| this.follow_the_desktop_text_size(!following, cx),
                 cx,
-                |this, size: TextSize, cx| {
-                    this.wear(
-                        Appearance {
-                            text_size: size,
-                            ..theme::worn()
-                        },
-                        &Setting::TextSize(size),
-                        cx,
-                    );
-                },
-            ),
-        ))
+            ))
+            .child(note(FOLLOW_TEXT_SIZE_NOTE))
+            .child(kit::field(
+                "Text size",
+                self.choices(
+                    "text-size",
+                    worn.text_size,
+                    cx,
+                    |this, size: TextSize, cx| {
+                        let kept = theme::chosen();
+                        this.wear(
+                            Appearance {
+                                text_size: size,
+                                follows: Following {
+                                    text: false,
+                                    ..kept.follows
+                                },
+                                ..kept
+                            },
+                            &Setting::TextSize(size),
+                            cx,
+                        );
+                        this.store(&Setting::FollowDesktopTextSize(false), cx);
+                    },
+                ),
+            ))
+    }
+
+    pub(crate) fn follow_the_desktop_scheme(&mut self, follows: bool, cx: &mut Context<Self>) {
+        let worn = theme::worn();
+        let kept = theme::chosen();
+        let dressed = Appearance {
+            theme: worn.theme,
+            follows: Following {
+                scheme: follows,
+                ..kept.follows
+            },
+            ..kept
+        };
+
+        self.wear(dressed, &Setting::Theme(worn.theme), cx);
+        self.store(&Setting::FollowDesktopScheme(follows), cx);
+    }
+
+    pub(crate) fn follow_the_desktop_text_size(&mut self, follows: bool, cx: &mut Context<Self>) {
+        let worn = theme::worn();
+        let kept = theme::chosen();
+        let dressed = Appearance {
+            text_size: worn.text_size,
+            follows: Following {
+                text: follows,
+                ..kept.follows
+            },
+            ..kept
+        };
+
+        self.wear(dressed, &Setting::TextSize(worn.text_size), cx);
+        self.store(&Setting::FollowDesktopTextSize(follows), cx);
     }
 
     pub(super) fn motion_group(&mut self, cx: &mut Context<Self>) -> Div {

@@ -2,7 +2,7 @@ use std::sync::{Arc, LazyLock};
 
 use gpui::{Font, FontFeatures, FontStyle, FontWeight, Pixels, Rgba, SharedString, Size, px, rgba};
 use parking_lot::RwLock;
-use resonate_core::{Accent, Appearance, Theme};
+use resonate_core::{Accent, Appearance, DesktopLook, Ground, Theme};
 
 struct Accents {
     mauve: u32,
@@ -72,6 +72,22 @@ struct Recipe {
     chroma: f32,
     alarm: f32,
     accents: LitAt,
+    ladder: &'static Ladder,
+}
+
+struct Ladder {
+    ground: f32,
+    below: f32,
+    lifted: f32,
+    under_the_pointer: f32,
+    hairline: f32,
+    drawn_edge: f32,
+    body_ink: f32,
+    second_ink: f32,
+    third_ink: f32,
+    pitch: f32,
+    paper: f32,
+    scrim: f32,
 }
 
 #[derive(Clone, Copy)]
@@ -100,18 +116,58 @@ const LIT_ON_PLUM: LitAt = LitAt {
     saturation: 0.78,
     lightness: 0.68,
 };
+const LIT_ON_PAPER: LitAt = LitAt {
+    saturation: 0.65,
+    lightness: 0.26,
+};
+const LIT_ON_WHITE: LitAt = LitAt {
+    saturation: 0.80,
+    lightness: 0.16,
+};
 
-const GROUND: f32 = 0.082;
-const BELOW_THE_GROUND: f32 = 0.056;
-const LIFTED: f32 = 0.112;
-const UNDER_THE_POINTER: f32 = 0.152;
-const HAIRLINE: f32 = 0.135;
-const DRAWN_EDGE: f32 = 0.44;
-const BODY_INK: f32 = 0.935;
-const SECOND_INK: f32 = 0.660;
-const THIRD_INK: f32 = 0.525;
-const PITCH: f32 = 0.040;
-const PAPER: f32 = 0.968;
+static AFTER_DARK: Ladder = Ladder {
+    ground: 0.082,
+    below: 0.056,
+    lifted: 0.112,
+    under_the_pointer: 0.152,
+    hairline: 0.135,
+    drawn_edge: 0.44,
+    body_ink: 0.935,
+    second_ink: 0.660,
+    third_ink: 0.525,
+    pitch: 0.040,
+    paper: 0.968,
+    scrim: 0.040,
+};
+static BY_DAYLIGHT: Ladder = Ladder {
+    ground: 0.965,
+    below: 0.940,
+    lifted: 0.990,
+    under_the_pointer: 0.915,
+    hairline: 0.880,
+    drawn_edge: 0.480,
+    body_ink: 0.100,
+    second_ink: 0.340,
+    third_ink: 0.400,
+    pitch: 0.040,
+    paper: 0.968,
+    scrim: 0.985,
+};
+static IN_FULL_LIGHT: Ladder = Ladder {
+    ground: 1.0,
+    below: 1.0,
+    lifted: 0.970,
+    under_the_pointer: 0.930,
+    hairline: 0.400,
+    drawn_edge: 0.340,
+    body_ink: 0.0,
+    second_ink: 0.100,
+    third_ink: 0.180,
+    pitch: 0.0,
+    paper: 1.0,
+    scrim: 1.0,
+};
+const LIGHT_SHADOW_SHARE: f32 = 0.4;
 const SCRIM_ALPHA: u32 = 0xea;
 const INK_CHROMA: f32 = 0.34;
 
@@ -134,24 +190,24 @@ fn hsl(hue: f32, saturation: f32, lightness: f32) -> u32 {
 }
 
 fn ramp(recipe: &Recipe) -> Flavour {
+    let ladder = recipe.ladder;
     let surface = |lightness: f32| hsl(recipe.hue, recipe.chroma, lightness);
     let ink = |lightness: f32| hsl(recipe.hue, recipe.chroma * INK_CHROMA, lightness);
-    let pitch = surface(PITCH);
 
     Flavour {
         native: recipe.native,
-        background: surface(GROUND),
-        surface: surface(BELOW_THE_GROUND),
-        raised: surface(LIFTED),
-        hover: surface(UNDER_THE_POINTER),
-        border: surface(HAIRLINE),
-        outline: surface(DRAWN_EDGE),
-        text: ink(BODY_INK),
-        muted: ink(SECOND_INK),
-        faint: ink(THIRD_INK),
-        pitch,
-        paper: ink(PAPER),
-        scrim: (pitch << 8) | SCRIM_ALPHA,
+        background: surface(ladder.ground),
+        surface: surface(ladder.below),
+        raised: surface(ladder.lifted),
+        hover: surface(ladder.under_the_pointer),
+        border: surface(ladder.hairline),
+        outline: surface(ladder.drawn_edge),
+        text: ink(ladder.body_ink),
+        muted: ink(ladder.second_ink),
+        faint: ink(ladder.third_ink),
+        pitch: surface(ladder.pitch),
+        paper: ink(ladder.paper),
+        scrim: (surface(ladder.scrim) << 8) | SCRIM_ALPHA,
         alarm: hsl(recipe.alarm, 0.62, 0.55),
         accents: Accents::ramped(recipe.accents),
     }
@@ -190,6 +246,7 @@ static MIDNIGHT: LazyLock<Flavour> = LazyLock::new(|| {
         chroma: 0.17,
         alarm: RED_HUE,
         accents: LIT_ON_NAVY,
+        ladder: &AFTER_DARK,
     })
 });
 
@@ -200,6 +257,7 @@ static GRAPHITE: LazyLock<Flavour> = LazyLock::new(|| {
         chroma: 0.0,
         alarm: RED_HUE,
         accents: LIT_ON_GREY,
+        ladder: &AFTER_DARK,
     })
 });
 
@@ -236,6 +294,7 @@ static PLUM: LazyLock<Flavour> = LazyLock::new(|| {
         chroma: 0.15,
         alarm: RED_HUE,
         accents: LIT_ON_PLUM,
+        ladder: &AFTER_DARK,
     })
 });
 
@@ -551,6 +610,28 @@ static HIGH_CONTRAST: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     },
 });
 
+static RESONATE_LIGHT: LazyLock<Flavour> = LazyLock::new(|| {
+    ramp(&Recipe {
+        native: Accent::Mauve,
+        hue: 0.10,
+        chroma: 0.10,
+        alarm: RED_HUE,
+        accents: LIT_ON_PAPER,
+        ladder: &BY_DAYLIGHT,
+    })
+});
+
+static HIGH_CONTRAST_LIGHT: LazyLock<Flavour> = LazyLock::new(|| {
+    ramp(&Recipe {
+        native: Accent::Blue,
+        hue: 0.0,
+        chroma: 0.0,
+        alarm: RED_HUE,
+        accents: LIT_ON_WHITE,
+        ladder: &IN_FULL_LIGHT,
+    })
+});
+
 fn flavour(theme: Theme) -> &'static Flavour {
     match theme {
         Theme::Resonate => &RESONATE,
@@ -570,10 +651,14 @@ fn flavour(theme: Theme) -> &'static Flavour {
         Theme::OneDark => &ONE_DARK,
         Theme::SolarizedDark => &SOLARIZED_DARK,
         Theme::HighContrast => &HIGH_CONTRAST,
+        Theme::Light => &RESONATE_LIGHT,
+        Theme::HighContrastLight => &HIGH_CONTRAST_LIGHT,
     }
 }
 
 struct Worn {
+    chosen: Appearance,
+    look: DesktopLook,
     appearance: Appearance,
     flavour: &'static Flavour,
     accent: u32,
@@ -581,10 +666,13 @@ struct Worn {
 }
 
 impl Worn {
-    fn of(appearance: Appearance) -> Self {
+    fn of(chosen: Appearance, look: DesktopLook) -> Self {
+        let appearance = chosen.seen_by(look);
         let flavour = flavour(appearance.theme);
 
         Self {
+            chosen,
+            look,
             appearance,
             flavour,
             accent: flavour.accent(appearance.accent),
@@ -593,14 +681,38 @@ impl Worn {
     }
 }
 
-static WORN: LazyLock<RwLock<Worn>> = LazyLock::new(|| RwLock::new(Worn::of(Appearance::DEFAULT)));
+static WORN: LazyLock<RwLock<Worn>> =
+    LazyLock::new(|| RwLock::new(Worn::of(Appearance::DEFAULT, DesktopLook::default())));
 
-pub fn wear(appearance: Appearance) {
-    *WORN.write() = Worn::of(appearance);
+pub fn wear(chosen: Appearance) {
+    let mut worn = WORN.write();
+    *worn = Worn::of(chosen, worn.look);
+}
+
+pub fn hear_the_desktop(look: DesktopLook) {
+    let mut worn = WORN.write();
+    *worn = Worn::of(worn.chosen, look);
 }
 
 pub fn worn() -> Appearance {
     WORN.read().appearance
+}
+
+pub fn chosen() -> Appearance {
+    WORN.read().chosen
+}
+
+pub(crate) fn ground() -> Ground {
+    WORN.read().appearance.theme.ground()
+}
+
+pub(crate) fn shadow(strength: f32) -> gpui::Hsla {
+    let share = match ground() {
+        Ground::Dark => 1.0,
+        Ground::Light => LIGHT_SHADOW_SHARE,
+    };
+
+    gpui::hsla(0.0, 0.0, 0.0, strength * share)
 }
 
 pub(crate) struct Sample {
@@ -1165,7 +1277,7 @@ mod tests {
         path::{Path, PathBuf},
     };
 
-    use resonate_core::TextSize;
+    use resonate_core::{Following, TextSize};
 
     use super::*;
 
@@ -1228,13 +1340,13 @@ mod tests {
                 .map(move |accent| Appearance {
                     theme,
                     accent,
-                    text_size: TextSize::Medium,
+                    ..Appearance::DEFAULT
                 })
         })
     }
 
     #[test]
-    fn every_theme_is_dark_enough_to_read_its_own_text_on() {
+    fn every_theme_is_dark_or_light_enough_to_read_its_own_text_on() {
         for theme in Theme::ALL {
             let flavour = flavour(theme);
             for pane in [flavour.background, flavour.surface] {
@@ -1390,7 +1502,7 @@ mod tests {
             let dressed = Appearance {
                 theme,
                 accent: None,
-                text_size: TextSize::Medium,
+                ..Appearance::DEFAULT
             };
 
             assert_eq!(
@@ -1629,8 +1741,21 @@ mod tests {
     }
 
     #[test]
-    fn high_contrast_clears_every_bar_at_the_stricter_ratio() {
-        let flavour = flavour(Theme::HighContrast);
+    fn both_high_contrasts_clear_every_bar_at_the_stricter_ratio() {
+        let mut failures = Vec::new();
+
+        for theme in [Theme::HighContrast, Theme::HighContrastLight] {
+            failures.extend(
+                high_contrast_failures(flavour(theme))
+                    .into_iter()
+                    .map(|failure| format!("{theme}: {failure}")),
+            );
+        }
+
+        nothing_failed(failures);
+    }
+
+    fn high_contrast_failures(flavour: &Flavour) -> Vec<String> {
         let mut failures = Vec::new();
 
         for (name, pane) in panes_of(flavour) {
@@ -1673,7 +1798,118 @@ mod tests {
             }
         }
 
-        nothing_failed(failures);
+        failures
+    }
+
+    #[test]
+    fn a_light_theme_has_a_ground_lighter_than_its_text_and_a_dark_one_darker() {
+        for theme in Theme::ALL {
+            let flavour = flavour(theme);
+            let ground = luminance(flavour.background);
+            let text = luminance(flavour.text);
+
+            match theme.ground() {
+                Ground::Light => assert!(ground > text, "{theme} is light under lighter text"),
+                Ground::Dark => assert!(ground < text, "{theme} is dark under darker text"),
+            }
+        }
+    }
+
+    #[test]
+    fn the_light_themes_raise_what_is_raised_toward_the_ground_they_stand_on() {
+        for theme in Theme::ALL
+            .into_iter()
+            .filter(|theme| theme.ground() == Ground::Light)
+        {
+            let flavour = flavour(theme);
+
+            assert!(
+                luminance(flavour.hover) < luminance(flavour.raised),
+                "{theme} lets the pointer lighten a raised control"
+            );
+        }
+    }
+
+    #[test]
+    fn a_scrim_stands_on_the_ground_of_its_palette() {
+        for theme in Theme::ALL {
+            let flavour = flavour(theme);
+            let scrim = flavour.scrim >> 8;
+
+            match theme.ground() {
+                Ground::Light => assert!(
+                    luminance(scrim) > luminance(flavour.text),
+                    "{theme}'s scrim is darker than its text"
+                ),
+                Ground::Dark => assert!(
+                    luminance(scrim) < luminance(flavour.text),
+                    "{theme}'s scrim is lighter than its text"
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn a_shadow_is_softer_on_a_light_ground_than_on_a_dark_one() {
+        let _worn = WEARING.lock();
+
+        wear(Appearance::DEFAULT);
+        let on_dark = shadow(0.5).a;
+        wear(Appearance {
+            theme: Theme::Light,
+            ..Appearance::DEFAULT
+        });
+        let on_light = shadow(0.5).a;
+
+        assert_eq!(on_dark, 0.5);
+        assert!(on_light < on_dark);
+
+        wear(Appearance::DEFAULT);
+    }
+
+    #[test]
+    fn the_desktop_light_wears_the_counterpart_and_its_scale_the_nearest_size() {
+        let _worn = WEARING.lock();
+
+        wear(Appearance::DEFAULT);
+        hear_the_desktop(DesktopLook {
+            ground: Some(Ground::Light),
+            text_scale: Some(1.5),
+        });
+
+        assert_eq!(worn().theme, Theme::Light);
+        assert_eq!(worn().text_size, TextSize::Larger);
+        assert_eq!(chosen(), Appearance::DEFAULT);
+        assert_eq!(background(), flavour(Theme::Light).background);
+        assert_eq!(text_base(), TEXT_BASE * TextSize::Larger.scale());
+
+        hear_the_desktop(DesktopLook::default());
+        assert_eq!(worn(), Appearance::DEFAULT);
+    }
+
+    #[test]
+    fn the_desktop_is_not_heard_where_the_listener_wears_a_palette_and_size_of_their_own() {
+        let _worn = WEARING.lock();
+
+        wear(Appearance {
+            theme: Theme::Nord,
+            text_size: TextSize::Small,
+            follows: Following {
+                scheme: false,
+                text: false,
+            },
+            ..Appearance::DEFAULT
+        });
+        hear_the_desktop(DesktopLook {
+            ground: Some(Ground::Light),
+            text_scale: Some(2.0),
+        });
+
+        assert_eq!(worn().theme, Theme::Nord);
+        assert_eq!(worn().text_size, TextSize::Small);
+
+        hear_the_desktop(DesktopLook::default());
+        wear(Appearance::DEFAULT);
     }
 
     #[test]
