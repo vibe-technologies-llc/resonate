@@ -91,7 +91,7 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
   (rounded down, so the figure read is never under the one measured; 254 holds anything deeper
   than 63.5 dB below, 255 a node that held nothing); the moments loudest first, silent moments
   after: 472 bytes (`BAND_PEAKS_BYTES`), `track_studies.band_peaks`, a row of any other length
-  reading as unmeasured. `Study::band_peaks` and the kept analysis (`WRITTEN_AS` 5) carry it, so a
+  reading as unmeasured. `Study::band_peaks` and the kept analysis (`WRITTEN_AS` 6) carry it, so a
   study from a recalled analysis keeps its peaks. `BandPeaks::at_once` makes the peaks of bands
   heard as one moment (each node the sum of its bands), for a caller that has only band peaks. The
   bank, the tree and the moments cost about 14 ms of one core a second of 44.1 kHz stereo audio,
@@ -334,6 +334,45 @@ could change (stored studies and kept analyses are weighed against it).
     and the undone reading replaces the plain one only where its lattice is higher. The search stays
     plain, so `Opus` takes 16 frames a search (8 left a 64 kbps master and one decoded to 44.1 kHz
     on another offset, though undone at its own it read 0.29 over 14 000 bands).
+- **An Opus decode is also read by its intensity stereo** (`celt::Coupling`, `Tell::IntensityStereo`,
+  `Finding::IntensityStereo`). Above a band chosen by bitrate (band 15, 5.6 kHz, at 64 kbps in
+  libopus; band 19 at 128) CELT codes one shape per band for both channels and scales it to each
+  channel's energy, so on CELT's own frames the two channels of each such band are exactly
+  proportional, to within the 16-bit rounding, where a recording's channels are not, and off those
+  frames the bands of neighbouring frames (each with its own ratio) blur together. `Coupling` is a
+  grid like the others (pre-emphasis, the long 1 920-sample MDCT, 960 residues, 16 frames a search,
+  400 confirmed, control 540 off; 48 kHz, two channels, `Grid::PAIRED_ONLY`) whose observation is
+  a *cell*, one band of one frame from band 8 (1.6 kHz) up: it is counted where the rounding would
+  decorrelate the band by at most `COUPLED_ROUNDING_AT_MOST` (0.05; `ROUNDING_POWER` 1/12 a line,
+  shaped by the pre-emphasis, over each channel's power) and is *coupled* where `1 - ⟨L,R⟩² /
+  (‖L‖²‖R‖²)` is within `PROPORTIONAL_WITHIN_ROUNDINGS` (4) of that; a frame with a sample at full
+  scale counts nothing, since a clipped decode is no longer proportional (one loud master clipped
+  1.5% of its samples and its intensity bands read 0.005 apart instead of the rounding's 10^-6).
+  `Steps::lattice` is the share coupled, `control` the share off the grid, `coefficients` the cells.
+  A recording whose highs are near mono is coupled as much off the grid as on it, so the verdict
+  takes the excess: `COUPLED_CELLS_AT_LEAST` (2 000), the share at least
+  `COUPLED_OVER_ITS_CONTROL_AT_LEAST` (0.05) over its control and that excess
+  `COUPLED_SIGNIFICANCE_AT_LEAST` (12) times `√((p(1-p) + c(1-c)) / n)`, the spread of two
+  independent shares (the two are read on the same frames, so the true spread is smaller)
+  (`channels_proportional_band_by_band_on_each_frame_are_found_and_proportional_everywhere_are_not`,
+  `channels_coupled_on_opus_frames_are_fake_only_well_over_their_control_and_counted`). The pitch
+  post-filter is not undone for it: the same comb runs on both channels, and the misses measured
+  were clipping, not the comb (a master encoded at complexity 4, with no pre-filter, read the
+  same). Measured on 464 library tracks (40 s from 0:40; 458 lossless, 6 that are Opus files in the
+  library), libopus at 64 kbps decoded to 16-bit FLAC: the band energies alone found 446, with the
+  coupling 460 (14 found by the coupling alone, the quiet masters the energies missed: 0.23 to 0.49
+  coupled against 0.002 to 0.22 off the grid); the 458 lossless sources read a coupling
+  significance of 1.5 at most (a share up to 0.34 on near-mono sources, as much off the grid) and
+  none was called on it; the 6 Opus files
+  were called by their energies, 4 of them by the coupling too (12.8 to 21.5). The 4 still missed
+  are two loud masters whose decode clips (2.0% and 2.7% of samples at full scale, too few
+  unclipped frames left to search), one quiet, sparse track with 78 cells over the rounding, and
+  one whose source is itself near mono above 2 kHz (0.42 against 0.33, a significance of 9.1). The
+  other figures looked at on the decode, on the way: a sine-window STFT of the same bands, with no
+  grid, reads intensity bands 0.002 to 0.03 apart, under most recordings' 0.1 to 0.9 but over a
+  near-mono source's 0.001, so without the grid's control it would call genuine near-mono masters;
+  PVQ's pulses show in the shapes of a few bands (lines of equal magnitude or zero) but only where
+  the band has few pulses and no spreading, and were not weighed.
 - **A decode taken to another rate is weighed brought back.** `Weighing` runs the three grids at
   the stream's rate and feeds the first two channels through a `Resampler` (`Quality::Balanced`,
   linear phase) to each rate in `BROUGHT_BACK_TO`, running `Aac` and `Mp3` there at
@@ -359,10 +398,10 @@ could change (stored studies and kept analyses are weighed against it).
   offset, which the control refuses, and a lattice among few coefficients is chance, which the
   significance refuses (a genuine track read 0.019 on 21 000 effective coefficients, a significance
   of 2.8; a real MP3 rip reads 0.023 on 300 000, 12.6). Every grid's `Steps` is kept in the study
-  and the kept analysis (`WRITTEN_AS` 5, the peaks over moments after the print; 4: one moment; 3: a count, then coding name,
+  and the kept analysis (`WRITTEN_AS` 6, each `Steps`' `Tell` named after its coding; 5: the peaks over moments after the print; 4: one moment; 3: a count, then coding name,
   rate, lattice, control and coefficients each, the last now the effective count); `track_studies`
   stores only the verdict (no basis column), so the change moved `JUDGED_UNDER` to 4 and every
-  study is weighed again; MP2, Opus and the low rates brought back moved it to 5, the post-filter undone and the band norms to 6. Cost: about 2 s a track over the decode (3.9 s to 5.9 s for a 3:33 FLAC
+  study is weighed again; MP2, Opus and the low rates brought back moved it to 5, the post-filter undone and the band norms to 6, the intensity-stereo coupling to 7. Cost: about 2 s a track over the decode (3.9 s to 5.9 s for a 3:33 FLAC
   on a loaded machine, 0.9 s to 3.3 s for 40 s at 96 kHz, which runs two resamplers), fixed
   whatever its length, since every grid is done within its first 20 s; the band norms added 0.7 s
   a track to `Aac` alone (118 s to 144 s for the 36 sources, two cores at the lowest priority on a

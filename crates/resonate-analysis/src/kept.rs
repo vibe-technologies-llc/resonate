@@ -15,7 +15,7 @@ use resonate_core::{
 
 use crate::{
     Analysis, BandPeaks, Coding, Envelope, Examined, Levels, Loudness, Spectrogram, Spectrum,
-    Steps, Stereo, Study,
+    Steps, Stereo, Study, Tell,
     envelope::ENVELOPE_LANES,
     spectrogram::SPECTROGRAM_ROWS,
     verdict::{JUDGED_UNDER, Weighed, judged},
@@ -23,7 +23,7 @@ use crate::{
 
 const MAGIC: &[u8; 4] = b"RSAN";
 
-const WRITTEN_AS: u8 = 5;
+const WRITTEN_AS: u8 = 6;
 
 const KEPT_AS: &str = "analysis";
 
@@ -324,6 +324,7 @@ fn written(analysis: &Analysis) -> Vec<u8> {
     writer.u8(u8::try_from(study.steps.len()).unwrap_or(u8::MAX));
     for steps in study.steps.iter().take(usize::from(u8::MAX)) {
         writer.bytes(steps.coding.as_str().as_bytes());
+        writer.bytes(steps.tell.as_str().as_bytes());
         writer.u32(steps.rate);
         writer.f32(steps.lattice);
         writer.f32(steps.control);
@@ -413,10 +414,13 @@ pub(crate) fn read(bytes: &[u8]) -> Option<Analysis> {
     let steps = (0..weighed)
         .map(|_| {
             let named = std::str::from_utf8(reader.bytes()?).ok()?;
+            let coding = Coding::ALL
+                .into_iter()
+                .find(|coding| coding.as_str() == named)?;
+            let told = std::str::from_utf8(reader.bytes()?).ok()?;
             Some(Steps {
-                coding: Coding::ALL
-                    .into_iter()
-                    .find(|coding| coding.as_str() == named)?,
+                coding,
+                tell: Tell::ALL.into_iter().find(|tell| tell.as_str() == told)?,
                 rate: reader.u32()?,
                 lattice: reader.f32()?,
                 control: reader.f32()?,
@@ -578,13 +582,15 @@ mod tests {
         let steps = vec![
             Steps {
                 coding: Coding::Aac,
+                tell: Tell::QuantiserSteps,
                 rate: 44_100,
                 lattice: 0.42,
                 control: 0.01,
                 coefficients: 1_500_000,
             },
             Steps {
-                coding: Coding::Mp3,
+                coding: Coding::Opus,
+                tell: Tell::IntensityStereo,
                 rate: 48_000,
                 lattice: 0.002,
                 control: 0.001,

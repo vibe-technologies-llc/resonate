@@ -8,7 +8,7 @@ use rustfft::num_complex::Complex;
 
 use crate::{
     pitch::{LONGEST_CODED_PERIOD, LONGEST_PERIOD, Pitch, SHORTEST_PERIOD},
-    steps::{Band, Coding, Grid, Mdct, Taking, Tally, turned},
+    steps::{Band, Coding, Grid, Mdct, Taking, Tally, Tell, turned},
 };
 
 const OPUS_RATE: u32 = 48_000;
@@ -50,6 +50,12 @@ const TAP_REACH: usize = 2;
 const LAGS: usize = 2 * (PERIODS_EITHER_SIDE + TAP_REACH) + 1;
 const GAIN_STEPS_OVER_THE_ESTIMATE: usize = 1;
 const ENCODER_FILTERS_FROM: f32 = 0.2;
+const FIRST_COUPLED_BAND: usize = 8;
+const COUPLED_FRAMES_A_SEARCH: usize = 16;
+const ROUNDING_POWER: f64 = 1.0 / 12.0;
+const COUPLED_ROUNDING_AT_MOST: f64 = 0.05;
+const PROPORTIONAL_WITHIN_ROUNDINGS: f64 = 4.0;
+const FULL_SCALE_FROM: f32 = 32_767.0;
 
 #[derive(Clone, Copy)]
 struct Energies {
@@ -590,6 +596,94 @@ fn powers(one: &[f32], other: &[f32]) -> [f64; BANDS] {
     powers
 }
 
+pub(crate) struct Coupling {
+    mdct: Mdct,
+    emphasised: Vec<f32>,
+    noise: [f64; BANDS],
+    clipped: [bool; 2],
+}
+
+impl Grid for Coupling {
+    const CODING: Coding = Coding::Opus;
+    const TELL: Tell = Tell::IntensityStereo;
+    const HOP: usize = FRAME;
+    const RESIDUES: usize = FRAME;
+    const SPAN: usize = 2 * FRAME + 1;
+    const LINES: usize = FRAME;
+    const SHAPES: usize = 1;
+    const CONTROL_SHIFT: usize = FRAME / 2 + OVERLAP / 2;
+    const FRAMES_A_SEARCH: usize = COUPLED_FRAMES_A_SEARCH;
+    const CONFIRMED_FRAMES: usize = 400;
+    const MID_AND_SIDE: bool = false;
+    const PAIRED_ONLY: bool = true;
+
+    fn band(rate: u32) -> Option<Band> {
+        (rate == OPUS_RATE).then_some(Band {
+            first: FIRST_COUPLED_BAND,
+            past: BANDS,
+        })
+    }
+
+    fn new(_: u32, _: &Band) -> Self {
+        let mut noise = [0.0; BANDS];
+        for (band, edges) in BAND_EDGES.windows(2).enumerate() {
+            noise[band] = (edges[0] * SHORTS..edges[1] * SHORTS)
+                .map(|line| {
+                    let angle = PI * (line as f64 + 0.5) / FRAME as f64;
+                    let emphasis = f64::from(EMPHASIS);
+                    ROUNDING_POWER * (1.0 + emphasis * emphasis - 2.0 * emphasis * angle.cos())
+                })
+                .sum();
+        }
+        Self {
+            mdct: Mdct::new(FRAME, vec![window(2 * FRAME, QUIET)]),
+            emphasised: vec![0.0; 2 * FRAME],
+            noise,
+            clipped: [false; 2],
+        }
+    }
+
+    fn tally(&self, _: Range<usize>, left: &[f32], right: Option<&[f32]>) -> Tally {
+        let Some(right) = right else {
+            return Tally::default();
+        };
+        if self.clipped[0] || self.clipped[1] {
+            return Tally::default();
+        }
+        let mut on = 0;
+        let mut counted = 0;
+        for band in FIRST_COUPLED_BAND..BANDS {
+            let lines = BAND_EDGES[band] * SHORTS..BAND_EDGES[band + 1] * SHORTS;
+            let (mut own, mut other, mut shared) = (0.0_f64, 0.0_f64, 0.0_f64);
+            for (one, two) in left[lines.clone()].iter().zip(&right[lines]) {
+                let (one, two) = (f64::from(*one), f64::from(*two));
+                own += one * one;
+                other += two * two;
+                shared += one * two;
+            }
+            if own <= 0.0 || other <= 0.0 {
+                continue;
+            }
+            let rounding = self.noise[band] * (1.0 / own + 1.0 / other);
+            if rounding > COUPLED_ROUNDING_AT_MOST {
+                continue;
+            }
+            counted += 1;
+            let apart = 1.0 - shared * shared / (own * other);
+            on += u64::from(apart <= PROPORTIONAL_WITHIN_ROUNDINGS * rounding);
+        }
+        Tally::counted(on, counted)
+    }
+
+    fn coefficients(&mut self, lane: usize, samples: &[f32], _: u64, _: usize, into: &mut [f32]) {
+        self.clipped[lane.min(1)] = samples.iter().any(|sample| sample.abs() >= FULL_SCALE_FROM);
+        for (slot, pair) in self.emphasised.iter_mut().zip(samples.windows(2)) {
+            *slot = pair[1] - EMPHASIS * pair[0];
+        }
+        self.mdct.coefficients(&self.emphasised, 0, into);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::f64::consts::PI;
@@ -600,10 +694,9 @@ mod tests {
     const SECONDS: usize = 16;
     const FINE_BITS_AT_MOST: f64 = 4.0;
     const LEVEL: f64 = 3.0;
+    const COUPLED_FROM_BAND: usize = 14;
 
-    fn synthesised(seed: u64, on_the_steps: bool) -> Vec<f32> {
-        let mut wandering = Wandering(seed);
-        let frames = SECONDS * OPUS_RATE as usize / FRAME;
+    fn rendered(frames: &[Vec<f64>]) -> Vec<f32> {
         let window = window(2 * FRAME, QUIET);
         let cosines: Vec<f64> = (0..2 * FRAME * FRAME)
             .map(|at| {
@@ -613,41 +706,13 @@ mod tests {
             })
             .collect();
         let scale = (2.0 / FRAME as f64).sqrt();
-        let mut old = [LEVEL; BANDS];
-        let mut out = vec![0.0_f64; (frames + 2) * FRAME];
-        for frame in 0..frames {
-            let mut running = 0.0;
-            let mut levels = [0.0; BANDS];
-            for band in 0..BANDS {
-                let predicted = INTER_PREDICTION * old[band].max(OLDEST_ENERGY) + running;
-                let wanted = LEVEL + wandering.laplacian(1.0);
-                let step = (wanted - predicted).round();
-                let fine = if on_the_steps {
-                    let bits = (wandering.next() * FINE_BITS_AT_MOST).floor();
-                    let levels_a_step = bits.exp2();
-                    ((wandering.next() * levels_a_step).floor() + 0.5) / levels_a_step - 0.5
-                } else {
-                    wandering.next() - 0.5
-                };
-                levels[band] = predicted + step + fine;
-                running += step - INTER_DECAY * step;
-            }
-            old = levels;
-            let mut lines = vec![0.0_f64; FRAME];
-            for band in 0..BANDS {
-                let range = BAND_EDGES[band] * SHORTS..BAND_EDGES[band + 1] * SHORTS;
-                let shape: Vec<f64> = range.clone().map(|_| wandering.laplacian(1.0)).collect();
-                let norm = shape.iter().map(|value| value * value).sum::<f64>().sqrt();
-                let gain = (levels[band] + ENERGY_MEANS[band] + SCALE_OCTAVES).exp2();
-                for (line, value) in range.zip(&shape) {
-                    lines[line] = value / norm * gain;
-                }
-            }
+        let mut out = vec![0.0_f64; (frames.len() + 2) * FRAME];
+        for (frame, lines) in frames.iter().enumerate() {
             for nth in 0..2 * FRAME {
                 let row = &cosines[nth * FRAME..(nth + 1) * FRAME];
                 let sum: f64 = row
                     .iter()
-                    .zip(&lines)
+                    .zip(lines)
                     .map(|(cosine, line)| cosine * line)
                     .sum();
                 out[frame * FRAME + nth] += sum * scale * window[nth];
@@ -662,13 +727,89 @@ mod tests {
             .collect()
     }
 
-    fn stepped(left: &[f32], right: &[f32], skipped: usize) -> Option<Steps> {
+    fn synthesised(seed: u64, on_the_steps: bool) -> Vec<f32> {
+        let mut wandering = Wandering(seed);
+        let mut old = [LEVEL; BANDS];
+        let frames: Vec<Vec<f64>> = (0..SECONDS * OPUS_RATE as usize / FRAME)
+            .map(|_| {
+                let mut running = 0.0;
+                let mut levels = [0.0; BANDS];
+                for band in 0..BANDS {
+                    let predicted = INTER_PREDICTION * old[band].max(OLDEST_ENERGY) + running;
+                    let wanted = LEVEL + wandering.laplacian(1.0);
+                    let step = (wanted - predicted).round();
+                    let fine = if on_the_steps {
+                        let bits = (wandering.next() * FINE_BITS_AT_MOST).floor();
+                        let levels_a_step = bits.exp2();
+                        ((wandering.next() * levels_a_step).floor() + 0.5) / levels_a_step - 0.5
+                    } else {
+                        wandering.next() - 0.5
+                    };
+                    levels[band] = predicted + step + fine;
+                    running += step - INTER_DECAY * step;
+                }
+                old = levels;
+                let mut lines = vec![0.0_f64; FRAME];
+                for band in 0..BANDS {
+                    let range = BAND_EDGES[band] * SHORTS..BAND_EDGES[band + 1] * SHORTS;
+                    let shape: Vec<f64> = range.clone().map(|_| wandering.laplacian(1.0)).collect();
+                    let norm = shape.iter().map(|value| value * value).sum::<f64>().sqrt();
+                    let gain = (levels[band] + ENERGY_MEANS[band] + SCALE_OCTAVES).exp2();
+                    for (line, value) in range.zip(&shape) {
+                        lines[line] = value / norm * gain;
+                    }
+                }
+                lines
+            })
+            .collect();
+        rendered(&frames)
+    }
+
+    #[derive(Clone, Copy)]
+    enum Moving {
+        OnEachFrame,
+        Everywhere,
+    }
+
+    fn coupled_from(seed: u64, moving: Moving) -> (Vec<f32>, Vec<f32>) {
+        let mut wandering = Wandering(seed);
+        let mut left = Vec::new();
+        let mut right = Vec::new();
+        for _ in 0..SECONDS * OPUS_RATE as usize / FRAME {
+            let mut one = vec![0.0_f64; FRAME];
+            let mut other = vec![0.0_f64; FRAME];
+            for band in 0..BANDS {
+                let gain = (LEVEL + ENERGY_MEANS[band] + SCALE_OCTAVES + wandering.laplacian(0.5))
+                    .exp2()
+                    / (((BAND_EDGES[band + 1] - BAND_EDGES[band]) * SHORTS) as f64).sqrt();
+                let (ratio, coupled) = match moving {
+                    Moving::OnEachFrame => {
+                        (0.3 + 1.4 * wandering.next(), band >= COUPLED_FROM_BAND)
+                    }
+                    Moving::Everywhere => (0.7, true),
+                };
+                for line in BAND_EDGES[band] * SHORTS..BAND_EDGES[band + 1] * SHORTS {
+                    one[line] = gain * wandering.laplacian(1.0);
+                    other[line] = if coupled {
+                        ratio * one[line]
+                    } else {
+                        gain * wandering.laplacian(1.0)
+                    };
+                }
+            }
+            left.push(one);
+            right.push(other);
+        }
+        (rendered(&left), rendered(&right))
+    }
+
+    fn stepped<G: Grid>(left: &[f32], right: &[f32], skipped: usize) -> Option<Steps> {
         let interleaved: Vec<f32> = left[skipped..]
             .iter()
             .zip(&right[skipped..])
             .flat_map(|(left, right)| [*left, *right])
             .collect();
-        let mut stepping = Stepping::<Opus>::new(OPUS_RATE, 2);
+        let mut stepping = Stepping::<G>::new(OPUS_RATE, 2);
         for block in interleaved.chunks(4_096 * 2) {
             stepping.note(block);
         }
@@ -681,7 +822,7 @@ mod tests {
         let left = synthesised(11, true);
         let right = synthesised(23, true);
         for skipped in [0, 300] {
-            let steps = stepped(&left, &right, skipped).expect("weighed");
+            let steps = stepped::<Opus>(&left, &right, skipped).expect("weighed");
 
             assert!(steps.lattice > 0.3, "{skipped} {steps:?}");
             assert!(steps.control < steps.lattice / 10.0, "{steps:?}");
@@ -691,14 +832,41 @@ mod tests {
 
         let left = synthesised(11, false);
         let right = synthesised(23, false);
-        let steps = stepped(&left, &right, 0).expect("weighed");
+        let steps = stepped::<Opus>(&left, &right, 0).expect("weighed");
 
         assert!(steps.lattice < 0.03, "{steps:?}");
     }
 
     #[test]
+    fn channels_proportional_band_by_band_on_each_frame_are_found_and_proportional_everywhere_are_not()
+     {
+        let (left, right) = coupled_from(5, Moving::OnEachFrame);
+        for skipped in [0, 300] {
+            let steps = stepped::<Coupling>(&left, &right, skipped).expect("weighed");
+
+            assert!(steps.lattice > 0.3, "{skipped} {steps:?}");
+            assert!(steps.control < steps.lattice / 4.0, "{steps:?}");
+            assert!(steps.coefficients > 2_000, "{steps:?}");
+            assert_eq!(steps.tell, Tell::IntensityStereo);
+        }
+
+        let (left, right) = coupled_from(5, Moving::Everywhere);
+        let steps = stepped::<Coupling>(&left, &right, 0).expect("weighed");
+
+        assert!(steps.lattice > 0.9, "{steps:?}");
+        assert!(steps.lattice - steps.control < 0.02, "{steps:?}");
+    }
+
+    #[test]
     fn a_rate_no_opus_stream_is_decoded_at_is_not_weighed() {
         let stepping = Stepping::<Opus>::new(44_100, 2);
+
+        assert!(stepping.finished().is_none());
+    }
+
+    #[test]
+    fn one_channel_has_no_coupling_to_weigh() {
+        let stepping = Stepping::<Coupling>::new(OPUS_RATE, 1);
 
         assert!(stepping.finished().is_none());
     }

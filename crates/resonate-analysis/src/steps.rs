@@ -73,9 +73,27 @@ impl Coding {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Tell {
+    QuantiserSteps,
+    IntensityStereo,
+}
+
+impl Tell {
+    pub const ALL: [Self; 2] = [Self::QuantiserSteps, Self::IntensityStereo];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::QuantiserSteps => "quantiser steps",
+            Self::IntensityStereo => "intensity stereo",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Steps {
     pub coding: Coding,
+    pub tell: Tell,
     pub rate: u32,
     pub lattice: f32,
     pub control: f32,
@@ -295,6 +313,7 @@ pub(crate) struct Taking {
 
 pub(crate) trait Grid {
     const CODING: Coding;
+    const TELL: Tell = Tell::QuantiserSteps;
     const HOP: usize;
     const RESIDUES: usize;
     const SPAN: usize;
@@ -306,6 +325,7 @@ pub(crate) trait Grid {
     const CONFIRMED_FRAMES: usize;
     const MID_AND_SIDE: bool;
     const UNDOES: bool = false;
+    const PAIRED_ONLY: bool = false;
 
     fn band(rate: u32) -> Option<Band>;
 
@@ -394,7 +414,7 @@ impl<G: Grid> Stepping<G> {
 
     pub(crate) fn searching(rate: u32, channels: usize, searches: usize) -> Self {
         let band = G::band(rate)
-            .filter(|band| !band.is_empty() && channels > 0)
+            .filter(|band| !band.is_empty() && channels > usize::from(G::PAIRED_ONLY))
             .unwrap_or(Band { first: 0, past: 0 });
         let weighable = !band.is_empty();
         let hop = G::HOP as u64;
@@ -562,6 +582,7 @@ impl<G: Grid> Stepping<G> {
     fn lanes(&self) -> usize {
         match (self.paired, G::MID_AND_SIDE) {
             (false, _) => 1,
+            (true, _) if G::PAIRED_ONLY => 1,
             (true, false) => 2,
             (true, true) => 4,
         }
@@ -672,6 +693,7 @@ impl<G: Grid> Stepping<G> {
         }
         Steps {
             coding: G::CODING,
+            tell: G::TELL,
             rate: self.rate,
             lattice: lattice.resultant() as f32,
             control: control.resultant() as f32,

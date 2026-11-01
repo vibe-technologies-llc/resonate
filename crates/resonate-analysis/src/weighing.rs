@@ -2,7 +2,7 @@ use resonate_core::{ChannelLayout, SampleRate};
 use resonate_dsp::{FilterPhase, Processor, Quality, Resampler, ResamplerConfig};
 
 use crate::{
-    celt::Opus,
+    celt::{Coupling, Opus},
     granules::Mp3,
     steps::{Aac, Stepping, Steps, Vorbis},
     subbands::Mp2,
@@ -30,6 +30,7 @@ struct Coded {
     mp2: Stepping<Mp2>,
     vorbis: Stepping<Vorbis>,
     opus: Stepping<Opus>,
+    coupling: Stepping<Coupling>,
 }
 
 impl Coded {
@@ -40,6 +41,7 @@ impl Coded {
             mp2: Stepping::new(rate, channels),
             vorbis: Stepping::new(rate, channels),
             opus: Stepping::new(rate, channels),
+            coupling: Stepping::new(rate, channels),
         }
     }
 
@@ -50,6 +52,7 @@ impl Coded {
             mp2: Stepping::unweighed(),
             vorbis: Stepping::unweighed(),
             opus: Stepping::unweighed(),
+            coupling: Stepping::unweighed(),
         }
     }
 
@@ -59,6 +62,7 @@ impl Coded {
             && self.mp2.is_done()
             && self.vorbis.is_done()
             && self.opus.is_done()
+            && self.coupling.is_done()
     }
 
     fn note(&mut self, interleaved: &[f32]) {
@@ -67,6 +71,7 @@ impl Coded {
         self.mp2.note(interleaved);
         self.vorbis.note(interleaved);
         self.opus.note(interleaved);
+        self.coupling.note(interleaved);
     }
 
     fn finished(self, into: &mut Vec<Steps>) {
@@ -75,6 +80,7 @@ impl Coded {
         into.extend(self.mp2.finished());
         into.extend(self.vorbis.finished());
         into.extend(self.opus.finished());
+        into.extend(self.coupling.finished());
     }
 }
 
@@ -118,6 +124,7 @@ impl Resampled {
                 mp2: Stepping::searching(to.hz(), lanes, SEARCHES_RESAMPLED),
                 vorbis: Stepping::unweighed(),
                 opus: Stepping::searching(to.hz(), lanes, SEARCHES_RESAMPLED),
+                coupling: Stepping::searching(to.hz(), lanes, SEARCHES_RESAMPLED),
             },
         })
     }

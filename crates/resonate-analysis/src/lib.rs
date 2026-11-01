@@ -45,7 +45,7 @@ pub use crate::{
     signature::{Signature, signature_of},
     spectrogram::{Ramp, SPECTROGRAM_COLUMNS, SPECTROGRAM_FLOOR_DB, SPECTROGRAM_ROWS, Spectrogram},
     spectrum::{FLOOR_DB, Spectrum},
-    steps::{Coding, Steps},
+    steps::{Coding, Steps, Tell},
     verdict::{Cutoff, Finding, JUDGED_UNDER, Judgement, LossyGuess, Verdict},
     watch::{Watch, Watching},
 };

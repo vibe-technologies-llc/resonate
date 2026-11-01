@@ -2,9 +2,9 @@ use std::time::Duration;
 
 use resonate_codec::Codec;
 
-use crate::{Coding, Levels, Spectrum, Steps, spectrum::BAND_HZ};
+use crate::{Coding, Levels, Spectrum, Steps, Tell, spectrum::BAND_HZ};
 
-pub const JUDGED_UNDER: u32 = 6;
+pub const JUDGED_UNDER: u32 = 7;
 
 const WALL_DB: f32 = 30.0;
 const WALL_FLOOR_SLACK_DB: f32 = 15.0;
@@ -37,6 +37,9 @@ const LATTICE_OVER_ITS_CONTROL_AT_LEAST: f32 = 4.0;
 const STEPPED_COEFFICIENTS_AT_LEAST: u64 = 20_000;
 const STEPPED_GROUPS_AT_LEAST: u64 = 2_000;
 const LATTICE_SIGNIFICANCE_AT_LEAST: f32 = 12.0;
+const COUPLED_CELLS_AT_LEAST: u64 = 2_000;
+const COUPLED_OVER_ITS_CONTROL_AT_LEAST: f64 = 0.05;
+const COUPLED_SIGNIFICANCE_AT_LEAST: f64 = 12.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Verdict {
@@ -187,6 +190,11 @@ pub enum Finding {
         resampled_from: Option<u32>,
         lattice: f32,
     },
+    IntensityStereo {
+        coding: Coding,
+        resampled_from: Option<u32>,
+        share: f32,
+    },
 }
 
 const HZ_A_KILOHERTZ: f32 = 1_000.0;
@@ -269,6 +277,25 @@ impl Finding {
                 lattice * 100.0,
                 coding = coding.as_str()
             ),
+            Self::IntensityStereo {
+                coding,
+                resampled_from: None,
+                share,
+            } => format!(
+                "On {coding}'s own frames its two channels move as one in {:.0}% of {coding}'s bands, exactly as {coding}'s intensity stereo leaves them and far more than off those frames, so it was decoded from {coding}",
+                share * 100.0,
+                coding = coding.as_str()
+            ),
+            Self::IntensityStereo {
+                coding,
+                resampled_from: Some(hz),
+                share,
+            } => format!(
+                "Brought back to {:.1} kHz, on {coding}'s own frames its two channels move as one in {:.0}% of {coding}'s bands, exactly as {coding}'s intensity stereo leaves them and far more than off those frames, so it was decoded from {coding} at that rate and resampled",
+                kilohertz(*hz),
+                share * 100.0,
+                coding = coding.as_str()
+            ),
         }
     }
 }
@@ -347,11 +374,22 @@ pub(crate) fn judged(weighed: Weighed<'_>) -> Judgement {
     let stepped: Vec<Finding> = weighed
         .steps
         .iter()
-        .filter(|steps| on_quantiser_steps(steps))
-        .map(|steps| Finding::QuantiserSteps {
-            coding: steps.coding,
-            resampled_from: (steps.rate != weighed.rate).then_some(steps.rate),
-            lattice: steps.lattice,
+        .filter(|steps| taken(steps))
+        .map(|steps| {
+            let coding = steps.coding;
+            let resampled_from = (steps.rate != weighed.rate).then_some(steps.rate);
+            match steps.tell {
+                Tell::QuantiserSteps => Finding::QuantiserSteps {
+                    coding,
+                    resampled_from,
+                    lattice: steps.lattice,
+                },
+                Tell::IntensityStereo => Finding::IntensityStereo {
+                    coding,
+                    resampled_from,
+                    share: steps.lattice,
+                },
+            }
         })
         .collect();
     let on_steps = !stepped.is_empty();
@@ -391,6 +429,23 @@ pub(crate) fn judged(weighed: Weighed<'_>) -> Judgement {
         extent_hz,
         findings,
     }
+}
+
+fn taken(steps: &Steps) -> bool {
+    match steps.tell {
+        Tell::QuantiserSteps => on_quantiser_steps(steps),
+        Tell::IntensityStereo => coupled(steps),
+    }
+}
+
+fn coupled(steps: &Steps) -> bool {
+    let (on, off) = (f64::from(steps.lattice), f64::from(steps.control));
+    let spread = ((on * (1.0 - on) + off * (1.0 - off)) / steps.coefficients.max(1) as f64).sqrt();
+    let over = on - off;
+    steps.coefficients >= COUPLED_CELLS_AT_LEAST
+        && over >= COUPLED_OVER_ITS_CONTROL_AT_LEAST
+        && spread > 0.0
+        && over / spread >= COUPLED_SIGNIFICANCE_AT_LEAST
 }
 
 fn on_quantiser_steps(steps: &Steps) -> bool {
@@ -756,6 +811,7 @@ mod tests {
         };
         let stepped = Steps {
             coding: Coding::Aac,
+            tell: Tell::QuantiserSteps,
             rate: 44_100,
             lattice: 0.15,
             control: 0.004,
@@ -802,6 +858,62 @@ mod tests {
             judged_as(Codec::Aac, 44_100, &spectrum, &QUIET).verdict,
             Verdict::Lossy
         );
+    }
+
+    #[test]
+    fn channels_coupled_on_opus_frames_are_fake_only_well_over_their_control_and_counted() {
+        let spectrum = spectrum_of(48_000, music_up_to(19_900.0));
+        let weighed = |steps| {
+            judged(Weighed {
+                codec: Codec::Flac,
+                rate: 48_000,
+                declared_bits: Some(16),
+                float: false,
+                spectrum: &spectrum,
+                levels: &QUIET,
+                steps: &[steps],
+            })
+        };
+        let coupled = Steps {
+            coding: Coding::Opus,
+            tell: Tell::IntensityStereo,
+            rate: 48_000,
+            lattice: 0.3,
+            control: 0.1,
+            coefficients: 5_000,
+        };
+
+        let judgement = weighed(coupled);
+        assert_eq!(judgement.verdict, Verdict::Fake);
+        assert!(judgement.findings.contains(&Finding::IntensityStereo {
+            coding: Coding::Opus,
+            resampled_from: None,
+            share: 0.3
+        }));
+        assert!(
+            !judgement
+                .findings
+                .iter()
+                .any(|finding| matches!(finding, Finding::QuantiserSteps { .. }))
+        );
+
+        let everywhere = weighed(Steps {
+            lattice: 0.9,
+            control: 0.88,
+            ..coupled
+        });
+        assert_ne!(everywhere.verdict, Verdict::Fake);
+        let few = weighed(Steps {
+            coefficients: 1_000,
+            ..coupled
+        });
+        assert_ne!(few.verdict, Verdict::Fake);
+        let by_chance = weighed(Steps {
+            lattice: 0.12,
+            control: 0.1,
+            ..coupled
+        });
+        assert_ne!(by_chance.verdict, Verdict::Fake);
     }
 
     #[test]
