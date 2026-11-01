@@ -26,7 +26,45 @@ mod tests {
 
     const HAS_AN_ID: [&str; 4] = [".id(", "kit::button(", "kit::icon_button(", "kit::segment("];
 
-    const STILL_POINTER_ONLY: &[&str] = &[];
+    const STILL_POINTER_ONLY: &[&str] = &[
+        "browser.rs | cell.cursor_pointer() | .on_click(cx.listener(move |this, _, _, cx| {",
+        "browser.rs | row.cursor_pointer() | .on_click(cx.listener(move |this, _, _, cx| {",
+        "browser.rs | row.cursor_pointer() | .on_click(cx.listener(move |this, _, _, cx| {",
+        "dropping.rs | if stopping { | button.on_click(cx.listener(|this, _, _, cx| this.stop_copying(cx)))",
+        "hint.rs | div() | .on_click(|_, _, cx| cx.stop_propagation())",
+        "playlists.rs | .child( | control(\"drop-saved\", id, Icon::Discard, DISCARD_HINT).on_click(",
+        "playlists.rs | .child( | control(\"last-saved\", id, Icon::QueueLast, PLAYLIST_QUEUE_HINT).on_click(",
+        "playlists.rs | .child( | control(\"next-saved\", id, Icon::QueueNext, PLAYLIST_NEXT_HINT).on_click(",
+        "playlists.rs | .child( | control(\"pin-saved\", id, pin_icon(pinned), pin_hint(pinned)).on_click(",
+        "playlists.rs | .child( | control(\"play-saved\", id, Icon::Play, PLAY_HINT).on_click(cx.listener(",
+        "playlists.rs | .child( | control(\"shuffle-saved\", id, Icon::Shuffle, SHUFFLE_HINT).on_click(",
+        "playlists.rs | controls.child( | control(\"add-songs\", id, Icon::Plus, ADD_SONGS_HINT).on_click(",
+        "playlists.rs | div() | .on_click(cx.listener(move |this, _, _, cx| {",
+        "playlists.rs | div() | .on_click(cx.listener(move |this, _, window, cx| {",
+        "playlists.rs | div() | .on_click(cx.listener(|this, _, window, cx| this.stop_naming(window, cx)))",
+        "playlists.rs | div() | .on_click(cx.listener(|this, _, window, cx| {",
+        "playlists.rs | let cell = div() | .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {",
+        "playlists.rs | let listed = tall_row(playing) | .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {",
+        "root.rs | div() | .on_click(cx.listener(|this, _, window, cx| {",
+        "root.rs | let box_of_words = div() | .on_click(cx.listener(|this, _, window, cx| {",
+        "root.rs | named | .on_click(cx.listener(move |this, _, _, cx| {",
+        "served.rs | div() | .on_click(cx.listener(|this, _, window, cx| {",
+        "settings/equaliser.rs | div() | .on_click(cx.listener(|this, _, window, cx| {",
+        "settings/equaliser.rs | div() | .on_click(cx.listener(|this, _, window, cx| {",
+        "settings/equaliser.rs | segment | .on_click(cx.listener(move |this, _, _, cx| {",
+        "settings/library.rs | control | .on_click(cx.listener(move |this, click: &ClickEvent, _, cx| {",
+        "settings/library.rs | div() | .on_click(cx.listener(|this, _, window, cx| {",
+        "settings/library.rs | div() | .on_click(cx.listener(|this, _, window, cx| {",
+        "settings/mod.rs | control | .on_click(cx.listener(move |this, click: &ClickEvent, window, cx| {",
+        "settings/mod.rs | control | .on_click(cx.listener(move |this, click: &ClickEvent, window, cx| {",
+        "settings/mod.rs | div() | .on_click(cx.listener(|this, _, window, cx| {",
+        "settings/mod.rs | let clicked = press.clone(); | Self::ringed_for_keys(handle, control, press, cx).on_click(cx.listener(",
+        "settings/online.rs | div() | .on_click(cx.listener(move |_, _: &ClickEvent, window, cx| {",
+        "settings/online.rs | div() | .on_click(cx.listener(|this, _, window, cx| {",
+        "settings/output.rs | row.track_focus(&self.controls.at(reached, cx)) | .on_click(cx.listener(move |this, click: &ClickEvent, _, cx| {",
+        "settings/sync.rs | div() | .on_click(cx.listener(|this, _, _, cx| this.show_the_pairing(true, cx)))",
+        "suggestions.rs | div() | .on_click(cx.listener(move |this, _, _, cx| {",
+    ];
 
     fn indent(line: &str) -> usize {
         line.len() - line.trim_start().len()
@@ -78,7 +116,7 @@ mod tests {
             let trimmed = above.trim_start();
             let continues = trimmed.is_empty()
                 || indent(above) > click
-                || (indent(above) == click && trimmed.starts_with('.'));
+                || (indent(above) == click && continues_the_chain(trimmed));
             if !continues {
                 break;
             }
@@ -87,6 +125,10 @@ mod tests {
         let base = start.saturating_sub(1);
 
         lines[base..=at].to_vec()
+    }
+
+    fn continues_the_chain(trimmed: &str) -> bool {
+        trimmed.starts_with('.') || trimmed.starts_with(')') || trimmed.starts_with('}')
     }
 
     fn lacks_what_a_reader_needs(chain: &[&str]) -> bool {

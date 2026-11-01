@@ -251,11 +251,16 @@ pub(crate) fn drawn(
     window: &Window,
     cx: &mut Context<RootView>,
 ) -> Option<AnimationElement<Div>> {
-    let toast = cx.try_global::<Toaster>()?.showing.clone()?;
-    cx.default_global::<Toaster>().focused = toast
+    let toaster = cx.try_global::<Toaster>()?;
+    let toast = toaster.showing.clone()?;
+    let focused = toast
         .focus
         .as_ref()
         .is_some_and(|focus| focus.is_focused(window));
+
+    if toaster.focused != focused {
+        cx.default_global::<Toaster>().focused = focused;
+    }
     let (icon, ink, urgency) = match toast.notice.tone() {
         Tone::Trouble => (Icon::Alert, theme::failure(), Urgency::Warned),
         Tone::Done => (Icon::Check, theme::done(), Urgency::Told),

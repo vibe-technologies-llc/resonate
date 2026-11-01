@@ -214,7 +214,10 @@ is never named.
     via `on_mouse_down_out`. `ctrl-f` takes focus deliberately (no predicate) and selects what is
     there.
 - **Escape away from the field is a chain, and a notice is in it.** `LeaveSearch` binds under
-  `SEARCH_CONTEXT` alone; `RootView::typed` hears escape elsewhere. Order, over-the-pane before
+  `SEARCH_CONTEXT` alone; `RootView::typed` hears escape elsewhere (`RootView::escaped`). A ringed
+  control's escape is `LeaveControl`, which fires before `typed`, so it runs the over-the-pane part
+  (`close_what_stands_over_the_pane`) first and lets the control go only where nothing stands there:
+  a sheet's focus lands on its safe control, and escape there still closes the sheet. Order, over-the-pane before
   beside-it: delete sheet (`keep_the_track`), Listen sheet, magnified cover, playlist picker
   (`stop_naming`), shown record, open menu, downloads panel, standing toast (`toast::dismiss`), live
   type-ahead (`stop_typing`), then `dismiss_search`: close the naming row, clear the query, or (query
@@ -833,7 +836,9 @@ is never named.
   toasted; at most `WAITING_AT_MOST` (4) waiting, never the same words
   twice (a `Trouble` told again while the same one shows or waits is counted on it, *… (×3)*, and a
   repeat of any other tone is dropped); a full line gives up its oldest non-`Trouble` for a newer notice, turns a plain one away where
-  only troubles wait, and keeps every `Trouble`, so troubles alone may pass four), fades out over `WITHDRAWAL`; a click or escape takes it early. A `Notice` is `Trouble`,
+  only troubles wait, and keeps every `Trouble`, so troubles alone may pass four), fades out over `WITHDRAWAL`; a click or escape takes it early. **The pill's drawing writes the `Toaster` only where its focus moved**: gpui's
+  `default_global` queues a notice to the global's observers on every call and `RootView` observes the
+  `Toaster`, so a write each frame redrew the window forever while a toast stood. A `Notice` is `Trouble`,
   `Done` or `Noted`; the tone is the pill's icon (alert in the failure colour, tick in green, info mark
   in the accent). `EqualiserModel` sets its notice where it holds no `cx`: an outbox `RootView` drains
   (`take_notice`). One line stays in place, belonging to its control: the Library card's refusal of a

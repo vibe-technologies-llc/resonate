@@ -4066,24 +4066,7 @@ impl RootView {
         }
 
         match keystroke.key.as_str() {
-            "escape" if self.deleting.is_some() => self.keep_the_track(cx),
-            "escape" if self.listening_open => self.close_the_listener(cx),
-            "escape" if self.magnified.is_some() => self.shrink_cover(cx),
-            "escape" if self.adding.is_some() => self.stop_naming(window, cx),
-            "escape" if self.record.is_some() => {
-                self.record = None;
-                cx.notify();
-            }
-            "escape" if self.menu.is_some() => {
-                self.close_the_menu(cx);
-            }
-            "escape" if self.downloads_open => self.close_the_downloads(cx),
-            "escape" if Self::noticed(cx) => toast::dismiss(cx),
-            "escape" => {
-                if !self.stop_typing(cx) {
-                    self.dismiss_search(window, cx);
-                }
-            }
+            "escape" => self.escaped(window, cx),
             _ if self.something_stands_over_the_pane() => {}
             "backspace" => {
                 if !self.drop_typed(cx)
@@ -4205,6 +4188,43 @@ impl RootView {
             });
             let _ = stopped;
         });
+    }
+
+    fn escaped(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.close_what_stands_over_the_pane(window, cx) {
+            return;
+        }
+        if self.downloads_open {
+            self.close_the_downloads(cx);
+        } else if Self::noticed(cx) {
+            toast::dismiss(cx);
+        } else if !self.stop_typing(cx) {
+            self.dismiss_search(window, cx);
+        }
+    }
+
+    fn close_what_stands_over_the_pane(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.deleting.is_some() {
+            self.keep_the_track(cx);
+        } else if self.listening_open {
+            self.close_the_listener(cx);
+        } else if self.magnified.is_some() {
+            self.shrink_cover(cx);
+        } else if self.adding.is_some() {
+            self.stop_naming(window, cx);
+        } else if self.record.is_some() {
+            self.record = None;
+            cx.notify();
+        } else if self.menu.is_some() {
+            self.close_the_menu(cx);
+        } else {
+            return false;
+        }
+        true
     }
 
     pub(crate) const fn something_stands_over_the_pane(&self) -> bool {
@@ -6028,7 +6048,9 @@ impl Render for RootView {
                 this.step_pane(Step::Above, cx);
             }))
             .on_action(cx.listener(|this, _: &LeaveControl, window, cx| {
-                this.let_the_control_go(window, cx);
+                if !this.close_what_stands_over_the_pane(window, cx) {
+                    this.let_the_control_go(window, cx);
+                }
             }))
             .on_action(|_: &Quit, window: &mut Window, _: &mut App| window.remove_window())
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
