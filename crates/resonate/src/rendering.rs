@@ -35,7 +35,7 @@ impl Kinds {
             })
             .ok()?;
         for address in config.cast_at() {
-            if let Err(error) = cast.locate(*address) {
+            if let Err(error) = cast.locate(address.clone()) {
                 tracing::warn!(%error, %address, "a Cast receiver given by address could not be held");
             }
         }

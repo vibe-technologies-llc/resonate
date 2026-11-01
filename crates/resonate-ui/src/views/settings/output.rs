@@ -486,7 +486,7 @@ impl RootView {
 
         let away = wanted
             .as_ref()
-            .is_some_and(|name| !sinks.iter().any(|sink| &sink.name == name));
+            .is_some_and(|name| !sinks.iter().any(|sink| sink.is_named(name)));
         let looking = cx
             .global::<ResonateApp>()
             .renderers
@@ -580,7 +580,7 @@ impl RootView {
             .read(cx)
             .sinks()
             .iter()
-            .any(|sink| &sink.name == name)
+            .any(|sink| sink.is_named(name))
     }
 
     pub(crate) fn vouch_for(&mut self, renderer: NodeName, vouched: bool, cx: &mut Context<Self>) {

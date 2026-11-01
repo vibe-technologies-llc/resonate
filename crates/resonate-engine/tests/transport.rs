@@ -455,6 +455,7 @@ fn sink(rates: &[SampleRate], formats: &[SampleFormat]) -> SinkInfo {
     SinkInfo {
         id: SinkId::new(1),
         name: NodeName::new("alsa_output.fake"),
+        aliases: Vec::new(),
         description: "Fake DAC".to_owned(),
         is_default: true,
         is_hardware: true,
@@ -478,6 +479,7 @@ fn arriving() -> SinkInfo {
     SinkInfo {
         id: SinkId::new(2),
         name: NodeName::new("alsa_output.usb"),
+        aliases: Vec::new(),
         description: "USB DAC".to_owned(),
         is_default: false,
         ..sink(&[SampleRate::HZ_48000], &[SampleFormat::S32])
@@ -1484,6 +1486,7 @@ fn two_players_in_one_process_play_at_once_each_on_its_own_sink_and_steered_alon
     let usb = SinkInfo {
         id: SinkId::new(2),
         name: NodeName::new("alsa_output.usb"),
+        aliases: Vec::new(),
         is_default: false,
         ..sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])
     };
@@ -1757,6 +1760,7 @@ fn kitchen() -> SinkInfo {
     SinkInfo {
         id: SinkId::new(3),
         name: NodeName::new("alsa_output.kitchen"),
+        aliases: Vec::new(),
         description: "Kitchen speakers".to_owned(),
         is_default: false,
         ..sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])
@@ -2081,6 +2085,7 @@ fn a_zone_handed_the_song_lands_its_first_frame_on_the_frame_the_other_is_heard_
     let elsewhere = SinkInfo {
         id: SinkId::new(3),
         name: NodeName::new("alsa_output.kitchen"),
+        aliases: Vec::new(),
         description: "Kitchen speakers".to_owned(),
         is_default: false,
         ..sink(&[SampleRate::HZ_44100], &[SampleFormat::S24])

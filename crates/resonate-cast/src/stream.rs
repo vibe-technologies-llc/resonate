@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    net::SocketAddr,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -18,7 +19,7 @@ use resonate_core::{Frames, SampleFormat};
 use resonate_upnp::{Feed, Server, Token};
 
 use crate::{
-    Asked, CastId, Device, Error, Result, device,
+    Asked, Device, Error, Result, device,
     json::Json,
     link::{ANSWERED_WITHIN, Link, Namespace, Told},
 };
@@ -55,13 +56,13 @@ type Lane = Arc<Mutex<Option<u64>>>;
 
 #[derive(Default)]
 pub(crate) struct Lanes {
-    lanes: Mutex<BTreeMap<CastId, Lane>>,
+    lanes: Mutex<BTreeMap<SocketAddr, Lane>>,
     minted: AtomicU64,
 }
 
 impl Lanes {
-    fn taken(&self, id: &CastId) -> Hold {
-        let lane = Arc::clone(self.lanes.lock().entry(id.clone()).or_default());
+    fn taken(&self, at: SocketAddr) -> Hold {
+        let lane = Arc::clone(self.lanes.lock().entry(at).or_default());
         let mine = self.minted.fetch_add(1, Ordering::Relaxed);
         *lane.lock() = Some(mine);
         Hold { lane, mine }
@@ -118,7 +119,7 @@ pub(crate) fn open(
             return Err(Error::served(error).into());
         }
     };
-    let hold = lanes.taken(device.id());
+    let hold = lanes.taken(device.at());
 
     let (announce, events) = unbounded();
     let (steer, steered) = unbounded();

@@ -238,6 +238,7 @@ impl RealtimeSink {
             sinks: vec![SinkInfo {
                 id: SinkId::new(1),
                 name: NodeName::new("alsa_output.fake"),
+                aliases: Vec::new(),
                 description: "Fake DAC".to_owned(),
                 is_default: true,
                 is_hardware: true,

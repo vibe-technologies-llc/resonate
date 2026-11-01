@@ -443,7 +443,7 @@ impl Zones {
         let wanted = surveyed
             .iter()
             .find(|known| match sink {
-                Some(name) => &known.name == name,
+                Some(name) => known.is_named(name),
                 None => known.is_default,
             })
             .map(|known| known.id)?;

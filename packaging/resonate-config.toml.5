@@ -198,7 +198,7 @@ Array of \fBhttp://\fR addresses of UPnP renderers' device descriptions, such as
 Each is reached when Resonate starts, whatever \fBrenderers\fR says, and no search is sent to the network unless \fBrenderers\fR is on. Default: empty.
 .TP
 .B cast-at
-Array of IP addresses of Google Cast receivers, each with its port (\fB192.168.1.30:8009\fR) or without it (8009), for a network that drops the multicast browse. A name is not looked up. Each is reached when Resonate starts, whatever \fBrenderers\fR says, and no browse is sent to the network unless \fBrenderers\fR is on. A receiver found by the browse at an address held here is listed once, under the name the address gives it (\fBcast:at-\fR and the address). Default: empty.
+Array of Google Cast receivers given by IP address or by host name, each with its port (\fB192.168.1.30:8009\fR, \fBkitchen.local:8009\fR) or without it (8009), for a network that drops the multicast browse. A host name is looked up when it is reached and again each time it is tried, off the window's thread; a \fB.local\fR name the system cannot resolve is asked for over mDNS. Each is reached when Resonate starts, whatever \fBrenderers\fR says, and no browse is sent to the network unless \fBrenderers\fR is on. A receiver is named \fBcast:at-\fR and its address until the browse hears it at that address, and then \fBcast:\fR and its mDNS id; a \fBsink\fR naming it either way finds it while the address is held. Default: empty.
 .TP
 .B flac-above-96k-for
 Array of renderer names (\fBupnp:\fR and the UDN, as \fBresonate sinks \-\-renderers\fR lists them).

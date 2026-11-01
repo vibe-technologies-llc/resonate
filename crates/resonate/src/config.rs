@@ -3,7 +3,6 @@ use std::{
     env, fmt,
     fs::{self, File, OpenOptions},
     io::{self, Write as _},
-    net::SocketAddr,
     ops::RangeInclusive,
     path::{Path, PathBuf},
     process,
@@ -12,6 +11,7 @@ use std::{
 };
 
 use clap::ValueEnum as _;
+use resonate_cast::Given;
 use resonate_core::{
     Accent, AppId, ArtistsDrawn, HeadYaw, Icon, Pictured, Presence, ScrollbarMode, Shown,
     SpeakerAngle, SpeakerElevation, Speakers, SpectrumBands, SpectrumFalls, SpectrumFloor,
@@ -191,7 +191,7 @@ pub struct Config {
     pub renderers: Option<bool>,
     pub flac_above_96k_for: BTreeSet<NodeName>,
     pub renderers_at: BTreeSet<Located>,
-    pub cast_at: BTreeSet<SocketAddr>,
+    pub cast_at: BTreeSet<Given>,
     pub history_kept: Option<HistoryKept>,
     pub organise_as: Option<Layout>,
     pub notify: Option<bool>,
@@ -679,7 +679,7 @@ impl Config {
         &self.renderers_at
     }
 
-    pub const fn cast_at(&self) -> &BTreeSet<SocketAddr> {
+    pub const fn cast_at(&self) -> &BTreeSet<Given> {
         &self.cast_at
     }
 
@@ -1375,7 +1375,7 @@ fn renderer_addresses(at: At<'_>, value: &Item) -> Result<BTreeSet<Located>> {
     Ok(addresses)
 }
 
-fn cast_addresses(at: At<'_>, value: &Item) -> Result<BTreeSet<SocketAddr>> {
+fn cast_addresses(at: At<'_>, value: &Item) -> Result<BTreeSet<Given>> {
     let array = value
         .as_array()
         .ok_or_else(|| at.mistyped(ValueKind::Array))?;
@@ -1383,7 +1383,7 @@ fn cast_addresses(at: At<'_>, value: &Item) -> Result<BTreeSet<SocketAddr>> {
 
     for named in array {
         let address = named.as_str().ok_or_else(|| at.mistyped(ValueKind::Text))?;
-        match resonate_cast::receiver_address(address) {
+        match Given::parse(address) {
             Some(receiver) => {
                 addresses.insert(receiver);
             }
@@ -1391,7 +1391,7 @@ fn cast_addresses(at: At<'_>, value: &Item) -> Result<BTreeSet<SocketAddr>> {
                 tracing::debug!("ignoring a blank Cast receiver address");
             }
             None => {
-                tracing::warn!(address, path = %at.path.display(), "ignoring a Cast receiver address that is not an IP address");
+                tracing::warn!(address, path = %at.path.display(), "ignoring a Cast receiver address that is neither an IP address nor a host name");
             }
         }
     }
@@ -2540,19 +2540,27 @@ mod tests {
     }
 
     #[test]
-    fn the_cast_addresses_are_the_ip_addresses_named_with_the_cast_port_unless_given() {
+    fn the_cast_addresses_are_ip_addresses_and_host_names_with_the_cast_port_unless_given() {
         let config = read(
-            r#"cast-at = ["192.168.1.30", " 192.168.1.31:8010 ", "[fe80::1]", "", "living-room.local"]"#,
+            r#"cast-at = ["192.168.1.30", " 192.168.1.31:8010 ", "[fe80::1]", "", "Living-Room.local", "speaker.lan:8011", "not an address", "speaker.lan:x"]"#,
         )
         .expect("a well formed document");
 
+        let mut held = config
+            .cast_at()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        held.sort();
         assert_eq!(
-            config
-                .cast_at()
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>(),
-            ["192.168.1.30:8009", "192.168.1.31:8010", "[fe80::1]:8009"]
+            held,
+            [
+                "192.168.1.30:8009",
+                "192.168.1.31:8010",
+                "[fe80::1]:8009",
+                "living-room.local:8009",
+                "speaker.lan:8011",
+            ]
         );
         assert!(Config::default().cast_at().is_empty());
 

@@ -4,6 +4,8 @@ use resonate_audio::{Error as SinkError, Operation, SinkId};
 use resonate_core::StreamSpec;
 use thiserror::Error;
 
+use crate::Host;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Asked {
     Status,
@@ -109,6 +111,12 @@ pub enum Error {
         #[source]
         source: Box<resonate_upnp::Error>,
     },
+    #[error("the Cast receiver named {host} could not be found")]
+    Resolve {
+        host: Host,
+        #[source]
+        source: io::Error,
+    },
     #[error("no Cast receiver is known as {0}")]
     NoSuchReceiver(SinkId),
     #[error("the Cast receiver takes no stream of {0}")]
@@ -128,6 +136,7 @@ impl Error {
             | Self::NotACastMessage
             | Self::Browse { .. }
             | Self::Serve { .. }
+            | Self::Resolve { .. }
             | Self::NoSuchReceiver(_) => Operation::Connect,
             Self::FormatRefused(_) => Operation::Format,
         }

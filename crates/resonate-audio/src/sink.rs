@@ -151,6 +151,7 @@ pub struct CardProfile {
 pub struct SinkInfo {
     pub id: SinkId,
     pub name: NodeName,
+    pub aliases: Vec<NodeName>,
     pub description: String,
     pub is_default: bool,
     pub is_hardware: bool,
@@ -170,6 +171,10 @@ impl SinkFormats {
 }
 
 impl SinkInfo {
+    pub fn is_named(&self, name: &NodeName) -> bool {
+        &self.name == name || self.aliases.contains(name)
+    }
+
     pub fn words_for(&self, format: SampleFormat) -> Option<Words> {
         self.formats
             .iter()
@@ -371,6 +376,7 @@ mod tests {
         SinkInfo {
             id: SinkId::new(42),
             name: NodeName::new("alsa_output.test"),
+            aliases: Vec::new(),
             description: "Test DAC".to_owned(),
             is_default: true,
             is_hardware: true,

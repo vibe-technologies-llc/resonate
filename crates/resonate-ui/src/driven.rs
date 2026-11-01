@@ -5084,6 +5084,7 @@ mod tests {
         SinkInfo {
             id: SinkId::new(id),
             name: NodeName::new(name),
+            aliases: Vec::new(),
             description: description.to_owned(),
             is_default,
             is_hardware: true,

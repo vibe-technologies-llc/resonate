@@ -499,6 +499,7 @@ impl Discovered {
                 SinkInfo {
                     id: SinkId::new(*id),
                     name: NodeName::new(record.name.clone()),
+                    aliases: Vec::new(),
                     description: record.description.clone(),
                     is_default: self.default_sink.as_deref() == Some(record.name.as_str()),
                     is_hardware: self.is_hardware(record),

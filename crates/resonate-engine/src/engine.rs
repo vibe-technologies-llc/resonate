@@ -529,7 +529,7 @@ fn heard_amplitude(plan: &OutputPlan, muted: bool) -> f32 {
 fn chosen_sink<'s>(sinks: &'s [SinkInfo], named: Option<&NodeName>) -> Option<&'s SinkInfo> {
     sinks
         .iter()
-        .find(|sink| named == Some(&sink.name))
+        .find(|sink| named.is_some_and(|named| sink.is_named(named)))
         .or_else(|| sinks.iter().find(|sink| sink.is_default))
         .or_else(|| sinks.first())
 }
@@ -2594,7 +2594,7 @@ impl Engine {
             return false;
         };
         chosen_sink(&self.published.sinks.read(), self.config.sink.as_ref())
-            .is_some_and(|sink| sink.id == output.sink && sink.name == output.bound)
+            .is_some_and(|sink| sink.id == output.sink && sink.is_named(&output.bound))
     }
 
     fn plan_wanted_now(&self) -> Option<OutputPlan> {
@@ -2989,7 +2989,7 @@ impl Engine {
             .sinks
             .read()
             .iter()
-            .find(|sink| sink.name == output.bound)
+            .find(|sink| sink.is_named(&output.bound))
             .is_some_and(|sink| {
                 packs_again(
                     track.decoded(),

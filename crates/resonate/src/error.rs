@@ -583,7 +583,7 @@ pub enum Error {
         source: Box<resonate_upnp::Error>,
     },
 
-    #[error("{address} is not an IP address a Cast receiver can be reached at")]
+    #[error("{address} is neither an IP address nor a host name a Cast receiver can be reached at")]
     CastAddress { address: String },
 
     #[error("no playlist named {0}")]

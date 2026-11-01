@@ -58,7 +58,7 @@ impl Listener {
                     .enumerate_sinks(ENUMERATES_WITHIN)
                     .map_err(|source| Error::capture(CaptureOp::Connect, source))?
                     .into_iter()
-                    .find(|sink| &sink.name == name)
+                    .find(|sink| sink.is_named(name))
                     .map(|sink| sink.id)
                     .ok_or_else(|| Error::NoSuchSink { name: name.clone() })?,
                 None => pipewire

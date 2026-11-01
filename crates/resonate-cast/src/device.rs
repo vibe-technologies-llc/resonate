@@ -14,16 +14,6 @@ pub const CAST_NODES: &str = "cast:";
 
 pub const CAST_PORT: u16 = 8009;
 
-pub fn receiver_address(text: &str) -> Option<SocketAddr> {
-    let text = text.trim();
-    text.parse::<SocketAddr>().ok().or_else(|| {
-        text.trim_matches(['[', ']'])
-            .parse::<std::net::IpAddr>()
-            .ok()
-            .map(|ip| SocketAddr::new(ip, CAST_PORT))
-    })
-}
-
 pub const MEDIA_RECEIVER: &str = "CC1AD845";
 
 const LAUNCHED_WITHIN: Duration = Duration::from_secs(20);
@@ -120,6 +110,17 @@ impl Device {
 
     pub fn node_name(&self) -> NodeName {
         NodeName::new(format!("{CAST_NODES}{}", self.found.id))
+    }
+
+    pub fn address_node_name(&self) -> NodeName {
+        NodeName::new(format!("{CAST_NODES}{}", CastId::at(self.found.at)))
+    }
+
+    pub fn renamed(&self, found: Found) -> Self {
+        Self {
+            found,
+            volume: self.volume,
+        }
     }
 
     pub fn carriage() -> Carriage {
@@ -242,31 +243,6 @@ mod tests {
             status_in(&Json::read(r#"{"type":"MEDIA_STATUS","status":[]}"#).expect("JSON"))
                 .is_none()
         );
-    }
-
-    #[test]
-    fn a_receiver_is_addressed_by_an_ip_with_the_cast_port_unless_one_is_given() {
-        assert_eq!(
-            receiver_address(" 192.168.1.20 "),
-            Some(SocketAddr::from(([192, 168, 1, 20], CAST_PORT)))
-        );
-        assert_eq!(
-            receiver_address("192.168.1.20:8010"),
-            Some(SocketAddr::from(([192, 168, 1, 20], 8010)))
-        );
-        assert_eq!(
-            receiver_address("[fe80::1]"),
-            Some(SocketAddr::new(
-                "fe80::1".parse().expect("an address"),
-                CAST_PORT
-            ))
-        );
-        assert_eq!(
-            receiver_address("[fe80::1]:8011").map(|at| at.port()),
-            Some(8011)
-        );
-        assert_eq!(receiver_address("living-room.local"), None);
-        assert_eq!(receiver_address(""), None);
     }
 
     #[test]
