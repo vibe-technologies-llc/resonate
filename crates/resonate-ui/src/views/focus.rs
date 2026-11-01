@@ -11,8 +11,6 @@ use crate::{
     views::hint::{self, Wording},
 };
 
-const WASH_ALPHA: u8 = 0x14;
-
 pub(crate) fn ring_of(colour: u32) -> Vec<BoxShadow> {
     vec![BoxShadow {
         color: rgb(colour).into(),
@@ -26,7 +24,6 @@ pub(crate) fn ring_of(colour: u32) -> Vec<BoxShadow> {
 pub(crate) fn lit(style: StyleRefinement) -> StyleRefinement {
     style
         .border_color(rgb(theme::focus_ring()))
-        .bg(theme::tinted(theme::accent(), WASH_ALPHA))
         .shadow(ring_of(theme::focus_ring()))
 }
 
@@ -39,9 +36,7 @@ pub(crate) fn lit_over(fill: u32) -> impl FnOnce(StyleRefinement) -> StyleRefine
 }
 
 pub(crate) fn picked(style: StyleRefinement) -> StyleRefinement {
-    style
-        .bg(theme::tinted(theme::accent(), 0x2a))
-        .shadow(ring_of(theme::focus_ring()))
+    style.shadow(ring_of(theme::focus_ring()))
 }
 
 pub(crate) fn by_the_pointer(click: &ClickEvent) -> bool {
