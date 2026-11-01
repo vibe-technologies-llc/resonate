@@ -84,12 +84,14 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   nothing here has run
 
 ## Testing
-- [M · 0.3.1] `resonate-ui`'s driven tests never finish: on master (920c0650) as since, a test that
-  opens a `RootView` (`driven::tests::a_contact_typed_and_left_with_the_pointer_is_kept_and_one_left_with_escape_is_put_back`
+- [M · 0.3.1] `resonate-ui`'s driven tests never finish on this machine since the afternoon of
+  2026-11-01: a test that opens a `RootView`
+  (`driven::tests::a_contact_typed_and_left_with_the_pointer_is_kept_and_one_left_with_escape_is_put_back`
   alone) spins one core in gpui's layout, `taffy` 0.13's `compute_flexbox_layout` measuring a child
-  through `measure_child_size` and `determine_flex_base_size` level under level without returning,
-  so `cargo test -p resonate-ui` and CI's whole-workspace job run until killed. Found under a
-  debugger, not yet narrowed to the element tree that recurses
+  through `measure_child_size` and `determine_flex_base_size` level under level. A clean in-place
+  build of `f7710650` and of `920c0650` ran past 25 s as well, so the commits of that day are not
+  shown to be the cause; the text system is gpui's `NoopTextSystem`, so the system fonts upgraded
+  that afternoon are not either. Not yet narrowed
 - [S · blocked: a second compositor] The drag test has run on KWin alone: no other compositor
   (`sway`, `weston`, `mutter`, `cage`, `labwc`) is installed here, so another's data-device and
   drag-icon behaviour is untried
