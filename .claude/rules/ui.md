@@ -376,6 +376,12 @@ is never named.
     *Look for missing covers* via `held_back`; a scan can still start under one. `RootView::enrichment_status` sits
     above the sidebar's *Settings* row while `LibraryModel::is_enriching` (a globe in `theme::faint()`
     and *Enriching…*; a press opens `Category::Library`); the toast `looked_up` tells what was found.
+    **The Library category's *What online knows* group shows the breakdown** (`library.md`): while a
+    lookup runs *The lookup so far*, read from `EnrichProgress::snapshot` on the poll, and once it
+    ends *The last lookup*, kept in `LibraryModel::looked_up` until the next begins (a section a
+    row, only its counted outcomes: `lookup_lines`), with a note where it was stopped or the
+    reference could not be reached (`lookup_ending`). Unlike the other passes' counts it stays
+    after the toast, since the toast says only the albums and artists answered.
 - **What a listener reaches for is what the lookup asks next.** `LibraryModel` holds one `Sought` for
   the run and hands it to every `enrich`. Set via `LibraryModel::ask_about`: scoping the tracks pane
   to an album or artist, playing a row, and `ask_about_what_is_drawn` whenever a listing is read with

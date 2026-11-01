@@ -24,18 +24,18 @@ use resonate_library::{
     Album, AlbumFound, AlbumMatch, AlbumNotHeld, AlbumOrder, AlbumQuery, Artist, ArtistDetail,
     ArtistFound, ArtistOrder, ArtistQuery, ArtistTotals, CatalogStamp, CoverArt, Covering, Cut,
     Day, Deleted, DeliveryFolder, Direction, Drawing, Edit, EnrichOptions, EnrichProgress,
-    EnrichSummary, Favoured, FileTags, Fingerprinters, Found, GroupRelease, HeldReleaseTrack,
-    HistoryKept, ImportOptions, ImportProgress, ImportStats, ImportSummary, Imported, Issued, Kept,
-    Layout, Learning, Library, Listen, Maker, Mbid, Meant, Measured, Missing, MissingTrack,
-    MostListened, NamedPlaylist, OrganiseOptions, OrganiseProgress, OrganiseStats, OrganiseSummary,
-    Performer, Playing, Playlist, PlaylistEntry, PlaylistOrder, PollOptions, PollProgress,
-    PollStats, PollSummary, Raster, Recording, RecordingMatch, RecordingRelease, Reference,
-    ReleaseAsked, ReleaseDetail, ReleaseMatch, RetagOptions, RetagProgress, RetagStats,
-    RetagSummary, RootsWatch, RowOrder, SavedQuery, ScanHandle, ScanOptions, ScanProgress,
-    ScanStats, ScanSummary, Search, Shared, SongsAsked, SortOrder, Sought, Sources, Statistics,
-    Suggestion, Sung, Track, TrackQuery, Undoable, UnheldRelease, Window, Wording,
-    albums_still_answering, artists_still_answering, folded_letters, songs_asked, still_answering,
-    weighed_for,
+    EnrichStats, EnrichSummary, Favoured, FileTags, Fingerprinters, Found, GroupRelease,
+    HeldReleaseTrack, HistoryKept, ImportOptions, ImportProgress, ImportStats, ImportSummary,
+    Imported, Issued, Kept, Layout, Learning, Library, Listen, Maker, Mbid, Meant, Measured,
+    Missing, MissingTrack, MostListened, NamedPlaylist, OrganiseOptions, OrganiseProgress,
+    OrganiseStats, OrganiseSummary, Performer, Playing, Playlist, PlaylistEntry, PlaylistOrder,
+    PollOptions, PollProgress, PollStats, PollSummary, Raster, Recording, RecordingMatch,
+    RecordingRelease, Reference, ReleaseAsked, ReleaseDetail, ReleaseMatch, RetagOptions,
+    RetagProgress, RetagStats, RetagSummary, RootsWatch, RowOrder, SavedQuery, ScanHandle,
+    ScanOptions, ScanProgress, ScanStats, ScanSummary, Search, Shared, SongsAsked, SortOrder,
+    Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery, Undoable, UnheldRelease,
+    Window, Wording, albums_still_answering, artists_still_answering, folded_letters, songs_asked,
+    still_answering, weighed_for,
 };
 use resonate_providers::Providers;
 
@@ -805,6 +805,7 @@ pub struct LibraryModel {
     previewed_tags: Planned,
     sourcing: Sourcing,
     enriching: Option<Arc<EnrichProgress>>,
+    looked_up: Option<EnrichSummary>,
     sought: Arc<Sought>,
     reach: usize,
     page_moved: bool,
@@ -1026,6 +1027,7 @@ impl LibraryModel {
             previewed_tags: Planned::Not,
             sourcing,
             enriching: None,
+            looked_up: None,
             sought: Arc::default(),
             reach,
             page_moved: false,
@@ -5040,6 +5042,17 @@ impl LibraryModel {
         self.enriching.is_some()
     }
 
+    pub fn enrich_stats(&self) -> Option<EnrichStats> {
+        match &self.enriching {
+            Some(progress) => Some(progress.snapshot()),
+            None => self.looked_up.map(|summary| summary.stats),
+        }
+    }
+
+    pub fn looked_up(&self) -> Option<EnrichSummary> {
+        self.looked_up
+    }
+
     pub fn is_stopping_enrich(&self) -> bool {
         self.enriching
             .as_ref()
@@ -5089,6 +5102,7 @@ impl LibraryModel {
         };
 
         self.enriching = Some(Arc::clone(handle.progress()));
+        self.looked_up = None;
         cx.notify();
 
         self._enrich = cx.spawn(async move |this, cx| {
@@ -5112,7 +5126,10 @@ impl LibraryModel {
             let finished = this.update(cx, |this, cx| {
                 this.enriching = None;
                 match handle.join() {
-                    Ok(summary) => toast::tell(looked_up(&summary), cx),
+                    Ok(summary) => {
+                        this.looked_up = Some(summary);
+                        toast::tell(looked_up(&summary), cx);
+                    }
                     Err(error) => {
                         tracing::error!(%error, "the lookup failed");
                         toast::tell(toast::could_not("finish the lookup", &error), cx);

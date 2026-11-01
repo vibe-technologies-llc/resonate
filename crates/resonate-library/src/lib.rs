@@ -26,6 +26,7 @@ mod moves;
 mod numerals;
 mod offered;
 mod organise;
+mod outcomes;
 mod paged;
 mod pass;
 mod playlist;
@@ -128,6 +129,7 @@ pub use crate::{
         Companion, DEFAULT_LAYOUT, Field, Layout, Move, Named, Naming, OrganiseOptions,
         OrganiseProgress, OrganiseStats, OrganiseSummary, Plan, Refusal, Refused, Sidecar,
     },
+    outcomes::{Outcome, Section},
     pass::{
         Cancelling, EnrichHandle, ImportHandle, OrganiseHandle, PassHandle, PassKind, PollHandle,
         RetagHandle, ScanHandle, TakeInHandle,

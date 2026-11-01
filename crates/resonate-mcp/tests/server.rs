@@ -2904,6 +2904,13 @@ fn a_scan_run_to_its_end_hands_over_to_a_lookup_where_the_settings_ask_for_one()
     assert_eq!(started["follow_links"], true);
     assert_eq!(started["lookup_after"], true);
     assert_eq!(lookup["state"], "finished", "{lookup}");
+    for outcome in resonate_library::Outcome::ALL {
+        assert!(
+            lookup["stats"][outcome.key()].is_u64(),
+            "the lookup's stats lack {}: {lookup}",
+            outcome.key()
+        );
+    }
 }
 
 #[test]

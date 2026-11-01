@@ -73,11 +73,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   and iPad layouts for Now Playing, the library and the sheets, with the accessibility-size layouts
   held in each
 
-## Enrichment
-- [M · 0.4.0] Clicking enrichment shows no detailed statistics of what it is doing: the pass counts
-  what landed (`EnrichProgress`) and `EnrichSummary` carries its totals, but the listener sees no
-  breakdown of what the pass is doing, outcome by outcome, while it runs or after
-
 ## Playback and output
 - [M · blocked: pipewire-rs] A rebind or turn inside a row that moves the rate while
   `force-graph-rate` pins it (on by default), or switches the pin, still reopens the PipeWire stream:

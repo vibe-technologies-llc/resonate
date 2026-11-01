@@ -192,7 +192,9 @@ what follows describes Unix, where `signals.rs` and termios are used.
   Cancelled: `Error::Cancelled { pass }` via `finished`, exit 1. Ran out with failures:
   `Error::FilesFailed { pass, failed }` via `none_failed`, exit 1, after the summary (scan: after
   its lookup); writes `tag` passes over by design (`Unwritten::is_a_failure`) are not failures. A
-  cancelled scan asks the reference nothing after. Handles are one `resonate_library::PassHandle`
+  cancelled scan asks the reference nothing after. `enrich` ends by printing its `EnrichStats` a section at a time
+  (`counted_by_section`: only the outcomes counted, the count then its `Outcome::label`), then why
+  it ended early. Handles are one `resonate_library::PassHandle`
   (`ScanHandle` etc. aliases); a dying thread answers `Error::Stopped { pass }` after the panic
   message goes to an error record (`pass::what_it_said`), so a new pass is an alias plus a
   `PassKind` variant.
