@@ -1,16 +1,11 @@
 use std::mem;
 
-use audio_thread_priority::{
-    RtPriorityHandle, demote_current_thread_from_real_time, promote_current_thread_to_real_time,
-};
-use resonate_core::SampleRate;
+use resonate_win32::ProAudioClass;
 use thread_priority::{ThreadPriority, WinAPIThreadPriority, set_current_thread_priority};
-
-const FRAMES_A_CYCLE_UNSAID: u32 = 0;
 
 enum Held {
     Ordinary,
-    Scheduled(RtPriorityHandle),
+    Scheduled(ProAudioClass),
     Raised,
 }
 
@@ -25,9 +20,9 @@ impl Priority {
         }
     }
 
-    pub(crate) fn set(&mut self, realtime: bool, rate: SampleRate) {
+    pub(crate) fn set(&mut self, realtime: bool) {
         match (realtime, &self.held) {
-            (true, Held::Ordinary) => self.held = raised(rate),
+            (true, Held::Ordinary) => self.held = raised(),
             (false, Held::Scheduled(_) | Held::Raised) => self.lower(),
             (true, Held::Scheduled(_) | Held::Raised) | (false, Held::Ordinary) => {}
         }
@@ -35,9 +30,9 @@ impl Priority {
 
     fn lower(&mut self) {
         match mem::replace(&mut self.held, Held::Ordinary) {
-            Held::Scheduled(handle) => {
-                if let Err(error) = demote_current_thread_from_real_time(handle) {
-                    tracing::warn!(%error, "the stream thread would not leave its MMCSS class");
+            Held::Scheduled(class) => {
+                if let Err(error) = class.leave() {
+                    tracing::warn!(%error, "the stream thread would not leave MMCSS's Pro Audio class");
                 }
             }
             Held::Raised => {
@@ -54,9 +49,9 @@ impl Priority {
     }
 }
 
-fn raised(rate: SampleRate) -> Held {
-    match promote_current_thread_to_real_time(FRAMES_A_CYCLE_UNSAID, rate.hz()) {
-        Ok(handle) => Held::Scheduled(handle),
+fn raised() -> Held {
+    match ProAudioClass::join() {
+        Ok(class) => Held::Scheduled(class),
         Err(error) => {
             tracing::warn!(%error, "MMCSS refused the stream thread; raising its priority instead");
             match set_current_thread_priority(ThreadPriority::Max) {

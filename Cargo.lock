@@ -625,19 +625,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "audio_thread_priority"
-version = "0.38.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0b30b2f3d2da482d0faeaafd8f88a38fbc62abb58d3b402cfa195793f4c92ab"
-dependencies = [
- "cfg-if",
- "libc",
- "log",
- "mach2 0.4.3",
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2646,7 +2633,7 @@ dependencies = [
  "image",
  "libc",
  "log",
- "mach2 0.6.0",
+ "mach2",
  "metal",
  "objc2 0.6.5",
  "objc2-core-foundation",
@@ -4098,15 +4085,6 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "time",
  "uuid",
-]
-
-[[package]]
-name = "mach2"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d640282b302c0bb0a2a8e0233ead9035e3bed871f0b7e81fe4a1ec829765db44"
-dependencies = [
- "libc",
 ]
 
 [[package]]
@@ -6037,6 +6015,7 @@ dependencies = [
  "resonate-ui",
  "resonate-upnp",
  "resonate-vault",
+ "resonate-win32",
  "rustix",
  "signal-hook 0.4.6",
  "thiserror 2.0.21",
@@ -6113,6 +6092,7 @@ dependencies = [
  "opus-rs",
  "parking_lot 0.13.0",
  "resonate-core",
+ "resonate-win32",
  "rustfft",
  "rustix",
  "symphonia",
@@ -6558,17 +6538,23 @@ dependencies = [
 name = "resonate-wasapi"
 version = "0.3.0"
 dependencies = [
- "audio_thread_priority",
  "crossbeam-channel",
  "parking_lot 0.13.0",
  "resonate-audio",
  "resonate-core",
+ "resonate-win32",
  "thread-priority",
  "tracing",
- "volumecontrol-core",
- "volumecontrol-windows",
  "wasapi",
- "win-time-sys",
+]
+
+[[package]]
+name = "resonate-win32"
+version = "0.3.0"
+dependencies = [
+ "thiserror 2.0.21",
+ "windows 0.62.2",
+ "windows-core 0.62.2",
 ]
 
 [[package]]
@@ -8621,26 +8607,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
-name = "volumecontrol-core"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfff75d0fba84a608808b8ef3a7f85a35690e8278bbe696d08559e69bb676cd6"
-dependencies = [
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "volumecontrol-windows"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46dfa7183cb1892b9cb7743c1bb81e87f6b79c7f26f604200a1b5d4474a39713"
-dependencies = [
- "thiserror 2.0.21",
- "volumecontrol-core",
- "windows 0.62.2",
-]
-
-[[package]]
 name = "vswhom"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9164,15 +9130,6 @@ dependencies = [
  "roxmltree 0.21.2",
  "thiserror 2.0.21",
  "unicode-normalization",
-]
-
-[[package]]
-name = "win-time-sys"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ccbdeedb7cdb28990babc08deda7976e18830d05e83caa5f41a4319804b94133"
-dependencies = [
- "windows-sys 0.61.2",
 ]
 
 [[package]]

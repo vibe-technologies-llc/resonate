@@ -13,8 +13,8 @@ use std::{
 
 use resonate_audio::{GraphTime, StreamClock, handover::Fed};
 use resonate_core::{Ratio, SampleFormat, SampleRate};
+use resonate_win32::{PerformanceCounter, performance_counter};
 use wasapi::{AudioClient, AudioClock, AudioRenderClient, Handle, ShareMode, WasapiError};
-use win_time_sys::{Clock, PerformanceClock};
 
 use crate::{
     clock::{ClockReading, CounterNow},
@@ -34,7 +34,7 @@ pub(crate) struct Playing {
     pub(crate) frame_bytes: NonZeroUsize,
     pub(crate) clock: Arc<StreamClock>,
     pub(crate) audio_clock: Option<(AudioClock, NonZeroU64)>,
-    pub(crate) counter_per_second: NonZeroU64,
+    pub(crate) counter: Option<PerformanceCounter>,
     pub(crate) written: u64,
     pub(crate) real: u64,
 }
@@ -78,8 +78,9 @@ impl Playing {
             return Ok(Cycled { heard: 0, played });
         }
 
-        let device =
-            reading.and_then(|reading| reading.device_time(counter, self.written, self.rate));
+        let device = reading
+            .zip(counter)
+            .and_then(|(reading, counter)| reading.device_time(counter, self.written, self.rate));
         let filled = fill_buffer(
             self.fed.source(),
             &mut self.scratch,
@@ -121,10 +122,10 @@ impl Playing {
         })
     }
 
-    fn read_the_counter(&self) -> CounterNow {
-        CounterNow {
-            ticks: PerformanceClock.now().ticks(),
-            per_second: self.counter_per_second,
-        }
+    fn read_the_counter(&self) -> Option<CounterNow> {
+        Some(CounterNow {
+            per_second: self.counter?.per_second,
+            ticks: performance_counter().ok()?,
+        })
     }
 }

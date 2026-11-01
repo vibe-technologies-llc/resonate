@@ -2,8 +2,7 @@ use std::io;
 
 use resonate_audio::{Error, HardwareVolume, Operation, Plugged, SinkInfo, SinkPort, SinkResult};
 use resonate_core::{ChannelCount, ChannelLayout, SampleFormat, SampleRate};
-use volumecontrol_core::{AudioDevice as _, AudioError};
-use volumecontrol_windows::AudioDevice;
+use resonate_win32::EndpointVolume;
 use wasapi::{
     AudioClient, Device, DeviceEnumerator, Direction, SampleType, ShareMode, WasapiError,
     WaveFormat,
@@ -22,7 +21,7 @@ pub(crate) fn backend_error(op: Operation, source: WasapiError) -> Error {
     }
 }
 
-pub(crate) fn level_error(source: AudioError) -> Error {
+pub(crate) fn level_error(source: resonate_win32::Error) -> Error {
     Error::Backend {
         op: Operation::Volume,
         source: io::Error::other(source),
@@ -104,8 +103,8 @@ pub(crate) fn enumerate() -> SinkResult<Vec<SinkInfo>> {
 }
 
 fn port_of(device: &Device, endpoint: &str) -> Option<SinkPort> {
-    let level = AudioDevice::from_id(endpoint).ok()?;
-    let percent = level.get_vol().ok()?;
+    let level = EndpointVolume::of(endpoint).ok()?;
+    let scalar = level.level().ok()?;
     let hardware_volume = device
         .get_audiometerinformation()
         .and_then(|meter| meter.query_hardware_support())
@@ -120,8 +119,8 @@ fn port_of(device: &Device, endpoint: &str) -> Option<SinkPort> {
         description: device.get_description().unwrap_or_default(),
         plugged: Plugged::Unsaid,
         hardware_volume,
-        volume: Some(gain_of(percent)),
-        muted: level.is_mute().unwrap_or(false),
+        volume: Some(gain_of(scalar.get())),
+        muted: level.is_muted().unwrap_or(false),
     })
 }
 

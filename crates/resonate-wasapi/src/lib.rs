@@ -27,7 +27,7 @@ pub use crate::{
     formats::{
         PROBED_LAYOUTS, PROBED_RATES, Wire, format_of, formats_taken, mask_of, rates_of, wire_of,
     },
-    level::{gain_of, percent_of},
+    level::{gain_of, scalar_of},
     reshaping::refusal_of,
     watching::{Pace, watch},
     ways::{Way, endpoint_of, node_of, sink_id_of},

@@ -160,6 +160,13 @@ fn report(error: &(dyn std::error::Error + 'static)) {
     }
 }
 
+#[cfg(windows)]
+fn name_the_process() {
+    if let Err(error) = resonate_win32::name_the_process(resonate_mpris::APP_USER_MODEL_ID) {
+        tracing::warn!(%error, "the process could not take the identity its toasts are raised under");
+    }
+}
+
 fn init_logging() -> Result<()> {
     let (filter, refused) = wanted_filter();
     tracing_subscriber::registry()
@@ -193,6 +200,8 @@ fn run() -> Result<()> {
     let cli = Cli::parse();
     one_way_on_bit_perfect(&cli)?;
     init_logging()?;
+    #[cfg(windows)]
+    name_the_process();
     let config = config::load(cli.config.as_deref())?;
 
     match &cli.command {

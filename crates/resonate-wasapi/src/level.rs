@@ -1,15 +1,15 @@
 use resonate_core::{Gain, Volume};
 
-const PERCENT_A_WHOLE_SLIDER: f32 = 100.0;
-const WHOLE_SLIDER_PERCENT: u8 = 100;
-
-pub fn percent_of(gain: Gain) -> u8 {
-    let percent = (Volume::heard_at(gain).get() * PERCENT_A_WHOLE_SLIDER).round();
-    percent.clamp(0.0, f32::from(WHOLE_SLIDER_PERCENT)) as u8
+pub fn scalar_of(gain: Gain) -> f32 {
+    Volume::heard_at(gain).get()
 }
 
-pub fn gain_of(percent: u8) -> Gain {
-    let position = f32::from(percent.min(WHOLE_SLIDER_PERCENT)) / PERCENT_A_WHOLE_SLIDER;
+pub fn gain_of(scalar: f32) -> Gain {
+    let position = if scalar.is_nan() {
+        0.0
+    } else {
+        scalar.clamp(0.0, 1.0)
+    };
     Volume::new(position).unwrap_or(Volume::MAX).to_gain()
 }
 
@@ -21,22 +21,36 @@ mod tests {
         Gain::new(linear).expect("a finite gain")
     }
 
-    #[test]
-    fn the_windows_slider_stands_where_ours_does() {
-        assert_eq!(percent_of(Gain::UNITY), 100);
-        assert_eq!(percent_of(Gain::SILENT), 0);
-        assert_eq!(percent_of(gain(0.125)), 50);
-        assert_eq!(percent_of(gain(4.0)), 100);
+    fn decibels_apart(one: Gain, other: Gain) -> f32 {
+        (one.to_decibels().get() - other.to_decibels().get()).abs()
     }
 
     #[test]
-    fn a_percentage_read_back_is_the_gain_our_slider_sends_there() {
-        assert_eq!(gain_of(100), Gain::UNITY);
-        assert_eq!(gain_of(0), Gain::SILENT);
-        assert_eq!(gain_of(50), gain(0.125));
-        assert_eq!(gain_of(250), Gain::UNITY);
-        for percent in 0..=100 {
-            assert_eq!(percent_of(gain_of(percent)), percent);
+    fn the_windows_slider_stands_where_ours_does() {
+        assert_eq!(scalar_of(Gain::UNITY), 1.0);
+        assert_eq!(scalar_of(Gain::SILENT), 0.0);
+        assert!((scalar_of(gain(0.125)) - 0.5).abs() < 1e-6);
+        assert_eq!(scalar_of(gain(4.0)), 1.0);
+    }
+
+    #[test]
+    fn a_level_read_back_is_the_gain_our_slider_sends_there() {
+        assert_eq!(gain_of(1.0), Gain::UNITY);
+        assert_eq!(gain_of(0.0), Gain::SILENT);
+        assert!(decibels_apart(gain_of(0.5), gain(0.125)) < 1e-3);
+        assert_eq!(gain_of(2.5), Gain::UNITY);
+        assert_eq!(gain_of(f32::NAN), Gain::SILENT);
+    }
+
+    #[test]
+    fn a_level_sent_reads_back_far_within_half_a_devices_step_however_low() {
+        for thousandth in 1..=1_000_u16 {
+            let sent = gain_of(f32::from(thousandth) / 1_000.0);
+            let heard = gain_of(scalar_of(sent));
+            assert!(
+                decibels_apart(sent, heard) < 0.01,
+                "{thousandth}: {sent:?} came back as {heard:?}"
+            );
         }
     }
 }

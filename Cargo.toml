@@ -13,6 +13,7 @@ members = [
     "crates/resonate-dsp",
     "crates/resonate-pipewire",
     "crates/resonate-wasapi",
+    "crates/resonate-win32",
     "crates/resonate-engine",
     "crates/resonate-eq",
     "crates/resonate-fetch",
@@ -260,6 +261,7 @@ resonate-discord = { version = "0.3.0", path = "crates/resonate-discord" }
 resonate-dsp = { version = "0.3.0", path = "crates/resonate-dsp" }
 resonate-pipewire = { version = "0.3.0", path = "crates/resonate-pipewire" }
 resonate-wasapi = { version = "0.3.0", path = "crates/resonate-wasapi" }
+resonate-win32 = { version = "0.3.0", path = "crates/resonate-win32" }
 resonate-engine = { version = "0.3.0", path = "crates/resonate-engine" }
 resonate-eq = { version = "0.3.0", path = "crates/resonate-eq" }
 resonate-fetch = { version = "0.3.0", path = "crates/resonate-fetch" }

@@ -1488,10 +1488,20 @@ fn has_other_names(_: &Metadata) -> bool {
 
 #[cfg(windows)]
 pub fn carries_what_the_file_did(standing: &Metadata, path: &Path, staged: &Path) -> bool {
-    match fs::set_permissions(staged, standing.permissions()) {
-        Ok(()) => true,
-        Err(error) => {
-            tracing::debug!(%error, path = %path.display(), "a copy cannot carry the mode the file held");
+    let streamed = resonate_win32::carry_alternate_streams(path, staged);
+    let secured = resonate_win32::carry_security(path, staged);
+    let moded = fs::set_permissions(staged, standing.permissions());
+
+    match (streamed, secured, moded) {
+        (Ok(()), Ok(()), Ok(())) => true,
+        (streamed, secured, moded) => {
+            tracing::debug!(
+                path = %path.display(),
+                streamed = ?streamed.err(),
+                secured = ?secured.err(),
+                moded = ?moded.err(),
+                "a copy cannot carry the alternate streams, security and attributes the file held"
+            );
             false
         }
     }

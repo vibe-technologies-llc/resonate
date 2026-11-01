@@ -205,6 +205,16 @@ jobs:
           refuse resonate-pipewire resonate-wasapi
           refuse resonate-wasapi resonate-codec resonate-dsp resonate-pipewire pipewire libspa gpui
           only resonate-wasapi resonate-core resonate-audio
+          for reached in $(held_by -p resonate-win32 --target x86_64-pc-windows-msvc -e normal | grep '^resonate' | grep -vx resonate-win32 || true); do
+            echo "::error::resonate-win32 reaches $reached"
+            failed=1
+          done
+          for by in $(held_by --workspace -i resonate-win32 --target x86_64-pc-windows-msvc --depth 1 | grep '^resonate' | grep -vx resonate-win32 || true); do
+            case "$by" in
+              resonate|resonate-wasapi|resonate-codec) ;;
+              *) echo "::error::resonate-win32 is reached by $by"; failed=1 ;;
+            esac
+          done
           check "resonate-listen on Windows" "$(held_by -p resonate-listen --target x86_64-pc-windows-msvc -e normal)" \
             resonate-pipewire resonate-wasapi pipewire libspa gpui ureq
           check "resonate on Windows" "$(held_by -p resonate --target x86_64-pc-windows-msvc)" \

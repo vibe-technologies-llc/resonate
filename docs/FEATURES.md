@@ -49,25 +49,16 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   hotspot, the change event) and the System Media Transport Controls (whether a `MediaPlayer` with its
   command manager off claims the session for an unpackaged process, the media keys and the overlay's
   buttons, seek bar, shuffle and repeat reaching the transport, the cover read through `StorageFile`,
-  the title, artist and album on the overlay and the lock screen) have never run on real hardware or
-  a real audio endpoint
-- [S · 0.4.0] The WASAPI stream thread joins MMCSS's `Audio` class, not `Pro Audio`:
-  `audio_thread_priority`, the safe wrapper, names its task itself, and no safe wrapper of
-  `AvSetMmThreadCharacteristicsW` takes another
-- [S · 0.4.0] A volume turned from the Windows mixer reaches the slider by the two-second poll: the
-  safe wrapper of `IAudioEndpointVolume` reads and sets only a whole percent and offers no
-  `IAudioEndpointVolumeCallback`, so a change is neither told at once nor read finer than a percent
-- [S · 0.4.0] `terminal.rs` (play's key reader and the terminal it restores on an interrupt, a
-  termination and a hang-up) has no Windows counterpart: it needs a pseudo-terminal, which on Windows
-  is ConPTY, and Ctrl-C through `GenerateConsoleCtrlEvent`, both `unsafe` Win32 the workspace forbids,
-  and `play` needs an audio endpoint the hosted runner lacks. The in-place tag write's inode check,
-  the directory-mode tests and the cross-filesystem organise tests are Unix-only for want of a
-  stable Windows equivalent (`windows.md`)
-- [M · blocked: a vetted safe crate] NTFS alternate streams and ACLs are not carried by a
-  tag write (`carries_what_the_file_did` is Unix only, so a staged copy renamed over a track drops
-  both): `std::fs::copy` carries streams but not the security descriptor and cannot stand in for
-  the writer's own staged copy, and no reviewed safe wrapper of `FindFirstStreamW`, `BackupRead` or
-  `GetNamedSecurityInfoW` exists to take them across
+  the title, artist and album on the overlay and the lock screen), the stream thread in MMCSS's
+  `Pro Audio` class, the endpoint volume's change notification and its scalar level, the console
+  tests under ConPTY, a tag write carrying NTFS alternate streams and the DACL and owner, and a toast
+  shown from the zip under the process's own AppUserModelID have never run on real hardware or a
+  real audio endpoint
+- [S · 0.4.0] A console closed under `play` (`CTRL_CLOSE_EVENT`, the hang-up's counterpart) is not
+  driven by `tests/console.rs`, and the console tests skip where no audio endpoint is listed, which
+  is the hosted runner. The in-place tag write's inode check, the directory-mode tests and the
+  cross-filesystem organise tests are Unix-only for want of a stable Windows equivalent
+  (`windows.md`)
 - [S · blocked: certificate] The Windows archives and installers are not Authenticode signed, so
   SmartScreen warns on a first run: no code-signing certificate exists. `sign.ps1` and `release.yml`
   sign with `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD` once they are set

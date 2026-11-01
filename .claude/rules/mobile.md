@@ -19,8 +19,9 @@ listener's own file.
 
 ## Unsafe
 
-`resonate-mobile` is the sole exception to the workspace's unsafe prohibition, explicitly approved
-for the native boundary. UniFFI generates the FFI scaffolding; the handwritten unsafe operations are
+`resonate-mobile` is one of the two exceptions to the workspace's unsafe prohibition, explicitly
+approved for the native boundary (the other is `resonate-win32`, the Windows calls no safe crate
+wraps: `windows.md`). UniFFI generates the FFI scaffolding; the handwritten unsafe operations are
 two. **An owned descriptor**: the front end hands Rust a descriptor it opened (Android detaches
 `ParcelFileDescriptor`, iOS calls `open(2)`), transferred once and closed by Rust's `File`; a
 negative descriptor is refused (`documents::owned`, for a document read through `Documents` and one replaced through `DocumentRewriting` alike). The same transfer (`downloads::fresh_destination`) owns a newly
