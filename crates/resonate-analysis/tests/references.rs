@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 
-use resonate_analysis::{Coding, Finding, Loudness, Verdict, Watch, study};
+use resonate_analysis::{Coding, Finding, Loudness, Tell, Verdict, Watch, study};
 use resonate_codec::Sources;
 use resonate_core::MediaLocation;
 
@@ -490,11 +490,18 @@ fn assert_a_genuine_source(path: &Path) {
     assert_ne!(study.judgement.verdict, Verdict::Fake, "{study:?}");
     assert!(!study.steps.is_empty(), "a lossless source is weighed");
     for steps in &study.steps {
-        let by_chance = match steps.coding {
-            Coding::Opus => {
+        let by_chance = match (steps.tell, steps.coding) {
+            (Tell::IntensityStereo, _) => {
+                let (on, off) = (steps.lattice, steps.control);
+                let spread = ((on * (1.0 - on) + off * (1.0 - off))
+                    / steps.coefficients.max(1) as f32)
+                    .sqrt();
+                on - off <= SOURCE_SIGNIFICANCE_BELOW * spread
+            }
+            (Tell::QuantiserSteps, Coding::Opus) => {
                 steps.lattice * (steps.coefficients as f32).sqrt() < SOURCE_SIGNIFICANCE_BELOW
             }
-            Coding::Aac | Coding::Mp3 | Coding::Mp2 | Coding::Vorbis => {
+            (Tell::QuantiserSteps, Coding::Aac | Coding::Mp3 | Coding::Mp2 | Coding::Vorbis) => {
                 steps.lattice < SOURCE_LATTICE_BELOW
             }
         };
