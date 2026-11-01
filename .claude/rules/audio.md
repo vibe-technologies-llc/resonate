@@ -1197,9 +1197,10 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `DAEMON_ANSWERS_WITHIN` goes through `lose_the_graph`. **Nothing inside the request callback sends
   on the request channel** (pipewire-rs runs it under the channel's lock; a send from there never
   returns). With no graph, a `Sync`, open or capture answers `Error::Disconnected` at once. **A
-  recording survives the restart:** `resonate-listen`'s `Capture` reads a disconnected events
-  channel, or a `StateChanged` to `Failed` on an open one (an unplugged microphone), as lost and asks
-  the same client for the same capture every `LOOKS_EVERY`. **A gap is silence of the time lost, not
+  recording survives the restart:** `resonate-listen`'s `Sitting::until_full` asks each capture
+  whether it is `Held::is_lost` (PipeWire: a disconnected events channel, or a `StateChanged` to
+  `Failed` on an open one, an unplugged microphone) and asks the same client for the same capture
+  every `LOOKS_EVERY`. **A gap is silence of the time lost, not
   a splice:** the reopened stream's `Recorder` is held back until `Recording::silence_for` has
   advanced the clip by the time since the loss in whole frames (the slots are zero until written),
   so the clip keeps wall-clock timing and the deadline is not extended; a reopen that fails adds no

@@ -205,6 +205,8 @@ jobs:
           refuse resonate-pipewire resonate-wasapi
           refuse resonate-wasapi resonate-codec resonate-dsp resonate-pipewire pipewire libspa gpui
           only resonate-wasapi resonate-core resonate-audio
+          check "resonate-listen on Windows" "$(held_by -p resonate-listen --target x86_64-pc-windows-msvc -e normal)" \
+            resonate-pipewire resonate-wasapi pipewire libspa gpui ureq
           check "resonate on Windows" "$(held_by -p resonate --target x86_64-pc-windows-msvc)" \
             resonate-pipewire pipewire libspa wayland-client wayland-protocols rustix
           check "resonate-mobile on iOS" "$(held_by -p resonate-mobile --target aarch64-apple-ios)" \

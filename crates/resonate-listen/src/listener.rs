@@ -1,31 +1,21 @@
-use std::{
-    sync::{Arc, atomic::Ordering},
-    thread,
-    time::{Duration, Instant},
-};
+use std::{sync::Arc, time::Duration};
 
 use crossbeam_channel::Receiver;
-use resonate_core::{ChannelLayout, SampleFormat, SampleRate, StreamSpec};
+use resonate_core::{SampleFormat, StreamSpec};
 use resonate_pipewire::{
-    AudioSource, CaptureRequest, CaptureStream, Capturing, LatencyRequest, MediaRole, Microphone,
-    NodeName, PipeWire, SinkStream, StreamEvent, StreamRequest, StreamState,
+    CaptureRequest, CaptureStream, Capturing, LatencyRequest, MediaRole, Microphone, NodeName,
+    PipeWire, SinkStream, StreamEvent, StreamRequest, StreamState,
 };
 
 use crate::{
     CaptureOp, Clip, Error, Hearing, Listening, Result,
-    recording::{Recorder, Recording},
+    recording::Recorder,
+    session::{HEARD_AT, HEARD_IN, Held, Played, Sitting, finished},
 };
 
-const HEARD_AT: SampleRate = SampleRate::HZ_48000;
-const HEARD_IN: ChannelLayout = ChannelLayout::Stereo;
-const LOOKS_EVERY: Duration = Duration::from_millis(40);
-const GIVES_UP_AFTER_MORE_THAN_ASKED: Duration = Duration::from_secs(4);
 const ENUMERATES_WITHIN: Duration = Duration::from_secs(2);
 const STREAM_NAME: &str = "Listening";
 const PLAYING_NAME: &str = "Measuring";
-const BYTES_PER_SAMPLE: usize = size_of::<f32>();
-const BYTES_PER_FRAME: usize = HEARD_IN_CHANNELS * BYTES_PER_SAMPLE;
-const HEARD_IN_CHANNELS: usize = 2;
 
 #[derive(Clone, Debug)]
 pub struct Listener {
@@ -104,15 +94,10 @@ impl Listener {
         hearing: &Hearing,
         accompanied_by: impl FnOnce(&PipeWire) -> Result<Option<SinkStream>>,
     ) -> Result<Clip> {
-        let spec = StreamSpec::new(HEARD_AT, HEARD_IN, SampleFormat::F32);
-        let channels = usize::from(spec.channel_count().get());
-        let frames = (length.as_secs_f64() * f64::from(HEARD_AT.hz())).round() as usize;
-        hearing.wanted.store(frames as u64, Ordering::Relaxed);
-        hearing.heard.store(0, Ordering::Relaxed);
+        let sitting = Sitting::begin(length, hearing);
 
         let pipewire = PipeWire::start(&self.app_name)
             .map_err(|source| Error::capture(CaptureOp::Connect, source))?;
-        let recording = Recording::holding(frames * channels);
         let request = CaptureRequest {
             from: match from {
                 Listening::Desktop => Capturing::Desktop { sink: None },
@@ -120,13 +105,13 @@ impl Listener {
                     source: source.clone(),
                 },
             },
-            spec,
+            spec: sitting.spec,
             media_name: STREAM_NAME.to_owned(),
         };
         let opened = pipewire
             .capture(
                 &request,
-                Box::new(Recorder::admitting(Arc::clone(&recording))),
+                Box::new(Recorder::admitting(Arc::clone(&sitting.recording))),
             )
             .map_err(|source| Error::capture(CaptureOp::Open, source))?;
 
@@ -139,13 +124,12 @@ impl Listener {
             }
         };
 
-        let capturing = Capture {
-            pipewire: &pipewire,
-            request: &request,
-            recording: &recording,
-            channels,
-        };
-        let left = capturing.until_full(opened, length, hearing);
+        let left = sitting.until_full(opened, length, hearing, |recorder| {
+            pipewire
+                .capture(&request, Box::new(recorder))
+                .inspect_err(|error| tracing::debug!(%error, "the capture cannot open again yet"))
+                .ok()
+        });
         let stopped = left
             .map(CaptureStream::stop)
             .transpose()
@@ -153,129 +137,19 @@ impl Listener {
         drop(accompanying);
         let _ = pipewire.shutdown();
 
-        finished(stopped, hearing.stopped(), recording.taken(), spec)
+        finished(
+            stopped,
+            hearing.stopped(),
+            sitting.recording.taken(),
+            sitting.spec,
+        )
     }
 }
 
-struct Played {
-    mono: std::sync::Arc<[f32]>,
-    at: usize,
-}
-
-impl Played {
-    fn of(samples: &[f32]) -> Self {
-        Self {
-            mono: samples.into(),
-            at: 0,
-        }
+impl Held for CaptureStream {
+    fn is_lost(&self) -> bool {
+        was_lost(self.events())
     }
-}
-
-impl AudioSource for Played {
-    fn fill(&mut self, dst: &mut [u8]) -> usize {
-        let whole = dst.len() / BYTES_PER_FRAME * BYTES_PER_FRAME;
-        let frames = dst.get_mut(..whole).unwrap_or_default();
-        for frame in frames.as_chunks_mut::<BYTES_PER_FRAME>().0 {
-            let sample = self.mono.get(self.at).copied().unwrap_or(0.0);
-            self.at = self.at.saturating_add(1);
-            for word in frame.as_chunks_mut::<BYTES_PER_SAMPLE>().0 {
-                *word = sample.to_le_bytes();
-            }
-        }
-        whole
-    }
-}
-
-fn finished(
-    stopped: Result<Option<()>>,
-    asked_to_stop: bool,
-    samples: Vec<f32>,
-    spec: StreamSpec,
-) -> Result<Clip> {
-    if asked_to_stop {
-        return Err(Error::Stopped);
-    }
-    if samples.is_empty() {
-        stopped?;
-        return Err(Error::NothingHeard);
-    }
-    if let Err(error) = stopped {
-        tracing::warn!(%error, "the capture would not stop cleanly; the clip heard is kept");
-    }
-    Ok(Clip {
-        rate: spec.rate,
-        channels: u16::from(spec.channel_count().get()),
-        samples,
-    })
-}
-
-struct Capture<'a> {
-    pipewire: &'a PipeWire,
-    request: &'a CaptureRequest,
-    recording: &'a Arc<Recording>,
-    channels: usize,
-}
-
-impl Capture<'_> {
-    fn until_full(
-        &self,
-        opened: CaptureStream,
-        length: Duration,
-        hearing: &Hearing,
-    ) -> Option<CaptureStream> {
-        let started = Instant::now();
-        let deadline = length + GIVES_UP_AFTER_MORE_THAN_ASKED;
-        let mut stream = Some(opened);
-        let mut lost_since = None;
-        let mut filled_at_reopen = None;
-        while !self.recording.is_full() && !hearing.stopped() && started.elapsed() < deadline {
-            thread::sleep(LOOKS_EVERY);
-            hearing.heard.store(
-                (self.recording.filled() / self.channels) as u64,
-                Ordering::Relaxed,
-            );
-
-            if stream
-                .as_ref()
-                .is_some_and(|stream| was_lost(stream.events()))
-            {
-                if filled_at_reopen.take() == Some(self.recording.filled()) {
-                    tracing::debug!("the capture reopened was lost before it heard anything");
-                } else {
-                    tracing::warn!("the capture was lost; opening it again");
-                }
-                stream = None;
-                lost_since.get_or_insert_with(Instant::now);
-            }
-            if stream.is_none() {
-                let since = lost_since.unwrap_or_else(Instant::now);
-                stream = self.again(since);
-                if stream.is_some() {
-                    lost_since = None;
-                    filled_at_reopen = Some(self.recording.filled());
-                }
-            }
-        }
-        stream
-    }
-
-    fn again(&self, lost_since: Instant) -> Option<CaptureStream> {
-        let (recorder, admitting) = Recorder::held_back(Arc::clone(self.recording));
-        let stream = self
-            .pipewire
-            .capture(self.request, Box::new(recorder))
-            .inspect_err(|error| tracing::debug!(%error, "the capture cannot open again yet"))
-            .ok()?;
-        self.recording
-            .silence_for(frames_in(lost_since.elapsed()), self.channels);
-        admitting.store(true, Ordering::Release);
-        tracing::info!("the capture carries on after a gap of silence");
-        Some(stream)
-    }
-}
-
-fn frames_in(elapsed: Duration) -> usize {
-    (elapsed.as_secs_f64() * f64::from(HEARD_AT.hz())).round() as usize
 }
 
 fn was_lost(events: &Receiver<StreamEvent>) -> bool {
@@ -353,74 +227,5 @@ mod tests {
 
         drop(kept_open);
         assert!(was_lost(&events));
-    }
-
-    fn stereo() -> StreamSpec {
-        StreamSpec::new(HEARD_AT, HEARD_IN, SampleFormat::F32)
-    }
-
-    #[test]
-    fn a_clip_survives_a_stop_that_failed() {
-        let failed = Err(Error::capture(
-            CaptureOp::Stop,
-            resonate_pipewire::Error::Disconnected,
-        ));
-
-        let clip = finished(failed, false, vec![0.5, -0.5], stereo()).expect("the clip heard");
-        assert_eq!(clip.samples, vec![0.5, -0.5]);
-        assert_eq!(clip.channels, 2);
-    }
-
-    #[test]
-    fn a_stop_that_failed_with_nothing_heard_is_the_error_it_was() {
-        let failed = Err(Error::capture(
-            CaptureOp::Stop,
-            resonate_pipewire::Error::Disconnected,
-        ));
-
-        assert!(matches!(
-            finished(failed, false, Vec::new(), stereo()),
-            Err(Error::Capture {
-                op: CaptureOp::Stop,
-                ..
-            })
-        ));
-        assert!(matches!(
-            finished(Ok(Some(())), false, Vec::new(), stereo()),
-            Err(Error::NothingHeard)
-        ));
-    }
-
-    #[test]
-    fn a_listener_who_stopped_it_hears_no_clip() {
-        assert!(matches!(
-            finished(Ok(Some(())), true, vec![0.5, 0.5], stereo()),
-            Err(Error::Stopped)
-        ));
-    }
-
-    #[test]
-    fn what_is_played_fills_both_channels_in_whole_frames_and_then_falls_silent() {
-        let mut played = Played::of(&[0.5, -0.25]);
-        let mut block = [0xff_u8; 3 * BYTES_PER_FRAME + 3];
-
-        let filled = played.fill(&mut block);
-
-        assert_eq!(filled, 3 * BYTES_PER_FRAME);
-        let words: Vec<f32> = block
-            .get(..filled)
-            .unwrap_or_default()
-            .as_chunks::<BYTES_PER_SAMPLE>()
-            .0
-            .iter()
-            .map(|word| f32::from_le_bytes(*word))
-            .collect();
-        assert_eq!(words, vec![0.5, 0.5, -0.25, -0.25, 0.0, 0.0]);
-    }
-
-    #[test]
-    fn a_gap_counts_the_frames_of_the_time_that_passed() {
-        assert_eq!(frames_in(Duration::from_millis(500)), 24_000);
-        assert_eq!(frames_in(Duration::ZERO), 0);
     }
 }

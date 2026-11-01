@@ -21,7 +21,7 @@ owned-descriptor bridge and the iOS RemoteIO unit at the native boundary (`mobil
 
 Windows reaches its COM and Win32 calls through safe wrapper crates only, so `unsafe_code = "forbid"`
 holds there: `wasapi` (`resonate-wasapi`'s device enumeration, endpoint notifications, render client
-and audio clock), `audio_thread_priority` (its stream thread's MMCSS class, without `with_dbus`),
+and audio clock; `resonate-listen`'s capture endpoints, loopback capture and measuring playback), `audio_thread_priority` (its stream thread's MMCSS class, without `with_dbus`),
 `thread-priority` (the fallback where MMCSS refuses), `volumecontrol-windows` (the endpoint's volume
 and mute, with `volumecontrol-core`'s trait), `win-time-sys` (the performance counter now), `interprocess` (Discord's named pipe), `keepawake` (the machine awake while playing), `ctrlc` and `crossterm` (the binary's interrupts and key reading), `fs4` (the spool's free space), `trash` (the
 recycle bin), `same-file` (core's same-entry test). Each is a `cfg(windows)` target dependency, so
@@ -53,7 +53,9 @@ here, add it there.
   (the arithmetic is `resonate-core::eq`). `-analysis` reaches `-dsp` for `TruePeakMeter` and the
   Shazam signature's `Resampler`.
 - `resonate-lyrics`, `-eq`, `-listen`, `-analysis`: none of gpui, engine, library, `ureq`. `-listen`
-  is core + `-audio` + `-pipewire` alone (recognisers that reach HTTP are `resonate-online`'s, handed in by the
+  is core + `-audio` + `-pipewire` alone on Linux and core + `-audio` + the `wasapi` crate on Windows,
+  never `resonate-pipewire` or `resonate-wasapi` there (`resonate-wasapi` is its dev-dependency, which
+  pins the endpoint naming the two agree on; recognisers that reach HTTP are `resonate-online`'s, handed in by the
   binary). `resonate-mpris`: no gpui, no library.
 - `resonate-ui`: no `resonate-codec`, no image decoding of its own; `resonate-codec::Drawing`
   decodes and scales cover art to a `Raster`.

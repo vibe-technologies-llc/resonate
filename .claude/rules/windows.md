@@ -8,7 +8,8 @@ paths:
   - "crates/resonate/src/interrupts.rs"
   - "crates/resonate/src/windows_launcher.rs"
   - "crates/resonate/src/awake.rs"
-  - "crates/resonate-listen/src/unavailable.rs"
+  - "crates/resonate-listen/src/endpoints.rs"
+  - "crates/resonate-listen/src/wasapi_*.rs"
   - "crates/resonate-discord/src/pipe.rs"
   - "crates/resonate-ui/src/system.rs"
   - "packaging/windows/**"
@@ -181,13 +182,57 @@ handle) and holds a `keepawake::KeepAwake` (display and idle, as the portal's `I
 Linux) while any is `Playing` or `Buffering`. `SetThreadExecutionState` belongs to the thread that
 set it, so the hold is made and dropped on that thread alone; dropping `Awake` stops and joins it.
 
+## Capture
+
+`resonate-listen`'s Windows `Listener` is the Linux one's twin over the `wasapi` crate, reaching core,
+`resonate-audio` and `wasapi` alone (never `resonate-wasapi` or `resonate-pipewire`; the layering job
+refuses both from its Windows tree). `resonate-wasapi` is its dev-dependency, so the node names the
+two agree on are held by `endpoints.rs`' tests. What the two platforms share is portable and tested
+on the host: `session.rs` (the spec heard, the sitting's `until_full` loop over a `Held` capture,
+`Played`, `finished`, `frames_in`), `recording.rs` (`Recording` and `Recorder`, whose `take` of the
+PipeWire sink is `admit`) and `endpoints.rs` (naming, the listing, the choice of tap and output).
+
+- **A microphone is `wasapi-capture:<endpoint id>`**, the endpoint id being the system's stable one
+  (`Listener::microphones` surveys `Direction::Capture` on a short thread of its own with COM entered
+  and left through `Apartment`, the system's order kept, the default endpoint marked, the friendly name
+  the description, the id where the name cannot be read). `Listening::Microphone(None)` is the default
+  capture endpoint; a name that is not a `wasapi-capture:` one (a PipeWire name left in the settings)
+  is `Error::NoSuchMicrophone`, not a guess.
+- **The desktop is loopback capture of the default render endpoint** (`Listening::Desktop`): the
+  render device's client initialised with `Direction::Capture`, which the `wasapi` crate turns into
+  `AUDCLNT_STREAMFLAGS_LOOPBACK`. Loopback is shared mode only; the exclusive endpoints of the output
+  pane cannot be listened to, and a render endpoint taken exclusively by the engine yields nothing.
+- **Both are one shared-mode, event-driven capture asked for what the clip is: 48 kHz stereo `F32`**
+  with `autoconvert` on, so the system's engine converts rate, word and layout and the bytes read are
+  the ones `Recording::keep` takes. A buffer flagged `AUDCLNT_BUFFERFLAGS_SILENT` is zeroed
+  (`zeroed_if_silent`), as its contents are undefined.
+- **A capture is a thread of its own** (`resonate-listen-capture`, as the render stream is):
+  every COM object is made on it, the open is answered through a one-slot channel within five
+  seconds, the loop waits on the event for 100 ms and drains every packet each turn, and `Capture::stop`
+  sets the flag and joins (dropping does the same). A failure of any call ends the thread with
+  `lost` set, which is `Held::is_lost`, so `Sitting::until_full` opens the same capture again behind a
+  held-back `Recorder` and the gap is silence of the time lost (`audio.md`'s recording survives the
+  restart); a device unplugged, or the default render endpoint changed under a loopback, is that.
+- **A quiet loopback is silence of the time that passed.** A render endpoint with nothing playing
+  delivers no packets, so a turn of the loop that drained none pads the clip with the frames of the
+  time since the last turn (`Recorder::pad`, loopback only; a microphone never starves, its quiet
+  arrives as silent buffers). The clip therefore keeps wall-clock length, and a silent desktop is
+  `NothingHeard` as a silent one is on Linux.
+- **The measuring sweep plays through a shared-mode render stream of its own**
+  (`resonate-listen-playback`, same format and autoconvert), on the default render endpoint or the
+  endpoint named by `--sink`, the settings or the output pane: a `wasapi:` or `wasapi-exclusive:`
+  node names the endpoint (`render_endpoint_of`; either way is played shared, so an endpoint held
+  exclusively by the engine fails as `Capture { op: Play }`), any other name is
+  `NoSuchSink`, a missing default `NoOutput`. The buffer is filled before the client starts and on
+  every event; `Playback`'s drop stops and joins. The sweep never passes the engine, as on Linux.
+- **The desktop names no endpoint.** `Listening::Desktop` carries no sink on either platform, so
+  loopback is of the default render endpoint alone.
+
 ## Not on Windows yet
 
 The MPRIS service, notifications, network metering and `Running` (so `queue`, `sleep`
 and `players` against a running window) answer "no bus": `resonate-mpris` compiles but finds no
-session bus, and the binary carries on without it as it does on a Linux machine with none. Capture
-(`resonate-listen`) is a `Listener` that lists no microphone and refuses to record
-(`Error::Unavailable`). The
+session bus, and the binary carries on without it as it does on a Linux machine with none. The
 launcher's icon-follows-the-accent is a no-op. All of it is on the roadmap.
 
 ## Release

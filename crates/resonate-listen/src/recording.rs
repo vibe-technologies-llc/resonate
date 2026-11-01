@@ -11,9 +11,10 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
 };
 
+#[cfg(target_os = "linux")]
 use resonate_pipewire::AudioSink;
 
-const BYTES_PER_SAMPLE: usize = size_of::<f32>();
+use crate::session::BYTES_PER_SAMPLE;
 
 pub struct Recording {
     samples: Box<[AtomicU32]>,
@@ -97,11 +98,25 @@ impl Recorder {
     }
 }
 
-impl AudioSink for Recorder {
-    fn take(&mut self, bytes: &[u8]) {
+impl Recorder {
+    pub(crate) fn admit(&mut self, bytes: &[u8]) {
         if self.admitting.load(Ordering::Acquire) {
             self.recording.keep(bytes);
         }
+    }
+
+    #[cfg(any(windows, test))]
+    pub(crate) fn pad(&mut self, frames: usize, channels: usize) {
+        if self.admitting.load(Ordering::Acquire) {
+            self.recording.silence_for(frames, channels);
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl AudioSink for Recorder {
+    fn take(&mut self, bytes: &[u8]) {
+        self.admit(bytes);
     }
 }
 
@@ -117,9 +132,9 @@ mod tests {
             .iter()
             .flat_map(|sample| sample.to_le_bytes())
             .collect();
-        recorder.take(bytes.get(..8).unwrap_or_default());
+        recorder.admit(bytes.get(..8).unwrap_or_default());
         assert_eq!(recording.taken(), vec![0.5, -0.25]);
-        recorder.take(bytes.get(8..).unwrap_or_default());
+        recorder.admit(bytes.get(8..).unwrap_or_default());
         assert!(recording.is_full());
         assert_eq!(recording.taken(), vec![0.5, -0.25, 1.0]);
     }
@@ -135,7 +150,7 @@ mod tests {
     fn a_gap_is_silence_of_whole_frames_and_never_past_the_end() {
         let recording = Recording::holding(8);
         let mut recorder = Recorder::admitting(Arc::clone(&recording));
-        recorder.take(&bytes_of(&[0.5, -0.5, 0.25]));
+        recorder.admit(&bytes_of(&[0.5, -0.5, 0.25]));
 
         recording.silence_for(1, 2);
         assert_eq!(recording.filled(), 6);
@@ -147,15 +162,28 @@ mod tests {
     }
 
     #[test]
+    fn a_recorder_pads_silence_only_while_it_is_admitted() {
+        let recording = Recording::holding(8);
+        let (mut recorder, admitting) = Recorder::held_back(Arc::clone(&recording));
+
+        recorder.pad(1, 2);
+        assert_eq!(recording.filled(), 0);
+
+        admitting.store(true, Ordering::Release);
+        recorder.pad(1, 2);
+        assert_eq!(recording.filled(), 2);
+    }
+
+    #[test]
     fn a_recorder_held_back_hears_nothing_until_it_is_admitted() {
         let recording = Recording::holding(4);
         let (mut recorder, admitting) = Recorder::held_back(Arc::clone(&recording));
 
-        recorder.take(&bytes_of(&[1.0, 1.0]));
+        recorder.admit(&bytes_of(&[1.0, 1.0]));
         assert_eq!(recording.filled(), 0);
 
         admitting.store(true, Ordering::Release);
-        recorder.take(&bytes_of(&[0.5]));
+        recorder.admit(&bytes_of(&[0.5]));
         assert_eq!(recording.taken(), vec![0.5]);
     }
 }

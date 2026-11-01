@@ -143,7 +143,7 @@ fn stage_after(error: &ListenError) -> Stage {
         | ListenError::NoSuchSink { .. }
         | ListenError::NoOutput => Stage::CaptureFailed,
         #[cfg(windows)]
-        ListenError::Unavailable => Stage::CaptureFailed,
+        ListenError::NoSuchMicrophone { .. } => Stage::CaptureFailed,
         ListenError::Unreachable { .. } => Stage::Unreached,
         ListenError::Refused { .. }
         | ListenError::Unreadable { .. }
@@ -470,8 +470,8 @@ fn noted(error: &ListenError) {
             tracing::warn!(%error, "nothing could be listened to");
         }
         #[cfg(windows)]
-        ListenError::Unavailable => {
-            tracing::warn!(%error, "this platform cannot listen yet");
+        ListenError::NoSuchMicrophone { .. } => {
+            tracing::warn!(%error, "the microphone chosen is not on this machine");
         }
         ListenError::Unreachable { .. }
         | ListenError::Refused { .. }

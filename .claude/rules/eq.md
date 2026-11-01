@@ -16,6 +16,7 @@ paths:
   - "crates/resonate-online/src/autoeq.rs"
   - "crates/resonate-dsp/src/sweep.rs"
   - "crates/resonate-listen/src/listener.rs"
+  - "crates/resonate-listen/src/session.rs"
   - "crates/resonate/src/measuring.rs"
   - "crates/resonate-core/src/abx.rs"
   - "crates/resonate-ui/src/views/settings/abx.rs"
@@ -1067,13 +1068,14 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   the sweep is the desktop's own, the window's included. `resonate_dsp::Sweep` is an exponential sine sweep from 20 Hz to
   20 kHz over `SWEEP_FOR` (8 s) at 48 kHz, 0.1 of full scale (-20 dBFS) with 20 ms Hann fades, refused
   as `Error::SweepBand` (not below half the rate) or `SweepLength` (500 ms to a minute).
-  `Listener::play_and_record` (`resonate-listen`, still reaching core, audio and pipewire alone; it
+  `Listener::play_and_record` (`resonate-listen`, still reaching core, audio and pipewire alone on Linux, the `wasapi` crate on Windows (`windows.md`); it
   takes the `Hearing` listening's capture takes, whose `stop` ends the run at once as
   `Error::Stopped` and keeps nothing)
   opens the capture first, then a playback stream of its own on the output `--sink`, the settings
   or the default names (`NoSuchSink`, `NoOutput`), straight to the device: the sweep never passes
   the engine, so the equaliser, convolver and crossfeed in force do not touch it. It is the
-  `Listener::record` loop with the playback held beside it (`recorded`), so a lost capture reopens
+  `Listener::record` loop with the playback held beside it (`recorded`, on both platforms the one
+  `session::Sitting::until_full`), so a lost capture reopens
   as in listening, and records `HEARD_AFTER_THE_SWEEP` (2 s) past the sweep for the room's tail.
   **Deconvolution is regularised spectral division** (`Sweep::heard_as`): the recording's mono mix
   over the sweep's, `Y * conj(X) / (|X|^2 + 1e-6 * max |X|^2)` on a transform at least recorded

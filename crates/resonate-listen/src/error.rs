@@ -37,8 +37,8 @@ pub enum Error {
     NoOutput,
 
     #[cfg(windows)]
-    #[error("this platform has no capture yet")]
-    Unavailable,
+    #[error("no microphone is named {name}")]
+    NoSuchMicrophone { name: resonate_audio::NodeName },
 
     #[error("nothing reached the recording before it was given up on")]
     NothingHeard,

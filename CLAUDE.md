@@ -32,7 +32,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `discord.md` | resonate-discord, `core::presence`, the binary's `discord.rs`, the Desktop groups | the gate, the seam, the frame, what an activity says and how often |
 | `release.md` | `.github/workflows/release.yml`, `packaging/**`, the root manifest, `docs/ROADMAP.md` | versions and their spelling per ecosystem, branches, tags, the release assets, the signing secrets |
 | `packaging.md` | `packaging/**` | the Arch, Fedora, DEB and Flatpak payloads, the x86-64-v3 release baseline and the pre-release spellings |
-| `windows.md` | resonate-wasapi, core's `os_bytes`, `file_facts`, `positioned`, `windows_uri`, the binary's `interrupts.rs`, `packaging/windows/**` | the WASAPI backend (shared and exclusive as two sinks), the filesystem and path seams under the shared crates, interrupts and keys, what is not on Windows yet |
+| `windows.md` | resonate-wasapi, the Windows capture of resonate-listen, core's `os_bytes`, `file_facts`, `positioned`, `windows_uri`, the binary's `interrupts.rs`, `packaging/windows/**` | the WASAPI backend (shared and exclusive as two sinks), loopback and microphone capture, the filesystem and path seams under the shared crates, interrupts and keys, what is not on Windows yet |
 
 ## Project
 
@@ -108,7 +108,8 @@ the refusals. Worth knowing: only the binary (and the detached `fuzz/`, for `res
 `resonate-mcp` and `resonate-discord`; `resonate-online` is composed by the binary and `resonate-mobile`; a provider crate reaches the seam, core and
 (over the network) `resonate-fetch` alone; `resonate-upnp` reaches core and `resonate-audio` alone (its HTTP
 hand-written over `httparse`, so a build without `online` still plays to a renderer); `resonate-cast` reaches those and `resonate-upnp` alone (its JSON hand-written, so no `serde_json` without `online`); `resonate-listen` reaches core, `resonate-audio` and `resonate-pipewire`
-alone (its own PipeWire client per recording; capture modules only on Linux); `resonate-analysis` reaches `resonate-dsp`;
+alone on Linux (its own PipeWire client per recording) and core, `resonate-audio` and the `wasapi` crate on Windows
+(capture and loopback on threads of its own, never `resonate-wasapi`); `resonate-analysis` reaches `resonate-dsp`;
 `resonate-sync` reaches core alone and is reached by the binary, `resonate-mobile` and the server.
 
 Invariants the layering protects (the rules files have the rest):

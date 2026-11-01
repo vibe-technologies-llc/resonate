@@ -6248,8 +6248,10 @@ dependencies = [
  "resonate-core",
  "resonate-dsp",
  "resonate-pipewire",
+ "resonate-wasapi",
  "thiserror 2.0.21",
  "tracing",
+ "wasapi",
 ]
 
 [[package]]

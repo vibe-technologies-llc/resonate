@@ -41,8 +41,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M · blocked: hardware] Nothing of the Windows build has been heard or seen on a Windows machine:
   it is cross-checked (`cargo xwin`), its portable halves are tested on Linux and a hosted runner
   builds and tests it, but WASAPI shared and exclusive playback at every rate and word, device
-  hot-plug, the render cycle's timing, the window under per-monitor DPI and IME, the recycle bin
-  and the terminal keys have never run on real hardware or a real audio endpoint
+  hot-plug, the render cycle's timing, microphone and loopback capture (a loopback endpoint that
+  stays silent while nothing plays, a microphone's autoconverted format), the window under
+  per-monitor DPI and IME, the recycle bin and the terminal keys have never run on real hardware or
+  a real audio endpoint
 - [L · 0.4.0] Windows has no media transport: the System Media Transport Controls (media keys, the
   volume overlay and lock screen, track and cover metadata) need a native crate behind
   `resonate-mpris`'s `Host` seam, since `resonate-mpris` finds no session bus and the player runs
@@ -50,9 +52,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M · 0.4.0] A running window cannot be reached on Windows: `queue`, `sleep`, `players`, `launch`,
   `eq` reloads and `mcp` ride the session bus's `Running`, which has no Windows transport (a named
   pipe with a lock file for discovery would carry the same calls)
-- [M · 0.4.0] Windows has no capture: `resonate-listen`'s `Listener` lists no microphone and refuses
-  to record, so listening to the desktop, recognition by ear and room measurement are unavailable;
-  WASAPI loopback and capture endpoints would fill it
 - [S · 0.4.0] The WASAPI stream thread joins MMCSS's `Audio` class, not `Pro Audio`:
   `audio_thread_priority`, the safe wrapper, names its task itself, and no safe wrapper of
   `AvSetMmThreadCharacteristicsW` takes another
