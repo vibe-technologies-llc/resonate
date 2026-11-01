@@ -11,7 +11,7 @@ struct ZonesPresentation: ViewModifier {
             get: { presenting && navigation.zones },
             set: { navigation.zones = $0 }
         )) {
-            ZonesSheet().presentationDetents([.medium, .large])
+            ZonesSheet().sheetSized().presentationDetents([.medium, .large])
         }
     }
 }
@@ -87,8 +87,8 @@ struct ZonesSheet: View {
                     Text(addressesFooter)
                 }
             }
-            .sheet(isPresented: $addressing) { RendererAddressSheet(kind: .renderer) }
-            .sheet(isPresented: $addressingReceiver) { RendererAddressSheet(kind: .receiver) }
+            .sheet(isPresented: $addressing) { RendererAddressSheet(kind: .renderer).sheetSized() }
+            .sheet(isPresented: $addressingReceiver) { RendererAddressSheet(kind: .receiver).sheetSized() }
             .task(id: reaching) {
                 while reaching, !Task.isCancelled {
                     library.readRenderers()
@@ -99,7 +99,7 @@ struct ZonesSheet: View {
                 get: { choosing != nil },
                 set: { if !$0 { choosing = nil } }
             )) {
-                if let zone = choosing { RendererPicker(zone: zone) }
+                if let zone = choosing { RendererPicker(zone: zone).sheetSized() }
             }
             .navigationTitle("Zones")
             .navigationBarTitleDisplayMode(.inline)

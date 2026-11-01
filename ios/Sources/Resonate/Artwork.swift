@@ -15,7 +15,6 @@ struct ArtworkLoad: Equatable {
 }
 
 struct ArtworkView: View {
-    private static let arrival: TimeInterval = 0.2
     private static let settlesWithin: Duration = .milliseconds(300)
 
     @Environment(Library.self) private var library
@@ -159,7 +158,9 @@ struct ArtworkView: View {
 
         guard !Task.isCancelled else { return }
         if image == nil, shown != nil {
-            withAnimation(reduceMotion ? nil : .easeOut(duration: Self.arrival)) { image = shown }
+            withAnimation(MotionRendering.of(.arrival, reduceMotion: reduceMotion, sceneActive: phase == .active).animation(Arrival.animation)) {
+                image = shown
+            }
             pictured = track.pictureKey
         } else if image !== shown {
             present(shown, of: track)
@@ -168,10 +169,11 @@ struct ArtworkView: View {
     }
 
     private func present(_ shown: UIImage?, of track: Track) {
-        let anotherSong = pictured != track.pictureKey
+        let anotherSong = SongChange(from: pictured, to: track.pictureKey).handsOver
         pictured = shown == nil ? nil : track.pictureKey
         if phase != .active { leaving = nil }
-        guard handsOver, anotherSong, let current = image, !reduceMotion, phase == .active else {
+        let rendering = MotionRendering.of(.handover, reduceMotion: reduceMotion, sceneActive: phase == .active)
+        guard handsOver, anotherSong, let current = image, rendering == .animated else {
             image = shown
             return
         }
@@ -347,6 +349,7 @@ struct FavouriteButton: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let track: Track
     @State private var tapped = 0
+    @State private var starred = 0
 
     var body: some View {
         if !track.isServed {
@@ -361,12 +364,15 @@ struct FavouriteButton: View {
         let favourite = library.isFavourite(track)
         return Button {
             tapped += 1
-            library.setFavourite(track, !favourite)
+            if !favourite { starred += 1 }
+            withAnimation(MotionRendering.of(.flip, reduceMotion: reduceMotion, sceneActive: true).animation(Flip.animation)) {
+                library.setFavourite(track, !favourite)
+            }
         } label: {
             Image(systemName: favourite ? "heart.fill" : "heart")
                 .foregroundStyle(favourite ? Color.pink : Color.secondary)
                 .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
-                .symbolEffect(.bounce, value: reduceMotion ? 0 : tapped)
+                .symbolEffect(.bounce, value: reduceMotion ? 0 : starred)
                 .touchTarget()
                 .buttonShape()
         }

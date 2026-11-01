@@ -57,6 +57,12 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   by hand, on another xtool app's fixtures (a plain intent, a `String` parameter, App Shortcuts),
   and `AudioPlaybackIntent` as `AudioStarting` was never set beside Apple's output for it. The
   processor is an arm64 Mach-O
+- [S · blocked: iPhone] Now Playing's motion is proved by its rules in tests and a clean build, never
+  seen on an iPhone: the handover (cover crossfade, words, the held title height), the play and
+  pause symbol replacing, the shuffle and repeat flips, the progress bar's flow, seek and song
+  change, the mode change's pane fade, each under Reduce Motion, in the one column and in the two
+  columns turned on its side, and the defects only a device shows (a dropped frame in a handover,
+  the cover's decode landing late)
 
 ## Identification
 - [S · blocked: registered key] AcoustID never reached with a real key; its fixture is written from
@@ -98,7 +104,10 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   reader follows are built and read back in tests only (Orca over AT-SPI; gpui's test platform never
   activates the tree), and neither TalkBack on the Compose screens nor VoiceOver on the SwiftUI app
   has read the accessibility work of 0.4.0 (the lyric elements, the adjustable bars, the hidden
-  background under Now Playing, the announcements)
+  background under Now Playing, the announcements), and the iOS landscape and iPad layouts (Now
+  Playing's two columns, the Library tab's split view, the sheets' form and page sizes, and the
+  accessibility-size layouts in each) have been proved by their rules in tests and a clean build,
+  never seen on an iPhone turned on its side or an iPad
 - [S · blocked: a desktop] The desktop's colour scheme and text scale are proved on how a
   value is read alone: no GNOME or KDE session is reachable from the agent shell, so the portal's
   `color-scheme` and `SettingChanged`, GNOME's `text-scaling-factor` and KDE's `font` point size

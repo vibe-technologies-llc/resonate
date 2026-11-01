@@ -583,11 +583,11 @@ const fn replay_gain_text(mode: ReplayGainMode) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeSet, env, ffi::OsStr, fs, os::unix::ffi::OsStrExt as _, process};
+    use std::{collections::BTreeSet, env, fs, process};
 
     use resonate_core::{
         Accent, AppId, HeadYaw, Pictured, Presence, Shown, SpeakerAngle, SpeakerElevation,
-        TextSize, Theme,
+        TextSize, Theme, os_bytes,
     };
 
     use super::*;
@@ -960,7 +960,7 @@ mod tests {
         let folder = env::temp_dir().join(format!("resonate-settings-batch-{}", process::id()));
         let path = folder.join("config.toml");
         let file = File::at(path.clone());
-        let unwritable = PathBuf::from(OsStr::from_bytes(b"/music/\xff"));
+        let unwritable = PathBuf::from(os_bytes::os_string_from(b"/music/\xed\xa0\x80".to_vec()));
 
         let refused = file.apply(&[
             SettingChange::Store(Setting::Inbox(PathBuf::from("/music/inbox"))),

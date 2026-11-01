@@ -50,6 +50,11 @@ pub enum WindowsOp {
     Listen,
     Show,
     Hide,
+    Player,
+    Controls,
+    Display,
+    Cover,
+    Timeline,
 }
 
 #[derive(Debug, Error)]

@@ -191,7 +191,7 @@ struct DownloadDestinationPrompt: ViewModifier {
 
     func body(content: Content) -> some View {
         @Bindable var downloads = library.features.downloads
-        content.sheet(isPresented: $downloads.choosingFolder) { DownloadFolderSheet() }
+        content.sheet(isPresented: $downloads.choosingFolder) { DownloadFolderSheet().sheetSized() }
     }
 }
 

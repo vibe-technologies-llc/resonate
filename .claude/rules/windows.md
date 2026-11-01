@@ -7,6 +7,7 @@ paths:
   - "crates/resonate-core/src/windows_uri.rs"
   - "crates/resonate-core/src/volume_mounts.rs"
   - "crates/resonate-library/src/reach.rs"
+  - "crates/resonate-library/tests/support/**"
   - "crates/resonate/src/interrupts.rs"
   - "crates/resonate/src/windows_launcher.rs"
   - "crates/resonate/src/awake.rs"
@@ -25,6 +26,8 @@ paths:
   - "crates/resonate-mpris/src/costing.rs"
   - "crates/resonate-mpris/src/desk_toast.rs"
   - "crates/resonate-mpris/src/toast.rs"
+  - "crates/resonate-mpris/src/smtc.rs"
+  - "crates/resonate-mpris/src/transport.rs"
   - "crates/resonate-ui/src/system.rs"
   - "packaging/windows/**"
 ---
@@ -33,7 +36,7 @@ paths:
 
 The whole workspace but the phones' boundary and PipeWire builds for `x86_64-pc-windows-msvc`
 (`cargo xwin check --target x86_64-pc-windows-msvc --workspace --exclude resonate-mobile --exclude
-resonate-bindgen --exclude resonate-pipewire` on Linux, the `windows` CI job on a hosted runner)
+resonate-bindgen --exclude resonate-pipewire --all-targets` on Linux, the `windows` CI job on a hosted runner)
 and for `aarch64-pc-windows-msvc` (the same command with that target; the `windows-arm64` CI job
 checks it on the hosted x64 runner). No crate has an x86-only path: the DSP's vector code is
 portable Rust the compiler vectorises, so ARM64 needs no fallback. `ring`, which `rustls` brings
@@ -226,6 +229,47 @@ settle. `unsafe_code = "forbid"` holds: every Win32 and COM call goes through a 
   mode swallows Ctrl-C as a key, which `interrupted()` turns back into the interrupt. A piped stdin
   is read as bytes. `Readout` draws only where `crossterm::ansi_support::supports_ansi()` holds.
 
+## The integration suites
+
+The `windows` CI job runs every crate's tests, so the integration suites run there as they do on
+Linux; what is Unix-only is gated per test with `#[cfg(unix)]`, never per suite, and clippy runs with
+`--all-targets` so a helper dead on one platform fails the build where it is not gated.
+
+- **Covered on Windows:** `resonate-library`'s `library`, `playlists`, `scanned`, `studies`,
+  `search` and `synced` (the scan, the catalog, enrichment, tag writing, organise, deleting, the
+  vault import, playlists, studies), `resonate-codec`'s `encoded` (every fixture ffmpeg, `flac` and
+  the rest build, each skipped where its tool is absent), `resonate-vault`'s `vault`, and the binary's
+  `signals` (the MCP server answering and leaving when its input closes, `mcp` feature).
+- **A test tree is canonical.** `Tree::new` in `library` and `studies` canonicalises its root, as
+  the scan does (`\\?\C:\...` on Windows), so the paths a test writes are the paths the catalog
+  stores.
+- **A symlink needs a privilege Windows does not always give.** `tests/support::link_to_directory`
+  and `link_to_file` create `symlink_dir`/`symlink_file` and answer `false` (the test returns, with
+  a note on stderr) where the account lacks `SeCreateSymbolicLinkPrivilege` (`ERROR_PRIVILEGE_NOT_HELD`,
+  1314, or `PermissionDenied`) and any other refusal is a panic; `unlink_directory` is `remove_dir`
+  there, since a directory link is taken away as a directory. The hosted runner is an administrator,
+  so the link tests run in CI.
+- **The read-only attribute stands for a file's permission bits.** `forbid_writing`, `allow_writing`
+  and `can_write` set `0o444`/`0o644` on Unix and the read-only attribute on Windows, which
+  `writing::ensure_writable` already reads; the two tag-write failure tests
+  (`a_write_that_fails_is_not_noted_as_one_to_put_back`, the cut-short walk back) run on both.
+- **A file out of reach is held exclusively.** `studies.rs`' `OutOfReach` is `chmod 000` on Unix and
+  an open with `share_mode(0)` held for the pass on Windows; either reads as `Error::Io`, which
+  `is_out_of_reach` takes for the same verdict.
+- **The vault's dedupe-before-staging test swaps the staging folder for a file**, which refuses a
+  staged write on both platforms in place of a closed directory mode.
+- **A loopback pair stands for a socket pair** (`bus.rs`' `connected_pair`): `UnixStream::pair` has
+  no Windows counterpart, and the pipe peer takes any `Read + Write`.
+- **Unix-only on purpose, with the reason:** file names that are not text (`os::unix::ffi`; Windows
+  names are UTF-16 and a lone surrogate is not a name a tagger writes); directory modes (a folder
+  unreadable, unsearchable or unwritable: the read-only attribute on a folder stops nothing and an
+  ACL needs the Win32 API behind `unsafe`); a second filesystem (`/dev/shm`, `st_dev`: the three
+  organise tests that copy across it, and the volume-noting test); the in-place tag write's inode
+  identity (`an_ogg_comment_grown_and_shrunk_...`, `MetadataExt::ino`, no stable Windows file id);
+  the signal tests (`kill -HUP`) and `terminal.rs` (a pseudo-terminal, `setsid`, termios, none of
+  which Windows has before ConPTY, and a Ctrl-C needs `GenerateConsoleCtrlEvent`, which is `unsafe`
+  FFI the workspace forbids).
+
 ## The settings text
 
 The window names its sound system through `system::sound_system!` (`PipeWire`, `Windows`), which
@@ -339,8 +383,9 @@ PipeWire sink is `admit`) and `endpoints.rs` (naming, the listing, the choice of
 
 `resonate-mpris` answers both with the Windows Runtime, through the `windows` crate's safe
 projections (`Windows.UI.Notifications`, `Windows.Data.Xml.Dom`, `Windows.Networking.Connectivity`;
-the features `Data_Xml_Dom`, `Foundation`, `Networking_Connectivity` and `UI_Notifications`, and
-nothing else). `RoInitialize` and `CoInitializeEx` are `unsafe fn`s there, so a thread enters the
+the features `Data_Xml_Dom`, `Foundation`, `Networking_Connectivity` and `UI_Notifications`;
+the media transport below adds `Media`, `Media_Playback`, `Storage` and `Storage_Streams`, and
+nothing else is enabled). `RoInitialize` and `CoInitializeEx` are `unsafe fn`s there, so a thread enters the
 multithreaded apartment through the `wasapi` crate's safe `initialize_mta` (`apartment.rs`'s
 `Apartment`, left on drop), as the render and capture threads do; a Windows Runtime call on a thread
 in no apartment fails `CO_E_NOTINITIALIZED`. Errors are `Error::Windows { op: WindowsOp, source }`.
@@ -384,11 +429,60 @@ in no apartment fails `CO_E_NOTINITIALIZED`. Errors are `Error::Windows { op: Wi
   never blocks anything. `Roaming`, `OverDataLimit` and `ApproachingDataLimit` of the cost are
   not read.
 
+## The media transport
+
+Media keys, the volume overlay's and the lock screen's player, and the buttons on them are the
+System Media Transport Controls, which `resonate-mpris` publishes to and is commanded from as it is
+from MPRIS on Linux (`smtc.rs`, `cfg(windows)`; `transport.rs`, portable and tested on every host).
+
+- **The session comes from a `Windows.Media.Playback.MediaPlayer`, never from a window.** An
+  unpackaged Win32 process has no `GetForCurrentView`, and `ISystemMediaTransportControlsInterop::
+  GetForWindow(hwnd)` is COM interop the `windows` crate leaves `unsafe` (and `resonate play` has no
+  window). A `MediaPlayer` that never plays carries a `SystemMediaTransportControls` of its own;
+  its `CommandManager` is switched off (`SetIsEnabled(false)`), so the buttons are ours and not the
+  idle player's, and the controls are enabled. All safe projections: the features `Media`,
+  `Media_Playback`, `Storage` and `Storage_Streams` beside the toasts' (`dependencies.md`).
+  `souvlaki` was weighed and left: on Windows it needs the window handle (`GetForWindow`), pins an
+  older `windows` crate beside ours and is a second abstraction over the `Host` seam.
+- **The first zone owns it.** Windows has one media session per process here, so the zone that
+  claims `org.mpris.MediaPlayer2.resonate` on Linux (the window's first zone, the only one of
+  `resonate play`) and registers with BlueZ owns it: `Host::answers_media_keys`, false by default
+  (so no test's host touches the machine's controls), the binary's `Desktop` answering true for the
+  first zone as it does `answers_headsets`. A second zone shown in the window is not what the keys
+  reach; it hands over or is driven from the window.
+- **One thread, the bus's poll and arithmetic.** `Mpris::start` spawns `resonate-transport` on
+  Windows whether the zone is served on a bus or on the pipe, beside the `Answering` and the
+  `resonate-toasts` thread. It enters the apartment (`Apartment`), opens the `Transport`, and every
+  `POLL` (200 ms) takes the same `snapshot` the bus publishes from and maps it by `controls_of`
+  into a portable `transport::Controls`: `Status::of` is `PlaybackStatus`'s mapping (`Buffering`
+  plays, `Idle` stops) with `Closed` where nothing is queued; `Buttons::of` offers Play, Pause,
+  Next and Previous exactly where `CanPlay`, `CanPause`, `CanGoNext` and `CanGoPrevious` say so
+  (`service::can_go_next`, `can_go_previous`), Stop beside Pause; shuffle and repeat
+  (`repeat_code`: `None`, `Track`, `List`); title (the notification's, so a file with no title
+  shows its stem), artist, album, album artist and track number off the playing tags; the cover the
+  bus names (`art::Pictures`' `file:///` URI, read through `StorageFile::GetFileFromPathAsync` and
+  `RandomAccessStreamReference::CreateFromFile`, any other URI `CreateFromUri`); and the timeline in
+  100 ns ticks (`ticks`), the end the track's length, the seek range closed where `CanSeek` is false
+  or the length unknown. `Moved::between` tells only what moved: the display on a track or cover
+  change (`ClearAll` then every field, `Update`), the timeline on a seek (`PlayerState::seeks`,
+  as `Seeked`), a status, length or display change, and once every `TIMELINE_EVERY` (1 s) while a
+  track is current. Teardown removes the handlers, sets `Closed`, clears the display and disables
+  the controls.
+- **A request is the MPRIS method of that name.** `ButtonPressed` maps through `Pressed::of` to
+  `PlayerInterface::play`, `pause`, `stop`, `next` or `previous` (so a press does nothing where the
+  bus says it could not), `PlaybackPositionChangeRequested` to `set_position` on the current row
+  (ignored before the start, past the end or where nothing can be sought), and
+  `ShuffleEnabledChangeRequested` and `AutoRepeatModeChangeRequested` to the `Shuffle` and
+  `LoopStatus` setters. The handlers run on the Windows Runtime's own threads and `settle` as a
+  bus call does; what Windows is then shown is what the next poll reads, never the request.
+- **The volume overlay's level is the system's.** SMTC carries no application volume, so the
+  overlay's slider turns the endpoint, which the output pane already follows (`set_device_volume`).
+
 ## Not on Windows yet
 
-The MPRIS service and the media transport answer "no bus": `resonate-mpris` finds no session bus
-and the binary carries on without it as it does on a Linux machine with none (a running window is
-still reached on its pipe, the machine kept awake by `awake.rs`, toasts and the metered connection
+The MPRIS service answers "no bus": `resonate-mpris` finds no session bus and the binary carries
+on without it as it does on a Linux machine with none (a running window is still reached on its
+pipe, the machine kept awake by `awake.rs`, the media transport, toasts and the metered connection
 above). The launcher's icon-follows-the-accent is a no-op. All of it is on the roadmap.
 
 ## Release

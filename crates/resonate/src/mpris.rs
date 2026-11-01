@@ -189,9 +189,11 @@ impl Host for Desktop {
     }
 
     fn answers_headsets(&self) -> bool {
-        self.zoned
-            .as_ref()
-            .is_none_or(|zoned| zoned.zone.is_first())
+        self.is_the_first_zone()
+    }
+
+    fn answers_media_keys(&self) -> bool {
+        self.is_the_first_zone()
     }
 
     fn quit(&self) {
@@ -308,6 +310,12 @@ impl Host for Desktop {
 }
 
 impl Desktop {
+    fn is_the_first_zone(&self) -> bool {
+        self.zoned
+            .as_ref()
+            .is_none_or(|zoned| zoned.zone.is_first())
+    }
+
     fn zones(&self) -> Option<(Arc<Zones>, ZoneId)> {
         let zoned = self.zoned.as_ref()?;
         Some((zoned.zones.upgrade()?, zoned.zone))

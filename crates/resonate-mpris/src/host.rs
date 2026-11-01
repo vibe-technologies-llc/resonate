@@ -125,6 +125,10 @@ pub trait Host: Send + Sync + 'static {
         false
     }
 
+    fn answers_media_keys(&self) -> bool {
+        false
+    }
+
     fn raise(&self) {}
 
     fn quit(&self) {}

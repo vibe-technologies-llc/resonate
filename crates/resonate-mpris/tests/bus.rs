@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     env, fs,
     io::Cursor,
-    os::unix::net::UnixStream,
+    net::{TcpListener, TcpStream},
     path::{Path, PathBuf},
     process::{self, Command as Process},
     sync::{
@@ -1916,6 +1916,15 @@ fn listed_as(harness: &Harness) -> Running {
         .unwrap_or_else(|| panic!("none of {held:?} was listed among the players of this build"))
 }
 
+fn connected_pair() -> (TcpStream, TcpStream) {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).expect("a loopback listener");
+    let near = TcpStream::connect(listener.local_addr().expect("the listener's address"))
+        .expect("a connection to the listener");
+    let (far, _) = listener.accept().expect("the connection accepted");
+
+    (near, far)
+}
+
 fn piped(harness: &Harness) -> Running {
     let host = Desktop {
         quit: Arc::clone(&harness.quit),
@@ -1931,7 +1940,7 @@ fn piped(harness: &Harness) -> Running {
         Arc::new(host),
         Some(Arc::clone(&harness.shelf) as Arc<dyn Playlists>),
     );
-    let (near, far) = UnixStream::pair().expect("a pair of connected sockets");
+    let (near, far) = connected_pair();
     thread::spawn(move || answering.serve(far));
     let name = WellKnownName::try_from("org.mpris.MediaPlayer2.resonate.zone2")
         .expect("a well known name");

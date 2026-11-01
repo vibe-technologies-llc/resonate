@@ -1,9 +1,6 @@
-#![cfg(unix)]
-
 use std::{
     env, fs,
     num::NonZeroUsize,
-    os,
     path::{Path, PathBuf},
     process, slice,
     sync::atomic::{AtomicU64, Ordering},
@@ -11,6 +8,10 @@ use std::{
 
 use resonate_core::{Frames, MediaLocation, Resumable, Resumption, Span, ZoneId};
 use resonate_library::{Library, Result, ScanOptions, SortOrder, TrackQuery};
+
+mod support;
+
+use support::link_to_directory;
 
 const RATE: u32 = 44_100;
 const CHANNELS: u16 = 2;
@@ -125,14 +126,14 @@ fn row(path: &str) -> Resumable {
     }
 }
 
-#[cfg(unix)]
 #[test]
 fn a_link_to_a_folder_inside_the_same_root_is_not_walked_a_second_time() -> Result<()> {
     let tree = Tree::new();
     let real = tree.wav("albums/meddle/echoes.wav");
     for named in ["a link", "z link"] {
-        os::unix::fs::symlink(tree.path().join("albums/meddle"), tree.path().join(named))
-            .expect("the fixture tree takes a link");
+        if !link_to_directory(&tree.path().join("albums/meddle"), &tree.path().join(named)) {
+            return Ok(());
+        }
     }
 
     let library = Library::open_in_memory()?;
@@ -142,13 +143,13 @@ fn a_link_to_a_folder_inside_the_same_root_is_not_walked_a_second_time() -> Resu
     Ok(())
 }
 
-#[cfg(unix)]
 #[test]
 fn a_link_to_a_folder_holding_the_root_is_not_walked_back_into_it() -> Result<()> {
     let tree = Tree::new();
     let real = tree.wav("music/echoes.wav");
-    os::unix::fs::symlink(tree.path(), tree.path().join("music/everything"))
-        .expect("the fixture tree takes a link");
+    if !link_to_directory(tree.path(), &tree.path().join("music/everything")) {
+        return Ok(());
+    }
 
     let library = Library::open_in_memory()?;
     scan(&library, following_links(&tree.path().join("music")))?;
@@ -157,14 +158,17 @@ fn a_link_to_a_folder_holding_the_root_is_not_walked_back_into_it() -> Result<()
     Ok(())
 }
 
-#[cfg(unix)]
 #[test]
 fn a_link_into_another_root_leaves_its_files_to_that_root() -> Result<()> {
     let tree = Tree::new();
     let kept = tree.wav("first/kept.wav");
     let elsewhere = tree.wav("second/elsewhere.wav");
-    os::unix::fs::symlink(tree.path().join("second"), tree.path().join("first/second"))
-        .expect("the fixture tree takes a link");
+    if !link_to_directory(
+        &tree.path().join("second"),
+        &tree.path().join("first/second"),
+    ) {
+        return Ok(());
+    }
 
     let library = Library::open_in_memory()?;
     library.add_root(&tree.path().join("second"))?;

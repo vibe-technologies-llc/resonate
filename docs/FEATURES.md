@@ -9,9 +9,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   arrive untouched
 
 ## iOS parity
-- [M · 0.4.0] The now playing section on iOS needs better animations and its bugs fixed: the
-  handover between songs, the cover, the progress and the controls should move as `motion.md` says
-  the desktop's do, and the section's defects are to be found on a device and fixed
 - [L · blocked: xtool] The iOS icon has no appearance variants of its own: Dark, Clear and Tinted
   come from a compiled `Assets.car` (an `AppIcon` set with dark and tinted renditions, or an Icon
   Composer `.icon`, whichever `actool` compiles, which only Xcode has), and xtool 1.24 turns
@@ -49,21 +46,24 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   runner, never started), the installer (compiled by Inno Setup for the first time at a release; its
   Start menu shortcut, file associations and uninstall), a toast (whether one shows once a shortcut carries
   `org.resonate.Resonate`, its image from a `file:///` cover, its three buttons reaching the
-  transport, a replacement when the cover lands) and the connection's `NetworkCostType` (a metered
-  hotspot, the change event) have never run on real hardware or a real audio endpoint
-- [L · 0.4.0] Windows has no media transport: the System Media Transport Controls (media keys, the
-  volume overlay and lock screen, track and cover metadata) need a native crate behind
-  `resonate-mpris`'s `Host` seam, since `resonate-mpris` finds no session bus and the player runs
-  without one
+  transport, a replacement when the cover lands), the connection's `NetworkCostType` (a metered
+  hotspot, the change event) and the System Media Transport Controls (whether a `MediaPlayer` with its
+  command manager off claims the session for an unpackaged process, the media keys and the overlay's
+  buttons, seek bar, shuffle and repeat reaching the transport, the cover read through `StorageFile`,
+  the title, artist and album on the overlay and the lock screen) have never run on real hardware or
+  a real audio endpoint
 - [S · 0.4.0] The WASAPI stream thread joins MMCSS's `Audio` class, not `Pro Audio`:
   `audio_thread_priority`, the safe wrapper, names its task itself, and no safe wrapper of
   `AvSetMmThreadCharacteristicsW` takes another
 - [S · 0.4.0] A volume turned from the Windows mixer reaches the slider by the two-second poll: the
   safe wrapper of `IAudioEndpointVolume` reads and sets only a whole percent and offers no
   `IAudioEndpointVolumeCallback`, so a change is neither told at once nor read finer than a percent
-- [M · 0.4.0] The integration suites of the library, the codec's encoded files, the vault and the
-  binary's terminal and signal tests are Unix-only; each needs a Windows counterpart (symlinks,
-  permission bits, pseudo-terminals)
+- [S · 0.4.0] `terminal.rs` (play's key reader and the terminal it restores on an interrupt, a
+  termination and a hang-up) has no Windows counterpart: it needs a pseudo-terminal, which on Windows
+  is ConPTY, and Ctrl-C through `GenerateConsoleCtrlEvent`, both `unsafe` Win32 the workspace forbids,
+  and `play` needs an audio endpoint the hosted runner lacks. The in-place tag write's inode check,
+  the directory-mode tests and the cross-filesystem organise tests are Unix-only for want of a
+  stable Windows equivalent (`windows.md`)
 - [M · blocked: a vetted safe crate] NTFS alternate streams and ACLs are not carried by a
   tag write (`carries_what_the_file_did` is Unix only, so a staged copy renamed over a track drops
   both): `std::fs::copy` carries streams but not the security descriptor and cannot stand in for
@@ -72,11 +72,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [S · blocked: certificate] The Windows archives and installers are not Authenticode signed, so
   SmartScreen warns on a first run: no code-signing certificate exists. `sign.ps1` and `release.yml`
   sign with `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD` once they are set
-
-## Accessibility
-- [M · 0.4.0] The iOS app is portrait-only and iPhone-only, which fails WCAG 1.3.4 (orientation): landscape
-  and iPad layouts for Now Playing, the library and the sheets, with the accessibility-size layouts
-  held in each
 
 ## Playback and output
 - [M · blocked: pipewire-rs] A rebind or turn inside a row that moves the rate while

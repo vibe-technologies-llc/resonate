@@ -72,6 +72,7 @@ struct SavedSearchSheet: View {
             }
         }
         .keepingEditsUnlessDiscarded(draft != initial, asking: $discarding) { dismiss() }
+        .sheetSized(.long)
         .presentationDetents([.large])
     }
 }

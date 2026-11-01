@@ -3430,6 +3430,7 @@ fn every_field_written_into_an_opus_file_reads_back_and_the_audio_is_left_alone(
     );
 }
 
+#[cfg(unix)]
 fn titled_with(path: &Path, title: &str) {
     let location = MediaLocation::local(path);
     let edits = [TagEdit {
@@ -3450,6 +3451,7 @@ fn titled_with(path: &Path, title: &str) {
         .expect("a written Ogg file");
 }
 
+#[cfg(unix)]
 fn read_by_ffmpeg_without_a_complaint(path: &Path) -> bool {
     Command::new("ffmpeg")
         .args(["-v", "warning", "-err_detect", "crccheck+explode", "-i"])

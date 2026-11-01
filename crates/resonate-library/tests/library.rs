@@ -1,13 +1,11 @@
-#![cfg(unix)]
-
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt as _;
 use std::{
     collections::BTreeSet,
     env,
     ffi::OsStr,
     fs, io,
     num::NonZeroUsize,
-    os,
-    os::unix::fs::MetadataExt as _,
     path::{Path, PathBuf},
     process::{self, Command, Stdio},
     slice,
@@ -52,6 +50,10 @@ use resonate_providers::{
     Delivery, Error as ProvidedError, Extension, Identity, Obtained, Opened, Opening, Provider,
     ProviderOp, Providers, Result as ProvidedResult, TURNED_TO_APART,
 };
+
+mod support;
+
+use support::{allow_writing, can_write, forbid_writing, link_to_directory, unlink_directory};
 
 const RATE: u32 = 44_100;
 const CHANNELS: u16 = 2;
@@ -132,7 +134,9 @@ impl Tree {
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir_all(&root).expect("a writable temporary directory");
-        Self { root }
+        Self {
+            root: root.canonicalize().expect("a canonical path"),
+        }
     }
 
     fn write(&self, relative: &str, bytes: &[u8]) -> PathBuf {
@@ -724,6 +728,7 @@ fn a_file_that_left_the_tree_leaves_the_library() -> Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
 #[test]
 fn a_file_the_watch_heard_gone_is_forgotten_beside_a_name_no_row_can_hold() -> Result<()> {
     let tree = Tree::new();
@@ -740,7 +745,7 @@ fn a_file_the_watch_heard_gone_is_forgotten_beside_a_name_no_row_can_hold() -> R
     fs::remove_dir_all(tree.path().join("other")).expect("the folder is removable");
     let root = tree.path().canonicalize().expect("the tree is there");
     let named = [
-        root.join(<OsStr as os::unix::ffi::OsStrExt>::from_bytes(
+        root.join(<OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(
             b"caf\xe9.wav",
         )),
         root.join("album/gone.wav"),
@@ -2450,6 +2455,7 @@ fn winding_down_cancels_the_pass_walking_the_tree_and_waits_for_it_to_let_go() -
     Ok(())
 }
 
+#[cfg(unix)]
 #[test]
 fn a_file_with_a_name_that_is_not_text_is_catalogued_and_opens_under_the_name_it_has() -> Result<()>
 {
@@ -2457,7 +2463,7 @@ fn a_file_with_a_name_that_is_not_text_is_catalogued_and_opens_under_the_name_it
     tree.write("good.wav", &Wav::new().text(TITLE, "good").build());
     let bytes = |name: &[u8]| {
         tree.path()
-            .join(<OsStr as os::unix::ffi::OsStrExt>::from_bytes(name))
+            .join(<OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(name))
     };
     let cafe = bytes(b"caf\xe9.wav");
     let inside = bytes(b"dir\xff").join("inside.wav");
@@ -2499,12 +2505,13 @@ fn a_file_with_a_name_that_is_not_text_is_catalogued_and_opens_under_the_name_it
     Ok(())
 }
 
+#[cfg(unix)]
 #[test]
 fn a_file_with_a_name_that_is_not_text_is_forgotten_once_it_is_gone() -> Result<()> {
     let tree = Tree::new();
     let cafe = tree
         .path()
-        .join(<OsStr as os::unix::ffi::OsStrExt>::from_bytes(
+        .join(<OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(
             b"caf\xe9.wav",
         ));
     fs::write(&cafe, Wav::new().text(TITLE, "cafe").build()).expect("a file");
@@ -2521,13 +2528,14 @@ fn a_file_with_a_name_that_is_not_text_is_forgotten_once_it_is_gone() -> Result<
     Ok(())
 }
 
+#[cfg(unix)]
 #[test]
 fn a_cue_sheet_with_a_name_that_is_not_text_still_cuts_the_file_it_names() -> Result<()> {
     let tree = Tree::new();
     tree.write("Meddle.wav", &Wav::new().frames(44_100).build());
     fs::write(
         tree.path()
-            .join(<OsStr as os::unix::ffi::OsStrExt>::from_bytes(
+            .join(<OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(
                 b"Meddle\xe9.cue",
             )),
         MEDDLE_SHEET.as_bytes(),
@@ -2544,13 +2552,14 @@ fn a_cue_sheet_with_a_name_that_is_not_text_still_cuts_the_file_it_names() -> Re
     Ok(())
 }
 
+#[cfg(unix)]
 #[test]
 fn a_cue_sheet_cannot_name_a_file_whose_name_is_not_text_so_the_file_is_scanned_whole() -> Result<()>
 {
     let tree = Tree::new();
     fs::write(
         tree.path()
-            .join(<OsStr as os::unix::ffi::OsStrExt>::from_bytes(
+            .join(<OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(
                 b"Meddle\xe9.wav",
             )),
         Wav::new().frames(44_100).build(),
@@ -2917,7 +2926,7 @@ fn a_changed_file_that_will_not_probe_keeps_its_row_and_what_was_heard_of_it() -
 #[cfg(unix)]
 #[test]
 fn a_folder_the_scan_cannot_read_keeps_every_row_under_it() -> Result<()> {
-    use os::unix::fs::PermissionsExt as _;
+    use std::os::unix::fs::PermissionsExt as _;
 
     let tree = Tree::new();
     tree.write(
@@ -2952,7 +2961,7 @@ fn a_folder_the_scan_cannot_read_keeps_every_row_under_it() -> Result<()> {
 #[test]
 fn a_folder_readable_but_not_searchable_keeps_its_rows_when_another_root_is_scanned() -> Result<()>
 {
-    use os::unix::fs::PermissionsExt as _;
+    use std::os::unix::fs::PermissionsExt as _;
 
     let here = Tree::new();
     let there = Tree::new();
@@ -3024,6 +3033,7 @@ fn a_volume_not_mounted_keeps_every_row_on_it_whether_its_mount_point_is_empty_o
     Ok(())
 }
 
+#[cfg(unix)]
 #[test]
 fn a_folder_on_another_volume_is_noted_and_its_rows_kept_once_it_is_not_mounted() -> Result<()> {
     let tree = Tree::new();
@@ -3046,7 +3056,7 @@ fn a_folder_on_another_volume_is_noted_and_its_rows_kept_once_it_is_not_mounted(
     .expect("the second volume is writable");
     tree.write("near.wav", &Wav::new().text(TITLE, "Near").build());
     let link = tree.path().join("far");
-    os::unix::fs::symlink(&elsewhere, &link).expect("the fixture tree takes a link");
+    std::os::unix::fs::symlink(&elsewhere, &link).expect("the fixture tree takes a link");
 
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
@@ -3079,7 +3089,6 @@ fn a_folder_on_another_volume_is_noted_and_its_rows_kept_once_it_is_not_mounted(
     Ok(())
 }
 
-#[cfg(unix)]
 #[test]
 fn two_links_to_one_directory_are_walked_once_rather_than_read_as_a_cycle() -> Result<()> {
     let tree = Tree::new();
@@ -3088,8 +3097,9 @@ fn two_links_to_one_directory_are_walked_once_rather_than_read_as_a_cycle() -> R
     shared.write("one.wav", &Wav::new().text(TITLE, "One").build());
 
     for named in ["albums/first", "albums/second"] {
-        os::unix::fs::symlink(shared.path(), tree.path().join(named))
-            .expect("the fixture tree takes a link");
+        if !link_to_directory(shared.path(), &tree.path().join(named)) {
+            return Ok(());
+        }
     }
 
     let library = Library::open_in_memory()?;
@@ -3105,7 +3115,6 @@ fn two_links_to_one_directory_are_walked_once_rather_than_read_as_a_cycle() -> R
     Ok(())
 }
 
-#[cfg(unix)]
 #[test]
 fn a_link_to_a_folder_inside_another_links_target_is_walked_once_whichever_comes_first()
 -> Result<()> {
@@ -3119,8 +3128,9 @@ fn a_link_to_a_folder_inside_another_links_target_is_walked_once_whichever_comes
         ("albums/b", shared.path().join("inner")),
         ("albums/c", shared.path().to_path_buf()),
     ] {
-        os::unix::fs::symlink(&target, tree.path().join(named))
-            .expect("the fixture tree takes a link");
+        if !link_to_directory(&target, &tree.path().join(named)) {
+            return Ok(());
+        }
     }
 
     let library = Library::open_in_memory()?;
@@ -17125,6 +17135,7 @@ fn a_root_the_catalog_does_not_hold_is_refused_rather_than_filing_nothing() -> R
     Ok(())
 }
 
+#[cfg(unix)]
 fn across_the_boundary() -> Option<PathBuf> {
     static NEXT: AtomicU64 = AtomicU64::new(0);
     let elsewhere = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
@@ -17144,6 +17155,7 @@ fn across_the_boundary() -> Option<PathBuf> {
     Some(elsewhere)
 }
 
+#[cfg(unix)]
 #[test]
 fn a_track_whose_destination_is_on_another_filesystem_is_copied_over_and_taken_away() -> Result<()>
 {
@@ -17157,7 +17169,7 @@ fn a_track_whose_destination_is_on_another_filesystem_is_copied_over_and_taken_a
         return Ok(());
     };
     let root = filed_under(&tree);
-    os::unix::fs::symlink(&elsewhere, root.join("Pink Floyd"))
+    std::os::unix::fs::symlink(&elsewhere, root.join("Pink Floyd"))
         .expect("a link into the second filesystem");
 
     let held = fs::read(&stood).expect("the file the scan walked");
@@ -17193,6 +17205,7 @@ fn a_track_whose_destination_is_on_another_filesystem_is_copied_over_and_taken_a
     Ok(())
 }
 
+#[cfg(unix)]
 #[test]
 fn a_copy_a_killed_run_left_whole_on_the_other_filesystem_is_taken_as_landed() -> Result<()> {
     let tree = Tree::new();
@@ -17205,7 +17218,7 @@ fn a_copy_a_killed_run_left_whole_on_the_other_filesystem_is_taken_as_landed() -
         return Ok(());
     };
     let root = filed_under(&tree);
-    os::unix::fs::symlink(&elsewhere, root.join("Pink Floyd"))
+    std::os::unix::fs::symlink(&elsewhere, root.join("Pink Floyd"))
         .expect("a link into the second filesystem");
     let landed = root.join("Pink Floyd/Meddle/01 Echoes.wav");
     fs::create_dir_all(landed.parent().expect("a folder")).expect("the folder a run made");
@@ -17245,6 +17258,7 @@ fn a_copy_a_killed_run_left_whole_on_the_other_filesystem_is_taken_as_landed() -
     Ok(())
 }
 
+#[cfg(unix)]
 #[test]
 fn a_file_of_the_same_size_and_time_but_other_bytes_is_still_in_the_way() -> Result<()> {
     let tree = Tree::new();
@@ -17257,7 +17271,7 @@ fn a_file_of_the_same_size_and_time_but_other_bytes_is_still_in_the_way() -> Res
         return Ok(());
     };
     let root = filed_under(&tree);
-    os::unix::fs::symlink(&elsewhere, root.join("Pink Floyd"))
+    std::os::unix::fs::symlink(&elsewhere, root.join("Pink Floyd"))
         .expect("a link into the second filesystem");
     let landed = root.join("Pink Floyd/Meddle/01 Echoes.wav");
     fs::create_dir_all(landed.parent().expect("a folder")).expect("a folder");
@@ -18950,18 +18964,14 @@ fn a_tag_walk_back_cut_short_keeps_what_it_did_not_put_back_for_the_next_one() -
     retagged(&library, true)?;
     assert_eq!(tags_of(&shut).title.as_deref(), Some("Echoes"));
 
-    let mode = |bits: u32| {
-        fs::set_permissions(&shut, os::unix::fs::PermissionsExt::from_mode(bits))
-            .expect("the file's mode changes");
-    };
-    mode(0o444);
-    if fs::OpenOptions::new().write(true).open(&shut).is_ok() {
-        mode(0o644);
+    forbid_writing(&shut);
+    if can_write(&shut) {
+        allow_writing(&shut);
         eprintln!("skipping: this user writes a file whatever its mode");
         return Ok(());
     }
     let cut_short = walked_back(&library, true)?;
-    mode(0o644);
+    allow_writing(&shut);
     assert_eq!(cut_short.stats.written, 1);
     assert_eq!(cut_short.retagging.passed_over.len(), 1);
     assert_eq!(tags_of(&open).title.as_deref(), Some("Echos"));
@@ -19154,11 +19164,8 @@ fn a_tag_run_the_catalog_cannot_note_writes_no_file() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[test]
 fn a_write_that_fails_is_not_noted_as_one_to_put_back() -> Result<()> {
-    use os::unix::fs::PermissionsExt as _;
-
     let tree = Tree::new();
     let file = tree.write(
         "shut/1.aiff",
@@ -19172,17 +19179,14 @@ fn a_write_that_fails_is_not_noted_as_one_to_put_back() -> Result<()> {
     scan(&library, &options(&tree))?;
     answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
 
-    fs::set_permissions(&file, fs::Permissions::from_mode(0o444))
-        .expect("the fixture file takes a mode");
-    if fs::OpenOptions::new().write(true).open(&file).is_ok() {
-        fs::set_permissions(&file, fs::Permissions::from_mode(0o644))
-            .expect("the fixture file takes a mode");
+    forbid_writing(&file);
+    if can_write(&file) {
+        allow_writing(&file);
         eprintln!("skipping: this user writes a file whatever its mode");
         return Ok(());
     }
     let summary = retagged(&library, true);
-    fs::set_permissions(&file, fs::Permissions::from_mode(0o644))
-        .expect("the fixture file takes a mode");
+    allow_writing(&file);
 
     assert_eq!(summary?.stats.written, 0);
     assert!(
@@ -21874,7 +21878,9 @@ fn a_vault_opened_through_another_spelling_or_moved_keeps_every_object_and_cover
     let first = held.path().join("vault");
     let through = held.path().join("through");
     fs::create_dir_all(&first).expect("a vault folder");
-    std::os::unix::fs::symlink(&first, &through).expect("a second spelling of the vault");
+    if !link_to_directory(&first, &through) {
+        return Ok(());
+    }
 
     {
         let vault = Arc::new(Vault::make(&through).expect("a writable vault"));
@@ -21897,7 +21903,7 @@ fn a_vault_opened_through_another_spelling_or_moved_keeps_every_object_and_cover
     );
 
     let moved = held.path().join("moved");
-    fs::remove_file(&through).expect("the second spelling taken away");
+    unlink_directory(&through).expect("the second spelling taken away");
     fs::rename(&first, &moved).expect("a moved vault");
 
     let vault = Arc::new(Vault::open(&moved).expect("a writable vault"));
@@ -22288,7 +22294,7 @@ fn a_cover_naming_no_format_the_vault_knows_is_passed_over_and_the_import_carrie
 #[cfg(unix)]
 #[test]
 fn a_vault_that_cannot_write_ends_the_import_rather_than_billing_every_row() -> Result<()> {
-    use os::unix::fs::PermissionsExt as _;
+    use std::os::unix::fs::PermissionsExt as _;
 
     let tree = Tree::new();
     let held = Tree::new();
@@ -22447,7 +22453,7 @@ fn a_prune_takes_away_an_object_no_row_names_once_it_has_stood_a_while() -> Resu
 #[cfg(unix)]
 #[test]
 fn an_object_a_prune_could_not_take_away_keeps_its_row_for_the_next() -> Result<()> {
-    use os::unix::fs::PermissionsExt as _;
+    use std::os::unix::fs::PermissionsExt as _;
 
     let tree = Tree::new();
     let held = Tree::new();

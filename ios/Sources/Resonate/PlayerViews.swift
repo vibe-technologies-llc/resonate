@@ -118,6 +118,7 @@ struct PlayButton: View {
                 .font(large ? .largeTitle.weight(.semibold) : .title3)
                 .frame(width: large ? largeEdge : edge, height: large ? largeEdge : edge)
                 .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
+                .motion(Flip.animation, value: playingish)
                 .touchTarget()
         }
         .buttonStyle(.plain)
@@ -150,7 +151,7 @@ enum PlayerMode {
 struct NowPlayingView: View {
     private static let gutter: CGFloat = 24
     private static let reshaping: Animation = .spring(duration: 0.45, bounce: 0.15)
-    private static let arriving: Animation = .easeOut(duration: 0.2)
+    private static let arriving = Arrival.animation
     private static let leaving: Animation = .easeOut(duration: 0.12)
     private static let reshapedWithin: CFTimeInterval = 0.8
     private static let focusedHeightAtAccessibilitySizes: CGFloat = 360
@@ -170,12 +171,8 @@ struct NowPlayingView: View {
     var body: some View {
         let track = library.playingTrack
         NavigationStack {
-            Group {
-                if typeSize.isAccessibilitySize {
-                    ScrollView { layout(track) }
-                } else {
-                    layout(track)
-                }
+            ShapedScreen { shape in
+                arranged(track, PlayerArrangement.of(shape))
             }
             .overlayPreferenceValue(CoverSlot.self) { slots in
                 GeometryReader { proxy in
@@ -207,7 +204,7 @@ struct NowPlayingView: View {
                     )
                 }
             }
-            .sheet(item: $picked) { PlaylistPicker(tracks: $0.tracks) }
+            .sheet(item: $picked) { PlaylistPicker(tracks: $0.tracks).sheetSized() }
             .alert("Save queue as playlist", isPresented: $savingQueue) {
                 PlaylistNameField(confirm: "Save") { library.features.createPlaylist($0, with: library.queue.filter { !$0.isServed }) }
             }
@@ -221,6 +218,65 @@ struct NowPlayingView: View {
             .modifier(SleepTimerPresentation(presenting: true))
             .modifier(ZonesPresentation(presenting: true))
             .modifier(PairingOffer(presenting: true))
+        }
+    }
+
+    @ViewBuilder
+    private func arranged(_ track: Track?, _ arrangement: PlayerArrangement) -> some View {
+        if arrangement.sideBySide {
+            columns(track, scrolls: arrangement.scrolls)
+        } else if arrangement.scrolls {
+            ScrollView { layout(track) }
+        } else {
+            layout(track)
+        }
+    }
+
+    private func columns(_ track: Track?, scrolls: Bool) -> some View {
+        HStack(alignment: .center, spacing: Self.gutter) {
+            if mode == .artwork {
+                LargeArtwork()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                column(scrolls: scrolls) {
+                    PlayerTitles(track: track)
+                    PlayerScrubber()
+                    TransportRow()
+                    SleepCountdown()
+                    VolumeRow()
+                    PlayerModes(mode: mode, choose: choose)
+                }
+            } else {
+                column(scrolls: scrolls) {
+                    CompactTitles(track: track)
+                    PlayerScrubber()
+                    TransportRow()
+                    PlayerModes(mode: mode, choose: choose)
+                }
+                ZStack {
+                    if settled == mode {
+                        focusedContent(track).transition(.opacity)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .padding(.bottom, 8)
+    }
+
+    @ViewBuilder
+    private func column<Content: View>(scrolls: Bool, @ViewBuilder content: () -> Content) -> some View {
+        if scrolls {
+            ScrollView {
+                VStack(spacing: 16) { content() }
+            }
+            .frame(maxWidth: .infinity)
+        } else {
+            VStack(spacing: 16) {
+                Spacer(minLength: 0)
+                content()
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity)
         }
     }
 
@@ -267,7 +323,7 @@ struct NowPlayingView: View {
     private func choose(_ target: PlayerMode) {
         guard !reduceMotion else {
             mode = target
-            settled = target == .artwork ? nil : target
+            withAnimation(Self.arriving) { settled = target == .artwork ? nil : target }
             return
         }
         let coverMoves = (mode == .artwork) != (target == .artwork)
@@ -379,12 +435,20 @@ struct CoverShadow: View {
 
 struct PlayerTitles: View {
     let track: Track?
+    @State private var tallest = HeldHeight()
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             words
                 .contentTransition(.opacity)
                 .handover(value: track?.pictureKey)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+                    var seen = tallest
+                    seen.see(width: size.width, height: size.height)
+                    if seen != tallest { tallest = seen }
+                }
+                .frame(minHeight: tallest.height, alignment: .top)
             Spacer(minLength: 0)
             if let track { FavouriteButton(track: track).font(.title2) }
         }
@@ -506,9 +570,6 @@ struct PlayerScrubber: View {
     private static let touchHeight: CGFloat = 44
     private static let stepMs: Double = 10_000
     private static let slightestMove: CGFloat = 2
-    private static let flowsWithin: ClosedRange<CFTimeInterval> = 0.05...0.6
-    private static let flowsAcrossMs: Double = 1500
-    private static let settles: Animation = .easeOut(duration: 0.15)
 
     @Environment(Library.self) private var library
     @State private var dragging: Double?
@@ -521,6 +582,7 @@ struct PlayerScrubber: View {
 
     private final class LastReading {
         var at: CFTimeInterval = 0
+        var song: String?
         var flow: Animation?
     }
 
@@ -587,8 +649,13 @@ struct PlayerScrubber: View {
             if let target = held, abs(Double(now) - target) < Self.nearEnoughMs { held = nil }
             flow(from: Double(old), to: Double(now))
         }
+        .onChange(of: library.playingTrack?.pictureKey) {
+            held = nil
+            lastReading.flow = nil
+            flowing = Double(library.clock.positionMs)
+        }
         .onChange(of: library.transport) {
-            lastReading.flow = reduceMotion ? nil : Self.settles
+            lastReading.flow = MotionRendering.of(.flip, reduceMotion: reduceMotion, sceneActive: true).animation(Flip.animation)
             flowing = held ?? Double(library.clock.positionMs)
         }
         .task(id: held) {
@@ -649,14 +716,25 @@ struct PlayerScrubber: View {
 
     private func flow(from old: Double, to now: Double) {
         let at = CACurrentMediaTime()
-        let first = lastReading.at == 0
-        let elapsed = min(max(at - lastReading.at, Self.flowsWithin.lowerBound), Self.flowsWithin.upperBound)
+        let song = library.playingTrack?.pictureKey
+        let reading = ProgressFlow.Reading(old: old, now: now, sinceLast: lastReading.at == 0 ? nil : at - lastReading.at)
+        let conditions = ProgressFlow.Conditions(
+            playing: library.transport == .playing,
+            touched: dragging != nil,
+            held: held,
+            reduceMotion: reduceMotion,
+            songChanged: SongChange(from: lastReading.song, to: song).handsOver
+        )
         lastReading.at = at
-        let stepped = now - old
-        let free = dragging == nil && held == nil
-        let flows = free && !first && !reduceMotion && library.transport == .playing && stepped >= 0 && stepped < Self.flowsAcrossMs
-        lastReading.flow = flows ? .linear(duration: elapsed) : nil
-        flowing = held ?? (flows ? now + elapsed * 1000 : now)
+        lastReading.song = song
+        switch ProgressFlow.step(reading, conditions) {
+        case .snap(let target):
+            lastReading.flow = nil
+            flowing = target
+        case .flow(let target, let over):
+            lastReading.flow = .linear(duration: over)
+            flowing = target
+        }
     }
 }
 
@@ -815,6 +893,7 @@ extension View {
 
 struct TransportRow: View {
     @Environment(Library.self) private var library
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var skipped = 0
 
     var body: some View {
@@ -825,6 +904,7 @@ struct TransportRow: View {
                 Button { library.setShuffle(!shuffled) } label: { Label("Shuffle", systemImage: "shuffle").touchTarget().buttonShape() }
                     .modeInk(shuffled)
                     .modeMark(shuffled)
+                    .motion(Flip.animation, value: shuffled)
                     .accessibilityAddTraits(.isToggle)
                     .accessibilityValue(shuffled ? "On" : "Off")
                     .accessibilityInputLabels(["Shuffle", "Shuffle songs"])
@@ -848,9 +928,15 @@ struct TransportRow: View {
                 .font(.title)
                 .accessibilityInputLabels(["Next", "Next song", "Skip"])
                 .frame(maxWidth: .infinity)
-                Button { library.setRepeat(repeating.following) } label: { Label("Repeat", systemImage: repeating.symbol).touchTarget().buttonShape() }
+                Button { library.setRepeat(repeating.following) } label: {
+                    Label("Repeat", systemImage: repeating.symbol)
+                        .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
+                        .touchTarget()
+                        .buttonShape()
+                }
                     .modeInk(repeating != .off)
                     .modeMark(repeating != .off)
+                    .motion(Flip.animation, value: repeating)
                     .accessibilityAddTraits(.isToggle)
                     .accessibilityValue(repeating.spoken)
                     .accessibilityInputLabels(["Repeat", "Repeat songs"])
@@ -1492,7 +1578,7 @@ struct QueueRow: View {
                 }
             }
         }
-        .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: [row]) }
+        .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: [row]).sheetSized() }
     }
 }
 
@@ -1522,7 +1608,7 @@ struct SleepTimerPresentation: ViewModifier {
             get: { presenting && navigation.sleepTimer },
             set: { navigation.sleepTimer = $0 }
         )) {
-            SleepTimerSheet().presentationDetents([.medium, .large])
+            SleepTimerSheet().sheetSized().presentationDetents([.medium, .large])
         }
     }
 }

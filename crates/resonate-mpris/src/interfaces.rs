@@ -279,7 +279,7 @@ impl PlayerInterface {
     }
 
     #[zbus(property)]
-    fn set_loop_status(&self, status: &str) -> fdo::Result<()> {
+    pub(crate) fn set_loop_status(&self, status: &str) -> fdo::Result<()> {
         let Some(repeat) = repeat_mode(status) else {
             return Err(fdo::Error::InvalidArgs(
                 "LoopStatus is one of None, Track or Playlist".to_owned(),
@@ -312,7 +312,7 @@ impl PlayerInterface {
     }
 
     #[zbus(property)]
-    fn set_shuffle(&self, shuffle: bool) -> fdo::Result<()> {
+    pub(crate) fn set_shuffle(&self, shuffle: bool) -> fdo::Result<()> {
         self.shared.settle(Command::SetShuffle(shuffle))
     }
 
