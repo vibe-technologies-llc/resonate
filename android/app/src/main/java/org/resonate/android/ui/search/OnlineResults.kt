@@ -31,6 +31,7 @@ import androidx.compose.material.icons.rounded.LinkOff
 import androidx.compose.material.icons.rounded.MusicOff
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.SearchOff
+import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.TravelExplore
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -43,6 +44,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -58,15 +60,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.resonate.android.LinkedPlaylistWords
 import org.resonate.android.nativecore.SearchAlbum
 import org.resonate.android.nativecore.SearchArtist
 import org.resonate.android.nativecore.SearchRelease
 import org.resonate.android.nativecore.SearchSong
+import org.resonate.android.nativecore.playlistLinkService
+import org.resonate.android.nativecore.profileLinkService
 import org.resonate.android.ui.components.EmptyState
 import org.resonate.android.ui.components.IconTile
 import org.resonate.android.ui.components.LocalSheets
@@ -97,9 +103,12 @@ fun OnlineResults(
     val trail by model.trail.collectAsStateWithLifecycle()
     val shown by model.onlineShown.collectAsStateWithLifecycle()
     val online by model.online.collectAsStateWithLifecycle()
+    val following by model.followingProfiles.collectAsStateWithLifecycle()
     val sheets = LocalSheets.current
     val levels = remember { mutableMapOf<List<OnlineView>, LazyListState>() }
     levels.keys.retainAll { place -> trail.views.take(place.size) == place }
+    val profileLink = (trail.top as? OnlineView.Link)?.text
+    val profileService = remember(profileLink) { profileLink?.let(::profileLinkService) }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         key(trail.views) {
             val state = levels.getOrPut(trail.views) { LazyListState() }
@@ -113,7 +122,19 @@ fun OnlineResults(
                 val top = trail.top
                 if (trail.nested) item(key = "heading") { Heading(top, model::back) }
                 val current = shown
-                if (!online && current !is OnlineShown.Ready) {
+                if (profileLink != null && profileService != null) {
+                    if (!online) item(key = "online-off") { OnlineOffCard(model::turnOnline) }
+                    else
+                        item(key = "profile") {
+                            ProfileCard(
+                                service = profileService,
+                                link = profileLink,
+                                following = profileLink in following,
+                                onFollow = { model.followProfile(profileLink, keptInStep = true) },
+                                onMove = { model.followProfile(profileLink, keptInStep = false) },
+                            )
+                        }
+                } else if (!online && current !is OnlineShown.Ready) {
                     item(key = "online-off") { OnlineOffCard(model::turnOnline) }
                 } else when (current) {
                     OnlineShown.Idle -> loading()
@@ -139,7 +160,62 @@ fun OnlineResults(
                             import = { name, songs ->
                                 sheets.name("Import as playlist", name) { model.import(it, songs) }
                             },
+                            importLinked = { link, name, songs, keptInStep ->
+                                sheets.name(LinkedPlaylistWords.naming(keptInStep), name) {
+                                    model.importLinked(link, it, songs, keptInStep)
+                                }
+                            },
                         )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileCard(
+    service: String,
+    link: String,
+    following: Boolean,
+    onFollow: () -> Unit,
+    onMove: () -> Unit,
+) {
+    OutlinedCard(
+        Modifier.fillMaxWidth().padding(horizontal = Sizes.gutter, vertical = 8.dp).testTag("profile-card"),
+        shape = MaterialTheme.shapes.large,
+    ) {
+        ListItem(
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            leadingContent = { Icon(Icons.Rounded.Person, contentDescription = null) },
+            supportingContent = {
+                Text(
+                    "Bring in every playlist this profile made and the songs it loves, held in step " +
+                        "as it changes, or moved once.",
+                )
+            },
+            overlineContent = { Text(link, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        ) {
+            Text("$service profile", modifier = Modifier.semantics { heading() })
+        }
+        FlowRow(
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (following) {
+                LoadingIndicator(
+                    Modifier.size(40.dp).semantics { contentDescription = "Reading the $service profile" }
+                )
+            } else {
+                Button(onClick = onFollow, modifier = Modifier.testTag("follow-profile")) {
+                    Icon(Icons.Rounded.Sync, null, Modifier.size(ButtonDefaults.IconSize))
+                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                    Text("Follow $service profile")
+                }
+                FilledTonalButton(onClick = onMove, modifier = Modifier.testTag("move-profile")) {
+                    Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null, Modifier.size(ButtonDefaults.IconSize))
+                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                    Text("Move to Resonate once")
                 }
             }
         }
@@ -206,6 +282,7 @@ private fun LazyListScope.answer(
     model: SearchViewModel,
     act: (SearchSong) -> Unit,
     import: (String, List<SearchSong>) -> Unit,
+    importLinked: (String, String, List<SearchSong>, Boolean) -> Unit,
 ) {
     when (answer) {
         is OnlineAnswer.Songs -> {
@@ -294,6 +371,8 @@ private fun LazyListScope.answer(
                         importable = answer.name.ifBlank { "Imported playlist" },
                         save = model::saveAll,
                         import = import,
+                        link = (top as? OnlineView.Link)?.text,
+                        importLinked = importLinked,
                     )
                 }
                 item(key = "link-songs") { SectionHeader("Songs") }
@@ -371,13 +450,33 @@ private fun CollectionActions(
     importable: String?,
     save: (List<SearchSong>) -> Unit,
     import: (String, List<SearchSong>) -> Unit,
+    link: String? = null,
+    importLinked: (String, String, List<SearchSong>, Boolean) -> Unit = { _, _, _, _ -> },
 ) {
+    val service = remember(link) { link?.let(::playlistLinkService) }
     FlowRow(
         Modifier.fillMaxWidth().padding(horizontal = Sizes.gutter, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (importable != null) {
+        if (importable != null && link != null && service != null) {
+            FilledTonalButton(
+                onClick = { importLinked(link, importable, songs, false) },
+                modifier = Modifier.testTag("import-playlist-once"),
+            ) {
+                Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null, Modifier.size(ButtonDefaults.IconSize))
+                Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                Text("Import once")
+            }
+            Button(
+                onClick = { importLinked(link, importable, songs, true) },
+                modifier = Modifier.testTag("import-playlist-in-step"),
+            ) {
+                Icon(Icons.Rounded.Sync, null, Modifier.size(ButtonDefaults.IconSize))
+                Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                Text("Keep in step with $service")
+            }
+        } else if (importable != null) {
             Button(onClick = { import(importable, songs) }, modifier = Modifier.testTag("import-playlist")) {
                 Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null, Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.size(ButtonDefaults.IconSpacing))

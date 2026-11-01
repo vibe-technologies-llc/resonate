@@ -273,6 +273,12 @@ pub enum Error {
     )]
     KeptInOrder { playlist: PlaylistId },
 
+    #[error("playlist {playlist} came from a link this build cannot read back")]
+    UnreadablePlaylistSource { playlist: PlaylistId },
+
+    #[error("playlist {playlist} came from no link, so there is nothing to refresh it from")]
+    NoPlaylistSource { playlist: PlaylistId },
+
     #[error("playlist {playlist} is both sides of the copy, and would only double itself")]
     IntoItself { playlist: PlaylistId },
 

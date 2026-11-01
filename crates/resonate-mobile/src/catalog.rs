@@ -198,6 +198,33 @@ ALTER TABLE zones ADD COLUMN renderer TEXT;
 ALTER TABLE zones ADD COLUMN renderer_name TEXT;
 ";
 
+const PLAYLISTS_REMEMBER_THEIR_LINK: &str = "
+CREATE TABLE playlist_links (
+    playlist  INTEGER PRIMARY KEY,
+    link      TEXT NOT NULL,
+    kept      INTEGER NOT NULL,
+    refreshed INTEGER NOT NULL
+) STRICT;
+
+CREATE TRIGGER playlists_born_again_hold_no_link AFTER INSERT ON playlists BEGIN
+    DELETE FROM playlist_links WHERE playlist = new.id;
+END;
+";
+
+const PROFILES_ARE_FOLLOWED_WHOLE: &str = "
+CREATE TABLE profile_links (
+    link      TEXT PRIMARY KEY,
+    name      TEXT NOT NULL,
+    refreshed INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE profile_pages (
+    profile TEXT NOT NULL REFERENCES profile_links(link) ON DELETE CASCADE,
+    page    TEXT NOT NULL,
+    PRIMARY KEY (profile, page)
+) STRICT;
+";
+
 const SONGS_DELETED_HERE_ARE_REMEMBERED: &str = "
 CREATE TABLE songs_deleted (
     recording TEXT PRIMARY KEY,
@@ -229,6 +256,8 @@ const MIGRATIONS: &[&str] = &[
     LISTENS_NAME_THE_SERVED_SONG_THEY_HEARD,
     ZONES_KEEP_THEIR_RENDERER,
     SONGS_DELETED_HERE_ARE_REMEMBERED,
+    PLAYLISTS_REMEMBER_THEIR_LINK,
+    PROFILES_ARE_FOLLOWED_WHOLE,
 ];
 
 #[cfg(test)]

@@ -55,11 +55,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   tests under ConPTY, a tag write carrying NTFS alternate streams and the DACL and owner, and a toast
   shown from the zip under the process's own AppUserModelID have never run on real hardware or a
   real audio endpoint
-- [S · 0.4.0] A console closed under `play` (`CTRL_CLOSE_EVENT`, the hang-up's counterpart) is not
-  driven by `tests/console.rs`, and the console tests skip where no audio endpoint is listed, which
-  is the hosted runner. The in-place tag write's inode check, the directory-mode tests and the
-  cross-filesystem organise tests are Unix-only for want of a stable Windows equivalent
-  (`windows.md`)
+- [S · blocked: hardware] The console tests (`tests/console.rs`) skip where `resonate sinks`
+  lists no audio endpoint, which is every hosted runner: `play` answers `NoSink` to its first load
+  with no device, so it leaves before the console can be driven, and a runner cannot be given an
+  endpoint without a driver
 - [S · blocked: certificate] The Windows archives and installers are not Authenticode signed, so
   SmartScreen warns on a first run: no code-signing certificate exists. `sign.ps1` and `release.yml`
   sign with `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD` once they are set
@@ -90,6 +89,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   such file type); `.oga` alone could be mapped to Vorbis by hand
 
 ## Providers and network
+- [L · blocked: Apple] An Apple Music library cannot be synced: reading a listener's library and
+  playlists needs a MusicKit developer token, issued only to a paid Apple Developer membership, and
+  a user token only Apple's own sign-in hands out, which neither the desktop nor Android can show;
+  a public playlist's link is followed as it is
 
 ## Equaliser and DSP
 
@@ -109,6 +112,13 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   factor band, each band's scale factor searched, is untried without fdkaac to weigh it on)
 
 ## Later: Sources and providers
+- [L] A Spotify account cannot be synced: sign in with an app the listener registers at
+  developer.spotify.com (its client ID typed into a setting, empty by default, as Last.fm's key is)
+  through an authorisation-code sign-in with PKCE like TIDAL's, its refresh token kept in the
+  settings; then read every playlist the account owns or follows, private ones included, and the
+  liked songs through the Web API with each song's ISRC (past the embed page's hundred songs and
+  its strict name search), and either keep them in step or move them to Resonate once. CLI,
+  window, MCP and both phones
 - [S · blocked: TIDAL's CDN] A TIDAL song a DASH manifest delivers in segments seeks only once the
   codec has spooled it whole: the codec seeks by byte, and the remuxed FLAC's offsets are the sum of
   every earlier segment's `mdat`, which the manifest's timeline (times alone) does not give; asking

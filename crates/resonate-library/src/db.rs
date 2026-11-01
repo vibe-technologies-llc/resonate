@@ -1570,7 +1570,6 @@ impl Library {
         })
     }
 
-    #[cfg(test)]
     pub(crate) fn inner(&self) -> &Inner {
         &self.inner
     }

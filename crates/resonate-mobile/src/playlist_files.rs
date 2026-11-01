@@ -170,7 +170,11 @@ impl MobilePlayer {
             .map_err(|source| Error::store(StoreOp::Read, source))
     }
 
-    fn make_playlist_named_free(&self, wanted: &str, tracks: Vec<u64>) -> Result<(u64, String)> {
+    pub(crate) fn make_playlist_named_free(
+        &self,
+        wanted: &str,
+        tracks: Vec<u64>,
+    ) -> Result<(u64, String)> {
         let mut attempt = 1;
         loop {
             let name = if attempt == 1 {

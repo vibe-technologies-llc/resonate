@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use resonate_codec::{CoverArt, ImageFormat};
 use resonate_library::{
-    Barcode, Isrc, Link, LinkNames, LinkedPlaylist, ListedSong, LookupOp, Relation, Service,
-    StreamAsked, folded_letters,
+    Barcode, Isrc, Link, LinkNames, LinkedPlaylist, LinkedProfile, ListedSong, LookupOp,
+    PlaylistLink, ProfilePlaylist, Relation, Service, StreamAsked, folded_letters,
 };
 use serde::Deserialize;
 
@@ -19,6 +19,9 @@ const ALBUM: &str = "/album/";
 const TRACK: &str = "/track/";
 const TRACK_BY_ISRC: &str = "/track/isrc:";
 const PLAYLIST: &str = "/playlist/";
+const USER: &str = "/user/";
+const PROFILE_PLAYLISTS_A_PAGE: usize = 100;
+const PROFILE_PLAYLISTS_AT_MOST: usize = 500;
 const PLAYLIST_SONGS_A_PAGE: usize = 100;
 pub(crate) const PLAYLIST_SONGS_AT_MOST: usize = 1_000;
 const SEARCH: &str = "/search";
@@ -157,6 +160,57 @@ pub(crate) fn playlist_named(client: &Client, playlist: u64) -> Result<Option<Li
     }))
 }
 
+pub(crate) fn profile_named(client: &Client, user: u64) -> Result<Option<LinkedProfile>> {
+    let asked = format!("{USER}{user}");
+    let Some(name) = client
+        .json::<UserDoc>(Host::Deezer, LookupOp::FollowLink, &asked)?
+        .and_then(|doc| named(doc.name.as_deref()))
+    else {
+        return Ok(None);
+    };
+    let mut listed = Vec::new();
+    loop {
+        let asked = format!(
+            "{USER}{user}/playlists?index={}&limit={PROFILE_PLAYLISTS_A_PAGE}",
+            listed.len()
+        );
+        let page = client.json::<PlaylistsPage>(Host::Deezer, LookupOp::FollowLink, &asked)?;
+        let Some(page) = page.filter(|page| !page.data.is_empty()) else {
+            break;
+        };
+        let last = page.next.is_none();
+        listed.extend(page.data);
+        if last || listed.len() >= PROFILE_PLAYLISTS_AT_MOST {
+            break;
+        }
+    }
+    listed.truncate(PROFILE_PLAYLISTS_AT_MOST);
+
+    Ok(Some(LinkedProfile {
+        name,
+        playlists: owned_by(user, listed),
+    }))
+}
+
+fn owned_by(user: u64, listed: Vec<ListedPlaylistDoc>) -> Vec<ProfilePlaylist> {
+    listed
+        .into_iter()
+        .filter(|playlist| {
+            playlist.is_loved_track
+                || playlist
+                    .creator
+                    .as_ref()
+                    .is_some_and(|creator| creator.id == user)
+        })
+        .filter_map(|playlist| {
+            Some(ProfilePlaylist {
+                title: named(playlist.title.as_deref())?,
+                link: PlaylistLink::Deezer(playlist.id),
+            })
+        })
+        .collect()
+}
+
 pub(crate) fn artist(url: &str) -> Option<u64> {
     let rest = url
         .strip_prefix(SECURE)
@@ -184,6 +238,32 @@ struct TrackDoc {
     duration: Option<u64>,
     artist: Option<Credited>,
     isrc: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UserDoc {
+    name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PlaylistsPage {
+    #[serde(default)]
+    data: Vec<ListedPlaylistDoc>,
+    next: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ListedPlaylistDoc {
+    id: u64,
+    title: Option<String>,
+    #[serde(default)]
+    is_loved_track: bool,
+    creator: Option<Creator>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Creator {
+    id: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -310,6 +390,29 @@ mod tests {
 
     fn read(document: &str) -> ArtistDoc {
         serde_json::from_str(document).expect("the captured answer reads back")
+    }
+
+    #[test]
+    fn a_profile_offers_the_playlists_it_made_and_its_loved_tracks_and_none_it_only_follows() {
+        let page: PlaylistsPage = serde_json::from_str(include_str!(
+            "../tests/fixtures/deezer_profile_playlists.json"
+        ))
+        .expect("the captured page reads back");
+
+        assert_eq!(page.next, None);
+        assert_eq!(
+            owned_by(2_529, page.data),
+            [
+                ProfilePlaylist {
+                    title: "Loved Tracks".to_owned(),
+                    link: PlaylistLink::Deezer(908_622_995),
+                },
+                ProfilePlaylist {
+                    title: "Night drive".to_owned(),
+                    link: PlaylistLink::Deezer(3_155_776_842),
+                },
+            ]
+        );
     }
 
     #[test]

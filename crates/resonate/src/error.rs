@@ -637,6 +637,15 @@ pub enum Error {
     #[error("--as names one playlist, and {given} files were given")]
     NameForOnePlaylistOnly { given: usize },
 
+    #[error("{file} is a playlist file, and only a playlist read from a link is kept in step with one", file = file.display())]
+    KeptInStepOnlyWithALink { file: PathBuf },
+
+    #[error("the link names no playlist the service shows")]
+    NoPlaylistAtTheLink,
+
+    #[error("the profile is private, or the service shows no playlist of it")]
+    NoProfileAtTheLink,
+
     #[error("no sink named {0} is present in the graph")]
     SinkNotFound(NodeName),
 

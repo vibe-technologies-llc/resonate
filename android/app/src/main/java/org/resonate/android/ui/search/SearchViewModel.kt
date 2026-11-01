@@ -377,6 +377,16 @@ class SearchViewModel(private val resonate: Resonate) : ViewModel() {
         features.importPlaylist(name, songs)
     }
 
+    fun importLinked(link: String, name: String, songs: List<SearchSong>, keptInStep: Boolean) {
+        features.importLinkedPlaylist(link, name, songs, keptInStep)
+    }
+
+    val followingProfiles: StateFlow<Set<String>> = features.followingProfiles
+
+    fun followProfile(link: String, keptInStep: Boolean) {
+        features.followProfile(link, keptInStep)
+    }
+
     fun saveAll(songs: List<SearchSong>) {
         features.saveWanted(songs)
     }

@@ -24,7 +24,9 @@ mod output;
 mod partials;
 mod playback;
 mod playlist_files;
+mod playlist_links;
 mod playlists;
+mod profile_links;
 mod queue_edit;
 mod rendering;
 #[cfg(test)]

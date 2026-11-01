@@ -1562,6 +1562,18 @@ is never named.
   and wants the rest**: `followed_a_playlist` wants every found song, then `Library::fill_playlist_named`
   on bg puts the held songs into the playlist of that name (made where none is; an existing one gains
   only what it lacks), opens it and toasts (`playlist_told`); where nothing is held no playlist is made
+  (made through `Library::fill_from_the_link` with `Upkeep::Once`, so the playlist remembers its
+  link); **a pasted Deezer profile link is followed whole, in step** (`followed_a_profile`:
+  `Library::follow_profile` on the background executor, every found song wanted, the Playlists pane
+  opened, `profile_told` counting the playlists and the songs downloading; a private profile or one
+  with no playlist is a `Trouble`), and `refreshed_where_due` follows each profile
+  `profiles_due_a_refresh` names before the playlists due; **an opened playlist with a link says where it came from and how it follows it** (*imported
+  from Spotify* / *kept in step with Spotify* in the line under its name) and carries *Keep in step
+  with …* / *In step with …* (`LibraryModel::keep_playlist_from_its_link`, an edit) and a refresh
+  mark (`LibraryModel::refresh_playlist`, toasted). `keep_the_linked_in_step` looks a minute after
+  opening and every `LINKS_LOOKED_AT_EVERY` (10 min) while Online is on and reads every playlist
+  `playlists_due_a_refresh` names; found songs go through `want_found` (the downloads list) and a
+  playlist the read moved is toasted, a quiet one is not
   (`a_playlist_link_pasted_into_the_search_wants_every_song_it_holds_that_is_not_held`,
   `a_song_link_pasted_into_the_search_is_downloaded_and_leaves_the_box_as_it_was`; links read:
   `library.md`; service asked: `online.md`).

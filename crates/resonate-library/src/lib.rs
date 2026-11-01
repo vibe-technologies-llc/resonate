@@ -45,6 +45,7 @@ mod share;
 mod sheet;
 mod sheeted;
 mod songs;
+mod sourced;
 mod spelling;
 mod statistics;
 mod stem;
@@ -116,7 +117,8 @@ pub use crate::{
     learning::Learning,
     linked::{
         AlbumLink, AlbumNames, ArtistLink, Barcode, FollowedLink, FollowedPlaylist, LinkNames,
-        Linked, LinkedPlaylist, ListedSong, PlaylistLink, SongLink, is_a_followed_link,
+        Linked, LinkedPlaylist, LinkedProfile, ListedSong, PlaylistLink, ProfileLink,
+        ProfilePlaylist, SongLink, is_a_followed_link,
     },
     meant::{ByArtist, Meant},
     model::{
@@ -135,7 +137,7 @@ pub use crate::{
         Cancelling, EnrichHandle, ImportHandle, OrganiseHandle, PassHandle, PassKind, PollHandle,
         RetagHandle, ScanHandle, TakeInHandle,
     },
-    playlist::{Filled, cuts_listed_in},
+    playlist::{Filled, Mirrored, cuts_listed_in},
     query::{
         AlbumOrder, AlbumQuery, ArtistOrder, ArtistQuery, Direction, Kept, PlaylistOrder, RowOrder,
         SavedQuery, SearchResults, SortOrder, TrackQuery,
@@ -170,6 +172,9 @@ pub use crate::{
     },
     sheeted::{SheetWanted, SheetWrite},
     songs::AlbumNotHeld,
+    sourced::{
+        FilledFromTheLink, FollowedProfile, FromTheLink, KEPT_IN_STEP_EVERY, PlaylistSource, Upkeep,
+    },
     spelling::{Spellings, spelt_alike},
     statistics::{Day, Listened, MostListened, Statistics, Window},
     store::{A_THUMBNAIL_BELOW, betters, folded_letters},

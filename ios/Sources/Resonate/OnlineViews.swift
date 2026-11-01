@@ -19,6 +19,8 @@ struct OnlineSearchContent: View {
                 description: Text("Find songs, artists, albums and shared music. Paste a shared link to open it.")
             )
             .listRowSeparator(.hidden)
+        } else if let service = profileLinkService(text: text) {
+            OnlineProfileSection(link: text, service: service)
         } else if current, found.isWhole, found.isEmpty, !features.searching {
             OnlineNothingFound(text: text)
         } else {
@@ -31,6 +33,39 @@ struct OnlineSearchContent: View {
                 OnlinePending(text: text, awaited: found.awaited(for: text))
             }
         }
+    }
+}
+
+struct OnlineProfileSection: View {
+    @Environment(Library.self) private var library
+    let link: String
+    let service: String
+
+    var body: some View {
+        let features = library.features
+        Section {
+            Button(FollowedProfileWords.follow(service), systemImage: "person.crop.circle.badge.checkmark") {
+                Keyboard.stow()
+                features.followProfile(link, keptInStep: true)
+            }
+            Button(FollowedProfileWords.moveOnce, systemImage: "square.and.arrow.down") {
+                Keyboard.stow()
+                features.followProfile(link, keptInStep: false)
+            }
+            if features.followingProfile {
+                HStack(spacing: 10) {
+                    ProgressView().accessibilityHidden(true)
+                    Text(FollowedProfileWords.reading).foregroundStyle(.secondary)
+                }
+                .font(.subheadline)
+                .accessibilityElement(children: .combine)
+            }
+        } header: {
+            Text(FollowedProfileWords.heading(service))
+        } footer: {
+            Text(FollowedProfileWords.explained(service))
+        }
+        .disabled(features.followingProfile)
     }
 }
 
@@ -80,7 +115,7 @@ struct OnlineTopSections: View {
 
     var body: some View {
         if let link = found.link {
-            OnlineLinkSections(collection: link, actions: $actions)
+            OnlineLinkSections(collection: link, link: found.text, actions: $actions)
         }
         if let songs = found.songs, !songs.isEmpty {
             let shown = Array(songs.prefix(Self.topSongs))
@@ -178,6 +213,7 @@ struct OnlineArtistsPage: View {
 
 struct OnlineLinkSections: View {
     let collection: OnlineCollection
+    let link: String
     @Binding var actions: OnlineSongActions
 
     var body: some View {
@@ -198,7 +234,7 @@ struct OnlineLinkSections: View {
             }
         }
         if !collection.songs.isEmpty {
-            OnlineSongsSection(songs: collection.songs, heading: heading, collected: true, actions: $actions)
+            OnlineSongsSection(songs: collection.songs, heading: heading, collected: true, link: link, actions: $actions)
         }
     }
 }
@@ -207,6 +243,13 @@ struct OnlineSongActions {
     var importing = false
     var importName = ""
     var importedSongs: [SearchSong] = []
+    var importedLink: ImportedLink?
+}
+
+struct ImportedLink {
+    let link: String
+    let service: String
+    let keptInStep: Bool
 }
 
 extension View {
@@ -222,16 +265,34 @@ struct OnlineSongPresentations: ViewModifier {
     func body(content: Content) -> some View {
         content
             .downloadDestinationPrompt()
-            .alert("Import matching local songs", isPresented: $actions.importing) {
+            .alert(title, isPresented: $actions.importing) {
                 TextField("Playlist name", text: $actions.importName)
                 Button("Cancel", role: .cancel) {}
                 Button("Import") {
-                    let name = actions.importName.trimmingCharacters(in: .whitespacesAndNewlines)
-                    library.features.importPlaylist(name.isEmpty ? "Shared music" : name, actions.importedSongs)
+                    let typed = actions.importName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let name = typed.isEmpty ? "Shared music" : typed
+                    if let linked = actions.importedLink {
+                        library.features.importLinkedPlaylist(
+                            link: linked.link, name: name, songs: actions.importedSongs, keptInStep: linked.keptInStep)
+                    } else {
+                        library.features.importPlaylist(name, actions.importedSongs)
+                    }
                 }
             } message: {
-                Text("Songs already in your library are added in the shared order. Save the remaining recordings for later to download them.")
+                Text(message)
             }
+    }
+
+    private var title: String {
+        guard let linked = actions.importedLink, linked.keptInStep else { return "Import matching local songs" }
+        return LinkedPlaylistWords.keepInStep(linked.service)
+    }
+
+    private var message: String {
+        guard let linked = actions.importedLink, linked.keptInStep else {
+            return "Songs already in your library are added in the shared order. Save the remaining recordings for later to download them."
+        }
+        return LinkedPlaylistWords.keepingExplained(linked.service)
     }
 }
 
@@ -240,6 +301,7 @@ struct OnlineSongsSection: View {
     let songs: [SearchSong]
     var heading = ""
     var collected = false
+    var link: String?
     @Binding var actions: OnlineSongActions
 
     var body: some View {
@@ -247,10 +309,19 @@ struct OnlineSongsSection: View {
         Section {
             if collected, !songs.isEmpty {
                 Button("Save all for later", systemImage: "bookmark") { features.saveWanted(songs) }
-                Button("Import local matches as playlist", systemImage: "text.badge.plus") {
-                    actions.importName = heading
-                    actions.importedSongs = songs
-                    actions.importing = true
+                if let link, let service = playlistLinkService(text: link) {
+                    Menu {
+                        Button("Import once", systemImage: "square.and.arrow.down") {
+                            importing(ImportedLink(link: link, service: service, keptInStep: false))
+                        }
+                        Button(LinkedPlaylistWords.keepInStep(service), systemImage: "arrow.triangle.2.circlepath") {
+                            importing(ImportedLink(link: link, service: service, keptInStep: true))
+                        }
+                    } label: {
+                        Label("Import as playlist", systemImage: "text.badge.plus")
+                    }
+                } else {
+                    Button("Import local matches as playlist", systemImage: "text.badge.plus") { importing(nil) }
                 }
             }
             ForEach(songs.indices, id: \.self) { index in
@@ -259,6 +330,13 @@ struct OnlineSongsSection: View {
         } header: {
             if !heading.isEmpty { Text(heading) }
         }
+    }
+
+    private func importing(_ linked: ImportedLink?) {
+        actions.importName = heading
+        actions.importedSongs = songs
+        actions.importedLink = linked
+        actions.importing = true
     }
 }
 

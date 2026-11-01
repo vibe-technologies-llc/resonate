@@ -24,18 +24,18 @@ use resonate_library::{
     Album, AlbumFound, AlbumMatch, AlbumNotHeld, AlbumOrder, AlbumQuery, Artist, ArtistDetail,
     ArtistFound, ArtistOrder, ArtistQuery, ArtistTotals, CatalogStamp, CoverArt, Covering, Cut,
     Day, Deleted, DeliveryFolder, Direction, Drawing, Edit, EnrichOptions, EnrichProgress,
-    EnrichStats, EnrichSummary, Favoured, FileTags, Fingerprinters, Found, GroupRelease,
-    HeldReleaseTrack, HistoryKept, ImportOptions, ImportProgress, ImportStats, ImportSummary,
-    Imported, Issued, Kept, Layout, Learning, Library, Listen, Maker, Mbid, Meant, Measured,
-    Missing, MissingTrack, MostListened, NamedPlaylist, OrganiseOptions, OrganiseProgress,
-    OrganiseStats, OrganiseSummary, Performer, Playing, Playlist, PlaylistEntry, PlaylistOrder,
-    PollOptions, PollProgress, PollStats, PollSummary, Raster, Recording, RecordingMatch,
-    RecordingRelease, Reference, ReleaseAsked, ReleaseDetail, ReleaseMatch, RetagOptions,
-    RetagProgress, RetagStats, RetagSummary, RootsWatch, RowOrder, SavedQuery, ScanHandle,
-    ScanOptions, ScanProgress, ScanStats, ScanSummary, Search, Shared, SongsAsked, SortOrder,
-    Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery, Undoable, UnheldRelease,
-    Window, Wording, albums_still_answering, artists_still_answering, folded_letters, songs_asked,
-    still_answering, weighed_for,
+    EnrichStats, EnrichSummary, Favoured, FileTags, Fingerprinters, Found, FromTheLink,
+    GroupRelease, HeldReleaseTrack, HistoryKept, ImportOptions, ImportProgress, ImportStats,
+    ImportSummary, Imported, Issued, Kept, Layout, Learning, Library, Listen, Maker, Mbid, Meant,
+    Measured, Missing, MissingTrack, MostListened, NamedPlaylist, OrganiseOptions,
+    OrganiseProgress, OrganiseStats, OrganiseSummary, Performer, Playing, Playlist, PlaylistEntry,
+    PlaylistOrder, PollOptions, PollProgress, PollStats, PollSummary, Raster, Recording,
+    RecordingMatch, RecordingRelease, Reference, ReleaseAsked, ReleaseDetail, ReleaseMatch,
+    RetagOptions, RetagProgress, RetagStats, RetagSummary, RootsWatch, RowOrder, SavedQuery,
+    ScanHandle, ScanOptions, ScanProgress, ScanStats, ScanSummary, Search, Shared, SongsAsked,
+    SortOrder, Sought, Sources, Statistics, Suggestion, Sung, Track, TrackQuery, Undoable,
+    UnheldRelease, Upkeep, Window, Wording, albums_still_answering, artists_still_answering,
+    folded_letters, songs_asked, still_answering, weighed_for,
 };
 use resonate_providers::Providers;
 
@@ -96,6 +96,10 @@ const ROOTS_LOOKED_AT_EVERY: Duration = Duration::from_millis(250);
 const ROOTS_QUIET_FOR: Duration = Duration::from_secs(2);
 const UNCOVERED_ROOTS_TRIED_AGAIN_AFTER: Duration = Duration::from_secs(5 * 60);
 const INBOX_LOOKED_AT_EVERY: Duration = Duration::from_secs(1);
+
+const LINKS_LOOKED_AT_FIRST_AFTER: Duration = Duration::from_secs(60);
+
+const LINKS_LOOKED_AT_EVERY: Duration = Duration::from_secs(10 * 60);
 const INBOX_QUIET_FOR: Duration = Duration::from_secs(2);
 const GONE_QUIET_FOR: Duration = Duration::from_millis(250);
 
@@ -850,6 +854,8 @@ pub struct LibraryModel {
     _taking_offers: Task<()>,
     _watching_roots: Task<()>,
     _watching_inbox: Task<()>,
+    _keeping_in_step: Task<()>,
+    _refreshing: Task<()>,
     _retag: Task<()>,
     _enrich: Task<()>,
     _edit: Task<()>,
@@ -1072,6 +1078,8 @@ impl LibraryModel {
             _taking_offers: Task::ready(()),
             _watching_roots: Task::ready(()),
             _watching_inbox: Task::ready(()),
+            _keeping_in_step: Task::ready(()),
+            _refreshing: Task::ready(()),
             _retag: Task::ready(()),
             _enrich: Task::ready(()),
             _edit: Task::ready(()),
@@ -1101,7 +1109,125 @@ impl LibraryModel {
         model.watch_for_writes_elsewhere(cx);
         model.watch_the_roots(cx);
         model.watch_the_inbox(cx);
+        model.keep_the_linked_in_step(cx);
         model
+    }
+
+    fn keep_the_linked_in_step(&mut self, cx: &mut Context<Self>) {
+        self._keeping_in_step = cx.spawn(async move |this, cx| {
+            let mut waiting = LINKS_LOOKED_AT_FIRST_AFTER;
+            loop {
+                cx.background_executor().timer(waiting).await;
+                waiting = LINKS_LOOKED_AT_EVERY;
+                let Ok(Some((library, reference))) =
+                    this.update(cx, |this, _| this.follows_links())
+                else {
+                    if this.upgrade().is_none() {
+                        return;
+                    }
+                    continue;
+                };
+                let read = cx
+                    .background_executor()
+                    .spawn(async move { refreshed_where_due(&library, reference.as_ref()) })
+                    .await;
+                let _ = this.update(cx, |this, cx| {
+                    this.took_in_what_the_links_said(read, false, cx)
+                });
+            }
+        });
+    }
+
+    pub fn refresh_playlist(&mut self, id: PlaylistId, cx: &mut Context<Self>) {
+        let Some((library, reference)) = self.follows_links() else {
+            toast::tell(
+                Notice::Noted("Turn Online on to read a playlist from its link".to_owned()),
+                cx,
+            );
+            return;
+        };
+        let before = mem::replace(&mut self._refreshing, Task::ready(()));
+
+        self._refreshing = cx.spawn(async move |this, cx| {
+            before.await;
+            let read = cx
+                .background_executor()
+                .spawn(async move { vec![(id, library.refresh_playlist(reference.as_ref(), id))] })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                this.took_in_what_the_links_said(read, true, cx)
+            });
+        });
+    }
+
+    pub fn keep_playlist_from_its_link(
+        &mut self,
+        id: PlaylistId,
+        upkeep: Upkeep,
+        cx: &mut Context<Self>,
+    ) {
+        self.edit(
+            Change::Playlist,
+            move |library| {
+                library.keep_playlist_from_its_link(id, upkeep)?;
+                let name = library
+                    .playlist(id)?
+                    .map_or_else(|| format!("playlist {id}"), |found| found.name);
+                Ok(Some(match upkeep {
+                    Upkeep::InStep => format!("{name} is kept in step with its link"),
+                    Upkeep::Once => format!("{name} stays as it stands"),
+                }))
+            },
+            cx,
+        );
+    }
+
+    fn took_in_what_the_links_said(
+        &mut self,
+        read: Vec<(PlaylistId, resonate_library::Result<Option<FromTheLink>>)>,
+        asked: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let mut moved = false;
+        for (playlist, answer) in read {
+            match answer {
+                Ok(Some(from)) => {
+                    let wanted = from.found.len();
+                    for found in from.found {
+                        self.want_found(found, cx);
+                    }
+                    let brought = from.added + from.removed + wanted > 0;
+                    moved |= brought;
+                    if asked || brought {
+                        toast::tell(
+                            Notice::Done(link_told(&from.name, from.added, from.removed, wanted)),
+                            cx,
+                        );
+                    }
+                }
+                Ok(None) => {
+                    tracing::info!(%playlist, "a playlist's link names no playlist now");
+                    if asked {
+                        toast::tell(
+                            Notice::Trouble("The link names no playlist any more".to_owned()),
+                            cx,
+                        );
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!(%error, %playlist, "a playlist was not read again from its link");
+                    if asked {
+                        toast::tell(
+                            toast::could_not("read the playlist from its link", &error),
+                            cx,
+                        );
+                    }
+                }
+            }
+        }
+        if moved || asked {
+            self.reload_playlists(cx);
+        }
     }
 
     fn watch_the_inbox(&mut self, cx: &mut Context<Self>) {
@@ -5764,6 +5890,7 @@ fn edit_put_back_as(put_back: &Undoable) -> String {
         Edit::Moved | Edit::Ordered | Edit::Kept => {
             format!("Put {name} back in the order it was in")
         }
+        Edit::Refreshed => format!("Put back the rows {name} held before it was refreshed"),
     }
 }
 
@@ -5784,6 +5911,7 @@ fn edit_done_again_as(done_again: &Undoable) -> String {
         Edit::Moved | Edit::Ordered | Edit::Kept => {
             format!("Put {name} back in the order that edit left")
         }
+        Edit::Refreshed => format!("Refreshed {name} from its link again"),
     }
 }
 
@@ -6777,6 +6905,70 @@ fn grown(library: &Library, asked: &Asked) -> resonate_library::Result<Grown> {
             },
         },
     })
+}
+
+fn refreshed_where_due(
+    library: &Library,
+    reference: &dyn Reference,
+) -> Vec<(PlaylistId, resonate_library::Result<Option<FromTheLink>>)> {
+    let mut read = Vec::new();
+    match library.profiles_due_a_refresh(SystemTime::now()) {
+        Ok(due) => {
+            for profile in due {
+                match library.follow_profile(reference, &profile, Upkeep::InStep) {
+                    Ok(Some(followed)) => read.extend(
+                        followed
+                            .playlists
+                            .into_iter()
+                            .map(|from| (from.playlist, Ok(Some(from)))),
+                    ),
+                    Ok(None) => {
+                        tracing::info!(profile = %profile.page(), "a followed profile names nothing now");
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, profile = %profile.page(), "a followed profile went unread");
+                    }
+                }
+            }
+        }
+        Err(error) => tracing::warn!(%error, "the profiles followed went unread"),
+    }
+    match library.playlists_due_a_refresh(SystemTime::now()) {
+        Ok(due) => read.extend(
+            due.into_iter()
+                .map(|playlist| (playlist, library.refresh_playlist(reference, playlist))),
+        ),
+        Err(error) => {
+            tracing::warn!(%error, "the playlists kept in step with a link went unread");
+        }
+    }
+    read
+}
+
+fn link_told(name: &str, added: usize, removed: usize, wanted: usize) -> String {
+    let mut told = match (added, removed) {
+        (0, 0) => format!("{name} is as its link has it"),
+        (added, 0) => format!(
+            "Added {} to {name}",
+            format::counted(added, "song", "songs")
+        ),
+        (0, removed) => format!(
+            "Took {} out of {name}, as its link did",
+            format::counted(removed, "song", "songs")
+        ),
+        (added, removed) => format!(
+            "Added {} to {name} and took {} out",
+            format::counted(added, "song", "songs"),
+            format::counted(removed, "song", "songs")
+        ),
+    };
+    if wanted > 0 {
+        told.push_str(&format!(
+            " · downloading {}",
+            format::counted(wanted, "more", "more")
+        ));
+    }
+    told
 }
 
 fn put_into(library: &Library, id: PlaylistId, added: usize) -> resonate_library::Result<String> {

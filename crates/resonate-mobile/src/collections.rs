@@ -5,7 +5,7 @@ use std::{
 
 use resonate_core::{Mbid, folded_letters};
 use resonate_library::{
-    AlbumLink, ArtistLink, FollowedLink, ListedSong, LookupOp, POLL_AGAIN_AFTER,
+    AlbumLink, ArtistLink, FollowedLink, ListedSong, LookupOp, POLL_AGAIN_AFTER, PlaylistLink,
     REFUSALS_REMEMBERED_FOR, RETRY_WAITS, Reference, TRIES_BEFORE_GIVING_UP,
 };
 use rusqlite::{Connection, params};
@@ -20,6 +20,8 @@ use crate::{
 };
 
 const WANTED_READ_AT_MOST: usize = 500;
+
+const PLAYLIST_SONGS_READ_AT_MOST: usize = 500;
 
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct OnlineCollection {
@@ -112,45 +114,12 @@ impl MobilePlayer {
                 }
             }
             Some(FollowedLink::Playlist(link)) => {
-                if let Some(playlist) = self
-                    .services
-                    .online
-                    .playlist_linked(&link)
-                    .map_err(follow_error)?
-                {
-                    collection.name = playlist.name;
-                    for song in playlist.songs.into_iter().take(500) {
-                        match song {
-                            ListedSong::Recording(id) => {
-                                if let Some(recording) =
-                                    self.services.online.recording(&id).map_err(follow_error)?
-                                {
-                                    collection.songs.push(search_song(recording.into(), &[]));
-                                }
-                            }
-                            ListedSong::Named(named) | ListedSong::Uploaded(named) => {
-                                if let Some(title) = named.title {
-                                    collection.songs.push(SearchSong {
-                                        title,
-                                        artist: named.artist.unwrap_or_default(),
-                                        duration_ms: named.length.map(|length| {
-                                            length.as_millis().min(u128::from(u64::MAX)) as u64
-                                        }),
-                                        isrcs: named
-                                            .isrcs
-                                            .iter()
-                                            .map(ToString::to_string)
-                                            .collect(),
-                                        ..SearchSong::default()
-                                    });
-                                }
-                            }
-                        }
-                    }
-                    collection.songs = self.offered(collection.songs, Listing::Listed)?;
+                if let Some((name, songs)) = self.songs_of_a_playlist(&link)? {
+                    collection.name = name;
+                    collection.songs = songs;
                 }
             }
-            None => {}
+            Some(FollowedLink::Profile(_)) | None => {}
         }
         Ok(collection)
     }
@@ -226,6 +195,48 @@ impl MobilePlayer {
             .execute("DELETE FROM wanted WHERE id = ?1", [id as i64])
             .map_err(write_error)?;
         Ok(())
+    }
+}
+
+impl MobilePlayer {
+    pub(crate) fn songs_of_a_playlist(
+        &self,
+        link: &PlaylistLink,
+    ) -> Result<Option<(String, Vec<SearchSong>)>> {
+        let Some(playlist) = self
+            .services
+            .online
+            .playlist_linked(link)
+            .map_err(follow_error)?
+        else {
+            return Ok(None);
+        };
+        let mut songs = Vec::new();
+        for song in playlist.songs.into_iter().take(PLAYLIST_SONGS_READ_AT_MOST) {
+            match song {
+                ListedSong::Recording(id) => {
+                    if let Some(recording) =
+                        self.services.online.recording(&id).map_err(follow_error)?
+                    {
+                        songs.push(search_song(recording.into(), &[]));
+                    }
+                }
+                ListedSong::Named(named) | ListedSong::Uploaded(named) => {
+                    if let Some(title) = named.title {
+                        songs.push(SearchSong {
+                            title,
+                            artist: named.artist.unwrap_or_default(),
+                            duration_ms: named
+                                .length
+                                .map(|length| length.as_millis().min(u128::from(u64::MAX)) as u64),
+                            isrcs: named.isrcs.iter().map(ToString::to_string).collect(),
+                            ..SearchSong::default()
+                        });
+                    }
+                }
+            }
+        }
+        Ok(Some((playlist.name, self.offered(songs, Listing::Listed)?)))
     }
 }
 
@@ -477,7 +488,7 @@ impl Catalog {
 
 const LOCAL_MATCH: &str = "SELECT id, coalesce(recording = ?1, 0) FROM documents WHERE missing = 0 AND ((?1 != '' AND recording = ?1) OR ((recording IS NULL OR ?1 = '') AND ?3 != '' AND folded(title) = folded(?2) AND folded(artist) = folded(?3) AND (?4 IS NULL OR abs(duration_ms - ?4) <= 5000))) ORDER BY coalesce(recording = ?1, 0) DESC, id LIMIT 2";
 
-fn local_match(connection: &Connection, song: &SearchSong) -> Result<Option<u64>> {
+pub(crate) fn local_match(connection: &Connection, song: &SearchSong) -> Result<Option<u64>> {
     let mut query = connection.prepare(LOCAL_MATCH).map_err(read_error)?;
     let matches = query
         .query_map(
@@ -514,7 +525,7 @@ pub(crate) fn wanted_key(song: &SearchSong) -> String {
     )
 }
 
-fn follow_error(source: resonate_library::Error) -> Error {
+pub(crate) fn follow_error(source: resonate_library::Error) -> Error {
     Error::reference(LookupOp::FollowLink, source)
 }
 fn read_error(source: rusqlite::Error) -> Error {

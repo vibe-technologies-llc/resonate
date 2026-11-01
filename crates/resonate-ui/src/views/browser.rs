@@ -4372,10 +4372,10 @@ mod tests {
             AlbumLink, AlbumMatch, AlbumNames, ArtistLink, ArtistMatch, ArtistPressings,
             ArtistProfile, Barcode, BarcodeMatch, CoverArt, Credit, Discography, EnrichOptions,
             Fingerprinters, GroupAsked, GroupMatch, Issued, Library, Link, LinkNames,
-            LinkedPlaylist, ListedSong, LookupOp, LyricText, LyricsAsked, Mbid, Medium,
-            PlaylistLink, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference,
-            Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, SongLink,
-            SongsAsked, StreamAsked, Track, TrackQuery,
+            LinkedPlaylist, LinkedProfile, ListedSong, LookupOp, LyricText, LyricsAsked, Mbid,
+            Medium, PlaylistLink, ProfileLink, Recording, RecordingAsked, RecordingMatch,
+            RecordingRelease, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
+            ReleaseTrack, Result, SongLink, SongsAsked, StreamAsked, Track, TrackQuery,
         };
         use resonate_providers::{Identity, Obtained, Provider, Providers};
 
@@ -4615,6 +4615,10 @@ mod tests {
                         songs: vec![ListedSong::Recording(mbid(HEROES_TONIGHT))],
                     }),
                 )
+            }
+
+            fn profile_linked(&self, _link: &ProfileLink) -> Result<Option<LinkedProfile>> {
+                Ok(None)
             }
 
             fn artist_at(&self, _: &str) -> Result<Option<Mbid>> {

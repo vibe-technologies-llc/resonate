@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -42,6 +43,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.resonate.android.nativecore.SavedSearch
+import org.resonate.android.nativecore.ProfileFollowed
+import org.resonate.android.nativecore.playlistLinkService
 import org.resonate.android.nativecore.AnalysisReport
 import org.resonate.android.nativecore.ArtistInformation
 import org.resonate.android.nativecore.AutoEqDevice
@@ -120,6 +123,8 @@ private const val RECENT_SEARCHES_KEY = "recent-searches"
 private const val REMEMBER_SEARCHES_KEY = "remember-searches"
 private const val TELL_FINDINGS_KEY = "tell-findings"
 private const val RECENT_SEARCHES_KEPT = 10
+private const val LINKED_PLAYLISTS_FIRST_LOOK_MS = 60_000L
+private const val LINKED_PLAYLISTS_LOOKED_AT_EVERY_MS = 600_000L
 
 class LibraryFeatures(private val context: Context, private val library: LibraryRepository) {
     private val scope =
@@ -145,6 +150,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val scrobbleAccount = MutableStateFlow<ScrobbleAccount?>(null)
     val scrobbleStatus = MutableStateFlow<String?>(null)
     private var submitting: Job? = null
+    private var keepingInStep: Job? = null
+    private var inStepFailure: String? = null
     private var missingChecked = -MISSING_CHECKED_EVERY_MS
     private var hidingFailure: String? = null
     private val routes =
@@ -238,6 +245,9 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val openPlaylist = MutableStateFlow<ULong?>(null)
     val playlistLoading = MutableStateFlow(false)
     val playlistUnread = MutableStateFlow<ULong?>(null)
+    val refreshingPlaylists = MutableStateFlow<Set<ULong>>(emptySet())
+    val followingProfiles = MutableStateFlow<Set<String>>(emptySet())
+    val profilesFollowed = MutableStateFlow<List<ProfileFollowed>>(emptyList())
     val onlineAlbums = MutableStateFlow<List<SearchAlbum>>(emptyList())
     val onlineArtists = MutableStateFlow<List<SearchArtist>>(emptyList())
     val onlineReleases = MutableStateFlow<List<SearchRelease>>(emptyList())
@@ -407,7 +417,125 @@ class LibraryFeatures(private val context: Context, private val library: Library
         watchNetwork()
         syncPolling?.cancel()
         syncPolling = scope.launch { pollSync() }
+        keepingInStep?.cancel()
+        keepingInStep = scope.launch { keepLinkedPlaylistsInStep() }
         work { applySync(it) }
+    }
+
+    private suspend fun keepLinkedPlaylistsInStep() {
+        delay(LINKED_PLAYLISTS_FIRST_LOOK_MS)
+        while (currentCoroutineContext().isActive) {
+            if (foreground && online.value) {
+                inStepQuietly { native ->
+                    native.profilesDueARefresh().forEach { link ->
+                        inStepQuietly { follow(it, link, keptInStep = true, asked = false) }
+                    }
+                }
+                inStepQuietly { native ->
+                    native.playlistsDueARefresh().forEach { id ->
+                        inStepQuietly { refreshLinked(it, id, asked = false) }
+                    }
+                }
+            }
+            delay(LINKED_PLAYLISTS_LOOKED_AT_EVERY_MS)
+        }
+    }
+
+    private suspend fun inStepQuietly(action: suspend (MobilePlayer) -> Unit) {
+        try {
+            action(library.native())
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            if (failure.message != inStepFailure) {
+                inStepFailure = failure.message
+                library.report(failure)
+            }
+        }
+    }
+
+    private fun claimProfile(link: String): Boolean {
+        var claimed = false
+        followingProfiles.update { held ->
+            claimed = link !in held
+            if (claimed) held + link else held
+        }
+        return claimed
+    }
+
+    private fun follow(native: MobilePlayer, link: String, keptInStep: Boolean, asked: Boolean) {
+        if (!claimProfile(link)) return
+        try {
+            val before = native.playlists()
+            val followed = native.followProfile(link, keptInStep)
+            val after = native.playlists()
+            val changes = FollowedProfileWords.changes(before, after, followed)
+            if (asked || !changes.quiet) {
+                playlists.value = after
+                openPlaylist.value?.let { id ->
+                    if (after.any { it.id == id }) reloadPlaylist(native, id) else selectPlaylist(null)
+                }
+            }
+            if (keptInStep && followed.playlists.any { it.missing > 0u }) {
+                refreshWanted(native)
+                downloads.wantsChanged()
+            }
+            profilesFollowed.value = native.profilesFollowed()
+            when {
+                asked && keptInStep -> library.notice(FollowedProfileWords.followed(followed))
+                asked -> library.notice(FollowedProfileWords.moved(followed))
+                !changes.quiet -> tellFinding(FollowedProfileWords.refreshed(followed, changes))
+            }
+        } finally {
+            followingProfiles.update { it - link }
+        }
+    }
+
+    fun followProfile(link: String, keptInStep: Boolean) = work { native ->
+        follow(native, link, keptInStep, asked = true)
+    }
+
+    fun loadProfilesFollowed() = work { native -> profilesFollowed.value = native.profilesFollowed() }
+
+    fun unfollowProfile(link: String) = work { native ->
+        native.unfollowProfile(link)
+        profilesFollowed.value = native.profilesFollowed()
+        library.notice(FollowedProfileWords.STOPPED)
+    }
+
+    private fun claimRefresh(id: ULong): Boolean {
+        var claimed = false
+        refreshingPlaylists.update { held ->
+            claimed = id !in held
+            if (claimed) held + id else held
+        }
+        return claimed
+    }
+
+    private fun refreshLinked(native: MobilePlayer, id: ULong, asked: Boolean) {
+        if (!claimRefresh(id)) return
+        try {
+            val refreshed = native.refreshLinkedPlaylist(id)
+            val moved = LinkedPlaylistWords.moved(refreshed)
+            if (moved) {
+                playlists.value = native.playlists()
+                if (openPlaylist.value == id) reloadPlaylist(native, id)
+            }
+            if (refreshed.wanted > 0u) {
+                refreshWanted(native)
+                downloads.wantsChanged()
+            }
+            val playlist = playlists.value.firstOrNull { it.id == id } ?: return
+            val sentence =
+                LinkedPlaylistWords.refreshed(
+                    playlist.name,
+                    playlist.link?.service ?: "its service",
+                    refreshed,
+                )
+            if (asked) library.notice(sentence) else if (moved) tellFinding(sentence)
+        } finally {
+            refreshingPlaylists.update { it - id }
+        }
     }
 
     fun setOnline(enabled: Boolean) {
@@ -1570,8 +1698,50 @@ class LibraryFeatures(private val context: Context, private val library: Library
         val imported = native.importMatchedPlaylist(name, songs)
         playlists.value = native.playlists()
         library.notice(
-            "Imported ${imported.matched} local songs; ${imported.missing} still missing"
+            LinkedPlaylistWords.imported(name, null, false, imported.matched, imported.missing)
         )
+    }
+
+    fun importLinkedPlaylist(
+        link: String,
+        name: String,
+        songs: List<SearchSong>,
+        keptInStep: Boolean,
+    ) = work { native ->
+        val imported = native.importLinkedPlaylist(link, name, songs, keptInStep)
+        playlists.value = native.playlists()
+        if (openPlaylist.value == imported.id) reloadPlaylist(native, imported.id)
+        val playlist = playlists.value.firstOrNull { it.id == imported.id }
+        if (keptInStep && imported.missing > 0u) {
+            refreshWanted(native)
+            downloads.wantsChanged()
+        }
+        library.notice(
+            LinkedPlaylistWords.imported(
+                playlist?.name ?: name,
+                playlist?.link?.service ?: playlistLinkService(link),
+                keptInStep,
+                imported.matched,
+                imported.missing,
+            )
+        )
+    }
+
+    fun refreshLinkedPlaylist(id: ULong) = work { native -> refreshLinked(native, id, asked = true) }
+
+    fun keepPlaylistInStep(id: ULong, keptInStep: Boolean) = work { native ->
+        native.keepPlaylistInStep(id, keptInStep)
+        playlists.value = native.playlists()
+        val playlist = playlists.value.firstOrNull { it.id == id } ?: return@work
+        playlist.link?.let { link ->
+            library.notice(LinkedPlaylistWords.inStep(playlist.name, link.service, keptInStep))
+        }
+    }
+
+    fun forgetPlaylistLink(id: ULong) = work { native ->
+        native.forgetPlaylistLink(id)
+        playlists.value = native.playlists()
+        playlists.value.firstOrNull { it.id == id }?.let { library.notice(LinkedPlaylistWords.forgotten(it.name)) }
     }
 
     fun artistAlbums(id: String, from: UInt = 0u) =
@@ -1664,6 +1834,9 @@ class LibraryFeatures(private val context: Context, private val library: Library
         enrichment.close()
         scope.coroutineContext.cancelChildren()
         submitting = null
+        keepingInStep = null
+        refreshingPlaylists.value = emptySet()
+        followingProfiles.value = emptySet()
         visualization = null
         syncPolling = null
         network?.let { callback ->

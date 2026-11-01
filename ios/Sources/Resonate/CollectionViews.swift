@@ -63,6 +63,7 @@ struct LibraryView: View {
     @State private var playlistSearch = ""
     @State private var naming = false
     @State private var importing = false
+    @State private var unfollowing: String?
 
     var body: some View {
         @Bindable var shelfSearch = library.shelfSearch
@@ -203,6 +204,17 @@ struct LibraryView: View {
                         Button("Import playlist file", systemImage: "square.and.arrow.down") { importing = true }
                     }
                 }
+                if !library.features.followedProfiles.isEmpty {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Menu("Followed profiles", systemImage: "person.2") {
+                            Section(FollowedProfileWords.stopFollowingHeading) {
+                                ForEach(library.features.followedProfiles, id: \.link) { profile in
+                                    Button(FollowedProfileWords.followed(profile)) { unfollowing = profile.link }
+                                }
+                            }
+                        }
+                    }
+                }
                 ToolbarSpacer(.fixed, placement: .topBarTrailing)
             }
             LibraryToolbar()
@@ -213,6 +225,20 @@ struct LibraryView: View {
             case .success(let url): library.importPlaylistFile(url)
             case .failure(let failure): library.report(failure)
             }
+        }
+        .confirmationDialog(
+            unfollowing.map { link in
+                FollowedProfileWords.stopFollowing(
+                    library.features.followedProfiles.first { $0.link == link }?.name ?? link
+                )
+            } ?? "",
+            isPresented: Binding(get: { unfollowing != nil }, set: { if !$0 { unfollowing = nil } }),
+            titleVisibility: .visible,
+            presenting: unfollowing
+        ) { link in
+            Button("Stop following", role: .destructive) { library.features.unfollowProfile(link) }
+        } message: { _ in
+            Text(FollowedProfileWords.stoppingExplained)
         }
         .alert("Create playlist", isPresented: $naming) {
             PlaylistNameField(confirm: "Create") { library.features.createPlaylist($0) }

@@ -4,7 +4,8 @@ use resonate_core::SourceId;
 
 use crate::{
     AlbumLink, AlbumNames, ArtistLink, Barcode, CoverArt, Isrc, Link, LinkNames, LinkedPlaylist,
-    Mbid, PlaylistLink, Relation, Result, Service, SongLink, SongsAsked,
+    LinkedProfile, Mbid, PlaylistLink, ProfileLink, Relation, Result, Service, SongLink,
+    SongsAsked,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -538,6 +539,8 @@ pub trait Reference: Send + Sync {
     fn artist_linked(&self, link: &ArtistLink) -> Result<Option<String>>;
 
     fn playlist_linked(&self, link: &PlaylistLink) -> Result<Option<LinkedPlaylist>>;
+
+    fn profile_linked(&self, link: &ProfileLink) -> Result<Option<LinkedProfile>>;
 
     fn artist_at(&self, page: &str) -> Result<Option<Mbid>>;
 }

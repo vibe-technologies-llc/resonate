@@ -32,19 +32,19 @@ use resonate_library::{
     CoverArt, CoverSource, Credit, Cut, Deleted, DeliveryFolder, Direction, Discography, Edit,
     Encoding, EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form, Genre,
     GroupAsked, GroupMatch, GroupRelease, HeldMedium, HistoryKept, ImageFormat, ImportOptions,
-    ImportSummary, Isrc, Issued, Kept, Layout, Learning, Library, LifeSpan, Link, LinkNames,
-    Linked, LinkedPlaylist, ListedSong, Listen, ListeningService, LookupOp, Love, Loved,
-    LovedNames, LovesTold, LyricText, LyricsAhead, LyricsAsked, Maker, Mbid, Medium, Missing,
-    MissingTrack, NamesMoved, OrganiseOptions, OrganiseSummary, Performer, Picturing, Playing,
-    PlaylistFormat, PlaylistLink, PlaylistOrder, PollHandle, PollOptions, PollProgress, Popularity,
-    Pruned, RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease,
-    Reference, Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
-    ReleaseTrack, Removal, Result, RetagOptions, RetagSummary, RowOrder, SUBMITTED_AT_ONCE,
-    SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search, Service, SheetEdit,
-    SheetField, SheetScope, Sidecar, SongLink, SongsAsked, SortOrder, Sought, Sources, StreamAsked,
-    Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource,
-    TextEncoding, TokenHeld, Track, TrackQuery, Trashes, UnheldRelease, Unwritten, Vault, Waits,
-    Window, Wording, Written,
+    ImportSummary, Isrc, Issued, KEPT_IN_STEP_EVERY, Kept, Layout, Learning, Library, LifeSpan,
+    Link, LinkNames, Linked, LinkedPlaylist, LinkedProfile, ListedSong, Listen, ListeningService,
+    LookupOp, Love, Loved, LovedNames, LovesTold, LyricText, LyricsAhead, LyricsAsked, Maker, Mbid,
+    Medium, Missing, MissingTrack, NamesMoved, OrganiseOptions, OrganiseSummary, Performer,
+    Picturing, Playing, PlaylistFormat, PlaylistLink, PlaylistOrder, PollHandle, PollOptions,
+    PollProgress, Popularity, ProfileLink, ProfilePlaylist, Pruned, RETRY_WAITS, Rated, Recording,
+    RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal, Refused, Relation,
+    Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Removal, Result, RetagOptions,
+    RetagSummary, RowOrder, SUBMITTED_AT_ONCE, SavedQuery, ScanOptions, ScanStats, Scrobble,
+    Scrobbler, Search, Service, SheetEdit, SheetField, SheetScope, Sidecar, SongLink, SongsAsked,
+    SortOrder, Sought, Sources, StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField,
+    TagSet, TagSink, TagSource, TextEncoding, TokenHeld, Track, TrackQuery, Trashes, UnheldRelease,
+    Unwritten, Upkeep, Vault, Waits, Window, Wording, Written,
 };
 use resonate_providers::{
     Delivery, Error as ProvidedError, Extension, Identity, Obtained, Opened, Opening, Provider,
@@ -10674,6 +10674,8 @@ struct Canned {
     artist_linked: Option<String>,
     artists_at: Vec<(String, Mbid)>,
     playlist_linked: Option<LinkedPlaylist>,
+    playlists_linked: Vec<(PlaylistLink, LinkedPlaylist)>,
+    profile_linked: Option<LinkedProfile>,
     barcoded: Vec<BarcodeMatch>,
 }
 
@@ -10998,7 +11000,17 @@ impl Reference for Fake {
 
     fn playlist_linked(&self, link: &PlaylistLink) -> Result<Option<LinkedPlaylist>> {
         self.note(Called::PlaylistLinked(link.clone()))?;
-        Ok(self.canned.playlist_linked.clone())
+        Ok(self
+            .canned
+            .playlists_linked
+            .iter()
+            .find(|(held, _)| held == link)
+            .map(|(_, linked)| linked.clone())
+            .or_else(|| self.canned.playlist_linked.clone()))
+    }
+
+    fn profile_linked(&self, _link: &ProfileLink) -> Result<Option<LinkedProfile>> {
+        Ok(self.canned.profile_linked.clone())
     }
 
     fn artist_at(&self, page: &str) -> Result<Option<Mbid>> {
@@ -25269,6 +25281,229 @@ fn a_link_to_a_song_the_library_holds_answers_the_track_and_asks_musicbrainz_not
         vec![Called::SongLinked(linked_to_spotify())],
         "a song held is not asked about"
     );
+    Ok(())
+}
+
+fn orbits_with_the_first_held_by_recording() -> Result<(Tree, Library)> {
+    let (tree, library) = scanned_orbits()?;
+    let mut rows = orbits_rows();
+    rows[0] = ReleaseTrack {
+        recording: Some(mbid(RECORDING)),
+        ..rows[0].clone()
+    };
+    let identifying = Arc::new(Fake::new(Canned {
+        found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
+        releases: vec![orbits(rows, Vec::new())],
+        ..Canned::default()
+    }));
+    enrich(&library, &identifying, false)?;
+    Ok((tree, library))
+}
+
+fn a_service_listing(songs: Vec<ListedSong>) -> Fake {
+    Fake::new(Canned {
+        playlist_linked: Some(LinkedPlaylist {
+            name: "Night drive".to_owned(),
+            songs,
+        }),
+        recordings: vec![echoes_found().into_recording()],
+        ..Canned::default()
+    })
+}
+
+#[test]
+fn a_playlist_kept_in_step_with_its_link_takes_what_the_service_added_and_drops_what_it_took_out()
+-> Result<()> {
+    let (_tree, library) = orbits_with_the_first_held_by_recording()?;
+    let link = PlaylistLink::Spotify("37i9dQZF1DXcBWIGoYBM5M".to_owned());
+    let holding = a_service_listing(vec![
+        ListedSong::Recording(mbid(RECORDING)),
+        ListedSong::Recording(mbid(ECHOES)),
+    ]);
+    let emptied = a_service_listing(vec![ListedSong::Recording(mbid(ECHOES))]);
+
+    let imported = library
+        .import_playlist_link(&holding, &link, None, Upkeep::InStep)?
+        .expect("a playlist the service read");
+    let again = library
+        .import_playlist_link(&holding, &link, None, Upkeep::InStep)?
+        .expect("the same playlist read again");
+    let source = library
+        .playlist(imported.playlist)?
+        .and_then(|playlist| playlist.source)
+        .expect("the link the playlist came from");
+    let refreshed = library
+        .refresh_playlist(&emptied, imported.playlist)?
+        .expect("the playlist read again");
+
+    assert!(imported.started);
+    assert_eq!(imported.name, "Night drive");
+    assert_eq!(imported.added, 1);
+    assert_eq!(again.playlist, imported.playlist);
+    assert!(
+        !again.started,
+        "importing a kept link again started a second playlist"
+    );
+    assert_eq!((again.added, again.removed), (0, 0));
+    assert_eq!(source.link, link);
+    assert_eq!(source.upkeep, Upkeep::InStep);
+    assert!(!source.is_due(SystemTime::now()));
+    assert!(source.is_due(SystemTime::now() + KEPT_IN_STEP_EVERY));
+    assert_eq!((refreshed.added, refreshed.removed), (0, 1));
+    assert!(
+        library
+            .playlist_entries(imported.playlist, None)?
+            .is_empty()
+    );
+    assert_eq!(
+        refreshed
+            .found
+            .iter()
+            .map(|found| found.recording.clone())
+            .collect::<Vec<_>>(),
+        [mbid(ECHOES)],
+        "a song nobody wants yet is offered to be wanted"
+    );
+    assert_eq!(
+        library.playlists_kept_in_step()?.len(),
+        1,
+        "one playlist follows the link"
+    );
+    Ok(())
+}
+
+fn a_profile_holding(playlists: &[(u64, &str, ListedSong)]) -> Fake {
+    Fake::new(Canned {
+        profile_linked: Some(LinkedProfile {
+            name: "listener".to_owned(),
+            playlists: playlists
+                .iter()
+                .map(|(id, title, _)| ProfilePlaylist {
+                    title: (*title).to_owned(),
+                    link: PlaylistLink::Deezer(*id),
+                })
+                .collect(),
+        }),
+        playlists_linked: playlists
+            .iter()
+            .map(|(id, title, song)| {
+                (
+                    PlaylistLink::Deezer(*id),
+                    LinkedPlaylist {
+                        name: (*title).to_owned(),
+                        songs: vec![song.clone()],
+                    },
+                )
+            })
+            .collect(),
+        recordings: vec![echoes_found().into_recording()],
+        ..Canned::default()
+    })
+}
+
+#[test]
+fn a_profile_followed_takes_its_new_playlists_lets_go_of_its_deleted_ones_and_never_revives_one_let_go()
+-> Result<()> {
+    let (_tree, library) = orbits_with_the_first_held_by_recording()?;
+    let profile = ProfileLink::Deezer(2_529);
+    let first = a_profile_holding(&[
+        (1, "Loved Tracks", ListedSong::Recording(mbid(RECORDING))),
+        (2, "Night drive", ListedSong::Recording(mbid(ECHOES))),
+    ]);
+    let later = a_profile_holding(&[
+        (1, "Loved Tracks", ListedSong::Recording(mbid(RECORDING))),
+        (3, "Morning", ListedSong::Recording(mbid(RECORDING))),
+    ]);
+
+    let followed = library
+        .follow_profile(&first, &profile, Upkeep::InStep)?
+        .expect("a profile the service read");
+    let loved = followed.playlists[0].playlist;
+    let night = followed.playlists[1].playlist;
+    library.keep_playlist_from_its_link(loved, Upkeep::Once)?;
+    let again = library
+        .follow_profile(&later, &profile, Upkeep::InStep)?
+        .expect("the profile read again");
+    let due_now = library.profiles_due_a_refresh(SystemTime::now())?;
+    let due_later = library.profiles_due_a_refresh(SystemTime::now() + KEPT_IN_STEP_EVERY)?;
+
+    assert_eq!(followed.name, "listener");
+    assert_eq!(followed.playlists.len(), 2);
+    assert!(followed.playlists.iter().all(|read| read.started));
+    assert_eq!(
+        (again.playlists.len(), again.let_go, again.gone),
+        (1, 1, 1),
+        "the new playlist taken, the one let go left, the deleted one's link dropped"
+    );
+    assert_eq!(again.playlists[0].name, "Morning");
+    assert_eq!(library.playlist_source(night)?, None);
+    assert_eq!(
+        library.playlist_source(loved)?.map(|source| source.upkeep),
+        Some(Upkeep::Once)
+    );
+    assert!(due_now.is_empty());
+    assert_eq!(due_later, [profile]);
+    Ok(())
+}
+
+#[test]
+fn a_profile_moved_once_leaves_its_playlists_with_no_link_and_is_not_followed() -> Result<()> {
+    let (_tree, library) = orbits_with_the_first_held_by_recording()?;
+    let profile = ProfileLink::Deezer(2_529);
+    let holding = a_profile_holding(&[(1, "Loved Tracks", ListedSong::Recording(mbid(RECORDING)))]);
+
+    library.follow_profile(&holding, &profile, Upkeep::InStep)?;
+    let moved = library
+        .follow_profile(&holding, &profile, Upkeep::Once)?
+        .expect("the profile read");
+
+    assert_eq!(moved.playlists.len(), 1);
+    assert_eq!(library.playlist_source(moved.playlists[0].playlist)?, None);
+    assert!(library.profiles_followed()?.is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_playlist_imported_once_keeps_what_the_service_took_out_and_can_be_kept_in_step_later()
+-> Result<()> {
+    let (_tree, library) = orbits_with_the_first_held_by_recording()?;
+    let link = PlaylistLink::Deezer(7);
+    let holding = a_service_listing(vec![ListedSong::Recording(mbid(RECORDING))]);
+    let emptied = a_service_listing(Vec::new());
+
+    let imported = library
+        .import_playlist_link(&holding, &link, None, Upkeep::Once)?
+        .expect("a playlist the service read");
+    let refreshed = library
+        .refresh_playlist(&emptied, imported.playlist)?
+        .expect("the playlist read again");
+    let held_once = library.playlist_entries(imported.playlist, None)?.len();
+    let now_kept = library.keep_playlist_from_its_link(imported.playlist, Upkeep::InStep)?;
+    let due = library.playlists_due_a_refresh(SystemTime::now() + KEPT_IN_STEP_EVERY)?;
+    let mirrored = library
+        .refresh_playlist(&emptied, imported.playlist)?
+        .expect("the playlist read again");
+    let forgotten = library.forget_playlist_source(imported.playlist)?;
+
+    assert_eq!((refreshed.added, refreshed.removed), (0, 0));
+    assert_eq!(
+        held_once, 1,
+        "a playlist imported once lost a row the service dropped"
+    );
+    assert!(now_kept);
+    assert_eq!(due, [imported.playlist]);
+    assert_eq!(mirrored.removed, 1);
+    assert!(forgotten);
+    assert_eq!(
+        library
+            .playlist(imported.playlist)?
+            .and_then(|playlist| playlist.source),
+        None
+    );
+    assert!(matches!(
+        library.refresh_playlist(&emptied, imported.playlist),
+        Err(Error::NoPlaylistSource { .. })
+    ));
     Ok(())
 }
 

@@ -26,10 +26,11 @@ pub enum Edit {
     Moved,
     Ordered,
     Kept,
+    Refreshed,
 }
 
 impl Edit {
-    const ALL: [Self; 14] = [
+    const ALL: [Self; 15] = [
         Self::Started,
         Self::Renamed,
         Self::Revised,
@@ -44,6 +45,7 @@ impl Edit {
         Self::Moved,
         Self::Ordered,
         Self::Kept,
+        Self::Refreshed,
     ];
 
     pub(crate) const fn code(self) -> i64 {

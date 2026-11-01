@@ -4,7 +4,10 @@ use gpui::{
     AnyElement, App, Context, Div, FontWeight, Role, SharedString, Stateful, Window, div,
     prelude::*, px, rgb, transparent_black,
 };
-use resonate_library::{AlbumFound, ArtistFound, Filled, FollowedLink, FollowedPlaylist, Linked};
+use resonate_library::{
+    AlbumFound, ArtistFound, FilledFromTheLink, FollowedLink, FollowedPlaylist, FollowedProfile,
+    Linked, PlaylistLink, ProfileLink, Upkeep,
+};
 
 use crate::{
     Beyond, LibraryModel, Notice, Selection, format,
@@ -71,9 +74,32 @@ const NO_PLAYLIST_AT_THE_LINK: &str = "No service could read the playlist that l
 
 const FILLING_THE_PLAYLIST: &str = "make the playlist that link names";
 
-fn playlist_told(name: &str, filled: Option<Filled>, wanted: usize, unnamed: usize) -> String {
+const LOOKING_THE_PROFILE_UP: &str = "Reading every playlist that profile holds…";
+
+const NO_PROFILE_AT_THE_LINK: &str = "That profile is private or holds no playlist";
+
+fn profile_told(name: &str, service: &str, kept: usize, wanted: usize) -> String {
+    let mut told = format!(
+        "Keeping {} of {name} in step with {service}",
+        format::counted(kept, "playlist", "playlists")
+    );
+    if wanted > 0 {
+        told.push_str(&format!(
+            " · downloading {}",
+            format::counted(wanted, "song", "songs")
+        ));
+    }
+    told
+}
+
+fn playlist_told(
+    name: &str,
+    filled: Option<FilledFromTheLink>,
+    wanted: usize,
+    unnamed: usize,
+) -> String {
     let mut told = match filled {
-        Some(Filled {
+        Some(FilledFromTheLink {
             started: true,
             added,
             ..
@@ -81,8 +107,10 @@ fn playlist_told(name: &str, filled: Option<Filled>, wanted: usize, unnamed: usi
             "Made “{name}” of {}",
             format::counted(added, "song", "songs")
         ),
-        Some(Filled { added: 0, .. }) => format!("“{name}” already holds every song you have"),
-        Some(Filled { added, .. }) => format!(
+        Some(FilledFromTheLink { added: 0, .. }) => {
+            format!("“{name}” already holds every song you have")
+        }
+        Some(FilledFromTheLink { added, .. }) => format!(
             "Added {} to “{name}”",
             format::counted(added, "song", "songs")
         ),
@@ -90,7 +118,7 @@ fn playlist_told(name: &str, filled: Option<Filled>, wanted: usize, unnamed: usi
     };
     if wanted > 0 {
         told.push_str(&format!(
-            " · downloading {}; paste the link again once they arrive",
+            " · downloading {}; Refresh on the playlist takes them in once they arrive",
             format::counted(wanted, "more", "more")
         ));
     }
@@ -266,13 +294,24 @@ impl Told {
                 looking: LOOKING_THE_PLAYLIST_UP,
                 nothing: NO_PLAYLIST_AT_THE_LINK,
             },
+            FollowedLink::Profile(_) => Self {
+                looking: LOOKING_THE_PROFILE_UP,
+                nothing: NO_PROFILE_AT_THE_LINK,
+            },
         }
     }
 }
 
 enum Following {
     Linked(resonate_library::Result<Linked>),
-    Playlist(resonate_library::Result<Option<FollowedPlaylist>>),
+    Playlist(
+        PlaylistLink,
+        resonate_library::Result<Option<FollowedPlaylist>>,
+    ),
+    Profile(
+        ProfileLink,
+        resonate_library::Result<Option<FollowedProfile>>,
+    ),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -541,15 +580,25 @@ impl RootView {
                         FollowedLink::Artist(artist) => {
                             Following::Linked(library.follow_artist_link(reference, artist))
                         }
-                        FollowedLink::Playlist(playlist) => {
-                            Following::Playlist(library.follow_playlist_link(reference, playlist))
-                        }
+                        FollowedLink::Playlist(playlist) => Following::Playlist(
+                            playlist.clone(),
+                            library.follow_playlist_link(reference, playlist),
+                        ),
+                        FollowedLink::Profile(profile) => Following::Profile(
+                            profile.clone(),
+                            library.follow_profile(reference, profile, Upkeep::InStep),
+                        ),
                     }
                 })
                 .await;
             let _ = this.update(cx, |this, cx| match followed {
                 Following::Linked(linked) => this.followed(linked, &told, cx),
-                Following::Playlist(playlist) => this.followed_a_playlist(playlist, &told, cx),
+                Following::Playlist(link, playlist) => {
+                    this.followed_a_playlist(link, playlist, &told, cx);
+                }
+                Following::Profile(link, profile) => {
+                    this.followed_a_profile(&link, profile, &told, cx);
+                }
             });
         })
         .detach();
@@ -603,6 +652,7 @@ impl RootView {
 
     fn followed_a_playlist(
         &mut self,
+        link: PlaylistLink,
         followed: resonate_library::Result<Option<FollowedPlaylist>>,
         told: &Told,
         cx: &mut Context<Self>,
@@ -642,7 +692,9 @@ impl RootView {
             let filling = name.clone();
             let filled = cx
                 .background_executor()
-                .spawn(async move { library.fill_playlist_named(&filling, &held) })
+                .spawn(
+                    async move { library.fill_from_the_link(&link, &filling, &held, Upkeep::Once) },
+                )
                 .await;
             let _ = this.update(cx, |this, cx| match filled {
                 Ok(filled) => {
@@ -659,6 +711,42 @@ impl RootView {
             });
         })
         .detach();
+    }
+
+    fn followed_a_profile(
+        &mut self,
+        link: &ProfileLink,
+        followed: resonate_library::Result<Option<FollowedProfile>>,
+        told: &Told,
+        cx: &mut Context<Self>,
+    ) {
+        let followed = match followed {
+            Ok(Some(followed)) if !followed.playlists.is_empty() => followed,
+            Ok(_) => {
+                toast::tell(Notice::Trouble(told.nothing.to_owned()), cx);
+                return;
+            }
+            Err(error) => {
+                toast::tell(toast::could_not(FOLLOWING_THE_LINK, &error), cx);
+                return;
+            }
+        };
+        let kept = followed.playlists.len();
+        let mut wanted = 0;
+        for read in followed.playlists {
+            for found in read.found {
+                wanted += 1;
+                self.library
+                    .update(cx, |library, cx| library.want_found(found, cx));
+            }
+        }
+        self.library
+            .update(cx, |library, cx| library.reload_playlists(cx));
+        self.set_pane(Pane::Playlists, cx);
+        toast::tell(
+            Notice::Done(profile_told(&followed.name, link.service(), kept, wanted)),
+            cx,
+        );
     }
 
     pub(crate) fn search_pane(&mut self, shows: SearchShows, cx: &mut Context<Self>) -> AnyElement {

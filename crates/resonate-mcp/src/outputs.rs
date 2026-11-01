@@ -98,8 +98,26 @@ fn playlist() -> Value {
             ("last_played", text()),
             ("fills_from", text()),
             ("pinned", flag()),
+            ("from_link", text()),
+            ("in_step", flag()),
         ],
         &["name", "tracks", "pinned"],
+    )
+}
+
+fn linked_playlist() -> Value {
+    object(
+        vec![
+            ("playlist", playlist()),
+            ("started", flag()),
+            ("added", whole()),
+            ("removed", whole()),
+            ("wanted", whole()),
+            ("unnamed", whole()),
+        ],
+        &[
+            "playlist", "started", "added", "removed", "wanted", "unnamed",
+        ],
     )
 }
 
@@ -287,6 +305,35 @@ impl Tool {
                 &["playlist", "removed"],
             ),
             Self::DiscardPlaylist => object(vec![("discarded", playlist())], &["discarded"]),
+            Self::ImportPlaylistLink | Self::RefreshPlaylist => linked_playlist(),
+            Self::FollowProfile => object(
+                vec![
+                    ("profile", text()),
+                    ("service", text()),
+                    ("followed", flag()),
+                    (
+                        "playlists",
+                        json!({ "type": "array", "items": linked_playlist() }),
+                    ),
+                    ("let_go", whole()),
+                    ("gone", whole()),
+                    ("unread", whole()),
+                ],
+                &[
+                    "profile",
+                    "service",
+                    "followed",
+                    "playlists",
+                    "let_go",
+                    "gone",
+                    "unread",
+                ],
+            ),
+            Self::StopFollowing => object(vec![("stopped", flag())], &["stopped"]),
+            Self::KeepPlaylistInStep => object(
+                vec![("playlist", playlist()), ("changed", flag())],
+                &["playlist", "changed"],
+            ),
             Self::UndoEdit => object(
                 vec![
                     ("walked", json!({ "type": ["string", "null"] })),

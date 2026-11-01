@@ -5,9 +5,9 @@ use resonate_core::SourceId;
 use resonate_library::{
     AlbumLink, AlbumMatch, AlbumNames, ArtistLink, ArtistMatch, ArtistPressings, ArtistProfile,
     Barcode, BarcodeMatch, Discography, GroupAsked, GroupMatch, Isrc, Link, LinkNames,
-    LinkedPlaylist, LyricText, LyricsAsked, Mbid, PlaylistLink, Recording, RecordingAsked,
-    RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, SongLink,
-    SongsAsked, StreamAsked,
+    LinkedPlaylist, LinkedProfile, LyricText, LyricsAsked, Mbid, PlaylistLink, ProfileLink,
+    Recording, RecordingAsked, RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup,
+    ReleaseMatch, SongLink, SongsAsked, StreamAsked,
 };
 
 use crate::{
@@ -165,6 +165,15 @@ impl Reference for Online {
             }
             PlaylistLink::Youtube(list) => Ok(youtube::playlist_named(&self.client, list)?),
             PlaylistLink::Tidal(playlist) => Ok(tidal::playlist_named(&self.client, playlist)?),
+        }
+    }
+
+    fn profile_linked(
+        &self,
+        link: &ProfileLink,
+    ) -> resonate_library::Result<Option<LinkedProfile>> {
+        match link {
+            ProfileLink::Deezer(user) => Ok(deezer::profile_named(&self.client, *user)?),
         }
     }
 

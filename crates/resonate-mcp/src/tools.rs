@@ -2,7 +2,7 @@ use std::{fmt, num::NonZeroU64, path::PathBuf, time::Duration};
 
 use resonate_core::{AlbumId, ArtistId, ReleaseTrackId, Span, TrackId, Volume};
 use resonate_engine::Until;
-use resonate_library::{Favoured, Library, Window};
+use resonate_library::{Favoured, Library, PlaylistLink, ProfileLink, Upkeep, Window};
 use resonate_mpris::Seeking;
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Value, json};
@@ -13,6 +13,7 @@ use crate::{
     controlling::Reach,
     edits::{self, Dropping, Filling, Marking},
     error::Field,
+    linked,
     passes::{Pass, Passes, ScanAsked},
     transport::{self, Action, Adding},
 };
@@ -48,6 +49,11 @@ pub enum Tool {
     RemoveFromPlaylist,
     RenamePlaylist,
     DiscardPlaylist,
+    ImportPlaylistLink,
+    RefreshPlaylist,
+    KeepPlaylistInStep,
+    FollowProfile,
+    StopFollowing,
     UndoEdit,
     WantTracks,
     NowPlaying,
@@ -68,7 +74,7 @@ pub enum Tool {
 }
 
 impl Tool {
-    pub const ALL: [Self; 30] = [
+    pub const ALL: [Self; 35] = [
         Self::Search,
         Self::Playlists,
         Self::PlaylistTracks,
@@ -82,6 +88,11 @@ impl Tool {
         Self::RemoveFromPlaylist,
         Self::RenamePlaylist,
         Self::DiscardPlaylist,
+        Self::ImportPlaylistLink,
+        Self::RefreshPlaylist,
+        Self::KeepPlaylistInStep,
+        Self::FollowProfile,
+        Self::StopFollowing,
         Self::UndoEdit,
         Self::WantTracks,
         Self::NowPlaying,
@@ -116,6 +127,11 @@ impl Tool {
             Self::RemoveFromPlaylist => "remove_from_playlist",
             Self::RenamePlaylist => "rename_playlist",
             Self::DiscardPlaylist => "discard_playlist",
+            Self::ImportPlaylistLink => "import_playlist_link",
+            Self::RefreshPlaylist => "refresh_playlist",
+            Self::KeepPlaylistInStep => "keep_playlist_in_step",
+            Self::FollowProfile => "follow_profile",
+            Self::StopFollowing => "stop_following",
             Self::UndoEdit => "undo_edit",
             Self::WantTracks => "want_tracks",
             Self::NowPlaying => "now_playing",
@@ -161,6 +177,7 @@ impl Tool {
             self,
             Self::RemoveFromPlaylist
                 | Self::DiscardPlaylist
+                | Self::RefreshPlaylist
                 | Self::UndoEdit
                 | Self::RemoveFromQueue
                 | Self::PlayPlaylist
@@ -169,7 +186,14 @@ impl Tool {
     }
 
     pub const fn reaches_the_network(self) -> bool {
-        matches!(self, Self::StartLookup | Self::StartPoll)
+        matches!(
+            self,
+            Self::StartLookup
+                | Self::StartPoll
+                | Self::ImportPlaylistLink
+                | Self::RefreshPlaylist
+                | Self::FollowProfile
+        )
     }
 
     fn describes(self) -> String {
@@ -225,6 +249,36 @@ impl Tool {
             Self::DiscardPlaylist => "Take a playlist and its rows away for good, or the search \
                                       one that fills itself fills from. The files it named stay \
                                       where they are. Needs no player."
+                .to_owned(),
+            Self::ImportPlaylistLink => "Make a playlist of the songs a playlist on Spotify, \
+                                         Deezer, Apple Music, TIDAL, YouTube or ListenBrainz \
+                                         holds that the library has, and want the rest so the \
+                                         providers fetch them. Imported once it appends to a \
+                                         playlist of that name; kept in step it is a playlist of \
+                                         its own that refresh_playlist (and the window, every six \
+                                         hours) rewrites to the service's songs and order. Needs \
+                                         no player."
+                .to_owned(),
+            Self::RefreshPlaylist => "Read a playlist again from the link it was imported from: \
+                                      one kept in step takes the service's songs and order, \
+                                      dropping what the service took out; one imported once only \
+                                      gains what it lacks. Songs the library lacks are wanted. \
+                                      Needs no player."
+                .to_owned(),
+            Self::KeepPlaylistInStep => "Say whether a playlist imported from a link is kept in \
+                                         step with it or left as it stands. Needs no player."
+                .to_owned(),
+            Self::FollowProfile => "Follow a public Deezer profile whole: every playlist it made \
+                                    and its loved tracks become playlists here kept in step, and \
+                                    following it again takes its new playlists, lets go of those \
+                                    deleted there and leaves alone any no longer kept in step. With \
+                                    in_step false every playlist is moved to Resonate once and the \
+                                    profile is followed no longer. Songs the library lacks are \
+                                    wanted. Needs no player."
+                .to_owned(),
+            Self::StopFollowing => "Stop following a Deezer profile; its playlists stay as they \
+                                    are, each still kept in step with its own link. Needs no \
+                                    player."
                 .to_owned(),
             Self::UndoEdit => "Put back the playlist edit this session made last, or with redo \
                                make again what undo put back. Reaches only this session's own \
@@ -411,6 +465,48 @@ impl Tool {
                 "playlist": { "type": "string", "description": "The playlist's name." },
                 "to": { "type": "string", "description": "Its new name." },
             }),
+            Self::ImportPlaylistLink => json!({
+                "link": {
+                    "type": "string",
+                    "description": "The playlist's link, as the service shares it.",
+                },
+                "name": {
+                    "type": "string",
+                    "description": "A name for it; none takes the one the service shows.",
+                },
+                "in_step": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Keep it in step with the link rather than importing it once.",
+                },
+            }),
+            Self::RefreshPlaylist => json!({
+                "playlist": { "type": "string", "description": "The playlist's name." },
+            }),
+            Self::FollowProfile => json!({
+                "link": {
+                    "type": "string",
+                    "description": "The profile's link, as deezer.com shares it.",
+                },
+                "in_step": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Follow it, rather than moving its playlists here once.",
+                },
+            }),
+            Self::StopFollowing => json!({
+                "link": {
+                    "type": "string",
+                    "description": "The profile's link, as deezer.com shares it.",
+                },
+            }),
+            Self::KeepPlaylistInStep => json!({
+                "playlist": { "type": "string", "description": "The playlist's name." },
+                "in_step": {
+                    "type": "boolean",
+                    "description": "Kept in step with its link, or left as it stands.",
+                },
+            }),
             Self::UndoEdit => json!({
                 "redo": {
                     "type": "boolean",
@@ -549,7 +645,10 @@ impl Tool {
             | Self::PlayPlaylist
             | Self::DiscardPlaylist
             | Self::AddToPlaylist
-            | Self::RemoveFromPlaylist => &["playlist"],
+            | Self::RemoveFromPlaylist
+            | Self::RefreshPlaylist => &["playlist"],
+            Self::ImportPlaylistLink | Self::FollowProfile | Self::StopFollowing => &["link"],
+            Self::KeepPlaylistInStep => &["playlist", "in_step"],
             Self::CreatePlaylist => &["name"],
             Self::RenamePlaylist => &["playlist", "to"],
             Self::WantTracks => &["release_track_ids"],
@@ -674,6 +773,44 @@ impl Tool {
                 let asked: Choosing = self.taken(arguments)?;
                 edits::discard_playlist(library, &asked.playlist)
             }
+            Self::ImportPlaylistLink => {
+                let asked: ImportingALink = self.taken(arguments)?;
+                let link = PlaylistLink::read(&asked.link).ok_or(Refusal::Unreadable {
+                    tool: self,
+                    field: Field("link"),
+                })?;
+                passes.reference().and_then(|reference| {
+                    linked::import(
+                        library,
+                        reference,
+                        &link,
+                        asked.name.as_deref(),
+                        upkeep(asked.in_step),
+                    )
+                })
+            }
+            Self::RefreshPlaylist => {
+                let asked: Choosing = self.taken(arguments)?;
+                passes
+                    .reference()
+                    .and_then(|reference| linked::refresh(library, reference, &asked.playlist))
+            }
+            Self::FollowProfile => {
+                let asked: FollowingAProfile = self.taken(arguments)?;
+                let link = self.profile(&asked.link)?;
+                passes.reference().and_then(|reference| {
+                    linked::follow_profile(library, reference, &link, upkeep(asked.in_step))
+                })
+            }
+            Self::StopFollowing => {
+                let asked: StoppingAProfile = self.taken(arguments)?;
+                let link = self.profile(&asked.link)?;
+                linked::stop_following(library, &link)
+            }
+            Self::KeepPlaylistInStep => {
+                let asked: KeepingInStep = self.taken(arguments)?;
+                linked::keep(library, &asked.playlist, upkeep(asked.in_step))
+            }
             Self::UndoEdit => {
                 let asked: Undoing = self.taken(arguments)?;
                 edits::undo_edit(library, asked.redo)
@@ -781,6 +918,13 @@ impl Tool {
     ) -> std::result::Result<Asked, Refusal> {
         serde_json::from_value(arguments)
             .map_err(|source| Refusal::BadArguments { tool: self, source })
+    }
+
+    fn profile(self, text: &str) -> std::result::Result<ProfileLink, Refusal> {
+        ProfileLink::read(text).ok_or(Refusal::Unreadable {
+            tool: self,
+            field: Field("link"),
+        })
     }
 
     fn queue_row(self, arguments: Value) -> std::result::Result<TrackId, Refusal> {
@@ -1137,6 +1281,43 @@ struct Dropped {
     row: Option<usize>,
     through_row: Option<usize>,
     matching: Option<String>,
+}
+
+const fn upkeep(in_step: bool) -> Upkeep {
+    match in_step {
+        true => Upkeep::InStep,
+        false => Upkeep::Once,
+    }
+}
+
+#[derive(Deserialize)]
+struct ImportingALink {
+    link: String,
+    name: Option<String>,
+    #[serde(default)]
+    in_step: bool,
+}
+
+const fn followed_by_default() -> bool {
+    true
+}
+
+#[derive(Deserialize)]
+struct FollowingAProfile {
+    link: String,
+    #[serde(default = "followed_by_default")]
+    in_step: bool,
+}
+
+#[derive(Deserialize)]
+struct StoppingAProfile {
+    link: String,
+}
+
+#[derive(Deserialize)]
+struct KeepingInStep {
+    playlist: String,
+    in_step: bool,
 }
 
 #[derive(Deserialize)]

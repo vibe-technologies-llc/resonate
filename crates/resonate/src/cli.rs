@@ -343,6 +343,12 @@ pub enum WindowArg {
     All,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum UpkeepArg {
+    Once,
+    InStep,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
 pub enum PlaylistOrderArg {
     #[default]
@@ -362,7 +368,7 @@ pub enum PlaylistOrderArg {
         .multiple(true)
         .conflicts_with_all([
             "add", "export", "tidy", "fold", "drop", "into", "order", "by_hand", "query",
-            "rename", "discard", "pin", "unpin"
+            "rename", "discard", "pin", "unpin", "refresh", "upkeep", "forget_link"
         ])
 ))]
 pub struct PlaylistArgs {
@@ -543,6 +549,44 @@ pub struct PlaylistArgs {
                 the listing is read in"
     )]
     pub unpin: bool,
+
+    #[arg(
+        long,
+        conflicts_with_all = [
+            "add", "export", "tidy", "fold", "query", "order", "by_hand", "into", "matching",
+            "rename", "discard", "pin", "unpin", "upkeep", "forget_link"
+        ],
+        help = "Read the playlist again from the link it was imported from, instead of playing \
+                it. One kept in step takes the service's rows and order, dropping what the \
+                service took out; one imported once only gains what it lacks. Songs the \
+                library does not hold are wanted, so a poll fetches them"
+    )]
+    pub refresh: bool,
+
+    #[arg(
+        long,
+        value_enum,
+        value_name = "UPKEEP",
+        conflicts_with_all = [
+            "add", "export", "tidy", "fold", "query", "order", "by_hand", "into", "matching",
+            "rename", "discard", "pin", "unpin", "forget_link"
+        ],
+        help = "Say how the playlist follows the link it was imported from, instead of playing \
+                it: once leaves it as it stands, in-step reads the link again every six hours \
+                while the window is open, and whenever `resonate playlists --refresh` runs"
+    )]
+    pub upkeep: Option<UpkeepArg>,
+
+    #[arg(
+        long,
+        conflicts_with_all = [
+            "add", "export", "tidy", "fold", "query", "order", "by_hand", "into", "matching",
+            "rename", "discard", "pin", "unpin"
+        ],
+        help = "Forget the link the playlist was imported from, instead of playing it. Its rows \
+                stay, and it is never read from the link again"
+    )]
+    pub forget_link: bool,
 
     #[command(flatten)]
     pub transport: TransportArgs,
@@ -1366,6 +1410,15 @@ pub enum Sub {
                     has only a name to answer with, so terms like year: and is: are passed over"
         )]
         named: Option<String>,
+
+        #[arg(
+            long,
+            conflicts_with_all = ["order", "reverse", "named"],
+            help = "Read every playlist kept in step with a link (Spotify, Deezer, Apple Music, \
+                    TIDAL, YouTube, ListenBrainz) from it again now, instead of listing them, \
+                    and want the songs the library does not hold"
+        )]
+        refresh: bool,
     },
 
     #[command(
@@ -1403,11 +1456,34 @@ pub enum Sub {
     },
 
     #[command(
-        about = "Read playlists in from M3U, PLS or XSPF files, appending to one already named"
+        about = "Read playlists in from M3U, PLS or XSPF files, appending to one already named, \
+                 from a link to a playlist on Spotify, Deezer, Apple Music, TIDAL, YouTube or \
+                 ListenBrainz, or from a public Deezer profile's link (every playlist it made and \
+                 its loved tracks), once or kept in step with it"
     )]
     Import {
-        #[arg(required = true, value_name = "FILE")]
+        #[arg(
+            required = true,
+            value_name = "FILE",
+            help = "A playlist file, or a link to a playlist on a service. A link's songs the \
+                    library holds fill the playlist, and the rest are wanted, so a poll fetches \
+                    them"
+        )]
         files: Vec<PathBuf>,
+
+        #[arg(
+            long,
+            value_enum,
+            value_name = "UPKEEP",
+            default_value = "once",
+            help = "How a playlist read from a link follows it: once reads it now and appends \
+                    to a playlist of that name, in-step makes a playlist of its own that takes \
+                    the service's rows and order every time the link is read again (every six \
+                    hours while the window is open, or `resonate playlists --refresh`). A profile \
+                    in step is followed whole, its new playlists taken and its deleted ones let \
+                    go; once moves every playlist to Resonate and stops following it"
+        )]
+        upkeep: UpkeepArg,
 
         #[arg(
             long = "as",

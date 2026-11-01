@@ -322,6 +322,13 @@ before a source joined is asked again by `look_again_for_portraits`.
     `a_link_to_a_youtube_playlist_names_its_uploads_off_the_public_page`, live, a playlist of over a
     hundred).
   A playlist with no title names nothing.
+- **`Reference::profile_linked` reads a public Deezer profile keylessly** (`deezer::profile_named`):
+  `/user/<id>` for the name (none: private or unknown, nothing named), then `/user/<id>/playlists`
+  pages of `PROFILE_PLAYLISTS_A_PAGE` until no `next`, at most `PROFILE_PLAYLISTS_AT_MOST` (500),
+  keeping those whose `creator.id` is the profile's or that are its `is_loved_track` playlist; a
+  playlist it only follows is not its own
+  (`a_profile_offers_the_playlists_it_made_and_its_loved_tracks_and_none_it_only_follows`, live:
+  `a_public_deezer_profile_names_the_playlists_it_made_and_its_loved_tracks`).
 
 ## ListenBrainz
 

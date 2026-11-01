@@ -166,5 +166,6 @@ fn edit_called(walked: &Undoable) -> &'static str {
         Edit::Moved => "moved",
         Edit::Ordered => "ordered",
         Edit::Kept => "kept",
+        Edit::Refreshed => "refreshed",
     }
 }

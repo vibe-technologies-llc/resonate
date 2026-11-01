@@ -106,6 +106,8 @@ final class Features {
     var playlistRows: [Track] = []
     var openPlaylist: UInt64?
     var playlistToShow: UInt64?
+    var followedProfiles: [ProfileFollowed] = []
+    var followingProfile = false
     var onlineQuery = "" {
         didSet { if onlineQuery != oldValue { askOnline() } }
     }
@@ -151,11 +153,14 @@ final class Features {
     @ObservationIgnored private var submitting: Task<Void, Never>?
     @ObservationIgnored private var visualization: Task<Void, Never>?
     @ObservationIgnored private var syncPolling: Task<Void, Never>?
+    @ObservationIgnored private var syncNap: Task<Void, Never>?
     @ObservationIgnored private var nearby: NearbyDevices?
     @ObservationIgnored private var network: NWPathMonitor?
     @ObservationIgnored private var power: (any NSObjectProtocol)?
     @ObservationIgnored private var arriving: Task<Void, Never>?
     @ObservationIgnored private var landing: Task<Void, Never>?
+    @ObservationIgnored private var linkedFollowing: Task<Void, Never>?
+    @ObservationIgnored private var linkedGeneration = 0
     @ObservationIgnored private var landedSongs = 0
     @ObservationIgnored private(set) var unmetered = false
     @ObservationIgnored private var connection = ConnectionMeter.unknown
@@ -163,8 +168,10 @@ final class Features {
     @ObservationIgnored var foreground = true {
         didSet {
             library.nudgePoll()
+            wakeSyncPoll()
             enrichment.foregroundChanged(foreground)
             downloads.foregroundChanged(foreground)
+            followLinkedPlaylists()
             tapHoldersChanged()
         }
     }
@@ -275,6 +282,7 @@ final class Features {
         syncPolling?.cancel()
         syncPolling = Task { [weak self] in await self?.pollSync(native) }
         work { [weak self] native in try await self?.applySync(native) }
+        followLinkedPlaylists()
         Task { [weak self] in
             await self?.library.forgetMissing()
             await self?.refreshChangedArt(native)
@@ -368,6 +376,7 @@ final class Features {
                 self?.online = enabled
                 self?.settings.set(enabled, forKey: "online")
                 self?.downloads.wantsChanged()
+                self?.followLinkedPlaylists()
                 if enabled {
                     self?.enrichment.begin()
                     self?.askOnline()
@@ -541,6 +550,7 @@ final class Features {
     func forceSync() {
         nearby?.refresh()
         syncAskedAt = Date()
+        wakeSyncPoll()
         work { [weak self] native in
             await self?.library.forgetMissing()
             try await Work.aside { native.syncForce() }
@@ -551,9 +561,13 @@ final class Features {
         let polling = syncPolling
         let arrivals = arriving
         let landed = landing
+        let following = linkedFollowing
         syncPolling = nil
         arriving = nil
         landing = nil
+        linkedFollowing = nil
+        linkedGeneration += 1
+        following?.cancel()
         polling?.cancel()
         arrivals?.cancel()
         landed?.cancel()
@@ -563,6 +577,7 @@ final class Features {
         await polling?.value
         await arrivals?.value
         await landed?.value
+        await following?.value
         nearby?.follow(record: nil)
         syncAskedAt = nil
         listening.stop()
@@ -658,6 +673,7 @@ final class Features {
                 }
             }
             syncStatus = status
+            wakeSyncPoll()
             await announceNearby(native)
         } catch {
             syncStatus = try? await Work.aside { native.syncStatus() }
@@ -728,7 +744,11 @@ final class Features {
         var arrivals: UInt64 = 0
         var failing = false
         while !Task.isCancelled {
-            try? await Task.sleep(for: syncAskedAt != nil ? Self.syncAsked : foreground || transferring ? Self.syncForeground : Self.syncBackground)
+            let pause = syncAskedAt != nil ? Self.syncAsked : foreground || transferring ? Self.syncForeground : Self.syncBackground
+            let nap = Task { _ = try? await Task.sleep(for: pause) }
+            syncNap = nap
+            await withTaskCancellationHandler { await nap.value } onCancel: { nap.cancel() }
+            guard !Task.isCancelled else { return }
             do {
                 let (status, waiting, handoffs, record) = try await Work.aside {
                     let status = native.syncStatus()
@@ -766,6 +786,10 @@ final class Features {
                 failing = true
             }
         }
+    }
+
+    private func wakeSyncPoll() {
+        syncNap?.cancel()
     }
 
     private func adoptArrivals(_ native: MobilePlayer) async {
@@ -975,6 +999,32 @@ final class Features {
             await MainActor.run {
                 if self?.playlists != found { self?.playlists = found }
             }
+            let profiles = try await Work.aside { try native.profilesFollowed() }
+            if self?.followedProfiles != profiles { self?.followedProfiles = profiles }
+        }
+    }
+
+    func followProfile(_ link: String, keptInStep: Bool) {
+        guard !followingProfile else { return }
+        followingProfile = true
+        work({ [weak self] native in
+            let followed = try await Work.aside { try native.followProfile(link: link, keptInStep: keptInStep) }
+            let (found, profiles) = try await Work.aside { (try native.playlists(), try native.profilesFollowed()) }
+            guard let self else { return }
+            adoptPlaylists(found, native)
+            if followedProfiles != profiles { followedProfiles = profiles }
+            library.notice(FollowedProfileWords.followed(followed, keptInStep: keptInStep))
+            if keptInStep { await refreshWanted(native) }
+        }, finally: { [weak self] in self?.followingProfile = false })
+    }
+
+    func unfollowProfile(_ link: String) {
+        work { [weak self] native in
+            let profiles = try await Work.aside {
+                try native.unfollowProfile(link: link)
+                return try native.profilesFollowed()
+            }
+            self?.followedProfiles = profiles
         }
     }
 
@@ -1651,6 +1701,143 @@ final class Features {
         }
     }
 
+    func importLinkedPlaylist(link: String, name: String, songs: [SearchSong], keptInStep: Bool) {
+        work { [weak self] native in
+            let (imported, found) = try await Work.inLibrary {
+                (
+                    try native.importLinkedPlaylist(link: link, name: name, songs: songs, keptInStep: keptInStep),
+                    try native.playlists()
+                )
+            }
+            guard let self else { return }
+            if playlists != found { playlists = found }
+            let playlist = found.first { $0.id == imported.id }
+            library.notice(
+                LinkedPlaylistWords.imported(
+                    name: playlist?.name ?? name,
+                    service: playlist?.link?.service ?? playlistLinkService(text: link) ?? "",
+                    keptInStep: keptInStep,
+                    matched: imported.matched,
+                    missing: imported.missing
+                ))
+            if keptInStep, imported.missing > 0 { await refreshWanted(native) }
+        }
+    }
+
+    func refreshLinkedPlaylist(_ id: UInt64) {
+        work { [weak self] native in
+            let refreshed = try await Work.aside { try native.refreshLinkedPlaylist(id: id) }
+            await self?.adoptRefresh(refreshed, asked: true, native)
+        }
+    }
+
+    func keepPlaylistInStep(_ id: UInt64, _ kept: Bool) {
+        work { [weak self] native in
+            let found = try await Work.inLibrary {
+                try native.keepPlaylistInStep(id: id, keptInStep: kept)
+                return try native.playlists()
+            }
+            guard let self else { return }
+            if playlists != found { playlists = found }
+            guard let playlist = found.first(where: { $0.id == id }), let link = playlist.link else { return }
+            library.notice(LinkedPlaylistWords.keptInStep(name: playlist.name, service: link.service, kept))
+            if kept, online { refreshLinkedPlaylist(id) }
+        }
+    }
+
+    func forgetPlaylistLink(_ id: UInt64) {
+        let before = playlists.first { $0.id == id }
+        work { [weak self] native in
+            let found = try await Work.inLibrary {
+                try native.forgetPlaylistLink(id: id)
+                return try native.playlists()
+            }
+            guard let self else { return }
+            if playlists != found { playlists = found }
+            if let before, let link = before.link {
+                library.notice(LinkedPlaylistWords.forgotten(name: before.name, service: link.service))
+            }
+        }
+    }
+
+    private func adoptRefresh(_ refreshed: RefreshedPlaylist, asked: Bool, _ native: MobilePlayer) async {
+        if LinkedPlaylistWords.moved(refreshed),
+            let found = try? await Work.aside({ try native.playlists() })
+        {
+            adoptPlaylists(found, native)
+        }
+        if refreshed.wanted > 0 { await refreshWanted(native) }
+        guard let playlist = playlists.first(where: { $0.id == refreshed.id }),
+            let words = LinkedPlaylistWords.refreshed(
+                name: playlist.name,
+                service: playlist.link?.service ?? "",
+                refreshed,
+                asked: asked
+            )
+        else { return }
+        if asked {
+            library.notice(words)
+        } else {
+            library.noticeUnasked(words)
+        }
+    }
+
+    private func followLinkedPlaylists() {
+        guard LinkedPlaylistPace.follows(online: online, foreground: foreground) else {
+            linkedFollowing?.cancel()
+            linkedFollowing = nil
+            linkedGeneration += 1
+            return
+        }
+        guard linkedFollowing == nil, library.native != nil else { return }
+        linkedGeneration += 1
+        let generation = linkedGeneration
+        linkedFollowing = Task { [weak self] in await self?.keepLinkedPlaylistsInStep(generation) }
+    }
+
+    private func refreshDueProfiles(_ native: MobilePlayer, _ generation: Int) async {
+        let due = (try? await Work.aside { try native.profilesDueARefresh() }) ?? []
+        for link in due {
+            guard !Task.isCancelled, linkedGeneration == generation, online else { return }
+            let before = playlists
+            guard let followed = try? await Work.aside({ try native.followProfile(link: link, keptInStep: true) }),
+                let found = try? await Work.aside({ try native.playlists() })
+            else { continue }
+            let added = followed.playlists.filter { imported in !before.contains { $0.id == imported.id } }.count
+            let changed = found != before
+            if changed {
+                adoptPlaylists(found, native)
+                await refreshWanted(native)
+            }
+            if let words = FollowedProfileWords.refreshed(
+                name: followed.name, service: followed.service, added: added, changed: changed, gone: followed.gone)
+            {
+                library.noticeUnasked(words)
+            }
+        }
+    }
+
+    private func keepLinkedPlaylistsInStep(_ generation: Int) async {
+        defer {
+            if linkedGeneration == generation { linkedFollowing = nil }
+        }
+        var wait = LinkedPlaylistPace.firstLook
+        while !Task.isCancelled {
+            do { try await Task.sleep(for: wait) } catch { return }
+            wait = LinkedPlaylistPace.lookEvery
+            guard LinkedPlaylistPace.follows(online: online, foreground: foreground),
+                let native = try? await library.player()
+            else { return }
+            await refreshDueProfiles(native, generation)
+            let due = (try? await Work.aside { try native.playlistsDueARefresh() }) ?? []
+            for id in due {
+                guard !Task.isCancelled, linkedGeneration == generation, online else { return }
+                guard let refreshed = try? await Work.aside({ try native.refreshLinkedPlaylist(id: id) }) else { continue }
+                await adoptRefresh(refreshed, asked: false, native)
+            }
+        }
+    }
+
     func onlineAnswer<Value: Sendable>(_ ask: @escaping @Sendable (MobilePlayer) throws -> Value) async -> Value? {
         do {
             let native = try await library.player()
@@ -1666,7 +1853,7 @@ final class Features {
         onlinePending?.cancel()
         let request = searchRequest
         let text = onlineQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        let chain = OnlineAsked.chain(text)
+        let chain = profileLinkService(text: text) == nil ? OnlineAsked.chain(text) : []
 
         guard online, !chain.isEmpty else {
             searching = false

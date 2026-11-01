@@ -22,19 +22,20 @@ use crate::{
     Sources, StoreOp, Track, TrackQuery,
     db::{self, BESIDE_A_TRACK, Inner, Narrowed, RawTrack, TRACK_COLUMNS},
     sheet::{self, Listed},
-    store,
+    sourced, store,
     undo::{self, Change, Edit, Reach},
     volumes,
 };
 
 const COLUMNS: &str = "p.id, p.name, p.created, p.modified, p.played, p.plays,
      count(e.path), sum(t.duration * 1.0 / t.sample_rate), q.text, q.sort, q.max_rows,
-     p.kept_order, p.kept_reading, p.pinned, q.reading";
+     p.kept_order, p.kept_reading, p.pinned, q.reading, s.link, s.kept, s.refreshed";
 
 const COUNTED: &str = "FROM playlists p
      LEFT JOIN playlist_entries e ON e.playlist_id = p.id
      LEFT JOIN tracks t ON t.path = e.path AND t.span_start = e.span_start
-     LEFT JOIN playlist_queries q ON q.playlist_id = p.id";
+     LEFT JOIN playlist_queries q ON q.playlist_id = p.id
+     LEFT JOIN playlist_sources s ON s.playlist_id = p.id";
 
 const PER_PLAYLIST: &str = "GROUP BY p.id";
 
@@ -298,6 +299,7 @@ fn created(transaction: &Transaction<'_>, name: &PlaylistName) -> Result<Playlis
 
     let id = PlaylistId::new(transaction.last_insert_rowid() as u64)?;
     forget_the_plays_of_a_discarded_holder(transaction, id)?;
+    sourced::forget_the_source_of_a_discarded_holder(transaction, id)?;
     Ok(id)
 }
 
@@ -412,6 +414,19 @@ pub fn fill(inner: &Inner, name: &str, cuts: &[Cut]) -> Result<Filled> {
             started: true,
         });
     };
+    Ok(Filled {
+        playlist,
+        added: lacking_added(inner, playlist, held, cuts)?,
+        started: false,
+    })
+}
+
+pub fn fill_into(inner: &Inner, id: PlaylistId, cuts: &[Cut]) -> Result<usize> {
+    let held = inner.read(|connection| rows(connection, id))?;
+    lacking_added(inner, id, held, cuts)
+}
+
+fn lacking_added(inner: &Inner, id: PlaylistId, held: Vec<Row>, cuts: &[Cut]) -> Result<usize> {
     let mut kept: AHashSet<Row> = held.into_iter().collect();
     let mut missing = Vec::new();
     for cut in cuts {
@@ -419,16 +434,72 @@ pub fn fill(inner: &Inner, name: &str, cuts: &[Cut]) -> Result<Filled> {
             missing.push(cut.clone());
         }
     }
-    let added = match missing.is_empty() {
-        true => 0,
-        false => add(inner, playlist, &missing)?,
-    };
 
-    Ok(Filled {
-        playlist,
-        added,
-        started: false,
-    })
+    match missing.is_empty() {
+        true => Ok(0),
+        false => add(inner, id, &missing),
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Mirrored {
+    pub added: usize,
+    pub removed: usize,
+}
+
+pub fn mirror(inner: &Inner, id: PlaylistId, cuts: &[Cut]) -> Result<Mirrored> {
+    let wanted = Adding::of(cuts)?;
+
+    let mirrored = undo::edited(inner, id, Edit::Refreshed, Reach::Whole, |transaction| {
+        only_a_list(transaction, id)?;
+        let held = rows(transaction, id)?;
+        if held == wanted.rows {
+            return Ok(Change::Nothing(Mirrored::default()));
+        }
+        let mirrored = Mirrored {
+            added: beyond(&wanted.rows, &held),
+            removed: beyond(&held, &wanted.rows),
+        };
+
+        transaction
+            .execute(
+                "DELETE FROM playlist_entries WHERE playlist_id = ?1",
+                params![id.get() as i64],
+            )
+            .map_err(|source| Error::store(StoreOp::Delete, source))?;
+        wanted.appended(transaction, id)?;
+        Ok(Change::Made(mirrored))
+    })?;
+
+    if mirrored != Mirrored::default() {
+        inner.playlists_changed();
+    }
+    Ok(mirrored)
+}
+
+fn beyond(these: &[Row], those: &[Row]) -> usize {
+    let mut counted: AHashMap<&Row, usize> = AHashMap::new();
+    for row in those {
+        *counted.entry(row).or_default() += 1;
+    }
+
+    these
+        .iter()
+        .filter(|row| match counted.get_mut(row) {
+            Some(left) if *left > 0 => {
+                *left -= 1;
+                false
+            }
+            _ => true,
+        })
+        .count()
+}
+
+pub(crate) fn a_free_name_for(inner: &Inner, wanted: &str) -> Result<String> {
+    let wanted = wanted_name(wanted)?;
+    inner
+        .read(|connection| a_free_name(connection, wanted.as_str()))
+        .map(|name| name.as_str().to_owned())
 }
 
 fn a_free_name(connection: &Connection, name: &str) -> Result<PlaylistName> {
@@ -2162,6 +2233,9 @@ fn read(row: &SqlRow<'_>) -> rusqlite::Result<Result<Playlist>> {
     let kept_reading: Option<i64> = row.get(12)?;
     let pinned: Option<i64> = row.get(13)?;
     let reading: Option<i64> = row.get(14)?;
+    let link: Option<String> = row.get(15)?;
+    let keeping: Option<i64> = row.get(16)?;
+    let refreshed: Option<i64> = row.get(17)?;
 
     Ok(PlaylistId::new(id as u64)
         .map_err(Error::from)
@@ -2186,6 +2260,7 @@ fn read(row: &SqlRow<'_>) -> rusqlite::Result<Result<Playlist>> {
                     .map(|(order, reading)| wanted_kept(id, order, reading))
                     .transpose()?,
                 pinned: pinned.map(store::from_nanos),
+                source: sourced::read(id, link, keeping, refreshed)?,
             })
         }))
 }

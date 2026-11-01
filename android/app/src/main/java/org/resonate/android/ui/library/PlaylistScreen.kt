@@ -20,7 +20,11 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.DownloadForOffline
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.LinkOff
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
@@ -48,10 +52,14 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.resonate.android.LinkedPlaylistWords
+import org.resonate.android.nativecore.PlaylistLinkInfo
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.components.DragHandle
 import org.resonate.android.ui.components.LocalSheets
@@ -85,10 +93,13 @@ fun PlaylistScreen(screen: Screen.Playlist) {
     val loaded by model.rows.collectAsStateWithLifecycle()
     val sync by model.sync.collectAsStateWithLifecycle()
     val playing by model.playing.collectAsStateWithLifecycle()
+    val refreshing by model.refreshing.collectAsStateWithLifecycle()
+    val online by model.online.collectAsStateWithLifecycle()
     var adding by rememberSaveable { mutableStateOf(false) }
     var deleting by rememberSaveable { mutableStateOf(false) }
     val name = playlist?.name ?: screen.name
     val search = playlist?.search
+    val link = playlist?.link
     val entries = loaded.valueOrNull().orEmpty()
     val tracks = entries.map { it.track }
     val list = rememberLazyListState()
@@ -151,6 +162,9 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                         onUndo = model::undo,
                         onKeep = model::keep,
                         onFetch = model::fetch,
+                        link = link,
+                        onKeepInStep = model::keepInStep,
+                        onForgetLink = model::forgetLink,
                         onDelete = { deleting = true },
                     ),
                     description = "Playlist options",
@@ -181,13 +195,25 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                                     modifier = Modifier.testTag("saved-search-reading"),
                                 )
                             }
-                        } else if (rows.isEmpty()) {
-                            FilledTonalButton(onClick = { adding = true }, modifier = Modifier.testTag("add-songs-button")) {
-                                AddSongsLabel()
-                            }
                         } else {
-                            TextButton(onClick = { adding = true }, modifier = Modifier.testTag("add-songs-button")) {
-                                AddSongsLabel()
+                            Column {
+                                if (link != null) {
+                                    LinkedPlaylistLine(
+                                        link = link,
+                                        refreshing = refreshing,
+                                        online = online,
+                                        onRefresh = model::refreshLink,
+                                    )
+                                }
+                                if (rows.isEmpty()) {
+                                    FilledTonalButton(onClick = { adding = true }, modifier = Modifier.testTag("add-songs-button")) {
+                                        AddSongsLabel()
+                                    }
+                                } else {
+                                    TextButton(onClick = { adding = true }, modifier = Modifier.testTag("add-songs-button")) {
+                                        AddSongsLabel()
+                                    }
+                                }
                             }
                         }
                     },
@@ -272,6 +298,39 @@ fun PlaylistScreen(screen: Screen.Playlist) {
 }
 
 @Composable
+private fun LinkedPlaylistLine(
+    link: PlaylistLinkInfo,
+    refreshing: Boolean,
+    online: Boolean,
+    onRefresh: () -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            LinkedPlaylistWords.line(link),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f, fill = false).testTag("playlist-link-line"),
+        )
+        Spacer(Modifier.width(8.dp))
+        Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+            if (refreshing) {
+                CircularProgressIndicator(
+                    Modifier.size(24.dp).semantics { contentDescription = "Refreshing from ${link.service}" }
+                )
+            } else {
+                IconButton(
+                    onClick = onRefresh,
+                    enabled = online,
+                    modifier = Modifier.testTag("playlist-link-refresh"),
+                ) {
+                    Icon(Icons.Rounded.Refresh, contentDescription = "Refresh from ${link.service}")
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun AddSongsLabel() {
     Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null, Modifier.size(ButtonDefaults.IconSize))
     Spacer(Modifier.width(ButtonDefaults.IconSpacing))
@@ -289,6 +348,9 @@ private fun playlistMenu(
     onUndo: () -> Unit,
     onKeep: (Boolean) -> Unit,
     onFetch: (org.resonate.android.nativecore.SyncedDevice) -> Unit,
+    link: PlaylistLinkInfo?,
+    onKeepInStep: (Boolean) -> Unit,
+    onForgetLink: () -> Unit,
     onDelete: () -> Unit,
 ): List<List<MenuEntry>> =
     listOf(
@@ -315,6 +377,12 @@ private fun playlistMenu(
                         }
                     }
                 else emptyList(),
+        if (link == null) emptyList()
+        else
+            listOf(
+                MenuEntry.Toggle("Keep in step with ${link.service}", Icons.Rounded.Sync, link.keptInStep, onKeepInStep),
+                MenuEntry.Action("Forget the link", Icons.Rounded.LinkOff, run = onForgetLink),
+            ),
         listOf(MenuEntry.Action("Delete playlist", Icons.Rounded.Delete, destructive = true, run = onDelete)),
     )
 

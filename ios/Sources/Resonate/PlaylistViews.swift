@@ -89,8 +89,9 @@ struct PlaylistView: View {
         let rows = features.openPlaylist == id ? features.playlistRows : []
         let name = playlist?.name ?? "Playlist"
         let search = playlist?.search
+        let subtitle = search == nil ? playlist?.link.map(LinkedPlaylistWords.header) ?? "Playlist" : "Saved search"
         List {
-            CollectionHeader(title: name, subtitle: search == nil ? "Playlist" : "Saved search", tracks: rows) {
+            CollectionHeader(title: name, subtitle: subtitle, tracks: rows) {
                 PlaylistArtwork(playlist: playlist, corner: 20)
             }
             if let search {
@@ -121,6 +122,7 @@ struct PlaylistView: View {
                     PlaylistOptions(
                         id: id,
                         fills: search != nil,
+                        link: playlist?.link,
                         renaming: $renaming,
                         revising: $revising,
                         deleting: $deleting,
@@ -259,6 +261,7 @@ struct PlaylistOptions: View {
     @Environment(Library.self) private var library
     let id: UInt64
     var fills = false
+    var link: PlaylistLinkInfo?
     @Binding var renaming: Bool
     @Binding var revising: Bool
     @Binding var deleting: Bool
@@ -282,6 +285,20 @@ struct PlaylistOptions: View {
                 }
             }
             Button("Delete playlist", systemImage: "trash", role: .destructive) { deleting = true }
+        }
+        if let link, !fills {
+            Section(LinkedPlaylistWords.header(link)) {
+                Button(LinkedPlaylistWords.refreshFrom(link.service), systemImage: "arrow.clockwise") {
+                    features.refreshLinkedPlaylist(id)
+                }
+                .disabled(!features.online)
+                Toggle(
+                    "Keep in step",
+                    systemImage: "arrow.triangle.2.circlepath",
+                    isOn: Binding(get: { link.keptInStep }, set: { features.keepPlaylistInStep(id, $0) })
+                )
+                Button("Forget the link", systemImage: "link") { features.forgetPlaylistLink(id) }
+            }
         }
         if let sync, !fills, features.syncStatus?.standing != .off {
             Section("Your devices") {

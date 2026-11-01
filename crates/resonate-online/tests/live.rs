@@ -8,8 +8,8 @@ use resonate_core::{MediaLocation, SampleRate};
 use resonate_eq::{Corrections, DeviceId, suggest};
 use resonate_library::{
     AlbumLink, Billed, Error, Isrc, Library, Link, ListedSong, LookupOp, Mbid, PlaylistLink,
-    Reference, Relation, ReleaseAsked, Scrobble, Scrobbler, Service, SongLink, StreamAsked,
-    TokenHeld, Wording, songs_asked, weighed_for,
+    ProfileLink, Reference, Relation, ReleaseAsked, Scrobble, Scrobbler, Service, SongLink,
+    StreamAsked, TokenHeld, Wording, songs_asked, weighed_for,
 };
 use resonate_listen::{Clip, Recogniser};
 use resonate_lyrics::{Detail, LyricProvider, Timing, Voice, Wanted};
@@ -715,4 +715,40 @@ fn better_lyrics_answers_a_duet_word_by_word_with_both_singers() {
     assert_eq!(lyrics.detail(), Detail::Words);
     assert!(lyrics.lines().iter().any(|line| line.voice == Voice::Two));
     assert_eq!(lyrics.source().as_str(), "betterlyrics");
+}
+
+#[test]
+fn a_public_deezer_profile_names_the_playlists_it_made_and_its_loved_tracks() {
+    let Some(client) = reached() else {
+        return;
+    };
+    let online = Online::with_client(client);
+    let link =
+        ProfileLink::read("https://www.deezer.com/fr/profile/2529").expect("a Deezer profile");
+
+    let profile = online
+        .profile_linked(&link)
+        .expect("Deezer answered")
+        .expect("the profile is public");
+
+    assert_eq!(profile.name, "dadbond");
+    assert!(
+        profile.playlists.len() >= 50,
+        "{} playlists",
+        profile.playlists.len()
+    );
+    assert!(
+        profile
+            .playlists
+            .iter()
+            .any(|playlist| playlist.link == PlaylistLink::Deezer(181_961_911)),
+        "the loved tracks are among them"
+    );
+    assert!(
+        profile
+            .playlists
+            .iter()
+            .all(|playlist| playlist.link != PlaylistLink::Deezer(6_399_367_984)),
+        "a playlist it only follows is not"
+    );
 }

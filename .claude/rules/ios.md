@@ -251,7 +251,10 @@ sync seals its records and talks QUIC (TLS) of its own.
   written into the folder (`syncLanding`), with a fraction where every size is known, else
   *syncing* from *Sync now* (`syncAskedAt`) until the status settles (a notice says with how many
   devices), the server is refused or unreachable with nobody nearby (the standing as a notice), or
-  45 s pass; the poll runs every second meanwhile. Songs arriving refresh the library and the
+  45 s pass; the poll runs every second meanwhile. **The poll's pause is a nap that can be cut**
+  (`syncNap`, `wakeSyncPoll`): the scene's foreground changing, a start answering and *Sync now*
+  wake it, since a 30 s pause begun in the background otherwise left the page on *Syncing…* that
+  long after coming forward though sync had already met everyone. Songs arriving refresh the library and the
   playlists in a task of their own (`adoptArrivals`), and received songs are copied in another
   (`landing`, awaited on erasing), so neither a long refresh nor a large song holds the poll, the
   progress, `syncHandoffs` or `answerSyncAsked`. `SyncProgress` is a glass card in the status
@@ -782,6 +785,39 @@ every route change (a pair of headphones at the same rate included), not from th
   in the library, and `Features.playlistToShow` has the root view open the new playlist. A playlist's
   options menu exports M3U8, PLS or XSPF through `export_playlist` into a `fileExporter`
   (`PlaylistFile`).
+- **A pasted playlist link is imported once or kept in step with it** (`mobile.md`'s *A playlist
+  kept in step with its link*). Where the Search tab's link (`OnlineFound.text`, handed down through
+  `OnlineLinkSections` to `OnlineSongsSection`) names a playlist service
+  (`playlist_link_service`, the boundary's own `PlaylistLink::read`, so no host list is kept in
+  Swift), the collection's import is a menu of *Import once* and *Keep in step
+  with <service>*, each opening the name alert (`OnlineSongActions.importedLink`); any other link
+  keeps *Import local matches as playlist* (`importPlaylist`). `Features.importLinkedPlaylist` runs
+  on `Work.inLibrary`, says `LinkedPlaylistWords.imported` and, in step with songs not held, reads
+  the wants again so the wants loop downloads them. A playlist whose `MusicPlaylist.link` is set is
+  subtitled `LinkedPlaylistWords.header` (*Kept in step with Spotify*, *Imported from Spotify*), and
+  its options menu holds a section of *Refresh from <service>* (`refreshLinkedPlaylist` on
+  `Work.aside`, off while online is off), a *Keep in step* toggle (`keepPlaylistInStep`, which
+  refreshes at once when turned on and online) and *Forget the link*. **Playlists kept in step are
+  refreshed on their own** (`Features.followLinkedPlaylists`): while the scene is active and online
+  is on (`LinkedPlaylistPace.follows`; started when the player opens, stopped and restarted by
+  `foreground` and `setOnline`, awaited on erasing, a generation refusing a loop that was replaced) it
+  looks a minute in and every ten minutes after (`firstLook`, `lookEvery`), refreshing each of
+  `playlists_due_a_refresh`. A refresh that moved rows reloads the playlists and the open page
+  (`adoptRefresh`, `adoptPlaylists`); a timed one is told through `noticeUnasked` only where rows
+  moved, and a failed one says nothing (`LinkedPlaylistWords.refreshed`, `LinkedPlaylistsTests`).
+  **A whole profile is followed or moved once** (`mobile.md`'s *A Deezer profile is followed whole*): text the
+  boundary reads as a profile (`profile_link_service`) is asked nothing online (`askOnline` passes
+  it over) and the Search tab's *Online* shows `OnlineProfileSection` in place of the empty answer:
+  *Follow <service> profile* and *Move to Resonate once*, both `Features.followProfile` on
+  `Work.aside` (one at a time, `followingProfile`, a spinner meanwhile), then the playlists and the
+  open page reloaded, `followedProfiles` read again, the wants read again where followed, and
+  `FollowedProfileWords.followed` said (playlists, then let go, deleted and unreadable counts where
+  not zero). The timed refresh first asks `profiles_due_a_refresh` and follows each again
+  (`refreshDueProfiles`), reloading only where the playlists read differ from those shown and
+  telling `noticeUnasked` only then or where playlists were added or deleted
+  (`FollowedProfileWords.refreshed`). The Playlists page's toolbar holds *Followed profiles* while any
+  is followed (`profiles_followed`, read with the playlists): each link a button that asks *Stop
+  following* (confirmed, `unfollow_profile`; its playlists stay) (`FollowedProfileWordsTests`).
 - **The queue is saved as a playlist** from the player's More menu (`createPlaylist` with every
   queue row, repeats kept).
 - **Statistics is a page of its own** (`StatisticsView.swift`), opened from Home's *Your listening* as

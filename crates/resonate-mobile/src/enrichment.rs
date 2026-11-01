@@ -2453,8 +2453,8 @@ mod tests {
     use resonate_library::{
         AlbumLink, AlbumMatch, AlbumNames, ArtistLink, ArtistMatch, ArtistPressings, ArtistProfile,
         Barcode, BarcodeMatch, Credit, Discography, GroupAsked, GroupMatch, LinkNames,
-        LinkedPlaylist, PlaylistLink, RecordingAsked, RecordingMatch, ReleaseAsked, ReleaseMatch,
-        SongLink, SongsAsked, StreamAsked,
+        LinkedPlaylist, LinkedProfile, PlaylistLink, ProfileLink, RecordingAsked, RecordingMatch,
+        ReleaseAsked, ReleaseMatch, SongLink, SongsAsked, StreamAsked,
     };
     use resonate_online::Identity;
 
@@ -2664,6 +2664,13 @@ mod tests {
             &self,
             _link: &PlaylistLink,
         ) -> resonate_library::Result<Option<LinkedPlaylist>> {
+            self.answered(None)
+        }
+
+        fn profile_linked(
+            &self,
+            _link: &ProfileLink,
+        ) -> resonate_library::Result<Option<LinkedProfile>> {
             self.answered(None)
         }
 

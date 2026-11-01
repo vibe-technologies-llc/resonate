@@ -138,12 +138,30 @@ pub enum PlaylistLink {
     Tidal(String),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum ProfileLink {
+    Deezer(u64),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LinkedProfile {
+    pub name: String,
+    pub playlists: Vec<ProfilePlaylist>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProfilePlaylist {
+    pub title: String,
+    pub link: PlaylistLink,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FollowedLink {
     Song(SongLink),
     Album(AlbumLink),
     Artist(ArtistLink),
     Playlist(PlaylistLink),
+    Profile(ProfileLink),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -446,10 +464,59 @@ impl FollowedLink {
             .or_else(|| AlbumLink::read(text).map(Self::Album))
             .or_else(|| ArtistLink::read(text).map(Self::Artist))
             .or_else(|| PlaylistLink::read(text).map(Self::Playlist))
+            .or_else(|| ProfileLink::read(text).map(Self::Profile))
+    }
+}
+
+impl ProfileLink {
+    pub fn read(text: &str) -> Option<Self> {
+        let address = Address::read(one_token(text)?)?;
+        match address.host.as_str() {
+            "deezer.com" => address.after("profile")?.parse().ok().map(Self::Deezer),
+            _ => None,
+        }
+    }
+
+    pub fn page(&self) -> String {
+        match self {
+            Self::Deezer(user) => format!("https://www.deezer.com/profile/{user}"),
+        }
+    }
+
+    pub const fn service(&self) -> &'static str {
+        match self {
+            Self::Deezer(_) => "Deezer",
+        }
     }
 }
 
 impl PlaylistLink {
+    pub fn page(&self) -> String {
+        match self {
+            Self::Deezer(playlist) => format!("https://www.deezer.com/playlist/{playlist}"),
+            Self::ListenBrainz(playlist) => {
+                format!("https://listenbrainz.org/playlist/{}", playlist.as_str())
+            }
+            Self::Spotify(playlist) => format!("https://open.spotify.com/playlist/{playlist}"),
+            Self::AppleMusic { storefront, id } => {
+                format!("https://music.apple.com/{storefront}/playlist/{id}")
+            }
+            Self::Youtube(list) => format!("https://www.youtube.com/playlist?list={list}"),
+            Self::Tidal(playlist) => format!("https://tidal.com/playlist/{playlist}"),
+        }
+    }
+
+    pub const fn service(&self) -> &'static str {
+        match self {
+            Self::Deezer(_) => "Deezer",
+            Self::ListenBrainz(_) => "ListenBrainz",
+            Self::Spotify(_) => "Spotify",
+            Self::AppleMusic { .. } => "Apple Music",
+            Self::Youtube(_) => "YouTube",
+            Self::Tidal(_) => "TIDAL",
+        }
+    }
+
     pub fn read(text: &str) -> Option<Self> {
         let text = one_token(text)?;
         if let Some(id) = text.strip_prefix(SPOTIFY_PLAYLIST) {
@@ -1219,6 +1286,48 @@ mod tests {
             "https://www.deezer.com/playlist/3155776842 too",
         ] {
             assert_eq!(PlaylistLink::read(text), None, "{text}");
+        }
+    }
+
+    #[test]
+    fn a_deezer_profile_is_read_as_one_whatever_its_language_and_reads_back_from_its_page() {
+        let profile = ProfileLink::Deezer(2_529);
+
+        assert_eq!(
+            FollowedLink::read("https://www.deezer.com/fr/profile/2529?utm_source=x"),
+            Some(FollowedLink::Profile(profile.clone()))
+        );
+        assert_eq!(ProfileLink::read(&profile.page()), Some(profile));
+        assert_eq!(
+            ProfileLink::read("https://www.deezer.com/profile/a-name"),
+            None
+        );
+        assert_eq!(
+            ProfileLink::read("https://open.spotify.com/user/2529"),
+            None
+        );
+    }
+
+    #[test]
+    fn a_playlists_page_reads_back_as_the_link_it_was_written_from() {
+        let links = [
+            PlaylistLink::Deezer(3_155_776_842),
+            PlaylistLink::ListenBrainz(mbid("d20c6058-b625-49ec-ab78-99cf15584b3d")),
+            PlaylistLink::Spotify("37i9dQZF1DXcBWIGoYBM5M".to_owned()),
+            PlaylistLink::AppleMusic {
+                storefront: "gb".to_owned(),
+                id: "pl.u-AkAmPlyUxEAm9V".to_owned(),
+            },
+            PlaylistLink::Youtube("PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI".to_owned()),
+            PlaylistLink::Tidal("36ea71a8-445e-41a4-82ab-6628c581535d".to_owned()),
+        ];
+
+        for link in links {
+            assert_eq!(
+                PlaylistLink::read(&link.page()),
+                Some(link.clone()),
+                "{link:?}"
+            );
         }
     }
 

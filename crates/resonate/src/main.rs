@@ -15,6 +15,7 @@ mod error;
 mod favourites;
 #[cfg(test)]
 mod fixtures;
+mod followed;
 mod info;
 mod input;
 mod lastfm;
@@ -102,7 +103,7 @@ use resonate_library::{
     LookupOp, Missing, MissingTrack, Move, OrganiseOptions, OrganiseSummary, Outcome, PassHandle,
     PassKind, Playing, Playlist, PlaylistFormat, PlaylistName, PlaylistOrder, PollOptions, Refusal,
     Refused, RetagOptions, RetagSummary, RowOrder, SavedQuery, ScanOptions, Search, SheetScope,
-    SortOrder, StudyFilter, TRIES_BEFORE_GIVING_UP, UnheldRelease, Vault, VaultFiles, Want,
+    SortOrder, StudyFilter, TRIES_BEFORE_GIVING_UP, UnheldRelease, Upkeep, Vault, VaultFiles, Want,
     cuts_listed_in, folded_letters,
 };
 use resonate_mpris::{PlayerName, Queueing, Reloadable, Running, Standing, ZoneAsked};
@@ -369,10 +370,14 @@ fn run() -> Result<()> {
         Some(Sub::Subsonic(wanted)) => {
             served::browse_subsonic(&config, settings_path(&cli).ok(), wanted)
         }
+        Some(Sub::Playlists { refresh: true, .. }) => {
+            followed::refresh_every_kept(&open_library(&cli, &config)?, &config)
+        }
         Some(Sub::Playlists {
             order,
             reverse,
             named,
+            refresh: false,
         }) => list_playlists(
             &open_library(&cli, &config)?,
             *order,
@@ -386,9 +391,17 @@ fn run() -> Result<()> {
             trials,
             against,
         }) => abx::run(&cli, &config, file, *trials, *against),
-        Some(Sub::Import { files, name }) => {
-            import(&open_library(&cli, &config)?, files, name.as_deref())
-        }
+        Some(Sub::Import {
+            files,
+            upkeep,
+            name,
+        }) => import(
+            &open_library(&cli, &config)?,
+            &config,
+            files,
+            name.as_deref(),
+            (*upkeep).into(),
+        ),
         Some(Sub::Sleep { spec, player, zone }) => {
             sleep::set(spec, player.as_deref(), zone.as_deref())
         }
@@ -1757,6 +1770,7 @@ fn list_playlists(
         "LAST PLAYED",
         "PLAYS",
         "PINNED",
+        "FROM",
     ]);
     for playlist in listed {
         table.push(vec![
@@ -1767,6 +1781,7 @@ fn list_playlists(
             ago(playlist.played),
             times(playlist.plays),
             ago(playlist.pinned),
+            followed::came_from(playlist.source.as_ref()),
         ]);
     }
 
@@ -1872,6 +1887,15 @@ fn playlist(cli: &Cli, config: &Config, wanted: &PlaylistArgs) -> Result<()> {
         library.remove_playlist(found.id)?;
         said!("{}", discarded(&found));
         return Ok(());
+    }
+    if wanted.refresh {
+        return followed::refresh(&library, config, &found);
+    }
+    if let Some(upkeep) = wanted.upkeep {
+        return followed::set_upkeep(&library, &found, upkeep.into());
+    }
+    if wanted.forget_link {
+        return followed::forget_link(&library, &found);
     }
     if wanted.pin || wanted.unpin {
         library.pin_playlist(found.id, wanted.pin)?;
@@ -2056,12 +2080,29 @@ fn extend(library: &Library, name: &str, paths: &[PathBuf]) -> Result<()> {
     Ok(())
 }
 
-fn import(library: &Library, files: &[PathBuf], name: Option<&str>) -> Result<()> {
+fn import(
+    library: &Library,
+    config: &Config,
+    files: &[PathBuf],
+    name: Option<&str>,
+    upkeep: Upkeep,
+) -> Result<()> {
     if name.is_some() && files.len() > 1 {
         return Err(Error::NameForOnePlaylistOnly { given: files.len() });
     }
 
     for file in files {
+        if let Some(profile) = followed::profile_named_by(file) {
+            followed::follow_profile(library, config, &profile, upkeep)?;
+            continue;
+        }
+        if let Some(link) = followed::link_named_by(file) {
+            followed::import(library, config, &link, name, upkeep)?;
+            continue;
+        }
+        if upkeep == Upkeep::InStep {
+            return Err(Error::KeptInStepOnlyWithALink { file: file.clone() });
+        }
         let read = library.import_playlist(file, name)?;
         let held = library
             .playlist(read.id)?

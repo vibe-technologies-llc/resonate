@@ -18,9 +18,10 @@ use resonate_engine::{Asleep, Placement, Until};
 use resonate_library::{
     AlbumLink, AlbumMatch, AlbumNames, AlbumQuery, ArtistLink, ArtistMatch, ArtistPressings,
     ArtistProfile, Barcode, BarcodeMatch, CoverArt, Discography, GroupAsked, GroupMatch, Isrc,
-    Library, Link, LinkNames, LinkedPlaylist, LyricText, LyricsAsked, Mbid, Medium, PlaylistLink,
-    Recording, RecordingAsked, RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup,
-    ReleaseMatch, ReleaseTrack, ScanOptions, SongLink, SongsAsked, StreamAsked,
+    Library, Link, LinkNames, LinkedPlaylist, LinkedProfile, LyricText, LyricsAsked, Mbid, Medium,
+    PlaylistLink, ProfileLink, Recording, RecordingAsked, RecordingMatch, Reference, Release,
+    ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, ScanOptions, SongLink, SongsAsked,
+    StreamAsked,
 };
 use resonate_mcp::{Controlling, Error, Lookups, Reach, Resource, Row, Server, Tool};
 use resonate_mpris::{Described, PlaybackStatus, PlaylistInfo, Queueing, Seeking};
@@ -2867,6 +2868,13 @@ impl Reference for Silent {
         Ok(None)
     }
 
+    fn profile_linked(
+        &self,
+        _link: &ProfileLink,
+    ) -> resonate_library::Result<Option<LinkedProfile>> {
+        Ok(None)
+    }
+
     fn artist_at(&self, _page: &str) -> resonate_library::Result<Option<Mbid>> {
         Ok(None)
     }
@@ -2930,4 +2938,58 @@ fn a_scan_hands_over_to_no_lookup_where_the_settings_leave_it_to_be_asked_for() 
     assert_eq!(started["full"], false);
     assert_eq!(started["lookup_after"], false);
     assert_eq!(lookup["state"], "idle", "{lookup}");
+}
+
+#[test]
+fn a_playlist_link_is_read_only_with_a_reference_and_a_link_that_names_no_playlist_says_so() {
+    let without = nothing_running();
+    let with = looking_up(false);
+    let link = json!({ "link": "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M" });
+
+    let unreferenced = failed(&without, "import_playlist_link", link.clone());
+    let unnamed = failed(&with, "import_playlist_link", link);
+    let unread = error_code(
+        &with,
+        &request(
+            "tools/call",
+            json!({
+                "name": "import_playlist_link",
+                "arguments": { "link": "https://example.com/not/a/playlist" },
+            }),
+        ),
+    );
+    called(&with, "create_playlist", json!({ "name": "Evening" }));
+    let unlinked = failed(
+        &with,
+        "keep_playlist_in_step",
+        json!({ "playlist": "Evening", "in_step": true }),
+    );
+
+    assert!(unreferenced.contains("look anything up"), "{unreferenced}");
+    assert!(unnamed.contains("names no playlist"), "{unnamed}");
+    assert_eq!(unread, -32_602);
+    assert!(unlinked.contains("came from no link"), "{unlinked}");
+}
+
+#[test]
+fn a_profile_is_followed_only_with_a_reference_and_a_private_one_says_so() {
+    let with = looking_up(false);
+    let profile = json!({ "link": "https://www.deezer.com/fr/profile/2529" });
+
+    let private = failed(&with, "follow_profile", profile.clone());
+    let unread = error_code(
+        &with,
+        &request(
+            "tools/call",
+            json!({
+                "name": "follow_profile",
+                "arguments": { "link": "https://www.deezer.com/playlist/1" },
+            }),
+        ),
+    );
+    let stopped = called(&with, "stop_following", profile);
+
+    assert!(private.contains("private"), "{private}");
+    assert_eq!(unread, -32_602);
+    assert_eq!(stopped["stopped"], false);
 }

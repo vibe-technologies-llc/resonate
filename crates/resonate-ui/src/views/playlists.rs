@@ -7,7 +7,9 @@ use gpui::{
 };
 use resonate_core::{Accent, AlbumId, FrameSpan, MediaLocation, PlaylistId, Span};
 use resonate_engine::{Command, Placement, QueueItem, QueueRows, Queued, Unclaimed};
-use resonate_library::{Cut, Edit, Favoured, Lit, Maker, Playlist, PlaylistEntry, Undoable};
+use resonate_library::{
+    Cut, Edit, Favoured, Lit, Maker, Playlist, PlaylistEntry, PlaylistSource, Undoable, Upkeep,
+};
 use smallvec::smallvec;
 
 use crate::{
@@ -54,6 +56,10 @@ const PLAYLIST_QUEUE_HINT: &str =
     "Queue this playlist after what is already queued, ahead of the rest of what is playing";
 
 const RENAME_HINT: &str = "Give this playlist another name";
+
+const REFRESH_HINT: &str = "Read it again from its link now: a playlist kept in step takes the \
+     service's songs and order, one imported once only gains what it lacks, and songs you do not \
+     have are downloaded";
 
 const PIN_HINT: &str =
     "Keep this playlist at the top of the list, whichever order it is read in, and in the sidebar";
@@ -888,6 +894,9 @@ impl RootView {
                 Rows::Narrowed => parts.push("narrowed by the search".to_owned()),
                 Rows::InHand => {}
             }
+            if let Some(source) = named.source.as_ref() {
+                parts.push(came_from(source));
+            }
             if named.plays > 0 {
                 parts.push(listing::times(named.plays).to_string());
             }
@@ -1007,6 +1016,57 @@ impl RootView {
                     cx,
                 ))
             })
+            .when_some(
+                named.as_ref().and_then(|named| named.source.clone()),
+                |bar, source| {
+                    let service = source.link.service();
+                    let (label, saying, other) = match source.upkeep {
+                        Upkeep::Once => (
+                            format!("Keep in step with {service}"),
+                            format!(
+                                "Imported once from {service}. Keep it in step: read the link \
+                                 again every six hours while the window is open, taking the \
+                                 songs and order {service} has and leaving out what it took out"
+                            ),
+                            Upkeep::InStep,
+                        ),
+                        Upkeep::InStep => (
+                            format!("In step with {service}"),
+                            format!(
+                                "Kept in step with {service}, read again every six hours. \
+                                 Press to leave it as it stands from now on"
+                            ),
+                            Upkeep::Once,
+                        ),
+                    };
+                    bar.child(self.in_the_pane_ring(
+                        kit::button(
+                            "keep-playlist-in-step",
+                            Some(Icon::Link),
+                            label,
+                            saying,
+                            match source.upkeep {
+                                Upkeep::Once => Tone::Ghost,
+                                Upkeep::InStep => Tone::Outlined,
+                            },
+                        ),
+                        move |this, _, cx| {
+                            this.library.update(cx, |library, cx| {
+                                library.keep_playlist_from_its_link(opened, other, cx);
+                            });
+                        },
+                        cx,
+                    ))
+                    .child(self.in_the_pane_ring(
+                        kit::icon_button("refresh-playlist", Icon::Redo, REFRESH_HINT),
+                        move |this, _, cx| {
+                            this.library
+                                .update(cx, |library, cx| library.refresh_playlist(opened, cx));
+                        },
+                        cx,
+                    ))
+                },
+            )
             .when(named.is_some(), |bar| {
                 bar.child(self.in_the_pane_ring(
                     match pinned {
@@ -2232,6 +2292,14 @@ fn control(
     kit::icon_button((id, playlist.get() as usize), icon, saying)
 }
 
+fn came_from(source: &PlaylistSource) -> String {
+    let service = source.link.service();
+    match source.upkeep {
+        Upkeep::Once => format!("imported from {service}"),
+        Upkeep::InStep => format!("kept in step with {service}"),
+    }
+}
+
 fn puts_back(undoable: &Undoable) -> SharedString {
     let name = &undoable.name;
     let doing = match undoable.edit {
@@ -2247,6 +2315,9 @@ fn puts_back(undoable: &Undoable) -> SharedString {
         }
         Edit::Moved | Edit::Ordered | Edit::Kept => {
             format!("Put the rows of {name} back in the order they were in")
+        }
+        Edit::Refreshed => {
+            format!("Put back the rows {name} held before it was refreshed from its link")
         }
     };
 
@@ -2273,6 +2344,7 @@ fn does_again(redoable: &Undoable) -> SharedString {
         Edit::Moved | Edit::Ordered | Edit::Kept => {
             format!("Put the rows of {name} back in the order that edit left them in")
         }
+        Edit::Refreshed => format!("Refresh {name} from its link again, as it was refreshed"),
     };
 
     SharedString::from(format!(
@@ -2383,6 +2455,7 @@ mod tests {
                 query: None,
                 kept: None,
                 pinned: None,
+                source: None,
             })
             .collect()
     }

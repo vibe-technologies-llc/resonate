@@ -11,7 +11,7 @@ use resonate_core::{
 };
 use resonate_vault::{Encoding, Form, VaultKey};
 
-use crate::{Genre, Isrc, Kept, LifeSpan, Link, LyricText, Mbid, SavedQuery};
+use crate::{Genre, Isrc, Kept, LifeSpan, Link, LyricText, Mbid, PlaylistSource, SavedQuery};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Track {
@@ -368,6 +368,7 @@ pub struct Playlist {
     pub query: Option<SavedQuery>,
     pub kept: Option<Kept>,
     pub pinned: Option<SystemTime>,
+    pub source: Option<PlaylistSource>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

@@ -228,6 +228,18 @@ pub enum Error {
     ClipTooLong { samples: u64 },
     #[error("none of these recordings could be matched to the local library")]
     NoLocalMatches,
+    #[error(
+        "That is not a link to a playlist on Spotify, Deezer, Apple Music, TIDAL, YouTube or ListenBrainz"
+    )]
+    NotAPlaylistLink,
+    #[error("This playlist was not imported from a link")]
+    NoPlaylistLink,
+    #[error("That is not a link to a Deezer profile")]
+    NotAProfileLink,
+    #[error("That profile is private, or shows no playlist")]
+    NoProfileAtTheLink,
+    #[error("The link this playlist came from can no longer be read")]
+    UnreadablePlaylistLink,
     #[error("The playlist file is larger than eight MiB ({bytes} bytes)")]
     PlaylistFileTooLarge { bytes: u64 },
     #[error("The playlist file lists no songs")]

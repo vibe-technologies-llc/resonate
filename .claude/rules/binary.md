@@ -31,6 +31,16 @@ paths:
   with a gone file `Library::retire` drops even on an unmounted drive (the one place a scan keeps
   them). A folder holding nothing gone says it named none of the three.
 
+- **A playlist link is imported like a sheet, once or kept in step** (`followed.rs`). `import`
+  reads an argument `PlaylistLink::read` takes as a link (any other is a file), `--upkeep once`
+  (default) or `in-step` (`Error::KeptInStepOnlyWithALink` for a file; `NoPlaylistAtTheLink` where
+  the service shows none), and wants every song found and not held, saying `resonate poll` fetches
+  them. A public Deezer profile's link (`followed::profile_named_by`, read before a playlist link)
+  is `Library::follow_profile` under the same `--upkeep` (`NoProfileAtTheLink` where private), each
+  playlist said and then the profile, what was let go, deleted there or unread. `playlists
+  --refresh` follows every followed profile, then reads every playlist kept in step now; `playlist NAME --refresh`,
+  `--upkeep once|in-step` and `--forget-link` act on one; the listing's FROM column says the service
+  and how it follows.
 - **The catalog's marks are named, not numbered.** `favourites --tracks|--albums|--artists --add|--remove
   <NAME>` (repeatable, one kind) marks through `Library::favour`: a track or album is found by the search
   on its name and kept only where its title folds to the name (`folded_name`), `--by <ARTIST>` narrows

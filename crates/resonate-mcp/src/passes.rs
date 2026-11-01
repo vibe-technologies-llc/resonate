@@ -398,6 +398,10 @@ impl Passes {
         }))
     }
 
+    pub(crate) fn reference(&self) -> Result<&dyn Reference> {
+        self.lookups.reference.as_deref().ok_or(Error::NoReference)
+    }
+
     pub(crate) fn look_up(&self, library: &Library, refresh: bool) -> Result<Value> {
         self.free(Pass::Lookup)?;
         let reference = self.lookups.reference.clone().ok_or(Error::NoReference)?;

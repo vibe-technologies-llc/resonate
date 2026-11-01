@@ -15,11 +15,11 @@ use resonate_library::{
     Agreement, AlbumLink, AlbumMatch, AlbumNames, ArtistLink, ArtistMatch, ArtistPressings,
     ArtistProfile, Barcode, BarcodeMatch, CoverArt, Credit, Discography, EnrichOptions,
     EnrichSummary, Error, Fingerprinters, Fingerprints, GroupAsked, GroupMatch, ImportOptions,
-    Isrc, Library, Link, LinkNames, LinkedPlaylist, LookupOp, LyricText, LyricsAsked, Mbid, Medium,
-    PlaylistLink, Printed, Recording, RecordingAsked, RecordingMatch, Reference, Release,
-    ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Result, ScanOptions, SongLink,
-    SongsAsked, SortOrder, Sounded, Sources, StreamAsked, StudyFilter, Track, TrackQuery, Vault,
-    Verdict, WAITS,
+    Isrc, Library, Link, LinkNames, LinkedPlaylist, LinkedProfile, LookupOp, LyricText,
+    LyricsAsked, Mbid, Medium, PlaylistLink, Printed, ProfileLink, Recording, RecordingAsked,
+    RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack,
+    Result, ScanOptions, SongLink, SongsAsked, SortOrder, Sounded, Sources, StreamAsked,
+    StudyFilter, Track, TrackQuery, Vault, Verdict, WAITS,
 };
 use rustfft::{FftPlanner, num_complex::Complex};
 
@@ -313,6 +313,10 @@ impl Reference for Silent {
     }
 
     fn playlist_linked(&self, _link: &PlaylistLink) -> Result<Option<LinkedPlaylist>> {
+        Ok(None)
+    }
+
+    fn profile_linked(&self, _link: &ProfileLink) -> Result<Option<LinkedProfile>> {
         Ok(None)
     }
 

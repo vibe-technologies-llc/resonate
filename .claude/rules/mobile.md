@@ -150,6 +150,44 @@ next ask rebuild), and a playlist file or a link's matches take the lock per son
 `folded(name)`, `folded(title)` and `recording` indexes
 (`a_playlist_import_looks_each_song_up_by_index_not_by_scanning_the_catalog`).
 
+## A playlist kept in step with its link
+
+`playlist_links.rs` is the phones' half of `library.md`'s *A playlist remembers the link it came
+from*, over the document catalog. Step 24 (`PLAYLISTS_REMEMBER_THEIR_LINK`) made `playlist_links`
+(`playlist` primary, the link as `PlaylistLink::page`, `kept`, `refreshed` in Unix seconds) with no
+foreign key and the `playlists_born_again_hold_no_link` trigger, so an id SQLite hands out again
+holds no stranger's link (an undone delete comes back without its link).
+`import_linked_playlist(link, name, songs, kept_in_step)` matches each listed song by `local_match`
+(per song, as a link's matches always were) and makes the playlist under a free name; kept in step
+it is made even with nothing held, mirrors the playlist already kept from that link, and saves the
+songs not held as wants (`save_wanted`, `ON CONFLICT DO NOTHING`, so a given-up want is never armed
+again). `refresh_linked_playlist(id)` reads the link through `songs_of_a_playlist` (the reading
+`open_online_link` shares): kept in step, the rows become the held songs in the service's order
+through `edit_playlist` (one undo step, the revision stepped) and the unheld are wanted; imported
+once, it only appends what the playlist lacks. `playlists_due_a_refresh` names the kept ones read
+`KEPT_IN_STEP_EVERY` ago; `keep_playlist_in_step` and `forget_playlist_link` change or drop the
+link; `MusicPlaylist.link` carries `PlaylistLinkInfo` (service, page, kept, refreshed) in the
+listing (`a_playlist_kept_in_step_takes_the_services_songs_and_order_and_wants_what_is_not_held`,
+`a_playlist_imported_once_only_gains_what_it_lacks_and_wants_nothing`,
+`a_link_is_kept_in_step_due_once_its_hours_pass_and_forgotten_on_asking`).
+
+**A Deezer profile is followed whole, as on the desktop** (`profile_links.rs`, `library.md`'s *A
+Deezer profile is followed whole*). Step 25 (`PROFILES_ARE_FOLLOWED_WHOLE`) made `profile_links`
+(`link` primary, the profile's `name` as Deezer last billed it, `refreshed` in Unix seconds) and `profile_pages` (the playlist pages it listed,
+cascading with it). `follow_profile(link, kept_in_step)` asks `Reference::profile_linked`, reads each
+playlist through `songs_of_a_playlist` and lands it through `import_linked_playlist` under its own
+title: in step, a page known before with no playlist still kept from it is let go, a page gone from
+the profile has its playlist's link forgotten, and the profile and its pages are kept; once, each
+link is forgotten as it lands and the profile is followed no longer. A playlist nothing of which is
+held is `unread` once (`NoLocalMatches`) and made kept in step.
+`profiles_due_a_refresh`, `profiles_followed` (a `ProfileFollowed` of link, name and service, so a
+phone names a profile, never shows its link) and `unfollow_profile` serve the timers and the list;
+`profile_link_service` and `playlist_link_service` say which service a pasted text names, so neither
+phone keeps a host list of its own
+(`a_profile_followed_is_due_once_its_hours_pass_and_unfollowed_on_asking`,
+`a_profile_link_names_its_service_and_anything_else_names_none`,
+`a_playlist_link_names_its_service_and_any_other_text_names_none`).
+
 ## Logging
 
 `logging.rs` is the phones' `tracing` subscriber, safe code only: `keep_log(logbook)` installs once

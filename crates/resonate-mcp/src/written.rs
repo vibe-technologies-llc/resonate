@@ -4,7 +4,7 @@ use ahash::AHashMap;
 use resonate_core::{AlbumId, Volume};
 use resonate_engine::{Asleep, Until};
 use resonate_library::{
-    Album, Artist, Library, Listened, MissingTrack, Playlist, Suggestion, Track,
+    Album, Artist, Library, Listened, MissingTrack, Playlist, Suggestion, Track, Upkeep,
 };
 use resonate_mpris::{Described, utc_stamp};
 use serde_json::{Value, json};
@@ -113,6 +113,8 @@ pub(crate) fn playlist(playlist: &Playlist) -> Value {
         "last_played": playlist.played.map(utc_stamp),
         "fills_from": playlist.query.as_ref().and_then(|query| query.text.clone()),
         "pinned": playlist.pinned.is_some(),
+        "from_link": playlist.source.as_ref().map(|source| source.link.page()),
+        "in_step": playlist.source.as_ref().map(|source| source.upkeep == Upkeep::InStep),
     }))
 }
 

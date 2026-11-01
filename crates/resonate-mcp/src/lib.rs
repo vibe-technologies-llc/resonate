@@ -3,6 +3,7 @@ mod completions;
 mod controlling;
 mod edits;
 mod error;
+mod linked;
 mod outputs;
 mod passes;
 mod prompts;

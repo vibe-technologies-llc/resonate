@@ -19,6 +19,7 @@ import androidx.compose.material.icons.rounded.Fingerprint
 import androidx.compose.material.icons.rounded.ImageSearch
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SignalCellularAlt
 import androidx.compose.material.icons.rounded.Sync
@@ -27,6 +28,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
@@ -43,6 +45,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.foundation.lazy.items
+import org.resonate.android.FollowedProfileWords
 import org.resonate.android.nativecore.EnrichmentStatus
 import org.resonate.android.nativecore.EnrichmentStop
 import org.resonate.android.ui.Resonate
@@ -74,8 +78,14 @@ class LibraryToolsViewModel(private val resonate: Resonate) : ViewModel() {
     val songs = library.allTracks
     val organiseUndo = features.organising.undo
     val organising = features.organising.busy
+    val profilesFollowed = features.profilesFollowed
 
-    fun read() = enrichment.read()
+    fun read() {
+        enrichment.read()
+        features.loadProfilesFollowed()
+    }
+
+    fun unfollow(link: String) = features.unfollowProfile(link)
 
     fun setOnline(enabled: Boolean) = features.setOnline(enabled)
 
@@ -145,6 +155,8 @@ fun LibraryToolsScreen() {
     val organiseUndo by model.organiseUndo.collectAsStateWithLifecycle()
     val organising by model.organising.collectAsStateWithLifecycle()
     val tagsUndoable by model.tagsUndoable.collectAsStateWithLifecycle()
+    val profilesFollowed by model.profilesFollowed.collectAsStateWithLifecycle()
+    var unfollowing by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmRefresh by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) { model.read() }
     val running = status?.running == true
@@ -311,6 +323,22 @@ fun LibraryToolsScreen() {
                     onClick = { navigator.open(Screen.Wanted) },
                 )
             }
+            if (profilesFollowed.isNotEmpty()) {
+                item(key = "profiles") { SectionHeader("Profiles followed") }
+                items(profilesFollowed, key = { "profile-${it.link}" }) { profile ->
+                    SettingRow(
+                        title = profile.name,
+                        icon = Icons.Rounded.Person,
+                        supporting = FollowedProfileWords.line(profile.service),
+                        trailing = {
+                            TextButton(onClick = { unfollowing = profile.link }) {
+                                Text("Stop following")
+                            }
+                        },
+                        modifier = Modifier.testTag("followed-profile"),
+                    )
+                }
+            }
             item(key = "recognition") { SectionHeader("Recognition") }
             item(key = "acoustid") { RecognitionKey(storedKey, model::saveRecognitionKey) }
             item(key = "audd") { AuddToken(auddToken, model::saveAuddToken) }
@@ -326,6 +354,17 @@ fun LibraryToolsScreen() {
                 )
             }
         }
+    }
+    unfollowing?.let { link ->
+        ConfirmDialog(
+            title = "Stop following this profile?",
+            text =
+                "${profilesFollowed.firstOrNull { it.link == link }?.name ?: link} will no longer bring in new playlists. The playlists already here stay.",
+            confirm = "Stop following",
+            icon = Icons.Rounded.Person,
+            onConfirm = { model.unfollow(link) },
+            onDismiss = { unfollowing = null },
+        )
     }
     if (confirmRefresh) {
         ConfirmDialog(

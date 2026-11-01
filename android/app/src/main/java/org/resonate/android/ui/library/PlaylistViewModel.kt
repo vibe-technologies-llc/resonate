@@ -55,6 +55,13 @@ class PlaylistViewModel(private val resonate: Resonate, private val id: ULong) :
             }
             .stateIn(viewModelScope, shared, null)
 
+    val refreshing: StateFlow<Boolean> =
+        features.refreshingPlaylists
+            .map { id in it }
+            .stateIn(viewModelScope, shared, id in features.refreshingPlaylists.value)
+
+    val online: StateFlow<Boolean> = features.online
+
     val playing: StateFlow<ULong?> = resonate.playingId().stateIn(viewModelScope, shared, null)
 
     val catalog: StateFlow<List<Track>> = resonate.library.allTracks
@@ -105,4 +112,10 @@ class PlaylistViewModel(private val resonate: Resonate, private val id: ULong) :
     fun keep(kept: Boolean) = features.keepSongs(id, kept)
 
     fun fetch(device: SyncedDevice) = features.fetchMissing(id, device)
+
+    fun refreshLink() = features.refreshLinkedPlaylist(id)
+
+    fun keepInStep(kept: Boolean) = features.keepPlaylistInStep(id, kept)
+
+    fun forgetLink() = features.forgetPlaylistLink(id)
 }

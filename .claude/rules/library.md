@@ -1933,6 +1933,40 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   answers at most the covers asked, one per distinct picture (`pictured_by` identity and likeness).
   List: own order; saved query without cap: `pictured_by` over its search; with cap: the rows the
   cap leaves. `Library::pinned_playlists`: pinned ids and names, most lately pinned first, no join.
+- **A playlist remembers the link it came from, imported once or kept in step.** `sourced.rs`;
+  `playlist_sources` (no foreign key, as `playlist_plays`: a `Whole` undo deletes and rewrites the
+  playlist row under its id, and a cascade would lose the source; `created` forgets the source of a
+  reused id, and every read joins `playlists`) holds the link as `PlaylistLink::page` (read back by
+  `PlaylistLink::read`, `a_playlists_page_reads_back_as_the_link_it_was_written_from`), the
+  `Upkeep` and when it was last read. `Playlist::source` rides the listing's `LEFT JOIN`.
+  `Library::fill_from_the_link` is the one write: `Upkeep::Once` is `playlist::fill` (the list of
+  that name gains what it lacks; the source is written only where the playlist was started or had
+  none), `Upkeep::InStep` finds the playlist already following that link and mirrors it, else starts
+  one under a free name, so a kept playlist never takes over a hand-made one of the same name.
+  **Mirroring is one undo step** (`playlist::mirror`, `Edit::Refreshed`, `Reach::Whole`): the rows
+  become the held songs in the service's order, counted as added and taken out as multisets, a kept
+  order applied after; equal rows write nothing. `Library::refresh_playlist` reads the link again
+  (`Error::NoPlaylistSource` without one): once = fill by id (`playlist::fill_into`), in step =
+  mirror; it stamps `refreshed` and hands back only found songs **no want already names**
+  (`is_recording_wanted`), so a timed refresh never makes a given-up want due again. A link naming
+  nothing now answers `None` and leaves the rows. `playlists_due_a_refresh` = in step and
+  `KEPT_IN_STEP_EVERY` (6 h) since the last read
+  (`a_playlist_kept_in_step_with_its_link_takes_what_the_service_added_and_drops_what_it_took_out`,
+  `a_playlist_imported_once_keeps_what_the_service_took_out_and_can_be_kept_in_step_later`).
+- **A Deezer profile is followed whole, or moved to Resonate once.** `ProfileLink`
+  (`deezer.com/[lang/]profile/<id>`, a fourth `FollowedLink`) is answered by
+  `Reference::profile_linked` with the playlists the profile made and its loved tracks
+  (`LinkedProfile`). `Library::follow_profile` imports each through `import_playlist_link` under its
+  own title. In step it remembers the profile (`profile_sources`, and in `profile_playlists` every
+  page it listed, the step `A_PROFILE_IS_FOLLOWED_WHOLE`), so the next follow imports only what is
+  new there, refreshes what is still kept, **never revives a playlist the listener let go** (a page
+  known before whose playlist is no longer kept in step is counted `let_go` and passed over) and
+  forgets the link of one deleted there (`gone`; the rows stay). Once, every playlist is imported and
+  its link forgotten, and the profile is followed no longer. Songs already wanted are not handed back
+  to be wanted again (`not_yet_wanted`, as `refresh_playlist`). `profiles_due_a_refresh` = followed
+  and `KEPT_IN_STEP_EVERY` since the last follow
+  (`a_profile_followed_takes_its_new_playlists_lets_go_of_its_deleted_ones_and_never_revives_one_let_go`,
+  `a_profile_moved_once_leaves_its_playlists_with_no_link_and_is_not_followed`).
 - **A search narrows a playlist; shown = played.** `Library::playlists` matches each standalone word
   against the name; a term is passed over; no standalone word = whole index.
   `Library::playlist_entries` runs the whole text against the catalog: an unscanned row falls out; a

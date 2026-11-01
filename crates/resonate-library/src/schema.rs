@@ -19,6 +19,8 @@ const MIGRATIONS: &[&str] = &[
     A_ZONE_KEEPS_ITS_OWN_QUEUE,
     PEAKS_KEPT_AS_ONE_MOMENT_ARE_MEASURED_AGAIN,
     A_SONG_DELETED_HERE_IS_REMEMBERED,
+    A_PLAYLIST_REMEMBERS_THE_LINK_IT_CAME_FROM,
+    A_PROFILE_IS_FOLLOWED_WHOLE,
 ];
 
 const STAMPS: [SchemaFingerprint; MIGRATIONS.len() + 1] = stamps();
@@ -116,6 +118,28 @@ const A_SONG_DELETED_HERE_IS_REMEMBERED: &str = "
 CREATE TABLE songs_deleted (
     recording TEXT PRIMARY KEY,
     deleted   INTEGER NOT NULL
+) STRICT;
+";
+
+const A_PLAYLIST_REMEMBERS_THE_LINK_IT_CAME_FROM: &str = "
+CREATE TABLE playlist_sources (
+    playlist_id INTEGER PRIMARY KEY,
+    link        TEXT NOT NULL,
+    kept        INTEGER NOT NULL,
+    refreshed   INTEGER NOT NULL
+) STRICT;
+";
+
+const A_PROFILE_IS_FOLLOWED_WHOLE: &str = "
+CREATE TABLE profile_sources (
+    link      TEXT PRIMARY KEY,
+    refreshed INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE profile_playlists (
+    profile TEXT NOT NULL REFERENCES profile_sources(link) ON DELETE CASCADE,
+    page    TEXT NOT NULL,
+    PRIMARY KEY (profile, page)
 ) STRICT;
 ";
 

@@ -7,6 +7,7 @@ use unicode_normalization::UnicodeNormalization;
 use crate::{
     Error, MobilePlayer, Result, StoreOp, Track,
     catalog::read,
+    playlist_links::{PlaylistLinkInfo, info_of},
     saved_searches::{
         SavedSearch, StoredQuery, is_a_saved_search, refuse_a_saved_search, saved_query,
         stored_query, write_stored_query,
@@ -32,6 +33,8 @@ pub struct MusicPlaylist {
     pub covers: Vec<u64>,
     #[uniffi(default = None)]
     pub search: Option<SavedSearch>,
+    #[uniffi(default = None)]
+    pub link: Option<PlaylistLinkInfo>,
 }
 
 #[derive(Clone)]
@@ -72,14 +75,16 @@ impl MobilePlayer {
                             })?
                             .collect::<rusqlite::Result<Vec<_>>>()?,
                         search: None,
+                        link: None,
                     })
                 })
                 .map_err(read_error)?
                 .collect::<rusqlite::Result<Vec<_>>>()
                 .map_err(read_error)?;
             rows.into_iter()
-                .map(|playlist| {
+                .map(|mut playlist| {
                     let query = saved_query(&connection, playlist.id)?;
+                    playlist.link = info_of(&connection, playlist.id);
                     Ok((playlist, query))
                 })
                 .collect::<Result<Vec<_>>>()?
@@ -303,7 +308,7 @@ impl MobilePlayer {
         Ok(id)
     }
 
-    fn edit_playlist(
+    pub(crate) fn edit_playlist(
         &self,
         id: u64,
         revision: Option<u64>,

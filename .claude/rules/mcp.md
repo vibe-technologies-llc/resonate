@@ -110,10 +110,23 @@ stays in the grammar (`build.rs` reads `cli.rs` featureless) and answers `Error:
   resource list uses `Library::playlist_names`, no row counted. `list_playlists` answers `limit`
   (default 200) playlists from `skip` with `matched` counting them all (`Library::playlists_within`);
   the playlists resource is its first page.
+- **A playlist link is imported, refreshed and kept in step by name** (`linked.rs`):
+  `import_playlist_link` (`link`, optional `name`, `in_step`) is `Library::import_playlist_link`
+  and wants every song found, as the CLI does; `refresh_playlist` is `Library::refresh_playlist`;
+  both need the reference (`Passes::reference`, `NoReference` without one), an unreadable link is
+  `Refusal::Unreadable`, a link naming nothing `Error::NoPlaylistAtTheLink`. `keep_playlist_in_step`
+  is `Library::keep_playlist_from_its_link`. A listed playlist carries `from_link` and `in_step`
+  (`a_playlist_link_is_read_only_with_a_reference_and_a_link_that_names_no_playlist_says_so`).
+  `follow_profile` (`link`, `in_step`, true unless given) is `Library::follow_profile` and answers each
+  playlist as `import_playlist_link` does, with `let_go`, `gone` and `unread`; `stop_following` is
+  `Library::stop_following` and answers whether it was followed; a link that is no profile is
+  `Refusal::Unreadable`, a private one `Error::NoProfileAtTheLink`
+  (`a_profile_is_followed_only_with_a_reference_and_a_private_one_says_so`).
 - **A missing track is named by `release_track_id`.** `want_tracks` is `Library::want_release_tracks`
   in one transaction: one unknown row wants none.
 - **`Tool::destroys` is `destructiveHint`**: the removals, `forget_folder`, `undo_edit`,
-  `play_playlist`. **`Tool::reaches_the_network` is `openWorldHint`**: `start_lookup`, `start_poll`.
+  `play_playlist`, `refresh_playlist`. **`Tool::reaches_the_network` is `openWorldHint`**: `start_lookup`,
+  `start_poll`, `import_playlist_link`, `refresh_playlist`, `follow_profile`.
 - **A session undoes only its own edits.** `undo_edit` is `Library::undo` (`Library::redo` with
   `redo`) over this process's stack; a playlist since changed by anything else (a window that took
   the step and walked it back included) is `Error::PlaylistChanged`. Undoing withdraws the step's

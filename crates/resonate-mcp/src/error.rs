@@ -51,6 +51,12 @@ pub enum Error {
     )]
     NoReference,
 
+    #[error("the link names no playlist the service shows")]
+    NoPlaylistAtTheLink,
+
+    #[error("the profile is private, or the service shows no playlist of it")]
+    NoProfileAtTheLink,
+
     #[error("{path} is not a folder that can be scanned", path = path.display())]
     NoSuchFolder { path: PathBuf },
 
