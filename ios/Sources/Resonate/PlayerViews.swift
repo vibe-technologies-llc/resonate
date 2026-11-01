@@ -154,6 +154,7 @@ struct NowPlayingView: View {
     private static let arriving = Arrival.animation
     private static let leaving: Animation = .easeOut(duration: 0.12)
     private static let reshapedWithin: CFTimeInterval = 0.8
+    private static let openedWithin: CFTimeInterval = 0.7
     private static let focusedHeightAtAccessibilitySizes: CGFloat = 360
 
     @Environment(Library.self) private var library
@@ -164,6 +165,7 @@ struct NowPlayingView: View {
     @State private var mode = PlayerMode.artwork
     @State private var settled: PlayerMode?
     @State private var reshaping = false
+    @State private var opening = true
     @State private var picked: PickedTracks?
     @State private var savingQueue = false
     @State private var clearingQueue = false
@@ -184,7 +186,8 @@ struct NowPlayingView: View {
                 .allowsHitTesting(false)
             }
             .padding(.horizontal, Self.gutter)
-            .background(BackdropView(track: track, resting: reshaping))
+            .background(BackdropView(track: track, resting: reshaping || opening))
+            .task { await open() }
             .safeAreaInset(edge: .top) { StatusBanner() }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -318,6 +321,12 @@ struct NowPlayingView: View {
         case .lyrics: LyricsPane(track: track, compact: true)
         case .queue, .artwork: UpNextList().padding(.horizontal, -Self.gutter)
         }
+    }
+
+    private func open() async {
+        FrameRateBoost.shared.boost(for: Self.openedWithin)
+        try? await Task.sleep(for: .seconds(Self.openedWithin))
+        opening = false
     }
 
     private func choose(_ target: PlayerMode) {

@@ -583,7 +583,10 @@ every route change (a pair of headphones at the same rate included), not from th
   until the spring is removed (`completionCriteria: .removed`; logically complete ends while the
   bounce still moves, and the field woke under it):
   left to the system, the spring ran at its default rate, and the field redrawing under the moving
-  glass took the frames it needed. Sleep,
+  glass took the frames it needed. **The opening zoom is held the same way**: for its first 0.7 s
+  (`NowPlayingView.openedWithin`, `opening`) the cover asks 120 Hz and the field rests on its
+  opening frame (the placeholder, *The backdrop*), since the field flowing at 120 fps under the
+  zooming glass, titles and cover held the whole transition below the display's rate. Sleep,
   equaliser, visualizer and output sit in the More menu; no tab's toolbar carries the sleep timer
   (Settings has its row). At accessibility text sizes the layout scrolls (*Orientation and iPad*).
 - **A song change hands the cover and the words over, as the desktop does** (`motion.md`'s *The
