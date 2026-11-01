@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, time::Duration};
 
-use gpui::{ClickEvent, Context, Div, SharedString, Stateful, div, prelude::*, px, rgb};
+use gpui::{ClickEvent, Context, Div, SharedString, Stateful, div, prelude::*, px};
 use resonate_core::{SampleFormat, SampleRate, StreamSpec};
 use resonate_engine::{
     BluetoothWake, Command, HardwareVolume, NodeName, Plugged, SinkId, SinkInfo,
@@ -11,7 +11,7 @@ use crate::{
     system::sound_system,
     theme,
     views::{
-        focus::by_the_pointer,
+        focus::{self, by_the_pointer},
         hint::Names,
         kit,
         root::RootView,
@@ -732,7 +732,7 @@ impl RootView {
 
         row.track_focus(&self.controls.at(reached, cx))
             .key_context(crate::app::CONTROL_CONTEXT)
-            .focus(|row| row.border_color(rgb(theme::accent())))
+            .focus(focus::lit)
             .on_action(
                 cx.listener(move |this, _: &crate::app::PressControl, _, cx| {
                     this.route_to(Some(name.clone()), cx);

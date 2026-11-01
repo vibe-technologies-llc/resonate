@@ -1,9 +1,9 @@
 use std::time::{Duration, Instant};
 
 use gpui::{
-    AnyElement, Bounds, Canvas, Context, Corners, Div, Entity, Pixels, Point, Render, SharedString,
-    Subscription, Task, Window, canvas, div, fill, linear_color_stop, linear_gradient, point,
-    prelude::*, px, rgb,
+    AnyElement, App, Bounds, Canvas, Context, Corners, Div, Entity, Pixels, Point, Render,
+    SharedString, Subscription, Task, Window, canvas, div, fill, linear_color_stop,
+    linear_gradient, point, prelude::*, px, rgb,
 };
 use resonate_core::{Frames, SampleRate, Spectral, SpectrumBands, SpectrumTilt};
 use resonate_engine::{Caught, PlaybackState, Tap, Tapped};
@@ -17,13 +17,18 @@ use crate::{
     theme,
     views::{
         hint::{self, Names},
-        kit, plot,
+        kit::{self, Tone},
+        plot,
         root::RootView,
         settings::marked_at,
         spoken::Spoken as _,
         transport::Playing,
     },
 };
+
+const HOLD_HINT: &str = keyed!("Hold the picture still", key!(hold_the_picture));
+
+const RESUME_HINT: &str = keyed!("Set the picture moving again", key!(hold_the_picture));
 
 const NOTHING_PLAYING: &str = "Nothing is playing, so there is nothing to draw.";
 
@@ -162,6 +167,8 @@ pub(crate) struct Visualiser {
     traced: Option<usize>,
     drawn_at: Option<Instant>,
     settling: Task<()>,
+    held: bool,
+    still_of: Option<Showing>,
 }
 
 impl Visualiser {
@@ -181,6 +188,8 @@ impl Visualiser {
             traced: None,
             drawn_at: None,
             settling: Task::ready(()),
+            held: false,
+            still_of: None,
         }
     }
 
@@ -197,6 +206,23 @@ impl Visualiser {
 
     pub(crate) fn show(&mut self, showing: Showing) {
         self.showing = showing;
+    }
+
+    pub(crate) const fn is_held(&self) -> bool {
+        self.held
+    }
+
+    pub(crate) fn hold_the_picture(&mut self, held: bool) {
+        self.held = held;
+        self.still_of = None;
+    }
+
+    fn stands_still(&self, cx: &App) -> bool {
+        self.held || cx.reduce_motion()
+    }
+
+    fn needs_its_still_frame(&self) -> bool {
+        self.still_of != Some(self.showing)
     }
 
     fn readback(&self) -> SharedString {
@@ -331,15 +357,24 @@ impl Render for Visualiser {
             .map_or(Duration::ZERO, |then| now.saturating_duration_since(then));
         self.drawn_at = Some(now);
 
-        let settling = match self.showing {
-            Showing::Spectrum => self.read_the_spectrum(tap, now, step),
-            Showing::Scope => {
-                self.read_the_scope(tap, now);
-                false
-            }
-            Showing::Stereo => self.read_the_stereo(tap, now, step),
-        };
-        if settling {
+        let still = self.stands_still(cx);
+        let reads = !still || self.needs_its_still_frame();
+        let settling = reads
+            && match self.showing {
+                Showing::Spectrum => self.read_the_spectrum(tap, now, step),
+                Showing::Scope => {
+                    self.read_the_scope(tap, now);
+                    false
+                }
+                Showing::Stereo => self.read_the_stereo(tap, now, step),
+            };
+        if still && reads {
+            self.still_of = Some(self.showing);
+        }
+        if !still {
+            self.still_of = None;
+        }
+        if settling && !still {
             self.settle(cx);
         }
 
@@ -348,7 +383,7 @@ impl Render for Visualiser {
             .pictured_as(self.showing.label(), || self.showing.about(spectral))
             .relative()
             .size_full()
-            .child(follows_the_display(playing && tap.is_some()));
+            .child(follows_the_display(playing && tap.is_some() && !still));
         match self.showing {
             Showing::Spectrum => {
                 let top = self.spectrum.top();
@@ -737,11 +772,23 @@ impl RootView {
         kit::pane().child(heading).child(body).into_any_element()
     }
 
+    pub(crate) fn hold_the_picture(&mut self, cx: &mut Context<Self>) {
+        self.visualiser.update(cx, |visualiser, cx| {
+            let held = visualiser.is_held();
+            visualiser.hold_the_picture(!held);
+            cx.notify();
+        });
+    }
+
     fn visualiser_heading(&self, playing: &Playing, cx: &mut Context<Self>) -> Div {
         let spectral = cx.global::<ResonateApp>().spectral;
-        let (chosen, readback) = {
+        let (chosen, readback, held) = {
             let visualiser = self.visualiser.read(cx);
-            (visualiser.showing(), visualiser.readback())
+            (
+                visualiser.showing(),
+                visualiser.readback(),
+                visualiser.is_held(),
+            )
         };
 
         kit::heading().child(
@@ -757,6 +804,20 @@ impl RootView {
                     kit::actions()
                         .child(kit::figure(readback))
                         .child(hint::explains("visualiser-reads", reads_hint(spectral)))
+                        .child(
+                            self.in_the_pane_ring(
+                                kit::button(
+                                    "visualiser-hold",
+                                    Some(if held { Icon::Play } else { Icon::Pause }),
+                                    if held { "Resume" } else { "Pause" },
+                                    if held { RESUME_HINT } else { HOLD_HINT },
+                                    Tone::Ghost,
+                                )
+                                .thrown(held),
+                                |this, _, cx| this.hold_the_picture(cx),
+                                cx,
+                            ),
+                        )
                         .child(
                             kit::segmented().children(Showing::ALL.into_iter().enumerate().map(
                                 |(index, showing)| {

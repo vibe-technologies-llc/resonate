@@ -42,7 +42,7 @@ use crate::{
     icons::{self, Icon},
     motion, theme,
     views::{
-        focus::by_the_pointer,
+        focus::{self, by_the_pointer},
         hint::{self, Names},
         kit::{self, EndsInAnEllipsis as _, Press, Tone},
         root::RootView,
@@ -51,9 +51,13 @@ use crate::{
             defaults::{Standing, can_be_put_back, differs, puts_back},
             find::Narrowing,
         },
-        spoken::Spoken,
+        spoken::{self, Spoken},
     },
 };
+
+const CLEAR_THE_FILTER_HINT: &str = "Clear what is typed";
+
+const FILTER_FRAME: &str = "find-a-setting-frame";
 
 pub(crate) const FILTER_PLACEHOLDER: &str = "Find a setting…";
 
@@ -202,6 +206,9 @@ impl RootView {
             .border_color(rgb(theme::border()))
             .text_size(px(theme::text_sm()))
             .cursor_text()
+            .track_focus(&self.controls.holding(FILTER_FRAME, cx))
+            .in_focus(focus::lit)
+            .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
             .hover(|field| field.border_color(theme::tinted(theme::accent(), 0x99)))
             .child(icons::icon(
                 Icon::Search,
@@ -222,8 +229,9 @@ impl RootView {
     }
 
     fn clear_filter(&self, cx: &mut Context<Self>) -> Stateful<Div> {
-        div()
+        let clear = div()
             .id("clear-the-filter")
+            .said_as(Role::Button, CLEAR_THE_FILTER_HINT)
             .group("clear-filter")
             .flex()
             .flex_none()
@@ -233,17 +241,22 @@ impl RootView {
             .rounded_full()
             .cursor_pointer()
             .hover(|mark| mark.bg(rgb(theme::hover())))
-            .names("Clear what is typed")
-            .on_click(cx.listener(|this, _, window, cx| {
+            .names(CLEAR_THE_FILTER_HINT)
+            .child(icons::lit_on_hover(
+                icons::icon(Icon::Close, theme::filter_clear_mark(), theme::muted()),
+                "clear-filter",
+            ));
+
+        self.in_the_pane_ring(
+            clear,
+            |this, window, cx| {
                 this.finding.update(cx, |finding, cx| finding.clear(cx));
                 this.finding
                     .update(cx, |finding, cx| finding.take_focus(window, cx));
                 cx.notify();
-            }))
-            .child(icons::lit_on_hover(
-                icons::icon(Icon::Close, theme::filter_clear_mark(), theme::muted()),
-                "clear-filter",
-            ))
+            },
+            cx,
+        )
     }
 
     fn categories(&self, narrowing: &Narrowing, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -813,11 +826,7 @@ impl RootView {
         control
             .track_focus(&self.controls.at(&named, cx))
             .key_context(CONTROL_CONTEXT)
-            .focus(|control| {
-                control
-                    .border_color(rgb(theme::accent()))
-                    .bg(theme::tinted(theme::accent(), 0x14))
-            })
+            .focus(focus::lit)
             .on_action(
                 cx.listener(move |this, _: &crate::app::PressControl, window, cx| {
                     press(this, window, cx);
@@ -868,6 +877,7 @@ impl RootView {
             &handle,
             control,
             move |this, window, cx| {
+                this.remember_the_opener(window, cx);
                 window.focus(&this.focus, cx);
                 press(this, corner.get(), cx);
             },
@@ -904,6 +914,7 @@ impl RootView {
         self.in_the_pane_ring(
             control,
             move |this, window, cx| {
+                this.remember_the_opener(window, cx);
                 window.focus(&this.focus, cx);
                 press(this, corner.get(), cx);
             },
@@ -924,6 +935,7 @@ impl RootView {
             named,
             control,
             move |this, window, cx| {
+                this.remember_the_opener(window, cx);
                 window.focus(&this.focus, cx);
                 press(this, corner.get(), cx);
             },
@@ -972,11 +984,7 @@ impl RootView {
         control
             .track_focus(handle)
             .key_context(CONTROL_CONTEXT)
-            .focus(|control| {
-                control
-                    .border_color(rgb(theme::accent()))
-                    .bg(theme::tinted(theme::accent(), 0x14))
-            })
+            .focus(focus::lit)
             .on_action(
                 cx.listener(move |this, _: &crate::app::PressControl, window, cx| {
                     press(this, window, cx);
@@ -1032,7 +1040,7 @@ impl RootView {
         control
             .track_focus(&self.controls.at(named, cx))
             .key_context(CONTROL_CONTEXT)
-            .focus(|option| option.bg(theme::tinted(theme::accent(), 0x2a)))
+            .focus(focus::picked)
             .on_action(
                 cx.listener(move |this, _: &crate::app::PressControl, window, cx| {
                     press(this, window, cx);
@@ -1117,19 +1125,28 @@ fn named(title: impl Into<SharedString>, under: impl Into<SharedString>) -> Div 
         )
 }
 
-fn note(text: impl Into<SharedString>) -> Div {
+fn note(text: impl Into<SharedString>) -> Stateful<Div> {
+    let text = text.into();
+
     div()
+        .id(text.clone())
+        .read_plainly(&text)
         .text_size(px(theme::text_sm()))
         .text_color(rgb(theme::faint()))
-        .child(text.into())
+        .child(text)
 }
 
 fn hugging(control: Stateful<Div>) -> Div {
     div().flex().child(control)
 }
 
-fn reading(label: impl Into<SharedString>, value: impl Into<SharedString>) -> Div {
+fn reading(label: impl Into<SharedString>, value: impl Into<SharedString>) -> Stateful<Div> {
+    let label = label.into();
+    let value = value.into();
+
     div()
+        .id(label.clone())
+        .read_plainly_as(|| spoken::joined([label.as_ref(), value.as_ref()]))
         .flex()
         .items_start()
         .gap_3()
@@ -1139,7 +1156,7 @@ fn reading(label: impl Into<SharedString>, value: impl Into<SharedString>) -> Di
                 .w(theme::width(theme::field_label()))
                 .text_size(px(theme::text_xs()))
                 .text_color(rgb(theme::muted()))
-                .child(label.into()),
+                .child(label),
         )
         .child(
             div()
@@ -1148,7 +1165,7 @@ fn reading(label: impl Into<SharedString>, value: impl Into<SharedString>) -> Di
                 .font_family(theme::mono_face())
                 .text_size(px(theme::text_xs()))
                 .text_color(rgb(theme::text()))
-                .child(value.into()),
+                .child(value),
         )
 }
 

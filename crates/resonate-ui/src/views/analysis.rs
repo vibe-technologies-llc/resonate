@@ -1,8 +1,9 @@
 use std::{borrow::Cow, sync::Arc, time::Duration};
 
 use gpui::{
-    AnyElement, Bounds, Canvas, Context, Div, MouseButton, MouseDownEvent, ObjectFit, Pixels,
-    Point, SharedString, canvas, div, fill, img, point, prelude::*, px, relative, rgb,
+    AnyElement, Bounds, Canvas, Context, Div, FontWeight, MouseButton, MouseDownEvent, ObjectFit,
+    Pixels, Point, SharedString, Stateful, canvas, div, fill, img, point, prelude::*, px, relative,
+    rgb,
 };
 use resonate_engine::{Analysis, Finding, Judgement, Levels, Loudness, Reach, Spectrum, Verdict};
 use resonate_library::{Agreement, HeardAs};
@@ -24,7 +25,7 @@ use crate::{
         plot,
         root::RootView,
         scrollbar::Scrollbars,
-        spoken::Spoken as _,
+        spoken::{self, Spoken as _},
         transport::Playing,
     },
 };
@@ -338,17 +339,30 @@ fn read_back(analysis: &Analysis) -> String {
 fn verdict_card(analysis: &Analysis) -> Div {
     let judgement = &analysis.study.judgement;
     let colour = verdict_colour(judgement.verdict);
-    let told: Vec<Div> = judgement
+    let told: Vec<Stateful<Div>> = judgement
         .findings
         .iter()
-        .map(|finding| {
+        .enumerate()
+        .map(|(nth, finding)| {
             div()
+                .id(("finding", nth))
+                .read_plainly_as(|| spoken::joined([severity_word(finding), &finding.told()]))
                 .flex()
                 .items_start()
                 .gap_2()
                 .text_size(px(theme::text_sm()))
                 .text_color(rgb(theme::muted()))
                 .child(kit::mode_dot(finding_colour(finding)).mt(px(6.0)))
+                .child(
+                    div()
+                        .flex_none()
+                        .min_w(theme::width(theme::text_xs() * SEVERITY_WORD_EMS))
+                        .whitespace_nowrap()
+                        .text_size(px(theme::text_xs()))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(rgb(theme::muted()))
+                        .child(severity_word(finding)),
+                )
                 .child(div().flex_1().min_w(px(0.0)).child(finding.told()))
         })
         .collect();
@@ -357,6 +371,8 @@ fn verdict_card(analysis: &Analysis) -> Div {
         .gap_2()
         .child(
             div()
+                .id("verdict")
+                .read_plainly_as(|| SharedString::from(judgement.verdict.told()))
                 .flex()
                 .items_center()
                 .gap_3()
@@ -373,19 +389,50 @@ fn verdict_card(analysis: &Analysis) -> Div {
         .children(told)
 }
 
-fn finding_colour(finding: &Finding) -> u32 {
-    match finding {
-        Finding::Wall { lossy: Some(_), .. }
-        | Finding::Upsampled { .. }
-        | Finding::Padded { .. }
-        | Finding::QuantiserSteps { .. } => theme::failure(),
-        Finding::Clipped { .. } | Finding::DcOffset { .. } | Finding::MonoAsStereo => {
-            theme::converted()
+const SEVERITY_WORD_EMS: f32 = 5.0;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Severity {
+    Fault,
+    Caution,
+    Aside,
+}
+
+impl Severity {
+    const fn of(finding: &Finding) -> Self {
+        match finding {
+            Finding::Wall { lossy: Some(_), .. }
+            | Finding::Upsampled { .. }
+            | Finding::Padded { .. }
+            | Finding::QuantiserSteps { .. } => Self::Fault,
+            Finding::Clipped { .. } | Finding::DcOffset { .. } | Finding::MonoAsStereo => {
+                Self::Caution
+            }
+            Finding::Wall { lossy: None, .. }
+            | Finding::Rolloff { .. }
+            | Finding::TooLittleHeard
+            | Finding::FromDsd => Self::Aside,
         }
-        Finding::Wall { lossy: None, .. }
-        | Finding::Rolloff { .. }
-        | Finding::TooLittleHeard
-        | Finding::FromDsd => theme::faint(),
+    }
+
+    const fn word(self) -> &'static str {
+        match self {
+            Self::Fault => "Fault",
+            Self::Caution => "Caution",
+            Self::Aside => "Note",
+        }
+    }
+}
+
+fn severity_word(finding: &Finding) -> &'static str {
+    Severity::of(finding).word()
+}
+
+fn finding_colour(finding: &Finding) -> u32 {
+    match Severity::of(finding) {
+        Severity::Fault => theme::failure(),
+        Severity::Caution => theme::converted(),
+        Severity::Aside => theme::faint(),
     }
 }
 

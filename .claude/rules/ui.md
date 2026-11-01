@@ -298,7 +298,7 @@ is never named.
     blue; `dithered` amber; `failure` red; `suspect` peach; `converted`, `lossy` muted grey. One
     colour, one meaning in every palette. `theme::tinted` makes a colour a wash; `theme::selection` is
     the accent worn thin.
-- **Every theme is dark; contrast tests hold each readable.** Sixteen (`Theme::ALL`): Resonate's own
+- **Every theme is dark; contrast tests hold each readable.** Seventeen (`Theme::ALL`), High Contrast last (pure black ground, white text, every bar below at 7:1, drawn edges at 4.5:1; `Theme::HighContrast`, `high-contrast`): Resonate's own
   warm near-black, Midnight, Graphite, AMOLED, Plum, Rosé Pine, Rosé Pine Moon, Catppuccin Mocha,
   Macchiato, Frappé, Nord, Gruvbox Dark, Tokyo Night, Dracula, One Dark, Solarized Dark. Each carries
   the same seven accents (`Accent::ALL`: Mauve, Blue, Teal, Green, Amber, Peach, Red) under its own
@@ -691,6 +691,34 @@ is never named.
     pane, the volume set through the Value interface moved); no screen reader (Orca) was run. The
     cells, links, lyric lines, plots, bars, cards, the caret and selection and the menu hand-over
     were only built and read back in tests (`docs/TESTING.md`).
+- **Accessibility beyond the tree: the bars and what holds them.** The contrast tests in `theme.rs`
+  also walk every theme x accent for: drawn edges (`DRAWN_EDGE`) standing off the panes they are
+  drawn on at 3:1, `theme::focus_ring()` (`FOCUS_RING_WIDTH` 2 px, full strength, 3:1 against every
+  pane; `focus_ring_over(fill)` picks whichever ink stands off a fill) , every accent as text on the
+  panes, every semantic colour as text on its own `tinted` wash, the inks on every pane they are
+  drawn on, text on the selection wash, and High Contrast at the stricter ratio. A colour that fell
+  short was lifted along its hue, as `THIRD_INK` is. Fixed heights are measures read through
+  `scaled()` (`BUTTON_HEIGHT`, `PILL_HEIGHT`, `WAY_BACK_HEIGHT`, `COLUMN_HEADER_HEIGHT`,
+  `SIDEBAR_ROW`): `a_view_draws_no_height_in_a_bare_number_of_pixels_unless_it_is_fixed_by_design`
+  fails on a new literal. `TextSize::Largest` (twice the middling size) is the 200 % step; a hit
+  area under `TARGET_AT_LEAST` (24 px) does not compile (`RAIL_HEIGHT` is 24).
+  - **Static text and landmarks.** `Spoken::headed(level, label)` (a heading), `read_plainly` (text a
+    reader can land on) and `dialog` (`Role::Dialog`) join the builders, no-ops while nobody listens.
+  - **A sheet is a dialog with its own focus** (`views/sheets.rs`): the delete sheet, Listen sheet,
+    playlist picker, magnifier and record card name a `Sheet`; opening one remembers the opener and
+    lands focus on the safe control (Cancel for a deletion, no key confirms), Tab steps inside it
+    (`step_the_focus`), and closing returns focus to the opener.
+  - **A click has a name and a tab stop.** `views/audit.rs` scans `views/` for `.on_click(` sites that
+    are on no element a reader can name and fails on a new one; the sites that remain are listed in it.
+  - **Announcements are rate-limited** (`views/announcing.rs`, `ANNOUNCED_AT_MOST_EVERY` 5 s): scan,
+    enrichment and download progress and a search's result count speak politely once in that span. A
+    toast's timer waits while it is hovered or focused.
+  - **Motion and contrast follow the desktop until the listener says otherwise.**
+    `resonate_mpris::desktop_preferences` reads `org.freedesktop.appearance` `contrast` and
+    `reduced-motion` (GNOME's `enable-animations` as the fallback) within 300 ms; the binary seeds High
+    Contrast and Reduce motion from it only where `theme` / `reduced-motion` are not stored
+    (`Config::appearance_where_the_desktop_asks`, `reduces_motion_where_the_desktop_asks`). The
+    visualiser draws one still frame under reduced motion and has a pause key.
 - **A playlist row no scan has seen draws as a queued one does.** `views/listing.rs` owns the `Row`
   the queue and playlists panes build: the scanned `Track` where the library has one, `Player::media`
   where not, the file stem only where the file cannot be read. The play count rides on the same `Row`
@@ -1757,7 +1785,7 @@ is never named.
   Appearance is the one category with nothing behind it but the window: a choice is worn via
   `theme::wear`, saved through the `Settings` seam, redrawn by `cx.refresh_windows()`; no `Command`.
   Groups in order: *Colour*; *Layout* (text size: Small, Medium, Large and Larger, roots of 12, 13.5, 15.5
-  and 19 against the 13.5 middling one, so Larger reads at 141 per cent); *Motion* (`reduced-motion`,
+  and 19 against the 13.5 middling one, so Larger reads at 141 per cent, and Largest at 27, 200 per cent); *Motion* (`reduced-motion`,
   `ResonateApp::reduced_motion`, `RootView::reduce_motion`; `motion.md`); *Window buttons* (worn via
   `RootView::show_window_buttons` onto the global, not `theme`); *The volume wheel*
   (`ResonateApp::scroll_volume`, `scroll-volume`); *Mouse navigation* (`mouse-navigation`);

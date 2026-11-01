@@ -596,6 +596,7 @@ impl RootView {
                 ROW_CONTROLS,
                 sorting::queue_sorted(self),
                 &self.columns_fit,
+                &self.controls,
                 cx,
             ))
             .child(

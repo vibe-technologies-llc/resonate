@@ -6,8 +6,8 @@ use std::{
 };
 
 use gpui::{
-    AnyElement, Context, Div, ElementId, FontWeight, HighlightStyle, Pixels, SharedString,
-    StyledText, div, prelude::*, px, rgb,
+    AnyElement, Context, Div, ElementId, FontWeight, HighlightStyle, MouseButton, Pixels, Role,
+    SharedString, Stateful, StyledText, div, prelude::*, px, rgb,
 };
 use resonate_core::{AlbumId, ArtistId, MediaLocation, StreamSpec, TrackId};
 use resonate_engine::MediaInfo;
@@ -19,12 +19,13 @@ use crate::{
     theme,
     views::{
         browser,
+        focus::Controls,
         hint::Names as _,
         kit::{self, EndsInAnEllipsis},
         menu::{self, Menu},
         pointed::LitUnderThePointer,
         root::RootView,
-        spoken::Spelt,
+        spoken::{self, Spelt, Spoken as _, Urgency},
     },
 };
 
@@ -144,18 +145,46 @@ pub(crate) fn unread(location: &MediaLocation) -> Row {
     }
 }
 
-pub(crate) fn noticed(notice: &Notice) -> Div {
-    let colour = match notice.tone() {
+const NOTICE_LINE: &str = "notice-line";
+
+const fn severity_word(tone: Tone) -> &'static str {
+    match tone {
+        Tone::Trouble => "Problem",
+        Tone::Done => "Done",
+        Tone::Noted => "Note",
+    }
+}
+
+const fn urgency_of(tone: Tone) -> Urgency {
+    match tone {
+        Tone::Trouble => Urgency::Warned,
+        Tone::Done | Tone::Noted => Urgency::Told,
+    }
+}
+
+pub(crate) fn noticed(notice: &Notice) -> Stateful<Div> {
+    let tone = notice.tone();
+    let colour = match tone {
         Tone::Trouble => theme::failure(),
         Tone::Done => theme::done(),
         Tone::Noted => theme::muted(),
     };
+    let word = severity_word(tone);
 
     div()
+        .id(NOTICE_LINE)
+        .told(spoken::joined([word, notice.text()]), urgency_of(tone))
         .flex()
         .items_center()
         .gap_2()
         .child(kit::mode_dot(colour))
+        .child(
+            div()
+                .text_size(px(theme::text_xs()))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(rgb(theme::muted()))
+                .child(word),
+        )
         .child(
             div()
                 .text_size(px(theme::text_sm()))
@@ -459,6 +488,7 @@ pub(crate) fn columns(
     trailing_controls: usize,
     sorted: Sorted,
     fitting: &Fitting,
+    controls: &Controls,
     cx: &mut Context<RootView>,
 ) -> Div {
     let shown = Shown::within(fitting.room.get(), with_cover, trailing_controls);
@@ -469,15 +499,24 @@ pub(crate) fn columns(
         numbered,
         div().w(px(theme::row_number())).flex_none(),
         sorted,
+        controls,
         cx,
     );
-    let title = heads(Sortable::Title, "TITLE", title_room(), sorted, cx);
-    let artist = heads(Sortable::Artist, "ARTIST", artist_room(), sorted, cx);
+    let title = heads(Sortable::Title, "TITLE", title_room(), sorted, controls, cx);
+    let artist = heads(
+        Sortable::Artist,
+        "ARTIST",
+        artist_room(),
+        sorted,
+        controls,
+        cx,
+    );
     let heard = heads(
         Sortable::Heard,
         "HEARD",
         div().w(px(theme::row_plays())).flex_none(),
         sorted,
+        controls,
         cx,
     );
     let length = heads(
@@ -485,6 +524,7 @@ pub(crate) fn columns(
         "LENGTH",
         div().w(px(theme::row_length())).flex_none().justify_end(),
         sorted,
+        controls,
         cx,
     );
 
@@ -514,6 +554,7 @@ fn heads(
     label: &'static str,
     cell: Div,
     sorted: Sorted,
+    controls: &Controls,
     cx: &mut Context<RootView>,
 ) -> AnyElement {
     let cell = cell.flex().items_center().gap_1();
@@ -529,8 +570,9 @@ fn heads(
         Direction::Descending => Icon::ChevronDown,
     };
 
-    let head = cell
+    let mut head = cell
         .id(label)
+        .named_as(Role::Button, label, sorted.saying)
         .cursor_pointer()
         .names(sorted.saying)
         .when_else(
@@ -541,10 +583,18 @@ fn heads(
         .child(label)
         .when(held, |head| {
             head.child(icons::icon(mark, theme::column_mark(), theme::accent()))
-        })
-        .on_click(cx.listener(move |this, _, _, cx| {
-            press(this, column, cx);
-        }));
+        });
+
+    let key = key_of(column);
+    controls.captioned_by_its_name(key, &mut head);
+    let handle = controls.at(key, cx);
+    let head = RootView::ringed(
+        &handle,
+        head,
+        move |this, _, cx| press(this, column, cx),
+        cx,
+    )
+    .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default());
 
     menu::opens_a_menu(
         head,
@@ -562,6 +612,17 @@ fn heads(
         cx,
     )
     .into_any_element()
+}
+
+const fn key_of(column: Sortable) -> &'static str {
+    match column {
+        Sortable::Number => "sort-by-number",
+        Sortable::Marked => "sort-by-marked",
+        Sortable::Title => "sort-by-title",
+        Sortable::Artist => "sort-by-artist",
+        Sortable::Heard => "sort-by-heard",
+        Sortable::Length => "sort-by-length",
+    }
 }
 
 const fn sorts_by(column: Sortable) -> &'static str {

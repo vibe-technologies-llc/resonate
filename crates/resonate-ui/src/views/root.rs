@@ -38,13 +38,13 @@ use crate::{
     analysis::AnalysisModel,
     app::{
         ChooseReached, CycleRepeat, DropReached, FocusFilter, FocusSearch, GoToTheResults,
-        HopAbove, HopBelow, LeaveControl, LeaveSearch, Listen, LowerRow, Next, NextPane,
-        OpenTheMenu, PasteAway, Pause, PlayPauseUnlessTyping, PlayReached, Previous, PreviousPane,
-        Quit, RaiseRow, ReachAbove, ReachBelow, ReachEverything, ReachFirst, ReachLast, ReachNext,
-        ReachPageAbove, ReachPageBelow, ReachPrevious, RedoEdit, SeekBackward, SeekForward,
-        SeekFurtherBackward, SeekFurtherForward, Stop, TabOnward, ToggleMute, TogglePlayPause,
-        ToggleQueue, ToggleShuffle, UndoEdit, VolumeDown, VolumeUp, WINDOW_CONTEXT, WidenAbove,
-        WidenBelow, attend, seek_further, seek_step,
+        HoldThePicture, HopAbove, HopBelow, LeaveControl, LeaveSearch, Listen, LowerRow, Next,
+        NextPane, OpenTheMenu, PasteAway, Pause, PlayPauseUnlessTyping, PlayReached, Previous,
+        PreviousPane, Quit, RaiseRow, ReachAbove, ReachBelow, ReachEverything, ReachFirst,
+        ReachLast, ReachNext, ReachPageAbove, ReachPageBelow, ReachPrevious, RedoEdit,
+        SeekBackward, SeekForward, SeekFurtherBackward, SeekFurtherForward, Stop, TabOnward,
+        ToggleMute, TogglePlayPause, ToggleQueue, ToggleShuffle, UndoEdit, VolumeDown, VolumeUp,
+        WINDOW_CONTEXT, WidenAbove, WidenBelow, attend, seek_further, seek_step,
     },
     downloads::{self, Download, Fetching},
     format,
@@ -57,6 +57,7 @@ use crate::{
     theme,
     toast::{self, Toaster},
     views::{
+        announcing,
         browser::{self, ArtistShows, OpenedRecord},
         chrome,
         dropping::{FolderStanding, Incoming, TakingIn},
@@ -81,6 +82,7 @@ use crate::{
             Plotted, SYNC_CODE_PLACEHOLDER, SYNC_DEVICE_PLACEHOLDER, SYNC_SERVER_PLACEHOLDER,
             SigningIn, TidalAccount,
         },
+        sheets::{self, MAGNIFIER_PANEL},
         slider::{Grab, Rail},
         spoken::{self, Spelt, Spoken},
         transport::{Handovers, Resolved, ShownCover},
@@ -152,6 +154,10 @@ const SEARCH_HINT: &str = "Words match a title, artist or album, and a term narr
 
 const PANE_GROUP: &str = "pane";
 
+const PANE_REGION: &str = "pane-region";
+
+const SEARCH_REGION: &str = "Search";
+
 const JUMPED_TO: &str = "JUMP TO";
 
 const JUMPED_NOWHERE: &str = "NO MATCH";
@@ -165,6 +171,12 @@ const PINNED_HINT: &str = "Open this pinned playlist";
 const PINNED_ROW: f32 = 26.0;
 
 const PINNED_INSET: f32 = 22.0;
+
+const DOWNLOADS_PANEL_LABEL: &str = "Downloads";
+
+const MAGNIFIED_LABEL: &str = "Cover";
+
+const ENRICHING_LABEL: &str = "Enriching…";
 
 const ENRICHING_HINT: &str =
     "The reference is being asked about the library; opens the Online settings";
@@ -635,6 +647,10 @@ pub struct RootView {
     pub(crate) equaliser: Entity<EqualiserModel>,
     pub(crate) controls: Controls,
     pub(crate) standing_controls: Controls,
+    pub(crate) sheet_panels: Controls,
+    pub(crate) sheets: sheets::Standing,
+    pub(crate) announced: announcing::Announcer,
+    pub(crate) announcing_again: announcing::Waking,
     pub(crate) took_out: TakenBack,
     pub(crate) queue_length: QueueMeasure,
     pub(crate) queue_ordered: Option<Task<()>>,
@@ -706,7 +722,7 @@ pub struct RootView {
     pub(crate) naming_the_zone: Option<ZoneId>,
     pub(crate) zone_name: Entity<Field>,
     following: Following,
-    magnified: Option<Magnified>,
+    pub(crate) magnified: Option<Magnified>,
     pointer_inside: bool,
     volume_settled: Task<()>,
     pub(crate) band_retuning: Task<()>,
@@ -1253,6 +1269,10 @@ impl RootView {
             equaliser,
             controls: Controls::default(),
             standing_controls: Controls::default(),
+            sheet_panels: Controls::default(),
+            sheets: sheets::Standing::default(),
+            announced: announcing::Announcer::default(),
+            announcing_again: None,
             took_out: TakenBack::default(),
             queue_length: QueueMeasure::default(),
             queue_ordered: None,
@@ -3989,6 +4009,8 @@ impl RootView {
 
         div()
             .id("magnified-cover")
+            .dialog(MAGNIFIED_LABEL)
+            .track_focus(&self.sheet_panels.holding(MAGNIFIER_PANEL, cx))
             .absolute()
             .inset_0()
             .flex()
@@ -4332,25 +4354,25 @@ impl RootView {
         if self.search.read(cx).is_focused(window) {
             self.go_to_the_results(window, cx);
         } else {
-            window.focus_next(cx);
+            self.step_the_focus(true, window, cx);
         }
     }
 
     fn tab_past_the_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.focus.is_focused(window) {
+        if self.focus.is_focused(window) && !self.something_stands_over_the_pane() {
             let search = self.search.focus_handle(cx);
             search.focus(window, cx);
         }
-        window.focus_next(cx);
+        self.step_the_focus(true, window, cx);
     }
 
     fn tab_back_to_the_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.focus.is_focused(window) {
+        if self.focus.is_focused(window) && !self.something_stands_over_the_pane() {
             let search = self.search.focus_handle(cx);
             search.focus(window, cx);
             return;
         }
-        window.focus_prev(cx);
+        self.step_the_focus(false, window, cx);
     }
 
     fn leave_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -5047,15 +5069,22 @@ impl RootView {
         });
         let said = downloads::summed_up(&fetching, arriving);
         let open = self.downloads_open;
+        let hint = if open {
+            HIDE_DOWNLOADS_HINT
+        } else {
+            SHOW_DOWNLOADS_HINT
+        };
         let mark = if underway {
             theme::accent()
         } else {
             theme::faint()
         };
 
-        div()
+        let row = div()
             .id("downloads")
             .debug_selector(|| "downloads".to_owned())
+            .named_as(Role::Button, &said, hint)
+            .thrown(open)
             .flex()
             .items_center()
             .gap_2p5()
@@ -5064,22 +5093,7 @@ impl RootView {
             .rounded_md()
             .cursor_pointer()
             .hover(|row| row.bg(rgb(theme::hover())))
-            .names(if open {
-                HIDE_DOWNLOADS_HINT
-            } else {
-                SHOW_DOWNLOADS_HINT
-            })
-            .on_click(cx.listener(|this, _, _, cx| {
-                let closed_by_this_press = this
-                    .downloads_pressed_off
-                    .take()
-                    .is_some_and(|pressed| pressed.elapsed() < DOWNLOADS_TOGGLE_PRESS);
-                if closed_by_this_press {
-                    return;
-                }
-                this.downloads_open = !this.downloads_open;
-                cx.notify();
-            }))
+            .names(hint)
             .child(icons::icon(Icon::Download, theme::text_base(), mark))
             .child(
                 div()
@@ -5099,7 +5113,24 @@ impl RootView {
                 },
                 theme::row_marker_icon(),
                 theme::faint(),
-            ))
+            ));
+
+        self.in_the_standing_ring(
+            "downloads",
+            row,
+            |this, _, cx| {
+                let closed_by_this_press = this
+                    .downloads_pressed_off
+                    .take()
+                    .is_some_and(|pressed| pressed.elapsed() < DOWNLOADS_TOGGLE_PRESS);
+                if closed_by_this_press {
+                    return;
+                }
+                this.downloads_open = !this.downloads_open;
+                cx.notify();
+            },
+            cx,
+        )
     }
 
     fn downloads_over_the_app(
@@ -5133,6 +5164,7 @@ impl RootView {
         Some(motion::risen_in(
             div()
                 .id("downloads-panel")
+                .named_as(Role::Dialog, DOWNLOADS_PANEL_LABEL, "")
                 .absolute()
                 .left(px(theme::sidebar_width() + DOWNLOADS_PANEL_GAP))
                 .bottom(resting)
@@ -5228,6 +5260,14 @@ impl RootView {
             .downloaded_track(download)
             .filter(|_| fetching == Fetching::Downloaded);
 
+        let spoken_row = || {
+            spoken::joined([
+                download.found.title.as_str(),
+                download.found.artist.as_str(),
+                saying.as_ref(),
+            ])
+        };
+
         let text = div()
             .id(listing::keyed_by("open-download", &recording))
             .flex()
@@ -5235,14 +5275,6 @@ impl RootView {
             .flex_1()
             .min_w_0()
             .overflow_hidden()
-            .when_some(album, |text, album| {
-                text.cursor_pointer()
-                    .names(OPEN_DOWNLOAD_HINT)
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.close_the_downloads(cx);
-                        this.opened(Selection::Album(album), cx);
-                    }))
-            })
             .child(
                 div()
                     .text_size(px(theme::text_sm()))
@@ -5265,8 +5297,23 @@ impl RootView {
                     .text_color(rgb(state))
                     .truncate()
                     .ends_in_an_ellipsis()
-                    .child(saying),
+                    .child(saying.clone()),
             );
+        let text = match album {
+            Some(album) => self.in_the_pane_ring(
+                text.cursor_pointer().names(OPEN_DOWNLOAD_HINT).named_as(
+                    Role::Link,
+                    &download.found.title,
+                    OPEN_DOWNLOAD_HINT,
+                ),
+                move |this, _, cx| {
+                    this.close_the_downloads(cx);
+                    this.opened(Selection::Album(album), cx);
+                },
+                cx,
+            ),
+            None => text,
+        };
 
         let actions = div()
             .flex()
@@ -5337,6 +5384,7 @@ impl RootView {
         div()
             .id(listing::keyed_by("download", &recording))
             .debug_selector(move || format!("download-{at}"))
+            .listed_as(spoken_row)
             .flex()
             .items_center()
             .gap_2()
@@ -5391,6 +5439,8 @@ impl RootView {
     fn deletion_sheet(&self, deleting: &Deleting, cx: &mut Context<Self>) -> Div {
         let card = div()
             .id("delete-sheet")
+            .dialog(deleting.asking())
+            .track_focus(&self.sheet_panels.holding(sheets::DELETE_PANEL, cx))
             .flex()
             .flex_col()
             .gap_4()
@@ -5416,6 +5466,8 @@ impl RootView {
                     .child(icons::icon(Icon::Delete, 18.0, theme::failure()))
                     .child(
                         div()
+                            .id("delete-sheet-asking")
+                            .headed(2, deleting.asking())
                             .text_size(px(theme::text_lg()))
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(rgb(theme::text()))
@@ -5424,6 +5476,8 @@ impl RootView {
             )
             .child(
                 div()
+                    .id("delete-sheet-saying")
+                    .read_plainly_as(|| SharedString::from(deleting.saying()))
                     .flex()
                     .flex_col()
                     .gap_2()
@@ -5479,8 +5533,9 @@ impl RootView {
     }
 
     fn enrichment_status(&self, cx: &mut Context<Self>) -> Stateful<Div> {
-        div()
+        let row = div()
             .id("enriching")
+            .named_as(Role::Button, ENRICHING_LABEL, ENRICHING_HINT)
             .flex()
             .items_center()
             .gap_2p5()
@@ -5490,10 +5545,6 @@ impl RootView {
             .cursor_pointer()
             .hover(|row| row.bg(rgb(theme::hover())))
             .names(ENRICHING_HINT)
-            .on_click(cx.listener(|this, _, _, cx| {
-                this.set_pane(Pane::Settings, cx);
-                this.show_settings(Category::Library, cx);
-            }))
             .child(icons::icon(Icon::Globe, theme::text_base(), theme::faint()))
             .child(
                 div()
@@ -5503,8 +5554,18 @@ impl RootView {
                     .text_color(rgb(theme::muted()))
                     .truncate()
                     .ends_in_an_ellipsis()
-                    .child("Enriching…"),
-            )
+                    .child(ENRICHING_LABEL),
+            );
+
+        self.in_the_standing_ring(
+            "enriching",
+            row,
+            |this, _, cx| {
+                this.set_pane(Pane::Settings, cx);
+                this.show_settings(Category::Library, cx);
+            },
+            cx,
+        )
     }
 
     pub(crate) fn in_the_standing_ring(
@@ -5542,7 +5603,7 @@ impl RootView {
             .flex()
             .items_center()
             .gap_2p5()
-            .h(px(32.0))
+            .h(px(theme::sidebar_row()))
             .px_3()
             .rounded_md()
             .cursor_pointer()
@@ -5709,8 +5770,18 @@ impl RootView {
             Region::Pane => {
                 self.grid_width.seen_in(window.viewport_size().width);
                 let shown = self.pane_shown(cx);
+                let named = match self.search_in_front(cx) {
+                    Some(_) => SEARCH_REGION,
+                    None => self.pane.label(),
+                };
                 motion::faded_in(
-                    div().size_full().flex().flex_col().child(self.content(cx)),
+                    div()
+                        .id(PANE_REGION)
+                        .regioned(named)
+                        .size_full()
+                        .flex()
+                        .flex_col()
+                        .child(self.content(cx)),
                     shown,
                     motion::ARRIVES_OVER,
                 )
@@ -5792,6 +5863,8 @@ impl Render for RootView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         spoken::listened_to(window.is_a11y_active());
         self.hand_the_reader_the_menu(window, cx);
+        self.keep_the_focus_with_the_sheets(window, cx);
+        self.keep_the_announcements(cx);
         let moved = self.moved_under_a_still_pointer(window, cx);
         hint::asking(self.hints_are_wanted(cx) && !moved);
         let opened = menu::Opened(self.menu.as_ref().and_then(|menu| menu.owner().cloned()));
@@ -5854,6 +5927,9 @@ impl Render for RootView {
             }))
             .on_action(cx.listener(|this, _: &ToggleMute, _, cx| this.toggle_mute(cx)))
             .on_action(cx.listener(|this, _: &ToggleQueue, _, cx| this.toggle_queue(cx)))
+            .on_action(cx.listener(|this, _: &HoldThePicture, _, cx| {
+                this.hold_the_picture(cx);
+            }))
             .on_action(cx.listener(|this, _: &ToggleShuffle, _, cx| {
                 let shuffle = this.player.read(cx).state().shuffle;
                 this.send(Command::SetShuffle(!shuffle), cx);
@@ -5980,8 +6056,9 @@ impl Render for RootView {
             .child(self.drag_surface(cx))
             .child(self.pointer_watch(cx))
             .child(self.composition_watch())
+            .when_some(self.announcement(), ParentElement::child)
             .when_some(
-                toast::drawn(self.type_ahead.typed().is_some(), cx),
+                toast::drawn(self.type_ahead.typed().is_some(), window, cx),
                 ParentElement::child,
             )
             .when_some(self.focused_control_named(window), |app, name| {
@@ -6664,11 +6741,17 @@ mod tests {
         }
 
         fn nothing_behind_the_sheet_answers(driven: &mut Driven, rows: usize) {
+            nothing_behind_the_sheet_answers_to(
+                driven,
+                rows,
+                "delete enter backspace alt-up down ctrl-z",
+            );
+        }
+
+        fn nothing_behind_the_sheet_answers_to(driven: &mut Driven, rows: usize, keys: &str) {
             let queue = driven.queue();
 
-            driven
-                .cx
-                .simulate_keystrokes("delete enter backspace alt-up down ctrl-z");
+            driven.cx.simulate_keystrokes(keys);
             driven.cx.simulate_keystrokes("t->t");
             driven.settle();
 
@@ -6735,7 +6818,11 @@ mod tests {
                 });
             });
             driven.settle();
-            nothing_behind_the_sheet_answers(&mut driven, 3);
+            nothing_behind_the_sheet_answers_to(
+                &mut driven,
+                3,
+                "delete backspace alt-up down ctrl-z",
+            );
         }
 
         #[gpui::test]
@@ -6759,10 +6846,163 @@ mod tests {
                 });
             });
             driven.settle();
-            nothing_behind_the_sheet_answers(&mut driven, 3);
+            nothing_behind_the_sheet_answers_to(
+                &mut driven,
+                3,
+                "delete backspace alt-up down ctrl-z",
+            );
 
             driven.cx.simulate_keystrokes("escape");
             assert!(driven.read(|root, _| root.deleting.is_none()));
+        }
+
+        fn asking_to_delete(driven: &mut Driven) {
+            let track = driven.queue()[0];
+            let root = driven.root.clone();
+
+            driven.cx.update(|_, cx| {
+                root.update(cx, |root, cx| {
+                    root.deleting = Some(Deleting {
+                        tracks: vec![track],
+                        title: "one".to_owned(),
+                        artist: None,
+                        a_cut: false,
+                    });
+                    cx.notify();
+                });
+            });
+            driven.settle();
+            driven.settle();
+        }
+
+        fn focused_is(driven: &mut Driven, named: &'static str) -> bool {
+            let root = driven.root.clone();
+            driven.cx.update(|window, cx| {
+                root.read(cx)
+                    .controls
+                    .handle(named)
+                    .is_some_and(|handle| handle.is_focused(window))
+            })
+        }
+
+        #[gpui::test]
+        fn focus_enters_the_delete_sheet_on_the_control_that_keeps_the_song(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let mut driven = queue_open(cx, &folder, &["one", "two"]);
+
+            asking_to_delete(&mut driven);
+
+            assert!(focused_is(&mut driven, "keep-the-track"));
+            assert!(!focused_is(&mut driven, "delete-the-track"));
+
+            driven.cx.simulate_keystrokes("enter");
+            driven.settle();
+
+            assert!(driven.read(|root, _| root.deleting.is_none()));
+            assert_eq!(
+                driven.queue().len(),
+                2,
+                "no key confirms a deletion, enter included"
+            );
+        }
+
+        #[gpui::test]
+        fn tab_stays_inside_the_delete_sheet_in_both_directions(cx: &mut TestAppContext) {
+            let folder = Folder::new();
+            let mut driven = queue_open(cx, &folder, &["one", "two"]);
+            asking_to_delete(&mut driven);
+
+            for keys in [
+                "tab",
+                "tab",
+                "tab",
+                "tab",
+                "shift-tab",
+                "shift-tab",
+                "shift-tab",
+            ] {
+                driven.cx.simulate_keystrokes(keys);
+                driven.settle();
+
+                let inside = driven.read(|root, _| root.front_panel().is_some());
+                let root = driven.root.clone();
+                let within = driven.cx.update(|window, cx| {
+                    root.read(cx)
+                        .front_panel()
+                        .is_some_and(|panel| panel.contains_focused(window, cx))
+                });
+
+                assert!(inside, "the sheet has a panel to keep the focus in");
+                assert!(within, "{keys} took the focus out of the delete sheet");
+            }
+        }
+
+        #[gpui::test]
+        fn escape_gives_the_focus_back_to_the_control_the_sheet_was_opened_from(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let mut driven = queue_open(cx, &folder, &["one", "two"]);
+            let root = driven.root.clone();
+            let opener = driven.cx.update(|window, cx| {
+                let opener = root
+                    .read(cx)
+                    .standing_controls
+                    .handle(Pane::Albums.label())
+                    .expect("the Albums tab is in the ring");
+                window.focus(&opener, cx);
+                opener
+            });
+            driven.settle();
+
+            asking_to_delete(&mut driven);
+            assert!(focused_is(&mut driven, "keep-the-track"));
+
+            driven.cx.simulate_keystrokes("escape");
+            driven.settle();
+            driven.settle();
+
+            assert!(driven.read(|root, _| root.deleting.is_none()));
+            assert!(driven.cx.update(|window, _| opener.is_focused(window)));
+        }
+
+        #[gpui::test]
+        fn a_toast_stays_while_the_pointer_is_on_it_and_goes_once_it_leaves(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let mut driven = queue_open(cx, &folder, &["one"]);
+
+            driven.cx.update(|_, cx| {
+                toast::tell(Notice::Done("Queued".to_owned()), cx);
+            });
+            driven.settle();
+            let on_the_toast = driven.centre_of("toast");
+            driven.hover(on_the_toast);
+
+            for _ in 0..30 {
+                driven
+                    .cx
+                    .executor()
+                    .advance_clock(std::time::Duration::from_secs(1));
+                driven.settle();
+            }
+            assert!(
+                driven.read(|_, cx| toast::is_showing(cx)),
+                "a toast under the pointer went"
+            );
+
+            driven.hover(gpui::point(gpui::px(2.0), gpui::px(2.0)));
+            for _ in 0..12 {
+                driven
+                    .cx
+                    .executor()
+                    .advance_clock(std::time::Duration::from_secs(1));
+                driven.settle();
+            }
+            assert!(driven.read(|_, cx| !toast::is_showing(cx)));
         }
 
         #[gpui::test]

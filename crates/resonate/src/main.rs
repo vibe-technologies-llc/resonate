@@ -2895,6 +2895,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     drop(starting);
     zoning::restore(&zones, &library, &kept_zones);
     let listens = listen::in_the_window(&config, opener.teller());
+    let desktop = the_desktop_asks(&config);
     let presenter = Arc::new(discord::start(&player, Some(&library), &config));
     #[cfg(windows)]
     let _awake = {
@@ -2994,7 +2995,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             window_buttons: config.window_buttons(),
             scroll_volume: config.scrolls_the_volume(),
             mouse_navigation: config.navigates_with_mouse_buttons(),
-            reduced_motion: config.reduces_motion(),
+            reduced_motion: config.reduces_motion_where_the_desktop_asks(desktop.reduces_motion),
             scrollbars: config.scrollbars(),
             spectral: config.spectral(),
             tabs: config.tabs(),
@@ -3019,7 +3020,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
             reads_as_a_code: sync::code_reader(),
             launcher: Arc::new(launcher::Icons::start()),
         },
-        config.appearance(),
+        config.appearance_where_the_desktop_asks(desktop.more_contrast),
         resonate_ui::Bus {
             quit: quitting,
             raise: raising,
@@ -3033,6 +3034,27 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     zones.leave();
     outcome?;
     Ok(())
+}
+
+#[cfg(feature = "ui")]
+#[derive(Clone, Copy, Default)]
+struct DesktopAsks {
+    more_contrast: bool,
+    reduces_motion: bool,
+}
+
+#[cfg(feature = "ui")]
+fn the_desktop_asks(config: &Config) -> DesktopAsks {
+    if config.theme.is_some() && config.reduced_motion.is_some() {
+        return DesktopAsks::default();
+    }
+
+    let preferences = resonate_mpris::desktop_preferences();
+
+    DesktopAsks {
+        more_contrast: preferences.contrast == resonate_mpris::Contrast::More,
+        reduces_motion: preferences.motion == resonate_mpris::Motion::Reduced,
+    }
 }
 
 #[cfg(feature = "ui")]

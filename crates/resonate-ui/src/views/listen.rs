@@ -18,9 +18,12 @@ use crate::{
         hint::Names,
         kit::{self, Tone},
         root::RootView,
+        sheets,
         spoken::Spoken,
     },
 };
+
+const LISTEN_LABEL: &str = "Listen";
 
 const LISTEN_HINT: &str = "Listen again to whatever is sounding";
 const STOP_HINT: &str = "Stop listening";
@@ -104,6 +107,8 @@ impl RootView {
 
         let card = div()
             .id("listen-sheet")
+            .dialog(LISTEN_LABEL)
+            .track_focus(&self.sheet_panels.holding(sheets::LISTEN_PANEL, cx))
             .flex()
             .flex_col()
             .gap_4()
@@ -156,30 +161,34 @@ impl RootView {
             .child(icons::icon(Icon::Listen, 18.0, theme::accent()))
             .child(
                 div()
+                    .id("listen-heading")
+                    .headed(2, LISTEN_LABEL)
                     .flex_1()
                     .text_size(px(theme::text_lg()))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(rgb(theme::text()))
-                    .child("Listen"),
+                    .child(LISTEN_LABEL),
             )
             .when(listening, |row| {
-                row.child(
+                row.child(self.in_the_pane_ring(
                     kit::button(
                         "listen-stop",
                         Some(Icon::Stop),
                         "Stop",
                         STOP_HINT,
                         Tone::Ghost,
-                    )
-                    .on_click(cx.listener(|this, _, _, cx| {
+                    ),
+                    |this, _, cx| {
                         this.listen.update(cx, |listen, cx| listen.stop(cx));
-                    })),
-                )
+                    },
+                    cx,
+                ))
             })
-            .child(
-                kit::icon_button("listen-close", Icon::Close, CLOSE_HINT)
-                    .on_click(cx.listener(|this, _, _, cx| this.close_the_listener(cx))),
-            )
+            .child(self.in_the_pane_ring(
+                kit::icon_button("listen-close", Icon::Close, CLOSE_HINT),
+                |this, _, cx| this.close_the_listener(cx),
+                cx,
+            ))
     }
 
     fn listen_sources(
@@ -190,27 +199,27 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Div {
         let pressable = !listening;
+        let desktop =
+            kit::segment("listen-desktop", "Desktop", !from.is_a_microphone()).names(DESKTOP_HINT);
+        let microphone = kit::segment("listen-microphone", "Microphone", from.is_a_microphone())
+            .names(MICROPHONE_HINT);
         let row = kit::segmented()
-            .child(
-                kit::segment("listen-desktop", "Desktop", !from.is_a_microphone())
-                    .when(pressable, |segment| {
-                        segment.on_click(
-                            cx.listener(|this, _, _, cx| this.listen_from(Listening::Desktop, cx)),
-                        )
-                    })
-                    .when(listening, |segment| segment.cursor_default())
-                    .names(DESKTOP_HINT),
-            )
-            .child(
-                kit::segment("listen-microphone", "Microphone", from.is_a_microphone())
-                    .when(pressable, |segment| {
-                        segment.on_click(cx.listener(|this, _, _, cx| {
-                            this.listen_from(Listening::Microphone(None), cx);
-                        }))
-                    })
-                    .when(listening, |segment| segment.cursor_default())
-                    .names(MICROPHONE_HINT),
-            );
+            .child(match pressable {
+                true => self.in_the_pane_ring(
+                    desktop,
+                    |this, _, cx| this.listen_from(Listening::Desktop, cx),
+                    cx,
+                ),
+                false => desktop.cursor_default(),
+            })
+            .child(match pressable {
+                true => self.in_the_pane_ring(
+                    microphone,
+                    |this, _, cx| this.listen_from(Listening::Microphone(None), cx),
+                    cx,
+                ),
+                false => microphone.cursor_default(),
+            });
 
         let chosen = match from {
             Listening::Microphone(Some(node)) => Some(node.to_string()),
@@ -229,29 +238,31 @@ impl RootView {
                     div().flex().flex_wrap().gap_1p5(),
                     |chips, (index, (name, described))| {
                         let node = name.clone();
-                        chips.child(
-                            kit::chip(
-                                ("listen-microphone-choice", index),
-                                described.clone(),
-                                chosen.as_deref() == Some(name.as_str()),
-                            )
-                            .when(pressable, |chip| {
-                                chip.on_click(cx.listener(move |this, _, _, cx| {
+                        let chip = kit::chip(
+                            ("listen-microphone-choice", index),
+                            described.clone(),
+                            chosen.as_deref() == Some(name.as_str()),
+                        );
+                        chips.child(match pressable {
+                            true => self.in_the_pane_ring(
+                                chip,
+                                move |this, _, cx| {
                                     this.listen_from(
                                         Listening::Microphone(Some(NodeName::new(node.clone()))),
                                         cx,
                                     );
-                                }))
-                            })
-                            .when(listening, |chip| chip.cursor_default()),
-                        )
+                                },
+                                cx,
+                            ),
+                            false => chip.cursor_default(),
+                        })
                     },
                 ))
             })
     }
 
     fn keeps_listening_row(&self, keeps: bool, cx: &mut Context<Self>) -> Stateful<Div> {
-        div()
+        let row = div()
             .id("listen-keep")
             .named_as(Role::Switch, KEEP_LISTENING, KEEP_LISTENING_HINT)
             .thrown(keeps)
@@ -267,8 +278,9 @@ impl RootView {
                     .child(KEEP_LISTENING),
             )
             .child(kit::switch("listen-keep-track", keeps))
-            .names(KEEP_LISTENING_HINT)
-            .on_click(cx.listener(|this, _, _, cx| this.keep_listening(cx)))
+            .names(KEEP_LISTENING_HINT);
+
+        self.in_the_pane_ring(row, |this, _, cx| this.keep_listening(cx), cx)
     }
 
     fn listen_stage(&self, stage: &Stage, length: Duration, cx: &mut Context<Self>) -> Div {
@@ -319,18 +331,17 @@ impl RootView {
     }
 
     fn listen_again(&self, said: &str, cx: &mut Context<Self>) -> Div {
-        listen_note(said.to_owned()).child(
-            sheet_actions().child(
-                kit::button(
-                    "listen-again",
-                    Some(Icon::Listen),
-                    "Listen",
-                    LISTEN_HINT,
-                    Tone::Primary,
-                )
-                .on_click(cx.listener(|this, _, _, cx| this.listen_now(cx))),
+        listen_note(said.to_owned()).child(sheet_actions().child(self.in_the_pane_ring(
+            kit::button(
+                "listen-again",
+                Some(Icon::Listen),
+                "Listen",
+                LISTEN_HINT,
+                Tone::Primary,
             ),
-        )
+            |this, _, cx| this.listen_now(cx),
+            cx,
+        )))
     }
 
     fn found_card(&self, found: &Found, cx: &mut Context<Self>) -> Div {
@@ -403,42 +414,43 @@ impl RootView {
             )
             .child(
                 sheet_actions()
-                    .child(
+                    .child(self.in_the_pane_ring(
                         kit::button(
                             "listen-again",
                             Some(Icon::Listen),
                             "Listen again",
                             LISTEN_HINT,
                             Tone::Ghost,
-                        )
-                        .on_click(cx.listener(|this, _, _, cx| this.listen_now(cx))),
-                    )
+                        ),
+                        |this, _, cx| this.listen_now(cx),
+                        cx,
+                    ))
                     .when_some(link, |actions, link| {
-                        actions.child(
+                        actions.child(self.in_the_pane_ring(
                             kit::button(
                                 "listen-open",
                                 Some(Icon::Link),
                                 "Open",
                                 OPEN_HINT,
                                 Tone::Ghost,
-                            )
-                            .on_click(move |_, _, cx| cx.open_url(&link)),
-                        )
+                            ),
+                            move |_, _, cx| cx.open_url(&link),
+                            cx,
+                        ))
                     })
-                    .child(
+                    .child(self.in_the_pane_ring(
                         kit::button(
                             "listen-find",
                             Some(Icon::Search),
                             "Find it",
                             FIND_HINT,
                             Tone::Primary,
-                        )
-                        .on_click(cx.listener(
-                            move |this, _, window, cx| {
-                                this.find_what_was_heard(&finding, window, cx);
-                            },
-                        )),
-                    ),
+                        ),
+                        move |this, window, cx| {
+                            this.find_what_was_heard(&finding, window, cx);
+                        },
+                        cx,
+                    )),
             )
     }
 
@@ -465,11 +477,11 @@ impl RootView {
                     None => heard.title.clone(),
                 };
                 let finding = found.clone();
-                list.child(
-                    earlier_row(("listen-earlier", index), said).on_click(cx.listener(
-                        move |this, _, window, cx| this.find_what_was_heard(&finding, window, cx),
-                    )),
-                )
+                list.child(self.in_the_pane_ring(
+                    earlier_row(("listen-earlier", index), said),
+                    move |this, window, cx| this.find_what_was_heard(&finding, window, cx),
+                    cx,
+                ))
             },
         )
     }
@@ -523,6 +535,7 @@ fn listen_note(said: String) -> Div {
 fn earlier_row(id: impl Into<gpui::ElementId>, said: String) -> Stateful<Div> {
     div()
         .id(id)
+        .named_as(Role::Button, &said, "Look for it in the library")
         .px_2()
         .py_1()
         .rounded_md()

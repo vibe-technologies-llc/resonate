@@ -170,6 +170,7 @@ impl RootView {
                 TRACK_CONTROLS,
                 sorting::favourites_sorted(self, cx),
                 &self.columns_fit,
+                &self.controls,
                 cx,
             ))
             .child(

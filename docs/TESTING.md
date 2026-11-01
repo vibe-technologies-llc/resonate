@@ -85,9 +85,12 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   engine's published settings, but no run has been heard on PipeWire with a real song, nor the
   sections driven on an emulator or an iPhone
 - [M · blocked: hardware] A microphone recording not proved against real sound reaching a microphone
-- [S · blocked: screen reader] None of the cells, links, lyric lines, plots, bars, cards, the caret and
-  selection or the menu a reader follows has been heard over AT-SPI with a screen reader (Orca), only
-  built and read back in tests, since gpui's test platform never activates the tree
+- [M · blocked: screen reader] No front end has been heard with a screen reader: the desktop's cells,
+  links, lyric lines, plots, bars, cards, headings, dialogs, the caret and selection and the menu a
+  reader follows are built and read back in tests only (Orca over AT-SPI; gpui's test platform never
+  activates the tree), and neither TalkBack on the Compose screens nor VoiceOver on the SwiftUI app
+  has read the accessibility work of 0.4.0 (the lyric elements, the adjustable bars, the hidden
+  background under Now Playing, the announcements)
 
 ## Later: Packaging
 - [S · blocked: tooling] The sync server's RPM spec has never run: no `rpmbuild` here, and its

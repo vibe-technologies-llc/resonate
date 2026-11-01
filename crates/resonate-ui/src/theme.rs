@@ -98,7 +98,7 @@ const LIT_ON_GREY: LitAt = LitAt {
 };
 const LIT_ON_PLUM: LitAt = LitAt {
     saturation: 0.78,
-    lightness: 0.64,
+    lightness: 0.68,
 };
 
 const GROUND: f32 = 0.082;
@@ -106,10 +106,10 @@ const BELOW_THE_GROUND: f32 = 0.056;
 const LIFTED: f32 = 0.112;
 const UNDER_THE_POINTER: f32 = 0.152;
 const HAIRLINE: f32 = 0.135;
-const DRAWN_EDGE: f32 = 0.225;
+const DRAWN_EDGE: f32 = 0.44;
 const BODY_INK: f32 = 0.935;
 const SECOND_INK: f32 = 0.660;
-const THIRD_INK: f32 = 0.506;
+const THIRD_INK: f32 = 0.525;
 const PITCH: f32 = 0.040;
 const PAPER: f32 = 0.968;
 const SCRIM_ALPHA: u32 = 0xea;
@@ -164,10 +164,10 @@ static RESONATE: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     raised: 0x1a1a1f,
     hover: 0x222228,
     border: 0x222227,
-    outline: 0x31313a,
+    outline: 0x656577,
     text: 0xf1efe9,
     muted: 0x9f9d97,
-    faint: 0x807d77,
+    faint: 0x85827b,
     pitch: 0x0b0a10,
     paper: 0xf6f4ee,
     scrim: 0x08080aea,
@@ -210,10 +210,10 @@ static AMOLED: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     raised: 0x121212,
     hover: 0x1d1d1d,
     border: 0x1a1a1a,
-    outline: 0x2e2e2e,
+    outline: 0x616161,
     text: 0xf2f2f2,
     muted: 0xa3a3a3,
-    faint: 0x757575,
+    faint: 0x7d7d7d,
     pitch: 0x000000,
     paper: 0xf7f7f7,
     scrim: 0x000000ea,
@@ -246,22 +246,22 @@ static ROSE_PINE: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     raised: 0x26233a,
     hover: 0x403d52,
     border: 0x2a2739,
-    outline: 0x4c4864,
+    outline: 0x706a93,
     text: 0xe0def4,
     muted: 0xa8a3c4,
-    faint: 0x8783a2,
+    faint: 0x8d89a6,
     pitch: 0x16141f,
     paper: 0xfaf4ed,
     scrim: 0x191724ea,
-    alarm: 0xeb6f92,
+    alarm: 0xe5406f,
     accents: Accents {
         mauve: 0xc4a7e7,
-        blue: 0x6fb3ce,
+        blue: 0x71b4cf,
         teal: 0x9ccfd8,
         green: 0x81cf9e,
         amber: 0xf6c177,
         peach: 0xebbcba,
-        red: 0xeb6f92,
+        red: 0xef8da8,
     },
 });
 
@@ -272,22 +272,22 @@ static ROSE_PINE_MOON: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     raised: 0x393552,
     hover: 0x44415a,
     border: 0x36324d,
-    outline: 0x56526e,
+    outline: 0x837e9f,
     text: 0xe0def4,
     muted: 0xaba6c8,
-    faint: 0x938eab,
+    faint: 0xa39eb7,
     pitch: 0x1d1b2e,
     paper: 0xfaf4ed,
     scrim: 0x232136ea,
-    alarm: 0xeb6f92,
+    alarm: 0xe5406f,
     accents: Accents {
-        mauve: 0xc4a7e7,
-        blue: 0x69b5d8,
+        mauve: 0xc5a8e7,
+        blue: 0x77bcdc,
         teal: 0x9ccfd8,
         green: 0x81cf9e,
         amber: 0xf6c177,
-        peach: 0xea9a97,
-        red: 0xeb6f92,
+        peach: 0xeba09d,
+        red: 0xf199b2,
     },
 });
 
@@ -298,22 +298,22 @@ static CATPPUCCIN_MOCHA: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     raised: 0x313244,
     hover: 0x45475a,
     border: 0x313244,
-    outline: 0x585b70,
+    outline: 0x777b94,
     text: 0xcdd6f4,
     muted: 0xa6adc8,
-    faint: 0x9399b2,
+    faint: 0x949ab2,
     pitch: 0x11111b,
     paper: 0xeff1f5,
     scrim: 0x11111bea,
-    alarm: 0xf38ba8,
+    alarm: 0xe8245b,
     accents: Accents {
-        mauve: 0xcba6f7,
-        blue: 0x89b4fa,
+        mauve: 0xcca7f7,
+        blue: 0x8fb8fa,
         teal: 0x94e2d5,
         green: 0xa6e3a1,
         amber: 0xf9e2af,
         peach: 0xfab387,
-        red: 0xf38ba8,
+        red: 0xf59db5,
     },
 });
 
@@ -324,22 +324,22 @@ static CATPPUCCIN_MACCHIATO: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     raised: 0x363a4f,
     hover: 0x494d64,
     border: 0x363a4f,
-    outline: 0x5b6078,
+    outline: 0x7e849d,
     text: 0xcad3f5,
     muted: 0xa5adcb,
-    faint: 0x939ab7,
+    faint: 0x9da4be,
     pitch: 0x181926,
     paper: 0xeff1f5,
     scrim: 0x181926ea,
-    alarm: 0xed8796,
+    alarm: 0xe0314b,
     accents: Accents {
-        mauve: 0xc6a0f6,
-        blue: 0x8aadf4,
+        mauve: 0xd1b2f8,
+        blue: 0xa5c0f7,
         teal: 0x8bd5ca,
         green: 0xa6da95,
         amber: 0xeed49f,
-        peach: 0xf5a97f,
-        red: 0xed8796,
+        peach: 0xf6af88,
+        red: 0xf3acb7,
     },
 });
 
@@ -350,22 +350,22 @@ static CATPPUCCIN_FRAPPE: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     raised: 0x414559,
     hover: 0x51576d,
     border: 0x414559,
-    outline: 0x626880,
+    outline: 0x8b91a6,
     text: 0xc6d0f5,
     muted: 0xb5bfe2,
-    faint: 0x949cbb,
+    faint: 0xacb3ca,
     pitch: 0x232634,
     paper: 0xeff1f5,
     scrim: 0x232634ea,
-    alarm: 0xe78284,
+    alarm: 0xd9383b,
     accents: Accents {
-        mauve: 0xca9ee6,
-        blue: 0x8caaee,
-        teal: 0x81c8be,
-        green: 0xa6d189,
-        amber: 0xe5c890,
-        peach: 0xef9f76,
-        red: 0xe78284,
+        mauve: 0xdfc4f0,
+        blue: 0xbdcef5,
+        teal: 0xa4d7d0,
+        green: 0xb3d89a,
+        amber: 0xe6ca93,
+        peach: 0xf5c3a9,
+        red: 0xf3c1c2,
     },
 });
 
@@ -376,22 +376,22 @@ static NORD: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     raised: 0x3b4252,
     hover: 0x434c5e,
     border: 0x3b4252,
-    outline: 0x4c566a,
+    outline: 0x818da4,
     text: 0xeceff4,
     muted: 0xa7b1c2,
-    faint: 0x949db0,
+    faint: 0xa6aebd,
     pitch: 0x242933,
     paper: 0xeceff4,
     scrim: 0x242933ea,
     alarm: 0xbf616a,
     accents: Accents {
-        mauve: 0xb48ead,
-        blue: 0x81a1c1,
-        teal: 0x8fbcbb,
-        green: 0xa3be8c,
+        mauve: 0xd2bbcd,
+        blue: 0xafc4d8,
+        teal: 0xa4c9c8,
+        green: 0xb2c99f,
         amber: 0xebcb8b,
-        peach: 0xd08770,
-        red: 0xc87d86,
+        peach: 0xe3b8aa,
+        red: 0xe1b7bc,
     },
 });
 
@@ -402,22 +402,22 @@ static GRUVBOX_DARK: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     raised: 0x3c3836,
     hover: 0x504945,
     border: 0x3c3836,
-    outline: 0x665c54,
+    outline: 0x8d8075,
     text: 0xebdbb2,
     muted: 0xbdae93,
-    faint: 0xa89984,
+    faint: 0xaea08c,
     pitch: 0x16181a,
     paper: 0xfbf1c7,
     scrim: 0x1d2021ea,
     alarm: 0xcc241d,
     accents: Accents {
-        mauve: 0xd3869b,
-        blue: 0x83a598,
-        teal: 0x8ec07c,
-        green: 0xb8bb26,
+        mauve: 0xe1abba,
+        blue: 0xa6bfb5,
+        teal: 0x98c688,
+        green: 0xbdc027,
         amber: 0xfabd2f,
-        peach: 0xfe8019,
-        red: 0xfb4934,
+        peach: 0xfea55c,
+        red: 0xfda196,
     },
 });
 
@@ -428,14 +428,14 @@ static TOKYO_NIGHT: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     raised: 0x24283b,
     hover: 0x292e42,
     border: 0x232433,
-    outline: 0x3b4261,
+    outline: 0x646fa1,
     text: 0xc0caf5,
     muted: 0xa9b1d6,
-    faint: 0x7b82a7,
+    faint: 0x878eaf,
     pitch: 0x101014,
     paper: 0xd5d6db,
     scrim: 0x16161eea,
-    alarm: 0xf7768e,
+    alarm: 0xe10d35,
     accents: Accents {
         mauve: 0xbb9af7,
         blue: 0x7aa2f7,
@@ -454,22 +454,22 @@ static DRACULA: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     raised: 0x343746,
     hover: 0x44475a,
     border: 0x343746,
-    outline: 0x4d5066,
+    outline: 0x7b7f9b,
     text: 0xf8f8f2,
     muted: 0xa9abc2,
-    faint: 0x8491b8,
+    faint: 0x95a0c2,
     pitch: 0x191a21,
     paper: 0xf8f8f2,
     scrim: 0x191a21ea,
-    alarm: 0xff5555,
+    alarm: 0xff5151,
     accents: Accents {
-        mauve: 0xff79c6,
-        blue: 0xbd93f9,
+        mauve: 0xff93d1,
+        blue: 0xc9a7fa,
         teal: 0x8be9fd,
         green: 0x50fa7b,
         amber: 0xf1fa8c,
         peach: 0xffb86c,
-        red: 0xff5555,
+        red: 0xff9a9a,
     },
 });
 
@@ -480,22 +480,22 @@ static ONE_DARK: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     raised: 0x2c313a,
     hover: 0x3e4451,
     border: 0x2c313a,
-    outline: 0x4b5263,
+    outline: 0x6f7992,
     text: 0xd7dae0,
     muted: 0xabb2bf,
-    faint: 0x8d94a1,
+    faint: 0x9198a5,
     pitch: 0x181a1f,
     paper: 0xd7dae0,
     scrim: 0x181a1fea,
-    alarm: 0xe06c75,
+    alarm: 0xd84853,
     accents: Accents {
-        mauve: 0xc678dd,
-        blue: 0x61afef,
-        teal: 0x56b6c2,
+        mauve: 0xd59ce6,
+        blue: 0x70b7f1,
+        teal: 0x66bdc8,
         green: 0x98c379,
         amber: 0xe5c07b,
-        peach: 0xd19a66,
-        red: 0xe06c75,
+        peach: 0xd7a77a,
+        red: 0xea9ba1,
     },
 });
 
@@ -506,22 +506,48 @@ static SOLARIZED_DARK: LazyLock<Flavour> = LazyLock::new(|| Flavour {
     raised: 0x073642,
     hover: 0x0a4251,
     border: 0x073642,
-    outline: 0x586e75,
+    outline: 0x657e86,
     text: 0xeee8d5,
     muted: 0x93a1a1,
-    faint: 0x839496,
+    faint: 0x8b9b9d,
     pitch: 0x000000,
     paper: 0xfdf6e3,
     scrim: 0x001b22ea,
     alarm: 0xdc322f,
     accents: Accents {
-        mauve: 0x6c71c4,
-        blue: 0x268bd2,
-        teal: 0x2aa198,
-        green: 0x859900,
-        amber: 0xb58900,
-        peach: 0xcb4b16,
-        red: 0xdc322f,
+        mauve: 0xa0a4d9,
+        blue: 0x66b0e3,
+        teal: 0x31bcb1,
+        green: 0x9bb300,
+        amber: 0xd19e00,
+        peach: 0xee8d65,
+        red: 0xeb8c8b,
+    },
+});
+
+static HIGH_CONTRAST: LazyLock<Flavour> = LazyLock::new(|| Flavour {
+    native: Accent::Amber,
+    background: 0x000000,
+    surface: 0x000000,
+    raised: 0x141414,
+    hover: 0x2b2b2b,
+    border: 0x808080,
+    outline: 0xa8a8a8,
+    text: 0xffffff,
+    muted: 0xe0e0e0,
+    faint: 0xbdbdbd,
+    pitch: 0x000000,
+    paper: 0xffffff,
+    scrim: 0x000000f5,
+    alarm: 0xa80000,
+    accents: Accents {
+        mauve: 0xc9a9ff,
+        blue: 0x7fc4ff,
+        teal: 0x4fe8d6,
+        green: 0x5cf09a,
+        amber: 0xffc94d,
+        peach: 0xff9f70,
+        red: 0xff9b9b,
     },
 });
 
@@ -543,6 +569,7 @@ fn flavour(theme: Theme) -> &'static Flavour {
         Theme::Dracula => &DRACULA,
         Theme::OneDark => &ONE_DARK,
         Theme::SolarizedDark => &SOLARIZED_DARK,
+        Theme::HighContrast => &HIGH_CONTRAST,
     }
 }
 
@@ -661,6 +688,47 @@ pub(crate) fn accent_ink() -> u32 {
     ink_over(accent())
 }
 
+pub(crate) const FOCUS_RING_WIDTH: f32 = 2.0;
+
+pub(crate) fn focus_ring() -> u32 {
+    let worn = WORN.read();
+
+    ring_of(worn.flavour, worn.accent)
+}
+
+pub(crate) fn focus_ring_over(fill: u32) -> u32 {
+    let worn = WORN.read();
+    let ring = ring_of(worn.flavour, worn.accent);
+
+    [
+        ring,
+        worn.flavour.text,
+        worn.flavour.pitch,
+        worn.flavour.paper,
+    ]
+    .into_iter()
+    .find(|candidate| contrast(*candidate, fill) >= RING_STANDS_APART)
+    .unwrap_or(worn.flavour.text)
+}
+
+fn ring_of(flavour: &Flavour, accent: u32) -> u32 {
+    let panes = [
+        flavour.background,
+        flavour.surface,
+        flavour.raised,
+        flavour.hover,
+    ];
+
+    [accent, flavour.text]
+        .into_iter()
+        .find(|candidate| {
+            panes
+                .iter()
+                .all(|pane| contrast(*candidate, *pane) >= RING_STANDS_APART)
+        })
+        .unwrap_or(flavour.text)
+}
+
 pub(crate) fn selection() -> u32 {
     (accent() << 8) | u32::from(SELECTION_ALPHA)
 }
@@ -753,7 +821,8 @@ pub(crate) fn contrast(over: u32, under: u32) -> f32 {
     (lit + 0.05) / (dim + 0.05)
 }
 
-const SELECTION_ALPHA: u8 = 0x40;
+const SELECTION_ALPHA: u8 = 0x24;
+const RING_STANDS_APART: f32 = 3.0;
 
 pub const UNMARKED: u32 = 0x00000000;
 
@@ -804,6 +873,11 @@ const SHELF_COVER: f32 = 104.0;
 const GRID_GAP: f32 = 20.0;
 const GRID_ROW: f32 = 230.0;
 const SCOPE_COVER: f32 = 224.0;
+const BUTTON_HEIGHT: f32 = 28.0;
+const PILL_HEIGHT: f32 = 26.0;
+const WAY_BACK_HEIGHT: f32 = 26.0;
+const COLUMN_HEADER_HEIGHT: f32 = 28.0;
+const SIDEBAR_ROW: f32 = 32.0;
 const ROW_HEIGHT: f32 = 36.0;
 const TALL_ROW_HEIGHT: f32 = 48.0;
 const ROW_NUMBER: f32 = 30.0;
@@ -816,9 +890,9 @@ const SEARCH_HEIGHT: f32 = 32.0;
 const FIELD_LABEL: f32 = 96.0;
 const HEADING_NAME: f32 = 220.0;
 const CARET_HEIGHT: f32 = 16.0;
-const CLEAR: Control = Control::of(20.0, 12.0);
-const FILTER_CLEAR: Control = Control::of(20.0, 14.0);
-const HINT: Control = Control::of(20.0, 14.0);
+const CLEAR: Control = Control::of(24.0, 12.0);
+const FILTER_CLEAR: Control = Control::of(24.0, 14.0);
+const HINT: Control = Control::of(24.0, 14.0);
 const CHECK_MARK: f32 = 14.0;
 const HINT_WIDTH: f32 = 300.0;
 const MENU_WIDTH: f32 = 236.0;
@@ -858,7 +932,7 @@ const SWITCH_KNOB: f32 = 14.0;
 pub const PICKER_ROWS: usize = 9;
 pub const CARET_WIDTH: f32 = 1.5;
 pub const SCAN_BAR: f32 = 4.0;
-pub const RAIL_HEIGHT: f32 = 16.0;
+pub const RAIL_HEIGHT: f32 = 24.0;
 pub const RAIL_TRACK: f32 = 4.0;
 pub const CHART_BAR: f32 = 3.0;
 pub const CHART_BAR_GAP: f32 = 2.0;
@@ -880,6 +954,12 @@ fn scaled(base: f32) -> f32 {
 }
 
 const MARK_MARGIN_AT_LEAST: f32 = 3.0;
+const TARGET_AT_LEAST: f32 = 24.0;
+
+const _: () = assert!(
+    RAIL_HEIGHT >= TARGET_AT_LEAST,
+    "a rail's hit area is smaller than a pointer target"
+);
 
 #[derive(Clone, Copy)]
 struct Control {
@@ -893,6 +973,10 @@ impl Control {
             mark > 0.0 && mark + 2.0 * MARK_MARGIN_AT_LEAST <= hit,
             "a control's mark does not sit inside its box"
         );
+        assert!(
+            hit >= TARGET_AT_LEAST,
+            "a control's box is smaller than a pointer target"
+        );
         Self { hit, mark }
     }
 }
@@ -904,6 +988,11 @@ macro_rules! measures {
                 scaled($base)
             }
         )+
+
+        #[cfg(test)]
+        fn every_measure() -> Vec<(&'static str, f32)> {
+            vec![$((stringify!($measure), $measure())),+]
+        }
     };
 }
 
@@ -953,6 +1042,11 @@ measures! {
     grid_gap => GRID_GAP,
     grid_row => GRID_ROW,
     scope_cover => SCOPE_COVER,
+    button_height => BUTTON_HEIGHT,
+    pill_height => PILL_HEIGHT,
+    way_back_height => WAY_BACK_HEIGHT,
+    column_header_height => COLUMN_HEADER_HEIGHT,
+    sidebar_row => SIDEBAR_ROW,
     row_height => ROW_HEIGHT,
     tall_row_height => TALL_ROW_HEIGHT,
     row_number => ROW_NUMBER,
@@ -1066,6 +1160,11 @@ pub fn magnified_cover(viewport: Size<Pixels>) -> Pixels {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+    };
+
     use resonate_core::TextSize;
 
     use super::*;
@@ -1073,6 +1172,53 @@ mod tests {
     const READS_AS_BODY: f32 = 4.5;
     const READS_AT_REST: f32 = 7.0;
     const STANDS_APART: f32 = 3.0;
+    const WASH_ALPHA: u8 = 0x1c;
+    const SEVEN_TO_ONE: f32 = 7.0;
+    const FOUR_AND_A_HALF: f32 = 4.5;
+
+    static WEARING: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
+    fn mixed(over: u32, alpha: u8, under: u32) -> u32 {
+        let share = f32::from(alpha) / 255.0;
+        let channel = |shift: u32| {
+            let top = ((over >> shift) & 0xff) as f32;
+            let bottom = ((under >> shift) & 0xff) as f32;
+            top.mul_add(share, bottom * (1.0 - share)).round() as u32
+        };
+
+        (channel(16) << 16) | (channel(8) << 8) | channel(0)
+    }
+
+    fn panes_of(flavour: &Flavour) -> [(&'static str, u32); 4] {
+        [
+            ("background", flavour.background),
+            ("surface", flavour.surface),
+            ("raised", flavour.raised),
+            ("hover", flavour.hover),
+        ]
+    }
+
+    fn resting_panes_of(flavour: &Flavour) -> [(&'static str, u32); 3] {
+        let [background, surface, raised, _] = panes_of(flavour);
+
+        [background, surface, raised]
+    }
+
+    fn colours_of(flavour: &Flavour) -> [(&'static str, u32); 7] {
+        [
+            ("mauve", flavour.accents.mauve),
+            ("blue", flavour.accents.blue),
+            ("teal", flavour.accents.teal),
+            ("green", flavour.accents.green),
+            ("amber", flavour.accents.amber),
+            ("peach", flavour.accents.peach),
+            ("red", flavour.accents.red),
+        ]
+    }
+
+    fn nothing_failed(failures: Vec<String>) {
+        assert!(failures.is_empty(), "\n{}", failures.join("\n"));
+    }
 
     fn every_appearance() -> impl Iterator<Item = Appearance> {
         Theme::ALL.into_iter().flat_map(|theme| {
@@ -1288,6 +1434,8 @@ mod tests {
 
     #[test]
     fn what_is_worn_is_what_was_asked_for() {
+        let _worn = WEARING.lock();
+
         for appearance in every_appearance() {
             wear(appearance);
 
@@ -1304,25 +1452,354 @@ mod tests {
 
     #[test]
     fn a_larger_text_size_draws_every_measure_larger() {
+        let _worn = WEARING.lock();
+
         let read = |size: TextSize| {
             wear(Appearance {
                 text_size: size,
                 ..Appearance::DEFAULT
             });
-            (text_base(), row_height(), sidebar_width(), settings_rail())
+            every_measure()
         };
 
-        let small = read(TextSize::Small);
-        let medium = read(TextSize::Medium);
-        let large = read(TextSize::Large);
+        let sizes = TextSize::ALL.map(read);
 
-        assert!(small.0 < medium.0 && medium.0 < large.0);
-        assert!(small.1 < medium.1 && medium.1 < large.1);
-        assert!(small.2 < medium.2 && medium.2 < large.2);
-        assert!(small.3 < medium.3 && medium.3 < large.3);
-        assert_eq!(medium.0, TEXT_BASE);
+        for pair in sizes.windows(2) {
+            for (smaller, larger) in pair[0].iter().zip(&pair[1]) {
+                assert!(
+                    smaller.1 < larger.1,
+                    "{} does not grow from {} to {}",
+                    smaller.0,
+                    smaller.1,
+                    larger.1
+                );
+            }
+        }
+
+        let medium = read(TextSize::Medium);
+        let largest = read(TextSize::Largest);
+        for (middling, doubled) in medium.iter().zip(&largest) {
+            assert_eq!(
+                middling.1 * 2.0,
+                doubled.1,
+                "{} is not twice its middling measure at the largest size",
+                middling.0
+            );
+        }
+        assert_eq!(medium[2].1, TEXT_BASE);
 
         wear(Appearance::DEFAULT);
+    }
+
+    #[test]
+    fn every_drawn_edge_stands_off_the_panes_it_is_drawn_on() {
+        let mut failures = Vec::new();
+
+        for theme in Theme::ALL {
+            let flavour = flavour(theme);
+            for (name, pane) in resting_panes_of(flavour) {
+                let read = contrast(flavour.outline, pane);
+                if read < STANDS_APART {
+                    failures.push(format!("{theme}: outline on {name} reads at {read:.2}"));
+                }
+            }
+        }
+
+        nothing_failed(failures);
+    }
+
+    #[test]
+    fn every_focus_ring_stands_off_the_panes_it_rings() {
+        let mut failures = Vec::new();
+
+        for appearance in every_appearance() {
+            let flavour = flavour(appearance.theme);
+            let ring = ring_of(flavour, flavour.accent(appearance.accent));
+            let theme = appearance.theme;
+            let named = appearance.accent.unwrap_or(flavour.native);
+
+            for (name, pane) in panes_of(flavour) {
+                let read = contrast(ring, pane);
+                if read < STANDS_APART {
+                    failures.push(format!(
+                        "{theme}/{named}: the focus ring on {name} reads at {read:.2}"
+                    ));
+                }
+            }
+        }
+
+        nothing_failed(failures);
+    }
+
+    #[test]
+    fn every_accent_is_text_that_reads_on_the_panes() {
+        let mut failures = Vec::new();
+
+        for theme in Theme::ALL {
+            let flavour = flavour(theme);
+            for (hue, colour) in colours_of(flavour) {
+                for (name, pane) in panes_of(flavour) {
+                    let read = contrast(colour, pane);
+                    if read < READS_AS_BODY {
+                        failures.push(format!("{theme}: {hue} text on {name} reads at {read:.2}"));
+                    }
+                }
+            }
+        }
+
+        nothing_failed(failures);
+    }
+
+    #[test]
+    fn every_colour_reads_as_text_on_its_own_wash() {
+        let mut failures = Vec::new();
+
+        for theme in Theme::ALL {
+            let flavour = flavour(theme);
+            for (hue, colour) in colours_of(flavour) {
+                for (name, pane) in resting_panes_of(flavour) {
+                    let washed = mixed(colour, WASH_ALPHA, pane);
+                    let read = contrast(colour, washed);
+                    if read < READS_AS_BODY {
+                        failures.push(format!(
+                            "{theme}: {hue} text on its wash over {name} reads at {read:.2}"
+                        ));
+                    }
+                }
+            }
+        }
+
+        nothing_failed(failures);
+    }
+
+    #[test]
+    fn the_inks_read_on_every_pane_they_are_drawn_on() {
+        let mut failures = Vec::new();
+
+        for theme in Theme::ALL {
+            let flavour = flavour(theme);
+            for (name, pane) in resting_panes_of(flavour) {
+                for (ink, colour) in [("muted", flavour.muted), ("faint", flavour.faint)] {
+                    let read = contrast(colour, pane);
+                    if read < READS_AS_BODY {
+                        failures.push(format!("{theme}: {ink} on {name} reads at {read:.2}"));
+                    }
+                }
+            }
+        }
+
+        nothing_failed(failures);
+    }
+
+    #[test]
+    fn text_reads_on_the_selection_wash() {
+        let mut failures = Vec::new();
+
+        for appearance in every_appearance() {
+            let flavour = flavour(appearance.theme);
+            let accent = flavour.accent(appearance.accent);
+            let theme = appearance.theme;
+            let named = appearance.accent.unwrap_or(flavour.native);
+
+            for (name, pane) in resting_panes_of(flavour) {
+                let selected = mixed(accent, SELECTION_ALPHA, pane);
+                let read = contrast(flavour.text, selected);
+                if read < READS_AS_BODY {
+                    failures.push(format!(
+                        "{theme}/{named}: text on the selection over {name} reads at {read:.2}"
+                    ));
+                }
+            }
+        }
+
+        nothing_failed(failures);
+    }
+
+    #[test]
+    fn the_mark_on_a_closing_window_stands_off_the_alarm() {
+        for theme in Theme::ALL {
+            let flavour = flavour(theme);
+            let read = contrast(flavour.text, flavour.alarm);
+
+            assert!(
+                read >= STANDS_APART,
+                "{theme}: the close mark on the alarm reads at {read:.2}"
+            );
+        }
+    }
+
+    #[test]
+    fn high_contrast_clears_every_bar_at_the_stricter_ratio() {
+        let flavour = flavour(Theme::HighContrast);
+        let mut failures = Vec::new();
+
+        for (name, pane) in panes_of(flavour) {
+            for (ink, colour) in [
+                ("text", flavour.text),
+                ("muted", flavour.muted),
+                ("faint", flavour.faint),
+            ] {
+                let read = contrast(colour, pane);
+                if read < SEVEN_TO_ONE {
+                    failures.push(format!("{ink} on {name} reads at {read:.2}"));
+                }
+            }
+            for (hue, colour) in colours_of(flavour) {
+                let read = contrast(colour, pane);
+                if read < SEVEN_TO_ONE {
+                    failures.push(format!("{hue} on {name} reads at {read:.2}"));
+                }
+                if name == "hover" {
+                    continue;
+                }
+                let washed = mixed(colour, WASH_ALPHA, pane);
+                let read = contrast(colour, washed);
+                if read < SEVEN_TO_ONE {
+                    failures.push(format!("{hue} on its wash over {name} reads at {read:.2}"));
+                }
+            }
+            for (edge, colour) in [("border", flavour.border), ("outline", flavour.outline)] {
+                if name == "hover" {
+                    continue;
+                }
+                let read = contrast(colour, pane);
+                if read < FOUR_AND_A_HALF {
+                    failures.push(format!("{edge} on {name} reads at {read:.2}"));
+                }
+            }
+            let ring = contrast(ring_of(flavour, flavour.accent(None)), pane);
+            if ring < SEVEN_TO_ONE {
+                failures.push(format!("the focus ring on {name} reads at {ring:.2}"));
+            }
+        }
+
+        nothing_failed(failures);
+    }
+
+    #[test]
+    fn a_focus_ring_over_a_fill_is_whichever_ink_stands_off_it() {
+        let _worn = WEARING.lock();
+
+        for appearance in every_appearance() {
+            wear(appearance);
+            let fill = accent();
+            let ring = focus_ring_over(fill);
+
+            assert!(
+                contrast(ring, fill) >= STANDS_APART,
+                "{}: a ring over the accent reads at {:.2}",
+                appearance.theme,
+                contrast(ring, fill)
+            );
+        }
+
+        wear(Appearance::DEFAULT);
+    }
+
+    const HEIGHT_CALLS: [&str; 4] = [".h(px(", ".min_h(px(", ".max_h(px(", ".size(px("];
+    const HAIRLINES: [f32; 2] = [0.0, 1.0];
+    const FIXED_BY_DESIGN: [(&str, &str); 5] = [
+        ("dropping.rs", ".h(px(4.0))"),
+        ("listen.rs", ".h(px(4.0))"),
+        ("kit.rs", ".size(px(7.0))"),
+        ("kit.rs", ".size(px(56.0))"),
+        ("root.rs", ".size(px(22.0))"),
+    ];
+
+    fn view_sources(folder: &Path, read: &mut Vec<(String, String)>) {
+        let mut entries: Vec<PathBuf> = fs::read_dir(folder)
+            .expect("the views folder is readable")
+            .map(|entry| entry.expect("a readable directory entry").path())
+            .collect();
+        entries.sort();
+
+        for path in entries {
+            if path.is_dir() {
+                view_sources(&path, read);
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                let name = path
+                    .file_name()
+                    .expect("a file has a name")
+                    .to_string_lossy()
+                    .into_owned();
+                read.push((
+                    name,
+                    fs::read_to_string(&path).expect("a readable source file"),
+                ));
+            }
+        }
+    }
+
+    fn literal_heights(source: &str) -> Vec<String> {
+        let mut found = Vec::new();
+
+        for line in source.lines() {
+            let line = line.trim();
+            for call in HEIGHT_CALLS {
+                let mut rest = line;
+                while let Some(at) = rest.find(call) {
+                    let after = &rest[at + call.len()..];
+                    let digits: String = after
+                        .chars()
+                        .take_while(|letter| letter.is_ascii_digit() || *letter == '.')
+                        .collect();
+                    let drawn = after.starts_with(|letter: char| letter.is_ascii_digit());
+                    let hairline = digits
+                        .parse::<f32>()
+                        .is_ok_and(|value| HAIRLINES.contains(&value));
+                    if drawn && !hairline {
+                        found.push(format!("{call}{digits}))"));
+                    }
+                    rest = after;
+                }
+            }
+        }
+
+        found
+    }
+
+    #[test]
+    fn a_view_draws_no_height_in_a_bare_number_of_pixels_unless_it_is_fixed_by_design() {
+        let mut read = Vec::new();
+        view_sources(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("src")
+                .join("views")
+                .as_path(),
+            &mut read,
+        );
+        assert!(
+            read.len() > 10,
+            "the walk found {} view files, so it is not reading the views at all",
+            read.len()
+        );
+
+        let mut unlisted = Vec::new();
+        let mut used: Vec<(&str, String)> = Vec::new();
+        for (name, source) in &read {
+            for height in literal_heights(source) {
+                if FIXED_BY_DESIGN
+                    .iter()
+                    .any(|(file, literal)| file == name && *literal == height)
+                {
+                    used.push((name, height));
+                } else {
+                    unlisted.push(format!("{name}: {height}"));
+                }
+            }
+        }
+
+        assert!(
+            unlisted.is_empty(),
+            "a pixel height that does not grow with the text size: {unlisted:?}"
+        );
+        for (file, literal) in FIXED_BY_DESIGN {
+            assert!(
+                used.iter()
+                    .any(|(name, height)| *name == file && height == literal),
+                "{file}: {literal} is allowed but no longer drawn, so it leaves the list"
+            );
+        }
     }
 
     #[test]

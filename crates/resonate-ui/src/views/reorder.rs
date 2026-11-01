@@ -592,11 +592,9 @@ pub(crate) fn marked<E: Styled + FluentBuilder>(listed: E, reached: bool) -> E {
 
 pub(crate) fn cursor_marked<E: Styled + FluentBuilder>(listed: E, cursor_only: bool) -> E {
     listed.when(cursor_only, |row| {
-        row.border_color(theme::tinted(theme::accent(), CURSOR_ALPHA))
+        row.border_color(rgb(theme::focus_ring()))
     })
 }
-
-pub(crate) const CURSOR_ALPHA: u8 = 0x80;
 
 pub(crate) fn movable(
     listed: Stateful<Div>,

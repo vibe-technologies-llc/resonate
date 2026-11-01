@@ -609,7 +609,7 @@ impl Group {
                 "rich presence status activity cover art album icon asset progress bar elapsed \
                  paused details"
             }
-            Self::Colour => "theme accent palette dark swatch",
+            Self::Colour => "theme accent palette dark swatch high contrast contrast accessibility",
             Self::Layout => "text size type scale larger largest smaller density",
             Self::Motion => {
                 "animation animations reduced reduce motion fade slide glide transition still \

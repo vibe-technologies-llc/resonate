@@ -1,8 +1,8 @@
 use std::{ops::Range, rc::Rc};
 
 use gpui::{
-    AnyElement, App, Context, Div, FontWeight, SharedString, Stateful, Window, div, prelude::*, px,
-    rgb, transparent_black,
+    AnyElement, App, Context, Div, FontWeight, Role, SharedString, Stateful, Window, div,
+    prelude::*, px, rgb, transparent_black,
 };
 use resonate_library::{AlbumFound, ArtistFound, Filled, FollowedLink, FollowedPlaylist, Linked};
 
@@ -20,6 +20,7 @@ use crate::{
         reorder::{self, Listed, Shift, Step},
         root::{Pane, RootView},
         scrollbar::{SHELF_INSET, Scrollbars},
+        spoken::Spoken as _,
     },
 };
 
@@ -492,6 +493,13 @@ impl Matched {
 }
 
 impl RootView {
+    pub(crate) fn matches_said(&self, cx: &App) -> Option<SharedString> {
+        self.search_in_front(cx)?;
+        let matched = Matched::read(self, cx);
+
+        Some(SharedString::from(matched.in_the_library()))
+    }
+
     pub(crate) fn search_in_front(&self, cx: &App) -> Option<SearchShows> {
         let library = self.library.read(cx);
         let browsing = matches!(self.pane, Pane::Albums | Pane::Artists | Pane::Tracks);
@@ -745,11 +753,7 @@ impl RootView {
                                 .min_w(px(theme::heading_name()))
                                 .gap_1()
                                 .child(kit::eyebrow("SEARCH"))
-                                .child(kit::title(
-                                    div()
-                                        .truncate()
-                                        .child(SharedString::from(format!("“{query}”"))),
-                                ))
+                                .child(kit::title(SharedString::from(format!("“{query}”"))))
                                 .when_some(meant, |column, meant| {
                                     column.child(
                                         div()
@@ -771,8 +775,19 @@ impl RootView {
         )
     }
 
-    fn search_tabs(&self, shows: SearchShows, matched: Matched, cx: &mut Context<Self>) -> Div {
-        let mut tabs = div().flex().flex_wrap().items_end().gap_5();
+    fn search_tabs(
+        &self,
+        shows: SearchShows,
+        matched: Matched,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let mut tabs = div()
+            .id("search-tabs")
+            .spoken_as(Role::TabList)
+            .flex()
+            .flex_wrap()
+            .items_end()
+            .gap_5();
         for tab in SearchShows::ALL {
             tabs = tabs.child(self.search_tab(tab, tab == shows, matched.counted(tab), cx));
         }
@@ -789,9 +804,11 @@ impl RootView {
     ) -> Stateful<Div> {
         let id = gpui::ElementId::from(tab.id());
 
-        div()
+        let header = div()
             .id(id.clone())
             .found_as(&id)
+            .named_as(Role::Tab, tab.label(), tab.saying())
+            .chosen(chosen)
             .flex()
             .flex_none()
             .items_center()
@@ -833,8 +850,13 @@ impl RootView {
                         .text_color(rgb(theme::muted()))
                         .child(counted),
                 )
-            })
-            .on_click(cx.listener(move |this, _, _, cx| this.show_in_the_search(tab, cx)))
+            });
+
+        self.in_the_pane_ring(
+            header,
+            move |this, _, cx| this.show_in_the_search(tab, cx),
+            cx,
+        )
     }
 
     fn top_results(&mut self, cx: &mut Context<Self>) -> AnyElement {

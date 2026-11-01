@@ -11,7 +11,7 @@ const PORTAL: &str = "org.freedesktop.portal.Desktop";
 const OBJECT_PATH: &str = "/org/freedesktop/portal/desktop";
 const SETTINGS: &str = "org.freedesktop.portal.Settings";
 const READ_ONE: &str = "ReadOne";
-const GNOME_INTERFACE: &str = "org.gnome.desktop.interface";
+pub(crate) const GNOME_INTERFACE: &str = "org.gnome.desktop.interface";
 const GNOME_BLINKS: &str = "cursor-blink";
 const GNOME_BLINK_TIME: &str = "cursor-blink-time";
 const KDE_GLOBALS: &str = "org.kde.kdeglobals.KDE";
@@ -68,7 +68,7 @@ fn asked() -> Result<Blinking> {
         .map_or(Blinking::Unsaid, Blinking::of_a_cycle))
 }
 
-fn read(connection: &Connection, namespace: &str, key: &str) -> Option<OwnedVariant> {
+pub(crate) fn read(connection: &Connection, namespace: &str, key: &str) -> Option<OwnedVariant> {
     connection
         .call_method(
             Some(PORTAL),

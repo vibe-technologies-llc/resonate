@@ -12,6 +12,7 @@ use crate::{
     icons::{self, Icon},
     motion, theme,
     views::{
+        focus,
         hint::Names,
         listing,
         pointed::LitUnderThePointer,
@@ -73,17 +74,28 @@ pub(crate) fn readout(text: impl Into<SharedString>) -> Div {
         .child(text.into())
 }
 
-pub(crate) fn eyebrow(text: impl Into<SharedString>) -> Div {
+pub(crate) fn eyebrow(text: impl Into<SharedString>) -> Stateful<Div> {
+    let text = text.into();
+
     div()
+        .id(text.clone())
+        .read_plainly(&text)
         .text_size(px(theme::text_xs()))
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(rgb(theme::faint()))
         .whitespace_nowrap()
-        .child(text.into())
+        .child(text)
 }
 
-pub(crate) fn title(text: impl IntoElement) -> Div {
-    title_face().truncate().ends_in_an_ellipsis().child(text)
+pub(crate) fn title(text: impl IntoElement + Spelt) -> Stateful<Div> {
+    let spelt = text.spelt();
+
+    title_face()
+        .id(spelt.clone())
+        .headed(1, &spelt)
+        .truncate()
+        .ends_in_an_ellipsis()
+        .child(text)
 }
 
 pub(crate) fn linked_title(link: Stateful<Div>) -> Div {
@@ -236,7 +248,7 @@ pub(crate) fn button_when(
         .flex_none()
         .items_center()
         .gap_1p5()
-        .h(px(28.0))
+        .h(px(theme::button_height()))
         .px_2p5()
         .rounded_md()
         .text_size(px(theme::text_sm()))
@@ -251,6 +263,9 @@ pub(crate) fn button_when(
             |button| {
                 button
                     .cursor_pointer()
+                    .when(tone == Tone::Primary, |button| {
+                        button.focus_visible(focus::lit_over(theme::accent()))
+                    })
                     .hover(move |button| button.bg(theme::tinted(hovered, hover_alpha(tone))))
                     .lit_under_the_pointer(id, |button| {
                         button.text_color(rgb(match tone {
@@ -404,7 +419,7 @@ fn pill(id: impl Into<ElementId>, colour: u32, selected: bool) -> Stateful<Div> 
         .flex_none()
         .items_center()
         .gap_1p5()
-        .h(px(26.0))
+        .h(px(theme::pill_height()))
         .px_2p5()
         .rounded_full()
         .text_size(px(theme::text_sm()))
@@ -512,14 +527,18 @@ pub(crate) fn section_header() -> Div {
         .border_color(rgb(theme::border()))
 }
 
-pub(crate) fn section_name(text: impl Into<SharedString>) -> Div {
+pub(crate) fn section_name(text: impl Into<SharedString>) -> Stateful<Div> {
+    let text = text.into();
+
     div()
+        .id(text.clone())
+        .headed(2, &text)
         .flex_1()
         .min_w(px(0.0))
         .text_size(px(theme::text_xs()))
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(rgb(theme::faint()))
-        .child(text.into())
+        .child(text)
 }
 
 pub(crate) fn section_body() -> Div {
@@ -832,12 +851,16 @@ pub(crate) fn card() -> Div {
         .border_color(rgb(theme::border()))
 }
 
-pub(crate) fn card_title(text: impl Into<SharedString>) -> Div {
+pub(crate) fn card_title(text: impl Into<SharedString>) -> Stateful<Div> {
+    let text = text.into();
+
     div()
+        .id(text.clone())
+        .headed(3, &text)
         .text_size(px(theme::text_sm()))
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(rgb(theme::text()))
-        .child(text.into())
+        .child(text)
 }
 
 pub(crate) fn heading() -> Div {
@@ -867,7 +890,7 @@ pub(crate) fn way_back(
         .flex_none()
         .items_center()
         .gap_1()
-        .h(px(26.0))
+        .h(px(theme::way_back_height()))
         .pl_1()
         .pr_2p5()
         .ml(px(-6.0))
@@ -891,8 +914,12 @@ pub(crate) fn hero() -> Div {
     div().flex().items_end().gap_6()
 }
 
-pub(crate) fn hero_title(text: impl IntoElement, room: Pixels) -> Div {
+pub(crate) fn hero_title(text: impl IntoElement + Spelt, room: Pixels) -> Stateful<Div> {
+    let spelt = text.spelt();
+
     div()
+        .id(spelt.clone())
+        .headed(1, &spelt)
         .text_size(px(theme::text_title()))
         .line_height(px(theme::text_title() * 1.15))
         .font_weight(FontWeight::BOLD)
@@ -1060,7 +1087,7 @@ pub(crate) fn column_header() -> Div {
         .items_center()
         .gap(px(listing::COLUMN_GAP))
         .px(px(listing::ROW_INSET))
-        .h(px(28.0))
+        .h(px(theme::column_header_height()))
         .border_b_1()
         .border_color(rgb(theme::border()))
         .text_size(px(theme::text_xs()))
@@ -1115,6 +1142,8 @@ fn nothing_here(icon: Icon, message: &'static str, more: Option<&'static str>) -
         )
         .child(
             div()
+                .id(message)
+                .read_plainly(message)
                 .text_size(px(theme::text_base()))
                 .text_color(rgb(theme::muted()))
                 .text_center()
@@ -1123,6 +1152,8 @@ fn nothing_here(icon: Icon, message: &'static str, more: Option<&'static str>) -
         .when_some(more, |empty, more| {
             empty.child(
                 div()
+                    .id(more)
+                    .read_plainly(more)
                     .text_size(px(theme::text_sm()))
                     .text_color(rgb(theme::faint()))
                     .text_center()
@@ -1204,6 +1235,75 @@ mod tests {
         assert_eq!(chosen.toggled(), Some(gpui::Toggled::True));
         assert_eq!(chip.label(), Some("Newest"));
         assert_eq!(chip.toggled(), Some(gpui::Toggled::False));
+    }
+
+    #[test]
+    fn the_text_the_kit_draws_is_headings_and_plain_text_a_reader_can_reach() {
+        spoken::listened_to(true);
+
+        let eyebrow = node_of(&eyebrow("SEARCH")).expect("an eyebrow is a node");
+        let title = node_of(&title(SharedString::new_static("Albums"))).expect("a title is a node");
+        let hero = node_of(&hero_title(SharedString::new_static("Echoes"), px(300.0)))
+            .expect("a hero title is a node");
+        let section = node_of(&section_name("OUTPUT")).expect("a section name is a node");
+        let card = node_of(&card_title("Signal")).expect("a card title is a node");
+        let empty = node_of(&nothing_here(
+            Icon::Search,
+            "No albums yet.",
+            Some("Scan a folder."),
+        ))
+        .map(|node| node.role());
+
+        assert_eq!(eyebrow.role(), Role::Label);
+        assert_eq!(eyebrow.label(), Some("SEARCH"));
+        assert_eq!(title.role(), Role::Heading);
+        assert_eq!(title.level(), Some(1));
+        assert_eq!(title.label(), Some("Albums"));
+        assert_eq!(hero.role(), Role::Heading);
+        assert_eq!(hero.label(), Some("Echoes"));
+        assert_eq!(section.role(), Role::Heading);
+        assert_eq!(section.level(), Some(2));
+        assert_eq!(card.level(), Some(3));
+        assert_eq!(empty, None, "the empty state names its parts, not itself");
+    }
+
+    #[test]
+    fn the_controls_a_pointer_alone_once_reached_are_named_buttons() {
+        spoken::listened_to(true);
+
+        let sort = div()
+            .id("sort-by-title")
+            .named_as(Role::Button, "TITLE", "Sort by title");
+        let enriching =
+            div()
+                .id("enriching")
+                .named_as(Role::Button, "Enriching…", "Looking things up");
+        let fixed = [
+            node_of(&sort),
+            node_of(&enriching),
+            node_of(&icon_button(
+                "clear-the-filter",
+                Icon::Close,
+                "Clear what is typed",
+            )),
+            node_of(&button(
+                "visualiser-hold",
+                Some(Icon::Pause),
+                "Pause",
+                "Hold the picture still — ctrl-p",
+                Tone::Ghost,
+            )),
+        ];
+
+        for node in fixed {
+            let node = node.expect("a fixed control is a node");
+
+            assert_eq!(node.role(), Role::Button);
+            assert!(
+                node.label().is_some_and(|name| !name.is_empty()),
+                "a control with no name is not reachable"
+            );
+        }
     }
 
     #[test]

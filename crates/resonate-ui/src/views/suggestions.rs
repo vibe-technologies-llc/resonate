@@ -297,6 +297,7 @@ impl RootView {
                 TRACK_CONTROLS,
                 sorting::unsorted(),
                 &self.columns_fit,
+                &self.controls,
                 cx,
             ))
             .child(

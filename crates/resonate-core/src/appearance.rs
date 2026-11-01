@@ -22,10 +22,11 @@ pub enum Theme {
     Dracula,
     OneDark,
     SolarizedDark,
+    HighContrast,
 }
 
 impl Theme {
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 17] = [
         Self::Resonate,
         Self::Midnight,
         Self::Graphite,
@@ -42,6 +43,7 @@ impl Theme {
         Self::Dracula,
         Self::OneDark,
         Self::SolarizedDark,
+        Self::HighContrast,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -62,6 +64,7 @@ impl Theme {
             Self::Dracula => "dracula",
             Self::OneDark => "one-dark",
             Self::SolarizedDark => "solarized-dark",
+            Self::HighContrast => "high-contrast",
         }
     }
 
@@ -83,6 +86,7 @@ impl Theme {
             Self::Dracula => "Dracula",
             Self::OneDark => "One Dark",
             Self::SolarizedDark => "Solarized Dark",
+            Self::HighContrast => "High Contrast",
         }
     }
 
@@ -174,10 +178,17 @@ pub enum TextSize {
     Medium,
     Large,
     Larger,
+    Largest,
 }
 
 impl TextSize {
-    pub const ALL: [Self; 4] = [Self::Small, Self::Medium, Self::Large, Self::Larger];
+    pub const ALL: [Self; 5] = [
+        Self::Small,
+        Self::Medium,
+        Self::Large,
+        Self::Larger,
+        Self::Largest,
+    ];
 
     pub const MIDDLING: f32 = 13.5;
 
@@ -187,6 +198,7 @@ impl TextSize {
             Self::Medium => "medium",
             Self::Large => "large",
             Self::Larger => "larger",
+            Self::Largest => "largest",
         }
     }
 
@@ -196,6 +208,7 @@ impl TextSize {
             Self::Medium => "Medium",
             Self::Large => "Large",
             Self::Larger => "Larger",
+            Self::Largest => "Largest",
         }
     }
 
@@ -205,6 +218,7 @@ impl TextSize {
             Self::Medium => Self::MIDDLING,
             Self::Large => 15.5,
             Self::Larger => 19.0,
+            Self::Largest => 27.0,
         }
     }
 
@@ -543,7 +557,18 @@ mod tests {
     }
 
     #[test]
-    fn the_largest_size_is_at_least_a_third_again_the_middling_one() {
+    fn the_larger_size_is_at_least_a_third_again_the_middling_one() {
         assert!(TextSize::Larger.scale() >= 4.0 / 3.0);
+    }
+
+    #[test]
+    fn the_largest_size_is_twice_the_middling_one() {
+        assert_eq!(TextSize::Largest.scale(), 2.0);
+    }
+
+    #[test]
+    fn high_contrast_is_a_theme_read_back_from_its_name() {
+        assert_eq!(Theme::parse("high-contrast"), Some(Theme::HighContrast));
+        assert_eq!(Theme::HighContrast.label(), "High Contrast");
     }
 }

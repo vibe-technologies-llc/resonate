@@ -18,7 +18,7 @@ use crate::{
     icons::{self, Icon},
     theme, toast,
     views::{
-        focus::by_the_pointer,
+        focus::{self, by_the_pointer},
         hint::Names as _,
         kit::{self, EndsInAnEllipsis as _, Found as _, Press},
         listing,
@@ -444,7 +444,7 @@ impl RootView {
         control
             .track_focus(&self.controls.at(named, cx))
             .key_context(crate::app::CONTROL_CONTEXT)
-            .focus(|mark| mark.bg(theme::tinted(theme::accent(), 0x2a)))
+            .focus(focus::picked)
             .on_action(
                 cx.listener(move |this, _: &crate::app::PressControl, _, cx| {
                     this.ask_to_forget_the_folder(root.clone(), cx);
@@ -862,6 +862,8 @@ impl RootView {
         let typed = self.organising.read(cx).text().trim().to_owned();
         let refused = Layout::read(&typed).err().map(|error| error.to_string());
         let unreadable = refused.is_some();
+        self.organising
+            .update(cx, |organising, cx| organising.refusing(unreadable, cx));
         let library = self.library.read(cx);
         let busy = library.is_busy();
         let organising = library.is_organising();

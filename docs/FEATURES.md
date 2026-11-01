@@ -80,11 +80,11 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M · 0.4.0] Windows on ARM64 is not built: the archive is x86-64-v3 alone
 
 ## Accessibility
-- [L · 0.4.0] Accessibility is not yet robust on desktop or mobile, and WCAG conformance is not
-  claimed: the desktop tree, the Compose screens and the SwiftUI app need an audit against WCAG
-  (names, roles and values, focus order and visible focus, contrast in every palette and accent,
-  target sizes, text scaling, reduced motion, no information by colour alone), the fixes the audit
-  finds, and a check that holds each result
+- [M · 0.4.0] The iOS app is portrait-only and iPhone-only, which fails WCAG 1.3.4 (orientation): landscape
+  and iPad layouts for Now Playing, the library and the sheets, with the accessibility-size layouts
+  held in each
+- [M · 0.4.0] The desktop wears dark palettes alone (High Contrast included) and its text size is
+  chosen by hand: a light theme, and a text size that follows the desktop's own scale
 
 ## Enrichment
 - [M · 0.4.0] Clicking enrichment shows no detailed statistics of what it is doing: the pass counts

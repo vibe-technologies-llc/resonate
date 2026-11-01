@@ -1,4 +1,7 @@
 mod analysis;
+mod announcing;
+#[cfg(test)]
+mod audit;
 mod browser;
 mod chrome;
 pub(crate) mod dropping;
@@ -26,6 +29,7 @@ mod scrollbar;
 mod search;
 mod served;
 pub(crate) mod settings;
+mod sheets;
 mod slider;
 pub(crate) mod sorting;
 pub(crate) mod spoken;

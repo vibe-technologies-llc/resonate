@@ -11,6 +11,7 @@ mod interfaces;
 mod metered;
 mod notify;
 mod playlists;
+mod preferences;
 mod remote;
 mod service;
 mod track;
@@ -29,6 +30,7 @@ pub use crate::{
     },
     icons::tell_the_icons_changed,
     metered::{meter_of_network_manager, watch_the_meter},
+    preferences::{Contrast, Motion, Preferences, desktop_preferences},
     remote::{
         Described, PlayerName, Queueing, ROWS_A_CALL, Running, Seeking, Session, Standing,
         ZoneAsked,

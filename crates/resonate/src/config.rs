@@ -535,12 +535,22 @@ impl Bindings {
 }
 
 impl Config {
-    #[cfg(any(feature = "ui", test))]
+    #[cfg(test)]
     pub fn appearance(&self) -> Appearance {
+        self.appearance_where_the_desktop_asks(false)
+    }
+
+    #[cfg(any(feature = "ui", test))]
+    pub fn appearance_where_the_desktop_asks(&self, for_more_contrast: bool) -> Appearance {
         let worn = Appearance::default();
+        let unasked = if for_more_contrast {
+            Theme::HighContrast
+        } else {
+            worn.theme
+        };
 
         Appearance {
-            theme: self.theme.unwrap_or(worn.theme),
+            theme: self.theme.unwrap_or(unasked),
             accent: self.accent.or(worn.accent),
             text_size: self.text_size.unwrap_or(worn.text_size),
         }
@@ -691,9 +701,14 @@ impl Config {
         self.mouse_navigation.unwrap_or(true)
     }
 
-    #[cfg(feature = "ui")]
+    #[cfg(test)]
     pub fn reduces_motion(&self) -> bool {
-        self.reduced_motion.unwrap_or(false)
+        self.reduces_motion_where_the_desktop_asks(false)
+    }
+
+    #[cfg(any(feature = "ui", test))]
+    pub fn reduces_motion_where_the_desktop_asks(&self, desktop_reduces: bool) -> bool {
+        self.reduced_motion.unwrap_or(desktop_reduces)
     }
 
     pub fn speaker_angle(&self) -> SpeakerAngle {
@@ -2845,6 +2860,35 @@ mod tests {
         let config = read("volume = 0.5").expect("a well formed document");
 
         assert_eq!(config.appearance(), Appearance::DEFAULT);
+    }
+
+    #[test]
+    fn a_desktop_asking_for_more_contrast_wears_high_contrast_where_no_theme_is_stored() {
+        let unstored = read("volume = 0.5").expect("a well formed document");
+        let stored = read("theme = \"nord\"").expect("a well formed document");
+
+        assert_eq!(
+            unstored.appearance_where_the_desktop_asks(true).theme,
+            Theme::HighContrast
+        );
+        assert_eq!(
+            unstored.appearance_where_the_desktop_asks(false),
+            Appearance::DEFAULT
+        );
+        assert_eq!(
+            stored.appearance_where_the_desktop_asks(true).theme,
+            Theme::Nord
+        );
+    }
+
+    #[test]
+    fn a_desktop_asking_for_reduced_motion_is_heard_only_where_no_setting_is_stored() {
+        let unstored = read("volume = 0.5").expect("a well formed document");
+        let kept_off = read("reduced-motion = false").expect("a boolean is valid");
+
+        assert!(unstored.reduces_motion_where_the_desktop_asks(true));
+        assert!(!unstored.reduces_motion_where_the_desktop_asks(false));
+        assert!(!kept_off.reduces_motion_where_the_desktop_asks(true));
     }
 
     #[test]

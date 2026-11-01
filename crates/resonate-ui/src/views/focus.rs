@@ -1,9 +1,48 @@
 use std::cell::RefCell;
 
 use ahash::{AHashMap, AHashSet};
-use gpui::{App, ClickEvent, FocusHandle, InteractiveElement, SharedString, Window};
+use gpui::{
+    App, BoxShadow, ClickEvent, FocusHandle, InteractiveElement, SharedString, StyleRefinement,
+    Styled, Window, point, px, rgb,
+};
 
-use crate::views::hint::{self, Wording};
+use crate::{
+    theme,
+    views::hint::{self, Wording},
+};
+
+const WASH_ALPHA: u8 = 0x14;
+
+pub(crate) fn ring_of(colour: u32) -> Vec<BoxShadow> {
+    vec![BoxShadow {
+        color: rgb(colour).into(),
+        offset: point(px(0.0), px(0.0)),
+        blur_radius: px(0.0),
+        spread_radius: px(theme::FOCUS_RING_WIDTH),
+        inset: true,
+    }]
+}
+
+pub(crate) fn lit(style: StyleRefinement) -> StyleRefinement {
+    style
+        .border_color(rgb(theme::focus_ring()))
+        .bg(theme::tinted(theme::accent(), WASH_ALPHA))
+        .shadow(ring_of(theme::focus_ring()))
+}
+
+pub(crate) fn lit_over(fill: u32) -> impl FnOnce(StyleRefinement) -> StyleRefinement {
+    move |style| {
+        let ring = theme::focus_ring_over(fill);
+
+        style.border_color(rgb(ring)).shadow(ring_of(ring))
+    }
+}
+
+pub(crate) fn picked(style: StyleRefinement) -> StyleRefinement {
+    style
+        .bg(theme::tinted(theme::accent(), 0x2a))
+        .shadow(ring_of(theme::focus_ring()))
+}
 
 pub(crate) fn by_the_pointer(click: &ClickEvent) -> bool {
     matches!(click, ClickEvent::Mouse(_))
@@ -70,6 +109,14 @@ impl Controls {
             .entry(named)
             .or_insert_with(|| cx.focus_handle())
             .clone()
+    }
+
+    pub(crate) fn handle(&self, named: &str) -> Option<FocusHandle> {
+        self.handles.borrow().get(named).cloned()
+    }
+
+    pub(crate) fn owns(&self, handle: &FocusHandle) -> bool {
+        self.handles.borrow().values().any(|owned| owned == handle)
     }
 
     pub(crate) fn holds_the_caret(&self, window: &Window) -> bool {

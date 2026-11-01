@@ -145,6 +145,7 @@ pub(crate) struct Field {
     lit: bool,
     blink: Task<()>,
     catches: Option<fn(&str) -> bool>,
+    refused: bool,
 }
 
 impl Field {
@@ -173,6 +174,7 @@ impl Field {
             lit: false,
             blink: Task::ready(()),
             catches: None,
+            refused: false,
         }
     }
 
@@ -206,6 +208,14 @@ impl Field {
             text,
             anchor: self.edit.anchor(),
             focus: self.edit.cursor(),
+            refused: self.refused,
+        }
+    }
+
+    pub(crate) fn refusing(&mut self, refused: bool, cx: &mut Context<Self>) {
+        if self.refused != refused {
+            self.refused = refused;
+            cx.notify();
         }
     }
 

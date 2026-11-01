@@ -809,6 +809,24 @@ impl RootView {
         sink: Option<SharedString>,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
+        let drawn = self.drawn_signal_path(signal, playing, sink, cx);
+
+        self.in_the_standing_ring(
+            "signal-path",
+            drawn,
+            |this, _, cx| this.set_pane(Pane::Inspector, cx),
+            cx,
+        )
+    }
+
+    fn drawn_signal_path(
+        &self,
+        signal: Signal,
+        playing: &Playing,
+        sink: Option<SharedString>,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let hint = inspects(sink.as_ref().map(SharedString::as_ref));
         let source = signal.source;
         let mut path = div()
             .id("signal-path")
@@ -824,8 +842,8 @@ impl RootView {
             .rounded_sm()
             .cursor_pointer()
             .hover(|path| path.bg(rgb(theme::hover())))
-            .names(inspects(sink.as_ref().map(SharedString::as_ref)))
-            .on_click(cx.listener(|this, _, _, cx| this.set_pane(Pane::Inspector, cx)));
+            .said_as(Role::Button, &hint)
+            .names(hint);
 
         let quality = source.map(format::quality);
         let output = signal.output.map(|output| format::mode(output.mode));
@@ -924,14 +942,17 @@ impl RootView {
         };
 
         let opened = magnified.clone();
-        let cover = faces(frame)
-            .id("magnify-cover")
-            .cursor_pointer()
-            .hover(|cover| cover.opacity(kit::LIT))
-            .names(COVER_HINT)
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.magnify(magnified.clone(), cx);
-            }));
+        let cover = self.in_the_standing_ring(
+            "magnify-cover",
+            faces(frame)
+                .id("magnify-cover")
+                .said_as(Role::Button, COVER_HINT)
+                .cursor_pointer()
+                .hover(|cover| cover.opacity(kit::LIT))
+                .names(COVER_HINT),
+            move |this, _, cx| this.magnify(magnified.clone(), cx),
+            cx,
+        );
 
         menu::opens_a_menu(
             cover,
@@ -1267,25 +1288,21 @@ impl RootView {
                 clock(far_end)
                     .id("seek-far-end")
                     .when(duration.is_some(), |end| {
-                        end.cursor_pointer()
-                            .said_as(
-                                Role::Button,
-                                if showing_left {
-                                    SHOW_LENGTH_HINT
-                                } else {
-                                    SHOW_TIME_LEFT_HINT
-                                },
-                            )
-                            .names(if showing_left {
-                                SHOW_LENGTH_HINT
-                            } else {
-                                SHOW_TIME_LEFT_HINT
-                            })
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                cx.stop_propagation();
+                        let hint = if showing_left {
+                            SHOW_LENGTH_HINT
+                        } else {
+                            SHOW_TIME_LEFT_HINT
+                        };
+
+                        self.in_the_standing_ring(
+                            "seek-far-end",
+                            end.cursor_pointer().said_as(Role::Button, hint).names(hint),
+                            |this, _, cx| {
                                 this.showing_time_left = !this.showing_time_left;
                                 cx.notify();
-                            }))
+                            },
+                            cx,
+                        )
                     }),
             )
     }

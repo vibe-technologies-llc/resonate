@@ -12,7 +12,7 @@ use crate::{
     app::{CONTROL_CONTEXT, RAIL_CONTEXT, RailBack, RailOn, seek_step},
     theme,
     views::{
-        kit,
+        focus, kit,
         root::VOLUME_STEP,
         spoken::{self, Reading, Spoken},
     },
@@ -266,7 +266,7 @@ impl RootView {
                     })
             })
             .rounded_md()
-            .focus(|rail| rail.bg(theme::tinted(theme::accent(), 0x14)))
+            .focus(focus::lit)
             .group(RAIL_GROUP)
             .flex()
             .when_else(

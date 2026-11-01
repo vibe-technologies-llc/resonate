@@ -352,14 +352,15 @@ Boolean. Keep showing the track while it is paused. Default: false.
 .TP
 .B theme
 String: resonate, midnight, graphite, amoled, plum, rose-pine, rose-pine-moon, catppuccin-mocha,
-catppuccin-macchiato, catppuccin-frappe, nord, gruvbox-dark, tokyo-night, dracula, one-dark or
-solarized-dark. Default: resonate.
+catppuccin-macchiato, catppuccin-frappe, nord, gruvbox-dark, tokyo-night, dracula, one-dark,
+solarized-dark or high-contrast. Default: resonate, or high-contrast while the desktop asks for more
+contrast and no theme is set.
 .TP
 .B accent
 String: mauve, blue, teal, green, amber, peach or red. The accent colour. Default: the theme's own.
 .TP
 .B text-size
-String: small, medium, large or larger. Default: medium.
+String: small, medium, large, larger or largest. Default: medium.
 .TP
 .B notify
 Boolean. Raise a desktop notification when the track changes. Default: true.
@@ -378,7 +379,8 @@ Boolean. The mouse's back and forward buttons navigate. Default: true.
 .TP
 .B reduced-motion
 Boolean. Draw menus, sheets, notices, switches, song changes, scrollbars and lyrics without sliding,
-fading or gliding. Default: false.
+fading or gliding. Default: false, or true while the desktop asks for reduced motion and no value is
+set.
 .TP
 .B scrollbars
 String: shown, auto-hide or hidden. A boolean still reads, true as shown and false as hidden.

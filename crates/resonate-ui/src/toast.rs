@@ -1,20 +1,24 @@
 use std::{collections::VecDeque, time::Duration};
 
 use gpui::{
-    Animation, AnimationElement, AnimationExt, App, BoxShadow, Context, Div, Global, Pixels,
-    SharedString, Task, div, ease_in_out, ease_out_quint, hsla, point, prelude::*, px, rgb,
+    Animation, AnimationElement, AnimationExt, App, BoxShadow, Context, Div, FocusHandle, Global,
+    Pixels, SharedString, Task, Window, div, ease_in_out, ease_out_quint, hsla, point, prelude::*,
+    px, rgb,
 };
 use resonate_engine::{Cause, CommandKind};
 
 use crate::{
+    app::{CONTROL_CONTEXT, PressControl},
     icons::{self, Icon},
     models::{Notice, Tone},
     theme,
     views::{
-        RootView,
+        RootView, focus,
         spoken::{Spoken, Urgency},
     },
 };
+
+const LINGERS_IN_STEPS_OF: Duration = Duration::from_millis(100);
 
 const LINGER_AT_LEAST: Duration = Duration::from_secs(6);
 
@@ -42,6 +46,8 @@ pub(crate) struct Toaster {
     waiting: VecDeque<Waiting>,
     told: u64,
     fading: Option<Task<()>>,
+    hovered: bool,
+    focused: bool,
 }
 
 impl Global for Toaster {}
@@ -52,6 +58,14 @@ struct Toast {
     times: u32,
     serial: u64,
     leaving: bool,
+    focus: Option<FocusHandle>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Lingering {
+    Gone,
+    Held,
+    Free,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -74,6 +88,19 @@ fn said_with_its_count(notice: &Notice, times: u32) -> String {
 }
 
 impl Toaster {
+    fn lingering(&self, serial: u64) -> Lingering {
+        match self.showing.as_ref() {
+            Some(toast) if toast.serial == serial && !toast.leaving => {
+                if self.hovered || self.focused {
+                    Lingering::Held
+                } else {
+                    Lingering::Free
+                }
+            }
+            _ => Lingering::Gone,
+        }
+    }
+
     fn counts_a_repeat_of(&mut self, notice: &Notice) -> bool {
         let standing = self
             .showing
@@ -158,18 +185,36 @@ pub(crate) fn is_showing(cx: &App) -> bool {
 fn show(Waiting { notice, times }: Waiting, cx: &mut App) {
     let others_wait = !cx.default_global::<Toaster>().waiting.is_empty();
     let lingers = lingers(&notice, others_wait);
+    let serial = cx.default_global::<Toaster>().told + 1;
     let fading = Some(cx.spawn(async move |cx| {
-        cx.background_executor().timer(lingers).await;
-        cx.update(withdraw);
+        let mut remaining = lingers;
+        loop {
+            cx.background_executor().timer(LINGERS_IN_STEPS_OF).await;
+            match cx.update(|cx| cx.default_global::<Toaster>().lingering(serial)) {
+                Lingering::Gone => return,
+                Lingering::Held => {}
+                Lingering::Free => {
+                    remaining = remaining.saturating_sub(LINGERS_IN_STEPS_OF);
+                    if remaining.is_zero() {
+                        cx.update(withdraw);
+                        return;
+                    }
+                }
+            }
+        }
     }));
+    let focus = Some(cx.focus_handle().tab_stop(true));
 
     let toaster = cx.default_global::<Toaster>();
-    toaster.told += 1;
+    toaster.told = serial;
+    toaster.hovered = false;
+    toaster.focused = false;
     toaster.showing = Some(Toast {
         notice,
         times,
-        serial: toaster.told,
+        serial,
         leaving: false,
+        focus,
     });
     toaster.fading = fading;
 }
@@ -201,8 +246,16 @@ fn withdraw(cx: &mut App) {
     toaster.fading = Some(fading);
 }
 
-pub(crate) fn drawn(lifted: bool, cx: &mut Context<RootView>) -> Option<AnimationElement<Div>> {
+pub(crate) fn drawn(
+    lifted: bool,
+    window: &Window,
+    cx: &mut Context<RootView>,
+) -> Option<AnimationElement<Div>> {
     let toast = cx.try_global::<Toaster>()?.showing.clone()?;
+    cx.default_global::<Toaster>().focused = toast
+        .focus
+        .as_ref()
+        .is_some_and(|focus| focus.is_focused(window));
     let (icon, ink, urgency) = match toast.notice.tone() {
         Tone::Trouble => (Icon::Alert, theme::failure(), Urgency::Warned),
         Tone::Done => (Icon::Check, theme::done(), Urgency::Told),
@@ -221,7 +274,17 @@ pub(crate) fn drawn(lifted: bool, cx: &mut Context<RootView>) -> Option<Animatio
         .child(
             div()
                 .id(("toast", toast.serial as usize))
+                .debug_selector(|| "toast".to_owned())
                 .told(said.clone(), urgency)
+                .when_some(toast.focus.as_ref(), |pill, handle| {
+                    pill.track_focus(handle)
+                        .key_context(CONTROL_CONTEXT)
+                        .focus(focus::lit)
+                        .on_action(cx.listener(|_, _: &PressControl, _, cx| dismiss(cx)))
+                })
+                .on_hover(|hovering, _, cx| {
+                    cx.default_global::<Toaster>().hovered = *hovering;
+                })
                 .flex()
                 .items_center()
                 .gap_2()
@@ -421,6 +484,7 @@ mod tests {
                 times: 1,
                 serial: 1,
                 leaving: false,
+                focus: None,
             }),
             ..Toaster::default()
         }

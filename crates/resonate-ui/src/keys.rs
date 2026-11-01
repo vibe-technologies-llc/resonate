@@ -38,6 +38,9 @@ macro_rules! key {
     (listen) => {
         "ctrl-l"
     };
+    (hold_the_picture) => {
+        "ctrl-p"
+    };
     (quit) => {
         "ctrl-q"
     };
@@ -160,7 +163,7 @@ mod tests {
 
     use crate::app;
 
-    const NAMED: [&str; 42] = [
+    const NAMED: [&str; 43] = [
         key!(play_pause),
         key!(previous),
         key!(next),
@@ -174,6 +177,7 @@ mod tests {
         key!(shuffle),
         key!(repeat),
         key!(listen),
+        key!(hold_the_picture),
         key!(quit),
         key!(leave),
         key!(undo),

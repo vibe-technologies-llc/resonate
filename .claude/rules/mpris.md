@@ -270,3 +270,5 @@ for a hotspot have not been seen (`docs/TESTING.md`).
   `Standing` = what one answers about itself (`Option`s: nothing vs empty differ); a player that
   stops answering between listing and read is left out. `PlaybackStatus` lives in `track.rs` beside
   the (lossy) mapping from `PlaybackState`.
+
+- **The desktop's own preferences are read once at start** (`preferences.rs`, `desktop_preferences`): `org.freedesktop.appearance` `contrast` and `reduced-motion` over the portal, GNOME's `enable-animations` as the fallback, answered within 300 ms or `Unsaid`; the binary seeds High Contrast and Reduce motion from it only where the listener stored neither (`ui.md`).

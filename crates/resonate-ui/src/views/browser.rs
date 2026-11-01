@@ -9,8 +9,8 @@ use std::{
 
 use gpui::{
     AnyElement, App, BoxShadow, ClickEvent, Context, Div, ElementId, FontWeight, MouseButton,
-    MouseDownEvent, ObjectFit, Pixels, Point, SharedString, Stateful, Window, anchored, deferred,
-    div, hsla, img, point, prelude::*, px, rgb, uniform_list,
+    MouseDownEvent, ObjectFit, Pixels, Point, Role, SharedString, Stateful, Window, anchored,
+    deferred, div, hsla, img, point, prelude::*, px, rgb, uniform_list,
 };
 use resonate_core::{AlbumId, ArtistId, ArtistsDrawn, ReleaseTrackId, Span, TrackId};
 use resonate_engine::Placement;
@@ -43,7 +43,7 @@ use crate::{
             tall_row,
         },
         scrollbar::{SHELF_INSET, Scrollbars},
-        sorting,
+        sheets, sorting,
         spoken::{self, Spelt, Spoken},
         transport::COVER_HINT,
     },
@@ -968,6 +968,7 @@ impl RootView {
                     },
                     sorting::tracks_sorted(self, cx),
                     &self.columns_fit,
+                    &self.controls,
                     cx,
                 ))
             })
@@ -2010,15 +2011,16 @@ impl RootView {
         let favourite = library.favoured_album(id);
         let has_missing_tracks = album.is_some_and(|album| album.missing > 0);
 
-        let cover = self
-            .cover_sized(Pictured::Album(id), Drawn::OnThePage, self.hero_side(), cx)
-            .id("magnify-scoped-cover")
-            .cursor_pointer()
-            .hover(|cover| cover.opacity(kit::LIT))
-            .names(COVER_HINT)
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.magnify(Magnified::Album(id), cx);
-            }));
+        let cover = self.in_the_pane_ring(
+            self.cover_sized(Pictured::Album(id), Drawn::OnThePage, self.hero_side(), cx)
+                .id("magnify-scoped-cover")
+                .said_as(Role::Button, COVER_HINT)
+                .cursor_pointer()
+                .hover(|cover| cover.opacity(kit::LIT))
+                .names(COVER_HINT),
+            move |this, _, cx| this.magnify(Magnified::Album(id), cx),
+            cx,
+        );
         let cover = menu::opens_a_menu(
             cover,
             move |this, at, cx| {
@@ -2157,7 +2159,7 @@ impl RootView {
                 column.child(kit::subtitle(profile))
             })
             .when_some(
-                heard_on("artist-heard-on", services, self.hero_width.get()),
+                heard_on(self, "artist-heard-on", services, self.hero_width.get(), cx),
                 Div::child,
             )
             .child(
@@ -2338,7 +2340,7 @@ impl RootView {
                         .filter(|_| library.can_enrich());
                     let current = release.and_then(|release| release.mbid.clone());
                     let pressings = library.pressings_of(album).cloned();
-                    let card = record_card(&record);
+                    let card = record_card(self, &record, cx);
                     let card = match (group, findable) {
                         (Some(group), _) => card.child(self.other_pressings(
                             album,
@@ -2438,42 +2440,43 @@ impl RootView {
         for (at, pressing) in listed.iter().take(PRESSINGS_SHOWN).enumerate() {
             let in_use = current.as_ref() == Some(&pressing.id);
             let chosen = pressing.id.clone();
-            column = column.child(
-                div()
-                    .id(("pressing", at))
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .gap_2()
-                    .px_1p5()
-                    .py_0p5()
-                    .rounded_md()
-                    .when(!in_use, |row| {
-                        row.cursor_pointer()
-                            .hover(|row| row.bg(rgb(theme::hover())))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.record = None;
-                                let taken = chosen.clone();
-                                this.library.update(cx, |library, cx| {
-                                    library.take_pressing(album, taken, cx);
-                                });
-                                cx.notify();
-                            }))
-                    })
-                    .names(if in_use {
-                        PRESSING_IN_USE_HINT
-                    } else {
-                        TAKE_THE_PRESSING_HINT
-                    })
-                    .child(
-                        kit::figure(pressing_line(pressing))
-                            .truncate()
-                            .ends_in_an_ellipsis(),
-                    )
-                    .when(in_use, |row| {
-                        row.child(kit::badge("IN USE", theme::accent()))
-                    }),
-            );
+            let line = pressing_line(pressing);
+            let hint = if in_use {
+                PRESSING_IN_USE_HINT
+            } else {
+                TAKE_THE_PRESSING_HINT
+            };
+            let row = div()
+                .id(("pressing", at))
+                .flex()
+                .items_center()
+                .justify_between()
+                .gap_2()
+                .px_1p5()
+                .py_0p5()
+                .rounded_md()
+                .names(hint)
+                .child(kit::figure(line.clone()).truncate().ends_in_an_ellipsis())
+                .when(in_use, |row| {
+                    row.child(kit::badge("IN USE", theme::accent()))
+                });
+            column = column.child(match in_use {
+                true => row.named_as(Role::ListItem, &line, hint).chosen(true),
+                false => self.in_the_pane_ring(
+                    row.named_as(Role::Button, &line, hint)
+                        .cursor_pointer()
+                        .hover(|row| row.bg(rgb(theme::hover()))),
+                    move |this, _, cx| {
+                        this.record = None;
+                        let taken = chosen.clone();
+                        this.library.update(cx, |library, cx| {
+                            library.take_pressing(album, taken, cx);
+                        });
+                        cx.notify();
+                    },
+                    cx,
+                ),
+            });
         }
         if listed.len() > PRESSINGS_SHOWN {
             column = column.child(pressing_note(&format!(
@@ -2551,7 +2554,10 @@ impl RootView {
                     anchored()
                         .position(at)
                         .snap_to_window_with_margin(px(8.0))
-                        .child(motion::lifted_in(card, "record-arrives")),
+                        .child(motion::lifted_in(
+                            card.track_focus(&self.sheet_panels.holding(sheets::RECORD_PANEL, cx)),
+                            "record-arrives",
+                        )),
                 )
                 .with_priority(1),
             )
@@ -3722,6 +3728,7 @@ pub(crate) enum OpenedRecord {
 fn detail_card(title: &'static str) -> Stateful<Div> {
     div()
         .id("record")
+        .dialog(title)
         .flex()
         .flex_col()
         .w(px(theme::record_width()))
@@ -3742,6 +3749,8 @@ fn detail_card(title: &'static str) -> Stateful<Div> {
         .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
         .child(
             div()
+                .id("record-title")
+                .headed(2, title)
                 .text_size(px(theme::text_sm()))
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(rgb(theme::text()))
@@ -3749,7 +3758,7 @@ fn detail_card(title: &'static str) -> Stateful<Div> {
         )
 }
 
-fn record_card(record: &Record) -> Stateful<Div> {
+fn record_card(root: &RootView, record: &Record, cx: &mut Context<RootView>) -> Stateful<Div> {
     let mut card = detail_card("About this record");
     for fact in &record.facts {
         card = card.child(fact_row(fact));
@@ -3763,7 +3772,7 @@ fn record_card(record: &Record) -> Stateful<Div> {
         );
     }
     if !record.on.is_empty() {
-        card = card.child(record_services(&record.on));
+        card = card.child(record_services(root, &record.on, cx));
     }
     card
 }
@@ -3795,7 +3804,13 @@ fn service_names(links: &[Link]) -> Vec<HeardOn> {
 
 const SERVICES_SHOWN: usize = 4;
 
-fn heard_on(id: &'static str, services: Vec<HeardOn>, room: Pixels) -> Option<Div> {
+fn heard_on(
+    root: &RootView,
+    id: &'static str,
+    services: Vec<HeardOn>,
+    room: Pixels,
+    cx: &mut Context<RootView>,
+) -> Option<Div> {
     if services.is_empty() {
         return None;
     }
@@ -3809,8 +3824,10 @@ fn heard_on(id: &'static str, services: Vec<HeardOn>, room: Pixels) -> Option<Di
             line = line.child(div().px_1().child("·"));
         }
         line = line.child(service_link(
+            root,
             ElementId::NamedInteger(id.into(), at as u64),
             heard,
+            cx,
         ));
     }
     Some(line)
@@ -3839,7 +3856,7 @@ fn fact_row(fact: &Fact) -> Div {
         )
 }
 
-fn record_services(services: &[HeardOn]) -> Div {
+fn record_services(root: &RootView, services: &[HeardOn], cx: &mut Context<RootView>) -> Div {
     let mut links = div()
         .flex()
         .flex_1()
@@ -3850,8 +3867,10 @@ fn record_services(services: &[HeardOn]) -> Div {
         .gap_y_1();
     for (at, heard) in services.iter().cloned().enumerate() {
         links = links.child(service_link(
+            root,
             ElementId::NamedInteger("record-service".into(), at as u64),
             heard,
+            cx,
         ));
     }
 
@@ -3870,23 +3889,35 @@ fn record_services(services: &[HeardOn]) -> Div {
         .child(links)
 }
 
-fn service_link(id: ElementId, heard: HeardOn) -> Stateful<Div> {
+fn service_link(
+    root: &RootView,
+    id: ElementId,
+    heard: HeardOn,
+    cx: &mut Context<RootView>,
+) -> Stateful<Div> {
     let url = heard.url;
+    let hint = format!("Open on {}", heard.name);
 
-    div()
+    let link = div()
         .id(id.clone())
+        .linked_as(&heard.name, &hint)
         .cursor_pointer()
         .lit_under_the_pointer(id, |link| {
             link.text_color(rgb(theme::accent()))
                 .text_decoration_1()
                 .text_decoration_color(rgb(theme::accent()))
         })
-        .names(format!("Open on {}", heard.name))
-        .on_click(move |_, _, cx| {
+        .names(hint)
+        .child(heard.name);
+
+    root.in_the_pane_ring(
+        link,
+        move |_, _, cx| {
             cx.stop_propagation();
             cx.open_url(&url);
-        })
-        .child(heard.name)
+        },
+        cx,
+    )
 }
 
 fn profile_line(detail: &ArtistDetail) -> Option<String> {
@@ -4244,7 +4275,7 @@ pub(crate) fn reached_ring() -> Div {
 }
 
 pub(crate) fn cursor_ring() -> Div {
-    reached_ring().border_color(theme::tinted(theme::accent(), reorder::CURSOR_ALPHA))
+    reached_ring().border_color(rgb(theme::focus_ring()))
 }
 
 const REACHED_ROUNDING: f32 = 10.0;

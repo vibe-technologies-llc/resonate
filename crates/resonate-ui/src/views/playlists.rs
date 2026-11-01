@@ -2,7 +2,7 @@ use std::{env, path::PathBuf, rc::Rc, sync::Arc, time::SystemTime};
 
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, ElementId, FontWeight, MouseButton,
-    PathPromptOptions, Pixels, Point, SharedString, Stateful, div, prelude::*, px, rgb, rgba,
+    PathPromptOptions, Pixels, Point, Role, SharedString, Stateful, div, prelude::*, px, rgb, rgba,
     uniform_list,
 };
 use resonate_core::{Accent, AlbumId, FrameSpan, MediaLocation, PlaylistId, Span};
@@ -26,10 +26,14 @@ use crate::{
         reorder::{self, Carried, Chosen, LiftedTo, Listed, MOVING_HINT, Shift, Step},
         root::{Pane, RootView, empty, listed, row, somewhere_in, tall_row},
         scrollbar::Scrollbars,
-        sorting,
+        sheets, sorting,
         spoken::{self, Placed, Spoken},
     },
 };
+
+const PICKER_LABEL: &str = "Add to a playlist";
+
+const PICK_HINT: &str = "Add to this playlist";
 
 const NEW_HINT: &str = "Start a playlist, and name it";
 
@@ -786,6 +790,7 @@ impl RootView {
                     rows.control_count(),
                     sorting::playlist_sorted(self),
                     &self.columns_fit,
+                    &self.controls,
                     cx,
                 ))
             })
@@ -1416,9 +1421,13 @@ impl RootView {
         let rows = uniform_list(
             "picker-rows",
             offered.len(),
-            cx.processor(move |_this, range: std::ops::Range<usize>, _, cx| {
+            cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
                 range
-                    .filter_map(|index| offered.row(index).map(|playlist| picked(playlist, cx)))
+                    .filter_map(|index| {
+                        offered
+                            .row(index)
+                            .map(|playlist| picked(this, playlist, cx))
+                    })
                     .collect()
             }),
         )
@@ -1438,6 +1447,8 @@ impl RootView {
             .child(motion::lifted_in(
                 div()
                     .id("playlist-picker-panel")
+                    .dialog(PICKER_LABEL)
+                    .track_focus(&self.sheet_panels.holding(sheets::PICKER_PANEL, cx))
                     .flex()
                     .flex_col()
                     .gap_3()
@@ -2297,12 +2308,13 @@ fn shown_of(shown: usize, playlist: &Playlist) -> SharedString {
     SharedString::from(format!("{shown} of {} tracks", playlist.entries))
 }
 
-fn picked(playlist: &Playlist, cx: &mut Context<RootView>) -> AnyElement {
+fn picked(root: &RootView, playlist: &Playlist, cx: &mut Context<RootView>) -> AnyElement {
     let id = playlist.id;
 
-    row(false)
+    let line = row(false)
         .id(("picker", id.get() as usize))
         .debug_selector(move || format!("picker-{}", id.get()))
+        .named_as(Role::Button, &playlist.name, PICK_HINT)
         .px_3()
         .cursor_pointer()
         .hover(|row| row.bg(rgb(theme::hover())))
@@ -2319,8 +2331,11 @@ fn picked(playlist: &Playlist, cx: &mut Context<RootView>) -> AnyElement {
                 .ends_in_an_ellipsis()
                 .child(SharedString::from(playlist.name.clone())),
         )
-        .child(kit::figure(counted(playlist)))
-        .on_click(cx.listener(move |this, _, window, cx| {
+        .child(kit::figure(counted(playlist)));
+
+    root.in_the_pane_ring(
+        line,
+        move |this, window, cx| {
             let Some(holding) = this.adding.take() else {
                 return;
             };
@@ -2328,8 +2343,10 @@ fn picked(playlist: &Playlist, cx: &mut Context<RootView>) -> AnyElement {
                 library.add_to_playlist(id, holding.rows.to_vec(), cx);
             });
             this.stop_naming(window, cx);
-        }))
-        .into_any_element()
+        },
+        cx,
+    )
+    .into_any_element()
 }
 
 fn counted(playlist: &Playlist) -> SharedString {

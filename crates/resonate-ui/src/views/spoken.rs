@@ -2,7 +2,7 @@ use std::cell::Cell;
 
 use gpui::{
     A11ySubtreeBuilder, Role, SharedString, StatefulInteractiveElement, Toggled,
-    accesskit::{ActionData, Live, Node, NodeId, TextPosition, TextSelection},
+    accesskit::{ActionData, Invalid, Live, Node, NodeId, TextPosition, TextSelection},
 };
 
 use crate::format;
@@ -79,11 +79,24 @@ impl Spelt for SharedString {
     }
 }
 
+impl Spelt for &'static str {
+    fn spelt(&self) -> SharedString {
+        SharedString::new_static(self)
+    }
+}
+
+impl Spelt for String {
+    fn spelt(&self) -> SharedString {
+        SharedString::from(self.clone())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Typing {
     pub(crate) text: SharedString,
     pub(crate) anchor: usize,
     pub(crate) focus: usize,
+    pub(crate) refused: bool,
 }
 
 impl Typing {
@@ -120,10 +133,17 @@ impl Typing {
         }
     }
 
+    fn describe(&self, run: NodeId, parent: &mut Node) {
+        parent.set_text_selection(self.selection(run));
+        if self.refused {
+            parent.set_invalid(Invalid::True);
+        }
+    }
+
     fn write(&self, built: &mut A11ySubtreeBuilder) {
         let run = built.synthetic_node_id(THE_RUN);
         built.push_child(run, self.run());
-        built.parent_node().set_text_selection(self.selection(run));
+        self.describe(run, built.parent_node());
     }
 }
 
@@ -250,6 +270,47 @@ pub(crate) trait Spoken: StatefulInteractiveElement + Sized {
         self.role(urgency.role())
             .aria_label(said)
             .a11y_synthetic_children(move |built| built.parent_node().set_live(live))
+    }
+
+    fn headed(self, level: usize, label: &str) -> Self {
+        if !listening() {
+            return self;
+        }
+        self.role(Role::Heading)
+            .aria_label(SharedString::from(label.to_owned()))
+            .aria_level(level)
+    }
+
+    fn read_plainly(self, label: &str) -> Self {
+        if !listening() {
+            return self;
+        }
+        self.role(Role::Label)
+            .aria_label(SharedString::from(label.to_owned()))
+    }
+
+    fn read_plainly_as(self, label: impl FnOnce() -> SharedString) -> Self {
+        if !listening() {
+            return self;
+        }
+        self.role(Role::Label).aria_label(label())
+    }
+
+    fn regioned(self, label: &str) -> Self {
+        if !listening() {
+            return self;
+        }
+        self.role(Role::Region)
+            .aria_label(SharedString::from(label.to_owned()))
+    }
+
+    fn dialog(self, label: &str) -> Self {
+        if !listening() {
+            return self;
+        }
+        self.role(Role::Dialog)
+            .aria_label(SharedString::from(label.to_owned()))
+            .a11y_synthetic_children(|built| built.parent_node().set_modal())
     }
 
     fn pictured_as(self, label: &str, saying: impl FnOnce() -> String) -> Self {
@@ -528,11 +589,13 @@ mod tests {
             text: SharedString::new_static("dark side"),
             anchor: 4,
             focus: 4,
+            refused: false,
         };
         let selected = Typing {
             text: SharedString::new_static("dark side"),
             anchor: 9,
             focus: 5,
+            refused: false,
         };
         let run = NodeId(7);
 
@@ -549,6 +612,7 @@ mod tests {
             text: SharedString::new_static("café au lait"),
             anchor: 6,
             focus: 6,
+            refused: false,
         };
         let run = typing.run();
 
@@ -566,6 +630,83 @@ mod tests {
                 .sum::<usize>(),
             "café au lait".len()
         );
+    }
+
+    #[test]
+    fn a_heading_is_a_heading_of_its_level_named_by_its_words() {
+        listened_to(true);
+
+        let heading =
+            node_of(&div().id("title").headed(1, "Albums")).expect("a heard heading is a node");
+
+        assert_eq!(heading.role(), Role::Heading);
+        assert_eq!(heading.label(), Some("Albums"));
+        assert_eq!(heading.level(), Some(1));
+    }
+
+    #[test]
+    fn plain_text_is_a_label_and_a_region_is_named() {
+        listened_to(true);
+
+        let text = node_of(&div().id("note").read_plainly("Nothing is playing"))
+            .expect("heard text is a node");
+        let joined = node_of(
+            &div()
+                .id("reading")
+                .read_plainly_as(|| joined(["Rate", "96 kHz"])),
+        )
+        .expect("heard text is a node");
+        let region =
+            node_of(&div().id("pane").regioned("Albums")).expect("a heard region is a node");
+
+        assert_eq!(text.role(), Role::Label);
+        assert_eq!(text.label(), Some("Nothing is playing"));
+        assert_eq!(joined.label(), Some("Rate, 96 kHz"));
+        assert_eq!(region.role(), Role::Region);
+        assert_eq!(region.label(), Some("Albums"));
+    }
+
+    #[test]
+    fn a_dialog_is_named_and_asks_the_reader_to_stay_inside_it() {
+        listened_to(true);
+
+        let dialog = div().id("sheet").dialog("Delete this song?");
+        let node = node_of(&dialog).expect("a heard dialog is a node");
+
+        assert_eq!(node.role(), Role::Dialog);
+        assert_eq!(node.label(), Some("Delete this song?"));
+    }
+
+    #[test]
+    fn nothing_of_this_is_built_while_no_reader_listens() {
+        listened_to(false);
+
+        assert!(node_of(&div().id("a").headed(1, "Albums")).is_none());
+        assert!(node_of(&div().id("b").read_plainly("Note")).is_none());
+        assert!(
+            node_of(
+                &div()
+                    .id("c")
+                    .read_plainly_as(|| unreachable!("no reader asked"))
+            )
+            .is_none()
+        );
+        assert!(node_of(&div().id("d").regioned("Albums")).is_none());
+        assert!(node_of(&div().id("e").dialog("Sheet")).is_none());
+    }
+
+    #[test]
+    fn a_refused_field_is_invalid_beside_its_caret() {
+        let refused = Typing {
+            text: SharedString::new_static("{nope"),
+            anchor: 0,
+            focus: 0,
+            refused: true,
+        };
+        let mut node = Node::new(Role::TextInput);
+        refused.describe(NodeId(1), &mut node);
+
+        assert_eq!(node.invalid(), Some(Invalid::True));
     }
 
     #[test]
