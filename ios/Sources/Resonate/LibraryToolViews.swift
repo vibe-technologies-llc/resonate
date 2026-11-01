@@ -130,7 +130,7 @@ struct FoldersView: View {
             }
         }
         .navigationTitle("Music folders")
-        .sheet(item: $organising) { OrganiseSheet(folder: $0) }
+        .sheet(item: $organising) { OrganiseSheet(folder: $0).sheetSized(.long) }
         .task { library.folderList = await library.folders.refreshed() }
         .confirmationDialog(
             "Remove \(removing?.name ?? "this folder")?",

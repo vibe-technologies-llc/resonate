@@ -71,7 +71,7 @@ struct SyncView: View {
         }
         .navigationTitle("Device sync")
         .sheet(isPresented: $pairing) {
-            PairingSheet()
+            PairingSheet().sheetSized()
         }
         .task { library.folderList = await library.folders.refreshed() }
     }

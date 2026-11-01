@@ -11,7 +11,7 @@ struct ZonesPresentation: ViewModifier {
             get: { presenting && navigation.zones },
             set: { navigation.zones = $0 }
         )) {
-            ZonesSheet().presentationDetents([.medium, .large])
+            ZonesSheet().sheetSized().presentationDetents([.medium, .large])
         }
     }
 }
@@ -75,7 +75,7 @@ struct ZonesSheet: View {
                         : "\(library.rendererAddresses.count) added by address.")
                 }
             }
-            .sheet(isPresented: $addressing) { RendererAddressSheet() }
+            .sheet(isPresented: $addressing) { RendererAddressSheet().sheetSized() }
             .task(id: library.lookingForRenderers || !library.rendererAddresses.isEmpty) {
                 while library.lookingForRenderers || !library.rendererAddresses.isEmpty, !Task.isCancelled {
                     library.readRenderers()
@@ -86,7 +86,7 @@ struct ZonesSheet: View {
                 get: { choosing != nil },
                 set: { if !$0 { choosing = nil } }
             )) {
-                if let zone = choosing { RendererPicker(zone: zone) }
+                if let zone = choosing { RendererPicker(zone: zone).sheetSized() }
             }
             .navigationTitle("Zones")
             .navigationBarTitleDisplayMode(.inline)

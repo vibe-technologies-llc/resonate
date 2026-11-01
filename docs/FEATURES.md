@@ -72,11 +72,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   SmartScreen warns on a first run: no code-signing certificate exists. `sign.ps1` and `release.yml`
   sign with `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD` once they are set
 
-## Accessibility
-- [M · 0.4.0] The iOS app is portrait-only and iPhone-only, which fails WCAG 1.3.4 (orientation): landscape
-  and iPad layouts for Now Playing, the library and the sheets, with the accessibility-size layouts
-  held in each
-
 ## Playback and output
 - [M · blocked: pipewire-rs] A rebind or turn inside a row that moves the rate while
   `force-graph-rate` pins it (on by default), or switches the pin, still reopens the PipeWire stream:

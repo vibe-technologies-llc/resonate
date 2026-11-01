@@ -34,7 +34,7 @@ struct LyricsView: View {
                     }
                 }
             }
-            .sheet(item: $writing) { LyricWriter(track: $0.track) }
+            .sheet(item: $writing) { LyricWriter(track: $0.track).sheetSized(.long) }
     }
 }
 
@@ -383,7 +383,7 @@ struct InspectorView: View {
         .onChange(of: features.enriching) { wasEnriching, enriching in
             if wasEnriching, !enriching { features.loadInspector(track.id) }
         }
-        .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: [shown]) }
+        .sheet(isPresented: $choosingPlaylist) { PlaylistPicker(tracks: [shown]).sheetSized() }
     }
 }
 

@@ -14,11 +14,11 @@ paths:
 
 The iOS front end is SwiftUI, a SwiftPM package under `ios/` built, signed and installed from Linux
 with xtool (`xtool.yml`: bundle `org.resonate.ios`, `Resonate/Info.plist`, `Resonate/Icon.png`,
-`Resonate/Resonate.entitlements`). **It is an iPhone app**: `Info.plist`'s `UIDeviceFamily` is 1
-alone and its orientation portrait, overriding xtool's universal default (1 and 2), since no view
-was laid out for an iPad's width or size classes; an iPad runs it as an iPhone app. xtool also
-writes `UISupportedInterfaceOrientations~ipad` with no way to leave it out, which iOS ignores
-without the iPad family. iOS 26 is the minimum, so the app draws with Liquid Glass and
+`Resonate/Resonate.entitlements`). **It is an iPhone and iPad app that turns every way**
+(*Orientation and iPad*): `Info.plist` declares `UIDeviceFamily` 1 and 2, the iPhone's
+orientations upright and both sides (not upside down, as no iPhone since the X turns that way) and
+`UISupportedInterfaceOrientations~ipad` all four, with no `UIRequiresFullScreen`, so an iPad
+offers Split View, Slide Over and Stage Manager (`ios/test_orientation.py` holds the three). iOS 26 is the minimum, so the app draws with Liquid Glass and
 needs no older-platform branch. The host needs Swift 6.4, the xtool AppImage (1.22.2 or later; older builds miss Xcode 27's SDK),
 `zip` for `--ipa`, `rsvg-convert` (librsvg) for the accent icons, the `darwin` Swift SDK
 `xtool setup` builds from Xcode's `.xip`, the `aarch64-apple-ios` Rust target, clang and `llvm-ar`.
@@ -569,7 +569,7 @@ every route change (a pair of headphones at the same rate included), not from th
   left to the system, the spring ran at its default rate, and the field redrawing under the moving
   glass took the frames it needed. Sleep,
   equaliser, visualizer and output sit in the More menu; no tab's toolbar carries the sleep timer
-  (Settings has its row). At accessibility text sizes the artwork layout scrolls.
+  (Settings has its row). At accessibility text sizes the layout scrolls (*Orientation and iPad*).
 - **A song change hands the cover and the words over, as the desktop does** (`motion.md`'s *The
   song change*): one pace for both, `Handover.animation` (280 ms, smoothstep), and nothing slides.
   `ArtworkView(handsOver: true)` (Now Playing's `MovingCover` and the mini player) keeps the leaving
@@ -1593,6 +1593,45 @@ unbound (`ForgottenEqualiser`) and the *Forgot the curve for …* notice offers 
 `change` writes it empty; typing into the field takes it out of the set
 (`aMixedFieldLeftBlankIsUnchangedAndAnEmptiedOneIsWrittenEmpty`).
 
+## Orientation and iPad
+
+**Which layout applies is decided in `ResonateLogic/Layouts.swift`, from plain values, and the
+views only ask** (`LayoutsTests`; `Layouts.swift` in the app target reads the environment into a
+`ScreenShape`: the horizontal and vertical size classes, the width and height of the space and
+whether `dynamicTypeSize` is an accessibility size). Nothing reads `UIDevice` or the orientation:
+the classes and the room decide, so Split View, Slide Over, Stage Manager and a Pro Max on its side
+are handled by the same rules as an iPad turned.
+
+- **Now Playing** (`PlayerArrangement.of`, `NowPlayingView.arranged`) is two columns where the height is
+  compact (an iPhone on its side) and the text is not large, or where both classes are regular and the
+  space is wider than tall (an iPad on its side); an iPad upright, in Slide Over or in a narrow window
+  keeps the one column. It scrolls at accessibility sizes, and an iPhone's columns scroll too (the
+  controls column in the cover mode, the header and controls column in Lyrics and Up next). An iPhone
+  on its side at an accessibility size is the one column, scrolling; an iPad on its side at one keeps
+  both columns, scrolling. In the columns the cover (`LargeArtwork`) is the left column and the
+  titles, scrubber, transport, sleep countdown, volume and mode row the right; in Lyrics and Up next
+  the header (`CompactTitles`, its slot the compact cover's), scrubber, transport and modes are the
+  left and the pane takes the right, full height, since a one-column pane on a phone's side was
+  under a hundred points tall. The cover is still the one `MovingCover` following whichever slot the
+  mode names, so a mode change moves it between the columns' slots exactly as it moves it in one.
+- **The Library tab** (`LibraryArrangement.of`, `LibraryTab`) is a `NavigationSplitView` where the
+  width class is regular and the text is not large, otherwise the stack it always was: the sidebar is
+  `LibrarySection.allCases` (`LibrarySidebar`: Library, Favourites, All songs, Suggestions,
+  Statistics, Playlists, Albums, Artists), its selection `Navigation.librarySection` (`choose`
+  empties the tab's path, so a section is a root, not a page pushed on the last one), and the detail
+  is the tab's own `NavigationStack` over the same `Navigation.paths[.library]`, rooted at
+  `LibrarySectionRoot` (`.id(section)`), so every destination, value link and `Navigation.open`
+  works as in the stack. The section is not kept across launches; the path is. `showSongs` selects
+  Library and pushes Songs. Settings and Search stay stacks: Settings is a list of pages the stack
+  already shows well on a wide screen, and Search is the search role's own page.
+- **A sheet is sized by its weight** (`sheetSized(_:)`, `SheetSizing.of`): a short one (a picker, the
+  sleep timer, zones, the pairing code, the folder choice) is `presentationSizing(.form)`, a long one
+  (tags, filters, saved search, organise, lyrics, add songs) `.page`, and every one a `.page` at
+  accessibility sizes, so large text has room. The sizing means nothing on a phone, where the
+  detents stay; the new sheet takes `sheetSized` at its content, beside any `presentationDetents`.
+- **Not seen on a device**: the rules are held in tests and the app builds without a warning, but no
+  iPhone on its side or iPad has shown the layouts (`TESTING.md`).
+
 ## Accessibility
 
 - **Accents reach their bar.** `AccentMath.worn(_:dark:increased:)` deepens (light) or lifts (dark) an accent
@@ -1612,5 +1651,6 @@ unbound (`ForgottenEqualiser`) and the *Forgot the curve for …* notice offers 
   symbol, a gesture with no action or trait, an animation with no Reduce Motion gate, a bare `ProgressView` and a
   fixed `.system(size:)` against `ios/accessibility-baseline.json`, keyed by file, rule and stripped line text;
   `python3 ios/accessibility.py` rewrites it, and a fixed line must leave it) and the host `ColourTests`. A stale
-  `ios/Generated` fails the build before any edit: regenerate with `python3 ios/build-native.py`. Portrait only:
-  the roadmap holds landscape.
+  `ios/Generated` fails the build before any edit: regenerate with `python3 ios/build-native.py`.
+  The app turns every way (WCAG 1.3.4), with the accessibility-size layouts held in each
+  (*Orientation and iPad*).
