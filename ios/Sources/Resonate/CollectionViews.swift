@@ -309,7 +309,7 @@ struct ShortcutCards<Cards: View>: View {
         }
         .scrollDisabled(true)
         .scrollIndicators(.hidden)
-        .listRowInsets(EdgeInsets())
+        .listRowInsets(EdgeInsets(top: ShortcutCard.belowTheTitle, leading: 0, bottom: 0, trailing: 0))
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
     }
@@ -318,6 +318,7 @@ struct ShortcutCards<Cards: View>: View {
 struct ShortcutCard: View {
     static let corner: CGFloat = 20
     static let spacing: CGFloat = 12
+    static let belowTheTitle: CGFloat = 16
     private static let markOpacity = 0.2
     private static let markTilt = Angle.degrees(-12)
     private static let markOverhang: CGFloat = 0.2

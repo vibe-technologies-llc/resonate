@@ -727,8 +727,8 @@ every route change (a pair of headphones at the same rate included), not from th
   the all-time statistics, a dash while another period is loaded; it opens `Destination.statistics`). An empty
   catalog shows one invitation to add a folder and the playlists. Home's pages push onto its own stack.
 - **Home's and the Library tab's shortcuts are a pair of cards** (`ShortcutCards`, `ShortcutCard`):
-  one list row with no insets and a clear background, so the two cards run edge to edge with the
-  section cards below, side by side and stacked at accessibility text sizes. A card is a
+  one list row with no side insets and a clear background, so the two cards run edge to edge with the
+  section cards below, 16 pt below the page's title (`ShortcutCard.belowTheTitle`), side by side and stacked at accessibility text sizes. A card is a
   corner-to-corner gradient of two system colours (20 pt continuous corners, a dark scrim toward
   the foot so the white words hold their contrast), its symbol small at the top and large, tilted
   and faint, overhanging the bottom trailing corner, and the title and song count at the foot,
