@@ -100,14 +100,14 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Providers and network
 
 ## Equaliser and DSP
-- [M · 0.4.0] *Fit the preamp*'s solved bound prices every node under the whole signal's at its steady
-  gain, so broadband music under a curve moving many bands still bounds one to three and a half
-  decibels over its decode (3.6 dB on average over eight real songs, 0.2 to 5.9); a transient
-  gain per node was measured too loose under a dispersive correction, a level of its own for every
-  node of the tree and finer anchor levels moved nothing, and 64 moments in place of 8 moved the
-  real songs 0.3 dB (`eq.md`), so a tighter bound likely needs a figure the study does not keep, one
-  that says how far apart in time the bands' peaks fall (a stored format, so a migration), not a
-  better reading of the peaks
+- [M · 0.4.0] *Fit the preamp*'s solved bound still sits 3.7 dB over the decode on average over
+  eight real songs under the bench's six curves (0.7 to 5.9; `RESONATE_BENCH_SONGS`), and the slack
+  is the in-phase sum of every node's peak inside a few hundredths of a second, not where in time
+  the peaks fall: every tile of five milliseconds kept as a moment of its own moved it 0.74 dB and
+  every quarter-second tile 0.56, so no figure of when the bands peak can buy more (`eq.md`); what
+  could is a joint figure of how the bands' phases sum (the peak of the signal through a few fixed
+  probe curves, an anchor in place of `c * x`), and a finer reading of the nodes reaching above
+  10 kHz, whose tone shortfall costs at most 0.63 dB
 
 ## Search
 - [M · blocked: service] A pasted Spotify, TIDAL or Apple Music playlist link lists only the songs its

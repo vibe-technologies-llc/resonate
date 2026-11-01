@@ -10,8 +10,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use resonate_analysis::{Applied, BandGains, BandPeaks, Loudest, Watch, band_figures};
-use resonate_codec::Sources;
+use resonate_analysis::{
+    Applied, BandGains, BandPeaks, Loudest, Watch, band_figures, peak_through,
+};
+use resonate_codec::{Sources, probe};
 use resonate_core::{
     MediaLocation, SampleRate,
     eq::{Band, BandGain, BandKind, Frequency, Preamp, Profile, Q},
@@ -24,6 +26,8 @@ const FADE_SECONDS: f64 = 0.1;
 const SONGS_FOLDED: usize = 1_000;
 const RUNS: usize = 7;
 const KEPT_BOUNDS: &str = "RESONATE_BENCH_BOUNDS";
+
+const SONGS_HELD_IN: &str = "RESONATE_BENCH_SONGS";
 const ROOM_SECONDS: usize = 10;
 
 struct Noise(u32);
@@ -268,7 +272,57 @@ fn fastest<T>(runs: usize, mut run: impl FnMut() -> T) -> (Duration, T) {
     (fastest, last.expect("at least one run"))
 }
 
+fn decibels_over(bound: f64, decode: f64) -> f64 {
+    20.0 * (bound / decode).log10()
+}
+
+fn weighed_against_their_decodes(folder: PathBuf) {
+    let mut paths: Vec<PathBuf> = fs::read_dir(&folder)
+        .expect("a folder of songs")
+        .filter_map(|entry| Some(entry.ok()?.path()))
+        .filter(|path| path.is_file())
+        .collect();
+    paths.sort();
+    let sources = Sources::local();
+    let watch = Watch::default();
+    let measured: Vec<(MediaLocation, SampleRate, BandPeaks)> = paths
+        .into_iter()
+        .filter_map(|path| {
+            let location = MediaLocation::local(path);
+            let rate = probe(&sources, &location).ok()?.spec.rate;
+            let figures = band_figures(&sources, &location, None, &watch).ok()?;
+            Some((location, rate, figures.peaks))
+        })
+        .collect();
+    let mut over = Vec::new();
+    for (curve, profile) in curves() {
+        let applied = Applied::from(Arc::clone(&profile));
+        for (location, rate, peaks) in &measured {
+            let gains = BandGains::of(&applied, *rate).expect("gains under a curve");
+            let decode =
+                peak_through(&sources, location, None, &applied, &watch).expect("a decode");
+            let bound = gains.bound(peaks);
+            let apart = decibels_over(bound, decode);
+            println!(
+                "{curve:>16} {location}: decode {decode:.4}, bound {bound:.4}, {apart:+.2} dB"
+            );
+            over.push(apart);
+        }
+    }
+    let mean = over.iter().sum::<f64>() / over.len().max(1) as f64;
+    let least = over.iter().copied().fold(f64::INFINITY, f64::min);
+    let most = over.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    println!(
+        "{} cases: {mean:+.2} dB over the decode on average, {least:+.2} to {most:+.2}",
+        over.len()
+    );
+}
+
 fn main() {
+    if let Some(folder) = env::var_os(SONGS_HELD_IN) {
+        weighed_against_their_decodes(PathBuf::from(folder));
+        return;
+    }
     let songs = measured(&songs());
     let mut kept = String::new();
     let mut bounding = Duration::ZERO;

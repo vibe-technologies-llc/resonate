@@ -321,7 +321,28 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   boost and cut and an allpass pair) the bound sat 3.6 dB over the decode on average (0.2 to 5.9),
   and keeping 64 moments in place of 8 moved it to 3.3: the slack is the tone model's, which
   adds every node's peak as if they fell together, and what a node's peak says of the others
-  is all the figures hold. **Cost**: `BandGains::of` takes
+  is all the figures hold. **When the peaks fall is not where the slack is**:
+  `RESONATE_BENCH_SONGS=<folder> cargo bench -p resonate-analysis --bench bound` measures every
+  file in the folder (`band_figures`, then `BandGains::of` at the file's own rate) against its
+  decode (`peak_through`) under the bench's six curves and prints each case and the mean. Over
+  eight library songs (30 s from 0:40 of each, 44.1 kHz FLAC) it reads 3.69 dB over the decode
+  on average, 0.72 to 5.88 (bass boost 1.46, boosts and cuts 3.83, smile 4.02, ragged 4.02, tilt
+  3.86, turned phase 4.97). Ceilings measured there, none shipped: every quarter-second tile kept
+  as a moment of its own (no grouping, up to 1 024 moments) moved it 0.56 dB (with the shortfall
+  below taken off: 3.06 to 2.50); five-millisecond tiles widened ten milliseconds each way (so
+  the near window a fifth of a second shrinks to two hundredths, as a profile alone allows), every
+  one its own moment, 0.74 dB (3.59 to 2.85); so no figure of how far apart in time the bands'
+  peaks fall, of any size, buys more than about 0.7 dB, and a compact one less, while it costs
+  more moments to solve and a stored format to migrate. The rest is the sum of every node's term
+  in phase within a few hundredths of a second, which a joint figure of how the bands' phases sum
+  would have to answer (the peak of the signal through a few fixed probe curves, taken as an
+  anchor in place of `c * x`), not a per-node one. **The reading's shortfall** costs at most
+  0.63 dB (dividing by nothing, which no longer bounds the continuous peak: 3.69 to 3.06), all
+  of it in the nodes reaching bands 26 to 28, whose reach at 0.9 of Nyquist leaves the sample and
+  cubic midpoint a shortfall of 0.71 within four frames (3 dB); reading each node as the lesser of
+  its own figure and the sum of its halves' (sound, free in the study) recovered only 0.10, and a
+  longer interpolator at three phases still reads 0.84 there, at more than the bank's own cost a
+  sample. **Cost**: `BandGains::of` takes
   about 15 ms for a profile and 75 ms with a ten-second response (it was 28 and 320 ms here), since
   the near window is summed by `resonate_dsp::response_of`, which shares the points among
   `available_parallelism` scoped threads once taps times points pass `TURNS_WORTH_A_THREAD` (2^24),
