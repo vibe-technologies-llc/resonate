@@ -33,7 +33,8 @@ settle. `unsafe_code = "forbid"` holds: every Win32 and COM call goes through a 
   none of PipeWire, Wayland, `rustix` or `signal-hook` (the layering job).
 - **`resonate-wasapi` is `resonate-audio`'s `Backend` over the `wasapi` crate** and reaches core and
   audio alone. Its portable halves compile and are tested everywhere (`ways`, `formats`, `changes`,
-  `fill`); `device`, `stream`, `render` and `backend` are `cfg(windows)`.
+  `fill`, `clock`, `level`, `reshaping`, `watching`); `device`, `stream`, `render`, `priority` and
+  `backend` are `cfg(windows)`.
 - **An endpoint is two sinks.** `wasapi:<endpoint id>` plays through the Windows mixer in shared mode
   (event-driven, `autoconvert` on, offered at the mix format alone) and is the default sink when the
   endpoint is; `wasapi-exclusive:<endpoint id>` ("<name> (WASAPI exclusive)") takes the device in
@@ -50,19 +51,53 @@ settle. `unsafe_code = "forbid"` holds: every Win32 and COM call goes through a 
   32/32 float).
 - **A stream is a thread of its own** (`resonate-wasapi-stream`): every COM object is made on it
   (`initialize_mta` first), opens are answered through a one-slot channel within five seconds, and
-  commands arrive on a channel the loop reads between events. `SetActive(true)` fills the buffer
-  once and starts the client, `SetActive(false)` stops and resets it, `Drain` is told once the
-  device position (frames written less the buffer's padding) has passed the last frame music
-  reached, and a failure of any call is `StateChanged` to `Failed` so the engine waits for the
-  device as for any sink gone. `Reshaper` is not given (`Unreshapable::Unsupported`): a rebind
-  closes and opens.
-- **Devices are watched by polling.** The backend thread surveys every two seconds and tells the
-  difference (`changes_between`: added, removed, default moved, formats or mix rate moved); the
-  crate's endpoint notifications are not used. Volume and mute of the device are `Unsupported`.
-- **A stamp is the wall clock plus the buffer's padding**, not the audio clock's position against
-  the performance counter: the stream's `StreamClock` is noted each cycle with the frames queued
-  (`Playing::cycle`) and `fill_stamped` takes `StreamClock::stamp`. Handing a song between zones
-  therefore lands within a period of the other, not within frames (`audio.md`).
+  orders arrive on a channel the loop reads between events (`Order`: a `StreamCommand`, or a
+  reshape taken). `SetActive(true)` fills the buffer once and starts the client (and is nothing on a
+  stream already streaming, as the engine sends it after every reshape), `SetActive(false)` stops
+  and resets it, `Drain` is told once the device position has passed the last frame music reached,
+  and a failure of any call is `StateChanged` to `Failed` so the engine waits for the device as for
+  any sink gone.
+- **A stream is reshaped where its client stays the same.** The render cycle reads `Fed::source`
+  (`realtime.md`), and the stream's `Reshaper` hands a new source through `Handing` and tells the
+  loop (`Order::Reshaped`), which calls off a drain and moves the thread's priority; so a rebind
+  that keeps the device, the format and the buffer (a ring of another depth, a chain rebuilt, a
+  priority turned) keeps the stream. `refusal_of` refuses another target (`AnotherTarget`) and
+  another spec or latency (`AnotherFormat`): an `IAudioClient`'s format and buffer are fixed by its
+  one `Initialize`, and an exclusive endpoint cannot hold a second client while the first is open,
+  so a rate, word or layout change genuinely closes the client and opens another, and the engine's
+  reopen is that. `StillHandingOver` while the last source is untaken, `NoStream` once the thread
+  has ended.
+- **The stream thread is in MMCSS's `Audio` class** (`priority::Priority`, over
+  `audio_thread_priority`, whose safe call names the `Audio` task and not `Pro Audio`) while the
+  request is `realtime`, demoted on the same thread when a reshape lowers it or the thread ends;
+  where MMCSS refuses (the service stopped), `thread-priority`'s `Max` stands in.
+- **Devices are told by the system and checked by a poll.** The watcher thread registers the
+  `wasapi` crate's endpoint notification client (added, removed, state, default and property
+  changes), whose callbacks only nudge a one-slot channel; `watching::watch` waits on the nudge or
+  `Pace::ENDPOINTS`' two seconds, lets a burst settle for 100 ms, surveys once and tells the
+  difference through `changes_between` (added, removed, default moved, formats or mix rate moved,
+  and `Turned` where the endpoint's volume or mute moved), the one difference computation for both.
+  A refused registration leaves the poll alone. The endpoint volume has no notification here, so a
+  volume turned from the Windows mixer is noticed by the poll, within two seconds.
+- **The endpoint's volume and mute are the device's** (`set_device_volume`, `set_device_mute`, over
+  `volumecontrol-windows`, which wraps `IAudioEndpointVolume` by endpoint id; both sinks of an
+  endpoint turn the one level). Every survey reads it into `SinkPort` (the endpoint's description,
+  the level, the mute, and `HardwareVolume::Yes` only where `IAudioMeterInformation`'s hardware
+  support says the device turns its own volume, else `No`), so `device-volume` hands the slider to
+  the device only where that keeps the stream bit-perfect: in exclusive mode a software endpoint
+  volume is not applied at all, and in shared mode it is the mixer's. The crate speaks the Windows
+  slider's whole percent, and the slider is ours (`level::percent_of` is `Volume::heard_at` in
+  percent, `gain_of` its inverse), so both sliders stand at the same place; a read-back below about
+  a tenth of the way can differ from what was sent by more than `A_DEVICES_HALF_STEP_DB` and moves
+  the slider by under a percent.
+- **A stamp is `IAudioClock`'s position against the performance counter** (`render::Playing`): each
+  cycle reads `GetPosition` (the device position, in the clock's `GetFrequency` units, and the
+  counter when it was read, in 100 ns) and the counter now (`win-time-sys`'s `PerformanceClock`), and
+  `clock::ClockReading::device_time` hands `StreamClock::stamp_by` both in nanoseconds with the
+  frames written less those played, so a zone handed a song lands within frames of the other
+  (`audio.md`). The same frames are the latency the clock notes and the device position a drain
+  waits for. A stream with no audio clock, a reading naming no counter or one more than 100 ms from
+  now falls back to the buffer's padding and `StreamClock::stamp`.
 
 ## The filesystem under the shared crates
 

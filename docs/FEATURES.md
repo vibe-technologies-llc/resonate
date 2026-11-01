@@ -53,13 +53,12 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M · 0.4.0] Windows has no capture: `resonate-listen`'s `Listener` lists no microphone and refuses
   to record, so listening to the desktop, recognition by ear and room measurement are unavailable;
   WASAPI loopback and capture endpoints would fill it
-- [M · 0.4.0] The WASAPI stream stamps what it fills with the wall clock and the buffer's padding,
-  not `IAudioClock`'s position against the performance counter, so a handover between zones lands
-  within a period of the other zone rather than within a few frames; reading the counter needs a
-  safe wrapper that does not exist yet
-- [M · 0.4.0] A WASAPI stream cannot be reshaped (a rate, word or priority change closes and opens
-  it), has no endpoint volume or mute (`Unsupported`), learns of devices by a two-second poll and
-  runs at the thread priority `thread-priority` sets rather than an MMCSS class
+- [S · 0.4.0] The WASAPI stream thread joins MMCSS's `Audio` class, not `Pro Audio`:
+  `audio_thread_priority`, the safe wrapper, names its task itself, and no safe wrapper of
+  `AvSetMmThreadCharacteristicsW` takes another
+- [S · 0.4.0] A volume turned from the Windows mixer reaches the slider by the two-second poll: the
+  safe wrapper of `IAudioEndpointVolume` reads and sets only a whole percent and offers no
+  `IAudioEndpointVolumeCallback`, so a change is neither told at once nor read finer than a percent
 - [M · 0.4.0] Windows has no toast notifications with transport actions and no metered-network
   detector (`NetworkCostType`)
 - [M · 0.4.0] A Windows path past `MAX_PATH` (260) is not weighed by the organiser, NTFS alternate

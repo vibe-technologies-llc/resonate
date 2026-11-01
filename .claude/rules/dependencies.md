@@ -20,8 +20,10 @@ owned-descriptor bridge and the iOS RemoteIO unit at the native boundary (`mobil
 `result_large_err` denied. No other crate weakens `unsafe_code = "forbid"`.
 
 Windows reaches its COM and Win32 calls through safe wrapper crates only, so `unsafe_code = "forbid"`
-holds there: `wasapi` (`resonate-wasapi`'s device enumeration and render client), `thread-priority`
-(its stream thread), `interprocess` (Discord's named pipe), `keepawake` (the machine awake while playing), `ctrlc` and `crossterm` (the binary's interrupts and key reading), `fs4` (the spool's free space), `trash` (the
+holds there: `wasapi` (`resonate-wasapi`'s device enumeration, endpoint notifications, render client
+and audio clock), `audio_thread_priority` (its stream thread's MMCSS class, without `with_dbus`),
+`thread-priority` (the fallback where MMCSS refuses), `volumecontrol-windows` (the endpoint's volume
+and mute, with `volumecontrol-core`'s trait), `win-time-sys` (the performance counter now), `interprocess` (Discord's named pipe), `keepawake` (the machine awake while playing), `ctrlc` and `crossterm` (the binary's interrupts and key reading), `fs4` (the spool's free space), `trash` (the
 recycle bin), `same-file` (core's same-entry test). Each is a `cfg(windows)` target dependency, so
 none is built elsewhere; the layering job refuses PipeWire, Wayland, `rustix` and `signal-hook`
 from the Windows tree of the binary.

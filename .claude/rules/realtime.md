@@ -56,9 +56,9 @@ rest on this discipline alone):
   allocated when the stream opened, zeroes a short fill, shifts a 24-bit word against the top of its
   32-bit container and reports how many frames were music; `Playing::cycle` then hands the scratch
   to `AudioRenderClient::write_to_device`, which is `GetBuffer`, a copy and `ReleaseBuffer`, so the
-  cycle allocates nothing. `fill.rs` is portable and tested on every host. The cycle runs on the
-  stream's own thread, woken by the endpoint's event, and publishes the buffer's padding through
-  `StreamClock::note`; unlike the three callbacks above it is a loop on a thread the crate owns,
+  cycle allocates nothing. `fill.rs` and `clock.rs` (the audio clock's arithmetic) are portable and
+  tested on every host. The cycle runs on the stream's own thread, woken by the endpoint's event, and
+  publishes the frames between the write head and the device position through `StreamClock::note`; unlike the three callbacks above it is a loop on a thread the crate owns,
   not a function the system calls, so a panic would end that stream's thread only (`panic = "abort"`
   makes it the process in a release build all the same).
 - `resonate-mobile/src/output/remote_io_render.rs`, `remote_io_buffers.rs` and `remote_io_fill.rs`:
@@ -98,8 +98,12 @@ reading falls back to `StreamClock::stamp` (now, plus the latency the clock last
 landing the fill's first frame as far past that moment as it lies past that frame
 (`oboe_frames::heard_by_the_device`), and `rendered` stamps each chunk with the frames of the chunks
 before it added; RemoteIO's `render` reads the buffer's `mHostTime` against `mach_absolute_time`
-and `Rendering::fill` stamps it with the route's latency less the buffer's frames. An Oboe stream
-whose API gives no timestamp (OpenSL ES) or a RemoteIO stamp without a valid host time falls back. The ring consumer
+and `Rendering::fill` stamps it with the route's latency less the buffer's frames; WASAPI's
+`Playing::cycle` reads `IAudioClock::GetPosition` (a device position and the performance counter at
+it) against the counter read now and the frames written less those the position has played
+(`windows.md`). An Oboe stream
+whose API gives no timestamp (OpenSL ES), a RemoteIO stamp without a valid host time or a WASAPI
+stream with no audio clock falls back. The ring consumer
 (`filled_from`) writes a `RingStamp` (the moment the stamp was `taken`, the ring frame it took first, the moment that frame is heard,
 the moment the next fill's first frame is, the frames pulled, whether music flowed from the fill's
 start) into a seqlock of atomics (`StampSlot`, one writer, the reader retrying a torn read) under

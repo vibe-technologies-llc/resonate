@@ -1,7 +1,9 @@
 use std::io;
 
-use resonate_audio::{Error, Operation, SinkInfo, SinkResult};
+use resonate_audio::{Error, HardwareVolume, Operation, Plugged, SinkInfo, SinkPort, SinkResult};
 use resonate_core::{ChannelCount, ChannelLayout, SampleFormat, SampleRate};
+use volumecontrol_core::{AudioDevice as _, AudioError};
+use volumecontrol_windows::AudioDevice;
 use wasapi::{
     AudioClient, Device, DeviceEnumerator, Direction, SampleType, ShareMode, WasapiError,
     WaveFormat,
@@ -9,12 +11,20 @@ use wasapi::{
 
 use crate::{
     formats::{Wire, format_of, formats_taken, mask_of, rates_of, wire_of},
+    level::gain_of,
     ways::{Way, node_of, sink_id_of},
 };
 
 pub(crate) fn backend_error(op: Operation, source: WasapiError) -> Error {
     Error::Backend {
         op,
+        source: io::Error::other(source),
+    }
+}
+
+pub(crate) fn level_error(source: AudioError) -> Error {
+    Error::Backend {
+        op: Operation::Volume,
         source: io::Error::other(source),
     }
 }
@@ -80,10 +90,39 @@ pub(crate) fn enumerate() -> SinkResult<Vec<SinkInfo>> {
         let Ok(client) = device.get_iaudioclient() else {
             continue;
         };
-        sinks.extend(shared_sink(&endpoint, &name, is_default, &client));
-        sinks.extend(exclusive_sink(&endpoint, &name, &client));
+        let port = port_of(&device, &endpoint);
+        sinks.extend(shared_sink(
+            &endpoint,
+            &name,
+            is_default,
+            &client,
+            port.clone(),
+        ));
+        sinks.extend(exclusive_sink(&endpoint, &name, &client, port));
     }
     Ok(sinks)
+}
+
+fn port_of(device: &Device, endpoint: &str) -> Option<SinkPort> {
+    let level = AudioDevice::from_id(endpoint).ok()?;
+    let percent = level.get_vol().ok()?;
+    let hardware_volume = device
+        .get_audiometerinformation()
+        .and_then(|meter| meter.query_hardware_support())
+        .map_or(HardwareVolume::Unsaid, |support| {
+            if support.volume {
+                HardwareVolume::Yes
+            } else {
+                HardwareVolume::No
+            }
+        });
+    Some(SinkPort {
+        description: device.get_description().unwrap_or_default(),
+        plugged: Plugged::Unsaid,
+        hardware_volume,
+        volume: Some(gain_of(percent)),
+        muted: level.is_mute().unwrap_or(false),
+    })
 }
 
 fn shared_sink(
@@ -91,6 +130,7 @@ fn shared_sink(
     name: &str,
     is_default: bool,
     client: &AudioClient,
+    port: Option<SinkPort>,
 ) -> Option<SinkInfo> {
     let (format, rate, layout) = mix_of(client)?;
     let node = node_of(Way::Shared, endpoint);
@@ -100,7 +140,7 @@ fn shared_sink(
         description: format!("{name}{}", Way::Shared.described()),
         is_default,
         is_hardware: true,
-        port: None,
+        port,
         profile: None,
         formats: vec![resonate_audio::SinkFormats {
             format,
@@ -113,7 +153,12 @@ fn shared_sink(
     })
 }
 
-fn exclusive_sink(endpoint: &str, name: &str, client: &AudioClient) -> Option<SinkInfo> {
+fn exclusive_sink(
+    endpoint: &str,
+    name: &str,
+    client: &AudioClient,
+    port: Option<SinkPort>,
+) -> Option<SinkInfo> {
     let formats = formats_taken(|format, rate, layout| {
         matches!(
             client.is_supported(&wave_of(format, rate, layout), &ShareMode::Exclusive),
@@ -132,7 +177,7 @@ fn exclusive_sink(endpoint: &str, name: &str, client: &AudioClient) -> Option<Si
         is_hardware: true,
         allowed_rates: rates_of(&formats),
         formats,
-        port: None,
+        port,
         profile: None,
         current_rate: None,
     })

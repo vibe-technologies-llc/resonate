@@ -7,15 +7,19 @@
 )]
 
 use std::{
-    num::{NonZeroU32, NonZeroUsize},
+    num::{NonZeroU32, NonZeroU64, NonZeroUsize},
     sync::Arc,
 };
 
 use resonate_audio::{GraphTime, StreamClock, handover::Fed};
 use resonate_core::{Ratio, SampleFormat, SampleRate};
-use wasapi::{AudioClient, AudioRenderClient, Handle, ShareMode, WasapiError};
+use wasapi::{AudioClient, AudioClock, AudioRenderClient, Handle, ShareMode, WasapiError};
+use win_time_sys::{Clock, PerformanceClock};
 
-use crate::fill::fill_buffer;
+use crate::{
+    clock::{ClockReading, CounterNow},
+    fill::fill_buffer,
+};
 
 pub(crate) struct Playing {
     pub(crate) client: AudioClient,
@@ -29,6 +33,8 @@ pub(crate) struct Playing {
     pub(crate) rate: SampleRate,
     pub(crate) frame_bytes: NonZeroUsize,
     pub(crate) clock: Arc<StreamClock>,
+    pub(crate) audio_clock: Option<(AudioClock, NonZeroU64)>,
+    pub(crate) counter_per_second: NonZeroU64,
     pub(crate) written: u64,
     pub(crate) real: u64,
 }
@@ -48,13 +54,15 @@ impl Cycled {
 impl Playing {
     pub(crate) fn cycle(&mut self) -> Result<Cycled, WasapiError> {
         let available = self.client.get_available_space_in_frames()?;
-        let ahead = match self.way {
-            ShareMode::Shared => self.buffer_frames.saturating_sub(available),
-            ShareMode::Exclusive => self.buffer_frames,
+        let reading = self.read_the_clock();
+        let counter = self.read_the_counter();
+        let ahead = match reading {
+            Some(reading) => reading.frames_ahead(self.written, self.rate),
+            None => u64::from(self.padding(available)),
         };
         self.clock.note(
             GraphTime {
-                delay: i64::from(ahead),
+                delay: i64::try_from(ahead).unwrap_or(i64::MAX),
                 buffered: 0,
                 queued: 0,
                 tick: Ratio {
@@ -64,19 +72,21 @@ impl Playing {
             },
             self.rate,
         );
-        let played = self.written.saturating_sub(u64::from(ahead));
+        let played = self.written.saturating_sub(ahead);
         let wanted = usize::try_from(available).unwrap_or_default();
         if wanted == 0 {
             return Ok(Cycled { heard: 0, played });
         }
 
+        let device =
+            reading.and_then(|reading| reading.device_time(counter, self.written, self.rate));
         let filled = fill_buffer(
             self.fed.source(),
             &mut self.scratch,
             self.frame_bytes,
             wanted,
             self.format,
-            self.clock.stamp(),
+            self.clock.stamp_by(device),
         );
         let bytes = filled.frames.saturating_mul(self.frame_bytes.get());
         let Some(window) = self.scratch.get(..bytes) else {
@@ -92,5 +102,29 @@ impl Playing {
             heard: filled.heard,
             played,
         })
+    }
+
+    const fn padding(&self, available: u32) -> u32 {
+        match self.way {
+            ShareMode::Shared => self.buffer_frames.saturating_sub(available),
+            ShareMode::Exclusive => self.buffer_frames,
+        }
+    }
+
+    fn read_the_clock(&self) -> Option<ClockReading> {
+        let (audio_clock, frequency) = self.audio_clock.as_ref()?;
+        let (position, counter_in_hundred_nanoseconds) = audio_clock.get_position().ok()?;
+        Some(ClockReading {
+            position,
+            frequency: *frequency,
+            counter_in_hundred_nanoseconds,
+        })
+    }
+
+    fn read_the_counter(&self) -> CounterNow {
+        CounterNow {
+            ticks: PerformanceClock.now().ticks(),
+            per_second: self.counter_per_second,
+        }
     }
 }

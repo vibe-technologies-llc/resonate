@@ -3,18 +3,21 @@ use std::{sync::Arc, thread, time::Duration};
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, bounded, unbounded};
 use parking_lot::Mutex;
 use resonate_audio::{
-    AudioSource, Error, NodeName, Opener, Operation, SinkId, SinkResult, SinkStream, StreamClock,
-    StreamCommand, StreamEvent, StreamRequest, StreamState, Words,
-    handover::{Fed, fed_from},
+    AudioSource, Error, NodeName, Opener, Operation, Reshaped, Reshaper, SinkId, SinkResult,
+    SinkStream, StreamClock, StreamCommand, StreamEvent, StreamRequest, StreamState, Unreshapable,
+    Words,
+    handover::{Fed, Handing, fed_from},
 };
 use resonate_core::{Frames, SampleFormat};
-use thread_priority::{ThreadPriority, set_current_thread_priority};
 use wasapi::{ShareMode, StreamMode, WasapiError};
+use win_time_sys::{PerformanceCounter, Timeline};
 
 use crate::{
     device::{backend_error, default_device, device_for, enter_the_apartment, enumerate, wave_of},
     formats::wire_of,
+    priority::Priority,
     render::Playing,
+    reshaping::refusal_of,
     ways::{Way, endpoint_of},
 };
 
@@ -35,14 +38,24 @@ enum Target {
     Node(NodeName),
 }
 
+enum Order {
+    Command(StreamCommand),
+    Reshaped { realtime: bool },
+}
+
 struct Opening {
     target: Target,
     request: StreamRequest,
     fed: Fed,
     ready: Sender<SinkResult<()>>,
-    commands: Receiver<StreamCommand>,
+    orders: Receiver<Order>,
     announced: Sender<StreamEvent>,
     clock: Arc<StreamClock>,
+}
+
+struct Reshaping {
+    open: StreamRequest,
+    handing: Handing,
 }
 
 impl Opener for Opens {
@@ -52,17 +65,17 @@ impl Opener for Opens {
         source: Box<dyn AudioSource>,
     ) -> SinkResult<SinkStream> {
         let target = self.target_of(request.target)?;
-        let (sending, commands) = unbounded();
+        let (sending, orders) = unbounded();
         let (announced, events) = unbounded();
         let (ready, started) = bounded(1);
-        let (fed, _handing) = fed_from(source);
+        let (fed, handing) = fed_from(source);
         let clock = Arc::new(StreamClock::behind_by(Frames::ZERO));
         let opening = Opening {
             target,
             request: request.clone(),
             fed,
             ready,
-            commands,
+            orders,
             announced,
             clock: Arc::clone(&clock),
         };
@@ -78,12 +91,60 @@ impl Opener for Opens {
             Err(RecvTimeoutError::Timeout) => return Err(Error::OpenUnanswered),
             Err(RecvTimeoutError::Disconnected) => return Err(Error::LoopStopped),
         }
+        let reshaping = sending.clone();
         Ok(SinkStream::new(
             events,
             clock,
-            Box::new(move |command| sending.send(command).map_err(|_| Error::LoopStopped)),
-        ))
+            Box::new(move |command| {
+                sending
+                    .send(Order::Command(command))
+                    .map_err(|_| Error::LoopStopped)
+            }),
+        )
+        .reshaped_by(reshaper(
+            Reshaping {
+                open: request.clone(),
+                handing,
+            },
+            reshaping,
+        )))
     }
+}
+
+fn reshaper(reshaping: Reshaping, orders: Sender<Order>) -> Reshaper {
+    let reshaping = Mutex::new(reshaping);
+    Box::new(move |asked, source| {
+        let mut reshaping = reshaping.lock();
+        reshaping.handing.let_go_of_the_spent();
+        if let Some(because) = refusal_of(&reshaping.open, asked) {
+            return Reshaped::Refused { source, because };
+        }
+        if !reshaping.handing.has_room() {
+            return Reshaped::Refused {
+                source,
+                because: Unreshapable::StillHandingOver,
+            };
+        }
+        let order = Order::Reshaped {
+            realtime: asked.realtime,
+        };
+        if orders.send(order).is_err() {
+            return Reshaped::Refused {
+                source,
+                because: Unreshapable::NoStream,
+            };
+        }
+        match reshaping.handing.hand(source) {
+            Ok(()) => {
+                reshaping.open = asked.clone();
+                Reshaped::Kept
+            }
+            Err(source) => Reshaped::Refused {
+                source,
+                because: Unreshapable::StillHandingOver,
+            },
+        }
+    })
 }
 
 impl Opens {
@@ -119,13 +180,12 @@ fn play(opening: Opening) {
         request,
         fed,
         ready,
-        commands,
+        orders,
         announced,
         clock,
     } = opening;
-    if request.realtime {
-        let _ = set_current_thread_priority(ThreadPriority::Max);
-    }
+    let mut priority = Priority::ordinary();
+    priority.set(request.realtime, request.spec.rate);
     match start(&target, &request, fed, clock) {
         Ok(playing) => {
             let _ = announced.send(StreamEvent::FormatChanged {
@@ -133,7 +193,14 @@ fn play(opening: Opening) {
                 words: words_of(request.spec.format),
             });
             let _ = ready.send(Ok(()));
-            serve(playing, &commands, &announced);
+            serve(
+                playing,
+                &Serving {
+                    orders: &orders,
+                    announced: &announced,
+                },
+                &mut priority,
+            );
         }
         Err(error) => {
             let _ = ready.send(Err(error));
@@ -208,6 +275,11 @@ fn start(
     let frame_bytes = std::num::NonZeroUsize::new(frame_bytes).ok_or(Error::FormatRefused)?;
     let scratch =
         vec![0_u8; frame_bytes.get() * usize::try_from(buffer_frames).unwrap_or_default()];
+    let audio_clock = client.get_audioclock().ok().and_then(|audio_clock| {
+        let frequency = std::num::NonZeroU64::new(audio_clock.get_frequency().ok()?)?;
+        Some((audio_clock, frequency))
+    });
+    let counter_per_second = PerformanceCounter::ticks_per_second();
 
     Ok(Playing {
         client,
@@ -221,6 +293,8 @@ fn start(
         rate: spec.rate,
         frame_bytes,
         clock,
+        audio_clock,
+        counter_per_second,
         written: 0,
         real: 0,
     })
@@ -242,17 +316,25 @@ fn initialize_error(error: WasapiError) -> Error {
     }
 }
 
-fn serve(
-    mut playing: Playing,
-    commands: &Receiver<StreamCommand>,
-    announced: &Sender<StreamEvent>,
-) {
-    let mut state = StreamState::Paused;
-    let mut draining = false;
+struct Serving<'a> {
+    orders: &'a Receiver<Order>,
+    announced: &'a Sender<StreamEvent>,
+}
+
+struct Standing {
+    state: StreamState,
+    draining: bool,
+}
+
+fn serve(mut playing: Playing, serving: &Serving<'_>, priority: &mut Priority) {
+    let mut standing = Standing {
+        state: StreamState::Paused,
+        draining: false,
+    };
     loop {
-        if state == StreamState::Streaming {
-            while let Ok(command) = commands.try_recv() {
-                match handled(&mut playing, command, &mut state, &mut draining, announced) {
+        if standing.state == StreamState::Streaming {
+            while let Ok(order) = serving.orders.try_recv() {
+                match handled(&mut playing, order, &mut standing, serving, priority) {
                     Handled::Went => return,
                     Handled::Stays => {}
                 }
@@ -262,28 +344,26 @@ fn serve(
             }
             match playing.cycle() {
                 Ok(cycled) => {
-                    if draining && cycled.has_played_out(playing.real) {
-                        draining = false;
-                        let _ = announced.send(StreamEvent::Drained);
+                    if standing.draining && cycled.has_played_out(playing.real) {
+                        standing.draining = false;
+                        let _ = serving.announced.send(StreamEvent::Drained);
                     }
                 }
                 Err(error) => {
                     tracing::warn!(%error, "a WASAPI stream failed");
-                    let _ = announced.send(StreamEvent::StateChanged {
-                        from: state,
+                    let _ = serving.announced.send(StreamEvent::StateChanged {
+                        from: standing.state,
                         to: StreamState::Failed,
                     });
                     return;
                 }
             }
         } else {
-            match commands.recv_timeout(IDLE_POLL) {
-                Ok(command) => {
-                    match handled(&mut playing, command, &mut state, &mut draining, announced) {
-                        Handled::Went => return,
-                        Handled::Stays => {}
-                    }
-                }
+            match serving.orders.recv_timeout(IDLE_POLL) {
+                Ok(order) => match handled(&mut playing, order, &mut standing, serving, priority) {
+                    Handled::Went => return,
+                    Handled::Stays => {}
+                },
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => {
                     let _ = playing.client.stop_stream();
@@ -301,22 +381,32 @@ enum Handled {
 
 fn handled(
     playing: &mut Playing,
-    command: StreamCommand,
-    state: &mut StreamState,
-    draining: &mut bool,
-    announced: &Sender<StreamEvent>,
+    order: Order,
+    standing: &mut Standing,
+    serving: &Serving<'_>,
+    priority: &mut Priority,
 ) -> Handled {
-    match command {
-        StreamCommand::Close => {
+    match order {
+        Order::Reshaped { realtime } => {
+            standing.draining = false;
+            priority.set(realtime, playing.rate);
+            Handled::Stays
+        }
+        Order::Command(StreamCommand::Close) => {
             let _ = playing.client.stop_stream();
             Handled::Went
         }
-        StreamCommand::Drain => {
-            *draining = true;
+        Order::Command(StreamCommand::Drain) => {
+            standing.draining = true;
             Handled::Stays
         }
-        StreamCommand::SetActive(active) => {
-            let from = *state;
+        Order::Command(StreamCommand::SetActive(true))
+            if standing.state == StreamState::Streaming =>
+        {
+            Handled::Stays
+        }
+        Order::Command(StreamCommand::SetActive(active)) => {
+            let from = standing.state;
             let moved = if active {
                 playing
                     .cycle()
@@ -340,11 +430,13 @@ fn handled(
                 (Ok(()), true) => StreamState::Streaming,
                 (Ok(()), false) => StreamState::Paused,
             };
-            *state = to;
+            standing.state = to;
             if !active {
-                *draining = false;
+                standing.draining = false;
             }
-            let _ = announced.send(StreamEvent::StateChanged { from, to });
+            let _ = serving
+                .announced
+                .send(StreamEvent::StateChanged { from, to });
             match to {
                 StreamState::Failed => Handled::Went,
                 _ => Handled::Stays,

@@ -9,12 +9,15 @@ pub fn changes_between(before: &[SinkInfo], after: &[SinkInfo]) -> Vec<SinkChang
         changes.push(SinkChange::Removed(gone.id));
     }
     for now in after {
-        match before.iter().find(|held| held.id == now.id) {
-            None => changes.push(SinkChange::Added(now.id)),
-            Some(held) if held.formats != now.formats || held.current_rate != now.current_rate => {
-                changes.push(SinkChange::Reformatted(now.id));
-            }
-            Some(_) => {}
+        let Some(held) = before.iter().find(|held| held.id == now.id) else {
+            changes.push(SinkChange::Added(now.id));
+            continue;
+        };
+        if held.formats != now.formats || held.current_rate != now.current_rate {
+            changes.push(SinkChange::Reformatted(now.id));
+        }
+        if held.port != now.port {
+            changes.push(SinkChange::Turned(now.id));
         }
     }
     let default_of = |sinks: &[SinkInfo]| sinks.iter().find(|sink| sink.is_default).map(|s| s.id);
@@ -73,6 +76,36 @@ mod tests {
         let sinks = [sink(1, true), sink(2, false)];
 
         assert!(changes_between(&sinks, &sinks).is_empty());
+    }
+
+    #[test]
+    fn a_volume_or_mute_turned_from_elsewhere_is_told_as_turned() {
+        use resonate_audio::{HardwareVolume, Plugged, SinkPort};
+        use resonate_core::Gain;
+
+        let port = |volume: f32, muted: bool| SinkPort {
+            description: "Speakers".to_owned(),
+            plugged: Plugged::Unsaid,
+            hardware_volume: HardwareVolume::Yes,
+            volume: Gain::new(volume).ok(),
+            muted,
+        };
+        let mut before = sink(1, true);
+        before.port = Some(port(0.5, false));
+        let mut turned = before.clone();
+        turned.port = Some(port(0.25, false));
+        let mut muted = before.clone();
+        muted.port = Some(port(0.5, true));
+
+        assert_eq!(
+            changes_between(&[before.clone()], &[turned]),
+            [SinkChange::Turned(SinkId::new(1))]
+        );
+        assert_eq!(
+            changes_between(&[before.clone()], &[muted]),
+            [SinkChange::Turned(SinkId::new(1))]
+        );
+        assert!(changes_between(&[before.clone()], &[before]).is_empty());
     }
 
     #[test]

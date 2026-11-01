@@ -523,7 +523,8 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   (`a_format_the_graph_settled_while_its_stream_was_kept_is_followed_once_the_stream_is_reshaped_alike`).
   The backend contract: `SinkStream::reshaped_by` gives a stream its
   `Reshaper`; a stream given none refuses `Unreshapable::Unsupported`, as the test fake's default does;
-  the phones' streams are given one, below (`a_buffer_moved_mid_track_reshapes_the_stream_and_plays_on_from_where_it_was_heard`,
+  the phones' streams are given one, below, and a WASAPI stream one that takes a new source on the
+  same client (`windows.md`) (`a_buffer_moved_mid_track_reshapes_the_stream_and_plays_on_from_where_it_was_heard`,
   `a_graph_answering_another_format_has_the_stream_it_holds_reshaped_rather_than_reopened`,
   `a_reshaped_stream_whose_format_the_graph_never_settles_is_reopened`,
   `a_device_chosen_mid_track_opens_a_stream_on_it_rather_than_reshaping_the_one_held`).
