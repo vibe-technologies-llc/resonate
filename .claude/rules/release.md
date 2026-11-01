@@ -43,11 +43,25 @@ paths:
   `.pkg.tar.zst` (Arch), for the player and the sync server, built with
   `RUSTFLAGS=-C target-cpu=x86-64-v3` over the checkout's `native`. A machine older than v3 builds
   from source.
-- **The Windows archives are `resonate-<version>-x86_64_v3-windows.zip` and
-  `resonate-<version>-aarch64-windows.zip`**: `resonate.exe` built for x86-64-v3, or for
-  `aarch64-pc-windows-msvc` at the target's baseline, the licence and a README, from
-  `packaging/windows/build.ps1 -Architecture`. Neither is signed and neither has an installer
-  (`windows.md`).
+- **The Windows files are, per architecture, `resonate-<version>-x86_64_v3-windows.zip` and
+  `resonate-<version>-x86_64_v3-windows-setup.exe`, and `resonate-<version>-aarch64-windows.zip`
+  and `resonate-<version>-aarch64-windows-setup.exe`**: `resonate.exe` built for x86-64-v3, or for
+  `aarch64-pc-windows-msvc` at the target's baseline, the licence and a README in the zip, the same
+  in a per-user Inno Setup installer (Start menu entry, file associations; `windows.md`), from
+  `packaging/windows/build.ps1 -Architecture`. They are signed (`sign.ps1`, Authenticode) only
+  where the repository holds the secrets `WINDOWS_CERTIFICATE_BASE64` (a PFX, base64) and
+  `WINDOWS_CERTIFICATE_PASSWORD`; none exists, so the files are unsigned and Windows SmartScreen
+  warns on a first run.
+- **`resonate-<version>-winget-manifests.zip` and `resonate-<version>-scoop.json` are filled
+  from the templates** in `packaging/windows/` by `fill-manifests.sh` in the `publish` job, once
+  every file above exists: the version, the repository URL of the running workflow, the asset URLs
+  and their SHA-256 (the winget installer manifest also takes the Inno `AppId` as its product code).
+  The zip holds `manifests/r/Resonate/Resonate/<version>/` as a pull request to winget-pkgs
+  wants it; the JSON is a Scoop manifest for the zip archives (a Scoop install makes a Start menu
+  shortcut with no `AppUserModelID`, so toasts need the installer). **Submitting either upstream
+  is a manual step the maintainer takes after the release is published**: a pull request of the
+  winget folder to winget-pkgs (`wingetcreate` or `winget validate` first), and the JSON
+  added to a Scoop bucket. A candidate (`-rcN`) is not submitted.
 - **The APK is a signed release build**: `assembleRelease` under the repository's signing secrets,
   then `apksigner verify` (`build.md` has the job). The keystore is removed at the end of the job
   and its secrets are never echoed.

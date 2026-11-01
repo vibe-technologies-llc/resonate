@@ -662,6 +662,41 @@ mod tests {
         }
     }
 
+    fn extensions_of(kind: &str) -> &'static [&'static str] {
+        match kind {
+            "audio/flac" | "audio/x-flac" => &["flac"],
+            "audio/mpeg" => &["mp3"],
+            "audio/mp4" => &["m4a", "mp4"],
+            "audio/x-m4b" => &["m4b"],
+            "audio/aac" => &["aac"],
+            "audio/ogg" | "audio/x-vorbis+ogg" => &["ogg", "oga"],
+            "audio/opus" | "audio/x-opus+ogg" => &["opus"],
+            "audio/x-wav" | "audio/wav" => &["wav", "wave"],
+            "audio/x-matroska" => &["mka"],
+            "audio/x-aiff" | "audio/aiff" => &["aif", "aiff"],
+            "audio/x-caf" => &["caf"],
+            "audio/x-dsf" => &["dsf"],
+            "audio/x-dff" => &["dff"],
+            "audio/x-wavpack" => &["wv"],
+            "audio/x-ape" => &["ape"],
+            other => panic!("{other} has no extension the Windows installer could register"),
+        }
+    }
+
+    #[test]
+    fn the_windows_installer_registers_an_extension_for_every_media_type_the_bus_offers() {
+        let installer = include_str!("../../../packaging/windows/resonate.iss");
+
+        for kind in MIME_TYPES {
+            for extension in extensions_of(kind) {
+                assert!(
+                    installer.contains(&format!("ValueName: \".{extension}\"")),
+                    "{kind} is offered on the bus and .{extension} is not registered by the installer"
+                );
+            }
+        }
+    }
+
     #[test]
     fn a_settings_file_is_the_same_one_however_it_is_spelled_and_another_is_not() {
         let folder = crate::fixtures::scratch("mpris-settings");

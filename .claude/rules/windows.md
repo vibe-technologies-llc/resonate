@@ -10,6 +10,11 @@ paths:
   - "crates/resonate/src/interrupts.rs"
   - "crates/resonate/src/windows_launcher.rs"
   - "crates/resonate/src/awake.rs"
+  - "crates/resonate/build.rs"
+  - "crates/resonate/resources.rs"
+  - "crates/resonate/icon_resources.rs"
+  - "crates/resonate/tests/icon_resources.rs"
+  - "crates/resonate/tests/installer.rs"
   - "crates/resonate-listen/src/endpoints.rs"
   - "crates/resonate-listen/src/wasapi_*.rs"
   - "crates/resonate-discord/src/pipe.rs"
@@ -360,9 +365,10 @@ in no apartment fails `CO_E_NOTINITIALIZED`. Errors are `Error::Windows { op: Wi
 - **No process AppUserModelID is set.** `CreateToastNotifierWithId` names the identity, which
   needs no call of ours (`SetCurrentProcessExplicitAppUserModelID` is `unsafe`). **A toast shows in
   practice only where a Start-menu shortcut carries that identity** (the `System.AppUserModel.ID`
-  property of a `.lnk` in the Start menu's `Programs`); the zip has none and the installer is a
-  separate roadmap entry, so until it exists a toast is created and silently not shown. The
-  installer's shortcut must name `org.resonate.Resonate`.
+  property of a `.lnk` in the Start menu's `Programs`); the zip has none, the installer
+  makes one (*The installer*, below). The identity is one constant, `resonate_mpris::APP_USER_MODEL_ID`
+  (`identity.rs`): `desk_toast.rs` creates its notifier under it and a test holds the installer
+  script's shortcut to it.
 - **Which service raises it.** With a session bus (a dbus session on Windows is rare but possible)
   the poll that serves the bus raises toasts; with none, the pipe's service runs a thread of its
   own for them (`resonate-toasts`, `toast_what_plays`), the same `snapshot` and `tell_the_desktop`
@@ -387,24 +393,104 @@ above). The launcher's icon-follows-the-accent is a no-op. All of it is on the r
 
 ## Release
 
-`packaging/windows/build.ps1 -Architecture x86_64|aarch64` builds one archive per architecture and
-zips `resonate.exe`, the licence and a README:
+`packaging/windows/build.ps1 -Architecture x86_64|aarch64` builds one archive and one installer per
+architecture:
 
-- **`x86_64`** (the default) builds `-C target-cpu=x86-64-v3` for the host and names it
-  `resonate-<version>-x86_64_v3-windows.zip`.
+- **`x86_64`** (the default) builds `-C target-cpu=x86-64-v3` for the host and names its files
+  `resonate-<version>-x86_64_v3-windows.zip` and `resonate-<version>-x86_64_v3-windows-setup.exe`.
 - **`aarch64`** installs the `aarch64-pc-windows-msvc` target, builds `--target` it at `-C
   target-cpu=generic` (the target's own baseline, ARMv8-A with NEON, written out because a PowerShell
   variable set to the empty string is removed rather than emptied and so could not replace the
   checkout's `target-cpu=native`; every Windows 11 ARM64 machine is above it, and a higher floor
-  would buy little over NEON and shut out machines for it) and names it
-  `resonate-<version>-aarch64-windows.zip`.
+  would buy little over NEON and shut out machines for it) and names its files
+  `resonate-<version>-aarch64-windows.zip` and `resonate-<version>-aarch64-windows-setup.exe`.
 
-`release.yml`'s `windows-zip` is a matrix of the two on `windows-latest`, each its own artifact, both
-in the `SHA256SUMS`. The ARM64 archive is **cross-built on the x64 runner**, not on a `windows-11-arm`
+The zip holds `resonate.exe`, the licence and a README; the setup program installs the same three.
+`release.yml`'s `windows-zip` is a matrix of the two on `windows-latest`, each its own artifact
+(`resonate-windows-<architecture>`), all four files in the `SHA256SUMS`. The ARM64 files are
+**cross-built on the x64 runner**, not on a `windows-11-arm`
 one: the hosted ARM64 runner's availability follows the repository's plan, its image carries fewer
 tools, and a release is immutable, so the more predictable runner builds it; the x64 image already carries the
 MSVC ARM64 tools and LLVM that `ring` needs, and a step runs `clang --version` first so a missing
-compiler fails by name. A cross-built archive is never run in CI, which is why the roadmap still
-lists the ARM64 build among what only hardware settles. `crates/resonate/tests/packaging.rs` holds
-the script to v3, to the ARM64 triple and baseline, to the manifest's version, and the workflow to
-one archive and artifact name per architecture. Neither archive is signed and neither has an installer.
+compiler fails by name. A cross-built archive or installer is never run in CI, which is why the
+roadmap still lists the ARM64 build among what only hardware settles.
+
+### The executable's icon and version
+
+`crates/resonate/build.rs` embeds a resource file when the target is Windows, through
+`resources.rs`: the icon `packaging/windows/resonate.ico` as `RT_GROUP_ICON` 1 (the lowest name,
+which Explorer shows and which gpui's `load_icon` loads for the window and the taskbar) and a
+version resource (`FileVersion` and `ProductVersion` the manifest's `major.minor.patch.0`,
+`Comments` the full version so `-rcN` stays readable, `CompanyName` and `ProductName` `Resonate`,
+`OriginalFilename` `resonate.exe`, `LegalCopyright` naming the licence). The version resource is
+written by `win-resource-builder` (pure Rust; `dependencies.md` says why it, why not `rc.exe`, and
+why its `images` feature is off); the icon is `icon_resources.rs`, which reads the `.ico` and writes
+an `RT_ICON` record per image (ids 1 to N) and the `RT_GROUP_ICON` directory naming them. `joined`
+puts the icon records after the `.res` file's empty first record and before the version record, and
+the one `.res` is passed as `cargo::rustc-link-arg-bins`, which `link.exe` and `lld-link` take for
+either machine, so `CARGO_CFG_TARGET_ARCH` is not read. **The modules are `#[cfg(windows)]`, the
+host's cfg, because the dependency is `[target.'cfg(windows)'.build-dependencies]`, which Cargo
+resolves against the host**: a Windows host (the runner, for both architectures) embeds, a Linux
+host cross-checking with `cargo xwin` neither compiles the modules nor pulls the crate, so a
+cross-built executable carries no icon and no Linux package build gains a dependency. The build
+script also tests `CARGO_CFG_TARGET_OS`. The `.ico` is committed, ten PNG images from 16 to 256 px
+rendered from `packaging/resonate.svg` by `packaging/windows/icon.py` (`rsvg-convert`, `python3 -I
+packaging/windows/icon.py`). The Linux desktop's accent-following icon is not carried over: the
+executable's icon is the packaged colours. `tests/icon_resources.rs` includes `icon_resources.rs`
+and runs it on every host over the committed file: each image is a numbered `RT_ICON` holding its
+bytes, the group's entries match the `.ico`'s directory with the ids in the offsets' place, the
+icon records join in ahead of a resource file, and a file that is no icon is refused by name
+(`the_icon_holds_the_sizes_windows_asks_for_as_png_of_those_sides` holds the file). `resources.rs`
+itself runs only on a Windows host; its `.res` was read back with `llvm-cvtres` and
+`llvm-readobj --coff-resources` on Linux, and the icon records were identical to the crate's own.
+
+### The installer
+
+`packaging/windows/resonate.iss` is an **Inno Setup** script, compiled by `build.ps1` with `ISCC`
+(on the runner's path, else installed with `choco install innosetup`). Inno rather than a WiX MSI:
+the script is one text file in which a list of registry rows is plain lines, `[Icons]` takes the
+shortcut's `AppUserModelID` directly, winget installs it (`InstallerType: inno`, silent switches
+known), it is free of WiX's maintenance-fee terms and needs no .NET tool on the runner, and it
+cannot be validated on Linux either way. It is **per user**: `PrivilegesRequired=lowest`, no
+override, so it installs to `%LOCALAPPDATA%\Programs\Resonate`, writes `HKCU` alone and never asks
+for elevation. `x86_64` is `x64os`, `aarch64` is `arm64`, so each runs only on its own Windows.
+`build.ps1` passes the version, its numeric `major.minor.patch.0`, the architecture, the paths and
+the output name as `/D` definitions the script reads (`the_build_script_compiles_one_installer_per_architecture_beside_its_archive`).
+
+- **The Start menu shortcut** (`{autoprograms}\Resonate`) carries `AppUserModelID:
+  "{#AppUserModelId}"`, defined once at the head of the script as `org.resonate.Resonate`, the
+  value of `resonate_mpris::APP_USER_MODEL_ID`, the constant the toast code creates its notifier
+  under. Windows shows a toast only for an identity a Start-menu shortcut carries, so installing is
+  what makes toasts appear; the zip and a Scoop install have no such shortcut
+  (`the_start_menu_shortcut_carries_the_identity_the_toasts_are_raised_under`).
+- **File associations are the registration Windows allows a program to make**, all under
+  `HKCU\Software\Classes`: the ProgID `Resonate.Audio` (name, `DefaultIcon`, `shell\open\command`
+  `"resonate.exe" "%1"`), `OpenWithProgids` on every extension so Resonate is offered in "Open
+  with", `Applications\resonate.exe` with `SupportedTypes`, and `Software\Resonate\Capabilities`
+  with `FileAssociations` and `RegisteredApplications`, so Settings > Default apps lists it. It
+  claims no default: Windows leaves that to the listener. The extensions are `AUDIO_EXTENSIONS`
+  (everything the scan admits, which is the `MIME_TYPES` formats and `.rf64`, `.w64`), in the
+  three places that name them. A test holds each place to the list, another holds the bus's `MIME_TYPES` to the
+  extensions registered (`the_installer_registers_every_extension_the_scan_admits_and_no_other`,
+  `the_windows_installer_registers_an_extension_for_every_media_type_the_bus_offers`), so a format
+  added to the scan fails until the script lists it. The list is written out line by line in the
+  script, not generated, as the desktop entry's is.
+- **Uninstalling removes the program, the shortcut and every key and value setup wrote** (each row
+  deletes its key or value, an extension's key only if left empty) and `ChangesAssociations=yes`
+  tells the shell. Settings, catalog, vault and profiles in `%APPDATA%` and `%LOCALAPPDATA%` stay
+  (`the_installer_writes_the_current_users_registry_and_removes_what_it_wrote`).
+- The publisher is `Resonate`; the script, the manifests and the scripts name no maintainer and
+  no repository (`nothing_the_windows_installer_is_made_of_names_a_maintainer_or_a_repository`).
+  The installer is not run in CI and has not been compiled or run on this tree's host: a
+  Windows runner compiles it first at release (`docs/FEATURES.md`).
+
+### Signing
+
+`packaging/windows/sign.ps1` signs the given files with the Windows SDK's `signtool` (SHA-256,
+timestamped) from a PFX in `RESONATE_WINDOWS_PFX_BASE64` and `RESONATE_WINDOWS_PFX_PASSWORD`, which
+`release.yml` fills from the secrets `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD`.
+Where either is empty (no certificate exists yet) it says so and leaves the files unsigned, so a
+release without the secrets is built as before. `build.ps1` signs `resonate.exe` before the zip and the
+installer take it, and the installer after it is compiled (the uninstaller inside it is not signed).
+The certificate is written to a temporary file for the signing and removed at the end. Nothing here
+has run: it waits on a certificate (`docs/FEATURES.md`).

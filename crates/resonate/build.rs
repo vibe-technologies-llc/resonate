@@ -7,7 +7,15 @@ mod cli {
     include!("src/cli.rs");
 }
 
+#[cfg(windows)]
+mod icon_resources;
+#[cfg(windows)]
+mod resources;
+
 const SHELLS: [Shell; 3] = [Shell::Bash, Shell::Fish, Shell::Zsh];
+
+#[cfg(windows)]
+const WINDOWS: &str = "windows";
 
 fn main() -> io::Result<()> {
     println!("cargo::rerun-if-changed=src/cli.rs");
@@ -19,6 +27,11 @@ fn main() -> io::Result<()> {
     clap_mangen::generate_to(command.clone(), &out)?;
     for shell in SHELLS {
         clap_complete::generate_to(shell, &mut command, env!("CARGO_PKG_NAME"), &out)?;
+    }
+
+    #[cfg(windows)]
+    if env::var("CARGO_CFG_TARGET_OS").is_ok_and(|os| os == WINDOWS) {
+        resources::embed().map_err(io::Error::other)?;
     }
     Ok(())
 }

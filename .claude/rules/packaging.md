@@ -5,9 +5,14 @@ paths:
 
 # Packaging
 
-`packaging/windows/` is the Windows archives' recipe (`windows.md`): one PowerShell script taking
-the architecture (x86-64-v3, or ARM64 at the target's baseline), not a package, since the build
-needs no system library. PKGBUILD, RPM spec and Flatpak manifest all build the default-feature `resonate` binary plus
+`packaging/windows/` is the Windows archives' and installers' recipe (`windows.md`): the PowerShell
+`build.ps1` taking the architecture (x86-64-v3, or ARM64 at the target's baseline), which builds the
+zip and compiles `resonate.iss` (an Inno Setup script, per user, with the file associations and the
+Start menu shortcut), `sign.ps1` (Authenticode where secrets exist), `icon.py` (renders the
+committed `resonate.ico` from `resonate.svg`), and the winget (`winget/`) and Scoop (`scoop.json`)
+templates `fill-manifests.sh` fills at release (`release.md`). Not a package, since the build needs no system library; `crates/resonate/tests/installer.rs` holds
+the script to `AUDIO_EXTENSIONS`, to `APP_USER_MODEL_ID`, to the build script's definitions and the
+templates to the filler. PKGBUILD, RPM spec and Flatpak manifest all build the default-feature `resonate` binary plus
 desktop entry, icon, metainfo, man pages, completions. The `resonate*.1` man pages and completions
 come from the binary crate's build script, so a CLI change reaches every package with no second
 list; `resonate-config.toml.5`, the settings file's manual, is written by hand and installed from

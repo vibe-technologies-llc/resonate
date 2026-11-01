@@ -18,6 +18,7 @@ mod desktop;
 mod error;
 mod host;
 mod icons;
+mod identity;
 #[cfg(unix)]
 mod idle;
 mod interfaces;
@@ -60,6 +61,7 @@ pub use crate::{
         Reloaded, Tunable, Tuned,
     },
     icons::tell_the_icons_changed,
+    identity::APP_USER_MODEL_ID,
     preferences::{Contrast, Motion, Preferences, Scheme, desktop_preferences, watch_the_desktop},
     remote::{
         Described, PlayerName, Queueing, ROWS_A_CALL, Running, Seeking, Session, Standing,

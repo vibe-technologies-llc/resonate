@@ -36,12 +36,12 @@ paths:
   player and server RPMs and SRPMs), `ubuntu-deb` (`ubuntu:24.04`, rustup stable,
   `packaging/deb/build.sh`), `arch-package` (`archlinux:latest`, `makepkg` as a build user from a
   `git archive` of the tag, the `packaging/release/` recipes), `windows-zip` (`windows-latest`, a matrix of
-  `x86_64` and `aarch64`, each `packaging/windows/build.ps1 -Architecture`) and `android-apk`; `publish` collects
-  every artifact, writes `SHA256SUMS`, uploads all to the release and publishes it, since a published
+  `x86_64` and `aarch64`, each `packaging/windows/build.ps1 -Architecture`: the zip and the Inno Setup installer, signed where the certificate secrets exist) and `android-apk`; `publish` collects
+  every artifact, fills the winget and Scoop manifests from the Windows files (`fill-manifests.sh`), writes `SHA256SUMS`, uploads all to the release and publishes it, since a published
   release is immutable. Everything but the APK and the Windows ARM64 archive is x86-64-v3
   (`packaging.md`). Secrets, set once in the repository: `ANDROID_KEYSTORE_BASE64` (the release
   keystore, base64), `RESONATE_SIGNING_STORE_PASSWORD`, `RESONATE_SIGNING_KEY_ALIAS`,
-  `RESONATE_SIGNING_KEY_PASSWORD`. The APK job decodes the keystore to `$RUNNER_TEMP/release.jks`
+  `RESONATE_SIGNING_KEY_PASSWORD`; the Windows job reads `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD` when they exist and signs nothing when they do not. The APK job decodes the keystore to `$RUNNER_TEMP/release.jks`
   for the one build step, which exports the `RESONATE_SIGNING_*` variables Gradle reads, runs
   `apksigner verify` and `android/check-release.py`, and removes the keystore whatever happens.
 

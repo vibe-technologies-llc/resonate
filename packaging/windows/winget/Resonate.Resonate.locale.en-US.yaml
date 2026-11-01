@@ -1,0 +1,20 @@
+PackageIdentifier: Resonate.Resonate
+PackageVersion: @VERSION@
+PackageLocale: en-US
+Publisher: Resonate
+PackageName: Resonate
+PackageUrl: @REPOSITORY_URL@
+License: AGPL-3.0-or-later
+LicenseUrl: @REPOSITORY_URL@/blob/v@VERSION@/LICENSE
+ShortDescription: A music player for audio enthusiasts
+Description: Resonate plays through WASAPI, shared or exclusive, at the song's own rate and word, and resamples itself at high quality where the device needs it.
+Moniker: resonate
+Tags:
+  - audio
+  - flac
+  - music
+  - player
+  - wasapi
+ReleaseNotesUrl: @REPOSITORY_URL@/releases/tag/v@VERSION@
+ManifestType: defaultLocale
+ManifestVersion: 1.10.0
