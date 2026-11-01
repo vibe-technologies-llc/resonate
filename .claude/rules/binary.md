@@ -239,6 +239,12 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   Appearance and Library panes, live at once. `Config::window_buttons`/`Config::tabs` fold their
   switches; close is never a window button; an off tab leaves the sidebar and pane keys,
   `RootView::set_pane` lands on the tracks, the artist page's *not held* button is not drawn.
+- `theme` also takes `resonate-light` and `high-contrast-light`. `follow-desktop-scheme` and
+  `follow-desktop-text-size` (booleans): wear the theme's light or dark counterpart as the desktop's
+  colour scheme asks, and the size nearest the desktop's text scale (`ui.md`); each defaults to true
+  where `theme` / `text-size` is not stored and false where it is, and `text-size` is then the size
+  worn when the desktop says nothing. The pane writes `theme` with `follow-desktop-scheme = false`
+  (and `text-size` with `follow-desktop-text-size = false`) when a palette or size is chosen by hand.
 - `artists-drawn`: `resonate_core::ArtistsDrawn`, `grid` unless the file says `list`.
 - `spectrum-tilt` (`flat`, `pink`, `steep`), `spectrum-floor` (`60`, `78`, `96` dB under full
   scale), `spectrum-bands` (`thirds`, `sixths`, `twelfths`), `spectrum-falls` (`slowly`, `middling`,

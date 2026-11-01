@@ -36,6 +36,8 @@ pub enum ConfigKey {
     Theme,
     Accent,
     TextSize,
+    FollowDesktopScheme,
+    FollowDesktopTextSize,
     Online,
     EnrichAfterScan,
     EnrichOnMetered,
@@ -176,7 +178,7 @@ impl fmt::Display for Named {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 112] = [
+    pub const ALL: [Self; 114] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -203,6 +205,8 @@ impl ConfigKey {
         Self::Theme,
         Self::Accent,
         Self::TextSize,
+        Self::FollowDesktopScheme,
+        Self::FollowDesktopTextSize,
         Self::Online,
         Self::EnrichAfterScan,
         Self::EnrichOnMetered,
@@ -319,6 +323,8 @@ impl ConfigKey {
             Self::Theme => "theme",
             Self::Accent => "accent",
             Self::TextSize => "text-size",
+            Self::FollowDesktopScheme => "follow-desktop-scheme",
+            Self::FollowDesktopTextSize => "follow-desktop-text-size",
             Self::Online => "online",
             Self::EnrichAfterScan => "enrich-after-scan",
             Self::EnrichOnMetered => "enrich-on-metered",

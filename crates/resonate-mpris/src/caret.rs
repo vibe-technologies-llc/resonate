@@ -7,9 +7,9 @@ use crate::{
     blocking::{Connection, connection},
 };
 
-const PORTAL: &str = "org.freedesktop.portal.Desktop";
-const OBJECT_PATH: &str = "/org/freedesktop/portal/desktop";
-const SETTINGS: &str = "org.freedesktop.portal.Settings";
+pub(crate) const PORTAL: &str = "org.freedesktop.portal.Desktop";
+pub(crate) const OBJECT_PATH: &str = "/org/freedesktop/portal/desktop";
+pub(crate) const SETTINGS: &str = "org.freedesktop.portal.Settings";
 const READ_ONE: &str = "ReadOne";
 pub(crate) const GNOME_INTERFACE: &str = "org.gnome.desktop.interface";
 const GNOME_BLINKS: &str = "cursor-blink";

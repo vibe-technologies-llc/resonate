@@ -18,8 +18,8 @@ use gpui::{
     TestAppContext, TouchPhase, VisualTestContext, point, px, size,
 };
 use resonate_core::{
-    Appearance, Frames, Gain, HeadYaw, MediaLocation, QueueStamp, Resumable, Resumption,
-    SpeakerAngle, SpeakerElevation, TrackId, ZoneId, ZoneName,
+    Appearance, DesktopLook, Frames, Gain, Ground, HeadYaw, MediaLocation, QueueStamp, Resumable,
+    Resumption, SpeakerAngle, SpeakerElevation, TextSize, Theme, TrackId, ZoneId, ZoneName,
 };
 use resonate_engine::{
     AudioSource, Backend, Command, EngineConfig, Opener, Opening, Opens, Player, SinkChange,
@@ -4616,6 +4616,35 @@ mod tests {
         driven.until(|_, cx| !cx.reduce_motion());
 
         assert!(!driven.read(|_, cx| cx.global::<ResonateApp>().reduced_motion));
+    }
+
+    #[gpui::test]
+    fn ending_the_following_of_the_desktop_keeps_the_palette_and_size_worn_at_that_moment(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::open(cx, catalog());
+
+        let (kept, worn) = driven.root.update(&mut driven.cx, |root, cx| {
+            theme::hear_the_desktop(DesktopLook {
+                ground: Some(Ground::Light),
+                text_scale: Some(1.5),
+            });
+            let worn = theme::worn();
+            root.follow_the_desktop_scheme(false, cx);
+            root.follow_the_desktop_text_size(false, cx);
+            let kept = theme::chosen();
+            theme::hear_the_desktop(DesktopLook::default());
+            (kept, worn)
+        });
+
+        assert_eq!(worn.theme, Theme::Light);
+        assert_eq!(worn.text_size, TextSize::Larger);
+        assert_eq!(kept.theme, Theme::Light);
+        assert_eq!(kept.text_size, TextSize::Larger);
+        assert!(!kept.follows.scheme);
+        assert!(!kept.follows.text);
+
+        theme::wear(Appearance::default());
     }
 
     #[gpui::test]

@@ -23,10 +23,12 @@ pub enum Theme {
     OneDark,
     SolarizedDark,
     HighContrast,
+    Light,
+    HighContrastLight,
 }
 
 impl Theme {
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 19] = [
         Self::Resonate,
         Self::Midnight,
         Self::Graphite,
@@ -44,6 +46,8 @@ impl Theme {
         Self::OneDark,
         Self::SolarizedDark,
         Self::HighContrast,
+        Self::Light,
+        Self::HighContrastLight,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -65,6 +69,8 @@ impl Theme {
             Self::OneDark => "one-dark",
             Self::SolarizedDark => "solarized-dark",
             Self::HighContrast => "high-contrast",
+            Self::Light => "resonate-light",
+            Self::HighContrastLight => "high-contrast-light",
         }
     }
 
@@ -87,12 +93,44 @@ impl Theme {
             Self::OneDark => "One Dark",
             Self::SolarizedDark => "Solarized Dark",
             Self::HighContrast => "High Contrast",
+            Self::Light => "Resonate Light",
+            Self::HighContrastLight => "High Contrast Light",
+        }
+    }
+
+    pub const fn ground(self) -> Ground {
+        match self {
+            Self::Light | Self::HighContrastLight => Ground::Light,
+            _ => Ground::Dark,
+        }
+    }
+
+    pub const fn counterpart(self) -> Self {
+        match self {
+            Self::HighContrast => Self::HighContrastLight,
+            Self::HighContrastLight => Self::HighContrast,
+            Self::Light => Self::Resonate,
+            _ => Self::Light,
+        }
+    }
+
+    pub fn on(self, ground: Ground) -> Self {
+        if self.ground() == ground {
+            self
+        } else {
+            self.counterpart()
         }
     }
 
     pub fn parse(text: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|theme| theme.as_str() == text)
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Ground {
+    Dark,
+    Light,
 }
 
 impl fmt::Display for Theme {
@@ -224,6 +262,17 @@ impl TextSize {
 
     pub fn scale(self) -> f32 {
         self.root() / Self::MIDDLING
+    }
+
+    pub fn nearest(scale: f32) -> Self {
+        Self::ALL
+            .into_iter()
+            .min_by(|first, second| {
+                (first.scale() - scale)
+                    .abs()
+                    .total_cmp(&(second.scale() - scale).abs())
+            })
+            .unwrap_or(Self::Medium)
     }
 
     pub fn parse(text: &str) -> Option<Self> {
@@ -410,10 +459,30 @@ pub struct Spectral {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Following {
+    pub scheme: bool,
+    pub text: bool,
+}
+
+impl Following {
+    pub const BOTH: Self = Self {
+        scheme: true,
+        text: true,
+    };
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct DesktopLook {
+    pub ground: Option<Ground>,
+    pub text_scale: Option<f32>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Appearance {
     pub theme: Theme,
     pub accent: Option<Accent>,
     pub text_size: TextSize,
+    pub follows: Following,
 }
 
 impl Appearance {
@@ -421,7 +490,25 @@ impl Appearance {
         theme: Theme::Resonate,
         accent: None,
         text_size: TextSize::Medium,
+        follows: Following::BOTH,
     };
+
+    pub fn seen_by(self, look: DesktopLook) -> Self {
+        let theme = match look.ground {
+            Some(ground) if self.follows.scheme => self.theme.on(ground),
+            _ => self.theme,
+        };
+        let text_size = match look.text_scale {
+            Some(scale) if self.follows.text => TextSize::nearest(scale),
+            _ => self.text_size,
+        };
+
+        Self {
+            theme,
+            text_size,
+            ..self
+        }
+    }
 }
 
 impl Default for Appearance {
@@ -564,6 +651,81 @@ mod tests {
     #[test]
     fn the_largest_size_is_twice_the_middling_one() {
         assert_eq!(TextSize::Largest.scale(), 2.0);
+    }
+
+    #[test]
+    fn every_theme_has_a_counterpart_on_the_other_ground_that_leads_back_to_a_theme_of_this_one() {
+        for theme in Theme::ALL {
+            let counterpart = theme.counterpart();
+
+            assert_ne!(counterpart.ground(), theme.ground(), "{theme}");
+            assert_eq!(
+                counterpart.counterpart().ground(),
+                theme.ground(),
+                "{theme}"
+            );
+        }
+        assert_eq!(Theme::HighContrast.counterpart(), Theme::HighContrastLight);
+        assert_eq!(Theme::HighContrastLight.counterpart(), Theme::HighContrast);
+        assert_eq!(Theme::Nord.counterpart(), Theme::Light);
+        assert_eq!(Theme::Light.counterpart(), Theme::Resonate);
+    }
+
+    #[test]
+    fn a_theme_on_its_own_ground_is_worn_as_it_is_and_on_the_other_as_its_counterpart() {
+        assert_eq!(Theme::Nord.on(Ground::Dark), Theme::Nord);
+        assert_eq!(Theme::Nord.on(Ground::Light), Theme::Light);
+        assert_eq!(Theme::Light.on(Ground::Light), Theme::Light);
+        assert_eq!(Theme::Light.on(Ground::Dark), Theme::Resonate);
+        assert_eq!(
+            Theme::HighContrast.on(Ground::Light),
+            Theme::HighContrastLight
+        );
+    }
+
+    #[test]
+    fn the_desktop_is_heard_only_where_the_appearance_follows_it() {
+        let light_and_large = DesktopLook {
+            ground: Some(Ground::Light),
+            text_scale: Some(1.5),
+        };
+        let following = Appearance::DEFAULT.seen_by(light_and_large);
+        let alone = Appearance {
+            follows: Following {
+                scheme: false,
+                text: false,
+            },
+            ..Appearance::DEFAULT
+        }
+        .seen_by(light_and_large);
+
+        assert_eq!(following.theme, Theme::Light);
+        assert_eq!(following.text_size, TextSize::Larger);
+        assert_eq!(alone.theme, Theme::Resonate);
+        assert_eq!(alone.text_size, TextSize::Medium);
+    }
+
+    #[test]
+    fn a_desktop_that_says_nothing_leaves_the_chosen_look() {
+        let chosen = Appearance {
+            theme: Theme::Nord,
+            text_size: TextSize::Large,
+            ..Appearance::DEFAULT
+        };
+
+        assert_eq!(chosen.seen_by(DesktopLook::default()), chosen);
+    }
+
+    #[test]
+    fn a_text_scale_is_worn_as_the_nearest_size_and_never_past_the_ends() {
+        assert_eq!(TextSize::nearest(1.0), TextSize::Medium);
+        assert_eq!(TextSize::nearest(0.5), TextSize::Small);
+        assert_eq!(TextSize::nearest(1.25), TextSize::Large);
+        assert_eq!(TextSize::nearest(1.5), TextSize::Larger);
+        assert_eq!(TextSize::nearest(3.0), TextSize::Largest);
+        for size in TextSize::ALL {
+            assert_eq!(TextSize::nearest(size.scale()), size);
+        }
     }
 
     #[test]

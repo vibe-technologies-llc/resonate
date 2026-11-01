@@ -1459,7 +1459,7 @@ impl RootView {
                     .border_1()
                     .border_color(rgb(theme::outline()))
                     .shadow(vec![gpui::BoxShadow {
-                        color: gpui::hsla(0.0, 0.0, 0.0, 0.55),
+                        color: theme::shadow(0.55),
                         offset: gpui::point(px(0.0), px(12.0)),
                         blur_radius: px(40.0),
                         spread_radius: px(0.0),
@@ -1872,7 +1872,7 @@ impl RootView {
                     .rounded(px(mosaic::ART_ROUNDING))
                     .group_hover(PLAYLIST_CELL, |frame| {
                         frame.shadow(vec![gpui::BoxShadow {
-                            color: gpui::hsla(0.0, 0.0, 0.0, 0.5),
+                            color: theme::shadow(0.5),
                             offset: gpui::point(px(0.0), px(8.0)),
                             blur_radius: px(24.0),
                             spread_radius: px(0.0),
@@ -2006,7 +2006,7 @@ impl RootView {
             .rounded_full()
             .bg(rgb(theme::accent()))
             .shadow(vec![gpui::BoxShadow {
-                color: gpui::hsla(0.0, 0.0, 0.0, 0.45),
+                color: theme::shadow(0.45),
                 offset: gpui::point(px(0.0), px(4.0)),
                 blur_radius: px(12.0),
                 spread_radius: px(0.0),

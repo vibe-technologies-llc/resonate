@@ -191,6 +191,12 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
             accent.map(|accent| accent.as_str().into()),
         ),
         Setting::TextSize(size) => (ConfigKey::TextSize, Some(size.as_str().into())),
+        Setting::FollowDesktopScheme(follows) => {
+            (ConfigKey::FollowDesktopScheme, Some((*follows).into()))
+        }
+        Setting::FollowDesktopTextSize(follows) => {
+            (ConfigKey::FollowDesktopTextSize, Some((*follows).into()))
+        }
         Setting::Online(enabled) => (ConfigKey::Online, Some((*enabled).into())),
         Setting::EnrichAfterScan(after_scan) => {
             (ConfigKey::EnrichAfterScan, Some((*after_scan).into()))
@@ -452,6 +458,8 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::Theme => ConfigKey::Theme,
         SettingKey::Accent => ConfigKey::Accent,
         SettingKey::TextSize => ConfigKey::TextSize,
+        SettingKey::FollowDesktopScheme => ConfigKey::FollowDesktopScheme,
+        SettingKey::FollowDesktopTextSize => ConfigKey::FollowDesktopTextSize,
         SettingKey::Online => ConfigKey::Online,
         SettingKey::EnrichAfterScan => ConfigKey::EnrichAfterScan,
         SettingKey::EnrichOnMetered => ConfigKey::EnrichOnMetered,

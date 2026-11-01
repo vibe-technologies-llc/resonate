@@ -12,13 +12,13 @@ use std::{
 };
 
 use clap::ValueEnum as _;
-#[cfg(any(feature = "ui", test))]
-use resonate_core::Appearance;
 use resonate_core::{
     Accent, AppId, ArtistsDrawn, HeadYaw, Icon, Pictured, Presence, ScrollbarMode, Shown,
     SpeakerAngle, SpeakerElevation, Speakers, SpectrumBands, SpectrumFalls, SpectrumFloor,
     SpectrumTilt, SyncedSongs, TextSize, Theme, Trim, Volume, file_facts,
 };
+#[cfg(any(feature = "ui", test))]
+use resonate_core::{Appearance, Following};
 use resonate_engine::{
     Crossfeed, DitherKind, FilterPhase, NodeName, NoiseShaping, PreviousRestarts, Quality,
     ReplayGainMode, Restoration, SkipUnderRepeat,
@@ -161,6 +161,8 @@ pub struct Config {
     pub theme: Option<Theme>,
     pub accent: Option<Accent>,
     pub text_size: Option<TextSize>,
+    pub follow_desktop_scheme: Option<bool>,
+    pub follow_desktop_text_size: Option<bool>,
     pub online: Option<bool>,
     pub enrich_after_scan: Option<bool>,
     pub enrich_on_metered: Option<bool>,
@@ -290,6 +292,8 @@ impl fmt::Debug for Config {
             theme,
             accent,
             text_size,
+            follow_desktop_scheme,
+            follow_desktop_text_size,
             online,
             enrich_after_scan,
             enrich_on_metered,
@@ -405,6 +409,8 @@ impl fmt::Debug for Config {
             .field("theme", theme)
             .field("accent", accent)
             .field("text_size", text_size)
+            .field("follow_desktop_scheme", follow_desktop_scheme)
+            .field("follow_desktop_text_size", follow_desktop_text_size)
             .field("online", online)
             .field("enrich_after_scan", enrich_after_scan)
             .field("enrich_on_metered", enrich_on_metered)
@@ -553,6 +559,14 @@ impl Config {
             theme: self.theme.unwrap_or(unasked),
             accent: self.accent.or(worn.accent),
             text_size: self.text_size.unwrap_or(worn.text_size),
+            follows: Following {
+                scheme: self
+                    .follow_desktop_scheme
+                    .unwrap_or_else(|| self.theme.is_none()),
+                text: self
+                    .follow_desktop_text_size
+                    .unwrap_or_else(|| self.text_size.is_none()),
+            },
         }
     }
 
@@ -1020,6 +1034,12 @@ impl Config {
             ConfigKey::Accent => config.accent = Some(at.one_of(value, Accent::parse)?),
             ConfigKey::TextSize => {
                 config.text_size = Some(at.one_of(value, TextSize::parse)?);
+            }
+            ConfigKey::FollowDesktopScheme => {
+                config.follow_desktop_scheme = Some(at.boolean(value)?);
+            }
+            ConfigKey::FollowDesktopTextSize => {
+                config.follow_desktop_text_size = Some(at.boolean(value)?);
             }
             ConfigKey::Online => config.online = Some(at.boolean(value)?),
             ConfigKey::EnrichAfterScan => config.enrich_after_scan = Some(at.boolean(value)?),
@@ -2217,6 +2237,10 @@ mod tests {
                 theme: Theme::CatppuccinMocha,
                 accent: Some(Accent::Teal),
                 text_size: TextSize::Large,
+                follows: Following {
+                    scheme: false,
+                    text: false,
+                },
             }
         );
     }
@@ -2878,6 +2902,43 @@ mod tests {
         assert_eq!(
             stored.appearance_where_the_desktop_asks(true).theme,
             Theme::Nord
+        );
+    }
+
+    #[test]
+    fn the_desktop_is_followed_for_colour_and_text_where_neither_is_stored_and_not_where_one_is() {
+        let unstored = read("volume = 0.5").expect("a well formed document");
+        let stored =
+            read("theme = \"nord\"\ntext-size = \"large\"").expect("a well formed document");
+        let kept =
+            read("theme = \"nord\"\nfollow-desktop-scheme = true").expect("a well formed document");
+        let refused = read("follow-desktop-text-size = false").expect("a well formed document");
+
+        assert_eq!(unstored.appearance().follows, Following::BOTH);
+        assert_eq!(
+            stored.appearance().follows,
+            Following {
+                scheme: false,
+                text: false,
+            }
+        );
+        assert!(kept.appearance().follows.scheme);
+        assert!(kept.appearance().follows.text);
+        assert!(!refused.appearance().follows.text);
+        assert!(refused.appearance().follows.scheme);
+    }
+
+    #[test]
+    fn the_light_themes_are_read_by_their_names() {
+        assert_eq!(
+            read("theme = \"resonate-light\"").expect("a theme").theme,
+            Some(Theme::Light)
+        );
+        assert_eq!(
+            read("theme = \"high-contrast-light\"")
+                .expect("a theme")
+                .theme,
+            Some(Theme::HighContrastLight)
         );
     }
 

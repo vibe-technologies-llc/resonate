@@ -3,7 +3,7 @@ use std::cell::Cell;
 use gpui::{
     AnyElement, App, Bounds, BoxShadow, Corners, CursorStyle, Decorations, Div, HitboxBehavior,
     MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, ResizeEdge, Role, Size, Stateful,
-    Svg, Tiling, Window, canvas, div, hsla, point, prelude::*, px, rgb,
+    Svg, Tiling, Window, canvas, div, point, prelude::*, px, rgb,
 };
 
 use crate::{
@@ -242,7 +242,7 @@ fn shadow_rim(border: Pixels, corners: Corners<Pixels>) -> [Div; 4] {
         .max(corners.top_right.max(corners.bottom_right));
     let cast = || {
         div().absolute().shadow(vec![BoxShadow {
-            color: hsla(0.0, 0.0, 0.0, SHADOW_ALPHA),
+            color: theme::shadow(SHADOW_ALPHA),
             offset: point(px(0.0), px(SHADOW_DROP)),
             blur_radius: blur,
             spread_radius: px(0.0),

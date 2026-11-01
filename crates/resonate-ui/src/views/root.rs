@@ -16,7 +16,7 @@ use gpui::{
     Entity, ExternalPaths, FocusHandle, Focusable, KeyDownEvent, Modifiers, MouseButton,
     MouseDownEvent, MouseExitEvent, MouseMoveEvent, NavigationDirection, ObjectFit, Pixels, Point,
     Render, Role, ScrollHandle, ScrollStrategy, SharedString, Stateful, Task,
-    UniformListScrollHandle, Window, canvas, div, hsla, img, point, prelude::*, px, rgb, rgba,
+    UniformListScrollHandle, Window, canvas, div, img, point, prelude::*, px, rgb, rgba,
 };
 use resonate_core::{
     AlbumId, ArtistId, ArtistsDrawn, Frames, MediaLocation, PlaylistId, QueueStamp, Span, TrackId,
@@ -4029,7 +4029,7 @@ impl RootView {
                         .overflow_hidden()
                         .bg(rgb(theme::raised()))
                         .shadow(vec![BoxShadow {
-                            color: hsla(0.0, 0.0, 0.0, 0.6),
+                            color: theme::shadow(0.6),
                             offset: point(px(0.0), px(16.0)),
                             blur_radius: px(48.0),
                             spread_radius: px(0.0),
@@ -4269,7 +4269,7 @@ impl RootView {
                         .border_1()
                         .border_color(rgb(theme::outline()))
                         .shadow(vec![BoxShadow {
-                            color: hsla(0.0, 0.0, 0.0, 0.45),
+                            color: theme::shadow(0.45),
                             offset: point(px(0.0), px(4.0)),
                             blur_radius: px(16.0),
                             spread_radius: px(0.0),
@@ -5178,7 +5178,7 @@ impl RootView {
                 .border_1()
                 .border_color(rgb(theme::border()))
                 .shadow(vec![BoxShadow {
-                    color: hsla(0.0, 0.0, 0.0, 0.5),
+                    color: theme::shadow(0.5),
                     offset: point(px(0.0), px(12.0)),
                     blur_radius: px(32.0),
                     spread_radius: px(0.0),
@@ -5451,7 +5451,7 @@ impl RootView {
             .border_1()
             .border_color(rgb(theme::border()))
             .shadow(vec![BoxShadow {
-                color: hsla(0.0, 0.0, 0.0, 0.5),
+                color: theme::shadow(0.5),
                 offset: point(px(0.0), px(16.0)),
                 blur_radius: px(48.0),
                 spread_radius: px(0.0),

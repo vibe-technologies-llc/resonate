@@ -91,6 +91,11 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   activates the tree), and neither TalkBack on the Compose screens nor VoiceOver on the SwiftUI app
   has read the accessibility work of 0.4.0 (the lyric elements, the adjustable bars, the hidden
   background under Now Playing, the announcements)
+- [S · blocked: a desktop] The desktop's colour scheme and text scale are proved on how a
+  value is read alone: no GNOME or KDE session is reachable from the agent shell, so the portal's
+  `color-scheme` and `SettingChanged`, GNOME's `text-scaling-factor` and KDE's `font` point size
+  (taken against an ordinary ten) have not been read from a live portal, and the light palettes have
+  been held by the contrast tests but not looked at in a window
 
 ## Later: Packaging
 - [S · blocked: tooling] The sync server's RPM spec has never run: no `rpmbuild` here, and its

@@ -48,8 +48,8 @@ pub use crate::{
         SharedTrack, WholeFile,
     },
     appearance::{
-        Accent, Appearance, ArtistsDrawn, ScrollbarMode, Spectral, SpectrumBands, SpectrumFalls,
-        SpectrumFloor, SpectrumTilt, TextSize, Theme,
+        Accent, Appearance, ArtistsDrawn, DesktopLook, Following, Ground, ScrollbarMode, Spectral,
+        SpectrumBands, SpectrumFalls, SpectrumFloor, SpectrumTilt, TextSize, Theme,
     },
     buffer::{AudioBuffer, SampleData},
     calendar::Calendar,

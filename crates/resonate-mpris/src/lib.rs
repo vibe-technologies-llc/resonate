@@ -30,7 +30,7 @@ pub use crate::{
     },
     icons::tell_the_icons_changed,
     metered::{meter_of_network_manager, watch_the_meter},
-    preferences::{Contrast, Motion, Preferences, desktop_preferences},
+    preferences::{Contrast, Motion, Preferences, Scheme, desktop_preferences, watch_the_desktop},
     remote::{
         Described, PlayerName, Queueing, ROWS_A_CALL, Running, Seeking, Session, Standing,
         ZoneAsked,

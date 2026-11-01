@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use gpui::{
-    BoxShadow, Context, Div, FontWeight, ObjectFit, Role, SharedString, Stateful, Window, div,
-    hsla, img, point, prelude::*, px, relative, rgb, rgba,
+    BoxShadow, Context, Div, FontWeight, ObjectFit, Role, SharedString, Stateful, Window, div, img,
+    point, prelude::*, px, relative, rgb, rgba,
 };
 use resonate_engine::NodeName;
 use resonate_listen::Listening;
@@ -119,7 +119,7 @@ impl RootView {
             .border_1()
             .border_color(rgb(theme::border()))
             .shadow(vec![BoxShadow {
-                color: hsla(0.0, 0.0, 0.0, 0.5),
+                color: theme::shadow(0.5),
                 offset: point(px(0.0), px(16.0)),
                 blur_radius: px(48.0),
                 spread_radius: px(0.0),

@@ -228,8 +228,12 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         Group::Colour => {
             standing.appearance.theme != Appearance::DEFAULT.theme
                 || standing.appearance.accent != Appearance::DEFAULT.accent
+                || standing.appearance.follows.scheme != Appearance::DEFAULT.follows.scheme
         }
-        Group::Layout => standing.appearance.text_size != Appearance::DEFAULT.text_size,
+        Group::Layout => {
+            standing.appearance.text_size != Appearance::DEFAULT.text_size
+                || standing.appearance.follows.text != Appearance::DEFAULT.follows.text
+        }
         Group::WindowButtons => standing.window_buttons != WINDOW_BUTTONS,
         Group::VolumeWheel => standing.scroll_volume != SCROLL_VOLUME,
         Group::MouseNavigation => standing.mouse_navigation != MOUSE_NAVIGATION,

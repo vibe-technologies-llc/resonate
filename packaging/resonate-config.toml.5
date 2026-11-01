@@ -353,14 +353,26 @@ Boolean. Keep showing the track while it is paused. Default: false.
 .B theme
 String: resonate, midnight, graphite, amoled, plum, rose-pine, rose-pine-moon, catppuccin-mocha,
 catppuccin-macchiato, catppuccin-frappe, nord, gruvbox-dark, tokyo-night, dracula, one-dark,
-solarized-dark or high-contrast. Default: resonate, or high-contrast while the desktop asks for more
-contrast and no theme is set.
+solarized-dark, high-contrast, resonate-light or high-contrast-light. Default: resonate, or high-contrast
+while the desktop asks for more contrast and no theme is set; with
+.B follow-desktop-scheme
+a light desktop wears the theme's light counterpart.
 .TP
 .B accent
 String: mauve, blue, teal, green, amber, peach or red. The accent colour. Default: the theme's own.
 .TP
 .B text-size
-String: small, medium, large, larger or largest. Default: medium.
+String: small, medium, large, larger or largest. The size used when the desktop's own text scale is not followed or is not said. Default: medium.
+.TP
+.B follow-desktop-scheme
+Boolean. Wear the light or dark counterpart of the theme as the desktop's colour scheme asks. Default: true where
+.B theme
+is not set, otherwise false.
+.TP
+.B follow-desktop-text-size
+Boolean. Draw the text at the size nearest the desktop's own text scale. Default: true where
+.B text-size
+is not set, otherwise false.
 .TP
 .B notify
 Boolean. Raise a desktop notification when the track changes. Default: true.

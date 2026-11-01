@@ -7,8 +7,7 @@ use std::{
 use ahash::AHashMap;
 use gpui::{
     AnyView, App, BoxShadow, Context, Div, ElementId, IntoElement, MouseButton, Render,
-    SharedString, Stateful, StatefulInteractiveElement, Window, div, hsla, point, prelude::*, px,
-    rgb,
+    SharedString, Stateful, StatefulInteractiveElement, Window, div, point, prelude::*, px, rgb,
 };
 
 use crate::{
@@ -96,7 +95,7 @@ fn plate(text: SharedString) -> Div {
         .border_1()
         .border_color(rgb(theme::outline()))
         .shadow(vec![BoxShadow {
-            color: hsla(0.0, 0.0, 0.0, 0.45),
+            color: theme::shadow(0.45),
             offset: point(px(0.0), px(4.0)),
             blur_radius: px(16.0),
             spread_radius: px(0.0),
