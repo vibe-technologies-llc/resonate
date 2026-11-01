@@ -654,7 +654,7 @@ pub(crate) fn switch(id: impl Into<ElementId>, on: bool) -> Stateful<Div> {
                             .flex_none()
                             .rounded_full()
                             .bg(rgb(motion::blended(
-                                theme::faint(),
+                                theme::switch_knob_off(),
                                 theme::accent_ink(),
                                 at,
                             ))),

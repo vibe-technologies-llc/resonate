@@ -739,7 +739,9 @@ is never named.
   pane; `focus_ring_over(fill)` picks whichever ink stands off a fill), every accent as text on the
   panes, every semantic colour as text on its own `tinted` wash, the inks on every pane they are
   drawn on, text on the selection wash, and High Contrast at the stricter ratio. A colour that fell
-  short was lifted along its hue, as `THIRD_INK` is. Fixed heights are measures read through
+  short was lifted along its hue, as `THIRD_INK` is. A switch thrown off wears its knob in
+  `theme::switch_knob_off` (`ink_over` the `outline` track, 3:1 held by
+  `a_switch_knob_thrown_off_stands_off_its_track`), since `faint` on `outline` read at 1.3 to 1.5:1. Fixed heights are measures read through
   `scaled()` (`BUTTON_HEIGHT`, `PILL_HEIGHT`, `WAY_BACK_HEIGHT`, `COLUMN_HEADER_HEIGHT`,
   `SIDEBAR_ROW`): `a_view_draws_no_height_in_a_bare_number_of_pixels_unless_it_is_fixed_by_design`
   fails on a new literal. `TextSize::Largest` (twice the middling size) is the 200 % step; a hit
