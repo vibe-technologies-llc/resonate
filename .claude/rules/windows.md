@@ -26,6 +26,8 @@ paths:
   - "crates/resonate-mpris/src/costing.rs"
   - "crates/resonate-mpris/src/desk_toast.rs"
   - "crates/resonate-mpris/src/toast.rs"
+  - "crates/resonate-mpris/src/smtc.rs"
+  - "crates/resonate-mpris/src/transport.rs"
   - "crates/resonate-ui/src/system.rs"
   - "packaging/windows/**"
 ---
@@ -381,8 +383,9 @@ PipeWire sink is `admit`) and `endpoints.rs` (naming, the listing, the choice of
 
 `resonate-mpris` answers both with the Windows Runtime, through the `windows` crate's safe
 projections (`Windows.UI.Notifications`, `Windows.Data.Xml.Dom`, `Windows.Networking.Connectivity`;
-the features `Data_Xml_Dom`, `Foundation`, `Networking_Connectivity` and `UI_Notifications`, and
-nothing else). `RoInitialize` and `CoInitializeEx` are `unsafe fn`s there, so a thread enters the
+the features `Data_Xml_Dom`, `Foundation`, `Networking_Connectivity` and `UI_Notifications`;
+the media transport below adds `Media`, `Media_Playback`, `Storage` and `Storage_Streams`, and
+nothing else is enabled). `RoInitialize` and `CoInitializeEx` are `unsafe fn`s there, so a thread enters the
 multithreaded apartment through the `wasapi` crate's safe `initialize_mta` (`apartment.rs`'s
 `Apartment`, left on drop), as the render and capture threads do; a Windows Runtime call on a thread
 in no apartment fails `CO_E_NOTINITIALIZED`. Errors are `Error::Windows { op: WindowsOp, source }`.
@@ -426,11 +429,60 @@ in no apartment fails `CO_E_NOTINITIALIZED`. Errors are `Error::Windows { op: Wi
   never blocks anything. `Roaming`, `OverDataLimit` and `ApproachingDataLimit` of the cost are
   not read.
 
+## The media transport
+
+Media keys, the volume overlay's and the lock screen's player, and the buttons on them are the
+System Media Transport Controls, which `resonate-mpris` publishes to and is commanded from as it is
+from MPRIS on Linux (`smtc.rs`, `cfg(windows)`; `transport.rs`, portable and tested on every host).
+
+- **The session comes from a `Windows.Media.Playback.MediaPlayer`, never from a window.** An
+  unpackaged Win32 process has no `GetForCurrentView`, and `ISystemMediaTransportControlsInterop::
+  GetForWindow(hwnd)` is COM interop the `windows` crate leaves `unsafe` (and `resonate play` has no
+  window). A `MediaPlayer` that never plays carries a `SystemMediaTransportControls` of its own;
+  its `CommandManager` is switched off (`SetIsEnabled(false)`), so the buttons are ours and not the
+  idle player's, and the controls are enabled. All safe projections: the features `Media`,
+  `Media_Playback`, `Storage` and `Storage_Streams` beside the toasts' (`dependencies.md`).
+  `souvlaki` was weighed and left: on Windows it needs the window handle (`GetForWindow`), pins an
+  older `windows` crate beside ours and is a second abstraction over the `Host` seam.
+- **The first zone owns it.** Windows has one media session per process here, so the zone that
+  claims `org.mpris.MediaPlayer2.resonate` on Linux (the window's first zone, the only one of
+  `resonate play`) and registers with BlueZ owns it: `Host::answers_media_keys`, false by default
+  (so no test's host touches the machine's controls), the binary's `Desktop` answering true for the
+  first zone as it does `answers_headsets`. A second zone shown in the window is not what the keys
+  reach; it hands over or is driven from the window.
+- **One thread, the bus's poll and arithmetic.** `Mpris::start` spawns `resonate-transport` on
+  Windows whether the zone is served on a bus or on the pipe, beside the `Answering` and the
+  `resonate-toasts` thread. It enters the apartment (`Apartment`), opens the `Transport`, and every
+  `POLL` (200 ms) takes the same `snapshot` the bus publishes from and maps it by `controls_of`
+  into a portable `transport::Controls`: `Status::of` is `PlaybackStatus`'s mapping (`Buffering`
+  plays, `Idle` stops) with `Closed` where nothing is queued; `Buttons::of` offers Play, Pause,
+  Next and Previous exactly where `CanPlay`, `CanPause`, `CanGoNext` and `CanGoPrevious` say so
+  (`service::can_go_next`, `can_go_previous`), Stop beside Pause; shuffle and repeat
+  (`repeat_code`: `None`, `Track`, `List`); title (the notification's, so a file with no title
+  shows its stem), artist, album, album artist and track number off the playing tags; the cover the
+  bus names (`art::Pictures`' `file:///` URI, read through `StorageFile::GetFileFromPathAsync` and
+  `RandomAccessStreamReference::CreateFromFile`, any other URI `CreateFromUri`); and the timeline in
+  100 ns ticks (`ticks`), the end the track's length, the seek range closed where `CanSeek` is false
+  or the length unknown. `Moved::between` tells only what moved: the display on a track or cover
+  change (`ClearAll` then every field, `Update`), the timeline on a seek (`PlayerState::seeks`,
+  as `Seeked`), a status, length or display change, and once every `TIMELINE_EVERY` (1 s) while a
+  track is current. Teardown removes the handlers, sets `Closed`, clears the display and disables
+  the controls.
+- **A request is the MPRIS method of that name.** `ButtonPressed` maps through `Pressed::of` to
+  `PlayerInterface::play`, `pause`, `stop`, `next` or `previous` (so a press does nothing where the
+  bus says it could not), `PlaybackPositionChangeRequested` to `set_position` on the current row
+  (ignored before the start, past the end or where nothing can be sought), and
+  `ShuffleEnabledChangeRequested` and `AutoRepeatModeChangeRequested` to the `Shuffle` and
+  `LoopStatus` setters. The handlers run on the Windows Runtime's own threads and `settle` as a
+  bus call does; what Windows is then shown is what the next poll reads, never the request.
+- **The volume overlay's level is the system's.** SMTC carries no application volume, so the
+  overlay's slider turns the endpoint, which the output pane already follows (`set_device_volume`).
+
 ## Not on Windows yet
 
-The MPRIS service and the media transport answer "no bus": `resonate-mpris` finds no session bus
-and the binary carries on without it as it does on a Linux machine with none (a running window is
-still reached on its pipe, the machine kept awake by `awake.rs`, toasts and the metered connection
+The MPRIS service answers "no bus": `resonate-mpris` finds no session bus and the binary carries
+on without it as it does on a Linux machine with none (a running window is still reached on its
+pipe, the machine kept awake by `awake.rs`, the media transport, toasts and the metered connection
 above). The launcher's icon-follows-the-accent is a no-op. All of it is on the roadmap.
 
 ## Release

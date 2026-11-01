@@ -29,7 +29,11 @@ windows = {
     features = [
         "Data_Xml_Dom",
         "Foundation",
+        "Media",
+        "Media_Playback",
         "Networking_Connectivity",
+        "Storage",
+        "Storage_Streams",
         "UI_Notifications"
     ]
 }
