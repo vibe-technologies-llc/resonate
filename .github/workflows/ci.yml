@@ -21,13 +21,13 @@ env:
 jobs:
   clippy:
     name: Clippy
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     container: archlinux:latest
     timeout-minutes: 60
     steps:
       - name: Install the build dependencies
         run: pacman -Syu --noconfirm --needed $ARCH_PACKAGES
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install the pinned toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
@@ -44,13 +44,13 @@ jobs:
 
   headless:
     name: Tests without the window
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     container: archlinux:latest
     timeout-minutes: 60
     steps:
       - name: Install the build dependencies
         run: pacman -Syu --noconfirm --needed $ARCH_PACKAGES
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install the pinned toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
@@ -59,13 +59,13 @@ jobs:
 
   workspace:
     name: Tests with everything
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     container: archlinux:latest
     timeout-minutes: 90
     steps:
       - name: Install the build dependencies
         run: pacman -Syu --noconfirm --needed $ARCH_PACKAGES
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install the pinned toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
@@ -73,13 +73,13 @@ jobs:
 
   costs:
     name: DSP costs under their ceilings
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     container: archlinux:latest
     timeout-minutes: 30
     steps:
       - name: Install the build dependencies
         run: pacman -Syu --noconfirm --needed $ARCH_PACKAGES
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install the pinned toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
@@ -89,13 +89,13 @@ jobs:
 
   layering:
     name: Crate layering
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     container: archlinux:latest
     timeout-minutes: 15
     steps:
       - name: Install the build dependencies
         run: pacman -Syu --noconfirm --needed $ARCH_PACKAGES
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install the pinned toolchain
         run: rustup toolchain install
       - name: Refuse the dependencies each crate must stay free of
@@ -234,7 +234,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install the pinned toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
@@ -247,7 +247,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install the pinned toolchain
         run: rustup toolchain install
       - run: rustup target add aarch64-pc-windows-msvc
@@ -256,13 +256,13 @@ jobs:
 
   server-package:
     name: Sync server package
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     container: archlinux:latest
     timeout-minutes: 60
     steps:
       - name: Install the build dependencies
         run: pacman -Syu --noconfirm --needed base-devel git rustup
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build the package from this checkout
         run: |
           useradd --create-home builder
@@ -275,13 +275,13 @@ jobs:
 
   fuzz:
     name: Fuzz targets build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     container: archlinux:latest
     timeout-minutes: 60
     steps:
       - name: Install the build dependencies
         run: pacman -Syu --noconfirm --needed $ARCH_PACKAGES
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install nightly and cargo-fuzz
         run: |
           rustup toolchain install nightly --profile minimal
@@ -295,15 +295,15 @@ jobs:
 
   android:
     name: Android APK and emulator
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
         with:
           packages: platform-tools
       - name: Install the Android toolchains
@@ -314,7 +314,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> android/.cargo-target
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
       - name: Build and lint Android
         run: android/gradlew -p android :app:assembleDebug :app:lintDebug :app:testDebugUnitTest
       - name: Enforce Android dependencies and Rust checks
@@ -340,7 +340,7 @@ jobs:
           target: google_apis
           disable-animations: true
           script: android/gradlew -p android :app:connectedDebugAndroidTest
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: resonate-android-tests-api-33
@@ -355,7 +355,7 @@ jobs:
           target: google_apis
           disable-animations: true
           script: android/gradlew -p android :app:connectedDebugAndroidTest
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: resonate-android-tests-api-36
@@ -363,7 +363,7 @@ jobs:
             android/app/build/reports/androidTests
             android/app/build/outputs/androidTest-results
           if-no-files-found: ignore
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: resonate-android-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
