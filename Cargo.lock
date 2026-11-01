@@ -6316,6 +6316,7 @@ version = "0.3.0"
 dependencies = [
  "ahash",
  "crossbeam-channel",
+ "interprocess",
  "parking_lot 0.13.0",
  "resonate-codec",
  "resonate-core",

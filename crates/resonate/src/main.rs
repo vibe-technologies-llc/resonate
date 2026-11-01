@@ -2283,7 +2283,7 @@ fn players() -> Result<()> {
         .collect();
 
     if standing.is_empty() {
-        said!("no player of this build is answering on the session bus");
+        said!("no player of this build is running");
         return Ok(());
     }
 

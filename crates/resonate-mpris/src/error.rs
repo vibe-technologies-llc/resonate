@@ -1,7 +1,9 @@
-use std::result;
+use std::{io, result};
 
 use thiserror::Error;
 use zbus::names::OwnedWellKnownName;
+
+use crate::wire::{Call, Fault, WireFault};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum BusOp {
@@ -23,6 +25,18 @@ pub enum BusOp {
     Shutdown,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PipeOp {
+    Connect,
+    Read,
+    Write,
+    Listen,
+    Accept,
+    Spawn,
+    Claim,
+    List,
+}
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("{op:?} failed on the message bus")]
@@ -31,6 +45,19 @@ pub enum Error {
         #[source]
         source: Box<zbus::Error>,
     },
+
+    #[error("{op:?} failed on the player's pipe")]
+    Pipe {
+        op: PipeOp,
+        #[source]
+        source: io::Error,
+    },
+
+    #[error("the player's pipe spoke out of turn")]
+    Wire(#[from] WireFault),
+
+    #[error("the player refused {call:?} as {fault:?}")]
+    Refused { call: Call, fault: Fault },
 
     #[error("{landed} of the {asked} rows reached the queue before the bus failed")]
     QueuedPartway {
@@ -54,6 +81,10 @@ pub enum Error {
 }
 
 impl Error {
+    pub(crate) fn pipe(op: PipeOp, source: io::Error) -> Self {
+        Self::Pipe { op, source }
+    }
+
     pub(crate) fn bus(op: BusOp, source: zbus::Error) -> Self {
         Self::Bus {
             op,

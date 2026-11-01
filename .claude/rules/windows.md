@@ -10,6 +10,8 @@ paths:
   - "crates/resonate/src/awake.rs"
   - "crates/resonate-listen/src/unavailable.rs"
   - "crates/resonate-discord/src/pipe.rs"
+  - "crates/resonate-mpris/src/pipe.rs"
+  - "crates/resonate-mpris/src/registry.rs"
   - "crates/resonate-ui/src/system.rs"
   - "packaging/windows/**"
 ---
@@ -138,6 +140,40 @@ man page say "the sound system".
 - **Any user may create a pipe of that name**, so a squatter on a shared machine could learn what
   plays; the Unix socket's owner check has no counterpart yet.
 
+## The window's pipe
+
+`Running` has a second wire here, the way Discord's `Session` has (`mpris.md` has the seam: the
+`Peer` trait, `BusPeer` and `PipePeer`, `wire.rs`, `answering.rs`). With no session bus,
+`Mpris::start` serves the zone on a named pipe instead, so `queue`, `sleep`, `players`, a second
+launch handing its files to the window, `eq` reloads and `mcp` reach a running window on Windows
+through the same `Running` calls as on Linux, and `Session::open` is `Ok` without a bus.
+
+- **A player is named as on the bus** (`bus_name_of`, `instance_name`: `org.mpris.MediaPlayer2.resonate`,
+  `.zone<N>`, `.instance<pid>`), so `numbered`, `answers_to`, `PlayerName` and `--player zone2` are
+  unchanged. The name is claimed in `%TEMP%\resonate-players\<name>` by `Held::taken_over`
+  (`registry.rs`): the file is the **lock file for discovery**, held for the player's life, so a
+  client lists the folder and `writer_of` says which entries live (a held lock; on Windows the lock
+  is mandatory, so the file's content is never read, its name says everything). A dead player's
+  entry is swept by the next listing once it has aged `UNHELD_AND_UNTOUCHED_FOR`; a client that
+  cannot connect to a living-looking entry skips it. A taken name falls through to the instance
+  names, up to `INSTANCES`, as on the bus.
+- **The pipe is `\\.\pipe\resonate-<USERNAME>-<player name>`** (`registry::pipe_name`, the user
+  name cut to letters, digits, `-` and `_`), created by `interprocess` with
+  `FILE_FLAG_FIRST_PIPE_INSTANCE` (what its first listener instance sets), remote clients rejected
+  and the security descriptor `D:P(A;;GA;;;SY)(A;;GA;;;OW)`: only the system and the pipe's
+  owner may open it, so another user's process can neither connect nor create a further instance.
+  **Squatting**: a process that creates the name first makes this player's own creation fail, which is
+  logged and answered with the next name, and the registry entry is written only after the pipe
+  is held, so a client, which reaches only the pipes the registry names, never connects to a
+  squatter's. The registry folder lives in the user's temporary folder, private by the profile's
+  inheritance. Not heard on a real Windows machine (`docs/FEATURES.md`).
+- **One connection is one thread each side.** The listener's accept loop is one thread
+  (`resonate-mpris-pipe`), woken at shutdown by a connection to its own pipe; each client is served
+  on a thread of its own up to `CONNECTIONS_AT_MOST` (32), more turned away. A pipe handle has no
+  read timeout, so a client's `Link` runs the blocking I/O on a thread and waits `ANSWERS_WITHIN`
+  (2 s) for each reply; a call that times out severs the link (a later reply could be read for
+  another call), and dropping the client ends its thread.
+
 ## Awake while playing
 
 `awake.rs` (`resonate-awake` thread, the binary's, since `resonate-mpris` finds no bus) looks at
@@ -148,9 +184,9 @@ set it, so the hold is made and dropped on that thread alone; dropping `Awake` s
 
 ## Not on Windows yet
 
-The MPRIS service, notifications, network metering and `Running` (so `queue`, `sleep`
-and `players` against a running window) answer "no bus": `resonate-mpris` compiles but finds no
-session bus, and the binary carries on without it as it does on a Linux machine with none. Capture
+The MPRIS service, notifications and network metering answer "no bus": `resonate-mpris` compiles
+but finds no session bus, and the binary carries on without it as it does on a Linux machine with
+none (a running window is still reached on its pipe, above). Capture
 (`resonate-listen`) is a `Listener` that lists no microphone and refuses to record
 (`Error::Unavailable`). The
 launcher's icon-follows-the-accent is a no-op. All of it is on the roadmap.

@@ -20,6 +20,9 @@ zbus.workspace = true
 [target.'cfg(unix)'.dependencies]
 rustix.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+interprocess.workspace = true
+
 [dev-dependencies]
 resonate-codec.workspace = true
 zbus = { workspace = true, features = ["object-manager"] }

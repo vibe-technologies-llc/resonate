@@ -194,37 +194,37 @@ pub(crate) struct PlayerInterface {
 
 #[interface(name = "org.mpris.MediaPlayer2.Player")]
 impl PlayerInterface {
-    fn next(&self) -> fdo::Result<()> {
+    pub(crate) fn next(&self) -> fdo::Result<()> {
         if !service::can_go_next(&self.shared.player.state()) {
             return Ok(());
         }
         self.shared.settle(Command::Next)
     }
 
-    fn previous(&self) -> fdo::Result<()> {
+    pub(crate) fn previous(&self) -> fdo::Result<()> {
         if !service::can_go_previous(&self.shared.player.state()) {
             return Ok(());
         }
         self.shared.settle(Command::Previous)
     }
 
-    fn pause(&self) -> fdo::Result<()> {
+    pub(crate) fn pause(&self) -> fdo::Result<()> {
         self.shared.settle(Command::Pause)
     }
 
-    fn play_pause(&self) -> fdo::Result<()> {
+    pub(crate) fn play_pause(&self) -> fdo::Result<()> {
         self.shared.settle(Command::TogglePlayPause)
     }
 
-    fn stop(&self) -> fdo::Result<()> {
+    pub(crate) fn stop(&self) -> fdo::Result<()> {
         self.shared.settle(Command::Stop)
     }
 
-    fn play(&self) -> fdo::Result<()> {
+    pub(crate) fn play(&self) -> fdo::Result<()> {
         self.shared.settle(Command::Play)
     }
 
-    fn seek(&self, offset: i64) -> fdo::Result<()> {
+    pub(crate) fn seek(&self, offset: i64) -> fdo::Result<()> {
         let Some(current) = self.shared.player.state().current else {
             return Ok(());
         };
@@ -238,7 +238,7 @@ impl PlayerInterface {
         self.shared.settle(Command::SeekBy(delta))
     }
 
-    fn set_position(&self, track_id: ObjectPath<'_>, position: i64) -> fdo::Result<()> {
+    pub(crate) fn set_position(&self, track_id: ObjectPath<'_>, position: i64) -> fdo::Result<()> {
         let state = self.shared.player.state();
         let Some(current) = state.current else {
             return Ok(());
@@ -307,7 +307,7 @@ impl PlayerInterface {
     }
 
     #[zbus(property)]
-    fn shuffle(&self) -> bool {
+    pub(crate) fn shuffle(&self) -> bool {
         self.shared.player.state().shuffle
     }
 
@@ -317,7 +317,7 @@ impl PlayerInterface {
     }
 
     #[zbus(property)]
-    fn metadata(&self) -> HashMap<String, OwnedVariant> {
+    pub(crate) fn metadata(&self) -> HashMap<String, OwnedVariant> {
         let state = self.shared.player.state();
         let digest = self.shared.player.digest();
         let art = self.shared.art(&state, digest.as_ref());
@@ -327,12 +327,12 @@ impl PlayerInterface {
     }
 
     #[zbus(property)]
-    fn volume(&self) -> f64 {
+    pub(crate) fn volume(&self) -> f64 {
         f64::from(self.shared.player.state().volume.get())
     }
 
     #[zbus(property)]
-    fn set_volume(&self, volume: f64) -> fdo::Result<()> {
+    pub(crate) fn set_volume(&self, volume: f64) -> fdo::Result<()> {
         let Ok(volume) = Volume::new(volume.clamp(0.0, 1.0) as f32) else {
             return Err(fdo::Error::InvalidArgs(
                 "Volume is a fraction between 0 and 1".to_owned(),
@@ -342,7 +342,7 @@ impl PlayerInterface {
     }
 
     #[zbus(property(emits_changed_signal = "false"))]
-    fn position(&self) -> i64 {
+    pub(crate) fn position(&self) -> i64 {
         let state = self.shared.player.state();
         state
             .current
@@ -427,7 +427,7 @@ pub(crate) struct OwnInterface {
 
 #[interface(name = "org.resonate.Player1")]
 impl OwnInterface {
-    fn set_sleep(&self, mode: &str, seconds: u64) -> fdo::Result<()> {
+    pub(crate) fn set_sleep(&self, mode: &str, seconds: u64) -> fdo::Result<()> {
         let Some(wanted) = SleepMode::read(mode) else {
             return Err(fdo::Error::InvalidArgs(format!(
                 "{mode} is not one of {}",
@@ -438,7 +438,7 @@ impl OwnInterface {
             .settle(Command::SleepUntil(wanted.until(seconds)))
     }
 
-    fn add_tracks(
+    pub(crate) fn add_tracks(
         &self,
         uris: Vec<String>,
         after_track: ObjectPath<'_>,
@@ -469,7 +469,7 @@ impl OwnInterface {
         })
     }
 
-    fn tune(&self, settings: Vec<(String, String)>) -> fdo::Result<()> {
+    pub(crate) fn tune(&self, settings: Vec<(String, String)>) -> fdo::Result<()> {
         for (name, value) in &settings {
             let refused = || fdo::Error::InvalidArgs(format!("{name} cannot be set to {value}"));
             let setting = Tunable::named(name).ok_or_else(refused)?;
@@ -480,7 +480,7 @@ impl OwnInterface {
         Ok(())
     }
 
-    fn reload(&self, group: &str, settings: &str) -> fdo::Result<()> {
+    pub(crate) fn reload(&self, group: &str, settings: &str) -> fdo::Result<()> {
         let refused =
             || fdo::Error::InvalidArgs(format!("{group} cannot be reloaded from {settings}"));
         let group = Reloadable::named(group).ok_or_else(refused)?;
@@ -490,7 +490,7 @@ impl OwnInterface {
         }
     }
 
-    fn hand_over(&self, zone: u32) -> fdo::Result<()> {
+    pub(crate) fn hand_over(&self, zone: u32) -> fdo::Result<()> {
         let refused = || fdo::Error::InvalidArgs(format!("playback cannot move to zone {zone}"));
         let to = ZoneId::new(zone).ok_or_else(refused)?;
         match self.shared.host.hand_over(to) {
@@ -499,7 +499,7 @@ impl OwnInterface {
         }
     }
 
-    fn relocate(&self, moved: Vec<(String, String)>) -> fdo::Result<()> {
+    pub(crate) fn relocate(&self, moved: Vec<(String, String)>) -> fdo::Result<()> {
         let moved = moved
             .iter()
             .map(|(from, to)| Ok((moved_location(from)?, moved_location(to)?)))
@@ -512,12 +512,12 @@ impl OwnInterface {
     }
 
     #[zbus(property)]
-    fn sleep(&self) -> Sleep {
+    pub(crate) fn sleep(&self) -> Sleep {
         sleep_status(self.shared.player.state().sleeping)
     }
 
     #[zbus(property(emits_changed_signal = "false"))]
-    fn play_order(&self) -> Vec<OwnedObjectPath> {
+    pub(crate) fn play_order(&self) -> Vec<OwnedObjectPath> {
         self.shared
             .player
             .queued()
@@ -528,12 +528,12 @@ impl OwnInterface {
     }
 
     #[zbus(property)]
-    fn zone(&self) -> String {
+    pub(crate) fn zone(&self) -> String {
         self.shared.host.zone().as_str().to_owned()
     }
 
     #[zbus(property)]
-    fn playing_next(&self) -> u32 {
+    pub(crate) fn playing_next(&self) -> u32 {
         waiting_to_play(
             self.shared.player.queued().next,
             self.shared.player.state().queue_position,

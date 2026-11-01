@@ -14,7 +14,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `binary.md` | the binary, the settings pane | the CLI grammar, file arguments and URIs, the MIME list, signals, the terminal, the settings decisions, the settings file |
 | `realtime.md` | engine, pipewire, the Oboe and RemoteIO callbacks, dsp, `listen::recording`, `core::rt` | the audio-callback contract |
 | `audio.md` | engine, codec, dsp, pipewire | decode, the prescan guards, transport, queue, zones, sleep, resumption, what is published, DSP, sink |
-| `mpris.md` | resonate-mpris, the binary's `mpris.rs`, `starting.rs` | the bus, the track list, covers, the name and each zone's, notifications, the idle inhibit, `Running` |
+| `mpris.md` | resonate-mpris, the binary's `mpris.rs`, `starting.rs` | the bus, the track list, covers, the name and each zone's, notifications, the idle inhibit, `Running` and its two wires (the bus, a Windows pipe) |
 | `library.md` | library, mpris, the playlist panes, the binary's `playlists.rs` | schema, scan, enrichment, tag writing, deleting, organise, search, playlists, undo, sheets, statistics, suggestions, share |
 | `lyrics.md` | resonate-lyrics, the lyrics model and pane, `sylt.rs`, `lrclib.rs`, `sung.rs`, the phones' `lyrics.rs` | the vocabulary, the provider seam, the LRC reader |
 | `eq.md` | resonate-eq, `core::eq`, the DSP stage and convolver, `impulse.rs`, `sofa.rs`, `autoeq.rs`, the equaliser panes, the phones' `equaliser.rs`, `measurement.rs`, `room.rs` and graph | the vocabulary, the biquads, the per-sink binding, the formats, a measurement of your own fitted to a target, AutoEq, the phones' curve, measurement fit and room correction |
@@ -32,7 +32,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `discord.md` | resonate-discord, `core::presence`, the binary's `discord.rs`, the Desktop groups | the gate, the seam, the frame, what an activity says and how often |
 | `release.md` | `.github/workflows/release.yml`, `packaging/**`, the root manifest, `docs/ROADMAP.md` | versions and their spelling per ecosystem, branches, tags, the release assets, the signing secrets |
 | `packaging.md` | `packaging/**` | the Arch, Fedora, DEB and Flatpak payloads, the x86-64-v3 release baseline and the pre-release spellings |
-| `windows.md` | resonate-wasapi, core's `os_bytes`, `file_facts`, `positioned`, `windows_uri`, the binary's `interrupts.rs`, `packaging/windows/**` | the WASAPI backend (shared and exclusive as two sinks), the filesystem and path seams under the shared crates, interrupts and keys, what is not on Windows yet |
+| `windows.md` | resonate-wasapi, core's `os_bytes`, `file_facts`, `positioned`, `windows_uri`, the binary's `interrupts.rs`, `packaging/windows/**` | the WASAPI backend (shared and exclusive as two sinks), the filesystem and path seams under the shared crates, interrupts and keys, the window's named pipe, what is not on Windows yet |
 
 ## Project
 
