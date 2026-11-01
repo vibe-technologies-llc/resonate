@@ -35,7 +35,7 @@ struct TagEditorSheet: View {
         NavigationStack {
             Form {
                 if writableTracks == nil {
-                    Section { ProgressView().frame(maxWidth: .infinity) }
+                    Section { ProgressView().accessibilityLabel("Reading tags").frame(maxWidth: .infinity) }
                 } else if writable.isEmpty {
                     Section {
                         Text("Tags of this kind of file cannot be written.").foregroundStyle(.secondary)
@@ -43,7 +43,7 @@ struct TagEditorSheet: View {
                 } else if let failure {
                     Section { ReadFailure(text: failure) { Task { await load(writable) } } }
                 } else if !loaded {
-                    Section { ProgressView().frame(maxWidth: .infinity) }
+                    Section { ProgressView().accessibilityLabel("Reading tags").frame(maxWidth: .infinity) }
                 } else {
                     Section {
                         ForEach(names.filter { !$0.numbered }, id: \.self) { field($0) }

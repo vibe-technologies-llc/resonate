@@ -35,13 +35,13 @@ struct OrganiseSheet: View {
                     Text("Layout")
                 } footer: {
                     if let problem {
-                        Text(problem).foregroundStyle(.red)
+                        Text(problem).foregroundStyle(Color.failure).announced(problem)
                     } else {
                         Text("Fields: {albumartist} {artist} {album} {title} {year} {disc} {track} {ext}. Slashes make folders; {disc} is written only for albums of more than one disc.")
                     }
                 }
                 if planning || waiting {
-                    Section { ProgressView().frame(maxWidth: .infinity) }
+                    Section { ProgressView().accessibilityLabel("Planning").frame(maxWidth: .infinity) }
                 } else if let plan = current {
                     Section {
                         LabeledContent("To move", value: counted(plan.moves.count, "song"))

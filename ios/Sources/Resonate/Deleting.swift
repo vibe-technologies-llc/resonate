@@ -157,7 +157,7 @@ struct IdenticalSongsView: View {
                 }
             } else {
                 HStack(spacing: 12) {
-                    ProgressView()
+                    ProgressView().accessibilityHidden(true)
                     Text("Comparing songs…").foregroundStyle(.secondary)
                 }
             }
@@ -236,8 +236,8 @@ private struct IdenticalCopyRow: View {
                 ArtworkView(track: track, corner: 6)
                     .frame(width: artworkEdge, height: artworkEdge)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(track.shownTitle).lineLimit(1)
-                    Text(place).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                    Text(track.shownTitle).titleLines()
+                    Text(place).font(.subheadline).foregroundStyle(.secondary).titleLines(2)
                 }
                 Spacer(minLength: 0)
                 Image(systemName: kept ? "checkmark.circle.fill" : "trash")

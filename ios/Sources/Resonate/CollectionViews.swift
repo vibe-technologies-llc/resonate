@@ -286,7 +286,7 @@ struct AllSongsRow: View {
                 Text(counted(count, "song")).font(.subheadline).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
-            Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+            Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
                 .accessibilityHidden(true)
         }
         .contentShape(.rect)
@@ -336,7 +336,7 @@ struct PlaylistShelfRow: View {
         HStack(spacing: 14) {
             PlaylistArtwork(playlist: playlist).frame(width: artworkEdge, height: artworkEdge)
             VStack(alignment: .leading, spacing: 2) {
-                Text(playlist.name).font(.body.weight(.medium)).lineLimit(1)
+                Text(playlist.name).font(.body.weight(.medium)).titleLines()
                 Text("Playlist · \(counted(Int(playlist.songs), "song"))").font(.subheadline).foregroundStyle(.secondary)
             }
         }
@@ -358,11 +358,11 @@ struct PlaylistShelf: View {
                                 .frame(width: edge, height: edge)
                             Text(playlist.name)
                                 .font(.subheadline.weight(.medium))
-                                .lineLimit(1)
+                                .titleLines()
                             Text(counted(Int(playlist.songs), "song"))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                                .titleLines()
                         }
                         .frame(width: edge, alignment: .leading)
                         .contentShape(.rect)
@@ -817,7 +817,7 @@ struct ArtistView: View {
                                             .frame(width: albumEdge, height: albumEdge)
                                         Text(album.shownTitle)
                                             .font(.subheadline.weight(.medium))
-                                            .lineLimit(1)
+                                            .titleLines()
                                         Text(album.year.map(String.init) ?? counted(Int(album.songs), "song"))
                                             .font(.caption)
                                             .foregroundStyle(.secondary)

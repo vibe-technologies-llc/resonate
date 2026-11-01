@@ -13,14 +13,49 @@ import Testing
         #expect(rgb.blue == 0)
     }
 
-    @Test func inDarkTheAccentIsWornAsItIsAndInLightItIsDeepenedByTwentyEightPercent() {
-        let dark = AccentMath.worn(0x80C0FF, dark: true)
-        let light = AccentMath.worn(0x80C0FF, dark: false)
+    @Test func inDarkAnAccentThatReadsIsWornAsItIsAndInLightItIsDeepenedByTwentyEightPercentAtLeast() {
+        let dark = AccentMath.worn(0x6090C0, dark: true)
+        let light = AccentMath.worn(0x6090C0, dark: false)
 
-        #expect(dark.red == AccentMath.rgb(0x80C0FF).red)
-        #expect(abs(light.red - dark.red * 0.72) < 1e-9)
-        #expect(abs(light.green - dark.green * 0.72) < 1e-9)
-        #expect(abs(light.blue - dark.blue * 0.72) < 1e-9)
+        #expect(dark.red == AccentMath.rgb(0x6090C0).red)
+        #expect(light.red <= dark.red * 0.72 + 1e-9)
+        #expect(light.green <= dark.green * 0.72 + 1e-9)
+        #expect(light.blue <= dark.blue * 0.72 + 1e-9)
+    }
+
+    @Test func contrastIsOneForTheSameColourAndTwentyOneForBlackOnWhite() {
+        #expect(AccentMath.contrast(AccentMath.white, AccentMath.white) == 1)
+        #expect(abs(AccentMath.contrast(AccentMath.white, (0, 0, 0)) - 21) < 1e-9)
+        #expect(AccentMath.contrast((0.2, 0.4, 0.6), AccentMath.white) == AccentMath.contrast(AccentMath.white, (0.2, 0.4, 0.6)))
+    }
+
+    @Test(arguments: [true, false], [true, false])
+    func everyAccentIsWornAtFourPointFiveToOneAgainstItsGroundAndItsInkAgainstIt(dark: Bool, increased: Bool) {
+        let ground = dark ? AccentMath.darkBackground : AccentMath.white
+        let wanted = increased ? AccentMath.readableWhenIncreased : AccentMath.readable
+
+        for accent in ResonateAccent.every {
+            let worn = AccentMath.worn(accent.hex, dark: dark, increased: increased)
+
+            #expect(AccentMath.contrast(worn, ground) >= wanted - 1e-6, "\(accent.name) dark \(dark) increased \(increased)")
+            #expect(AccentMath.inkContrast(on: accent.hex, dark: dark, increased: increased) >= AccentMath.readable, "\(accent.name) ink dark \(dark) increased \(increased)")
+        }
+    }
+
+    @Test(arguments: [true, false], AccentMath.Statement.allCases)
+    func everyStatementInkReadsAtFourPointFiveToOneAgainstItsGround(dark: Bool, statement: AccentMath.Statement) {
+        let ground = dark ? AccentMath.darkBackground : AccentMath.white
+
+        #expect(AccentMath.contrast(statement.ink(dark: dark), ground) >= AccentMath.readable, "\(statement) dark \(dark)")
+    }
+
+    @Test func deepeningAnAccentInLightKeepsItsHueAndOnlyDarkensIt() {
+        for accent in ResonateAccent.every {
+            let plain = AccentMath.rgb(accent.hex)
+            let worn = AccentMath.worn(accent.hex, dark: false, increased: true)
+
+            #expect(worn.red <= plain.red && worn.green <= plain.green && worn.blue <= plain.blue, "\(accent.name)")
+        }
     }
 
     @Test func luminanceRunsFromBlackToWhiteAndWeighsGreenMost() {
@@ -30,8 +65,9 @@ import Testing
         #expect(AccentMath.luminance(red: 1, green: 0, blue: 0) > AccentMath.luminance(red: 0, green: 0, blue: 1))
     }
 
-    @Test func aDarkAccentIsLetteredInWhiteAndALightOneInNearBlack() {
-        #expect(AccentMath.ink(on: 0x101040, dark: true) == .white)
+    @Test func aDarkAccentIsLetteredInWhiteInLightAndLiftedInDarkSoItIsLetteredInNearBlack() {
+        #expect(AccentMath.ink(on: 0x101040, dark: false) == .white)
+        #expect(AccentMath.ink(on: 0x101040, dark: true) == .dark(white: AccentMath.darkInkWhite))
         #expect(AccentMath.ink(on: 0xFFE070, dark: true) == .dark(white: AccentMath.darkInkWhite))
     }
 

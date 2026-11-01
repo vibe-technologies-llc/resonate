@@ -277,7 +277,7 @@ struct EnrichmentProgressRow: View {
     var body: some View {
         let enrichment = library.features.enrichment
         HStack(spacing: 12) {
-            if enrichment.running { ProgressView() }
+            if enrichment.running { ProgressView().accessibilityHidden(true) }
             Text(enrichment.line)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)

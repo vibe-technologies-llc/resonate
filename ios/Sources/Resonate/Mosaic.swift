@@ -30,6 +30,7 @@ struct MosaicArtwork: View {
     private static let nameAlpha = 0.62
     private static let letteredFrom: CGFloat = 100
 
+    @Environment(\.colorSchemeContrast) private var contrast
     let covers: [Track]
     let accents: MixAccents
     let mark: String
@@ -46,6 +47,7 @@ struct MosaicArtwork: View {
             RoundedRectangle(cornerRadius: corner, style: .continuous)
                 .strokeBorder(.primary.opacity(0.06), lineWidth: 1)
         }
+        .accessibilityIgnoresInvertColors()
         .accessibilityHidden(true)
     }
 
@@ -88,12 +90,13 @@ struct MosaicArtwork: View {
             VStack(alignment: .leading, spacing: 0) {
                 Image(systemName: mark)
                     .font(.system(size: side * Self.markShare, weight: .semibold))
+                    .accessibilityHidden(true)
                 Spacer(minLength: 0)
                 if side >= Self.letteredFrom, !name.isEmpty {
                     Text(name)
                         .font(.system(size: side * Self.nameShare, weight: .bold))
                         .lineLimit(3)
-                        .opacity(Self.nameAlpha)
+                        .opacity(contrast == .increased ? 1 : Self.nameAlpha)
                 }
             }
             .foregroundStyle(accents.from.ink)

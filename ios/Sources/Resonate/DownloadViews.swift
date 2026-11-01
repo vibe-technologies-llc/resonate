@@ -49,9 +49,9 @@ struct DownloadSummary: View {
             }
             if !running.isEmpty {
                 if fractions.isEmpty {
-                    ProgressView().progressViewStyle(.linear)
+                    ProgressView().progressViewStyle(.linear).accessibilityLabel("Downloading")
                 } else {
-                    ProgressView(value: fractions.reduce(0, +) / Double(fractions.count))
+                    ProgressView(value: fractions.reduce(0, +) / Double(fractions.count)).accessibilityLabel("Downloading")
                 }
             }
         }
@@ -122,11 +122,11 @@ struct DownloadJobRow: View {
             }
             .frame(width: artworkEdge, height: artworkEdge)
             VStack(alignment: .leading, spacing: 6) {
-                Text(job.song.title).font(.body.weight(.medium)).lineLimit(1)
+                Text(job.song.title).font(.body.weight(.medium)).titleLines()
                 Text([job.song.artist, job.provider.map { "from \($0.title)" }].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .titleLines()
                 state
             }
         }
@@ -149,7 +149,7 @@ struct DownloadJobRow: View {
             }
             .buttonStyle(.glass)
         case .failed(let reason):
-            Text(reason).font(.footnote).foregroundStyle(.red)
+            Text(reason).font(.footnote).foregroundStyle(Color.failure)
             Button("Try again") { downloads.retry(job.id) }
                 .buttonStyle(.glass)
         case .cancelled:
@@ -165,19 +165,19 @@ struct DownloadJobRow: View {
         case .waiting:
             Text("Waiting").font(.footnote).foregroundStyle(.secondary)
         case .finding:
-            ProgressView().progressViewStyle(.linear)
+            ProgressView().progressViewStyle(.linear).accessibilityLabel("Finding a match")
             Text("Finding a match").font(.footnote).foregroundStyle(.secondary)
         case .validating:
-            ProgressView().progressViewStyle(.linear)
+            ProgressView().progressViewStyle(.linear).accessibilityLabel("Checking the download")
             Text("Checking the download").font(.footnote).foregroundStyle(.secondary)
         default:
             if let fraction = job.fraction {
-                ProgressView(value: fraction)
+                ProgressView(value: fraction).accessibilityLabel("Download progress")
                 Text(fraction.formatted(.percent.precision(.fractionLength(0))))
                     .font(.footnote.monospacedDigit())
                     .foregroundStyle(.secondary)
             } else {
-                ProgressView().progressViewStyle(.linear)
+                ProgressView().progressViewStyle(.linear).accessibilityLabel("Downloading")
                 Text("\(ByteCountFormatter.string(fromByteCount: Int64(clamping: job.received), countStyle: .file)) received")
                     .font(.footnote.monospacedDigit())
                     .foregroundStyle(.secondary)
@@ -282,11 +282,11 @@ struct WantedRow: View {
             OnlinePlaceholder(symbol: wanted.held ? "checkmark" : "music.note")
                 .frame(width: artworkEdge, height: artworkEdge)
             VStack(alignment: .leading, spacing: 2) {
-                Text(song.title).font(.body.weight(.medium)).lineLimit(1)
+                Text(song.title).font(.body.weight(.medium)).titleLines()
                 Text([song.artist, song.album].filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.joined(separator: " · "))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .titleLines()
                 if wanted.held {
                     Label("In your library", systemImage: "checkmark.circle.fill")
                         .font(.caption)
@@ -397,7 +397,7 @@ struct ProviderStatus: View {
 
     private var tint: Color {
         guard on else { return .secondary }
-        return account.readiness == .ready ? .green : .orange
+        return account.readiness == .ready ? Color.confirmation : Color.warning
     }
 }
 

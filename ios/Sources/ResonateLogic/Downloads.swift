@@ -92,6 +92,13 @@ public enum DownloadStanding: Equatable {
         case .waiting, .running, .held: false
         }
     }
+
+    public var cancellable: Bool {
+        switch self {
+        case .waiting, .running: true
+        case .available, .held, .failed, .cancelled: false
+        }
+    }
 }
 
 public enum ProviderReadiness: Equatable {

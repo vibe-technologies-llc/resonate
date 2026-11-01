@@ -108,7 +108,10 @@ struct OnlineOffRow: View {
                 Label("Turn on online features to search online too", systemImage: "globe")
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                Image(systemName: "chevron.forward")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
             .contentShape(.rect)
         }
@@ -130,7 +133,7 @@ struct SearchStart: View {
                         Label {
                             Text(recent).foregroundStyle(.primary)
                         } icon: {
-                            Image(systemName: "clock.arrow.circlepath").foregroundStyle(.secondary)
+                            Image(systemName: "clock.arrow.circlepath").foregroundStyle(.secondary).accessibilityHidden(true)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(.rect)
@@ -172,12 +175,14 @@ struct LibraryFindings: View {
                         Text("Did you mean \(Text(meant).bold())?")
                     } icon: {
                         Image(systemName: "text.magnifyingglass")
+                            .accessibilityHidden(true)
                     }
                 }
             }
             Text("Nothing in your library matches “\(search.answered)”")
                 .foregroundStyle(.secondary)
                 .listRowSeparator(.hidden)
+                .announced("Nothing in your library matches \(search.answered)")
         } else {
             SearchResults(search: search, scope: Binding(get: { .top }, set: { seeAll = $0 }), chosen: chosen)
         }

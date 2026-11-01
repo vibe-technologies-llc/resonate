@@ -190,6 +190,7 @@ struct NoneMatch: View {
             description: Text("Check the spelling, or try fewer words.")
         )
         .listRowSeparator(.hidden)
+        .announced("No \(kind) match \(query)")
     }
 }
 
@@ -203,6 +204,7 @@ struct NothingFound: View {
                     Text("Did you mean \(Text(meant).bold())?")
                 } icon: {
                     Image(systemName: "text.magnifyingglass")
+                        .accessibilityHidden(true)
                 }
             }
         }
@@ -218,6 +220,7 @@ struct SearchReadings: View {
             HStack(spacing: 8) {
                 Image(systemName: "line.3.horizontal.decrease")
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
                 ForEach(reads.indices, id: \.self) { index in
                     Text(reads[index])
                         .font(.footnote.monospaced())
@@ -265,7 +268,7 @@ struct SearchCompletions: View {
                         Button { search.text = completion } label: {
                             Label(completion, systemImage: "magnifyingglass")
                                 .font(.subheadline)
-                                .lineLimit(1)
+                                .titleLines()
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
                                 .glassEffect(.regular.interactive(), in: .capsule)
@@ -300,11 +303,11 @@ struct AlbumShelf: View {
                                 .frame(width: edge, height: edge)
                             Text(lit(album.shownTitle, by: query, in: .album))
                                 .font(.subheadline.weight(.medium))
-                                .lineLimit(1)
+                                .titleLines()
                             Text(lit(album.shownArtist, by: query, in: .artist))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                                .titleLines()
                         }
                         .frame(width: edge, alignment: .leading)
                         .contentShape(.rect)
@@ -338,7 +341,7 @@ struct ArtistShelf: View {
                                 .frame(width: edge, height: edge)
                             Text(lit(artist.shownName, by: query, in: .artist))
                                 .font(.subheadline.weight(.medium))
-                                .lineLimit(1)
+                                .titleLines()
                             Text(counted(Int(artist.songs), "song"))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)

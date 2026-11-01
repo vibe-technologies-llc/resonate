@@ -131,8 +131,9 @@ struct ListenStageView: View {
                     label: { EmptyView() },
                     currentValueLabel: { EmptyView() }
                 )
+                .accessibilityLabel("Listening")
             case .asking:
-                ProgressView()
+                ProgressView().accessibilityLabel("Asking who it is")
             case .found(let song):
                 actions(song)
             case .offline:
@@ -238,11 +239,13 @@ struct HeardCard: View {
             .frame(width: edge, height: edge)
             .clipShape(.rect(cornerRadius: 12, style: .continuous))
             .shadow(color: .black.opacity(0.18), radius: 12, y: 6)
+            .accessibilityIgnoresInvertColors()
             .accessibilityHidden(true)
 
             VStack(spacing: 4) {
                 Text(song.title)
                     .font(.title3.weight(.semibold))
+                    .accessibilityAddTraits(.isHeader)
                 if !song.artist.isEmpty {
                     Text(song.artist).font(.body).foregroundStyle(.tint)
                 }
@@ -251,7 +254,7 @@ struct HeardCard: View {
                 }
                 Text("Named by \(song.by)")
                     .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
             }
             .multilineTextAlignment(.center)
             .accessibilityElement(children: .combine)
@@ -280,14 +283,14 @@ struct HeardRow: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(song.title).lineLimit(1)
+                Text(song.title).titleLines()
                 Text([song.artist, song.album].filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .titleLines()
             }
             Spacer(minLength: 8)
-            Image(systemName: "magnifyingglass").foregroundStyle(.tertiary)
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary).accessibilityHidden(true)
         }
         .contentShape(.rect)
         .accessibilityHint("Searches for this song")

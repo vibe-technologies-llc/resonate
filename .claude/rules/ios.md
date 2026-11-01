@@ -1592,3 +1592,25 @@ unbound (`ForgottenEqualiser`) and the *Forgot the curve for …* notice offers 
 `TagDiff.changed(…, emptied:)` counts a mixed field in the editor's `emptied` set as changed and
 `change` writes it empty; typing into the field takes it out of the set
 (`aMixedFieldLeftBlankIsUnchangedAndAnEmptiedOneIsWrittenEmpty`).
+
+## Accessibility
+
+- **Accents reach their bar.** `AccentMath.worn(_:dark:increased:)` deepens (light) or lifts (dark) an accent
+  until it reads 4.5:1 against the ground, 7:1 under Increase Contrast; `AccentMath.contrast` is the one ratio.
+  `AccentMath.Statement` (`Color.failure`, `.warning`, `.confirmation`) is the only red, orange and green drawn
+  as text; `.tertiary` is never used for text that carries meaning. `ColourTests` holds every accent in light,
+  dark and Increase Contrast.
+- **Helpers in `Appearance.swift`.** `titleLines()` lifts a row title's one-line limit at accessibility Dynamic
+  Type sizes, `buttonShape()` draws a shape under Show Button Shapes, `announced(_:)` posts a VoiceOver
+  announcement, `HeadedSection` is a header-trait group title. Fixed frames that hold text are `@ScaledMetric`.
+- **Colour is never alone.** Under Differentiate Without Colour the mode toggles show `ModeMark`'s dot and the
+  sync online dot gets a ring. Seek and volume tracks fill with `NowPlayingInk` and stroke `trackOutline` under
+  Increase Contrast; their hit height is 44 pt.
+- **Lyric elements are built on demand** by `accessibilityElements`, for any assistive technology (VoiceOver,
+  Switch Control, Voice Control, Full Keyboard Access), and refreshed on status-change notifications.
+- **Held by** `ios/test_accessibility.py` (`ios/accessibility.py` scans `Sources/Resonate` for an unlabelled
+  symbol, a gesture with no action or trait, an animation with no Reduce Motion gate, a bare `ProgressView` and a
+  fixed `.system(size:)` against `ios/accessibility-baseline.json`, keyed by file, rule and stripped line text;
+  `python3 ios/accessibility.py` rewrites it, and a fixed line must leave it) and the host `ColourTests`. A stale
+  `ios/Generated` fails the build before any edit: regenerate with `python3 ios/build-native.py`. Portrait only:
+  the roadmap holds landscape.

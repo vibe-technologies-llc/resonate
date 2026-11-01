@@ -188,7 +188,7 @@ struct MeasuredCorrectionSection: View {
                 }
             }
             if view.fitting {
-                ProgressView().frame(maxWidth: .infinity)
+                ProgressView().accessibilityLabel("Fitting").frame(maxWidth: .infinity)
             }
         } header: {
             Text("Measured correction")

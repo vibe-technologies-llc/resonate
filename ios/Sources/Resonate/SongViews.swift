@@ -224,6 +224,7 @@ struct FilterChips: View {
                         .buttonStyle(.borderless)
                         .touchTarget()
                         .accessibilityLabel("Remove filter \(chip.label)")
+                        .accessibilityInputLabels([chip.label, "Remove \(chip.label)"])
                     }
                 }
                 .padding(.horizontal, 16)
@@ -239,10 +240,11 @@ struct FilterToken: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Text(label).lineLimit(1)
+            Text(label).titleLines()
             Image(systemName: "xmark")
                 .font(.caption2.weight(.bold))
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
         }
         .font(.footnote.weight(.medium))
         .foregroundStyle(.primary)
@@ -267,13 +269,15 @@ struct FilterButton: View {
 }
 
 struct EmptyLibrary: View {
+    @ScaledMetric(relativeTo: .largeTitle) private var glyph: CGFloat = 56
     @Environment(Navigation.self) private var navigation
 
     var body: some View {
         VStack(spacing: 16) {
             Image(systemName: "music.note.house")
-                .font(.system(size: 56))
+                .font(.system(size: glyph))
                 .foregroundStyle(.tint)
+                .accessibilityHidden(true)
             Text("Your music, in its own detail").font(.title2.weight(.semibold))
             Text("Choose a music folder to build your library, or put songs in Resonate's folder in the Files app. Your files stay where they are.")
                 .multilineTextAlignment(.center)
@@ -312,14 +316,15 @@ struct CollectionRow: View {
             ArtworkView(track: track, corner: 10, circle: circle)
                 .frame(width: artworkEdge, height: artworkEdge)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.body.weight(.medium)).lineLimit(1)
-                Text(detail).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                Text(title).font(.body.weight(.medium)).titleLines()
+                Text(detail).font(.subheadline).foregroundStyle(.secondary).titleLines()
             }
             Spacer(minLength: 0)
             if disclosed {
                 Image(systemName: "chevron.right")
                     .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
         }
         .contentShape(.rect)
@@ -429,12 +434,12 @@ struct PlayableTrack: View {
                     Text(title)
                         .font(.body.weight(playingHere ? .semibold : .regular))
                         .foregroundStyle(playingHere ? Color.worn : Color.primary)
-                        .lineLimit(1)
+                        .titleLines()
                     if let detail {
                         Text(detail)
                             .font(.subheadline)
                             .secondaryInk()
-                            .lineLimit(1)
+                            .titleLines()
                     }
                 }
                 Spacer(minLength: 0)

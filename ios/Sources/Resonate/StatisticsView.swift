@@ -37,7 +37,7 @@ struct StatisticsView: View {
                     .listRowBackground(Color.clear)
                 } else {
                     if !detail.days.isEmpty {
-                        Section("Listening over time") {
+                        HeadedSection("Listening over time") {
                             ListeningChart(days: detail.days, span: loadedDays, selected: $selected)
                                 .padding(.vertical, 8)
                         }
@@ -58,7 +58,7 @@ struct StatisticsView: View {
         }
         .toolbar {
             if statistics != nil, features.statisticsLoading {
-                ProgressView()
+                ProgressView().accessibilityLabel("Reading your listening history")
             }
         }
         .navigationTitle("Statistics")
@@ -86,7 +86,7 @@ struct StatisticsView: View {
     @ViewBuilder
     private func songs(_ tracks: [Track]) -> some View {
         if !tracks.isEmpty {
-            Section("Most listened songs") {
+            HeadedSection("Most listened songs") {
                 ForEach(shown(tracks, .songs), id: \.id) { track in
                     TrackRow(track: track) { library.play(tracks, selected: track) }
                 }
@@ -98,7 +98,7 @@ struct StatisticsView: View {
     @ViewBuilder
     private func albums(_ albums: [ListenedTo]) -> some View {
         if !albums.isEmpty {
-            Section("Most listened albums") {
+            HeadedSection("Most listened albums") {
                 ForEach(shown(albums, .albums), id: \.key) { album in
                     NavigationLink(value: Destination.album(album.key)) {
                         CollectionRow(track: cover(of: album, in: \.albums), title: album.name, detail: album.heard)
@@ -113,7 +113,7 @@ struct StatisticsView: View {
     @ViewBuilder
     private func artists(_ artists: [ListenedTo]) -> some View {
         if !artists.isEmpty {
-            Section("Most listened artists") {
+            HeadedSection("Most listened artists") {
                 ForEach(shown(artists, .artists), id: \.key) { artist in
                     NavigationLink(value: Destination.artist(artist.name)) {
                         CollectionRow(track: cover(of: artist, in: \.artists), title: artist.name, detail: artist.heard, circle: true)
@@ -168,11 +168,11 @@ struct StatTile: View {
             Text(value)
                 .font(.title2.weight(.semibold))
                 .minimumScaleFactor(0.6)
-                .lineLimit(1)
+                .titleLines()
             Text(detail ?? " ")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .titleLines()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
@@ -427,16 +427,16 @@ struct LibraryBreakdownSections: View {
 
     var body: some View {
         if !breakdown.formats.isEmpty {
-            Section("Formats") { ShareBars(shares: breakdown.formats, songs: songs) }
+            HeadedSection("Formats") { ShareBars(shares: breakdown.formats, songs: songs) }
         }
         if !breakdown.rates.isEmpty {
-            Section("Sample rates") { ShareBars(shares: breakdown.rates, songs: songs) }
+            HeadedSection("Sample rates") { ShareBars(shares: breakdown.rates, songs: songs) }
         }
         if !breakdown.genres.isEmpty {
-            Section("Genres") { ShareBars(shares: breakdown.genres, songs: songs) }
+            HeadedSection("Genres") { ShareBars(shares: breakdown.genres, songs: songs) }
         }
         if !breakdown.decades.isEmpty {
-            Section("Decades") { ShareBars(shares: breakdown.decades, songs: songs) }
+            HeadedSection("Decades") { ShareBars(shares: breakdown.decades, songs: songs) }
         }
     }
 }

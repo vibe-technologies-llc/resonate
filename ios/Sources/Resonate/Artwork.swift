@@ -50,6 +50,7 @@ struct ArtworkView: View {
                 Image(systemName: circle ? "person.fill" : "music.note")
                     .font(.title2)
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
             .overlay {
                 if let leaving {
@@ -78,6 +79,7 @@ struct ArtworkView: View {
         }
         .task(id: load) { await show(load) }
         .task(id: wanted) { await grow(to: wanted) }
+        .accessibilityIgnoresInvertColors()
         .accessibilityHidden(true)
     }
 
@@ -157,7 +159,7 @@ struct ArtworkView: View {
 
         guard !Task.isCancelled else { return }
         if image == nil, shown != nil {
-            withAnimation(.easeOut(duration: Self.arrival)) { image = shown }
+            withAnimation(reduceMotion ? nil : .easeOut(duration: Self.arrival)) { image = shown }
             pictured = track.pictureKey
         } else if image !== shown {
             present(shown, of: track)
@@ -366,9 +368,11 @@ struct FavouriteButton: View {
                 .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
                 .symbolEffect(.bounce, value: reduceMotion ? 0 : tapped)
                 .touchTarget()
+                .buttonShape()
         }
         .buttonStyle(.plain)
         .sensoryFeedback(.selection, trigger: tapped)
         .accessibilityLabel(favourite ? "Remove from favourites" : "Add to favourites")
+        .accessibilityInputLabels(["Favourite", "Heart", "Like", "Add to favourites", "Remove from favourites"])
     }
 }

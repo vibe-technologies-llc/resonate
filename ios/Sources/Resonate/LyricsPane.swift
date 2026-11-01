@@ -147,7 +147,7 @@ private struct LyricFollowing: View {
                 Task { stage.letGo(at: Date.now.timeIntervalSinceReferenceDate) }
             }
             .overlay(alignment: .bottom) { follow }
-            .animation(.easeInOut(duration: LyricPace.turn), value: offersFollow)
+            .motion(.easeInOut(duration: LyricPace.turn), value: offersFollow)
     }
 
     private static func resolving(_ scheme: ColorScheme, _ contrast: ColorSchemeContrast) -> EnvironmentValues {
@@ -199,7 +199,7 @@ struct LyricAttribution: View {
                 .tracking(0.6)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)
-                .overlay(Capsule().strokeBorder(.secondary.opacity(0.6), lineWidth: 1))
+                .overlay(Capsule().strokeBorder(.secondary, lineWidth: 1))
             if !sheet.origin.isEmpty {
                 Text(sheet.origin).font(.caption2.monospaced())
             }

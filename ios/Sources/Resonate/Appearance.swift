@@ -125,14 +125,21 @@ enum AccentColours {
 
     static func worn(_ hex: UInt32) -> Color {
         Color(UIColor { traits in
-            let worn = AccentMath.worn(hex, dark: traits.userInterfaceStyle == .dark)
+            let worn = AccentMath.worn(hex, dark: traits.userInterfaceStyle == .dark, increased: traits.accessibilityContrast == .high)
             return UIColor(red: worn.red, green: worn.green, blue: worn.blue, alpha: 1)
+        })
+    }
+
+    static func statement(_ statement: AccentMath.Statement) -> Color {
+        Color(UIColor { traits in
+            let ink = statement.ink(dark: traits.userInterfaceStyle == .dark)
+            return UIColor(red: ink.red, green: ink.green, blue: ink.blue, alpha: 1)
         })
     }
 
     static func ink(on hex: UInt32) -> Color {
         Color(UIColor { traits in
-            switch AccentMath.ink(on: hex, dark: traits.userInterfaceStyle == .dark) {
+            switch AccentMath.ink(on: hex, dark: traits.userInterfaceStyle == .dark, increased: traits.accessibilityContrast == .high) {
             case .white: .white
             case .dark(let white): UIColor(white: white, alpha: 1)
             }
@@ -141,6 +148,10 @@ enum AccentColours {
 }
 
 extension Color {
+    static let failure = AccentColours.statement(.failure)
+    static let warning = AccentColours.statement(.warning)
+    static let confirmation = AccentColours.statement(.confirmation)
+
     @MainActor static var worn: Color { AppearanceState.shared.tint }
     @MainActor static var wornInk: Color { AppearanceState.shared.ink }
     static let themedCard = AccentColours.card
@@ -149,6 +160,72 @@ extension Color {
 extension View {
     func touchTarget() -> some View {
         frame(minWidth: 44, minHeight: 44).contentShape(.rect)
+    }
+
+    func titleLines(_ lines: Int = 1) -> some View {
+        modifier(TitleLines(lines: lines))
+    }
+
+    func buttonShape() -> some View {
+        modifier(ButtonShape())
+    }
+
+    func announced(_ text: String?) -> some View {
+        modifier(Announced(text: text))
+    }
+}
+
+private struct Announced: ViewModifier {
+    let text: String?
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear { speak(text) }
+            .onChange(of: text) { _, now in speak(now) }
+    }
+
+    private func speak(_ text: String?) {
+        guard let text else { return }
+        AccessibilityNotification.Announcement(text).post()
+    }
+}
+
+struct HeadedSection<Content: View>: View {
+    let title: String
+    let content: Content
+
+    init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        Section {
+            content
+        } header: {
+            Text(title).accessibilityAddTraits(.isHeader)
+        }
+    }
+}
+
+private struct TitleLines: ViewModifier {
+    @Environment(\.dynamicTypeSize) private var size
+    let lines: Int
+
+    func body(content: Content) -> some View {
+        content.lineLimit(size.isAccessibilitySize ? nil : lines)
+    }
+}
+
+private struct ButtonShape: ViewModifier {
+    @Environment(\.accessibilityShowButtonShapes) private var shown
+
+    func body(content: Content) -> some View {
+        if shown {
+            content.background(.quaternary, in: .capsule)
+        } else {
+            content
+        }
     }
 }
 
@@ -315,11 +392,12 @@ struct AccentSwatch: View {
                             Image(systemName: "checkmark")
                                 .font(.body.weight(.bold))
                                 .foregroundStyle(ink)
+                                .accessibilityHidden(true)
                         }
                     }
                     .padding(3)
-                    .overlay(Circle().strokeBorder(chosen ? Color.primary.opacity(0.6) : .clear, lineWidth: 2))
-                Text(name).font(.caption).foregroundStyle(chosen ? .primary : .secondary).lineLimit(1)
+                    .overlay(Circle().strokeBorder(chosen ? Color.primary : .clear, lineWidth: 2))
+                Text(name).font(.caption).foregroundStyle(chosen ? .primary : .secondary).titleLines()
             }
         }
         .buttonStyle(.plain)

@@ -68,6 +68,12 @@ final class LyricLayerView: UIView {
     var offersFollow: (Bool) -> Void = { _ in }
 
     private static let presentsWithin: TimeInterval = 0.05
+    private static let assistiveStatusChanges: [Notification.Name] = [
+        UIAccessibility.voiceOverStatusDidChangeNotification,
+        UIAccessibility.switchControlStatusDidChangeNotification,
+        UIAccessibility.assistiveTouchStatusDidChangeNotification,
+        UIAccessibility.speakScreenStatusDidChangeNotification,
+    ]
 
     private let stage: LyricStage
     private let pane = CALayer()
@@ -102,6 +108,9 @@ final class LyricLayerView: UIView {
         registerForTraitChanges([UITraitDisplayScale.self, UITraitLayoutDirection.self]) { (view: LyricLayerView, _: UITraitCollection) in
             view.forgetLayout()
             view.wake()
+        }
+        for name in Self.assistiveStatusChanges {
+            NotificationCenter.default.addObserver(self, selector: #selector(assistiveStatusChanged), name: name, object: nil)
         }
     }
 
@@ -343,7 +352,19 @@ final class LyricLayerView: UIView {
 
         for owing in owed.sorted(by: { $0.away < $1.away }) { owing.layers.paint(at: scale) }
 
-        if UIAccessibility.isVoiceOverRunning { describe(scene, laid) }
+        if assistiveTechnologyRunning { describe(scene, laid) }
+    }
+
+    private var assistiveTechnologyRunning: Bool {
+        UIAccessibility.isVoiceOverRunning
+            || UIAccessibility.isSwitchControlRunning
+            || UIAccessibility.isAssistiveTouchRunning
+            || UIAccessibility.isSpeakScreenEnabled
+    }
+
+    @objc private func assistiveStatusChanged() {
+        if let shown, let layout { describe(shown, layout) }
+        UIAccessibility.post(notification: .layoutChanged, argument: nil)
     }
 
     private func made(_ placed: LyricLayout.Row, at index: Int) -> LyricRowLayers {
@@ -379,7 +400,10 @@ final class LyricLayerView: UIView {
     }
 
     override var accessibilityElements: [Any]? {
-        get { lines }
+        get {
+            if let shown, let layout { describe(shown, layout) }
+            return lines
+        }
         set {}
     }
 

@@ -37,7 +37,7 @@ struct EqualiserPresetGrid: View {
                 } label: {
                     Label(preset.name, systemImage: preset.mark)
                         .font(.subheadline.weight(.medium))
-                        .lineLimit(1)
+                        .titleLines()
                         .minimumScaleFactor(0.8)
                         .padding(.horizontal, 10)
                         .frame(maxWidth: .infinity, minHeight: 44)

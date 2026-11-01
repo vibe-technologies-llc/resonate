@@ -45,6 +45,7 @@ struct OnlineNothingFound: View {
             description: Text(link ? "Check the link, or search by name instead." : "Check the spelling, or try fewer words.")
         )
         .listRowSeparator(.hidden)
+        .announced(link ? "No music could be read from this link" : "No results for \(text)")
     }
 }
 
@@ -54,7 +55,7 @@ struct OnlinePending: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            ProgressView()
+            ProgressView().accessibilityHidden(true)
             Text(label).foregroundStyle(.secondary)
         }
         .font(.subheadline)
@@ -293,11 +294,11 @@ struct OnlineSongRow: View {
             HStack(spacing: 12) {
                 OnlinePlaceholder(symbol: "music.note")
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(song.title).font(.body.weight(.medium)).lineLimit(1)
+                    Text(song.title).font(.body.weight(.medium)).titleLines()
                     Text([song.artist, song.album].filter { !$0.isEmpty }.joined(separator: " · "))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .titleLines()
                     OnlineSongCaption(song: song, standing: standing)
                 }
                 Spacer(minLength: 0)
@@ -317,6 +318,11 @@ struct OnlineSongRow: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityHint(standing.startsOnTap ? "Downloads the song" : "")
+        .accessibilityActions {
+            if standing.cancellable {
+                Button("Cancel download") { downloads.cancel(song) }
+            }
+        }
         .sensoryFeedback(.success, trigger: standing == .held)
     }
 }
@@ -348,7 +354,7 @@ struct OnlineSongCaption: View {
                     .font(.caption)
                     .foregroundStyle(.tint)
             case .failed(let reason):
-                Text(reason).font(.caption).foregroundStyle(.red).lineLimit(1)
+                Text(reason).font(.caption).foregroundStyle(Color.failure).titleLines()
             case .cancelled:
                 Text("Cancelled").font(.caption).foregroundStyle(.secondary)
             }
@@ -366,7 +372,7 @@ struct DownloadBadge: View {
             glyph("arrow.down.circle").foregroundStyle(.tint)
         case .waiting:
             Button(action: stop) {
-                ProgressView().touchTarget()
+                ProgressView().accessibilityHidden(true).touchTarget().buttonShape()
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Cancel download")
@@ -374,20 +380,21 @@ struct DownloadBadge: View {
             Button(action: stop) {
                 ZStack {
                     if let fraction {
-                        ProgressView(value: fraction).progressViewStyle(.circular)
+                        ProgressView(value: fraction).progressViewStyle(.circular).accessibilityHidden(true)
                     } else {
-                        ProgressView()
+                        ProgressView().accessibilityHidden(true)
                     }
-                    Image(systemName: "stop.fill").font(.system(size: 8)).foregroundStyle(.secondary)
+                    Image(systemName: "stop.fill").font(.caption2).imageScale(.small).foregroundStyle(.secondary)
                 }
                 .touchTarget()
+                .buttonShape()
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Cancel download")
         case .held:
             glyph("checkmark.circle.fill").foregroundStyle(.tint)
         case .failed, .cancelled:
-            glyph("arrow.clockwise.circle").foregroundStyle(.red)
+            glyph("arrow.clockwise.circle").foregroundStyle(Color.failure)
         }
     }
 
@@ -403,11 +410,11 @@ struct OnlineAlbumRow: View {
         HStack(spacing: 12) {
             OnlinePlaceholder(symbol: "square.stack")
             VStack(alignment: .leading, spacing: 2) {
-                Text(album.title).font(.body.weight(.medium)).lineLimit(1)
+                Text(album.title).font(.body.weight(.medium)).titleLines()
                 Text([album.artist, album.date].filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .titleLines()
             }
         }
     }
@@ -420,7 +427,7 @@ struct OnlineArtistRow: View {
         HStack(spacing: 12) {
             OnlinePlaceholder(symbol: "music.mic", circle: true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(artist.name).font(.body.weight(.medium)).lineLimit(1)
+                Text(artist.name).font(.body.weight(.medium)).titleLines()
                 if !artist.kind.isEmpty {
                     Text(artist.kind).font(.subheadline).foregroundStyle(.secondary)
                 }
@@ -436,13 +443,13 @@ struct OnlineReleaseRow: View {
         HStack(spacing: 12) {
             OnlinePlaceholder(symbol: "opticaldisc")
             VStack(alignment: .leading, spacing: 2) {
-                Text(release.title).font(.body.weight(.medium)).lineLimit(1)
+                Text(release.title).font(.body.weight(.medium)).titleLines()
                 Text([release.date, release.country, release.songs > 0 ? counted(Int(release.songs), "song") : "View track list"]
                     .filter { !$0.isEmpty }
                     .joined(separator: " · "))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .titleLines()
             }
         }
     }
@@ -479,7 +486,7 @@ struct OnlineArtistPage: View {
                 }
             }
         }
-        .overlay { if !read, !failed { ProgressView() } }
+        .overlay { if !read, !failed { ProgressView().accessibilityLabel("Loading") } }
         .navigationTitle(artist.name)
         .navigationBarTitleDisplayMode(.inline)
         .task { await readArtist() }
@@ -544,7 +551,7 @@ struct OnlineAlbumPage: View {
                 }
             }
         }
-        .overlay { if !read, !failed { ProgressView() } }
+        .overlay { if !read, !failed { ProgressView().accessibilityLabel("Loading") } }
         .navigationTitle("Album")
         .navigationBarTitleDisplayMode(.inline)
         .task { await readReleases() }
@@ -581,7 +588,7 @@ struct OnlineReleasePage: View {
                 Text("No songs on this release were found.").foregroundStyle(.secondary)
             }
         }
-        .overlay { if !read, !failed { ProgressView() } }
+        .overlay { if !read, !failed { ProgressView().accessibilityLabel("Loading") } }
         .navigationTitle(release.title)
         .navigationBarTitleDisplayMode(.inline)
         .onlineSongActions($actions)

@@ -49,7 +49,8 @@ struct SavedSearchSheet: View {
                             ? "A whole number above zero, or blank for every row."
                             : "Blank keeps every row."
                     )
-                    .foregroundStyle(draft.search == nil ? Color.red : Color.secondary)
+                    .foregroundStyle(draft.search == nil ? Color.failure : Color.secondary)
+                    .announced(draft.search == nil ? "A whole number above zero, or blank for every row." : nil)
                 }
             }
             .navigationTitle(title)

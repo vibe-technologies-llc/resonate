@@ -138,7 +138,7 @@ struct LocalNetworkRefusedRow: View {
                     .foregroundStyle(.secondary)
             }
         } icon: {
-            Image(systemName: "network.slash").foregroundStyle(.orange)
+            Image(systemName: "network.slash").foregroundStyle(Color.warning).accessibilityHidden(true)
         }
         .padding(.vertical, 4)
         Button("Open Settings", systemImage: "gear") {
@@ -157,11 +157,11 @@ struct SyncStateRow: View {
         HStack(spacing: 12) {
             Group {
                 if features.syncActivity != nil || status?.standing == .connecting {
-                    ProgressView()
+                    ProgressView().accessibilityHidden(true)
                 } else if features.syncUpToDate {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.confirmation)
                 } else if status?.standing == .unreachable || status?.standing == .refused {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color.warning)
                 } else if status?.standing == .nearby {
                     Image(systemName: "wifi").foregroundStyle(.secondary)
                 } else {
@@ -265,6 +265,7 @@ struct SyncDevices: View {
 }
 
 struct KnownDeviceRow: View {
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiate
     let known: SyncedDevice
 
     var body: some View {
@@ -283,7 +284,10 @@ struct KnownDeviceRow: View {
             Spacer()
             if !known.thisDevice {
                 Circle()
-                    .fill(known.online ? Color.green : Color.secondary.opacity(0.35))
+                    .fill(known.online ? Color.confirmation : Color.secondary.opacity(differentiate ? 0 : 0.35))
+                    .overlay {
+                        if differentiate, !known.online { Circle().strokeBorder(Color.secondary, lineWidth: 1.5) }
+                    }
                     .frame(width: 8, height: 8)
                     .accessibilityHidden(true)
             }
@@ -386,7 +390,8 @@ struct PairingSheet: View {
                     if !joining.isEmpty, !reads {
                         Text("This is not a pairing code")
                             .font(.caption)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(Color.failure)
+                            .announced("This is not a pairing code")
                     }
                     Button("Join") {
                         if code == nil { join() } else { confirmingJoin = true }
@@ -508,7 +513,8 @@ struct SyncSongsPage: View {
                 }
                 if let notice = features.syncNotice {
                     Label(notice, systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Color.warning)
+                        .announced(notice)
                 }
             } footer: {
                 Text("Songs from your other devices are saved in this folder and added to your library.")
@@ -648,16 +654,17 @@ struct SyncTransferRow: View {
                     .frame(width: 20)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(transfer.title.isEmpty ? "Unknown song" : transfer.title).lineLimit(1)
+                    Text(transfer.title.isEmpty ? "Unknown song" : transfer.title).titleLines()
                     Text(caption)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .titleLines()
                         .monospacedDigit()
                 }
             }
             if transfer.state == .moving, transfer.size > 0 {
                 ProgressView(value: Double(min(transfer.received, transfer.size)), total: Double(transfer.size))
+                    .accessibilityLabel("Fetching")
             }
         }
         .accessibilityElement(children: .combine)
@@ -676,8 +683,8 @@ struct SyncTransferRow: View {
         switch transfer.state {
         case .waiting: .secondary
         case .moving: Color.worn
-        case .landed: .green
-        case .failed: .orange
+        case .landed: Color.confirmation
+        case .failed: Color.warning
         }
     }
 

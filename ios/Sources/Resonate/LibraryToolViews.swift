@@ -14,7 +14,7 @@ struct ToolRow: View {
                 Text(detail).font(.subheadline).foregroundStyle(.secondary)
             }
         } icon: {
-            Image(systemName: symbol).foregroundStyle(.tint)
+            Image(systemName: symbol).foregroundStyle(.tint).accessibilityHidden(true)
         }
     }
 }
@@ -157,11 +157,12 @@ struct FolderRow: View {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Image(systemName: folder.id == Folders.local ? "iphone" : "folder")
                     .foregroundStyle(.tint)
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(folder.name)
                     Text(standing)
                         .font(.caption)
-                        .foregroundStyle(folder.readable ? Color.secondary : Color.red)
+                        .foregroundStyle(folder.readable ? Color.secondary : Color.failure)
                     if !folder.path.isEmpty {
                         Text(folder.path)
                             .font(.caption2.monospaced())
@@ -369,8 +370,8 @@ struct SuggestedMixCard: View {
             .accessibilityHint("Shows the songs in this mix")
             HStack(alignment: .top, spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(mix.title).font(.subheadline.weight(.semibold)).lineLimit(1)
-                    Text(mix.detail).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    Text(mix.title).font(.subheadline.weight(.semibold)).titleLines()
+                    Text(mix.detail).font(.caption).foregroundStyle(.secondary).titleLines(2)
                 }
                 Spacer(minLength: 0)
                 Button("Play \(mix.title)", systemImage: "play.fill") { play(shuffled: false) }

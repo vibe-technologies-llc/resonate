@@ -556,11 +556,13 @@ struct SyncProgress: View {
                     case .fetching(_, let fraction?):
                         ProgressView(value: fraction)
                             .progressViewStyle(.circular)
+                            .accessibilityHidden(true)
                     case .fetching, .syncing:
-                        ProgressView()
+                        ProgressView().accessibilityHidden(true)
                     }
                 }
                 .frame(width: BannerGlyph.edge, height: BannerGlyph.edge)
+                .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title)
                         .font(.subheadline.weight(.semibold))
@@ -575,7 +577,8 @@ struct SyncProgress: View {
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
             .frame(minHeight: BannerGlyph.row)
             .contentShape(Rectangle())
@@ -584,6 +587,7 @@ struct SyncProgress: View {
         .bannerGlass()
         .accessibilityElement(children: .combine)
         .accessibilityHint("Opens device sync")
+        .onAppear { AccessibilityNotification.Announcement(title).post() }
     }
 
     private var title: String {
@@ -607,6 +611,7 @@ struct ScanProgress: View {
         HStack(spacing: 12) {
             ProgressView()
                 .frame(width: BannerGlyph.edge, height: BannerGlyph.edge)
+                .accessibilityHidden(true)
             Text("Reading music folder… \(counted(library.scanned, "song"))")
                 .font(.subheadline)
                 .monospacedDigit()
@@ -616,11 +621,12 @@ struct ScanProgress: View {
                 .font(.footnote.weight(.semibold))
                 .buttonStyle(.bordered)
                 .buttonBorderShape(.capsule)
-                .controlSize(.small)
+                .controlSize(.regular)
         }
         .frame(minHeight: BannerGlyph.row)
         .bannerGlass()
         .accessibilityElement(children: .combine)
+        .onAppear { AccessibilityNotification.Announcement("Reading music folder").post() }
     }
 }
 
@@ -673,7 +679,7 @@ struct StatusCard: View {
         HStack(spacing: 12) {
             BannerGlyph(
                 symbol: failed ? "exclamationmark.triangle.fill" : "info.circle.fill",
-                colour: failed ? .orange : Color.worn
+                colour: failed ? Color.warning : Color.worn
             )
             Text(message.text)
                 .font(.subheadline)
@@ -681,12 +687,14 @@ struct StatusCard: View {
                 .frame(maxWidth: .infinity, minHeight: BannerGlyph.row, alignment: .leading)
                 .contentShape(Rectangle())
                 .onTapGesture { expanded.toggle() }
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint(expanded ? "Shows less of the message" : "Shows the whole message")
             if let offer = message.offer {
                 Button(offer.title) { library.perform(offer) }
                     .font(.footnote.weight(.semibold))
                     .buttonStyle(.bordered)
                     .buttonBorderShape(.capsule)
-                    .controlSize(.small)
+                    .controlSize(.regular)
             }
             Button {
                 library.dismissStatus()

@@ -41,8 +41,8 @@ struct BackdropView: View {
             }
         }
         .ignoresSafeArea()
-        .animation(.easeInOut(duration: 0.4), value: palette == nil)
-        .animation(.easeInOut(duration: 0.4), value: rendering.drawsMesh)
+        .motion(.easeInOut(duration: 0.4), value: palette == nil)
+        .motion(.easeInOut(duration: 0.4), value: rendering.drawsMesh)
         .task { await prepareRendering() }
         .task(id: paletteRequest) { await loadPalette() }
         .onAppear { visible = true }
@@ -186,7 +186,7 @@ struct AppBackdrop: View {
             }
         }
         .ignoresSafeArea()
-        .animation(.easeInOut(duration: 0.4), value: rendering.drawsMesh)
+        .motion(.easeInOut(duration: 0.4), value: rendering.drawsMesh)
         .task {
             guard case .loading = rendering else { return }
             rendering = await BackdropPipeline.rendering()
@@ -220,7 +220,7 @@ private struct GradientBackdrop: View {
                 endRadius: 600
             )
         }
-        .animation(.easeInOut(duration: 0.6), value: palette)
+        .motion(.easeInOut(duration: 0.6), value: palette)
     }
 
     private static func color(_ linear: SIMD3<Float>) -> Color {
@@ -423,6 +423,7 @@ private struct StillBackdrop: View {
     let gpu: BackdropGPU
     let palette: Palette
     let tone: BackdropTone
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var size: FieldSize?
     @State private var shown: Shown?
 
@@ -463,7 +464,7 @@ private struct StillBackdrop: View {
             shown = next
             return
         }
-        withAnimation(.easeInOut(duration: 0.5)) { shown = next }
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.5)) { shown = next }
     }
 }
 

@@ -109,6 +109,8 @@ struct SignalPlot: View {
     let values: [Float]
     var mirrored = false
     var fittedToPeak = true
+    let label: String
+    var spoken: String?
 
     var body: some View {
         Canvas { context, size in
@@ -132,7 +134,9 @@ struct SignalPlot: View {
             }
             context.stroke(path, with: .color(Color.worn), lineWidth: mirrored ? max(step * 0.7, 1) : 1.5)
         }
-        .accessibilityHidden(true)
+        .accessibilityElement()
+        .accessibilityLabel(label)
+        .accessibilityValue(spoken ?? "")
     }
 }
 
@@ -184,7 +188,7 @@ struct AnalysisProgress: View {
                 ProgressView(value: progress) { Text("Analysing audio…") }
             } else {
                 HStack(spacing: 12) {
-                    ProgressView()
+                    ProgressView().accessibilityHidden(true)
                     Text("Analysing audio…")
                 }
             }
@@ -205,10 +209,22 @@ struct AnalysisReportSections: View {
             ForEach(report.findings, id: \.self) { Text($0).font(.footnote) }
         }
         Section("Waveform") {
-            SignalPlot(values: report.waveform, mirrored: true).frame(height: 120)
+            SignalPlot(
+                values: report.waveform,
+                mirrored: true,
+                label: "Waveform",
+                spoken: "Peak \(Self.level(report.peak, unit: "dBFS")). Assessment: \(report.verdict)"
+            )
+            .frame(height: 120)
         }
         Section("Spectrum") {
-            SignalPlot(values: Self.spectrumHeights(report.spectrum), fittedToPeak: false).frame(height: 120)
+            SignalPlot(
+                values: Self.spectrumHeights(report.spectrum),
+                fittedToPeak: false,
+                label: "Spectrum",
+                spoken: "Assessment: \(report.verdict)"
+            )
+            .frame(height: 120)
             if let last = report.spectrum.indices.last {
                 LabeledContent("Range", value: String(format: "0 – %.1f kHz", Double(report.spectrumStepHz) * Double(last) / 1000))
             }
@@ -309,7 +325,7 @@ struct LiveSignal: View {
         if library.transport != .playing, samples.isEmpty {
             ContentUnavailableView("Play a song to see its sound", systemImage: "waveform")
         } else {
-            SignalPlot(values: samples, mirrored: true)
+            SignalPlot(values: samples, mirrored: true, label: "Live waveform", spoken: library.transport == .playing ? "Playing" : "Paused")
                 .frame(maxWidth: .infinity, maxHeight: 320)
                 .padding()
                 .glassEffect(.regular, in: .rect(cornerRadius: 24))
@@ -446,7 +462,7 @@ struct InspectorAudio: View {
                 LabeledContent("Encoder", value: InspectorTags.tagged(inspector.encoder))
             } else {
                 HStack(spacing: 12) {
-                    ProgressView()
+                    ProgressView().accessibilityHidden(true)
                     Text("Reading the file…").foregroundStyle(.secondary)
                 }
             }
@@ -464,7 +480,7 @@ struct InspectorArtist: View {
         case .looking:
             Section {
                 HStack(spacing: 12) {
-                    ProgressView()
+                    ProgressView().accessibilityHidden(true)
                     Text("Looking up the artist…").foregroundStyle(.secondary)
                 }
             }

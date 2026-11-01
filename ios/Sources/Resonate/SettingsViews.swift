@@ -112,7 +112,7 @@ struct SettingsView: View {
                         confirmingErase = true
                     } label: {
                         Label("Erase all data", systemImage: "trash")
-                            .foregroundStyle(.red)
+                            .foregroundStyle(Color.failure)
                     }
                     .disabled(library.erasing)
                 } footer: {
@@ -769,7 +769,7 @@ struct HeadphoneCorrectionSection: View {
                 Text("Turn on online features in Settings to find corrections.").foregroundStyle(.secondary)
             } else if features.searchingCorrections {
                 HStack(spacing: 12) {
-                    ProgressView()
+                    ProgressView().accessibilityHidden(true)
                     Text("Searching the AutoEq catalogue…").foregroundStyle(.secondary)
                 }
             } else if let searched = features.correctionsFor, features.corrections.isEmpty {

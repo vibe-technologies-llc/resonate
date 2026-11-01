@@ -13,6 +13,7 @@ struct MiniPlayer: View {
     @Environment(Navigation.self) private var navigation
     @Environment(\.tabViewBottomAccessoryPlacement) private var placement
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
     @ScaledMetric(relativeTo: .subheadline) private var artworkEdge: CGFloat = 36
     @ScaledMetric(relativeTo: .subheadline) private var inlineArtworkEdge: CGFloat = 28
     let zoom: Namespace.ID
@@ -46,7 +47,7 @@ struct MiniPlayer: View {
                         .lineLimit(1)
                     Text(track?.shownArtist ?? "")
                         .font(expanded ? .caption : .caption2)
-                        .foregroundStyle(Color.primary.opacity(Self.artistOpacity))
+                        .foregroundStyle(Color.primary.opacity(contrast == .increased ? 1 : Self.artistOpacity))
                         .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -57,14 +58,16 @@ struct MiniPlayer: View {
             }
             if expanded {
                 Button { skip(forward: false) } label: {
-                    Label("Previous", systemImage: "backward.fill").labelStyle(.iconOnly).touchTarget()
+                    Label("Previous", systemImage: "backward.fill").labelStyle(.iconOnly).touchTarget().buttonShape()
                 }
+                .accessibilityInputLabels(["Previous", "Previous song", "Back"])
             }
             PlayButton(transport: library.transport)
             if expanded {
                 Button { skip(forward: true) } label: {
-                    Label("Next", systemImage: "forward.fill").labelStyle(.iconOnly).touchTarget()
+                    Label("Next", systemImage: "forward.fill").labelStyle(.iconOnly).touchTarget().buttonShape()
                 }
+                .accessibilityInputLabels(["Next", "Next song", "Skip"])
             }
         }
         .buttonStyle(.plain)
@@ -84,6 +87,7 @@ struct MiniPlayer: View {
         .sensoryFeedback(.impact(weight: .light), trigger: skipped)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(track.map { "\($0.shownTitle), \($0.shownArtist)" } ?? "")
+        .accessibilityAddTraits(.isButton)
         .accessibilityAction(named: "Open now playing") { navigation.nowPlaying = true }
         .accessibilityAction(named: "Previous") { skip(forward: false) }
         .accessibilityAction(named: "Next") { skip(forward: true) }
@@ -98,6 +102,8 @@ struct MiniPlayer: View {
 struct PlayButton: View {
     @Environment(Library.self) private var library
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ScaledMetric(relativeTo: .largeTitle) private var largeEdge: CGFloat = 76
+    @ScaledMetric(relativeTo: .title3) private var edge: CGFloat = 32
     let transport: Transport
     var large = false
     @State private var pressed = 0
@@ -109,15 +115,17 @@ struct PlayButton: View {
             library.toggle()
         } label: {
             Image(systemName: playingish ? "pause.fill" : "play.fill")
-                .font(large ? .system(size: 34, weight: .semibold) : .title3)
-                .frame(width: large ? 76 : 32, height: large ? 76 : 32)
+                .font(large ? .largeTitle.weight(.semibold) : .title3)
+                .frame(width: large ? largeEdge : edge, height: large ? largeEdge : edge)
                 .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
                 .touchTarget()
         }
         .buttonStyle(.plain)
         .modifier(GlassWhen(enabled: large))
         .sensoryFeedback(.impact(weight: .medium), trigger: pressed)
+        .keyboardShortcut(large ? KeyboardShortcut(.space, modifiers: []) : nil)
         .accessibilityLabel(playingish ? "Pause" : "Play")
+        .accessibilityInputLabels(["Play", "Pause", "Play pause", "Resume"])
     }
 }
 
@@ -145,6 +153,7 @@ struct NowPlayingView: View {
     private static let arriving: Animation = .easeOut(duration: 0.2)
     private static let leaving: Animation = .easeOut(duration: 0.12)
     private static let reshapedWithin: CFTimeInterval = 0.8
+    private static let focusedHeightAtAccessibilitySizes: CGFloat = 360
 
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
@@ -162,7 +171,7 @@ struct NowPlayingView: View {
         let track = library.playingTrack
         NavigationStack {
             Group {
-                if mode == .artwork, typeSize.isAccessibilitySize {
+                if typeSize.isAccessibilitySize {
                     ScrollView { layout(track) }
                 } else {
                     layout(track)
@@ -217,6 +226,7 @@ struct NowPlayingView: View {
 
     private func layout(_ track: Track?) -> some View {
         let large = mode == .artwork
+        let focusedHeight: CGFloat? = typeSize.isAccessibilitySize ? Self.focusedHeightAtAccessibilitySizes : nil
         return VStack(spacing: large ? 20 : 16) {
             if large {
                 Spacer(minLength: 0)
@@ -230,7 +240,7 @@ struct NowPlayingView: View {
                         focusedContent(track).transition(.opacity)
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, minHeight: focusedHeight, maxHeight: focusedHeight ?? .infinity)
             }
             PlayerScrubber()
             TransportRow()
@@ -387,25 +397,27 @@ struct PlayerTitles: View {
                     Text(track.shownTitle)
                         .font(.title2.weight(.bold))
                         .foregroundStyle(Color.primary)
-                        .lineLimit(2)
+                        .titleLines(2)
                         .multilineTextAlignment(.leading)
                 }
                 SongMenu(track: track) {
                     Text(track.shownArtist)
                         .font(.title3)
                         .nowPlayingInk()
+                        .titleLines()
                 }
                 if !track.album.isEmpty {
                     SongMenu(track: track) {
                         Text(track.album)
                             .font(.subheadline)
                             .nowPlayingInk()
+                            .titleLines()
                     }
                 }
             } else {
                 Text("Nothing playing")
                     .font(.title2.weight(.bold))
-                    .lineLimit(2)
+                    .titleLines(2)
             }
         }
         .lineLimit(1)
@@ -473,24 +485,25 @@ struct CompactTitles: View {
         if let track {
             SongMenu(track: track) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(track.shownTitle).font(.headline).foregroundStyle(Color.primary).lineLimit(1)
-                    Text(track.shownArtist).font(.subheadline).nowPlayingInk().lineLimit(1)
+                    Text(track.shownTitle).font(.headline).foregroundStyle(Color.primary).titleLines()
+                    Text(track.shownArtist).font(.subheadline).nowPlayingInk().titleLines()
                 }
                 .accessibilityElement(children: .combine)
             }
         } else {
-            Text("Nothing playing").font(.headline).lineLimit(1)
+            Text("Nothing playing").font(.headline).titleLines()
         }
     }
 }
 
 struct PlayerScrubber: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
     private static let nearEnoughMs: Double = 1500
     private static let holdAtMost: Duration = .seconds(4)
     private static let restingHeight: CGFloat = 7
     private static let grabbedHeight: CGFloat = 14
-    private static let touchHeight: CGFloat = 28
+    private static let touchHeight: CGFloat = 44
     private static let stepMs: Double = 10_000
     private static let slightestMove: CGFloat = 2
     private static let flowsWithin: ClosedRange<CFTimeInterval> = 0.05...0.6
@@ -526,11 +539,12 @@ struct PlayerScrubber: View {
                     .fill(.primary.opacity(0.16))
                     .overlay(alignment: .leading) {
                         Rectangle()
-                            .fill(.primary.opacity(grabbed ? 0.95 : 0.7))
+                            .nowPlayingInk(grabbed ? 0.95 : 0.7)
                             .frame(width: width * drawn / duration)
                             .animation(lastReading.flow, value: flowing)
                     }
                     .clipShape(Capsule())
+                    .trackOutline()
                     .frame(height: grabbed ? Self.grabbedHeight : Self.restingHeight)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
@@ -545,18 +559,18 @@ struct PlayerScrubber: View {
                 let step = direction == .increment ? Self.stepMs : -Self.stepMs
                 commit(min(max(shown + step, 0), duration))
             }
-            HStack {
-                Text(clock(UInt64(shown)))
-                    .accessibilityHidden(true)
-                Spacer()
-                if let waiting = library.waitingForADevice {
-                    WaitingLine(text: waiting)
-                } else {
-                    QualityLine(track: library.playingTrack)
+            .background { seekKeys(from: shown, of: duration) }
+            VStack(spacing: 4) {
+                HStack {
+                    Text(clock(UInt64(shown)))
+                        .accessibilityHidden(true)
+                    Spacer()
+                    if !typeSize.isAccessibilitySize { outputLine }
+                    Spacer()
+                    Text("-" + clock(UInt64(max(duration - shown, 0))))
+                        .accessibilityHidden(true)
                 }
-                Spacer()
-                Text("-" + clock(UInt64(max(duration - shown, 0))))
-                    .accessibilityHidden(true)
+                if typeSize.isAccessibilitySize { outputLine }
             }
             .font(.caption.monospacedDigit())
             .nowPlayingInk(grabbed ? 1 : NowPlayingInk.secondary)
@@ -582,6 +596,27 @@ struct PlayerScrubber: View {
             try? await Task.sleep(for: Self.holdAtMost)
             if !Task.isCancelled { held = nil }
         }
+    }
+
+    @ViewBuilder
+    private var outputLine: some View {
+        if let waiting = library.waitingForADevice {
+            WaitingLine(text: waiting)
+        } else {
+            QualityLine(track: library.playingTrack)
+        }
+    }
+
+    private func seekKeys(from shown: Double, of duration: Double) -> some View {
+        HStack {
+            Button("Back 10 seconds") { commit(min(max(shown - Self.stepMs, 0), duration)) }
+                .keyboardShortcut(.leftArrow, modifiers: [])
+            Button("Forward 10 seconds") { commit(min(max(shown + Self.stepMs, 0), duration)) }
+                .keyboardShortcut(.rightArrow, modifiers: [])
+        }
+        .opacity(0)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     private func drag(across width: CGFloat, of duration: Double, from shown: Double) -> some Gesture {
@@ -632,7 +667,7 @@ struct WaitingLine: View {
         Label(text, systemImage: "speaker.slash")
             .font(.caption2.weight(.semibold))
             .nowPlayingInk()
-            .lineLimit(2)
+            .titleLines(2)
             .multilineTextAlignment(.center)
             .minimumScaleFactor(0.7)
             .padding(.horizontal, 7)
@@ -654,7 +689,8 @@ struct QualityLine: View {
             Text(line)
                 .font(.caption2.weight(.semibold))
                 .nowPlayingInk()
-                .lineLimit(1)
+                .titleLines()
+                .multilineTextAlignment(.center)
                 .minimumScaleFactor(0.7)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 2)
@@ -679,8 +715,27 @@ struct QualityLine: View {
     }
 }
 
+private struct TrackOutline: ViewModifier {
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    func body(content: Content) -> some View {
+        content.overlay {
+            if contrast == .increased {
+                Capsule().strokeBorder(Color.primary, lineWidth: 1)
+            }
+        }
+    }
+}
+
+extension View {
+    fileprivate func trackOutline() -> some View {
+        modifier(TrackOutline())
+    }
+}
+
 struct NowPlayingInk: ViewModifier {
     static let secondary = 0.95
+    static let dimmed = 0.7
 
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -724,6 +779,15 @@ extension View {
     }
 }
 
+private struct ModeInk: ViewModifier {
+    @Environment(\.colorSchemeContrast) private var contrast
+    let active: Bool
+
+    func body(content: Content) -> some View {
+        content.foregroundStyle(active ? Color.worn : Color.primary.opacity(contrast == .increased ? 1 : NowPlayingInk.dimmed))
+    }
+}
+
 private struct ModeMark: ViewModifier {
     let active: Bool
 
@@ -743,6 +807,10 @@ extension View {
     fileprivate func modeMark(_ active: Bool) -> some View {
         modifier(ModeMark(active: active))
     }
+
+    fileprivate func modeInk(_ active: Bool) -> some View {
+        modifier(ModeInk(active: active))
+    }
 }
 
 struct TransportRow: View {
@@ -754,32 +822,38 @@ struct TransportRow: View {
         let repeating = library.repeatMode
         GlassEffectContainer(spacing: 24) {
             HStack(spacing: 0) {
-                Button { library.setShuffle(!shuffled) } label: { Label("Shuffle", systemImage: "shuffle").touchTarget() }
-                    .foregroundStyle(shuffled ? Color.worn : .secondary)
+                Button { library.setShuffle(!shuffled) } label: { Label("Shuffle", systemImage: "shuffle").touchTarget().buttonShape() }
+                    .modeInk(shuffled)
                     .modeMark(shuffled)
+                    .accessibilityAddTraits(.isToggle)
                     .accessibilityValue(shuffled ? "On" : "Off")
+                    .accessibilityInputLabels(["Shuffle", "Shuffle songs"])
                     .frame(maxWidth: .infinity)
                 Button {
                     skipped += 1
                     library.previous()
                 } label: {
-                    Label("Previous", systemImage: "backward.fill").touchTarget()
+                    Label("Previous", systemImage: "backward.fill").touchTarget().buttonShape()
                 }
                 .font(.title)
+                .accessibilityInputLabels(["Previous", "Previous song", "Back"])
                 .frame(maxWidth: .infinity)
                 PlayButton(transport: library.transport, large: true)
                 Button {
                     skipped += 1
                     library.next()
                 } label: {
-                    Label("Next", systemImage: "forward.fill").touchTarget()
+                    Label("Next", systemImage: "forward.fill").touchTarget().buttonShape()
                 }
                 .font(.title)
+                .accessibilityInputLabels(["Next", "Next song", "Skip"])
                 .frame(maxWidth: .infinity)
-                Button { library.setRepeat(repeating.following) } label: { Label("Repeat", systemImage: repeating.symbol).touchTarget() }
-                    .foregroundStyle(repeating == .off ? .secondary : Color.worn)
+                Button { library.setRepeat(repeating.following) } label: { Label("Repeat", systemImage: repeating.symbol).touchTarget().buttonShape() }
+                    .modeInk(repeating != .off)
                     .modeMark(repeating != .off)
+                    .accessibilityAddTraits(.isToggle)
                     .accessibilityValue(repeating.spoken)
+                    .accessibilityInputLabels(["Repeat", "Repeat songs"])
                     .frame(maxWidth: .infinity)
             }
             .labelStyle(.iconOnly)
@@ -823,7 +897,7 @@ struct SleepCountdown: View {
 struct VolumeRow: View {
     private static let restingHeight: CGFloat = 7
     private static let grabbedHeight: CGFloat = 14
-    private static let touchHeight: CGFloat = 34
+    private static let touchHeight: CGFloat = 44
     private static let step: Float = 1 / 16
     private static let driverMountsAfter: Duration = .milliseconds(600)
     private static let stepFollowed: Animation = .smooth(duration: 0.25)
@@ -846,7 +920,7 @@ struct VolumeRow: View {
                     .fill(.primary.opacity(0.16))
                     .overlay(alignment: .leading) {
                         Rectangle()
-                            .fill(.primary.opacity(grabbed ? 0.95 : 0.7))
+                            .nowPlayingInk(grabbed ? 0.95 : 0.7)
                             .frame(width: width * CGFloat(shown))
                             .motion(
                                 volume.steppedOutside && !grabbed ? Self.stepFollowed : nil,
@@ -854,6 +928,7 @@ struct VolumeRow: View {
                             )
                     }
                     .clipShape(Capsule())
+                    .trackOutline()
                     .frame(height: grabbed ? Self.grabbedHeight : Self.restingHeight)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
@@ -1037,6 +1112,8 @@ struct VolumeDriver: UIViewRepresentable {
 }
 
 struct PlayerModes: View {
+    @ScaledMetric(relativeTo: .title3) private var edge: CGFloat = 48
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiate
     let mode: PlayerMode
     let choose: (PlayerMode) -> Void
     @State private var switched = 0
@@ -1046,7 +1123,7 @@ struct PlayerModes: View {
             HStack(spacing: 20) {
                 toggle(.lyrics, title: "Lyrics", symbol: "quote.bubble")
                 RoutePicker()
-                    .frame(width: 48, height: 48)
+                    .frame(width: edge, height: edge)
                     .glassEffect(.regular.interactive(), in: .circle)
                     .accessibilityLabel("AirPlay")
                 toggle(.queue, title: "Up next", symbol: "list.bullet")
@@ -1064,13 +1141,16 @@ struct PlayerModes: View {
             Label(title, systemImage: symbol)
                 .labelStyle(.iconOnly)
                 .font(.title3)
-                .frame(width: 48, height: 48)
+                .frame(width: edge, height: edge)
                 .contentShape(.circle)
         }
         .foregroundStyle(active ? Color.wornInk : Color.primary)
         .glassEffect(active ? .regular.tint(Color.worn).interactive() : .regular.interactive(), in: .circle)
         .buttonStyle(.plain)
-        .accessibilityAddTraits(active ? .isSelected : [])
+        .modeMark(active && differentiate)
+        .accessibilityAddTraits(.isToggle)
+        .accessibilityValue(active ? "On" : "Off")
+        .accessibilityInputLabels([title, "Show \(title)"])
     }
 }
 

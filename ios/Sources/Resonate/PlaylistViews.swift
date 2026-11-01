@@ -427,7 +427,7 @@ struct AddSongsSheet: View {
             }
             .overlay {
                 if keying || !library.catalogRead {
-                    ProgressView()
+                    ProgressView().accessibilityLabel("Reading your songs")
                 } else if keyed.tracks.isEmpty {
                     ContentUnavailableView("Add a music folder in Settings to start your library.", systemImage: "music.note")
                 } else if listed.isEmpty {
@@ -490,6 +490,7 @@ struct ChoosableSong: View {
                 Spacer()
                 Image(systemName: isChosen ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(.tint)
+                    .accessibilityHidden(true)
             }
         }
         .buttonStyle(.plain)
@@ -528,7 +529,7 @@ struct PlaylistPicker: View {
                     Button("Create and add", systemImage: "plus") { create(trimmed) }
                         .disabled(trimmed.isEmpty || asking)
                 } footer: {
-                    if let failure { Text(failure).foregroundStyle(.red) }
+                    if let failure { Text(failure).foregroundStyle(Color.failure).announced(failure) }
                 }
                 Section {
                     ForEach(library.features.playlists.filter { $0.search == nil }, id: \.id) { playlist in
@@ -539,7 +540,7 @@ struct PlaylistPicker: View {
                             HStack(spacing: 12) {
                                 PlaylistArtwork(playlist: playlist).frame(width: artworkEdge, height: artworkEdge)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(playlist.name).lineLimit(1)
+                                    Text(playlist.name).titleLines()
                                     Text(counted(Int(playlist.songs), "song")).font(.subheadline).foregroundStyle(.secondary)
                                 }
                             }

@@ -97,6 +97,7 @@ struct ServedCoverView: View {
                 Image(systemName: circle ? "person.fill" : "music.note")
                     .font(.title2)
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
             .overlay {
                 if let image {
@@ -115,6 +116,7 @@ struct ServedCoverView: View {
                 }
                 image = await features.servedCover(load.uri, known: cover, bucket: load.bucket)
             }
+            .accessibilityIgnoresInvertColors()
             .accessibilityHidden(true)
     }
 }
@@ -131,9 +133,9 @@ struct ServedRow: View {
         HStack(spacing: 12) {
             ServedCoverView(uri: uri, cover: cover, edge: edge, circle: circle)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.body).lineLimit(1)
+                Text(title).font(.body).titleLines()
                 if let detail, !detail.isEmpty {
-                    Text(detail).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                    Text(detail).font(.subheadline).foregroundStyle(.secondary).titleLines()
                 }
             }
             Spacer(minLength: 0)
@@ -168,10 +170,10 @@ struct ServedSongRow: View {
                         .foregroundStyle(.secondary)
                         .frame(width: numberWidth)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(song.shownTitle).font(.body).lineLimit(1)
+                        Text(song.shownTitle).font(.body).titleLines()
                         let detail = song.line(withAlbum: false)
                         if !detail.isEmpty {
-                            Text(detail).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                            Text(detail).font(.subheadline).foregroundStyle(.secondary).titleLines()
                         }
                     }
                     Spacer(minLength: 0)
@@ -219,10 +221,12 @@ struct ServedStar: View {
                 .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
                 .symbolEffect(.bounce, value: reduceMotion ? 0 : tapped)
                 .touchTarget()
+                .buttonShape()
         }
         .buttonStyle(.plain)
         .sensoryFeedback(.selection, trigger: tapped)
         .accessibilityLabel(starred ? "Remove \(title) from favourites" : "Add \(title) to favourites")
+        .accessibilityInputLabels(["Favourite", "Star", "Add to favourites", "Remove from favourites"])
     }
 }
 
@@ -328,7 +332,7 @@ struct ServerView: View {
         } else if let first {
             ServedFoundRows(found: first)
         } else {
-            ProgressView().frame(maxWidth: .infinity).themedRows()
+            ProgressView().accessibilityLabel("Loading").frame(maxWidth: .infinity).themedRows()
         }
     }
 
@@ -342,7 +346,7 @@ struct ServerView: View {
         } else if let found {
             ServedFoundRows(found: found)
         } else {
-            ProgressView().frame(maxWidth: .infinity).themedRows()
+            ProgressView().accessibilityLabel("Loading").frame(maxWidth: .infinity).themedRows()
         }
     }
 
@@ -471,7 +475,7 @@ struct ServedArtistPage: View {
                                         ServedCoverView(uri: album.uri, cover: album.cover, edge: albumEdge, corner: 10)
                                         Text(album.shownName)
                                             .font(.subheadline.weight(.medium))
-                                            .lineLimit(1)
+                                            .titleLines()
                                         Text(album.year.map(String.init) ?? album.songs.map { counted(Int($0), "song") } ?? "")
                                             .font(.caption)
                                             .foregroundStyle(.secondary)

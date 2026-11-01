@@ -241,6 +241,16 @@ let folder = MusicFolder(id: "local", name: "On this iPhone", path: "/music", re
         #expect(failed.startsOnTap && cancelled.startsOnTap)
     }
 
+    @Test func onlyAWaitingOrRunningStandingCanBeCancelled() {
+        #expect(DownloadStanding.waiting.cancellable)
+        #expect(DownloadStanding.running(nil).cancellable)
+        #expect(DownloadStanding.running(0.5).cancellable)
+        #expect(!DownloadStanding.available.cancellable)
+        #expect(!DownloadStanding.held.cancellable)
+        #expect(!DownloadStanding.failed("No match").cancellable)
+        #expect(!DownloadStanding.cancelled.cancellable)
+    }
+
     @Test func theLatestJobOfASongDecidesAndOtherSongsAreIgnored() {
         let song = searchSong()
         let other = searchSong("Fearless")

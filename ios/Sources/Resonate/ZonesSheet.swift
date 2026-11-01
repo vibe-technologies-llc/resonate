@@ -37,6 +37,7 @@ struct ZonesSheet: View {
                             HStack {
                                 Image(systemName: zone.shown ? "checkmark.circle.fill" : "circle")
                                     .foregroundStyle(zone.shown ? Color.worn : Color.secondary)
+                                    .accessibilityHidden(true)
                                 VStack(alignment: .leading) {
                                     Text(zone.name)
                                     Text(ZonePlan.line(zone.transport, playing: zone.playing, on: zone.rendererName))
@@ -167,6 +168,7 @@ struct RendererPicker: View {
                             HStack {
                                 Image(systemName: renderer.node == playingOn ? "checkmark.circle.fill" : "circle")
                                     .foregroundStyle(renderer.node == playingOn ? Color.worn : Color.secondary)
+                                    .accessibilityHidden(true)
                                 VStack(alignment: .leading) {
                                     Text(renderer.name)
                                     Text(renderer.host)
