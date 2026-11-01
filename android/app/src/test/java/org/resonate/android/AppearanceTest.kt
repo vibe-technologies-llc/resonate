@@ -4,6 +4,7 @@ import java.io.File
 import androidx.compose.ui.graphics.Color
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.resonate.android.ui.theme.PlayerTone
 import org.resonate.android.ui.theme.schemeOf
 import org.junit.Test
 
@@ -47,5 +48,11 @@ class AppearanceTest {
         val seed = Color(0xFF7CB6EA)
         assertEquals(Color.Black, schemeOf(seed, dark = true, pitchBlack = true).surface)
         assertNotEquals(Color.Black, schemeOf(seed, dark = true).surface)
+    }
+
+    @Test
+    fun the_player_intensity_rests_in_the_middle() {
+        assertEquals(0.5f, Appearance().nowPlayingIntensity)
+        assertEquals(Appearance.INTENSITY_DEFAULT, PlayerTone.NEUTRAL_INTENSITY)
     }
 }

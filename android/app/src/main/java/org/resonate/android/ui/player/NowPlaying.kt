@@ -119,7 +119,9 @@ import org.resonate.android.ui.shownTitle
 import org.resonate.android.ui.theme.ArtworkTheme
 import org.resonate.android.ui.theme.HIGH_CONTRAST
 import org.resonate.android.ui.theme.LocalContrastLevel
+import org.resonate.android.ui.theme.LocalDarkTheme
 import org.resonate.android.ui.theme.LocalPitchBlack
+import org.resonate.android.ui.theme.PlayerTone
 import org.resonate.android.ui.theme.rememberSeedOf
 import org.resonate.android.ui.tools.LyricsPane
 
@@ -132,11 +134,9 @@ private enum class Pane {
 fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
     val playing by model.playing.collectAsStateWithLifecycle()
     val track = playing?.track
-    val chosenStrength =
-        LocalResonate.current.features.appearance.appearance
-            .collectAsStateWithLifecycle()
-            .value
-            .backgroundStrength
+    val appearance by
+        LocalResonate.current.features.appearance.appearance.collectAsStateWithLifecycle()
+    val chosenStrength = appearance.backgroundStrength
     val strength = if (LocalContrastLevel.current >= HIGH_CONTRAST) 0f else chosenStrength
     val scope = rememberCoroutineScope()
     var height by remember { mutableFloatStateOf(1f) }
@@ -165,6 +165,12 @@ fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
     ArtworkTheme(seed) {
         val scheme = MaterialTheme.colorScheme
         val base = if (LocalPitchBlack.current) Color.Black else scheme.surfaceContainerLow
+        val top =
+            PlayerTone.top(
+                scheme.primaryContainer,
+                appearance.nowPlayingIntensity,
+                LocalDarkTheme.current,
+            )
         Surface(
             color = scheme.surface,
             modifier =
@@ -185,7 +191,7 @@ fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
                 Modifier.fillMaxSize()
                     .background(
                         Brush.verticalGradient(
-                            0f to scheme.primaryContainer.copy(alpha = strength),
+                            0f to top.copy(alpha = strength),
                             0.55f to base,
                             1f to base,
                         )

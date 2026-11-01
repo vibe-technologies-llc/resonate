@@ -26,6 +26,7 @@ data class Appearance(
     val pitchBlack: Boolean = false,
     val highContrast: Boolean = false,
     val backgroundStrength: Float = Appearance.STRENGTH_DEFAULT,
+    val nowPlayingIntensity: Float = Appearance.INTENSITY_DEFAULT,
 ) {
     val accentLabel: String
         get() = accent?.label ?: WALLPAPER
@@ -33,6 +34,7 @@ data class Appearance(
     companion object {
         const val WALLPAPER = "Wallpaper"
         const val STRENGTH_DEFAULT = 0.7f
+        const val INTENSITY_DEFAULT = 0.5f
     }
 }
 
@@ -68,6 +70,12 @@ class AppearanceStore(private val storage: SharedPreferences) {
         storage.edit().putFloat(STRENGTH, kept).apply()
     }
 
+    fun chooseNowPlayingIntensity(intensity: Float) {
+        val kept = intensity.coerceIn(0f, 1f)
+        mutable.value = mutable.value.copy(nowPlayingIntensity = kept)
+        storage.edit().putFloat(INTENSITY, kept).apply()
+    }
+
     private fun read() =
         Appearance(
             mode = ThemeMode.entries.find { it.name == storage.getString(MODE, null) }
@@ -77,6 +85,8 @@ class AppearanceStore(private val storage: SharedPreferences) {
             highContrast = storage.getBoolean(HIGH_CONTRAST, false),
             backgroundStrength =
                 storage.getFloat(STRENGTH, Appearance.STRENGTH_DEFAULT).coerceIn(0f, 1f),
+            nowPlayingIntensity =
+                storage.getFloat(INTENSITY, Appearance.INTENSITY_DEFAULT).coerceIn(0f, 1f),
         )
 
     private companion object {
@@ -85,5 +95,6 @@ class AppearanceStore(private val storage: SharedPreferences) {
         const val PITCH_BLACK = "pitch-black"
         const val HIGH_CONTRAST = "high-contrast"
         const val STRENGTH = "background-strength"
+        const val INTENSITY = "now-playing-intensity"
     }
 }

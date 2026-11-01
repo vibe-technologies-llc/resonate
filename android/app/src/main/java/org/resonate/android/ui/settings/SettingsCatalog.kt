@@ -156,6 +156,9 @@ enum class Setting(
             "Amber",
             "Peach",
             "Red",
+            "Player background",
+            "Player intensity",
+            "Now Playing",
         ),
     ),
     NOTIFICATIONS(
