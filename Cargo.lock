@@ -6348,6 +6348,8 @@ dependencies = [
  "rustix",
  "thiserror 2.0.21",
  "tracing",
+ "wasapi",
+ "windows 0.62.2",
  "zbus 6.2.0",
 ]
 

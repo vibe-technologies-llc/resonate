@@ -44,8 +44,11 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   hot-plug, the render cycle's timing, microphone and loopback capture (a loopback endpoint that
   stays silent while nothing plays, a microphone's autoconverted format), the window under
   per-monitor DPI and IME, the recycle bin, the terminal keys, the window's named pipe (its
-  owner-only security descriptor, a client reaching it) and the ARM64 archive (cross-built on an x64
-  runner, never started) have never run on real hardware or a real audio endpoint
+  owner-only security descriptor, a client reaching it), the ARM64 archive (cross-built on an x64
+  runner, never started), a toast (whether one shows once a shortcut carries
+  `org.resonate.Resonate`, its image from a `file:///` cover, its three buttons reaching the
+  transport, a replacement when the cover lands) and the connection's `NetworkCostType` (a metered
+  hotspot, the change event) have never run on real hardware or a real audio endpoint
 - [L · 0.4.0] Windows has no media transport: the System Media Transport Controls (media keys, the
   volume overlay and lock screen, track and cover metadata) need a native crate behind
   `resonate-mpris`'s `Host` seam, since `resonate-mpris` finds no session bus and the player runs
@@ -56,15 +59,14 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [S · 0.4.0] A volume turned from the Windows mixer reaches the slider by the two-second poll: the
   safe wrapper of `IAudioEndpointVolume` reads and sets only a whole percent and offers no
   `IAudioEndpointVolumeCallback`, so a change is neither told at once nor read finer than a percent
-- [M · 0.4.0] Windows has no toast notifications with transport actions and no metered-network
-  detector (`NetworkCostType`)
 - [M · 0.4.0] A Windows path past `MAX_PATH` (260) is not weighed by the organiser, NTFS alternate
   streams and ACLs are not carried by a tag write, and a folder mounted into another drive's tree is
   not noticed as a volume
 - [M · 0.4.0] The integration suites of the library, the codec's encoded files, the vault and the
   binary's terminal and signal tests are Unix-only; each needs a Windows counterpart (symlinks,
   permission bits, pseudo-terminals)
-- [L · 0.4.0] Windows has no installer, start-menu entry or file associations from `MIME_TYPES`, no
+- [L · 0.4.0] Windows has no installer, start-menu entry (whose shortcut must carry the AppUserModelID `org.resonate.Resonate`, else the
+  toasts `resonate-mpris` creates are not shown) or file associations from `MIME_TYPES`, no
   Authenticode signing (no secrets exist), no winget or scoop manifest, and the executable carries no
   icon (the accent-following icon is a Linux theme file)
 

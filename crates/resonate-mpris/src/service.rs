@@ -99,7 +99,13 @@ pub struct Mpris {
 enum Service {
     Bus(OnTheBus),
     #[cfg(windows)]
-    Pipe(crate::pipe::Serving),
+    Pipe(OnThePipe),
+}
+
+#[cfg(windows)]
+struct OnThePipe {
+    serving: crate::pipe::Serving,
+    toasts: Option<JoinHandle<()>>,
 }
 
 struct OnTheBus {
@@ -160,7 +166,9 @@ impl Mpris {
                     Arc::clone(shared),
                     playlists,
                 ));
-                crate::pipe::Serving::start(zone, answering).map(Service::Pipe)
+                let serving = crate::pipe::Serving::start(zone, answering)?;
+                let toasts = toasting(shared, told, stop);
+                Ok(Service::Pipe(OnThePipe { serving, toasts }))
             }
         }
     }
@@ -169,7 +177,7 @@ impl Mpris {
         match &self.service {
             Service::Bus(bus) => bus.claimed.name(),
             #[cfg(windows)]
-            Service::Pipe(pipe) => pipe.name(),
+            Service::Pipe(pipe) => pipe.serving.name(),
         }
     }
 
@@ -199,6 +207,38 @@ impl Mpris {
             Service::Pipe(pipe) => pipe.rest(),
         }
         self.shared.pictures.forget();
+    }
+}
+
+#[cfg(windows)]
+impl OnThePipe {
+    fn rest(&mut self) {
+        if let Some(toasts) = self.toasts.take() {
+            let _ = toasts.join();
+        }
+        self.serving.rest();
+    }
+}
+
+#[cfg(windows)]
+fn toasting(
+    shared: &Arc<Shared>,
+    told: &Receiver<Told>,
+    stop: &Arc<AtomicBool>,
+) -> Option<JoinHandle<()>> {
+    let shared = Arc::clone(shared);
+    let told = told.clone();
+    let stop = Arc::clone(stop);
+    let spawned = thread::Builder::new()
+        .name("resonate-toasts".to_owned())
+        .spawn(move || toast_what_plays(&shared, &told, &stop));
+
+    match spawned {
+        Ok(toasts) => Some(toasts),
+        Err(error) => {
+            tracing::warn!(%error, "a track change will not be told to Windows");
+            None
+        }
     }
 }
 
@@ -519,20 +559,7 @@ fn announce(
         if let Some(collected) = collected.as_ref() {
             publish_playlists(collected, &watched.playlists, &next.playlists);
         }
-        if let Some(errands) = errands.as_ref() {
-            errands.follow(next.playback);
-        }
-        let wanted = Telling::of(shared.host.attended(), shared.host.notifies());
-        told = tell(errands.as_ref(), &next, told, wanted);
-        for heard in heard_from.try_iter() {
-            if let (Telling::Raise, Some(errands)) = (wanted, errands.as_ref()) {
-                let art = heard
-                    .picture
-                    .as_ref()
-                    .and_then(|picture| shared.pictures.uri_of(picture));
-                errands.tell(Shown::told(heard.summary, heard.body, art));
-            }
-        }
+        told = tell_the_desktop(shared, errands.as_ref(), &next, told, heard_from);
         if watched.seeks != next.seeks
             && let Some(playhead) = next.playhead
         {
@@ -550,6 +577,49 @@ fn announce(
     }
     if let Some(headsets) = headsets {
         headsets.rest();
+    }
+}
+
+fn tell_the_desktop(
+    shared: &Shared,
+    errands: Option<&Errands>,
+    next: &Watched,
+    told: Option<Shown>,
+    heard_from: &Receiver<Told>,
+) -> Option<Shown> {
+    if let Some(errands) = errands {
+        errands.follow(next.playback);
+    }
+    let wanted = Telling::of(shared.host.attended(), shared.host.notifies());
+    let told = tell(errands, next, told, wanted);
+    for heard in heard_from.try_iter() {
+        if let (Telling::Raise, Some(errands)) = (wanted, errands) {
+            let art = heard
+                .picture
+                .as_ref()
+                .and_then(|picture| shared.pictures.uri_of(picture));
+            errands.tell(Shown::told(heard.summary, heard.body, art));
+        }
+    }
+    told
+}
+
+#[cfg(windows)]
+fn toast_what_plays(shared: &Arc<Shared>, told: &Receiver<Told>, stop: &AtomicBool) {
+    let errands = Errands::start(shared);
+    let mut toasted = None;
+    let mut watched = snapshot(shared, None, None);
+
+    while !stop.load(Ordering::Acquire) {
+        thread::sleep(POLL);
+
+        let next = snapshot(shared, None, Some(&watched));
+        toasted = tell_the_desktop(shared, errands.as_ref(), &next, toasted, told);
+        watched = next;
+    }
+
+    if let Some(errands) = errands {
+        errands.rest();
     }
 }
 
