@@ -1199,7 +1199,11 @@ pub(crate) fn sink_in_use<'s>(
     sinks
         .iter()
         .find(|sink| open == Some(sink.id))
-        .or_else(|| sinks.iter().find(|sink| named == Some(&sink.name)))
+        .or_else(|| {
+            sinks
+                .iter()
+                .find(|sink| named.is_some_and(|named| sink.is_named(named)))
+        })
         .or_else(|| sinks.iter().find(|sink| sink.is_default))
         .or_else(|| sinks.first())
 }
@@ -1239,6 +1243,7 @@ mod tests {
         SinkInfo {
             id: SinkId::new(id),
             name: NodeName::new(name),
+            aliases: Vec::new(),
             description: name.to_owned(),
             is_default,
             is_hardware: true,

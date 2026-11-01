@@ -1063,11 +1063,11 @@ pub enum Sub {
 
         #[arg(
             long = "cast-at",
-            value_name = "IP[:PORT]",
-            help = "Reach the Google Cast receiver at this IP address (port 8009 unless one is \
-                    given), sending no search to the network unless --renderers asks for one: \
-                    for a network that drops multicast; repeatable, and the cast-at key holds \
-                    addresses for every run"
+            value_name = "HOST[:PORT]",
+            help = "Reach the Google Cast receiver at this IP address or host name (port 8009 \
+                    unless one is given), sending no search to the network unless --renderers \
+                    asks for one: for a network that drops multicast; repeatable, and the \
+                    cast-at key holds addresses for every run"
         )]
         cast_at: Vec<String>,
     },

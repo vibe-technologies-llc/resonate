@@ -603,6 +603,7 @@ fn sink_of(id: SinkId, renderer: &Renderer) -> SinkInfo {
     SinkInfo {
         id,
         name: renderer.node_name(),
+        aliases: Vec::new(),
         description: renderer.name().to_owned(),
         is_default: false,
         is_hardware: true,

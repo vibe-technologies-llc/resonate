@@ -118,6 +118,7 @@ fn speakers(sink: SinkId) -> SinkInfo {
     SinkInfo {
         id: sink,
         name: NodeName::new("test.speakers"),
+        aliases: Vec::new(),
         description: "Test speakers".to_owned(),
         is_default: true,
         is_hardware: true,

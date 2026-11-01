@@ -52,6 +52,7 @@ impl Surveyor for Device {
         Ok(vec![SinkInfo {
             id: self.0.sink(),
             name: NodeName::new("ios-route"),
+            aliases: Vec::new(),
             description: "iOS audio route".into(),
             is_default: true,
             is_hardware: false,

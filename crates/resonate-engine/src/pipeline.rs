@@ -731,6 +731,7 @@ mod tests {
         SinkInfo {
             id: SinkId::new(1),
             name: NodeName::new(name),
+            aliases: Vec::new(),
             description: "Test DAC".to_owned(),
             is_default: true,
             is_hardware: true,

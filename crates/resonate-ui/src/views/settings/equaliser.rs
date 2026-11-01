@@ -2027,7 +2027,7 @@ impl RootView {
                 .read(cx)
                 .sinks()
                 .iter()
-                .find(|sink| sink.name == *owner)
+                .find(|sink| sink.is_named(owner))
                 .map(|sink| sink.description.clone())
         });
         let called = match (described, owner) {

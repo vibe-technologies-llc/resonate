@@ -19,7 +19,7 @@ use resonate_audio::{
     AudioSource, Backend, Error as SinkError, HardwareVolume, LatencyRequest, MediaRole, Opener,
     SinkChange, SinkId, SinkInfo, SinkResult, SinkStream, StreamEvent, StreamRequest, Surveyor,
 };
-use resonate_cast::{CAST_SERVICE, CastId, Casting, Finding, Found, Searching};
+use resonate_cast::{CAST_SERVICE, CastId, Casting, Finding, Found, Given, Searching};
 use resonate_codec::{DecodeStatus, Decoder, Sources};
 use resonate_core::{
     AudioBuffer, ChannelLayout, Frames, Gain, MediaLocation, SampleFormat, SampleRate, StreamSpec,
@@ -1200,7 +1200,7 @@ fn a_receiver_given_by_address_is_reached_without_a_browse_and_named_by_where_it
     assert_eq!(sink.description, "127.0.0.1");
     assert!(casting.is_reaching());
     assert!(!casting.is_looking());
-    assert_eq!(casting.located(), [fake.at]);
+    assert_eq!(casting.located(), [Given::from(fake.at)]);
 }
 
 #[test]
@@ -1210,7 +1210,12 @@ fn an_address_given_to_a_receiver_already_listed_makes_no_second_sink() {
 
     casting.locate(fake.at).expect("already held");
 
-    assert_eq!(casting.sinks().len(), 1);
+    let sink = the_receiver(&casting);
+    assert_eq!(sink.name, NodeName::new(format!("cast:{ID}")));
+    assert_eq!(
+        sink.aliases,
+        [NodeName::new(format!("cast:{}", CastId::at(fake.at)))]
+    );
 }
 
 #[test]
@@ -1281,4 +1286,146 @@ fn a_casting_reaching_addresses_alone_that_is_asked_to_look_browses_too() {
 
     assert!(casting.is_looking());
     assert_eq!(casting.sinks().len(), 2);
+}
+
+fn named_given(fake: &Fake) -> Given {
+    Given::parse(&format!("localhost:{}", fake.at.port())).expect("a host name with a port")
+}
+
+fn waited_for_receivers(casting: &Casting, count: usize) {
+    let since = Instant::now();
+    while casting.sinks().len() != count {
+        assert!(
+            since.elapsed() < WAITED_AT_MOST,
+            "waited too long for {count} receivers"
+        );
+        thread::sleep(LOOKS_EVERY);
+    }
+}
+
+#[test]
+fn a_receiver_given_by_host_name_is_resolved_reached_and_named_by_where_it_is() {
+    let fake = Fake::start();
+    let casting = Casting::resting(nothing_listed()).expect("rests");
+    casting
+        .locate(named_given(&fake))
+        .expect("holds the host name");
+    assert!(casting.sinks().is_empty());
+
+    casting
+        .look_at_addresses(FirstSearch::Awaited)
+        .expect("reaches");
+    let sink = the_receiver(&casting);
+
+    assert_eq!(
+        sink.name,
+        NodeName::new(format!("cast:{}", CastId::at(fake.at)))
+    );
+    assert!(sink.aliases.is_empty());
+    assert_eq!(casting.located(), [named_given(&fake)]);
+}
+
+#[test]
+fn a_host_name_given_to_a_reaching_casting_is_resolved_off_the_callers_thread_and_forgetting_it_removes_the_receiver()
+ {
+    let fake = Fake::start();
+    let casting = Casting::resting(nothing_listed()).expect("rests");
+    casting
+        .look_at_addresses(FirstSearch::Awaited)
+        .expect("reaches");
+    let changes = Neighbours::subscribe(&casting);
+
+    casting
+        .locate(named_given(&fake))
+        .expect("the name is handed to a thread");
+    waited_for_receivers(&casting, 1);
+    let sink = the_receiver(&casting);
+    casting.unlocate(named_given(&fake));
+
+    assert_eq!(changes.try_recv(), Ok(SinkChange::Added(sink.id)));
+    assert_eq!(changes.try_recv(), Ok(SinkChange::Removed(sink.id)));
+    assert!(casting.sinks().is_empty());
+    assert!(casting.located().is_empty());
+}
+
+#[test]
+fn a_host_name_nothing_resolves_lists_no_receiver_and_is_kept_to_try_again() {
+    let casting = Casting::resting(nothing_listed()).expect("rests");
+    let unresolved = Given::parse("no-such-receiver.invalid").expect("a host name");
+    casting.locate(unresolved.clone()).expect("held");
+
+    casting
+        .look_at_addresses(FirstSearch::Awaited)
+        .expect("reaches");
+
+    assert!(casting.sinks().is_empty());
+    assert_eq!(casting.located(), [unresolved]);
+}
+
+#[test]
+fn a_receiver_given_by_address_and_then_heard_by_the_browse_is_named_by_its_mdns_id_under_the_same_sink()
+ {
+    let fake = Fake::start();
+    let searching = fake.searching();
+    let casting = Casting::resting(searching).expect("rests");
+    casting.locate(fake.at).expect("holds the address");
+    casting
+        .look_at_addresses(FirstSearch::Awaited)
+        .expect("reaches");
+    let before = the_receiver(&casting);
+    let by_address = NodeName::new(format!("cast:{}", CastId::at(fake.at)));
+    assert_eq!(before.name, by_address);
+    let changes = Neighbours::subscribe(&casting);
+
+    casting.look(FirstSearch::Awaited).expect("browses");
+    let after = the_receiver(&casting);
+
+    assert_eq!(after.id, before.id);
+    assert_eq!(after.name, NodeName::new(format!("cast:{ID}")));
+    assert_eq!(after.description, NAME);
+    assert_eq!(after.aliases, std::slice::from_ref(&by_address));
+    assert!(after.is_named(&by_address));
+    assert!(after.is_named(&NodeName::new(format!("cast:{ID}"))));
+    assert!(!after.is_named(&NodeName::new("cast:other")));
+    assert_eq!(changes.try_recv(), Ok(SinkChange::Reformatted(before.id)));
+    assert_eq!(
+        changes.try_recv(),
+        Err(crossbeam_channel::TryRecvError::Empty)
+    );
+}
+
+#[test]
+fn a_receiver_named_by_its_mdns_id_while_its_address_is_held_stays_listed_when_the_address_is_forgotten()
+ {
+    let fake = Fake::start();
+    let casting = Casting::resting(fake.searching()).expect("rests");
+    casting.locate(fake.at).expect("holds the address");
+    casting
+        .look_at_addresses(FirstSearch::Awaited)
+        .expect("reaches");
+    casting.look(FirstSearch::Awaited).expect("browses");
+    let named = the_receiver(&casting);
+
+    casting.unlocate(fake.at);
+
+    let kept = the_receiver(&casting);
+    assert_eq!(kept.id, named.id);
+    assert_eq!(kept.name, NodeName::new(format!("cast:{ID}")));
+    assert!(kept.aliases.is_empty());
+}
+
+#[test]
+fn a_receiver_named_by_its_mdns_id_keeps_that_name_when_browsing_stops_with_its_address_held() {
+    let fake = Fake::start();
+    let casting = Casting::start(fake.searching(), FirstSearch::Awaited).expect("reaches");
+    casting.locate(fake.at).expect("already held");
+
+    casting.stop_browsing();
+
+    let sink = the_receiver(&casting);
+    assert_eq!(sink.name, NodeName::new(format!("cast:{ID}")));
+    assert_eq!(
+        sink.aliases,
+        [NodeName::new(format!("cast:{}", CastId::at(fake.at)))]
+    );
 }

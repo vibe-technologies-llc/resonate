@@ -1227,7 +1227,12 @@ Invariants from file to sink. Callback contract: `realtime.md`.
 - **The chosen sink is named, not numbered:** `EngineConfig::sink` and `Command::SetSink` carry a
   `NodeName`, matched by `select_sink` on every stream open (PipeWire ids are per object; a replugged
   device gets a new one). `OutputStatus::sink` stays a `SinkId`. An unanswered name warns and falls
-  back to the default until the device turns up.
+  back to the default until the device turns up. **A sink may answer to more than one name**:
+  `SinkInfo::aliases` are further names it answers to and `SinkInfo::is_named` the one test (name or
+  alias) every match of a stored name against a surveyed sink goes through (`chosen_sink`,
+  `stays_on_the_bound_device`, a zone's holder, the window's device list, the binary's `--sink`
+  checks); only a Cast receiver given by address has one (`cast.md`). A map keyed by node name,
+  such as the equaliser's bindings, is keyed by the sink's `name` and does not follow an alias.
 - **Hardware-ness is a question about the `Device` above the node.** A `Node` global carries
   `device.id`, not `device.api`; `Discovered::is_hardware` answers for the pair at snapshot time, so
   the globals may arrive in either order. **The physical port is the `Device`'s to answer; the seat

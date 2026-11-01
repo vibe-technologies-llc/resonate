@@ -88,6 +88,7 @@ mod tests {
         SinkInfo {
             id: SinkId::new(id),
             name: NodeName::new(format!("wasapi:{id}")),
+            aliases: Vec::new(),
             description: String::new(),
             is_default: false,
             is_hardware: true,

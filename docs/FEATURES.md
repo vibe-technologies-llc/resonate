@@ -185,10 +185,13 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   complex`)
 
 ## Later: Network output
-- [S] A Google Cast receiver is given by IP address alone (`cast-at`, `sinks --cast-at`), not by a
-  host name, and is named by where it is (`cast:at-<ip>-<port>`), not by its mDNS `id`, which a
-  `GET_STATUS` over TLS does not carry: a `sink` key naming the mDNS id does not find it while its
-  address is held, and the phones have no Cast at all (`cast.md`)
+- [S] A Google Cast receiver given by address that the browse then hears is renamed `cast:<id>` with
+  `cast:at-<ip>-<port>` kept as a `SinkInfo` alias, and the alias is followed by every match of a
+  stored name against a surveyed sink but not by a map keyed by node name: the equaliser's binding
+  for `cast:at-...` is not carried over to `cast:<id>` (`cast.md`)
+- [L] The phones have no Cast at all: `resonate-mobile` holds `resonate-upnp`'s `Network` alone,
+  so a Cast receiver needs a `Casting` beside it, the `Beside` composition over Oboe and RemoteIO,
+  an address row beside *Add a renderer by address* and the Kotlin and Swift of both (`cast.md`)
 - [S] Nothing learns which renderers decode 176.4 and 192 kHz FLAC, since the protocol info does not say
   and a renderer that cannot play a stream gives no answer a try could read, so the default stays 96 kHz
   (the fake renderer's tests are all the proof the vouched rates have, no streamer having confirmed any);

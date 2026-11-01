@@ -78,6 +78,7 @@ use std::{
 
 use clap::Parser;
 use crossbeam_channel::{bounded, never, select, tick};
+use resonate_cast::Given;
 use resonate_codec::{
     CoverArt, Packing, Popularity, Sources, probe, read_cue_media, the_file_a_cue_names,
 };
@@ -576,7 +577,7 @@ fn select_sink(sinks: Vec<SinkInfo>, wanted: Option<&NodeName>) -> Result<SinkIn
     };
     sinks
         .into_iter()
-        .find(|sink| sink.name == *wanted)
+        .find(|sink| sink.is_named(wanted))
         .ok_or_else(|| Error::SinkNotFound(wanted.clone()))
 }
 
@@ -587,7 +588,7 @@ fn confirm_sink(player: &Player, wanted: Option<&NodeName>) {
     if player
         .sinks_once_surveyed(SINK_TIMEOUT)
         .iter()
-        .any(|sink| sink.name == *wanted)
+        .any(|sink| sink.is_named(wanted))
     {
         return;
     }
@@ -625,10 +626,9 @@ fn with_receiver_addresses(
         config.renderers_at.insert(located);
     }
     for address in cast_at {
-        let receiver =
-            resonate_cast::receiver_address(address).ok_or_else(|| Error::CastAddress {
-                address: address.clone(),
-            })?;
+        let receiver = Given::parse(address).ok_or_else(|| Error::CastAddress {
+            address: address.clone(),
+        })?;
         config.cast_at.insert(receiver);
     }
     Ok(config)

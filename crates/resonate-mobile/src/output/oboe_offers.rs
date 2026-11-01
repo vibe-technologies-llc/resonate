@@ -148,6 +148,7 @@ mod tests {
         SinkInfo {
             id: SinkId::new(1),
             name: NodeName::new("android-route"),
+            aliases: Vec::new(),
             description: "Android audio output".into(),
             is_default: true,
             is_hardware: false,

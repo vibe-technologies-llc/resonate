@@ -137,6 +137,7 @@ fn shared_sink(
     Some(SinkInfo {
         id: sink_id_of(&node),
         name: node,
+        aliases: Vec::new(),
         description: format!("{name}{}", Way::Shared.described()),
         is_default,
         is_hardware: true,
@@ -172,6 +173,7 @@ fn exclusive_sink(
     Some(SinkInfo {
         id: sink_id_of(&node),
         name: node,
+        aliases: Vec::new(),
         description: format!("{name}{}", Way::Exclusive.described()),
         is_default: false,
         is_hardware: true,

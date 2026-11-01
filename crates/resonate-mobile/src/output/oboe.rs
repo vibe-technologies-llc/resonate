@@ -55,6 +55,7 @@ impl Surveyor for Device {
         Ok(vec![SinkInfo {
             id: self.0.sink(),
             name: NodeName::new("android-default"),
+            aliases: Vec::new(),
             description: "Android audio output".into(),
             is_default: true,
             is_hardware: false,

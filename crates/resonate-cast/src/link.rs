@@ -85,7 +85,6 @@ pub(crate) struct Told {
 type Waiting = Arc<Mutex<BTreeMap<u32, Sender<Json>>>>;
 
 pub(crate) struct Link {
-    at: SocketAddr,
     outgoing: Sender<Message>,
     waiting: Waiting,
     minted: AtomicU32,
@@ -129,7 +128,6 @@ impl Link {
         let waiting = Waiting::default();
         let alive = Arc::new(AtomicBool::new(true));
         let link = Self {
-            at,
             outgoing,
             waiting: Arc::clone(&waiting),
             minted: AtomicU32::new(1),
@@ -159,10 +157,6 @@ impl Link {
             ]),
         );
         Ok(link)
-    }
-
-    pub(crate) const fn at(&self) -> SocketAddr {
-        self.at
     }
 
     pub(crate) fn is_alive(&self) -> bool {

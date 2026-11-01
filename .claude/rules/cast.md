@@ -24,7 +24,8 @@ and codec are dev-dependencies, for the end-to-end tests.
 - **Ids from `RECEIVER_IDS_FROM` (`0xE000_0000`) up to UPnP's `0xF000_0000`** (`Casting::owns`),
   above any PipeWire global and apart from the renderers'. The node name is `cast:` and the
   receiver's mDNS `id` (`CAST_NODES`, `Device::node_name`), so a `sink` key or `--sink` names one
-  across runs. Its `SinkInfo` is `is_hardware`, never default, `Plugged::Unsaid`, with
+  across runs; where the receiver was given by address and the browse has not heard it, the id is
+  not known and the name is the address's (*A receiver may be given by its address or its name*). Its `SinkInfo` is `is_hardware`, never default, `Plugged::Unsaid`, with
   `HardwareVolume::Always` and the volume read at discovery (`RECEIVER_STATUS`'s `volume.level`).
 - **The stream reuses UPnP's, unchanged**: `resonate-upnp`'s `Server` (one per `Casting`) offers a
   `Feed` under a token address, and the feed is the same paced live FLAC, encoded bit for bit from
@@ -51,20 +52,53 @@ and codec are dev-dependencies, for the end-to-end tests.
 - **`Finding::Listed` reaches a fixed list instead of browsing**, which is how the tests name a
   receiver on the loopback without multicast. `Searching::within` (2 s) is how long
   `FirstSearch::Awaited` collects records before `Casting::start` answers.
-- **A receiver may be given by its address** (`Casting::locate(SocketAddr)`, `unlocate`, `located`;
-  the binary's `cast-at`): its mDNS `id` is not on the wire (`GET_STATUS` does not carry it), so
-  the receiver is named by where it is, `CastId::at` (`at-192-168-1-20-8009`, so the sink
-  `cast:at-192-168-1-20-8009`) and `Found::at` titles it with the IP. `Casting::look_at_addresses`
-  starts the stream server and a `resonate-cast-browse` thread with no daemon, which reaches every
-  held address at once and again every `ADDRESSES_TRIED_AGAIN_EVERY` (60 s), so a receiver
-  powered off then appears when it is on; a held address is never dropped for being quiet.
-  `look` on such a casting starts the browse beside it, `stop_browsing` stops the browse and
-  drops the receivers only it heard (or rests where no address is held), `is_looking` is the browse
-  and `is_reaching` either. **One receiver, one sink:** an address is skipped where a receiver is
-  already held at it, and a browsed record at a held address is skipped, so a receiver the mDNS
-  browse names and an address names is listed once, under the name the address gives it; adding an
-  address for a receiver the browse already lists changes nothing
+- **A receiver may be given by its address or its name** (`Casting::locate(impl Into<Given>)`,
+  `unlocate`, `located`; the binary's `cast-at`). `Given` is `Address(SocketAddr)` or `Named { host:
+  Host, port }`: `Given::parse` takes an IP, `ip:port`, `[v6]`, `[v6]:port`, a host name or
+  `host:port` (port 8009 when none), a host being 1 to 253 bytes of letters, digits, `-` and `_` in
+  labels of at most 63, lowercased, whose last label is not all digits (so `192.168.1.300` is
+  refused rather than looked up) and anything else `None`. **A name is resolved when it is reached,
+  never when it is held** (`Given::resolve`, `Host::resolve`): `to_socket_addrs` on the
+  `resonate-cast-browse` thread, the IPv4 answer preferred, and, only under `Finding::Bonjour`
+  and for a name ending in `.local`, a short-lived `ServiceDaemon::resolve_hostname` (3 s) where
+  the system resolver lacks mDNS; a name nothing resolves is `Error::Resolve { host, source }`,
+  logged at debug and tried again with the next round. `locate` on a casting already reaching
+  spawns a `resonate-cast-resolve` thread for a name (an address is reached on the caller's
+  thread, as before), so no window, audio or UI thread blocks on a resolver. The address a name
+  last resolved to is kept (`Located::resolved`) and is what counts as held; a name that moves
+  drops the receiver at its old address unless another given or the browse holds it, and
+  reaches the new one. The mDNS `id` is not on the wire (`GET_STATUS` does not carry it), so a
+  receiver reached by address is first named by where it is, `CastId::at` (`at-192-168-1-20-8009`,
+  so the sink `cast:at-192-168-1-20-8009`) and `Found::at` titles it with the IP.
+  `Casting::look_at_addresses` starts the stream server and a `resonate-cast-browse` thread with
+  no daemon, which reaches every held given at once and again every `ADDRESSES_TRIED_AGAIN_EVERY`
+  (60 s), so a receiver powered off then appears when it is on and a name is looked up again; a
+  held given is never dropped for being quiet. `look` on such a casting starts the browse beside
+  it, `stop_browsing` stops the browse and drops the receivers only it heard (or rests where
+  nothing is held), `is_looking` is the browse and `is_reaching` either.
+- **One receiver, one sink, named by its mDNS id once heard.** An address is skipped where a
+  receiver is already held at it. A record the browse resolves (or a `Finding::Listed` one) at the
+  address of a receiver reached by address, whatever name the record gives, **renames that sink
+  to `cast:<id>` under the same `SinkId`** (`Shared::relabel`, `Device::renamed`, told as
+  `SinkChange::Reformatted`; the title becomes the record's `fn`), so a `sink` key naming the
+  mDNS id finds it while the address is held, and the `SinkInfo` keeps the address's name in
+  `aliases` for as long as the address is held (`Casting::sinks`, `Device::address_node_name`),
+  so a stored `cast:at-...` still finds it (`SinkInfo::is_named`, `audio.md`). Which sinks were
+  reached by address is `Known::addressed`, and the browse's record names (`Known::named`, a
+  fullname to a `CastId`; a `Listed` receiver is named by its id) say which are heard. A record
+  removed from the browse **reverts** an addressed receiver to its address's name (told
+  `Reformatted`) and removes any other; forgetting the address removes a receiver only the address
+  held (`forget_at`: addressed and not heard) and leaves one the browse hears, its alias gone.
+  A browse that stops keeps the name it gave. A receiver the browse listed first and an address
+  names later is one sink under the id. Locks and turns key by address (`Lanes`, the volume
+  links), not by id, so a rename does not split a receiver's lane. The browse's record is not
+  asked again to prove the rename: the address was reached already. A name stored elsewhere by
+  node name (the equaliser's binding for `cast:at-...`) is not carried over to `cast:<id>`
+  (`FEATURES.md`).
   (`a_receiver_given_by_address_is_reached_without_a_browse_and_named_by_where_it_is`,
+  `a_receiver_given_by_host_name_is_resolved_reached_and_named_by_where_it_is`,
+  `a_host_name_given_to_a_reaching_casting_is_resolved_off_the_callers_thread_and_forgetting_it_removes_the_receiver`,
+  `a_receiver_given_by_address_and_then_heard_by_the_browse_is_named_by_its_mdns_id_under_the_same_sink`,
   `an_address_given_to_a_receiver_already_listed_makes_no_second_sink`,
   `a_casting_that_stops_browsing_keeps_the_receivers_given_by_address_and_drops_the_rest`).
   No Cast receiver has been addressed so (`TESTING.md`'s Cast entry).
@@ -155,7 +189,11 @@ told, a pause, the volume and the mute turned, the receiver's ping answered and 
 refused load told as refused, a rate the receiver cannot take refused before it is reached, a song
 played through a real `Player` arriving bit for bit, a pause and a volume change reaching it within
 400 ms and the song resuming bit for bit, and a seek loading a fresh address within 400 ms that
-carries the song from where it landed without launching again. A record advertised through a
+carries the song from where it landed without launching again. A receiver given by a host name is resolved and reached (`localhost` and the fake's port),
+listed under its address's name, added and forgotten with its name, and a name nothing resolves lists
+nothing and is kept; a receiver given by address and then heard by the browse is renamed under its
+own sink id with the address's name as an alias, told `Reformatted`, and stays listed under its id when
+the address is forgotten. A record advertised through a
 second `mdns-sd` daemon is browsed, reached and listed, and removed once withdrawn
 (`a_receiver_advertised_over_mdns_is_found_and_gone_once_withdrawn`, skipped where that daemon
 cannot resolve its own record, which is a host with no multicast). The unit tests hold the protobuf
