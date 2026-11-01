@@ -24,11 +24,20 @@ pub struct Equalisation {
 }
 
 impl Equalisation {
-    pub fn for_sink(&self, sink: &NodeName) -> Option<&Arc<Profile>> {
+    pub fn for_sink(&self, sink: &SinkInfo) -> Option<&Arc<Profile>> {
         if !self.enabled {
             return None;
         }
-        self.bound.get(sink).or(self.fallback.as_ref())
+        sink.names()
+            .find_map(|name| self.bound.get(name))
+            .or(self.fallback.as_ref())
+    }
+
+    pub fn for_name(&self, name: &NodeName) -> Option<&Arc<Profile>> {
+        if !self.enabled {
+            return None;
+        }
+        self.bound.get(name).or(self.fallback.as_ref())
     }
 
     pub fn auditioning(sink: NodeName, profile: Arc<Profile>) -> Self {
@@ -464,7 +473,7 @@ pub fn plan_output(
     .unwrap_or(source);
 
     let attenuator = Attenuator::of(config, sink);
-    plan_for(decoded, &sink.name, target, config, replay_gain, attenuator)
+    plan_for(decoded, sink, target, config, replay_gain, attenuator)
 }
 
 pub fn packs_again(
@@ -489,7 +498,7 @@ fn dop_survives(
     config.dop
         && sink.supports(source)
         && gain_config(config, Attenuator::of(config, sink), replay_gain).is_none()
-        && eq_config(config, &sink.name, source.rate).is_none()
+        && eq_config(config, sink, source.rate).is_none()
         && config.crossfeed == Crossfeed::Off
 }
 
@@ -515,7 +524,7 @@ fn untouched(stream: StreamSpec, rate: DsdRate) -> OutputPlan {
 
 pub fn plan_for(
     source: Decoded,
-    sink: &NodeName,
+    sink: &SinkInfo,
     target: StreamSpec,
     config: &EngineConfig,
     replay_gain: AppliedGain,
@@ -647,7 +656,7 @@ pub fn resolve_replay_gain(
     }
 }
 
-fn eq_config(config: &EngineConfig, sink: &NodeName, rate: SampleRate) -> Option<Arc<Profile>> {
+fn eq_config(config: &EngineConfig, sink: &SinkInfo, rate: SampleRate) -> Option<Arc<Profile>> {
     config
         .equaliser
         .for_sink(sink)
@@ -699,15 +708,52 @@ mod tests {
         let auditioning = Equalisation::auditioning(this_sink(), Arc::clone(&profile));
 
         assert!(auditioning.enabled);
-        assert_eq!(auditioning.for_sink(&this_sink()), Some(&profile));
+        assert_eq!(auditioning.for_name(&this_sink()), Some(&profile));
         assert_eq!(
-            auditioning.for_sink(&NodeName::new(ANOTHER_SINK)),
+            auditioning.for_name(&NodeName::new(ANOTHER_SINK)),
             Some(&profile)
         );
     }
 
+    #[test]
+    fn a_profile_bound_under_an_alias_reaches_the_sink_and_the_name_outranks_the_alias() {
+        let under_its_name = Arc::new(Profile::flat());
+        let under_its_alias = boosting();
+        let alias = NodeName::new("cast:at-192-168-1-20-8009");
+        let sink = SinkInfo {
+            aliases: vec![alias.clone()],
+            ..this_sink_info()
+        };
+
+        let only_the_alias = Equalisation {
+            enabled: true,
+            bound: [(alias.clone(), Arc::clone(&under_its_alias))]
+                .into_iter()
+                .collect(),
+            fallback: None,
+        };
+        let both = Equalisation {
+            enabled: true,
+            bound: [
+                (alias, Arc::clone(&under_its_alias)),
+                (this_sink(), Arc::clone(&under_its_name)),
+            ]
+            .into_iter()
+            .collect(),
+            fallback: None,
+        };
+
+        assert_eq!(only_the_alias.for_sink(&sink), Some(&under_its_alias));
+        assert_eq!(only_the_alias.for_sink(&this_sink_info()), None);
+        assert_eq!(both.for_sink(&sink), Some(&under_its_name));
+    }
+
     fn this_sink() -> NodeName {
         NodeName::new(THIS_SINK)
+    }
+
+    fn this_sink_info() -> SinkInfo {
+        named(THIS_SINK, &[], &[], &[])
     }
 
     fn sink(allowed: &[SampleRate], formats: &[SampleFormat]) -> SinkInfo {
@@ -1531,7 +1577,7 @@ mod tests {
         let target = StreamSpec::new(SampleRate::HZ_48000, ChannelLayout::Mono, SampleFormat::F32);
         let plan = plan_for(
             Decoded::samples(source),
-            &this_sink(),
+            &this_sink_info(),
             target,
             &EngineConfig::default(),
             AppliedGain::default(),
@@ -1557,7 +1603,7 @@ mod tests {
 
         let first = plan_for(
             Decoded::samples(source),
-            &this_sink(),
+            &this_sink_info(),
             negotiated,
             &EngineConfig::default(),
             AppliedGain::default(),
@@ -1565,7 +1611,7 @@ mod tests {
         );
         let second = plan_for(
             Decoded::samples(source),
-            &this_sink(),
+            &this_sink_info(),
             first.stream,
             &EngineConfig::default(),
             AppliedGain::default(),
@@ -2163,7 +2209,7 @@ mod tests {
 
         assert!(!config.equaliser.enabled);
         assert!(!config.equaliser.binds_anything());
-        assert_eq!(config.equaliser.for_sink(&this_sink()), None);
+        assert_eq!(config.equaliser.for_sink(&this_sink_info()), None);
     }
 
     #[test]
@@ -2579,7 +2625,7 @@ mod tests {
 
         let renegotiated = plan_for(
             Decoded::samples(cd),
-            &this_sink(),
+            &this_sink_info(),
             spec(SampleRate::HZ_44100, SampleFormat::S32),
             &plain,
             AppliedGain::default(),

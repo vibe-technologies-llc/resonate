@@ -32,6 +32,14 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   endless `LIVE` FLAC from the player's address, how `currentTime` runs on it, and the TLS 1.2
   handshake of an older receiver have not been heard
 
+- [S · blocked: hardware] Cast on a phone has never been heard against a real receiver: the
+  phones' receivers are proved on the host by what `resonate-mobile` holds of them (an address
+  parsed, held, refused when it is neither an address nor a name, listed with the renderers and
+  forgotten) and by `resonate-cast`'s loopback fake alone, so the mDNS browse over Wi-Fi (Android's
+  `MulticastLock` held), a receiver given by name from a phone, a Default Media Receiver fetching
+  the phone's stream across the network and an iPhone's browse being refused without the multicast
+  entitlement have not been seen
+
 - [S · blocked: hardware] A phone's zone on a network renderer is proved on the host alone, over a
   fake renderer on loopback: no renderer is on this network and neither phone ran it, so the
   search over Wi-Fi (Android's `MulticastLock` held), a renderer fetching the phone's stream across

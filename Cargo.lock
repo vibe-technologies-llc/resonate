@@ -6297,6 +6297,7 @@ dependencies = [
  "parking_lot 0.13.0",
  "resonate-analysis",
  "resonate-audio",
+ "resonate-cast",
  "resonate-codec",
  "resonate-core",
  "resonate-dsp",

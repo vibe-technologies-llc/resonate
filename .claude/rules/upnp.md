@@ -309,16 +309,19 @@ as what drives them.
 ## On the phones
 
 The phones reach renderers through the same seam: `resonate-mobile` holds one `Network` per
-`MobilePlayer` (`rendering::Rendering`, resting from the start, `Searching::on_the_network`), and
-`output::player` builds every zone's engine over `Beside` wrapping Oboe or RemoteIO, so a renderer is
-one more sink to each zone as on the desktop, with the same queue, DSP, handover, clock and volume.
+`MobilePlayer` beside one `Casting` (`rendering::Kinds`, resting from the start,
+`Searching::on_the_network`), and `output::player` builds every zone's engine over `Beside`
+wrapping Oboe or RemoteIO and adding both (`Beside::over(phone, upnp).and(cast)`, `cast.md`'s *On
+the phones*), so a renderer is one more sink to each zone as on the desktop, with the same queue,
+DSP, handover, clock and volume.
 Renderer sink ids come from the one `Network`, so `Zones::send` sees two zones asking one renderer
 as one sink and refuses it to a second while the first holds it bit-perfect (`audio.md`).
 
 - **The boundary** (`mobile.md`'s *Zones*): `look_for_renderers(on)` is `look(FirstSearch::Behind)`
   or `stop_multicasting` (`RenderersUnreachable` where no `Network` could be made, `RendererSearch` where the
-  stream server could not start), `looking_for_renderers`, `renderers()` (a `NetworkRenderer` per
-  renderer known: `node`, the `upnp:` node name; `name`; `host`), and
+  stream server could not start; it looks for Cast receivers too), `looking_for_renderers`,
+  `renderers()` (a `NetworkRenderer` per renderer known: `node`, the `upnp:` node name; `name`;
+  `host`; `kind`, and one per Cast receiver beside them), and
   `select_zone_renderer(zone, node)`, which refuses a node not listed (`UnknownRenderer`), sends
   `SetSink` with the node (or none) and keeps it beside the zone. `PlayerZone` carries `renderer`
   and `renderer_name` (the name the network gives now, else the one kept). Nothing searches unasked:

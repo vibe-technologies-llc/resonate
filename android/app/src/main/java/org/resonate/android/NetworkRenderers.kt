@@ -10,6 +10,7 @@ import org.resonate.android.nativecore.NetworkRenderer
 
 private const val LOOKS_FOR_RENDERERS = "renderers"
 private const val RENDERER_ADDRESSES = "renderer-addresses"
+private const val RECEIVER_ADDRESSES = "receiver-addresses"
 
 class NetworkRenderers(
     context: Context,
@@ -22,6 +23,8 @@ class NetworkRenderers(
     val listed = mutableListed.asStateFlow()
     private val mutableAddresses = MutableStateFlow<List<String>>(emptyList())
     val addresses = mutableAddresses.asStateFlow()
+    private val mutableReceiverAddresses = MutableStateFlow<List<String>>(emptyList())
+    val receiverAddresses = mutableReceiverAddresses.asStateFlow()
     private val searchesHeard: WifiManager.MulticastLock? by lazy {
         context.applicationContext
             .getSystemService(WifiManager::class.java)
@@ -33,6 +36,13 @@ class NetworkRenderers(
         for (address in savedAddresses()) {
             try {
                 native.addRendererAddress(address)
+            } catch (failure: Exception) {
+                library.report(failure)
+            }
+        }
+        for (address in savedReceiverAddresses()) {
+            try {
+                native.addReceiverAddress(address)
             } catch (failure: Exception) {
                 library.report(failure)
             }
@@ -79,6 +89,26 @@ class NetworkRenderers(
         }
     }
 
+    fun addReceiver(address: String) {
+        library.request { native ->
+            try {
+                native.addReceiverAddress(address.trim())
+            } finally {
+                keep(native)
+            }
+        }
+    }
+
+    fun forgetReceiver(address: String) {
+        library.request { native ->
+            try {
+                native.removeReceiverAddress(address)
+            } finally {
+                keep(native)
+            }
+        }
+    }
+
     fun refresh() {
         library.request { native -> mutableListed.value = native.renderers() }
     }
@@ -88,15 +118,25 @@ class NetworkRenderers(
         mutableLooking.value = false
         mutableListed.value = emptyList()
         mutableAddresses.value = emptyList()
+        mutableReceiverAddresses.value = emptyList()
     }
 
     private fun savedAddresses(): List<String> =
         settings.getStringSet(RENDERER_ADDRESSES, emptySet()).orEmpty().sorted()
 
+    private fun savedReceiverAddresses(): List<String> =
+        settings.getStringSet(RECEIVER_ADDRESSES, emptySet()).orEmpty().sorted()
+
     private fun keep(native: MobilePlayer) {
         val held = native.rendererAddresses()
-        settings.edit().putStringSet(RENDERER_ADDRESSES, held.toSet()).apply()
+        val receivers = native.receiverAddresses()
+        settings
+            .edit()
+            .putStringSet(RENDERER_ADDRESSES, held.toSet())
+            .putStringSet(RECEIVER_ADDRESSES, receivers.toSet())
+            .apply()
         mutableAddresses.value = held
+        mutableReceiverAddresses.value = receivers
         mutableListed.value = native.renderers()
     }
 
@@ -106,6 +146,7 @@ class NetworkRenderers(
         mutableLooking.value = looking
         mutableListed.value = native.renderers()
         mutableAddresses.value = native.rendererAddresses()
+        mutableReceiverAddresses.value = native.receiverAddresses()
     }
 
     private fun hearSearches(hear: Boolean) {

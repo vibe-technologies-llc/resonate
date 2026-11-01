@@ -35,6 +35,11 @@ import Testing
         #expect(ZonePlan.line(.stopped, playing: "Echoes") == "Stopped")
     }
 
+    @Test func aCastReceiverIsNamedAsOneBesideItsHostAndAStreamerByItsHostAlone() {
+        #expect(ZonePlan.rendererLine(host: "192.168.1.20", viaCast: false) == "192.168.1.20")
+        #expect(ZonePlan.rendererLine(host: "192.168.1.30", viaCast: true) == "Google Cast · 192.168.1.30")
+    }
+
     @Test func aZoneOnARendererNamesItBeforeWhatItIsDoing() {
         #expect(ZonePlan.line(.playing, playing: "Echoes", on: "Living room streamer") == "Living room streamer · Playing Echoes")
         #expect(ZonePlan.line(.paused, playing: nil, on: nil) == "Paused")

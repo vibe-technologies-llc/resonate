@@ -65,7 +65,9 @@ fun ZonesSheet(onDismiss: () -> Unit) {
     val looking by features.renderers.looking.collectAsStateWithLifecycle()
     val renderers by features.renderers.listed.collectAsStateWithLifecycle()
     val addresses by features.renderers.addresses.collectAsStateWithLifecycle()
+    val receiverAddresses by features.renderers.receiverAddresses.collectAsStateWithLifecycle()
     var addressing by remember { mutableStateOf(false) }
+    var addressingReceiver by remember { mutableStateOf(false) }
     val shown = zones.firstOrNull { it.shown }?.id
     LaunchedEffect(Unit) { features.refreshOutputs() }
     LaunchedEffect(looking, addresses.isNotEmpty()) {
@@ -133,7 +135,7 @@ fun ZonesSheet(onDismiss: () -> Unit) {
                 supportingContent = {
                     Text(
                         if (looking) "${renderers.size} found on this network"
-                        else "Streamers and amplifiers on this network, as outputs for a zone"
+                        else "Streamers, amplifiers and Cast receivers on this network, as outputs for a zone"
                     )
                 },
                 trailingContent = { Switch(checked = looking, onCheckedChange = null) },
@@ -153,21 +155,49 @@ fun ZonesSheet(onDismiss: () -> Unit) {
             ) {
                 Text("Add a renderer by address")
             }
+            ListItem(
+                onClick = { addressingReceiver = true },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                leadingContent = { Icon(Icons.Rounded.Add, contentDescription = null) },
+                supportingContent = {
+                    Text(
+                        if (receiverAddresses.isEmpty())
+                            "For a Google Cast receiver a search does not hear"
+                        else "${receiverAddresses.size} added"
+                    )
+                },
+            ) {
+                Text("Add a receiver by address")
+            }
         }
     }
     if (addressing) {
         RendererAddressDialog(
+            title = "Add a renderer by address",
+            label = "Description address",
+            placeholder = "http://192.168.1.20:49152/description.xml",
             addresses = addresses,
             add = { features.renderers.add(it) },
             forget = { features.renderers.forget(it) },
             dismiss = { addressing = false },
         )
     }
+    if (addressingReceiver) {
+        RendererAddressDialog(
+            title = "Add a receiver by address",
+            label = "Address or host name",
+            placeholder = "192.168.1.30 or living-room.local",
+            addresses = receiverAddresses,
+            add = { features.renderers.addReceiver(it) },
+            forget = { features.renderers.forgetReceiver(it) },
+            dismiss = { addressingReceiver = false },
+        )
+    }
     choosing?.let { zone ->
         RendererDialog(
             zone = zone,
             renderers = renderers,
-            reaching = looking || addresses.isNotEmpty(),
+            reaching = looking || addresses.isNotEmpty() || receiverAddresses.isNotEmpty(),
             choose = { features.zones.playOn(zone.id, it.node) },
             dismiss = { choosing = null },
         )
@@ -306,8 +336,8 @@ private fun RendererDialog(
         text = {
             when {
                 !reaching && renderers.isEmpty() ->
-                    Text("Turn on Find renderers, or add one by its address, to reach renderers")
-                renderers.isEmpty() -> Text("No renderer has answered yet")
+                    Text("Turn on Find renderers, or add one by its address, to reach renderers and receivers")
+                renderers.isEmpty() -> Text("No renderer or receiver has answered yet")
                 else ->
                     Column(Modifier.selectableGroup()) {
                         renderers.forEach { renderer ->
@@ -321,7 +351,7 @@ private fun RendererDialog(
                                 leadingContent = {
                                     RadioButton(selected = renderer.node == zone.renderer, onClick = null)
                                 },
-                                supportingContent = { Text(renderer.host) },
+                                supportingContent = { Text(ZonePlan.rendererLine(renderer.kind, renderer.host)) },
                             ) {
                                 Text(renderer.name)
                             }
@@ -335,6 +365,9 @@ private fun RendererDialog(
 
 @Composable
 private fun RendererAddressDialog(
+    title: String,
+    label: String,
+    placeholder: String,
     addresses: List<String>,
     add: (String) -> Unit,
     forget: (String) -> Unit,
@@ -352,14 +385,14 @@ private fun RendererAddressDialog(
     LaunchedEffect(Unit) { focus.requestFocus() }
     AlertDialog(
         onDismissRequest = dismiss,
-        title = { Text("Add a renderer by address") },
+        title = { Text(title) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(
                     value = typed,
                     onValueChange = { typed = it.take(RENDERER_ADDRESS_AT_MOST) },
-                    label = { Text("Description address") },
-                    placeholder = { Text("http://192.168.1.20:49152/description.xml") },
+                    label = { Text(label) },
+                    placeholder = { Text(placeholder) },
                     singleLine = true,
                     keyboardOptions =
                         KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),

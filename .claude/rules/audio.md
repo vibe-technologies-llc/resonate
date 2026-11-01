@@ -1231,8 +1231,12 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   `SinkInfo::aliases` are further names it answers to and `SinkInfo::is_named` the one test (name or
   alias) every match of a stored name against a surveyed sink goes through (`chosen_sink`,
   `stays_on_the_bound_device`, a zone's holder, the window's device list, the binary's `--sink`
-  checks); only a Cast receiver given by address has one (`cast.md`). A map keyed by node name,
-  such as the equaliser's bindings, is keyed by the sink's `name` and does not follow an alias.
+  checks); only a Cast receiver given by address has one (`cast.md`). **A map keyed by node name
+  follows the alias too**: `Equalisation::for_sink(&SinkInfo)` takes the first of the sink's
+  `names()` (name, then aliases) the map binds, the name outranking an alias, and the engine plans
+  with the sink as the published list names it now (`Engine::bound_sink`; `Engine::follow_the_names_of_the_sink`
+  retunes the equaliser when a survey moved the bound sink's names), never the name it was bound
+  under. The window's own maps are carried to the sink's name (`eq.md`'s *The binding*).
 - **Hardware-ness is a question about the `Device` above the node.** A `Node` global carries
   `device.id`, not `device.api`; `Discovered::is_hardware` answers for the pair at snapshot time, so
   the globals may arrive in either order. **The physical port is the `Device`'s to answer; the seat

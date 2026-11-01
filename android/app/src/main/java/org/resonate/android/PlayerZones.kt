@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.PlayerZone
+import org.resonate.android.nativecore.RendererKind
 import org.resonate.android.nativecore.Snapshot
 import org.resonate.android.nativecore.Transport
 
@@ -29,6 +30,12 @@ object ZonePlan {
     fun mayRemove(zone: UInt): Boolean = zone != FIRST_ZONE
 
     fun heardOn(rendererName: String?, device: String): String = rendererName ?: device
+
+    fun rendererLine(kind: RendererKind, host: String): String =
+        when (kind) {
+            RendererKind.UPNP -> host
+            RendererKind.CAST -> "Google Cast · $host"
+        }
 
     fun line(output: String, transport: Transport, playing: String?): String {
         val doing =

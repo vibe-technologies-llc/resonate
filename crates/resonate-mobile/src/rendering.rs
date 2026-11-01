@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use resonate_cast::{Casting, Given, Searching as CastSearching};
 use resonate_engine::{Command, NodeName};
 use resonate_upnp::{FirstSearch, Located, Network, Searching};
 
@@ -8,56 +9,113 @@ use crate::{
     zoning::{KeptRenderer, zone_named},
 };
 
+#[derive(Clone)]
+pub(crate) struct Kinds {
+    pub(crate) upnp: Arc<Network>,
+    pub(crate) cast: Arc<Casting>,
+}
+
 #[derive(Clone, Default)]
-pub(crate) struct Rendering(Option<Arc<Network>>);
+pub(crate) struct Rendering(Option<Kinds>);
 
 impl Rendering {
-    pub(crate) fn resting(searching: Searching) -> Self {
-        match Network::resting(searching) {
-            Ok(network) => Self(Some(Arc::new(network))),
-            Err(error) => {
+    pub(crate) fn resting(searching: Searching, browsing: CastSearching) -> Self {
+        let upnp = Network::resting(searching)
+            .inspect_err(|error| {
                 tracing::warn!(%error, "renderers on the network cannot be played to");
-                Self(None)
-            }
+            })
+            .ok();
+        let cast = Casting::resting(browsing)
+            .inspect_err(|error| {
+                tracing::warn!(%error, "Cast receivers on the network cannot be played to");
+            })
+            .ok();
+        match (upnp, cast) {
+            (Some(upnp), Some(cast)) => Self(Some(Kinds {
+                upnp: Arc::new(upnp),
+                cast: Arc::new(cast),
+            })),
+            _ => Self(None),
         }
     }
 
     pub(crate) fn on_the_network() -> Self {
-        Self::resting(Searching::on_the_network())
+        Self::resting(Searching::on_the_network(), CastSearching::on_the_network())
     }
 
-    pub(crate) fn network(&self) -> Option<Arc<Network>> {
+    pub(crate) fn kinds(&self) -> Option<Kinds> {
         self.0.clone()
     }
 
     pub(crate) fn look_behind(&self) {
-        let Some(network) = &self.0 else {
+        let Some(kinds) = &self.0 else {
             return;
         };
-        if let Err(error) = network.look(FirstSearch::Behind) {
+        if let Err(error) = kinds.upnp.look(FirstSearch::Behind) {
             tracing::warn!(%error, "the network could not be searched for renderers");
+        }
+        if let Err(error) = kinds.cast.look(FirstSearch::Behind) {
+            tracing::warn!(%error, "the network could not be browsed for Cast receivers");
         }
     }
 
-    fn listed(&self) -> Vec<NetworkRenderer> {
-        self.0.as_ref().map_or_else(Vec::new, |network| {
-            network
-                .renderers()
-                .into_iter()
-                .map(|(_, renderer)| NetworkRenderer {
+    fn listed(&self) -> Vec<Listed> {
+        let Some(kinds) = &self.0 else {
+            return Vec::new();
+        };
+        let renderers = kinds
+            .upnp
+            .renderers()
+            .into_iter()
+            .map(|(_, renderer)| Listed {
+                renderer: NetworkRenderer {
                     node: renderer.node_name().as_str().to_owned(),
                     name: renderer.name().to_owned(),
                     host: renderer.location().host().to_owned(),
+                    kind: RendererKind::Upnp,
+                },
+                aliases: Vec::new(),
+            });
+        let sinks = kinds.cast.sinks();
+        let receivers = kinds
+            .cast
+            .receivers()
+            .into_iter()
+            .filter_map(|(id, device)| {
+                let sink = sinks.iter().find(|sink| sink.id == id)?;
+                Some(Listed {
+                    renderer: NetworkRenderer {
+                        node: sink.name.as_str().to_owned(),
+                        name: device.name().to_owned(),
+                        host: device.at().ip().to_string(),
+                        kind: RendererKind::Cast,
+                    },
+                    aliases: sink
+                        .aliases
+                        .iter()
+                        .map(|alias| alias.as_str().to_owned())
+                        .collect(),
                 })
-                .collect()
-        })
+            });
+        renderers.chain(receivers).collect()
     }
 
-    pub(crate) fn named(&self, node: &str) -> Option<String> {
+    pub(crate) fn named(&self, node: &str) -> Option<NetworkRenderer> {
         self.listed()
             .into_iter()
-            .find(|renderer| renderer.node == node)
-            .map(|renderer| renderer.name)
+            .find(|listed| listed.answers_to(node))
+            .map(|listed| listed.renderer)
+    }
+}
+
+struct Listed {
+    renderer: NetworkRenderer,
+    aliases: Vec<String>,
+}
+
+impl Listed {
+    fn answers_to(&self, node: &str) -> bool {
+        self.renderer.node == node || self.aliases.iter().any(|alias| alias == node)
     }
 }
 
@@ -71,36 +129,65 @@ fn renderer_address(source: resonate_upnp::Error) -> Error {
     }
 }
 
+fn receiver_unreached(source: resonate_cast::Error) -> Error {
+    Error::ReceiverUnreached {
+        source: Box::new(source),
+    }
+}
+
+fn receiver_search(source: resonate_cast::Error) -> Error {
+    Error::ReceiverSearch {
+        source: Box::new(source),
+    }
+}
+
+fn receiver_given(address: &str) -> Result<Given> {
+    Given::parse(address).ok_or(Error::ReceiverAddress)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum RendererKind {
+    Upnp,
+    Cast,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct NetworkRenderer {
     pub node: String,
     pub name: String,
     pub host: String,
+    pub kind: RendererKind,
 }
 
 #[uniffi::export]
 impl MobilePlayer {
     pub fn look_for_renderers(&self, on: bool) -> Result<()> {
-        let network = self
-            .rendering
-            .network()
-            .ok_or(Error::RenderersUnreachable)?;
+        let kinds = self.rendering.kinds().ok_or(Error::RenderersUnreachable)?;
         if !on {
-            network.stop_multicasting();
+            kinds.upnp.stop_multicasting();
+            kinds.cast.stop_browsing();
             return Ok(());
         }
-        network
+        let renderers =
+            kinds
+                .upnp
+                .look(FirstSearch::Behind)
+                .map_err(|source| Error::RendererSearch {
+                    source: Box::new(source),
+                });
+        let receivers = kinds
+            .cast
             .look(FirstSearch::Behind)
-            .map_err(|source| Error::RendererSearch {
-                source: Box::new(source),
-            })
+            .map_err(receiver_search);
+        renderers.and(receivers)
     }
 
     pub fn add_renderer_address(&self, address: String) -> Result<()> {
         let network = self
             .rendering
-            .network()
-            .ok_or(Error::RenderersUnreachable)?;
+            .kinds()
+            .ok_or(Error::RenderersUnreachable)?
+            .upnp;
         let located = Located::parse(&address).map_err(renderer_address)?;
         let reaching = network.is_reaching();
         let located = network.locate(located);
@@ -117,8 +204,9 @@ impl MobilePlayer {
     pub fn remove_renderer_address(&self, address: String) -> Result<()> {
         let network = self
             .rendering
-            .network()
-            .ok_or(Error::RenderersUnreachable)?;
+            .kinds()
+            .ok_or(Error::RenderersUnreachable)?
+            .upnp;
         network.unlocate(&Located::parse(&address).map_err(renderer_address)?);
         if network.located().is_empty() && !network.is_looking() {
             network.rest();
@@ -127,19 +215,69 @@ impl MobilePlayer {
     }
 
     pub fn renderer_addresses(&self) -> Vec<String> {
-        self.rendering.network().map_or_else(Vec::new, |network| {
-            network.located().iter().map(ToString::to_string).collect()
+        self.rendering.kinds().map_or_else(Vec::new, |kinds| {
+            kinds
+                .upnp
+                .located()
+                .iter()
+                .map(ToString::to_string)
+                .collect()
+        })
+    }
+
+    pub fn add_receiver_address(&self, address: String) -> Result<()> {
+        let casting = self
+            .rendering
+            .kinds()
+            .ok_or(Error::RenderersUnreachable)?
+            .cast;
+        let given = receiver_given(&address)?;
+        let reaching = casting.is_reaching();
+        let located = casting.locate(given);
+        if !reaching {
+            casting
+                .look_at_addresses(FirstSearch::Behind)
+                .map_err(receiver_search)?;
+        }
+        located.map_err(receiver_unreached)
+    }
+
+    pub fn remove_receiver_address(&self, address: String) -> Result<()> {
+        let casting = self
+            .rendering
+            .kinds()
+            .ok_or(Error::RenderersUnreachable)?
+            .cast;
+        casting.unlocate(receiver_given(&address)?);
+        if casting.located().is_empty() && !casting.is_looking() {
+            casting.rest();
+        }
+        Ok(())
+    }
+
+    pub fn receiver_addresses(&self) -> Vec<String> {
+        self.rendering.kinds().map_or_else(Vec::new, |kinds| {
+            kinds
+                .cast
+                .located()
+                .iter()
+                .map(ToString::to_string)
+                .collect()
         })
     }
 
     pub fn looking_for_renderers(&self) -> bool {
         self.rendering
-            .network()
-            .is_some_and(|network| network.is_looking())
+            .kinds()
+            .is_some_and(|kinds| kinds.upnp.is_looking() || kinds.cast.is_looking())
     }
 
     pub fn renderers(&self) -> Vec<NetworkRenderer> {
-        self.rendering.listed()
+        self.rendering
+            .listed()
+            .into_iter()
+            .map(|listed| listed.renderer)
+            .collect()
     }
 
     pub fn select_zone_renderer(&self, zone: u32, renderer: Option<String>) -> Result<()> {
@@ -154,8 +292,11 @@ impl MobilePlayer {
         let chosen = match renderer {
             None => None,
             Some(node) => {
-                let name = self.rendering.named(&node).ok_or(Error::UnknownRenderer)?;
-                Some(KeptRenderer { node, name })
+                let listed = self.rendering.named(&node).ok_or(Error::UnknownRenderer)?;
+                Some(KeptRenderer {
+                    node: listed.node,
+                    name: listed.name,
+                })
             }
         };
 
@@ -383,6 +524,7 @@ mod tests {
                 node: format!("upnp:{UDN}"),
                 name: NAME.to_owned(),
                 host: "127.0.0.1".to_owned(),
+                kind: RendererKind::Upnp,
             }
         );
 
@@ -491,6 +633,97 @@ mod tests {
         assert!(!harness.player.looking_for_renderers());
         assert_eq!(harness.player.renderers().len(), 1);
         assert_eq!(harness.player.renderer_addresses().len(), 1);
+    }
+
+    fn nothing_listening() -> String {
+        let closed = TcpListener::bind("127.0.0.1:0").expect("a loopback listener");
+        let at = closed.local_addr().expect("the address");
+        drop(closed);
+        at.to_string()
+    }
+
+    #[test]
+    fn a_receiver_given_by_address_is_held_with_no_search_and_forgotten() {
+        let harness = Harness::beside_renderers(Fake::start().searching());
+        let silent = nothing_listening();
+        let also_silent = nothing_listening();
+
+        let first = harness.player.add_receiver_address(silent.clone());
+        let reaching = harness.player.add_receiver_address(also_silent.clone());
+
+        assert!(first.is_ok());
+        assert!(matches!(reaching, Err(Error::ReceiverUnreached { .. })));
+        let mut held = harness.player.receiver_addresses();
+        held.sort();
+        let mut given = vec![silent.clone(), also_silent.clone()];
+        given.sort();
+        assert_eq!(held, given);
+        assert!(harness.player.renderers().is_empty());
+        assert!(!harness.player.looking_for_renderers());
+        assert!(harness.player.renderer_addresses().is_empty());
+
+        harness
+            .player
+            .remove_receiver_address(silent)
+            .expect("forgotten");
+        harness
+            .player
+            .remove_receiver_address(also_silent.clone())
+            .expect("forgotten");
+
+        assert!(harness.player.receiver_addresses().is_empty());
+    }
+
+    #[test]
+    fn a_receiver_address_that_is_neither_an_address_nor_a_name_is_refused_and_a_name_is_held() {
+        let harness = Harness::beside_renderers(Fake::start().searching());
+
+        for refused in [
+            "",
+            "not an address!",
+            "192.168.1.300",
+            "http://192.168.1.30/",
+        ] {
+            assert!(
+                matches!(
+                    harness.player.add_receiver_address(refused.to_owned()),
+                    Err(Error::ReceiverAddress)
+                ),
+                "{refused:?} was taken for a receiver"
+            );
+        }
+        assert!(harness.player.receiver_addresses().is_empty());
+
+        harness
+            .player
+            .add_receiver_address("living-room.invalid".to_owned())
+            .expect("a name is held until it is reached");
+
+        assert_eq!(
+            harness.player.receiver_addresses(),
+            ["living-room.invalid:8009"]
+        );
+    }
+
+    #[test]
+    fn one_switch_looks_for_renderers_and_receivers_and_turning_it_off_keeps_the_addresses() {
+        let fake = Fake::start();
+        let harness = Harness::beside_renderers(fake.searching());
+        let _ = harness.player.add_receiver_address(nothing_listening());
+        let casting = harness.player.rendering.kinds().expect("both kinds").cast;
+        assert!(!casting.is_looking());
+
+        harness.player.look_for_renderers(true).expect("looking");
+        found(&harness);
+
+        assert!(harness.player.looking_for_renderers());
+        assert!(casting.is_looking());
+
+        harness.player.look_for_renderers(false).expect("stopped");
+
+        assert!(!harness.player.looking_for_renderers());
+        assert!(!casting.is_looking());
+        assert_eq!(harness.player.receiver_addresses().len(), 1);
     }
 
     #[test]

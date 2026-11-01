@@ -24,6 +24,19 @@ struct ZonesSheet: View {
     @State private var removing: PlayerZone?
     @State private var choosing: PlayerZone?
     @State private var addressing = false
+    @State private var addressingReceiver = false
+
+    private var reaching: Bool {
+        library.lookingForRenderers || !library.rendererAddresses.isEmpty || !library.receiverAddresses.isEmpty
+    }
+
+    private var addressesFooter: String {
+        let added = library.rendererAddresses.count + library.receiverAddresses.count
+        if added == 0 {
+            return "A network that hides its renderers from a search, or an iPhone signed for free, reaches a renderer by the address of its description and a Google Cast receiver by its address or name."
+        }
+        return "\(added) added by address."
+    }
 
     var body: some View {
         let shown = library.zones.first(where: \.shown)?.id
@@ -64,20 +77,20 @@ struct ZonesSheet: View {
                 Section {
                     Toggle(isOn: Binding(get: { library.lookingForRenderers }, set: { library.lookForRenderers($0) })) {
                         Text("Find renderers")
-                        Text(library.lookingForRenderers ? "\(library.renderers.count) found on this network" : "Streamers and amplifiers on this network, as outputs for a zone")
+                        Text(library.lookingForRenderers ? "\(library.renderers.count) found on this network" : "Streamers, amplifiers and Cast receivers on this network, as outputs for a zone")
                     }
                     Button("Add a renderer by address", systemImage: "plus") { addressing = true }
+                    Button("Add a receiver by address", systemImage: "plus") { addressingReceiver = true }
                 } header: {
                     Text("Network renderers")
                 } footer: {
-                    Text(library.rendererAddresses.isEmpty
-                        ? "A network that hides its renderers from a search, or an iPhone signed for free, reaches one by the address of its description."
-                        : "\(library.rendererAddresses.count) added by address.")
+                    Text(addressesFooter)
                 }
             }
-            .sheet(isPresented: $addressing) { RendererAddressSheet() }
-            .task(id: library.lookingForRenderers || !library.rendererAddresses.isEmpty) {
-                while library.lookingForRenderers || !library.rendererAddresses.isEmpty, !Task.isCancelled {
+            .sheet(isPresented: $addressing) { RendererAddressSheet(kind: .renderer) }
+            .sheet(isPresented: $addressingReceiver) { RendererAddressSheet(kind: .receiver) }
+            .task(id: reaching) {
+                while reaching, !Task.isCancelled {
                     library.readRenderers()
                     try? await Task.sleep(for: .seconds(2))
                 }
@@ -153,11 +166,11 @@ struct RendererPicker: View {
         let playingOn = library.zones.first { $0.id == zone.id }?.renderer
         NavigationStack {
             List {
-                if !library.lookingForRenderers, library.rendererAddresses.isEmpty, library.renderers.isEmpty {
-                    Text("Turn on Find renderers, or add one by its address, to reach renderers.")
+                if !library.lookingForRenderers, library.rendererAddresses.isEmpty, library.receiverAddresses.isEmpty, library.renderers.isEmpty {
+                    Text("Turn on Find renderers, or add one by its address, to reach renderers and receivers.")
                         .foregroundStyle(.secondary)
                 } else if library.renderers.isEmpty {
-                    Text("No renderer has answered yet.")
+                    Text("No renderer or receiver has answered yet.")
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(library.renderers, id: \.node) { renderer in
@@ -171,7 +184,7 @@ struct RendererPicker: View {
                                     .accessibilityHidden(true)
                                 VStack(alignment: .leading) {
                                     Text(renderer.name)
-                                    Text(renderer.host)
+                                    Text(ZonePlan.rendererLine(host: renderer.host, viaCast: renderer.kind == .cast))
                                         .font(.subheadline)
                                         .foregroundStyle(.secondary)
                                 }
@@ -193,17 +206,51 @@ struct RendererPicker: View {
     }
 }
 
+enum AddressKind {
+    case renderer
+    case receiver
+
+    var title: String {
+        switch self {
+        case .renderer: "Add a renderer by address"
+        case .receiver: "Add a receiver by address"
+        }
+    }
+
+    var field: String {
+        switch self {
+        case .renderer: "http://192.168.1.20:49152/description.xml"
+        case .receiver: "192.168.1.30 or living-room.local"
+        }
+    }
+
+    var header: String {
+        switch self {
+        case .renderer: "Description address"
+        case .receiver: "Address or host name"
+        }
+    }
+}
+
 struct RendererAddressSheet: View {
     @Environment(Library.self) private var library
     @Environment(\.dismiss) private var dismiss
     @State private var typed = ""
     @FocusState private var focused: Bool
+    let kind: AddressKind
+
+    private var held: [String] {
+        switch kind {
+        case .renderer: library.rendererAddresses
+        case .receiver: library.receiverAddresses
+        }
+    }
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    TextField("http://192.168.1.20:49152/description.xml", text: $typed)
+                    TextField(kind.field, text: $typed)
                         .keyboardType(.URL)
                         .textContentType(.URL)
                         .textInputAutocapitalization(.never)
@@ -214,14 +261,14 @@ struct RendererAddressSheet: View {
                     Button("Add", action: add)
                         .disabled(typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 } header: {
-                    Text("Description address")
+                    Text(kind.header)
                 }
-                if !library.rendererAddresses.isEmpty {
+                if !held.isEmpty {
                     Section {
-                        ForEach(library.rendererAddresses, id: \.self) { address in
+                        ForEach(held, id: \.self) { address in
                             Text(address)
                                 .swipeActions {
-                                    Button("Remove", role: .destructive) { library.forgetRendererAddress(address) }
+                                    Button("Remove", role: .destructive) { forget(address) }
                                 }
                         }
                     } header: {
@@ -229,7 +276,7 @@ struct RendererAddressSheet: View {
                     }
                 }
             }
-            .navigationTitle("Add a renderer by address")
+            .navigationTitle(kind.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -244,7 +291,17 @@ struct RendererAddressSheet: View {
     private func add() {
         let chosen = typed.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !chosen.isEmpty else { return }
-        library.addRendererAddress(chosen)
+        switch kind {
+        case .renderer: library.addRendererAddress(chosen)
+        case .receiver: library.addReceiverAddress(chosen)
+        }
         typed = ""
+    }
+
+    private func forget(_ address: String) {
+        switch kind {
+        case .renderer: library.forgetRendererAddress(address)
+        case .receiver: library.forgetReceiverAddress(address)
+        }
     }
 }

@@ -177,6 +177,18 @@ pub enum Error {
         #[source]
         source: Box<resonate_upnp::Error>,
     },
+    #[error("The network could not be browsed for Cast receivers")]
+    ReceiverSearch {
+        #[source]
+        source: Box<resonate_cast::Error>,
+    },
+    #[error("That is not an address or a name a Cast receiver can be reached at")]
+    ReceiverAddress,
+    #[error("That Cast receiver could not be reached")]
+    ReceiverUnreached {
+        #[source]
+        source: Box<resonate_cast::Error>,
+    },
     #[error("That renderer is no longer on the network")]
     UnknownRenderer,
     #[error("the destination descriptor is invalid")]

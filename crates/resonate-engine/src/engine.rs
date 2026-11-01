@@ -445,7 +445,7 @@ fn carried_samples(chain: &Chain, stream: StreamSpec) -> usize {
 
 struct Output {
     sink: SinkId,
-    bound: NodeName,
+    bound: SinkInfo,
     attenuator: Attenuator,
     over_bluetooth: bool,
     awake_since: Option<Instant>,
@@ -548,14 +548,7 @@ impl Output {
         let decoded = track.decoded();
         let attenuator = Attenuator::of(config, sink);
         let plan = match target {
-            Some(target) => plan_for(
-                decoded,
-                &sink.name,
-                target,
-                config,
-                track.replay_gain,
-                attenuator,
-            ),
+            Some(target) => plan_for(decoded, sink, target, config, track.replay_gain, attenuator),
             None => plan_output(decoded, sink, config, track.replay_gain),
         };
 
@@ -593,7 +586,7 @@ impl Output {
 
         Ok(Self {
             sink: sink.id,
-            bound: sink.name.clone(),
+            bound: sink.clone(),
             attenuator,
             over_bluetooth: sink.is_bluetooth(),
             awake_since: None,
@@ -739,7 +732,7 @@ impl Output {
             .saturating_add(self.chain.overs());
         if self.status.overs == 0 && overs > 0 {
             tracing::warn!(
-                sink = %self.bound,
+                sink = %self.bound.name,
                 "samples past full scale reach the sink's word with nothing weighing them; \
                  lower the preamp or turn true-peak on"
             );
@@ -2594,7 +2587,7 @@ impl Engine {
             return false;
         };
         chosen_sink(&self.published.sinks.read(), self.config.sink.as_ref())
-            .is_some_and(|sink| sink.id == output.sink && sink.is_named(&output.bound))
+            .is_some_and(|sink| sink.id == output.sink && sink.is_named(&output.bound.name))
     }
 
     fn plan_wanted_now(&self) -> Option<OutputPlan> {
@@ -2754,10 +2747,11 @@ impl Engine {
         let (Some(track), Some(output)) = (self.track.as_ref(), self.output.as_ref()) else {
             return false;
         };
+        let planned_for = self.bound_sink().unwrap_or_else(|| output.bound.clone());
         output.holds_seconds_downstream()
             && !plan_for(
                 track.decoded(),
-                &output.bound,
+                &planned_for,
                 output.plan.stream,
                 &self.config,
                 track.replay_gain,
@@ -2826,9 +2820,10 @@ impl Engine {
         if !matches!(output.plan.packing, Packing::Samples) {
             return Err(Error::NothingToAudition);
         }
+        let planned_for = self.bound_sink().unwrap_or_else(|| output.bound.clone());
         let (a, b) = plans_of(
             track.decoded(),
-            &output.bound,
+            &planned_for,
             output.plan.stream,
             &set,
             track.replay_gain,
@@ -2989,7 +2984,7 @@ impl Engine {
             .sinks
             .read()
             .iter()
-            .find(|sink| sink.is_named(&output.bound))
+            .find(|sink| sink.is_named(&output.bound.name))
             .is_some_and(|sink| {
                 packs_again(
                     track.decoded(),
@@ -3002,9 +2997,16 @@ impl Engine {
         if packs {
             return self.rebind_where_it_stands();
         }
+        let planned_for = self
+            .published
+            .sinks
+            .read()
+            .iter()
+            .find(|sink| sink.id == output.sink)
+            .map_or_else(|| output.bound.clone(), Clone::clone);
         let wanted = plan_for(
             track.decoded(),
-            &output.bound,
+            &planned_for,
             output.plan.stream,
             &self.config,
             replay_gain,
@@ -3014,7 +3016,7 @@ impl Engine {
         let heard_as_planned = |track: &Track| {
             let plan = plan_for(
                 track.decoded(),
-                &output.bound,
+                &planned_for,
                 output.plan.stream,
                 &self.config,
                 track.replay_gain,
@@ -3204,6 +3206,7 @@ impl Engine {
                 *self.published.sinks.write() = found.into();
                 self.follow_the_devices_volume();
                 self.follow_the_sink_it_would_choose();
+                self.follow_the_names_of_the_sink();
                 self.follow_the_formats_it_was_told_of();
                 self.bind_the_row_waiting_for_a_device();
                 self.bind_the_row_the_graph_let_go();
@@ -3319,6 +3322,30 @@ impl Engine {
             return Ok(());
         };
         Ok(self.backend.set_device_mute(output.sink, muted)?)
+    }
+
+    fn follow_the_names_of_the_sink(&mut self) {
+        let Some(current) = self.bound_sink() else {
+            return;
+        };
+        let Some(output) = self.output.as_mut() else {
+            return;
+        };
+        if output.bound.name == current.name && output.bound.aliases == current.aliases {
+            return;
+        }
+
+        let equaliser = &self.config.equaliser;
+        let heard_before = equaliser.for_sink(&output.bound).map(Arc::as_ptr);
+        let heard_now = equaliser.for_sink(&current).map(Arc::as_ptr);
+        output.bound.name = current.name;
+        output.bound.aliases = current.aliases;
+        if heard_before == heard_now {
+            return;
+        }
+        if let Err(error) = self.retune_for(Retuning::Equaliser) {
+            tracing::warn!(%error, "the equaliser a renamed sink is bound to could not be rendered");
+        }
     }
 
     fn follow_the_sink_it_would_choose(&mut self) {

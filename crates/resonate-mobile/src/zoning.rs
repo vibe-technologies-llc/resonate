@@ -631,7 +631,7 @@ impl MobilePlayer {
         let renderer_name = renderer.as_ref().map(|renderer| {
             self.rendering
                 .named(&renderer.node)
-                .unwrap_or_else(|| renderer.name.clone())
+                .map_or_else(|| renderer.name.clone(), |listed| listed.name)
         });
 
         PlayerZone {
