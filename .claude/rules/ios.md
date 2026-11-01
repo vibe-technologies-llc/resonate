@@ -735,7 +735,9 @@ every route change (a pair of headphones at the same rate included), not from th
   at least 104 pt tall, scaled: Favourites pink and purple, All songs orange and red, Home's
   *Shuffle all* indigo and blue. Each card is its own `NavigationLink` or `Button` in
   `.buttonStyle(.plain)`, since a row holding two controls of the default style fires both on any
-  tap. The Library tab's *All songs* is a `Button` that clears any filter or mix, shows songs and
+  tap, and the pair sits in a horizontal `ScrollView` with scrolling disabled, each card half its
+  width (`containerRelativeFrame`), as the shelves' links do: a `List` gives a `NavigationLink`
+  directly in a row its disclosure chevron whatever the style, which drew an arrow between the cards. The Library tab's *All songs* is a `Button` that clears any filter or mix, shows songs and
   opens the Songs page: a `simultaneousGesture` tap on a `NavigationLink` there left a tap doing
   nothing. `ShelfTile` (a white symbol on the same gradient) stays the Favourites page's cover.
 - **The Library tab has no selector**: it is a home page (`LibraryView(page: .home)`) of one

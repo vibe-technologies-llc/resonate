@@ -304,10 +304,14 @@ struct ShortcutCards<Cards: View>: View {
         let layout = typeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(spacing: ShortcutCard.spacing))
             : AnyLayout(HStackLayout(spacing: ShortcutCard.spacing))
-        layout { cards }
-            .listRowInsets(EdgeInsets())
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
+        ScrollView(.horizontal) {
+            layout { cards }
+        }
+        .scrollDisabled(true)
+        .scrollIndicators(.hidden)
+        .listRowInsets(EdgeInsets())
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
     }
 }
 
@@ -319,6 +323,7 @@ struct ShortcutCard: View {
     private static let markOverhang: CGFloat = 0.2
     private static let scrimOpacity = 0.22
 
+    @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .headline) private var height: CGFloat = 104
     @ScaledMetric(relativeTo: .headline) private var markSize: CGFloat = 72
     let title: String
@@ -361,6 +366,7 @@ struct ShortcutCard: View {
                 .clipShape(shape)
         }
         .contentShape(shape)
+        .containerRelativeFrame(.horizontal, count: typeSize.isAccessibilitySize ? 1 : 2, span: 1, spacing: Self.spacing)
         .accessibilityElement(children: .combine)
     }
 }
