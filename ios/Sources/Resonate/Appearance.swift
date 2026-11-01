@@ -303,8 +303,32 @@ private struct CalmedAnimation<Value: Equatable>: ViewModifier {
     }
 }
 
+extension Animation {
+    static func moving(_ curve: MotionCurve, over seconds: Double) -> Animation {
+        .timingCurve(curve.x1, curve.y1, curve.x2, curve.y2, duration: seconds)
+    }
+}
+
 enum Handover {
-    static let animation = Animation.timingCurve(0.5, 0, 0.5, 1, duration: 0.28)
+    static let animation = Animation.moving(.smooth, over: MotionSpan.handsOver)
+}
+
+enum Arrival {
+    static let animation = Animation.moving(.settling, over: MotionSpan.arrivesOver)
+}
+
+enum Flip {
+    static let animation = Animation.moving(.settling, over: MotionSpan.flipsOver)
+}
+
+extension MotionRendering {
+    func animation(_ animated: Animation) -> Animation? {
+        switch self {
+        case .animated: animated
+        case .fades: Arrival.animation
+        case .instant: nil
+        }
+    }
 }
 
 private struct HandedOver<Value: Equatable>: ViewModifier {
@@ -313,7 +337,8 @@ private struct HandedOver<Value: Equatable>: ViewModifier {
     let value: Value
 
     func body(content: Content) -> some View {
-        content.animation(reduceMotion || phase != .active ? nil : Handover.animation, value: value)
+        let rendering = MotionRendering.of(.handover, reduceMotion: reduceMotion, sceneActive: phase == .active)
+        content.animation(rendering.animation(Handover.animation), value: value)
     }
 }
 

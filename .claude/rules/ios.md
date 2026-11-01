@@ -430,8 +430,8 @@ sync seals its records and talks QUIC (TLS) of its own.
   implicit animation goes through `.motion(_:calm:value:)` (`Appearance.swift`: none, or the calm
   fade given, under Reduce Motion), an explicit one is `withAnimation(reduceMotion ? nil : …)`, a
   symbol effect is inactive and a content transition `.identity`, and a banner arrives by fading
-  rather than moving. Now Playing's mode change under Reduce Motion swaps at once, with no spring and
-  no settle wait.
+  rather than moving. Now Playing's mode change under Reduce Motion swaps the layout at once, with no
+  spring and no settle wait, and the pane fades in or out over `Arrival.animation`.
 - **An icon-only control is at least 44 pt** (`touchTarget()`: a minimum frame and a rectangle
   content shape, put inside a control's label so the hit area grows with it: the favourite heart, a header's menu and the recent searches' *Clear*; a folder row's three actions are large bordered buttons that stack where they do not fit; the mini player's skips and play button and the transport row's skips, shuffle and
   repeat (the active mode also carries a dot, so colour is never the only sign), a filter token, the online song menu, *See all*). A slider speaks its value in its unit
@@ -520,12 +520,15 @@ every route change (a pair of headphones at the same rate included), not from th
   (`matchedTransitionSource`, `.zoom`), dismissed by dragging down. Its slider (like the volume row's) commits one seek on
   release, clears a drag the system cancelled through a `@GestureState` flag, and holds the scrubbed value, bar and times, until the clock comes within 1.5 s of it or four seconds pass (a pause and play straight after a seek keep the engine's lane busy and its snapshots late, and a shorter hold let the bar and times fall back to the old position and then jump to the new), the bar's flowed value set to it as the seek is sent and not moved by a reading that has not reached it.
   **The scrubber's bar flows between readings**: each new position read while playing animates
-  the bar linearly to where the song will be one reading later (`PlayerScrubber.flow`: the reading
-  plus the time since the last, held within 0.05 to 0.6 s, over that same time), so the render
-  server moves it and nothing re-renders between polls; a reading that steps back or moves 1.5 s or
-  more (a seek, a skip), the first after opening, a drag or held seek, a paused transport and
-  Reduce Motion set it at once, and a transport change settles it on the reading in 0.15 s. The
-  times stay on the reading. **The flow is an implicit animation on the fill alone**
+  the bar linearly to where the song will be one reading later (`ProgressFlow.step`, in
+  `ResonateLogic` and held by `MotionTests`: the reading plus the time since the last, held within
+  0.05 to 0.6 s, over that same time), so the render server moves it and nothing re-renders between
+  polls; a reading that steps back or moves 1.5 s or more (a seek, a skip), the first after opening,
+  the first reading of another song, a drag or held seek, a paused transport and Reduce Motion set
+  it at once, and a transport change settles it on the reading in `Flip.animation` (140 ms). **A
+  hold on a seek ends with the song** (`onChange` of the playing song's key): a seek sent just before
+  a skip held its target for up to four seconds, so the new song showed the old song's place.
+  The times stay on the reading. **The flow is an implicit animation on the fill alone**
   (`.animation(_:value: flowing)`, its curve kept in `LastReading.flow`), never `withAnimation`:
   an explicit transaction four times a second re-gathered the cover's slot under the bar's linear
   curve and retimed the cover's spring as it resized.
@@ -558,7 +561,7 @@ every route change (a pair of headphones at the same rate included), not from th
   at the large slot's edge and reaches the slot in force by `scaleEffect` and `offset`, so the spring
   re-lays out and re-measures nothing (two `ArtworkView`s under `matchedGeometryEffect` resized and
   re-measured a live image every frame). The pane or
-  list fades in over 0.2 s as the cover starts to shrink (`NowPlayingView.settled`), not once the
+  list fades in over `Arrival.animation` (150 ms, settling) as the cover starts to shrink (`NowPlayingView.settled`), not once the
   spring has landed, and fades out in 0.12 s as the cover starts to grow back; both are cheap to
   build in the spring's first frame (the lyrics are layers, the queue a window); Lyrics to Up next crossfades at once, the cover staying put.
   **A mode change asks 120 Hz for its 0.8 s** (`FrameRateBoost`, a `CADisplayLink` that lets go once
@@ -595,6 +598,28 @@ every route change (a pair of headphones at the same rate included), not from th
   (`MovingCover.settlesOnItsSlot`, a `transaction(value: slot)` that fills in only an empty
   animation): rows a mode change removes also hold their space until they fade, and the cover
   reached the slot laid out with them, then jumped as they went.
+  **The motion vocabulary is the desktop's** (`ResonateLogic/Motion.swift`, `MotionTests`): `MotionSpan`
+  (`arrivesOver` 150 ms, `flipsOver` 140 ms, `handsOver` 280 ms) and `MotionCurve` (`settling`, a
+  cubic ease-out, and `smooth`, smoothstep, each a cubic Bezier proved equal to its closed form),
+  which `Handover`, `Arrival` and `Flip` (`Appearance.swift`) turn into animations, so no Now
+  Playing view names a duration or curve of its own beyond the cover's springs and the bar's
+  linear flow. `MotionRendering.of(kind, reduceMotion:, sceneActive:)` is the one rule for what
+  Reduce Motion and an inactive scene turn a motion into: the song handover, a flip and the bar's
+  flow are instant under Reduce Motion, an arrival (the pane or the first picture) keeps its fade
+  (opacity is not movement), and nothing animates while the scene is away. `SongChange` decides
+  whether a key change hands over: the key is the song's (`Track.pictureKey`, its id, or the uri
+  of a served row), so a pause, a favourite, an art revision or a redraw of the same song never
+  re-animates, and a skip hands over the same way whichever way it goes: **the handover is not
+  directed**, as the desktop's is not (nothing slides). The play and pause symbol replaces under
+  `Flip.animation` (`contentTransition(.symbolEffect(.replace))` plays only inside an animation, so
+  it did not play without one), the shuffle and repeat marks, ink and dot flip in it, the repeat glyph
+  replaces, and the heart replaces only on a tap (an animation around `setFavourite`, never keyed on
+  the value, which a song change flips) and bounces only when newly favoured.
+  **The titles hold the tallest height seen at their width** (`HeldHeight`, a `PlayerTitles`
+  minimum height measured under the available width, reset when the width moves, as a turn of the
+  phone does): a two-line title or an album line shifted the scrubber and transport by half the
+  difference on every song change while only the cover glided; the block now grows once for the
+  tallest song and then stays.
   **The quality line holds the last output rate** (`QualityLine.lastOutput`) while the engine reads
   none: between songs there is no stream until the next row binds, and the line lost its *Output*
   part, drew unshrunk and shrank back once the rate returned. The backdrop keeps its own 1.2 s palette crossfade. Under Reduce

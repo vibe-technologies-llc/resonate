@@ -9,9 +9,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   arrive untouched
 
 ## iOS parity
-- [M · 0.4.0] The now playing section on iOS needs better animations and its bugs fixed: the
-  handover between songs, the cover, the progress and the controls should move as `motion.md` says
-  the desktop's do, and the section's defects are to be found on a device and fixed
 - [L · blocked: xtool] The iOS icon has no appearance variants of its own: Dark, Clear and Tinted
   come from a compiled `Assets.car` (an `AppIcon` set with dark and tinted renditions, or an Icon
   Composer `.icon`, whichever `actool` compiles, which only Xcode has), and xtool 1.24 turns

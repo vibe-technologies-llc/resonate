@@ -49,6 +49,12 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   by hand, on another xtool app's fixtures (a plain intent, a `String` parameter, App Shortcuts),
   and `AudioPlaybackIntent` as `AudioStarting` was never set beside Apple's output for it. The
   processor is an arm64 Mach-O
+- [S · blocked: iPhone] Now Playing's motion is proved by its rules in tests and a clean build, never
+  seen on an iPhone: the handover (cover crossfade, words, the held title height), the play and
+  pause symbol replacing, the shuffle and repeat flips, the progress bar's flow, seek and song
+  change, the mode change's pane fade, each under Reduce Motion, in the one column and in the two
+  columns turned on its side, and the defects only a device shows (a dropped frame in a handover,
+  the cover's decode landing late)
 
 ## Identification
 - [S · blocked: registered key] AcoustID never reached with a real key; its fixture is written from
