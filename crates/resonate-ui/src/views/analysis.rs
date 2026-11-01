@@ -404,7 +404,8 @@ impl Severity {
             Finding::Wall { lossy: Some(_), .. }
             | Finding::Upsampled { .. }
             | Finding::Padded { .. }
-            | Finding::QuantiserSteps { .. } => Self::Fault,
+            | Finding::QuantiserSteps { .. }
+            | Finding::IntensityStereo { .. } => Self::Fault,
             Finding::Clipped { .. } | Finding::DcOffset { .. } | Finding::MonoAsStereo => {
                 Self::Caution
             }
