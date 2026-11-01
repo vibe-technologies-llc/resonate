@@ -616,6 +616,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "doctest-file"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c2db04e74f0a9a93103b50e90b96024c9b2bdca8bce6a632ec71b88736d3d359"
+
+[[package]]
 name = "either"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1112,6 +1118,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c033f80b2c113cdf91ab7a33faa9cbc014726dcad99880c8609af2a370edf37d"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "interprocess"
+version = "2.4.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4a4fff6c51dece332bdbf3af5fe376c49cfc8dced782725e95be0bb489e35d7"
+dependencies = [
+ "doctest-file",
+ "libc",
+ "recvmsg",
+ "widestring",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2177,6 +2196,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "recvmsg"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3edd4d5d42c92f0a659926464d4cce56b562761267ecf0f469d85b7de384175"
+
+[[package]]
 name = "redox_syscall"
 version = "0.5.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2231,7 +2256,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "resonate-analysis"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "ahash",
  "parking_lot 0.13.0",
@@ -2247,7 +2272,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-audio"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "crossbeam-channel",
  "resonate-core",
@@ -2257,7 +2282,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-codec"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "ape-decoder",
  "fs4",
@@ -2267,6 +2292,7 @@ dependencies = [
  "opus-rs",
  "parking_lot 0.13.0",
  "resonate-core",
+ "resonate-win32",
  "rustfft",
  "rustix",
  "symphonia",
@@ -2277,7 +2303,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "bytemuck",
  "chardetng",
@@ -2291,7 +2317,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-dsp"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "parking_lot 0.13.0",
  "realfft",
@@ -2302,7 +2328,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-engine"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "ahash",
  "crossbeam-channel",
@@ -2323,7 +2349,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-eq"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "resonate-core",
  "thiserror",
@@ -2332,7 +2358,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-fetch"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "resonate-core",
  "resonate-providers",
@@ -2363,7 +2389,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-library"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "ahash",
  "crossbeam-channel",
@@ -2384,7 +2410,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-listen"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "crossbeam-channel",
  "resonate-audio",
@@ -2392,11 +2418,12 @@ dependencies = [
  "resonate-pipewire",
  "thiserror",
  "tracing",
+ "wasapi",
 ]
 
 [[package]]
 name = "resonate-lyrics"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "parking_lot 0.13.0",
  "resonate-core",
@@ -2409,7 +2436,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-mcp"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "ahash",
  "resonate-core",
@@ -2425,22 +2452,25 @@ dependencies = [
 
 [[package]]
 name = "resonate-mpris"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "ahash",
  "crossbeam-channel",
+ "interprocess",
  "parking_lot 0.13.0",
  "resonate-core",
  "resonate-engine",
  "rustix",
  "thiserror",
  "tracing",
+ "wasapi",
+ "windows",
  "zbus",
 ]
 
 [[package]]
 name = "resonate-online"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "flate2",
  "md-5 0.11.0",
@@ -2463,7 +2493,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-pipewire"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "crossbeam-channel",
  "libspa",
@@ -2480,7 +2510,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-providers"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "parking_lot 0.13.0",
  "resonate-core",
@@ -2490,7 +2520,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-sync"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "ahash",
  "flate2",
@@ -2517,7 +2547,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-tidal"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "base64",
  "parking_lot 0.13.0",
@@ -2533,7 +2563,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-vault"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "flacenc",
  "image",
@@ -2552,15 +2582,25 @@ dependencies = [
 
 [[package]]
 name = "resonate-wasapi"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "crossbeam-channel",
  "parking_lot 0.13.0",
  "resonate-audio",
  "resonate-core",
+ "resonate-win32",
  "thread-priority",
  "tracing",
  "wasapi",
+]
+
+[[package]]
+name = "resonate-win32"
+version = "0.4.0"
+dependencies = [
+ "thiserror",
+ "windows",
+ "windows-core",
 ]
 
 [[package]]
@@ -3720,6 +3760,12 @@ dependencies = [
  "bytemuck",
  "safe_arch 1.2.0",
 ]
+
+[[package]]
+name = "widestring"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72069c3113ab32ab29e5584db3c6ec55d416895e60715417b5b883a357c3e471"
 
 [[package]]
 name = "winapi-util"
