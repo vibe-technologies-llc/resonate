@@ -324,7 +324,7 @@ whatever the choice, so changing it never rebuilds the content below; it provide
 colours follow the chosen theme rather than the phone's. Widgets and the launcher keep following the
 system.
 
-**The shell** (`ResonateApp`): the roots are Home, Library, Search and, while any service is served in place, Server (`rootScreens`) in a
+**The shell** (`ResonateApp`): the roots are Home, Library and Search (`rootScreens`) in a
 `NavigationSuiteScaffold`, a bottom bar on a phone and a rail on a wide window; Settings is a page,
 opened from the gear (`SettingsAction`) in each root's header. Each root has its own Navigation 3
 back stack (`Navigator`), kept across Activity recreation with the selected root: choosing the
@@ -1229,7 +1229,7 @@ and `next_wanted_due` the earliest of those times among them (unix seconds), for
 
 ## Services played in place
 
-**The Server tab browses and plays every service that plays in place** (Subsonic, TIDAL, the keyed
+**The Server page browses and plays every service that plays in place** (Subsonic, TIDAL, the keyed
 Resonate server, hifi-api and Monochrome; `mobile.md`'s *Services played in place*; `Served.kt`,
 `ui/server/`). `Served` (`LibraryFeatures.served`) derives the accounts from the download accounts,
 the online switch and *Ask the hosted services*: every account that is on and ready
@@ -1238,11 +1238,11 @@ account with no server while hosted services are declined (so a toggle changes t
 over), and none while online is off (`servedAccounts`). `Served.begin` hands each change to
 `serve_from` (so the slot the player's own `Sources` read on every open follows the accounts) and
 publishes `served_services` as `Served.services`; every browse binds again first (`Resonate.asked`,
-`serve_from` being idempotent for the same list), so a read never races the collector. **The tab is
-`Screen.Server`, the fourth of `rootScreens`**, listed in the bar only while `Served.serving` (at
-least one service; `ResonateApp` filters the items; the stack and index exist always so the others
-keep theirs), and leaving it when the last service goes (`selectAtRoot(Home)`; a tab restored after
-the process died lands on Home until the accounts are read). **The root is one service at a time**:
+`serve_from` being idempotent for the same list), so a read never races the collector. **It is a page of Settings, not a root, as
+on iOS and the desktop**: `Setting.SERVER` (*Online & services*) opens `Screen.Server` and is listed
+only while `Served.serving` (at least one service; `SettingsScreen` filters the matches), and when the
+last service goes `ResonateApp` cuts every stack at its first served page (`Navigator.leave`,
+`Screen.isServed`: the Server page and the served artist and album pages). **The page is one service at a time**:
 `FilterChip`s under the search field choose it, shown only where more than one is served;
 `ServerViewModel` keeps the scheme picked and `chosenService` answers it while that scheme is still
 served, else the first (`ServedChoiceTest`). The root shows `served_first_page` of the chosen one

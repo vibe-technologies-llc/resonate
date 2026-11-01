@@ -10,6 +10,7 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.Clear
+import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Devices
 import androidx.compose.material.icons.rounded.Equalizer
@@ -61,6 +62,7 @@ import org.resonate.android.ui.resonateViewModel
 class SettingsViewModel(private val resonate: Resonate) : ViewModel() {
     val online = resonate.features.online
     val appearance = resonate.features.appearance.appearance
+    val serving = resonate.features.served.serving
 
     fun setOnline(enabled: Boolean) = resonate.features.setOnline(enabled)
 
@@ -81,6 +83,7 @@ private val Setting.icon: ImageVector
             Setting.WANTED -> Icons.Rounded.BookmarkBorder
             Setting.ONLINE -> Icons.Rounded.Public
             Setting.PROVIDERS -> Icons.Rounded.CloudDownload
+            Setting.SERVER -> Icons.Rounded.Cloud
             Setting.SCROBBLING -> Icons.Rounded.History
             Setting.SYNC -> Icons.Rounded.Devices
             Setting.APPEARANCE -> Icons.Rounded.Palette
@@ -101,6 +104,7 @@ private val Setting.destination: Screen?
             Setting.SUGGESTIONS -> Screen.Suggestions
             Setting.WANTED -> Screen.Wanted
             Setting.PROVIDERS -> Screen.Providers
+            Setting.SERVER -> Screen.Server
             Setting.SCROBBLING -> Screen.Scrobbling
             Setting.SYNC -> Screen.Sync
             Setting.APPEARANCE -> Screen.Appearance
@@ -126,6 +130,7 @@ fun SettingsScreen() {
     val context = LocalContext.current
     val online by model.online.collectAsStateWithLifecycle()
     val appearance by model.appearance.collectAsStateWithLifecycle()
+    val serving by model.serving.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     var notifications by remember { mutableStateOf(notificationsAllowed(context)) }
     val version = remember { versionOf(context) }
@@ -133,7 +138,10 @@ fun SettingsScreen() {
         notifications = notificationsAllowed(context)
         onPauseOrDispose {}
     }
-    val matches = remember(query) { matchingSettings(query) }
+    val matches =
+        remember(query, serving) {
+            matchingSettings(query).filter { serving || it.setting != Setting.SERVER }
+        }
     Page("Settings", size = TitleSize.LARGE) { padding ->
         SettingsList(padding, Modifier.testTag("settings-list")) {
             item(key = "search") { SettingsSearch(query, { query = it }) }

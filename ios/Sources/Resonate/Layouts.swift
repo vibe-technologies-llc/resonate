@@ -53,8 +53,6 @@ extension LibrarySection {
         case .home: nil
         case .favourites: .favourites
         case .songs: .songs
-        case .suggestions: .suggestions
-        case .statistics: .statistics
         case .playlists: .playlists
         case .albums: .albums
         case .artists: .artists

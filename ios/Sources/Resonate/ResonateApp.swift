@@ -38,7 +38,7 @@ struct ResonateApp: App {
 }
 
 enum Root: String, Hashable, Codable {
-    case library, settings, search
+    case home, library, settings, search
 }
 
 enum Destination: Hashable, Codable {
@@ -92,7 +92,7 @@ enum PlayerTransition {
 @MainActor
 @Observable
 final class Navigation {
-    var tab: Root = .library
+    var tab: Root = .home
     var paths: [Root: [Destination]] = [:]
     var nowPlaying = false
     var choosingFolder = false
@@ -283,7 +283,10 @@ struct RootView: View {
     var body: some View {
         @Bindable var navigation = navigation
         TabView(selection: $navigation.tab) {
-            Tab("Library", systemImage: "music.note.house", value: Root.library) {
+            Tab("Home", systemImage: "house", value: Root.home) {
+                stack(.home) { HomeView() }
+            }
+            Tab("Library", systemImage: "square.stack", value: Root.library) {
                 LibraryTab()
             }
             Tab("Settings", systemImage: "gearshape", value: Root.settings) {

@@ -67,6 +67,13 @@ class Navigator(private val stacks: List<NavBackStack<NavKey>>, selected: Int) {
         }
     }
 
+    fun leave(gone: (Screen) -> Boolean) {
+        stacks.forEach { stack ->
+            val at = stack.indexOfFirst { gone(it as Screen) }
+            if (at > 0) while (stack.size > at) stack.removeAt(stack.lastIndex)
+        }
+    }
+
     @Composable
     fun entries(content: @Composable (Screen) -> Unit): List<NavEntry<NavKey>> {
         val decorated =
@@ -96,7 +103,7 @@ fun rememberNavigator(): Navigator {
 private fun navigatorSaver(stacks: List<NavBackStack<NavKey>>) =
     Saver<Navigator, Int>(
         save = { it.selected },
-        restore = { Navigator(stacks, it) },
+        restore = { Navigator(stacks, it.coerceIn(rootScreens.indices)) },
     )
 
 val LocalNavigator = staticCompositionLocalOf<Navigator> { error("No navigator in composition") }

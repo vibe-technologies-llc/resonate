@@ -56,8 +56,6 @@ public enum LibrarySection: String, Sendable, Equatable, CaseIterable, Identifia
     case home
     case favourites
     case songs
-    case suggestions
-    case statistics
     case playlists
     case albums
     case artists
@@ -69,8 +67,6 @@ public enum LibrarySection: String, Sendable, Equatable, CaseIterable, Identifia
         case .home: "Library"
         case .favourites: "Favourites"
         case .songs: "All songs"
-        case .suggestions: "Suggestions"
-        case .statistics: "Statistics"
         case .playlists: "Playlists"
         case .albums: "Albums"
         case .artists: "Artists"
@@ -82,8 +78,6 @@ public enum LibrarySection: String, Sendable, Equatable, CaseIterable, Identifia
         case .home: "music.note.house"
         case .favourites: "heart"
         case .songs: "music.note"
-        case .suggestions: "sparkles"
-        case .statistics: "chart.bar"
         case .playlists: "music.note.list"
         case .albums: "square.stack"
         case .artists: "music.mic"

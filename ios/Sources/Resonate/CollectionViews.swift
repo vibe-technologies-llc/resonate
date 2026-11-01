@@ -97,12 +97,6 @@ struct LibraryView: View {
                             SongsCountRow()
                         }
                         .buttonStyle(.plain)
-                        NavigationLink(value: Destination.suggestions) {
-                            SuggestionsRow()
-                        }
-                        NavigationLink(value: Destination.statistics) {
-                            StatisticsRow()
-                        }
                     }
                 }
             }
@@ -288,40 +282,6 @@ struct AllSongsRow: View {
             Spacer(minLength: 0)
             Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
                 .accessibilityHidden(true)
-        }
-        .contentShape(.rect)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-struct SuggestionsRow: View {
-    @ScaledMetric(relativeTo: .body) private var artworkEdge: CGFloat = 56
-
-    var body: some View {
-        HStack(spacing: 14) {
-            ShelfTile(symbol: "sparkles", from: .teal, to: .blue)
-                .frame(width: artworkEdge, height: artworkEdge)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Suggestions").font(.body.weight(.medium))
-                Text("Mixes from your library").font(.subheadline).foregroundStyle(.secondary)
-            }
-        }
-        .contentShape(.rect)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-struct StatisticsRow: View {
-    @ScaledMetric(relativeTo: .body) private var artworkEdge: CGFloat = 56
-
-    var body: some View {
-        HStack(spacing: 14) {
-            ShelfTile(symbol: "chart.bar.fill", from: .indigo, to: .blue)
-                .frame(width: artworkEdge, height: artworkEdge)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Statistics").font(.body.weight(.medium))
-                Text("Your listening in numbers").font(.subheadline).foregroundStyle(.secondary)
-            }
         }
         .contentShape(.rect)
         .accessibilityElement(children: .combine)
@@ -1044,7 +1004,7 @@ extension View {
     }
 }
 
-private struct FavouritesCountRow: View {
+struct FavouritesCountRow: View {
     @Environment(Library.self) private var library
 
     var body: some View {

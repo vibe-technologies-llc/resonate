@@ -243,6 +243,15 @@ struct SuggestedMix: Identifiable {
         return mixes
     }
 
+    @MainActor
+    static func covers(of mixes: [SuggestedMix], in library: Library) async -> [String: [UInt64]]? {
+        guard let native = try? await library.player() else { return nil }
+        let asked = mixes.map { ($0.id, $0.filter) }
+        return try? await Work.aside {
+            Dictionary(uniqueKeysWithValues: try asked.map { ($0.0, try native.picturedBy(filter: $0.1)) })
+        }
+    }
+
     static func named(_ id: String) -> SuggestedMix? {
         let artistPrefix = "More from "
         let topArtist = id.hasPrefix(artistPrefix) ? String(id.dropFirst(artistPrefix.count)) : nil
@@ -283,11 +292,7 @@ struct SuggestionsView: View {
     }
 
     private func loadCovers(_ mixes: [SuggestedMix]) async {
-        guard let native = try? await library.player() else { return }
-        let asked = mixes.map { ($0.id, $0.filter) }
-        guard let found = try? await Work.aside({
-            Dictionary(uniqueKeysWithValues: try asked.map { ($0.0, try native.picturedBy(filter: $0.1)) })
-        }) else { return }
+        guard let found = await SuggestedMix.covers(of: mixes, in: library) else { return }
         covers = found
     }
 }

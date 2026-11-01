@@ -83,4 +83,7 @@ sealed interface Screen : NavKey {
     @Serializable data object Appearance : Screen
 }
 
-val rootScreens = listOf(Screen.Home, Screen.Library, Screen.Search, Screen.Server)
+val rootScreens = listOf(Screen.Home, Screen.Library, Screen.Search)
+
+val Screen.isServed: Boolean
+    get() = this == Screen.Server || this is Screen.ServedArtist || this is Screen.ServedAlbum

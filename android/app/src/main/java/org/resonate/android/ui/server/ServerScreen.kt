@@ -45,9 +45,7 @@ import org.resonate.android.nativecore.ServedService
 import org.resonate.android.ui.components.EmptyState
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.SectionHeader
-import org.resonate.android.ui.components.SettingsAction
 import org.resonate.android.ui.components.Sizes
-import org.resonate.android.ui.components.TitleSize
 import org.resonate.android.ui.library.LoadedContent
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.resonateViewModel
@@ -61,7 +59,7 @@ fun ServerScreen() {
     val firstPage by model.firstPage.collectAsStateWithLifecycle()
     val found by model.found.collectAsStateWithLifecycle()
     val title = chosen?.title.orEmpty()
-    Page("Server", size = TitleSize.LARGE, back = false, actions = { SettingsAction() }) { padding ->
+    Page("Server") { padding ->
         val direction = LocalLayoutDirection.current
         val below =
             PaddingValues(

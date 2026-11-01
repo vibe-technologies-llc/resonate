@@ -112,6 +112,12 @@ enum class Setting(
         "Monochrome, hifi-api, Subsonic and TIDAL",
         listOf("Download provider", "Add a source", "Server address", "Sign in with TIDAL"),
     ),
+    SERVER(
+        SettingsGroup.ONLINE,
+        "Server",
+        "Browse and play from your connected server",
+        listOf("Subsonic", "Navidrome", "TIDAL", "Monochrome", "Browse", "Stream"),
+    ),
     SCROBBLING(
         SettingsGroup.ONLINE,
         "Scrobbling",

@@ -494,8 +494,8 @@ sync seals its records and talks QUIC (TLS) of its own.
   and is left as it is, and so is a song a download or the listener put in Documents. Songs landed
   before this was done carry no mark: nothing tells them from the listener's own.
 
-The views follow Android's screens and wording (`android.md`), with three tabs, Library, Settings
-and Search, and a Server page in Settings while a service that plays in place is served (below) (`Tab(role: .search)`, which iOS sets apart at the trailing edge and turns into the search
+The views follow Android's screens and wording (`android.md`), with four tabs, Home, Library, Settings
+and Search, and a Server page in Settings while a service that plays in place is served (below), as on Android (`Tab(role: .search)`, which iOS sets apart at the trailing edge and turns into the search
 field; `Root.search` has its own stack). **Songs is a page of the Library tab and the queue is
 Now Playing's Up next, neither a tab**: *All songs*, Favourites' and the
 empty states' *Browse songs* push `Destination.songs` onto the Library stack alone
@@ -706,17 +706,27 @@ every route change (a pair of headphones at the same rate included), not from th
   the catalog no longer holds, an album `album(key)` no longer finds, an artist with no songs or a
   playlist gone (`Library.gone`, on `Work.aside`) cuts its stack at that page, since every page above
   it was reached through it. A failed read cuts nothing: a catalog read that fails resumes `wholeCatalog`'s waiters with nothing cut. Now Playing and the sheets are not kept.
+- **Home is the first tab and the one a launch opens** (`Root.home`, `HomeView` in `HomeViews.swift`), Android's
+  Home: a title greeting by the hour (`HomeGreeting.of`, `ResonateLogic`, held by `HomeTests`, read again on
+  appearing and coming forward), then *Favourites* and *Shuffle all* (`ShuffleAllRow`, the whole catalog
+  shuffled), *Made for you* (`HomeMixes`: every `SuggestedMix` as a card on a shelf, its covers from
+  `SuggestedMix.covers`, which the Suggestions page shares; *See all* is `Destination.suggestions`),
+  *Recently added* (`albums(order: .added)`) and *Artists* (`artists(order: .plays)`), twelve each read on
+  `Work.onScreen` keyed by `collectionGeneration` and `catalogEpoch`, *Your playlists* (a *New playlist*
+  button where there are none) and *Your listening* (`ListeningSummary`: plays, time listened and songs from
+  the all-time statistics, a dash while another period is loaded; it opens `Destination.statistics`). An empty
+  catalog shows one invitation to add a folder and the playlists. Home's pages push onto its own stack.
 - **The Library tab's *All songs*** is a plain `Button` (the row draws its own chevron, as its
   neighbours' links do) that clears any filter or mix, shows songs and opens the Songs page: a
   `simultaneousGesture` tap on a `NavigationLink` there left a tap on the tile doing nothing.
   **Its rows' icons are one kind of tile** (`ShelfTile`: a white symbol at `.title2` centred on a
   corner-to-corner gradient of two system colours, 56 pt scaled): Favourites pink and purple, All
-  songs orange and red, Suggestions teal and blue, Statistics indigo and blue. The tile takes no touch
+  songs orange and red, Home's *Shuffle all* orange and red. The tile takes no touch
   (`allowsHitTesting(false)`) and each row is one rectangle (`contentShape(.rect)`), so a tap on the
   tile opens the page as a tap on the words does; a tap landing on the tile alone opened nothing.
 - **The Library tab has no selector**: it is a home page (`LibraryView(page: .home)`) of one
-  section of shortcuts (Favourites, All songs, Suggestions, Statistics; all but Favourites hidden
-  while searching), then playlists, albums and artists as carousels (`PlaylistShelf`, `AlbumShelf`,
+  section of shortcuts (Favourites and All songs, the second hidden while searching; Suggestions and
+  Statistics are Home's), then playlists, albums and artists as carousels (`PlaylistShelf`, `AlbumShelf`,
   `ArtistShelf`, twelve each) under a *See all* header (`SeeAllPageHeader`) that pushes the kind's
   own page, `Destination.playlists`, `.albums` or `.artists`, each `LibraryView(page:)` listing
   every one as rows with its own search. **Creating and importing a playlist live on the Playlists
@@ -774,8 +784,8 @@ every route change (a pair of headphones at the same rate included), not from th
   (`PlaylistFile`).
 - **The queue is saved as a playlist** from the player's More menu (`createPlaylist` with every
   queue row, repeats kept).
-- **Statistics is a page of its own** (`StatisticsView.swift`), a row beside Favourites, All songs and
-  Suggestions on the Library tab as well as in Library tools. Under the period picker (the tiles and the chart take the period the loaded data was read for, `Features.statisticsDays`, so a pick that is loading or failed never divides one period's total by another's span): tiles
+- **Statistics is a page of its own** (`StatisticsView.swift`), opened from Home's *Your listening* as
+  well as from Library tools. Under the period picker (the tiles and the chart take the period the loaded data was read for, `Features.statisticsDays`, so a pick that is loading or failed never divides one period's total by another's span): tiles
   (`StatisticsTiles`: time listened and plays, the daily average over the period or, for all time,
   since the first counted play, songs heard of the library, the busiest day, the library's size, albums
   and artists); a bar chart of listening (`ListeningChart`, drawn in SwiftUI: days for a week or month,
@@ -910,8 +920,8 @@ every route change (a pair of headphones at the same rate included), not from th
   `FilterSheet`: genre, artist and album are pickers of the names the filter compares (the track's
   artist, not an album artist; an album's title, since the filter compares folded equality), Cancel
   closes it and *Reset* is a button in the form that clears the draft, applied with *Apply*), and each part of the filter set shows under the picker as a small capsule token
-  that clears it. Playlists and Suggestions are reached from the Library tab (Suggestions is a row
-  beside Favourites and All songs), online search from the Search tab.
+  that clears it. Playlists are reached from the Library tab and Home, Suggestions from Home's *Made for you*,
+  online search from the Search tab.
 - **The Search tab is one search of the library and online** (`SearchTab.swift`), with no scope to
   choose: `tabSearch.text` and `Features.onlineQuery` move together (`SearchTab` follows the text, so *Did you mean*, a completion and Listen's *Find it* ask online as typing does), and the page lists *In
   your library* (the completions' row, then the Songs results' Top with *See all* pushing the full
@@ -1342,9 +1352,9 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   `Features.served`, a `ServedChoice`: the services in the boundary's order and the chosen scheme,
   kept while that scheme is still served, else the first. Every read binds the accounts again first
   (`Features.serverAnswer`, on `Work.aside`; `serve_from` is idempotent for one list), so a browse
-  never races the change. **The tab is `Root.server`**, a `Tab` present while `Features.serving`
-  (any service served), after Library; the restored tab never lands on it (`Navigation.restore`)
-  and it is left when the last service goes (`leaveServer`). Its pages are
+  never races the change. **It is no tab**: the row shows only while `Features.serving`
+  (any service served), and the page is taken off the Settings stack when the last service goes
+  (`leaveServer`). Its pages are
   `Destination.served(ServedPlace)` (an artist or an album, kept in the scene's navigation). The
   root shows a segmented chooser only while more than one service is served, then the chosen
   service's `served_first_page` (Subsonic's artists, TIDAL's favourites, else nothing and an
@@ -1644,13 +1654,13 @@ are handled by the same rules as an iPad turned.
   mode names, so a mode change moves it between the columns' slots exactly as it moves it in one.
 - **The Library tab** (`LibraryArrangement.of`, `LibraryTab`) is a `NavigationSplitView` where the
   width class is regular and the text is not large, otherwise the stack it always was: the sidebar is
-  `LibrarySection.allCases` (`LibrarySidebar`: Library, Favourites, All songs, Suggestions,
-  Statistics, Playlists, Albums, Artists), its selection `Navigation.librarySection` (`choose`
+  `LibrarySection.allCases` (`LibrarySidebar`: Library, Favourites, All songs, Playlists, Albums,
+  Artists), its selection `Navigation.librarySection` (`choose`
   empties the tab's path, so a section is a root, not a page pushed on the last one), and the detail
   is the tab's own `NavigationStack` over the same `Navigation.paths[.library]`, rooted at
   `LibrarySectionRoot` (`.id(section)`), so every destination, value link and `Navigation.open`
   works as in the stack. The section is not kept across launches; the path is. `showSongs` selects
-  Library and pushes Songs. Settings and Search stay stacks: Settings is a list of pages the stack
+  Library and pushes Songs. Home, Settings and Search stay stacks: Settings is a list of pages the stack
   already shows well on a wide screen, and Search is the search role's own page.
 - **A sheet is sized by its weight** (`sheetSized(_:)`, `SheetSizing.of`): a short one (a picker, the
   sleep timer, zones, the pairing code, the folder choice) is `presentationSizing(.form)`, a long one
