@@ -598,9 +598,7 @@ pub(crate) fn segment(
         .cursor_pointer()
         .relative()
         .child(motion::shown_while(
-            div()
-                .absolute()
-                .inset_0()
+            focus::beneath_the_ring(div())
                 .rounded_md()
                 .bg(rgb(theme::hover())),
             "chosen",

@@ -29,6 +29,7 @@ use crate::{
     views::{
         Pane,
         browser::{OPEN_ALBUM_HINT, OPEN_ARTIST_HINT},
+        focus,
         gives_way::{SignalWidths, StatusWidths, signal_kept, status_kept},
         hint::Names,
         kit::{self, KeepsItsWidth},
@@ -1411,9 +1412,7 @@ impl RootView {
             .cursor_pointer()
             .hover(|button| button.bg(rgb(theme::hover())))
             .child(motion::shown_while(
-                div()
-                    .absolute()
-                    .inset_0()
+                focus::beneath_the_ring(div())
                     .rounded_md()
                     .bg(theme::tinted(theme::accent(), 0x1c)),
                 "tint",

@@ -719,13 +719,16 @@ is never named.
     pane, the volume set through the Value interface moved); no screen reader (Orca) was run. The
     cells, links, lyric lines, plots, bars, cards, the caret and selection and the menu hand-over
     were only built and read back in tests (`docs/TESTING.md`).
-- **The focus ring is the keyboard's, drawn outside the control.** Every ring wrapper styles through
-  `focus_visible` (`focus::lit`, `picked`, `lit_over`), never `focus`, so a click focuses without
-  ringing and only Tab or an arrow lights it (gpui's `last_input_was_keyboard`). `focus::ring_of`
-  is an outset shadow, not an inset one: gpui paints an inset shadow before the element's
-  children, so an opaque child (the settings rail's sliding `chosen` wash) covered all of it but an
-  antialiased sliver along the bottom and right edges. A field holding the caret still lights on
-  `in_focus`, since a click into it is where typing goes.
+- **The focus ring is the keyboard's, hollow, drawn inside the control.** Every ring wrapper styles
+  through `focus_visible` (`focus::lit`, `picked`, `lit_over`), never `focus`, so a click focuses
+  without ringing and only Tab or an arrow lights it (gpui's `last_input_was_keyboard`), and none
+  puts a fill under the control. `focus::ring_of` is an inset shadow: gpui's shader paints an outset
+  shadow as a solid rectangle behind the element, so a control with no ground of its own (a rail
+  row, a segment, a ghost button) was filled with the ring colour. An inset shadow is painted before
+  the element's children, so an opaque ground child (the `shown_while` wash of the settings rail,
+  `kit::segment` and the bar's toggles) is laid by `focus::beneath_the_ring`, inside the ring's
+  width. A field holding the caret still lights on `in_focus`, since a click into it is where typing
+  goes.
 - **An outlined button's edge is `border`, not `outline`.** `outline` is lifted to 3:1 for the
   edges that alone tell a control apart (a field, a swatch, a menu); a button is told by its
   raised fill and label, and at 3:1 every button wore a hard line. High Contrast's `border` is

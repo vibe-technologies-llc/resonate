@@ -304,9 +304,7 @@ impl RootView {
                         .relative()
                         .text_color(rgb(ink))
                         .child(motion::shown_while(
-                            div()
-                                .absolute()
-                                .inset_0()
+                            focus::beneath_the_ring(div())
                                 .rounded_lg()
                                 .bg(rgb(theme::hover())),
                             "chosen",

@@ -17,8 +17,19 @@ pub(crate) fn ring_of(colour: u32) -> Vec<BoxShadow> {
         offset: point(px(0.0), px(0.0)),
         blur_radius: px(0.0),
         spread_radius: px(theme::FOCUS_RING_WIDTH),
-        inset: false,
+        inset: true,
     }]
+}
+
+pub(crate) fn beneath_the_ring<E: Styled>(ground: E) -> E {
+    let ring = px(theme::FOCUS_RING_WIDTH);
+
+    ground
+        .absolute()
+        .top(ring)
+        .bottom(ring)
+        .left(ring)
+        .right(ring)
 }
 
 pub(crate) fn lit(style: StyleRefinement) -> StyleRefinement {
