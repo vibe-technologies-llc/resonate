@@ -36,10 +36,14 @@ mod preferences;
 mod registry;
 mod remote;
 mod service;
+#[cfg(windows)]
+mod smtc;
 #[cfg(any(windows, test))]
 mod toast;
 mod track;
 mod tracklist;
+#[cfg(any(windows, test))]
+mod transport;
 #[cfg(unix)]
 mod trash;
 mod wire;

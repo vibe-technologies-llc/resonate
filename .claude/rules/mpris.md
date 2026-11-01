@@ -10,9 +10,10 @@ paths:
 `resonate-mpris` also compiles for Windows, where there is no session bus: its portal trash and
 the permission and `/proc` parts of its cover folder are Unix, and the binary treats a missing bus
 as it does on a Linux machine with none, except that a window is still served and reached on a
-named pipe (*The client's second wire*, `windows.md`), song changes are told as toasts and the
+named pipe (*The client's second wire*, `windows.md`), song changes are told as toasts, the
 connection's cost is read from `NetworkInformation` (*The desktop's calls*, *Is the connection
-metered*). It is MPRIS, notifications, idle inhibit, playlists (`library.md` has the seam), and
+metered*) and the first zone is published to and commanded from the System Media Transport
+Controls (*The media transport* below, `windows.md`). It is MPRIS, notifications, idle inhibit, playlists (`library.md` has the seam), and
 the client a second `resonate` reaches a first through.
 
 ## What it sees
@@ -223,6 +224,21 @@ binary (no test touches the machine's BlueZ). Missing system bus or BlueZ = debu
 needs `--system-talk-name=org.bluez` (`packaging.md`)
 (`bus.rs`'s `a_headsets_press_reaches_the_transport_through_the_player_registered_with_bluez`: under
 `dbus-run-session` with `DBUS_SYSTEM_BUS_ADDRESS` at the session bus and a stand-in `org.bluez`).
+
+## The media transport
+
+**On Windows the media keys and the system's player overlay are SMTC, served from the same state and
+the same methods as MPRIS** (`windows.md` has the Windows side). `Host::answers_media_keys` (false
+by default; the binary's first zone, as `answers_headsets`) starts a `resonate-transport` thread
+beside whichever service serves the zone. It reads `snapshot` as the bus poll does and maps it
+through `controls_of` into `transport::Controls` (portable, tested on every host: `Status::of`,
+`Buttons::of` over the `Can*` the bus publishes, `repeat_code`/`repeat_asked`, `ticks`,
+`Timeline`, `Displayed`, `Moved::between`); every request Windows makes is a `PlayerInterface`
+method (`Pressed::of` to `play`/`pause`/`stop`/`next`/`previous`, a position to `set_position`,
+shuffle and repeat to their setters), so the rules of *A method does what the spec says* hold for a
+media key too. Why the first zone and not the zone shown: it is the zone the plain bus name, BlueZ
+and `resonate play` already mean, and following the window's choice would need the front end
+through a second seam.
 
 ## Is the connection metered
 

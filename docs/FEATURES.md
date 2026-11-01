@@ -48,12 +48,12 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   runner, never started), the installer (compiled by Inno Setup for the first time at a release; its
   Start menu shortcut, file associations and uninstall), a toast (whether one shows once a shortcut carries
   `org.resonate.Resonate`, its image from a `file:///` cover, its three buttons reaching the
-  transport, a replacement when the cover lands) and the connection's `NetworkCostType` (a metered
-  hotspot, the change event) have never run on real hardware or a real audio endpoint
-- [L · 0.4.0] Windows has no media transport: the System Media Transport Controls (media keys, the
-  volume overlay and lock screen, track and cover metadata) need a native crate behind
-  `resonate-mpris`'s `Host` seam, since `resonate-mpris` finds no session bus and the player runs
-  without one
+  transport, a replacement when the cover lands), the connection's `NetworkCostType` (a metered
+  hotspot, the change event) and the System Media Transport Controls (whether a `MediaPlayer` with its
+  command manager off claims the session for an unpackaged process, the media keys and the overlay's
+  buttons, seek bar, shuffle and repeat reaching the transport, the cover read through `StorageFile`,
+  the title, artist and album on the overlay and the lock screen) have never run on real hardware or
+  a real audio endpoint
 - [S · 0.4.0] The WASAPI stream thread joins MMCSS's `Audio` class, not `Pro Audio`:
   `audio_thread_priority`, the safe wrapper, names its task itself, and no safe wrapper of
   `AvSetMmThreadCharacteristicsW` takes another

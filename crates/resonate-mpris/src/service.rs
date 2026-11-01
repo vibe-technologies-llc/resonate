@@ -92,6 +92,8 @@ impl Teller {
 pub struct Mpris {
     tells: Sender<Told>,
     service: Service,
+    #[cfg(windows)]
+    transport: Option<JoinHandle<()>>,
     stop: Arc<AtomicBool>,
     shared: Arc<Shared>,
 }
@@ -130,10 +132,14 @@ impl Mpris {
         let stop = Arc::new(AtomicBool::new(false));
         let (tells, told) = bounded(WAITING_TELLS);
         let service = Self::served(zone, &shared, playlists, &told, &stop)?;
+        #[cfg(windows)]
+        let transport = transporting(&shared, &stop);
 
         Ok(Self {
             tells,
             service,
+            #[cfg(windows)]
+            transport,
             stop,
             shared,
         })
@@ -206,6 +212,10 @@ impl Mpris {
             #[cfg(windows)]
             Service::Pipe(pipe) => pipe.rest(),
         }
+        #[cfg(windows)]
+        if let Some(transport) = self.transport.take() {
+            let _ = transport.join();
+        }
         self.shared.pictures.forget();
     }
 }
@@ -239,6 +249,94 @@ fn toasting(
             tracing::warn!(%error, "a track change will not be told to Windows");
             None
         }
+    }
+}
+
+#[cfg(windows)]
+fn transporting(shared: &Arc<Shared>, stop: &Arc<AtomicBool>) -> Option<JoinHandle<()>> {
+    if !shared.host.answers_media_keys() {
+        return None;
+    }
+    let shared = Arc::clone(shared);
+    let stop = Arc::clone(stop);
+    let spawned = thread::Builder::new()
+        .name("resonate-transport".to_owned())
+        .spawn(move || transport_what_plays(&shared, &stop));
+
+    match spawned {
+        Ok(transport) => Some(transport),
+        Err(error) => {
+            tracing::warn!(%error, "media keys and the Windows media controls are unavailable");
+            None
+        }
+    }
+}
+
+#[cfg(windows)]
+fn transport_what_plays(shared: &Arc<Shared>, stop: &AtomicBool) {
+    let _apartment = match crate::apartment::Apartment::enter() {
+        Ok(apartment) => apartment,
+        Err(error) => {
+            tracing::warn!(%error, "media keys and the Windows media controls are unavailable");
+            return;
+        }
+    };
+    let mut transport = match crate::smtc::Transport::open(shared) {
+        Ok(transport) => transport,
+        Err(error) => {
+            tracing::warn!(%error, "media keys and the Windows media controls are unavailable");
+            return;
+        }
+    };
+
+    let mut watched = snapshot(shared, None, None);
+    transport.tell(controls_of(&watched), true);
+
+    while !stop.load(Ordering::Acquire) {
+        thread::sleep(POLL);
+
+        let next = snapshot(shared, None, Some(&watched));
+        transport.tell(controls_of(&next), watched.seeks != next.seeks);
+        watched = next;
+    }
+
+    transport.close();
+}
+
+#[cfg(windows)]
+fn controls_of(now: &Watched) -> crate::transport::Controls {
+    use crate::transport::{Buttons, Controls, Displayed, Status, Timeline};
+
+    let displayed = now
+        .shown
+        .as_ref()
+        .zip(now.described.info.as_ref())
+        .map(|(shown, info)| Displayed::of(&info.tags, &shown.summary, now.described.art.clone()));
+    let timeline = now
+        .described
+        .track
+        .zip(now.playhead)
+        .map(|(track, playhead)| {
+            Timeline::of(
+                playhead.position,
+                track.duration,
+                playhead.rate,
+                now.can_seek,
+            )
+        });
+
+    Controls {
+        status: Some(Status::of(now.playback, now.can_play)),
+        buttons: Buttons::of(
+            now.can_play,
+            now.can_pause,
+            now.can_go_next,
+            now.can_go_previous,
+        ),
+        shuffle: now.shuffle,
+        repeat: Some(now.repeat),
+        displayed,
+        timeline,
     }
 }
 
