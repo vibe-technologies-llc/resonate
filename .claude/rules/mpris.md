@@ -8,7 +8,7 @@ paths:
 # The session bus
 
 `resonate-mpris` also compiles for Windows, where there is no session bus: its portal trash and
-the permission and `/proc` parts of its cover folder are Unix, and the binary treats a missing bus
+the permission part of its cover folder are Unix, and the binary treats a missing bus
 as it does on a Linux machine with none, except that a window is still served and reached on a
 named pipe (*The client's second wire*, `windows.md`), song changes are told as toasts, the
 connection's cost is read from `NetworkInformation` (*The desktop's calls*, *Is the connection
@@ -105,7 +105,8 @@ demand and never announced. Ids:
   unfinished cover). A poll reuses a laid cover only where the row *and* the catalog's `Arc` of the
   picture match. Writes happen outside the lock every `Metadata` read takes (`Pictures::drawn`),
   under their own. Last `COVERS_KEPT` (8) held; `Mpris::shutdown` removes the folder; the next run
-  sweeps `resonate-art-<pid>-*` of dead processes. A queued row's cover is laid only when a client
+  sweeps `resonate-art-<pid>-*` of dead processes (on Windows, with no `/proc`, a folder holds a
+  `.held` file under `writer::Held` for its life and is swept where `writer_of` reads it `Gone`). A queued row's cover is laid only when a client
   asks for it, kept apart (`Shared::row_art`, `Pictures::queued_uri`), at most `QUEUED_COVERS_KEPT`
   (32): past that, no cover named rather than one a later row would remove.
 - **Catalog counts reach the bus through `Host`.** `xesam:useCount`/`xesam:lastUsed` come from

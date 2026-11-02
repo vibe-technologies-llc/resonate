@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::media::uri_escaped;
 
 const BACKSLASH: u8 = b'\\';
@@ -6,6 +8,7 @@ const DRIVE_MARK: u8 = b':';
 const VERBATIM_UNC: &[u8] = br"\\?\UNC\";
 const VERBATIM: &[u8] = br"\\?\";
 const NETWORK: &[u8] = br"\\";
+const NOT_A_SHARE: &[u8] = b"?.";
 
 pub fn uri_rest_of(path: &[u8]) -> String {
     if let Some(network) = path.strip_prefix(VERBATIM_UNC) {
@@ -34,6 +37,32 @@ pub fn path_of_uri_rest(decoded: &[u8]) -> Option<Vec<u8>> {
         (Some(_), None | Some(&SLASH)) => Some(backwards(rooted)),
         _ => Some(backwards(decoded)),
     }
+}
+
+pub(crate) fn verbatim(path: Vec<u8>) -> Vec<u8> {
+    if path.starts_with(VERBATIM) {
+        return path;
+    }
+    if drive_of(&path).is_some() && path.get(2) == Some(&BACKSLASH) {
+        return [VERBATIM, &path].concat();
+    }
+    match path.strip_prefix(NETWORK) {
+        Some(share)
+            if share
+                .first()
+                .is_some_and(|first| !NOT_A_SHARE.contains(first)) =>
+        {
+            [VERBATIM_UNC, share].concat()
+        }
+        _ => path,
+    }
+}
+
+pub(crate) fn plain(path: &[u8]) -> Cow<'_, [u8]> {
+    if let Some(share) = path.strip_prefix(VERBATIM_UNC) {
+        return Cow::Owned([NETWORK, share].concat());
+    }
+    Cow::Borrowed(path.strip_prefix(VERBATIM).unwrap_or(path))
 }
 
 fn drive_of(path: &[u8]) -> Option<u8> {
@@ -96,6 +125,33 @@ mod tests {
             path_of_uri_rest(b"/music/a.flac"),
             Some(br"\music\a.flac".to_vec())
         );
+    }
+
+    #[test]
+    fn a_drive_or_share_path_is_written_verbatim_as_canonicalising_writes_it() {
+        assert_eq!(
+            verbatim(br"C:\Music\a.flac".to_vec()),
+            br"\\?\C:\Music\a.flac"
+        );
+        assert_eq!(
+            verbatim(br"\\nas\music\a.flac".to_vec()),
+            br"\\?\UNC\nas\music\a.flac"
+        );
+        assert_eq!(verbatim(br"\\?\C:\a.flac".to_vec()), br"\\?\C:\a.flac");
+        assert_eq!(
+            verbatim(br"\\.\pipe\resonate".to_vec()),
+            br"\\.\pipe\resonate"
+        );
+        assert_eq!(verbatim(br"\music\a.flac".to_vec()), br"\music\a.flac");
+        assert_eq!(verbatim(b"C:a.flac".to_vec()), b"C:a.flac");
+    }
+
+    #[test]
+    fn a_verbatim_path_is_plain_again_without_its_prefix() {
+        assert_eq!(plain(br"\\?\C:\Music"), &br"C:\Music"[..]);
+        assert_eq!(plain(br"\\?\UNC\nas\music"), &br"\\nas\music"[..]);
+        assert_eq!(plain(br"C:\Music"), &br"C:\Music"[..]);
+        assert_eq!(plain(b"/home/music"), &b"/home/music"[..]);
     }
 
     #[test]

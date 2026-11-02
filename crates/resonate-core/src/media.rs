@@ -279,7 +279,7 @@ fn local_path_of(decoded: Vec<u8>) -> Option<Vec<u8>> {
 
 #[cfg(windows)]
 fn local_path_of(decoded: Vec<u8>) -> Option<Vec<u8>> {
-    crate::windows_uri::path_of_uri_rest(&decoded)
+    crate::windows_uri::path_of_uri_rest(&decoded).map(crate::windows_uri::verbatim)
 }
 
 pub fn uri_escaped(text: &[u8]) -> String {

@@ -179,7 +179,13 @@ exists (*The Win32 exception*, below).
   and `MediaLocation` keep their byte designs and a stored locator is the same text on either.
 - **A `file://` URI is `file:///C:/Music/a.flac`, a share `file://host/share/a.flac`**
   (`windows_uri`, tested on every host); `\\?\` prefixes are dropped; `from_uri` takes the rest of
-  the URI back to a `\` path. On Unix a URI still has to start at the root.
+  the URI back to a `\` path **written verbatim** (`windows_uri::verbatim`: `\\?\C:\…`,
+  `\\?\UNC\host\share\…`), the spelling `fs::canonicalize` gives and so the one the scan stores,
+  so a song kept as a URI (the resumed queue, a delivery's offer, a playlist, `OpenUri`) finds its
+  catalog row again; the binary's `from_here` writes a path that does not exist yet the same way.
+  `path_text::verbatim` and `path_text::plain` are the two directions (identity off Windows),
+  `path_text::shown` is what a window or notice draws, and a call into the Windows Runtime
+  (`StorageFile` for the media controls' cover) is handed the plain spelling. On Unix a URI still has to start at the root.
 - **Positioned I/O is one trait** (`positioned::FileExt`): the standard Unix one, or `seek_read` and
   `seek_write` on Windows (which move the cursor, so no caller reads a file by position and by
   cursor at once).
@@ -250,8 +256,8 @@ exists (*The Win32 exception*, below).
   than write a `\\?\` path: `std` already prefixes a path past the limit itself for the calls our
   code makes (no manifest or registry switch is involved), so writing would work, but Explorer,
   the shell's recycle bin, taggers and most other programs open the library by its plain path and
-  fail past 260, and the catalog stores prefix-free paths (`windows_uri` drops `\\?\`) that
-  must stay openable by them. The weighing is in `reach.rs` and tested on every host. Trailing dots and spaces are trimmed from every component on every platform, and a
+  fail past 260, and the paths written there must stay openable by them (the catalog keeps the
+  canonical, verbatim spelling; a URI drops the prefix). The weighing is in `reach.rs` and tested on every host. Trailing dots and spaces are trimmed from every component on every platform, and a
   case-insensitive collision is found by the probe `Claims` makes with `file_facts`.
 - **Deleting goes to the recycle bin** (`trashing::RecycleBin` over `trash::delete`); the hand-written
   freedesktop trash and the portal are Unix. A catalog with no trasher keeps the file

@@ -311,9 +311,12 @@ fn refused(outcome: zbus::fdo::Result<()>) {
 
 fn cover(art: &str) -> Result<RandomAccessStreamReference> {
     let path = MediaLocation::from_uri(art).and_then(|location| {
-        location
-            .as_path()
-            .map(|path| path.as_os_str().encode_wide().collect::<Vec<u16>>())
+        location.as_path().map(|path| {
+            resonate_core::path_text::plain(path)
+                .as_os_str()
+                .encode_wide()
+                .collect::<Vec<u16>>()
+        })
     });
 
     match path {

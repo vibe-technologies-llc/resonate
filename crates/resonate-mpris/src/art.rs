@@ -14,6 +14,8 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use parking_lot::Mutex;
+#[cfg(windows)]
+use resonate_core::writer::{self, Writer};
 use resonate_core::{MediaLocation, TrackId};
 use resonate_engine::{CoverArt, QueueRows};
 
@@ -36,6 +38,9 @@ const READ_BY_US_ALONE: u32 = 0o600;
 
 const STAGED: &str = ".laying";
 
+#[cfg(windows)]
+const HELD_WHILE_LAID: &str = ".held";
+
 #[derive(Default)]
 pub(crate) struct Pictures {
     folder: Folder,
@@ -45,7 +50,7 @@ pub(crate) struct Pictures {
 
 #[derive(Default)]
 struct Laid {
-    made: bool,
+    made: Option<Marked>,
     drawn: VecDeque<Drawn>,
     queued: AHashMap<TrackId, Drawn>,
 }
@@ -140,16 +145,18 @@ impl Pictures {
     fn laid_down(&self, playing: Option<Playing>, art: &CoverArt, kept: Kept) -> Option<String> {
         let path = {
             let mut laid = self.drawn.lock();
-            if !laid.made {
-                if let Err(error) = made_ours(&self.folder.0) {
-                    tracing::debug!(
-                        %error,
-                        folder = %self.folder.0.display(),
-                        "no folder of our own could be made for the covers the bus names"
-                    );
-                    return None;
+            if laid.made.is_none() {
+                match made_ours(&self.folder.0) {
+                    Ok(marked) => laid.made = Some(marked),
+                    Err(error) => {
+                        tracing::debug!(
+                            %error,
+                            folder = %self.folder.0.display(),
+                            "no folder of our own could be made for the covers the bus names"
+                        );
+                        return None;
+                    }
                 }
-                laid.made = true;
             }
             let drawn_for = |held: &&Drawn| {
                 held.playing
@@ -192,7 +199,7 @@ impl Pictures {
 
         let uri = MediaLocation::local(&path).to_uri();
         let mut laid = self.drawn.lock();
-        if !laid.made {
+        if laid.made.is_none() {
             let _ = fs::remove_file(&path);
             return None;
         }
@@ -222,10 +229,9 @@ impl Pictures {
 
     pub(crate) fn forget(&self) {
         let mut laid = self.drawn.lock();
-        if laid.made {
+        if laid.made.take().is_some() {
             let _ = fs::remove_dir_all(&self.folder.0);
         }
-        laid.made = false;
         laid.drawn.clear();
         laid.queued.clear();
     }
@@ -256,7 +262,24 @@ impl Default for Folder {
 }
 
 #[cfg(windows)]
-fn sweep_the_departed(_: &Path) {}
+fn sweep_the_departed(temporary: &Path) {
+    let Ok(entries) = fs::read_dir(temporary) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(pid) = name.to_str().and_then(laid_down_by) else {
+            continue;
+        };
+        let marker = entry.path().join(HELD_WHILE_LAID);
+        if pid != process::id()
+            && marker.exists()
+            && writer::writer_of(&marker, pid) == Writer::Gone
+        {
+            let _ = fs::remove_dir_all(entry.path());
+        }
+    }
+}
 
 #[cfg(unix)]
 fn sweep_the_departed(temporary: &Path) {
@@ -274,7 +297,6 @@ fn sweep_the_departed(temporary: &Path) {
     }
 }
 
-#[cfg(any(unix, test))]
 fn laid_down_by(name: &str) -> Option<u32> {
     let rest = name.strip_prefix(FOLDER)?.strip_prefix('-')?;
     let (pid, count) = rest.split_once('-')?;
@@ -283,15 +305,22 @@ fn laid_down_by(name: &str) -> Option<u32> {
 }
 
 #[cfg(unix)]
-fn made_ours(folder: &Path) -> io::Result<()> {
+type Marked = ();
+
+#[cfg(windows)]
+type Marked = writer::Held;
+
+#[cfg(unix)]
+fn made_ours(folder: &Path) -> io::Result<Marked> {
     use std::{fs::DirBuilder, os::unix::fs::DirBuilderExt as _};
 
     DirBuilder::new().mode(OURS_ALONE).create(folder)
 }
 
 #[cfg(windows)]
-fn made_ours(folder: &Path) -> io::Result<()> {
-    fs::DirBuilder::new().create(folder)
+fn made_ours(folder: &Path) -> io::Result<Marked> {
+    fs::DirBuilder::new().create(folder)?;
+    writer::Held::made(&folder.join(HELD_WHILE_LAID))
 }
 
 fn lay_down(path: &Path, bytes: &[u8]) -> io::Result<()> {

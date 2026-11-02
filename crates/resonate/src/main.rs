@@ -3352,7 +3352,9 @@ fn settled_here(location: MediaLocation) -> MediaLocation {
 
 fn from_here(path: &Path) -> PathBuf {
     path.canonicalize()
-        .or_else(|_| path::absolute(path))
+        .or_else(|_| {
+            path::absolute(path).map(|absolute| resonate_core::path_text::verbatim(&absolute))
+        })
         .unwrap_or_else(|_| path.to_path_buf())
 }
 
