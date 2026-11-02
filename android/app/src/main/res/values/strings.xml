@@ -1,5 +1,7 @@
 <resources>
     <string name="notification_close">Close</string>
+    <string name="notification_shuffle">Shuffle</string>
+    <string name="notification_repeat">Repeat</string>
     <string name="browse_root">Resonate</string>
     <string name="browse_albums">Albums</string>
     <string name="browse_artists">Artists</string>

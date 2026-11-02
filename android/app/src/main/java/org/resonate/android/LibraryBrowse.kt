@@ -1,9 +1,13 @@
 package org.resonate.android
 
 import android.content.Context
+import android.net.Uri
+import android.os.Bundle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.session.MediaConstants
+import androidx.media3.session.MediaLibraryService.LibraryParams
 import androidx.media3.session.MediaSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -28,6 +32,28 @@ sealed interface BrowseNode {
     data class Artist(val name: String) : BrowseNode
 
     data class Playlist(val id: ULong) : BrowseNode
+}
+
+@UnstableApi
+data class BrowseStyle(val browsable: Int, val playable: Int) {
+    fun extras(): Bundle =
+        Bundle().apply {
+            putInt(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_BROWSABLE, browsable)
+            putInt(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_PLAYABLE, playable)
+        }
+
+    companion object {
+        const val LIST = MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_LIST_ITEM
+        const val GRID = MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_GRID_ITEM
+
+        fun ofChildren(node: BrowseNode): BrowseStyle =
+            when (node) {
+                BrowseNode.Albums,
+                BrowseNode.Artists,
+                BrowseNode.Playlists -> BrowseStyle(GRID, LIST)
+                else -> BrowseStyle(LIST, LIST)
+            }
+    }
 }
 
 object BrowseIds {
@@ -82,7 +108,19 @@ object BrowseIds {
 
 @UnstableApi
 class LibraryBrowse(private val context: Context, private val library: LibraryRepository) {
-    suspend fun root(): MediaItem = folder(BrowseIds.ROOT, context.getString(R.string.browse_root), FOLDER)
+    suspend fun root(): MediaItem = titled(BrowseNode.Root)!!
+
+    fun rootParams(asked: LibraryParams?): LibraryParams =
+        LibraryParams.Builder()
+            .setRecent(asked?.isRecent == true)
+            .setOffline(asked?.isOffline == true)
+            .setSuggested(asked?.isSuggested == true)
+            .setExtras(
+                BrowseStyle.ofChildren(BrowseNode.Root).extras().apply {
+                    putBoolean(CONTENT_STYLE_SUPPORTED, true)
+                }
+            )
+            .build()
 
     suspend fun item(id: String): MediaItem? {
         val asSong = BrowseIds.songOf(id)
@@ -145,17 +183,17 @@ class LibraryBrowse(private val context: Context, private val library: LibraryRe
 
     private fun titled(node: BrowseNode): MediaItem? =
         when (node) {
-            BrowseNode.Root -> folder(BrowseIds.ROOT, context.getString(R.string.browse_root), FOLDER)
-            BrowseNode.Albums ->
-                folder(BrowseIds.ALBUMS, context.getString(R.string.browse_albums), FOLDER)
-            BrowseNode.Artists ->
-                folder(BrowseIds.ARTISTS, context.getString(R.string.browse_artists), FOLDER)
-            BrowseNode.Playlists ->
-                folder(BrowseIds.PLAYLISTS, context.getString(R.string.browse_playlists), FOLDER)
+            BrowseNode.Root -> topFolder(node, BrowseIds.ROOT, R.string.browse_root)
+            BrowseNode.Albums -> topFolder(node, BrowseIds.ALBUMS, R.string.browse_albums)
+            BrowseNode.Artists -> topFolder(node, BrowseIds.ARTISTS, R.string.browse_artists)
+            BrowseNode.Playlists -> topFolder(node, BrowseIds.PLAYLISTS, R.string.browse_playlists)
             BrowseNode.Favourites ->
-                folder(BrowseIds.FAVOURITES, context.getString(R.string.browse_favourites), FOLDER)
+                topFolder(node, BrowseIds.FAVOURITES, R.string.browse_favourites)
             else -> null
         }
+
+    private fun topFolder(node: BrowseNode, id: String, title: Int): MediaItem =
+        folder(id, context.getString(title), FOLDER, style = BrowseStyle.ofChildren(node))
 
     private fun listing(native: MobilePlayer, node: BrowseNode): List<MediaItem> =
         when (node) {
@@ -164,15 +202,31 @@ class LibraryBrowse(private val context: Context, private val library: LibraryRe
                     .mapNotNull(::titled)
             BrowseNode.Albums ->
                 native.albums(CollectionOrder.ALPHABETICAL).map {
-                    folder(BrowseIds.album(it.key), it.title, MediaMetadata.MEDIA_TYPE_ALBUM, it.artist)
+                    folder(
+                        BrowseIds.album(it.key),
+                        it.title,
+                        MediaMetadata.MEDIA_TYPE_ALBUM,
+                        it.artist,
+                        it.artworkTrack,
+                    )
                 }
             BrowseNode.Artists ->
                 native.artists(CollectionOrder.ALPHABETICAL).map {
-                    folder(BrowseIds.artist(it.name), it.name, MediaMetadata.MEDIA_TYPE_ARTIST)
+                    folder(
+                        BrowseIds.artist(it.name),
+                        it.name,
+                        MediaMetadata.MEDIA_TYPE_ARTIST,
+                        artwork = it.artworkTrack,
+                    )
                 }
             BrowseNode.Playlists ->
                 native.playlists().map {
-                    folder(BrowseIds.playlist(it.id), it.name, MediaMetadata.MEDIA_TYPE_PLAYLIST)
+                    folder(
+                        BrowseIds.playlist(it.id),
+                        it.name,
+                        MediaMetadata.MEDIA_TYPE_PLAYLIST,
+                        artwork = it.covers.firstOrNull(),
+                    )
                 }
             else -> songsOf(native, node).map { song(it, parentOf(node)) }
         }
@@ -199,30 +253,53 @@ class LibraryBrowse(private val context: Context, private val library: LibraryRe
             else -> BrowseIds.ROOT
         }
 
-    private fun folder(id: String, title: String, type: Int, subtitle: String? = null): MediaItem =
+    private fun folder(
+        id: String,
+        title: String,
+        type: Int,
+        subtitle: String? = null,
+        artwork: ULong? = null,
+        style: BrowseStyle = BrowseStyle(BrowseStyle.LIST, BrowseStyle.LIST),
+    ): MediaItem =
         MediaItem.Builder()
             .setMediaId(id)
             .setMediaMetadata(
                 MediaMetadata.Builder()
                     .setTitle(title)
                     .setSubtitle(subtitle)
+                    .setArtworkUri(artworkUri(artwork))
                     .setIsBrowsable(true)
                     .setIsPlayable(false)
                     .setMediaType(type)
+                    .setExtras(style.extras())
                     .build()
             )
             .build()
 
-    private fun song(track: Track, parent: String): MediaItem =
-        track
-            .mediaItem()
+    private fun song(track: Track, parent: String): MediaItem {
+        val item = track.mediaItem()
+        return item
             .buildUpon()
             .setMediaId(BrowseIds.song(track.id, parent))
+            .setMediaMetadata(
+                item.mediaMetadata
+                    .buildUpon()
+                    .setArtworkUri(artworkUri(track.id.takeUnless { track.served }))
+                    .build()
+            )
             .build()
+    }
+
+    private fun artworkUri(track: ULong?): Uri? =
+        track
+            ?.takeIf { it != NO_TRACK }
+            ?.let { Uri.parse(ArtworkUris.uri(ArtworkUris.authority(context.packageName), it)) }
 
     private companion object {
         const val FOLDER = MediaMetadata.MEDIA_TYPE_FOLDER_MIXED
         const val SONGS_AT_MOST = 500u
         const val SEARCH_AT_MOST = 100u
+        const val NO_TRACK = 0uL
+        const val CONTENT_STYLE_SUPPORTED = "android.media.browse.CONTENT_STYLE_SUPPORTED"
     }
 }

@@ -129,7 +129,17 @@ listed under the root, a playlist past row 500) plays alone. A voice request (`r
 or `MEDIA_PLAY_FROM_SEARCH` on `MainActivity`) plays `search_library`'s first 100 songs. Android Auto, the
 Assistant, the car-assistant and the Auto simulator connect as controllers beside the trusted ones
 (`BROWSING_HOSTS`), and `automotive_app_desc.xml` declares the media app
-(`BrowseIdsTest`, `LibraryBrowseTest`).
+(`BrowseIdsTest`, `LibraryBrowseTest`). Every browse row wears a cover by `content://` URI, never bytes
+(a Binder payload of 500 rows would be too large): `ArtworkProvider` (exported, read-only, authority
+`<applicationId>.art`, `ArtworkUris`) answers `/track/<id>` with the JPEG `artworkJpeg` encodes at
+`ArtworkSizes.BROWSE_EDGE` through a pipe fed off the main thread, and a folder wears the cover of the
+track the catalog names for it (`AlbumHit.artworkTrack`, `ArtistHit.artworkTrack`, a playlist's first
+`covers`; none, none). `BrowseStyle.ofChildren` hints Albums, Artists and Playlists as grids and every
+other level as lists in each folder's extras, and `onGetLibraryRoot` answers params that say content
+styles are supported and carry the root's hints. The session's button preferences
+are Shuffle and Close; a car host's own preferences add Repeat (session commands that toggle the player,
+rebuilt per controller when the mode moves). The notification shows five actions, so a third overflow
+button pushes Close out of it (`BackgroundPlaybackTest`). Tests: `ArtworkUrisTest`, `BrowseStyleTest`. A real car or the Desktop Head Unit is not checked here.
 Audio focus loss and noisy-output events pause playback; a transient loss resumes on regaining
 focus if the engine was playing or loading, and a duck is left to the platform
 (`setWillPauseWhenDucked(false)`). The Media3 state is invalidated only when the transport, queue

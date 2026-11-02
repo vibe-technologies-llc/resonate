@@ -3,6 +3,7 @@ package org.resonate.android
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Bundle
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaLibraryService
@@ -27,6 +28,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 
 private val closePlayback = SessionCommand("resonate.close", Bundle.EMPTY)
+private val toggleShuffle = SessionCommand("resonate.shuffle", Bundle.EMPTY)
+private val cycleRepeat = SessionCommand("resonate.repeat", Bundle.EMPTY)
+
+private fun nextRepeat(mode: Int): Int =
+    when (mode) {
+        Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+        Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+        else -> Player.REPEAT_MODE_OFF
+    }
 
 private const val RESUMPTION_WAITS_AT_MOST_MS = 8_000L
 
@@ -44,6 +54,7 @@ private class TrustedControllers(
     private val library: LibraryRepository,
     private val browse: LibraryBrowse,
     private val scope: CoroutineScope,
+    private val carButtons: () -> List<CommandButton>,
 ) : MediaLibraryService.MediaLibrarySession.Callback {
     override fun onConnect(
         session: MediaSession,
@@ -56,8 +67,14 @@ private class TrustedControllers(
                 .setAvailableSessionCommands(
                     MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
                         .add(closePlayback)
+                        .add(toggleShuffle)
+                        .add(cycleRepeat)
                         .build()
                 )
+                .apply {
+                    if (controller.packageName in BROWSING_HOSTS)
+                        setMediaButtonPreferences(carButtons())
+                }
                 .build()
         else MediaSession.ConnectionResult.reject()
 
@@ -66,7 +83,7 @@ private class TrustedControllers(
         browser: MediaSession.ControllerInfo,
         params: MediaLibraryService.LibraryParams?,
     ): ListenableFuture<LibraryResult<MediaItem>> =
-        answering { LibraryResult.ofItem(browse.root(), params) }
+        answering { LibraryResult.ofItem(browse.root(), browse.rootParams(params)) }
 
     override fun onGetItem(
         session: MediaLibraryService.MediaLibrarySession,
@@ -198,9 +215,14 @@ private class TrustedControllers(
         customCommand: SessionCommand,
         args: Bundle,
     ): ListenableFuture<SessionResult> {
-        if (customCommand != closePlayback)
-            return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
-        close()
+        when (customCommand) {
+            closePlayback -> close()
+            toggleShuffle ->
+                session.player.shuffleModeEnabled = !session.player.shuffleModeEnabled
+            cycleRepeat -> session.player.repeatMode = nextRepeat(session.player.repeatMode)
+            else ->
+                return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
+        }
         return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
     }
 }
@@ -227,23 +249,60 @@ class PlaybackService : MediaLibraryService() {
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
         session =
-            MediaLibrarySession.Builder(this, adapter, TrustedControllers(::close, library, library.browse, scope))
+            MediaLibrarySession.Builder(this, adapter, TrustedControllers(::close, library, library.browse, scope) {
+                    buttons(adapter, forCar = true)
+                })
                 .setSessionActivity(openApp)
-                .setMediaButtonPreferences(
-                    listOf(
-                        CommandButton.Builder(CommandButton.ICON_UNDEFINED)
-                            .setCustomIconResId(R.drawable.ic_notification_close)
-                            .setDisplayName(getString(R.string.notification_close))
-                            .setSessionCommand(closePlayback)
-                            .setSlots(
-                                CommandButton.SLOT_FORWARD_SECONDARY,
-                                CommandButton.SLOT_OVERFLOW,
-                            )
-                            .build()
-                    )
-                )
+                .setMediaButtonPreferences(buttons(adapter, forCar = false))
                 .build()
+        adapter.addListener(
+            object : Player.Listener {
+                override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) =
+                    refreshButtons(adapter)
+
+                override fun onRepeatModeChanged(repeatMode: Int) = refreshButtons(adapter)
+            }
+        )
     }
+
+    private fun refreshButtons(player: Player) {
+        val open = session ?: return
+        open.setMediaButtonPreferences(buttons(player, forCar = false))
+        open.connectedControllers
+            .filter { it.packageName in BROWSING_HOSTS }
+            .forEach { open.setMediaButtonPreferences(it, buttons(player, forCar = true)) }
+    }
+
+    private fun buttons(player: Player, forCar: Boolean): List<CommandButton> =
+        listOfNotNull(
+            CommandButton.Builder(
+                    if (player.shuffleModeEnabled) CommandButton.ICON_SHUFFLE_ON
+                    else CommandButton.ICON_SHUFFLE_OFF
+                )
+                .setDisplayName(getString(R.string.notification_shuffle))
+                .setSessionCommand(toggleShuffle)
+                .setSlots(CommandButton.SLOT_OVERFLOW)
+                .build(),
+            if (forCar)
+                CommandButton.Builder(
+                        when (player.repeatMode) {
+                            Player.REPEAT_MODE_ALL -> CommandButton.ICON_REPEAT_ALL
+                            Player.REPEAT_MODE_ONE -> CommandButton.ICON_REPEAT_ONE
+                            else -> CommandButton.ICON_REPEAT_OFF
+                        }
+                    )
+                    .setDisplayName(getString(R.string.notification_repeat))
+                    .setSessionCommand(cycleRepeat)
+                    .setSlots(CommandButton.SLOT_OVERFLOW)
+                    .build()
+            else null,
+            CommandButton.Builder(CommandButton.ICON_UNDEFINED)
+                .setCustomIconResId(R.drawable.ic_notification_close)
+                .setDisplayName(getString(R.string.notification_close))
+                .setSessionCommand(closePlayback)
+                .setSlots(CommandButton.SLOT_FORWARD_SECONDARY, CommandButton.SLOT_OVERFLOW)
+                .build(),
+        )
 
     private fun close() {
         player?.stop()

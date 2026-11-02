@@ -80,6 +80,11 @@ class LibraryBrowseTest {
                     assertTrue(tracks.all { track ->
                         favourites.any { BrowseIds.songOf(it.mediaId)?.first == track.id }
                     })
+                    assertTrue(favourites.all { it.mediaMetadata.artworkUri != null })
+                    assertEquals(
+                        "image/jpeg",
+                        resolver.getType(favourites.first().mediaMetadata.artworkUri!!),
+                    )
                     val chosen = favourites.first { BrowseIds.songOf(it.mediaId)?.first == tracks[1].id }
                     instrumentation.runOnMainSync {
                         browser.setMediaItem(chosen)

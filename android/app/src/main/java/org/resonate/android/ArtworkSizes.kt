@@ -2,6 +2,7 @@ package org.resonate.android
 
 object ArtworkSizes {
     const val MEDIA_EDGE = 512
+    const val BROWSE_EDGE = 256
     private const val DEFAULT_EDGE = 768
     private val edges = listOf(96, 192, 384, 512, 768, 1024)
 

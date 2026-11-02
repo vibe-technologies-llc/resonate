@@ -68,6 +68,10 @@
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
+        <provider
+            android:name=".ArtworkProvider"
+            android:authorities="${applicationId}.art"
+            android:exported="true" />
         <meta-data
             android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc" />

@@ -1143,11 +1143,13 @@ class LibraryFeatures(private val context: Context, private val library: Library
             }
         }
 
-    suspend fun artworkJpeg(track: Track, edge: Int): ByteArray? =
+    suspend fun artworkJpeg(track: Track, edge: Int): ByteArray? = artworkJpeg(track.id, edge)
+
+    suspend fun artworkJpeg(song: ULong, edge: Int): ByteArray? =
         withContext(Dispatchers.IO) {
             try {
                 val native = library.native()
-                val picture = native.artworkPicture(track.id) ?: return@withContext null
+                val picture = native.artworkPicture(song) ?: return@withContext null
                 val key = "$picture:$edge"
                 encoded.get(key)?.let {
                     return@withContext it
