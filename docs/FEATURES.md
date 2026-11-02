@@ -63,7 +63,18 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   SmartScreen warns on a first run: no code-signing certificate exists. `sign.ps1` and `release.yml`
   sign with `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD` once they are set
 
+## macOS parity
+- [L · blocked: hardware] There is no macOS desktop build: GPUI draws natively there and the iOS
+  RemoteIO output is close to a CoreAudio sink beside PipeWire's and WASAPI's, but no Mac exists
+  here to hear it on, so it would ship as Windows did, cross-checked and never played
+
 ## Playback and output
+- [L · 0.5.0] One device cannot drive another's zones: a handoff (`sync.md`) moves the song and its
+  place once, and nothing lets the phone play, pause, seek, set the volume of or reorder the queue
+  of a zone the desktop keeps playing through its own output. The paired devices' QUIC peers and
+  LAN beacons already reach each other and every command reaches a zone through `Zones::send`; the
+  wire needs the commands and a mirror of the zone's state (what plays, position, queue, volume),
+  and a choice of which commands a paired device is trusted with. CLI, window and both phones
 - [M · blocked: pipewire-rs] A rebind or turn inside a row that moves the rate while
   `force-graph-rate` pins it (on by default), or switches the pin, still reopens the PipeWire stream:
   the pin is the node's `node.rate` property, which only `pw_stream_update_properties` moves, and
@@ -89,6 +100,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   such file type); `.oga` alone could be mapped to Vorbis by hand
 
 ## Providers and network
+- [M · 0.5.0] A Jellyfin or Emby server cannot be browsed or played in place: Subsonic covers
+  Navidrome and its kin, but Jellyfin speaks its own API (a user's sign-in for a token, items by
+  parent, the audio by item id). A `providers/jellyfin` crate beside `providers/subsonic`, tested
+  against a fake server on loopback, with `served` on the CLI, the window and both phones
 - [L · blocked: Apple] An Apple Music library cannot be synced: reading a listener's library and
   playlists needs a MusicKit developer token, issued only to a paid Apple Developer membership, and
   a user token only Apple's own sign-in hands out, which neither the desktop nor Android can show;
