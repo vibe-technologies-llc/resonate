@@ -77,18 +77,28 @@ import Testing
         #expect(MotionRendering.of(.progress, reduceMotion: true, sceneActive: true) == .instant)
     }
 
-    @Test func aPlayingReadingFlowsToWhereTheSongWillBeOneReadingLater() {
+    @Test func aPlayingReadingFlowsToWhereTheSongWillBeTwoReadingsLater() {
         let step = ProgressFlow.step(.init(old: 10_000, now: 10_250, sinceLast: 0.25), Self.playingFree)
 
-        #expect(step == .flow(to: 10_500, over: 0.25))
+        #expect(step == .flow(to: 10_750, over: 0.5))
+    }
+
+    @Test func aFlowMovesAtTheSongsOwnPaceWhateverItsHorizon() {
+        let step = ProgressFlow.step(.init(old: 10_000, now: 10_250, sinceLast: 0.25), Self.playingFree)
+
+        guard case .flow(let target, let over) = step else {
+            Issue.record("a playing reading should flow")
+            return
+        }
+        #expect(abs((target - 10_250) / over - 1000) < 1e-9)
     }
 
     @Test func aFlowIsHeldWithinTheShortestAndLongestWait() {
         let quick = ProgressFlow.step(.init(old: 0, now: 10, sinceLast: 0.001), Self.playingFree)
         let slow = ProgressFlow.step(.init(old: 0, now: 10, sinceLast: 30), Self.playingFree)
 
-        #expect(quick == .flow(to: 60, over: 0.05))
-        #expect(slow == .flow(to: 610, over: 0.6))
+        #expect(quick == .flow(to: 110, over: 0.1))
+        #expect(slow == .flow(to: 1210, over: 1.2))
     }
 
     @Test func theFirstReadingAfterOpeningSetsTheBarAtOnce() {

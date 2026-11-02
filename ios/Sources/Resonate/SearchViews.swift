@@ -122,7 +122,7 @@ struct SearchResults: View {
         TrackRow(track: track, query: query) {
             chosen()
             search.remember()
-            if library.snapshot?.shuffle == true {
+            if library.shuffled {
                 let everything = library.allTracks
                 if let place = everything.firstIndex(where: { $0.id == track.id }) {
                     library.play(everything, at: place, shuffle: true)

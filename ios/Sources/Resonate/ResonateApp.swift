@@ -312,16 +312,16 @@ struct RootView: View {
                 .environment(navigation)
         }
         .modifier(DeleteSongsConfirmation(insidePlayer: false))
-        .modifier(SleepTimerPresentation(presenting: !navigation.nowPlaying))
-        .modifier(ZonesPresentation(presenting: !navigation.nowPlaying))
+        .modifier(SleepTimerPresentation(insidePlayer: false))
+        .modifier(ZonesPresentation(insidePlayer: false))
         .sheet(isPresented: $navigation.filters) {
             FilterSheet().sheetSized(.long)
         }
         .sheet(item: $navigation.tagging) { editing in
             TagEditorSheet(tracks: editing.tracks).sheetSized(.long)
         }
-        .modifier(SharingSheet(presenting: !navigation.nowPlaying))
-        .modifier(PairingOffer(presenting: !navigation.nowPlaying))
+        .modifier(SharingSheet(insidePlayer: false))
+        .modifier(PairingOffer(insidePlayer: false))
         .onChange(of: library.features.playlistToShow) { _, shown in
             guard let shown else { return }
             library.features.playlistToShow = nil
@@ -394,13 +394,13 @@ struct LibraryTab: View {
 struct PairingOffer: ViewModifier {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
-    let presenting: Bool
+    let insidePlayer: Bool
 
     func body(content: Content) -> some View {
         content.alert(
             "Join these devices?",
             isPresented: Binding(
-                get: { presenting && library.features.pairingOffered != nil },
+                get: { navigation.nowPlaying == insidePlayer && library.features.pairingOffered != nil },
                 set: { shown in if !shown { library.features.pairingOffered = nil } }
             ),
             presenting: library.features.pairingOffered
@@ -450,8 +450,6 @@ struct ThemedForm<Content: View>: View {
 }
 
 struct ThemedPage: ViewModifier {
-    @Environment(Navigation.self) private var navigation
-
     func body(content: Content) -> some View {
         let appearance = AppearanceState.shared
         if appearance.themedBackground {
@@ -460,8 +458,7 @@ struct ThemedPage: ViewModifier {
                 .containerBackground(for: .navigation) {
                     AppBackdrop(
                         strength: Float(appearance.backgroundStrength),
-                        moving: appearance.movingBackground,
-                        frozen: navigation.coversAmbient
+                        moving: appearance.movingBackground
                     )
                 }
         } else {

@@ -23,11 +23,12 @@ struct ActivitySheet: UIViewControllerRepresentable {
 
 struct SharingSheet: ViewModifier {
     @Environment(Library.self) private var library
-    let presenting: Bool
+    @Environment(Navigation.self) private var navigation
+    let insidePlayer: Bool
 
     func body(content: Content) -> some View {
         content.sheet(item: Binding(
-            get: { presenting ? library.features.sharing : nil },
+            get: { navigation.nowPlaying == insidePlayer ? library.features.sharing : nil },
             set: { library.features.sharing = $0 }
         )) { shared in
             ActivitySheet(link: shared.url, title: shared.title)

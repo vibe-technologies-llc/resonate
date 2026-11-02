@@ -4,11 +4,11 @@ import SwiftUI
 
 struct ZonesPresentation: ViewModifier {
     @Environment(Navigation.self) private var navigation
-    let presenting: Bool
+    let insidePlayer: Bool
 
     func body(content: Content) -> some View {
         content.sheet(isPresented: Binding(
-            get: { presenting && navigation.zones },
+            get: { navigation.nowPlaying == insidePlayer && navigation.zones },
             set: { navigation.zones = $0 }
         )) {
             ZonesSheet().sheetSized().presentationDetents([.medium, .large])

@@ -173,9 +173,10 @@ sync seals its records and talks QUIC (TLS) of its own.
 - **What moves every tick lives in `PlayClock`** (`library.clock`): position, duration, sleep time
   left, output rate, underruns and clamped samples. `snapshot` is assigned only when something else changed, and
   `currentId`/`currentQueueId` only when the song does, so a list that marks the playing row is not
-  redrawn four times a second; `transport`, `playingTrack` and `playingNext` are derived from each
+  redrawn four times a second; `transport`, `shuffled`, `repeatMode`, `sleepTimer`, `playingTrack` and `playingNext` are derived from each
   snapshot assigned (`Library.derive`) and stored only when they move, so a view that needs the
-  playing song or the transport is not rebuilt by a pause, a shuffle or a sleep timer, and a list
+  playing song or the transport is not rebuilt by a pause, a shuffle or a sleep timer, nor Now Playing's
+  transport row, sleep countdown and More menu by a song change (each read `snapshot` and was rebuilt, glass and all, in the handover's first frame), and a list
   never reads `snapshot` in the body that builds its rows (a row marks itself by `currentId`): the
   Songs list doing so re-diffed the whole library on every play and pause, in the frame Now
   Playing's cover began its spring; only the views that show the position (Now Playing
@@ -522,10 +523,11 @@ player sits in the tab bar's bottom accessory (`tabViewBottomAccessory(isEnabled
 so no empty capsule shows with nothing loaded), with previous/play/next (play alone inline) and a horizontal swipe to
 skip; it shows no progress (a bar along the accessory's bottom ran through the title and artist,
 since the system fixes the accessory's height, and a ring around the play button was dropped) and no
-heart (the song's heart is Now Playing's). Opening Now Playing the first time in a launch built an
-`AVRoutePickerView` and, 600 ms in, an `MPVolumeView`, each the first of its framework, so
-`PlayerWarmup` builds one of each 2 s after launch and drops them, and the first opening costs no
-more than the next. Inline (the
+heart (the song's heart is Now Playing's). **Now Playing builds no AirPlay picker or volume view**: every opening built an
+`AVRoutePickerView` in the zoom's first frame and, 600 ms in, an `MPVolumeView` (the first of each in a launch also loading its framework),
+so the process keeps one of each (`KeptControls`, built by `PlayerWarmup` 2 s after launch) and Now Playing borrows them:
+`RoutePicker` and `VolumeDriver` are a `KeptControlHost` that adopts the kept control while it is in a window and, leaving,
+hands it to another host still in one. Inline (the
 tab bar minimised on scroll) it measures itself and keeps what fits, the width read as one of three fits (`InlineFit`) so the accessory's animated resizing redraws the player only as a threshold is crossed, never every frame: a 28 pt cover and the play
 button always, the title with the artist beneath it from 150 pt, as Apple Music's minimised player draws them, and no next (the capsule beside the search
 button is about 220 pt, and the artist line fills what next held), tighter spacing and a
@@ -548,18 +550,24 @@ every route change (a pair of headphones at the same rate included), not from th
   Its slider (like the volume row's) commits one seek on
   release, clears a drag the system cancelled through a `@GestureState` flag, and holds the scrubbed value, bar and times, until the clock comes within 1.5 s of it or four seconds pass (a pause and play straight after a seek keep the engine's lane busy and its snapshots late, and a shorter hold let the bar and times fall back to the old position and then jump to the new), the bar's flowed value set to it as the seek is sent and not moved by a reading that has not reached it.
   **The scrubber's bar flows between readings**: each new position read while playing animates
-  the bar linearly to where the song will be one reading later (`ProgressFlow.step`, in
-  `ResonateLogic` and held by `MotionTests`: the reading plus the time since the last, held within
-  0.05 to 0.6 s, over that same time), so the render server moves it and nothing re-renders between
-  polls; a reading that steps back or moves 1.5 s or more (a seek, a skip), the first after opening,
+  the bar linearly from where it is shown to where the song will be two readings later (`ProgressFlow.step`,
+  `readingsAhead`, in `ResonateLogic` and held by `MotionTests`: the reading plus twice the time since the last,
+  that time held within 0.05 to 0.6 s, over twice that time), so it moves at the song's pace and a reading
+  landing late (the ordered lane busy behind a skip or a save, the main thread held) finds it still moving;
+  aimed one reading ahead, it halted at its target until the late reading came and then caught up; a reading that steps back or moves 1.5 s or more (a seek, a skip), the first after opening,
   the first reading of another song, a drag or held seek, a paused transport and Reduce Motion set
   it at once, and a transport change settles it on the reading in `Flip.animation` (140 ms). **A
   hold on a seek ends with the song** (`onChange` of the playing song's key): a seek sent just before
   a skip held its target for up to four seconds, so the new song showed the old song's place.
-  The times stay on the reading. **The flow is an implicit animation on the fill alone**
-  (`.animation(_:value: flowing)`, its curve kept in `LastReading.flow`), never `withAnimation`:
-  an explicit transaction four times a second re-gathered the cover's slot under the bar's linear
-  curve and retimed the cover's spring as it resized.
+  The times stay on the reading. **The fill is a Core Animation layer, never a SwiftUI animation**
+  (`ScrubberFill`, `ScrubberFill.swift`): each reading is a `ScrubberCourse` (its target and a `ScrubberPace`: snap,
+  linear flow, or the flip's settle), and `ScrubberFillView` adds a `CABasicAnimation` on the fill's
+  `transform.scale.x` from its presentation value, so the render server moves it and the main thread does nothing
+  between polls. Only a new course animates; a fraction moved by a drag, a held seek or a new duration is set at once.
+  Animated by SwiftUI, the bar was interpolated on the main thread at every display frame while a song played
+  (a whole update and commit at 120 Hz for a bar moving a few pixels a second), and any pause of the main thread
+  (a poll landing, a song change) stalled it; a `withAnimation` around it, four times a second, also re-gathered
+  the cover's slot under the bar's linear curve and retimed the cover's spring as it resized.
   Repeat cycles off, all, one. Volume is the system's, drawn as the scrubber is (`VolumeRow`: a
   capsule between the speaker icons in one `HStack`, so nothing can sit off their line): an
   `MPVolumeView` lays its slider out late and again on the first touch, which left it off centre
@@ -570,8 +578,8 @@ every route change (a pair of headphones at the same rate included), not from th
   is found), since even at 1 % its knob showed as a faint bubble riding the bar. A level heard from
   the session (the volume buttons, Control Centre) moves the fill in 0.25 s (`steppedOutside`);
   a drag, the first reading and the driver's seed set it at once.
-  The driver is mounted 600 ms after the row appears (or at the first touch), so building an
-  `MPVolumeView` never lands in the zoom's first frames, and `SystemVolumeLevel` reads the session's
+  The driver (the kept `MPVolumeView`) is mounted 600 ms after the row appears (or at the first touch), so
+  it never lands in the zoom's first frames, and `SystemVolumeLevel` reads the session's
   volume only in `watch()`: a `@State` initial value is built on every parent body, and
   `outputVolume` is a call into the audio server.
   The glass row toggles two modes inside the cover: Lyrics (the compact `LyricsPane`) and Up next,
@@ -599,9 +607,20 @@ every route change (a pair of headphones at the same rate included), not from th
   bounce still moves, and the field woke under it):
   left to the system, the spring ran at its default rate, and the field redrawing under the moving
   glass took the frames it needed. **The opening zoom is held the same way**: for its first 0.7 s
-  (`NowPlayingView.openedWithin`, `opening`) the cover asks 120 Hz and the field rests on its
+  (`NowPlayingView.openedWithin`, `FieldRest.opening`) the cover asks 120 Hz and the field rests on its
   opening frame (the placeholder, *The backdrop*), since the field flowing at 120 fps under the
-  zooming glass, titles and cover held the whole transition below the display's rate. Sleep,
+  zooming glass, titles and cover held the whole transition below the display's rate. **The rest is
+  read by the field alone**: `FieldRest` (opening, reshaping) is an observable only `NowPlayingField` reads, so
+  the field waking at 0.7 s and at a spring's end redraws the field, not Now Playing's body and toolbar,
+  as two `@State` flags of `NowPlayingView` did, in the zoom's last frames and the spring's.
+  **Every other Now Playing motion asks 120 Hz for its length too**: a song's handover with its slot's settle
+  (`MovingCover.handedOverWithin`), the pause's spring on the cover (`restedWithin`), a grab of the scrubber or
+  the volume row and a volume step heard from outside, none under Reduce Motion or with the scene away;
+  SwiftUI's animations otherwise ran at the system's default rate beside the field's 120.
+  **The toolbar holds no closure**: `CloseNowPlaying` and `PlayerMoreMenu(track:asks:)` (its sheet, alert and
+  dialog asked through `PlayerAsks`, an observable `NowPlayingView` keeps) compare equal across bodies, so a mode
+  change or a field waking rebuilds no bar button and no `UIMenu`; closures made in each body made SwiftUI
+  build the More menu again in the first frame of every spring. Sleep,
   equaliser, visualizer and output sit in the More menu; no tab's toolbar carries the sleep timer
   (Settings has its row). At accessibility text sizes the layout scrolls (*Orientation and iPad*).
 - **A song change hands the cover and the words over, as the desktop does** (`motion.md`'s *The
@@ -1122,7 +1141,8 @@ in; it never opens on another colour first.
   field is composited again at every frame the field draws, which a 120 Hz frame holds only with the
   rest of Now Playing cheap: the Metal layer is opaque (the shader writes alpha 1, so the compositor
   blends nothing beneath it), the lyrics are layers set per frame rather than views rebuilt
-  (*Lyrics*), and the field rests while the cover moves. Before those, 120 fps dropped frames and
+  (*Lyrics*), the scrubber's flow is a layer animation the render server runs (*Now Playing*'s
+  `ScrubberFill`), and the field rests while the cover moves. Before those, 120 fps dropped frames and
   30 fps read as plainly low beside everything else.
 - **The app background is one field for the whole app** (`AppBackdrop`, the
   `containerBackground(for: .navigation)` of every page; a clear one is drawn as the system's own, so
@@ -1145,7 +1165,7 @@ in; it never opens on another colour first.
   where it stands (`AmbientMotion.frozen`), so it neither jumps to another frame when Now Playing
   opens nor when it closes; *Moving background* off, or Reduce Motion, draws the still moment.
   `ThemedPage` on each stack's root and every `DestinationView` hides the scroll content background
-  and sets that background. It stays frozen too (no display link, no render) while a page that draws its own backdrop is the top of the tab's stack (`Navigation.coversAmbient`: an album, artist, playlist, lyrics or visualizer page, as well as Now Playing and the whole Search tab, so nothing changes, redraws or re-evaluates in the first frames of the search field's widening). `AppearanceState` keeps four settings in the `appearance` defaults,
+  and sets that background. It stays frozen too (no display link, no render) while a page that draws its own backdrop is the top of the tab's stack (`Navigation.coversAmbient`: an album, artist, playlist, lyrics or visualizer page, as well as Now Playing and the whole Search tab, so nothing changes, redraws or re-evaluates in the first frames of the search field's widening); `AppBackdrop` reads it itself, so Now Playing opening or closing re-evaluates the backgrounds alone, not every page's `ThemedPage` and its container background in the zoom's first frame. `AppearanceState` keeps four settings in the `appearance` defaults,
   edited in Settings › Appearance › Background (`BackgroundView`, `Destination.background`, a page of
   its own beside `AppearanceView`): `themedBackground` (on), `movingBackground` (on; off draws the
   still frame), `backgroundStrength` (0.4), and `nowPlayingIntensity` (0.5, a section of its own on that page). A plain list's rows draw their own opaque fill, so each
@@ -1680,10 +1700,13 @@ button asks *Discard your changes?* instead of dropping them; with nothing edite
 
 **A sheet or alert the root view raises is raised again inside Now Playing**, since the root cannot
 present over the full-screen cover: the sleep timer sheet (`SleepTimerPresentation`) and the *Join
-these devices?* alert (`PairingOffer`) are modifiers on the root with `presenting: !navigation.nowPlaying`
-and on `NowPlayingView` with `presenting: true`, as `SharingSheet` is, so the countdown chip, *More >
+these devices?* alert (`PairingOffer`) are modifiers on the root with `insidePlayer: false`
+and on `NowPlayingView` with `insidePlayer: true`, as `SharingSheet`, `ZonesPresentation` and
+`DeleteSongsConfirmation` are, each presenting where `navigation.nowPlaying == insidePlayer`, so the countdown chip, *More >
 Sleep timer* and a `resonate://pair/` link arriving over the cover each show. `joinSync` still runs only
-on *Join*.
+on *Join*. Each reads `nowPlaying` in its own binding, never in the root's body: the root passing
+`!navigation.nowPlaying` evaluated the whole `TabView` and its modifiers again in the first frame of
+every opening and closing zoom.
 
 ## Removing a queue row can be undone
 

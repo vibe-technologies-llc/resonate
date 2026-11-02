@@ -194,6 +194,9 @@ final class Library {
         didSet { derive(from: snapshot) }
     }
     private(set) var transport = Transport.stopped
+    private(set) var shuffled = false
+    private(set) var repeatMode = RepeatMode.off
+    private(set) var sleepTimer: SleepTimer?
     private(set) var playingTrack: Track?
     private(set) var loaded = false
     private(set) var playingNext: Range<Int>?
@@ -726,6 +729,11 @@ final class Library {
             transport = shownTransport
             features.tapHoldersChanged()
         }
+        let shownShuffle = state?.shuffle ?? false
+        let shownRepeat = RepeatMode(engineValue: state?.repeat ?? 0)
+        if shuffled != shownShuffle { shuffled = shownShuffle }
+        if repeatMode != shownRepeat { repeatMode = shownRepeat }
+        if sleepTimer != state?.sleep { sleepTimer = state?.sleep }
         if playingTrack != state?.current {
             playingTrack = state?.current
             if let track = playingTrack { Task { await BackdropView.prepare(track, features: features) } }
@@ -814,7 +822,7 @@ final class Library {
     }
 
     func play(_ rows: [Track], selected: Track) {
-        play(rows, at: rows.firstIndex { $0.id == selected.id } ?? 0, shuffle: snapshot?.shuffle == true)
+        play(rows, at: rows.firstIndex { $0.id == selected.id } ?? 0, shuffle: shuffled)
     }
 
     func shuffle(_ rows: [Track]) {
@@ -920,10 +928,6 @@ final class Library {
     func setRepeat(_ mode: RepeatMode) {
         let value = mode.engineValue
         steer({ $0.repeatMode = value }) { try $0.setRepeat(repeat: value) }
-    }
-
-    var repeatMode: RepeatMode {
-        RepeatMode(engineValue: snapshot?.repeat ?? 0)
     }
 
     private func steer(_ expected: Transport, _ action: @escaping @Sendable (MobilePlayer) throws -> Void) {

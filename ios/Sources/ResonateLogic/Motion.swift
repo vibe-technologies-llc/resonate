@@ -89,6 +89,7 @@ public enum ProgressStep: Equatable, Sendable {
 public enum ProgressFlow {
     public static let flowsWithin: ClosedRange<Double> = 0.05...0.6
     public static let flowsAcrossMs = 1500.0
+    public static let readingsAhead = 2.0
     private static let millisecondsPerSecond = 1000.0
 
     public struct Reading: Equatable, Sendable {
@@ -127,7 +128,8 @@ public enum ProgressFlow {
             reading.sinceLast != nil && !conditions.touched && !conditions.songChanged
             && conditions.playing && stepped >= 0 && stepped < flowsAcrossMs
             && MotionRendering.of(.progress, reduceMotion: conditions.reduceMotion, sceneActive: true) == .animated
-        return flows ? .flow(to: reading.now + elapsed * millisecondsPerSecond, over: elapsed) : .snap(to: reading.now)
+        let ahead = elapsed * readingsAhead
+        return flows ? .flow(to: reading.now + ahead * millisecondsPerSecond, over: ahead) : .snap(to: reading.now)
     }
 }
 

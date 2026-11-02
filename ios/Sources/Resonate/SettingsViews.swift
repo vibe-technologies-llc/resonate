@@ -309,7 +309,7 @@ private struct SleepTimerRow: View {
     var body: some View {
         ToolRow(
             title: entry.title,
-            detail: SettingsView.sleepSummary(library.snapshot?.sleep, remaining: library.clock.sleepRemainingMs),
+            detail: SettingsView.sleepSummary(library.sleepTimer, remaining: library.clock.sleepRemainingMs),
             symbol: entry.symbol
         )
     }

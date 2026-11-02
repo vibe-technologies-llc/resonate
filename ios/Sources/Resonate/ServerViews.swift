@@ -262,7 +262,7 @@ struct ServedFoundRows: View {
             Section("Songs") {
                 let uris = found.songs.map(\.uri)
                 ForEach(Array(found.songs.enumerated()), id: \.element.uri) { index, song in
-                    ServedSongRow(song: song) { library.playServed(uris, at: index, shuffle: library.snapshot?.shuffle == true) }
+                    ServedSongRow(song: song) { library.playServed(uris, at: index, shuffle: library.shuffled) }
                 }
                 .themedRows()
             }
@@ -540,7 +540,7 @@ struct ServedAlbumPage: View {
             let uris = songs.map(\.uri)
             ForEach(Array(songs.enumerated()), id: \.element.uri) { index, song in
                 ServedSongRow(song: song, number: song.number(at: index)) {
-                    library.playServed(uris, at: index, shuffle: library.snapshot?.shuffle == true)
+                    library.playServed(uris, at: index, shuffle: library.shuffled)
                 }
                 .listRowBackground(Color.clear)
             }

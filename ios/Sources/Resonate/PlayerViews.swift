@@ -159,19 +159,16 @@ struct NowPlayingView: View {
 
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var mode = PlayerMode.artwork
     @State private var settled: PlayerMode?
-    @State private var reshaping = false
-    @State private var opening = true
-    @State private var picked: PickedTracks?
-    @State private var savingQueue = false
-    @State private var clearingQueue = false
+    @State private var rest = FieldRest()
+    @State private var asks = PlayerAsks()
 
     var body: some View {
         let track = library.playingTrack
+        @Bindable var asks = asks
         NavigationStack {
             ShapedScreen { shape in
                 arranged(track, PlayerArrangement.of(shape))
@@ -186,12 +183,12 @@ struct NowPlayingView: View {
                 .allowsHitTesting(false)
             }
             .padding(.horizontal, Self.gutter)
-            .background(BackdropView(track: track, resting: reshaping || opening))
+            .background(NowPlayingField(track: track, rest: rest))
             .task { await open() }
             .safeAreaInset(edge: .top) { StatusBanner() }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Close", systemImage: "chevron.down") { dismiss() }
+                    CloseNowPlaying()
                 }
                 if let track {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -199,28 +196,23 @@ struct NowPlayingView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    PlayerMoreMenu(
-                        track: track,
-                        addToPlaylist: { picked = PickedTracks(tracks: [$0]) },
-                        saveQueue: { savingQueue = true },
-                        clearQueue: { clearingQueue = true }
-                    )
+                    PlayerMoreMenu(track: track, asks: asks)
                 }
             }
-            .sheet(item: $picked) { PlaylistPicker(tracks: $0.tracks).sheetSized() }
-            .alert("Save queue as playlist", isPresented: $savingQueue) {
+            .sheet(item: $asks.picked) { PlaylistPicker(tracks: $0.tracks).sheetSized() }
+            .alert("Save queue as playlist", isPresented: $asks.savingQueue) {
                 PlaylistNameField(confirm: "Save") { library.features.createPlaylist($0, with: library.queue.filter { !$0.isServed }) }
             }
-            .confirmationDialog("Clear the queue?", isPresented: $clearingQueue, titleVisibility: .visible) {
+            .confirmationDialog("Clear the queue?", isPresented: $asks.clearingQueue, titleVisibility: .visible) {
                 Button("Clear queue", role: .destructive) { library.clearQueue() }
             } message: {
                 Text("Songs up next and in your history are removed. The playing song keeps playing.")
             }
             .modifier(DeleteSongsConfirmation(insidePlayer: true))
-            .modifier(SharingSheet(presenting: true))
-            .modifier(SleepTimerPresentation(presenting: true))
-            .modifier(ZonesPresentation(presenting: true))
-            .modifier(PairingOffer(presenting: true))
+            .modifier(SharingSheet(insidePlayer: true))
+            .modifier(SleepTimerPresentation(insidePlayer: true))
+            .modifier(ZonesPresentation(insidePlayer: true))
+            .modifier(PairingOffer(insidePlayer: true))
         }
     }
 
@@ -390,7 +382,7 @@ struct NowPlayingView: View {
     private func open() async {
         FrameRateBoost.shared.boost(for: Self.openedWithin)
         try? await Task.sleep(for: .seconds(Self.openedWithin))
-        opening = false
+        rest.opening = false
     }
 
     private func choose(_ target: PlayerMode) {
@@ -408,11 +400,12 @@ struct NowPlayingView: View {
             }
             return
         }
-        reshaping = true
+        let rest = rest
+        rest.reshaping = true
         withAnimation(Self.reshaping, completionCriteria: .removed) {
             mode = target
         } completion: {
-            reshaping = false
+            rest.reshaping = false
         }
         if target == .artwork {
             withAnimation(Self.leaving) { settled = nil }
@@ -451,7 +444,12 @@ struct LargeArtwork: View {
 struct MovingCover: View {
     private static let pausedScale: CGFloat = 0.84
     private static let corner: CGFloat = 24
-    private static let settlesOnItsSlot: Animation = .smooth(duration: 0.25)
+    private static let restsOver: Double = 0.5
+    private static let settlesOver: Double = 0.25
+    private static let settlesOnItsSlot: Animation = .smooth(duration: settlesOver)
+    private static let boostOutlasts: CFTimeInterval = 0.1
+    private static let restedWithin: CFTimeInterval = restsOver + boostOutlasts
+    private static let handedOverWithin: CFTimeInterval = MotionSpan.handsOver + settlesOver + boostOutlasts
 
     @Environment(Library.self) private var library
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -468,7 +466,7 @@ struct MovingCover: View {
             .frame(width: drawn, height: drawn)
             .background { CoverShadow(corner: Self.corner) }
             .scaleEffect(resting)
-            .motion(.spring(duration: 0.5, bounce: 0.25), value: playing)
+            .motion(.spring(duration: Self.restsOver, bounce: 0.25), value: playing)
             .scaleEffect(slot.width / drawn)
             .offset(x: slot.midX - drawn / 2, y: slot.midY - drawn / 2)
             .transaction(value: slot) { moved in
@@ -479,6 +477,17 @@ struct MovingCover: View {
             .onChange(of: slot, initial: true) { _, now in
                 if large, now.width > 0, now.width != edge { edge = now.width }
             }
+            .onChange(of: playing) {
+                if large { boost(for: Self.restedWithin) }
+            }
+            .onChange(of: track?.pictureKey) {
+                boost(for: Self.handedOverWithin)
+            }
+    }
+
+    private func boost(for seconds: CFTimeInterval) {
+        guard !reduceMotion, UIApplication.shared.applicationState == .active else { return }
+        FrameRateBoost.shared.boost(for: seconds)
     }
 }
 
@@ -634,6 +643,9 @@ struct CompactTitles: View {
 
 struct PlayerScrubber: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.colorScheme) private var scheme
     @Environment(\.dynamicTypeSize) private var typeSize
     private static let nearEnoughMs: Double = 1500
     private static let holdAtMost: Duration = .seconds(4)
@@ -642,13 +654,14 @@ struct PlayerScrubber: View {
     private static let touchHeight: CGFloat = 44
     private static let stepMs: Double = 10_000
     private static let slightestMove: CGFloat = 2
+    private static let grabSettles: CFTimeInterval = 0.4
 
     @Environment(Library.self) private var library
     @State private var dragging: Double?
     @State private var grabbedAt: Double?
     @State private var held: Double?
     @State private var grabs = 0
-    @State private var flowing: Double = 0
+    @State private var course = ScrubberCourse(to: 0, pace: .snap)
     @State private var lastReading = LastReading()
     @State private var heading = SliderDrag.undecided
     @GestureState private var touching = false
@@ -656,7 +669,6 @@ struct PlayerScrubber: View {
     private final class LastReading {
         var at: CFTimeInterval = 0
         var song: String?
-        var flow: Animation?
     }
 
     var body: some View {
@@ -664,7 +676,7 @@ struct PlayerScrubber: View {
         let duration = Double(max(timing.durationMs, 1))
         let live = Double(timing.positionMs)
         let shown = min(dragging ?? held ?? live, duration)
-        let drawn = min(dragging ?? held ?? flowing, duration)
+        let drawn = min(dragging ?? held ?? course.to, duration)
         let grabbed = dragging != nil
 
         VStack(spacing: 6) {
@@ -672,11 +684,15 @@ struct PlayerScrubber: View {
                 let width = max(space.size.width, 1)
                 Capsule()
                     .fill(.primary.opacity(0.16))
-                    .overlay(alignment: .leading) {
-                        Rectangle()
-                            .nowPlayingInk(grabbed ? 0.95 : 0.7)
-                            .frame(width: width * drawn / duration)
-                            .animation(lastReading.flow, value: flowing)
+                    .overlay {
+                        ScrubberFill(
+                            fraction: drawn / duration,
+                            course: course,
+                            ink: NowPlayingInk.shown(grabbed ? 0.95 : 0.7, contrast: contrast, reduceTransparency: reduceTransparency),
+                            dark: scheme == .dark,
+                            turnsInk: !reduceMotion
+                        )
+                        .accessibilityHidden(true)
                     }
                     .clipShape(Capsule())
                     .trackOutline()
@@ -727,14 +743,16 @@ struct PlayerScrubber: View {
             if let target = held, abs(Double(now) - target) < Self.nearEnoughMs { held = nil }
             flow(from: Double(old), to: Double(now))
         }
+        .onChange(of: grabbed) {
+            if !reduceMotion { FrameRateBoost.shared.boost(for: Self.grabSettles) }
+        }
         .onChange(of: library.playingTrack?.pictureKey) {
             held = nil
-            lastReading.flow = nil
-            flowing = Double(library.clock.positionMs)
+            course = ScrubberCourse(to: Double(library.clock.positionMs), pace: .snap)
         }
         .onChange(of: library.transport) {
-            lastReading.flow = MotionRendering.of(.flip, reduceMotion: reduceMotion, sceneActive: true).animation(Flip.animation)
-            flowing = held ?? Double(library.clock.positionMs)
+            let settles = MotionRendering.of(.flip, reduceMotion: reduceMotion, sceneActive: true) == .animated
+            course = ScrubberCourse(to: held ?? Double(library.clock.positionMs), pace: settles ? .settle(over: MotionSpan.flipsOver) : .snap)
         }
         .task(id: held) {
             guard held != nil else { return }
@@ -795,8 +813,7 @@ struct PlayerScrubber: View {
 
     private func commit(_ target: Double) {
         held = target
-        lastReading.flow = nil
-        flowing = target
+        course = ScrubberCourse(to: target, pace: .snap)
         library.seek(to: UInt64(target))
     }
 
@@ -815,11 +832,9 @@ struct PlayerScrubber: View {
         lastReading.song = song
         switch ProgressFlow.step(reading, conditions) {
         case .snap(let target):
-            lastReading.flow = nil
-            flowing = target
+            course = ScrubberCourse(to: target, pace: .snap)
         case .flow(let target, let over):
-            lastReading.flow = .linear(duration: over)
-            flowing = target
+            course = ScrubberCourse(to: target, pace: .flow(over: over))
         }
     }
 }
@@ -905,8 +920,12 @@ struct NowPlayingInk: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     let level: Double
 
+    static func shown(_ level: Double, contrast: ColorSchemeContrast, reduceTransparency: Bool) -> Double {
+        contrast == .increased || reduceTransparency ? 1 : level
+    }
+
     func body(content: Content) -> some View {
-        content.foregroundStyle(Color.primary.opacity(contrast == .increased || reduceTransparency ? 1 : level))
+        content.foregroundStyle(Color.primary.opacity(Self.shown(level, contrast: contrast, reduceTransparency: reduceTransparency)))
     }
 }
 
@@ -983,7 +1002,7 @@ struct TransportRow: View {
     @State private var skipped = 0
 
     var body: some View {
-        let shuffled = library.snapshot?.shuffle ?? false
+        let shuffled = library.shuffled
         let repeating = library.repeatMode
         GlassEffectContainer(spacing: 24) {
             HStack(spacing: 0) {
@@ -1043,7 +1062,7 @@ struct SleepCountdown: View {
     @Environment(Navigation.self) private var navigation
 
     var body: some View {
-        if let text = Self.text(library.snapshot?.sleep, remaining: library.clock.sleepRemainingMs) {
+        if let text = Self.text(library.sleepTimer, remaining: library.clock.sleepRemainingMs) {
             Button {
                 navigation.sleepTimer = true
             } label: {
@@ -1072,8 +1091,11 @@ struct VolumeRow: View {
     private static let touchHeight: CGFloat = 44
     private static let step: Float = 1 / 16
     private static let driverMountsAfter: Duration = .milliseconds(600)
-    private static let stepFollowed: Animation = .smooth(duration: 0.25)
+    private static let stepFollowedOver: Double = 0.25
+    private static let stepFollowed: Animation = .smooth(duration: stepFollowedOver)
+    private static let grabSettles: CFTimeInterval = 0.4
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var volume = SystemVolumeLevel()
     @State private var dragging: Float?
     @State private var grabbedAt: Float?
@@ -1127,6 +1149,12 @@ struct VolumeRow: View {
             heading = .undecided
             grabbedAt = nil
             dragging = nil
+        }
+        .onChange(of: grabbed) {
+            if !reduceMotion { FrameRateBoost.shared.boost(for: Self.grabSettles) }
+        }
+        .onChange(of: volume.level) {
+            if volume.steppedOutside, !reduceMotion { FrameRateBoost.shared.boost(for: Self.stepFollowedOver) }
         }
         .onAppear { volume.watch() }
         .onDisappear { volume.stopWatching() }
@@ -1273,22 +1301,17 @@ final class SystemVolumeLevel {
 }
 
 struct VolumeDriver: UIViewRepresentable {
-    private static let barelyShown: CGFloat = 0.01
-
     let volume: SystemVolumeLevel
 
-    func makeUIView(context: Context) -> MPVolumeView {
-        let driver = MPVolumeView(frame: .zero)
-        driver.setValue(false, forKey: "showsRouteButton")
-        driver.alpha = Self.barelyShown
-        driver.isUserInteractionEnabled = false
+    func makeUIView(context: Context) -> KeptControlHost {
+        let driver = KeptControls.volume.control
         volume.driver = driver
         volume.seed(from: driver)
-        return driver
+        return KeptControls.volume.host()
     }
 
-    func updateUIView(_ uiView: MPVolumeView, context: Context) {
-        volume.driver = uiView
+    func updateUIView(_ uiView: KeptControlHost, context: Context) {
+        volume.driver = KeptControls.volume.control
     }
 }
 
@@ -1335,19 +1358,49 @@ struct PlayerModes: View {
     }
 }
 
+@MainActor
+@Observable
+final class PlayerAsks {
+    var picked: PickedTracks?
+    var savingQueue = false
+    var clearingQueue = false
+}
+
+@MainActor
+@Observable
+final class FieldRest {
+    var opening = true
+    var reshaping = false
+}
+
+struct NowPlayingField: View {
+    let track: Track?
+    let rest: FieldRest
+
+    var body: some View {
+        BackdropView(track: track, resting: rest.opening || rest.reshaping)
+    }
+}
+
+struct CloseNowPlaying: View {
+    @Environment(Navigation.self) private var navigation
+
+    var body: some View {
+        Button("Close", systemImage: "chevron.down") { navigation.nowPlaying = false }
+    }
+}
+
 struct PlayerMoreMenu: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
     let track: Track?
-    let addToPlaylist: (Track) -> Void
-    let saveQueue: () -> Void
-    let clearQueue: () -> Void
+    let asks: PlayerAsks
 
     var body: some View {
         Menu("More", systemImage: "ellipsis") {
             if let track, !track.isServed {
                 Section {
-                    Button("Add to playlist", systemImage: "text.badge.plus") { addToPlaylist(track) }
+                    Button("Add to playlist", systemImage: "text.badge.plus") { asks.picked = PickedTracks(tracks: [track]) }
                     ShareSongButton(track: track)
                     Button("Song details", systemImage: "info.circle") { navigation.open(.inspector(track)) }
                     Button("Analyse", systemImage: "waveform.path.ecg") { navigation.open(.analysis(track)) }
@@ -1355,13 +1408,13 @@ struct PlayerMoreMenu: View {
             }
             if !library.queue.isEmpty {
                 Section("Queue") {
-                    Button("Save queue as playlist", systemImage: "text.badge.plus", action: saveQueue)
-                    Button("Clear queue", systemImage: "trash", role: .destructive, action: clearQueue)
+                    Button("Save queue as playlist", systemImage: "text.badge.plus") { asks.savingQueue = true }
+                    Button("Clear queue", systemImage: "trash", role: .destructive) { asks.clearingQueue = true }
                         .disabled(library.queue.count <= 1)
                 }
             }
             Section {
-                Button("Sleep timer", systemImage: library.snapshot?.sleep == nil ? "moon.zzz" : "moon.zzz.fill") {
+                Button("Sleep timer", systemImage: library.sleepTimer == nil ? "moon.zzz" : "moon.zzz.fill") {
                     navigation.sleepTimer = true
                 }
                 Button("Zones", systemImage: "hifispeaker.2") { navigation.zones = true }
@@ -1386,21 +1439,16 @@ enum PlayerWarmup {
     static func warm() async {
         try? await Task.sleep(for: afterLaunch)
         guard !Task.isCancelled else { return }
-        let picker = AVRoutePickerView()
-        picker.prioritizesVideoDevices = false
-        let warmed: [UIView] = [picker, MPVolumeView(frame: .zero)]
-        for view in warmed { view.layoutIfNeeded() }
+        KeptControls.warm()
     }
 }
 
 struct RoutePicker: UIViewRepresentable {
-    func makeUIView(context: Context) -> AVRoutePickerView {
-        let picker = AVRoutePickerView()
-        picker.prioritizesVideoDevices = false
-        return picker
+    func makeUIView(context: Context) -> KeptControlHost {
+        KeptControls.route.host()
     }
 
-    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
+    func updateUIView(_ uiView: KeptControlHost, context: Context) {}
 }
 
 struct UpNextList: View {
@@ -1696,11 +1744,11 @@ struct HandoffRows: View {
 
 struct SleepTimerPresentation: ViewModifier {
     @Environment(Navigation.self) private var navigation
-    let presenting: Bool
+    let insidePlayer: Bool
 
     func body(content: Content) -> some View {
         content.sheet(isPresented: Binding(
-            get: { presenting && navigation.sleepTimer },
+            get: { navigation.nowPlaying == insidePlayer && navigation.sleepTimer },
             set: { navigation.sleepTimer = $0 }
         )) {
             SleepTimerSheet().sheetSized().presentationDetents([.medium, .large])
@@ -1715,7 +1763,7 @@ struct SleepTimerSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        let timer = library.snapshot?.sleep
+        let timer = library.sleepTimer
         NavigationStack {
             List {
                 Section {
@@ -1752,7 +1800,7 @@ struct SleepTimerState: View {
     @Environment(Library.self) private var library
 
     var body: some View {
-        if let text = SleepCountdown.text(library.snapshot?.sleep, remaining: library.clock.sleepRemainingMs) {
+        if let text = SleepCountdown.text(library.sleepTimer, remaining: library.clock.sleepRemainingMs) {
             Text(text).font(.headline.monospacedDigit())
         } else {
             Text("No timer set").foregroundStyle(.secondary)

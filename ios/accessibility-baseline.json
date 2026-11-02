@@ -19,12 +19,6 @@
   },
   {
     "file": "PlayerViews.swift",
-    "rule": "animation without a reduce motion gate",
-    "line": ".animation(lastReading.flow, value: flowing)",
-    "count": 1
-  },
-  {
-    "file": "PlayerViews.swift",
     "rule": "gesture without an action or a trait",
     "line": "DragGesture(minimumDistance: 0)",
     "count": 2

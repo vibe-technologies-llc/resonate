@@ -171,12 +171,12 @@ struct BackdropView: View {
 }
 
 struct AppBackdrop: View {
+    @Environment(Navigation.self) private var navigation
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var phase
     @Environment(\.colorScheme) private var scheme
     let strength: Float
     let moving: Bool
-    let frozen: Bool
     @State private var rendering = BackdropPipeline.finished ?? .loading
     @State private var lowPower = ProcessInfo.processInfo.sparesFrames
 
@@ -203,7 +203,7 @@ struct AppBackdrop: View {
     }
 
     private var motion: AmbientMotion {
-        if frozen || phase != .active { return .frozen }
+        if navigation.coversAmbient || phase != .active { return .frozen }
         if reduceMotion || !moving { return .still }
         return .flowing(framesPerSecond: lowPower ? 5 : 10)
     }
