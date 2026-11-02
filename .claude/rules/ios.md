@@ -520,8 +520,9 @@ Now Playing's Up next, neither a tab**: *All songs*, Favourites' and the
 empty states' *Browse songs* push `Destination.songs` onto the Library stack alone
 (`Navigation.showSongs`, which closes Now Playing and sets the grouping to songs). The mini
 player sits in the tab bar's bottom accessory (`tabViewBottomAccessory(isEnabled:)` from 26.1, enabled by `Library.loaded`, stored and flipped only when something is or stops being loaded so a song change never rebuilds the root view,
-so no empty capsule shows with nothing loaded), with previous/play/next (play alone inline) and a horizontal swipe to
-skip; it shows no progress (a bar along the accessory's bottom ran through the title and artist,
+so no empty capsule shows with nothing loaded), with previous/play/next (play alone inline), a horizontal swipe to
+skip and an upward one that opens Now Playing the moment it passes 40 pt, not on lifting the finger (the drag's start
+point marks the swipe that opened, so a cancelled drag leaves nothing to reset); it shows no progress (a bar along the accessory's bottom ran through the title and artist,
 since the system fixes the accessory's height, and a ring around the play button was dropped) and no
 heart (the song's heart is Now Playing's). **Now Playing builds no AirPlay picker or volume view**: every opening built an
 `AVRoutePickerView` in the zoom's first frame and, 600 ms in, an `MPVolumeView` (the first of each in a launch also loading its framework),
@@ -592,7 +593,8 @@ every route change (a pair of headphones at the same rate included), not from th
   names; while one layout fades out beside the other both report, and whichever came last in the
   tree won, which left the cover in the header until the fade ended and then jumped it back
   unanimated), and `MovingCover`, an overlay above both, draws the artwork once (its shadow is
-  `CoverShadow`, a shadow-only `Canvas` rasterised once at scale 1 behind it, never `.shadow` on the
+  `CoverShadow`, a shadow-only `Canvas` rasterised once at scale 1 behind it and asynchronously
+  (`rendersAsynchronously`, so its blur is not drawn on the main thread in the zoom's first frame), never `.shadow` on the
   artwork, which is blurred again on every frame the field behind it moves)
   at the large slot's edge and reaches the slot in force by `scaleEffect` and `offset`, so the spring
   re-lays out and re-measures nothing (two `ArtworkView`s under `matchedGeometryEffect` resized and
@@ -609,7 +611,13 @@ every route change (a pair of headphones at the same rate included), not from th
   glass took the frames it needed. **The opening zoom is held the same way**: for its first 0.7 s
   (`NowPlayingView.openedWithin`, `FieldRest.opening`) the cover asks 120 Hz and the field rests on its
   opening frame (the placeholder, *The backdrop*), since the field flowing at 120 fps under the
-  zooming glass, titles and cover held the whole transition below the display's rate. **The rest is
+  zooming glass, titles and cover held the whole transition below the display's rate; the 120 Hz is asked as
+  `Navigation.nowPlaying` turns true (its `didSet`), so the zoom's first frames have it, not only once the view's
+  task starts. **The cover is decoded at its own size before the opening**: `NowPlayingOpening.prepare`, at each
+  song change and each time the scene becomes active, decodes the playing song's cover at the bucket the large cover last
+  measured (`coverMeasured`) and keeps it as `ShownArtwork`, so an opening draws the sharp cover from its first
+  frame; it drew the mini player's small picture and swapped in the large one, decoded and uploaded, partway
+  through the zoom. **The rest is
   read by the field alone**: `FieldRest` (opening, reshaping) is an observable only `NowPlayingField` reads, so
   the field waking at 0.7 s and at a spring's end redraws the field, not Now Playing's body and toolbar,
   as two `@State` flags of `NowPlayingView` did, in the zoom's last frames and the spring's.
@@ -1078,7 +1086,7 @@ in; it never opens on another colour first.
   a third of the cover is vivid; a cover less than a sixteenth vivid (black, grey, white) is
   clustered whole and keeps its own greys, its lightness held from 0.16 (`Palette.darkestGrey`) so a
   black cover gives a near-black field; only a song without a cover takes the palette built around
-  the accent colour. A moving view whose cover is not yet sampled opens on that accent palette and crossfades to the cover's, never on black; the playing song's palette is sampled as soon as the song changes (`BackdropView.prepare`, from `Library.derive`), so Now Playing opens on its own field. Each colour is held to
+  the accent colour. A moving view whose cover is not yet sampled opens on that accent palette and crossfades to the cover's, never on black; the playing song's palette is sampled as soon as the song changes (`BackdropView.prepare`, through `NowPlayingOpening.prepare` from `Library.derive`, and again each time the scene becomes active), so Now Playing opens on its own field, and a moving view shows the palette remembered for its song (`PaletteMemory`) as soon as the song reaches it, before sampling the cover again. Each colour is held to
   Oklab lightness 0.30 to 0.64 and chroma 0.07 to 0.19 (a grey stays grey), then pulled into gamut.
   A superseded sample is dropped at once (cancellation is checked as soon as the cover arrives), so it never assigns the accent palette after a newer song's. Palettes are remembered per song and art revision, so a page opens on its field at once.
 - **The shader** is Metal Shading Language in a Swift string (`BackdropShader.source`), compiled once
@@ -1104,16 +1112,25 @@ in; it never opens on another colour first.
   missed its frame whenever the main thread did (a poll published, a queue read landed, a lyric
   line moved), which read as the background stuttering now and then; the first live frame is told
   back to the main actor once per entry into a window, to retire the placeholder.
-  A view that enters a window (a tab switched to, a page popped back to) would show black, or the stale frame it last presented, until the link's first tick, so each time it enters a window with a size, while the application is active, it lays over the layer a picture of the field 96 pixels across (`BackdropRenderer.placeholder`) and removes it 0.15 s after its first live frame; the field is slow and blurred, so the two agree. **The placeholder never waits on the GPU on the main thread**: a view returning to a window wears the one rendered off the main thread as it left (`keepPlaceholder`, kept until the palette or tone moves), and a fresh view, as Now Playing's is on every opening (the cover builds its backdrop anew, so a renderer's own memory was always empty and each opening rendered and waited in the zoom's first frame, dropping frames every time), wears the field's opening frame from `OpeningPlaceholders`, a process-wide memory of the last six keyed by palette, tone, stillness and size (`OpeningLook`; a fresh renderer's frame depends on nothing else), which `BackdropView.prepare` fills off the main thread on every song change at the size Now Playing last opened at. A miss renders off the main thread and is laid in only if no live frame came first. `nextDrawable` is never asked for: a layer with a `CAMetalDisplayLink` raises an exception there, which no `catch` reaches. The link is paused when dormant, paused again after a still frame, and invalidated when the view
-  leaves its window, and dropped and made again whenever the application becomes active
-  (`UIApplication.didBecomeActiveNotification`, `FieldDrawer.restart`; `AmbientField.cameForward` does the same for its link and clears a draw that never completed), so a field never waits on a link the system stopped while the app was away. The view draws at scale 1; the compositor
+  A view that enters a window (a tab switched to, a page popped back to) would show black, or the stale frame it last presented, until the link's first tick, so each time it enters a window with a size, while the application is active, it lays over the layer a picture of the field 96 pixels across (`BackdropRenderer.placeholder`) and removes it 0.15 s after its first live frame; the field is slow and blurred, so the two agree. **The placeholder never waits on the GPU on the main thread**: a view returning to a window wears the one rendered off the main thread as it left (`keepPlaceholder`, kept until the palette or tone moves), and a fresh view, as Now Playing's is on every opening (the cover builds its backdrop anew, so a renderer's own memory was always empty and each opening rendered and waited in the zoom's first frame, dropping frames every time), wears the field's opening frame from `OpeningPlaceholders`, a process-wide memory of the last six keyed by palette, tone, stillness and size (`OpeningLook`; a fresh renderer's frame depends on nothing else), which `BackdropView.prepare` fills off the main thread on every song change at the size Now Playing last opened at, or before it has opened in this launch at the key window's (`unopened`), so the first opening has its frame too; it renders nothing while the application is in the background, where a command buffer fails, and the scene becoming active prepares the playing song again. A miss renders off the main thread and is laid in only if no live frame came first. `nextDrawable` is never asked for: a layer with a `CAMetalDisplayLink` raises an exception there, which no `catch` reaches. The link is paused when dormant, paused again after a still frame, and invalidated when the view
+  leaves its window, and dropped and made again whenever the application comes forward and becomes active
+  (`UIApplication.willEnterForegroundNotification` and `didBecomeActiveNotification`, `FieldDrawer.restart`; `AmbientField.cameForward` does the same at becoming active for its link and clears a draw that never completed), so a field never waits on a link the system stopped while the app was away.
+  **A dormant field draws the frame it owes**: a look (palette, tone, stillness) whose frame has not completed
+  (`BackdropRenderer.owesFrame`, the look stamped by the frame's completion handler) is drawn once and the link paused again,
+  when it changes while dormant out of the background (`redrawIfResting`, gated on `foreground`, the scene not in the
+  background, since GPU work there fails) and when the link is made again on coming forward. A song that changed in
+  another app handed its palette to the renderer at rest, but the field stayed dormant through the switch back
+  (the scene inactive) and showed the old song's last frame until the scene was active; a fresh renderer owes
+  nothing, its opening frame being the placeholder's. The view draws at scale 1; the compositor
   scales the blurred field up.
 - **A song change crossfades** the old field into the new over 1.2 s, eased in and out, in the shader;
   a change mid-fade starts from the blend then on screen.
   **Only a change the listener sees fades**: a palette that arrives while the scene is not active
   (`BackdropView`'s `fades`, `FieldBlend.show(fading: false)`) is shown at rest at once, and the
   cover's handover is skipped the same way (`ArtworkView.present`, `Handover`'s `.handover(value:)`
-  modifier, all keyed on `scenePhase == .active`). The fade is timed by the wall clock, which runs
+  modifier, all keyed on `scenePhase == .active`); the field also fades only while the playing song's
+  change was seen (`Library.songChangeSeen`, whether the application was active when `derive` took the new song),
+  so a palette landing late after coming back is shown at rest rather than faded from the old song's. The fade is timed by the wall clock, which runs
   while the display link is stopped, so a song that changed in another app finished its fade unseen
   and the cover then animated alone on coming back; now the field and the cover both arrive already
   changed.

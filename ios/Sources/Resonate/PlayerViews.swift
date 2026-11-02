@@ -19,6 +19,7 @@ struct MiniPlayer: View {
     let zoom: Namespace.ID
     @State private var skipped = 0
     @State private var fit = InlineFit.unmeasured
+    @State private var swipedOpenFrom: CGPoint?
 
     private enum InlineFit {
         private static let titledFrom: CGFloat = 150
@@ -78,12 +79,7 @@ struct MiniPlayer: View {
         .onGeometryChange(for: InlineFit.self) { InlineFit(width: $0.size.width) } action: { fit = $0 }
         .contentShape(.rect)
         .onTapGesture { navigation.nowPlaying = true }
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 24).onEnded { drag in
-                guard abs(drag.translation.width) > max(abs(drag.translation.height), Self.swipeDistance) else { return }
-                skip(forward: drag.translation.width < 0)
-            }
-        )
+        .simultaneousGesture(swipes)
         .sensoryFeedback(.impact(weight: .light), trigger: skipped)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(track.map { "\($0.shownTitle), \($0.shownArtist)" } ?? "")
@@ -91,6 +87,23 @@ struct MiniPlayer: View {
         .accessibilityAction(named: "Open now playing") { navigation.nowPlaying = true }
         .accessibilityAction(named: "Previous") { skip(forward: false) }
         .accessibilityAction(named: "Next") { skip(forward: true) }
+    }
+
+    private var swipes: some Gesture {
+        DragGesture(minimumDistance: 24)
+            .onChanged { drag in
+                guard swipedOpenFrom != drag.startLocation,
+                    -drag.translation.height > max(abs(drag.translation.width), Self.swipeDistance)
+                else { return }
+                swipedOpenFrom = drag.startLocation
+                navigation.nowPlaying = true
+            }
+            .onEnded { drag in
+                guard swipedOpenFrom != drag.startLocation,
+                    abs(drag.translation.width) > max(abs(drag.translation.height), Self.swipeDistance)
+                else { return }
+                skip(forward: drag.translation.width < 0)
+            }
     }
 
     private func skip(forward: Bool) {
@@ -154,7 +167,7 @@ struct NowPlayingView: View {
     private static let arriving = Arrival.animation
     private static let leaving: Animation = .easeOut(duration: 0.12)
     private static let reshapedWithin: CFTimeInterval = 0.8
-    private static let openedWithin: CFTimeInterval = 0.7
+    static let openedWithin: CFTimeInterval = 0.7
     private static let focusedHeightAtAccessibilitySizes: CGFloat = 360
 
     @Environment(Library.self) private var library
@@ -453,6 +466,7 @@ struct MovingCover: View {
 
     @Environment(Library.self) private var library
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.displayScale) private var displayScale
     let track: Track?
     let slot: CGRect
     let large: Bool
@@ -475,7 +489,9 @@ struct MovingCover: View {
             .handover(value: track?.pictureKey)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onChange(of: slot, initial: true) { _, now in
-                if large, now.width > 0, now.width != edge { edge = now.width }
+                guard large, now.width > 0, now.width != edge else { return }
+                edge = now.width
+                NowPlayingOpening.coverMeasured(ArtworkBucket.fitting(points: now.width, scale: displayScale))
             }
             .onChange(of: playing) {
                 if large { boost(for: Self.restedWithin) }
@@ -491,6 +507,21 @@ struct MovingCover: View {
     }
 }
 
+@MainActor
+enum NowPlayingOpening {
+    private static var coverBucket: ArtworkBucket?
+
+    static func coverMeasured(_ bucket: ArtworkBucket) {
+        coverBucket = bucket
+    }
+
+    static func prepare(_ track: Track, features: Features) async {
+        await BackdropView.prepare(track, features: features)
+        guard let bucket = coverBucket, !track.isServed, let cover = await features.artwork(track, bucket: bucket) else { return }
+        ShownArtwork.keep(cover, for: track)
+    }
+}
+
 struct CoverShadow: View {
     private static let blur: CGFloat = 28
     private static let drop: CGFloat = 16
@@ -501,7 +532,7 @@ struct CoverShadow: View {
     let corner: CGFloat
 
     var body: some View {
-        Canvas { context, size in
+        Canvas(rendersAsynchronously: true) { context, size in
             let cover = CGRect(origin: .zero, size: size).insetBy(dx: Self.reach, dy: Self.reach)
             guard cover.width > 0, cover.height > 0 else { return }
 

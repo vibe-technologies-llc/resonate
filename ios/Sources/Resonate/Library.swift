@@ -274,6 +274,7 @@ final class Library {
     @ObservationIgnored private var catalogIndex: [UInt64: Int] = [:]
     @ObservationIgnored private var marking = false
     @ObservationIgnored private var shownFailure: String?
+    @ObservationIgnored private(set) var songChangeSeen = true
     @ObservationIgnored private var hidingFailure: String?
     @ObservationIgnored private var pollFailures: [PollPart: String] = [:]
     @ObservationIgnored private var statusSerial = 0
@@ -735,11 +736,19 @@ final class Library {
         if repeatMode != shownRepeat { repeatMode = shownRepeat }
         if sleepTimer != state?.sleep { sleepTimer = state?.sleep }
         if playingTrack != state?.current {
+            if playingTrack?.pictureKey != state?.current?.pictureKey {
+                songChangeSeen = UIApplication.shared.applicationState == .active
+            }
             playingTrack = state?.current
-            if let track = playingTrack { Task { await BackdropView.prepare(track, features: features) } }
+            if let track = playingTrack { Task { await NowPlayingOpening.prepare(track, features: features) } }
         }
         if loaded != (playingTrack != nil) { loaded = playingTrack != nil }
         if playingNext != next { playingNext = next }
+    }
+
+    func prepareNowPlaying() {
+        guard let track = playingTrack else { return }
+        Task { await NowPlayingOpening.prepare(track, features: features) }
     }
 
     private static func askedNext(in state: Snapshot) -> Range<Int>? {

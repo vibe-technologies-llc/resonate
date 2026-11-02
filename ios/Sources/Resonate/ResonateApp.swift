@@ -27,7 +27,9 @@ struct ResonateApp: App {
         .onChange(of: phase) { _, now in
             library.features.foreground = now == .active
             switch now {
-            case .active: library.features.cameForward()
+            case .active:
+                library.features.cameForward()
+                library.prepareNowPlaying()
             case .background:
                 library.features.wentToBackground()
                 library.save()
@@ -94,7 +96,11 @@ enum PlayerTransition {
 final class Navigation {
     var tab: Root = .home
     var paths: [Root: [Destination]] = [:]
-    var nowPlaying = false
+    var nowPlaying = false {
+        didSet {
+            if nowPlaying, !oldValue { FrameRateBoost.shared.boost(for: NowPlayingView.openedWithin) }
+        }
+    }
     var choosingFolder = false
     var sleepTimer = false
     var zones = false

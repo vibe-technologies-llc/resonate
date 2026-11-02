@@ -58,7 +58,16 @@ struct BackdropView: View {
     private func field(_ palette: Palette) -> some View {
         switch rendering {
         case .metal(let gpu) where moving:
-            MeshBackdrop(gpu: gpu, heard: library.features.heardLevel, palette: palette, motion: motion, tone: tone, playing: sounding, fades: phase == .active)
+            MeshBackdrop(
+                gpu: gpu,
+                heard: library.features.heardLevel,
+                palette: palette,
+                motion: motion,
+                tone: tone,
+                playing: sounding,
+                fades: phase == .active && library.songChangeSeen,
+                foreground: phase != .background
+            )
         case .metal(let gpu):
             StillBackdrop(gpu: gpu, palette: palette, tone: tone)
         case .gradient, .loading:
@@ -77,8 +86,15 @@ struct BackdropView: View {
             PaletteMemory.remember(palette, as: key)
         }
 
+        guard UIApplication.shared.applicationState != .background else { return }
         let tone = BackdropTone.nowPlaying(dark: shownScheme == .dark, intensity: Float(AppearanceState.shared.nowPlayingIntensity))
-        await OpeningPlaceholders.prepare(palette, tone: tone, still: UIAccessibility.isReduceMotionEnabled)
+        let window = UIApplication.shared.connectedScenes.lazy.compactMap { ($0 as? UIWindowScene)?.keyWindow?.bounds.size }.first
+        await OpeningPlaceholders.prepare(
+            palette,
+            tone: tone,
+            still: UIAccessibility.isReduceMotionEnabled,
+            unopened: window.flatMap(BackdropRenderer.openingSize(of:))
+        )
     }
 
     private var paletteRequest: String {
@@ -154,6 +170,7 @@ struct BackdropView: View {
             if palette != shown { palette = shown }
             return
         }
+        if let recalled = PaletteMemory.recalled(Self.key(of: track)), palette != recalled { palette = recalled }
         let found = await library.features.artwork(track, bucket: .tile)
         guard !Task.isCancelled else { return }
 
@@ -743,6 +760,7 @@ private struct MeshBackdrop: UIViewRepresentable {
     let tone: BackdropTone
     let playing: Bool
     let fades: Bool
+    let foreground: Bool
 
     func makeCoordinator() -> BackdropRenderer {
         BackdropRenderer(gpu: gpu, palette: palette, heard: heard)
@@ -754,8 +772,9 @@ private struct MeshBackdrop: UIViewRepresentable {
 
     func updateUIView(_ view: BackdropMetalView, context: Context) {
         context.coordinator.wear(tone: tone, playing: playing, still: motion == .still, palette: palette, fading: fades)
+        view.foreground = foreground
         view.motion = motion
-        view.redrawIfStill()
+        view.redrawIfResting()
     }
 
     static func dismantleUIView(_ view: BackdropMetalView, coordinator: BackdropRenderer) {
@@ -813,7 +832,7 @@ final class FieldDrawer: NSObject, CAMetalDisplayLinkDelegate, @unchecked Sendab
     private let renderer: BackdropRenderer
     private let drewFirst: @MainActor @Sendable () -> Void
     private var link: CAMetalDisplayLink?
-    private var still = false
+    private var motion = BackdropMotion.dormant
     private var toldFirst = false
 
     init(layer: CAMetalLayer, renderer: BackdropRenderer, drewFirst: @escaping @MainActor @Sendable () -> Void) {
@@ -841,9 +860,13 @@ final class FieldDrawer: NSObject, CAMetalDisplayLinkDelegate, @unchecked Sendab
         }
     }
 
-    func redrawIfStill() {
+    func redrawIfResting() {
         FieldThread.shared.perform { [self] in
-            if still { link?.isPaused = false }
+            switch motion {
+            case .flowing: return
+            case .still: link?.isPaused = false
+            case .dormant: drawOwedFrame()
+            }
         }
     }
 
@@ -852,7 +875,7 @@ final class FieldDrawer: NSObject, CAMetalDisplayLinkDelegate, @unchecked Sendab
     }
 
     private func apply(_ motion: BackdropMotion) {
-        still = motion == .still
+        self.motion = motion
         switch motion {
         case .flowing(let framesPerSecond):
             let rate = Float(framesPerSecond)
@@ -863,7 +886,13 @@ final class FieldDrawer: NSObject, CAMetalDisplayLinkDelegate, @unchecked Sendab
             running().isPaused = false
         case .dormant:
             link?.isPaused = true
+            drawOwedFrame()
         }
+    }
+
+    private func drawOwedFrame() {
+        guard renderer.owesFrame else { return }
+        running().isPaused = false
     }
 
     private func running() -> CAMetalDisplayLink {
@@ -878,7 +907,7 @@ final class FieldDrawer: NSObject, CAMetalDisplayLinkDelegate, @unchecked Sendab
 
     func metalDisplayLink(_ link: CAMetalDisplayLink, needsUpdate update: CAMetalDisplayLink.Update) {
         renderer.draw(on: update.drawable, at: update.targetPresentationTimestamp)
-        if still { link.isPaused = true }
+        if case .flowing = motion {} else { link.isPaused = true }
         guard !toldFirst else { return }
         toldFirst = true
         let drewFirst = drewFirst
@@ -897,6 +926,8 @@ final class BackdropMetalView: UIView {
             if motion != oldValue { applyMotion() }
         }
     }
+
+    var foreground = true
 
     private let renderer: BackdropRenderer
     private var drawer: FieldDrawer?
@@ -918,12 +949,9 @@ final class BackdropMetalView: UIView {
         metal.isOpaque = true
         metal.contentsScale = Self.drawingScale
         drawer = FieldDrawer(layer: metal, renderer: renderer) { [weak self] in self?.liveFrameDrawn() }
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(cameForward),
-            name: UIApplication.didBecomeActiveNotification,
-            object: nil
-        )
+        for coming in [UIApplication.willEnterForegroundNotification, UIApplication.didBecomeActiveNotification] {
+            NotificationCenter.default.addObserver(self, selector: #selector(cameForward), name: coming, object: nil)
+        }
     }
 
     @objc private func cameForward() {
@@ -946,7 +974,7 @@ final class BackdropMetalView: UIView {
         metal.drawableSize = size
         placeholder?.frame = bounds
         showPlaceholder()
-        redrawIfStill()
+        redrawIfResting()
     }
 
     private func showPlaceholder() {
@@ -1000,8 +1028,10 @@ final class BackdropMetalView: UIView {
         applyMotion()
     }
 
-    func redrawIfStill() {
-        if window != nil, motion == .still { drawer?.redrawIfStill() }
+    func redrawIfResting() {
+        guard window != nil, foreground else { return }
+        if case .flowing = motion { return }
+        drawer?.redrawIfResting()
     }
 
     func stop() {
@@ -1052,8 +1082,8 @@ enum OpeningPlaceholders {
     }
 
     @concurrent
-    static func prepare(_ palette: Palette, tone: BackdropTone, still: Bool) async {
-        guard case .metal(let gpu) = BackdropPipeline.finished, let size = lastSize.withLock({ $0 }) else { return }
+    static func prepare(_ palette: Palette, tone: BackdropTone, still: Bool, unopened: FieldSize?) async {
+        guard case .metal(let gpu) = BackdropPipeline.finished, let size = lastSize.withLock({ $0 }) ?? unopened else { return }
         let look = OpeningLook(palette: palette, tone: tone, still: still, size: size)
         guard recalled(look) == nil else { return }
 
@@ -1092,6 +1122,7 @@ final class BackdropRenderer: Sendable {
         var kept: KeptPlaceholder?
         var keeping = false
         var keptLook = 0
+        var drawnLook: Int?
 
         mutating func forgetPlaceholder() {
             kept = nil
@@ -1126,16 +1157,21 @@ final class BackdropRenderer: Sendable {
         }
     }
 
+    var owesFrame: Bool {
+        held.withLock { held in held.drawnLook.map { $0 != held.keptLook } ?? false }
+    }
+
     func draw(on drawable: any CAMetalDrawable, at moment: CFTimeInterval) {
         let texture = drawable.texture
         let aspect = texture.height > 0 ? Float(texture.width) / Float(texture.height) : 1
         let loudness = min(heard.rms / Self.fullEnergyLoudness, 1)
-        var uniforms = held.withLock { held in
+        let (look, shown) = held.withLock { held in
             let step = Float(min(max(moment - (held.lastFrame ?? moment), 0), Self.longestStep))
             held.lastFrame = moment
             Self.advance(&held, by: step, loudness: loudness)
-            return Self.uniforms(of: held, at: moment, aspect: aspect)
+            return (held.keptLook, Self.uniforms(of: held, at: moment, aspect: aspect))
         }
+        var uniforms = shown
 
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = texture
@@ -1150,8 +1186,16 @@ final class BackdropRenderer: Sendable {
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
         BackdropPipeline.reportFailures(of: commands)
+        commands.addCompletedHandler(drawn(look))
         commands.present(drawable)
         commands.commit()
+    }
+
+    private func drawn(_ look: Int) -> @Sendable (any MTLCommandBuffer) -> Void {
+        { [weak self] finished in
+            guard finished.status == .completed else { return }
+            self?.held.withLock { $0.drawnLook = look }
+        }
     }
 
     func placeholder(
