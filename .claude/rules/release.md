@@ -32,6 +32,13 @@ paths:
   `release.yml` (`build.md`), which checks the tag against the manifest's version and attaches the
   assets. The roadmap's targets (`docs/ROADMAP.md`) name what each release is meant to hold.
 
+- **A release carrying the iPhone app is begun by `python3 ios/release.py vX.Y.Z`, not by pushing
+  the tag**: the tag is made first on the commit checked out, already on the remote, and not yet
+  pushed. The script builds the IPA in release (the SDK is the listener's Xcode, so no runner can),
+  creates the draft release itself, puts the IPA (and, for a release that is not a candidate, the
+  AltStore source) on it, and only then pushes the tag; `release.yml`'s `release` job finds the draft
+  and leaves it, and `publish` attaches the rest. Pushing the tag alone still releases, without the
+  IPA, since a published release takes no asset afterwards.
 - **Releases are immutable**: the workflow creates the release as a draft, attaches the assets and
   only then publishes it, since a published release accepts no new asset. A tag name that a
   published release has used can never be used again, even after the release is deleted, so a
@@ -65,4 +72,14 @@ paths:
 - **The APK is a signed release build**: `assembleRelease` under the repository's signing secrets,
   then `apksigner verify` (`build.md` has the job). The keystore is removed at the end of the job
   and its secrets are never echoed.
+- **The iPhone app is `resonate-<version>-ios.ipa`**, ad-hoc signed and carrying no provisioning
+  profile, so whoever installs it signs it with their own Apple ID (SideStore, AltStore, Sideloadly,
+  xtool). **`resonate-altstore.json` is the AltStore and SideStore source** (`ios/altstore.py`): the
+  app's name, bundle, permissions (the entitlements and every `NS…UsageDescription`) and every
+  version published, newest first, each read from the last published source and the IPA's own
+  `Info.plist`; its URLs are the running repository's (`gh repo view`), the icon `Resonate/Icon.png`
+  at the tag. Listeners add `<repository>/releases/latest/download/resonate-altstore.json` once,
+  so every final release must carry the file: `publish` takes the IPA and source from the draft and,
+  where the draft has no source, carries the last published one forward unchanged. A candidate
+  carries the IPA alone, since `latest` never names a pre-release.
 - `SHA256SUMS` lists every asset.

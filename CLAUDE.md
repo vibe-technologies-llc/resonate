@@ -183,7 +183,8 @@ Invariants the layering protects (the rules files have the rest):
   Xcode's step) and package; `xtool install xtool/Resonate.app` installs on an attached iPhone
   (`run-ios` skill), never `xtool dev run`, which drops the metadata. `python3 ios/install.py` does
   it all in one run, fetching the latest xtool AppImage first. Not in CI: the Darwin SDK comes
-  from the listener's Xcode download.
+  from the listener's Xcode download. `python3 ios/release.py vX.Y.Z` begins a release carrying
+  the sideloadable IPA and its AltStore source (`release.md`).
 
 - `RUSTFLAGS= cargo xwin check --target x86_64-pc-windows-msvc --workspace --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --all-targets`:
   the Windows build, cross-checked from Linux (`windows.md`); CI runs it natively in the `windows` job.

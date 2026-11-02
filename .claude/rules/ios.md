@@ -25,6 +25,20 @@ needs no older-platform branch. The host needs Swift 6.4, the xtool AppImage (1.
 (`ReservedRegion` and the Duo's inner screen drawn edge to edge are 27.1's; a 27.0 SDK fails the build), the `aarch64-apple-ios` Rust target, clang and `llvm-ar`.
 None of this is in CI: the SDK cannot be fetched without the listener's Apple ID.
 
+## Releasing for sideloading
+
+`python3 ios/release.py vX.Y.Z` (`release.md`) builds the native library, the app and its App
+Intents metadata in release, packs `resonate-<version>-ios.ipa` and writes the AltStore source with
+`ios/altstore.py` (a module with no command line; `ios/test_altstore.py` holds it on the host). It
+refuses a tag that is not the manifest's version or `Info.plist`'s `CFBundleShortVersionString`, a
+tree with changes, a tag not on the commit checked out, a commit on no branch of the remote, a tag
+already pushed and a release already published. The IPA keeps xtool's ad-hoc signature: the
+entitlements are all in the unrestricted `com.apple.security.` namespace (*Hardening*), so a free
+Apple ID's profile signs it, with the 7-day expiry and three-app limit of free signing, which
+SideStore and AltStore refresh on their own. The source's `appPermissions` must name every
+entitlement and usage description the IPA carries, since AltStore refuses an app whose permissions
+the source did not declare.
+
 ## The native library
 
 `ios/build-native.py [--profile debug|release]` builds `resonate-mobile` as a staticlib for

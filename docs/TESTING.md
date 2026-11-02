@@ -108,6 +108,10 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   Playing's two columns, the Library tab's split view, the sheets' form and page sizes, and the
   accessibility-size layouts in each) have been proved by their rules in tests and a clean build,
   never seen on an iPhone turned on its side or an iPad
+- [S · blocked: hardware] The sideloaded IPA and its AltStore source are proved by their shape in
+  tests: no release has yet been added as a source to SideStore or AltStore, signed with a free
+  Apple ID and installed, so the declared permissions matching what AltStore reads from the IPA and
+  the Enhanced Security entitlements passing a free profile are unseen
 - [S · blocked: hardware] The iPhone Duo's poses are proved by their rules in tests and a clean
   build against the iOS 27.2 SDK, never seen on a Duo or the Duo simulator (Xcode's Device Hub needs a
   Mac): Now Playing's columns meeting at the fold held as a book, the cover above the fold and the

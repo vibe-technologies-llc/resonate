@@ -292,6 +292,20 @@ jobs:
           VERSION: ${{ needs.release.outputs.version }}
           REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
         run: ./packaging/windows/fill-manifests.sh "$VERSION" "$REPOSITORY_URL" assets assets
+      - name: Take the iOS files from the draft, else carry the last AltStore source forward
+        if: needs.release.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          gh release download "$TAG" --pattern '*-ios.ipa' --pattern 'resonate-altstore.json' --dir assets || true
+          case "$TAG" in
+            *-rc*|*-beta*|*-alpha*) exit 0 ;;
+          esac
+          if [ ! -e assets/resonate-altstore.json ]; then
+            gh release download --pattern 'resonate-altstore.json' --dir assets || true
+          fi
       - name: Write the checksums
         working-directory: assets
         run: sha256sum -- * > SHA256SUMS
