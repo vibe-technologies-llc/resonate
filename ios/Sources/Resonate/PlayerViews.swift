@@ -226,44 +226,108 @@ struct NowPlayingView: View {
 
     @ViewBuilder
     private func arranged(_ track: Track?, _ arrangement: PlayerArrangement) -> some View {
-        if arrangement.sideBySide {
-            columns(track, scrolls: arrangement.scrolls)
-        } else if arrangement.scrolls {
-            ScrollView { layout(track) }
-        } else {
-            layout(track)
+        switch arrangement.seam {
+        case let .beside(leading, gap, trailing):
+            atTheFold(track, scrolls: arrangement.scrolls, leading: leading, gap: gap, trailing: trailing)
+        case let .stacked(top, gap, bottom):
+            onATable(track, scrolls: arrangement.scrolls, top: top, gap: gap, bottom: bottom)
+        case .none:
+            if arrangement.sideBySide {
+                columns(track, scrolls: arrangement.scrolls)
+            } else if arrangement.scrolls {
+                ScrollView { layout(track) }
+            } else {
+                layout(track)
+            }
         }
     }
 
     private func columns(_ track: Track?, scrolls: Bool) -> some View {
         HStack(alignment: .center, spacing: Self.gutter) {
-            if mode == .artwork {
-                LargeArtwork()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                column(scrolls: scrolls) {
-                    PlayerTitles(track: track)
-                    PlayerScrubber()
-                    TransportRow()
-                    SleepCountdown()
-                    VolumeRow()
-                    PlayerModes(mode: mode, choose: choose)
-                }
-            } else {
-                column(scrolls: scrolls) {
-                    CompactTitles(track: track)
-                    PlayerScrubber()
-                    TransportRow()
-                    PlayerModes(mode: mode, choose: choose)
-                }
-                ZStack {
-                    if settled == mode {
-                        focusedContent(track).transition(.opacity)
-                    }
-                }
+            leadingColumn(track, scrolls: scrolls)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
+            trailingColumn(track, scrolls: scrolls)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding(.bottom, 8)
+    }
+
+    private func atTheFold(_ track: Track?, scrolls: Bool, leading: Double, gap: Double, trailing: Double) -> some View {
+        HStack(alignment: .center, spacing: 0) {
+            leadingColumn(track, scrolls: scrolls)
+                .frame(width: leading)
+                .frame(maxHeight: .infinity)
+            Color.clear.frame(width: gap)
+            trailingColumn(track, scrolls: scrolls, bleeding: .trailing)
+                .frame(width: trailing)
+                .frame(maxHeight: .infinity)
+        }
+        .padding(.bottom, 8)
+    }
+
+    private func onATable(_ track: Track?, scrolls: Bool, top: Double, gap: Double, bottom: Double) -> some View {
+        VStack(spacing: 0) {
+            Group {
+                if mode == .artwork {
+                    LargeArtwork()
+                } else {
+                    focusedPane(track)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: top)
+            Color.clear.frame(height: gap)
+            controls(track, scrolls: scrolls)
+                .frame(height: bottom)
+        }
+    }
+
+    @ViewBuilder
+    private func leadingColumn(_ track: Track?, scrolls: Bool) -> some View {
+        if mode == .artwork {
+            LargeArtwork()
+        } else {
+            controls(track, scrolls: scrolls)
+        }
+    }
+
+    @ViewBuilder
+    private func trailingColumn(_ track: Track?, scrolls: Bool, bleeding: Edge.Set = .horizontal) -> some View {
+        if mode == .artwork {
+            controls(track, scrolls: scrolls)
+        } else {
+            focusedPane(track, bleeding: bleeding)
+        }
+    }
+
+    @ViewBuilder
+    private func controls(_ track: Track?, scrolls: Bool) -> some View {
+        if mode == .artwork {
+            column(scrolls: scrolls) {
+                PlayerTitles(track: track)
+                PlayerScrubber()
+                TransportRow()
+                SleepCountdown()
+                VolumeRow()
+                PlayerModes(mode: mode, choose: choose)
+            }
+        } else {
+            column(scrolls: scrolls) {
+                CompactTitles(track: track)
+                PlayerScrubber()
+                TransportRow()
+                PlayerModes(mode: mode, choose: choose)
+            }
+        }
+    }
+
+    private func focusedPane(_ track: Track?, bleeding: Edge.Set = .horizontal) -> some View {
+        ZStack {
+            if settled == mode {
+                focusedContent(track, bleeding: bleeding).transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder
@@ -316,10 +380,10 @@ struct NowPlayingView: View {
     }
 
     @ViewBuilder
-    private func focusedContent(_ track: Track?) -> some View {
+    private func focusedContent(_ track: Track?, bleeding: Edge.Set = .horizontal) -> some View {
         switch mode {
         case .lyrics: LyricsPane(track: track, compact: true)
-        case .queue, .artwork: UpNextList().padding(.horizontal, -Self.gutter)
+        case .queue, .artwork: UpNextList().padding(bleeding, -Self.gutter)
         }
     }
 

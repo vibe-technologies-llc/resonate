@@ -10,6 +10,12 @@ import Testing
     private static let iPadLandscape = shape(.regular, .regular, 1180, 820)
     private static let iPadSlideOver = shape(.compact, .regular, 320, 1000)
     private static let iPadSplitView = shape(.compact, .regular, 507, 820)
+    private static let duoClosed = shape(.compact, .regular, 466, 678)
+    private static let duoClosedOnItsSide = shape(.compact, .compact, 678, 466)
+    private static let duoOpen = shape(.regular, .regular, 669, 951)
+    private static let duoOpenOnItsSide = shape(.regular, .regular, 951, 669)
+    private static let duoAsABook = folded(duoOpenOnItsSide, Fold(runs: .down, start: 459, end: 492))
+    private static let duoOnATable = folded(duoOpen, Fold(runs: .across, start: 459, end: 492))
 
     private static func shape(_ horizontal: SizeClass, _ vertical: SizeClass, _ width: Double, _ height: Double) -> ScreenShape {
         ScreenShape(horizontal: horizontal, vertical: vertical, width: width, height: height, accessibilityText: false)
@@ -21,7 +27,19 @@ import Testing
             vertical: shape.vertical,
             width: shape.width,
             height: shape.height,
-            accessibilityText: true
+            accessibilityText: true,
+            fold: shape.fold
+        )
+    }
+
+    private static func folded(_ shape: ScreenShape, _ fold: Fold) -> ScreenShape {
+        ScreenShape(
+            horizontal: shape.horizontal,
+            vertical: shape.vertical,
+            width: shape.width,
+            height: shape.height,
+            accessibilityText: shape.accessibilityText,
+            fold: fold
         )
     }
 
@@ -80,6 +98,48 @@ import Testing
         #expect(!PlayerArrangement.of(square).sideBySide)
     }
 
+    @Test func aDuoClosedIsAPhoneAndOpenFlatIsAnIPad() {
+        #expect(PlayerArrangement.of(Self.duoClosed) == PlayerArrangement(sideBySide: false, scrolls: false))
+        #expect(PlayerArrangement.of(Self.duoClosedOnItsSide) == PlayerArrangement(sideBySide: true, scrolls: true))
+        #expect(PlayerArrangement.of(Self.duoOpen) == PlayerArrangement(sideBySide: false, scrolls: false))
+        #expect(PlayerArrangement.of(Self.duoOpenOnItsSide) == PlayerArrangement(sideBySide: true, scrolls: false))
+    }
+
+    @Test func aDuoHeldAsABookMeetsItsColumnsAtTheFold() {
+        let arrangement = PlayerArrangement.of(Self.duoAsABook)
+
+        #expect(arrangement.sideBySide)
+        #expect(!arrangement.scrolls)
+        #expect(!arrangement.stackedAtTheFold)
+        #expect(arrangement.seam == .beside(leading: 459, gap: 33, trailing: 459))
+    }
+
+    @Test func aDuoOnATableShowsTheCoverAboveTheFoldAndTheControlsBelow() {
+        let arrangement = PlayerArrangement.of(Self.duoOnATable)
+
+        #expect(!arrangement.sideBySide)
+        #expect(!arrangement.scrolls)
+        #expect(arrangement.stackedAtTheFold)
+        #expect(arrangement.seam == .stacked(top: 459, gap: 33, bottom: 459))
+    }
+
+    @Test func accessibilityTextAtTheFoldKeepsTheSeamAndScrolls() {
+        for shape in [Self.duoAsABook, Self.duoOnATable] {
+            let arrangement = PlayerArrangement.of(Self.large(shape))
+
+            #expect(arrangement.seam == PlayerArrangement.of(shape).seam)
+            #expect(arrangement.scrolls)
+        }
+    }
+
+    @Test func aFoldLeavingTooNarrowASideIsIgnored() {
+        let nearTheEdge = Self.folded(Self.duoOpenOnItsSide, Fold(runs: .down, start: 120, end: 150))
+        let empty = Self.folded(Self.duoOpenOnItsSide, Fold(runs: .down, start: 475, end: 475))
+
+        #expect(PlayerArrangement.of(nearTheEdge) == PlayerArrangement.of(Self.duoOpenOnItsSide))
+        #expect(PlayerArrangement.of(empty) == PlayerArrangement.of(Self.duoOpenOnItsSide))
+    }
+
     @Test func theLibraryIsASplitOnlyWhereTheWidthIsRegularAndTheTextIsNotLarge() {
         #expect(LibraryArrangement.of(horizontal: Self.iPadPortrait.horizontal, accessibilityText: false) == .split)
         #expect(LibraryArrangement.of(horizontal: Self.iPadLandscape.horizontal, accessibilityText: false) == .split)
@@ -88,6 +148,8 @@ import Testing
         #expect(LibraryArrangement.of(horizontal: Self.iPhoneLandscape.horizontal, accessibilityText: false) == .stack)
         #expect(LibraryArrangement.of(horizontal: Self.iPadSlideOver.horizontal, accessibilityText: false) == .stack)
         #expect(LibraryArrangement.of(horizontal: Self.iPadSplitView.horizontal, accessibilityText: false) == .stack)
+        #expect(LibraryArrangement.of(horizontal: Self.duoOpen.horizontal, accessibilityText: false) == .split)
+        #expect(LibraryArrangement.of(horizontal: Self.duoClosed.horizontal, accessibilityText: false) == .stack)
     }
 
     @Test func theLibraryFallsBackToTheStackAtAccessibilityTextSizes() {

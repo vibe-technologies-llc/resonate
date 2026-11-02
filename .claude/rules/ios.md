@@ -14,14 +14,15 @@ paths:
 
 The iOS front end is SwiftUI, a SwiftPM package under `ios/` built, signed and installed from Linux
 with xtool (`xtool.yml`: bundle `org.resonate.ios`, `Resonate/Info.plist`, `Resonate/Icon.png`,
-`Resonate/Resonate.entitlements`). **It is an iPhone and iPad app that turns every way**
-(*Orientation and iPad*): `Info.plist` declares `UIDeviceFamily` 1 and 2, the iPhone's
+`Resonate/Resonate.entitlements`). **It is an iPhone and iPad app that turns every way**, the iPhone Duo's
+fold included (*Orientation and iPad*): `Info.plist` declares `UIDeviceFamily` 1 and 2, the iPhone's
 orientations upright and both sides (not upside down, as no iPhone since the X turns that way) and
 `UISupportedInterfaceOrientations~ipad` all four, with no `UIRequiresFullScreen`, so an iPad
 offers Split View, Slide Over and Stage Manager (`ios/test_orientation.py` holds the three). iOS 26 is the minimum, so the app draws with Liquid Glass and
 needs no older-platform branch. The host needs Swift 6.4, the xtool AppImage (1.22.2 or later; older builds miss Xcode 27's SDK),
 `zip` for `--ipa`, `rsvg-convert` (librsvg) for the accent icons, the `darwin` Swift SDK
-`xtool setup` builds from Xcode's `.xip`, the `aarch64-apple-ios` Rust target, clang and `llvm-ar`.
+`xtool setup` (or `xtool sdk install <xip>`) builds from Xcode's `.xip`, **Xcode 27.1 or later**
+(`ReservedRegion` and the Duo's inner screen drawn edge to edge are 27.1's; a 27.0 SDK fails the build), the `aarch64-apple-ios` Rust target, clang and `llvm-ar`.
 None of this is in CI: the SDK cannot be fetched without the listener's Apple ID.
 
 ## The native library
@@ -1724,8 +1725,24 @@ are handled by the same rules as an iPad turned.
   (tags, filters, saved search, organise, lyrics, add songs) `.page`, and every one a `.page` at
   accessibility sizes, so large text has room. The sizing means nothing on a phone, where the
   detents stay; the new sheet takes `sheetSized` at its content, beside any `presentationDetents`.
+- **The iPhone Duo is the same rules, plus its fold.** Closed it is an iPhone (compact width, 466 by
+  678 points upright); open, flat or half open, both classes are regular (669 by 951 upright, 951 by
+  669 on its side), so the Library is the split and Now Playing is two columns on its side and one
+  upright, as on an iPad. The inner screen ignores the declared orientations, which is why nothing
+  reads them. **The fold is read, never the hinge**: `Fold.within` takes the first `.division`
+  `ReservedRegion` of `ShapedScreen`'s proxy (iOS 27.1; active only half open, and its frame already
+  holds the margins kept clear of it) into `ScreenShape.fold`, running `down` where it is taller than
+  wide; `PlayerSeam.of` turns it into the seam Now Playing lays out against, ignored where a side would
+  be under `narrowestSide` (240 points). Held as a book (`.beside`) the two columns stand on either
+  side of the fold at its own widths with the fold clear between them, and Up next bleeds only past
+  its trailing edge, not into the fold. Laid on a table (`.stacked`) the cover, or in Lyrics and Up
+  next the pane, fills the half above the fold and the titles, scrubber, transport and modes the half
+  below, the controls scrolling at accessibility sizes. Each column and half is the same view the
+  ordinary columns use (`leadingColumn`, `trailingColumn`, `controls`, `focusedPane`), so a mode moves
+  the cover between slots as it always does. Lists, the split view, sheets, menus and bars are the
+  system's and keep clear of the fold and cameras themselves.
 - **Not seen on a device**: the rules are held in tests and the app builds without a warning, but no
-  iPhone on its side or iPad has shown the layouts (`TESTING.md`).
+  iPhone on its side, iPad or iPhone Duo has shown the layouts (`TESTING.md`).
 
 ## Accessibility
 

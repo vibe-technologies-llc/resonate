@@ -5,19 +5,45 @@ public enum SizeClass: Sendable, Equatable {
     case regular
 }
 
+public struct Fold: Sendable, Equatable {
+    public enum Runs: Sendable, Equatable {
+        case down
+        case across
+    }
+
+    public let runs: Runs
+    public let start: Double
+    public let end: Double
+
+    public init(runs: Runs, start: Double, end: Double) {
+        self.runs = runs
+        self.start = start
+        self.end = end
+    }
+}
+
 public struct ScreenShape: Sendable, Equatable {
     public let horizontal: SizeClass
     public let vertical: SizeClass
     public let width: Double
     public let height: Double
     public let accessibilityText: Bool
+    public let fold: Fold?
 
-    public init(horizontal: SizeClass, vertical: SizeClass, width: Double, height: Double, accessibilityText: Bool) {
+    public init(
+        horizontal: SizeClass,
+        vertical: SizeClass,
+        width: Double,
+        height: Double,
+        accessibilityText: Bool,
+        fold: Fold? = nil
+    ) {
         self.horizontal = horizontal
         self.vertical = vertical
         self.width = width
         self.height = height
         self.accessibilityText = accessibilityText
+        self.fold = fold
     }
 
     public var isWiderThanTall: Bool {
@@ -25,16 +51,49 @@ public struct ScreenShape: Sendable, Equatable {
     }
 }
 
+public enum PlayerSeam: Sendable, Equatable {
+    case none
+    case beside(leading: Double, gap: Double, trailing: Double)
+    case stacked(top: Double, gap: Double, bottom: Double)
+
+    public static let narrowestSide: Double = 240
+
+    public static func of(_ shape: ScreenShape) -> PlayerSeam {
+        guard let fold = shape.fold, fold.start < fold.end else { return .none }
+        let length = fold.runs == .down ? shape.width : shape.height
+        let before = fold.start
+        let after = length - fold.end
+        guard before >= narrowestSide, after >= narrowestSide else { return .none }
+        let gap = fold.end - fold.start
+        return switch fold.runs {
+        case .down: .beside(leading: before, gap: gap, trailing: after)
+        case .across: .stacked(top: before, gap: gap, bottom: after)
+        }
+    }
+}
+
 public struct PlayerArrangement: Sendable, Equatable {
     public let sideBySide: Bool
     public let scrolls: Bool
+    public let seam: PlayerSeam
 
-    public init(sideBySide: Bool, scrolls: Bool) {
+    public init(sideBySide: Bool, scrolls: Bool, seam: PlayerSeam = .none) {
         self.sideBySide = sideBySide
         self.scrolls = scrolls
+        self.seam = seam
+    }
+
+    public var stackedAtTheFold: Bool {
+        if case .stacked = seam { true } else { false }
     }
 
     public static func of(_ shape: ScreenShape) -> PlayerArrangement {
+        let seam = PlayerSeam.of(shape)
+        switch seam {
+        case .beside: return PlayerArrangement(sideBySide: true, scrolls: shape.accessibilityText, seam: seam)
+        case .stacked: return PlayerArrangement(sideBySide: false, scrolls: shape.accessibilityText, seam: seam)
+        case .none: break
+        }
         let phoneOnItsSide = shape.vertical == .compact && !shape.accessibilityText
         let roomForTwoColumns = shape.horizontal == .regular && shape.vertical == .regular && shape.isWiderThanTall
         let sideBySide = phoneOnItsSide || roomForTwoColumns

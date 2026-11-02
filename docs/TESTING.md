@@ -108,6 +108,10 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   Playing's two columns, the Library tab's split view, the sheets' form and page sizes, and the
   accessibility-size layouts in each) have been proved by their rules in tests and a clean build,
   never seen on an iPhone turned on its side or an iPad
+- [S · blocked: hardware] The iPhone Duo's poses are proved by their rules in tests and a clean
+  build against the iOS 27.2 SDK, never seen on a Duo or the Duo simulator (Xcode's Device Hub needs a
+  Mac): Now Playing's columns meeting at the fold held as a book, the cover above the fold and the
+  controls below it on a table, Up next stopping short of the fold, and the inner screen edge to edge
 - [S · blocked: a desktop] The desktop's colour scheme and text scale are proved on how a
   value is read alone: no GNOME or KDE session is reachable from the agent shell, so the portal's
   `color-scheme` and `SettingChanged`, GNOME's `text-scaling-factor` and KDE's `font` point size

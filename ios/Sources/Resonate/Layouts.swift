@@ -21,11 +21,22 @@ struct ShapedScreen<Content: View>: View {
                     vertical: SizeClass(vertical),
                     width: space.size.width,
                     height: space.size.height,
-                    accessibilityText: typeSize.isAccessibilitySize
+                    accessibilityText: typeSize.isAccessibilitySize,
+                    fold: Fold.within(space)
                 )
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+}
+
+extension Fold {
+    static func within(_ space: GeometryProxy) -> Fold? {
+        guard #available(iOS 27.1, *), let division = space.reservedRegions(kind: .division).first else { return nil }
+        let frame = division.frame
+        return frame.height > frame.width
+            ? Fold(runs: .down, start: frame.minX, end: frame.maxX)
+            : Fold(runs: .across, start: frame.minY, end: frame.maxY)
     }
 }
 
