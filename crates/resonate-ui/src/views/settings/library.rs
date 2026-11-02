@@ -276,7 +276,10 @@ impl RootView {
             let _ = this.update_in(cx, |this, window, cx| {
                 if !there {
                     this.report(
-                        Notice::Trouble(format!("{} is not a folder", folder.display())),
+                        Notice::Trouble(format!(
+                            "{} is not a folder",
+                            resonate_core::path_text::shown(&folder)
+                        )),
                         cx,
                     );
                     return;
@@ -297,7 +300,7 @@ impl RootView {
         let choosing = path.clone();
 
         let id: ElementId = (ElementId::Path(Arc::from(root)), "primary").into();
-        let named = format!("primary {}", root.display());
+        let named = format!("primary {}", resonate_core::path_text::shown(root));
         let choice = self.in_the_ring_at(
             named,
             self.folder_choice(&path, chosen, id),
@@ -333,7 +336,7 @@ impl RootView {
                     .child(kit::badge(PRIMARY_BADGE, theme::accent())),
             )
             .child(self.in_the_ring_at(
-                format!("clear primary {}", folder.display()),
+                format!("clear primary {}", resonate_core::path_text::shown(folder)),
                 clear,
                 |this, _, cx| this.forget_the_music_folder(cx),
                 cx,
@@ -391,7 +394,7 @@ impl RootView {
 
     fn forget_root(&self, root: PathBuf, cx: &mut Context<Self>) -> Div {
         let id = (ElementId::Path(Arc::from(root.as_path())), "forget");
-        let named = format!("forget {}", root.display());
+        let named = format!("forget {}", resonate_core::path_text::shown(&root));
         let asked = self.forgetting_the_folder.as_deref() == Some(root.as_path());
 
         div()
@@ -726,8 +729,12 @@ fn waiting_line(waiting: &[crate::RootWaiting]) -> String {
     let named: Vec<String> = waiting
         .iter()
         .map(|waiting| match waiting {
-            crate::RootWaiting::ToAdd(root) => format!("{} to add", root.display()),
-            crate::RootWaiting::ToForget(root) => format!("{} to forget", root.display()),
+            crate::RootWaiting::ToAdd(root) => {
+                format!("{} to add", resonate_core::path_text::shown(root))
+            }
+            crate::RootWaiting::ToForget(root) => {
+                format!("{} to forget", resonate_core::path_text::shown(root))
+            }
         })
         .collect();
     format!(
@@ -1920,7 +1927,7 @@ fn folder_name(folder: &Path) -> Div {
                 .truncate()
                 .ends_in_an_ellipsis()
                 .text_size(px(theme::text_sm()))
-                .child(SharedString::from(folder.display().to_string())),
+                .child(SharedString::from(resonate_core::path_text::shown(folder))),
         )
 }
 
@@ -1947,7 +1954,7 @@ fn folder_row(folder: &Path) -> Div {
                 .truncate()
                 .ends_in_an_ellipsis()
                 .text_size(px(theme::text_sm()))
-                .child(SharedString::from(folder.display().to_string())),
+                .child(SharedString::from(resonate_core::path_text::shown(folder))),
         )
 }
 

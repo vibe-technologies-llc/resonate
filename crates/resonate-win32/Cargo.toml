@@ -8,7 +8,7 @@ license.workspace = true
 doctest = false
 
 [features]
-console = ["windows/Win32_System_Console"]
+console = []
 
 [target.'cfg(windows)'.dependencies]
 thiserror.workspace = true
@@ -24,6 +24,7 @@ windows = {
         "Win32_Storage_FileSystem",
         "Win32_System_Com",
         "Win32_System_Com_StructuredStorage",
+        "Win32_System_Console",
         "Win32_System_Performance",
         "Win32_System_Threading",
         "Win32_System_Variant",

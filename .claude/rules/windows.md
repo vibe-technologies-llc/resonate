@@ -73,6 +73,8 @@ exists (*The Win32 exception*, below).
   level as a `Level` clamped to 0..=1, the mute, and `watched`, an `IAudioEndpointVolumeCallback`
   made with `#[implement]` that only calls the closure it is given, unregistered when its
   `VolumeWatch` drops); `name_the_process` (`SetCurrentProcessExplicitAppUserModelID`);
+  `leave_a_console_of_its_own` (`GetConsoleProcessList`, then `FreeConsole` only where this process
+  is the console's one, answering a `Console`);
   `carry_alternate_streams` and `carry_security` (below); and, under the `console` feature the
   binary's tests take, `PseudoConsole` (ConPTY over two `std::io::pipe`s, a process started into
   it by `CreateProcessW` with the `PSEUDOCONSOLE` attribute, its standard handles invalid so it
@@ -104,7 +106,12 @@ exists (*The Win32 exception*, below).
   exclusive event-driven mode at the format the engine plans, offered for every rate, word and layout
   `IsFormatSupported` accepts out of a fixed grid (`PROBED_RATES` x `SampleFormat::ALL` x
   `PROBED_LAYOUTS`, each combination its own `SinkFormats` entry so a rate is never claimed for a
-  layout it was not probed with). Bit-perfect on Windows is therefore a choice of device the
+  layout it was not probed with). **A held endpoint keeps the formats it took while free**: while a
+  client holds it exclusively (this player's own stream included) every exclusive probe answers
+  `AUDCLNT_E_DEVICE_IN_USE`, so `taken_while_free` answers the grid last probed for that endpoint id
+  instead (nothing where it was never free this run); listing it empty made the engine read its own
+  open stream as the device gone, rebind, and fail the row when the next survey dropped it again.
+  Bit-perfect on Windows is therefore a choice of device the
   listener makes in the output pane, and following the default never takes a device away from other
   programs. `SinkId` is an FNV-1a hash of the node name (`sink_id_of`), so the two ways of one
   endpoint have two ids.
@@ -261,7 +268,11 @@ exists (*The Win32 exception*, below).
   call of ours is needed.
 - **Settings are `%APPDATA%\resonate\config.toml`; data and cache are `%LOCALAPPDATA%\resonate`**
   (`config::known_folder`), unless an `XDG_*` variable is set; `~` is `%USERPROFILE%`. A config is
-  not made owner-only (the profile folder is private by inheritance).
+  not made owner-only (the profile folder is private by inheritance). **A writer locks
+  `config.toml.writing`, not the folder**: `std` cannot open a directory on Windows (that wants
+  `FILE_FLAG_BACKUP_SEMANTICS`) and a directory takes no byte-range lock, so the folder lock Linux
+  uses failed every write with *cannot write*; the lock file stays beside the settings and no sweep
+  takes it.
 - **The spool is the system temporary folder** and its anonymous file is
   `FILE_FLAG_DELETE_ON_CLOSE`; free space on the temporary folder's volume is read through `fs4` and the
   ceiling leaves `LEFT_FREE_ON_DISC` of it, as `fstatvfs` does on Unix.
@@ -275,7 +286,25 @@ exists (*The Win32 exception*, below).
 - **A key at a time is `crossterm`'s raw mode**, not termios: key events become the bytes the Unix
   readers parse (arrows as `ESC [ A`), so `Keyed` and `Struck` are one state machine on both. Raw
   mode swallows Ctrl-C as a key, which `interrupted()` turns back into the interrupt. A piped stdin
-  is read as bytes. `Readout` draws only where `crossterm::ansi_support::supports_ansi()` holds.
+  is read as bytes. `Readout` draws only where `crossterm::ansi_support::supports_ansi()` holds,
+  and the log's colours are written only there too (`readout::understands_escapes`, which turns on
+  virtual terminal processing where the console offers it), so an old console shows no raw escapes.
+- **The window leaves a console of its own.** The binary is a console program (`play`, `abx` and
+  the readout need the terminal they were started from), so a launch from Explorer or a shortcut
+  opens a console beside the window. A bare `resonate` (no subcommand) calls
+  `resonate_win32::leave_a_console_of_its_own` before logging starts: where the console has no
+  other process it is freed and its window closes; started from a shell, the shell shares it and
+  the window's log stays there.
+- **The window draws its own caption.** gpui's Windows backend reports `Decorations::Server`, so
+  `chrome::the_caption_is_ours` is true on Windows whatever the decorations say, and the window
+  opens with `TitlebarOptions::appears_transparent` (gpui then hides the system caption and keeps
+  the resize frame). `THE_SYSTEM_PRESSES_THE_CAPTION`: the header is `WindowControlArea::Drag`
+  (Windows moves the window, zooms on a double press and opens the system menu on a right press,
+  so `titlebar` adds no handlers of its own there), and each window control is `occlude`d (so the
+  drag area beneath is not hit) and marked `Min`, `Max` or `Close`, pressed by the system through
+  gpui's non-client handling rather than by `Control::act` (gpui's `zoom` only maximises, and the
+  system's maximise is a toggle that offers Snap Layouts). Everything else clickable in the header
+  stops the press, which gpui reads as the non-client press handled.
 
 ## The integration suites
 

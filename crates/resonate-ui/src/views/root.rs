@@ -4715,7 +4715,7 @@ impl RootView {
     }
 
     fn header(&self, window: &Window, cx: &mut Context<Self>) -> Div {
-        let client_side = chrome::client_side(window);
+        let caption_is_ours = chrome::the_caption_is_ours(window);
         let corners = chrome::rounded_within_the_frame(window);
 
         div()
@@ -4730,7 +4730,7 @@ impl RootView {
             .rounded_tl(corners.top_left)
             .rounded_tr(corners.top_right)
             .bg(rgb(theme::surface()))
-            .when(client_side, chrome::titlebar)
+            .when(caption_is_ours, chrome::titlebar)
             .child(self.wordmark())
             .child(
                 div()
@@ -4760,7 +4760,7 @@ impl RootView {
                     .w(px(theme::sidebar_width() - 32.0))
                     .justify_end()
                     .child(self.zone_switcher(cx))
-                    .when(client_side, |bar| {
+                    .when(caption_is_ours, |bar| {
                         bar.child(self.window_controls(window, cx))
                     }),
             )

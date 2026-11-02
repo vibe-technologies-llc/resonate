@@ -8,6 +8,9 @@ use std::{
 use crate::os_bytes;
 
 const ESCAPE: char = '\u{FDD0}';
+const VERBATIM_SHARE: &str = r"\\?\UNC\";
+const VERBATIM: &str = r"\\?\";
+const SHARE: &str = r"\\";
 const HEX_DIGITS: u32 = 2;
 const HEX_RADIX: u32 = 16;
 
@@ -32,6 +35,22 @@ pub fn encoded(path: &Path) -> Cow<'_, str> {
         }
     }
     Cow::Owned(text)
+}
+
+pub fn shown(path: &Path) -> String {
+    let text = path.display().to_string();
+    if cfg!(windows) {
+        return without_verbatim(&text).into_owned();
+    }
+    text
+}
+
+fn without_verbatim(text: &str) -> Cow<'_, str> {
+    if let Some(share) = text.strip_prefix(VERBATIM_SHARE) {
+        return Cow::Owned(format!("{SHARE}{share}"));
+    }
+    text.strip_prefix(VERBATIM)
+        .map_or(Cow::Borrowed(text), Cow::Borrowed)
 }
 
 pub fn decoded(text: &str) -> PathBuf {
@@ -73,6 +92,17 @@ fn byte_after_escape(letters: &mut Peekable<Chars<'_>>) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_verbatim_prefix_is_not_shown() {
+        assert_eq!(
+            without_verbatim(r"\\?\C:\Users\cb\Desktop"),
+            r"C:\Users\cb\Desktop"
+        );
+        assert_eq!(without_verbatim(r"\\?\UNC\nas\music"), r"\\nas\music");
+        assert_eq!(without_verbatim(r"C:\Music"), r"C:\Music");
+        assert_eq!(without_verbatim("/home/music"), "/home/music");
+    }
 
     #[cfg(unix)]
     fn named(bytes: &[u8]) -> PathBuf {

@@ -723,7 +723,7 @@ fn destination(folder: &Path, ink: u32) -> Div {
                 .truncate()
                 .ends_in_an_ellipsis()
                 .text_size(px(theme::text_sm()))
-                .child(SharedString::from(folder.display().to_string())),
+                .child(SharedString::from(resonate_core::path_text::shown(folder))),
         )
 }
 

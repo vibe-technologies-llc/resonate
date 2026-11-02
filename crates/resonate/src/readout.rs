@@ -114,12 +114,12 @@ pub fn line_of(state: &PlayerState, billed: &str, typing: &str) -> String {
 }
 
 #[cfg(unix)]
-const fn understands_escapes() -> bool {
+pub(crate) const fn understands_escapes() -> bool {
     true
 }
 
 #[cfg(windows)]
-fn understands_escapes() -> bool {
+pub(crate) fn understands_escapes() -> bool {
     crossterm::ansi_support::supports_ansi()
 }
 

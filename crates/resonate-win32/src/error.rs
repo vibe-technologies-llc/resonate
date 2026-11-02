@@ -28,6 +28,7 @@ pub enum Op {
     TellTheConsole,
     ReadConsoleMode,
     ReadFileIdentity,
+    LeaveTheConsole,
 }
 
 #[derive(Debug, thiserror::Error)]

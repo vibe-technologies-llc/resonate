@@ -1,6 +1,9 @@
-use std::io;
+use std::{collections::BTreeMap, io, sync::LazyLock};
 
-use resonate_audio::{Error, HardwareVolume, Operation, Plugged, SinkInfo, SinkPort, SinkResult};
+use parking_lot::Mutex;
+use resonate_audio::{
+    Error, HardwareVolume, Operation, Plugged, SinkFormats, SinkInfo, SinkPort, SinkResult,
+};
 use resonate_core::{ChannelCount, ChannelLayout, SampleFormat, SampleRate};
 use resonate_win32::EndpointVolume;
 use wasapi::{
@@ -13,6 +16,11 @@ use crate::{
     level::gain_of,
     ways::{Way, node_of, sink_id_of},
 };
+
+const DEVICE_IN_USE: i32 = i32::from_ne_bytes(0x8889_000A_u32.to_ne_bytes());
+
+static TAKEN_WHILE_FREE: LazyLock<Mutex<BTreeMap<String, Vec<SinkFormats>>>> =
+    LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
 pub(crate) fn backend_error(op: Operation, source: WasapiError) -> Error {
     Error::Backend {
@@ -159,12 +167,21 @@ fn exclusive_sink(
     client: &AudioClient,
     port: Option<SinkPort>,
 ) -> Option<SinkInfo> {
-    let formats = formats_taken(|format, rate, layout| {
-        matches!(
-            client.is_supported(&wave_of(format, rate, layout), &ShareMode::Exclusive),
-            Ok(None)
-        )
+    let mut held = false;
+    let probed = formats_taken(|format, rate, layout| {
+        if held {
+            return false;
+        }
+        match client.is_supported(&wave_of(format, rate, layout), &ShareMode::Exclusive) {
+            Ok(None) => true,
+            Err(WasapiError::Windows(error)) if error.code().0 == DEVICE_IN_USE => {
+                held = true;
+                false
+            }
+            _ => false,
+        }
     });
+    let formats = taken_while_free(endpoint, held, probed);
     if formats.is_empty() {
         return None;
     }
@@ -182,6 +199,15 @@ fn exclusive_sink(
         profile: None,
         current_rate: None,
     })
+}
+
+fn taken_while_free(endpoint: &str, held: bool, probed: Vec<SinkFormats>) -> Vec<SinkFormats> {
+    let mut remembered = TAKEN_WHILE_FREE.lock();
+    if held {
+        return remembered.get(endpoint).cloned().unwrap_or_default();
+    }
+    remembered.insert(endpoint.to_owned(), probed.clone());
+    probed
 }
 
 pub(crate) fn device_for(endpoint: &str) -> SinkResult<Device> {

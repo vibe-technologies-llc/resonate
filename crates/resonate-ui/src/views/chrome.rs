@@ -3,7 +3,7 @@ use std::cell::Cell;
 use gpui::{
     AnyElement, App, Bounds, BoxShadow, Corners, CursorStyle, Decorations, Div, HitboxBehavior,
     MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, ResizeEdge, Role, Size, Stateful,
-    Svg, Tiling, Window, canvas, div, point, prelude::*, px, rgb,
+    Svg, Tiling, Window, WindowControlArea, canvas, div, point, prelude::*, px, rgb,
 };
 
 use crate::{
@@ -23,6 +23,8 @@ thread_local! {
     static EDGE_UNDER_THE_POINTER: Cell<Option<ResizeEdge>> = const { Cell::new(None) };
 }
 const CONTROL_GROUP: &str = "window-control";
+
+const THE_SYSTEM_PRESSES_THE_CAPTION: bool = cfg!(windows);
 
 #[derive(Clone, Copy)]
 enum Control {
@@ -68,6 +70,14 @@ impl Control {
         match self {
             Self::Minimise | Self::Maximise | Self::Restore => theme::hover(),
             Self::Close => theme::close_hover(),
+        }
+    }
+
+    const fn area(self) -> WindowControlArea {
+        match self {
+            Self::Minimise => WindowControlArea::Min,
+            Self::Maximise | Self::Restore => WindowControlArea::Max,
+            Self::Close => WindowControlArea::Close,
         }
     }
 
@@ -120,8 +130,14 @@ fn window_control(control: Control) -> Stateful<Div> {
         .hover(|button| button.bg(rgb(control.hover())))
         .said_as(Role::Button, control.saying())
         .names(control.saying())
-        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-        .on_click(move |_, window, _| control.act(window))
+        .when(THE_SYSTEM_PRESSES_THE_CAPTION, |button| {
+            button.occlude().window_control_area(control.area())
+        })
+        .when(!THE_SYSTEM_PRESSES_THE_CAPTION, |button| {
+            button
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_click(move |_, window, _| control.act(window))
+        })
         .child(control.mark())
 }
 
@@ -137,7 +153,14 @@ pub(crate) fn client_side(window: &Window) -> bool {
     matches!(window.window_decorations(), Decorations::Client { .. })
 }
 
+pub(crate) fn the_caption_is_ours(window: &Window) -> bool {
+    THE_SYSTEM_PRESSES_THE_CAPTION || client_side(window)
+}
+
 pub(crate) fn titlebar(bar: Div) -> Div {
+    if THE_SYSTEM_PRESSES_THE_CAPTION {
+        return bar.window_control_area(WindowControlArea::Drag);
+    }
     bar.on_mouse_down(
         MouseButton::Left,
         |event: &MouseDownEvent, window, _| match event.click_count {

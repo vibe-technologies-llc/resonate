@@ -168,11 +168,21 @@ fn name_the_process() {
     }
 }
 
+#[cfg(all(windows, feature = "ui"))]
+fn leave_a_console_of_its_own() {
+    if let Err(error) = resonate_win32::leave_a_console_of_its_own() {
+        told!("resonate: the console the window was started with stays open: {error}");
+    }
+}
+
 fn init_logging() -> Result<()> {
     let (filter, refused) = wanted_filter();
+    let written = fmt::layer().with_writer(io::stderr);
+    #[cfg(windows)]
+    let written = written.with_ansi(readout::understands_escapes());
     tracing_subscriber::registry()
         .with(filter)
-        .with(fmt::layer().with_writer(io::stderr))
+        .with(written)
         .try_init()
         .map_err(|_| Error::LoggingAlreadyInstalled)?;
 
@@ -200,6 +210,10 @@ fn wanted_filter() -> (EnvFilter, Option<ParseError>) {
 fn run() -> Result<()> {
     let cli = Cli::parse();
     one_way_on_bit_perfect(&cli)?;
+    #[cfg(all(windows, feature = "ui"))]
+    if cli.command.is_none() {
+        leave_a_console_of_its_own();
+    }
     init_logging()?;
     #[cfg(windows)]
     name_the_process();

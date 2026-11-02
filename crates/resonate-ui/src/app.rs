@@ -1154,6 +1154,7 @@ pub fn run(
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             titlebar: Some(TitlebarOptions {
                 title: Some(WINDOW_TITLE.into()),
+                appears_transparent: cfg!(windows),
                 ..TitlebarOptions::default()
             }),
             window_decorations: Some(WindowDecorations::Client),

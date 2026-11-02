@@ -429,7 +429,8 @@ window drains `Bus::followed` on the foreground (`follow_when_told`, as it drain
 
 Every writer (`config::store`, `clear`, `store_in_table`, `clear_in_table`, `edit`): follows a
 symlinked `config.toml`; locks the containing folder for the whole read-edit-write (a window and
-`resonate eq` cannot overwrite each other; no lock file left); sweeps what a killed writer left
+`resonate eq` cannot overwrite each other; no lock file left; on Windows `config.toml.writing`,
+`windows.md`); sweeps what a killed writer left
 (`config.toml.<pid>-<n>.new`, older builds' `config.toml.lock`, nothing else); stages under this
 process's own name; creates the staged file `0600` and narrows the standing file to its owner's bits
 before writing (it holds secrets); `sync_all`s file and folder; renames over the target. A value

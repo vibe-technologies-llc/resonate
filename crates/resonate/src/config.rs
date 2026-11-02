@@ -45,6 +45,9 @@ const SPEAKER_ANGLE_DEGREES: RangeInclusive<u64> =
 
 const STAGING_SUFFIX: &str = ".new";
 
+#[cfg(windows)]
+const WRITERS_LOCK_SUFFIX: &str = ".writing";
+
 #[cfg(unix)]
 const READ_BY_ITS_OWNER_ALONE: u32 = 0o600;
 
@@ -1551,10 +1554,25 @@ fn held_alone(target: &Path) -> Result<File> {
         source,
     };
     let folder = target.parent().unwrap_or_else(|| Path::new("."));
-    let lock = File::open(folder).map_err(refused)?;
+    let lock = writers_lock(target, folder).map_err(refused)?;
     lock.lock().map_err(refused)?;
     sweep_what_writers_left(target, folder);
     Ok(lock)
+}
+
+#[cfg(unix)]
+fn writers_lock(_: &Path, folder: &Path) -> io::Result<File> {
+    File::open(folder)
+}
+
+#[cfg(windows)]
+fn writers_lock(target: &Path, _: &Path) -> io::Result<File> {
+    OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(beside(target, WRITERS_LOCK_SUFFIX))
 }
 
 fn sweep_what_writers_left(target: &Path, folder: &Path) {

@@ -1,3 +1,5 @@
+#[cfg(windows)]
+mod attached;
 #[cfg(all(windows, feature = "console"))]
 mod console;
 #[cfg(windows)]
@@ -25,6 +27,7 @@ pub use crate::console::{
 };
 #[cfg(windows)]
 pub use crate::{
+    attached::{Console, leave_a_console_of_its_own},
     counter::{PerformanceCounter, performance_counter},
     endpoint::{EndpointVolume, Level, VolumeWatch},
     error::{Error, Op, Result},

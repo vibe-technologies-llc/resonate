@@ -17,7 +17,9 @@ is never named.
   (`the_window_is_titled_by_what_plays_and_by_the_app_where_nothing_does`).
 - **The window is its own titlebar.** `WindowDecorations::Client`; the header draws
   minimise/maximise/close, drags the window, opens the compositor's window menu; under
-  `Decorations::Server` neither controls nor drag handlers render.
+  `Decorations::Server` neither controls nor drag handlers render, except on Windows, where the
+  caption is always the window's own and the system presses it (`chrome::the_caption_is_ours`,
+  `windows.md`).
   - Header: `theme::header_height()`, three columns; wordmark and controls each take sidebar width
     less padding, so the search field (at most `theme::search_width()`) centres on the window.
     Control = `theme::WINDOW_CONTROL` (31, odd so the mark centres on a whole pixel) square.
