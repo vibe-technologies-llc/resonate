@@ -97,7 +97,7 @@ unicode-normalization = { version = "0.1.26", default-features = false, features
 encoding_rs = { version = "0.8.44", default-features = false, features = ["alloc"] }
 chardetng = { version = "1.0.0", default-features = false }
 jiff = {
-    version = "0.2.38",
+    version = "0.2.39",
     default-features = false,
     features = ["std", "tz-system", "tzdb-zoneinfo"]
 }
@@ -170,10 +170,10 @@ rusqlite = {
 toml_edit = { version = "0.25.17", default-features = false, features = ["parse", "display"] }
 
 md-5 = { version = "0.11.0", default-features = false }
-crc32fast = { version = "1.5.3", default-features = false, features = ["std"] }
+crc32fast = { version = "1.5.4", default-features = false, features = ["std"] }
 base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
 roxmltree = { version = "0.21.2", default-features = false, features = ["std"] }
-ureq = { version = "3.5.0", default-features = false, features = ["rustls", "gzip"] }
+ureq = { version = "3.5.1", default-features = false, features = ["rustls", "gzip"] }
 rustls = { version = "0.23.46", default-features = false, features = ["std"] }
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring"] }
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["handshake"] }
@@ -184,7 +184,7 @@ webpki-root-certs = { version = "1.0.11", default-features = false }
 uuid = { version = "1.29.0", default-features = false, features = ["std", "v4"] }
 if-addrs = { version = "0.15.0", default-features = false }
 socket2 = { version = "0.6.5", default-features = false }
-mdns-sd = { version = "0.21.6", default-features = false, features = ["async"] }
+mdns-sd = { version = "0.21.7", default-features = false, features = ["async"] }
 quinn = {
     version = "0.11.12",
     default-features = false,
@@ -195,14 +195,14 @@ rcgen = { version = "0.14.10", default-features = false, features = ["ring"] }
 ring = { version = "0.17.14", default-features = false }
 rustls-pki-types = { version = "1.15.1", default-features = false }
 flate2 = { version = "1.1.10", default-features = false, features = ["rust_backend"] }
-hdf5-reader = { version = "0.12.0", default-features = false }
-hdf5-writer = "0.12.0"
+hdf5-reader = { version = "0.12.1", default-features = false }
+hdf5-writer = "0.12.1"
 serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
 serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
 serde-saphyr = { version = "2.0.0", default-features = false, features = ["deserialize"] }
 
 zbus = {
-    version = "6.2.0",
+    version = "6.2.1",
     default-features = false,
     features = ["default-rt", "proxy", "service"]
 }
