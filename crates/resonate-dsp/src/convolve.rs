@@ -351,12 +351,12 @@ fn resampled(taps: &[f64], from: SampleRate, to: SampleRate) -> Result<Vec<f64>>
     let most = resampler.prepare(spec, RESAMPLED_A_BLOCK_AT_A_TIME)?;
     let mut out = vec![0.0; most.max(resampler.max_flush_frames())];
     let mut written = Vec::new();
-    let trailing = std::iter::repeat_n(0.0, 2 * RESAMPLED_A_BLOCK_AT_A_TIME);
-    let padded: Vec<f64> = taps.iter().copied().chain(trailing).collect();
-    for block in padded.chunks(RESAMPLED_A_BLOCK_AT_A_TIME) {
+    for block in taps.chunks(RESAMPLED_A_BLOCK_AT_A_TIME) {
         let counted = resampler.process(block, &mut out);
         written.extend_from_slice(&out[..counted.frames_out]);
     }
+    let flushed = resampler.flush(&mut out);
+    written.extend_from_slice(&out[..flushed]);
     let scale = f64::from(from.hz()) / f64::from(to.hz());
     let length = (taps.len() as u64 * u64::from(to.hz())).div_ceil(u64::from(from.hz())) as usize;
     Ok(written

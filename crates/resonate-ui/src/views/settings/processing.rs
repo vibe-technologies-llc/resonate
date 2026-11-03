@@ -477,6 +477,16 @@ impl RootView {
 fn filter(params: SincParams) -> SharedString {
     let taps = 2 * u32::from(params.half_taps) + 1;
 
+    if params.converts_in_blocks() {
+        return format!(
+            "Converted a block at a time through Fourier transforms: a filter reaching {} samples \
+             either side of each output instant, flat until its transition and silent from the \
+             lower rate's Nyquist. Cutoff {:.3} of Nyquist, Kaiser β {:.1}.",
+            params.half_taps, params.cutoff, params.kaiser_beta,
+        )
+        .into();
+    }
+
     format!(
         "{} source samples either side of each output instant — {taps} taps where the \
          device's rate is at or above the file's, and more in proportion below it. {} phases in \

@@ -3,40 +3,38 @@
 How `resonate-dsp`'s resampler compares with libsoxr, the resampler most audio software treats as
 the reference, measured with both in one process on the same buffers. Measured on 2026-11-04 with
 libsoxr 0.1.3 as Arch ships it, rustc 1.99.1 and `target-cpu=native` on an AMD Ryzen 7 7700, after
-the two changes this comparison led to (*What changed in Resonate*). `soxr-comparison/` is the
-harness (`.claude/rules/build.md`); the `compare-resamplers` skill reruns it.
+the changes this comparison led to (*What changed in Resonate*). `soxr-comparison/` is the harness
+(`.claude/rules/build.md`); the `compare-resamplers` skill reruns it.
 
 ## In short
 
-- **At every level that matters, Resonate's filter is at least as clean as SoXR's and keeps more
-  of the top octave.** High, the default, rejects aliases and images to −136.6 dB against SoXR
-  HQ's −132.0 dB and stays flat to 20.83 kHz (−0.1 dB) where HQ stops at 20.53 kHz; Very high
-  reaches −185.8 dB against VHQ's −183.6 dB and stays flat to 21.34 kHz against 20.57 kHz
-  (44.1 kHz to 48 kHz).
-- **Resonate computes in f64 throughout; SoXR HQ computes in single precision.** HQ's noise stops
-  at about 133 dB SNR whatever the filter; High reaches 196.6 dB at 1 kHz and 147.1 dB at its worst
-  tone, Very high 246.4 dB and 202.7 dB.
-- **Resonate's top levels cost 2.5 to 4 times SoXR's, down from 3 to 22.** High and Very
-  high now filter through FFTs in two stages: at 44.1 to 48 kHz Very high takes 0.165 % of a core
-  against VHQ's 0.054 % (it took 0.356 %), and at 192 to 48 kHz 0.332 % against 0.084 % (it took
-  1.867 %). High takes 0.145 % against HQ's 0.053 %.
-- **The price was a little latency.** High and Very high now answer 2.9 to 3.5 ms later than they
-  did: Very high's peak leaves 10.75 ms after its impulse at 44.1 to 48 kHz, where VHQ's leaves
-  after 8.41 ms; at 48 to 44.1 kHz Very high takes 10.44 ms and VHQ 30.85 ms, since SoXR's block
-  depends on the ratio.
-- **SoXR's top recipes go further than Resonate's top level.** The 32-bit recipe rejects to
-  −207.0 dB, which no Resonate level does, and VHQ steep keeps the passband to 21.75 kHz. Both
-  sit far below anything a 24-bit converter resolves (−144 dB).
-- **SoXR's passband is deliberately rolled off by up to 0.01 dB under its edge**, so from a
-  44.1 kHz source a null against the ideal over 20 Hz–20 kHz bottoms out near −80 dB for HQ and
-  every recipe above it; Resonate's High and Very high null to −155 dB and −208 dB there.
-- **Resonate's filters ring for longer.** A narrower transition needs a longer kernel: Very high
-  rings 5.7 ms either side of an impulse against VHQ's 2.5 ms, with its energy more than 1 ms
-  before the peak at −35 dB against VHQ's −47 dB.
-- **Fast and Balanced now start their stopband at Nyquist**, as SoXR's recipes do: lengthened to
-  19 and 47 taps a side, the fewest that do it at their cutoff and β, their worst leak past
-  Nyquist falls from −39 and −36 dB to −63 and −90 dB for 5 % and 17 % more CPU, and their
-  −3 dB points rise. Narrowing their cutoffs instead would have cost 4 to 5 dB at 20 kHz.
+- **Very high now beats every SoXR recipe on every frequency-domain figure at every rate pair, and
+  High every recipe up to VHQ, each for less CPU than its peer at the ratios most listeners hear;
+  what SoXR keeps is shorter ringing and lower latency.**
+- **Very high rejects further than SoXR's 32-bit recipe and keeps more of the top octave than VHQ
+  steep, at once and at every rate pair measured.** At 44.1 to 48 kHz it stays flat to 21.76 kHz
+  (steep 21.75 kHz) and rejects to −218.7 dB (32-bit −207.0 dB, steep −181.6 dB); its worst SNR is
+  255.0 dB against 207.1 dB and its null to 20 kHz −270.5 dB against −77.7 dB.
+- **High, the default, beats VHQ on rejection and passband, and HQ on CPU at every pair.** It stays
+  flat to 20.84 kHz against VHQ's 20.57 kHz, rejects to −195.4 dB against −183.6 dB, and costs 0.027
+  % of a core against HQ's 0.053 % and VHQ's 0.054 %.
+- **Very high is the fastest top recipe at the ratios most listeners hear.** 0.039 % of a core at
+  44.1 to 48 kHz, against VHQ's 0.054 %, the 32-bit recipe's 0.062 % and steep's 0.073 %. At the
+  integer ratios (96 to 48, 192 to 48, 48 to 96 kHz) it costs more than VHQ, whose filter is far
+  shorter (0.053 % against 0.040 % at 96 to 48 kHz), and at 96 to 48 and 48 to 96 kHz more than the
+  32-bit recipe too.
+- **The passband has no ripple left to measure.** 2.0e-13 dB to 10 kHz against SoXR's 1.4e-8 dB,
+  because the response is exactly one below its transition, not a sidelobe's depth from it. Its
+  stopband is exactly nothing past the band edge, so what is measured there is the kernel's tail,
+  not a filter's sidelobe.
+- **SoXR's linear recipes ring for less and answer sooner.** A narrower transition needs a longer
+  kernel: Very high rings 14.27 ms either side of an impulse against steep's 11.77 ms and VHQ's 2.52
+  ms, High 3.02 ms against HQ's 2.15 ms. Very high's peak leaves 80.00 ms after its impulse at 44.1
+  to 48 kHz where steep's leaves after 24.83 ms and VHQ's after 8.41 ms, though at 48 to 44.1 kHz
+  steep takes 134.27 ms. A player's ring hides latency; it is the price of the speed, and a longer
+  hop is what buys it.
+- **Fast and Balanced are now the dearest levels.** They stay the low-latency polyphase levels (0.43
+  and 1.07 ms), and cost 0.068 % and 0.097 % where High costs 0.027 %.
 
 ## What was compared
 
@@ -45,11 +43,11 @@ Eighteen settings at seven rate pairs: 44.1 to 48 kHz (a CD on a 48 kHz device),
 
 | Setting | Design |
 |---|---|
-| **Resonate Fast** | Kaiser-windowed sinc, 19 taps a side, cutoff 0.900 of the band edge, β 6.0 (about 63 dB), one polyphase stage |
-| **Resonate Balanced** | 47 taps a side, cutoff 0.940, β 9.0 (about 90 dB), one polyphase stage |
-| **Resonate High** (default) | 128 taps a side, cutoff 0.965, β 14.0 (about 136 dB), two stages |
-| **Resonate Very high** | 320 taps a side, cutoff 0.978, β 19.5 (about 186 dB), two stages |
-| **Resonate High, minimum** and **Very high, minimum** | the same kernels folded to minimum phase through the real cepstrum |
+| **Resonate Fast** | Kaiser-windowed sinc, 19 taps a side, cutoff 0.900 of the band edge, β 6.0 (about 63 dB), polyphase |
+| **Resonate Balanced** | 47 taps a side, cutoff 0.940, β 9.0 (about 90 dB), polyphase |
+| **Resonate High** (default) | flat top reaching 160 taps a side, cutoff 0.9635, β 18.33 (about 175 dB), a block at a time in the frequency domain |
+| **Resonate Very high** | flat top reaching 900 taps a side, cutoff 0.9921, β 22.4 (about 212 dB), the same way |
+| **Resonate High, minimum** and **Very high, minimum** | those kernels windowed in time, folded to minimum phase through the real cepstrum |
 | **Resonate Very high, intermediate** | half minimum, half linear phase |
 | SoXR QQ | cubic interpolation, no filter |
 | SoXR LQ | 16-bit precision, passband to 0.676 of Nyquist, medium rolloff |
@@ -64,11 +62,11 @@ Eighteen settings at seven rate pairs: 44.1 to 48 kHz (a CD on a 48 kHz device),
 
 Resonate's taps are counted at the lower of the two rates. Fast and Balanced tabulate their kernel
 for every phase the exact rational ratio needs (160 for 44.1 to 48 kHz) and sum each output frame
-over it. High and Very high convolve the same kernel by FFT at twice the input rate, then
-interpolate to the output with a short kernel 60 dB quieter than their own stopband
-(*What changed in Resonate*). SoXR runs on one thread, with its own defaults otherwise: its
-stopband begins at Nyquist at every recipe, and recipes of 20 bits and fewer compute in single
-precision. Both take and give interleaved f64, so neither pays for a conversion the other does not.
+over it. High and Very high take one forward FFT at the input's rate over a pair of channels,
+multiply it by the response and take one inverse FFT at the output's rate (*What changed in
+Resonate*). SoXR runs on one thread, with its own defaults otherwise: its stopband begins at Nyquist
+at every recipe, and recipes of 20 bits and fewer compute in single precision. Both take and give
+interleaved f64, so neither pays for a conversion the other does not.
 
 ## How it was measured
 
@@ -106,7 +104,7 @@ Every figure is read from what each resampler made of a signal, never from its d
   of five runs on an idle machine: the share of one core a second of audio costs. **Construction**
   is the first build of a setting in the process, then the best of nine builds after it.
 - The plots draw the response as the sweep read it: the tone's gain under the output's Nyquist,
-  and above it the alias or image level at the frequency it came from. Their floor is −220 dB;
+  and above it the alias or image level at the frequency it came from. Their floor is −340 dB;
   anything lower is drawn on it.
 
 ## Results
@@ -118,29 +116,31 @@ Resonate's best setting, Very high in linear phase, against SoXR's three stronge
 
 | 44.1 kHz to 48 kHz unless named | **Resonate Very high** | SoXR VHQ | SoXR 32-bit | SoXR VHQ, steep |
 |---|---:|---:|---:|---:|
-| Ripple 20 Hz–10 kHz (dB) | **4.2e-10** | 1.4e-8 | 7.2e-9 | 1.3e-8 |
+| Ripple 20 Hz–10 kHz (dB) | **2.0e-13** | 1.4e-8 | 7.2e-9 | 1.3e-8 |
 | Deviation 20 Hz–20 kHz (dB) | **< 0.0001** | 0.0062 | 0.0078 | 0.0017 |
-| −0.1 dB (kHz) | 21.34 | 20.57 | 20.58 | **21.75** |
-| −3 dB (kHz) | 21.51 | 20.95 | 20.94 | **21.82** |
-| Worst alias or image (dB) | −185.8 | −183.6 | **−207.0** | −181.6 |
-| Worst landing ≤ 20 kHz (dB) | −210.7 | −201.4 | **−222.0** | −214.6 |
-| 96 → 48 kHz: worst alias (dB) | −185.8 | −177.3 | **−216.7** | −192.3 |
-| 192 → 48 kHz: worst alias (dB) | −185.8 | −183.9 | **−215.7** | −183.9 |
-| SNR at 1 kHz (dB) | **246.4** | 187.0 | 212.3 | 189.9 |
-| Worst SNR 20 Hz–20 kHz (dB) | 202.7 | 184.1 | **207.1** | 183.9 |
-| Null 20 Hz–20 kHz (dB) | **−208.0** | −79.7 | −77.7 | −91.1 |
-| Null 20 Hz–10 kHz (dB) | **−211.2** | −182.4 | −190.7 | −183.0 |
-| Ringing either side (ms) | 5.67 | **2.52** | 2.69 | 11.77 |
-| Energy over 1 ms before the peak (dB) | −35.3 | **−46.5** | −45.1 | −31.6 |
-| Streaming latency (ms) | 10.75 | **8.41** | 18.44 | 24.83 |
-| CPU, % of a core | 0.165 | **0.054** | 0.061 | 0.073 |
-| 192 → 48 kHz: CPU, % of a core | 0.332 | **0.084** | 0.097 | 0.097 |
+| −0.1 dB (kHz) | **21.76** | 20.57 | 20.58 | 21.75 |
+| −3 dB (kHz) | **21.84** | 20.95 | 20.94 | 21.82 |
+| Worst alias or image (dB) | **−218.7** | −183.6 | −207.0 | −181.6 |
+| Worst landing ≤ 20 kHz (dB) | **−334.0** | −201.4 | −222.0 | −214.6 |
+| 48 → 44.1 kHz: worst alias (dB) | **−217.7** | −182.0 | −208.5 | −181.4 |
+| 96 → 48 kHz: worst alias (dB) | **−219.1** | −177.3 | −216.7 | −192.3 |
+| 192 → 48 kHz: worst alias (dB) | **−219.1** | −183.9 | −215.7 | −183.9 |
+| SNR at 1 kHz (dB) | **270.1** | 187.0 | 212.3 | 189.9 |
+| Worst SNR 20 Hz–20 kHz (dB) | **255.0** | 184.1 | 207.1 | 183.9 |
+| Null 20 Hz–20 kHz (dB) | **−270.5** | −79.7 | −77.7 | −91.1 |
+| Null 20 Hz–10 kHz (dB) | **−275.0** | −182.4 | −190.7 | −183.0 |
+| Ringing either side (ms) | 14.27 | **2.52** | 2.69 | 11.77 |
+| Energy over 1 ms before the peak (dB) | −31.1 | **−46.5** | −45.1 | −31.6 |
+| Streaming latency (ms) | 80.00 | **8.41** | 18.44 | 24.83 |
+| 48 → 44.1 kHz: streaming latency (ms) | 80.02 | 30.85 | **23.77** | 134.27 |
+| CPU, % of a core | **0.039** | 0.054 | 0.062 | 0.073 |
+| 48 → 44.1 kHz: CPU | **0.039** | 0.059 | 0.064 | 0.073 |
+| 96 → 48 kHz: CPU | 0.053 | **0.040** | 0.046 | 0.051 |
+| 192 → 48 kHz: CPU | 0.095 | **0.084** | 0.097 | 0.098 |
 
-Very high is the most transparent in the audible band: the flattest passband, no rolloff under
-20 kHz, and a null 20 to 29 dB deeper than any SoXR recipe's to 10 kHz and 117 dB deeper to
-20 kHz. SoXR 32-bit rejects aliases and images 11 to 31 dB further; VHQ steep keeps 0.4 kHz more
-of the passband; VHQ rings for half as long, answers 2.3 ms sooner here and costs a third of the
-CPU.
+Very high takes every row of the frequency domain, and CPU at the fractional ratios. VHQ's shorter
+filter rings for less, answers sooner and costs less at the integer ratios; the 32-bit recipe costs
+less at 96 to 48 kHz.
 
 ### 44.1 kHz to 48 kHz
 
@@ -148,69 +148,76 @@ The case nearly every listener with a 48 kHz device hears.
 
 | Setting | −0.1 dB (kHz) | Worst alias or image (dB) | Worst landing ≤ 20 kHz (dB) | Worst SNR (dB) | Null to 10 kHz (dB) | Streaming latency (ms) | CPU (%) |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| **Resonate High** | 20.83 | −136.6 | −158.3 | 147.1 | −168.8 | 6.26 | 0.145 |
+| **Resonate High** | 20.84 | −195.4 | −275.6 | 213.6 | −242.4 | 43.33 | 0.027 |
 | SoXR HQ | 20.53 | −132.0 | −141.5 | 131.1 | −131.3 | 18.39 | 0.053 |
-| **Resonate Very high** | 21.34 | −185.8 | −210.7 | 202.7 | −211.2 | 10.75 | 0.165 |
+| SoXR 24-bit | 20.56 | −158.9 | −177.6 | 160.4 | −158.8 | 4.92 | 0.053 |
+| **Resonate Very high** | 21.76 | −218.7 | −334.0 | 255.0 | −275.0 | 80.00 | 0.039 |
 | SoXR VHQ | 20.57 | −183.6 | −201.4 | 184.1 | −182.4 | 8.41 | 0.054 |
-| SoXR 32-bit | 20.58 | −207.0 | −222.0 | 207.1 | −190.7 | 18.44 | 0.061 |
+| SoXR 32-bit | 20.58 | −207.0 | −222.0 | 207.1 | −190.7 | 18.44 | 0.062 |
 | SoXR VHQ, steep | 21.75 | −181.6 | −214.6 | 183.9 | −183.0 | 24.83 | 0.073 |
 
 ![Magnitude response and rejection, 44.1 kHz to 48 kHz](resampling/response-44.1-to-48.svg)
 
 ![Top of the passband, 44.1 kHz to 48 kHz](resampling/passband-44.1-to-48.svg)
 
-High and Very high hold their passbands flat almost to their −3 dB points (21.16 and 21.51 kHz),
-then fall into their stopbands by the input's Nyquist: Resonate trades a longer kernel for a
-narrower transition. SoXR's linear recipes keep their −3 dB point at about 20.95 kHz whatever the
-precision, and spend the extra precision on stopband depth alone.
+High and Very high hold their passbands exactly flat almost to their −3 dB points
+(21.14 and 21.84 kHz), then fall to nothing by the input's Nyquist. SoXR's linear
+recipes keep their −3 dB point at about 20.95 kHz whatever the precision, and spend the extra
+precision on stopband depth alone.
 
 ### Going down: 96 and 192 kHz to 48 kHz
 
 A high-resolution file on a 48 kHz device. Every tone above 24 kHz in the source must vanish.
 
-| Setting | 96 → 48: worst alias (dB) | 96 → 48: landing ≤ 20 kHz (dB) | 192 → 48: worst alias (dB) | 192 → 48: landing ≤ 20 kHz (dB) | −0.1 dB (kHz) | 192 → 48: CPU (%) |
-|---|---:|---:|---:|---:|---:|---:|
-| **Resonate High** | −136.6 | −152.3 | −136.6 | −153.1 | 22.67 | 0.248 |
-| SoXR HQ | −127.9 | −139.0 | −133.7 | −135.3 | 22.34 | 0.072 |
-| **Resonate Very high** | −185.8 | −205.9 | −185.8 | −205.9 | 23.23 | 0.332 |
-| SoXR VHQ | −177.3 | −208.3 | −183.9 | −183.9 | 22.39 | 0.084 |
-| SoXR 32-bit | −216.7 | −238.0 | −215.7 | −215.7 | 22.40 | 0.097 |
+| Setting | 96 → 48: worst alias (dB) | 96 → 48: landing ≤ 20 kHz (dB) | 192 → 48: worst alias (dB) | 192 → 48: landing ≤ 20 kHz (dB) | −0.1 dB (kHz) | 96 → 48: CPU (%) | 192 → 48: CPU (%) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| **Resonate High** | −197.7 | −231.5 | −197.7 | −232.0 | 22.68 | 0.039 | 0.069 |
+| SoXR HQ | −127.9 | −139.0 | −133.7 | −135.3 | 22.34 | 0.045 | 0.072 |
+| **Resonate Very high** | −219.1 | −265.0 | −219.1 | −265.2 | 23.69 | 0.053 | 0.095 |
+| SoXR VHQ | −177.3 | −208.3 | −183.9 | −183.9 | 22.39 | 0.040 | 0.084 |
+| SoXR 32-bit | −216.7 | −238.0 | −215.7 | −215.7 | 22.40 | 0.046 | 0.097 |
+| SoXR VHQ, steep | −192.3 | −229.5 | −183.9 | −183.9 | 23.67 | 0.051 | 0.098 |
 
 ![Magnitude response and rejection, 96 kHz to 48 kHz](resampling/response-96-to-48.svg)
 
 ![Magnitude response and rejection, 192 kHz to 48 kHz](resampling/response-192-to-48.svg)
 
 SoXR divides a large ratio into stages, so at 192 to 48 kHz its VHQ rejection rises again past
-about 72 kHz, where its last stage's images sit; Resonate's stage one filters at the input's own
-rate there and keeps the same stopband from the band edge to the input's Nyquist. At an integer
-ratio, SoXR QQ (cubic interpolation) passes everything above Nyquist at 0 dB: it applies no
-anti-alias filter.
+about 72 kHz, where its last stage's images sit; Resonate drops every bin past the band edge in one
+transform, so nothing comes back at any frequency. At an integer ratio, SoXR QQ (cubic
+interpolation) passes everything above Nyquist at 0 dB: it applies no anti-alias filter.
 
 ### Phase, ringing and latency
 
-| Setting | 44.1 → 48: delay spread (µs) | Ringing before / after (ms) | Energy over 1 ms early (dB) | Latency 44.1 → 48 (ms) | Latency 48 → 44.1 (ms) |
-|---|---:|---:|---:|---:|---:|
-| **Resonate High** | 0.0 | 2.65 / 2.65 | −44.2 | 6.26 | 5.98 |
-| **Resonate High, minimum** | 58.7 | 0.08 / 4.77 | < −200 | 3.47 | 3.17 |
-| **Resonate Very high** | 0.0 | 5.67 / 5.67 | −35.3 | 10.75 | 10.44 |
-| **Resonate Very high, intermediate** | 38.7 | 4.06 / 8.23 | −61.1 | 12.56 | 12.25 |
-| **Resonate Very high, minimum** | 77.5 | 0.10 / 10.88 | < −200 | 3.63 | 3.31 |
-| SoXR HQ | 0.0 | 2.15 / 2.15 | −50.8 | 18.39 | 3.04 |
-| SoXR VHQ | 0.0 | 2.52 / 2.52 | −46.5 | 8.41 | 30.85 |
-| SoXR VHQ, intermediate | 38.0 | 1.98 / 3.62 | −75.6 | 34.35 | 33.31 |
-| SoXR VHQ, minimum | 76.1 | 0.08 / 4.75 | < −200 | 5.40 | 27.85 |
+| Setting | 44.1 → 48: delay spread (µs) | Ringing before / after (ms) | Energy over 1 ms early (dB) | Latency 44.1 → 48 (ms) | Latency 48 → 44.1 (ms) | Latency 96 → 48 (ms) |
+|---|---:|---:|---:|---:|---:|---:|
+| **Resonate High** | 0.0 | 3.02 / 3.02 | −42.5 | 43.33 | 43.35 | 71.43 |
+| **Resonate High, minimum** | 73.4 | 0.10 / 5.60 | −195.8 | 40.00 | 40.02 | 68.20 |
+| **Resonate Very high** | 0.0 | 14.27 / 14.27 | −31.1 | 80.00 | 80.02 | 117.89 |
+| **Resonate Very high, intermediate** | 42.7 | 9.31 / 21.27 | −59.6 | 93.33 | 93.35 | 145.99 |
+| **Resonate Very high, minimum** | 85.4 | 0.12 / 28.38 | < −200 | 60.00 | 60.02 | 99.26 |
+| SoXR HQ | 0.0 | 2.15 / 2.15 | −50.8 | 18.39 | 3.04 | 13.26 |
+| SoXR VHQ | 0.0 | 2.52 / 2.52 | −46.5 | 8.41 | 30.85 | 2.80 |
+| SoXR VHQ, steep | 0.0 | 11.77 / 11.77 | −31.6 | 24.83 | 134.27 | 143.14 |
+| SoXR VHQ, intermediate | 38.0 | 1.98 / 3.62 | −75.6 | 34.35 | 33.31 | 9.70 |
+| SoXR VHQ, minimum | 76.1 | 0.08 / 4.75 | < −200 | 5.40 | 27.85 | 0.12 |
 
-- Both libraries' minimum phase removes pre-echo entirely and spreads 20 Hz–20 kHz over about
-  77 µs; Resonate's minimum-phase Very high rings for twice as long afterwards (10.9 ms against
-  4.8 ms), the price of its narrower transition.
-- Resonate's latency is its kernel's lead plus one FFT partition and the interpolator's lookahead,
-  the same at every ratio: 2.9 to 3.5 ms on top of the kernel. SoXR's moves with the ratio, since
-  it fills a block before it filters: VHQ's from 2.8 ms to 31 ms, VHQ steep's to 143 ms. Minimum
-  phase brings Resonate to about 3 ms at every ratio; SoXR's minimum phase reaches 0.12 ms at 96
-  to 48 kHz but waits 5.4 to 27.9 ms at the fractional ratios.
-- Resonate's intermediate phase waits longer than its linear phase (12.56 ms against 10.75 ms),
-  since its window keeps 1.25 half-widths of lead; the lead is genuinely part of the response, and
-  trimming it to the stopband's level costs 14 dB of rejection.
+- Both libraries' minimum phase removes pre-echo entirely and spreads 20 Hz–20 kHz over about 80 µs;
+  Resonate's minimum-phase Very high rings for far longer afterwards
+  (28.38 ms against 4.75 ms), the price of
+  its narrower transition.
+- Resonate's latency is its block's hop, its kernel's lead and the margin kept clear of the tail, and
+  it hardly moves with the ratio: 43.33 ms for High and 80.00 ms for
+  Very high under 2:1, about 71.43 and 117.89 ms where the hop has doubled at 2:1 or
+  steeper. SoXR's moves with the ratio, since it fills a block before it filters: VHQ's from 2.8 ms to
+  31 ms, steep's from 24.83 ms to 143.14 ms.
+- A latency is what a track's first frame waits for, on a chain feeding a ring of 100 ms or more: a
+  seek or a track start decodes that many more frames ahead of the first it hears, a few milliseconds'
+  work, while a pause or a volume change is answered at the ring and never waits for it. So it is what
+  was traded.
+- Resonate's intermediate phase waits longer than its linear phase (93.33 ms
+  against 80.00 ms), since its window keeps 1.25 half-widths of lead; the lead is genuinely
+  part of the response.
 
 ### Throughput and construction
 
@@ -221,37 +228,37 @@ idle machine: the share of one core a second of audio costs.
 
 | Setting | 44.1 kHz to 48 kHz | 48 kHz to 44.1 kHz | 96 kHz to 48 kHz | 96 kHz to 44.1 kHz | 192 kHz to 48 kHz | 44.1 kHz to 96 kHz | 48 kHz to 96 kHz |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **Resonate Fast** | 0.068 | 0.064 | 0.083 | 0.087 | 0.113 | 0.133 | 0.124 |
-| **Resonate Balanced** | 0.097 | 0.095 | 0.128 | 0.140 | 0.199 | 0.193 | 0.175 |
-| **Resonate High** | 0.145 | 0.147 | 0.124 | 0.171 | 0.248 | 0.205 | 0.118 |
-| **Resonate Very high** | 0.165 | 0.169 | 0.141 | 0.186 | 0.332 | 0.225 | 0.132 |
-| **Resonate High, minimum** | 0.143 | 0.145 | 0.126 | 0.168 | 0.247 | 0.206 | 0.115 |
-| **Resonate Very high, intermediate** | 0.172 | 0.178 | 0.155 | 0.203 | 0.319 | 0.255 | 0.146 |
-| **Resonate Very high, minimum** | 0.162 | 0.165 | 0.148 | 0.185 | 0.308 | 0.259 | 0.166 |
-| SoXR QQ | 0.023 | 0.022 | 0.026 | 0.025 | 0.033 | 0.043 | 0.044 |
-| SoXR LQ | 0.045 | 0.050 | 0.041 | 0.062 | 0.069 | 0.095 | 0.044 |
-| SoXR MQ | 0.050 | 0.052 | 0.043 | 0.064 | 0.071 | 0.065 | 0.045 |
-| SoXR 16-bit | 0.051 | 0.052 | 0.043 | 0.064 | 0.071 | 0.069 | 0.045 |
-| SoXR HQ | 0.053 | 0.056 | 0.044 | 0.069 | 0.072 | 0.070 | 0.047 |
-| SoXR 24-bit | 0.053 | 0.054 | 0.038 | 0.064 | 0.080 | 0.078 | 0.040 |
-| SoXR VHQ | 0.054 | 0.059 | 0.039 | 0.068 | 0.084 | 0.079 | 0.041 |
-| SoXR 32-bit | 0.061 | 0.064 | 0.045 | 0.073 | 0.097 | 0.090 | 0.045 |
-| SoXR VHQ, steep | 0.073 | 0.072 | 0.052 | 0.082 | 0.097 | 0.101 | 0.058 |
-| SoXR VHQ, intermediate | 0.059 | 0.062 | 0.048 | 0.072 | 0.092 | 0.084 | 0.048 |
-| SoXR VHQ, minimum | 0.054 | 0.059 | 0.039 | 0.068 | 0.084 | 0.079 | 0.041 |
+| **Resonate Fast** | 0.068 | 0.065 | 0.081 | 0.087 | 0.116 | 0.136 | 0.124 |
+| **Resonate Balanced** | 0.097 | 0.094 | 0.127 | 0.140 | 0.202 | 0.195 | 0.175 |
+| **Resonate High** | 0.027 | 0.028 | 0.039 | 0.041 | 0.069 | 0.043 | 0.040 |
+| **Resonate Very high** | 0.039 | 0.039 | 0.053 | 0.053 | 0.095 | 0.055 | 0.054 |
+| **Resonate High, minimum** | 0.029 | 0.029 | 0.039 | 0.042 | 0.067 | 0.043 | 0.041 |
+| **Resonate Very high, intermediate** | 0.047 | 0.045 | 0.060 | 0.059 | 0.105 | 0.059 | 0.061 |
+| **Resonate Very high, minimum** | 0.038 | 0.038 | 0.055 | 0.055 | 0.099 | 0.057 | 0.058 |
+| SoXR QQ | 0.023 | 0.022 | 0.026 | 0.025 | 0.032 | 0.043 | 0.044 |
+| SoXR LQ | 0.046 | 0.050 | 0.040 | 0.062 | 0.069 | 0.095 | 0.044 |
+| SoXR MQ | 0.050 | 0.053 | 0.043 | 0.065 | 0.071 | 0.065 | 0.046 |
+| SoXR 16-bit | 0.052 | 0.053 | 0.043 | 0.065 | 0.071 | 0.069 | 0.046 |
+| SoXR HQ | 0.053 | 0.056 | 0.045 | 0.069 | 0.072 | 0.070 | 0.047 |
+| SoXR 24-bit | 0.053 | 0.055 | 0.038 | 0.064 | 0.079 | 0.077 | 0.041 |
+| SoXR VHQ | 0.054 | 0.059 | 0.040 | 0.068 | 0.084 | 0.079 | 0.042 |
+| SoXR 32-bit | 0.062 | 0.064 | 0.046 | 0.073 | 0.097 | 0.091 | 0.046 |
+| SoXR VHQ, steep | 0.073 | 0.073 | 0.051 | 0.084 | 0.098 | 0.101 | 0.059 |
+| SoXR VHQ, intermediate | 0.060 | 0.063 | 0.048 | 0.072 | 0.092 | 0.085 | 0.049 |
+| SoXR VHQ, minimum | 0.054 | 0.059 | 0.040 | 0.068 | 0.084 | 0.079 | 0.042 |
 
 #### Construction, milliseconds
 
 | Setting | First, 44.1 kHz to 48 kHz | Again, 44.1 kHz to 48 kHz | First, 192 kHz to 48 kHz | Again, 192 kHz to 48 kHz |
 | --- | ---: | ---: | ---: | ---: |
-| **Resonate Fast** | 0.15 | 0.00 | 0.00 | 0.00 |
+| **Resonate Fast** | 0.15 | 0.00 | 0.01 | 0.00 |
 | **Resonate Balanced** | 0.30 | 0.00 | 0.01 | 0.00 |
-| **Resonate High** | 0.75 | 0.01 | 1.32 | 0.01 |
-| **Resonate Very high** | 1.62 | 0.01 | 3.05 | 0.01 |
-| **Resonate High, minimum** | 61.39 | 0.01 | 0.70 | 0.01 |
-| **Resonate Very high, intermediate** | 133.07 | 0.01 | 2.78 | 0.01 |
-| **Resonate Very high, minimum** | 130.78 | 0.01 | 1.46 | 0.01 |
-| SoXR QQ | 0.01 | 0.00 | 0.01 | 0.00 |
+| **Resonate High** | 0.66 | 0.00 | 0.98 | 0.14 |
+| **Resonate Very high** | 0.73 | 0.01 | 1.08 | 0.14 |
+| **Resonate High, minimum** | 66.23 | 0.00 | 1.51 | 0.13 |
+| **Resonate Very high, intermediate** | 64.26 | 0.01 | 3.15 | 0.13 |
+| **Resonate Very high, minimum** | 60.35 | 0.00 | 2.35 | 0.13 |
+| SoXR QQ | 0.02 | 0.00 | 0.01 | 0.00 |
 | SoXR LQ | 0.05 | 0.05 | 0.01 | 0.00 |
 | SoXR MQ | 0.03 | 0.01 | 0.01 | 0.01 |
 | SoXR 16-bit | 0.01 | 0.01 | 0.01 | 0.01 |
@@ -260,27 +267,29 @@ idle machine: the share of one core a second of audio costs.
 | SoXR VHQ | 0.04 | 0.04 | 0.03 | 0.02 |
 | SoXR 32-bit | 0.06 | 0.06 | 0.05 | 0.05 |
 | SoXR VHQ, steep | 0.20 | 0.19 | 0.18 | 0.18 |
-| SoXR VHQ, intermediate | 0.45 | 0.40 | 0.40 | 0.39 |
-| SoXR VHQ, minimum | 0.40 | 0.38 | 0.37 | 0.37 |
+| SoXR VHQ, intermediate | 0.45 | 0.41 | 0.42 | 0.40 |
+| SoXR VHQ, minimum | 0.40 | 0.39 | 0.39 | 0.38 |
 
-- **Throughput barely moves with SoXR's precision**: 32-bit costs 0.061 % at 44.1 to 48 kHz, only
-  a seventh more than HQ, because a longer filter is one larger FFT. Resonate's High and Very high
-  now work the same way, so Very high costs only a seventh more than High; Fast and Balanced still
-  sum each output frame over their whole kernel, which is cheap at 39 and 95 taps.
-- **Going down by a large ratio is still where the gap is widest**, at 4 times VHQ for Very high
-  at 192 to 48 kHz: stage one runs at the input's rate, 192 000 samples a second through the FFT,
-  where SoXR halves the rate twice first.
-- **Intermediate phase costs within a tenth of linear phase**, though its kernel spans 1 040
-  taps where linear's spans 640, since an FFT's cost grows slowly with length; minimum phase costs
-  what linear does.
-- **The timings vary by about a tenth between runs on the same code** (Very high at 192 to 48 kHz
-  measured 0.273 % in one session and 0.332 % in two later ones); the tables are the latest run.
-  SoXR's vary by a few hundredths.
-- **Construction**: Resonate designs a kernel's spectra and the interpolator's table once and keeps
-  them, so a build after the first is free (0.01 ms); the first costs 0.75 ms for High and 1.6 ms
-  for Very high at 44.1 to 48 kHz, 3.1 ms at 192 kHz, and a shaped phase is designed once a run
-  (62 ms for High minimum, 132 ms for Very high's). SoXR designs afresh each time but in under half
-  a millisecond.
+- **High beats HQ at every pair**, and VHQ too. A stereo pair shares one complex FFT, so where SoXR
+  transforms each channel, Resonate transforms the pair once.
+- **Very high beats steep, its nearest peer in passband, at all but 96 to 48 kHz, where they are level.**
+  It beats the 32-bit recipe at the fractional ratios and at 192 to 48 kHz; at 96 to 48 and 48 to
+  96 kHz it costs a sixth more.
+- **Going down by a large ratio is still where it is dearest** (0.095 % at 192 to 48 kHz,
+  against VHQ's 0.084 %): the forward FFT runs at the input's rate and three quarters
+  of its bins are dropped, where SoXR halves the rate twice first.
+- **The speed does not depend on the build.** `rustfft` picks its vector width at run time, so on a
+  baseline SSE2 build (the Flatpak's) `cargo bench -p resonate-dsp --bench stages` reads High at
+  0.029 % and Very high at 0.037 % at 44.1 to 48 kHz, where Fast and Balanced, compiled for the build's
+  target, rise from 0.068 % and 0.097 % to 0.079 % and 0.120 %.
+- **Intermediate phase costs a fifth more than linear**, its complex response and wider reach;
+  minimum phase costs what linear does.
+- **The timings vary by about a tenth between runs on the same code**; the tables are the latest run.
+- **Construction**: a plan's transforms and response are kept, so a build after the first is free
+  (0.01 ms at 44.1 to 48 kHz, 0.14 ms at 192 to 48 kHz for its larger buffers). The first
+  costs 0.66 ms for High and 0.73 ms for Very high, and a shaped phase is designed once a run
+  (66.23 ms for High minimum, 60.35 ms for Very high's). SoXR
+  designs afresh each time but in under half a millisecond.
 
 ## What changed in Resonate
 
@@ -302,52 +311,60 @@ over every polyphase image: at a tenth under the stopband, High's total stopband
 | Resonate Very high, intermediate | 1.0e-7 | 3.4e-9 | < 0.0001 | < 0.0001 |
 | Resonate Very high, minimum | 4.1e-7 | 1.3e-8 | < 0.0001 | < 0.0001 |
 
-### High and Very high resample in two stages
+### High and Very high convert in the frequency domain
 
-The single polyphase stage summed every output frame over the whole kernel, stretched by the ratio
-going down: 640 taps a channel for Very high at 44.1 to 48 kHz, 2 560 at 192 to 48 kHz. The loop
-was bound by its loads at about 3.5 multiply-adds a cycle, so no reordering of it would close the
-gap; the work had to shrink. High and Very high now run:
+Two earlier designs were measured on the way here: one polyphase stage (up to 2 560 taps a channel
+for each output frame) and a partitioned convolution at twice the input rate followed by a short
+interpolator (29 to 37 taps a frame). Both spent most of their time on work the output does not need.
+High and Very high now take a single conversion:
 
-1. **Stage one** (`prefilter.rs`): the same kernel, convolved by uniformly partitioned overlap-save
-   at twice the input rate (at the input rate where the output is at most half of it), in
-   partitions of 256 samples, 512 from 176.4 kHz. Before it is sampled, the kernel is convolved
-   with a guard that is flat to the band edge and stops at the oversampled Nyquist: sampled bare
-   at exactly twice the input rate, the window's far sidelobes folded onto the tone and its first
-   image, and High lost 6 dB under 20 kHz.
-2. **Stage two**: the polyphase engine with a short linear-phase interpolator (29 to 37 taps)
-   passing half the oversampled band and stopping from one and a half of it. Where every output
-   lands on a stage-one sample (96 to 48, 192 to 48, 48 to 96 kHz) the sample is picked, not
-   summed.
+1. **A block a whole number of ratio cycles long.** At 44.1 to 48 kHz the reduced ratio is 147 : 160,
+   so a block is `147k` input and `160k` output samples. Every rate a device offers has no prime
+   factor past 7, which is what a fast FFT wants.
+2. **One forward FFT, a multiply, one inverse FFT.** The forward transform runs at the input's length
+   and the inverse at the output's; bins past the lower rate's Nyquist are dropped, or filled with
+   zeros going up. There is no second stage and no table of phases: every output sample is an inverse
+   FFT sample, so the read position is exact by construction. Overlap-save keeps the kernel's reach out
+   of what is released.
+3. **A pair of channels shares one complex FFT.** A real kernel filters `L + iR` into the two filtered
+   channels, so stereo costs one transform of each kind where a resampler treating channels apart
+   takes two.
 
-The guard and the interpolator both reject 60 dB under the quality's own Kaiser stopband, a
-thousandth of its ripple. The output stays aligned to the input, a track keeps its length to the
-frame, and the exact-oracle test now checks each frame against a direct guarded convolution
-followed by the interpolator, within 1e-12.
+The kernel changed as well. **The Kaiser window moved to the frequency side**: the response is exactly
+one below the transition, exactly zero from the band edge, and between them the integral of a Kaiser.
+A window in time gives a filter with sidelobes and a tail of nothing; a window in frequency gives a
+filter of nothing past its edge and a tail in time, and that tail is scaled down further by the sinc
+it multiplies. What is left to measure is that tail wrapping round the block: measured rejection is
+5 to 30 dB deeper than the Kaiser's own design level, depending on the pair and the block, and a margin
+of 192 taps kept clear of it buys 10 to 15 dB of that. The response must close exactly at the band edge: a cut anywhere above zero is
+a jump whose tail wraps at about 30 dB under its own level, which one bin lost to rounding (a block's
+bin count computed as `1567.9999999999998`) showed as 45 dB of rejection gone.
+
+Since the FFT's cost grows slowly with the kernel, the kernels could lengthen for almost nothing: High
+from 128 to 160 taps a side, Very high from 320 to 900. A block's size is searched at construction:
+the least `N log N` per sample among the 7-smooth lengths whose hop fits. A longer hop costs less and
+waits longer, and the hop chosen (1 400 taps plus half the kernel, scaled by the ratio of the rates up
+to twice) is where the cost stops falling much.
 
 | | High 44.1 → 48, before | After | Very high 44.1 → 48, before | After | Very high 192 → 48, before | After |
 |---|---:|---:|---:|---:|---:|---:|
-| CPU, % of a core | 0.174 | **0.145** | 0.356 | **0.165** | 1.867 | **0.332** |
-| Worst alias or image (dB) | −136.6 | −136.6 | −185.8 | −185.8 | −185.8 | −185.8 |
-| Worst landing ≤ 20 kHz (dB) | −156.6 | **−158.3** | −208.5 | **−210.7** | −205.6 | **−205.9** |
-| SNR at 1 kHz (dB) | 162.7 | **196.6** | 218.5 | **246.4** | 257.6 | 253.2 |
-| Worst SNR 20 Hz–20 kHz (dB) | 146.8 | **147.1** | 201.8 | **202.7** | 257.6 | 253.2 |
-| Null 20 Hz–10 kHz (dB) | −160.0 | **−168.8** | −210.2 | **−211.2** | −211.8 | −211.0 |
-| Ripple 20 Hz–10 kHz (dB) | 5.1e-8 | 5.7e-8 | 4.2e-10 | 4.2e-10 | 4.2e-10 | 4.6e-10 |
-| Streaming latency (ms) | 2.90 | 6.26 | 7.26 | 10.75 | 6.67 | 9.55 |
+| CPU, % of a core | 0.145 | **0.027** | 0.165 | **0.039** | 0.332 | **0.095** |
+| −0.1 dB (kHz) | 20.83 | **20.84** | 21.34 | **21.76** | 23.23 | **23.69** |
+| Worst alias or image (dB) | −136.6 | **−195.4** | −185.8 | **−218.7** | −185.8 | **−219.1** |
+| Worst landing ≤ 20 kHz (dB) | −158.3 | **−275.6** | −210.7 | **−334.0** | −205.9 | **−265.2** |
+| SNR at 1 kHz (dB) | 196.6 | **239.3** | 246.4 | **270.1** | 253.2 | **274.3** |
+| Worst SNR 20 Hz–20 kHz (dB) | 147.1 | **213.6** | 202.7 | **255.0** | 253.2 | **264.7** |
+| Null 20 Hz–20 kHz (dB) | −155.1 | **−229.1** | −208.0 | **−270.5** | −210.2 | **−275.3** |
+| Ripple 20 Hz–10 kHz (dB) | 5.7e-8 | **1.5e-13** | 4.2e-10 | **2.0e-13** | 4.6e-10 | **1.1e-13** |
+| Ringing either side (ms) | **2.65** | 3.02 | **5.67** | 14.27 | **5.23** | 12.69 |
+| Energy over 1 ms before the peak (dB) | **−44.2** | −42.5 | **−35.3** | −31.1 | **−36.0** | −30.2 |
+| Streaming latency (ms) | **6.26** | 43.33 | **10.75** | 80.00 | **9.55** | 117.89 |
 
-Every other rate pair and phase moved the same way: CPU fell 1.2 to 9.4 times (Very high
-intermediate at 192 to 48 kHz from 3.006 % to 0.319 %), 97 figures of the tables below improved,
-and the passband edges, rejection, ringing and pre-echo held. Fifteen figures moved by a hair the
-other way, each at a level nothing hears: ripple by up to 1e-10 dB at Very high and 2e-8 dB at
-High, High's worst alias at 96 to 48 kHz from −137.2 to −136.6 dB, Very high's null at 96 to
-48 kHz from −214.2 to −211.0 dB. They are the design now delivered exactly: the kernel's response
-on stage one's grid matches the continuous Kaiser design's own ripple (4.95e-10 dB for Very high,
-1.46e-7 dB for High, between 20 Hz and 10 kHz), where the single stage's 160 sampled phases had
-added an aliasing error that happened to lower these few figures. SNR above 250 dB, the f64
-rounding floor, fell by up to 15 dB at a few pairs (an FFT rounds differently from a dot
-product), the lowest of them from 206.8 to 205.4 dB. The latency rose by a partition, a guard's
-lead and the interpolator's lookahead, 2.9 to 3.5 ms; it stays exact in `latency_frames`.
+The output stays aligned to the input and a track keeps its length to the frame. A test holds every
+frame against a direct convolution over the kernel written in closed form (a Kaiser's Fourier transform
+is `sinh(r)/r`), which shares no code with the block path, within 5e-10 for High and 1e-11 for Very
+high. A ratio with a larger prime in it (44.1 kHz onto 47.993 kHz, a rate no device offers) cannot be cut
+into blocks, so it runs the same spectral stage at twice the input rate and interpolates on as before.
 
 ### Fast and Balanced start their stopband at Nyquist
 
@@ -378,17 +395,18 @@ Narrowing closes the leak for no CPU but takes the top octave: Fast's −3 dB po
 −5.37 dB. Lengthening closes it as well and widens the passband, Balanced's above all (at 20 kHz
 −0.43 dB against −1.25 dB), raises the worst SNR by 2 and 3 dB and deepens Balanced's null by
 3 dB, for 5 % and 17 % more CPU at 44.1 to 48 kHz (9 % and 33 % at 192 to 48 kHz) and 0.07 and
-0.34 ms more latency. Fast and Balanced are now 19 and 47 taps a side; Balanced still costs a third
-less than High.
+0.34 ms more latency. Fast and Balanced are now 19 and 47 taps a side.
 
 ## Findings left open
 
-- **High and Very high still cost 2.5 to 4 times SoXR HQ's and VHQ's CPU**, now in
-  `docs/PERFORMANCE.md`: stage two's 29 to 37 taps a frame are about a third of it (as timed
-  while building it), and larger partitions would cost more latency.
-- **No Resonate level reaches SoXR 32-bit's −207 dB stopband or VHQ steep's 21.75 kHz passband.**
-  Both are beyond what any converter resolves; a fifth level would only matter to someone
-  measuring rather than listening.
+- **Very high at the integer ratios still costs more than VHQ and the 32-bit recipe**, now in
+  `docs/PERFORMANCE.md`: the forward transform runs at the input's length and most of its bins are
+  dropped.
+- **Fast and Balanced cost more than High and Very high.** They keep the lowest latency, and could
+  run on the same blocks for the listener who does not need it (`docs/PERFORMANCE.md`).
+- **SoXR's linear recipes ring for less**, the one thing about a filter the frequency domain cannot
+  change: a transition as narrow as Very high's takes a kernel as long. Minimum phase is the way to
+  no pre-echo at all, at either library.
 
 ## Every measurement
 
@@ -400,11 +418,11 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **Resonate Fast** | 3.2e-3 | 7.2636 | -7.3 | 17.00 | 19.34 | -62.8 | -76.9 | 80.3 | 67.8 | -21.8 | -74.7 |
 | **Resonate Balanced** | 7.8e-5 | 0.4267 | -0.4 | 19.77 | 20.48 | -90.0 | -109.1 | 119.6 | 97.4 | -43.2 | -106.4 |
-| **Resonate High** | 5.7e-8 | < 0.0001 | -0.0 | 20.83 | 21.16 | -136.6 | -158.3 | 196.6 | 147.1 | -155.1 | -168.8 |
-| **Resonate Very high** | 4.2e-10 | < 0.0001 | -0.0 | 21.34 | 21.51 | -185.8 | -210.7 | 246.4 | 202.7 | -208.0 | -211.2 |
-| **Resonate High, minimum** | 7.6e-8 | < 0.0001 | -0.0 | 20.83 | 21.16 | -136.5 | -157.2 | 196.6 | 146.9 | -7.4 | -21.9 |
-| **Resonate Very high, intermediate** | 3.4e-9 | < 0.0001 | -0.0 | 21.34 | 21.51 | -185.8 | -207.4 | 246.5 | 198.8 | -8.6 | -25.4 |
-| **Resonate Very high, minimum** | 1.3e-8 | < 0.0001 | -0.0 | 21.34 | 21.51 | -185.8 | -211.2 | 246.6 | 202.3 | -5.8 | -19.4 |
+| **Resonate High** | 1.5e-13 | < 0.0001 | 0.0 | 20.84 | 21.14 | -195.4 | -275.6 | 239.3 | 213.6 | -229.1 | -242.4 |
+| **Resonate Very high** | 2.0e-13 | < 0.0001 | 0.0 | 21.76 | 21.84 | -218.7 | -334.0 | 270.1 | 255.0 | -270.5 | -275.0 |
+| **Resonate High, minimum** | 2.7e-8 | < 0.0001 | -0.0 | 20.83 | 21.14 | -189.3 | -281.2 | 234.0 | 216.8 | -5.8 | -20.0 |
+| **Resonate Very high, intermediate** | 1.3e-9 | < 0.0001 | -0.0 | 21.76 | 21.84 | -242.3 | -318.1 | 257.2 | 256.7 | -8.6 | -24.4 |
+| **Resonate Very high, minimum** | 5.2e-9 | < 0.0001 | -0.0 | 21.76 | 21.84 | -215.7 | -324.4 | 260.5 | 254.9 | -6.4 | -18.4 |
 | SoXR QQ | 4.2e-1 | 5.2375 | -5.2 | 6.65 | 16.94 | -7.3 | -18.0 | 110.7 | 9.6 | -19.5 | -39.4 |
 | SoXR LQ | 3.2e-5 | 22.0392 | -22.0 | 15.41 | 17.47 | -105.1 | -115.8 | 119.2 | 109.6 | -17.5 | -115.1 |
 | SoXR MQ | 7.3e-4 | 0.1872 | -0.2 | 18.08 | 20.95 | -109.6 | -128.0 | 114.8 | 108.9 | -49.6 | -96.2 |
@@ -423,11 +441,11 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **Resonate Fast** | -0.0 | 0.0 | 0.0 | 0.42 | 0.42 | < -200 | 0.43 |
 | **Resonate Balanced** | 0.0 | 0.0 | 0.0 | 1.06 | 1.06 | -93.8 | 1.07 |
-| **Resonate High** | -0.0 | 0.0 | 0.0 | 2.65 | 2.65 | -44.2 | 6.26 |
-| **Resonate Very high** | 0.0 | 0.0 | 0.0 | 5.67 | 5.67 | -35.3 | 10.75 |
-| **Resonate High, minimum** | -15.0 | 58.7 | 0.0 | 0.08 | 4.77 | < -200 | 3.47 |
-| **Resonate Very high, intermediate** | -12.6 | 38.7 | 0.0 | 4.06 | 8.23 | -61.1 | 12.56 |
-| **Resonate Very high, minimum** | -16.8 | 77.5 | 0.0 | 0.10 | 10.88 | < -200 | 3.63 |
+| **Resonate High** | -0.0 | 0.0 | 0.0 | 3.02 | 3.02 | -42.5 | 43.33 |
+| **Resonate Very high** | 0.0 | 0.0 | 0.0 | 14.27 | 14.27 | -31.1 | 80.00 |
+| **Resonate High, minimum** | -16.3 | 73.4 | 0.0 | 0.10 | 5.60 | -195.8 | 40.00 |
+| **Resonate Very high, intermediate** | -13.7 | 42.7 | 0.0 | 9.31 | 21.27 | -59.6 | 93.33 |
+| **Resonate Very high, minimum** | -17.5 | 85.4 | 0.0 | 0.12 | 28.38 | < -200 | 60.00 |
 | SoXR QQ | 0.0 | 0.0 | 0.0 | 0.04 | 0.04 | < -200 | 0.02 |
 | SoXR LQ | -0.0 | 0.0 | 0.0 | 0.46 | 0.46 | < -200 | 0.48 |
 | SoXR MQ | -0.0 | 0.0 | 0.0 | 1.85 | 1.85 | -54.4 | 12.45 |
@@ -446,11 +464,11 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **Resonate Fast** | 3.2e-3 | 7.2636 | -7.3 | 17.00 | 19.34 | -62.9 | -71.0 | 77.8 | 72.6 | -21.8 | -74.8 |
 | **Resonate Balanced** | 7.8e-5 | 0.4267 | -0.4 | 19.77 | 20.48 | -89.8 | -101.4 | 127.9 | 102.4 | -43.2 | -106.1 |
-| **Resonate High** | 4.8e-8 | < 0.0001 | -0.0 | 20.83 | 21.16 | -136.4 | -150.9 | 197.1 | 153.5 | -155.8 | -171.4 |
-| **Resonate Very high** | 4.3e-10 | < 0.0001 | -0.0 | 21.34 | 21.51 | -185.7 | -207.7 | 247.7 | 210.2 | -208.3 | -211.2 |
-| **Resonate High, minimum** | 6.4e-8 | < 0.0001 | -0.0 | 20.83 | 21.16 | -136.5 | -151.1 | 197.1 | 153.1 | -7.4 | -21.9 |
-| **Resonate Very high, intermediate** | 3.4e-9 | < 0.0001 | -0.0 | 21.34 | 21.51 | -185.8 | -203.1 | 247.7 | 206.6 | -8.6 | -25.4 |
-| **Resonate Very high, minimum** | 1.3e-8 | < 0.0001 | -0.0 | 21.34 | 21.51 | -185.7 | -207.8 | 247.7 | 210.4 | -5.8 | -19.4 |
+| **Resonate High** | 1.8e-13 | < 0.0001 | 0.0 | 20.84 | 21.14 | -192.9 | -250.7 | 239.2 | 213.7 | -229.4 | -242.3 |
+| **Resonate Very high** | 4.4e-14 | < 0.0001 | 0.0 | 21.76 | 21.84 | -217.7 | -273.2 | 272.8 | 256.6 | -271.8 | -275.1 |
+| **Resonate High, minimum** | 2.7e-8 | < 0.0001 | -0.0 | 20.83 | 21.14 | -182.8 | -253.9 | 233.9 | 218.7 | -5.8 | -20.0 |
+| **Resonate Very high, intermediate** | 1.3e-9 | < 0.0001 | -0.0 | 21.76 | 21.84 | -232.0 | -286.3 | 273.5 | 253.1 | -8.6 | -24.4 |
+| **Resonate Very high, minimum** | 5.2e-9 | < 0.0001 | -0.0 | 21.76 | 21.84 | -213.5 | -286.0 | 273.6 | 258.0 | -6.4 | -18.4 |
 | SoXR QQ | 3.1e-1 | 3.9418 | -3.9 | 7.25 | 18.42 | -3.9 | -9.4 | 113.6 | 11.9 | -21.7 | -42.1 |
 | SoXR LQ | 9.5e-3 | 23.2641 | -23.3 | 15.15 | 17.43 | -109.5 | -119.4 | 113.6 | 110.1 | -17.4 | -73.6 |
 | SoXR MQ | 4.3e-3 | 0.2153 | -0.2 | 17.24 | 20.95 | -109.8 | -122.0 | 113.9 | 109.3 | -48.0 | -80.8 |
@@ -469,11 +487,11 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **Resonate Fast** | -0.0 | 0.0 | 0.0 | 0.41 | 0.41 | < -200 | 0.44 |
 | **Resonate Balanced** | -0.0 | 0.0 | 0.0 | 1.04 | 1.04 | -93.4 | 1.08 |
-| **Resonate High** | 0.0 | 0.0 | 0.0 | 2.52 | 2.52 | -43.9 | 5.98 |
-| **Resonate Very high** | 0.0 | 0.0 | 0.0 | 5.69 | 5.69 | -36.0 | 10.44 |
-| **Resonate High, minimum** | -15.0 | 58.7 | 0.0 | 0.09 | 4.51 | < -200 | 3.17 |
-| **Resonate Very high, intermediate** | -12.6 | 38.7 | 0.0 | 4.04 | 8.28 | -61.0 | 12.25 |
-| **Resonate Very high, minimum** | -16.8 | 77.5 | 0.0 | 0.11 | 10.50 | < -200 | 3.31 |
+| **Resonate High** | -0.0 | 0.0 | 0.0 | 2.97 | 2.97 | -42.9 | 43.35 |
+| **Resonate Very high** | 0.0 | 0.0 | 0.0 | 13.81 | 13.81 | -29.6 | 80.02 |
+| **Resonate High, minimum** | -16.3 | 73.4 | 0.0 | 0.11 | 5.58 | -196.1 | 40.02 |
+| **Resonate Very high, intermediate** | -13.7 | 42.7 | 0.0 | 8.55 | 21.25 | -62.0 | 93.35 |
+| **Resonate Very high, minimum** | -17.5 | 85.4 | 0.0 | 0.11 | 27.80 | < -200 | 60.02 |
 | SoXR QQ | -0.0 | 0.0 | 0.0 | 0.02 | 0.02 | < -200 | 0.04 |
 | SoXR LQ | 0.0 | 0.0 | 0.0 | 0.50 | 0.50 | -139.0 | 9.81 |
 | SoXR MQ | -0.0 | 0.0 | 0.0 | 1.86 | 1.86 | -58.0 | 17.62 |
@@ -492,11 +510,11 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **Resonate Fast** | 3.5e-3 | 0.4024 | -0.4 | 18.69 | 21.05 | -63.7 | -71.6 | 271.7 | 258.4 | -43.7 | -74.9 |
 | **Resonate Balanced** | 9.1e-5 | 0.0002 | -0.0 | 21.52 | 22.29 | -89.7 | -101.7 | 275.5 | 258.8 | -104.9 | -104.8 |
-| **Resonate High** | 1.1e-7 | < 0.0001 | -0.0 | 22.67 | 23.03 | -136.6 | -152.3 | 250.5 | 250.5 | -162.2 | -168.1 |
-| **Resonate Very high** | 4.6e-10 | < 0.0001 | -0.0 | 23.23 | 23.41 | -185.8 | -205.9 | 280.4 | 269.4 | -210.2 | -211.0 |
-| **Resonate High, minimum** | 1.2e-7 | < 0.0001 | -0.0 | 22.67 | 23.03 | -136.6 | -152.4 | 262.9 | 253.7 | -7.8 | -24.3 |
-| **Resonate Very high, intermediate** | 2.4e-9 | < 0.0001 | -0.0 | 23.23 | 23.41 | -185.8 | -203.1 | 262.3 | 255.8 | -8.5 | -27.8 |
-| **Resonate Very high, minimum** | 9.5e-9 | < 0.0001 | -0.0 | 23.23 | 23.41 | -185.8 | -205.8 | 273.3 | 252.5 | -7.9 | -21.8 |
+| **Resonate High** | 3.4e-13 | < 0.0001 | -0.0 | 22.68 | 23.01 | -197.7 | -231.5 | 242.5 | 233.9 | -242.0 | -243.3 |
+| **Resonate Very high** | 1.1e-13 | < 0.0001 | 0.0 | 23.69 | 23.77 | -219.1 | -265.0 | 273.9 | 264.3 | -275.1 | -278.1 |
+| **Resonate High, minimum** | 1.9e-8 | < 0.0001 | -0.0 | 22.67 | 23.01 | -189.3 | -228.3 | 239.6 | 231.7 | -7.9 | -22.4 |
+| **Resonate Very high, intermediate** | 9.4e-10 | < 0.0001 | -0.0 | 23.69 | 23.77 | -223.7 | -270.2 | 265.8 | 265.8 | -8.1 | -26.7 |
+| **Resonate Very high, minimum** | 3.8e-9 | < 0.0001 | -0.0 | 23.69 | 23.77 | -216.6 | -265.3 | 261.0 | 261.0 | -7.6 | -20.8 |
 | SoXR QQ | 8.6e-8 | < 0.0001 | -0.0 | — | — | 0.0 | 0.0 | 154.9 | 153.3 | -151.9 | -152.0 |
 | SoXR LQ | 1.7e-5 | 5.3675 | -5.4 | 16.78 | 19.17 | -109.3 | -128.4 | 135.4 | 135.1 | -23.6 | -126.6 |
 | SoXR MQ | 1.3e-5 | < 0.0001 | 0.0 | 22.32 | 22.82 | -105.9 | -136.4 | 135.6 | 134.9 | -123.6 | -124.5 |
@@ -515,11 +533,11 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **Resonate Fast** | -0.0 | 0.0 | 0.0 | 0.38 | 0.38 | < -200 | 0.40 |
 | **Resonate Balanced** | -0.0 | 0.0 | 0.0 | 0.96 | 0.96 | < -200 | 0.98 |
-| **Resonate High** | 0.0 | 0.0 | 0.0 | 2.31 | 2.31 | -48.5 | 5.76 |
-| **Resonate Very high** | 0.0 | 0.0 | 0.0 | 5.23 | 5.23 | -36.0 | 9.88 |
-| **Resonate High, minimum** | -13.8 | 35.0 | 0.0 | 0.08 | 4.15 | < -200 | 3.20 |
-| **Resonate Very high, intermediate** | -11.6 | 23.3 | 0.0 | 3.71 | 7.60 | -61.3 | 11.54 |
-| **Resonate Very high, minimum** | -15.4 | 46.5 | 0.0 | 0.10 | 9.65 | < -200 | 3.33 |
+| **Resonate High** | -0.0 | 0.0 | 0.0 | 2.73 | 2.73 | -46.8 | 71.43 |
+| **Resonate Very high** | -0.0 | 0.0 | 0.0 | 12.69 | 12.69 | -30.2 | 117.89 |
+| **Resonate High, minimum** | -15.0 | 43.7 | 0.0 | 0.10 | 5.12 | -196.8 | 68.20 |
+| **Resonate Very high, intermediate** | -12.6 | 25.9 | 0.0 | 7.85 | 19.52 | -62.4 | 145.99 |
+| **Resonate Very high, minimum** | -16.1 | 51.9 | 0.0 | 0.10 | 25.54 | < -200 | 99.26 |
 | SoXR QQ | -0.0 | 0.0 | 0.0 | 0.00 | 0.00 | < -200 | 0.02 |
 | SoXR LQ | -0.0 | 0.0 | 0.0 | 0.44 | 0.44 | < -200 | 3.97 |
 | SoXR MQ | -0.0 | 0.0 | 0.0 | 1.65 | 1.65 | -60.2 | 8.34 |
@@ -538,11 +556,11 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **Resonate Fast** | 3.2e-3 | 7.2636 | -7.3 | 17.00 | 19.34 | -63.8 | -68.4 | 91.4 | 91.0 | -21.8 | -75.3 |
 | **Resonate Balanced** | 7.8e-5 | 0.4267 | -0.4 | 19.77 | 20.48 | -89.9 | -98.7 | 132.0 | 116.3 | -43.2 | -107.2 |
-| **Resonate High** | 4.8e-8 | < 0.0001 | -0.0 | 20.83 | 21.16 | -136.5 | -148.7 | 197.1 | 193.3 | -156.0 | -171.5 |
-| **Resonate Very high** | 4.3e-10 | < 0.0001 | -0.0 | 21.34 | 21.51 | -185.8 | -201.1 | 247.7 | 239.4 | -208.4 | -211.2 |
-| **Resonate High, minimum** | 6.4e-8 | < 0.0001 | -0.0 | 20.83 | 21.16 | -136.5 | -148.5 | 197.1 | 193.3 | -7.4 | -21.9 |
-| **Resonate Very high, intermediate** | 3.4e-9 | < 0.0001 | -0.0 | 21.34 | 21.51 | -185.9 | -198.7 | 247.7 | 239.4 | -8.6 | -25.4 |
-| **Resonate Very high, minimum** | 1.3e-8 | < 0.0001 | -0.0 | 21.34 | 21.51 | -185.8 | -201.2 | 247.7 | 239.4 | -5.8 | -19.4 |
+| **Resonate High** | 1.5e-13 | < 0.0001 | 0.0 | 20.84 | 21.14 | -193.6 | -229.6 | 307.3 | 216.4 | -243.7 | -245.9 |
+| **Resonate Very high** | 3.8e-14 | < 0.0001 | 0.0 | 21.76 | 21.84 | -229.5 | -261.2 | 307.0 | 259.0 | -277.9 | -280.7 |
+| **Resonate High, minimum** | 2.7e-8 | < 0.0001 | -0.0 | 20.83 | 21.14 | -183.8 | -223.0 | 281.1 | 221.9 | -5.8 | -20.0 |
+| **Resonate Very high, intermediate** | 1.3e-9 | < 0.0001 | -0.0 | 21.76 | 21.84 | -223.9 | -264.4 | 273.6 | 254.2 | -8.6 | -24.4 |
+| **Resonate Very high, minimum** | 5.2e-9 | < 0.0001 | -0.0 | 21.76 | 21.84 | -226.3 | -261.0 | 287.8 | 258.0 | -6.4 | -18.4 |
 | SoXR QQ | 2.1e-2 | 0.3349 | -0.3 | 14.49 | — | -0.4 | -0.7 | 136.9 | 33.9 | -42.5 | -65.4 |
 | SoXR LQ | 9.5e-3 | 23.2641 | -23.3 | 15.15 | 17.43 | -110.4 | -110.4 | 113.6 | 110.1 | -17.4 | -73.6 |
 | SoXR MQ | 4.3e-3 | 0.2153 | -0.2 | 17.24 | 20.95 | -110.1 | -111.4 | 113.9 | 109.3 | -48.0 | -80.8 |
@@ -561,11 +579,11 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **Resonate Fast** | -0.0 | 0.0 | 0.0 | 0.41 | 0.41 | < -200 | 0.44 |
 | **Resonate Balanced** | -0.0 | 0.0 | 0.0 | 1.04 | 1.04 | -93.4 | 1.07 |
-| **Resonate High** | 0.0 | 0.0 | 0.0 | 2.52 | 2.52 | -43.9 | 5.98 |
-| **Resonate Very high** | 0.0 | 0.0 | 0.0 | 5.69 | 5.69 | -36.0 | 10.45 |
-| **Resonate High, minimum** | -15.0 | 58.7 | 0.0 | 0.09 | 4.51 | < -200 | 3.18 |
-| **Resonate Very high, intermediate** | -12.6 | 38.7 | 0.0 | 4.04 | 8.28 | -61.0 | 12.26 |
-| **Resonate Very high, minimum** | -16.8 | 77.5 | 0.0 | 0.11 | 10.50 | < -200 | 3.32 |
+| **Resonate High** | 0.0 | 0.0 | 0.0 | 2.97 | 2.97 | -42.9 | 70.02 |
+| **Resonate Very high** | 0.0 | 0.0 | 0.0 | 13.81 | 13.81 | -29.6 | 113.35 |
+| **Resonate High, minimum** | -16.3 | 73.4 | 0.0 | 0.11 | 5.58 | -197.0 | 66.69 |
+| **Resonate Very high, intermediate** | -13.7 | 42.7 | 0.0 | 8.55 | 21.25 | -62.0 | 153.35 |
+| **Resonate Very high, minimum** | -17.5 | 85.4 | 0.0 | 0.11 | 27.80 | < -200 | 93.35 |
 | SoXR QQ | -0.0 | 0.0 | 0.0 | 0.00 | 0.00 | < -200 | 0.02 |
 | SoXR LQ | 0.0 | 0.0 | 0.0 | 0.50 | 0.50 | -140.0 | 9.82 |
 | SoXR MQ | -0.0 | 0.0 | 0.0 | 1.86 | 1.86 | -58.0 | 17.64 |
@@ -584,11 +602,11 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **Resonate Fast** | 3.5e-3 | 0.4024 | -0.4 | 18.69 | 21.05 | -63.8 | -71.1 | 263.4 | 263.4 | -43.7 | -74.9 |
 | **Resonate Balanced** | 8.5e-5 | 0.0002 | -0.0 | 21.52 | 22.29 | -89.8 | -101.2 | 260.7 | 259.2 | -105.5 | -105.6 |
-| **Resonate High** | 1.1e-7 | < 0.0001 | -0.0 | 22.67 | 23.03 | -136.6 | -153.1 | 271.4 | 248.1 | -162.4 | -168.8 |
-| **Resonate Very high** | 4.6e-10 | < 0.0001 | -0.0 | 23.23 | 23.41 | -185.8 | -205.9 | 253.2 | 253.2 | -210.2 | -211.0 |
-| **Resonate High, minimum** | 1.1e-7 | < 0.0001 | -0.0 | 22.67 | 23.03 | -136.5 | -153.1 | 270.5 | 257.2 | -7.8 | -24.3 |
-| **Resonate Very high, intermediate** | 2.5e-9 | < 0.0001 | -0.0 | 23.23 | 23.41 | -185.9 | -203.8 | 251.7 | 251.7 | -8.5 | -27.8 |
-| **Resonate Very high, minimum** | 9.5e-9 | < 0.0001 | -0.0 | 23.23 | 23.41 | -185.8 | -205.9 | 274.9 | 262.5 | -7.9 | -21.8 |
+| **Resonate High** | 2.4e-13 | < 0.0001 | 0.0 | 22.68 | 23.01 | -197.7 | -232.0 | 243.2 | 234.0 | -242.7 | -243.8 |
+| **Resonate Very high** | 1.1e-13 | < 0.0001 | 0.0 | 23.69 | 23.77 | -219.1 | -265.2 | 274.3 | 264.7 | -275.3 | -278.5 |
+| **Resonate High, minimum** | 1.9e-8 | < 0.0001 | -0.0 | 22.67 | 23.01 | -189.3 | -228.3 | 240.3 | 232.0 | -7.9 | -22.4 |
+| **Resonate Very high, intermediate** | 9.4e-10 | < 0.0001 | -0.0 | 23.69 | 23.77 | -223.7 | -272.8 | 266.3 | 266.3 | -8.1 | -26.7 |
+| **Resonate Very high, minimum** | 3.8e-9 | < 0.0001 | -0.0 | 23.69 | 23.77 | -216.6 | -265.9 | 261.1 | 261.1 | -7.6 | -20.8 |
 | SoXR QQ | 8.6e-8 | < 0.0001 | -0.0 | — | — | 0.0 | 0.0 | 154.9 | 153.3 | -151.9 | -152.0 |
 | SoXR LQ | 2.0e-5 | 5.3577 | -5.4 | 16.80 | 19.17 | -115.7 | -133.7 | 136.6 | 134.9 | -23.6 | -123.4 |
 | SoXR MQ | 5.0e-6 | < 0.0001 | -0.0 | 22.33 | 22.82 | -111.0 | -135.3 | 135.8 | 133.7 | -128.4 | -129.7 |
@@ -607,11 +625,11 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **Resonate Fast** | -0.0 | 0.0 | 0.0 | 0.38 | 0.38 | < -200 | 0.40 |
 | **Resonate Balanced** | 0.0 | 0.0 | 0.0 | 0.96 | 0.96 | < -200 | 0.98 |
-| **Resonate High** | 0.0 | 0.0 | 0.0 | 2.31 | 2.31 | -48.5 | 5.50 |
-| **Resonate Very high** | 0.0 | 0.0 | 0.0 | 5.23 | 5.23 | -36.0 | 9.55 |
-| **Resonate High, minimum** | -13.8 | 35.0 | 0.0 | 0.08 | 4.15 | < -200 | 2.93 |
-| **Resonate Very high, intermediate** | -11.6 | 23.3 | 0.0 | 3.71 | 7.60 | -61.3 | 11.21 |
-| **Resonate Very high, minimum** | -15.4 | 46.5 | 0.0 | 0.10 | 9.65 | < -200 | 3.01 |
+| **Resonate High** | -0.0 | 0.0 | 0.0 | 2.73 | 2.73 | -46.8 | 71.43 |
+| **Resonate Very high** | -0.0 | 0.0 | 0.0 | 12.69 | 12.69 | -30.2 | 117.89 |
+| **Resonate High, minimum** | -15.0 | 43.7 | 0.0 | 0.10 | 5.12 | -196.8 | 68.20 |
+| **Resonate Very high, intermediate** | -12.6 | 25.9 | 0.0 | 7.85 | 19.52 | -62.4 | 145.99 |
+| **Resonate Very high, minimum** | -16.1 | 51.9 | 0.0 | 0.10 | 25.54 | < -200 | 99.27 |
 | SoXR QQ | -0.0 | 0.0 | 0.0 | 0.00 | 0.00 | < -200 | 0.02 |
 | SoXR LQ | 0.0 | 0.0 | 0.0 | 0.46 | 0.46 | -136.4 | 2.78 |
 | SoXR MQ | -0.0 | 0.0 | 0.0 | 1.73 | 1.73 | -58.4 | 4.99 |
@@ -630,11 +648,11 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **Resonate Fast** | 3.2e-3 | 7.2636 | -7.3 | 17.00 | 19.34 | -62.8 | — | 80.2 | 67.8 | -21.8 | -74.7 |
 | **Resonate Balanced** | 7.8e-5 | 0.4267 | -0.4 | 19.77 | 20.48 | -90.0 | — | 119.6 | 97.4 | -43.2 | -106.3 |
-| **Resonate High** | 5.7e-8 | < 0.0001 | -0.0 | 20.83 | 21.16 | -136.6 | — | 196.6 | 147.1 | -155.1 | -168.8 |
-| **Resonate Very high** | 4.2e-10 | < 0.0001 | -0.0 | 21.34 | 21.51 | -185.8 | — | 246.6 | 202.7 | -208.0 | -211.2 |
-| **Resonate High, minimum** | 7.6e-8 | < 0.0001 | -0.0 | 20.83 | 21.16 | -136.5 | — | 196.6 | 146.9 | -7.4 | -21.9 |
-| **Resonate Very high, intermediate** | 3.4e-9 | < 0.0001 | -0.0 | 21.34 | 21.51 | -185.8 | — | 246.6 | 198.8 | -8.6 | -25.4 |
-| **Resonate Very high, minimum** | 1.3e-8 | < 0.0001 | -0.0 | 21.34 | 21.51 | -185.8 | — | 246.4 | 202.3 | -5.8 | -19.4 |
+| **Resonate High** | 1.9e-13 | < 0.0001 | 0.0 | 20.84 | 21.14 | -206.0 | — | 306.2 | 216.2 | -241.5 | -242.9 |
+| **Resonate Very high** | 3.3e-14 | < 0.0001 | 0.0 | 21.76 | 21.84 | -239.0 | — | 307.0 | 256.6 | -273.6 | -278.5 |
+| **Resonate High, minimum** | 2.7e-8 | < 0.0001 | -0.0 | 20.83 | 21.14 | -191.9 | — | 251.5 | 219.0 | -5.8 | -20.0 |
+| **Resonate Very high, intermediate** | 1.3e-9 | < 0.0001 | -0.0 | 21.76 | 21.84 | -231.2 | — | 256.2 | 256.2 | -8.6 | -24.4 |
+| **Resonate Very high, minimum** | 5.2e-9 | < 0.0001 | -0.0 | 21.76 | 21.84 | -230.7 | — | 262.7 | 247.6 | -6.4 | -18.4 |
 | SoXR QQ | 4.2e-1 | 5.2376 | -5.2 | 6.65 | 16.94 | -7.3 | — | 110.7 | 9.6 | -19.5 | -39.4 |
 | SoXR LQ | 3.2e-5 | 22.0405 | -22.0 | 15.41 | 17.47 | -105.1 | — | 119.4 | 109.6 | -17.5 | -115.2 |
 | SoXR MQ | 7.2e-4 | 0.1867 | -0.2 | 18.09 | 20.95 | -109.6 | — | 115.3 | 108.8 | -49.6 | -96.3 |
@@ -653,11 +671,11 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **Resonate Fast** | -0.0 | 0.0 | 0.0 | 0.43 | 0.43 | < -200 | 0.43 |
 | **Resonate Balanced** | 0.0 | 0.0 | 0.0 | 1.06 | 1.06 | -94.2 | 1.07 |
-| **Resonate High** | -0.0 | 0.0 | 0.0 | 2.65 | 2.65 | -44.3 | 6.26 |
-| **Resonate Very high** | 0.0 | 0.0 | 0.0 | 5.67 | 5.67 | -34.9 | 10.75 |
-| **Resonate High, minimum** | -15.0 | 58.7 | 0.0 | 0.09 | 4.84 | < -200 | 3.47 |
-| **Resonate Very high, intermediate** | -12.6 | 38.7 | 0.0 | 4.14 | 8.23 | -60.9 | 12.56 |
-| **Resonate Very high, minimum** | -16.8 | 77.5 | 0.0 | 0.11 | 10.88 | < -200 | 3.63 |
+| **Resonate High** | -0.0 | 0.0 | 0.0 | 3.02 | 3.02 | -42.3 | 70.00 |
+| **Resonate Very high** | -0.0 | 0.0 | 0.0 | 14.36 | 14.36 | -31.3 | 113.33 |
+| **Resonate High, minimum** | -16.3 | 73.4 | 0.0 | 0.10 | 5.60 | -196.7 | 66.67 |
+| **Resonate Very high, intermediate** | -13.7 | 42.7 | 0.0 | 9.31 | 21.36 | -59.4 | 153.33 |
+| **Resonate Very high, minimum** | -17.5 | 85.4 | 0.0 | 0.12 | 28.49 | < -200 | 93.33 |
 | SoXR QQ | -0.0 | 0.0 | 0.0 | 0.04 | 0.04 | < -200 | 0.05 |
 | SoXR LQ | -0.0 | 0.0 | 0.0 | 0.47 | 0.47 | < -200 | 0.48 |
 | SoXR MQ | -0.0 | 0.0 | 0.0 | 1.86 | 1.86 | -52.8 | 12.45 |
@@ -676,11 +694,11 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **Resonate Fast** | 3.5e-3 | 0.4024 | -0.4 | 18.69 | 21.05 | -62.6 | — | 82.4 | 72.2 | -43.7 | -74.7 |
 | **Resonate Balanced** | 9.1e-5 | 0.0002 | -0.0 | 21.52 | 22.29 | -89.7 | — | 153.3 | 102.4 | -104.7 | -104.8 |
-| **Resonate High** | 1.1e-7 | < 0.0001 | -0.0 | 22.67 | 23.03 | -136.6 | — | 255.8 | 154.5 | -161.4 | -168.1 |
-| **Resonate Very high** | 4.6e-10 | < 0.0001 | -0.0 | 23.23 | 23.41 | -185.8 | — | 282.9 | 204.7 | -209.8 | -211.0 |
-| **Resonate High, minimum** | 1.2e-7 | < 0.0001 | -0.0 | 22.67 | 23.03 | -136.5 | — | 257.1 | 153.9 | -7.8 | -24.3 |
-| **Resonate Very high, intermediate** | 2.4e-9 | < 0.0001 | -0.0 | 23.23 | 23.41 | -185.8 | — | 266.5 | 209.0 | -8.5 | -27.8 |
-| **Resonate Very high, minimum** | 9.5e-9 | < 0.0001 | -0.0 | 23.23 | 23.41 | -185.8 | — | 263.5 | 205.4 | -7.9 | -21.8 |
+| **Resonate High** | 2.9e-13 | < 0.0001 | 0.0 | 22.68 | 23.01 | -204.1 | — | 239.7 | 231.8 | -238.9 | -240.9 |
+| **Resonate Very high** | 3.6e-14 | < 0.0001 | -0.0 | 23.69 | 23.77 | -223.1 | — | 272.7 | 258.1 | -271.8 | -275.1 |
+| **Resonate High, minimum** | 1.9e-8 | < 0.0001 | -0.0 | 22.67 | 23.01 | -195.8 | — | 237.5 | 229.0 | -7.9 | -22.4 |
+| **Resonate Very high, intermediate** | 9.4e-10 | < 0.0001 | -0.0 | 23.69 | 23.77 | -230.4 | — | 269.4 | 261.4 | -8.1 | -26.7 |
+| **Resonate Very high, minimum** | 3.8e-9 | < 0.0001 | -0.0 | 23.69 | 23.77 | -221.3 | — | 255.0 | 255.0 | -7.6 | -20.8 |
 | SoXR QQ | 2.1e-1 | 3.2258 | -3.2 | 7.74 | 19.55 | -6.0 | — | 109.3 | 10.2 | -21.8 | -42.3 |
 | SoXR LQ | 1.7e-5 | 5.3675 | -5.4 | 16.78 | 19.17 | -103.9 | — | 130.1 | 109.3 | -23.6 | -125.8 |
 | SoXR MQ | 1.3e-5 | < 0.0001 | 0.0 | 22.32 | 22.82 | -103.5 | — | 134.0 | 119.0 | -123.6 | -124.4 |
@@ -699,11 +717,11 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **Resonate Fast** | -0.0 | 0.0 | 0.0 | 0.39 | 0.39 | < -200 | 0.40 |
 | **Resonate Balanced** | -0.0 | 0.0 | 0.0 | 0.97 | 0.97 | < -200 | 0.98 |
-| **Resonate High** | 0.0 | 0.0 | 0.0 | 2.43 | 2.43 | -46.5 | 5.75 |
-| **Resonate Very high** | 0.0 | 0.0 | 0.0 | 5.23 | 5.23 | -35.9 | 9.88 |
-| **Resonate High, minimum** | -13.8 | 35.0 | 0.0 | 0.08 | 4.43 | < -200 | 3.19 |
-| **Resonate Very high, intermediate** | -11.6 | 23.3 | 0.0 | 3.71 | 7.60 | -62.2 | 11.54 |
-| **Resonate Very high, minimum** | -15.4 | 46.5 | 0.0 | 0.10 | 9.97 | < -200 | 3.33 |
+| **Resonate High** | 0.0 | 0.0 | 0.0 | 2.78 | 2.78 | -44.1 | 71.42 |
+| **Resonate Very high** | -0.0 | 0.0 | 0.0 | 13.24 | 13.24 | -31.9 | 117.88 |
+| **Resonate High, minimum** | -15.0 | 43.7 | 0.0 | 0.10 | 5.12 | -196.4 | 68.19 |
+| **Resonate Very high, intermediate** | -12.6 | 25.9 | 0.0 | 8.47 | 19.52 | -59.8 | 145.98 |
+| **Resonate Very high, minimum** | -16.1 | 51.9 | 0.0 | 0.11 | 26.22 | < -200 | 99.25 |
 | SoXR QQ | -0.0 | 0.0 | 0.0 | 0.03 | 0.03 | < -200 | 0.04 |
 | SoXR LQ | -0.0 | 0.0 | 0.0 | 0.44 | 0.44 | < -200 | 3.96 |
 | SoXR MQ | -0.0 | 0.0 | 0.0 | 1.65 | 1.65 | -57.7 | 8.33 |

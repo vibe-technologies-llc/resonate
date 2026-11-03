@@ -9,11 +9,11 @@ mod gain;
 mod overs;
 mod peak;
 mod phase;
-mod prefilter;
 mod recall;
 mod remix;
 mod resample;
 mod restore;
+mod spectral;
 mod sweep;
 
 pub use crate::{

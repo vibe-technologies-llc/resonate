@@ -14,6 +14,8 @@ pub enum FilterPhase {
 }
 
 const SAMPLED_PER_TAP: usize = 64;
+const SAMPLED_PER_TAP_OF_A_LONG_KERNEL: usize = 16;
+const LONG_KERNEL_FROM_HALF_TAPS: u16 = 512;
 const CEPSTRUM_PADDING: usize = 32;
 const KAISER_BETA_PER_DECIBEL: f64 = 0.1102;
 const KAISER_DECIBELS_AT_NO_BETA: f64 = 8.7;
@@ -30,21 +32,22 @@ static DESIGNED: Mutex<Designed> = Mutex::new(Vec::new());
 
 pub(crate) struct Prototype {
     samples: Vec<f64>,
+    per_tap: usize,
     peak: usize,
     denominators: [f64; STENCIL],
 }
 
 impl Prototype {
     pub(crate) fn lead(&self) -> f64 {
-        self.peak as f64 / SAMPLED_PER_TAP as f64
+        self.peak as f64 / self.per_tap as f64
     }
 
     pub(crate) fn trail(&self) -> f64 {
-        self.samples.len().saturating_sub(self.peak + 1) as f64 / SAMPLED_PER_TAP as f64
+        self.samples.len().saturating_sub(self.peak + 1) as f64 / self.per_tap as f64
     }
 
     pub(crate) fn at(&self, after_peak: f64) -> f64 {
-        let position = self.peak as f64 + after_peak * SAMPLED_PER_TAP as f64;
+        let position = self.peak as f64 + after_peak * self.per_tap as f64;
         let base = position.floor();
         let between = position - base;
         let first = base as i64 - STENCIL_REACHES_BACK as i64;
@@ -120,14 +123,19 @@ fn stopband(params: SincParams) -> f64 {
 
 fn design(params: SincParams, phase: FilterPhase) -> Prototype {
     let windowed = WindowedSinc::new(params);
-    let reach = usize::from(params.half_taps) * SAMPLED_PER_TAP;
+    let per_tap = if params.half_taps >= LONG_KERNEL_FROM_HALF_TAPS {
+        SAMPLED_PER_TAP_OF_A_LONG_KERNEL
+    } else {
+        SAMPLED_PER_TAP
+    };
+    let reach = usize::from(params.half_taps) * per_tap;
     let taps = 2 * reach + 1;
     let size = (taps * CEPSTRUM_PADDING).next_power_of_two();
     let half = size / 2;
 
     let mut spectrum = vec![Complex::new(0.0, 0.0); size];
     for (index, bin) in spectrum.iter_mut().take(taps).enumerate() {
-        let tau = (index as f64 - reach as f64) / SAMPLED_PER_TAP as f64;
+        let tau = (index as f64 - reach as f64) / per_tap as f64;
         bin.re = windowed.at(tau.abs());
     }
 
@@ -198,6 +206,7 @@ fn design(params: SincParams, phase: FilterPhase) -> Prototype {
 
     Prototype {
         samples,
+        per_tap,
         peak,
         denominators: stencil_denominators(),
     }
@@ -215,7 +224,7 @@ mod tests {
     fn response(prototype: &Prototype, nyquists: f64) -> f64 {
         let (mut real, mut imaginary, mut sum) = (0.0, 0.0, 0.0);
         for (index, sample) in prototype.samples.iter().enumerate() {
-            let angle = PI * nyquists * index as f64 / SAMPLED_PER_TAP as f64;
+            let angle = PI * nyquists * index as f64 / prototype.per_tap as f64;
             real += sample * angle.cos();
             imaginary += sample * angle.sin();
             sum += sample;
@@ -271,8 +280,8 @@ mod tests {
     #[test]
     fn a_shaped_filter_keeps_the_stopband_and_passband_the_linear_one_promises() {
         let promised = [
-            (Quality::High, 0.90, 2e-6, -130.0),
-            (Quality::VeryHigh, 0.90, 2e-6, -180.0),
+            (Quality::High, 0.90, 2e-6, -160.0),
+            (Quality::VeryHigh, 0.90, 2e-6, -190.0),
         ];
         for (quality, flat_until, flat_within_db, rejects_db) in promised {
             for phase in [FilterPhase::Minimum, FilterPhase::Intermediate] {
@@ -302,7 +311,7 @@ mod tests {
         }
     }
 
-    fn stopband_energy_db(samples: &[f64]) -> f64 {
+    fn stopband_energy_db(samples: &[f64], per_tap: usize) -> f64 {
         let size = (samples.len() * 4).next_power_of_two();
         let mut spectrum = vec![Complex::new(0.0, 0.0); size];
         for (bin, sample) in spectrum.iter_mut().zip(samples) {
@@ -313,7 +322,7 @@ mod tests {
             .process(&mut spectrum);
 
         let direct = spectrum[0].norm();
-        let bins_a_nyquist = size as f64 / (2.0 * SAMPLED_PER_TAP as f64);
+        let bins_a_nyquist = size as f64 / (2.0 * per_tap as f64);
         let leaked: f64 = spectrum
             .iter()
             .take(size / 2)
@@ -328,20 +337,21 @@ mod tests {
     fn a_shaped_filter_leaks_hardly_more_into_the_stopband_than_the_linear_one() {
         const LEAKS_MORE_BY_AT_MOST_DB: f64 = 3.0;
 
-        for quality in [Quality::High, Quality::VeryHigh] {
+        for quality in [Quality::Balanced, Quality::High] {
             let params = quality.params();
             let windowed = WindowedSinc::new(params);
-            let reach = usize::from(params.half_taps) * SAMPLED_PER_TAP;
+            let per_tap = designed(params, FilterPhase::Minimum)
+                .expect("a shaped phase is designed")
+                .per_tap;
+            let reach = usize::from(params.half_taps) * per_tap;
             let linear: Vec<f64> = (0..=2 * reach)
-                .map(|index| {
-                    windowed.at((index as f64 - reach as f64).abs() / SAMPLED_PER_TAP as f64)
-                })
+                .map(|index| windowed.at((index as f64 - reach as f64).abs() / per_tap as f64))
                 .collect();
-            let promised = stopband_energy_db(&linear);
+            let promised = stopband_energy_db(&linear, per_tap);
 
             for phase in [FilterPhase::Minimum, FilterPhase::Intermediate] {
                 let prototype = designed(params, phase).expect("a shaped phase is designed");
-                let leaked = stopband_energy_db(&prototype.samples);
+                let leaked = stopband_energy_db(&prototype.samples, per_tap);
                 assert!(
                     leaked < promised + LEAKS_MORE_BY_AT_MOST_DB,
                     "{quality:?} {phase:?} leaks {leaked:.1} dB against the linear {promised:.1} dB"
@@ -380,6 +390,7 @@ mod tests {
     fn the_stencil_reads_a_polynomial_of_its_own_order_exactly() {
         let prototype = Prototype {
             samples: (0..64).map(|index| (index as f64 / 8.0).powi(7)).collect(),
+            per_tap: SAMPLED_PER_TAP,
             peak: 32,
             denominators: stencil_denominators(),
         };

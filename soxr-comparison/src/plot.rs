@@ -233,7 +233,7 @@ pub fn plotted(directory: &Path, pair: Pair, measured: &[Measured]) -> Result<()
     let whole = Frame {
         from_hz: 0.0,
         to_hz: (reach / 1_000.0).ceil() * 1_000.0,
-        floor_db: -220.0,
+        floor_db: -340.0,
         ceiling_db: 10.0,
     };
     written(

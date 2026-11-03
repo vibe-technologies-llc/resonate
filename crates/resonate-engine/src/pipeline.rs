@@ -1718,10 +1718,15 @@ mod tests {
             .expect("a downmixing chain builds");
         let fed = vec![0.25; BLOCK * 6];
         let mut produced = vec![0.0; chain.max_output_frames() * 2];
-        let count = chain.process(&fed, &mut produced);
+        let frames_to_wait_through = chain.latency_frames().ceil() as usize + BLOCK;
 
-        assert_eq!(count.frames_in, BLOCK);
-        assert!(count.frames_out > 0);
+        let mut frames_out = 0;
+        for _ in 0..frames_to_wait_through.div_ceil(BLOCK) {
+            let count = chain.process(&fed, &mut produced);
+            assert_eq!(count.frames_in, BLOCK);
+            frames_out += count.frames_out;
+        }
+        assert!(frames_out > 0);
     }
 
     #[test]
