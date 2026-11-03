@@ -9,9 +9,9 @@ are in [ROADMAP.md](ROADMAP.md).
   #62455)
 
 ## Later: DSP
-- [L] The resampler's High and Very high cost 3 to 22 times SoXR HQ's and VHQ's CPU at a deeper
-  stopband (`docs/RESAMPLING.md`): every output frame is a dot product over the whole kernel,
-  stretched by the ratio going down, so Very high at 192 to 48 kHz takes 1.87 % of a core against
-  SoXR VHQ's 0.085 %, and intermediate phase up to 3 %; halving stages ahead of the polyphase one
-  at integer factors, or partitioned FFT convolution for High and Very high, would close most of
-  it (and lower `ceilings.tsv` with it)
+- [M] The resampler's High and Very high still cost 2.4 to 3.5 times SoXR HQ's and VHQ's CPU at a
+  deeper stopband (`docs/RESAMPLING.md`: Very high 0.164 % of a core against VHQ's 0.054 % at 44.1
+  to 48 kHz, 0.273 % against 0.084 % at 192 to 48 kHz): stage two's interpolator spends 29 to 37
+  taps a frame through the general polyphase loop, about a third of the cost, and stage one's
+  partitions stay at 256 and 512 samples to hold the latency; a loop of its own for the short
+  interpolator, or halving stages ahead of stage one at 4:1 and beyond, would close part of it
