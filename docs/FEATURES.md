@@ -185,10 +185,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   complex`)
 
 ## Later: Network output
-- [S] A Google Cast receiver the browse stops hearing reverts to `cast:at-<ip>-<port>` while its
-  address is held, and nothing remembers the `cast:<id>` it had: an equaliser binding or measurer
-  the window carried to `cast:<id>` is then found by no name until the browse hears the receiver
-  again (`cast.md`)
 - [S] Nothing learns which renderers decode 176.4 and 192 kHz FLAC, since the protocol info does not say
   and a renderer that cannot play a stream gives no answer a try could read, so the default stays 96 kHz
   (the fake renderer's tests are all the proof the vouched rates have, no streamer having confirmed any);

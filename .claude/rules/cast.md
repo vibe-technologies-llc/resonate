@@ -87,8 +87,9 @@ codec are dev-dependencies, for the end-to-end tests.
   so a stored `cast:at-...` still finds it (`SinkInfo::is_named`, `audio.md`). Which sinks were
   reached by address is `Known::addressed`, and the browse's record names (`Known::named`, a
   fullname to a `CastId`; a `Listed` receiver is named by its id) say which are heard. A record
-  removed from the browse **reverts** an addressed receiver to its address's name (told
-  `Reformatted`) and removes any other; forgetting the address removes a receiver only the address
+  removed from the browse **keeps** an addressed receiver's name and its alias while the address
+  is held (nothing is told; a name that went to a window's binding must not be lost to a browse
+  that fell quiet) and removes any other; forgetting the address removes a receiver only the address
   held (`forget_at`: addressed and not heard) and leaves one the browse hears, its alias gone.
   A browse that stops keeps the name it gave. A receiver the browse listed first and an address
   names later is one sink under the id. Locks and turns key by address (`Lanes`, the volume
@@ -96,15 +97,20 @@ codec are dev-dependencies, for the end-to-end tests.
   asked again to prove the rename: the address was reached already. **A name stored elsewhere by
   node name follows the alias** (`audio.md`, `eq.md`): the engine resolves an equaliser binding
   through every name the sink answers to, and the window carries a binding, an own curve and a
-  measurer stored under `cast:at-...` to `cast:<id>` once the sink is listed so. The rename does not
-  last past the browse: a record removed reverts the name, which has no alias for the id
-  (`FEATURES.md`).
+  measurer stored under `cast:at-...` to `cast:<id>` once the sink is listed so. The rename lasts as long
+  as the address is held, past the browse hearing the record or stopping, so a binding stored under
+  `cast:<id>` keeps finding the receiver; a record heard again under the same id is the same name
+  and sink, told nothing.
   (`a_receiver_given_by_address_is_reached_without_a_browse_and_named_by_where_it_is`,
   `a_receiver_given_by_host_name_is_resolved_reached_and_named_by_where_it_is`,
   `a_host_name_given_to_a_reaching_casting_is_resolved_off_the_callers_thread_and_forgetting_it_removes_the_receiver`,
   `a_receiver_given_by_address_and_then_heard_by_the_browse_is_named_by_its_mdns_id_under_the_same_sink`,
   `an_address_given_to_a_receiver_already_listed_makes_no_second_sink`,
-  `a_casting_that_stops_browsing_keeps_the_receivers_given_by_address_and_drops_the_rest`).
+  `a_casting_that_stops_browsing_keeps_the_receivers_given_by_address_and_drops_the_rest`,
+  and in `casting.rs` `a_receiver_the_browse_stops_hearing_keeps_the_name_it_was_given_while_its_address_is_held`,
+  `a_receiver_the_browse_stopped_hearing_is_heard_again_under_the_same_name_and_sink`,
+  `a_receiver_the_browse_stopped_hearing_goes_with_its_address`,
+  `a_receiver_only_the_browse_held_goes_when_the_browse_stops_hearing_it`).
   No Cast receiver has been addressed so (`TESTING.md`'s Cast entry).
 - **`Casting` rests like `Network`**: `resting` runs only the `resonate-cast-turns` thread;
   `look` starts the stream server once, the daemon and the browse thread; `rest` stops browsing,

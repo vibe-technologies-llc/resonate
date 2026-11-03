@@ -638,14 +638,7 @@ impl Shared {
                 return;
             };
             if known.addressed.contains(&sink) && located.contains(&at) {
-                let reverted = known
-                    .held
-                    .get(&sink)
-                    .map(|device| Arc::new(device.renamed(Found::at(at))));
-                reverted.map(|device| {
-                    known.held.insert(sink, device);
-                    SinkChange::Reformatted(sink)
-                })
+                None
             } else {
                 known.held.remove(&sink);
                 known.addressed.remove(&sink);
@@ -745,5 +738,121 @@ fn turned_on(
     if let Err(error) = turn(link) {
         tracing::warn!(%error, receiver = %device.id(), "a Cast receiver's volume could not be turned");
         links.remove(&device.at());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use resonate_audio::NodeName;
+
+    use super::*;
+
+    const ID: &str = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
+
+    const FULLNAME: &str = "Fake-speaker._googlecast._tcp.local.";
+
+    fn address() -> SocketAddr {
+        SocketAddr::from(([192, 168, 1, 20], 8009))
+    }
+
+    fn heard() -> Found {
+        Found {
+            id: CastId::new(ID),
+            name: "Fake speaker".to_owned(),
+            at: address(),
+        }
+    }
+
+    fn browsing() -> Searching {
+        Searching {
+            finding: Finding::Listed(Vec::new()),
+            within: Duration::from_millis(100),
+            serving_on: IpAddr::V4(Ipv4Addr::LOCALHOST),
+        }
+    }
+
+    fn casting_holding_the_address() -> Casting {
+        let casting = Casting::resting(browsing()).expect("rests");
+        casting
+            .shared
+            .located
+            .lock()
+            .given
+            .insert(Given::Address(address()));
+        casting
+            .shared
+            .admit(Device::held_unreached(Found::at(address())), None, true);
+        casting
+    }
+
+    fn the_receiver(casting: &Casting) -> SinkInfo {
+        let mut sinks = casting.sinks();
+        assert_eq!(sinks.len(), 1);
+        sinks.remove(0)
+    }
+
+    #[test]
+    fn a_receiver_the_browse_stops_hearing_keeps_the_name_it_was_given_while_its_address_is_held() {
+        let casting = casting_holding_the_address();
+        let by_id = NodeName::new(format!("cast:{ID}"));
+        let by_address = NodeName::new(format!("cast:{}", CastId::at(address())));
+
+        casting.shared.reach(heard(), Some(FULLNAME.to_owned()));
+        let changes = Neighbours::subscribe(&casting);
+        let named = the_receiver(&casting);
+        casting.shared.forget(FULLNAME);
+        let kept = the_receiver(&casting);
+
+        assert_eq!(named.name, by_id);
+        assert_eq!(kept, named);
+        assert_eq!(kept.aliases, std::slice::from_ref(&by_address));
+        assert!(kept.is_named(&by_id));
+        assert!(kept.is_named(&by_address));
+        assert_eq!(changes.try_recv(), Err(TryRecvError::Empty));
+    }
+
+    #[test]
+    fn a_receiver_the_browse_stopped_hearing_is_heard_again_under_the_same_name_and_sink() {
+        let casting = casting_holding_the_address();
+        casting.shared.reach(heard(), Some(FULLNAME.to_owned()));
+        let named = the_receiver(&casting);
+        casting.shared.forget(FULLNAME);
+        let changes = Neighbours::subscribe(&casting);
+
+        casting.shared.reach(heard(), Some(FULLNAME.to_owned()));
+
+        assert_eq!(the_receiver(&casting), named);
+        assert_eq!(changes.try_recv(), Err(TryRecvError::Empty));
+    }
+
+    #[test]
+    fn a_receiver_the_browse_stopped_hearing_goes_with_its_address() {
+        let casting = casting_holding_the_address();
+        casting.shared.reach(heard(), Some(FULLNAME.to_owned()));
+        let named = the_receiver(&casting);
+        casting.shared.forget(FULLNAME);
+        let changes = Neighbours::subscribe(&casting);
+
+        casting.unlocate(address());
+
+        assert!(casting.sinks().is_empty());
+        assert_eq!(changes.try_recv(), Ok(SinkChange::Removed(named.id)));
+    }
+
+    #[test]
+    fn a_receiver_only_the_browse_held_goes_when_the_browse_stops_hearing_it() {
+        let casting = Casting::resting(browsing()).expect("rests");
+        casting.shared.admit(
+            Device::held_unreached(heard()),
+            Some(FULLNAME.to_owned()),
+            false,
+        );
+        let named = the_receiver(&casting);
+        let changes = Neighbours::subscribe(&casting);
+
+        casting.shared.forget(FULLNAME);
+
+        assert!(casting.sinks().is_empty());
+        assert_eq!(changes.try_recv(), Ok(SinkChange::Removed(named.id)));
     }
 }

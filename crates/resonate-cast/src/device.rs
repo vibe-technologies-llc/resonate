@@ -92,6 +92,14 @@ impl Device {
         })
     }
 
+    #[cfg(test)]
+    pub(crate) fn held_unreached(found: Found) -> Self {
+        Self {
+            found,
+            volume: None,
+        }
+    }
+
     pub const fn id(&self) -> &CastId {
         &self.found.id
     }
