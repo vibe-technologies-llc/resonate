@@ -7,7 +7,7 @@ use resonate_core::{
     Answer, CODES_SHARED_AT_MOST, Chromaprint, Figure, LARGEST_SHARED_LYRICSFILE,
     LINKS_SHARED_AT_MOST, LONGEST_SHARED_LYRICS, LONGEST_SHARED_PRINT, Link, Mbid, Recording,
     SharedBandPeaks, SharedCredit, SharedHeard, SharedLyrics, SharedLyricsfile, SharedMedium,
-    SharedPrint, SharedRecognition, SharedRelease, SharedStudy, SharedTrack, WholeFile,
+    SharedPrint, SharedRecognition, SharedRelease, SharedStudy, SharedTrack, WholeFile, ZoneId,
 };
 
 use crate::{
@@ -19,6 +19,7 @@ use crate::{
         Stamp,
     },
     key::{DEVICE_BYTES, SPACE_BYTES, TOKEN_BYTES},
+    remote::{Controlling, RemoteCommand, RemoteZone, read_zones, write_zones},
     seal::SEALED_AT_LEAST,
 };
 
@@ -145,13 +146,35 @@ pub enum FromServer {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ToPeer {
     Holdings,
-    Fetch { recording: Recording, offset: u64 },
-    Meet { device: DeviceId, records: bool },
-    Changes { whole: bool, changes: Vec<Change> },
-    Tags { recording: Recording },
-    Covers { releases: Vec<Mbid> },
-    Lyricsfiles { recordings: Vec<Recording> },
-    Prints { files: Vec<WholeFile> },
+    Fetch {
+        recording: Recording,
+        offset: u64,
+    },
+    Meet {
+        device: DeviceId,
+        records: bool,
+    },
+    Changes {
+        whole: bool,
+        changes: Vec<Change>,
+    },
+    Tags {
+        recording: Recording,
+    },
+    Covers {
+        releases: Vec<Mbid>,
+    },
+    Lyricsfiles {
+        recordings: Vec<Recording>,
+    },
+    Prints {
+        files: Vec<WholeFile>,
+    },
+    Control {
+        zone: ZoneId,
+        command: RemoteCommand,
+    },
+    Watch,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -187,6 +210,10 @@ pub enum FromPeer {
         print: SharedPrint,
     },
     PrintsEnd,
+    Controlled(Controlling),
+    Zones {
+        zones: Vec<RemoteZone>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1239,6 +1266,12 @@ impl ToPeer {
                     writer.whole_file(*file);
                 }
             }
+            Self::Control { zone, command } => {
+                writer.byte(8);
+                writer.number(u64::from(zone.get()));
+                command.write(&mut writer);
+            }
+            Self::Watch => writer.byte(9),
         }
         writer.finish()
     }
@@ -1295,6 +1328,11 @@ impl ToPeer {
                 }
                 Self::Prints { files }
             }
+            8 => Self::Control {
+                zone: ZoneId::new(reader.small()?).ok_or(Error::Malformed(Malformed::Number))?,
+                command: RemoteCommand::read(&mut reader)?,
+            },
+            9 => Self::Watch,
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
         reader.done()?;
@@ -1352,6 +1390,14 @@ impl FromPeer {
                 writer.print(print);
             }
             Self::PrintsEnd => writer.byte(12),
+            Self::Controlled(controlling) => {
+                writer.byte(13);
+                writer.byte(controlling.tag());
+            }
+            Self::Zones { zones } => {
+                writer.byte(14);
+                write_zones(&mut writer, zones);
+            }
         }
         writer.finish()
     }
@@ -1399,6 +1445,10 @@ impl FromPeer {
                 print: reader.print()?,
             },
             12 => Self::PrintsEnd,
+            13 => Self::Controlled(Controlling::tagged(reader.byte()?)),
+            14 => Self::Zones {
+                zones: read_zones(&mut reader)?,
+            },
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
         reader.done()?;

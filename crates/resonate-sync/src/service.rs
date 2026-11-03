@@ -8,6 +8,7 @@ use std::{
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
+        mpsc as std_mpsc,
     },
     thread,
     time::{Duration, SystemTime},
@@ -18,7 +19,7 @@ use parking_lot::{Mutex, RwLock};
 use quinn::{
     AsyncUdpSocket, ClientConfig, Connection, Endpoint, EndpointConfig, Runtime as _, TokioRuntime,
 };
-use resonate_core::{Recording, RecordingKey};
+use resonate_core::{Recording, RecordingKey, RemoteTrust, ZoneId};
 use ring::digest::{SHA256, SHA256_OUTPUT_LEN, digest};
 use rustls::ClientConfig as WebConfig;
 use socket2::{Domain, Protocol, Socket, Type};
@@ -40,10 +41,11 @@ use crate::{
         global_addresses_here, record_of, told_over_ipv6,
     },
     peer::{
-        Answering, Heard, blocking, covers_from, dialled, dialled_within, fetch, holdings_of,
-        lyricsfiles_from, meet, prints_from, serve, tell,
+        Answering, DIAL_WITHIN, Heard, blocking, control, covers_from, dialled, dialled_within,
+        fetch, holdings_of, lyricsfiles_from, meet, prints_from, serve, tell, watch,
     },
     quic::{KEEP_THE_SERVER_EVERY, PeerIdentity, to_the_server, trusted_roots},
+    remote::{CONTROL_ANSWERED_WITHIN, Controlled, Controlling, RemoteCommand, Watched},
     seal::{opened, sealed},
     stun::{Reflector, STUN_PORT},
     web::{Incoming, Outgoing, connect, to_the_web, web_address},
@@ -81,6 +83,7 @@ const LAST_REDIAL: Duration = Duration::from_secs(30);
 const DIAL_BACK_AFTER: Duration = Duration::from_millis(500);
 const DIALS_CROSS_WITHIN: Duration = Duration::from_secs(5);
 const HEARD_FOR: Duration = Duration::from_secs(60);
+const WATCH_LAPSES_AFTER: Duration = Duration::from_secs(30);
 const SERVER_ANSWERS_WITHIN: Duration = Duration::from_secs(15);
 const PUNCH_ANSWERED_AT_MOST_EVERY: Duration = Duration::from_secs(10);
 const RELAY_DIAL_WITHIN: Duration = Duration::from_secs(20);
@@ -258,6 +261,13 @@ enum Command {
     Heard(Beacon),
     Force,
     Forgot,
+    Control {
+        device: DeviceId,
+        zone: ZoneId,
+        command: RemoteCommand,
+        answer: std_mpsc::Sender<Controlling>,
+    },
+    Watch(DeviceId),
     Stop,
 }
 
@@ -302,6 +312,19 @@ struct Running {
     passed_over: Mutex<Vec<PassedOver>>,
     lyricsfiles_skipped: Mutex<BTreeMap<DeviceId, usize>>,
     prints_skipped: Mutex<BTreeMap<DeviceId, usize>>,
+    mirrors: RwLock<BTreeMap<DeviceId, Watched>>,
+    watched: Mutex<BTreeMap<DeviceId, std::time::Instant>>,
+    watching: Mutex<BTreeSet<DeviceId>>,
+}
+
+pub struct AskedToControl(std_mpsc::Receiver<Controlling>);
+
+impl AskedToControl {
+    pub fn answer(self) -> Controlling {
+        self.0
+            .recv_timeout(DIAL_WITHIN + CONTROL_ANSWERED_WITHIN)
+            .unwrap_or(Controlling::Unanswered)
+    }
 }
 
 enum Work {
@@ -310,6 +333,12 @@ enum Work {
         asked: bool,
     },
     Follow,
+    Control {
+        zone: ZoneId,
+        command: RemoteCommand,
+        answer: std_mpsc::Sender<Controlling>,
+    },
+    Watch,
 }
 
 #[derive(Default)]
@@ -569,6 +598,7 @@ impl Sync {
             device,
             heard,
             transfers_allowed: Arc::clone(&transfers_allowed),
+            controlled: RwLock::new(None),
         });
         let shown = Arc::new(RwLock::new(Shown {
             standing: if server.is_some() {
@@ -616,6 +646,9 @@ impl Sync {
             passed_over: Mutex::new(Vec::new()),
             lyricsfiles_skipped: Mutex::new(BTreeMap::new()),
             prints_skipped: Mutex::new(BTreeMap::new()),
+            mirrors: RwLock::new(BTreeMap::new()),
+            watched: Mutex::new(BTreeMap::new()),
+            watching: Mutex::new(BTreeSet::new()),
         });
 
         let (commands, received) = mpsc::unbounded_channel();
@@ -723,6 +756,65 @@ impl Sync {
         handoffs.retain(|handoff| handoff.device != self.device && !handoff.rows.is_empty());
         handoffs.sort_by_key(|handoff| Reverse(handoff.stamp));
         Ok(handoffs)
+    }
+
+    pub fn control_with(&self, controlled: Arc<dyn Controlled>, trust: RemoteTrust) {
+        *self.running.answering.controlled.write() = Some((controlled, trust));
+    }
+
+    pub fn trust(&self, trust: RemoteTrust) {
+        if let Some((_, held)) = self.running.answering.controlled.write().as_mut() {
+            *held = trust;
+        }
+    }
+
+    pub fn uncontrolled(&self) {
+        *self.running.answering.controlled.write() = None;
+    }
+
+    pub fn control(&self, device: DeviceId, zone: ZoneId, command: RemoteCommand) -> Controlling {
+        self.ask_to_control(device, zone, command).answer()
+    }
+
+    pub fn ask_to_control(
+        &self,
+        device: DeviceId,
+        zone: ZoneId,
+        command: RemoteCommand,
+    ) -> AskedToControl {
+        let (answer, answered) = std_mpsc::channel();
+        let asked = Command::Control {
+            device,
+            zone,
+            command,
+            answer,
+        };
+        let _ = self.commands.send(asked);
+        AskedToControl(answered)
+    }
+
+    pub fn watch(&self, device: DeviceId) {
+        self.running
+            .watched
+            .lock()
+            .insert(device, std::time::Instant::now());
+        if !self.running.watching.lock().contains(&device) {
+            let _ = self.commands.send(Command::Watch(device));
+        }
+    }
+
+    pub fn unwatch(&self, device: DeviceId) {
+        self.running.watched.lock().remove(&device);
+        self.running.mirrors.write().remove(&device);
+    }
+
+    pub fn watched(&self, device: DeviceId) -> Watched {
+        self.running
+            .mirrors
+            .read()
+            .get(&device)
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub fn leave(mut self) {
@@ -945,6 +1037,14 @@ async fn run(running: Arc<Running>, mut inbound: Inbound) {
                     Ok(())
                 }
                 Some(Command::Fetch { recordings, from }) => syncing.want(from, Work::Fetch { recordings, asked: true }).await,
+                Some(Command::Control { device, zone, command, answer }) => syncing.want(device, Work::Control { zone, command, answer }).await,
+                Some(Command::Watch(device)) => {
+                    if running.watching.lock().insert(device) {
+                        syncing.want(device, Work::Watch).await
+                    } else {
+                        Ok(())
+                    }
+                }
             },
             Some(event) = inbound.events.recv() => syncing.event(event).await,
             Some(heard) = inbound.heard.recv() => syncing.heard_from_peer(heard).await,
@@ -2048,7 +2148,7 @@ impl Syncing {
                 self.follow_owed.insert(device);
                 return Ok(());
             }
-            Work::Follow => {}
+            Work::Follow | Work::Control { .. } | Work::Watch => {}
         }
         if let Some(connection) = self
             .peers
@@ -2138,12 +2238,18 @@ impl Syncing {
             return;
         }
         for work in self.waiting.remove(&device).unwrap_or_default() {
-            if let Work::Fetch { recordings, .. } = work {
-                for recording in &recordings {
-                    self.running.transfer(recording, device, |transfer| {
-                        transfer.state = TransferState::Failed;
-                    });
+            match work {
+                Work::Fetch { recordings, .. } => {
+                    for recording in &recordings {
+                        self.running.transfer(recording, device, |transfer| {
+                            transfer.state = TransferState::Failed;
+                        });
+                    }
                 }
+                Work::Watch => {
+                    self.running.watching.lock().remove(&device);
+                }
+                Work::Follow | Work::Control { .. } => {}
             }
         }
     }
@@ -2666,6 +2772,32 @@ fn spawn_work(running: Arc<Running>, device: DeviceId, connection: Connection, w
 
 async fn worked(running: &Arc<Running>, device: DeviceId, connection: &Connection, work: Work) {
     let (recordings, asked) = match work {
+        Work::Control {
+            zone,
+            command,
+            answer,
+        } => {
+            let _ = answer.send(control(connection, zone, command).await);
+            return;
+        }
+        Work::Watch => {
+            let still_watched = || {
+                running
+                    .watched
+                    .lock()
+                    .get(&device)
+                    .is_some_and(|asked| asked.elapsed() < WATCH_LAPSES_AFTER)
+            };
+            if let Err(error) = watch(connection, device, &running.mirrors, still_watched).await {
+                tracing::debug!(%error, "another device's zones could not be watched");
+            }
+            running.watching.lock().remove(&device);
+            if !still_watched() {
+                running.watched.lock().remove(&device);
+                running.mirrors.write().remove(&device);
+            }
+            return;
+        }
         Work::Fetch {
             recordings,
             asked: true,

@@ -25,7 +25,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `providers.md` | resonate-providers, resonate-fetch, providers/*, the binary's `providers.rs`, `served.rs`, `supply.rs`, `filed.rs` | the seam, the registry, the inbox, Jellyfin and Emby (played in place), Subsonic (fetched and played in place, with covers, live in the window), TIDAL, hifi-api, Monochrome, what a delivery is and where it lands |
 | `analysis.md` | resonate-analysis, `studies.rs`, `fingerprint.rs`, the analysis pane, `acoustid.rs`, `analyse.rs` | the one decode pass, the fake-lossless heuristic, the print, the studies and recognition |
 | `mcp.md` | resonate-mcp, the binary's `mcp.rs` | the transport, refusals against failures, the tools, the resources and their seam |
-| `sync.md` | resonate-sync, the binary's `sync.rs`, `synced.rs`, the sync panes | the pairing key and what it derives, the wire, the ledger, the seam, peers and transfers, devices meeting on one network |
+| `sync.md` | resonate-sync, the binary's `sync.rs`, `driven.rs`, `synced.rs`, the sync panes | the pairing key and what it derives, the wire, the ledger, the seam, peers and transfers, devices meeting on one network, one device driving another's zones |
 | `server.md` | resonate-server, `packaging/server/**` | what the server keeps, sessions, presence, punching, limits, deployment |
 | `upnp.md` | resonate-upnp, the binary's `rendering.rs`, `zoning.rs`, the output settings pane, the phones' `rendering.rs` and `output/mod.rs` | network renderers: a renderer as a sink beside PipeWire's, Oboe's and RemoteIO's, the `Neighbours` seam, a resting network and its switch, SSDP, the description, SOAP, the paced live stream, seek, pause and volume past its buffer, the renderer's clock, multicast on the phones |
 | `cast.md` | resonate-cast, the binary's `rendering.rs` | Google Cast receivers: one more sink kind beside UPnP's, the mDNS browse, TLS and the hand-written `CastMessage` and JSON, the Default Media Receiver's launch and load, the receiver's clock, the volume |
@@ -74,7 +74,7 @@ resonate            bin: CLI, tracing, wiring
   ├── resonate-mcp        catalog and player over MCP  [`mcp`]
   ├── resonate-mpris      session bus: MPRIS, notifications, idle inhibit, playlists
   ├── resonate-discord    what is playing, told to Discord  [`discord`]
-  ├── resonate-sync       devices kept in step: sealed records, QUIC peers, LAN beacons and Bonjour  [`sync`]
+  ├── resonate-sync       devices kept in step: sealed records, QUIC peers, LAN beacons and Bonjour, one device driving another's zones  [`sync`]
   ├── resonate-engine     transport, ring, pipeline policy  (also on analysis)
   │     ├── resonate-codec    decode to PCM  (symphonia)
   │     ├── resonate-dsp      resample, gain, dither
@@ -244,7 +244,8 @@ stack's test harness:
 - **Catalog:** `served` (a service played in place browsed: Subsonic, Jellyfin or Emby, TIDAL, hifi-api, the Resonate server, Monochrome; `subsonic` is its Subsonic case), `scan`, `roots`, `forget`, `enrich`, `tag`, `organise`, `dedupe`, `vault`, `studies`, `stats`,
   `favourites`, `suggest`, `playlists`, `playlist`, `import`.
 - **Wants:** `wants`, `missing`, `poll`, `tidal` (device sign-in), `lastfm` (scrobbling sign-in).
-- **Devices:** `sync` (pairing code and devices; `--join`, `--leave`, `--fetch --from`, `--handoff`).
+- **Devices:** `sync` (pairing code and devices; `--join`, `--leave`, `--fetch --from`, `--handoff`,
+  `--control <device>` to see and drive another device's zones).
 - `cargo run -- <files>` opens the window with those queued; a bare `cargo run` opens it on the
   last queue unless `resume` is off.
 

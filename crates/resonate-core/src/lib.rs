@@ -82,5 +82,5 @@ pub use crate::{
     text::{LegacyEncoding, TextEncoding},
     time::{FrameSpan, Frames},
     volume::{AppliedGain, Decibels, Gain, Trim, Volume},
-    zone::{KeptZone, LONGEST_ZONE_NAME, ZoneId, ZoneName},
+    zone::{KeptZone, LONGEST_ZONE_NAME, RemoteTrust, ZoneId, ZoneName},
 };

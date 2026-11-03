@@ -69,12 +69,13 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   here to hear it on, so it would ship as Windows did, cross-checked and never played
 
 ## Playback and output
-- [L · 0.5.0] One device cannot drive another's zones: a handoff (`sync.md`) moves the song and its
-  place once, and nothing lets the phone play, pause, seek, set the volume of or reorder the queue
-  of a zone the desktop keeps playing through its own output. The paired devices' QUIC peers and
-  LAN beacons already reach each other and every command reaches a zone through `Zones::send`; the
-  wire needs the commands and a mirror of the zone's state (what plays, position, queue, volume),
-  and a choice of which commands a paired device is trusted with. CLI, window and both phones
+- [M · 0.5.0] Driving another device's zones (`sync.md`'s *One device drives another's zones*)
+  stops short in four places: a phone cannot be driven (the boundary hands its `Sync` no
+  `Controlled`, so a phone answers `Uncontrollable`; its `Zones` needs the binary's `Driven`
+  reading over the boundary's `Playing`), the window and both phones drive transport and volume
+  alone (seek, jump, move and remove are on the wire and in `resonate sync --control`, not yet
+  drawn), `sync-control` has no row in the settings pane or on the phones, and `Driven` is held
+  only by the sync crate's loopback test over a stand-in, never over a real engine
 - [M · blocked: pipewire-rs] A rebind or turn inside a row that moves the rate while
   `force-graph-rate` pins it (on by default), or switches the pin, still reopens the PipeWire stream:
   the pin is the node's `node.rate` property, which only `pw_stream_update_properties` moves, and

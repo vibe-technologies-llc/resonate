@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     io::{Read, Seek, SeekFrom},
     net::SocketAddr,
     path::{Path, PathBuf},
@@ -6,12 +7,14 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use quinn::{ClientConfig, Connection, Endpoint, RecvStream, SendStream};
-use resonate_core::{Mbid, Recording, SharedLyricsfile, SharedPrint, WholeFile};
+use resonate_core::{
+    Mbid, Recording, RemoteTrust, SharedLyricsfile, SharedPrint, WholeFile, ZoneId,
+};
 use tokio::{
     fs,
     io::AsyncWriteExt,
@@ -23,6 +26,11 @@ use tokio::{
 use crate::{
     Catalog, Change, DeviceId, Error, FileOp, Held, Ledger, Result, SongTags, StreamOp,
     quic::{PEER_NAME, read_frame, send_frame},
+    remote::{
+        CONTROL_ANSWERED_WITHIN, Controlled, Controlling, MIRROR_GOES_STALE_AFTER,
+        MIRROR_LOOKED_AT_EVERY, MIRROR_TOLD_AGAIN_AFTER, Mirror, RemoteCommand, RemoteZone,
+        Watched, told_alike,
+    },
     wire::{FromPeer, LARGEST_SHARED_COVER, ToPeer},
 };
 
@@ -74,6 +82,7 @@ pub async fn dialled_within(
 
 pub struct Answering {
     pub catalog: Arc<dyn Catalog>,
+    pub controlled: RwLock<Option<(Arc<dyn Controlled>, RemoteTrust)>>,
     pub ledger: Arc<Mutex<Ledger>>,
     pub device: DeviceId,
     pub heard: UnboundedSender<Heard>,
@@ -195,6 +204,11 @@ async fn answer(mut send: SendStream, mut recv: RecvStream, asked: Asked) -> Res
             }
             send_frame(&mut send, &FromPeer::PrintsEnd.encoded()).await?;
         }
+        ToPeer::Control { zone, command } => {
+            let answer = controlled_here(&asked.answering, zone, command).await;
+            send_frame(&mut send, &FromPeer::Controlled(answer).encoded()).await?;
+        }
+        ToPeer::Watch => send_mirror(&mut send, &asked.answering).await?,
         ToPeer::Fetch { recording, offset } => {
             if asked.answering.transfers_allowed.load(Ordering::Relaxed) {
                 send_song(&mut send, catalog, recording, offset).await?;
@@ -204,6 +218,135 @@ async fn answer(mut send: SendStream, mut recv: RecvStream, asked: Asked) -> Res
         }
     }
     send.finish().map_err(|_| Error::StreamClosed)
+}
+
+impl Answering {
+    fn controlled(&self) -> Option<(Arc<dyn Controlled>, RemoteTrust)> {
+        self.controlled.read().clone()
+    }
+}
+
+async fn controlled_here(
+    answering: &Answering,
+    zone: ZoneId,
+    command: RemoteCommand,
+) -> Controlling {
+    let Some((controlled, trust)) = answering.controlled() else {
+        return Controlling::Uncontrollable;
+    };
+    if !command.trusted_by(trust) {
+        return Controlling::Untrusted;
+    }
+    match blocking(move || Ok(controlled.control(zone, command))).await {
+        Ok(Ok(())) => Controlling::Done,
+        Ok(Err(uncontrolled)) => uncontrolled.into(),
+        Err(error) => {
+            tracing::debug!(%error, "a command from another device could not be applied");
+            Controlling::Failed
+        }
+    }
+}
+
+async fn send_mirror(send: &mut SendStream, answering: &Answering) -> Result<()> {
+    let mut told: Option<(Vec<RemoteZone>, Instant)> = None;
+    loop {
+        let (controlled, trust) = match answering.controlled() {
+            Some(held) => held,
+            None => {
+                let refusal = FromPeer::Controlled(Controlling::Uncontrollable);
+                return send_frame(send, &refusal.encoded()).await;
+            }
+        };
+        if !trust.shows() {
+            let refusal = FromPeer::Controlled(Controlling::Untrusted);
+            return send_frame(send, &refusal.encoded()).await;
+        }
+        let zones = blocking(move || Ok(controlled.zones())).await?;
+        let now = Instant::now();
+        let alike = told.as_ref().is_some_and(|(was, at)| {
+            now.saturating_duration_since(*at) < MIRROR_TOLD_AGAIN_AFTER
+                && told_alike(was, *at, &zones, now)
+        });
+        if !alike {
+            send_frame(
+                send,
+                &FromPeer::Zones {
+                    zones: zones.clone(),
+                }
+                .encoded(),
+            )
+            .await?;
+            told = Some((zones, now));
+        }
+        tokio::time::sleep(MIRROR_LOOKED_AT_EVERY).await;
+    }
+}
+
+pub async fn control(connection: &Connection, zone: ZoneId, command: RemoteCommand) -> Controlling {
+    let asked = timeout(CONTROL_ANSWERED_WITHIN, async {
+        let (mut send, mut recv) = connection
+            .open_bi()
+            .await
+            .map_err(|source| Error::Connection(Box::new(source)))?;
+        send_frame(&mut send, &ToPeer::Control { zone, command }.encoded()).await?;
+        send.finish().map_err(|_| Error::StreamClosed)?;
+        Ok::<_, Error>(match read_frame(&mut recv).await? {
+            Some(answer) => match FromPeer::decoded(&answer)? {
+                FromPeer::Controlled(controlling) => controlling,
+                _ => Controlling::Unanswered,
+            },
+            None => Controlling::Unanswered,
+        })
+    })
+    .await;
+    match asked {
+        Ok(Ok(controlling)) => controlling,
+        Ok(Err(error)) => {
+            tracing::debug!(%error, "a device was not told the command");
+            Controlling::Unanswered
+        }
+        Err(_) => Controlling::Unanswered,
+    }
+}
+
+pub async fn watch(
+    connection: &Connection,
+    device: DeviceId,
+    mirrors: &RwLock<BTreeMap<DeviceId, Watched>>,
+    still_watched: impl Fn() -> bool,
+) -> Result<()> {
+    let (mut send, mut recv) = connection
+        .open_bi()
+        .await
+        .map_err(|source| Error::Connection(Box::new(source)))?;
+    send_frame(&mut send, &ToPeer::Watch.encoded()).await?;
+    send.finish().map_err(|_| Error::StreamClosed)?;
+    let mut heard_at = Instant::now();
+    while still_watched() && connection.close_reason().is_none() {
+        let frame = match timeout(MIRROR_LOOKED_AT_EVERY * 4, read_frame(&mut recv)).await {
+            Err(_) if heard_at.elapsed() < MIRROR_GOES_STALE_AFTER => continue,
+            Err(_) => break,
+            Ok(frame) => frame?,
+        };
+        let Some(frame) = frame else {
+            break;
+        };
+        heard_at = Instant::now();
+        match FromPeer::decoded(&frame)? {
+            FromPeer::Zones { zones } => {
+                mirrors
+                    .write()
+                    .insert(device, Watched::Mirrored(Mirror { zones, heard_at }));
+            }
+            FromPeer::Controlled(refusal) => {
+                mirrors.write().insert(device, Watched::Refused(refusal));
+                return Ok(());
+            }
+            _ => {}
+        }
+    }
+    let _ = recv.stop(0_u32.into());
+    Ok(())
 }
 
 async fn send_covers(
@@ -309,7 +452,9 @@ pub async fn lyricsfiles_from(
             | FromPeer::Covered { .. }
             | FromPeer::CoversEnd
             | FromPeer::Printed { .. }
-            | FromPeer::PrintsEnd => {}
+            | FromPeer::PrintsEnd
+            | FromPeer::Controlled(_)
+            | FromPeer::Zones { .. } => {}
         }
     }
     Ok(landed)
@@ -378,7 +523,9 @@ pub async fn prints_from(
             | FromPeer::Covered { .. }
             | FromPeer::CoversEnd
             | FromPeer::Documented { .. }
-            | FromPeer::LyricsfilesEnd => {}
+            | FromPeer::LyricsfilesEnd
+            | FromPeer::Controlled(_)
+            | FromPeer::Zones { .. } => {}
         }
     }
     Ok(landed)
@@ -433,7 +580,9 @@ pub async fn covers_from(
             | FromPeer::Documented { .. }
             | FromPeer::LyricsfilesEnd
             | FromPeer::Printed { .. }
-            | FromPeer::PrintsEnd => {}
+            | FromPeer::PrintsEnd
+            | FromPeer::Controlled(_)
+            | FromPeer::Zones { .. } => {}
         }
     }
     Ok(landed)
@@ -511,7 +660,9 @@ pub async fn holdings_of(connection: &Connection) -> Result<Vec<Held>> {
             | FromPeer::Documented { .. }
             | FromPeer::LyricsfilesEnd
             | FromPeer::Printed { .. }
-            | FromPeer::PrintsEnd => {}
+            | FromPeer::PrintsEnd
+            | FromPeer::Controlled(_)
+            | FromPeer::Zones { .. } => {}
         }
     }
     Ok(holdings)
@@ -540,7 +691,9 @@ pub async fn meet(connection: &Connection, device: DeviceId, records: bool) -> R
         | FromPeer::Documented { .. }
         | FromPeer::LyricsfilesEnd
         | FromPeer::Printed { .. }
-        | FromPeer::PrintsEnd => Err(Error::Unmet),
+        | FromPeer::PrintsEnd
+        | FromPeer::Controlled(_)
+        | FromPeer::Zones { .. } => Err(Error::Unmet),
     }
 }
 
@@ -695,7 +848,9 @@ async fn fetched_from(
         | FromPeer::Documented { .. }
         | FromPeer::LyricsfilesEnd
         | FromPeer::Printed { .. }
-        | FromPeer::PrintsEnd => {
+        | FromPeer::PrintsEnd
+        | FromPeer::Controlled(_)
+        | FromPeer::Zones { .. } => {
             return Err(Error::Missing(device));
         }
     };

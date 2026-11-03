@@ -2,6 +2,7 @@
 paths:
   - "crates/resonate-sync/**"
   - "crates/resonate/src/sync.rs"
+  - "crates/resonate/src/driven.rs"
   - "crates/resonate-library/src/synced.rs"
   - "crates/resonate-library/tests/synced.rs"
   - "crates/resonate-library/src/answers.rs"
@@ -9,6 +10,9 @@ paths:
   - "crates/resonate-ui/src/views/settings/sync.rs"
   - "crates/resonate-mobile/src/sync.rs"
   - "crates/resonate-mobile/src/sync/answers.rs"
+  - "crates/resonate-mobile/src/sync/driving.rs"
+  - "android/app/src/main/java/org/resonate/android/ui/settings/DrivenDevice.kt"
+  - "ios/Sources/Resonate/DrivenDeviceView.swift"
   - "fuzz/fuzz_targets/sync.rs"
 ---
 
@@ -592,6 +596,84 @@ will not open is left out of the holdings.
   `Resumed::window_around` so the playhead is inside however far down the queue it is
   (`a_shuffled_queue_is_handed_off_in_the_order_it_plays_at_the_song_heard`,
   `a_queue_longer_than_a_handoff_hands_off_the_songs_around_the_playhead`).
+
+## One device drives another's zones
+
+A handoff moves the song once; driving leaves it where it plays. `remote.rs` holds the vocabulary
+and both halves ride the peer path only (`peer.rs`, one request per stream, directly, punched or
+through the relay as QUIC), so the server never carries a command or a mirror and reads neither.
+
+- **Two requests on the peer wire.** `ToPeer::Control` (tag 8: the `ZoneId`, then a
+  `RemoteCommand`: a kind byte, `Play` 0, `Pause` 1, `Toggle` 2, `Next` 3, `Previous` 4, `Seek` 5
+  with milliseconds, `Volume` 6 with a `Permille`, `Move` 7 with two rows, `Remove` 8 and `Jump` 9
+  with one; rows count from 0 in the queue's load order), answered one `FromPeer::Controlled`
+  (tag 13, a `Controlling` byte: `Done`, `Untrusted`, `Uncontrollable`, `NoSuchZone`, `NoSuchRow`,
+  `Failed`; a byte a later build adds reads as `Unanswered`), and `ToPeer::Watch` (tag 9), answered
+  by `FromPeer::Zones` frames (tag 14: at most `ZONES_MIRRORED_AT_MOST`, 16, `RemoteZone`s, each
+  the zone, its name, playback, the row playing, the position and length, volume, the queue's
+  length and a window of at most `ROWS_MIRRORED_AT_MOST`, 500, rows from `first_row` chosen by
+  `Resumed::window_around`, each a title, artist and length; the writer cuts and the reader refuses
+  more) until the asker stops reading, or one `Controlled` refusal. A command kind a later build
+  adds fails the decode, so the stream drops, and a build without either request drops the stream
+  too: both read as `Unanswered` (`a_command_or_answer_of_a_kind_a_later_build_adds_is_refused_or_read_as_unanswered`).
+- **The mirror is pushed, not polled.** The watched device looks at its zones every
+  `MIRROR_LOOKED_AT_EVERY` (250 ms) and sends a frame only where they moved otherwise than by
+  playing on (`told_alike`: a position more than a second off where it would have played to, or
+  anything else changed) or `MIRROR_TOLD_AGAIN_AFTER` (5 s) passed. The watcher stamps each frame
+  `heard_at` and plays the position on itself (`Mirror::position_of`, held at the song's length),
+  so a second's readout needs no frame; a watch hearing nothing for `MIRROR_GOES_STALE_AFTER`
+  (15 s) ends (`a_playing_zone_is_told_again_only_where_it_moved_other_than_by_playing_on`).
+- **The seam is `Controlled`** (`zones`, `control`; `Uncontrolled::{NoSuchZone, NoSuchRow,
+  Failed}`), handed to a running `Sync` by `control_with(controlled, trust)`; `trust` changes it
+  live and `uncontrolled` takes it away. A device given none answers `Uncontrollable`, so a
+  `resonate sync` run answers so while it is the one holding `sync.lock`.
+- **Which commands a paired device is trusted with is one `RemoteTrust` (core) per device**:
+  `Everything` (the default), `Transport` (all but `Move` and `Remove`,
+  `RemoteCommand::trusted_by`) or `Nothing` (no command and no mirror: a watch is answered
+  `Untrusted` and ends). Every connection is already mutual TLS against the space's key, so trust
+  is about this listener's other devices, not strangers; the controlled device decides, so a build
+  on the other side cannot widen it.
+- **The driving side** asks through the service like a fetch (`Work::Control`, `Work::Watch` through
+  `Syncing::want`: the standing connection, else a punch or a dial, the same transfers gate).
+  `Sync::control(device, zone, command)` waits at most `DIAL_WITHIN` plus
+  `CONTROL_ANSWERED_WITHIN` (10 s) and answers `Controlling`; `Sync::watch(device)` starts or keeps
+  one watch (`Running::watching`), renewed by each call and ended `WATCH_LAPSES_AFTER` (30 s)
+  after the last; `Sync::watched(device)` is a `Watched` (`Waiting`, `Mirrored(Mirror)`,
+  `Refused(Controlling)`) and `unwatch` drops it
+  (`a_device_drives_the_zones_another_plays_and_sees_them_change_as_far_as_it_is_trusted`).
+- **The desktop is driven through `Zones::send`.** The binary's `driven::Driven` implements
+  `Controlled` over the window's `Zones` (every zone, by `ZoneId`) or, for headless `resonate play`,
+  the one player as zone 1; `Syncing::drive` hands it to every service the settings start. A row is
+  named by the engine's tag catalog (`Player::media`, never a probe on the sync thread), else the
+  file's stem; a row past the queue is `NoSuchRow` before anything is sent, a seek with nothing
+  playing is `NoSuchRow`, and the engine's refusal is `Failed`. The setting is `sync-control`
+  (`everything`, `transport`, `nothing`; part of the `Arrangement`, so a change restarts the
+  service with it).
+- **`resonate sync --control <DEVICE>`** prints what that device plays (each zone, or the one
+  `--zone <N|NAME>` names: state, song and place, volume, the mirrored rows with the playing one
+  marked); with one of `--press play|pause|toggle|next|previous`, `--seek TIME` (the `lasting`
+  reader, seconds when bare), `--set-volume PERCENT`, `--jump ROW`, `--remove ROW` or
+  `--move ROW --to ROW` (rows from 1) it drives the zone and prints it as the next mirror says.
+  A refusal is `Error::NotControlled` with the `Controlling`, no mirror within 15 s
+  `NothingMirrored`, an unknown zone `NoSuchRemoteZone`; like every `resonate sync` it needs the
+  catalog's `sync.lock`, so it runs where no window syncs.
+- **The window drives from the Device sync pane** (`views/settings/sync.rs`): an online device's row
+  carries *Drive*, which sets `RootView::driving` and draws, under the device list, each zone it
+  mirrors (name and volume, song, place) with previous, play or pause, next, quieter and louder
+  (`VOLUME_STEP`, a tenth). `resonate_ui::Syncing` gained `watch` (renews the watch and answers a
+  `RemoteShown`: `Waiting`, `Zones(Vec<RemoteZoneShown>)`, `Refused`), `unwatch` and `press`
+  (a `RemoteKey`, run on the background executor since it waits for the answer; a refusal is a
+  toast), with defaults so a seam with no sync answers `Refused`; `driving_redraws` redraws the pane
+  every `DRIVEN_REDRAWN_EVERY` (500 ms) while driving.
+- **The phones drive through the boundary** (`resonate-mobile`'s `sync/driving.rs`):
+  `sync_watch(device)` (a `RemoteDevice`: `RemoteStanding` and `RemoteZoneState`s, the position
+  played on to the moment asked), `sync_unwatch` and `sync_control(device, zone, RemoteControl)`
+  answering a `RemoteAnswer`; `sync_control` takes the running sync's lock only to ask
+  (`Sync::ask_to_control`, an `AskedToControl` whose `answer` waits outside it), so a status poll
+  never waits behind a command. Android's Devices page gives an online device a *Drive* button
+  opening `DrivenDevice` under its row (read every `DRIVEN_READ_EVERY_MS`, unwatched as it leaves,
+  `DrivenWords` held by `DrivenWordsTest`); iOS's sync page makes such a device's row a link to
+  `DrivenDeviceView`, read every 500 ms while shown. A phone is not yet driven itself (`FEATURES.md`).
 
 ## The desktop follows its settings
 

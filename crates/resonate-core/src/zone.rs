@@ -80,6 +80,38 @@ pub struct KeptZone {
     pub volume: Option<Volume>,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum RemoteTrust {
+    #[default]
+    Everything,
+    Transport,
+    Nothing,
+}
+
+impl RemoteTrust {
+    pub const ALL: [Self; 3] = [Self::Everything, Self::Transport, Self::Nothing];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Everything => "everything",
+            Self::Transport => "transport",
+            Self::Nothing => "nothing",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|trust| trust.as_str() == text)
+    }
+
+    pub const fn shows(self) -> bool {
+        !matches!(self, Self::Nothing)
+    }
+
+    pub const fn edits_the_queue(self) -> bool {
+        matches!(self, Self::Everything)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

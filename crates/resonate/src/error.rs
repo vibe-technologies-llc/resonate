@@ -127,6 +127,7 @@ pub enum ConfigKey {
     SyncKey,
     SyncDevice,
     SyncSongs,
+    SyncControl,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -181,7 +182,7 @@ impl fmt::Display for Named {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 117] = [
+    pub const ALL: [Self; 118] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -299,6 +300,7 @@ impl ConfigKey {
         Self::SyncKey,
         Self::SyncDevice,
         Self::SyncSongs,
+        Self::SyncControl,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -420,6 +422,7 @@ impl ConfigKey {
             Self::SyncKey => "sync-key",
             Self::SyncDevice => "sync-device",
             Self::SyncSongs => "sync-songs",
+            Self::SyncControl => "sync-control",
         }
     }
 
@@ -830,6 +833,25 @@ pub enum Error {
     #[cfg(feature = "sync")]
     #[error("no synced device is named {0}")]
     NoSuchDevice(Box<str>),
+
+    #[cfg(feature = "sync")]
+    #[error("{device} did not take the command: {answer:?}")]
+    NotControlled {
+        device: Box<str>,
+        answer: resonate_sync::Controlling,
+    },
+
+    #[cfg(feature = "sync")]
+    #[error("{0} told nothing of what it plays; it may be away or too old to say")]
+    NothingMirrored(Box<str>),
+
+    #[cfg(feature = "sync")]
+    #[error("{device} plays no zone {zone}")]
+    NoSuchRemoteZone { device: Box<str>, zone: ZoneAsked },
+
+    #[cfg(feature = "sync")]
+    #[error("{given} is no place in a song; give seconds, 1:30 or 1m30s")]
+    NotAPlace { given: Box<str> },
 
     #[cfg(feature = "sync")]
     #[error("{0} handed off nothing this catalog holds")]

@@ -14,8 +14,8 @@ use crossbeam_channel::{RecvTimeoutError, Sender, bounded};
 use parking_lot::Mutex;
 #[cfg(feature = "sync")]
 use resonate_core::{
-    Answer, Frames, Mbid, PlaylistId, Recording, SampleRate, SharedLyricsfile, SharedPrint,
-    SyncedSongs, WholeFile,
+    Answer, Frames, Mbid, PlaylistId, Recording, RemoteTrust, SampleRate, SharedLyricsfile,
+    SharedPrint, SyncedSongs, WholeFile, ZoneId,
 };
 #[cfg(feature = "sync")]
 use resonate_engine::{QueueItem, Unclaimed};
@@ -26,15 +26,18 @@ use resonate_library::{
     SyncedQueryBody,
 };
 #[cfg(feature = "sync")]
+use resonate_mpris::ZoneAsked;
+#[cfg(feature = "sync")]
 use resonate_sync::{
-    Catalog, Follow, Handoff, Held, LocalListen, LocalPlaylist, LocalPlaylistId, LocalQuery, Me,
-    Nearby, Opened, Platform, QueryBody, Refused, RemoteListen, Resumed, Server, Settings,
-    SongTags, Standing, Sync, SyncDevice, SyncKey, TransferState,
+    Catalog, Controlled, Controlling, DeviceId, Follow, Handoff, Held, LocalListen, LocalPlaylist,
+    LocalPlaylistId, LocalQuery, Me, Mirror, Nearby, Opened, Platform, QueryBody, Refused,
+    RemoteCommand, RemoteListen, RemotePlayback, RemoteRow, RemoteZone, Resumed, Server, Settings,
+    SongTags, Standing, Sync, SyncDevice, SyncKey, TransferState, Watched,
 };
 
 use crate::config::Config;
 #[cfg(feature = "sync")]
-use crate::{Error, Result, config, error::ConfigKey};
+use crate::{Error, Result, config, driven::Driven, error::ConfigKey};
 
 #[cfg(all(feature = "sync", not(windows)))]
 const DEVICE_NAME: &str = "Linux";
@@ -76,6 +79,8 @@ pub(crate) struct Syncing {
 #[cfg(feature = "sync")]
 struct Service {
     running: Mutex<Option<Arc<Running>>>,
+    driven: Mutex<Option<Arc<dyn Controlled>>>,
+    trust: Mutex<RemoteTrust>,
 }
 
 #[cfg(feature = "sync")]
@@ -88,6 +93,7 @@ struct Arrangement {
     stun: Option<String>,
     device: Option<String>,
     follow: Follow,
+    trust: RemoteTrust,
 }
 
 #[cfg(feature = "sync")]
@@ -108,6 +114,7 @@ impl Arrangement {
             stun: config.sync_stun.clone(),
             device: config.sync_device.clone(),
             follow: follow_of(config.sync_songs),
+            trust: config.sync_control.unwrap_or_default(),
         }
     }
 
@@ -120,6 +127,7 @@ impl Arrangement {
             stun: None,
             device: None,
             follow: Follow::default(),
+            trust: RemoteTrust::default(),
         }
     }
 
@@ -151,9 +159,13 @@ impl Service {
             released(previous);
         }
 
+        *self.trust.lock() = arrangement.trust;
         match started(config, settings, library, follow_of(config.sync_songs)) {
             Ok(Some(running)) => {
                 let code = running.sync.code().to_owned();
+                if let Some(driven) = self.driven.lock().clone() {
+                    running.sync.control_with(driven, arrangement.trust);
+                }
                 *self.running.lock() = Some(Arc::new(running));
                 arrangement.keyed(&code)
             }
@@ -256,6 +268,16 @@ impl Syncing {
         }
     }
 
+    #[cfg(feature = "sync")]
+    pub(crate) fn drive(&self, driven: Driven) {
+        let driven = Arc::new(driven) as Arc<dyn Controlled>;
+        *self.service.driven.lock() = Some(Arc::clone(&driven));
+        let trust = *self.service.trust.lock();
+        if let Some(running) = self.service.running.lock().as_ref() {
+            running.sync.control_with(driven, trust);
+        }
+    }
+
     #[cfg(all(feature = "sync", feature = "ui"))]
     pub(crate) fn for_the_window(&self) -> Option<Arc<dyn resonate_ui::Syncing>> {
         Some(Arc::clone(&self.service) as Arc<dyn resonate_ui::Syncing>)
@@ -272,6 +294,8 @@ pub(crate) fn start(config: &Config, settings: Option<&Path>, library: &Arc<Libr
     let seen = settings.and_then(modified);
     let service = Arc::new(Service {
         running: Mutex::new(None),
+        driven: Mutex::new(None),
+        trust: Mutex::new(RemoteTrust::default()),
     });
     let arranged = service.arranged(config, settings, library);
     let watching = settings.map(Path::to_path_buf).and_then(|settings| {
@@ -826,8 +850,18 @@ pub(crate) enum Asked<'a> {
     Join(&'a str),
     Leave,
     Forget(&'a str),
-    Fetch { playlist: &'a str, from: &'a str },
-    Handoff { from: &'a str },
+    Fetch {
+        playlist: &'a str,
+        from: &'a str,
+    },
+    Handoff {
+        from: &'a str,
+    },
+    Control {
+        device: &'a str,
+        zone: Option<ZoneAsked>,
+        command: Option<RemoteCommand>,
+    },
 }
 
 #[cfg(feature = "sync")]
@@ -938,6 +972,155 @@ pub(crate) fn asked(
                 .ok_or_else(|| Error::NothingHandedOff(from.into()))?;
             Ok(Some(handed_off(&library, &handoff)?))
         }
+        Asked::Control {
+            device,
+            zone,
+            command,
+        } => {
+            let library = library.ok_or(Error::SyncOff)?;
+            let running = running(config, settings, &library)?;
+            controlled(&running.sync, device, zone.as_ref(), command)?;
+            Ok(None)
+        }
+    }
+}
+
+#[cfg(feature = "sync")]
+fn mirrored(sync: &Sync, device: DeviceId, named: &str, since: Instant) -> Result<Mirror> {
+    let deadline = Instant::now() + CONNECTED_WITHIN;
+    loop {
+        sync.watch(device);
+        match sync.watched(device) {
+            Watched::Mirrored(mirror) if mirror.heard_at >= since => return Ok(mirror),
+            Watched::Refused(answer) => {
+                return Err(Error::NotControlled {
+                    device: named.into(),
+                    answer,
+                });
+            }
+            Watched::Waiting | Watched::Mirrored(_) => {}
+        }
+        if Instant::now() >= deadline {
+            return Err(Error::NothingMirrored(named.into()));
+        }
+        thread::sleep(TRANSFERS_LOOKED_AT_EVERY);
+    }
+}
+
+#[cfg(feature = "sync")]
+fn zone_asked<'a>(
+    mirror: &'a Mirror,
+    named: &str,
+    zone: Option<&ZoneAsked>,
+) -> Result<&'a RemoteZone> {
+    let found = match zone {
+        None => mirror.zones.first(),
+        Some(ZoneAsked::Numbered(id)) => mirror.zone(*id),
+        Some(ZoneAsked::Named(name)) => mirror
+            .zones
+            .iter()
+            .find(|held| held.name.to_lowercase() == name.to_lowercase()),
+    };
+    found.ok_or_else(|| Error::NoSuchRemoteZone {
+        device: named.into(),
+        zone: zone.cloned().unwrap_or(ZoneAsked::Numbered(ZoneId::FIRST)),
+    })
+}
+
+#[cfg(feature = "sync")]
+fn controlled(
+    sync: &Sync,
+    named: &str,
+    zone: Option<&ZoneAsked>,
+    command: Option<RemoteCommand>,
+) -> Result<()> {
+    let _ = connected(sync);
+    let device = device_named(sync, named)?;
+    let mirror = mirrored(
+        sync,
+        device.id,
+        &device.name,
+        Instant::now() - CONNECTED_WITHIN,
+    )?;
+    let Some(command) = command else {
+        let shown: Vec<&RemoteZone> = match zone {
+            Some(_) => vec![zone_asked(&mirror, &device.name, zone)?],
+            None => mirror.zones.iter().collect(),
+        };
+        for held in shown {
+            said_zone(&mirror, held);
+        }
+        return Ok(());
+    };
+    let target = zone_asked(&mirror, &device.name, zone)?.zone;
+    let asked_at = Instant::now();
+    match sync.control(device.id, target, command) {
+        Controlling::Done => {}
+        answer => {
+            return Err(Error::NotControlled {
+                device: device.name.as_str().into(),
+                answer,
+            });
+        }
+    }
+    let after = mirrored(sync, device.id, &device.name, asked_at)?;
+    if let Some(held) = after.zone(target) {
+        said_zone(&after, held);
+    }
+    Ok(())
+}
+
+#[cfg(feature = "sync")]
+fn said_zone(mirror: &Mirror, zone: &RemoteZone) {
+    said!("Zone\t{} {}", zone.zone, zone.name);
+    said!("State\t{}", playback_word(zone.playback));
+    if let Some(row) = zone.playing_row() {
+        let place = clock_of(mirror.position_of(zone, Instant::now()));
+        let length = zone
+            .length
+            .map_or_else(String::new, |length| format!(" / {}", clock_of(length)));
+        said!("Playing\t{}\t{place}{length}", billed(row));
+    }
+    said!("Volume\t{}%", (u32::from(zone.volume.get()) + 5) / 10);
+    said!("Queue\t{} songs", zone.queue_length);
+    for (at, row) in zone.rows.iter().enumerate() {
+        let number = zone.first_row + at;
+        let mark = if zone.playing == Some(number) {
+            ">"
+        } else {
+            " "
+        };
+        said!("{mark}{}\t{}", number + 1, billed(row));
+    }
+}
+
+#[cfg(feature = "sync")]
+fn billed(row: &RemoteRow) -> String {
+    if row.artist.is_empty() {
+        row.title.clone()
+    } else {
+        format!("{} — {}", row.title, row.artist)
+    }
+}
+
+#[cfg(feature = "sync")]
+const fn playback_word(playback: RemotePlayback) -> &'static str {
+    match playback {
+        RemotePlayback::Idle => "idle",
+        RemotePlayback::Playing => "playing",
+        RemotePlayback::Paused => "paused",
+        RemotePlayback::Stopped => "stopped",
+    }
+}
+
+#[cfg(feature = "sync")]
+fn clock_of(length: Duration) -> String {
+    let seconds = length.as_secs();
+    let (hours, minutes, seconds) = (seconds / 3_600, seconds / 60 % 60, seconds % 60);
+    if hours > 0 {
+        format!("{hours}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{minutes}:{seconds:02}")
     }
 }
 
@@ -1180,10 +1363,94 @@ impl resonate_ui::Syncing for Service {
             resonate_ui::Syncing::continue_from(running, device)
         })
     }
+
+    fn watch(&self, device: &str) -> resonate_ui::RemoteShown {
+        self.with(resonate_ui::RemoteShown::Refused, |running| {
+            resonate_ui::Syncing::watch(running, device)
+        })
+    }
+
+    fn unwatch(&self, device: &str) {
+        self.with((), |running| resonate_ui::Syncing::unwatch(running, device));
+    }
+
+    fn press(&self, device: &str, zone: u32, key: resonate_ui::RemoteKey) -> bool {
+        self.with(false, |running| {
+            resonate_ui::Syncing::press(running, device, zone, key)
+        })
+    }
+}
+
+#[cfg(all(feature = "sync", feature = "ui"))]
+impl Running {
+    fn other_device(&self, device: &str) -> Option<DeviceId> {
+        self.sync
+            .shown()
+            .devices
+            .into_iter()
+            .find(|known| !known.this && known.id.to_string() == device)
+            .map(|known| known.id)
+    }
+}
+
+#[cfg(all(feature = "sync", feature = "ui"))]
+fn zone_shown(mirror: &Mirror, zone: &RemoteZone) -> resonate_ui::RemoteZoneShown {
+    resonate_ui::RemoteZoneShown {
+        zone: zone.zone.get(),
+        name: zone.name.clone(),
+        song: zone.playing_row().map(billed),
+        sounding: zone.playback == RemotePlayback::Playing,
+        position: mirror.position_of(zone, Instant::now()),
+        length: zone.length,
+        volume: zone.volume.get(),
+    }
+}
+
+#[cfg(all(feature = "sync", feature = "ui"))]
+const fn command_of(key: resonate_ui::RemoteKey) -> RemoteCommand {
+    match key {
+        resonate_ui::RemoteKey::Toggle => RemoteCommand::Toggle,
+        resonate_ui::RemoteKey::Next => RemoteCommand::Next,
+        resonate_ui::RemoteKey::Previous => RemoteCommand::Previous,
+        resonate_ui::RemoteKey::Volume(permille) => {
+            RemoteCommand::Volume(resonate_sync::Permille::new(permille))
+        }
+    }
 }
 
 #[cfg(all(feature = "sync", feature = "ui"))]
 impl resonate_ui::Syncing for Running {
+    fn watch(&self, device: &str) -> resonate_ui::RemoteShown {
+        let Some(id) = self.other_device(device) else {
+            return resonate_ui::RemoteShown::Refused;
+        };
+        self.sync.watch(id);
+        match self.sync.watched(id) {
+            Watched::Waiting => resonate_ui::RemoteShown::Waiting,
+            Watched::Refused(_) => resonate_ui::RemoteShown::Refused,
+            Watched::Mirrored(mirror) => resonate_ui::RemoteShown::Zones(
+                mirror
+                    .zones
+                    .iter()
+                    .map(|zone| zone_shown(&mirror, zone))
+                    .collect(),
+            ),
+        }
+    }
+
+    fn unwatch(&self, device: &str) {
+        if let Some(id) = self.other_device(device) {
+            self.sync.unwatch(id);
+        }
+    }
+
+    fn press(&self, device: &str, zone: u32, key: resonate_ui::RemoteKey) -> bool {
+        let (Some(id), Some(zone)) = (self.other_device(device), ZoneId::new(zone)) else {
+            return false;
+        };
+        self.sync.control(id, zone, command_of(key)) == Controlling::Done
+    }
+
     fn force(&self) {
         self.sync.force();
     }

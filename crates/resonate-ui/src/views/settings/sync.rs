@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use gpui::{
     Bounds, Context, Div, FontWeight, SharedString, Stateful, Window, canvas, div, fill, point,
@@ -8,12 +8,12 @@ use qrcode::{Color, EcLevel, QrCode};
 use resonate_core::SyncedSongs;
 
 use crate::{
-    Notice, ResonateApp, Setting, SyncShown, SyncStanding, SyncedDevice, SyncedPlatform,
-    Synchronised, clipboard,
+    Notice, RemoteKey, RemoteShown, RemoteZoneShown, ResonateApp, Setting, SyncShown, SyncStanding,
+    SyncedDevice, SyncedPlatform, Synchronised, clipboard,
     icons::{self, Icon},
     theme,
     views::{
-        kit::{self, Tone},
+        kit::{self, EndsInAnEllipsis, Tone},
         root::RootView,
         settings::{note, switch_row},
     },
@@ -59,6 +59,22 @@ const ARMED_TO_REGENERATE: &str = "Press again to make a new code: every device 
 
 const REGENERATED: &str = "A new pairing code is being made; type it into your other devices \
                            when it shows";
+
+const DRIVE_HINT: &str = "Play, pause, skip and set the volume of what this device plays";
+
+const STOP_DRIVING_HINT: &str = "Stop showing what this device plays";
+
+const DRIVING_WAITS: &str = "Asking the device what it plays…";
+
+const DRIVING_REFUSED: &str = "This device does not let others drive it, or cannot be driven";
+
+const NOT_DRIVEN: &str = "The other device did not take that";
+
+const DRIVEN_REDRAWN_EVERY: Duration = Duration::from_millis(500);
+
+const VOLUME_STEP: u16 = 100;
+
+const WHOLE_VOLUME: u16 = 1_000;
 
 const FORGET_HINT: &str = "Take this device off every device's list; one that syncs again comes \
                            back";
@@ -623,7 +639,178 @@ impl RootView {
         if devices.iter().all(|device| device.this) {
             body = body.child(note(NO_OTHER_DEVICE));
         }
+        if let Some((id, name)) = self.driving.clone() {
+            body = body.child(self.driven_zones(&id, &name, cx));
+        }
         body
+    }
+
+    fn drive_the_device(&mut self, id: &str, name: &str, cx: &mut Context<Self>) {
+        let syncing = cx.global::<ResonateApp>().syncing.clone();
+        if let Some((held, _)) = self.driving.take() {
+            if let Some(syncing) = syncing.as_ref() {
+                syncing.unwatch(&held);
+            }
+            self.driving_redraws = None;
+            if held == id {
+                cx.notify();
+                return;
+            }
+        }
+        if syncing.is_none() {
+            self.report(Notice::Trouble(NOT_SYNCING.to_owned()), cx);
+            return;
+        }
+        self.driving = Some((id.to_owned(), name.to_owned()));
+        self.driving_redraws = Some(cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(DRIVEN_REDRAWN_EVERY).await;
+                let driving = this.update(cx, |this, cx| {
+                    cx.notify();
+                    this.driving.is_some()
+                });
+                if !driving.unwrap_or(false) {
+                    return;
+                }
+            }
+        }));
+        cx.notify();
+    }
+
+    fn driven_zones(&mut self, id: &str, name: &str, cx: &mut Context<Self>) -> Div {
+        let shown = cx
+            .global::<ResonateApp>()
+            .syncing
+            .as_ref()
+            .map_or(RemoteShown::Refused, |syncing| syncing.watch(id));
+        let mut panel = div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .p_3()
+            .rounded_lg()
+            .bg(rgb(theme::surface()))
+            .border_1()
+            .border_color(rgb(theme::border()))
+            .child(
+                div()
+                    .text_size(px(theme::text_sm()))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(rgb(theme::text()))
+                    .child(format!("Playing on {name}")),
+            );
+        match shown {
+            RemoteShown::Waiting => panel.child(note(DRIVING_WAITS)),
+            RemoteShown::Refused => panel.child(note(DRIVING_REFUSED)),
+            RemoteShown::Zones(zones) if zones.is_empty() => panel.child(note(DRIVING_WAITS)),
+            RemoteShown::Zones(zones) => {
+                for zone in zones {
+                    panel = panel.child(self.driven_zone(id, &zone, cx));
+                }
+                panel
+            }
+        }
+    }
+
+    fn driven_zone(&mut self, id: &str, zone: &RemoteZoneShown, cx: &mut Context<Self>) -> Div {
+        let place = zone.length.map_or_else(
+            || clock_of(zone.position),
+            |length| format!("{} / {}", clock_of(zone.position), clock_of(length)),
+        );
+        let song = zone
+            .song
+            .clone()
+            .unwrap_or_else(|| "Nothing playing".to_owned());
+        let louder = zone.volume.saturating_add(VOLUME_STEP).min(WHOLE_VOLUME);
+        let quieter = zone.volume.saturating_sub(VOLUME_STEP);
+        let keys = [
+            (
+                "previous",
+                Icon::Previous,
+                "Previous song",
+                RemoteKey::Previous,
+            ),
+            (
+                "toggle",
+                if zone.sounding {
+                    Icon::Pause
+                } else {
+                    Icon::Play
+                },
+                if zone.sounding { "Pause" } else { "Play" },
+                RemoteKey::Toggle,
+            ),
+            ("next", Icon::Next, "Next song", RemoteKey::Next),
+            (
+                "quieter",
+                Icon::Minus,
+                "Quieter",
+                RemoteKey::Volume(quieter),
+            ),
+            ("louder", Icon::Plus, "Louder", RemoteKey::Volume(louder)),
+        ];
+        let mut transport = div().flex().items_center().gap_1();
+        for (which, icon, saying, key) in keys {
+            let control = format!("sync-drive-{which}-{}", zone.zone);
+            let device = id.to_owned();
+            let at = zone.zone;
+            transport = transport.child(self.in_the_ring_at(
+                control.clone(),
+                kit::icon_button(SharedString::from(control), icon, saying),
+                move |this, _, cx| this.press_on_the_device(&device, at, key, cx),
+                cx,
+            ));
+        }
+        div()
+            .flex()
+            .items_center()
+            .gap_3()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .child(
+                        div()
+                            .text_size(px(theme::text_xs()))
+                            .text_color(rgb(theme::muted()))
+                            .child(format!(
+                                "{} · {}%",
+                                zone.name,
+                                (u32::from(zone.volume) + 5) / 10
+                            )),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(theme::text_sm()))
+                            .text_color(rgb(theme::text()))
+                            .truncate()
+                            .ends_in_an_ellipsis()
+                            .child(song),
+                    )
+                    .child(kit::figure(place)),
+            )
+            .child(transport)
+    }
+
+    fn press_on_the_device(&mut self, id: &str, zone: u32, key: RemoteKey, cx: &mut Context<Self>) {
+        let Some(syncing) = cx.global::<ResonateApp>().syncing.clone() else {
+            self.report(Notice::Trouble(NOT_SYNCING.to_owned()), cx);
+            return;
+        };
+        let device = id.to_owned();
+        let pressing = cx
+            .background_executor()
+            .spawn(async move { syncing.press(&device, zone, key) });
+        cx.spawn(async move |this, cx| {
+            if !pressing.await {
+                let _ = this.update(cx, |this, cx| {
+                    this.report(Notice::Trouble(NOT_DRIVEN.to_owned()), cx);
+                });
+            }
+        })
+        .detach();
     }
 
     pub(super) fn sync_connection_group(&mut self, cx: &mut Context<Self>) -> Div {
@@ -825,7 +1012,33 @@ impl RootView {
                     ),
             );
         if device.online {
-            return row;
+            if device.this {
+                return row;
+            }
+            let id = device.id.clone();
+            let name = device.name.clone();
+            let driven = self
+                .driving
+                .as_ref()
+                .is_some_and(|(held, _)| *held == device.id);
+            let control = format!("sync-drive-{}", device.id);
+            let (label, hint) = if driven {
+                ("Stop driving", STOP_DRIVING_HINT)
+            } else {
+                ("Drive", DRIVE_HINT)
+            };
+            return row.child(self.in_the_ring_at(
+                control.clone(),
+                kit::button(
+                    SharedString::from(control),
+                    Some(Icon::Play),
+                    label,
+                    hint,
+                    Tone::Ghost,
+                ),
+                move |this, _, cx| this.drive_the_device(&id, &name, cx),
+                cx,
+            ));
         }
         let id = device.id.clone();
         let name = device.name.clone();
@@ -1022,6 +1235,16 @@ impl RootView {
             cx,
         );
         self.store(&Setting::SyncDevice(String::new()), cx);
+    }
+}
+
+fn clock_of(length: Duration) -> String {
+    let seconds = length.as_secs();
+    let (hours, minutes, seconds) = (seconds / 3_600, seconds / 60 % 60, seconds % 60);
+    if hours > 0 {
+        format!("{hours}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{minutes}:{seconds:02}")
     }
 }
 

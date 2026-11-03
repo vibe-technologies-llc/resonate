@@ -8,6 +8,7 @@ mod nearby;
 mod peer;
 mod quic;
 mod relay;
+mod remote;
 mod seal;
 mod service;
 mod stun;
@@ -30,10 +31,15 @@ pub use crate::{
     nearby::{BONJOUR_SERVICE, Broadcast, NEARBY_GROUP, NEARBY_PORT, Nearby, RECORD_KEY},
     quic::{read_frame, send_frame, transport},
     relay::{RELAYED_PORT, Relay},
+    remote::{
+        CONTROL_ANSWERED_WITHIN, Controlled, Controlling, MIRROR_GOES_STALE_AFTER, Mirror,
+        Permille, ROWS_MIRRORED_AT_MOST, RemoteCommand, RemotePlayback, RemoteRow, RemoteZone,
+        Uncontrolled, Watched, ZONES_MIRRORED_AT_MOST,
+    },
     seal::{opened, sealed},
     service::{
-        HOSTED_SERVER, SERVER_PORT, Server, Settings, Shown, Standing, Sync, SyncDevice, Transfer,
-        TransferState,
+        AskedToControl, HOSTED_SERVER, SERVER_PORT, Server, Settings, Shown, Standing, Sync,
+        SyncDevice, Transfer, TransferState,
     },
     stun::{Reflector, STUN_PORT},
     web::{

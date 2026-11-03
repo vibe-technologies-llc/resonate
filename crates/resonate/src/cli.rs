@@ -288,6 +288,102 @@ pub struct SyncArgs {
         help = "Play the queue this device was last playing, from the song it was on"
     )]
     pub handoff: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "DEVICE",
+        conflicts_with_all = ["join", "leave", "forget", "fetch", "handoff"],
+        help = "Show what this device plays in its zones, or drive it with --press, --seek, \
+                --set-volume, --jump, --remove or --move"
+    )]
+    pub control: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "N|NAME",
+        requires = "control",
+        help = "The zone of the --control device to show or drive, by number or name; the first \
+                unless given"
+    )]
+    pub zone: Option<String>,
+
+    #[arg(
+        long,
+        value_enum,
+        value_name = "KEY",
+        requires = "control",
+        group = "driving",
+        help = "Press a transport key on the --control device's zone"
+    )]
+    pub press: Option<PressArg>,
+
+    #[arg(
+        long,
+        value_name = "TIME",
+        requires = "control",
+        group = "driving",
+        help = "Go to this place in the song the --control device's zone plays: seconds, 1:30 or \
+                1m30s"
+    )]
+    pub seek: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "PERCENT",
+        value_parser = clap::value_parser!(u8).range(0..=100),
+        requires = "control",
+        group = "driving",
+        help = "Set the volume of the --control device's zone, 0 to 100"
+    )]
+    pub set_volume: Option<u8>,
+
+    #[arg(
+        long,
+        value_name = "ROW",
+        value_parser = clap::value_parser!(u32).range(1..),
+        requires = "control",
+        group = "driving",
+        help = "Play this row of the --control device's queue, 1 the first"
+    )]
+    pub jump: Option<u32>,
+
+    #[arg(
+        long,
+        value_name = "ROW",
+        value_parser = clap::value_parser!(u32).range(1..),
+        requires = "control",
+        group = "driving",
+        help = "Take this row out of the --control device's queue, 1 the first"
+    )]
+    pub remove: Option<u32>,
+
+    #[arg(
+        long = "move",
+        value_name = "ROW",
+        value_parser = clap::value_parser!(u32).range(1..),
+        requires_all = ["control", "to"],
+        group = "driving",
+        help = "Move this row of the --control device's queue to the row --to names"
+    )]
+    pub move_row: Option<u32>,
+
+    #[arg(
+        long,
+        value_name = "ROW",
+        value_parser = clap::value_parser!(u32).range(1..),
+        requires = "move_row",
+        help = "Where --move puts the row, 1 the first"
+    )]
+    pub to: Option<u32>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum PressArg {
+    Play,
+    Pause,
+    Toggle,
+    Next,
+    Previous,
 }
 
 #[derive(Debug, Args)]

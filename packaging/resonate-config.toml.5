@@ -337,6 +337,12 @@ String. The name other devices see. Default: Linux.
 Array of strings: favourites, playlists, everything. Which songs travel to other devices without
 being asked for; empty is only on request. Default: empty.
 .TP
+.B sync-control
+String: everything, transport or nothing. What another paired device may do to the zones this one
+plays: everything (play, pause, skip, seek, set the volume, jump to, move and remove queue rows),
+transport (all of it but moving and removing rows) or nothing (not even see what plays).
+Default: everything.
+.TP
 .B discord
 Boolean. Tell Discord what is playing. Default: false.
 .TP

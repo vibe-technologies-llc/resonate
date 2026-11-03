@@ -9,12 +9,15 @@ use std::{
     time::{Duration, Instant},
 };
 
+use parking_lot::Mutex;
 use resonate_core::{
-    Chromaprint, Mbid, SharedHeard, SharedLyricsfile, SharedPrint, SharedRecognition, WholeFile,
+    Chromaprint, Mbid, RemoteTrust, SharedHeard, SharedLyricsfile, SharedPrint, SharedRecognition,
+    WholeFile, ZoneId,
 };
 use resonate_sync::{
-    Broadcast, DeviceId, Follow, Me, Nearby, Platform, Server, Settings, Standing, Sync, SyncKey,
-    TransferState,
+    Broadcast, Controlled, Controlling, DeviceId, Follow, Me, Nearby, Permille, Platform,
+    RemoteCommand, RemotePlayback, RemoteRow, RemoteZone, Server, Settings, Standing, Sync,
+    SyncKey, TransferState, Uncontrolled, Watched,
 };
 
 use crate::shelf::{Shelf, song};
@@ -1000,6 +1003,151 @@ fn a_song_refused_at_landing_is_not_fetched_again_after_a_restart() {
 
     assert_eq!(desk_shelf.inside.lock().opened, opened);
     assert!(phone.shown().transfers.is_empty());
+
+    drop(phone);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+}
+
+struct Stage {
+    zone: Mutex<RemoteZone>,
+    told: Mutex<Vec<RemoteCommand>>,
+}
+
+impl Stage {
+    fn paused() -> Self {
+        Self {
+            zone: Mutex::new(RemoteZone {
+                zone: ZoneId::FIRST,
+                name: "Living room".into(),
+                playback: RemotePlayback::Paused,
+                playing: Some(0),
+                position: Duration::from_secs(30),
+                length: Some(Duration::from_secs(300)),
+                volume: Permille::WHOLE,
+                queue_length: 2,
+                first_row: 0,
+                rows: vec![
+                    RemoteRow {
+                        title: "Echoes".into(),
+                        artist: "Pink Floyd".into(),
+                        length: Some(Duration::from_secs(300)),
+                    },
+                    RemoteRow {
+                        title: "Time".into(),
+                        artist: "Pink Floyd".into(),
+                        length: None,
+                    },
+                ],
+            }),
+            told: Mutex::new(Vec::new()),
+        }
+    }
+}
+
+impl Controlled for Stage {
+    fn zones(&self) -> Vec<RemoteZone> {
+        vec![self.zone.lock().clone()]
+    }
+
+    fn control(&self, zone: ZoneId, command: RemoteCommand) -> Result<(), Uncontrolled> {
+        if zone != ZoneId::FIRST {
+            return Err(Uncontrolled::NoSuchZone);
+        }
+        self.told.lock().push(command);
+        let mut held = self.zone.lock();
+        match command {
+            RemoteCommand::Play => held.playback = RemotePlayback::Playing,
+            RemoteCommand::Volume(volume) => held.volume = volume,
+            RemoteCommand::Remove(row) if row >= held.rows.len() => {
+                return Err(Uncontrolled::NoSuchRow);
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn a_device_drives_the_zones_another_plays_and_sees_them_change_as_far_as_it_is_trusted() {
+    let folder = scratch("remote");
+    let key = SyncKey::minted().expect("a key");
+    let desk_shelf = Arc::new(Shelf::holding(&["A"]));
+    let phone_shelf = Arc::new(Shelf::holding(&["A"]));
+    let stage = Arc::new(Stage::paused());
+
+    let desk = device(&folder, &key, "Desk", Arc::clone(&desk_shelf), None);
+    desk.control_with(
+        Arc::clone(&stage) as Arc<dyn Controlled>,
+        RemoteTrust::Everything,
+    );
+    let phone = device(
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        Some(&desk),
+    );
+    eventually("the phone meeting the desk", || nearby_of(&phone, "Desk"));
+
+    phone.watch(desk.device());
+    eventually("the desk's zone mirrored on the phone", || {
+        phone.watched(desk.device()).mirror().is_some_and(|mirror| {
+            mirror.zones.len() == 1 && mirror.zones[0].playback == RemotePlayback::Paused
+        })
+    });
+
+    let played = phone.control(desk.device(), ZoneId::FIRST, RemoteCommand::Play);
+    let quieter = phone.control(
+        desk.device(),
+        ZoneId::FIRST,
+        RemoteCommand::Volume(Permille::new(400)),
+    );
+    let elsewhere = phone.control(
+        desk.device(),
+        ZoneId::new(9).expect("a zone"),
+        RemoteCommand::Pause,
+    );
+    let past_the_end = phone.control(desk.device(), ZoneId::FIRST, RemoteCommand::Remove(5));
+
+    assert_eq!(played, Controlling::Done);
+    assert_eq!(quieter, Controlling::Done);
+    assert_eq!(elsewhere, Controlling::NoSuchZone);
+    assert_eq!(past_the_end, Controlling::NoSuchRow);
+    eventually("the change mirrored back to the phone", || {
+        phone.watched(desk.device()).mirror().is_some_and(|mirror| {
+            mirror.zones[0].playback == RemotePlayback::Playing
+                && mirror.zones[0].volume == Permille::new(400)
+        })
+    });
+
+    desk.trust(RemoteTrust::Transport);
+    let removed = phone.control(desk.device(), ZoneId::FIRST, RemoteCommand::Remove(1));
+    let skipped = phone.control(desk.device(), ZoneId::FIRST, RemoteCommand::Next);
+
+    assert_eq!(removed, Controlling::Untrusted);
+    assert_eq!(skipped, Controlling::Done);
+
+    desk.trust(RemoteTrust::Nothing);
+    let paused = phone.control(desk.device(), ZoneId::FIRST, RemoteCommand::Pause);
+
+    assert_eq!(paused, Controlling::Untrusted);
+    eventually("the watch refused once nothing is trusted", || {
+        phone.watched(desk.device()) == Watched::Refused(Controlling::Untrusted)
+    });
+
+    let asked_of_the_phone = desk.control(phone.device(), ZoneId::FIRST, RemoteCommand::Play);
+
+    assert_eq!(asked_of_the_phone, Controlling::Uncontrollable);
+    assert_eq!(
+        *stage.told.lock(),
+        [
+            RemoteCommand::Play,
+            RemoteCommand::Volume(Permille::new(400)),
+            RemoteCommand::Remove(5),
+            RemoteCommand::Next,
+        ]
+    );
 
     drop(phone);
     drop(desk);

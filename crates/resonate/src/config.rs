@@ -13,8 +13,8 @@ use std::{
 use clap::ValueEnum as _;
 use resonate_cast::Given;
 use resonate_core::{
-    Accent, AppId, ArtistsDrawn, HeadYaw, Icon, Pictured, Presence, ScrollbarMode, Shown,
-    SpeakerAngle, SpeakerElevation, Speakers, SpectrumBands, SpectrumFalls, SpectrumFloor,
+    Accent, AppId, ArtistsDrawn, HeadYaw, Icon, Pictured, Presence, RemoteTrust, ScrollbarMode,
+    Shown, SpeakerAngle, SpeakerElevation, Speakers, SpectrumBands, SpectrumFalls, SpectrumFloor,
     SpectrumTilt, SyncedSongs, TextSize, Theme, Trim, Volume, file_facts,
 };
 #[cfg(any(feature = "ui", test))]
@@ -255,6 +255,7 @@ pub struct Config {
     pub sync_key: Option<String>,
     pub sync_device: Option<String>,
     pub sync_songs: Option<SyncedSongs>,
+    pub sync_control: Option<RemoteTrust>,
 }
 
 struct Withheld;
@@ -389,6 +390,7 @@ impl fmt::Debug for Config {
             sync_key,
             sync_device,
             sync_songs,
+            sync_control,
         } = self;
 
         f.debug_struct("Config")
@@ -515,6 +517,7 @@ impl fmt::Debug for Config {
             .field("sync_key", &withheld(sync_key.as_ref()))
             .field("sync_device", sync_device)
             .field("sync_songs", sync_songs)
+            .field("sync_control", sync_control)
             .finish()
     }
 }
@@ -1240,6 +1243,9 @@ impl Config {
                     .collect::<Result<Vec<_>>>()?;
                 config.sync_songs = Some(SyncedSongs::parse(&named).ok_or_else(|| at.rejected())?);
             }
+            ConfigKey::SyncControl => {
+                config.sync_control = Some(at.one_of(value, RemoteTrust::parse)?);
+            }
             ConfigKey::BufferMs => {
                 let millis = u64::try_from(at.integer(value)?).map_err(|_| at.rejected())?;
                 config.buffer = Some(Duration::from_millis(millis));
@@ -1871,7 +1877,7 @@ mod tests {
 
     #[test]
     fn the_man_page_gives_every_spelling_a_setting_takes() {
-        let spelled: [(ConfigKey, Vec<String>); 16] = [
+        let spelled: [(ConfigKey, Vec<String>); 17] = [
             (ConfigKey::Quality, spelled_by::<QualityArg>()),
             (ConfigKey::FilterPhase, spelled_by::<FilterPhaseArg>()),
             (ConfigKey::Dither, spelled_by::<DitherArg>()),
@@ -1904,6 +1910,12 @@ mod tests {
                 ConfigKey::Scrollbars,
                 ScrollbarMode::ALL
                     .map(|mode| mode.as_str().to_owned())
+                    .to_vec(),
+            ),
+            (
+                ConfigKey::SyncControl,
+                RemoteTrust::ALL
+                    .map(|trust| trust.as_str().to_owned())
                     .to_vec(),
             ),
             (

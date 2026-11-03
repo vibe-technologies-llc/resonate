@@ -1121,6 +1121,33 @@ pub struct HandedOff {
     pub songs: usize,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RemoteKey {
+    Toggle,
+    Next,
+    Previous,
+    Volume(u16),
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RemoteZoneShown {
+    pub zone: u32,
+    pub name: String,
+    pub song: Option<String>,
+    pub sounding: bool,
+    pub position: Duration,
+    pub length: Option<Duration>,
+    pub volume: u16,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum RemoteShown {
+    #[default]
+    Waiting,
+    Zones(Vec<RemoteZoneShown>),
+    Refused,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Continuing {
     pub cuts: Vec<Cut>,
@@ -1145,6 +1172,16 @@ pub trait Syncing: Send + Sync {
     fn handed_off(&self) -> Vec<HandedOff>;
 
     fn continue_from(&self, device: &str) -> Continuing;
+
+    fn watch(&self, _device: &str) -> RemoteShown {
+        RemoteShown::Refused
+    }
+
+    fn unwatch(&self, _device: &str) {}
+
+    fn press(&self, _device: &str, _zone: u32, _key: RemoteKey) -> bool {
+        false
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
