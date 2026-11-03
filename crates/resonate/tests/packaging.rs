@@ -225,6 +225,28 @@ fn the_windows_recipe_builds_x86_64_v3_and_arm64_and_reads_its_version_from_carg
             .any(|line| line.trim_start().starts_with("$Version = \"0")),
         "the Windows recipe hard-codes a version"
     );
+    assert_eq!(
+        script
+            .lines()
+            .filter(|line| line.contains("Flags = ") && line.contains("+crt-static"))
+            .count(),
+        2,
+        "each Windows build must link the C runtime statically, since a fresh Windows has no VCRUNTIME140.dll"
+    );
+}
+
+#[test]
+fn a_windows_build_from_the_checkout_links_the_c_runtime_statically() {
+    let config = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.cargo/config.toml"),
+    )
+    .expect("the cargo config");
+
+    assert!(
+        config.contains("[target.'cfg(all(windows, target_env = \"msvc\"))']")
+            && config.contains("target-feature=+crt-static"),
+        "a Windows build from the checkout must link the C runtime statically"
+    );
 }
 
 #[test]

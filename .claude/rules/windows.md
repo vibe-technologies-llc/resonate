@@ -602,6 +602,13 @@ architecture:
   would buy little over NEON and shut out machines for it) and names its files
   `resonate-<version>-aarch64-windows.zip` and `resonate-<version>-aarch64-windows-setup.exe`.
 
+Both add `-C target-feature=+crt-static`, and `.cargo/config.toml` does the same for every
+`windows`/`msvc` build from the checkout (a `target.cfg` entry replaces `build.rustflags`, so it
+repeats `target-cpu=native`): a fresh Windows has no Visual C++ redistributable, and a build linking
+the C runtime dynamically dies before `main` with `STATUS_DLL_NOT_FOUND` for `VCRUNTIME140.dll`
+(seen on a clean Windows 11). `packaging.rs` holds both. A cross-build under `RUSTFLAGS=` replaces
+them, so one meant to be run elsewhere passes `RUSTFLAGS="-C target-feature=+crt-static"`.
+
 The zip holds `resonate.exe`, the licence and a README; the setup program installs the same three.
 `release.yml`'s `windows-zip` is a matrix of the two on `windows-latest`, each its own artifact
 (`resonate-windows-<architecture>`), all four files in the `SHA256SUMS`. The ARM64 files are

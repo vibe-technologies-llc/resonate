@@ -8,8 +8,8 @@ param(
 $ErrorActionPreference = "Stop"
 
 $builds = @{
-    x86_64  = @{ Flags = "-C target-cpu=x86-64-v3"; Triple = ""; Label = "x86_64_v3"; Installs = "x64os" }
-    aarch64 = @{ Flags = "-C target-cpu=generic"; Triple = "aarch64-pc-windows-msvc"; Label = "aarch64"; Installs = "arm64" }
+    x86_64  = @{ Flags = "-C target-cpu=x86-64-v3 -C target-feature=+crt-static"; Triple = ""; Label = "x86_64_v3"; Installs = "x64os" }
+    aarch64 = @{ Flags = "-C target-cpu=generic -C target-feature=+crt-static"; Triple = "aarch64-pc-windows-msvc"; Label = "aarch64"; Installs = "arm64" }
 }
 $build = $builds[$Architecture]
 
