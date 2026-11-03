@@ -29,8 +29,8 @@ struct SettingsView: View {
     @State private var confirmingErase = false
     private static let onlineWords = "Online features internet network artwork covers lyrics enrichment music search"
     private static let enrichmentWords = "Artwork and details automatically portraits Wi-Fi metered connection cellular missing covers"
-    private static let providerWords = "Download providers TIDAL Subsonic Monochrome metered connection cellular wait"
-    private static let serverWords = "Server Subsonic Navidrome TIDAL Monochrome browse stream"
+    private static let providerWords = "Download providers TIDAL Subsonic Jellyfin Emby Monochrome metered connection cellular wait"
+    private static let serverWords = "Server Subsonic Navidrome Jellyfin Emby TIDAL Monochrome browse stream"
     private static let scrobblingWords = "Scrobbling ListenBrainz Last.fm"
     private static let erasingWords = "Erase all data reset everything delete start over"
     private static let historyWords = "Keep search history recent searches privacy"
@@ -321,6 +321,7 @@ extension MusicProvider {
         case .monochrome: "Monochrome"
         case .hifiApi: "hifi-api"
         case .subsonic: "Subsonic"
+        case .jellyfin: "Jellyfin"
         case .tidal: "TIDAL"
         }
     }

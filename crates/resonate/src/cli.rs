@@ -1072,7 +1072,7 @@ pub struct ServedArgs {
     #[arg(
         long,
         value_name = "NAME",
-        help = "The service to browse: subsonic, tidal, resonate, hifi-api or monochrome; \
+        help = "The service to browse: subsonic, jellyfin, tidal, resonate, hifi-api or monochrome; \
                 without it, the first the settings set"
     )]
     pub service: Option<String>,
@@ -1373,7 +1373,7 @@ pub enum Sub {
     Players,
 
     #[command(
-        about = "Browse a service the settings set to play in place (Subsonic, TIDAL, the \
+        about = "Browse a service the settings set to play in place (Subsonic, Jellyfin or Emby, TIDAL, the \
                  Resonate server, hifi-api, Monochrome): its first page (a Subsonic server's \
                  artists, a TIDAL account's favourites), an artist's albums, an album's songs or \
                  what a search finds, each with the URI play and queue take to stream it from there"

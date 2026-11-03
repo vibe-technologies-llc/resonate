@@ -414,7 +414,7 @@ struct ProviderFields: View {
         case .hifiApi:
             serverField("Server URL (blank uses the hosted service)")
             SecureField("Key for your own server (optional)", text: $account.password)
-        case .subsonic:
+        case .subsonic, .jellyfin:
             serverField("Server URL")
             TextField("Username", text: $account.user)
                 .textInputAutocapitalization(.never)
@@ -466,6 +466,7 @@ extension MusicProvider {
     var purpose: String {
         switch self {
         case .subsonic: "Your own Subsonic, Navidrome or compatible server, sending its original files."
+        case .jellyfin: "Your own Jellyfin or Emby server, browsed and played where it is."
         case .tidal: "Your TIDAL subscription, lossless only, signed in with your own client ID."
         case .hifiApi: "TIDAL through a hifi-api server."
         case .monochrome: "The track streamer behind Monochrome."

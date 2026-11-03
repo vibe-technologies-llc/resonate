@@ -72,6 +72,7 @@ pub enum MusicProvider {
     Subsonic,
     Tidal,
     HifiApi,
+    Jellyfin,
 }
 
 impl fmt::Display for MusicProvider {
@@ -81,6 +82,7 @@ impl fmt::Display for MusicProvider {
             Self::Subsonic => "The Subsonic server",
             Self::Tidal => "TIDAL",
             Self::HifiApi => "The hifi-api server",
+            Self::Jellyfin => "The Jellyfin server",
         })
     }
 }
@@ -101,15 +103,17 @@ enum Reached {
     Subsonic(resonate_subsonic::Subsonic),
     Tidal(resonate_tidal::Tidal),
     HifiApi(resonate_tidal::HifiApi),
+    Jellyfin(resonate_jellyfin::Jellyfin),
 }
 
 impl Reached {
-    fn provider(self) -> Box<dyn Provider> {
+    fn provider(self) -> Option<Box<dyn Provider>> {
         match self {
-            Self::Monochrome(service) => Box::new(service),
-            Self::Subsonic(service) => Box::new(service),
-            Self::Tidal(service) => Box::new(service),
-            Self::HifiApi(service) => Box::new(service),
+            Self::Monochrome(service) => Some(Box::new(service)),
+            Self::Subsonic(service) => Some(Box::new(service)),
+            Self::Tidal(service) => Some(Box::new(service)),
+            Self::HifiApi(service) => Some(Box::new(service)),
+            Self::Jellyfin(_) => None,
         }
     }
 
@@ -119,6 +123,7 @@ impl Reached {
             Self::Subsonic(service) => Arc::new(service),
             Self::Tidal(service) => Arc::new(service),
             Self::HifiApi(service) => Arc::new(service),
+            Self::Jellyfin(service) => Arc::new(service),
         }
     }
 }
@@ -564,6 +569,13 @@ impl Downloads {
                     password,
                 }))
             }
+            MusicProvider::Jellyfin => {
+                Reached::Jellyfin(resonate_jellyfin::Jellyfin::at(resonate_jellyfin::Server {
+                    url: server,
+                    user,
+                    password,
+                }))
+            }
             MusicProvider::Tidal => {
                 let refreshed = Arc::clone(&self.refreshed);
                 Reached::Tidal(
@@ -589,7 +601,11 @@ impl Downloads {
         }
     }
 
-    fn provider_of(&self, account: DownloadAccount) -> Box<dyn Provider> {
+    fn fetches_for_wants(&self, account: &DownloadAccount) -> bool {
+        account.provider != MusicProvider::Jellyfin && self.is_asked(account)
+    }
+
+    fn provider_of(&self, account: DownloadAccount) -> Option<Box<dyn Provider>> {
         self.reached(account).provider()
     }
 
@@ -607,7 +623,7 @@ impl Downloads {
     ) -> Searched {
         let accounts: Vec<DownloadAccount> = accounts
             .into_iter()
-            .filter(|account| self.is_asked(account))
+            .filter(|account| self.fetches_for_wants(account))
             .collect();
         if accounts.is_empty() {
             return Searched {
@@ -634,8 +650,11 @@ impl Downloads {
         let mut providers = Providers::none();
         for account in accounts {
             let provider = account.provider;
+            let Some(searching) = self.provider_of(account) else {
+                continue;
+            };
             let told = Told {
-                asked: self.provider_of(account),
+                asked: searching,
                 provider,
                 heard: Arc::clone(&heard),
             };

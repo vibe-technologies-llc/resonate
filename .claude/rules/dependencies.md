@@ -145,7 +145,7 @@ here, add it there.
   `serde_json::from_slice`, so nothing uncapped is parsed. `gzip` only reads, so `flate2`
   (`rust_backend`) is `resonate-online`'s for AcoustID's packed request body.
 - **`serde`** (`std`, `derive`), **`serde_json`** (`std`): `resonate-online`, `-mcp`, `-discord` and
-  the Subsonic, TIDAL, Monochrome providers alone; `serde` alone in `resonate-lyrics`. Every struct
+  the Subsonic, Jellyfin, TIDAL, Monochrome providers alone; `serde` alone in `resonate-lyrics`. Every struct
   deriving `Deserialize` is private (online: a `...Doc` mapped by hand; mcp: an argument struct made
   a domain value before a tool runs; discord: a frame doc; mcp's unit enums `Action`, `Pass` are the
   only public derives), so a renamed field breaks one mapping in one crate. The layering job refuses
@@ -173,10 +173,10 @@ here, add it there.
   roots as DER (`RootCerts::Specific` is the only way to add the built-in set beside the system's).
   `rustls` (`std` alone) downcasts a refused certificate out of ureq's `io::Error`, so matches
   ureq's version. Not ureq's `platform-verifier`, which fails where the system store is empty.
-- **`resonate-subsonic`, `-tidal`, `-monochrome`** take `ureq`, `serde`, `serde_json` themselves
+- **`resonate-subsonic`, `-jellyfin`, `-tidal`, `-monochrome`** take `ureq`, `serde`, `serde_json` themselves
   and `resonate-fetch` for shared plumbing, not `resonate-online`; the binary takes them only under
   `online`. `resonate-fetch` is core, the seam, `ureq` and the three certificate crates alone;
-  `resonate-online` takes it for `retry_after`. `md-5`: Subsonic's token (and Last.fm signing in
+  `resonate-online` takes it for `retry_after`. `uuid`: Jellyfin's generated device id. `md-5`: Subsonic's token (and Last.fm signing in
   online). TIDAL: `base64` (`alloc`), `roxmltree` (`std`; DASH MPD), at 0.21 against gpui's 0.20:
   a second copy of a small crate, not a held-back pin.
 - **`futures-channel`**: `resonate-ui`'s; the oneshot `Drawer::draw` returns a cover by.

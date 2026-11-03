@@ -17,7 +17,8 @@ fun DownloadAccount.readiness(): Readiness =
     when (provider) {
         MusicProvider.MONOCHROME,
         MusicProvider.HIFI_API -> Readiness.READY
-        MusicProvider.SUBSONIC ->
+        MusicProvider.SUBSONIC,
+        MusicProvider.JELLYFIN ->
             when {
                 server.isBlank() -> Readiness.MISSING_SERVER
                 user.isBlank() || password.isEmpty() -> Readiness.MISSING_LOGIN

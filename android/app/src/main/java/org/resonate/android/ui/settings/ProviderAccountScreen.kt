@@ -136,14 +136,18 @@ internal fun iconFor(provider: MusicProvider): ImageVector =
     when (provider) {
         MusicProvider.MONOCHROME -> Icons.Rounded.MusicNote
         MusicProvider.HIFI_API -> Icons.Rounded.Waves
-        MusicProvider.SUBSONIC -> Icons.Rounded.Dns
+        MusicProvider.SUBSONIC,
+        MusicProvider.JELLYFIN -> Icons.Rounded.Dns
         MusicProvider.TIDAL -> Icons.Rounded.Cloud
     }
+
+private fun needsAServer(provider: MusicProvider): Boolean =
+    provider == MusicProvider.SUBSONIC || provider == MusicProvider.JELLYFIN
 
 private fun fieldLabel(field: ProviderField, provider: MusicProvider): String =
     when (field) {
         ProviderField.SERVER ->
-            if (provider == MusicProvider.SUBSONIC) "Server address" else "Server address (optional)"
+            if (needsAServer(provider)) "Server address" else "Server address (optional)"
         ProviderField.USER -> "Username"
         ProviderField.PASSWORD ->
             if (provider == MusicProvider.HIFI_API) "Key for your own server (optional)" else "Password"
@@ -155,8 +159,11 @@ private fun fieldLabel(field: ProviderField, provider: MusicProvider): String =
 private fun supportOf(field: ProviderField, provider: MusicProvider): String? =
     when (field) {
         ProviderField.SERVER ->
-            if (provider == MusicProvider.SUBSONIC) "For example https://music.example.org"
-            else "Leave blank to use the hosted service"
+            when (provider) {
+                MusicProvider.SUBSONIC -> "For example https://music.example.org"
+                MusicProvider.JELLYFIN -> "For example https://jellyfin.example.org"
+                else -> "Leave blank to use the hosted service"
+            }
         ProviderField.REFRESH_TOKEN -> "Filled in by Sign in with TIDAL"
         else -> null
     }

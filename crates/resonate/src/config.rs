@@ -230,6 +230,9 @@ pub struct Config {
     pub subsonic: Option<String>,
     pub subsonic_user: Option<String>,
     pub subsonic_password: Option<String>,
+    pub jellyfin: Option<String>,
+    pub jellyfin_user: Option<String>,
+    pub jellyfin_password: Option<String>,
     pub tidal_client_id: Option<String>,
     pub tidal_client_secret: Option<String>,
     pub tidal_refresh_token: Option<String>,
@@ -361,6 +364,9 @@ impl fmt::Debug for Config {
             subsonic,
             subsonic_user,
             subsonic_password,
+            jellyfin,
+            jellyfin_user,
+            jellyfin_password,
             tidal_client_id,
             tidal_client_secret,
             tidal_refresh_token,
@@ -478,6 +484,9 @@ impl fmt::Debug for Config {
             .field("subsonic", subsonic)
             .field("subsonic_user", subsonic_user)
             .field("subsonic_password", &withheld(subsonic_password.as_ref()))
+            .field("jellyfin", jellyfin)
+            .field("jellyfin_user", jellyfin_user)
+            .field("jellyfin_password", &withheld(jellyfin_password.as_ref()))
             .field("tidal_client_id", tidal_client_id)
             .field(
                 "tidal_client_secret",
@@ -1116,6 +1125,11 @@ impl Config {
             ConfigKey::SubsonicUser => config.subsonic_user = given(at.string(value)?),
             ConfigKey::SubsonicPassword => {
                 config.subsonic_password = given(at.string(value)?);
+            }
+            ConfigKey::Jellyfin => config.jellyfin = given(at.string(value)?),
+            ConfigKey::JellyfinUser => config.jellyfin_user = given(at.string(value)?),
+            ConfigKey::JellyfinPassword => {
+                config.jellyfin_password = given(at.string(value)?);
             }
             ConfigKey::TidalClientId => config.tidal_client_id = given(at.string(value)?),
             ConfigKey::TidalClientSecret => {
@@ -1990,7 +2004,8 @@ mod tests {
     fn no_key_holding_a_secret_or_the_contact_is_printed_by_debug() {
         let config = read(
             "subsonic = \"https://music.home.arpa\"\nsubsonic-user = \"listener\"\n\
-             subsonic-password = \"subsonic-sesame\"\ntidal-client-id = \"client\"\n\
+             subsonic-password = \"subsonic-sesame\"\njellyfin = \"https://jelly.home.arpa\"\n\
+             jellyfin-user = \"listener\"\njellyfin-password = \"jellyfin-sesame\"\ntidal-client-id = \"client\"\n\
              tidal-client-secret = \"tidal-hush\"\ntidal-refresh-token = \"tidal-sesame\"\n\
              audd-token = \"audd-sesame\"\nlistenbrainz-token = \"listenbrainz-sesame\"\n\
              acoustid-key = \"acoustid-sesame\"\ncontact = \"someone at an address\"\n\
@@ -2006,6 +2021,7 @@ mod tests {
         assert!(printed.contains("<withheld>"));
         for secret in [
             "subsonic-sesame",
+            "jellyfin-sesame",
             "tidal-hush",
             "tidal-sesame",
             "audd-sesame",

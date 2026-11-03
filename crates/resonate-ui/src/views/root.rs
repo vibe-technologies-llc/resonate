@@ -80,7 +80,7 @@ use crate::{
         settings::{
             Account, Category, FILTER_PLACEHOLDER, Fitting, HeldBand, LastfmAccount, LastfmSigning,
             Plotted, SYNC_CODE_PLACEHOLDER, SYNC_DEVICE_PLACEHOLDER, SYNC_SERVER_PLACEHOLDER,
-            SigningIn, TidalAccount,
+            Service, SigningIn, TidalAccount,
         },
         sheets::{self, MAGNIFIER_PANEL},
         slider::{Grab, Rail},
@@ -515,7 +515,9 @@ impl Pane {
                 "What the releases are short of, and what the artists have put out \
                               that the library does not hold"
             }
-            Self::Server => "What your Subsonic server holds, to browse and play where it is",
+            Self::Server => {
+                "What your Subsonic, Jellyfin or other servers hold, to browse and play where it is"
+            }
             Self::Lyrics => "The words to the playing track, where a source has them",
             Self::Inspector => "What the playing file is, and what reaches the sink",
             Self::Visualiser => "The spectrum and the waveform of what is being heard",
@@ -627,6 +629,7 @@ pub struct RootView {
     pub(crate) audd: Entity<Field>,
     pub(crate) listenbrainz: Entity<Field>,
     pub(crate) subsonic: [Entity<Field>; 3],
+    pub(crate) jellyfin: [Entity<Field>; 3],
     pub(crate) tidal: [Entity<Field>; 6],
     pub(crate) lastfm: [Entity<Field>; 4],
     pub(crate) discord_app: Entity<Field>,
@@ -1004,7 +1007,8 @@ impl RootView {
         })
         .detach();
 
-        let subsonic = Account::fields(&online, window, cx);
+        let subsonic = Account::fields(Service::Subsonic, &online, window, cx);
+        let jellyfin = Account::fields(Service::Jellyfin, &online, window, cx);
         let tidal = TidalAccount::fields(&online, window, cx);
         let lastfm = LastfmAccount::fields(&online, window, cx);
 
@@ -1249,6 +1253,7 @@ impl RootView {
             audd,
             listenbrainz,
             subsonic,
+            jellyfin,
             tidal,
             lastfm,
             discord_app,
@@ -4332,6 +4337,7 @@ impl RootView {
         ]
         .into_iter()
         .chain(&self.subsonic)
+        .chain(&self.jellyfin)
         .chain(&self.tidal)
         .chain(&self.lastfm)
     }

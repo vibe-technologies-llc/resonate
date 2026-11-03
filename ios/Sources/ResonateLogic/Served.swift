@@ -2,7 +2,7 @@ import Foundation
 import ResonateNative
 
 public enum PlayedInPlace {
-    public static let schemes = ["subsonic", "tidal", "resonate", "hifi-api", "monochrome"]
+    public static let schemes = ["subsonic", "jellyfin", "tidal", "resonate", "hifi-api", "monochrome"]
 
     public static func scheme(of uri: String) -> String? {
         guard let colon = uri.firstIndex(of: ":") else { return nil }

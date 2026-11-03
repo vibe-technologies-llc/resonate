@@ -15,13 +15,20 @@ enum class ProviderField {
 }
 
 val providersShown =
-    listOf(MusicProvider.MONOCHROME, MusicProvider.HIFI_API, MusicProvider.SUBSONIC, MusicProvider.TIDAL)
+    listOf(
+        MusicProvider.MONOCHROME,
+        MusicProvider.HIFI_API,
+        MusicProvider.SUBSONIC,
+        MusicProvider.JELLYFIN,
+        MusicProvider.TIDAL,
+    )
 
 fun providerName(provider: MusicProvider): String =
     when (provider) {
         MusicProvider.MONOCHROME -> "Monochrome"
         MusicProvider.HIFI_API -> "hifi-api"
         MusicProvider.SUBSONIC -> "Subsonic"
+        MusicProvider.JELLYFIN -> "Jellyfin"
         MusicProvider.TIDAL -> "TIDAL"
     }
 
@@ -30,6 +37,7 @@ fun providerDetail(provider: MusicProvider): String =
         MusicProvider.MONOCHROME -> "A Monochrome server, or the hosted one"
         MusicProvider.HIFI_API -> "A hifi-api server, or the hosted one"
         MusicProvider.SUBSONIC -> "Your own Subsonic or Navidrome server"
+        MusicProvider.JELLYFIN -> "Your own Jellyfin or Emby server, browsed and played where it is"
         MusicProvider.TIDAL -> "Your TIDAL subscription"
     }
 
@@ -37,7 +45,8 @@ fun providerFields(provider: MusicProvider): List<ProviderField> =
     when (provider) {
         MusicProvider.MONOCHROME -> listOf(ProviderField.SERVER)
         MusicProvider.HIFI_API -> listOf(ProviderField.SERVER, ProviderField.PASSWORD)
-        MusicProvider.SUBSONIC ->
+        MusicProvider.SUBSONIC,
+        MusicProvider.JELLYFIN ->
             listOf(ProviderField.SERVER, ProviderField.USER, ProviderField.PASSWORD)
         MusicProvider.TIDAL ->
             listOf(ProviderField.CLIENT_ID, ProviderField.CLIENT_SECRET, ProviderField.REFRESH_TOKEN)
@@ -84,7 +93,8 @@ fun accountLocation(account: DownloadAccount): String {
         account.provider == MusicProvider.TIDAL -> "Your subscription"
         account.provider == MusicProvider.HIFI_API && account.password.isNotBlank() ->
             "Your own server"
-        account.provider == MusicProvider.SUBSONIC -> "No server yet"
+        account.provider == MusicProvider.SUBSONIC ||
+            account.provider == MusicProvider.JELLYFIN -> "No server yet"
         else -> "Hosted service"
     }
 }

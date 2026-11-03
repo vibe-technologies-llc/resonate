@@ -27,6 +27,7 @@ members = [
     "crates/resonate-server",
     "crates/resonate-sync",
     "crates/providers/inbox",
+    "crates/providers/jellyfin",
     "crates/providers/monochrome",
     "crates/providers/subsonic",
     "crates/providers/tidal",
@@ -274,6 +275,7 @@ resonate-online = { version = "0.4.0", path = "crates/resonate-online" }
 resonate-providers = { version = "0.4.0", path = "crates/resonate-providers" }
 resonate-sync = { version = "0.4.0", path = "crates/resonate-sync" }
 resonate-inbox = { version = "0.4.0", path = "crates/providers/inbox" }
+resonate-jellyfin = { version = "0.4.0", path = "crates/providers/jellyfin" }
 resonate-monochrome = { version = "0.4.0", path = "crates/providers/monochrome" }
 resonate-subsonic = { version = "0.4.0", path = "crates/providers/subsonic" }
 resonate-tidal = { version = "0.4.0", path = "crates/providers/tidal" }

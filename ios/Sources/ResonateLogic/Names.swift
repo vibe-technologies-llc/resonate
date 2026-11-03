@@ -42,7 +42,7 @@ extension LossyRestoration {
 }
 
 extension MusicProvider {
-    public static let every: [MusicProvider] = [.subsonic, .tidal, .hifiApi, .monochrome]
+    public static let every: [MusicProvider] = [.subsonic, .jellyfin, .tidal, .hifiApi, .monochrome]
     public var name: String { "\(self)" }
     public static func named(_ name: String?) -> MusicProvider? { every.first { $0.name == name } }
 }

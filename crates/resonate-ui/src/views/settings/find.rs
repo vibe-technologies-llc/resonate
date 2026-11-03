@@ -112,6 +112,7 @@ pub(crate) enum Group {
     Inbox,
     ResonateKey,
     Subsonic,
+    Jellyfin,
     Tidal,
     Served,
     Resuming,
@@ -152,7 +153,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 67] = [
+    pub(crate) const ALL: [Self; 68] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -183,6 +184,7 @@ impl Group {
         Self::Inbox,
         Self::ResonateKey,
         Self::Subsonic,
+        Self::Jellyfin,
         Self::Tidal,
         Self::Served,
         Self::Resuming,
@@ -257,6 +259,7 @@ impl Group {
             | Self::Inbox
             | Self::ResonateKey
             | Self::Subsonic
+            | Self::Jellyfin
             | Self::Tidal
             | Self::Served
             | Self::Resuming
@@ -323,6 +326,7 @@ impl Group {
             Self::Vault => "The vault",
             Self::Inbox => "The inbox",
             Self::Subsonic => "A Subsonic server",
+            Self::Jellyfin => "A Jellyfin or Emby server",
             Self::ResonateKey => "Resonate server key",
             Self::Tidal => "A TIDAL account",
             Self::Served => "Browsing a service",
@@ -399,6 +403,7 @@ impl Group {
             Self::Vault => VAULT_HINT,
             Self::Inbox => INBOX_HINT,
             Self::Subsonic => SUBSONIC_HINT,
+            Self::Jellyfin => JELLYFIN_HINT,
             Self::ResonateKey => RESONATE_KEY_HINT,
             Self::Tidal => TIDAL_HINT,
             Self::Served => SERVED_HINT,
@@ -531,12 +536,15 @@ impl Group {
                 "navidrome airsonic gonic server provider download wants missing stream fill \
                  obtain account password"
             }
+            Self::Jellyfin => {
+                "emby server provider stream play in place browse account password token"
+            }
             Self::ResonateKey => {
                 "resonate server key secret hifi-api hifi token password download wants missing \
                  fill obtain account bearer tecnio gateway"
             }
             Self::Served => {
-                "server pane browse play in place stream subsonic navidrome tidal monochrome \
+                "server pane browse play in place stream subsonic navidrome jellyfin emby tidal monochrome \
                  hifi-api resonate service artists albums search open"
             }
             Self::Tidal => {
@@ -693,6 +701,11 @@ impl Group {
                 SettingKey::Subsonic,
                 SettingKey::SubsonicUser,
                 SettingKey::SubsonicPassword,
+            ],
+            Self::Jellyfin => &[
+                SettingKey::Jellyfin,
+                SettingKey::JellyfinUser,
+                SettingKey::JellyfinPassword,
             ],
             Self::ResonateKey => &[SettingKey::HifiSecret],
             Self::Served => &[],
@@ -1055,6 +1068,9 @@ pub(crate) const VAULT_HINT: &str = "A managed archive this build writes itself.
 pub(crate) const SUBSONIC_HINT: &str = "A server of your own the tracks marked wanted are \
                                         also filled from, matched by the recording's \
                                         MusicBrainz id or its ISRC.";
+
+pub(crate) const JELLYFIN_HINT: &str = "A Jellyfin or Emby server of your own, browsed and played \
+                                        where it is in the server pane.";
 
 pub(crate) const SERVED_HINT: &str = "Opens the pane that browses and plays what a service of \
                                        yours holds, in place and with nothing downloaded.";

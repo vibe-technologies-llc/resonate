@@ -87,7 +87,7 @@ that name. Every file argument goes through it.
 - **Another source's URI only where its scheme names a source this build's `Sources` holds**
   (`01:intro.flac` is a file here). Scheme and `localhost` are case-insensitive.
 - **A URI of a service played in place is the service's only where the settings set it**
-  (`served.rs`, `providers.md`: `subsonic:`, `tidal:`, `hifi-api:`, `resonate:`, `monochrome:`, each
+  (`served.rs`, `providers.md`: `subsonic:`, `jellyfin:`, `tidal:`, `hifi-api:`, `resonate:`, `monochrome:`, each
   a song, album or artist; Monochrome's a song alone): `queue_items_served` reads arguments
   through `Served::sources`, and an album or artist URI is queued as the songs the service lists
   for it. `resonate served [--service NAME]` browses a service (`cli::ServedArgs`: the name is a

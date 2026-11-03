@@ -31,7 +31,7 @@ private func song(
     }
 
     @Test func everyServicePlayedInPlaceNamesItsRowsByItsScheme() {
-        for uri in ["subsonic:track/7", "tidal:track/7", "resonate:track/7", "hifi-api:track/7", "monochrome:track/7"] {
+        for uri in ["subsonic:track/7", "jellyfin:track/7", "tidal:track/7", "resonate:track/7", "hifi-api:track/7", "monochrome:track/7"] {
             #expect(servedTrack(uri).isServed)
         }
         #expect(PlayedInPlace.scheme(of: "hifi-api:album/3") == "hifi-api")

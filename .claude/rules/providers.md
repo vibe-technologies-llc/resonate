@@ -439,6 +439,61 @@ never copied into `resonate-library` (the local source's catalog alone). `Source
   copy. The window's pane is `ui.md`'s *The server pane*; the phones' boundary is `mobile.md`'s
   *Services played in place*; the terminal's is `resonate served` (`binary.md`).
 
+## A Jellyfin or Emby server played in place
+
+`resonate-jellyfin` reaches the listener's server named by `jellyfin`, `jellyfin-user`,
+`jellyfin-password`, one `Jellyfin` for both products (`Flavour`, read off where the sign-in
+answered). It is a source played in place beside Subsonic and no `Provider`: nothing is asked of it
+for a want, no delivery is made, and `providers::registry` never registers it; `providers::in_place`
+does, after Subsonic and only where all three are given and `online` is on. `SourceId` `jellyfin`:
+`jellyfin:track/<id>`, `jellyfin:album/<id>`, `jellyfin:artist/<id>`; a mix is never named. The
+catalog is the server's, browsed through its API and never copied into `resonate-library`.
+
+- **The password is sent once, to sign in.** `POST Users/AuthenticateByName` with `{"Username",
+  "Pw"}` in the body and the `Authorization: MediaBrowser Client="Resonate", Device="Resonate",
+  DeviceId="<uuid>", Version="<crate version>"` header (also as `X-Emby-Authorization`, which Emby
+  reads); the answer's `AccessToken` and `User.Id` are the `Session`, held under a `Mutex` so
+  concurrent callers sign in once. The device id is a v4 UUID generated per `Jellyfin` (so per
+  `Made` cell, one per process and account), never a name, host or setting; the User-Agent stays
+  bare. Every later request carries the token as `api_key` in its query, because a `Seeking` asks
+  again by URL alone. A 401 on a request drops the session, signs in again and asks once more; a
+  second is the `Refused` it was. A 401 or 403 at the sign-in is `Error::Unwelcome` under
+  `ProviderOp::SignIn`. `Server`'s `Debug` prints `<withheld>`, `Session` has no `Debug`, and
+  `told` keeps ureq's address-printing errors out of the log, as Subsonic's does
+  (`an_address_without_a_scheme_is_never_told_to_the_log_with_its_token`).
+- **Emby is the same client under `/emby`.** The address is tried as given and, where the sign-in
+  is answered 404 and the address does not already end in `/emby`, under `/emby`; the route that
+  answered is the session's root and its `Flavour`. No other call differs, so Emby is no second
+  crate or setting (`an_emby_server_that_lacks_the_plain_route_is_signed_in_to_under_its_own`,
+  `an_address_that_names_the_emby_route_is_signed_in_to_there_alone`). Proved against a fake only:
+  no real Jellyfin or Emby has been asked.
+- **Browsing** (`ProviderOp::Browse`, each one paced request under `answered_within`, ids as
+  strings or numbers, odd listings passed over by `readable`, as Subsonic's): `artists`
+  (`Artists/AlbumArtists`, `ARTISTS_A_PAGE` at a time by `StartIndex` until `TotalRecordCount`,
+  at most `ARTIST_PAGES_AT_MOST` pages), `artist` (`Users/<user>/Items/<id>` and the
+  `MusicAlbum`s with `ArtistIds`), `album` (the item and the `Audio` items with `ParentId`, in
+  disc, track and name order), `song`, `search` (`Artists?SearchTerm`, then `MusicAlbum` and
+  `Audio` items by `SearchTerm`, `BROWSED_AT_MOST` each). **An id reaches a path or query only
+  where it is letters, digits, dashes and underscores** (`item_id`; `Unreadable` otherwise, no
+  request: `an_id_that_would_leave_its_path_is_never_asked`). A song's `suffix` is `Container`
+  (`mov,mp4,m4a,...` read as the most trusted name in it), its length `RunTimeTicks` (100 ns), its
+  `favourite` `UserData.IsFavorite`; a cover is the item's own where `ImageTags.Primary` is
+  there, else its album's.
+- **A song is streamed as stored**: `Audio/<id>/stream?static=true`, which transcodes nothing and
+  asks for no download permission, a `Streamed::seeking` over `resonate_fetch::Seeking` with the
+  `Content-Type` as the hint; an answer naming a document is `Unreadable`
+  (`a_song_is_streamed_as_stored_and_a_seek_back_asks_the_server_from_there`). A cover is
+  `Items/<id>/Images/Primary` at `maxWidth` and `maxHeight` of the side. The star is the server's
+  own mark: `POST` and `DELETE Users/<user>/FavoriteItems/<id>`.
+- **Paces and trusts as Subsonic does**: `ASKED_APART`, 429 and 503 asked again after
+  `Retry-After`, `Trusted::SystemStoreToo`, a deadline for an answer and silence alone for a
+  download, a refused certificate `Error::Untrusted`.
+- **The binary and the phones treat it as every service played in place** (*A Subsonic server
+  played in place* above): `PLAYED_IN_PLACE` holds `jellyfin` after `subsonic`, `Made::jellyfin` is
+  its `Kept` cell, the window's Settings has a *Jellyfin or Emby server* group beside Subsonic's
+  (`ui.md`), `resonate served --service jellyfin` browses it, and the phones' `MusicProvider`
+  has `Jellyfin` (`mobile.md`).
+
 ## Other services played in place
 
 TIDAL, hifi-api (hosted, a listener's own, or the keyed Resonate server) and Monochrome are sources

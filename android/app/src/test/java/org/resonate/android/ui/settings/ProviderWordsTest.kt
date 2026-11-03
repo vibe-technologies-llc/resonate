@@ -25,6 +25,25 @@ class ProviderWordsTest {
         )
         assertEquals("Your own server · Ready", accountSummary(hifi, true))
         assertEquals(
+            "jelly.example · Ready",
+            accountSummary(
+                DownloadAccount(
+                    MusicProvider.JELLYFIN,
+                    "https://jelly.example/",
+                    "me",
+                    "pw",
+                    "",
+                    "",
+                    "",
+                ),
+                true,
+            ),
+        )
+        assertEquals(
+            "No server yet · Needs a server address",
+            accountSummary(emptyAccount(MusicProvider.JELLYFIN), true),
+        )
+        assertEquals(
             "Your subscription · Needs a TIDAL client ID",
             accountSummary(emptyAccount(MusicProvider.TIDAL), true),
         )

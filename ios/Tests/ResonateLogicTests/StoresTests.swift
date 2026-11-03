@@ -172,7 +172,7 @@ let interactionNotAllowed: Int32 = -25308
         for phase in ResamplingPhase.every { #expect(ResamplingPhase.named(phase.name) == phase) }
         for restoration in LossyRestoration.every { #expect(LossyRestoration.named(restoration.name) == restoration) }
         for provider in MusicProvider.every { #expect(MusicProvider.named(provider.name) == provider) }
-        #expect(MusicProvider.every.count == 4)
+        #expect(MusicProvider.every.count == 5)
     }
 }
 

@@ -1369,9 +1369,9 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
 - **Every provider is configured at once, as on the desktop** (`ProviderView`): one section per
   `MusicProvider.every`, each with its switch, its own credentials and Save, and a status
   (`DownloadAccount.readiness`): Monochrome and hifi-api are always ready (a blank server is the
-  hosted service); Subsonic needs a server, user and password (the desktop's three); TIDAL a client
+  hosted service); Subsonic and Jellyfin need a server, user and password (the desktop's three; a Jellyfin account is browsed and played in place and never asked for a want); TIDAL a client
   ID and refresh token. Every provider is on until switched off. **The boundary races them**, so
-  `every` is the desktop's registration order (Subsonic, TIDAL, hifi-api, Monochrome) and accounts
+  `every` is the desktop's registration order (Subsonic, Jellyfin, TIDAL, hifi-api, Monochrome) and accounts
   are passed in it: the desktop has no order of the listener's, so neither does the phone.
   *Sign in with TIDAL* shows the code and its link while `finish_tidal_authorization` waits on
   `Work.aside`, with *Cancel sign-in* beside it: `cancelTidalAuthorization` calls
@@ -1479,7 +1479,7 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   and a song plays the list it was pressed in (`Library.playServed(_:at:)`, `load_served` then the
   transport as `play(_:at:)` does). A queue holding served rows is saved and resumed by the
   boundary like any other. **A served row has id 0**, told by `Track.isServed` (id 0 and a uri
-  whose scheme is one of `PlayedInPlace.schemes`: `subsonic`, `tidal`, `resonate`, `hifi-api`,
+  whose scheme is one of `PlayedInPlace.schemes`: `subsonic`, `jellyfin`, `tidal`, `resonate`, `hifi-api`,
   `monochrome`, each `<scheme>:track/<id>`, `album/<id>`, `artist/<id>`); anything keyed by song id
   keys it by `Track.pictureKey` (its uri) instead: the
   artwork views (`ArtworkLoad.served`, `pictured`), the backdrop's palette memory and the lock

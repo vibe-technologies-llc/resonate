@@ -7,6 +7,8 @@ use std::{
 
 use resonate_inbox::Inbox;
 #[cfg(feature = "online")]
+use resonate_jellyfin::Jellyfin;
+#[cfg(feature = "online")]
 use resonate_monochrome::Monochrome;
 #[cfg(feature = "online")]
 use resonate_providers::PlaysInPlace;
@@ -99,6 +101,9 @@ fn in_place(accounts: &Accounts, made: &Made) -> InPlace {
     if let Some(server) = &accounts.subsonic {
         served.push(subsonic_of(made, server));
     }
+    if let Some(server) = &accounts.jellyfin {
+        served.push(jellyfin_of(made, server));
+    }
     if let Some(account) = &accounts.tidal {
         served.push(tidal_of(made, account));
     }
@@ -118,6 +123,17 @@ fn in_place(accounts: &Accounts, made: &Made) -> InPlace {
 fn subsonic_of(made: &Made, server: &Server) -> Arc<Subsonic> {
     made.subsonic
         .made_for(server, |server| Subsonic::at(server.clone()))
+}
+
+#[cfg(feature = "online")]
+fn jellyfin_of(made: &Made, server: &JellyfinServer) -> Arc<Jellyfin> {
+    made.jellyfin.made_for(server, |server| {
+        Jellyfin::at(resonate_jellyfin::Server {
+            url: server.url.clone(),
+            user: server.user.clone(),
+            password: server.password.clone(),
+        })
+    })
 }
 
 #[cfg(feature = "online")]
@@ -174,6 +190,7 @@ fn sourced_over(made: Arc<Made>) -> (resonate_ui::Registering, resonate_ui::Unke
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct Accounts {
     subsonic: Option<Server>,
+    jellyfin: Option<JellyfinServer>,
     tidal: Option<Account>,
     resonate: Option<Secret>,
     hifi: Option<Hosting>,
@@ -195,6 +212,11 @@ impl Accounts {
                 config.subsonic.as_deref(),
                 config.subsonic_user.as_deref(),
                 config.subsonic_password.as_deref(),
+            ),
+            jellyfin: jellyfin(
+                config.jellyfin.as_deref(),
+                config.jellyfin_user.as_deref(),
+                config.jellyfin_password.as_deref(),
             ),
             tidal: tidal(
                 config.tidal_client_id.as_deref(),
@@ -220,6 +242,11 @@ impl Accounts {
                 Some(&online.subsonic),
                 Some(&online.subsonic_user),
                 Some(&online.subsonic_password),
+            ),
+            jellyfin: jellyfin(
+                Some(&online.jellyfin),
+                Some(&online.jellyfin_user),
+                Some(&online.jellyfin_password),
             ),
             tidal: tidal(
                 Some(&online.tidal_client_id),
@@ -257,6 +284,38 @@ fn given(value: Option<&str>) -> Option<String> {
 #[cfg(feature = "online")]
 fn subsonic(url: Option<&str>, user: Option<&str>, password: Option<&str>) -> Option<Server> {
     Some(Server {
+        url: given(url)?,
+        user: given(user)?,
+        password: given(password)?,
+    })
+}
+
+#[cfg(feature = "online")]
+#[derive(Clone, PartialEq, Eq)]
+struct JellyfinServer {
+    url: String,
+    user: String,
+    password: String,
+}
+
+#[cfg(feature = "online")]
+impl std::fmt::Debug for JellyfinServer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("JellyfinServer")
+            .field("url", &self.url)
+            .field("user", &self.user)
+            .field("password", &"<withheld>")
+            .finish()
+    }
+}
+
+#[cfg(feature = "online")]
+fn jellyfin(
+    url: Option<&str>,
+    user: Option<&str>,
+    password: Option<&str>,
+) -> Option<JellyfinServer> {
+    Some(JellyfinServer {
         url: given(url)?,
         user: given(user)?,
         password: given(password)?,
@@ -310,6 +369,7 @@ fn hosting(server: Option<&str>, hosted_allowed: bool) -> Option<Hosting> {
 #[cfg(feature = "online")]
 struct Made {
     subsonic: Kept<Server, Subsonic>,
+    jellyfin: Kept<JellyfinServer, Jellyfin>,
     tidal: Kept<Account, Tidal>,
     resonate: Kept<Secret, HifiApi>,
     hifi: Kept<Hosting, HifiApi>,
@@ -336,6 +396,7 @@ impl Made {
     fn new(settings: Option<PathBuf>) -> Self {
         Self {
             subsonic: Kept::default(),
+            jellyfin: Kept::default(),
             tidal: Kept::default(),
             resonate: Kept::default(),
             hifi: Kept::default(),
@@ -617,6 +678,37 @@ mod tests {
             ..whole
         };
         assert!(!named(&offline).contains(&"subsonic".to_owned()));
+    }
+
+    #[cfg(feature = "online")]
+    #[test]
+    fn a_jellyfin_server_is_played_in_place_only_with_its_account_and_while_online_and_is_no_provider()
+     {
+        let schemes = |config: &Config| -> Vec<String> {
+            in_place(&Accounts::of(config), &Made::new(None))
+                .iter()
+                .map(|served| served.scheme().as_str().to_owned())
+                .collect()
+        };
+        let halfway = Config {
+            jellyfin: Some("http://music.local:8096".to_owned()),
+            jellyfin_user: Some("listener".to_owned()),
+            ..Config::default()
+        };
+        assert!(!schemes(&halfway).contains(&"jellyfin".to_owned()));
+
+        let whole = Config {
+            jellyfin_password: Some("sesame".to_owned()),
+            ..halfway
+        };
+        assert!(schemes(&whole).contains(&"jellyfin".to_owned()));
+        assert!(!named(&whole).contains(&"jellyfin".to_owned()));
+
+        let offline = Config {
+            online: Some(false),
+            ..whole
+        };
+        assert!(!schemes(&offline).contains(&"jellyfin".to_owned()));
     }
 
     #[cfg(feature = "online")]

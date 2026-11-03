@@ -242,6 +242,9 @@ pub enum SettingKey {
     Subsonic,
     SubsonicUser,
     SubsonicPassword,
+    Jellyfin,
+    JellyfinUser,
+    JellyfinPassword,
     TidalClientId,
     TidalClientSecret,
     TidalRefreshToken,
@@ -265,7 +268,7 @@ pub enum SettingKey {
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 109] = [
+    pub const ALL: [Self; 112] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -355,6 +358,9 @@ impl SettingKey {
         Self::Subsonic,
         Self::SubsonicUser,
         Self::SubsonicPassword,
+        Self::Jellyfin,
+        Self::JellyfinUser,
+        Self::JellyfinPassword,
         Self::TidalClientId,
         Self::TidalClientSecret,
         Self::TidalRefreshToken,
@@ -475,6 +481,9 @@ pub enum Setting {
     Subsonic(String),
     SubsonicUser(String),
     SubsonicPassword(String),
+    Jellyfin(String),
+    JellyfinUser(String),
+    JellyfinPassword(String),
     TidalClientId(String),
     TidalClientSecret(String),
     TidalRefreshToken(String),
@@ -595,6 +604,9 @@ impl Setting {
             Self::Subsonic(_) => SettingKey::Subsonic,
             Self::SubsonicUser(_) => SettingKey::SubsonicUser,
             Self::SubsonicPassword(_) => SettingKey::SubsonicPassword,
+            Self::Jellyfin(_) => SettingKey::Jellyfin,
+            Self::JellyfinUser(_) => SettingKey::JellyfinUser,
+            Self::JellyfinPassword(_) => SettingKey::JellyfinPassword,
             Self::TidalClientId(_) => SettingKey::TidalClientId,
             Self::TidalClientSecret(_) => SettingKey::TidalClientSecret,
             Self::TidalRefreshToken(_) => SettingKey::TidalRefreshToken,
@@ -637,6 +649,9 @@ pub struct Online {
     pub subsonic: String,
     pub subsonic_user: String,
     pub subsonic_password: String,
+    pub jellyfin: String,
+    pub jellyfin_user: String,
+    pub jellyfin_password: String,
     pub tidal_client_id: String,
     pub tidal_client_secret: String,
     pub tidal_refresh_token: String,
@@ -700,6 +715,9 @@ impl fmt::Debug for Online {
             subsonic,
             subsonic_user,
             subsonic_password,
+            jellyfin,
+            jellyfin_user,
+            jellyfin_password,
             tidal_client_id,
             tidal_client_secret,
             tidal_refresh_token,
@@ -726,6 +744,9 @@ impl fmt::Debug for Online {
             .field("subsonic", subsonic)
             .field("subsonic_user", subsonic_user)
             .field("subsonic_password", &withheld(subsonic_password))
+            .field("jellyfin", jellyfin)
+            .field("jellyfin_user", jellyfin_user)
+            .field("jellyfin_password", &withheld(jellyfin_password))
             .field("tidal_client_id", tidal_client_id)
             .field("tidal_client_secret", &withheld(tidal_client_secret))
             .field("tidal_refresh_token", &withheld(tidal_refresh_token))
@@ -1350,6 +1371,7 @@ mod tests {
             contact: "someone at an address".to_owned(),
             subsonic_user: "listener".to_owned(),
             subsonic_password: "subsonic-sesame".to_owned(),
+            jellyfin_password: "jellyfin-sesame".to_owned(),
             tidal_client_secret: "tidal-hush".to_owned(),
             tidal_refresh_token: "tidal-sesame".to_owned(),
             lastfm_secret: "lastfm-hush".to_owned(),
@@ -1370,6 +1392,7 @@ mod tests {
         for secret in [
             "someone at an address",
             "subsonic-sesame",
+            "jellyfin-sesame",
             "tidal-hush",
             "tidal-sesame",
             "lastfm-hush",

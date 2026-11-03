@@ -29,7 +29,14 @@ use crate::{
 };
 
 #[cfg(feature = "online")]
-const PLAYED_IN_PLACE: [&str; 5] = ["subsonic", "tidal", "resonate", "hifi-api", "monochrome"];
+const PLAYED_IN_PLACE: [&str; 6] = [
+    "subsonic",
+    "jellyfin",
+    "tidal",
+    "resonate",
+    "hifi-api",
+    "monochrome",
+];
 
 #[derive(Clone, Default)]
 pub struct Served {
@@ -1209,6 +1216,9 @@ mod tests {
             subsonic: "http://127.0.0.1:9".to_owned(),
             subsonic_user: "listener".to_owned(),
             subsonic_password: "sesame".to_owned(),
+            jellyfin: "http://127.0.0.1:9".to_owned(),
+            jellyfin_user: "listener".to_owned(),
+            jellyfin_password: "sesame".to_owned(),
             tidal_client_id: "client".to_owned(),
             tidal_refresh_token: "token".to_owned(),
             monochrome: "http://127.0.0.1:9".to_owned(),
@@ -1222,7 +1232,7 @@ mod tests {
             .map(|served| served.title().to_owned())
             .collect();
 
-        assert_eq!(titles, ["Subsonic", "TIDAL", "Monochrome"]);
+        assert_eq!(titles, ["Subsonic", "Jellyfin", "TIDAL", "Monochrome"]);
         assert!(
             opened
                 .iter()

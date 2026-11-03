@@ -96,7 +96,7 @@ is never named.
   once; a refusal is a toast naming which (`providers.md`). hifi-api and Monochrome addresses are
   optional overrides: blank = the hosted service where *Ask the hosted services* is on, else
   nothing.
-  - **An account given is asked at once.** Every field of the Subsonic and TIDAL groups writes the
+  - **An account given is asked at once.** Every field of the Subsonic, Jellyfin and TIDAL groups writes the
     global `Online` as it writes the file (`Sourcing::providers`). `the_sources_moved` calls
     `LibraryModel::sources_moved`: every *No provider is set up* download returns to *Queued* and
     every unheld want is asked, as *Poll now* does; turning Online on does the same
@@ -109,7 +109,7 @@ is never named.
   asks `Scrobblers::signed_in_to_lastfm` on the background executor; the password is emptied either
   way, a session is written as `lastfm-session`; a refusal says what could be wrong, anything else
   that Last.fm was not reached (`last_fm_is_signed_in_to_from_its_group_and_the_password_is_never_kept`).
-- **A secret is drawn as marks.** `Field::masked` (Subsonic password, TIDAL secret and token,
+- **A secret is drawn as marks.** `Field::masked` (Subsonic and Jellyfin password, TIDAL secret and token,
   AcoustID/AudD/ListenBrainz keys, Last.fm key, secret, password) shapes one `•` per letter; `Shown`
   maps every offset both ways; copies and cuts nothing.
 - **The caret blinks as the desktop says.** `CaretBlink` on `Stored` and `ResonateApp` (`as_built`

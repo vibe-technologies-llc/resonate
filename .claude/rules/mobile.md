@@ -632,15 +632,15 @@ iOS, `cargo clippy -p resonate-mobile --target aarch64-apple-ios` with the envir
 
 ## Services played in place
 
-`served.rs` is the phones' half of `providers.md`'s *A Subsonic server played in place* and *Other
-services played in place*: Subsonic, TIDAL, the keyed Resonate server, hifi-api and Monochrome
+`served.rs` is the phones' half of `providers.md`'s *A Subsonic server played in place*, *A Jellyfin or Emby server
+played in place* and *Other services played in place*: Subsonic, Jellyfin or Emby, TIDAL, the keyed Resonate server, hifi-api and Monochrome
 browsed and played where they are, never copied into the document catalog. The front end hands the
 download accounts that are on and ready (`serve_from(Vec<DownloadAccount>)`, the list a download is
-given; empty while online is off). The boundary keeps a ready one (`is_ready`: Subsonic's server,
+given; empty while online is off). The boundary keeps a ready one (`is_ready`: Subsonic's or Jellyfin's server,
 user and password, TIDAL's client id and refresh token) that `Downloads::in_place_of` builds as a
 download would (`Reached`, one construction for both: a hosted Monochrome or hifi-api is left out
 while hosted services are declined, a hifi-api account with a key is the `resonate` service, and a
-TIDAL account hands a rotated token to `refreshed_tidal_token`), the first account a scheme wins.
+TIDAL account hands a rotated token to `refreshed_tidal_token`), the first account a scheme wins. `MusicProvider::Jellyfin` is in-place only: `Downloads::fetches_for_wants` leaves it out of `find`, so a want is never asked of it (`a_jellyfin_server_is_browsed_and_its_song_is_queued_and_played_and_is_never_asked_for_a_want`).
 The list is compared with the one held, so a call with the same accounts builds nothing and every
 read may bind first; a service whose account stands keeps its `Arc` (one TIDAL session). One slot
 (`Arc<RwLock<Vec<Service>>>`) is read on each open by a `ServedSongs` per scheme of

@@ -1152,11 +1152,12 @@ dispatcher, never the main thread. Background tasks of `LibraryFeatures` share a
 native failure, a `LinkageError` included, so a screen never waits for ever.
 
 **Download accounts are a list** (`ProviderAccountBook`, `ProviderAccountRecords`, `ProviderAccountStore`):
-any number of Monochrome, hifi-api and Subsonic accounts, each its own row with its own switch, and at
+any number of Monochrome, hifi-api, Subsonic and Jellyfin accounts, each its own row with its own switch, and at
 most one TIDAL account, because the boundary hands back one renewed refresh token
 (`refreshed_tidal_token`) that cannot say which account it renews. An account is asked when it is on
-and ready (`Readiness`, iOS's `DownloadAccount.readiness`: Monochrome and hifi-api always, Subsonic
-with a server, user and password, TIDAL with a client ID and refresh token), and `find_download`
+and ready (`Readiness`, iOS's `DownloadAccount.readiness`: Monochrome and hifi-api always, Subsonic and Jellyfin
+with a server, user and password, TIDAL with a client ID and refresh token; a Jellyfin account is
+browsed and played in place and never asked for a want, the boundary leaving it out of `find_download`), and `find_download`
 takes every such account in list order, which only breaks ties, the boundary racing them; there is
 no order of the listener's, as on iOS and the desktop. The stored form is version 2, in the
 `provider-accounts` preferences: `accounts-version`, `accounts-ids` (the ids in order) and per id
@@ -1271,8 +1272,8 @@ and `next_wanted_due` the earliest of those times among them (unix seconds), for
 
 ## Services played in place
 
-**The Server page browses and plays every service that plays in place** (Subsonic, TIDAL, the keyed
-Resonate server, hifi-api and Monochrome; `mobile.md`'s *Services played in place*; `Served.kt`,
+**The Server page browses and plays every service that plays in place** (Subsonic, Jellyfin or Emby, TIDAL,
+the keyed Resonate server, hifi-api and Monochrome; `mobile.md`'s *Services played in place*; `Served.kt`,
 `ui/server/`). `Served` (`LibraryFeatures.served`) derives the accounts from the download accounts,
 the online switch and *Ask the hosted services*: every account that is on and ready
 (`ProviderAccountBook.asked`, the list `find_download` is given), less a Monochrome or hifi-api
@@ -1303,7 +1304,7 @@ controller or the queue is given them, since a network call must not hold the or
 served song plays through the controller as a library one does**: `Playback.playServed` sets media
 items whose id is the song's uri, `RustMediaPlayer.handleSetMediaItems` reads such ids
 (`servedMediaId`, which `BrowseIds.trackOf` leaves out) and calls `load_served`. **A served row has
-id 0**, told by `Track.served` (id 0 and a uri of one of `SERVED_SCHEMES`: `subsonic:`, `tidal:`,
+id 0**, told by `Track.served` (id 0 and a uri of one of `SERVED_SCHEMES`: `subsonic:`, `jellyfin:`, `tidal:`,
 `resonate:`, `hifi-api:`, `monochrome:`); everything keyed by song id keys it by `Track.pictureKey`
 (its uri) or `Track.rowKey` (its queue row) instead, and `findTrack(0)` is nothing. A queue holding
 served rows is saved and resumed by the boundary like any other. Its cover is `Served.bitmap`

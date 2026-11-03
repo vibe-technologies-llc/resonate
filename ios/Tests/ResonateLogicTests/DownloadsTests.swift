@@ -126,6 +126,12 @@ let folder = MusicFolder(id: "local", name: "On this iPhone", path: "/music", re
         #expect(account(.hifiApi).readiness == .ready)
     }
 
+    @Test func jellyfinNeedsAServerThenALoginAsSubsonicDoes() {
+        #expect(account(.jellyfin).readiness == .missingServer)
+        #expect(account(.jellyfin, server: "https://j.example").readiness == .missingLogin)
+        #expect(account(.jellyfin, server: "https://j.example", user: "me", password: "pw").readiness == .ready)
+    }
+
     @Test func subsonicNeedsAServerThenALogin() {
         #expect(account(.subsonic).readiness == .missingServer)
         #expect(account(.subsonic, server: "   ").readiness == .missingServer)

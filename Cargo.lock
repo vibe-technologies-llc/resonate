@@ -6001,6 +6001,7 @@ dependencies = [
  "resonate-engine",
  "resonate-eq",
  "resonate-inbox",
+ "resonate-jellyfin",
  "resonate-library",
  "resonate-listen",
  "resonate-lyrics",
@@ -6197,6 +6198,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "resonate-jellyfin"
+version = "0.4.0"
+dependencies = [
+ "parking_lot 0.13.0",
+ "resonate-core",
+ "resonate-fetch",
+ "resonate-providers",
+ "serde",
+ "serde_json",
+ "tracing",
+ "ureq",
+ "uuid",
+]
+
+[[package]]
 name = "resonate-library"
 version = "0.4.0"
 dependencies = [
@@ -6283,6 +6299,7 @@ dependencies = [
  "resonate-dsp",
  "resonate-engine",
  "resonate-eq",
+ "resonate-jellyfin",
  "resonate-library",
  "resonate-listen",
  "resonate-lyrics",

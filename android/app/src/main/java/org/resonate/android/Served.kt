@@ -25,7 +25,7 @@ import org.resonate.android.nativecore.MusicProvider
 import org.resonate.android.nativecore.ServedService
 import org.resonate.android.nativecore.Track
 
-val SERVED_SCHEMES = listOf("subsonic", "tidal", "resonate", "hifi-api", "monochrome")
+val SERVED_SCHEMES = listOf("subsonic", "jellyfin", "tidal", "resonate", "hifi-api", "monochrome")
 private const val COVERS_AT_ONCE = 4
 private const val COVER_BYTES_AT_MOST = 24 * 1024 * 1024
 private const val MISSING_COVERS_AT_MOST = 2048

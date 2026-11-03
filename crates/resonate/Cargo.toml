@@ -18,6 +18,7 @@ default = ["ui", "online", "mcp", "discord", "sync"]
 discord = ["dep:resonate-discord"]
 mcp = ["dep:resonate-mcp"]
 online = [
+    "dep:resonate-jellyfin",
     "dep:resonate-monochrome",
     "dep:resonate-online",
     "dep:resonate-subsonic",
@@ -45,6 +46,7 @@ resonate-mcp = { workspace = true, optional = true }
 resonate-monochrome = { workspace = true, optional = true }
 resonate-mpris.workspace = true
 resonate-online = { workspace = true, optional = true }
+resonate-jellyfin = { workspace = true, optional = true }
 resonate-subsonic = { workspace = true, optional = true }
 resonate-sync = { workspace = true, optional = true }
 resonate-tidal = { workspace = true, optional = true }

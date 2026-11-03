@@ -100,10 +100,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   such file type); `.oga` alone could be mapped to Vorbis by hand
 
 ## Providers and network
-- [M · 0.5.0] A Jellyfin or Emby server cannot be browsed or played in place: Subsonic covers
-  Navidrome and its kin, but Jellyfin speaks its own API (a user's sign-in for a token, items by
-  parent, the audio by item id). A `providers/jellyfin` crate beside `providers/subsonic`, tested
-  against a fake server on loopback, with `served` on the CLI, the window and both phones
 - [L · blocked: Apple] An Apple Music library cannot be synced: reading a listener's library and
   playlists needs a MusicKit developer token, issued only to a paid Apple Developer membership, and
   a user token only Apple's own sign-in hands out, which neither the desktop nor Android can show;

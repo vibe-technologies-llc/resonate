@@ -18,6 +18,7 @@ resonate-listen.workspace = true
 resonate-lyrics.workspace = true
 resonate-online.workspace = true
 resonate-providers.workspace = true
+resonate-jellyfin.workspace = true
 resonate-subsonic.workspace = true
 resonate-sync.workspace = true
 resonate-tidal.workspace = true

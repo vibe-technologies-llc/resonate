@@ -113,9 +113,14 @@ extension DownloadAccount {
     public var readiness: ProviderReadiness {
         switch provider {
         case .monochrome, .hifiApi: .ready
-        case .subsonic where Self.isBlank(server): .missingServer
-        case .subsonic where Self.isBlank(user) || password.isEmpty: .missingLogin
-        case .subsonic: .ready
+        case .subsonic, .jellyfin:
+            if Self.isBlank(server) {
+                .missingServer
+            } else if Self.isBlank(user) || password.isEmpty {
+                .missingLogin
+            } else {
+                .ready
+            }
         case .tidal where Self.isBlank(clientId): .missingClient
         case .tidal where Self.isBlank(refreshToken): .needsSignIn
         case .tidal: .ready

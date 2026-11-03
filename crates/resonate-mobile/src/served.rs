@@ -15,8 +15,14 @@ use crate::{
     downloads::{DownloadAccount, MusicProvider, failure_of},
 };
 
-pub(crate) const PLAYED_IN_PLACE: [&str; 5] =
-    ["subsonic", "tidal", "resonate", "hifi-api", "monochrome"];
+pub(crate) const PLAYED_IN_PLACE: [&str; 6] = [
+    "subsonic",
+    "jellyfin",
+    "tidal",
+    "resonate",
+    "hifi-api",
+    "monochrome",
+];
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct ServedService {
@@ -302,7 +308,7 @@ impl Served {
 fn is_ready(account: &DownloadAccount) -> bool {
     let given = |field: &str| !field.trim().is_empty();
     match account.provider {
-        MusicProvider::Subsonic => {
+        MusicProvider::Subsonic | MusicProvider::Jellyfin => {
             given(&account.server) && given(&account.user) && given(&account.password)
         }
         MusicProvider::Tidal => given(&account.client_id) && given(&account.refresh_token),
@@ -600,6 +606,13 @@ mod tests {
     const SEARCH: &str = r#"{"subsonic-response":{"status":"ok","version":"1.16.1","searchResult3":{"song":[{"id":"so-2","title":"A Pillow of Winds"}]}}}"#;
     const MONOCHROME_SEARCH: &str = r#"{"tracks":[{"trackId":77,"title":"Echoes","artistNames":["Pink Floyd"],"duration":2000,"playable":true},{"trackId":78,"title":"Unplayable","playable":false}]}"#;
     const PICTURE: &[u8] = b"\xFF\xD8 a picture";
+    const JELLYFIN_SIGNED_IN: &str = r#"{"AccessToken":"t-1","User":{"Id":"u-1"},"ServerId":"s"}"#;
+    const JELLYFIN_ARTISTS: &str =
+        r#"{"Items":[{"Id":"jar-1","Name":"Pink Floyd","AlbumCount":1}],"TotalRecordCount":1}"#;
+    const JELLYFIN_ARTIST: &str = r#"{"Id":"jar-1","Name":"Pink Floyd","Type":"MusicArtist"}"#;
+    const JELLYFIN_ALBUMS: &str = r#"{"Items":[{"Id":"jal-1","Name":"Meddle","AlbumArtist":"Pink Floyd","ProductionYear":1971}],"TotalRecordCount":1}"#;
+    const JELLYFIN_ALBUM: &str = r#"{"Id":"jal-1","Name":"Meddle","AlbumArtist":"Pink Floyd"}"#;
+    const JELLYFIN_SONGS: &str = r#"{"Items":[{"Id":"jso-1","Name":"One of These Days","Artists":["Pink Floyd"],"Album":"Meddle","IndexNumber":1,"RunTimeTicks":20000000,"Container":"wav"}],"TotalRecordCount":1}"#;
 
     const STARRED: &str = r#"{"subsonic-response":{"status":"ok","version":"1.16.1"}}"#;
 
@@ -618,8 +631,21 @@ mod tests {
             }
         }
         asked_log.lock().push(asked.clone());
-        let (kind, body): (&str, Vec<u8>) = if asked.contains("/star") || asked.contains("/unstar")
-        {
+        let (kind, body): (&str, Vec<u8>) = if asked.contains("/Users/AuthenticateByName") {
+            ("application/json", JELLYFIN_SIGNED_IN.into())
+        } else if asked.contains("/Artists/AlbumArtists") {
+            ("application/json", JELLYFIN_ARTISTS.into())
+        } else if asked.contains("/Items/jar-1") {
+            ("application/json", JELLYFIN_ARTIST.into())
+        } else if asked.contains("/Items/jal-1") {
+            ("application/json", JELLYFIN_ALBUM.into())
+        } else if asked.contains("IncludeItemTypes=MusicAlbum") {
+            ("application/json", JELLYFIN_ALBUMS.into())
+        } else if asked.contains("IncludeItemTypes=Audio") {
+            ("application/json", JELLYFIN_SONGS.into())
+        } else if asked.contains("/Audio/jso-1/stream") {
+            ("audio/wav", silence())
+        } else if asked.contains("/star") || asked.contains("/unstar") {
             ("application/json", STARRED.into())
         } else if asked.contains("/getArtists") {
             ("application/json", ARTISTS.into())
@@ -748,6 +774,44 @@ mod tests {
         assert_eq!(found.songs[0].title, "A Pillow of Winds");
         assert_eq!(picture, PICTURE);
         assert_eq!(expanded.len(), 2);
+    }
+
+    #[test]
+    fn a_jellyfin_server_is_browsed_and_its_song_is_queued_and_played_and_is_never_asked_for_a_want()
+     {
+        let harness = online();
+        harness
+            .player
+            .serve_from(vec![of(MusicProvider::Jellyfin, fake())]);
+
+        let services = harness.player.served_services();
+        let artists = harness
+            .player
+            .served_first_page("jellyfin".to_owned())
+            .expect("the artists")
+            .artists;
+        let albums = harness
+            .player
+            .served_albums(artists[0].uri.clone())
+            .expect("the albums");
+        let songs = harness
+            .player
+            .served_songs(albums[0].uri.clone())
+            .expect("the songs");
+        let loaded = harness
+            .player
+            .load_served(vec![songs[0].uri.clone()], 0, false);
+
+        assert_eq!(
+            (services[0].scheme.as_str(), services[0].title.as_str()),
+            ("jellyfin", "Jellyfin")
+        );
+        assert_eq!(artists[0].uri, "jellyfin:artist/jar-1");
+        assert_eq!(albums[0].uri, "jellyfin:album/jal-1");
+        assert_eq!(songs[0].uri, "jellyfin:track/jso-1");
+        assert_eq!(songs[0].duration_ms, Some(2000));
+        assert_eq!(songs[0].format.as_deref(), Some("wav"));
+        loaded.expect("a paused load");
     }
 
     #[test]

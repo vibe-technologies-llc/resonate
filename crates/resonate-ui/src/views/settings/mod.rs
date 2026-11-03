@@ -32,7 +32,7 @@ pub(crate) use crate::views::settings::{
     equaliser::{Fitting, marked_at},
     find::{Category, Group},
     lastfm::{LastfmAccount, LastfmSigning},
-    subsonic::Account,
+    subsonic::{Account, Service},
     sync::{SYNC_CODE_PLACEHOLDER, SYNC_DEVICE_PLACEHOLDER, SYNC_SERVER_PLACEHOLDER},
     tidal::{SigningIn, TidalAccount},
 };
@@ -445,7 +445,8 @@ impl RootView {
             Group::Organising => self.organising_group(cx),
             Group::Vault => self.vault_group(cx),
             Group::Inbox => self.inbox_group(cx),
-            Group::Subsonic => self.subsonic_group(cx),
+            Group::Subsonic => self.account_group(Service::Subsonic, cx),
+            Group::Jellyfin => self.account_group(Service::Jellyfin, cx),
             Group::ResonateKey => self.resonate_key_group(cx),
             Group::Tidal => self.tidal_group(cx),
             Group::Served => self.served_group(cx),
@@ -626,7 +627,8 @@ impl RootView {
                 self.clear_the_music_folder(cx);
                 self.file_what_is_dropped(defaults::FILE_DROPPED, cx);
             }
-            Group::Subsonic => self.forget_the_account(cx),
+            Group::Subsonic => self.forget_the_account(Service::Subsonic, cx),
+            Group::Jellyfin => self.forget_the_account(Service::Jellyfin, cx),
             Group::ResonateKey => self.forget_the_resonate_key(cx),
             Group::Tidal => self.forget_the_tidal_account(cx),
             Group::RoomCorrection => {
@@ -722,6 +724,10 @@ impl RootView {
             .subsonic
             .iter()
             .any(|field| !field.read(cx).text().trim().is_empty());
+        let jellyfin_given = self
+            .jellyfin
+            .iter()
+            .any(|field| !field.read(cx).text().trim().is_empty());
         let tidal_given = TidalAccount::ALL
             .into_iter()
             .filter(|account| account.is_tidals())
@@ -777,6 +783,7 @@ impl RootView {
             music_folder_given,
             file_dropped,
             subsonic_given,
+            jellyfin_given,
             tidal_given,
             resonate_key_given,
             convolving,

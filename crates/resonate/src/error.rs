@@ -94,6 +94,9 @@ pub enum ConfigKey {
     Subsonic,
     SubsonicUser,
     SubsonicPassword,
+    Jellyfin,
+    JellyfinUser,
+    JellyfinPassword,
     TidalClientId,
     TidalClientSecret,
     TidalRefreshToken,
@@ -178,7 +181,7 @@ impl fmt::Display for Named {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 114] = [
+    pub const ALL: [Self; 117] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -263,6 +266,9 @@ impl ConfigKey {
         Self::Subsonic,
         Self::SubsonicUser,
         Self::SubsonicPassword,
+        Self::Jellyfin,
+        Self::JellyfinUser,
+        Self::JellyfinPassword,
         Self::TidalClientId,
         Self::TidalClientSecret,
         Self::TidalRefreshToken,
@@ -381,6 +387,9 @@ impl ConfigKey {
             Self::Subsonic => "subsonic",
             Self::SubsonicUser => "subsonic-user",
             Self::SubsonicPassword => "subsonic-password",
+            Self::Jellyfin => "jellyfin",
+            Self::JellyfinUser => "jellyfin-user",
+            Self::JellyfinPassword => "jellyfin-password",
             Self::TidalClientId => "tidal-client-id",
             Self::TidalClientSecret => "tidal-client-secret",
             Self::TidalRefreshToken => "tidal-refresh-token",
@@ -691,7 +700,7 @@ pub enum Error {
 
     #[cfg(feature = "online")]
     #[error(
-        "no service is set in the settings to play in place (subsonic, tidal-refresh-token, \
+        "no service is set in the settings to play in place (subsonic, jellyfin, tidal-refresh-token, \
          hifi-secret, hifi-api, monochrome or hosted-services)"
     )]
     NoServedService,

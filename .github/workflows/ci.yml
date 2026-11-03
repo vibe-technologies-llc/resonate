@@ -157,12 +157,14 @@ jobs:
           refuse resonate-providers gpui
           refuse resonate-fetch gpui
           refuse resonate-inbox gpui
+          refuse resonate-jellyfin gpui
           refuse resonate-subsonic gpui
           refuse resonate-tidal gpui
           refuse resonate-monochrome gpui
           only resonate-providers resonate-core
           only resonate-fetch resonate-core resonate-providers
           only resonate-inbox resonate-core resonate-providers
+          only resonate-jellyfin resonate-core resonate-providers resonate-fetch
           only resonate-subsonic resonate-core resonate-providers resonate-fetch
           only resonate-tidal resonate-core resonate-providers resonate-fetch
           only resonate-monochrome resonate-core resonate-providers resonate-fetch
