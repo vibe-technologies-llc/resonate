@@ -7,6 +7,7 @@ mod plot;
 mod report;
 mod signal;
 mod summary;
+mod tuning;
 
 use std::{
     env,
@@ -44,6 +45,7 @@ struct Arguments {
     plots: Option<PathBuf>,
     timed: bool,
     measured: bool,
+    tuning: bool,
 }
 
 impl Arguments {
@@ -52,6 +54,7 @@ impl Arguments {
             plots: None,
             timed: true,
             measured: true,
+            tuning: false,
         };
         let mut given = env::args_os().skip(1);
         while let Some(argument) = given.next() {
@@ -66,6 +69,7 @@ impl Arguments {
                 }
                 Some("--no-timing") => arguments.timed = false,
                 Some("--timing-only") => arguments.measured = false,
+                Some("--fast-and-balanced") => arguments.tuning = true,
                 _ => return Err(Error::UnknownArgument(argument)),
             }
         }
@@ -73,10 +77,10 @@ impl Arguments {
     }
 }
 
-fn timed() -> Result<Vec<(Contender, Pair, Cost)>> {
+fn timed(contenders: &[Contender]) -> Result<Vec<(Contender, Pair, Cost)>> {
     let mut costs = Vec::new();
     for pair in PAIRS {
-        for contender in CONTENDERS {
+        for &contender in contenders {
             let spent = cost(contender, pair)?;
             eprintln!(
                 "timed {contender} at {pair}: {:.3} % of a core",
@@ -88,10 +92,10 @@ fn timed() -> Result<Vec<(Contender, Pair, Cost)>> {
     Ok(costs)
 }
 
-fn measured_everywhere() -> Result<Vec<Measured>> {
+fn measured_everywhere(contenders: &[Contender]) -> Result<Vec<Measured>> {
     let jobs: Vec<(Pair, Contender)> = PAIRS
         .iter()
-        .flat_map(|&pair| CONTENDERS.iter().map(move |&contender| (pair, contender)))
+        .flat_map(|&pair| contenders.iter().map(move |&contender| (pair, contender)))
         .collect();
     let next = AtomicUsize::new(0);
     let workers = thread::available_parallelism().map_or(1, usize::from);
@@ -126,16 +130,30 @@ fn measured_everywhere() -> Result<Vec<Measured>> {
 
 fn run() -> Result<()> {
     let arguments = Arguments::parsed()?;
+    let contenders = if arguments.tuning {
+        tuning::contenders(&PAIRS)?
+    } else {
+        CONTENDERS.to_vec()
+    };
 
-    if arguments.timed {
-        let costs = timed()?;
-        print!("{}", report::costs(&PAIRS, &BUILDS_SHOWN, &costs));
-    }
+    let costs = if arguments.timed {
+        let costs = timed(&contenders)?;
+        print!(
+            "{}",
+            report::costs(&contenders, &PAIRS, &BUILDS_SHOWN, &costs)
+        );
+        costs
+    } else {
+        Vec::new()
+    };
 
     if arguments.measured {
-        let measured = measured_everywhere()?;
+        let measured = measured_everywhere(&contenders)?;
+        if arguments.tuning {
+            print!("{}", tuning::verdicts(&contenders, &measured, &costs));
+        }
         for pair in PAIRS {
-            print!("{}", report::quality(pair, &measured));
+            print!("{}", report::quality(&contenders, pair, &measured));
             if let Some(directory) = &arguments.plots {
                 plot::plotted(directory, pair, &measured)?;
             }

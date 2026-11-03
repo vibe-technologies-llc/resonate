@@ -1,7 +1,7 @@
 use std::fmt;
 
 use resonate_core::{ChannelLayout, SampleFormat, SampleRate, StreamSpec};
-use resonate_dsp::{FilterPhase, Processor, Quality, Resampler, ResamplerConfig};
+use resonate_dsp::{FilterPhase, Processor, Quality, Resampler, ResamplerConfig, SincParams};
 use soxr::{
     Soxr,
     format::{IoFormat, Mono, Stereo},
@@ -82,11 +82,15 @@ impl SoxrPhase {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Contender {
     Ours {
         quality: Quality,
         phase: FilterPhase,
+    },
+    Tuned {
+        quality: Quality,
+        params: SincParams,
     },
     Soxr {
         recipe: QualityRecipe,
@@ -97,20 +101,22 @@ pub enum Contender {
 
 impl Contender {
     pub const fn is_ours(self) -> bool {
-        matches!(self, Self::Ours { .. })
+        matches!(self, Self::Ours { .. } | Self::Tuned { .. })
     }
 }
 
 impl fmt::Display for Contender {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
+            Self::Tuned { quality, params } => write!(
+                f,
+                "Resonate {}, {} taps a side, cutoff {:.4}",
+                level(quality),
+                params.half_taps,
+                params.cutoff
+            ),
             Self::Ours { quality, phase } => {
-                let quality = match quality {
-                    Quality::Fast => "Fast",
-                    Quality::Balanced => "Balanced",
-                    Quality::High => "High",
-                    Quality::VeryHigh => "Very high",
-                };
+                let quality = level(quality);
                 let phase = match phase {
                     FilterPhase::Linear => "",
                     FilterPhase::Intermediate => ", intermediate",
@@ -142,6 +148,15 @@ impl fmt::Display for Contender {
                 write!(f, "SoXR {recipe}{steep}{phase}")
             }
         }
+    }
+}
+
+const fn level(quality: Quality) -> &'static str {
+    match quality {
+        Quality::Fast => "Fast",
+        Quality::Balanced => "Balanced",
+        Quality::High => "High",
+        Quality::VeryHigh => "Very high",
     }
 }
 
@@ -243,18 +258,22 @@ impl OurStream {
     fn open(
         quality: Quality,
         phase: FilterPhase,
+        params: SincParams,
         pair: Pair,
         channels: Channels,
         block: usize,
     ) -> std::result::Result<Self, resonate_dsp::Error> {
-        let mut resampler = Resampler::new(ResamplerConfig {
-            input_rate: pair.from,
-            output_rate: pair.to,
-            channels: channels.layout(),
-            quality,
-            phase,
-            max_frames_in: block,
-        })?;
+        let mut resampler = Resampler::with_params(
+            ResamplerConfig {
+                input_rate: pair.from,
+                output_rate: pair.to,
+                channels: channels.layout(),
+                quality,
+                phase,
+                max_frames_in: block,
+            },
+            params,
+        )?;
         let spec = StreamSpec::new(pair.from, channels.layout(), SampleFormat::F32);
         let most_out = resampler.prepare(spec, block)?;
         let room = most_out.max(resampler.max_flush_frames()) * channels.count();
@@ -376,7 +395,16 @@ impl Stream {
     ) -> Result<Self> {
         let engine = match contender {
             Contender::Ours { quality, phase } => {
-                OurStream::open(quality, phase, pair, channels, block)
+                OurStream::open(quality, phase, quality.params(), pair, channels, block)
+                    .map(|stream| Engine::Ours(Box::new(stream)))
+                    .map_err(|source| Error::Ours {
+                        contender,
+                        pair,
+                        source,
+                    })?
+            }
+            Contender::Tuned { quality, params } => {
+                OurStream::open(quality, FilterPhase::Linear, params, pair, channels, block)
                     .map(|stream| Engine::Ours(Box::new(stream)))
                     .map_err(|source| Error::Ours {
                         contender,

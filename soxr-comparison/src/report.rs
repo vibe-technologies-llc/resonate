@@ -1,7 +1,7 @@
 use std::{fmt::Write as _, time::Duration};
 
 use crate::{
-    contender::{CONTENDERS, Contender, Pair},
+    contender::{Contender, Pair},
     cost::Cost,
     summary::Measured,
 };
@@ -79,8 +79,8 @@ fn named(contender: Contender) -> String {
     }
 }
 
-pub fn quality(pair: Pair, measured: &[Measured]) -> String {
-    let rows: Vec<&Measured> = CONTENDERS
+pub fn quality(contenders: &[Contender], pair: Pair, measured: &[Measured]) -> String {
+    let rows: Vec<&Measured> = contenders
         .iter()
         .filter_map(|contender| {
             measured
@@ -151,7 +151,12 @@ pub fn quality(pair: Pair, measured: &[Measured]) -> String {
     text
 }
 
-pub fn costs(pairs: &[Pair], built: &[Pair], costs: &[(Contender, Pair, Cost)]) -> String {
+pub fn costs(
+    contenders: &[Contender],
+    pairs: &[Pair],
+    built: &[Pair],
+    costs: &[(Contender, Pair, Cost)],
+) -> String {
     let mut text =
         String::from("#### Throughput, percent of one core per second of stereo audio\n\n");
     let titles: Vec<String> = pairs.iter().map(ToString::to_string).collect();
@@ -166,7 +171,7 @@ pub fn costs(pairs: &[Pair], built: &[Pair], costs: &[(Contender, Pair, Cost)]) 
             .map(|(_, _, cost)| *cost)
     };
 
-    for contender in CONTENDERS {
+    for &contender in contenders {
         let mut cells = vec![named(contender)];
         cells.extend(pairs.iter().map(|&pair| {
             found(contender, pair).map_or_else(
@@ -186,7 +191,7 @@ pub fn costs(pairs: &[Pair], built: &[Pair], costs: &[(Contender, Pair, Cost)]) 
     text.push_str(&header(
         &columns.iter().map(String::as_str).collect::<Vec<_>>(),
     ));
-    for contender in CONTENDERS {
+    for &contender in contenders {
         let mut cells = vec![named(contender)];
         for &pair in built {
             match found(contender, pair) {
