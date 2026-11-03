@@ -14,8 +14,10 @@ pub enum FilterPhase {
 }
 
 const SAMPLED_PER_TAP: usize = 64;
-const CEPSTRUM_PADDING: usize = 16;
-const QUIETEST_MAGNITUDE: f64 = 1e-30;
+const CEPSTRUM_PADDING: usize = 32;
+const KAISER_BETA_PER_DECIBEL: f64 = 0.1102;
+const KAISER_DECIBELS_AT_NO_BETA: f64 = 8.7;
+const LOG_FLOOR_UNDER_THE_STOPBAND: f64 = 0.01;
 const INTERMEDIATE_LEADS_BY_HALF_WIDTHS: f64 = 1.25;
 const INTERMEDIATE_TRAILS_BY_HALF_WIDTHS: f64 = 2.0;
 const INTERMEDIATE_SHARE_OF_LINEAR: f64 = 0.5;
@@ -110,6 +112,12 @@ fn stencil_denominators() -> [f64; STENCIL] {
     })
 }
 
+fn stopband(params: SincParams) -> f64 {
+    let decibels =
+        f64::from(params.kaiser_beta) / KAISER_BETA_PER_DECIBEL + KAISER_DECIBELS_AT_NO_BETA;
+    10_f64.powf(-decibels / 20.0)
+}
+
 fn design(params: SincParams, phase: FilterPhase) -> Prototype {
     let windowed = WindowedSinc::new(params);
     let reach = usize::from(params.half_taps) * SAMPLED_PER_TAP;
@@ -129,8 +137,9 @@ fn design(params: SincParams, phase: FilterPhase) -> Prototype {
     let unscaled = (size as f64).recip();
 
     forward.process(&mut spectrum);
+    let floor = spectrum[0].norm() * stopband(params) * LOG_FLOOR_UNDER_THE_STOPBAND;
     for bin in &mut spectrum {
-        *bin = Complex::new(bin.norm().max(QUIETEST_MAGNITUDE).ln(), 0.0);
+        *bin = Complex::new(bin.norm().max(floor).ln(), 0.0);
     }
     inverse.process(&mut spectrum);
     for (index, bin) in spectrum.iter_mut().enumerate() {
@@ -199,8 +208,6 @@ mod tests {
     use super::*;
     use crate::Quality;
 
-    const PASSBAND_FLAT_WITHIN_DB: f64 = 1e-4;
-    const VERY_HIGH_REJECTS_DB: f64 = -180.0;
     const STOPBAND_STEPS: u32 = 3_000;
     const EARLIEST_NYQUISTS: f64 = 1.0;
     const WIDEST_NYQUISTS: f64 = 3.0;
@@ -262,30 +269,84 @@ mod tests {
     }
 
     #[test]
-    fn a_shaped_very_high_filter_keeps_the_stopband_and_passband_the_linear_one_promises() {
-        for phase in [FilterPhase::Minimum, FilterPhase::Intermediate] {
-            let prototype =
-                designed(Quality::VeryHigh.params(), phase).expect("a shaped phase is designed");
-            let at = |nyquists: f64| decibels(response(&prototype, nyquists));
+    fn a_shaped_filter_keeps_the_stopband_and_passband_the_linear_one_promises() {
+        let promised = [
+            (Quality::High, 0.90, 2e-6, -130.0),
+            (Quality::VeryHigh, 0.90, 2e-6, -180.0),
+        ];
+        for (quality, flat_until, flat_within_db, rejects_db) in promised {
+            for phase in [FilterPhase::Minimum, FilterPhase::Intermediate] {
+                let prototype =
+                    designed(quality.params(), phase).expect("a shaped phase is designed");
+                let at = |nyquists: f64| decibels(response(&prototype, nyquists));
 
-            let flattest = (0..=95)
-                .map(|step| at(f64::from(step) / 100.0).abs())
-                .fold(0.0, f64::max);
-            assert!(
-                flattest < PASSBAND_FLAT_WITHIN_DB,
-                "{phase:?} strays {flattest:e} dB inside 95 % of Nyquist"
-            );
+                let flattest = (0..=100)
+                    .map(|step| at(flat_until * f64::from(step) / 100.0).abs())
+                    .fold(0.0, f64::max);
+                assert!(
+                    flattest < flat_within_db,
+                    "{quality:?} {phase:?} strays {flattest:e} dB inside {flat_until} of Nyquist"
+                );
 
-            let loudest = (0..=STOPBAND_STEPS)
-                .map(|step| {
-                    let across = f64::from(step) / f64::from(STOPBAND_STEPS);
-                    at(EARLIEST_NYQUISTS + across * (WIDEST_NYQUISTS - EARLIEST_NYQUISTS))
+                let loudest = (0..=STOPBAND_STEPS)
+                    .map(|step| {
+                        let across = f64::from(step) / f64::from(STOPBAND_STEPS);
+                        at(EARLIEST_NYQUISTS + across * (WIDEST_NYQUISTS - EARLIEST_NYQUISTS))
+                    })
+                    .fold(f64::NEG_INFINITY, f64::max);
+                assert!(
+                    loudest < rejects_db,
+                    "{quality:?} {phase:?} reaches {loudest:.1} dB at or past Nyquist"
+                );
+            }
+        }
+    }
+
+    fn stopband_energy_db(samples: &[f64]) -> f64 {
+        let size = (samples.len() * 4).next_power_of_two();
+        let mut spectrum = vec![Complex::new(0.0, 0.0); size];
+        for (bin, sample) in spectrum.iter_mut().zip(samples) {
+            bin.re = *sample;
+        }
+        FftPlanner::<f64>::new()
+            .plan_fft_forward(size)
+            .process(&mut spectrum);
+
+        let direct = spectrum[0].norm();
+        let bins_a_nyquist = size as f64 / (2.0 * SAMPLED_PER_TAP as f64);
+        let leaked: f64 = spectrum
+            .iter()
+            .take(size / 2)
+            .enumerate()
+            .filter(|(bin, _)| *bin as f64 >= bins_a_nyquist)
+            .map(|(_, level)| (level.norm() / direct).powi(2))
+            .sum();
+        10.0 * (leaked / bins_a_nyquist).log10()
+    }
+
+    #[test]
+    fn a_shaped_filter_leaks_hardly_more_into_the_stopband_than_the_linear_one() {
+        const LEAKS_MORE_BY_AT_MOST_DB: f64 = 3.0;
+
+        for quality in [Quality::High, Quality::VeryHigh] {
+            let params = quality.params();
+            let windowed = WindowedSinc::new(params);
+            let reach = usize::from(params.half_taps) * SAMPLED_PER_TAP;
+            let linear: Vec<f64> = (0..=2 * reach)
+                .map(|index| {
+                    windowed.at((index as f64 - reach as f64).abs() / SAMPLED_PER_TAP as f64)
                 })
-                .fold(f64::NEG_INFINITY, f64::max);
-            assert!(
-                loudest < VERY_HIGH_REJECTS_DB,
-                "{phase:?} reaches {loudest:.1} dB at or past Nyquist"
-            );
+                .collect();
+            let promised = stopband_energy_db(&linear);
+
+            for phase in [FilterPhase::Minimum, FilterPhase::Intermediate] {
+                let prototype = designed(params, phase).expect("a shaped phase is designed");
+                let leaked = stopband_energy_db(&prototype.samples);
+                assert!(
+                    leaked < promised + LEAKS_MORE_BY_AT_MOST_DB,
+                    "{quality:?} {phase:?} leaks {leaked:.1} dB against the linear {promised:.1} dB"
+                );
+            }
         }
     }
 

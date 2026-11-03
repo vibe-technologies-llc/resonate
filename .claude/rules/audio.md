@@ -1000,7 +1000,17 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   whole difference (printed on hover in the settings pane, hence `SincParams` re-exported by
   `resonate-engine`). **Phase is its own setting** (`FilterPhase` `Linear`/`Intermediate`/`Minimum`,
   SoX `-L -I -M`): `phase.rs` folds the quality's linear kernel through the real cepstrum to minimum
-  phase, designed once a run (`DESIGNED`, the design made outside its lock; a racing asker keeps the one held). **Reach is two numbers** (shaped kernels are asymmetric):
+  phase, designed once a run (`DESIGNED`, the design made outside its lock; a racing asker keeps the one held).
+  **The cepstrum's log magnitude is floored a hundredth under the Kaiser stopband**
+  (`LOG_FLOOR_UNDER_THE_STOPBAND`, the stopband read from β) **over a 32-fold padded FFT**: the
+  logarithm of the stopband's nulls aliased the cepstrum, and the truncated response strayed
+  6e-4 dB in High's passband; floored any higher, the flat floor sums over every polyphase image
+  and the stopband's energy rises (0.1 cost High 15 dB). `a_shaped_filter_keeps_the_stopband_and_passband_the_linear_one_promises`
+  (within 2e-6 dB to 0.9 of Nyquist) and `a_shaped_filter_leaks_hardly_more_into_the_stopband_than_the_linear_one`
+  (within 3 dB) hold both sides; `docs/RESAMPLING.md` measures it end to end against SoXR.
+  Intermediate's window (lead 1.25, trail 2 half-widths) is the whole of its response: trimmed to
+  the stopband's level its rejection falls, so it waits longer than linear (9.1 ms against 7.3 ms
+  at Very high, 44.1 kHz). **Reach is two numbers** (shaped kernels are asymmetric):
   `Reach { behind, ahead }`, history primed with `behind` zeros and flushed with `ahead` zeros; a
   track keeps its length whatever the phase.
 - **Kernel polyphase, read position exactly rational:** `whole` sample index + `phase` numerator over
