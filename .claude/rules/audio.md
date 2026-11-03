@@ -1024,6 +1024,11 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   channels instead of packing each one's lanes). More accumulators win nothing: the loop is bound by
   its loads (about 3.5 of 5 multiply-adds a cycle on Zen 4), so a long kernel needs fewer taps, not
   a faster dot product.
+- **Fast and Balanced are 19 and 47 taps a side, the fewest that start the stopband at Nyquist**
+  at their cutoff and β (nothing past Nyquist at any rate pair louder than 1 dB over the Kaiser
+  stopband; `soxr-comparison --fast-and-balanced` searches it). At 16 and 32 their transition
+  straddled Nyquist and −39 and −36 dB got through just above the band edge; narrowing the cutoff
+  instead cost 4 to 5 dB at 20 kHz, lengthening cost 5 % and 17 % more CPU.
 - **High and Very high run in two stages; Fast and Balanced in one** (`PREFILTERED_FROM_HALF_TAPS`,
   128). **Stage one, `prefilter.rs`**: the quality's kernel, unchanged, convolved by uniformly
   partitioned overlap-save at `R1`, twice the input rate unless the output is at most half of it

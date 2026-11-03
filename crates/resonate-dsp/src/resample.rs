@@ -102,13 +102,13 @@ impl Quality {
     pub const fn params(self) -> SincParams {
         match self {
             Self::Fast => SincParams {
-                half_taps: 16,
+                half_taps: 19,
                 phases: 128,
                 cutoff: 0.900,
                 kaiser_beta: 6.0,
             },
             Self::Balanced => SincParams {
-                half_taps: 32,
+                half_taps: 47,
                 phases: 512,
                 cutoff: 0.940,
                 kaiser_beta: 9.0,
