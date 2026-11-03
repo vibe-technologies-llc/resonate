@@ -13,6 +13,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Computer
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.PhoneIphone
+import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
@@ -72,6 +74,7 @@ import kotlinx.coroutines.withContext
 import org.resonate.android.MusicDocuments
 import org.resonate.android.MusicFolder
 import org.resonate.android.nativecore.DevicePlatform
+import org.resonate.android.nativecore.RemoteControl
 import org.resonate.android.nativecore.SyncConfig
 import org.resonate.android.nativecore.SyncStanding
 import org.resonate.android.nativecore.SyncStatus
@@ -115,6 +118,14 @@ class SyncViewModel(private val resonate: Resonate) : ViewModel() {
     fun choose(folder: MusicFolder) = features.chooseSyncFolder(folder)
 
     fun syncNow() = resonate.forceSync(viewModelScope)
+
+    val drivenBy = resonate
+
+    fun press(device: String, zone: UInt, control: RemoteControl) =
+        resonate.attempt(viewModelScope) { native ->
+            val answer = withContext(Dispatchers.IO) { native.syncControl(device, zone, control) }
+            DrivenWords.refusal(answer)?.let { resonate.library.notice(it) }
+        }
 
     fun forget(device: SyncedDevice) =
         resonate.attempt(viewModelScope) { native ->
@@ -165,6 +176,7 @@ fun SyncScreen() {
     var showCode by remember { mutableStateOf(false) }
     var asking by rememberSaveable { mutableStateOf<Asking?>(null) }
     var forgetting by rememberSaveable { mutableStateOf<String?>(null) }
+    var driving by rememberSaveable { mutableStateOf<String?>(null) }
     var joinCode by rememberSaveable { mutableStateOf("") }
     val copy = rememberCopy()
     LaunchedEffect(Unit) { model.refreshFolders() }
@@ -241,7 +253,20 @@ fun SyncScreen() {
             }
             devices.forEach { found ->
                 item(key = "device-${found.id}") {
-                    DeviceRow(found) { forgetting = found.id }
+                    DeviceRow(
+                        found,
+                        driven = driving == found.id,
+                        onDrive = { driving = if (driving == found.id) null else found.id },
+                    ) {
+                        forgetting = found.id
+                    }
+                }
+                if (driving == found.id && mayDrive(found)) {
+                    item(key = "driven-${found.id}") {
+                        DrivenDevice(model.drivenBy, found.id) { zone, control ->
+                            model.press(found.id, zone, control)
+                        }
+                    }
                 }
             }
             item(key = "pairing-header") { SectionHeader("Pairing") }
@@ -529,7 +554,12 @@ private fun StatusRow(
 }
 
 @Composable
-private fun DeviceRow(device: SyncedDevice, onForget: () -> Unit) {
+private fun DeviceRow(
+    device: SyncedDevice,
+    driven: Boolean,
+    onDrive: () -> Unit,
+    onForget: () -> Unit,
+) {
     val scheme = MaterialTheme.colorScheme
     val lit = device.thisDevice || device.online || device.nearby
     SettingRow(
@@ -551,7 +581,17 @@ private fun DeviceRow(device: SyncedDevice, onForget: () -> Unit) {
             }
         },
         trailing =
-            if (mayForget(device)) {
+            if (mayDrive(device)) {
+                {
+                    IconButton(onClick = onDrive) {
+                        Icon(
+                            if (driven) Icons.Rounded.Close else Icons.Rounded.PlayCircle,
+                            contentDescription =
+                                if (driven) "Stop driving ${device.name}" else "Drive ${device.name}",
+                        )
+                    }
+                }
+            } else if (mayForget(device)) {
                 {
                     IconButton(onClick = onForget) {
                         Icon(
@@ -564,3 +604,5 @@ private fun DeviceRow(device: SyncedDevice, onForget: () -> Unit) {
         modifier = Modifier.testTag("device"),
     )
 }
+
+private fun mayDrive(device: SyncedDevice): Boolean = !device.thisDevice && (device.online || device.nearby)

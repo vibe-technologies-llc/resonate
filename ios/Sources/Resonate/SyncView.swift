@@ -216,7 +216,7 @@ struct SyncDevices: View {
         let away = others.filter { !$0.online }
         Section {
             ForEach(devices.filter(\.thisDevice) + others, id: \.id) { known in
-                KnownDeviceRow(known: known)
+                KnownDeviceEntry(known: known)
                     .swipeActions(edge: .trailing) {
                         if !known.online, !known.thisDevice {
                             Button("Remove", systemImage: "trash", role: .destructive) {
@@ -260,6 +260,23 @@ struct SyncDevices: View {
             if !away.isEmpty {
                 Text("Swipe a device that's away to remove it. A removed device that syncs again comes back.")
             }
+        }
+    }
+}
+
+struct KnownDeviceEntry: View {
+    let known: SyncedDevice
+
+    var body: some View {
+        if !known.thisDevice, known.online || known.nearby {
+            NavigationLink {
+                DrivenDeviceView(device: known)
+            } label: {
+                KnownDeviceRow(known: known)
+            }
+            .accessibilityHint("Play, pause, skip and set the volume of what it plays")
+        } else {
+            KnownDeviceRow(known: known)
         }
     }
 }

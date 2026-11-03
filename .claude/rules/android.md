@@ -1387,6 +1387,8 @@ Playlist menus offer fetching their missing songs from each online device and ke
 here; the queue offers continuing what another device was playing, starting it through the Media3
 controller when that device was playing.
 
+**Another device is driven from its row** (*Drive*, `DrivenDevice.kt`; `sync.md`'s *One device drives another's zones*).
+
 Remaining desktop capabilities are open work in `docs/FEATURES.md`.
 
 ## Checks
