@@ -997,7 +997,7 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   rate) and before gain (volume is the last word, should attenuate a boost); the convolver is before
   it (both linear). An equaliser in force makes the plan `Converted`; a DoP-packed stream refuses it.
 - **Resampler levels: one filter design at four lengths; High is default.** `Quality::params` is the
-  whole difference (printed on hover in the settings pane, hence `SincParams` re-exported by
+  whole difference of the filter (printed on hover in the settings pane, hence `SincParams` re-exported by
   `resonate-engine`). **Phase is its own setting** (`FilterPhase` `Linear`/`Intermediate`/`Minimum`,
   SoX `-L -I -M`): `phase.rs` folds the quality's linear kernel through the real cepstrum to minimum
   phase, designed once a run (`DESIGNED`, the design made outside its lock; a racing asker keeps the one held).
@@ -1009,8 +1009,8 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   (within 2e-6 dB to 0.9 of Nyquist) and `a_shaped_filter_leaks_hardly_more_into_the_stopband_than_the_linear_one`
   (within 3 dB) hold both sides; `docs/RESAMPLING.md` measures it end to end against SoXR.
   Intermediate's window (lead 1.25, trail 2 half-widths) is the whole of its response: trimmed to
-  the stopband's level its rejection falls, so it waits longer than linear (9.1 ms against 7.3 ms
-  at Very high, 44.1 kHz). **Reach is two numbers** (shaped kernels are asymmetric):
+  the stopband's level its rejection falls, so it waits longer than linear (by 1.8 ms at Very
+  high, 44.1 kHz). **Reach is two numbers** (shaped kernels are asymmetric):
   `Reach { behind, ahead }`, history primed with `behind` zeros and flushed with `ahead` zeros; a
   track keeps its length whatever the phase.
 - **Kernel polyphase, read position exactly rational:** `whole` sample index + `phase` numerator over
@@ -1021,7 +1021,34 @@ Invariants from file to sink. Callback contract: `realtime.md`.
   every level, a rate no device offers uses `Kernel` (four-point Lagrange stencil). History is one f64
   plane per channel, `ACCUMULATORS` independent lanes, aligned to `VECTOR_BYTES` and zero-padded (no
   scalar tail); lanes pass through `lanes` before summing (LLVM's SLP vectoriser paired the two
-  channels instead of packing each one's lanes).
+  channels instead of packing each one's lanes). More accumulators win nothing: the loop is bound by
+  its loads (about 3.5 of 5 multiply-adds a cycle on Zen 4), so a long kernel needs fewer taps, not
+  a faster dot product.
+- **High and Very high run in two stages; Fast and Balanced in one** (`PREFILTERED_FROM_HALF_TAPS`,
+  128). **Stage one, `prefilter.rs`**: the quality's kernel, unchanged, convolved by uniformly
+  partitioned overlap-save at `R1`, twice the input rate unless the output is at most half of it
+  (then the input rate). Partitions of 256 samples, 512 from 176.4 kHz (`partition_at`, powers of
+  two since a 224 or 448 point FFT costs more than the 256 or 512 it saves); spectra held as split
+  real and imaginary planes so the complex multiply-accumulate vectorises; at twice the rate only
+  the gathered half is transformed and its spectrum unfolded (a zero-stuffed block's spectrum is
+  the compact one's repeated). Its output leaves one partition late, a constant delay, so
+  `latency_frames` stays exact ((partition + lead + interpolator's ahead) at `R1`). **The kernel is
+  convolved, continuously, with a guard** before it is sampled at `R1` (`guard_for`: Kaiser, flat to
+  the lower rate's Nyquist, stopping at `R1`'s): sampled bare at exactly twice the input rate, the
+  window's far sidelobes folded onto the tone and its first image, and High lost 6 dB under 20 kHz
+  and 3 dB of SNR; the sum is a 16-point-a-tap grid (`GUARD_POINTS_PER_TAP`) through one FFT, the
+  trail taken to its ceiling, each zero-stuffed branch divided by its own sum. **Stage two** is the
+  polyphase engine above with `interpolator_for(params)`: cutoff at `R1`'s Nyquist, passing half of
+  it and stopping from one and a half, and always linear phase (a minimum-phase interpolator bends
+  the passband's phase and broadens a minimum-phase peak). Guard and interpolator reject
+  `INTERPOLATOR_UNDER_THE_STOPBAND_DB` (60) under the quality's Kaiser stopband, a thousandth of its
+  own ripple; at 45 the guard's ripple showed in High's. Where every output lands on an `R1` sample
+  (one phase) it is picked, not summed. Stage one shifts the chain's latency by a partition and a
+  little (+2.9 ms at 192 kHz, +3.1 to +3.5 ms at 44.1 and 48 kHz); a track keeps its length (the
+  flush drives stage one with silence until exactly the frames the single stage would emit), and
+  the oracle (`every_frame_is_the_exact_windowed_sinc_normalised_at_its_instant`) is two-stage
+  there: a direct guarded convolution, then the interpolator instant by instant, within 1e-12.
+  `docs/RESAMPLING.md` has what it cost and bought against SoXR.
 - **Dither: flat or shaped path, f64; the plan's curve picks.** `Dither::prepare` resolves
   `NoiseShaping::at` the output rate once; `None` requantises with no error history and allocates
   none. Worked in target-grid steps in f64 (f32 rounded the noise near full scale). Output clamps to

@@ -1,11 +1,13 @@
 use std::{array, f64::consts::PI, num::NonZeroU32, sync::Arc};
 
 use parking_lot::Mutex;
+use realfft::{RealFftPlanner, num_complex::Complex};
 use resonate_core::{ChannelLayout, Ratio, SampleRate, StreamSpec};
 
 use crate::{
     Error, FilterPhase, ProcessCount, Processor, RatioLimits, Result,
     phase::{Prototype, designed},
+    prefilter::{Prefilter, Spectra, partition_at},
 };
 
 const MAX_HALF_TAPS: u16 = 1_024;
@@ -24,6 +26,54 @@ const _: () =
 const TABULATED_WEIGHT_BYTES_AT_MOST: usize = 16 << 20;
 const KEPT_TABLE_BYTES_AT_MOST: usize = 4 << 20;
 const LAGRANGE_NODES: usize = 4;
+const PREFILTERED_FROM_HALF_TAPS: u16 = 128;
+const OVERSAMPLED: usize = 2;
+const INTERPOLATOR_PHASES: u32 = 1_024;
+const INTERPOLATOR_CUTOFF: f32 = 1.0;
+const INTERPOLATOR_TRANSITION_CYCLES: f64 = 0.5;
+const INTERPOLATOR_UNDER_THE_STOPBAND_DB: f64 = 60.0;
+const KAISER_BETA_PER_DECIBEL: f64 = 0.1102;
+const KAISER_DECIBELS_AT_NO_BETA: f64 = 8.7;
+const KAISER_LENGTH_DECIBELS: f64 = 7.95;
+const KAISER_LENGTH_PER_DECIBEL: f64 = 14.36;
+
+const GUARD_STOPS_AT_NYQUISTS: f64 = 1.0;
+const GUARD_POINTS_PER_TAP: usize = 16;
+
+fn under_the_stopband(params: SincParams) -> f64 {
+    f64::from(params.kaiser_beta) / KAISER_BETA_PER_DECIBEL
+        + KAISER_DECIBELS_AT_NO_BETA
+        + INTERPOLATOR_UNDER_THE_STOPBAND_DB
+}
+
+fn kaiser_rejecting(rejected_db: f64, transition_cycles: f64, cutoff: f64) -> SincParams {
+    let taps = ((rejected_db - KAISER_LENGTH_DECIBELS)
+        / (KAISER_LENGTH_PER_DECIBEL * transition_cycles))
+        .ceil()
+        + 1.0;
+    SincParams {
+        half_taps: (taps / 2.0).ceil() as u16,
+        phases: INTERPOLATOR_PHASES,
+        cutoff: cutoff as f32,
+        kaiser_beta: (KAISER_BETA_PER_DECIBEL * (rejected_db - KAISER_DECIBELS_AT_NO_BETA)) as f32,
+    }
+}
+
+fn interpolator_for(params: SincParams) -> SincParams {
+    kaiser_rejecting(
+        under_the_stopband(params),
+        INTERPOLATOR_TRANSITION_CYCLES,
+        f64::from(INTERPOLATOR_CUTOFF),
+    )
+}
+
+fn guard_for(params: SincParams, passes_to_nyquists: f64) -> SincParams {
+    kaiser_rejecting(
+        under_the_stopband(params),
+        (GUARD_STOPS_AT_NYQUISTS - passes_to_nyquists) / 2.0,
+        (GUARD_STOPS_AT_NYQUISTS + passes_to_nyquists) / 2.0,
+    )
+}
 
 type Lanes = [f64; ACCUMULATORS];
 
@@ -95,6 +145,14 @@ pub struct ResamplerConfig {
     pub quality: Quality,
     pub phase: FilterPhase,
     pub max_frames_in: usize,
+}
+
+const fn greatest_common_divisor(a: u64, b: u64) -> u64 {
+    if b == 0 {
+        a
+    } else {
+        greatest_common_divisor(b, a % b)
+    }
 }
 
 fn bessel_i0(x: f64) -> f64 {
@@ -285,6 +343,7 @@ struct TableFor {
 }
 
 static LAST_TABULATED: Mutex<Option<(TableFor, Arc<Tabulated>)>> = Mutex::new(None);
+static LAST_PREFILTERED: Mutex<Option<(TableFor, Arc<Spectra>)>> = Mutex::new(None);
 
 impl Tabulated {
     fn kept_for(wanted: TableFor, build: impl FnOnce() -> Self) -> Arc<Self> {
@@ -466,6 +525,161 @@ enum Taps {
     Interpolated(Kernel),
 }
 
+struct Stage {
+    prefilter: Prefilter,
+    up: usize,
+    lead: usize,
+    preroll: usize,
+    skipping: usize,
+    taken: usize,
+    appended: usize,
+    wanted: Option<usize>,
+}
+
+impl Stage {
+    fn new(config: ResamplerConfig, params: SincParams, scale: f64, preroll: usize) -> Self {
+        let up = if 2 * u64::from(config.output_rate.hz()) <= u64::from(config.input_rate.hz()) {
+            1
+        } else {
+            OVERSAMPLED
+        };
+        let shape = Shape::of(params, config.phase);
+        let stretch = up as f64 / scale;
+        let lead = (shape.lead() * stretch).ceil() as usize;
+        let trail = (shape.trail() * stretch).ceil() as usize;
+        let oversampled = u64::from(config.input_rate.hz()) * up as u64;
+        let lower = config.input_rate.hz().min(config.output_rate.hz());
+        let guard = guard_for(params, f64::from(lower) / oversampled as f64);
+        let guarding = usize::from(guard.half_taps);
+        let partition = partition_at(oversampled);
+        let spectra = Spectra::kept_for(
+            &LAST_PREFILTERED,
+            TableFor {
+                params,
+                phase: config.phase,
+                input_rate: config.input_rate,
+                output_rate: config.output_rate,
+            },
+            partition,
+            || prefiltering_kernel(&shape, [lead, trail], up, scale, guard),
+        );
+        let channels = config.channels.count().get() as usize;
+        let lead = lead + guarding;
+        let delay = partition + lead;
+
+        Self {
+            prefilter: Prefilter::new(spectra, channels, up),
+            up,
+            lead,
+            preroll,
+            skipping: delay - preroll.min(delay),
+            taken: 0,
+            appended: 0,
+            wanted: None,
+        }
+    }
+
+    fn reset(&mut self) {
+        self.prefilter.reset();
+        self.skipping = self.delay() - self.preroll.min(self.delay());
+        self.taken = 0;
+        self.appended = 0;
+        self.wanted = None;
+    }
+
+    fn delay(&self) -> usize {
+        self.prefilter.partition() + self.lead
+    }
+
+    fn release(&mut self, samples: usize, planes: &mut [f64], stride: usize, filled: &mut usize) {
+        let skipped = self.skipping.min(samples);
+        self.skipping -= skipped;
+        let left = self
+            .wanted
+            .map_or(usize::MAX, |wanted| wanted.saturating_sub(self.appended));
+        let kept = (samples - skipped).min(left);
+        if kept > 0 {
+            for (channel, plane) in planes.chunks_exact_mut(stride).enumerate() {
+                let ready = self.prefilter.ready(channel, skipped..skipped + kept);
+                if let Some(slots) = plane.get_mut(*filled..*filled + ready.len()) {
+                    slots.copy_from_slice(ready);
+                }
+            }
+        }
+        *filled += kept;
+        self.appended += kept;
+        self.prefilter.advance(samples);
+    }
+}
+
+fn convolved(first: &[f64], second: &[f64]) -> Vec<f64> {
+    let length = first.len() + second.len() - 1;
+    let points = length.next_power_of_two();
+    let mut planner = RealFftPlanner::<f64>::new();
+    let forward = planner.plan_fft_forward(points);
+    let inverse = planner.plan_fft_inverse(points);
+    let mut spectra = [first, second].map(|taps| {
+        let mut time = vec![0.0; points];
+        time.get_mut(..taps.len())
+            .unwrap_or_default()
+            .copy_from_slice(taps);
+        let mut spectrum = forward.make_output_vec();
+        if forward.process(&mut time, &mut spectrum).is_err() {
+            spectrum.fill(Complex::new(0.0, 0.0));
+        }
+        spectrum
+    });
+    let [product, other] = &mut spectra;
+    let unscaled = (points as f64).recip();
+    for (bin, by) in product.iter_mut().zip(other.iter()) {
+        *bin *= by * unscaled;
+    }
+    if let Some(first) = product.first_mut() {
+        first.im = 0.0;
+    }
+    if let Some(last) = product.last_mut() {
+        last.im = 0.0;
+    }
+    let mut time = inverse.make_output_vec();
+    if inverse.process(product, &mut time).is_err() {
+        time.fill(0.0);
+    }
+    time.truncate(length);
+    time
+}
+
+fn prefiltering_kernel(
+    shape: &Shape,
+    [lead, trail]: [usize; 2],
+    up: usize,
+    scale: f64,
+    guard: SincParams,
+) -> Vec<f64> {
+    let fine = GUARD_POINTS_PER_TAP;
+    let points = fine as f64;
+    let sharp: Vec<f64> = (0..=(lead + trail) * fine)
+        .map(|point| shape.at((point as f64 / points - lead as f64) / up as f64 * scale))
+        .collect();
+    let guarding = usize::from(guard.half_taps);
+    let guard = WindowedSinc::new(guard);
+    let smooth: Vec<f64> = (0..=2 * guarding * fine)
+        .map(|point| guard.at((point as f64 / points - guarding as f64).abs()) / points)
+        .collect();
+    let mut taps: Vec<f64> = convolved(&sharp, &smooth)
+        .into_iter()
+        .step_by(fine)
+        .collect();
+    for branch in 0..up {
+        let gain: f64 = taps.iter().skip(branch).step_by(up).sum();
+        if gain.is_normal() {
+            for tap in taps.iter_mut().skip(branch).step_by(up) {
+                *tap /= gain;
+            }
+        }
+    }
+    taps
+}
+
 pub struct Resampler {
     config: ResamplerConfig,
     taps: Taps,
@@ -481,6 +695,7 @@ pub struct Resampler {
     phases: u32,
     whole_step: usize,
     phase_step: u32,
+    stage: Option<Stage>,
 }
 
 impl Resampler {
@@ -513,24 +728,40 @@ impl Resampler {
         }
 
         let scale = ratio.min(1.0);
-        let shape = Shape::of(params, config.phase);
-        let reach = Reach::of(&shape, scale);
+        let staged = params.half_taps >= PREFILTERED_FROM_HALF_TAPS;
+        let (interpolator, interpolated_at, interpolated_phase) = if staged {
+            (interpolator_for(params), 1.0, FilterPhase::Linear)
+        } else {
+            (params, scale, config.phase)
+        };
+        let shape = Shape::of(interpolator, interpolated_phase);
+        let reach = Reach::of(&shape, interpolated_at);
+        let stage = staged.then(|| Stage::new(config, params, scale, reach.behind));
+        let up = stage.as_ref().map_or(1, |stage| stage.up);
         let channels = config.channels.count().get() as usize;
         let cycle = config.input_rate.ratio_to(config.output_rate);
-        let phases = cycle.numer.get();
+        let advanced = u64::from(cycle.denom.get()) * up as u64;
+        let common = greatest_common_divisor(u64::from(cycle.numer.get()), advanced);
+        let phases = (u64::from(cycle.numer.get()) / common) as u32;
+        let advance = (advanced / common) as u32;
         let tabulated = Tabulated::fits(phases, reach);
         let taps = if tabulated {
             Taps::Tabulated(Tabulated::kept_for(
                 TableFor {
-                    params,
-                    phase: config.phase,
+                    params: interpolator,
+                    phase: interpolated_phase,
                     input_rate: config.input_rate,
                     output_rate: config.output_rate,
                 },
-                || Tabulated::new(&shape, scale, reach, phases),
+                || Tabulated::new(&shape, interpolated_at, reach, phases),
             ))
         } else {
-            Taps::Interpolated(Kernel::new(&shape, params.phases, scale, reach))
+            Taps::Interpolated(Kernel::new(
+                &shape,
+                interpolator.phases,
+                interpolated_at,
+                reach,
+            ))
         };
         let tapering = if tabulated { 0 } else { padded_row(reach) };
 
@@ -540,16 +771,100 @@ impl Resampler {
             channels,
             ratio,
             reach,
-            history: History::new(channels, config.max_frames_in + reach.span() + 2),
+            history: History::new(channels, up * config.max_frames_in + reach.span() + 2),
             lanes: Aligned::zeroed(channels * ACCUMULATORS),
             weights: vec![0.0; tapering],
-            filled: reach.behind,
+            filled: if staged { 0 } else { reach.behind },
             whole: reach.behind,
             phase: 0,
             phases,
-            whole_step: (cycle.denom.get() / phases) as usize,
-            phase_step: cycle.denom.get() % phases,
+            whole_step: (advance / phases) as usize,
+            phase_step: advance % phases,
+            stage,
         })
+    }
+
+    fn up(&self) -> usize {
+        self.stage.as_ref().map_or(1, |stage| stage.up)
+    }
+
+    fn append_staged(&mut self, input: &[f64]) -> usize {
+        let Self {
+            channels,
+            history,
+            filled,
+            stage: Some(stage),
+            ..
+        } = self
+        else {
+            return 0;
+        };
+        let channels = *channels;
+        let stride = history.stride;
+        let room = (history.capacity - *filled) / stage.up;
+        let frames = (input.len() / channels).min(room);
+        let planes = history.planes_mut();
+
+        let mut rest = input.get(..frames * channels).unwrap_or_default();
+        while !rest.is_empty() {
+            let run = (stage.prefilter.room() / stage.up).min(rest.len() / channels);
+            stage.prefilter.gather(rest, channels, run);
+            stage.release(run * stage.up, planes, stride, filled);
+            rest = rest.get(run * channels..).unwrap_or_default();
+        }
+        stage.taken += frames;
+        frames
+    }
+
+    fn silence_until_wanted(&mut self) -> usize {
+        let Self {
+            history,
+            filled,
+            stage: Some(stage),
+            ..
+        } = self
+        else {
+            return 0;
+        };
+        let stride = history.stride;
+        let capacity = history.capacity;
+        let planes = history.planes_mut();
+        let mut stepped = 0;
+        while stage.wanted.is_some_and(|wanted| stage.appended < wanted) && *filled < capacity {
+            let open = capacity - *filled + stage.skipping;
+            let run = stage.prefilter.room().min(open - open % stage.up);
+            if run == 0 {
+                break;
+            }
+            stage.prefilter.gather_silence(run);
+            stage.release(run, planes, stride, filled);
+            stepped += run;
+        }
+        stepped
+    }
+
+    fn flush_staged(&mut self, output: &mut [f64]) -> usize {
+        let behind = self.reach.behind;
+        let ahead = self.reach.ahead;
+        let channels = self.channels;
+        if let Some(stage) = self.stage.as_mut() {
+            let whole_track = match stage.taken.checked_sub(1) {
+                Some(last) => behind + stage.up * last + 1 + ahead,
+                None => stage.appended,
+            };
+            stage.wanted.get_or_insert(whole_track);
+        }
+
+        let mut produced = 0;
+        loop {
+            let stepped = self.silence_until_wanted();
+            let made = self.emit(output.get_mut(produced * channels..).unwrap_or_default());
+            produced += made;
+            self.compact();
+            if stepped == 0 && made == 0 {
+                return produced;
+            }
+        }
     }
 
     pub const fn ratio(&self) -> f64 {
@@ -651,6 +966,7 @@ impl Resampler {
             phases,
             whole_step,
             phase_step,
+            stage,
             ..
         } = self;
         let channels = *channels;
@@ -660,11 +976,24 @@ impl Resampler {
         let lanes = lanes.as_mut_slice().as_chunks_mut::<ACCUMULATORS>().0;
         let capacity = output.len() / channels;
         let mut produced = 0;
+        let lands_on_samples = stage.is_some() && *phases == 1;
 
         while produced < capacity && *filled > 0 {
             let rising = usize::from(*phase == 0);
             if whole.saturating_add(reach.ahead) + (1 - rising) > *filled - 1 {
                 break;
+            }
+
+            if lands_on_samples {
+                if let Some(frame) = output.get_mut(produced * channels..(produced + 1) * channels)
+                {
+                    for (slot, plane) in frame.iter_mut().zip(planes.chunks_exact(stride)) {
+                        *slot = plane.get(*whole).copied().unwrap_or_default();
+                    }
+                }
+                *whole += *whole_step;
+                produced += 1;
+                continue;
             }
 
             let first = whole.saturating_sub(reach.behind) + (1 - rising);
@@ -723,6 +1052,9 @@ impl Resampler {
     }
 
     fn append(&mut self, input: &[f64]) -> usize {
+        if self.stage.is_some() {
+            return self.append_staged(input);
+        }
         let channels = self.channels;
         let stride = self.history.stride;
         let room = self.history.capacity - self.filled;
@@ -767,7 +1099,10 @@ impl Processor for Resampler {
         }
         if max_frames_in > self.config.max_frames_in {
             self.config.max_frames_in = max_frames_in;
-            self.history = History::new(self.channels, max_frames_in + self.reach.span() + 2);
+            self.history = History::new(
+                self.channels,
+                self.up() * max_frames_in + self.reach.span() + 2,
+            );
             self.reset();
         }
         Ok(self.max_output_frames(max_frames_in))
@@ -778,14 +1113,26 @@ impl Processor for Resampler {
     }
 
     fn max_flush_frames(&self) -> usize {
-        self.max_output_frames(self.reach.ahead)
+        match &self.stage {
+            Some(stage) => self.max_output_frames(
+                (stage.delay() + self.reach.ahead + stage.up).div_ceil(stage.up),
+            ),
+            None => self.max_output_frames(self.reach.ahead),
+        }
     }
 
     fn reset(&mut self) {
         self.history.planes_mut().fill(0.0);
-        self.filled = self.reach.behind;
+        self.filled = if self.stage.is_some() {
+            0
+        } else {
+            self.reach.behind
+        };
         self.whole = self.reach.behind;
         self.phase = 0;
+        if let Some(stage) = self.stage.as_mut() {
+            stage.reset();
+        }
     }
 
     fn output_spec(&self, input: StreamSpec) -> StreamSpec {
@@ -793,7 +1140,10 @@ impl Processor for Resampler {
     }
 
     fn latency_frames(&self) -> f64 {
-        self.reach.ahead as f64 * self.ratio
+        match &self.stage {
+            Some(stage) => (stage.delay() + self.reach.ahead) as f64 * self.ratio / stage.up as f64,
+            None => self.reach.ahead as f64 * self.ratio,
+        }
     }
 
     fn is_transparent(&self) -> bool {
@@ -815,6 +1165,9 @@ impl Processor for Resampler {
     }
 
     fn flush(&mut self, output: &mut [f64]) -> usize {
+        if self.stage.is_some() {
+            return self.flush_staged(output);
+        }
         let stride = self.history.stride;
         let room = self.history.capacity - self.filled;
         let pad = self.reach.ahead.min(room);
@@ -1014,7 +1367,10 @@ mod tests {
 
     fn spanned(config: ResamplerConfig) -> f64 {
         let resampler = Resampler::new(config).expect("a valid resampler configuration");
-        resampler.reach.span() as f64 * resampler.ratio
+        let interpolated = resampler.reach.span() as f64 * resampler.ratio;
+        Prefiltered::of(config).map_or(interpolated, |stage| {
+            (stage.taps.len() as f64 / stage.up as f64) * resampler.ratio + interpolated
+        })
     }
 
     fn resampled_and_flushed_once(config: ResamplerConfig, input: &[f64]) -> usize {
@@ -1145,8 +1501,16 @@ mod tests {
             Quality::VeryHigh,
             FilterPhase::Minimum,
         ));
-        assert!(minimum < 12.0, "minimum phase waits {minimum} frames");
-        assert!(linear > 300.0);
+        let params = Quality::VeryHigh.params();
+        let waits_beside_the_kernel = partition_at(88_200)
+            + usize::from(interpolator_for(params).half_taps)
+            + usize::from(guard_for(params, 0.5).half_taps);
+        let partition = waits_beside_the_kernel as f64 * 48_000.0 / 88_200.0;
+        assert!(
+            minimum < partition + 12.0,
+            "minimum phase waits {minimum} frames, the partition and interpolator {partition}"
+        );
+        assert!(linear > partition + 300.0);
     }
 
     fn an_odd_rate() -> SampleRate {
@@ -1529,14 +1893,35 @@ mod tests {
 
     impl Oracle {
         fn new(config: ResamplerConfig) -> Self {
-            let params = config.quality.params();
             let cycle = config.input_rate.ratio_to(config.output_rate);
             let scale =
                 (f64::from(config.output_rate.hz()) / f64::from(config.input_rate.hz())).min(1.0);
+            Self::of(
+                config.quality.params(),
+                i64::from(cycle.numer.get()),
+                i64::from(cycle.denom.get()),
+                scale,
+            )
+        }
+
+        fn interpolating(config: ResamplerConfig, up: i64) -> Self {
+            let cycle = config.input_rate.ratio_to(config.output_rate);
+            let numer = i64::from(cycle.numer.get());
+            let advanced = i64::from(cycle.denom.get()) * up;
+            let common = greatest_common_divisor(numer as u64, advanced as u64) as i64;
+            Self::of(
+                interpolator_for(config.quality.params()),
+                numer / common,
+                advanced / common,
+                1.0,
+            )
+        }
+
+        fn of(params: SincParams, phases: i64, advance: i64, scale: f64) -> Self {
             Self {
                 params,
-                phases: i64::from(cycle.numer.get()),
-                advance: i64::from(cycle.denom.get()),
+                phases,
+                advance,
                 scale,
                 reach: (f64::from(params.half_taps) / scale).ceil() as i64 + 1,
                 rows: BTreeMap::new(),
@@ -1606,9 +1991,91 @@ mod tests {
         output
     }
 
+    struct Prefiltered {
+        taps: Vec<f64>,
+        lead: i64,
+        up: i64,
+    }
+
+    impl Prefiltered {
+        fn of(config: ResamplerConfig) -> Option<Self> {
+            let params = config.quality.params();
+            if params.half_taps < PREFILTERED_FROM_HALF_TAPS {
+                return None;
+            }
+            let up: i64 = if 2 * config.output_rate.hz() <= config.input_rate.hz() {
+                1
+            } else {
+                2
+            };
+            let scale =
+                (f64::from(config.output_rate.hz()) / f64::from(config.input_rate.hz())).min(1.0);
+            let sharp_lead = (f64::from(params.half_taps) * up as f64 / scale).ceil() as i64;
+            let lower = config.input_rate.hz().min(config.output_rate.hz());
+            let guard = guard_for(
+                params,
+                f64::from(lower) / (f64::from(config.input_rate.hz()) * up as f64),
+            );
+            let guarding = i64::from(guard.half_taps);
+            let fine = GUARD_POINTS_PER_TAP as i64;
+            let points = fine as f64;
+            let sharp: Vec<f64> = (0..=2 * sharp_lead * fine)
+                .map(|point| {
+                    let after = (point as f64 / points - sharp_lead as f64) / up as f64 * scale;
+                    analytic_tap(params, after.abs())
+                })
+                .collect();
+            let smooth: Vec<f64> = (0..=2 * guarding * fine)
+                .map(|point| analytic_tap(guard, (point as f64 / points - guarding as f64).abs()))
+                .collect();
+            let lead = sharp_lead + guarding;
+            let mut taps: Vec<f64> = (0..=2 * lead)
+                .map(|tap| {
+                    let at = tap * fine;
+                    smooth
+                        .iter()
+                        .zip(0..)
+                        .filter_map(|(weight, offset)| {
+                            let from = at - offset;
+                            usize::try_from(from)
+                                .ok()
+                                .and_then(|from| sharp.get(from))
+                                .map(|sample| sample * weight / points)
+                        })
+                        .sum()
+                })
+                .collect();
+            for branch in 0..up as usize {
+                let gain: f64 = taps.iter().skip(branch).step_by(up as usize).sum();
+                for tap in taps.iter_mut().skip(branch).step_by(up as usize) {
+                    *tap /= gain;
+                }
+            }
+            Some(Self { taps, lead, up })
+        }
+
+        fn at(&self, input: &[f64], channels: usize, channel: usize, instant: i64) -> f64 {
+            let frames = (input.len() / channels) as i64;
+            self.taps
+                .iter()
+                .zip(0..)
+                .filter_map(|(tap, offset)| {
+                    let stuffed = instant + self.lead - offset;
+                    let source = stuffed.div_euclid(self.up);
+                    (stuffed.rem_euclid(self.up) == 0 && (0..frames).contains(&source))
+                        .then(|| tap * input[source as usize * channels + channel])
+                })
+                .sum()
+        }
+    }
+
     fn assert_matches_the_oracle(from: SampleRate, to: SampleRate, quality: Quality, within: f64) {
         let frames = 3 * BLOCK + 417;
-        let mut oracle = Oracle::new(config(from, to, quality));
+        let prefiltered = Prefiltered::of(config(from, to, quality));
+        let mut oracle = match &prefiltered {
+            Some(stage) => Oracle::interpolating(config(from, to, quality), stage.up),
+            None => Oracle::new(config(from, to, quality)),
+        };
 
         for layout in [
             ChannelLayout::Mono,
@@ -1624,17 +2091,30 @@ mod tests {
             let input = oracle_signal(from, channels, frames);
             let output = resampled_and_flushed(config, &input);
 
+            let mut filtered: Vec<BTreeMap<i64, f64>> = vec![BTreeMap::new(); channels];
             for (index, frame) in output.chunks_exact(channels).enumerate() {
                 let (first, weights) = oracle.instant(index as i64);
                 for (channel, sample) in frame.iter().enumerate() {
-                    let exact: f64 = weights
-                        .iter()
-                        .zip(first..)
-                        .filter(|(_, source)| (0..frames as i64).contains(source))
-                        .map(|(weight, source)| {
-                            weight * input[source as usize * channels + channel]
-                        })
-                        .sum();
+                    let exact: f64 = match &prefiltered {
+                        Some(stage) => weights
+                            .iter()
+                            .zip(first..)
+                            .map(|(weight, instant)| {
+                                weight
+                                    * *filtered[channel].entry(instant).or_insert_with(|| {
+                                        stage.at(&input, channels, channel, instant)
+                                    })
+                            })
+                            .sum(),
+                        None => weights
+                            .iter()
+                            .zip(first..)
+                            .filter(|(_, source)| (0..frames as i64).contains(source))
+                            .map(|(weight, source)| {
+                                weight * input[source as usize * channels + channel]
+                            })
+                            .sum(),
+                    };
                     assert!(
                         (*sample - exact).abs() < within,
                         "{from} -> {to} {quality:?} {layout:?} frame {index} channel {channel}: {sample} against {exact}"
@@ -1655,6 +2135,14 @@ mod tests {
 
     #[test]
     fn an_interpolated_kernel_stays_within_the_step_its_window_ends_on() {
+        for quality in QUALITIES {
+            let resampler = Resampler::new(config(SampleRate::HZ_44100, an_odd_rate(), quality))
+                .expect("a valid configuration");
+            assert!(
+                matches!(resampler.taps, Taps::Interpolated(_)),
+                "{quality:?} tabulated 44.1 kHz onto 47.993 kHz"
+            );
+        }
         for (from, to) in [
             (SampleRate::HZ_44100, an_odd_rate()),
             (an_odd_rate(), SampleRate::HZ_44100),
@@ -1663,9 +2151,6 @@ mod tests {
                 (Quality::High, HIGH_INTERPOLATED_WITHIN),
                 (Quality::VeryHigh, VERY_HIGH_INTERPOLATED_WITHIN),
             ] {
-                let resampler =
-                    Resampler::new(config(from, to, quality)).expect("a valid configuration");
-                assert!(matches!(resampler.taps, Taps::Interpolated(_)));
                 assert_matches_the_oracle(from, to, quality, within);
             }
         }
@@ -1715,6 +2200,41 @@ mod tests {
             loudest < VERY_HIGH_REJECTS_DB,
             "the stopband reaches {loudest:.1} dB at or past Nyquist"
         );
+    }
+
+    #[test]
+    fn the_interpolator_behind_a_prefilter_is_flat_where_it_passes_and_under_its_stopband() {
+        const PASSES_TO_NYQUISTS: f64 = 0.5;
+        const REJECTS_FROM_NYQUISTS: f64 = 1.5;
+        const QUIETER_BY_DB: f64 = 40.0;
+        const FLATTER_BY_DB: f64 = 20.0;
+
+        for quality in [Quality::High, Quality::VeryHigh] {
+            let prefilter = quality.params();
+            let interpolator = interpolator_for(prefilter);
+            let at = |nyquists: f64| decibels(continuous_response(interpolator, nyquists));
+            let promised = -(f64::from(prefilter.kaiser_beta) / KAISER_BETA_PER_DECIBEL
+                + KAISER_DECIBELS_AT_NO_BETA);
+            let flat_within_db = decibels(1.0 + 10_f64.powf((promised - FLATTER_BY_DB) / 20.0));
+
+            let flattest = (0..=500)
+                .map(|step| at(PASSES_TO_NYQUISTS * f64::from(step) / 500.0).abs())
+                .fold(0.0, f64::max);
+            assert!(
+                flattest < flat_within_db,
+                "{quality:?}'s interpolator strays {flattest:e} dB where the prefilter passes"
+            );
+
+            let loudest = (0..=STOPBAND_STEPS)
+                .map(|step| {
+                    at(REJECTS_FROM_NYQUISTS + f64::from(step) / f64::from(STOPBAND_STEPS) * 4.0)
+                })
+                .fold(f64::NEG_INFINITY, f64::max);
+            assert!(
+                loudest < promised - QUIETER_BY_DB,
+                "{quality:?}'s interpolator reaches {loudest:.1} dB where images sit, the prefilter {promised:.1} dB"
+            );
+        }
     }
 
     #[test]
