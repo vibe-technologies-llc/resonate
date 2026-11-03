@@ -6,7 +6,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 |---|---|---|
 | `rust-style.md` | always | formatting, imports, the no-comment rule, collections, sync primitives, text read from files, names built around a file's, a file another run may sweep |
 | `errors.md` | always | the `thiserror` architecture and its structural enforcement |
-| `build.md` | `.github`, `.cargo`, `fuzz`, the root manifest, benches | CI, `release.yml` (tag-driven RPM, DEB, Arch and signed APK assets and their secrets), the profiles and `target-cpu`, the fuzz targets |
+| `build.md` | `.github`, `.cargo`, `fuzz`, `soxr-comparison`, the root manifest, benches | CI, `release.yml` (tag-driven RPM, DEB, Arch and signed APK assets and their secrets), the profiles and `target-cpu`, the fuzz targets, the resampler measured against SoXR |
 | `android.md` | Android Gradle project, the mobile boundary and binding tool | Compose, native build, documents, service lifecycle, emulator checks, and the boundary behaviour both phones share |
 | `mobile.md` | resonate-mobile, resonate-bindgen, both `build-native.py` | the unsafe exception, one surface on every target, granted-document schemes, the output per target, the phones' zones |
 | `ios.md` | `ios/**`, the RemoteIO output | the xtool toolchain, the native library and bindings, the App Intents metadata, hardening, the shape of the SwiftUI app, Siri |
@@ -231,8 +231,11 @@ Invariants the layering protects (the rules files have the rest):
   remote (CI points `source` at its own checkout).
 - `cd fuzz && cargo +nightly fuzz build`, then `cargo +nightly fuzz run <target> corpus/<target>
   seeds/<target> -- -max_total_time=180 -timeout=15` (`build.md`).
+- `cd soxr-comparison && cargo run --release -- --plots ../docs/resampling`: the resampler
+  measured against the system libsoxr, the tables of `docs/RESAMPLING.md` on stdout (`build.md`,
+  the `compare-resamplers` skill). Not in CI: it needs libsoxr, and an idle machine for its timings.
 
-CI runs exactly this list, iOS aside (`release.yml` runs on tags only); the debug profile is optimised and `target-cpu=native` is set
+CI runs exactly this list, iOS and the SoXR comparison aside (`release.yml` runs on tags only); the debug profile is optimised and `target-cpu=native` is set
 (`build.md`).
 
 `cargo run -- <subcommand> --help` is the grammar (`binary.md`); the binary doubles as the audio

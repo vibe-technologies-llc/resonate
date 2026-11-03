@@ -1,0 +1,23 @@
+[package]
+name = "resonate-soxr-comparison"
+version = "0.0.0"
+edition = "2024"
+license = "AGPL-3.0-or-later"
+publish = false
+
+[dependencies]
+resonate-core.path = "../crates/resonate-core"
+resonate-dsp.path = "../crates/resonate-dsp"
+soxr = { version = "0.6.0", default-features = false }
+thiserror = { version = "2.0.21", default-features = false, features = ["std"] }
+
+[workspace]
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+lto = "thin"
+panic = "abort"

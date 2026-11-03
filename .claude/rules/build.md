@@ -5,6 +5,8 @@ paths:
   - "fuzz/**"
   - "Cargo.toml"
   - "crates/*/benches/**"
+  - "soxr-comparison/**"
+  - "docs/RESAMPLING.md"
 ---
 
 # Build, CI and fuzzing
@@ -24,7 +26,7 @@ paths:
   boundary, its binding tool and PipeWire, then the tests of every crate but the window, then the
   binary's `signals` test with `mcp` on, which `--no-default-features` leaves out; the library,
   codec, vault and MCP integration suites run there, gated per test; `windows.md`)
-  and `windows-arm64` (`cargo check` of the same set for `aarch64-pc-windows-msvc`, never run). A command added to `CLAUDE.md` goes into the workflow; a crate added to the
+  and `windows-arm64` (`cargo check` of the same set for `aarch64-pc-windows-msvc`, never run). A command added to `CLAUDE.md` goes into the workflow (iOS and the SoXR comparison aside); a crate added to the
   layering refusals gets a line. The layering job has four shapes: `refuse`, `refuse_headless` (no
   default features), `only` (the workspace crates a crate may reach), `reached_by_the_binary_alone`
   (`cargo tree -i`; `online`, `mcp`, `discord`), and one `cargo tree --target x86_64-pc-windows-msvc`
@@ -109,3 +111,22 @@ the listener, never by a script.
 - **`ape-decoder` and `symphonia-codec-wavpack` wrap on malformed input by design**, so their
   overflow checks are off in `[profile.dev]`: an overflow panic inside either is not a finding;
   `fuzz run -O` says what a release build would do.
+
+## The resampler against SoXR
+
+- **`soxr-comparison/` measures `resonate-dsp`'s resampler against libsoxr from outside the
+  workspace**: its own `[workspace]` table, like `fuzz/`, so no workspace build, lint or `cargo
+  tree` sees libsoxr. It links the system libsoxr through `pkg-config` (the `soxr` crate), the one
+  C library wanted anywhere, since that library is what is measured; nothing in the workspace may
+  depend on it.
+- **One process, the same buffers**: eighteen settings (Resonate's four levels, High minimum and
+  Very high intermediate and minimum; SoXR's eight recipes, VHQ steep, intermediate and minimum) at
+  seven rate pairs, f64 interleaved in and out, SoXR on one thread. Tones sit on a 1/64 Hz grid so
+  every phase reduces exactly (`signal::phase_at`) and the least-squares fit (`fit::Window`) reads
+  levels down to the f64 floor, over the settled middle 0.6 s of 1.2 s.
+- **Timing wants an idle machine**: throughput is the best of five runs over 4 s of stereo noise in
+  1 024-frame blocks, construction the first build in the process and the best of nine after.
+  `--no-timing` measures quality alone (on every core, under any load), `--timing-only` the costs.
+- **Not in CI**: a hosted runner has no libsoxr and its timings would mean nothing.
+  `docs/RESAMPLING.md` is the report and `docs/resampling/` its plots; the `compare-resamplers`
+  skill reruns both.
