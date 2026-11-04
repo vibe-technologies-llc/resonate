@@ -98,7 +98,7 @@ pub enum Server {
 }
 
 impl Server {
-    fn address(self) -> Option<String> {
+    pub(crate) fn address(self) -> Option<String> {
         match self {
             Self::At(server) if !server.trim().is_empty() => Some(server.trim().to_owned()),
             Self::Hosted | Self::At(_) => Some(HOSTED_SERVER.to_owned()),
@@ -1216,7 +1216,7 @@ async fn resolve_stun(stun: &str) -> Result<SocketAddr> {
         })
 }
 
-async fn resolve(server: &str) -> Result<(SocketAddr, String)> {
+pub(crate) async fn resolve(server: &str) -> Result<(SocketAddr, String)> {
     let (host, port) = host_and_port(server.trim());
     let addresses = tokio::net::lookup_host((host.as_str(), port))
         .await
@@ -1249,7 +1249,7 @@ fn host_and_port(server: &str) -> (String, u16) {
     }
 }
 
-async fn within<T>(waiting: impl Future<Output = Result<T>>) -> Result<T> {
+pub(crate) async fn within<T>(waiting: impl Future<Output = Result<T>>) -> Result<T> {
     timeout(SERVER_ANSWERS_WITHIN, waiting)
         .await
         .unwrap_or(Err(Error::ServerSilent))

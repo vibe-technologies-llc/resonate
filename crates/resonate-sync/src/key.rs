@@ -75,6 +75,14 @@ impl SyncKey {
         random_bytes().map(Self)
     }
 
+    pub(crate) const fn bytes(&self) -> &[u8; SYNC_KEY_BYTES] {
+        &self.0
+    }
+
+    pub(crate) const fn from_bytes(bytes: [u8; SYNC_KEY_BYTES]) -> Self {
+        Self(bytes)
+    }
+
     pub fn from_code(code: &str) -> Result<Self> {
         let symbols = code
             .chars()
@@ -176,7 +184,7 @@ impl Derived {
     }
 }
 
-fn expand(prk: &hkdf::Prk, info: &[u8], out: &mut [u8]) -> Result<()> {
+pub(crate) fn expand(prk: &hkdf::Prk, info: &[u8], out: &mut [u8]) -> Result<()> {
     let infos = [info];
     prk.expand(&infos, Length(out.len()))
         .and_then(|okm| okm.fill(out))

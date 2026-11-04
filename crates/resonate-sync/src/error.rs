@@ -101,6 +101,18 @@ pub enum Error {
     #[error("the catalog refused: {0:?}")]
     Catalog(Refused),
 
+    #[error("the shared playlists' service has stopped")]
+    SharedStopped,
+
+    #[error("sharing a playlist needs a server, and this device is set to use none")]
+    SharedNeedsAServer,
+
+    #[error("the server is too old to know this")]
+    ServerTooOld,
+
+    #[error("no QUIC endpoint could be made")]
+    QuicEndpoint(#[source] std::io::Error),
+
     #[error("{op:?} failed setting up TLS")]
     Tls {
         op: TlsOp,

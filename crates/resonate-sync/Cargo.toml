@@ -29,6 +29,10 @@ tokio-rustls.workspace = true
 tokio-tungstenite.workspace = true
 tracing.workspace = true
 webpki-root-certs.workspace = true
+x25519-dalek = { workspace = true, features = ["static_secrets"] }
+
+[dev-dependencies]
+proptest.workspace = true
 
 [lints]
 workspace = true

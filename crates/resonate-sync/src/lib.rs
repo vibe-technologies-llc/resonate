@@ -11,6 +11,7 @@ mod relay;
 mod remote;
 mod seal;
 mod service;
+pub mod shared;
 mod stun;
 mod web;
 pub mod wire;
