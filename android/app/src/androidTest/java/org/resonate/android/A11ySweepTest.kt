@@ -4,11 +4,13 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.junit4.accessibility.enableAccessibilityChecks
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -48,6 +50,7 @@ class A11ySweepTest {
     fun settingsAndAppearancePassTheAccessibilityChecks() {
         rule.onNodeWithContentDescription("Settings").performClick()
         rule.waitForIdle()
+        rule.onNodeWithTag("settings-list").performScrollToNode(hasTestTag("setting-appearance"))
         rule.onNodeWithTag("setting-appearance").performClick()
         rule.waitForIdle()
         rule.onNodeWithTag("high-contrast").assertExists()
@@ -94,9 +97,11 @@ class A11ySweepTest {
                     .getOrNull(SemanticsActions.GetTextLayoutResult)
                     ?.action
                     ?.invoke(results)
-                results.any { it.didOverflowWidth }
+                results.any { it.isClipped() }
             }
-            .map { it.id.toString() }
+            .map { node ->
+                node.config.getOrNull(SemanticsProperties.Text).orEmpty().joinToString(" ") { it.text }
+            }
 
     private fun SemanticsNode.isUnnamed(): Boolean {
         val described = config.getOrNull(SemanticsProperties.ContentDescription)

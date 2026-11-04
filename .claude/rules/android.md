@@ -1443,5 +1443,4 @@ unverified. The QR is `com.google.zxing:core` (pure Java), since pairing draws n
 - **Held by** `ThemeContrastTest` (JVM: every accent in light, dark and pitch black, standard and high contrast;
   text pairs 4.5:1, non-text pairs 3:1, quiet lyric ink 3:1 on four grounds, body text 7:1 at high contrast) and
   `A11ySweepTest` (instrumented: the Compose accessibility checks over the root tabs and settings, a
-  `fontScale = 2` pass for clipped text and a pass for unnamed clickables); the sweep needs an emulator, and what it
-  still finds is in `docs/BUGS.md` and `docs/TESTING.md`.
+  `fontScale = 2` pass for clipped text and a pass for unnamed clickables; the sweep needs an emulator). **Clipped is a line wider than its box or lines cut off with no ellipsis** (`isClipped`, `ClippedTextTest`): `didOverflowWidth` weighs the box against the paragraph's layout width, so it reads every label narrower than its container as overflowing.

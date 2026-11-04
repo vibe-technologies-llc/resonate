@@ -65,6 +65,7 @@ import org.resonate.android.nativecore.AlbumHit
 import org.resonate.android.nativecore.LibraryStatistics
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.Mix
+import org.resonate.android.ui.components.rememberTitleMaxLines
 import org.resonate.android.ui.components.CollectionRow
 import org.resonate.android.ui.components.IconTile
 import org.resonate.android.ui.components.LocalSheets
@@ -267,7 +268,12 @@ private fun MixCard(shelf: MixShelf, onClick: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(12.dp))
-            Text(shelf.mix.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                shelf.mix.title,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = rememberTitleMaxLines(),
+                overflow = TextOverflow.Ellipsis,
+            )
             Text(
                 shelf.mix.subtitle,
                 style = MaterialTheme.typography.bodySmall,

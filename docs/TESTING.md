@@ -84,9 +84,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   nothing here has run
 
 ## Testing
-- [S · 0.4.1] `A11ySweepTest`'s `settingsAndAppearancePassTheAccessibilityChecks` does not find
-  `setting-appearance` on the Settings page, so Settings and Appearance go unswept; the sweep first
-  ran once Espresso reached 3.7.0 (API 37 removed what the older one called)
 - [S · blocked: a second compositor] The drag test has run on KWin alone: no other compositor
   (`sway`, `weston`, `mutter`, `cage`, `labwc`) is installed here, so another's data-device and
   drag-icon behaviour is untried

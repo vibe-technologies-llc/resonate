@@ -13,7 +13,3 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   mono/stereo switch of a low-bitrate podcast; `opus-rs` 0.1.37 refuses a packet whose TOC channel
   bit differs from the decoder's (`Channel count mismatch`) and keeps no stream-channel state a
   mono packet could be decoded against, so the fix is a decoder that switches (upstream or vendored)
-
-## Android
-- [S · 0.4.1] Home clips text without an ellipsis at font scale 2 (`A11ySweepTest`'s
-  `theLargestTextDoesNotClipAnyRootScreen`, on the emulator's empty library)
