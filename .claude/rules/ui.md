@@ -1009,9 +1009,11 @@ is never named.
   moves**: `PlayerModel::refresh` answers `Poll::Quiet` when not playing, no sleep timer, no seek in
   flight and nothing changed, and after `QUIET_POLLS_BEFORE_RESTING` (30) the loop waits
   `RESTING_POLL_INTERVAL` (64 ms).
-- **A sheet that runs early or late is moved by the listener, for that track.** *Later*/*Earlier*
-  (`LyricsAhead::STEP_MS` 100, within `MOST_MS` 30 s; `resonate-library`'s `sung.rs`) and the offset as
-  a chip putting it back. `look_for_lyrics` reads `Library::lyrics_ahead` into
+- **A sheet that runs early or late is moved by the listener, for that track.** *Earlier*/*Later*
+  (`LyricsAhead::STEP_MS` 100, within `MOST_MS` 30 s; `resonate-library`'s `sung.rs`) are `Tone::Ghost`
+  buttons in time's order (`RootView::lyric_timing`), the offset a `Tone::Outlined` button between them
+  putting it back: as chips they read as two more choices of the *Reads* pair beside them, and a chip
+  is what a setting is chosen from. `look_for_lyrics` reads `Library::lyrics_ahead` into
   `LyricsModel::hold_ahead`; `nudge_the_lyrics` writes `Library::hold_lyrics_ahead`. The pane reads every
   line at `ahead.read(clock)`; a line press seeks to `ahead.back(moment)`
   (`RootView::seek_to_moment`, clamped to the duration). A wheel sets `led_by_hand` (no following for

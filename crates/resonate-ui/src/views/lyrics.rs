@@ -287,35 +287,7 @@ impl RootView {
                         })
                         .when(synced, |actions| {
                             actions
-                                .child(self.in_the_pane_ring(
-                                    kit::chip("lyrics-later", "Later", false).names(LATER_HINT),
-                                    move |this, _, cx| {
-                                        this.nudge_the_lyrics(ahead.later(), cx);
-                                    },
-                                    cx,
-                                ))
-                                .when(!ahead.is_zero(), |actions| {
-                                    actions.child(
-                                        self.in_the_pane_ring(
-                                            kit::chip("lyrics-ahead", said_ahead(ahead), true)
-                                                .names(PUT_BACK_HINT),
-                                            |this, _, cx| {
-                                                this.nudge_the_lyrics(LyricsAhead::ZERO, cx);
-                                            },
-                                            cx,
-                                        ),
-                                    )
-                                })
-                                .child(
-                                    self.in_the_pane_ring(
-                                        kit::chip("lyrics-earlier", "Earlier", false)
-                                            .names(EARLIER_HINT),
-                                        move |this, _, cx| {
-                                            this.nudge_the_lyrics(ahead.earlier(), cx);
-                                        },
-                                        cx,
-                                    ),
-                                )
+                                .child(self.lyric_timing(ahead, cx))
                                 .child(hint::explains("lyric-press", PRESS_HINT))
                         })
                         .when_some(attribution(look), |actions, attributed| {
@@ -332,6 +304,42 @@ impl RootView {
                         }),
                 ),
         )
+    }
+
+    fn lyric_timing(&self, ahead: LyricsAhead, cx: &mut Context<Self>) -> Div {
+        div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .child(self.in_the_pane_ring(
+                kit::button("lyrics-earlier", None, "Earlier", EARLIER_HINT, Tone::Ghost),
+                move |this, _, cx| {
+                    this.nudge_the_lyrics(ahead.earlier(), cx);
+                },
+                cx,
+            ))
+            .when(!ahead.is_zero(), |timing| {
+                timing.child(self.in_the_pane_ring(
+                    kit::button(
+                        "lyrics-ahead",
+                        None,
+                        said_ahead(ahead),
+                        PUT_BACK_HINT,
+                        Tone::Outlined,
+                    ),
+                    |this, _, cx| {
+                        this.nudge_the_lyrics(LyricsAhead::ZERO, cx);
+                    },
+                    cx,
+                ))
+            })
+            .child(self.in_the_pane_ring(
+                kit::button("lyrics-later", None, "Later", LATER_HINT, Tone::Ghost),
+                move |this, _, cx| {
+                    this.nudge_the_lyrics(ahead.later(), cx);
+                },
+                cx,
+            ))
     }
 
     fn lyric_lines(
