@@ -30,6 +30,7 @@ mod tests {
         "browser.rs | cell.cursor_pointer() | .on_click(cx.listener(move |this, _, _, cx| {",
         "browser.rs | row.cursor_pointer() | .on_click(cx.listener(move |this, _, _, cx| {",
         "browser.rs | row.cursor_pointer() | .on_click(cx.listener(move |this, _, _, cx| {",
+        "chrome.rs | button | .on_click(move |_, window, _| control.act(window))",
         "dropping.rs | if stopping { | button.on_click(cx.listener(|this, _, _, cx| this.stop_copying(cx)))",
         "hint.rs | div() | .on_click(|_, _, cx| cx.stop_propagation())",
         "playlists.rs | .child( | control(\"drop-saved\", id, Icon::Discard, DISCARD_HINT).on_click(",

@@ -671,7 +671,7 @@ mod tests {
         Pane, Selection,
         equaliser::{Cell as BandCell, Editing},
         views::{
-            menu::{self, Menu},
+            menu::{self, Menu, Offered},
             reorder::{Listed, Shift},
             settings::curve::Plot,
             visualiser::Showing,
@@ -2828,11 +2828,16 @@ mod tests {
     }
 
     fn pressed_in_the_menu(driven: &mut Driven, label: &str) {
-        let at = menu_labels(driven)
-            .iter()
-            .position(|held| held == label)
+        let offered = driven
+            .read(|root, _| root.menu.as_ref().and_then(|menu| menu.offering(label)))
             .unwrap_or_else(|| panic!("the menu offers no {label}"));
-        driven.click(named("menu-entry", at));
+        match offered {
+            Offered::Here(at) => driven.click(named("menu-entry", at)),
+            Offered::Beneath(at, under) => {
+                driven.click(named("menu-entry", at));
+                driven.click(named(&format!("menu-beneath-{at}"), under));
+            }
+        }
     }
 
     fn deleting_asked_about(driven: &mut Driven) -> Option<Vec<TrackId>> {

@@ -737,6 +737,7 @@ pub struct RootView {
     pub(crate) muted_from: Option<Volume>,
     type_ahead: TypeAhead,
     typing_stops: Task<()>,
+    pub(crate) beneath_closes: Task<()>,
     last_typed: Option<Instant>,
     pub(crate) queue_names: QueueNames,
     drawn_at: SystemTime,
@@ -1364,6 +1365,7 @@ impl RootView {
             muted_from: None,
             type_ahead: TypeAhead::default(),
             typing_stops: Task::ready(()),
+            beneath_closes: Task::ready(()),
             last_typed: None,
             queue_names: QueueNames::default(),
             drawn_at: SystemTime::now(),
@@ -4231,7 +4233,9 @@ impl RootView {
             self.record = None;
             cx.notify();
         } else if self.menu.is_some() {
-            self.close_the_menu(cx);
+            if !self.back_out_of_the_menu(cx) {
+                self.close_the_menu(cx);
+            }
         } else {
             return false;
         }
@@ -5939,11 +5943,17 @@ impl Render for RootView {
             .on_action(cx.listener(|this, _: &Next, _, cx| this.send(Command::Next, cx)))
             .on_action(cx.listener(|this, _: &Previous, _, cx| this.send(Command::Previous, cx)))
             .on_action(cx.listener(|this, _: &SeekForward, _, cx| {
+                if this.step_into_the_menu(cx) || this.something_stands_over_the_pane() {
+                    return;
+                }
                 if !this.reach_along_the_strip(Step::Below, cx) {
                     this.seek_by(seek_step(), cx);
                 }
             }))
             .on_action(cx.listener(|this, _: &SeekBackward, _, cx| {
+                if this.back_out_of_the_menu(cx) || this.something_stands_over_the_pane() {
+                    return;
+                }
                 if !this.reach_along_the_strip(Step::Above, cx) {
                     this.seek_by(-seek_step(), cx);
                 }
@@ -6097,7 +6107,10 @@ impl Render for RootView {
             })
             .when_some(self.type_ahead_pill(), ParentElement::child)
             .when_some(self.downloads_over_the_app(cx), ParentElement::child)
-            .when_some(self.menu_over_the_app(cx), ParentElement::child)
+            .when_some(
+                self.menu_over_the_app(window.viewport_size(), cx),
+                ParentElement::child,
+            )
             .when_some(self.record_over_the_app(cx), ParentElement::child)
             .when_some(self.adding.clone(), |app, holding| {
                 app.child(self.playlist_picker(&holding, cx))

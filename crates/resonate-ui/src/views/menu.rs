@@ -1,14 +1,16 @@
 use std::{
+    cell::Cell,
     collections::BTreeSet,
     path::{Path, PathBuf},
     rc::Rc,
     sync::Arc,
+    time::Duration,
 };
 
 use gpui::{
     AnyElement, App, Bounds, BoxShadow, ClickEvent, Context, Div, ElementId, Global, MouseButton,
-    MouseDownEvent, Pixels, Point, Role, SharedString, Stateful, Window, anchored, canvas,
-    deferred, div, point, prelude::*, px, rgb,
+    MouseDownEvent, Pixels, Point, Role, SharedString, Size, Stateful, Task, Window, anchored,
+    canvas, deferred, div, point, prelude::*, px, rgb,
 };
 use resonate_core::{AlbumId, ArtistId, FrameSpan, MediaLocation, TrackId};
 use resonate_engine::Placement;
@@ -29,6 +31,10 @@ use crate::{
 
 const MENU_GROUP: &str = "menu-entry";
 const OPENED_IN_FROM_THE_ROWS_EDGE: f32 = 24.0;
+const BESIDE_ITS_ROW: f32 = 4.0;
+const PANEL_PADDING: f32 = 4.0;
+const OPEN_BENEATH: &str = "Opens a menu";
+const STAYS_OPEN_FOR_THE_POINTER_CROSSING: Duration = Duration::from_millis(250);
 
 type Doing = dyn Fn(&mut RootView, &mut Window, &mut Context<RootView>);
 
@@ -64,7 +70,14 @@ pub(crate) struct Menu {
     at: Point<Pixels>,
     entries: Vec<Entry>,
     reached: Option<usize>,
+    beneath: Option<Beneath>,
     owner: Option<ElementId>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Beneath {
+    at: usize,
+    reached: Option<usize>,
 }
 
 #[derive(Clone)]
@@ -72,7 +85,51 @@ struct Entry {
     icon: Option<Icon>,
     label: SharedString,
     key: Option<SharedString>,
-    does: Option<Rc<Doing>>,
+    takes: Takes,
+}
+
+#[derive(Clone)]
+enum Takes {
+    Nothing,
+    Press(Rc<Doing>),
+    Opens {
+        entries: Rc<[Entry]>,
+        drawn: Rc<Cell<Bounds<Pixels>>>,
+    },
+}
+
+impl Entry {
+    const fn is_apart(&self) -> bool {
+        matches!(self.takes, Takes::Nothing)
+    }
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Offered {
+    Here(usize),
+    Beneath(usize, usize),
+}
+
+fn stepped(entries: &[Entry], reached: Option<usize>, step: isize) -> Option<usize> {
+    let taking: Vec<usize> = entries
+        .iter()
+        .enumerate()
+        .filter(|(_, entry)| !entry.is_apart())
+        .map(|(at, _)| at)
+        .collect();
+    let last = taking.len().checked_sub(1)?;
+    let at = reached.and_then(|reached| taking.iter().position(|entry| *entry == reached));
+    let next = match (at, step) {
+        (None, 1) => 0,
+        (None, _) => last,
+        (Some(at), 1) if at == last => 0,
+        (Some(at), 1) => at + 1,
+        (Some(0), _) => last,
+        (Some(at), _) => at - 1,
+    };
+
+    taking.get(next).copied()
 }
 
 impl Menu {
@@ -80,8 +137,28 @@ impl Menu {
     pub(crate) fn labels(&self) -> Vec<String> {
         self.entries
             .iter()
-            .map(|entry| entry.label.to_string())
+            .flat_map(|entry| match &entry.takes {
+                Takes::Opens { entries, .. } => entries
+                    .iter()
+                    .map(|under| under.label.to_string())
+                    .collect(),
+                _ => vec![entry.label.to_string()],
+            })
             .collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn offering(&self, label: &str) -> Option<Offered> {
+        self.entries.iter().enumerate().find_map(|(at, entry)| {
+            if let Takes::Opens { entries, .. } = &entry.takes {
+                return entries
+                    .iter()
+                    .position(|under| under.label == label)
+                    .map(|under| Offered::Beneath(at, under));
+            }
+
+            (entry.label == label).then_some(Offered::Here(at))
+        })
     }
 
     pub(crate) fn at(at: Point<Pixels>) -> Self {
@@ -89,6 +166,7 @@ impl Menu {
             at,
             entries: Vec::new(),
             reached: None,
+            beneath: None,
             owner: None,
         }
     }
@@ -112,8 +190,29 @@ impl Menu {
             icon: Some(icon),
             label: label.into(),
             key: None,
-            does: Some(Rc::new(does)),
+            takes: Takes::Press(Rc::new(does)),
         });
+        self
+    }
+
+    pub(crate) fn nests(
+        mut self,
+        icon: Icon,
+        label: impl Into<SharedString>,
+        fill: impl FnOnce(Self) -> Self,
+    ) -> Self {
+        let filled = fill(Self::at(self.at)).without_a_last_line();
+        if filled.offers_anything() {
+            self.entries.push(Entry {
+                icon: Some(icon),
+                label: label.into(),
+                key: None,
+                takes: Takes::Opens {
+                    entries: Rc::from(filled.entries),
+                    drawn: Rc::default(),
+                },
+            });
+        }
         self
     }
 
@@ -139,13 +238,20 @@ impl Menu {
     }
 
     pub(crate) fn apart(mut self) -> Self {
-        if self.entries.last().is_some_and(|last| last.does.is_some()) {
+        if self.entries.last().is_some_and(|last| !last.is_apart()) {
             self.entries.push(Entry {
                 icon: None,
                 label: SharedString::new_static(""),
                 key: None,
-                does: None,
+                takes: Takes::Nothing,
             });
+        }
+        self
+    }
+
+    fn without_a_last_line(mut self) -> Self {
+        while self.entries.last().is_some_and(Entry::is_apart) {
+            self.entries.pop();
         }
         self
     }
@@ -155,39 +261,83 @@ impl Menu {
     }
 
     pub(crate) fn offers_anything(&self) -> bool {
-        self.entries.iter().any(|entry| entry.does.is_some())
+        self.entries.iter().any(|entry| !entry.is_apart())
+    }
+
+    fn entries_beneath(&self, at: usize) -> Option<&Rc<[Entry]>> {
+        match &self.entries.get(at)?.takes {
+            Takes::Opens { entries, .. } => Some(entries),
+            _ => None,
+        }
+    }
+
+    fn opens_beneath(&mut self, at: usize) -> bool {
+        if self.entries_beneath(at).is_none() {
+            return false;
+        }
+        if self.beneath.map(|beneath| beneath.at) != Some(at) {
+            self.beneath = Some(Beneath { at, reached: None });
+        }
+        true
     }
 
     fn steps(&mut self, step: isize) {
-        let taking: Vec<usize> = self
-            .entries
-            .iter()
-            .enumerate()
-            .filter(|(_, entry)| entry.does.is_some())
-            .map(|(at, _)| at)
-            .collect();
-        let Some(last) = taking.len().checked_sub(1) else {
+        if let Some(Beneath {
+            at,
+            reached: Some(reached),
+        }) = self.beneath
+        {
+            let moved = self
+                .entries_beneath(at)
+                .and_then(|entries| stepped(entries, Some(reached), step));
+            self.beneath = Some(Beneath { at, reached: moved });
             return;
-        };
-        let at = self
-            .reached
-            .and_then(|reached| taking.iter().position(|entry| *entry == reached));
-        let next = match (at, step) {
-            (None, 1) => 0,
-            (None, _) => last,
-            (Some(at), 1) if at == last => 0,
-            (Some(at), 1) => at + 1,
-            (Some(0), _) => last,
-            (Some(at), _) => at - 1,
-        };
+        }
+        self.beneath = None;
+        self.reached = stepped(&self.entries, self.reached, step);
+    }
 
-        self.reached = taking.get(next).copied();
+    fn steps_in(&mut self) -> bool {
+        if self
+            .beneath
+            .is_some_and(|beneath| beneath.reached.is_some())
+        {
+            return false;
+        }
+        let Some(at) = self.reached else {
+            return false;
+        };
+        if !self.opens_beneath(at) {
+            return false;
+        }
+        let first = self
+            .entries_beneath(at)
+            .and_then(|entries| stepped(entries, None, 1));
+        self.beneath = Some(Beneath { at, reached: first });
+        true
+    }
+
+    fn steps_out(&mut self) -> bool {
+        let Some(beneath) = self.beneath.take() else {
+            return false;
+        };
+        self.reached = Some(beneath.at);
+        true
     }
 
     fn reached(&self) -> Option<Rc<Doing>> {
-        self.entries
-            .get(self.reached?)
-            .and_then(|entry| entry.does.clone())
+        let entry = match self.beneath {
+            Some(Beneath {
+                at,
+                reached: Some(reached),
+            }) => self.entries_beneath(at)?.get(reached)?,
+            _ => self.entries.get(self.reached?)?,
+        };
+
+        match &entry.takes {
+            Takes::Press(does) => Some(Rc::clone(does)),
+            _ => None,
+        }
     }
 }
 
@@ -255,16 +405,66 @@ impl RootView {
         self.naming = None;
         self.adding = None;
         self.record = None;
-        self.menu = Some(menu);
+        self.menu = Some(menu.without_a_last_line());
         cx.notify();
     }
 
     pub(crate) fn close_the_menu(&mut self, cx: &mut Context<Self>) -> bool {
         let opened = self.menu.take().is_some();
         if opened {
+            self.beneath_closes = Task::ready(());
             cx.notify();
         }
         opened
+    }
+
+    pub(crate) fn back_out_of_the_menu(&mut self, cx: &mut Context<Self>) -> bool {
+        let stepped_out = self.menu.as_mut().is_some_and(Menu::steps_out);
+        if stepped_out {
+            cx.notify();
+        }
+        stepped_out
+    }
+
+    pub(crate) fn step_into_the_menu(&mut self, cx: &mut Context<Self>) -> bool {
+        let stepped_in = self.menu.as_mut().is_some_and(Menu::steps_in);
+        if stepped_in {
+            cx.notify();
+        }
+        stepped_in
+    }
+
+    fn opens_beneath_the_menu(&mut self, at: usize, cx: &mut Context<Self>) {
+        self.beneath_closes = Task::ready(());
+        if self
+            .menu
+            .as_mut()
+            .is_some_and(|menu| menu.opens_beneath(at))
+        {
+            cx.notify();
+        }
+    }
+
+    fn keeps_what_is_beneath(&mut self) {
+        self.beneath_closes = Task::ready(());
+    }
+
+    fn closes_beneath_the_menu(&mut self, cx: &mut Context<Self>) {
+        if self.menu.as_ref().is_none_or(|menu| menu.beneath.is_none()) {
+            return;
+        }
+        self.beneath_closes = cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(STAYS_OPEN_FOR_THE_POINTER_CROSSING)
+                .await;
+            let closed = this.update(cx, |this, cx| {
+                if let Some(menu) = this.menu.as_mut() {
+                    menu.beneath = None;
+                    cx.notify();
+                }
+            });
+            let _ = closed;
+        });
     }
 
     pub(crate) fn step_the_menu(&mut self, step: isize, cx: &mut Context<Self>) -> bool {
@@ -277,6 +477,9 @@ impl RootView {
     }
 
     pub(crate) fn press_the_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.step_into_the_menu(cx) {
+            return true;
+        }
         let Some(menu) = self.menu.as_ref() else {
             return false;
         };
@@ -289,54 +492,35 @@ impl RootView {
         true
     }
 
-    pub(crate) fn menu_over_the_app(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+    pub(crate) fn menu_over_the_app(
+        &self,
+        room: Size<Pixels>,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
         let menu = self.menu.clone()?;
         let entries = menu
             .entries
             .iter()
-            .filter(|entry| entry.does.is_some())
+            .filter(|entry| !entry.is_apart())
             .count();
-        let mut panel = div()
-            .id("menu")
-            .spoken_as(Role::Menu)
-            .track_focus(&self.menu_focus)
-            .flex()
-            .flex_col()
-            .w(theme::width(theme::menu_width()))
-            .p_1()
-            .gap_0p5()
-            .rounded_lg()
-            .bg(rgb(theme::raised()))
-            .border_1()
-            .border_color(rgb(theme::soft_edge()))
-            .shadow(vec![BoxShadow {
-                color: theme::shadow(0.5),
-                offset: point(px(0.0), px(6.0)),
-                blur_radius: px(24.0),
-                spread_radius: px(0.0),
-                inset: false,
-            }])
-            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-            .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation());
+        let mut panel = menu_panel("menu").track_focus(&self.menu_focus);
 
         let mut offered = 0;
         for (at, entry) in menu.entries.iter().enumerate() {
-            panel = panel.child(match entry.does.clone() {
-                Some(does) => {
-                    offered += 1;
-                    self.menu_entry(
-                        at,
-                        entry,
-                        &does,
-                        menu.reached == Some(at),
-                        Placed {
-                            at: offered - 1,
-                            of: entries,
-                        },
-                        cx,
-                    )
-                }
-                None => apart().into_any_element(),
+            panel = panel.child(if entry.is_apart() {
+                apart().into_any_element()
+            } else {
+                offered += 1;
+                self.menu_entry(
+                    Row::Of { at },
+                    entry,
+                    menu.reached == Some(at),
+                    Placed {
+                        at: offered - 1,
+                        of: entries,
+                    },
+                    cx,
+                )
             });
         }
 
@@ -366,30 +550,88 @@ impl RootView {
                     )
                     .with_priority(1),
                 )
+                .children(self.panel_beneath(&menu, room, cx))
                 .into_any_element(),
+        )
+    }
+
+    fn panel_beneath(
+        &self,
+        menu: &Menu,
+        room: Size<Pixels>,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let Beneath { at, reached } = menu.beneath?;
+        let Takes::Opens { entries, drawn } = &menu.entries.get(at)?.takes else {
+            return None;
+        };
+        let offered = entries.iter().filter(|entry| !entry.is_apart()).count();
+        let mut panel =
+            menu_panel("menu-beneath").on_hover(cx.listener(|this, hovered: &bool, _, _| {
+                if *hovered {
+                    this.keeps_what_is_beneath();
+                }
+            }));
+
+        let mut placed = 0;
+        for (under, entry) in entries.iter().enumerate() {
+            panel = panel.child(if entry.is_apart() {
+                apart().into_any_element()
+            } else {
+                placed += 1;
+                self.menu_entry(
+                    Row::Beneath { at, under },
+                    entry,
+                    reached == Some(under),
+                    Placed {
+                        at: placed - 1,
+                        of: offered,
+                    },
+                    cx,
+                )
+            });
+        }
+
+        Some(
+            deferred(
+                anchored()
+                    .position(beside_its_row(drawn.get(), room))
+                    .snap_to_window_with_margin(px(8.0))
+                    .child(motion::lifted_in(panel, "menu-beneath-arrives")),
+            )
+            .with_priority(2)
+            .into_any_element(),
         )
     }
 
     fn menu_entry(
         &self,
-        at: usize,
+        row: Row,
         entry: &Entry,
-        does: &Rc<Doing>,
         reached: bool,
         placed: Placed,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let pressed = Rc::clone(does);
+        let selector = row.selector();
 
         div()
-            .id(("menu-entry", at))
-            .debug_selector(move || format!("menu-entry-{at}"))
-            .named_as(Role::MenuItem, &entry.label, "")
+            .id(row.id())
+            .debug_selector(move || selector.clone())
+            .named_as(
+                Role::MenuItem,
+                &entry.label,
+                if matches!(entry.takes, Takes::Opens { .. }) {
+                    OPEN_BENEATH
+                } else {
+                    ""
+                },
+            )
             .keyed(entry.key.clone())
             .placed(placed)
             .chosen(reached)
             .focused_while(reached)
             .group(MENU_GROUP)
+            .relative()
             .flex()
             .items_center()
             .gap_2p5()
@@ -420,13 +662,111 @@ impl RootView {
             .when_some(entry.key.clone(), |row, key| {
                 row.child(kit::figure(key).text_color(rgb(theme::faint())))
             })
-            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                this.menu = None;
-                pressed(this, window, cx);
-                cx.notify();
-            }))
+            .map(|element| match (&entry.takes, row) {
+                (Takes::Opens { drawn, .. }, Row::Of { at }) => {
+                    let drawn = Rc::clone(drawn);
+
+                    element
+                        .child(icons::icon(
+                            Icon::ChevronRight,
+                            theme::menu_icon(),
+                            theme::faint(),
+                        ))
+                        .child(
+                            canvas(move |bounds, _, _| drawn.set(bounds), |_, _, _, _| {})
+                                .absolute()
+                                .inset_0(),
+                        )
+                        .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                            if *hovered {
+                                this.opens_beneath_the_menu(at, cx);
+                            }
+                        }))
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                            this.opens_beneath_the_menu(at, cx);
+                        }))
+                }
+                (Takes::Press(does), row) => {
+                    let pressed = Rc::clone(does);
+
+                    element
+                        .when(matches!(row, Row::Of { .. }), |element| {
+                            element.on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                                if *hovered {
+                                    this.closes_beneath_the_menu(cx);
+                                }
+                            }))
+                        })
+                        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                            this.menu = None;
+                            pressed(this, window, cx);
+                            cx.notify();
+                        }))
+                }
+                _ => element,
+            })
             .into_any_element()
     }
+}
+
+#[derive(Clone, Copy)]
+enum Row {
+    Of { at: usize },
+    Beneath { at: usize, under: usize },
+}
+
+impl Row {
+    fn id(self) -> ElementId {
+        match self {
+            Self::Of { at } => ("menu-entry", at).into(),
+            Self::Beneath { at, under } => {
+                ElementId::NamedInteger(format!("menu-beneath-{at}").into(), under as u64)
+            }
+        }
+    }
+
+    fn selector(self) -> String {
+        match self {
+            Self::Of { at } => format!("menu-entry-{at}"),
+            Self::Beneath { at, under } => format!("menu-beneath-{at}-{under}"),
+        }
+    }
+}
+
+fn beside_its_row(row: Bounds<Pixels>, room: Size<Pixels>) -> Point<Pixels> {
+    let wide = px(theme::menu_width());
+    let gap = px(BESIDE_ITS_ROW);
+    let x = if row.right() + gap + wide <= room.width {
+        row.right() + gap
+    } else {
+        row.left() - gap - wide
+    };
+
+    point(x, row.top() - px(PANEL_PADDING))
+}
+
+fn menu_panel(id: &'static str) -> Stateful<Div> {
+    div()
+        .id(id)
+        .spoken_as(Role::Menu)
+        .flex()
+        .flex_col()
+        .w(theme::width(theme::menu_width()))
+        .p_1()
+        .gap_0p5()
+        .rounded_lg()
+        .bg(rgb(theme::raised()))
+        .border_1()
+        .border_color(rgb(theme::soft_edge()))
+        .shadow(vec![BoxShadow {
+            color: theme::shadow(0.5),
+            offset: point(px(0.0), px(6.0)),
+            blur_radius: px(24.0),
+            spread_radius: px(0.0),
+            inset: false,
+        }])
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
 }
 
 fn apart() -> Div {
@@ -505,18 +845,22 @@ pub(crate) const PLAY: &str = "Play";
 pub(crate) const PLAY_NEXT: &str = "Play next";
 pub(crate) const ADD_TO_QUEUE: &str = "Add to queue";
 pub(crate) const ADD_TO_PLAYLIST: &str = "Add to playlist…";
-pub(crate) const GO_TO_ARTIST: &str = "Go to artist";
-pub(crate) const GO_TO_ALBUM: &str = "Go to album";
-pub(crate) const COPY_PATH: &str = "Copy the file path";
+pub(crate) const GO_TO: &str = "Go to";
+pub(crate) const COPY: &str = "Copy";
+pub(crate) const REMOVE: &str = "Remove";
+pub(crate) const OTHER_COPIES: &str = "Other copies";
+pub(crate) const GO_TO_ARTIST: &str = "Artist";
+pub(crate) const GO_TO_ALBUM: &str = "Album";
+pub(crate) const COPY_PATH: &str = "File path";
 
 pub(crate) const COPY_PATHS: &str = "Copy the file paths";
 
 pub(crate) const HIDE_EACH: &str = "Hide from library";
 
 pub(crate) const SHOW_EACH: &str = "Show in library";
-pub(crate) const COPY_TITLE: &str = "Copy the title";
-pub(crate) const COPY_ARTIST: &str = "Copy the artist";
-pub(crate) const COPY_ALBUM: &str = "Copy the album";
+pub(crate) const COPY_TITLE: &str = "Title";
+pub(crate) const COPY_ARTIST: &str = "Artist name";
+pub(crate) const COPY_ALBUM: &str = "Album name";
 pub(crate) const SHOW_IN_FOLDER: &str = "Show in the file manager";
 pub(crate) const TAKE_OUT: &str = "Take out of the queue";
 pub(crate) const REMOVE_ROW: &str = "Take out of the playlist";
@@ -569,31 +913,28 @@ impl Menu {
         album: Option<AlbumId>,
         artist: Option<ArtistId>,
     ) -> Self {
-        if album.is_none() && artist.is_none() {
-            return self;
-        }
+        self.apart().nests(Icon::Next, GO_TO, move |mut menu| {
+            if let Some(artist) = artist {
+                menu = menu.does(Icon::Artists, GO_TO_ARTIST, move |this, _, cx| {
+                    let now = this.library.read(cx).standing_of(track);
+                    let artist = now.map_or(Some(artist), |(_, artist)| artist);
+                    if let Some(artist) = artist {
+                        this.opened(Selection::Artist(artist), cx);
+                    }
+                });
+            }
+            if let Some(album) = album {
+                menu = menu.does(Icon::Albums, GO_TO_ALBUM, move |this, _, cx| {
+                    let now = this.library.read(cx).standing_of(track);
+                    let album = now.map_or(Some(album), |(album, _)| album);
+                    if let Some(album) = album {
+                        this.opened(Selection::Album(album), cx);
+                    }
+                });
+            }
 
-        let mut menu = self.apart();
-        if let Some(artist) = artist {
-            menu = menu.does(Icon::Artists, GO_TO_ARTIST, move |this, _, cx| {
-                let now = this.library.read(cx).standing_of(track);
-                let artist = now.map_or(Some(artist), |(_, artist)| artist);
-                if let Some(artist) = artist {
-                    this.opened(Selection::Artist(artist), cx);
-                }
-            });
-        }
-        if let Some(album) = album {
-            menu = menu.does(Icon::Albums, GO_TO_ALBUM, move |this, _, cx| {
-                let now = this.library.read(cx).standing_of(track);
-                let album = now.map_or(Some(album), |(album, _)| album);
-                if let Some(album) = album {
-                    this.opened(Selection::Album(album), cx);
-                }
-            });
-        }
-
-        menu
+            menu
+        })
     }
 
     pub(crate) fn favours(self, what: Favoured, already: bool) -> Self {
@@ -602,7 +943,7 @@ impl Menu {
             false => (Icon::Favourite, FAVOUR),
         };
 
-        self.apart().does(icon, label, move |this, _, cx| {
+        self.does(icon, label, move |this, _, cx| {
             this.library
                 .update(cx, |library, cx| library.favour(what, !already, cx));
         })
@@ -616,15 +957,17 @@ impl Menu {
     }
 
     pub(crate) fn offers_the_other_copies(self, (own, copies): (Track, Vec<Track>)) -> Self {
-        let mut menu = self.apart();
         let labels = copy_labels(&own, &copies);
-        for (copy, label) in copies.into_iter().zip(labels) {
-            let playing: Arc<[Track]> = Arc::from([copy]);
-            menu = menu.does(Icon::Play, label, move |this, _, cx| {
-                this.play(&playing, 0, cx);
-            });
-        }
-        menu
+
+        self.nests(Icon::Tracks, OTHER_COPIES, move |mut menu| {
+            for (copy, label) in copies.into_iter().zip(labels) {
+                let playing: Arc<[Track]> = Arc::from([copy]);
+                menu = menu.does(Icon::Play, label, move |this, _, cx| {
+                    this.play(&playing, 0, cx);
+                });
+            }
+            menu
+        })
     }
 
     pub(crate) fn shares_each(self, tracks: Vec<TrackId>) -> Self {
@@ -659,33 +1002,40 @@ impl Menu {
 
     pub(crate) fn offers_the_file(self, location: &MediaLocation, names: Called) -> Self {
         let menu = self.apart();
-        let menu = match location.locator().as_path() {
-            Some(path) => {
-                let written = path.to_string_lossy().into_owned();
-                let shown = path.to_path_buf();
-                menu.does(Icon::Folder, SHOW_IN_FOLDER, move |_, _, cx| {
-                    cx.reveal_path(&shown);
-                })
-                .does(Icon::Rename, COPY_PATH, move |_, _, cx| {
-                    clipboard::copy(written.clone(), cx);
-                })
-            }
+        let path = location.locator().as_path().map(Path::to_path_buf);
+        let menu = match path.clone() {
+            Some(shown) => menu.does(Icon::Folder, SHOW_IN_FOLDER, move |_, _, cx| {
+                cx.reveal_path(&shown);
+            }),
             None => menu,
         };
 
-        [
-            (COPY_TITLE, Some(names.title)),
-            (COPY_ARTIST, Some(names.artist)),
-            (COPY_ALBUM, names.album),
-        ]
-        .into_iter()
-        .filter_map(|(label, name)| {
-            name.filter(|name| !name.trim().is_empty())
-                .map(|name| (label, name))
-        })
-        .fold(menu, |menu, (label, name)| {
-            menu.does(Icon::Export, label, move |_, _, cx| {
-                clipboard::copy(name.to_string(), cx);
+        menu.nests(Icon::Export, COPY, move |menu| {
+            let menu = match path {
+                Some(path) => {
+                    let written = path.to_string_lossy().into_owned();
+
+                    menu.does(Icon::Rename, COPY_PATH, move |_, _, cx| {
+                        clipboard::copy(written.clone(), cx);
+                    })
+                }
+                None => menu,
+            };
+
+            [
+                (COPY_TITLE, Some(names.title)),
+                (COPY_ARTIST, Some(names.artist)),
+                (COPY_ALBUM, names.album),
+            ]
+            .into_iter()
+            .filter_map(|(label, name)| {
+                name.filter(|name| !name.trim().is_empty())
+                    .map(|name| (label, name))
+            })
+            .fold(menu, |menu, (label, name)| {
+                menu.does(Icon::Export, label, move |_, _, cx| {
+                    clipboard::copy(name.to_string(), cx);
+                })
             })
         })
     }
@@ -799,6 +1149,105 @@ mod tests {
         menu.steps(1);
 
         assert_eq!(Handing::of(false, Some(&menu), false), Handing::Stays);
+    }
+
+    fn a_menu_with_a_menu_beneath() -> Menu {
+        two_entries()
+            .apart()
+            .nests(Icon::Export, COPY, |menu| {
+                menu.does(Icon::Rename, COPY_TITLE, |_, _, _| {}).does(
+                    Icon::Rename,
+                    COPY_ARTIST,
+                    |_, _, _| {},
+                )
+            })
+            .apart()
+    }
+
+    #[test]
+    fn a_menu_beneath_is_walked_by_the_keys_and_stepping_out_lands_on_the_row_it_hangs_from() {
+        let mut menu = a_menu_with_a_menu_beneath();
+
+        menu.steps(1);
+        assert!(!menu.steps_in(), "Play opens nothing");
+        menu.steps(1);
+        menu.steps(1);
+        assert_eq!(menu.reached, Some(3));
+        assert!(menu.reached().is_none(), "a row that opens presses nothing");
+
+        assert!(menu.steps_in());
+        assert_eq!(
+            menu.beneath,
+            Some(Beneath {
+                at: 3,
+                reached: Some(0)
+            })
+        );
+        assert!(menu.reached().is_some());
+
+        menu.steps(1);
+        assert_eq!(
+            menu.beneath,
+            Some(Beneath {
+                at: 3,
+                reached: Some(1)
+            })
+        );
+        assert!(
+            !menu.steps_in(),
+            "enter on a row beneath presses it rather than going back to the first"
+        );
+        menu.steps(1);
+        assert_eq!(
+            menu.beneath,
+            Some(Beneath {
+                at: 3,
+                reached: Some(0)
+            }),
+            "the walk wraps within what is beneath"
+        );
+
+        assert!(menu.steps_out());
+        assert_eq!(menu.beneath, None);
+        assert_eq!(menu.reached, Some(3));
+        assert!(!menu.steps_out(), "nothing is left to step out of");
+    }
+
+    #[test]
+    fn a_menu_opens_with_no_line_left_at_its_foot_and_an_empty_nest_is_not_offered() {
+        let menu = two_entries()
+            .apart()
+            .nests(Icon::Export, COPY, |menu| menu)
+            .apart()
+            .without_a_last_line();
+
+        assert_eq!(menu.labels(), ["Play", "Add to queue"]);
+        assert_eq!(menu.entries.len(), 2);
+    }
+
+    #[test]
+    fn a_label_beneath_is_found_with_the_row_it_hangs_from() {
+        let menu = a_menu_with_a_menu_beneath();
+
+        assert_eq!(menu.offering("Play"), Some(Offered::Here(0)));
+        assert_eq!(menu.offering(COPY_ARTIST), Some(Offered::Beneath(3, 1)));
+        assert_eq!(menu.offering("Nothing like it"), None);
+    }
+
+    #[test]
+    fn a_menu_beneath_stands_beside_its_row_on_whichever_side_has_room() {
+        let row = Bounds::new(point(px(100.0), px(50.0)), gpui::size(px(236.0), px(30.0)));
+        let wide = gpui::size(px(1200.0), px(800.0));
+        let narrow = gpui::size(px(500.0), px(800.0));
+
+        assert_eq!(
+            beside_its_row(row, wide),
+            point(px(100.0 + 236.0 + BESIDE_ITS_ROW), px(50.0 - PANEL_PADDING))
+        );
+        assert_eq!(
+            beside_its_row(row, narrow).x,
+            px(100.0 - BESIDE_ITS_ROW - theme::menu_width())
+        );
     }
 
     #[test]

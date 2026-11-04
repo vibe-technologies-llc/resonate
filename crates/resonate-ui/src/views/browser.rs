@@ -1321,20 +1321,26 @@ impl RootView {
                         })
                     })
                     .apart()
-                    .does(icon, hiding, move |this, _, cx| {
-                        this.library.update(cx, |library, cx| {
-                            library.hide_track(track_id, !hidden, cx);
-                        });
-                    })
-                    .when_some(delivered, |menu, delivered| {
-                        menu.does(Icon::Close, menu::FORGET_DELIVERY, move |this, _, cx| {
+                    .nests(Icon::Delete, menu::REMOVE, move |menu| {
+                        menu.does(icon, hiding, move |this, _, cx| {
                             this.library.update(cx, |library, cx| {
-                                library.forget_delivered(&delivered, cx);
+                                library.hide_track(track_id, !hidden, cx);
                             });
                         })
-                    })
-                    .does(Icon::Delete, menu::DELETE_FROM_DISK, move |this, _, cx| {
-                        this.ask_to_delete(deleting.clone(), cx);
+                        .when_some(delivered, |menu, delivered| {
+                            menu.does(Icon::Close, menu::FORGET_DELIVERY, move |this, _, cx| {
+                                this.library.update(cx, |library, cx| {
+                                    library.forget_delivered(&delivered, cx);
+                                });
+                            })
+                        })
+                        .does(
+                            Icon::Delete,
+                            menu::DELETE_FROM_DISK,
+                            move |this, _, cx| {
+                                this.ask_to_delete(deleting.clone(), cx);
+                            },
+                        )
                     })
             },
             cx,
@@ -4065,21 +4071,23 @@ fn chosen_tracks_menu(at: Point<Pixels>, tracks: Vec<Track>, this: &RootView, cx
         .offers_the_files(paths)
         .shares_each(sharing)
         .apart()
-        .does(
-            if hidden { Icon::Undo } else { Icon::Discard },
-            if hidden {
-                menu::SHOW_EACH
-            } else {
-                menu::HIDE_EACH
-            },
-            move |this, _, cx| {
-                this.library.update(cx, |library, cx| {
-                    library.hide_tracks(hiding.clone(), !hidden, cx);
-                });
-            },
-        )
-        .does(Icon::Delete, menu::DELETE_FROM_DISK, move |this, _, cx| {
-            this.ask_to_delete(deleting.clone(), cx);
+        .nests(Icon::Delete, menu::REMOVE, move |menu| {
+            menu.does(
+                if hidden { Icon::Undo } else { Icon::Discard },
+                if hidden {
+                    menu::SHOW_EACH
+                } else {
+                    menu::HIDE_EACH
+                },
+                move |this, _, cx| {
+                    this.library.update(cx, |library, cx| {
+                        library.hide_tracks(hiding.clone(), !hidden, cx);
+                    });
+                },
+            )
+            .does(Icon::Delete, menu::DELETE_FROM_DISK, move |this, _, cx| {
+                this.ask_to_delete(deleting.clone(), cx);
+            })
         })
 }
 

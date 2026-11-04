@@ -50,6 +50,18 @@ is never named.
   `overflow_y_scroll` region tracked by `sidebar_scroll`, with a `Scrollbars` bar over its edge; the
   download and enrichment status and *Settings* stand below it, never scrolled, so a window squeezed
   vertically scrolls the tabs and leaves the foot above the playback bar.
+- **A long menu nests what a row rarely needs, one level deep.** `Menu::nests(icon, label, fill)`
+  hangs a panel off a row with a chevron (`Takes::Opens`, nothing when `fill` offers nothing): a song
+  is Play, Play next, Add to queue and Add to playlist, *Go to* (artist, album), favourite, *Show in
+  the file manager*, *Copy* (file path, title, artist, album), Share, *Other copies* where there are
+  some and *Remove* (hide, forget a delivery, delete), ten rows for sixteen. A pointer opens the panel
+  by resting on its row and a press too; it stands beside the row on whichever side has room
+  (`beside_its_row`, read from the row drawn a frame behind), and resting on another row closes it only
+  after `STAYS_OPEN_FOR_THE_POINTER_CROSSING` (250 ms), which reaching the panel calls off, so a
+  diagonal to it does not lose it. `right` or `enter` steps into a panel from its reached row, `up`
+  and `down` walk within it and `left` or escape steps back onto that row, a second escape closing the
+  menu. `Menu::labels` lists a nest's rows in its place and `Menu::offering` says how to reach a label
+  (`a_menu_beneath_is_walked_by_the_keys_and_stepping_out_lands_on_the_row_it_hangs_from`).
 - **A menu's *Play* does what a click or `enter` on its cell does.** A track row's menu plays the
   listing from it (`RootView::play_the_row`, shared with the click); an album or artist cell's
   menu queues the album or artist whole (`whole_of`: album then track order, no search text, as a drag
