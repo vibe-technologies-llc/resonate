@@ -1517,7 +1517,7 @@ impl RootView {
                     .rounded_xl()
                     .bg(rgb(theme::surface()))
                     .border_1()
-                    .border_color(rgb(theme::outline()))
+                    .border_color(rgb(theme::soft_edge()))
                     .shadow(vec![gpui::BoxShadow {
                         color: theme::shadow(0.55),
                         offset: gpui::point(px(0.0), px(12.0)),

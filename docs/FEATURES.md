@@ -4,11 +4,17 @@ Gaps: what is not built, a limit by design, an unsupported format or a behaviour
 reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Android parity
+- [S · 0.5.0] Android's album page draws only the songs held: iOS greys in the songs of the album's
+  release the listener lacks, each a press to download it, over `album_songs_not_held` and
+  `learn_album_songs`, which Android's generated bindings already carry and no screen calls
 - [M · blocked: hardware] Android offers no DoP: a marked stream needs the USB bit-perfect mixer at a
   32-bit word (Oboe-rs has no packed 24-bit one) and a DAC that decodes it to prove the markers
   arrive untouched
 
 ## iOS parity
+- [M · 0.5.0] An artist's page on the phones lists only what is held: the desktop greys in the
+  releases and songs of a discography the library lacks (`library.md`), and a phone reaches those
+  only through the Search tab's online artist page, since its catalog keeps no discography
 - [L · blocked: xtool] The iOS icon has no appearance variants of its own: Dark, Clear and Tinted
   come from a compiled `Assets.car` (an `AppIcon` set with dark and tinted renditions, or an Icon
   Composer `.icon`, whichever `actool` compiles, which only Xcode has), and xtool 1.24 turns

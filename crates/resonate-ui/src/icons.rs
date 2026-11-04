@@ -112,6 +112,7 @@ icons! {
     Close => "close",
     ChevronUp => "chevron-up",
     ChevronDown => "chevron-down",
+    ChevronRight => "chevron-right",
     Disc => "disc",
     Missing => "missing",
     Link => "link",

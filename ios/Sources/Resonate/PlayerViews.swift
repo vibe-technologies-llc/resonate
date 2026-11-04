@@ -8,6 +8,7 @@ struct MiniPlayer: View {
     private static let swipeDistance: CGFloat = 40
     private static let inlineInset: CGFloat = 12
     private static let artistOpacity = 0.6
+    private static let accessoryRegrowsWithin = Duration.milliseconds(450)
 
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
@@ -19,6 +20,7 @@ struct MiniPlayer: View {
     let zoom: Namespace.ID
     @State private var skipped = 0
     @State private var fit = InlineFit.unmeasured
+    @State private var skipsSettled = true
     @State private var swipedOpenFrom: CGPoint?
 
     private enum InlineFit {
@@ -62,6 +64,8 @@ struct MiniPlayer: View {
                     Label("Previous", systemImage: "backward.fill").labelStyle(.iconOnly).touchTarget().buttonShape()
                 }
                 .accessibilityInputLabels(["Previous", "Previous song", "Back"])
+                .opacity(skipsSettled ? 1 : 0)
+                .allowsHitTesting(skipsSettled)
             }
             PlayButton(transport: library.transport)
             if expanded {
@@ -69,6 +73,8 @@ struct MiniPlayer: View {
                     Label("Next", systemImage: "forward.fill").labelStyle(.iconOnly).touchTarget().buttonShape()
                 }
                 .accessibilityInputLabels(["Next", "Next song", "Skip"])
+                .opacity(skipsSettled ? 1 : 0)
+                .allowsHitTesting(skipsSettled)
             }
         }
         .buttonStyle(.plain)
@@ -77,6 +83,7 @@ struct MiniPlayer: View {
         .transaction(value: placement) { $0.animation = nil }
         .transaction(value: fit) { $0.animation = nil }
         .onGeometryChange(for: InlineFit.self) { InlineFit(width: $0.size.width) } action: { fit = $0 }
+        .task(id: expanded) { await settleTheSkips(expanded: expanded) }
         .contentShape(.rect)
         .onTapGesture { navigation.nowPlaying = true }
         .simultaneousGesture(swipes)
@@ -104,6 +111,17 @@ struct MiniPlayer: View {
                 else { return }
                 skip(forward: drag.translation.width < 0)
             }
+    }
+
+    private func settleTheSkips(expanded: Bool) async {
+        guard expanded else {
+            skipsSettled = false
+            return
+        }
+        guard !skipsSettled else { return }
+        try? await Task.sleep(for: Self.accessoryRegrowsWithin)
+        guard !Task.isCancelled else { return }
+        withAnimation(reduceMotion ? nil : Arrival.animation) { skipsSettled = true }
     }
 
     private func skip(forward: Bool) {

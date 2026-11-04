@@ -641,6 +641,7 @@ pub struct RootView {
     pub(crate) minimum_length: Entity<Field>,
     pub(crate) typed_root: Entity<Field>,
     pub(crate) finding: Entity<Field>,
+    pub(crate) finding_holds_the_caret: bool,
     pub(crate) server: Entity<ServerModel>,
     pub(crate) server_search: Entity<Field>,
     pub(crate) server_rows: UniformListScrollHandle,
@@ -736,6 +737,7 @@ pub struct RootView {
     pub(crate) muted_from: Option<Volume>,
     type_ahead: TypeAhead,
     typing_stops: Task<()>,
+    pub(crate) beneath_closes: Task<()>,
     last_typed: Option<Instant>,
     pub(crate) queue_names: QueueNames,
     drawn_at: SystemTime,
@@ -1267,6 +1269,7 @@ impl RootView {
             minimum_length,
             typed_root,
             finding,
+            finding_holds_the_caret: false,
             server,
             server_search,
             server_rows: UniformListScrollHandle::new(),
@@ -1362,6 +1365,7 @@ impl RootView {
             muted_from: None,
             type_ahead: TypeAhead::default(),
             typing_stops: Task::ready(()),
+            beneath_closes: Task::ready(()),
             last_typed: None,
             queue_names: QueueNames::default(),
             drawn_at: SystemTime::now(),
@@ -4229,7 +4233,9 @@ impl RootView {
             self.record = None;
             cx.notify();
         } else if self.menu.is_some() {
-            self.close_the_menu(cx);
+            if !self.back_out_of_the_menu(cx) {
+                self.close_the_menu(cx);
+            }
         } else {
             return false;
         }
@@ -4296,7 +4302,7 @@ impl RootView {
                         .rounded_full()
                         .bg(rgb(theme::raised()))
                         .border_1()
-                        .border_color(rgb(theme::outline()))
+                        .border_color(rgb(theme::soft_edge()))
                         .shadow(vec![BoxShadow {
                             color: theme::shadow(0.45),
                             offset: point(px(0.0), px(4.0)),
@@ -4827,15 +4833,11 @@ impl RootView {
             .border_color(if searching {
                 theme::tinted(theme::accent(), 0x99)
             } else {
-                theme::tinted(theme::outline(), 0xff)
+                rgb(theme::soft_edge())
             })
             .text_size(px(theme::text_sm()))
             .cursor_text()
-            .hover(|field| {
-                field
-                    .border_color(rgb(theme::outline()))
-                    .bg(rgb(theme::hover()))
-            })
+            .hover(|field| field.bg(rgb(theme::hover())))
             .child(icons::icon(
                 Icon::Search,
                 theme::search_icon(),
@@ -5799,6 +5801,7 @@ impl RootView {
             Region::Sidebar => self.sidebar(cx).into_any_element(),
             Region::Pane => {
                 self.grid_width.seen_in(window.viewport_size().width);
+                self.finding_holds_the_caret = self.finding.read(cx).is_focused(window);
                 let shown = self.pane_shown(cx);
                 let named = match self.search_in_front(cx) {
                     Some(_) => SEARCH_REGION,
@@ -5940,11 +5943,17 @@ impl Render for RootView {
             .on_action(cx.listener(|this, _: &Next, _, cx| this.send(Command::Next, cx)))
             .on_action(cx.listener(|this, _: &Previous, _, cx| this.send(Command::Previous, cx)))
             .on_action(cx.listener(|this, _: &SeekForward, _, cx| {
+                if this.step_into_the_menu(cx) || this.something_stands_over_the_pane() {
+                    return;
+                }
                 if !this.reach_along_the_strip(Step::Below, cx) {
                     this.seek_by(seek_step(), cx);
                 }
             }))
             .on_action(cx.listener(|this, _: &SeekBackward, _, cx| {
+                if this.back_out_of_the_menu(cx) || this.something_stands_over_the_pane() {
+                    return;
+                }
                 if !this.reach_along_the_strip(Step::Above, cx) {
                     this.seek_by(-seek_step(), cx);
                 }
@@ -6098,7 +6107,10 @@ impl Render for RootView {
             })
             .when_some(self.type_ahead_pill(), ParentElement::child)
             .when_some(self.downloads_over_the_app(cx), ParentElement::child)
-            .when_some(self.menu_over_the_app(cx), ParentElement::child)
+            .when_some(
+                self.menu_over_the_app(window.viewport_size(), cx),
+                ParentElement::child,
+            )
             .when_some(self.record_over_the_app(cx), ParentElement::child)
             .when_some(self.adding.clone(), |app, holding| {
                 app.child(self.playlist_picker(&holding, cx))

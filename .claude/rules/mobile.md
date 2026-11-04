@@ -188,6 +188,30 @@ phone keeps a host list of its own
 `a_profile_link_names_its_service_and_anything_else_names_none`,
 `a_playlist_link_names_its_service_and_any_other_text_names_none`).
 
+## The songs an album lacks
+
+`album_songs.rs` is the phones' half of `ui.md`'s *Album rows = catalog rows merged with the release's
+missing ones*, and a phone's catalog keeps nothing else of a release. Step 26
+(`ALBUMS_KEEP_THE_SONGS_OF_THEIR_RELEASE`) made `release_songs` (`album_key`, `disc`, `position` primary,
+beside what a `SearchSong` carries; no foreign key, since an album is no row of its own), written whole
+whenever a release lands on an album: by the enrichment pass (`land_album_release`, in its transaction,
+so a new album's list is there offline) and by `learn_album_songs(key)`, for an album matched before
+this step: where the album names a release (`album_art.release`, else a song's tagged `release`), keeps
+no song of it and online reaches, it asks `Reference::release` once and answers whether songs landed,
+a refusal being `Error::Reference`. `album_songs_not_held(key)` reads the list, no network, and leaves
+out what the album holds, by the desktop's passes each taking only what the earlier left and one file
+answering for one song: recording, title at its place, title anywhere, place alone (a file with no disc
+is on the first of a one-medium release), then `local_match`, so a song held under another album is not
+offered again. `SearchSong` carries disc and position, so a row is a download as any online row is, and
+`release_songs` (the export) and the list share `songs_of`
+(`a_kept_release_lists_only_the_songs_the_album_does_not_hold_in_their_order`,
+`a_song_is_held_by_its_recording_its_title_or_its_place`,
+`one_file_answers_for_one_song_of_a_name_a_release_holds_twice`,
+`a_song_landed_under_another_album_is_held_by_its_recording`,
+`an_album_with_a_release_is_asked_once_and_one_without_is_never_asked`,
+`a_catalog_of_before_albums_kept_their_songs_keeps_its_rows_and_owes_each_matched_album_a_read`). iOS draws them; Android does
+not yet (`FEATURES.md`).
+
 ## Logging
 
 `logging.rs` is the phones' `tracing` subscriber, safe code only: `keep_log(logbook)` installs once

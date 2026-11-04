@@ -29,6 +29,7 @@ use rusqlite::{OptionalExtension, params, params_from_iter, types::Value};
 
 use crate::{
     Error, MobilePlayer, Result, StoreOp, Track,
+    album_songs::keep_the_songs_of,
     catalog::Catalog,
     catalog_extras::{kept_picture, unreferenced_picture_dropped},
     documents::location,
@@ -2089,6 +2090,7 @@ impl Catalog {
                 params![key, release.id.as_str(), group],
             )
             .map_err(write_error)?;
+        keep_the_songs_of(&transaction, key, release)?;
         transaction.commit().map_err(write_error)
     }
 
@@ -2808,6 +2810,52 @@ mod tests {
                 Some(RELEASE)
             );
         }
+    }
+
+    #[test]
+    fn a_release_landing_on_an_album_keeps_its_songs_for_the_albums_page() {
+        let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+        let release = Release {
+            id: Mbid::new(RELEASE).expect("an mbid"),
+            group: Mbid::new(GROUP).ok(),
+            title: "Album".into(),
+            credit: Fake::credit(),
+            date: None,
+            country: None,
+            label: None,
+            catalog_number: None,
+            barcode: None,
+            kind: None,
+            disambiguation: None,
+            has_front_cover: false,
+            links: Vec::new(),
+            media: vec![resonate_library::Medium {
+                position: 1,
+                format: None,
+                title: None,
+                tracks: vec![resonate_library::ReleaseTrack {
+                    position: 1,
+                    number: "1".into(),
+                    title: "Echoes".into(),
+                    artist: None,
+                    recording: None,
+                    track: None,
+                    length: None,
+                    isrcs: Vec::new(),
+                    links: Vec::new(),
+                }],
+            }],
+        };
+
+        catalog
+            .land_album_release("the album", &release, SystemTime::now())
+            .expect("landed");
+
+        let songs = catalog.album_songs_not_held("the album").expect("the rows");
+        assert_eq!(songs.len(), 1);
+        assert_eq!(songs[0].title, "Echoes");
+        assert_eq!(songs[0].release, RELEASE);
+        assert_eq!(songs[0].release_group, GROUP);
     }
 
     #[test]

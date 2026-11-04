@@ -232,6 +232,24 @@ CREATE TABLE songs_deleted (
 ) STRICT;
 ";
 
+const ALBUMS_KEEP_THE_SONGS_OF_THEIR_RELEASE: &str = "
+CREATE TABLE release_songs (
+    album_key     TEXT NOT NULL,
+    disc          INTEGER NOT NULL,
+    position      INTEGER NOT NULL,
+    recording     TEXT NOT NULL,
+    title         TEXT NOT NULL,
+    artist        TEXT NOT NULL,
+    artist_id     TEXT NOT NULL,
+    album         TEXT NOT NULL,
+    release       TEXT NOT NULL,
+    release_group TEXT NOT NULL,
+    duration_ms   INTEGER,
+    isrcs         TEXT NOT NULL,
+    PRIMARY KEY (album_key, disc, position)
+) STRICT;
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     LISTENS_NAME_THEIR_ORIGIN,
@@ -258,6 +276,7 @@ const MIGRATIONS: &[&str] = &[
     SONGS_DELETED_HERE_ARE_REMEMBERED,
     PLAYLISTS_REMEMBER_THEIR_LINK,
     PROFILES_ARE_FOLLOWED_WHOLE,
+    ALBUMS_KEEP_THE_SONGS_OF_THEIR_RELEASE,
 ];
 
 #[cfg(test)]
@@ -1523,6 +1542,74 @@ mod tests {
         assert_eq!(kept.len(), 1);
         assert_eq!(kept[0].volume, Volume::MAX);
         assert!(refused.is_err());
+        drop(opened);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn a_catalog_of_before_albums_kept_their_songs_keeps_its_rows_and_owes_each_matched_album_a_read()
+     {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock")
+            .as_nanos();
+        let path = env::temp_dir().join(format!("resonate-mobile-release-songs-{unique}.sqlite"));
+        let release = "11111111-1111-4111-8111-111111111111";
+        let connection = Connection::open(&path).expect("a database");
+        connection
+            .create_scalar_function(
+                "folded",
+                1,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
+            )
+            .expect("the fold");
+        for step in &MIGRATIONS[..laid_before(ALBUMS_KEEP_THE_SONGS_OF_THEIR_RELEASE)] {
+            connection.execute_batch(step).expect("an earlier version");
+        }
+        connection
+            .execute(
+                "INSERT INTO documents (uri, name, title, artist, album, duration_ms, rate, codec)
+                 VALUES ('content://music/one.flac', 'one.flac', 'One', 'Band', 'Album', 1000, 44100, 'FLAC')",
+                [],
+            )
+            .expect("a song of before");
+        let key: String = connection
+            .query_row(
+                "SELECT album_key FROM documents WHERE uri = 'content://music/one.flac'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("its album");
+        connection
+            .execute(
+                "INSERT INTO album_art (album_key, release) VALUES (?1, ?2)",
+                rusqlite::params![key, release],
+            )
+            .expect("an album matched before");
+        connection
+            .pragma_update(
+                None,
+                "user_version",
+                u32::try_from(laid_before(ALBUMS_KEEP_THE_SONGS_OF_THEIR_RELEASE))
+                    .expect("a count"),
+            )
+            .expect("its stamp");
+        drop(connection);
+
+        let opened = Catalog::open(&path).expect("migrated");
+
+        assert_eq!(opened.tracks("One", 0, 10).expect("the rows").len(), 1);
+        assert!(
+            opened
+                .album_songs_not_held(&key)
+                .expect("nothing kept yet")
+                .is_empty()
+        );
+        assert_eq!(
+            opened.release_not_yet_read(&key).expect("a release owed"),
+            resonate_core::Mbid::new(release).ok()
+        );
         drop(opened);
         let _ = fs::remove_file(path);
     }

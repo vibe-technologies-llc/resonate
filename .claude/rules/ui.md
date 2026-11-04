@@ -50,6 +50,18 @@ is never named.
   `overflow_y_scroll` region tracked by `sidebar_scroll`, with a `Scrollbars` bar over its edge; the
   download and enrichment status and *Settings* stand below it, never scrolled, so a window squeezed
   vertically scrolls the tabs and leaves the foot above the playback bar.
+- **A long menu nests what a row rarely needs, one level deep.** `Menu::nests(icon, label, fill)`
+  hangs a panel off a row with a chevron (`Takes::Opens`, nothing when `fill` offers nothing): a song
+  is Play, Play next, Add to queue and Add to playlist, *Go to* (artist, album), favourite, *Show in
+  the file manager*, *Copy* (file path, title, artist, album), Share, *Other copies* where there are
+  some and *Remove* (hide, forget a delivery, delete), ten rows for sixteen. A pointer opens the panel
+  by resting on its row and a press too; it stands beside the row on whichever side has room
+  (`beside_its_row`, read from the row drawn a frame behind), and resting on another row closes it only
+  after `STAYS_OPEN_FOR_THE_POINTER_CROSSING` (250 ms), which reaching the panel calls off, so a
+  diagonal to it does not lose it. `right` or `enter` steps into a panel from its reached row, `up`
+  and `down` walk within it and `left` or escape steps back onto that row, a second escape closing the
+  menu. `Menu::labels` lists a nest's rows in its place and `Menu::offering` says how to reach a label
+  (`a_menu_beneath_is_walked_by_the_keys_and_stepping_out_lands_on_the_row_it_hangs_from`).
 - **A menu's *Play* does what a click or `enter` on its cell does.** A track row's menu plays the
   listing from it (`RootView::play_the_row`, shared with the click); an album or artist cell's
   menu queues the album or artist whole (`whole_of`: album then track order, no search text, as a drag
@@ -248,9 +260,13 @@ is never named.
     requested position until its `Outcome` answers (a refused seek restores the published position
     and raises the command toast); only `shown_position` reads the target, `state` stays what the
     engine published.
-  - Wheel over the volume cluster = a `VOLUME_A_NOTCH` (touchpad pixels in `PIXELS_A_NOTCH`) while
-    `ResonateApp::scroll_volume` says so; `RootView::volume_aimed` is what a run of notches or keys
-    adds to (reading the published volume back lost all but one per poll).
+  - Wheel over the volume cluster = a `VOLUME_A_NOTCH` (5 %; touchpad pixels in `PIXELS_A_NOTCH`) while
+    `ResonateApp::scroll_volume` says so; gpui hands one click of a wheel over as three lines
+    (`LINES_A_WHEEL_NOTCH`, its `SCROLL_LINES`), so a line read as a notch moved 15 % a click;
+    `RootView::volume_aimed` is what a run of notches or keys adds to (reading the published volume
+    back lost all but one per poll). **The volume rail is an even number of pixels wide**
+    (`halves_on_whole_pixels`): at a text size scaling it to an odd width, 50 % filled one side a
+    pixel further than the other.
   - **A press on the speaker, or `ctrl-m`, mutes; mute is not a volume.** `toggle_mute` sends
     `Volume::MUTE` and keeps the heard level in `muted_from`, storing nothing. `muted_at` reads the
     pair only while the engine publishes mute, so a volume set over the bus ends the mute. Where the
@@ -729,14 +745,22 @@ is never named.
   row, a segment, a ghost button) was filled with the ring colour. An inset shadow is painted before
   the element's children, so an opaque ground child (the `shown_while` wash of the settings rail,
   `kit::segment` and the bar's toggles) is laid by `focus::beneath_the_ring`, inside the ring's
-  width. A field holding the caret still lights on `in_focus`, since a click into it is where typing
-  goes.
-- **An outlined button's edge is `border`, not `outline`.** `outline` is lifted to 3:1 for the
-  edges that alone tell a control apart (a field, a swatch, a menu); a button is told by its
-  raised fill and label, and at 3:1 every button wore a hard line. High Contrast's `border` is
-  already at its bar.
+  width. A field holding the caret still lights its border, since a click into it is where typing
+  goes, read from `Field::is_focused` (`RootView::finding_holds_the_caret`, set as the pane is
+  drawn), never gpui's `in_focus`, which lights what stands *inside* the focused element: the
+  window's root holds the focus at rest, so the settings filter stood lit in the accent whenever no
+  control held it.
+- **What is drawn at rest wears a soft edge; `outline` is for the two marks that are nothing but
+  their edge.** `outline` (`DRAWN_EDGE`, 3:1) now draws only a switch's track and a radio's ring. A
+  button's edge is `border`; everything else that once took `outline` (the search field at rest, a
+  menu, hint, toast, the picker and record cards, the seek and volume rails' and a scan's track, a
+  meter's ground, a plot's zero line, a day with no plays) takes `theme::soft_edge()`, `border` a
+  quarter of the way to `outline`: at 3:1 each drew a hard bright line, and a surface that floats is
+  told by its raised fill and shadow, a rail by what fills it, a field by its fill, mark and words.
+  In High Contrast `border` is at its 4.5:1 bar, so the soft edge is too
+  (`a_soft_edge_is_quiet_beside_the_outline_and_strong_in_high_contrast`).
 - **Accessibility beyond the tree: the bars and what holds them.** The contrast tests in `theme.rs`
-  also walk every theme x accent for: drawn edges (`DRAWN_EDGE`) standing off the panes they are
+  also walk every theme x accent for: `outline` (`DRAWN_EDGE`) standing off the panes it is
   drawn on at 3:1, `theme::focus_ring()` (`FOCUS_RING_WIDTH` 2 px, full strength, 3:1 against every
   pane; `focus_ring_over(fill)` picks whichever ink stands off a fill), every accent as text on the
   panes, every semantic colour as text on its own `tinted` wash, the inks on every pane they are
@@ -1009,9 +1033,11 @@ is never named.
   moves**: `PlayerModel::refresh` answers `Poll::Quiet` when not playing, no sleep timer, no seek in
   flight and nothing changed, and after `QUIET_POLLS_BEFORE_RESTING` (30) the loop waits
   `RESTING_POLL_INTERVAL` (64 ms).
-- **A sheet that runs early or late is moved by the listener, for that track.** *Later*/*Earlier*
-  (`LyricsAhead::STEP_MS` 100, within `MOST_MS` 30 s; `resonate-library`'s `sung.rs`) and the offset as
-  a chip putting it back. `look_for_lyrics` reads `Library::lyrics_ahead` into
+- **A sheet that runs early or late is moved by the listener, for that track.** *Earlier*/*Later*
+  (`LyricsAhead::STEP_MS` 100, within `MOST_MS` 30 s; `resonate-library`'s `sung.rs`) are `Tone::Ghost`
+  buttons in time's order (`RootView::lyric_timing`), the offset a `Tone::Outlined` button between them
+  putting it back: as chips they read as two more choices of the *Reads* pair beside them, and a chip
+  is what a setting is chosen from. `look_for_lyrics` reads `Library::lyrics_ahead` into
   `LyricsModel::hold_ahead`; `nudge_the_lyrics` writes `Library::hold_lyrics_ahead`. The pane reads every
   line at `ahead.read(clock)`; a line press seeks to `ahead.back(moment)`
   (`RootView::seek_to_moment`, clamped to the duration). A wheel sets `led_by_hand` (no following for

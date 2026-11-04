@@ -36,24 +36,64 @@ public struct SongKeys: Sendable {
     }
 }
 
+public enum AlbumRow: Identifiable, Sendable {
+    case held(Track)
+    case notHeld(SearchSong)
+
+    public var id: String {
+        switch self {
+        case .held(let track): "held:\(track.id)"
+        case .notHeld(let song): "not-held:\(song.disc ?? 1):\(song.position ?? 0):\(song.id)"
+        }
+    }
+
+    var place: UInt32? {
+        switch self {
+        case .held(let track): track.trackNumber
+        case .notHeld(let song): song.position
+        }
+    }
+}
+
 public struct AlbumDisc: Identifiable, Sendable {
     public let number: UInt32
     public let run: Int
-    public var tracks: [Track]
+    public var rows: [AlbumRow]
 
     public var id: Int { run }
 
-    public static func of(_ tracks: [Track]) -> [AlbumDisc] {
+    public var tracks: [Track] {
+        rows.compactMap { row in
+            if case .held(let track) = row { track } else { nil }
+        }
+    }
+
+    public static func of(_ tracks: [Track], notHeld: [SearchSong] = []) -> [AlbumDisc] {
         var discs: [AlbumDisc] = []
         for track in tracks {
             let number = track.discNumber ?? 1
             if discs.last?.number == number {
-                discs[discs.count - 1].tracks.append(track)
+                discs[discs.count - 1].rows.append(.held(track))
             } else {
-                discs.append(AlbumDisc(number: number, run: discs.count, tracks: [track]))
+                discs.append(AlbumDisc(number: number, run: discs.count, rows: [.held(track)]))
             }
         }
-        return discs
+        for song in notHeld {
+            let number = song.disc ?? 1
+            if let found = discs.firstIndex(where: { $0.number == number }) {
+                discs[found].lay(song)
+            } else {
+                let after = discs.firstIndex { $0.number > number } ?? discs.endIndex
+                discs.insert(AlbumDisc(number: number, run: 0, rows: [.notHeld(song)]), at: after)
+            }
+        }
+        return discs.enumerated().map { AlbumDisc(number: $1.number, run: $0, rows: $1.rows) }
+    }
+
+    private mutating func lay(_ song: SearchSong) {
+        let place = song.position ?? .max
+        let before = rows.firstIndex { ($0.place ?? 0) > place } ?? rows.endIndex
+        rows.insert(.notHeld(song), at: before)
     }
 }
 

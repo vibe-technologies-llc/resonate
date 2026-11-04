@@ -770,6 +770,7 @@ struct AlbumView: View {
     @State private var key: String
     @State private var album: AlbumHit?
     @State private var tracks: [Track] = []
+    @State private var notHeld: [SearchSong] = []
     @State private var read = false
     @State private var failure: String?
 
@@ -781,7 +782,7 @@ struct AlbumView: View {
         let shownTitle = album?.shownTitle ?? ""
         let artist = album?.artist ?? ""
         let credit = AlbumCredit(artist)
-        let discs = AlbumDisc.of(tracks)
+        let discs = AlbumDisc.of(tracks, notHeld: notHeld)
         List {
             CollectionHeader(
                 title: shownTitle,
@@ -798,11 +799,17 @@ struct AlbumView: View {
             }
             ForEach(discs) { disc in
                 Section {
-                    ForEach(disc.tracks, id: \.id) { track in
-                        TrackRow(track: track, numbered: track.trackNumber, albumArtist: credit) {
-                            library.play(tracks, selected: track)
+                    ForEach(disc.rows) { row in
+                        switch row {
+                        case .held(let track):
+                            TrackRow(track: track, numbered: track.trackNumber, albumArtist: credit) {
+                                library.play(tracks, selected: track)
+                            }
+                            .listRowBackground(Color.clear)
+                        case .notHeld(let song):
+                            NotHeldAlbumRow(song: song)
+                                .listRowBackground(Color.clear)
                         }
-                        .listRowBackground(Color.clear)
                     }
                 } header: {
                     if discs.count > 1 {
@@ -818,6 +825,14 @@ struct AlbumView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { CollectionMenu(tracks: tracks, artist: album?.variousArtists == true ? nil : artist, editsTags: true) }
         .task(id: "\(key):\(library.collectionGeneration):\(library.catalogEpoch)") { await load() }
+        .task(id: key) { await learnTheRelease() }
+    }
+
+    private func learnTheRelease() async {
+        guard let native = try? await library.player() else { return }
+        let key = key
+        guard (try? await Work.aside { try native.learnAlbumSongs(key: key) }) == true else { return }
+        notHeld = (try? await Work.aside { try native.albumSongsNotHeld(key: key) }) ?? notHeld
     }
 
     private func load() async {
@@ -825,8 +840,11 @@ struct AlbumView: View {
         let key = key
         let found: AlbumHit?
         let rows: [Track]
+        let lacking: [SearchSong]
         do {
-            (found, rows) = try await Work.aside { (try native.album(key: key), try native.albumTracks(key: key)) }
+            (found, rows, lacking) = try await Work.aside {
+                (try native.album(key: key), try native.albumTracks(key: key), try native.albumSongsNotHeld(key: key))
+            }
         } catch {
             failure = explained(error)
             return
@@ -842,7 +860,66 @@ struct AlbumView: View {
         }
         album = found
         tracks = rows
+        notHeld = lacking
         read = true
+    }
+}
+
+struct NotHeldAlbumRow: View {
+    @Environment(Library.self) private var library
+    @ScaledMetric(relativeTo: .callout) private var numberWidth: CGFloat = 28
+    let song: SearchSong
+
+    var body: some View {
+        let features = library.features
+        let downloads = features.downloads
+        let standing = downloads.standing(of: song)
+        Button {
+            guard standing.startsOnTap else { return }
+            downloads.enqueue([song])
+        } label: {
+            HStack(spacing: 12) {
+                Text(song.position.map(String.init) ?? "")
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .frame(width: numberWidth)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(song.title)
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .titleLines()
+                    if standing != .available {
+                        OnlineSongCaption(song: song, standing: standing)
+                    }
+                }
+                Spacer(minLength: 0)
+                if standing == .available, let duration = song.durationMs {
+                    Text(clock(duration))
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                DownloadBadge(standing: standing) { downloads.cancel(song) }
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .swipeActions(edge: .trailing) {
+            Button("Save for later", systemImage: "bookmark") { features.saveWanted([song]) }
+                .tint(.indigo)
+        }
+        .contextMenu {
+            Button("Download", systemImage: "arrow.down.circle") { downloads.enqueue([song]) }
+                .disabled(!standing.startsOnTap)
+            Button("Save for later", systemImage: "bookmark") { features.saveWanted([song]) }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityValue("Not in your library")
+        .accessibilityHint(standing.startsOnTap ? "Downloads the song" : "")
+        .accessibilityActions {
+            if standing.cancellable {
+                Button("Cancel download") { downloads.cancel(song) }
+            }
+        }
     }
 }
 

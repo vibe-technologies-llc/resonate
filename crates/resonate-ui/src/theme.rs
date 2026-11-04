@@ -4,6 +4,8 @@ use gpui::{Font, FontFeatures, FontStyle, FontWeight, Pixels, Rgba, SharedString
 use parking_lot::RwLock;
 use resonate_core::{Accent, Appearance, DesktopLook, Ground, Theme};
 
+use crate::motion;
+
 struct Accents {
     mauve: u32,
     blue: u32,
@@ -800,9 +802,23 @@ pub(crate) fn accent_ink() -> u32 {
     ink_over(accent())
 }
 
+pub(crate) fn soft_edge() -> u32 {
+    soft_edge_of(WORN.read().flavour)
+}
+
+fn soft_edge_of(flavour: &Flavour) -> u32 {
+    motion::blended(
+        flavour.border,
+        flavour.outline,
+        SOFT_EDGE_TOWARD_THE_OUTLINE,
+    )
+}
+
 pub(crate) fn switch_knob_off() -> u32 {
     ink_over(outline())
 }
+
+const SOFT_EDGE_TOWARD_THE_OUTLINE: f32 = 0.25;
 
 pub(crate) const FOCUS_RING_WIDTH: f32 = 2.0;
 
@@ -1636,6 +1652,35 @@ mod tests {
                 if read < STANDS_APART {
                     failures.push(format!("{theme}: outline on {name} reads at {read:.2}"));
                 }
+            }
+        }
+
+        nothing_failed(failures);
+    }
+
+    #[test]
+    fn a_soft_edge_is_quiet_beside_the_outline_and_strong_in_high_contrast() {
+        let mut failures = Vec::new();
+
+        for theme in Theme::ALL {
+            let flavour = flavour(theme);
+            let soft = soft_edge_of(flavour);
+            let strong = matches!(theme, Theme::HighContrast | Theme::HighContrastLight);
+            for (name, pane) in resting_panes_of(flavour) {
+                let read = contrast(soft, pane);
+                if strong && read < FOUR_AND_A_HALF {
+                    failures.push(format!(
+                        "{theme}: the soft edge on {name} reads at {read:.2}"
+                    ));
+                }
+                if !strong && read >= STANDS_APART {
+                    failures.push(format!(
+                        "{theme}: the soft edge on {name} glows at {read:.2}"
+                    ));
+                }
+            }
+            if contrast(soft, flavour.raised) <= 1.0 {
+                failures.push(format!("{theme}: the soft edge is lost on what floats"));
             }
         }
 
