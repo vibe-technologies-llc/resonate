@@ -358,6 +358,11 @@ impl RingProducer {
         self.lockstep.holding.load(Ordering::Acquire)
     }
 
+    pub fn hold_in_step(&self) {
+        self.lockstep.release.store(NOT_YET, Ordering::Release);
+        self.lockstep.holding.store(true, Ordering::Release);
+    }
+
     pub fn drop_ahead(&self, frames: u64) {
         self.lockstep
             .drops_asked

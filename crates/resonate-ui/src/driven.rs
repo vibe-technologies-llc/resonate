@@ -462,6 +462,7 @@ impl Driven {
                 renderers: None,
                 synchronised: crate::Synchronised::default(),
                 syncing: None,
+                together: None,
                 reads_as_a_code: None,
                 launcher: unseen,
                 sourcing: Sourcing {

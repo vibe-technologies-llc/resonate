@@ -21,6 +21,9 @@ use crate::{
 
 pub(crate) const SYNC_SERVER_PLACEHOLDER: &str = "host or host:port of your own server";
 pub(crate) const SYNC_DEVICE_PLACEHOLDER: &str = "What your other devices call this one";
+
+pub(crate) const SHARED_NAME_PLACEHOLDER: &str =
+    "What other people see beside you; blank says nothing";
 pub(crate) const SYNC_CODE_PLACEHOLDER: &str = "Another device's pairing code, then press enter";
 
 const SYNCING_NOTE: &str = "A change here is taken up within a few seconds.";
@@ -855,6 +858,15 @@ impl RootView {
                 cx,
             ),
         ))
+        .child(kit::field(
+            "Your name on shared playlists and parties",
+            self.key_field(
+                "shared-name",
+                &self.shared_name,
+                |this, window, cx| this.leave_sync_field(window, cx),
+                cx,
+            ),
+        ))
         .child(note(SYNCING_NOTE))
     }
 
@@ -1167,6 +1179,21 @@ impl RootView {
         window.focus(&self.focus, cx);
     }
 
+    pub(crate) fn shared_name_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let typed = self.shared_name.read(cx).text().trim().to_owned();
+        self.shared_name
+            .update(cx, |field, cx| field.hold(typed.clone(), cx));
+        self.synchronise(
+            |synchronised| synchronised.shared_name.clone_from(&typed),
+            &Setting::SharedName(typed.clone()),
+            cx,
+        );
+        if let Some(together) = cx.global::<ResonateApp>().together.clone() {
+            together.named(&typed);
+        }
+        window.focus(&self.focus, cx);
+    }
+
     pub(crate) fn sync_device_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let typed = self.sync_device.read(cx).text().trim().to_owned();
         self.sync_device
@@ -1207,9 +1234,14 @@ impl RootView {
     }
 
     pub(crate) fn leave_sync_field(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let focused = [&self.sync_code, &self.sync_device, &self.sync_server]
-            .iter()
-            .any(|field| field.read(cx).is_focused(window));
+        let focused = [
+            &self.sync_code,
+            &self.sync_device,
+            &self.shared_name,
+            &self.sync_server,
+        ]
+        .iter()
+        .any(|field| field.read(cx).is_focused(window));
         if !focused {
             return;
         }

@@ -18,6 +18,8 @@ pub(crate) const RECORD_PANEL: &str = "record-panel";
 
 pub(crate) const WRAPPED_PANEL: &str = "wrapped-panel";
 
+pub(crate) const SHARING_PANEL: &str = "sharing-panel";
+
 pub(crate) const KEEP_THE_TRACK: &str = "keep-the-track";
 
 pub(crate) const LISTEN_CLOSE: &str = "listen-close";
@@ -30,6 +32,7 @@ pub(crate) enum Sheet {
     Naming,
     Recording,
     Wrapped,
+    Sharing,
     Menu,
 }
 
@@ -49,6 +52,7 @@ impl Sheet {
             Self::Naming => Some(PICKER_PANEL),
             Self::Recording => Some(RECORD_PANEL),
             Self::Wrapped => Some(WRAPPED_PANEL),
+            Self::Sharing => Some(SHARING_PANEL),
             Self::Menu => None,
         }
     }
@@ -60,6 +64,7 @@ impl Sheet {
             Self::Magnifying => Welcome::Panel(MAGNIFIER_PANEL),
             Self::Recording => Welcome::Panel(RECORD_PANEL),
             Self::Wrapped => Welcome::Panel(WRAPPED_PANEL),
+            Self::Sharing => Welcome::Panel(SHARING_PANEL),
             Self::Naming | Self::Menu => Welcome::Nowhere,
         }
     }
@@ -139,6 +144,8 @@ impl RootView {
             Some(Sheet::Recording)
         } else if self.wrapped.is_some() {
             Some(Sheet::Wrapped)
+        } else if self.sharing.is_some() {
+            Some(Sheet::Sharing)
         } else if self.menu.is_some() {
             Some(Sheet::Menu)
         } else {

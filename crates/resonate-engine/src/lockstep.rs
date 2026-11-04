@@ -26,7 +26,7 @@ impl HeardClock {
         *self.0.read()
     }
 
-    pub(crate) fn tell(&self, heard: Option<HeardAt>) {
+    pub fn tell(&self, heard: Option<HeardAt>) {
         *self.0.write() = heard;
     }
 }

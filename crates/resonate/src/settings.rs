@@ -292,6 +292,7 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
         Setting::SyncServer(given) => given_or_cleared(ConfigKey::SyncServer, given),
         Setting::SyncKey(given) => given_or_cleared(ConfigKey::SyncKey, given),
         Setting::SyncDevice(given) => given_or_cleared(ConfigKey::SyncDevice, given),
+        Setting::SharedName(given) => given_or_cleared(ConfigKey::SharedName, given),
         Setting::SyncSongs(songs) => (
             ConfigKey::SyncSongs,
             Some(Value::Array(songs.named().into_iter().collect::<Array>())),
@@ -548,6 +549,7 @@ const fn named(key: SettingKey) -> ConfigKey {
         SettingKey::SyncServer => ConfigKey::SyncServer,
         SettingKey::SyncKey => ConfigKey::SyncKey,
         SettingKey::SyncDevice => ConfigKey::SyncDevice,
+        SettingKey::SharedName => ConfigKey::SharedName,
         SettingKey::SyncSongs => ConfigKey::SyncSongs,
     }
 }

@@ -264,11 +264,12 @@ pub enum SettingKey {
     SyncServer,
     SyncKey,
     SyncDevice,
+    SharedName,
     SyncSongs,
 }
 
 impl SettingKey {
-    pub const ALL: [Self; 112] = [
+    pub const ALL: [Self; 113] = [
         Self::Sink,
         Self::Quality,
         Self::FilterPhase,
@@ -380,6 +381,7 @@ impl SettingKey {
         Self::SyncServer,
         Self::SyncKey,
         Self::SyncDevice,
+        Self::SharedName,
         Self::SyncSongs,
     ];
 }
@@ -503,6 +505,7 @@ pub enum Setting {
     SyncServer(String),
     SyncKey(String),
     SyncDevice(String),
+    SharedName(String),
     SyncSongs(SyncedSongs),
 }
 
@@ -626,6 +629,7 @@ impl Setting {
             Self::SyncServer(_) => SettingKey::SyncServer,
             Self::SyncKey(_) => SettingKey::SyncKey,
             Self::SyncDevice(_) => SettingKey::SyncDevice,
+            Self::SharedName(_) => SettingKey::SharedName,
             Self::SyncSongs(_) => SettingKey::SyncSongs,
         }
     }
@@ -1004,6 +1008,7 @@ pub struct Stored {
     pub renderers: Option<Arc<dyn Renderers>>,
     pub synchronised: Synchronised,
     pub syncing: Option<Arc<dyn Syncing>>,
+    pub together: Option<Arc<dyn crate::Together>>,
     pub reads_as_a_code: Option<fn(&str) -> bool>,
     pub launcher: Arc<dyn Launcher>,
 }
@@ -1059,6 +1064,7 @@ pub struct Synchronised {
     pub nearby_only: bool,
     pub server: String,
     pub device: String,
+    pub shared_name: String,
     pub songs: SyncedSongs,
 }
 
@@ -1069,6 +1075,7 @@ impl Default for Synchronised {
             nearby_only: false,
             server: String::new(),
             device: String::new(),
+            shared_name: String::new(),
             songs: SyncedSongs::default(),
         }
     }

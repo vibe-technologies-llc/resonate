@@ -29,6 +29,7 @@ mod scrollbar;
 mod search;
 mod served;
 pub(crate) mod settings;
+mod sharing;
 mod sheets;
 mod slider;
 pub(crate) mod sorting;

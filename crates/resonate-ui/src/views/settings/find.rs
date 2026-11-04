@@ -745,6 +745,7 @@ impl Group {
                 SettingKey::SyncNearbyOnly,
                 SettingKey::SyncServer,
                 SettingKey::SyncDevice,
+                SettingKey::SharedName,
             ],
             Self::SyncedSongs => &[SettingKey::SyncSongs],
             Self::Discord => &[SettingKey::Discord, SettingKey::DiscordApp],

@@ -1750,6 +1750,11 @@ impl RootView {
         let name = SharedString::from(playlist.name.clone());
         let pinned = playlist.pinned.is_some();
         let kind = kind_of(playlist);
+        let shared_as = self
+            .shared_lists
+            .iter()
+            .find(|(shared, _)| *shared == playlist.id)
+            .map(|(_, editable)| *editable);
         let albums = self.library.read(cx).pictured(id);
         let art = self.playlist_art(
             &playlist.name,
@@ -1791,6 +1796,12 @@ impl RootView {
                             )
                             .when_some(kind, |row, (label, colour)| {
                                 row.child(kit::badge(label, colour))
+                            })
+                            .when_some(shared_as, |row, editable| {
+                                row.child(kit::badge(
+                                    if editable { "SHARED" } else { "FOLLOWED" },
+                                    theme::accent(),
+                                ))
                             })
                             .when(pinned, |row| {
                                 row.child(kit::badge("PINNED", theme::accent()))
@@ -2214,6 +2225,13 @@ pub(crate) fn playlist_menu(at: Point<Pixels>, id: PlaylistId, pinned: bool, cx:
         .does(Icon::Export, menu::EXPORT, move |this, _, cx| {
             this.export_playlist(id, cx);
         })
+        .does(
+            Icon::Share,
+            "Share with other people…",
+            move |this, _, cx| {
+                this.open_sharing(id, cx);
+            },
+        )
         .does(Icon::Discard, menu::DISCARD, move |this, _, cx| {
             this.library
                 .update(cx, |library, cx| library.drop_playlist(id, cx));

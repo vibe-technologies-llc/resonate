@@ -33,6 +33,7 @@ mod stereo;
 mod system;
 mod theme;
 mod toast;
+mod together;
 mod views;
 mod wrapped_card;
 
@@ -56,5 +57,6 @@ pub use crate::{
         Supplying, SyncShown, SyncStanding, SyncedDevice, SyncedPlatform, Synchronised, Syncing,
         Tabs, TidalSignIn, Unkept, WindowButtons, WindowSize,
     },
+    together::{SharedPerson, SharedReach, SharedSeen, Together},
     views::{Pane, RootView},
 };

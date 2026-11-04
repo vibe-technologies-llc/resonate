@@ -33,7 +33,10 @@ pub(crate) use crate::views::settings::{
     find::{Category, Group},
     lastfm::{LastfmAccount, LastfmSigning},
     subsonic::{Account, Service},
-    sync::{SYNC_CODE_PLACEHOLDER, SYNC_DEVICE_PLACEHOLDER, SYNC_SERVER_PLACEHOLDER},
+    sync::{
+        SHARED_NAME_PLACEHOLDER, SYNC_CODE_PLACEHOLDER, SYNC_DEVICE_PLACEHOLDER,
+        SYNC_SERVER_PLACEHOLDER,
+    },
     tidal::{SigningIn, TidalAccount},
 };
 use crate::{

@@ -223,8 +223,11 @@ impl Store {
         }
         let written = raw
             .written
-            .chunks_exact(ENTRY_BYTES)
-            .filter_map(|bytes| bytes.try_into().ok().map(EntryId))
+            .as_chunks::<ENTRY_BYTES>()
+            .0
+            .iter()
+            .copied()
+            .map(EntryId)
             .collect();
 
         let mut statement = self

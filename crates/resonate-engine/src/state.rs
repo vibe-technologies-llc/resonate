@@ -69,6 +69,7 @@ pub struct OutputStatus {
     pub device_turned: bool,
     pub device_muted: bool,
     pub stream_volume: StreamVolume,
+    pub holds_seconds_downstream: bool,
 }
 
 impl OutputStatus {

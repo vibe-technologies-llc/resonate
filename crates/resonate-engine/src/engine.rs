@@ -603,6 +603,7 @@ impl Output {
                 device_turned: attenuator == Attenuator::Device,
                 device_muted: attenuator.hears_the_mute_of(sink),
                 stream_volume: StreamVolume::Unity,
+                holds_seconds_downstream: false,
             },
             plan,
             chain,
@@ -956,6 +957,8 @@ pub struct Engine {
     openings_begun: u64,
     deferred: Vec<Deferred>,
     lockstep: Option<Following>,
+    nudging: Option<Following>,
+    faded_for_a_nudge: bool,
     stepping: Stepping,
     auditioning: Option<Auditioning>,
 }
@@ -1130,6 +1133,8 @@ impl Engine {
             openings_begun: 0,
             deferred: Vec::new(),
             lockstep: None,
+            nudging: None,
+            faded_for_a_nudge: false,
             stepping: Stepping::Alone,
             auditioning: None,
         }
@@ -1161,6 +1166,7 @@ impl Engine {
                 self.restart_what_a_renderer_holds();
                 self.finish_fading();
                 self.promote();
+                self.begin_what_was_nudged();
                 self.keep_in_step();
                 self.collect_faults();
                 self.poll_stream();
@@ -1545,6 +1551,19 @@ impl Engine {
             Command::KeepInStepWith(with) => {
                 if self.output.is_none() {
                     self.lockstep = Some(Following {
+                        with,
+                        since: Instant::now(),
+                    });
+                    self.stepping = Stepping::Waiting;
+                }
+                Ok(())
+            }
+            Command::Nudge(with) => {
+                if self.may_nudge() {
+                    if let Some(output) = self.output.as_ref() {
+                        output.producer.fade_out(output.fade());
+                    }
+                    self.nudging = Some(Following {
                         with,
                         since: Instant::now(),
                     });
@@ -2102,8 +2121,63 @@ impl Engine {
         self.unbound = None;
         self.heard_at_least = None;
         self.lockstep = None;
+        self.nudging = None;
+        self.faded_for_a_nudge = false;
         self.stepping = Stepping::Alone;
         self.transport = TransportState::Stopped;
+    }
+
+    fn may_nudge(&self) -> bool {
+        let Some(output) = self.output.as_ref() else {
+            return false;
+        };
+
+        self.playing
+            && self.lockstep.is_none()
+            && self.nudging.is_none()
+            && self.boundaries.is_empty()
+            && !output.splice_owed
+            && !output.producer.is_splicing()
+            && output.can_fade()
+            && !output.holds_seconds_downstream()
+    }
+
+    fn begin_what_was_nudged(&mut self) {
+        let Some(nudging) = self.nudging.as_ref() else {
+            return;
+        };
+        let moved_on = !self.playing || !self.boundaries.is_empty() || self.output.is_none();
+        if moved_on || nudging.since.elapsed() >= IN_STEP_WITHIN {
+            self.nudging = None;
+            if let Some(output) = self.output.as_ref() {
+                output.producer.fade_in(output.fade());
+            }
+            self.stepping = Stepping::Alone;
+            return;
+        }
+        let Some(output) = self.output.as_ref() else {
+            return;
+        };
+        if !output.producer.is_quiet() {
+            return;
+        }
+
+        output.producer.hold_in_step();
+        self.faded_for_a_nudge = true;
+        self.lockstep = self.nudging.take().map(|nudging| Following {
+            with: nudging.with,
+            since: Instant::now(),
+        });
+    }
+
+    fn sound_again_after_a_nudge(&mut self) {
+        if !self.faded_for_a_nudge {
+            return;
+        }
+        self.faded_for_a_nudge = false;
+        if let Some(output) = self.output.as_ref() {
+            output.producer.fade_in(output.fade());
+        }
     }
 
     fn keep_in_step(&mut self) {
@@ -2124,7 +2198,8 @@ impl Engine {
         if output.stream.is_none() || output.producer.drops_pending() {
             return;
         }
-        let (Some(stamp), Some(aim)) = (output.producer.stamp(), following.with.read()) else {
+        let stamped_under_the_hold = output.producer.stamp().filter(|stamp| !stamp.flowing);
+        let (Some(stamp), Some(aim)) = (stamped_under_the_hold, following.with.read()) else {
             return;
         };
         let Some((track, next)) = self.frame_of_the_ring(output, stamp.read) else {
@@ -2166,6 +2241,7 @@ impl Engine {
         output.producer.release_at(release);
         self.lockstep = None;
         self.stepping = Stepping::Joined(release);
+        self.sound_again_after_a_nudge();
     }
 
     fn step_in_now(&mut self) {
@@ -2175,6 +2251,7 @@ impl Engine {
         }
         self.lockstep = None;
         self.stepping = Stepping::Joined(now);
+        self.sound_again_after_a_nudge();
     }
 
     fn heard_at(&self) -> Option<HeardAt> {
@@ -4293,6 +4370,7 @@ impl Engine {
             return;
         };
         output.status.latency = stream.latency();
+        output.status.holds_seconds_downstream = stream.downstream() == Downstream::Seconds;
         output.status.graph_rate = stream.graph_rate();
         output.status.hears(output.plan.mode);
         let events = Self::drain_events(output);

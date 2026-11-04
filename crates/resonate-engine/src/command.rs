@@ -64,6 +64,7 @@ pub enum Command {
     },
     Resume(Resumption),
     KeepInStepWith(HeardClock),
+    Nudge(HeardClock),
     Insert {
         items: Vec<QueueItem>,
         at: Placement,
@@ -122,6 +123,7 @@ pub enum CommandKind {
     Load,
     Resume,
     KeepInStepWith,
+    Nudge,
     Insert,
     Remove,
     Clear,
@@ -173,6 +175,7 @@ impl CommandKind {
             Self::Load => "the load",
             Self::Resume => "the resumption",
             Self::KeepInStepWith => "keeping in step with another zone",
+            Self::Nudge => "moving back into step",
             Self::Insert => "the insert",
             Self::Remove => "the removal",
             Self::Clear => "the clearing",
@@ -225,6 +228,7 @@ impl CommandKind {
             Self::Load
             | Self::Resume
             | Self::KeepInStepWith
+            | Self::Nudge
             | Self::Insert
             | Self::Remove
             | Self::Clear
@@ -284,6 +288,7 @@ impl Command {
             Self::Load { .. } => CommandKind::Load,
             Self::Resume(_) => CommandKind::Resume,
             Self::KeepInStepWith(_) => CommandKind::KeepInStepWith,
+            Self::Nudge(_) => CommandKind::Nudge,
             Self::Insert { .. } => CommandKind::Insert,
             Self::Remove(_) | Self::RemoveAll(_) => CommandKind::Remove,
             Self::Clear => CommandKind::Clear,

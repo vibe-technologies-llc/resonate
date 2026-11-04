@@ -757,6 +757,7 @@ mod tests {
             device_turned: false,
             device_muted: false,
             stream_volume: StreamVolume::Unity,
+            holds_seconds_downstream: false,
         }
     }
 

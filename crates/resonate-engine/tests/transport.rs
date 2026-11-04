@@ -24,10 +24,10 @@ use resonate_core::{
 use resonate_engine::{
     AudioSource, Audition, Backend, Band, BandGain, BandKind, Caught, Cause, Command, Contest,
     DeviceTime, DitherKind, Dithering, EngineConfig, Equalisation, Error as EngineError, Event,
-    FADED_OVER, FilterPhase, Frequency, GraphTime, HardwareVolume, Held, Hinting, Impulse,
-    LoudnessMeter, Lowered, Media, MediaProvider, MediaStream, Moment, NodeName, NoiseShaping,
-    Opener, Opening, Opens, OutputMode, Placement, PlaybackState, Player, Plugged, Preamp,
-    PreviousRestarts, Profile, Q, Quality, QueueItem, QueueRows, Reading, RepeatMode,
+    FADED_OVER, FilterPhase, Frequency, GraphTime, HardwareVolume, HeardAt, HeardClock, Held,
+    Hinting, Impulse, LoudnessMeter, Lowered, Media, MediaProvider, MediaStream, Moment, NodeName,
+    NoiseShaping, Opener, Opening, Opens, OutputMode, Placement, PlaybackState, Player, Plugged,
+    Preamp, PreviousRestarts, Profile, Q, Quality, QueueItem, QueueRows, Reading, RepeatMode,
     ReplayGainMode, Resampling, Reshaped, Reshaper, Restoration, Result, Resumable, Resumption,
     SinkChange, SinkError, SinkFormats, SinkId, SinkInfo, SinkPort, SinkResult, SinkStream,
     SkipUnderRepeat, SourceId, Sources, Stepping, StreamClock, StreamCommand, StreamEvent,
@@ -2159,6 +2159,89 @@ fn a_zone_handed_the_song_lands_its_first_frame_on_the_frame_the_other_is_heard_
         "the second zone came in where the first was asked from rather than where it was heard"
     );
     assert!(playing(&study.player));
+    Ok(())
+}
+
+fn nudged_towards(frames_ahead: i64) -> Result<(i64, bool)> {
+    let tree = Tree::new();
+    let path = tree.write("nudged.wav", &pcm(24, RATE as usize * 8).file);
+    let opened = FakeZones::over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S24])]);
+    let zones = opened.started()?;
+    let first = zones.first().player;
+    let device = Device {
+        graph: opened.graph(ZoneId::FIRST),
+    };
+    let mut clocked = Clocked::new();
+
+    played_from(&zones, ZoneId::FIRST, &path)?;
+    clocked.run_until(
+        &[&device],
+        || {
+            first
+                .state()
+                .current
+                .is_some_and(|track| track.position >= Frames(u64::from(RATE)))
+                && first.heard_at().is_some()
+        },
+        "the zone to be heard a while",
+    );
+
+    let heard = first.heard_at().expect("the zone is heard");
+    let afar = HeardClock::default();
+    afar.tell(Some(HeardAt {
+        frame: Frames(heard.frame.get().saturating_add_signed(frames_ahead)),
+        ..heard
+    }));
+    zones.send(ZoneId::FIRST, Command::Nudge(afar.clone()))?;
+    clocked.run_until(
+        &[&device],
+        || matches!(first.stepping(), Stepping::Joined(_)),
+        "the zone to step back in",
+    );
+    let joined_at = match first.stepping() {
+        Stepping::Joined(moment) => moment,
+        _ => Moment::now(),
+    };
+    clocked.run_until(
+        &[&device],
+        || {
+            first
+                .heard_at()
+                .is_some_and(|own| own.at.nanos() > joined_at.nanos() + 100_000_000)
+        },
+        "the zone to be heard past the step",
+    );
+
+    let own = first.heard_at().expect("the zone is heard again");
+    let wanted = afar.read().expect("told").frame_at(own.at);
+
+    Ok((
+        own.frame.get() as i64 - wanted.round() as i64,
+        playing(&first),
+    ))
+}
+
+#[test]
+fn a_zone_behind_a_clock_told_from_afar_skips_to_it_with_a_fade_and_carries_on() -> Result<()> {
+    let (apart, still_playing) = nudged_towards(i64::from(RATE) / 5)?;
+
+    assert!(
+        apart.abs() <= ALIGNED_WITHIN_FRAMES,
+        "the zone came back {apart} frames from the clock"
+    );
+    assert!(still_playing);
+    Ok(())
+}
+
+#[test]
+fn a_zone_ahead_of_a_clock_told_from_afar_waits_for_it_and_carries_on() -> Result<()> {
+    let (apart, still_playing) = nudged_towards(-i64::from(RATE) / 10)?;
+
+    assert!(
+        apart.abs() <= ALIGNED_WITHIN_FRAMES,
+        "the zone came back {apart} frames from the clock"
+    );
+    assert!(still_playing);
     Ok(())
 }
 

@@ -56,6 +56,7 @@ use crate::{
     settings::SettingsWriter,
     theme,
     toast::{self, Toaster},
+    together::is_an_invitation,
     views::{
         announcing,
         browser::{self, ArtistShows, OpenedRecord},
@@ -79,9 +80,10 @@ use crate::{
         served::SEARCH_PLACEHOLDER as SERVER_SEARCH_PLACEHOLDER,
         settings::{
             Account, Category, FILTER_PLACEHOLDER, Fitting, HeldBand, LastfmAccount, LastfmSigning,
-            Plotted, SYNC_CODE_PLACEHOLDER, SYNC_DEVICE_PLACEHOLDER, SYNC_SERVER_PLACEHOLDER,
-            Service, SigningIn, TidalAccount,
+            Plotted, SHARED_NAME_PLACEHOLDER, SYNC_CODE_PLACEHOLDER, SYNC_DEVICE_PLACEHOLDER,
+            SYNC_SERVER_PLACEHOLDER, Service, SigningIn, TidalAccount,
         },
+        sharing,
         sheets::{self, MAGNIFIER_PANEL},
         slider::{Grab, Rail},
         spoken::{self, Spelt, Spoken},
@@ -578,6 +580,9 @@ pub struct RootView {
     pub(crate) listening_open: bool,
     pub(crate) wrapped: Option<wrapped::Deck>,
     pub(crate) reading_wrapped: Option<Task<()>>,
+    pub(crate) sharing: Option<sharing::Sharing>,
+    pub(crate) shared_lists: Vec<(PlaylistId, bool)>,
+    pub(crate) sharing_redraws: Option<Task<()>>,
     downloads_open: bool,
     downloads_pressed_off: Option<Instant>,
     pub(crate) deleting: Option<Deleting>,
@@ -639,6 +644,7 @@ pub struct RootView {
     pub(crate) discord_icon: Entity<Field>,
     pub(crate) sync_server: Entity<Field>,
     pub(crate) sync_device: Entity<Field>,
+    pub(crate) shared_name: Entity<Field>,
     pub(crate) sync_code: Entity<Field>,
     pub(crate) organising: Entity<Field>,
     pub(crate) minimum_length: Entity<Field>,
@@ -916,7 +922,7 @@ impl RootView {
 
         let search = cx.new(|cx| {
             Field::new(SEARCH_PLACEHOLDER, window, cx)
-                .catching(is_a_followed_link)
+                .catching(|text| is_a_followed_link(text) || is_an_invitation(text))
                 .searching()
         });
         cx.observe(&search, |this, search, cx| {
@@ -935,7 +941,11 @@ impl RootView {
         .detach();
 
         cx.subscribe_in(&search, window, |this, _, Caught(link), window, cx| {
-            this.follow_link(link, window, cx);
+            if is_an_invitation(link) {
+                this.accept_an_invitation(link, cx);
+            } else {
+                this.follow_link(link, window, cx);
+            }
         })
         .detach();
 
@@ -1084,6 +1094,19 @@ impl RootView {
             },
         )
         .detach();
+        let shared_name = cx.new(|cx| {
+            let mut field = Field::new(SHARED_NAME_PLACEHOLDER, window, cx);
+            field.hold(synchronised.shared_name.clone(), cx);
+            field
+        });
+        cx.subscribe_in(
+            &shared_name,
+            window,
+            |this, _, _: &Submitted, window, cx| {
+                this.shared_name_given(window, cx);
+            },
+        )
+        .detach();
         let sync_code = cx.new(|cx| Field::new(SYNC_CODE_PLACEHOLDER, window, cx));
         cx.subscribe_in(&sync_code, window, |this, _, _: &Submitted, window, cx| {
             this.sync_code_given(window, cx);
@@ -1208,6 +1231,9 @@ impl RootView {
             listening_open: false,
             wrapped: None,
             reading_wrapped: None,
+            sharing: None,
+            shared_lists: Vec::new(),
+            sharing_redraws: None,
             downloads_open: false,
             downloads_pressed_off: None,
             deleting: None,
@@ -1269,6 +1295,7 @@ impl RootView {
             discord_icon,
             sync_server,
             sync_device,
+            shared_name,
             sync_code,
             organising,
             minimum_length,
@@ -4239,6 +4266,8 @@ impl RootView {
             cx.notify();
         } else if self.wrapped.is_some() {
             self.close_wrapped(cx);
+        } else if self.sharing.is_some() {
+            self.close_sharing(cx);
         } else if self.menu.is_some() {
             if !self.back_out_of_the_menu(cx) {
                 self.close_the_menu(cx);
@@ -4255,6 +4284,7 @@ impl RootView {
             || self.magnified.is_some()
             || self.record.is_some()
             || self.wrapped.is_some()
+            || self.sharing.is_some()
             || self.listening_open
             || self.deleting.is_some()
     }
@@ -4344,6 +4374,7 @@ impl RootView {
             &self.discord_icon,
             &self.sync_server,
             &self.sync_device,
+            &self.shared_name,
             &self.sync_code,
             &self.organising,
             &self.minimum_length,
@@ -6140,6 +6171,13 @@ impl Render for RootView {
                 app.child(motion::faded_in(
                     self.listen_sheet(cx),
                     "listen-scrim",
+                    motion::ARRIVES_OVER,
+                ))
+            })
+            .when(self.sharing.is_some(), |app| {
+                app.child(motion::faded_in(
+                    self.sharing_sheet(cx),
+                    "sharing-scrim",
                     motion::ARRIVES_OVER,
                 ))
             })

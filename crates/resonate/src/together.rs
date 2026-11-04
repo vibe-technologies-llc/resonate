@@ -189,6 +189,129 @@ pub(crate) fn start(config: &Config, library: &Arc<Library>) -> Result<Option<To
     }))
 }
 
+#[cfg(feature = "ui")]
+struct Seen {
+    library: Arc<Library>,
+}
+
+#[cfg(feature = "ui")]
+pub(crate) fn for_the_window(library: &Arc<Library>) -> Arc<dyn resonate_ui::Together> {
+    Arc::new(Seen {
+        library: Arc::clone(library),
+    })
+}
+
+#[cfg(feature = "ui")]
+impl Seen {
+    fn local(&self, playlist: PlaylistId) -> Option<LocalPlaylistId> {
+        Some(LocalPlaylistId {
+            id: playlist.get().cast_signed(),
+            created: self.library.playlist_stamp(playlist).ok()?,
+        })
+    }
+
+    fn list_of(&self, playlist: PlaylistId) -> Option<SharedShown> {
+        let at = self.local(playlist)?;
+
+        running()?
+            .shown()
+            .into_iter()
+            .find(|list| list.at == Some(at))
+    }
+}
+
+#[cfg(feature = "ui")]
+impl resonate_ui::Together for Seen {
+    fn seen(&self, playlist: PlaylistId) -> Option<resonate_ui::SharedSeen> {
+        let list = self.list_of(playlist)?;
+
+        Some(resonate_ui::SharedSeen {
+            may_edit: list.may_edit,
+            edit_link: list.invites.edit_page.or(list.invites.edit),
+            view_link: list.invites.view_page.unwrap_or(list.invites.view),
+            people: list
+                .people
+                .into_iter()
+                .map(|person| resonate_ui::SharedPerson {
+                    id: person.member.0,
+                    name: person.name,
+                    me: person.me,
+                })
+                .collect(),
+            unheld: list
+                .unheld
+                .into_iter()
+                .map(|recording| recording.title)
+                .collect(),
+            reach: match list.standing {
+                SharedStanding::Waiting => resonate_ui::SharedReach::Waiting,
+                SharedStanding::Reached => resonate_ui::SharedReach::Reached,
+                SharedStanding::Unreached => resonate_ui::SharedReach::Unreached,
+                SharedStanding::ServerTooOld => resonate_ui::SharedReach::ServerTooOld,
+                SharedStanding::TurnedAway(_) => resonate_ui::SharedReach::TurnedAway,
+                SharedStanding::NoServer => resonate_ui::SharedReach::NoServer,
+            },
+            name: list.name,
+        })
+    }
+
+    fn shared_playlists(&self) -> Vec<(PlaylistId, bool)> {
+        self.library.playlists_shared().unwrap_or_default()
+    }
+
+    fn share(&self, playlist: PlaylistId) -> bool {
+        let (Some(shared), Some(at)) = (running(), self.local(playlist)) else {
+            return false;
+        };
+
+        shared
+            .share(at)
+            .inspect_err(|error| tracing::warn!(%error, "a playlist could not be shared"))
+            .is_ok()
+    }
+
+    fn watch(&self, playlist: Option<PlaylistId>) {
+        let Some(shared) = running() else {
+            return;
+        };
+
+        shared.watch(
+            playlist
+                .and_then(|playlist| self.list_of(playlist))
+                .map(|list| list.space),
+        );
+    }
+
+    fn leave(&self, playlist: PlaylistId) -> bool {
+        let (Some(shared), Some(list)) = (running(), self.list_of(playlist)) else {
+            return false;
+        };
+
+        shared.leave(list.space).is_ok()
+    }
+
+    fn reset(&self, playlist: PlaylistId, removing: Option<[u8; 16]>) -> bool {
+        let (Some(shared), Some(list)) = (running(), self.list_of(playlist)) else {
+            return false;
+        };
+
+        shared
+            .reset(list.space, removing.map(MemberId))
+            .inspect_err(|error| tracing::warn!(%error, "a shared playlist could not be reset"))
+            .is_ok()
+    }
+
+    fn accept(&self, invitation: &str) -> bool {
+        accepted(invitation)
+    }
+
+    fn named(&self, name: &str) {
+        if let Some(shared) = running() {
+            shared.named(name.to_owned());
+        }
+    }
+}
+
 pub(crate) fn invitations_taken_out(arguments: &[OsString]) -> Vec<OsString> {
     arguments
         .iter()
