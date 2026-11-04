@@ -88,6 +88,7 @@ use crate::{
         transport::{Handovers, Resolved, ShownCover},
         typing::{self, TypeAhead, jumped},
         visualiser::Visualiser,
+        wrapped,
         zones::{self, Switcher, ZONE_NAME_PLACEHOLDER, ZoneShown},
     },
 };
@@ -575,6 +576,8 @@ pub struct RootView {
     pub(crate) analysis: Entity<AnalysisModel>,
     pub(crate) listen: Entity<ListenModel>,
     pub(crate) listening_open: bool,
+    pub(crate) wrapped: Option<wrapped::Deck>,
+    pub(crate) reading_wrapped: Option<Task<()>>,
     downloads_open: bool,
     downloads_pressed_off: Option<Instant>,
     pub(crate) deleting: Option<Deleting>,
@@ -1203,6 +1206,8 @@ impl RootView {
             analysis,
             listen,
             listening_open: false,
+            wrapped: None,
+            reading_wrapped: None,
             downloads_open: false,
             downloads_pressed_off: None,
             deleting: None,
@@ -4232,6 +4237,8 @@ impl RootView {
         } else if self.record.is_some() {
             self.record = None;
             cx.notify();
+        } else if self.wrapped.is_some() {
+            self.close_wrapped(cx);
         } else if self.menu.is_some() {
             if !self.back_out_of_the_menu(cx) {
                 self.close_the_menu(cx);
@@ -4247,6 +4254,7 @@ impl RootView {
             || self.adding.is_some()
             || self.magnified.is_some()
             || self.record.is_some()
+            || self.wrapped.is_some()
             || self.listening_open
             || self.deleting.is_some()
     }
@@ -5943,7 +5951,10 @@ impl Render for RootView {
             .on_action(cx.listener(|this, _: &Next, _, cx| this.send(Command::Next, cx)))
             .on_action(cx.listener(|this, _: &Previous, _, cx| this.send(Command::Previous, cx)))
             .on_action(cx.listener(|this, _: &SeekForward, _, cx| {
-                if this.step_into_the_menu(cx) || this.something_stands_over_the_pane() {
+                if this.step_into_the_menu(cx)
+                    || this.turn_the_slide(1, cx)
+                    || this.something_stands_over_the_pane()
+                {
                     return;
                 }
                 if !this.reach_along_the_strip(Step::Below, cx) {
@@ -5951,7 +5962,10 @@ impl Render for RootView {
                 }
             }))
             .on_action(cx.listener(|this, _: &SeekBackward, _, cx| {
-                if this.back_out_of_the_menu(cx) || this.something_stands_over_the_pane() {
+                if this.back_out_of_the_menu(cx)
+                    || this.turn_the_slide(-1, cx)
+                    || this.something_stands_over_the_pane()
+                {
                     return;
                 }
                 if !this.reach_along_the_strip(Step::Above, cx) {
@@ -6126,6 +6140,13 @@ impl Render for RootView {
                 app.child(motion::faded_in(
                     self.listen_sheet(cx),
                     "listen-scrim",
+                    motion::ARRIVES_OVER,
+                ))
+            })
+            .when(self.wrapped.is_some(), |app| {
+                app.child(motion::faded_in(
+                    self.wrapped_sheet(cx),
+                    "wrapped-scrim",
                     motion::ARRIVES_OVER,
                 ))
             })

@@ -27,6 +27,7 @@ use crate::{
     enrichment::Asking,
     lyrics::KeptSheets,
     output::{OutputFormat, OutputMixer, OutputStream},
+    wrapped::WrappedYear,
 };
 
 pub(crate) struct Services {
@@ -401,6 +402,18 @@ impl MobilePlayer {
 
     pub fn library_breakdown(&self) -> Result<LibraryBreakdown> {
         self.catalog.library_breakdown()
+    }
+
+    pub fn wrapped(
+        &self,
+        year: Option<i64>,
+        time_zone: String,
+        utc_offset_seconds: i32,
+    ) -> Result<Option<WrappedYear>> {
+        self.catalog.wrapped(
+            year,
+            &the_listeners_calendar(&time_zone, utc_offset_seconds),
+        )
     }
 
     pub fn artwork(&self, id: u64) -> Result<Option<Vec<u8>>> {

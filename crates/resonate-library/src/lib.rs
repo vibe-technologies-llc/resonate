@@ -63,6 +63,7 @@ mod unreplacing;
 mod vaulted;
 mod volumes;
 mod watch;
+mod wrapped;
 mod xspf;
 
 pub use resonate_analysis::{Cutoff, LossyGuess, Study, Verdict};

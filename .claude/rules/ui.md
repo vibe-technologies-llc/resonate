@@ -1125,6 +1125,7 @@ is never named.
   count, a `mod` line. Favourites stacks artists shelf, albums shelf, track rows; its count is all
   three. Its track rows have their own order, `Sorting::favourites` (*Favourited* newest first until a
   header is pressed) and `sorting::favourites_sorted`, a `Sorted` with `#` as `Sortable::Marked`.
+- **Resonate Wrapped is a sheet over the pane, offered from the Statistics heading and never unasked.** `views/wrapped.rs`: `open_wrapped` reads on the background executor and sets `RootView::wrapped`, a `Deck` (the years heard, the review, its slides, the slide shown); `Sheet::Wrapped` keeps the focus, escape closes it, and the plain arrows, which are the seek keys, turn the slide (`turn_the_slide`) because a sheet in front holds them back from the transport. A slide fades in over `HANDS_OVER`, keyed by its place; there is no auto-advance. Each row and bar is a list item saying what it shows. *Copy* takes `YearReview::summary`; *Save card* writes `wrapped_card.rs`'s picture, an SVG written by hand in the worn palette and drawn by `resvg` on the background executor with the system's fonts (`the_arrows_turn_the_slides_and_escape_closes_the_deck_leaving_the_pane_alone`, `a_name_written_on_the_card_cannot_break_out_of_the_drawing`).
 - **The statistics chart is `div`s, not a canvas** (a few dozen discrete bars; a `div` carries a
   `hint::Names` hover free). A day with no plays still draws its baseline; a run over `BARS_AT_MOST`
   (120) folds whole days into one bar. Axis: *today*, *yesterday*, else the date via

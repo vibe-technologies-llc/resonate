@@ -17,6 +17,12 @@ macro_rules! key {
     (mute) => {
         "ctrl-m"
     };
+    (seek) => {
+        "right"
+    };
+    (seek_back) => {
+        "left"
+    };
     (seek_further) => {
         "shift-right"
     };

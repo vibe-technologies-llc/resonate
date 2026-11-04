@@ -43,6 +43,7 @@ mod sync;
 mod tagging;
 mod vanished;
 mod watching;
+mod wrapped;
 mod zoning;
 
 use std::{

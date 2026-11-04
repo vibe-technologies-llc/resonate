@@ -579,6 +579,9 @@ pub enum Error {
     #[error("none of the {failed} tracks queued could be played")]
     NothingPlayed { failed: usize },
 
+    #[error("nothing has been played yet, so there is no year to review")]
+    NothingHeardYet,
+
     #[error("no player is on the session bus; start one with resonate play or open the window")]
     NothingRunning,
 

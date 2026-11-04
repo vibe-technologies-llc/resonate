@@ -853,8 +853,8 @@ fn answering_away_from_a_field(typed: Option<&str>) -> Vec<KeyBinding> {
     vec![
         KeyBinding::new(key!(play_pause), PlayPauseUnlessTyping, typed),
         KeyBinding::new(key!(stop), Stop, typed),
-        KeyBinding::new("right", SeekForward, typed),
-        KeyBinding::new("left", SeekBackward, typed),
+        KeyBinding::new(key!(seek), SeekForward, typed),
+        KeyBinding::new(key!(seek_back), SeekBackward, typed),
         KeyBinding::new(key!(seek_further), SeekFurtherForward, typed),
         KeyBinding::new(key!(seek_further_back), SeekFurtherBackward, typed),
         KeyBinding::new(key!(mute), ToggleMute, typed),

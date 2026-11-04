@@ -38,6 +38,7 @@ mod volume;
 mod volume_mounts;
 #[cfg(any(windows, test))]
 mod windows_uri;
+pub mod wrapped;
 pub mod writer;
 mod zone;
 

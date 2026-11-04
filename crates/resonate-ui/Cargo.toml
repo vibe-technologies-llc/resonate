@@ -23,6 +23,7 @@ resonate-library.workspace = true
 resonate-listen.workspace = true
 resonate-lyrics.workspace = true
 resonate-providers.workspace = true
+resvg.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

@@ -1638,6 +1638,26 @@ pub enum Sub {
         top: NonZeroUsize,
     },
 
+    #[command(
+        about = "Print Resonate Wrapped: a year of what was listened to, as the window's slides \
+                 read"
+    )]
+    Wrapped {
+        #[arg(
+            long,
+            value_name = "YEAR",
+            help = "The year to review; without it, last year until December and this year from \
+                    then on"
+        )]
+        year: Option<i64>,
+
+        #[arg(
+            long,
+            help = "Print the short summary a message can carry, and nothing else"
+        )]
+        summary: bool,
+    },
+
     #[command(about = "Print the tracks, albums and artists marked a favourite")]
     Favourites(FavouritesArgs),
 

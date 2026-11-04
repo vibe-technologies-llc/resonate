@@ -2068,7 +2068,7 @@ fn year_of(date: &str) -> Option<i32> {
         .flatten()
 }
 
-fn codec_named(codec: &str) -> Codec {
+pub(crate) fn codec_named(codec: &str) -> Codec {
     Codec::ALL
         .into_iter()
         .find(|known| known.as_str().eq_ignore_ascii_case(codec))

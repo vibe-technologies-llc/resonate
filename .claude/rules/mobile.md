@@ -735,3 +735,7 @@ hifi-api account whose server is blank while it is off, so a named server is sti
 else is, and an empty remainder is `NoProvider`
 (`declined_hosted_services_leave_a_hosted_account_unasked_and_a_named_server_asked`). The switch is
 *Ask the hosted services* on each phone's provider screen.
+
+## Resonate Wrapped
+
+`MobilePlayer::wrapped(year, time_zone, utc_offset_seconds)` answers a `WrappedYear` (the year, every year heard, `WrappedSlide`s, the summary) or nothing where no listen was ever kept; `resonate-mobile`'s `wrapped.rs` fills `resonate_core::wrapped::YearReview` from the document catalog (`library.md`), and the screens draw the slides as they come. The catalog's twenty-seventh step indexes `listens(began)`, since a year is read by time alone.

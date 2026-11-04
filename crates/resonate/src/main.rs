@@ -61,6 +61,7 @@ mod trashing;
 mod vault;
 mod vocabulary;
 mod wanting;
+mod wrapped;
 #[cfg(feature = "ui")]
 mod zoning;
 
@@ -424,6 +425,12 @@ fn run() -> Result<()> {
         Some(Sub::Stats { window, top }) => {
             stats::print(&open_library(&cli, &config)?, *window, top.get())
         }
+        Some(Sub::Wrapped { year, summary }) => wrapped::print(
+            &open_library(&cli, &config)?,
+            *year,
+            *summary,
+            config.history_kept(),
+        ),
         Some(Sub::Favourites(wanted)) => favourites::run(&open_library(&cli, &config)?, wanted),
         Some(Sub::Suggest { save }) => {
             suggest::print(&open_library(&cli, &config)?, save.as_deref())

@@ -60,6 +60,8 @@ paths:
   catalog are its own and cannot be swapped from outside, so handing files over while ignoring those
   flags would play them from a catalog the listener did not name.
 
+- **`wrapped [--year Y] [--summary]` prints Resonate Wrapped** (`wrapped.rs`): each `Slide` as text, its rankings as tables, or with `--summary` the few lines `YearReview::summary` writes. With nothing ever played it is `Error::NothingHeardYet`, exit 1; a year named with nothing in it says so and exits 0.
+
 - **A zone is addressed where a running player is.** `queue` and `sleep` take `--zone <N|NAME>`
   (conflicting with `--player`): a number is the zone's (1 the first), anything else the name the
   window shows, case folded (`ZoneAsked`, `Running::zoned`, `Error::NoSuchZone`); with neither flag

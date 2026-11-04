@@ -34,6 +34,7 @@ mod system;
 mod theme;
 mod toast;
 mod views;
+mod wrapped_card;
 
 pub use crate::{
     app::{Bus, Lookups, PlayerModel, ResonateApp, run},

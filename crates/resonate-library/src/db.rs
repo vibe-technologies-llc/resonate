@@ -15,10 +15,10 @@ use ahash::{AHashMap, AHashSet};
 use parking_lot::{Condvar, Mutex};
 use resonate_codec::{Hinting, Likeness, Popularity, Sources, StandIn};
 use resonate_core::{
-    AlbumId, ArtistId, ChannelCount, ChannelLayout, Chromaprint, FrameSpan, Frames, Gate, KeptZone,
-    ListenId, MediaLocation, PlaylistId, QueueStamp, ReleaseTrackId, Reordered, Resumable,
-    Resumption, SampleFormat, SampleRate, Span, StreamSpec, TrackId, Volume, WantId, ZoneId,
-    ZoneName,
+    AlbumId, ArtistId, Calendar, ChannelCount, ChannelLayout, Chromaprint, FrameSpan, Frames, Gate,
+    KeptZone, ListenId, MediaLocation, PlaylistId, QueueStamp, ReleaseTrackId, Reordered,
+    Resumable, Resumption, SampleFormat, SampleRate, Span, StreamSpec, TrackId, Volume, WantId,
+    ZoneId, ZoneName, wrapped::YearReview,
 };
 use resonate_providers::Providers;
 use resonate_vault::{Compacting, Encoding, HeldFile, Kept as VaultKept, Replacing, VaultFiles};
@@ -71,6 +71,7 @@ use crate::{
     },
     undo::{self, Step},
     vaulted::{self, Vaulted},
+    wrapped,
 };
 
 const READER_POOL: usize = 8;
@@ -1915,6 +1916,19 @@ impl Library {
 
     pub fn listening_by_day(&self, window: Window) -> Result<Vec<Day>> {
         statistics::listening_by_day(&self.inner, window)
+    }
+
+    pub fn years_heard(&self, calendar: &Calendar) -> Result<Vec<i64>> {
+        wrapped::years_heard(&self.inner, calendar)
+    }
+
+    pub fn year_review(
+        &self,
+        year: i64,
+        calendar: &Calendar,
+        history: HistoryKept,
+    ) -> Result<YearReview> {
+        wrapped::year_review(&self.inner, year, calendar, history)
     }
 
     pub fn shareable(&self, track: TrackId) -> Result<Option<Shared>> {

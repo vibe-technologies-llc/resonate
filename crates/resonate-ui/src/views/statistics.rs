@@ -40,6 +40,10 @@ const OPEN_ARTIST_HINT: &str = "Show this artist";
 
 const LISTENING_BY_DAY: &str = "Listening by day";
 
+const OPEN_WRAPPED: &str = "Wrapped";
+
+const OPEN_WRAPPED_HINT: &str = "Your year in music, a slide at a time";
+
 pub(crate) const BARS_AT_MOST: usize = 120;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -276,21 +280,33 @@ impl RootView {
 
         kit::heading()
             .child(
-                kit::heading_row().child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .flex_1()
-                        .min_w(px(theme::heading_name()))
-                        .gap_1()
-                        .child(kit::eyebrow("LIBRARY"))
-                        .child(kit::title("Statistics"))
-                        .child(kit::subtitle(format!(
-                            "{} {}",
-                            format::counted(counts.plays as usize, "play", "plays"),
-                            across(window)
-                        ))),
-                ),
+                kit::heading_row()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_w(px(theme::heading_name()))
+                            .gap_1()
+                            .child(kit::eyebrow("LIBRARY"))
+                            .child(kit::title("Statistics"))
+                            .child(kit::subtitle(format!(
+                                "{} {}",
+                                format::counted(counts.plays as usize, "play", "plays"),
+                                across(window)
+                            ))),
+                    )
+                    .child(kit::actions().child(self.in_the_pane_ring(
+                        kit::button(
+                            "open-wrapped",
+                            Some(Icon::Statistics),
+                            OPEN_WRAPPED,
+                            OPEN_WRAPPED_HINT,
+                            kit::Tone::Outlined,
+                        ),
+                        |this, _, cx| this.open_wrapped(cx),
+                        cx,
+                    ))),
             )
             .child(chosen)
     }

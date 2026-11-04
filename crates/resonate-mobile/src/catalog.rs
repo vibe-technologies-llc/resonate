@@ -250,6 +250,10 @@ CREATE TABLE release_songs (
 ) STRICT;
 ";
 
+const LISTENS_ARE_READ_BY_WHEN_THEY_BEGAN: &str = "
+CREATE INDEX listens_by_when ON listens(began);
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     LISTENS_NAME_THEIR_ORIGIN,
@@ -277,6 +281,7 @@ const MIGRATIONS: &[&str] = &[
     PLAYLISTS_REMEMBER_THEIR_LINK,
     PROFILES_ARE_FOLLOWED_WHOLE,
     ALBUMS_KEEP_THE_SONGS_OF_THEIR_RELEASE,
+    LISTENS_ARE_READ_BY_WHEN_THEY_BEGAN,
 ];
 
 #[cfg(test)]
@@ -1544,6 +1549,60 @@ mod tests {
         assert!(refused.is_err());
         drop(opened);
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn a_catalog_of_before_listens_were_read_by_time_keeps_them_and_answers_a_read_off_the_index() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock")
+            .as_nanos();
+        let path = env::temp_dir().join(format!("resonate-mobile-listens-by-time-{unique}.sqlite"));
+        let connection = Connection::open(&path).expect("a database");
+        connection
+            .create_scalar_function(
+                "folded",
+                1,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
+            )
+            .expect("the fold");
+        for step in &MIGRATIONS[..laid_before(LISTENS_ARE_READ_BY_WHEN_THEY_BEGAN)] {
+            connection.execute_batch(step).expect("an earlier version");
+        }
+        connection
+            .execute(
+                "INSERT INTO listens (began, heard_ms) VALUES (1000, 2000)",
+                [],
+            )
+            .expect("a listen of before");
+        connection
+            .pragma_update(
+                None,
+                "user_version",
+                u32::try_from(laid_before(LISTENS_ARE_READ_BY_WHEN_THEY_BEGAN)).expect("a count"),
+            )
+            .expect("its stamp");
+        drop(connection);
+
+        let opened = Catalog::open(&path).expect("migrated");
+        let connection = opened.0.lock();
+        let kept: i64 = connection
+            .query_row("SELECT sum(heard_ms) FROM listens", [], |row| row.get(0))
+            .expect("the listen");
+        let plan: String = connection
+            .query_row(
+                "EXPLAIN QUERY PLAN SELECT id FROM listens WHERE began >= 1 AND began < 2",
+                [],
+                |row| row.get(3),
+            )
+            .expect("a plan");
+        drop(connection);
+        drop(opened);
+        std::fs::remove_file(&path).ok();
+
+        assert_eq!(kept, 2000);
+        assert!(plan.contains("listens_by_when"), "read by {plan}");
     }
 
     #[test]
