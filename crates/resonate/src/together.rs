@@ -322,6 +322,7 @@ impl resonate_ui::Together for Seen {
         if let Some(shared) = running() {
             shared.named(name.to_owned());
         }
+        crate::party::named(name);
     }
 
     fn party(&self) -> Option<resonate_ui::PartySeen> {

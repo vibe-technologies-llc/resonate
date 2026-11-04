@@ -936,6 +936,10 @@ Invariants from file to sink. Callback contract: `realtime.md`.
 
 ## What the engine publishes
 
+`OutputStatus::holds_seconds_downstream` tells a party a sink it cannot step (`party.md`). `Command::Nudge`
+is the one correction of a running stream, a fade, `RingProducer::hold_in_step` and the handover's
+`keep_in_step`; `resonate_engine::Seat` is the ordered commands a follower gives a `Player`.
+
 - **An event is owed, not dropped, when nobody drains the channel.** `EVENT_SLOTS` fill while a front
   end is busy; the rest wait in `events_owed`, in order, so track changes cannot push out the
   `QueueFinished` headless `play` waits on. Past `EVENTS_OWED_AT_MOST` the oldest goes with a

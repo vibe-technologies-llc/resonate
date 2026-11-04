@@ -4011,6 +4011,50 @@ mod tests {
     }
 
     #[test]
+    fn a_ledger_of_before_shared_playlists_keeps_its_rows_and_releases_none() {
+        let connection = Connection::open_in_memory().expect("a connection");
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == SHARED_PLAYLISTS_STAND_APART)
+            .expect("the step is in the chain");
+        for step in &MIGRATIONS[..before] {
+            connection
+                .execute_batch(step)
+                .expect("the ledger of before");
+        }
+        connection
+            .execute(
+                "INSERT INTO playlists(key, name, entries, here, nanos, stamped_by)
+                 VALUES (X'01', 'Old', X'', X'', 1, X'02')",
+                [],
+            )
+            .expect("a playlist of before");
+        connection
+            .pragma_update(
+                None,
+                "user_version",
+                u32::try_from(before).expect("a count"),
+            )
+            .expect("stamped");
+
+        let ledger = Ledger::over(connection).expect("carried forward");
+        let (kept, released): (i64, i64) = ledger
+            .connection
+            .query_row(
+                "SELECT count(*), coalesce(sum(released), 0) FROM playlists",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read");
+        let shares: i64 = ledger
+            .connection
+            .query_row("SELECT count(*) FROM shares", [], |row| row.get(0))
+            .expect("the new table");
+
+        assert_eq!((kept, released, shares), (1, 0, 0));
+    }
+
+    #[test]
     fn a_ledger_of_before_refusals_were_kept_gains_them_and_forgets_one_once_it_has_waited() {
         let connection = Connection::open_in_memory().expect("a connection");
         connection

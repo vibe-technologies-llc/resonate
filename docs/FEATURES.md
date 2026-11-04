@@ -129,6 +129,16 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   kbps missed five of 36 loud masters there with the cause not found (a power-law lattice per scale
   factor band, each band's scale factor searched, is untried without fdkaac to weigh it on)
 
+## Later: Together
+
+- [M] Chat and reactions in a listening party.
+- [M] Handing the host's role to someone else in a party, when the host must go.
+- [S] A frozen snapshot of a past Wrapped, kept once its year is over, rather than read afresh from what history keeps.
+- [M] A browser view of a shared playlist's contents; today the page only hands its link to the app.
+- [S] Registering `resonate://` as a link handler on Windows, so a shared or party link opens the window there too.
+- [S] A guest's queue kept current as the host edits past the songs found ahead, rather than found again on reaching them.
+- [S] Measuring a party's offset between two people in different places, past the bound half their round trip gives.
+
 ## Later: Sources and providers
 - [L] A Spotify account cannot be synced: sign in with an app the listener registers at
   developer.spotify.com (its client ID typed into a setting, empty by default, as Last.fm's key is)

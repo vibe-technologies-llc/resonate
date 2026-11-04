@@ -8,8 +8,6 @@ use crate::{
     Command, HeardAt, HeardClock, PlaybackState, Player, RepeatMode, Result, resumption_of,
 };
 
-const NANOS_A_SECOND: f64 = 1_000_000_000.0;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Sounding {
     Playing,
@@ -241,9 +239,5 @@ impl Seat {
 
     pub fn nanos_of(position: Duration) -> u64 {
         u64::try_from(position.as_nanos()).unwrap_or(u64::MAX)
-    }
-
-    pub fn from_nanos(nanos: u64) -> Duration {
-        Duration::from_secs_f64(nanos as f64 / NANOS_A_SECOND)
     }
 }

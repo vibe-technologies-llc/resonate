@@ -188,6 +188,23 @@ resonate sleep <spec>             # stop the running player after so many minute
 resonate share [file]             # the link a track is shared as
 ```
 
+## Together
+
+```
+resonate party start <files>      # begin a listening party and print the link to join it
+resonate party join <link>        # join one, hearing each song from your own copy or service
+resonate shared                   # the playlists you share with other people
+resonate shared --share <name>    # print a link to edit it with you and a link to follow it
+resonate shared --join <link>     # take up someone's list; --leave, --remove-person, --reset
+resonate wrapped                  # a year of listening; --year, --summary
+```
+
+There are no accounts. A party or a shared playlist has a key of its own, passed as a link or a QR
+code; the server keeps it sealed and cannot read it, and the name other people see is one you type,
+empty until you do. No sound passes between people: at a party everyone plays their own copy, or a
+service they already have, and sits out a song they lack. The window has a Party pane, a Share entry
+on each playlist and a Wrapped button on Statistics; the phones have the same.
+
 ## The library
 
 ```

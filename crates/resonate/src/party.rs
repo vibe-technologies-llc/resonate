@@ -40,10 +40,6 @@ struct ZoneSeat {
     library: Option<Arc<Library>>,
 }
 
-fn nanos(position: Duration) -> u64 {
-    u64::try_from(position.as_nanos()).unwrap_or(u64::MAX)
-}
-
 fn song_of(
     player: &Player,
     library: Option<&Library>,
@@ -98,7 +94,7 @@ impl PartySeat for ZoneSeat {
         SeatHeard {
             mine: mine_of(&heard),
             row: heard.row.map(resonate_core::QueueStamp::value),
-            position_nanos: heard.position.map(nanos),
+            position_nanos: heard.position.map(Seat::nanos_of),
             at_nanos: heard.at.nanos(),
             coarse: heard.holds_seconds_downstream,
         }
@@ -263,7 +259,7 @@ struct Room {
 pub(crate) struct Seats {
     pub(crate) zones: Arc<Zones>,
     pub(crate) library: Arc<Library>,
-    pub(crate) services: Vec<Arc<dyn PlaysInPlace>>,
+    pub(crate) served: crate::Served,
     pub(crate) server: Server,
     pub(crate) trusted: Option<std::path::PathBuf>,
     pub(crate) name: String,
@@ -300,7 +296,7 @@ fn settings_for(
 fn opened(party: Party, player: Arc<Player>, zone: ZoneId, seats: &Seats) -> Result<Room> {
     let finder = Arc::new(Finder {
         library: Some(Arc::clone(&seats.library)),
-        services: seats.services.clone(),
+        services: seats.served.services(),
     });
     let seat = ZoneSeat {
         seat: Seat::on(Arc::clone(&player)),
@@ -382,6 +378,15 @@ pub(crate) fn accept(text: &str) -> bool {
     });
 
     true
+}
+
+pub(crate) fn named(name: &str) {
+    if let Some(seats) = SEATS.lock().as_mut() {
+        name.clone_into(&mut seats.name);
+    }
+    if let Some(room) = ROOM.lock().as_ref() {
+        room.going.party().named(name.to_owned());
+    }
 }
 
 pub(crate) fn shown() -> Option<(PartyShown, PartyFollowed, ZoneId)> {
@@ -468,6 +473,10 @@ fn reach_said(reach: PartyReach) -> Option<&'static str> {
 }
 
 pub(crate) fn run(cli: &crate::cli::Cli, config: &Config, wanted: &PartyWanted) -> Result<()> {
+    if !config.syncs() {
+        return Err(Error::SyncOff);
+    }
+
     let library = crate::catalog(cli, config);
     let served = crate::Served::of(config, crate::settings_path(cli).ok());
     let sources = crate::playing_from(library.as_deref(), &served);

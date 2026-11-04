@@ -70,6 +70,10 @@ paths:
   invitation, not a song** (`together::accepted`, `Host::invited`), though `resonate` is a played-in-place
   scheme; the desktop entry declares `x-scheme-handler/resonate`, the one claim not on the bus's list.
 
+- **`party start FILES` and `party join LINK` run until interrupted or the room ends** (`party.rs`), printing
+  the invitation and each change of standing, with no keys and no bus, since the host's queue is the
+  point and a guest's transport belongs to the party. `online = false` makes them `Error::SyncOff`.
+
 - **A zone is addressed where a running player is.** `queue` and `sleep` take `--zone <N|NAME>`
   (conflicting with `--player`): a number is the zone's (1 the first), anything else the name the
   window shows, case folded (`ZoneAsked`, `Running::zoned`, `Error::NoSuchZone`); with neither flag

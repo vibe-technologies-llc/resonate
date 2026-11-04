@@ -1,7 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
 use gpui::{
-    BoxShadow, Context, Div, FontWeight, SharedString, div, point, prelude::*, px, rgb, rgba,
+    BoxShadow, Context, Div, FontWeight, SharedString, div, point, prelude::*, px, relative, rgb,
+    rgba,
 };
 use resonate_core::PlaylistId;
 
@@ -11,6 +12,7 @@ use crate::{
     views::{
         kit::{self, EndsInAnEllipsis as _, Tone},
         root::RootView,
+        settings::sync::scanned,
         sheets,
         spoken::Spoken,
     },
@@ -45,6 +47,10 @@ const EDIT_LINK: &str = "Anyone with this link can edit";
 const FOLLOWING: &str = "You follow this playlist. Whoever shared it decides what is on it.";
 
 const NOT_SEEN_YET: &str = "This playlist could not be shared. Is Online on?";
+
+const SCAN_TO_FOLLOW: &str = "Scan to follow";
+
+const SCANNED_SIDE: f32 = 132.0;
 
 const A_NAMELESS_PERSON: &str = "Someone";
 
@@ -140,6 +146,8 @@ impl RootView {
             .flex_col()
             .gap_4()
             .w(px(theme::wrapped_width()))
+            .max_h(relative(0.94))
+            .overflow_y_scroll()
             .p_6()
             .rounded_xl()
             .bg(rgb(theme::surface()))
@@ -231,6 +239,10 @@ impl RootView {
         } else {
             body = body.child(said(FOLLOWING));
         }
+
+        body = body
+            .child(said(SCAN_TO_FOLLOW))
+            .child(div().size(px(SCANNED_SIDE)).child(scanned(&seen.view_link)));
 
         if !seen.people.is_empty() {
             let mut people = div()

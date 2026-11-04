@@ -83,7 +83,7 @@ the listener, never by a script.
 ## Fuzzing
 
 - **The hand-rolled parsers are fuzzed from outside the workspace**: `fuzz/`'s `[workspace]` table
-  detaches it, so workspace lints do not reach libfuzzer's macros. Twenty-four targets: `probe`, `boxes`,
+  detaches it, so workspace lints do not reach libfuzzer's macros. Twenty-five targets: `together` (what a shared list and a party say, their reading back and that ops converge whichever order they cross), `probe`, `boxes`,
   `cue`, `lrc`, `lyricsfile`, `ttml`, `playlist`, `search`, `uri`, `decoded`, `equaliser`, `mcp`, `sync`,
   `rewriter` (the vault's `bare` over every container and `declared_digest`), `unpacking` (zstd frame
   indexing and the reader), `padding` (the tag writer's padded heads), `journal` (an undo journal,

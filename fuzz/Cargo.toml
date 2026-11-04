@@ -194,3 +194,8 @@ path = "fuzz_targets/sofa.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "together"
+path = "fuzz_targets/together.rs"
+test = false

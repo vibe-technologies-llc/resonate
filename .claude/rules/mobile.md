@@ -736,6 +736,16 @@ else is, and an empty remainder is `NoProvider`
 (`declined_hosted_services_leave_a_hosted_account_unasked_and_a_named_server_asked`). The switch is
 *Ask the hosted services* on each phone's provider screen.
 
+## Shared playlists and parties
+
+`together.rs` is the surface, and `sync/shared.rs` the catalog's half of the seam. Step 28, `playlist_shares`
+keyed by `playlist` and `created`, leaves a flagged list out of `Catalog::playlists`; a list written for a
+friend is flagged in the transaction that writes it, a followed one refuses `edit_playlist`
+(`Error::PlaylistFollowed`), and `shared.sqlite` lives beside the ledger, started and stopped by `sync_start`
+and `sync_stop`, so sync must be on. `together_named` keeps the typed name, empty until asked. A party
+follows the zone shown when it began, and `save_zone` leaves that zone's kept queue alone while following
+(`shared-playlists.md`, `party.md`).
+
 ## Resonate Wrapped
 
 `MobilePlayer::wrapped(year, time_zone, utc_offset_seconds)` answers a `WrappedYear` (the year, every year heard, `WrappedSlide`s, the summary) or nothing where no listen was ever kept; `resonate-mobile`'s `wrapped.rs` fills `resonate_core::wrapped::YearReview` from the document catalog (`library.md`), and the screens draw the slides as they come. The catalog's twenty-seventh step indexes `listens(began)`, since a year is read by time alone.

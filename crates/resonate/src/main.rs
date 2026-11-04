@@ -3074,7 +3074,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     party::in_the_window(party::Seats {
         zones: Arc::clone(&zones),
         library: Arc::clone(&library),
-        services: served.services(),
+        served: served.clone(),
         server: sync::server_of(&config),
         trusted: config.sync_server_certificate.clone(),
         name: config.shared_name.clone().unwrap_or_default(),

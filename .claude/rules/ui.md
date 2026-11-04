@@ -1105,6 +1105,11 @@ is never named.
 
 ## Panes
 
+**Party** (`views/party.rs`) and the sharing sheet (`views/sharing.rs`) read through the `Together` seam,
+absent where the build or setting has no sync, so neither sees the sync crate. Both redraw on a timer
+while shown, reading in-memory state only; the sheet asks twice for what cannot be undone (`party.md`,
+`shared-playlists.md`).
+
 - **A favourite is a star; the heart is taken; missing is neither.** `Icon::Want`/`Wanted` (heart) are
   the *gesture* of wanting a row only; the Missing pane and an artist's *not held* button use
   `Icon::Missing`. `Favourite`/`Favourited` = star. The mark hides on hover like every row control

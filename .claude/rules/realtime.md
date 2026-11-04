@@ -131,6 +131,11 @@ need the matrix and a scratch buffer on the RT thread, for audio the rebuild dis
 every profile; only this discipline turns a crash into a glitch. No `catch_unwind`: a malformed
 file returns `Err`, never panics.
 
+## The hold
+
+`RingProducer::hold_in_step` only stores atomics (`release`, then `holding`); the callback reads them as it
+already does for a handover's entry, so a party's correction adds no lock or allocation (`party.md`).
+
 ## DSP stages
 
 `Processor::process` returns `ProcessCount`, never `Result` (the error path is where allocation

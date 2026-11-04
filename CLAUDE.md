@@ -31,6 +31,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `cast.md` | resonate-cast, the binary's `rendering.rs` | Google Cast receivers: one more sink kind beside UPnP's, the mDNS browse, TLS and the hand-written `CastMessage` and JSON, the Default Media Receiver's launch and load, the receiver's clock, the volume |
 | `discord.md` | resonate-discord, `core::presence`, the binary's `discord.rs`, the Desktop groups | the gate, the seam, the frame, what an activity says and how often |
 | `shared-playlists.md` | `shared/**`, the binary's `together.rs`, the sharing sheet, the phones' `shared.rs` | playlists shared with other people: keys and links, the op log, the catalog seam, your own devices, removing someone |
+| `party.md` | `party/**`, the binary's `party.rs`, `seat.rs`, the party pane, the phones' `together.rs` | listening parties: the room, the clock and what it was measured at, following a host, the ring nudge, a guest's own queue |
 | `release.md` | `.github/workflows/release.yml`, `packaging/**`, the root manifest, `docs/ROADMAP.md` | versions and their spelling per ecosystem, branches, tags, the release assets, the signing secrets |
 | `packaging.md` | `packaging/**` | the Arch, Fedora, DEB and Flatpak payloads, the x86-64-v3 release baseline and the pre-release spellings |
 | `windows.md` | resonate-wasapi, resonate-win32, the Windows capture of resonate-listen, core's `os_bytes`, `file_facts`, `positioned`, `windows_uri`, `volume_mounts`, the library's `reach.rs`, the binary's `interrupts.rs`, `packaging/windows/**` | the WASAPI backend (shared and exclusive as two sinks), the Win32 exception, loopback and microphone capture, the filesystem and path seams under the shared crates, interrupts and keys, the window's named pipe, what is not on Windows yet |
@@ -165,7 +166,8 @@ Invariants the layering protects (the rules files have the rest):
   `Answer` (what a lookup or study learnt, shared between devices).
 - **The sync server never reads what it keeps**: every record is sealed under keys the pairing
   code derives, songs travel device to device, and a device names itself only inside the sealed
-  records (`sync.md`).
+  records (`sync.md`). A shared playlist or a party has a key of its own, passed as a link; there
+  are no accounts, and a typed name travels only sealed (`shared-playlists.md`, `party.md`).
 - **Everything else is a crate behind its own seam**: tag writing through `TagSink`, the vault,
   lyrics, providers, studies, the equaliser's I/O, Discord.
 
@@ -248,6 +250,7 @@ stack's test harness:
 - **Catalog:** `served` (a service played in place browsed: Subsonic, Jellyfin or Emby, TIDAL, hifi-api, the Resonate server, Monochrome; `subsonic` is its Subsonic case), `scan`, `roots`, `forget`, `enrich`, `tag`, `organise`, `dedupe`, `vault`, `studies`, `stats`,
   `favourites`, `suggest`, `playlists`, `playlist`, `import`.
 - **Wants:** `wants`, `missing`, `poll`, `tidal` (device sign-in), `lastfm` (scrobbling sign-in).
+- **Together:** `shared` (playlists shared with other people: `--share`, `--join`, `--leave`, `--remove-person`, `--reset`, `--name`), `party` (`start FILES`, `join LINK`), `wrapped` (a year of listening).
 - **Devices:** `sync` (pairing code and devices; `--join`, `--leave`, `--fetch --from`, `--handoff`,
   `--control <device>` to see and drive another device's zones).
 - `cargo run -- <files>` opens the window with those queued; a bare `cargo run` opens it on the

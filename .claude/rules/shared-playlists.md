@@ -25,6 +25,9 @@ touches the pairing key, there are no accounts, and the server reads nothing it 
   or the page `https://<host>/s/#<code>`, which chat apps linkify (`invitation.rs`). The fragment
   never reaches the server.
 
+A list on a server other than the hosted one names it in its links, and its page is on that server
+(`Running::named_in_a_link`), so a self-hosted list is never sent to the hosted page.
+
 ## The merge
 
 **An op log, not a whole list last writer wins** (`shared/op.rs`), since two people editing at once is

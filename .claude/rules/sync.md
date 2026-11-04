@@ -338,6 +338,10 @@ platforms; the catalog seam stays thin.
 
 ## The seam
 
+**Playlists shared with other people stand apart from this ledger** (`shared-playlists.md`): a flagged
+list is not offered to it, a mapped one that becomes shared is `released` rather than tombstoned, and
+`Change::Share` (wire tag 10) tells the listener's own devices the list's code under the pairing key.
+
 `Catalog` is what a platform implements: playlists read and written (no undo step), saved queries
 read and written (`queries`, `write_query`; removal is `remove_playlist`, one id space), favourites,
 listens after a mark, a remote listen credited, the resume state, whether and how a song is held
