@@ -302,7 +302,7 @@ impl RootView {
                     .h(theme::width(theme::RAIL_TRACK))
                     .w(handle.track_width())
                     .rounded_full()
-                    .bg(rgb(theme::outline()))
+                    .bg(rgb(theme::soft_edge()))
                     .child(
                         div()
                             .h_full()
@@ -340,7 +340,7 @@ fn bubble(pointed: &Pointed) -> Div {
                 .rounded_md()
                 .bg(rgb(theme::raised()))
                 .border_1()
-                .border_color(rgb(theme::outline()))
+                .border_color(rgb(theme::soft_edge()))
                 .child(kit::figure(pointed.reading.clone()).text_color(rgb(theme::text()))),
         )
 }

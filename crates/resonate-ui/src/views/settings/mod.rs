@@ -57,8 +57,6 @@ use crate::{
 
 const CLEAR_THE_FILTER_HINT: &str = "Clear what is typed";
 
-const FILTER_FRAME: &str = "find-a-setting-frame";
-
 pub(crate) const FILTER_PLACEHOLDER: &str = "Find a setting…";
 
 const REVERT_HINT: &str = "Put this back to what Resonate was built with, and take the key out of \
@@ -190,6 +188,7 @@ impl RootView {
 
     fn filter_field(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let typed = !self.finding.read(cx).text().is_empty();
+        let holding_the_caret = self.finding_holds_the_caret;
 
         div()
             .id("find-a-setting")
@@ -203,11 +202,13 @@ impl RootView {
             .rounded_lg()
             .bg(rgb(theme::background()))
             .border_1()
-            .border_color(rgb(theme::border()))
+            .border_color(if holding_the_caret {
+                theme::tinted(theme::accent(), 0x99)
+            } else {
+                rgb(theme::border())
+            })
             .text_size(px(theme::text_sm()))
             .cursor_text()
-            .track_focus(&self.controls.holding(FILTER_FRAME, cx))
-            .in_focus(|field| field.border_color(theme::tinted(theme::accent(), 0x99)))
             .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
             .hover(|field| field.border_color(theme::tinted(theme::accent(), 0x99)))
             .child(icons::icon(
@@ -1188,7 +1189,7 @@ fn progress(share: f32) -> Div {
         .h(theme::width(theme::SCAN_BAR))
         .rounded_full()
         .overflow_hidden()
-        .bg(rgb(theme::outline()))
+        .bg(rgb(theme::soft_edge()))
         .child(
             div()
                 .h_full()

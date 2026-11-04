@@ -299,7 +299,7 @@ pub(crate) fn drawn(
                 .rounded_full()
                 .bg(rgb(theme::raised()))
                 .border_1()
-                .border_color(rgb(theme::outline()))
+                .border_color(rgb(theme::soft_edge()))
                 .shadow(vec![BoxShadow {
                     color: theme::shadow(0.45),
                     offset: point(px(0.0), px(4.0)),

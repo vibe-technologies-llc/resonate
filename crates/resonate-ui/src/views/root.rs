@@ -641,6 +641,7 @@ pub struct RootView {
     pub(crate) minimum_length: Entity<Field>,
     pub(crate) typed_root: Entity<Field>,
     pub(crate) finding: Entity<Field>,
+    pub(crate) finding_holds_the_caret: bool,
     pub(crate) server: Entity<ServerModel>,
     pub(crate) server_search: Entity<Field>,
     pub(crate) server_rows: UniformListScrollHandle,
@@ -1267,6 +1268,7 @@ impl RootView {
             minimum_length,
             typed_root,
             finding,
+            finding_holds_the_caret: false,
             server,
             server_search,
             server_rows: UniformListScrollHandle::new(),
@@ -4296,7 +4298,7 @@ impl RootView {
                         .rounded_full()
                         .bg(rgb(theme::raised()))
                         .border_1()
-                        .border_color(rgb(theme::outline()))
+                        .border_color(rgb(theme::soft_edge()))
                         .shadow(vec![BoxShadow {
                             color: theme::shadow(0.45),
                             offset: point(px(0.0), px(4.0)),
@@ -4827,15 +4829,11 @@ impl RootView {
             .border_color(if searching {
                 theme::tinted(theme::accent(), 0x99)
             } else {
-                theme::tinted(theme::outline(), 0xff)
+                rgb(theme::soft_edge())
             })
             .text_size(px(theme::text_sm()))
             .cursor_text()
-            .hover(|field| {
-                field
-                    .border_color(rgb(theme::outline()))
-                    .bg(rgb(theme::hover()))
-            })
+            .hover(|field| field.bg(rgb(theme::hover())))
             .child(icons::icon(
                 Icon::Search,
                 theme::search_icon(),
@@ -5799,6 +5797,7 @@ impl RootView {
             Region::Sidebar => self.sidebar(cx).into_any_element(),
             Region::Pane => {
                 self.grid_width.seen_in(window.viewport_size().width);
+                self.finding_holds_the_caret = self.finding.read(cx).is_focused(window);
                 let shown = self.pane_shown(cx);
                 let named = match self.search_in_front(cx) {
                     Some(_) => SEARCH_REGION,

@@ -729,14 +729,22 @@ is never named.
   row, a segment, a ghost button) was filled with the ring colour. An inset shadow is painted before
   the element's children, so an opaque ground child (the `shown_while` wash of the settings rail,
   `kit::segment` and the bar's toggles) is laid by `focus::beneath_the_ring`, inside the ring's
-  width. A field holding the caret still lights on `in_focus`, since a click into it is where typing
-  goes.
-- **An outlined button's edge is `border`, not `outline`.** `outline` is lifted to 3:1 for the
-  edges that alone tell a control apart (a field, a swatch, a menu); a button is told by its
-  raised fill and label, and at 3:1 every button wore a hard line. High Contrast's `border` is
-  already at its bar.
+  width. A field holding the caret still lights its border, since a click into it is where typing
+  goes, read from `Field::is_focused` (`RootView::finding_holds_the_caret`, set as the pane is
+  drawn), never gpui's `in_focus`, which lights what stands *inside* the focused element: the
+  window's root holds the focus at rest, so the settings filter stood lit in the accent whenever no
+  control held it.
+- **What is drawn at rest wears a soft edge; `outline` is for the two marks that are nothing but
+  their edge.** `outline` (`DRAWN_EDGE`, 3:1) now draws only a switch's track and a radio's ring. A
+  button's edge is `border`; everything else that once took `outline` (the search field at rest, a
+  menu, hint, toast, the picker and record cards, the seek and volume rails' and a scan's track, a
+  meter's ground, a plot's zero line, a day with no plays) takes `theme::soft_edge()`, `border` a
+  quarter of the way to `outline`: at 3:1 each drew a hard bright line, and a surface that floats is
+  told by its raised fill and shadow, a rail by what fills it, a field by its fill, mark and words.
+  In High Contrast `border` is at its 4.5:1 bar, so the soft edge is too
+  (`a_soft_edge_is_quiet_beside_the_outline_and_strong_in_high_contrast`).
 - **Accessibility beyond the tree: the bars and what holds them.** The contrast tests in `theme.rs`
-  also walk every theme x accent for: drawn edges (`DRAWN_EDGE`) standing off the panes they are
+  also walk every theme x accent for: `outline` (`DRAWN_EDGE`) standing off the panes it is
   drawn on at 3:1, `theme::focus_ring()` (`FOCUS_RING_WIDTH` 2 px, full strength, 3:1 against every
   pane; `focus_ring_over(fill)` picks whichever ink stands off a fill), every accent as text on the
   panes, every semantic colour as text on its own `tinted` wash, the inks on every pane they are

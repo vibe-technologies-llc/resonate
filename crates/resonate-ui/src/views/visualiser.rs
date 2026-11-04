@@ -503,7 +503,7 @@ fn traced(trace: Option<(Levels, Levels)>) -> Canvas<()> {
                     point(px(left), px(middle)),
                     point(px(left + wide), px(middle + 1.0)),
                 ),
-                rgb(theme::outline()),
+                rgb(theme::soft_edge()),
             ));
 
             let Some((on_the_left, on_the_right)) = trace else {
@@ -656,7 +656,7 @@ fn meter(window: &mut Window, left: f32, top: f32, tall: f32, meter: Meter) {
     window.paint_quad(
         fill(
             Bounds::from_corners(point(px(left), px(top)), point(px(right), px(bottom))),
-            rgb(theme::outline()),
+            rgb(theme::soft_edge()),
         )
         .corner_radii(Corners::all(px(BAR_ROUNDING))),
     );
@@ -697,7 +697,7 @@ fn correlation_meter(window: &mut Window, left: f32, middle: f32, wide: f32, hel
                 point(px(left), px(middle - half_track)),
                 point(px(left + wide), px(middle + half_track)),
             ),
-            rgb(theme::outline()),
+            rgb(theme::soft_edge()),
         )
         .corner_radii(Corners::all(px(half_track))),
     );

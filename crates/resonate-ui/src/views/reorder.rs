@@ -754,7 +754,7 @@ impl RootView {
                 .child(icons::icon(
                     step.glyph(),
                     theme::row_control_icon(),
-                    theme::outline(),
+                    theme::soft_edge(),
                 ))
                 .into_any_element();
         };

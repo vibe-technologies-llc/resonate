@@ -146,7 +146,7 @@ impl RootView {
             .p_0()
             .gap_0()
             .overflow_hidden()
-            .hover(|card| card.border_color(rgb(theme::outline())))
+            .hover(|card| card.border_color(rgb(theme::soft_edge())))
             .child(
                 div()
                     .id(("suggestion-open", index))

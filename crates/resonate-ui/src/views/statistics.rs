@@ -514,7 +514,7 @@ fn charted(chart: &Chart) -> Div {
 
 fn drawn_bar(index: usize, bar: Bar, of: usize) -> Stateful<Div> {
     let colour = if bar.plays == 0 {
-        theme::outline()
+        theme::soft_edge()
     } else {
         theme::accent()
     };

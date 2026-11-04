@@ -310,7 +310,7 @@ impl RootView {
             saying,
             kit::dot_swatch(id, saying, colour, worn.accent == accent)
                 .when(accent.is_none(), |swatch| {
-                    swatch.border_1().border_color(rgb(theme::outline()))
+                    swatch.border_1().border_color(rgb(theme::soft_edge()))
                 })
                 .names(saying),
             move |this, _, cx| this.wear(dressed, &Setting::Accent(accent), cx),

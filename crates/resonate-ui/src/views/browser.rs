@@ -3737,7 +3737,7 @@ fn detail_card(title: &'static str) -> Stateful<Div> {
         .rounded_lg()
         .bg(rgb(theme::raised()))
         .border_1()
-        .border_color(rgb(theme::outline()))
+        .border_color(rgb(theme::soft_edge()))
         .shadow(vec![BoxShadow {
             color: theme::shadow(0.5),
             offset: point(px(0.0), px(6.0)),

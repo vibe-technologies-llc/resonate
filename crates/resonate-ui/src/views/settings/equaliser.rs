@@ -1495,7 +1495,7 @@ fn traced(
                     point(bounds.right(), level(0.0)),
                 ],
                 1.0,
-                rgb(theme::outline()),
+                rgb(theme::soft_edge()),
             );
 
             let plotted_of = |traced: &Traced| -> Vec<gpui::Point<Pixels>> {
