@@ -7,6 +7,7 @@ struct StatisticsView: View {
     @State private var days: UInt32 = 0
     @State private var selected: Date?
     @State private var widened: Set<StatisticsRank> = []
+    @State private var showingWrapped = false
 
     private static let spans: [(UInt32, String)] = [(7, "Week"), (30, "Month"), (365, "Year"), (0, "All time")]
     private static let shortList = 5
@@ -60,12 +61,21 @@ struct StatisticsView: View {
             if statistics != nil, features.statisticsLoading {
                 ProgressView().accessibilityLabel("Reading your listening history")
             }
+            if features.wrappedYear != nil {
+                Button("Wrapped", systemImage: "rectangle.stack") { showingWrapped = true }
+            }
         }
         .navigationTitle("Statistics")
         .refreshable { features.loadStatistics(days: days) }
         .task(id: days) {
             selected = nil
             features.loadStatistics(days: days)
+        }
+        .task { features.loadWrapped() }
+        .fullScreenCover(isPresented: $showingWrapped) {
+            if let year = features.wrappedYear {
+                WrappedDeck(year: year)
+            }
         }
     }
 

@@ -547,6 +547,7 @@ struct SyncConnectionPage: View {
     @State private var chosen: SyncRoute?
     @State private var server = ""
     @State private var device = ""
+    @State private var sharedName = ""
 
     var body: some View {
         let features = library.features
@@ -596,10 +597,20 @@ struct SyncConnectionPage: View {
                 } footer: {
                     Text("What your other devices call this iPhone.")
                 }
+                Section {
+                    TextField("Name", text: $sharedName)
+                    Button("Save name") { features.together.rename(sharedName) }
+                        .disabled(trimmed(sharedName) == features.together.name)
+                } header: {
+                    Text("Your name on shared playlists and parties")
+                } footer: {
+                    Text("What other people see. Left empty, you are Someone.")
+                }
             }
         }
         .navigationTitle("Connection")
         .onAppear {
+            sharedName = features.together.name
             guard let config = features.syncConfig else { return }
             server = config.server
             device = config.device

@@ -73,6 +73,7 @@ enum Destination: Hashable, Codable {
     case identicalSongs
     case songs
     case served(ServedPlace)
+    case party
 
     static func lyrics(_ track: Track?) -> Destination {
         .songLyrics(track?.id)
@@ -333,6 +334,11 @@ struct RootView: View {
             library.features.playlistToShow = nil
             navigation.open(.playlist(shown))
         }
+        .onChange(of: library.features.together.toShow) { _, shown in
+            guard let shown else { return }
+            library.features.together.toShow = nil
+            navigation.open(shown == .party ? .party : .playlists)
+        }
         .sheet(isPresented: $navigation.listening) {
             ListenSheet()
                 .sheetSized()
@@ -520,6 +526,7 @@ struct DestinationView: View {
         case .identicalSongs: IdenticalSongsView()
         case .songs: SongsView()
         case .served(let place): ServedPlaceView(place: place)
+        case .party: PartyView()
         case .songLyrics(let id): LiveSong(id: id) { LyricsView(chosen: $0) }
         case .visualizer: VisualizerView()
         case .songAnalysis(let id): LiveSong(id: id) { AnalysisView(chosen: $0) }

@@ -82,6 +82,7 @@ struct PlaylistView: View {
     @State private var exported: PlaylistFile?
     @State private var exporting = false
     @State private var entries = PlaylistEntries()
+    @State private var sharingList = false
 
     var body: some View {
         let features = library.features
@@ -89,7 +90,11 @@ struct PlaylistView: View {
         let rows = features.openPlaylist == id ? features.playlistRows : []
         let name = playlist?.name ?? "Playlist"
         let search = playlist?.search
-        let subtitle = search == nil ? playlist?.link.map(LinkedPlaylistWords.header) ?? "Playlist" : "Saved search"
+        let shared = features.together.shared(id)
+        let mayEdit = shared?.mayEdit ?? true
+        let subtitle = search == nil
+            ? shared.map { SharedPlaylistWords.kind(mayEdit: $0.mayEdit) } ?? playlist?.link.map(LinkedPlaylistWords.header) ?? "Playlist"
+            : "Saved search"
         List {
             CollectionHeader(title: name, subtitle: subtitle, tracks: rows) {
                 PlaylistArtwork(playlist: playlist, corner: 20)
@@ -97,7 +102,7 @@ struct PlaylistView: View {
             if let search {
                 SavedSearchRows(search: search, rows: rows)
             } else {
-                listRows(rows, empty: playlist?.songs == 0)
+                listRows(rows, empty: playlist?.songs == 0, mayEdit: mayEdit)
             }
         }
         .listStyle(.plain)
@@ -107,7 +112,7 @@ struct PlaylistView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sensoryFeedback(.selection, trigger: edited)
         .toolbar {
-            if search == nil {
+            if search == nil, mayEdit {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Add songs", systemImage: "plus") { adding = true }
                 }
@@ -123,9 +128,11 @@ struct PlaylistView: View {
                         id: id,
                         fills: search != nil,
                         link: playlist?.link,
+                        mayEdit: mayEdit,
                         renaming: $renaming,
                         revising: $revising,
                         deleting: $deleting,
+                        sharing: $sharingList,
                         export: export
                     )
                 }
@@ -170,6 +177,7 @@ struct PlaylistView: View {
             Text("The music files stay in your library. You can undo this action from a playlist's options.")
         }
         .sheet(isPresented: $adding) { AddSongsSheet(id: id).sheetSized(.long) }
+        .sheet(isPresented: $sharingList) { SharedPlaylistSheet(id: id, name: name).sheetSized(.long) }
         .fileExporter(
             isPresented: $exporting,
             document: exported,
@@ -184,8 +192,8 @@ struct PlaylistView: View {
     }
 
     @ViewBuilder
-    private func listRows(_ rows: [Track], empty: Bool) -> some View {
-        if rows.isEmpty, empty {
+    private func listRows(_ rows: [Track], empty: Bool, mayEdit: Bool) -> some View {
+        if rows.isEmpty, empty, mayEdit {
             VStack(spacing: 12) {
                 Text("Your playlist starts here. Add songs from your library to make it yours.")
                     .multilineTextAlignment(.center)
@@ -198,17 +206,17 @@ struct PlaylistView: View {
             .listRowSeparator(.hidden)
         }
         ForEach(entries.of(rows)) { entry in
-            PlaylistRow(entry: entry, count: rows.count, move: move, remove: remove)
+            PlaylistRow(entry: entry, count: rows.count, mayEdit: mayEdit, move: move, remove: remove)
                 .equatable()
                 .listRowBackground(Color.clear)
         }
-        .onMove { from, to in
+        .onMove(perform: mayEdit ? { from, to in
             guard let start = from.first else { return }
             move(start, to: RowMoves.playlist(from: start, destination: to))
-        }
-        .onDelete { offsets in
+        } : nil)
+        .onDelete(perform: mayEdit ? { offsets in
             for position in offsets.sorted(by: >) { remove(position) }
-        }
+        } : nil)
     }
 
     private func export(_ format: PlaylistFileFormat) {
@@ -262,9 +270,11 @@ struct PlaylistOptions: View {
     let id: UInt64
     var fills = false
     var link: PlaylistLinkInfo?
+    var mayEdit = true
     @Binding var renaming: Bool
     @Binding var revising: Bool
     @Binding var deleting: Bool
+    @Binding var sharing: Bool
     let export: (PlaylistFileFormat) -> Void
 
     var body: some View {
@@ -277,14 +287,21 @@ struct PlaylistOptions: View {
             if fills {
                 Button("Edit search", systemImage: "slider.horizontal.3") { revising = true }
             }
-            Button("Rename playlist", systemImage: "pencil") { renaming = true }
-            Button("Undo last playlist edit", systemImage: "arrow.uturn.backward") { features.undoPlaylistEdit() }
+            if mayEdit {
+                Button("Rename playlist", systemImage: "pencil") { renaming = true }
+                Button("Undo last playlist edit", systemImage: "arrow.uturn.backward") { features.undoPlaylistEdit() }
+            }
+            if !fills {
+                Button("Share", systemImage: "person.2") { sharing = true }
+            }
             Menu("Export playlist", systemImage: "square.and.arrow.up") {
                 ForEach(PlaylistFileFormat.offered, id: \.self) { format in
                     Button(format.title) { export(format) }
                 }
             }
-            Button("Delete playlist", systemImage: "trash", role: .destructive) { deleting = true }
+            if mayEdit {
+                Button("Delete playlist", systemImage: "trash", role: .destructive) { deleting = true }
+            }
         }
         if let link, !fills {
             Section(LinkedPlaylistWords.header(link)) {
@@ -352,6 +369,7 @@ struct PlaylistRow: View, Equatable {
     @Environment(Library.self) private var library
     let entry: PlaylistEntry
     let count: Int
+    let mayEdit: Bool
     let move: (Int, Int) -> Void
     let remove: (Int) -> Void
     @State private var choosingPlaylist = false
@@ -365,8 +383,10 @@ struct PlaylistRow: View, Equatable {
             library.play(library.features.playlistRows, at: position)
         }
         .swipeActions(edge: .trailing) {
-            Button("Remove from playlist", systemImage: "minus.circle", role: .destructive) { remove(position) }
-                .tint(.red)
+            if mayEdit {
+                Button("Remove from playlist", systemImage: "minus.circle", role: .destructive) { remove(position) }
+                    .tint(.red)
+            }
         }
         .contextMenu {
             Section {
@@ -388,14 +408,16 @@ struct PlaylistRow: View, Equatable {
             Section {
                 SongPages(track: track)
             }
-            Section {
-                if position > 0 {
-                    Button("Move up", systemImage: "arrow.up") { move(position, position - 1) }
+            if mayEdit {
+                Section {
+                    if position > 0 {
+                        Button("Move up", systemImage: "arrow.up") { move(position, position - 1) }
+                    }
+                    if position + 1 < count {
+                        Button("Move down", systemImage: "arrow.down") { move(position, position + 1) }
+                    }
+                    Button("Remove from playlist", systemImage: "minus.circle", role: .destructive) { remove(position) }
                 }
-                if position + 1 < count {
-                    Button("Move down", systemImage: "arrow.down") { move(position, position + 1) }
-                }
-                Button("Remove from playlist", systemImage: "minus.circle", role: .destructive) { remove(position) }
             }
         }
         .sensoryFeedback(.success, trigger: queued)
@@ -403,7 +425,7 @@ struct PlaylistRow: View, Equatable {
     }
 
     nonisolated static func == (shown: PlaylistRow, other: PlaylistRow) -> Bool {
-        shown.entry == other.entry && shown.count == other.count
+        shown.entry == other.entry && shown.count == other.count && shown.mayEdit == other.mayEdit
     }
 }
 
@@ -549,7 +571,7 @@ struct PlaylistPicker: View {
                     if let failure { Text(failure).foregroundStyle(Color.failure).announced(failure) }
                 }
                 Section {
-                    ForEach(library.features.playlists.filter { $0.search == nil }, id: \.id) { playlist in
+                    ForEach(library.features.playlists.filter { $0.search == nil && library.features.together.mayEdit($0.id) }, id: \.id) { playlist in
                         Button {
                             asking = true
                             library.features.addToPlaylist(playlist.id, tracks) { finished($0, playlist.name) }

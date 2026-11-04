@@ -49,6 +49,7 @@ final class Features {
     @ObservationIgnored lazy var room = RoomCorrectionState(library: library)
     @ObservationIgnored lazy var measured = MeasuredCorrectionState(library: library) { [unowned self] in adopt($0) }
     @ObservationIgnored lazy var listeningTest = ListeningTestState(library: library)
+    @ObservationIgnored lazy var together = TogetherState(library: library)
     @ObservationIgnored private lazy var transfers = BackgroundHold(
         name: "Fetching songs from your devices",
         continued: BackgroundHold.transfers,
@@ -68,7 +69,10 @@ final class Features {
         didSet { servedChanged() }
     }
     var online: Bool {
-        didSet { servedChanged() }
+        didSet {
+            servedChanged()
+            together.networkRulesChanged()
+        }
     }
     private(set) var servedGeneration = 0
     @ObservationIgnored private var servedGiven: [DownloadAccount]?
@@ -84,6 +88,7 @@ final class Features {
     var libraryBreakdown: LibraryBreakdown?
     var statisticsLoading = false
     private(set) var statisticsDays: UInt32?
+    private(set) var wrappedYear: WrappedYear?
     var lyrics: LyricSheet?
     var lyricsLoading = false
     var lyricsUnread: UInt64?
@@ -257,6 +262,7 @@ final class Features {
         native.configureHostedServices(enabled: hostedServices)
         native.configureEnrichOnMetered(allowed: enrichOnMetered)
         native.configureStallDownloadsOnMetered(stalls: stallDownloadsOnMetered)
+        together.tellName(to: native)
         Task { [weak self] in
             await self?.readSecrets()
             self?.begin(native)
@@ -281,7 +287,7 @@ final class Features {
         watchNetwork()
         syncPolling?.cancel()
         syncPolling = Task { [weak self] in await self?.pollSync(native) }
-        work { [weak self] native in try await self?.applySync(native) }
+        work({ [weak self] native in try await self?.applySync(native) }, finally: { [weak self] in self?.together.syncSettled() })
         followLinkedPlaylists()
         Task { [weak self] in
             await self?.library.forgetMissing()
@@ -427,6 +433,7 @@ final class Features {
         let previous = syncConfig
         let store = accounts
         syncConfig = config
+        together.networkRulesChanged()
         work { [weak self] native in
             do {
                 try await Work.inSecrets { try store.writeSync(config) }
@@ -750,12 +757,13 @@ final class Features {
             await withTaskCancellationHandler { await nap.value } onCancel: { nap.cancel() }
             guard !Task.isCancelled else { return }
             do {
-                let (status, waiting, handoffs, record) = try await Work.aside {
+                let (status, waiting, handoffs, record, shared) = try await Work.aside {
                     let status = native.syncStatus()
                     let waiting = try native.syncReceived()
                     let handoffs = status.standing == .off ? [] : try native.syncHandoffs()
-                    return (status, waiting, handoffs, native.syncNearbyRecord())
+                    return (status, waiting, handoffs, native.syncNearbyRecord(), native.sharedPlaylists())
                 }
+                together.adopt(shared)
                 nearbyDevices(native).follow(record: record)
                 if syncStatus != status { syncStatus = status }
                 let moving = status.moving > 0 || !landable(waiting).isEmpty
@@ -999,8 +1007,9 @@ final class Features {
             await MainActor.run {
                 if self?.playlists != found { self?.playlists = found }
             }
-            let profiles = try await Work.aside { try native.profilesFollowed() }
+            let (profiles, shared) = try await Work.aside { (try native.profilesFollowed(), native.sharedPlaylists()) }
             if self?.followedProfiles != profiles { self?.followedProfiles = profiles }
+            self?.together.adopt(shared)
         }
     }
 
@@ -1155,6 +1164,24 @@ final class Features {
         }, finally: { [weak self] in
             if request == self?.statisticsRequest { self?.statisticsLoading = false }
         })
+    }
+
+    func loadWrapped() {
+        work { [weak self] _ in
+            guard let self else { return }
+            let found = try await wrapped(of: nil)
+            if wrappedYear != found { wrappedYear = found }
+        }
+    }
+
+    func wrapped(of year: Int64?) async throws -> WrappedYear? {
+        let native = try await library.player()
+        let zone = TimeZone.current
+        let identifier = zone.identifier
+        let offset = Int32(zone.secondsFromGMT())
+        return try await Work.aside {
+            try native.wrapped(year: year, timeZone: identifier, utcOffsetSeconds: offset)
+        }
     }
 
     func loadInspector(_ id: UInt64) {

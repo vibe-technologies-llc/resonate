@@ -36,6 +36,9 @@ struct LibraryToolsView: View {
                 NavigationLink(value: Destination.statistics) {
                     ToolRow(title: "Statistics", detail: "Your listening in numbers", symbol: "chart.bar")
                 }
+                NavigationLink(value: Destination.party) {
+                    ToolRow(title: "Listening party", detail: "Listen with other people, in step", symbol: "person.2.wave.2")
+                }
                 NavigationLink(value: Destination.identicalSongs) {
                     ToolRow(title: "Identical songs", detail: "Find files held twice and keep one of each", symbol: "square.on.square")
                 }

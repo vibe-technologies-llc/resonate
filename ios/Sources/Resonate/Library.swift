@@ -1679,9 +1679,18 @@ final class Library {
     private static let openedTogether = Duration.milliseconds(250)
 
     func open(_ url: URL) {
-        if url.scheme?.lowercased() == "resonate" {
+        switch OpenedLink.of(url) {
+        case .invitation:
+            features.together.accept(url.absoluteString)
+            return
+        case .unreadableInvitation:
+            notice(TogetherWords.unreadableLink)
+            return
+        case .pairing:
             features.offerPairing(url.absoluteString)
             return
+        case .elsewhere:
+            break
         }
         if playlistFileExtensions().contains(url.pathExtension.lowercased()) {
             importPlaylistFile(url)
@@ -1889,6 +1898,7 @@ final class Library {
                 scanStopped = true
                 documents.stopScanning(scanningFolder)
             }
+            _ = try? await Work.aside { opened.partyLeave() }
             await features.stopForErasing()
             let latest = try? await Work.inOrder { try opened.songUris() }
             songs = latest ?? songs

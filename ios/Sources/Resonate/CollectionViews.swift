@@ -205,6 +205,9 @@ struct LibraryView: View {
                     Menu("New playlist", systemImage: "plus") {
                         Button("Create playlist", systemImage: "plus") { naming = true }
                         Button("Import playlist file", systemImage: "square.and.arrow.down") { importing = true }
+                        Button("Paste a link", systemImage: "doc.on.clipboard") {
+                            library.features.together.accept(UIPasteboard.general.string ?? "")
+                        }
                     }
                 }
                 if !library.features.followedProfiles.isEmpty {
@@ -401,15 +404,17 @@ private struct AllSongsCard: View {
 }
 
 struct PlaylistShelfRow: View {
+    @Environment(Library.self) private var library
     @ScaledMetric(relativeTo: .body) private var artworkEdge: CGFloat = 56
     let playlist: MusicPlaylist
 
     var body: some View {
+        let kind = library.features.together.shared(playlist.id).map { SharedPlaylistWords.kind(mayEdit: $0.mayEdit) } ?? "Playlist"
         HStack(spacing: 14) {
             PlaylistArtwork(playlist: playlist).frame(width: artworkEdge, height: artworkEdge)
             VStack(alignment: .leading, spacing: 2) {
                 Text(playlist.name).font(.body.weight(.medium)).titleLines()
-                Text("Playlist · \(counted(Int(playlist.songs), "song"))").font(.subheadline).foregroundStyle(.secondary)
+                Text("\(kind) · \(counted(Int(playlist.songs), "song"))").font(.subheadline).foregroundStyle(.secondary)
             }
         }
         .accessibilityElement(children: .combine)
