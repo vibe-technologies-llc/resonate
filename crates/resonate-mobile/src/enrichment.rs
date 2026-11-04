@@ -2702,7 +2702,8 @@ mod tests {
             enriching: Enriching::default(),
             room: crate::room::Room::under(std::env::temp_dir()),
             tagging: crate::tagging::Tagging::under(std::env::temp_dir()),
-            served: crate::served::Served::default(),
+            served: Arc::new(crate::served::Served::default()),
+            together: crate::together::Together::default(),
             rendering: crate::rendering::Rendering::default(),
         }
     }

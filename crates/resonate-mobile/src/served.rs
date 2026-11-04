@@ -188,6 +188,13 @@ impl Served {
         self.slot.read().clone()
     }
 
+    pub(crate) fn playing_services(&self) -> Vec<Arc<dyn PlaysInPlace>> {
+        self.services()
+            .into_iter()
+            .map(|service| service.plays)
+            .collect()
+    }
+
     fn named(&self, scheme: &str) -> Result<Service> {
         self.slot
             .read()

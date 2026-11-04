@@ -257,7 +257,19 @@ impl resonate_ui::Together for Seen {
     }
 
     fn shared_playlists(&self) -> Vec<(PlaylistId, bool)> {
-        self.library.playlists_shared().unwrap_or_default()
+        let Some(shared) = running() else {
+            return Vec::new();
+        };
+
+        shared
+            .shown()
+            .into_iter()
+            .filter_map(|list| {
+                let at = list.at?;
+
+                Some((PlaylistId::new(at.id.cast_unsigned()).ok()?, list.may_edit))
+            })
+            .collect()
     }
 
     fn share(&self, playlist: PlaylistId) -> bool {
@@ -391,7 +403,14 @@ impl resonate_ui::Together for Seen {
 pub(crate) fn invitations_taken_out(arguments: &[OsString]) -> Vec<OsString> {
     arguments
         .iter()
-        .filter(|argument| !accepted(&argument.to_string_lossy()))
+        .filter(|argument| {
+            let text = argument.to_string_lossy();
+            if invitation_in(&text).is_none() {
+                return true;
+            }
+            accepted(&text);
+            false
+        })
         .cloned()
         .collect()
 }

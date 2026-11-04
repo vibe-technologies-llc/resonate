@@ -393,6 +393,9 @@ impl Running {
         match first.as_deref().map(FromServer::decoded).transpose()? {
             Some(FromServer::RoomWelcome { members, host }) => {
                 self.members = members;
+                if !self.members.contains(&self.me) {
+                    self.members.insert(0, self.me);
+                }
                 self.host_id = Some(host);
             }
             Some(FromServer::Refused(Refusal::NoSuchRoom)) => {

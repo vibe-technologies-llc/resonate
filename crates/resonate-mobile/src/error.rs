@@ -265,6 +265,8 @@ pub enum Error {
     UnknownPlaylist,
     #[error("the playlist changed; refresh it before editing")]
     PlaylistChanged,
+    #[error("this playlist is followed, so only the people who edit it can change it")]
+    PlaylistFollowed,
     #[error("A saved search fills itself; its songs cannot be added, removed or moved")]
     NotAList,
     #[error("A playlist of songs has no search to revise")]

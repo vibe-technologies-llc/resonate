@@ -359,6 +359,13 @@ pub(crate) fn queue_items(entries: &[PlaylistEntry], beside: &QueueRows) -> Vec<
 
 impl RootView {
     pub(crate) fn playlists_pane(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        self.shared_lists = cx
+            .global::<ResonateApp>()
+            .together
+            .as_ref()
+            .map(|together| together.shared_playlists())
+            .unwrap_or_default();
+
         match self.library.read(cx).opened() {
             Some(opened) => self.one_playlist(opened, cx),
             None => self.every_playlist(cx),
@@ -1922,7 +1929,19 @@ impl RootView {
         let art = self.playlist_art(&playlist.name, searched, &albums, side, cx);
         let cell_id = ElementId::from(("playlist-cell", id.get() as usize));
         let pointed = pointed::is_pointed_at(&cell_id);
-        let about = about_a_cell(playlist, now);
+        let about = match self
+            .shared_lists
+            .iter()
+            .find(|(shared, _)| *shared == playlist.id)
+        {
+            Some((_, true)) => {
+                SharedString::from(format!("Shared · {}", about_a_cell(playlist, now)))
+            }
+            Some((_, false)) => {
+                SharedString::from(format!("Followed · {}", about_a_cell(playlist, now)))
+            }
+            None => about_a_cell(playlist, now),
+        };
         let cursor_only = self.stands_unchosen_on(Shift::Listing(Listed::Playlists), at);
 
         let cell = div()

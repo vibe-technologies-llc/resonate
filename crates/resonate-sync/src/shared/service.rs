@@ -432,7 +432,10 @@ impl Running {
             return Err(Error::SharedNeedsAServer);
         }
         if let Some(kept) = self.lists.iter().find(|kept| kept.at == Some(at)) {
-            return invites_of(&kept.access, kept.server.as_deref());
+            return invites_of(
+                &kept.access,
+                self.named_in_a_link(kept.server.as_ref()).as_deref(),
+            );
         }
 
         let local = self
@@ -497,7 +500,7 @@ impl Running {
         self.lists.push(kept);
         self.standings.insert(keys.space, SharedStanding::Waiting);
 
-        invites_of(&access, None)
+        invites_of(&access, self.named_in_a_link(None).as_deref())
     }
 
     fn adopted(&mut self, share: &HeldShare) -> Result<()> {
@@ -1300,13 +1303,24 @@ impl Running {
             return Err(Error::Catalog(Refused::Unavailable));
         };
 
-        invites_of(&kept.access, kept.server.as_deref())
+        invites_of(
+            &kept.access,
+            self.named_in_a_link(kept.server.as_ref()).as_deref(),
+        )
+    }
+
+    fn named_in_a_link(&self, kept_on: Option<&String>) -> Option<String> {
+        kept_on
+            .or(self.server.as_ref())
+            .filter(|server| server.as_str() != HOSTED_SERVER)
+            .cloned()
     }
 
     fn publish(&self) {
         let mut shown = Vec::with_capacity(self.lists.len());
         for kept in self.lists.iter().filter(|kept| !kept.leaving) {
-            let Ok(invites) = invites_of(&kept.access, kept.server.as_deref()) else {
+            let named = self.named_in_a_link(kept.server.as_ref());
+            let Ok(invites) = invites_of(&kept.access, named.as_deref()) else {
                 continue;
             };
             let written: std::collections::BTreeSet<EntryId> =

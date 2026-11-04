@@ -656,9 +656,11 @@ async fn nobody_is_at_a_party_nobody_began() {
     .await;
 }
 
+type TakenUp = (Vec<u64>, u64, bool);
+
 #[derive(Clone, Default)]
 struct Told {
-    taken_up: Arc<Mutex<Vec<(Vec<u64>, u64, bool)>>>,
+    taken_up: Arc<Mutex<Vec<TakenUp>>>,
     paused: Arc<AtomicBool>,
     put_back: Arc<AtomicBool>,
 }

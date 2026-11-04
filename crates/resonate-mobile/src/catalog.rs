@@ -250,6 +250,14 @@ CREATE TABLE release_songs (
 ) STRICT;
 ";
 
+const A_PLAYLIST_MAY_BE_SHARED_WITH_OTHER_PEOPLE: &str = "
+CREATE TABLE playlist_shares (
+    playlist INTEGER PRIMARY KEY REFERENCES playlists(id) ON DELETE CASCADE,
+    created  INTEGER NOT NULL,
+    editable INTEGER NOT NULL
+) STRICT;
+";
+
 const LISTENS_ARE_READ_BY_WHEN_THEY_BEGAN: &str = "
 CREATE INDEX listens_by_when ON listens(began);
 ";
@@ -282,6 +290,7 @@ const MIGRATIONS: &[&str] = &[
     PROFILES_ARE_FOLLOWED_WHOLE,
     ALBUMS_KEEP_THE_SONGS_OF_THEIR_RELEASE,
     LISTENS_ARE_READ_BY_WHEN_THEY_BEGAN,
+    A_PLAYLIST_MAY_BE_SHARED_WITH_OTHER_PEOPLE,
 ];
 
 #[cfg(test)]
@@ -1549,6 +1558,56 @@ mod tests {
         assert!(refused.is_err());
         drop(opened);
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn a_catalog_of_before_shared_playlists_keeps_its_playlists_and_learns_the_flag() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock")
+            .as_nanos();
+        let path = env::temp_dir().join(format!("resonate-mobile-shares-{unique}.sqlite"));
+        let connection = Connection::open(&path).expect("a database");
+        connection
+            .create_scalar_function(
+                "folded",
+                1,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
+            )
+            .expect("the fold");
+        for step in &MIGRATIONS[..laid_before(A_PLAYLIST_MAY_BE_SHARED_WITH_OTHER_PEOPLE)] {
+            connection.execute_batch(step).expect("an earlier version");
+        }
+        connection
+            .execute(
+                "INSERT INTO playlists (name, folded, created) VALUES ('Old', 'old', 5)",
+                [],
+            )
+            .expect("a playlist of before");
+        connection
+            .pragma_update(
+                None,
+                "user_version",
+                u32::try_from(laid_before(A_PLAYLIST_MAY_BE_SHARED_WITH_OTHER_PEOPLE))
+                    .expect("a count"),
+            )
+            .expect("its stamp");
+        drop(connection);
+
+        let opened = Catalog::open(&path).expect("migrated");
+        let connection = opened.0.lock();
+        let kept: i64 = connection
+            .query_row("SELECT count(*) FROM playlists", [], |row| row.get(0))
+            .expect("read");
+        let flagged: i64 = connection
+            .query_row("SELECT count(*) FROM playlist_shares", [], |row| row.get(0))
+            .expect("the flag's table");
+
+        assert_eq!((kept, flagged), (1, 0));
+        drop(connection);
+        drop(opened);
+        fs::remove_file(path).ok();
     }
 
     #[test]

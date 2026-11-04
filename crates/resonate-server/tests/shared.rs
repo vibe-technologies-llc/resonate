@@ -337,6 +337,18 @@ fn two_sharing(
     let ada = hosted.person("Ada", Shelf::default());
     let list = ada.shelf.made("Mix", titles);
     let invites = ada.shared.share(list).expect("shared");
+    assert!(
+        invites.view.contains("server="),
+        "a list on a server of its own names that server in its link"
+    );
+    assert!(
+        !invites
+            .view_page
+            .as_deref()
+            .expect("a page")
+            .contains("resonate.tecnio.dev"),
+        "a list on a server of its own is not sent to the hosted page"
+    );
 
     let ben = hosted.person("Ben", Shelf::default());
     ben.shared

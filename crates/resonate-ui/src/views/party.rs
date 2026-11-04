@@ -124,15 +124,13 @@ impl RootView {
             (true, Some(seen)) => self.at_the_party(&seen, cx),
         };
 
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_h(px(0.0))
-            .p_6()
-            .gap_4()
-            .child(kit::eyebrow("LISTENING PARTY"))
-            .child(body)
+        kit::pane()
+            .child(
+                kit::heading()
+                    .child(kit::eyebrow("COLLECTION"))
+                    .child(kit::title("Listening party")),
+            )
+            .child(div().p_6().child(body))
     }
 
     fn nobody_here(&self, cx: &mut Context<Self>) -> Div {

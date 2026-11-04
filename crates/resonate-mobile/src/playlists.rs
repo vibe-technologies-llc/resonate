@@ -321,6 +321,9 @@ impl MobilePlayer {
         if revision.is_some_and(|revision| revision != before.revision) {
             return Err(Error::PlaylistChanged);
         }
+        if is_followed(&transaction, id)? {
+            return Err(Error::PlaylistFollowed);
+        }
         edit(&transaction)?;
         transaction
             .execute(
@@ -354,6 +357,16 @@ fn remember_playlist(history: &mut Vec<PlaylistUndo>, step: PlaylistUndo) {
     {
         history.remove(0);
     }
+}
+
+fn is_followed(connection: &Connection, id: u64) -> Result<bool> {
+    connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM playlist_shares WHERE playlist = ?1 AND editable = 0)",
+            [id as i64],
+            |row| row.get(0),
+        )
+        .map_err(read_error)
 }
 
 fn valid_name(name: &str) -> Result<String> {
@@ -500,7 +513,8 @@ pub(crate) mod tests {
             enriching: crate::enrichment::Enriching::default(),
             room: crate::room::Room::under(std::env::temp_dir()),
             tagging: crate::tagging::Tagging::under(std::env::temp_dir()),
-            served: crate::served::Served::default(),
+            served: Arc::new(crate::served::Served::default()),
+            together: crate::together::Together::default(),
             rendering: crate::rendering::Rendering::default(),
         }
     }

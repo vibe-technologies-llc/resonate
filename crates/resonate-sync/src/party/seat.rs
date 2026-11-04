@@ -27,6 +27,8 @@ const HOST_MOVED_PAST: Duration = Duration::from_millis(500);
 
 const SONGS_FOUND_AHEAD: usize = 3;
 
+const NANOS_A_MILLISECOND: f64 = 1_000_000.0;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SeatHeard {
     pub mine: Mine,
@@ -277,6 +279,16 @@ fn guested<S, F>(
             mine_row,
             mine_position: heard.position_nanos,
         };
+
+        if let (Some(mine), Some(host)) = (seen.mine_position, seen.host_position)
+            && seen.mine == Mine::Playing
+            && seen.mine_row == seen.host_row
+        {
+            tracing::trace!(
+                apart_ms = (i128::from(mine) - i128::from(host)) as f64 / NANOS_A_MILLISECOND,
+                "this seat against the host"
+            );
+        }
 
         if !rows.is_empty() {
             let known: Vec<u64> = rows.iter().map(|(stamp, _)| *stamp).collect();

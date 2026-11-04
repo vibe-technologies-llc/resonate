@@ -41,6 +41,7 @@ mod sharing;
 mod stamp;
 mod sync;
 mod tagging;
+mod together;
 mod vanished;
 mod watching;
 mod wrapped;
@@ -90,6 +91,10 @@ pub use crate::{
     rendering::{NetworkRenderer, RendererKind},
     rewriting::DocumentRewriting,
     saved_searches::{SavedSearch, SearchOrder, search_order_reads_descending},
+    together::{
+        InvitationKind, ListeningParty, PartyConnection, PartyFollowing, PartyRequest,
+        SharedPlaylist, SharedPlaylistReach, TogetherPerson, invitation_kind,
+    },
     watching::PlayerWatch,
     zoning::PlayerZone,
 };
@@ -232,8 +237,9 @@ pub struct MobilePlayer {
     enriching: enrichment::Enriching,
     room: room::Room,
     tagging: tagging::Tagging,
-    served: served::Served,
+    served: Arc<served::Served>,
     rendering: rendering::Rendering,
+    together: together::Together,
 }
 
 #[uniffi::export]
@@ -246,7 +252,7 @@ impl MobilePlayer {
         })?;
         let catalog = Arc::new(Catalog::open(&Path::new(&folder).join("documents.sqlite"))?);
         let documents: Arc<dyn Documents> = Arc::from(documents);
-        let served = served::Served::default();
+        let served = Arc::new(served::Served::default());
         let sources = Arc::new(GRANTED_SCHEMES.iter().try_fold(
             served.sources(Sources::local().spooling_under(Path::new(&folder).to_path_buf())),
             |sources, scheme| {
@@ -295,6 +301,7 @@ impl MobilePlayer {
             room: room::Room::under(PathBuf::from(&folder)),
             tagging: tagging::Tagging::under(PathBuf::from(&folder)),
             served,
+            together: together::Together::default(),
             rendering,
         });
         this.downloads.stall_by(this.services.downloads.clone());
@@ -591,6 +598,9 @@ impl MobilePlayer {
 impl MobilePlayer {
     fn save_zone(&self, zone: &resonate_engine::Zone) -> Result<()> {
         self.keep_volume_of(zone)?;
+        if self.party_following(zone.id) {
+            return Ok(());
+        }
         let zoned = self.playing.zoned(zone.id)?;
         let mut saved = zoned.saved.lock();
         let (place, rows, rate) = {

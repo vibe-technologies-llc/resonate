@@ -55,7 +55,7 @@ impl Served {
     }
 
     #[cfg(not(feature = "online"))]
-    pub fn services(&self) -> Vec<Arc<dyn resonate_providers::PlaysInPlace>> {
+    pub fn services(&self) -> Vec<std::sync::Arc<dyn resonate_providers::PlaysInPlace>> {
         Vec::new()
     }
 

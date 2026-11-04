@@ -24,6 +24,8 @@ use crate::{
     wrapped_card::{self, CardColours},
 };
 
+const WRAPPED_DECK_TALL: f32 = 480.0;
+
 const NOTHING_PLAYED: &str = "Nothing has been played yet, so there is no year to review";
 
 const BACK_HINT: &str = keyed!("The slide before", key!(seek_back));
@@ -223,6 +225,7 @@ impl RootView {
             .flex_col()
             .gap_4()
             .w(px(theme::wrapped_width()))
+            .h(px(WRAPPED_DECK_TALL))
             .max_h(relative(0.92))
             .p_6()
             .rounded_xl()
@@ -236,13 +239,16 @@ impl RootView {
                 spread_radius: px(0.0),
                 inset: false,
             }])
-            .when_some(slide, |card, slide| {
-                card.child(motion::faded_in(
-                    slide_drawn(&slide),
-                    ("wrapped-slide", deck.at),
-                    motion::HANDS_OVER,
-                ))
-            })
+            .child(div().flex_1().min_h(px(0.0)).overflow_hidden().when_some(
+                slide,
+                |body, slide| {
+                    body.child(motion::faded_in(
+                        slide_drawn(&slide),
+                        ("wrapped-slide", deck.at),
+                        motion::HANDS_OVER,
+                    ))
+                },
+            ))
             .child(self.wrapped_steps(deck, cx))
             .child(self.wrapped_foot(deck, cx));
 

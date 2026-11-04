@@ -1,12 +1,13 @@
 use std::{
     fmt,
     io::{self, ErrorKind, Read, Seek, SeekFrom},
+    sync::Arc,
     time::Duration,
 };
 
 use parking_lot::Mutex;
 use resonate_core::{
-    MediaLocation, SourceId, folded_letters,
+    MediaLocation, Recording, SourceId, folded_letters,
     titles::{self, Rating},
 };
 
@@ -369,6 +370,42 @@ pub fn not_offered(provider: &SourceId, op: ProviderOp) -> Error {
     }
 }
 
+const THE_SAME_SONG_LASTS_WITHIN: Duration = Duration::from_secs(3);
+
+const SEARCH_RESULTS_LOOKED_AT: usize = 20;
+
+pub fn found_exactly(
+    services: &[Arc<dyn PlaysInPlace>],
+    recording: &Recording,
+) -> Option<MediaLocation> {
+    let words = format!("{} {}", recording.artist, recording.title);
+    let title = folded_letters(&recording.title);
+    let artist = folded_letters(&recording.artist);
+
+    services.iter().find_map(|service| {
+        let found = service.search(&words).ok()?;
+        let offered = found
+            .songs
+            .into_iter()
+            .take(SEARCH_RESULTS_LOOKED_AT)
+            .find(|offered| {
+                folded_letters(&offered.title) == title
+                    && offered
+                        .artist
+                        .as_deref()
+                        .is_some_and(|named| folded_letters(named) == artist)
+                    && offered
+                        .length
+                        .zip(recording.length)
+                        .is_some_and(|(one, other)| {
+                            one.abs_diff(other) <= THE_SAME_SONG_LASTS_WITHIN
+                        })
+            })?;
+
+        Some(Named::Song(offered.id).location(service.scheme()))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
@@ -525,5 +562,100 @@ mod tests {
         assert!(seeking.is_seekable());
         assert_eq!(landed, 2);
         assert_eq!(read, [3]);
+    }
+
+    struct OneSearch {
+        scheme: SourceId,
+        songs: Vec<Song>,
+    }
+
+    impl PlaysInPlace for OneSearch {
+        fn scheme(&self) -> &SourceId {
+            &self.scheme
+        }
+
+        fn title(&self) -> &'static str {
+            "a search"
+        }
+
+        fn artists(&self) -> Result<Vec<Artist>> {
+            Err(not_offered(&self.scheme, ProviderOp::Browse))
+        }
+
+        fn artist(&self, _id: &Id) -> Result<ArtistAlbums> {
+            Err(not_offered(&self.scheme, ProviderOp::Browse))
+        }
+
+        fn album(&self, _id: &Id) -> Result<AlbumSongs> {
+            Err(not_offered(&self.scheme, ProviderOp::Browse))
+        }
+
+        fn search(&self, _words: &str) -> Result<Found> {
+            Ok(Found {
+                artists: Vec::new(),
+                albums: Vec::new(),
+                songs: self.songs.clone(),
+                mixes: Vec::new(),
+            })
+        }
+
+        fn streamed(&self, _song: &Id) -> Result<Streamed> {
+            Err(not_offered(&self.scheme, ProviderOp::Browse))
+        }
+
+        fn cover(&self, _cover: &Id, _side: u32) -> Result<Vec<u8>> {
+            Err(not_offered(&self.scheme, ProviderOp::Browse))
+        }
+
+        fn cover_of(&self, _named: &Named) -> Result<Id> {
+            Err(not_offered(&self.scheme, ProviderOp::Browse))
+        }
+    }
+
+    fn offered(id: &str, title: &str, artist: &str, seconds: Option<u64>) -> Song {
+        Song {
+            title: title.to_owned(),
+            artist: Some(artist.to_owned()),
+            length: seconds.map(Duration::from_secs),
+            ..Song::only(Id::new(id).expect("an id"))
+        }
+    }
+
+    fn wanted() -> Recording {
+        Recording {
+            mbid: None,
+            title: "Café Song".to_owned(),
+            artist: "The Band".to_owned(),
+            album: String::new(),
+            length: Some(Duration::from_secs(200)),
+        }
+    }
+
+    #[test]
+    fn only_the_same_title_artist_and_length_is_taken_as_the_song_a_party_plays() {
+        let service: Arc<dyn PlaysInPlace> = Arc::new(OneSearch {
+            scheme: SourceId::new("subsonic").expect("a scheme"),
+            songs: vec![
+                offered("other-title", "Cafe Song Remix", "The Band", Some(200)),
+                offered("other-artist", "Cafe Song", "Another Band", Some(200)),
+                offered("other-length", "Cafe Song", "The Band", Some(260)),
+                offered("no-length", "Cafe Song", "The Band", None),
+                offered("this-one", "CAFE SONG", "the band", Some(202)),
+            ],
+        });
+
+        let found = found_exactly(&[service], &wanted()).expect("the song is offered");
+
+        assert!(found.to_uri().contains("this-one"));
+    }
+
+    #[test]
+    fn a_service_holding_nothing_exact_finds_nothing() {
+        let service: Arc<dyn PlaysInPlace> = Arc::new(OneSearch {
+            scheme: SourceId::new("subsonic").expect("a scheme"),
+            songs: vec![offered("near", "Cafe Song", "The Band", Some(260))],
+        });
+
+        assert_eq!(found_exactly(&[service], &wanted()), None);
     }
 }

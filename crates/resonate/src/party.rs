@@ -1,18 +1,18 @@
 use std::{
     sync::{Arc, LazyLock},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use crossbeam_channel::bounded;
 use parking_lot::Mutex;
-use resonate_core::{FrameSpan, MediaLocation, Recording, Resumable, Span, folded_letters};
+use resonate_core::{FrameSpan, MediaLocation, Recording, Resumable, Span};
 use resonate_engine::{
     Command, Moment, Placement, Player, QueueItem, Seat, SeatHeard as ZoneHeard, Sounding, ZoneId,
     Zones,
 };
 use resonate_library::Library;
-use resonate_providers::{Named, PlaysInPlace};
+use resonate_providers::{PlaysInPlace, found_exactly};
 use resonate_sync::{
     Server,
     party::{
@@ -31,11 +31,9 @@ use crate::{
 
 const SONGS_TOLD_AHEAD: usize = 8;
 
-const LENGTHS_AGREE_WITHIN: Duration = Duration::from_secs(3);
-
-const SEARCH_RESULTS_LOOKED_AT: usize = 20;
-
 const LOOK_AT_THE_PARTY_EVERY: Duration = Duration::from_millis(500);
+
+const THE_WINDOW_COMES_WITHIN: Duration = Duration::from_secs(30);
 
 struct ZoneSeat {
     seat: Seat,
@@ -210,11 +208,6 @@ struct Finder {
     services: Vec<Arc<dyn PlaysInPlace>>,
 }
 
-fn lengths_agree(one: Option<Duration>, other: Option<Duration>) -> bool {
-    one.zip(other)
-        .is_some_and(|(one, other)| one.abs_diff(other) <= LENGTHS_AGREE_WITHIN)
-}
-
 impl Finder {
     fn held_here(&self, song: &PartySong) -> Option<Resumable> {
         let library = self.library.as_deref()?;
@@ -243,46 +236,19 @@ impl Finder {
             held: None,
         })
     }
-
-    fn played_in_place(&self, song: &PartySong) -> Option<Resumable> {
-        let words = format!("{} {}", song.recording.artist, song.recording.title);
-        let title = folded_letters(&song.recording.title);
-        let artist = folded_letters(&song.recording.artist);
-
-        for service in &self.services {
-            let Ok(found) = service.search(&words) else {
-                continue;
-            };
-            let matched = found
-                .songs
-                .into_iter()
-                .take(SEARCH_RESULTS_LOOKED_AT)
-                .find(|offered| {
-                    folded_letters(&offered.title) == title
-                        && offered
-                            .artist
-                            .as_deref()
-                            .is_some_and(|named| folded_letters(named) == artist)
-                        && lengths_agree(offered.length, song.recording.length)
-                });
-            if let Some(offered) = matched {
-                return Some(Resumable {
-                    location: Named::Song(offered.id).location(service.scheme()),
-                    span: None,
-                    held: None,
-                });
-            }
-        }
-
-        None
-    }
 }
 
 impl PartyFinder for Finder {
     type Row = Resumable;
 
     fn found(&self, song: &PartySong) -> Option<Resumable> {
-        self.held_here(song).or_else(|| self.played_in_place(song))
+        self.held_here(song).or_else(|| {
+            found_exactly(&self.services, &song.recording).map(|location| Resumable {
+                location,
+                span: None,
+                held: None,
+            })
+        })
     }
 }
 
@@ -393,17 +359,29 @@ pub(crate) fn accept(text: &str) -> bool {
     let Some(invitation) = invitation_in(text).filter(|one| one.to == Invited::Party) else {
         return false;
     };
-    let Some(zone) = SEATS
-        .lock()
-        .as_ref()
-        .and_then(|seats| seats.zones.listed().first().map(|zone| zone.id))
-    else {
-        return false;
-    };
 
-    join(&invitation.code, invitation.server, zone)
-        .inspect_err(|error| tracing::warn!(%error, "a party could not be joined"))
-        .is_ok()
+    thread::spawn(move || {
+        let deadline = Instant::now() + THE_WINDOW_COMES_WITHIN;
+        loop {
+            let zone = SEATS
+                .lock()
+                .as_ref()
+                .and_then(|seats| seats.zones.listed().first().map(|zone| zone.id));
+            if let Some(zone) = zone {
+                if let Err(error) = join(&invitation.code, invitation.server.clone(), zone) {
+                    tracing::warn!(%error, "a party could not be joined");
+                }
+                return;
+            }
+            if Instant::now() >= deadline {
+                tracing::warn!("a party's link came while no window was open to join it from");
+                return;
+            }
+            thread::sleep(LOOK_AT_THE_PARTY_EVERY);
+        }
+    });
+
+    true
 }
 
 pub(crate) fn shown() -> Option<(PartyShown, PartyFollowed, ZoneId)> {

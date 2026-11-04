@@ -20,9 +20,10 @@ use resonate_core::{
 };
 use resonate_engine::Command;
 use resonate_sync::{
-    Catalog, Follow, Handoff, Held, LocalListen, LocalPlaylist, LocalPlaylistId, LocalQuery, Me,
-    Nearby, Opened, Platform, QueryBody, Refused, RemoteListen, Resumed, Server, Settings,
-    SongTags, Standing, Sync, SyncDevice, SyncKey, TransferState,
+    Catalog, Follow, Handoff, Held, HeldShare, LocalListen, LocalPlaylist, LocalPlaylistId,
+    LocalQuery, Me, Nearby, Opened, Platform, QueryBody, Refused, RemoteListen, Resumed, Server,
+    Settings, SongTags, Standing, Sync, SyncDevice, SyncKey, TransferState,
+    shared::{Shared, SharedSettings},
 };
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use unicode_normalization::UnicodeNormalization;
@@ -41,10 +42,13 @@ use crate::{
 
 mod answers;
 mod driving;
+mod shared;
 
 use answers::the_same_file;
 
 const LEDGER: &str = "sync.sqlite";
+
+const SHARED_STORE: &str = "shared.sqlite";
 const STAGING: &str = "sync-staging";
 const RECEIVED: &str = "sync-received";
 #[cfg(not(target_os = "ios"))]
@@ -67,6 +71,10 @@ type Answered<T> = std::result::Result<T, Refused>;
 
 pub(crate) struct Syncing {
     folder: PathBuf,
+    pub(crate) shared_name: Mutex<String>,
+    shared: Arc<Mutex<Option<Arc<Shared>>>>,
+    server: Mutex<Option<String>>,
+    resolving: Mutex<Option<Arc<DocumentCatalog>>>,
     running: Mutex<Option<Running>>,
     unmetered: AtomicBool,
     arrivals: Arc<AtomicU64>,
@@ -78,9 +86,41 @@ struct Running {
 }
 
 impl Syncing {
+    pub(crate) fn shared(&self) -> Option<Arc<Shared>> {
+        self.shared.lock().clone()
+    }
+
+    pub(crate) fn server(&self) -> Option<String> {
+        self.server.lock().clone()
+    }
+
+    pub(crate) fn resolver(
+        &self,
+    ) -> Arc<dyn Fn(&Recording) -> Option<String> + Send + std::marker::Sync> {
+        let catalog = self.resolving.lock().clone();
+
+        Arc::new(move |recording| {
+            let catalog = catalog.as_ref()?;
+            let connection = catalog.catalog.0.lock();
+            let id = catalog.resolved_in(&connection, recording).ok()??;
+
+            connection
+                .query_row(
+                    "SELECT uri FROM documents WHERE id = ?1",
+                    [id as i64],
+                    |row| row.get(0),
+                )
+                .ok()
+        })
+    }
+
     pub(crate) fn under(folder: PathBuf) -> Self {
         Self {
             folder,
+            shared_name: Mutex::new(String::new()),
+            shared: Arc::new(Mutex::new(None)),
+            server: Mutex::new(None),
+            resolving: Mutex::new(None),
             running: Mutex::new(None),
             unmetered: AtomicBool::new(false),
             arrivals: Arc::new(AtomicU64::new(0)),
@@ -89,6 +129,7 @@ impl Syncing {
 }
 
 struct DocumentCatalog {
+    shared: Arc<Mutex<Option<Arc<Shared>>>>,
     catalog: Arc<catalog::Catalog>,
     sources: Arc<Sources>,
     received: PathBuf,
@@ -576,6 +617,7 @@ impl MobilePlayer {
         .map_err(|source| Error::sync(SyncOp::Start, source))?;
         let folder = &self.syncing.folder;
         let catalog = Arc::new(DocumentCatalog {
+            shared: Arc::clone(&self.syncing.shared),
             catalog: Arc::clone(&self.catalog),
             sources: Arc::clone(&self.sources),
             received: folder.join(RECEIVED),
@@ -607,6 +649,23 @@ impl MobilePlayer {
             nearby: Some(nearby()),
             relay_only: false,
         };
+        *self.syncing.resolving.lock() = Some(Arc::clone(&catalog));
+        *self.syncing.server.lock() = (!config.nearby_only).then(|| config.server.clone());
+        let shared = (!config.nearby_only)
+            .then(|| {
+                Shared::start(
+                    SharedSettings {
+                        server: Server::At(config.server.clone()),
+                        trusted: None,
+                        store: folder.join(SHARED_STORE),
+                        name: self.syncing.shared_name.lock().clone(),
+                    },
+                    Arc::clone(&catalog) as Arc<dyn resonate_sync::shared::SharedCatalog>,
+                )
+            })
+            .transpose()
+            .map_err(|source| Error::sync(SyncOp::Start, source))?;
+        *self.syncing.shared.lock() = shared.map(Arc::new);
         let sync =
             Sync::start(settings, catalog).map_err(|source| Error::sync(SyncOp::Start, source))?;
         Ok(Running {
@@ -615,7 +674,7 @@ impl MobilePlayer {
         })
     }
 
-    fn synced_playlist(&self, id: u64) -> Result<LocalPlaylistId> {
+    pub(crate) fn synced_playlist(&self, id: u64) -> Result<LocalPlaylistId> {
         let created: i64 = self
             .catalog
             .0
@@ -1017,10 +1076,32 @@ impl DocumentCatalog {
 }
 
 impl Catalog for DocumentCatalog {
+    fn hides_as_shared(&self, at: LocalPlaylistId) -> Answered<bool> {
+        shared::hides(&self.catalog.0.lock(), at).map_err(unavailable)
+    }
+
+    fn shares_here(&self) -> Answered<Option<Vec<HeldShare>>> {
+        Ok(self.shared.lock().as_ref().map(|shared| shared.held()))
+    }
+
+    fn take_share(&self, share: &HeldShare, _taking_over: Option<LocalPlaylistId>) -> Answered<()> {
+        if let Some(shared) = self.shared.lock().as_ref() {
+            shared.adopt(share.clone());
+        }
+        Ok(())
+    }
+
+    fn drop_share(&self, code: &str) -> Answered<()> {
+        if let Some(shared) = self.shared.lock().as_ref() {
+            shared.drop_code(code.to_owned());
+        }
+        Ok(())
+    }
+
     fn playlists(&self) -> Answered<Vec<LocalPlaylist>> {
         let connection = self.catalog.0.lock();
         let listed = connection
-            .prepare("SELECT id, created, name FROM playlists WHERE id NOT IN (SELECT playlist FROM playlist_queries) ORDER BY id")
+            .prepare("SELECT id, created, name FROM playlists WHERE id NOT IN (SELECT playlist FROM playlist_queries) AND id NOT IN (SELECT playlist FROM playlist_shares) ORDER BY id")
             .and_then(|mut query| {
                 query
                     .query_map([], |row| {
@@ -1060,7 +1141,7 @@ impl Catalog for DocumentCatalog {
         let held = match at {
             Some(at) => transaction
                 .query_row(
-                    "SELECT id FROM playlists WHERE id = ?1 AND created = ?2 AND id NOT IN (SELECT playlist FROM playlist_queries)",
+                    "SELECT id FROM playlists WHERE id = ?1 AND created = ?2 AND id NOT IN (SELECT playlist FROM playlist_queries) AND id NOT IN (SELECT playlist FROM playlist_shares)",
                     params![at.id, at.created],
                     |row| row.get::<_, i64>(0),
                 )
@@ -1966,13 +2047,15 @@ mod tests {
             enriching: crate::enrichment::Enriching::default(),
             room: crate::room::Room::under(std::env::temp_dir()),
             tagging: crate::tagging::Tagging::under(std::env::temp_dir()),
-            served: crate::served::Served::default(),
+            served: Arc::new(crate::served::Served::default()),
+            together: crate::together::Together::default(),
             rendering: crate::rendering::Rendering::default(),
         }
     }
 
     pub(super) fn documents_of(player: &MobilePlayer, folder: &Path) -> DocumentCatalog {
         DocumentCatalog {
+            shared: Arc::default(),
             catalog: Arc::clone(&player.catalog),
             sources: Arc::clone(&player.sources),
             received: folder.join(RECEIVED),
