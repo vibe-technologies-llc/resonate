@@ -162,15 +162,31 @@ private struct HomeMixes: View {
 }
 
 private struct ListeningSummary: View {
+    private static let gap: CGFloat = 12
+
     @Environment(Library.self) private var library
 
     var body: some View {
         let features = library.features
         let statistics = features.statisticsDays == 0 ? features.statistics : nil
-        HStack(alignment: .top, spacing: 12) {
-            ListeningFigure(value: statistics.map { "\($0.plays)" } ?? "–", label: "plays")
-            ListeningFigure(value: statistics.map { StatisticsView.brief($0.listenedMs) } ?? "–", label: "listened")
-            ListeningFigure(value: "\(statistics.map { Int($0.songs) } ?? library.catalogCount)", label: "songs")
+        let plays = statistics.map { "\($0.plays)" } ?? "–"
+        let listened = statistics.map { StatisticsView.brief($0.listenedMs) } ?? "–"
+        let songs = "\(statistics.map { Int($0.songs) } ?? library.catalogCount)"
+
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                ListeningFigure(value: plays, label: "plays")
+                Spacer(minLength: Self.gap)
+                ListeningFigure(value: listened, label: "listened")
+                Spacer(minLength: Self.gap)
+                ListeningFigure(value: songs, label: "songs")
+            }
+            VStack(alignment: .leading, spacing: Self.gap) {
+                ListeningFigure(value: plays, label: "plays")
+                ListeningFigure(value: listened, label: "listened")
+                ListeningFigure(value: songs, label: "songs")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 6)
         .accessibilityElement(children: .combine)
@@ -187,12 +203,11 @@ private struct ListeningFigure: View {
             Text(value)
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(.tint)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
+                .titleLines()
             Text(label)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .titleLines()
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

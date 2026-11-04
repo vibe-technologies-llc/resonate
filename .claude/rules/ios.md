@@ -773,7 +773,7 @@ every route change (a pair of headphones at the same rate included), not from th
   *Recently added* (`albums(order: .added)`) and *Artists* (`artists(order: .plays)`), twelve each read on
   `Work.onScreen` keyed by `collectionGeneration` and `catalogEpoch`, *Your playlists* (a *New playlist*
   button where there are none) and *Your listening* (`ListeningSummary`: plays, time listened and songs from
-  the all-time statistics, a dash while another period is loaded; it opens `Destination.statistics`). An empty
+  the all-time statistics, a dash while another period is loaded; it opens `Destination.statistics`; the three values never shrink apart, so they share one size and baseline and the captions one line: `ViewThatFits` lays them side by side at their natural widths, or under one another where those do not fit). An empty
   catalog shows one invitation to add a folder and the playlists. Home's pages push onto its own stack.
 - **Home's and the Library tab's shortcuts are a pair of cards** (`ShortcutCards`, `ShortcutCard`):
   one list row with no side insets and a clear background, so the two cards run edge to edge with the
