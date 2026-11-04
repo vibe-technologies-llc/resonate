@@ -417,7 +417,7 @@ the queue's length. *Save queue as playlist* and *Clear* sit in its header; *Cle
 
 **Library** is a pager of Songs, Albums, Artists and Playlists under a tab row (scrollable past a
 font scale of 1.3), *New playlist* a floating button on Playlists (the heading carries no second one), **Playlists** opening on two `Shortcut` tiles, *Favourites* and *Party* (stacked above a font scale of 1.3, the same `ShortcutPair` as Home's), then *Your playlists* with *Paste a link* and a grid of `PlaylistCard`s as wide as Albums' (a shared, followed or saved-search list says so before its count; none is *No playlists yet* over the button), Songs opening on full-width *Play* and *Shuffle* with the count at the start and sort and filters at the end of one row, as Albums and Artists put their sort, the active filters on a row beneath, *More* the folder, rescan and
-Library tools entries. **A sort menu lists only the orders**, in compact 40 dp rows (`MenuEntry.Choice`): choosing the order already held flips its direction, which the sort chip's arrow shows (a *Descending* switch under seven rows made the popup overrun the list and the notice). A catalog read (`catalogRead`) never emits a spinner over a result it held, so a page subscribed again
+Library tools entries. **A sort menu lists only the orders**, in compact 48 dp rows (`MenuEntry.Choice`): choosing the order already held flips its direction, which the sort chip's arrow shows (a *Descending* switch under seven rows made the popup overrun the list and the notice). A catalog read (`catalogRead`) never emits a spinner over a result it held, so a page subscribed again
 keeps its rows, and the Albums and Artists tabs keep their scroll across a reload. Favourites and the counts read the repository's whole catalog, never the
 song browser's filtered page. A completed favourite write updates the catalog, the browser, the
 queue, the snapshot and the open playlist in place (`setFavourite`) before the catalog is read
@@ -1443,5 +1443,5 @@ unverified. The QR is `com.google.zxing:core` (pure Java), since pairing draws n
 - **Held by** `ThemeContrastTest` (JVM: every accent in light, dark and pitch black, standard and high contrast;
   text pairs 4.5:1, non-text pairs 3:1, quiet lyric ink 3:1 on four grounds, body text 7:1 at high contrast) and
   `A11ySweepTest` (instrumented: the Compose accessibility checks over the root tabs and settings, a
-  `fontScale = 2` pass for clipped text and a pass for unnamed clickables); the sweep needs an emulator and has
-  not been run.
+  `fontScale = 2` pass for clipped text and a pass for unnamed clickables); the sweep needs an emulator, and what it
+  still finds is in `docs/BUGS.md` and `docs/TESTING.md`.
