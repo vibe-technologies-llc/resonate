@@ -432,7 +432,7 @@ one page at a time behind a spinner, rows kept once by id)
 then an *Online* section of the best five songs and three albums and artists, each with *See all*
 (`OnlineView.Found`, a nested page with Back) and a line naming what is still awaited. Typing asks the three
 online kinds in a chain after 450 ms (`SearchViewModel.askTop`, an answer per spelling kept); a link shows
-the online page alone; with online off the section, and a link's page, is one card that turns it on. Each
+the online page alone; its header stays `surface` under a scrolled list, as a `Page`'s bar does, and its actions wear the same `onSurfaceVariant`; with online off the section, and a link's page, is one card that turns it on. Each
 level of the online trail keeps its own scroll, so Back returns to where that page was. The last ten queries are
 kept in `library-features` as `recent-searches` (`keepRecentSearches`, `keptSearch` puts a typed one first
 and never a link) unless *Remember recent searches* in Library tools is off (`remember-searches`, on by

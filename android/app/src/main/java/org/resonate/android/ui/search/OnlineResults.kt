@@ -86,9 +86,6 @@ import org.resonate.android.ui.navigation.Screen
 class OnlineScroll {
     var current by mutableStateOf<LazyListState?>(null)
 
-    val scrolled: Boolean
-        get() = current?.canScrollBackward == true
-
     val moving: Boolean
         get() = current?.isScrollInProgress == true
 }

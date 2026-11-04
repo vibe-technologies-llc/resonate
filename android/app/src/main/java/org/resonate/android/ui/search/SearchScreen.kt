@@ -4,7 +4,6 @@ import org.resonate.android.ui.components.LocalSheets
 import androidx.compose.material.icons.rounded.Hearing
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -93,7 +92,6 @@ fun SearchScreen() {
     var choosing by remember { mutableStateOf<List<SearchSong>?>(null) }
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
-    val scrolled = if (onlinePage) onlineScroll.scrolled else libraryGrid.canScrollBackward
     val scrolling by remember {
         derivedStateOf { libraryGrid.isScrollInProgress || onlineScroll.moving }
     }
@@ -123,7 +121,7 @@ fun SearchScreen() {
                     onClose = selection::clear,
                 )
             } else {
-                SearchHeader(model, scrolled)
+                SearchHeader(model)
             }
         },
     ) { padding ->
@@ -173,17 +171,14 @@ fun SearchScreen() {
 }
 
 @Composable
-private fun SearchHeader(model: SearchViewModel, scrolled: Boolean) {
+private fun SearchHeader(model: SearchViewModel) {
     val navigator = LocalNavigator.current
     val library by model.libraryShown.collectAsStateWithLifecycle()
-    val container by
-        animateColorAsState(
-            if (scrolled) MaterialTheme.colorScheme.surfaceContainer
-            else MaterialTheme.colorScheme.surface,
-            label = "search header",
-        )
     val busy = (library as? LibraryShown.Answered)?.asking == true
-    Surface(color = container) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    ) {
         Column(
             Modifier.fillMaxWidth()
                 .windowInsetsPadding(
@@ -225,7 +220,7 @@ private fun SearchField(model: SearchViewModel, modifier: Modifier) {
         modifier = modifier.heightIn(min = 56.dp).testTag("search-field"),
         placeholder = {
             Text(
-                "Songs, albums, artists or a link",
+                "Search or paste a link",
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
