@@ -10,10 +10,10 @@ import org.resonate.android.nativecore.LibraryShare
 import org.resonate.android.nativecore.ListenedOnDay
 
 enum class Period(val days: UInt, val label: String, val within: String) {
-    ALL_TIME(0u, "All", "ever"),
-    WEEK(7u, "Week", "this week"),
-    MONTH(30u, "Month", "this month"),
-    YEAR(365u, "Year", "this year"),
+    ALL_TIME(0u, "All", "yet"),
+    WEEK(7u, "Week", "this week yet"),
+    MONTH(30u, "Month", "this month yet"),
+    YEAR(365u, "Year", "this year yet"),
 }
 
 data class Figure(val value: String, val unit: String)

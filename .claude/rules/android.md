@@ -325,7 +325,7 @@ splits history from up next by row, a repeated song included
 asks MaterialKolor for its `isAmoled` scheme, black surfaces, and blacks the player's base) and an
 `Accent` or none, kept as `theme`, `pitch-black` and `accent` in the `appearance` preferences and published by `AppearanceStore` (`LibraryFeatures.appearance`). With no
 accent the seed is the wallpaper's (`wallpaperSeed`, `system_accent1_500`); an accent is one of the
-desktop's seven (`resonate-ui`'s `RESONATE` flavour, held equal by `AppearanceTest`). Either seeds a
+desktop's seven (`resonate-ui`'s `RESONATE` flavour, held equal by `AppearanceTest`). The accent swatches are four to a row, spread across the page, and *Player background*'s two percentages are `CommitSlider`s with the player's 4 dp track. Either seeds a
 MaterialKolor `TonalSpot` scheme (`schemeOf`), never the platform's `dynamic*ColorScheme`: One UI fills
 the system surface-container roles with flat greys of its own, which greyed the mini player and the
 scrolled top bars, so only the accent hue is taken from the system. `ResonateTheme` builds one scheme and one `MaterialExpressiveTheme`
@@ -747,7 +747,7 @@ are left out of every total and day, as in `statistics(days)` (`plays`, `listene
 is the earliest counted listen in the window. `library_breakdown()` is what the library holds
 regardless of listening: the eight most common formats (codec), sample rates (`44.1 kHz`), genres
 (folded) and decades (from `date`'s first four digits), each with songs and length, hidden songs
-left out. `statistics(days)` ranks the top 25 songs.
+left out. `statistics(days)` ranks the top 25 songs. The page leads with *Time listening* as one wide `primaryContainer` tile above *Listens* and *Different songs*; the year in review opens from a `Shortcut` tile under the periods.
 
 **A playlist file is read and written over the document catalog** (`playlist_files.rs`).
 `import_playlist_file(bytes, file_name)` decodes the text through core's `text::decoded` (UTF-16

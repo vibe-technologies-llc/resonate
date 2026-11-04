@@ -22,7 +22,6 @@ import androidx.compose.material.icons.rounded.InvertColors
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Slider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
@@ -37,12 +36,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -53,10 +52,10 @@ import org.resonate.android.Accent
 import org.resonate.android.Appearance
 import org.resonate.android.ThemeMode
 import org.resonate.android.ui.Resonate
+import org.resonate.android.ui.components.CommitSlider
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.SectionHeader
 import org.resonate.android.ui.components.Sizes
-import org.resonate.android.ui.components.outlinedTrackColors
 import org.resonate.android.ui.resonateViewModel
 import org.resonate.android.ui.theme.LocalDarkTheme
 import org.resonate.android.ui.theme.schemeOf
@@ -91,6 +90,8 @@ private val ThemeMode.icon
 private val SWATCH = 48.dp
 private val SWATCH_COLUMN = 72.dp
 private val SWATCH_HIGHLIGHT_CORNER = 16.dp
+private val SLIDER_TRACK = 4.dp
+private const val SWATCHES_A_ROW = 4
 
 @Composable
 fun AppearanceScreen() {
@@ -164,13 +165,20 @@ fun AppearanceScreen() {
 }
 
 @Composable
-private fun BackgroundStrength(stored: Float, onCommit: (Float) -> Unit) {
+private fun PercentSetting(
+    title: String,
+    icon: ImageVector,
+    described: String,
+    tag: String,
+    stored: Float,
+    onCommit: (Float) -> Unit,
+) {
     var draft by remember { mutableStateOf<Float?>(null) }
     val shown = draft ?: stored
     Column(Modifier.fillMaxWidth()) {
         SettingRow(
-            title = "Strength",
-            icon = Icons.Rounded.Gradient,
+            title = title,
+            icon = icon,
             trailing = {
                 Text(
                     "${(shown * 100).roundToInt()} %",
@@ -179,58 +187,43 @@ private fun BackgroundStrength(stored: Float, onCommit: (Float) -> Unit) {
                 )
             },
         )
-        Slider(
-            value = shown,
-            colors = outlinedTrackColors(),
-            onValueChange = { draft = it },
-            onValueChangeFinished = {
-                draft?.let(onCommit)
-                draft = null
-            },
+        CommitSlider(
+            value = stored,
+            onCommit = onCommit,
+            onDraft = { draft = it },
+            trackHeight = SLIDER_TRACK,
+            stateText = { "${(it * 100).roundToInt()} percent" },
             modifier =
                 Modifier.fillMaxWidth()
                     .padding(start = 56.dp, end = Sizes.gutter)
-                    .semantics {
-                        contentDescription = "Player background strength"
-                        stateDescription = "${(shown * 100).roundToInt()} percent"
-                    }
-                    .testTag("background-strength"),
+                    .semantics { contentDescription = described }
+                    .testTag(tag),
         )
     }
 }
 
 @Composable
+private fun BackgroundStrength(stored: Float, onCommit: (Float) -> Unit) {
+    PercentSetting(
+        title = "Strength",
+        icon = Icons.Rounded.Gradient,
+        described = "Player background strength",
+        tag = "background-strength",
+        stored = stored,
+        onCommit = onCommit,
+    )
+}
+
+@Composable
 private fun NowPlayingIntensity(stored: Float, onCommit: (Float) -> Unit) {
-    var draft by remember { mutableStateOf<Float?>(null) }
-    val shown = draft ?: stored
     Column(Modifier.fillMaxWidth()) {
-        SettingRow(
+        PercentSetting(
             title = "Intensity",
             icon = Icons.Rounded.InvertColors,
-            trailing = {
-                Text(
-                    "${(shown * 100).roundToInt()} %",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            },
-        )
-        Slider(
-            value = shown,
-            colors = outlinedTrackColors(),
-            onValueChange = { draft = it },
-            onValueChangeFinished = {
-                draft?.let(onCommit)
-                draft = null
-            },
-            modifier =
-                Modifier.fillMaxWidth()
-                    .padding(start = 56.dp, end = Sizes.gutter)
-                    .semantics {
-                        contentDescription = "Player intensity"
-                        stateDescription = "${(shown * 100).roundToInt()} percent"
-                    }
-                    .testTag("now-playing-intensity"),
+            described = "Player intensity",
+            tag = "now-playing-intensity",
+            stored = stored,
+            onCommit = onCommit,
         )
         if (stored != Appearance.INTENSITY_DEFAULT) {
             TextButton(
@@ -250,8 +243,9 @@ private fun Swatches(appearance: Appearance, onChoose: (Accent?) -> Unit) {
     val dark = LocalDarkTheme.current
     val wallpaper = remember(context, dark) { schemeOf(wallpaperSeed(context), dark).primary }
     FlowRow(
-        Modifier.padding(horizontal = Sizes.gutter),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        Modifier.fillMaxWidth().padding(horizontal = Sizes.gutter),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        maxItemsInEachRow = SWATCHES_A_ROW,
     ) {
         Swatch(
             name = Appearance.WALLPAPER,
@@ -280,7 +274,7 @@ private fun Swatch(
     chosen: Boolean,
     onChoose: () -> Unit,
     modifier: Modifier = Modifier,
-    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    icon: ImageVector? = null,
 ) {
     val ink = if (color.luminance() > 0.4f) Color.Black else Color.White
     Column(

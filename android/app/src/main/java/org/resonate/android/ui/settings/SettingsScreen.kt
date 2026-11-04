@@ -7,7 +7,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
-import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.Cloud
@@ -19,6 +18,7 @@ import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
@@ -78,7 +78,7 @@ private val Setting.icon: ImageVector
             Setting.OUTPUT -> Icons.Rounded.Speaker
             Setting.FOLDERS -> Icons.Rounded.FolderOpen
             Setting.LIBRARY_TOOLS -> Icons.Rounded.LibraryMusic
-            Setting.STATISTICS -> Icons.Rounded.BarChart
+            Setting.STATISTICS -> Icons.Rounded.Insights
             Setting.SUGGESTIONS -> Icons.Rounded.AutoAwesome
             Setting.WANTED -> Icons.Rounded.BookmarkBorder
             Setting.ONLINE -> Icons.Rounded.Public

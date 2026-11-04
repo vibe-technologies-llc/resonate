@@ -20,7 +20,6 @@ import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -29,7 +28,6 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
@@ -74,6 +72,7 @@ import org.resonate.android.ui.components.EmptyState
 import org.resonate.android.ui.components.LocalSheets
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.SectionHeader
+import org.resonate.android.ui.components.Shortcut
 import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.components.SongArtwork
 import org.resonate.android.ui.components.TrackRow
@@ -104,6 +103,7 @@ sealed interface StatisticsState {
 private const val MOST_LISTENED_SHOWN = 5u
 private const val TOP_SONGS_FIRST_SHOWN = 10
 private const val DAYS_DRAWN = 60
+private const val WRAPPED_DETAIL = "A look back at what you played"
 
 private fun albumSong(entry: ListenedTo, tracks: List<Track>): ULong? =
     (tracks.firstOrNull {
@@ -227,15 +227,20 @@ fun StatisticsScreen() {
             item(key = "periods") { Periods(period) { period = it } }
             wrapped?.let { year ->
                 item(key = "wrapped") {
-                    TextButton(
+                    Shortcut(
+                        icon = Icons.Rounded.AutoAwesome,
+                        title = WrappedWords.entry(year.year),
+                        detail = WRAPPED_DETAIL,
+                        container = MaterialTheme.colorScheme.tertiaryContainer,
+                        content = MaterialTheme.colorScheme.onTertiaryContainer,
+                        badge = MaterialTheme.colorScheme.tertiary,
+                        onBadge = MaterialTheme.colorScheme.onTertiary,
                         onClick = { deckOpen = true },
                         modifier =
-                            Modifier.padding(horizontal = Sizes.gutter).testTag("wrapped-open"),
-                    ) {
-                        Icon(Icons.Rounded.AutoAwesome, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(WrappedWords.entry(year.year))
-                    }
+                            Modifier.fillMaxWidth()
+                                .padding(horizontal = Sizes.gutter, vertical = 4.dp)
+                                .testTag("wrapped-open"),
+                    )
                 }
             }
             when (val current = state) {
@@ -309,7 +314,7 @@ fun StatisticsScreen() {
                         item(key = "nothing") {
                             NoticeCard(
                                 Icons.Rounded.BarChart,
-                                "Nothing played ${listening.period.within} yet. Songs count once you have heard half of them, or four minutes.",
+                                "Nothing played ${listening.period.within}. Songs count once you have heard half of them, or four minutes.",
                             )
                         }
                     }
@@ -358,39 +363,48 @@ private fun Periods(selected: Period, onSelect: (Period) -> Unit) {
 }
 
 @Composable
-private fun FigureTile(label: String, figure: Figure, modifier: Modifier = Modifier) {
+private fun FigureTile(label: String, figure: Figure, modifier: Modifier = Modifier, hero: Boolean = false) {
+    val scheme = MaterialTheme.colorScheme
+    val ink = if (hero) scheme.onPrimaryContainer else scheme.primary
     Card(
         modifier = modifier,
-        shape = MaterialTheme.shapes.large,
+        shape = if (hero) MaterialTheme.shapes.extraLarge else MaterialTheme.shapes.large,
         colors =
-            CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+            CardDefaults.cardColors(
+                containerColor = if (hero) scheme.primaryContainer else scheme.surfaceContainerHigh
+            ),
     ) {
         Column(
-            Modifier.padding(16.dp).semantics(mergeDescendants = true) {
+            Modifier.padding(if (hero) 20.dp else 16.dp).semantics(mergeDescendants = true) {
                 contentDescription = "$label: ${figure.value} ${figure.unit}"
             }
         ) {
-            Row(verticalAlignment = Alignment.Bottom) {
+            Row {
                 Text(
                     figure.value,
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.primary,
+                    style =
+                        if (hero) MaterialTheme.typography.displayMedium
+                        else MaterialTheme.typography.headlineMedium,
+                    color = ink,
                     maxLines = 1,
+                    modifier = Modifier.alignByBaseline(),
                 )
                 if (figure.unit.isNotEmpty()) {
-                    Spacer(Modifier.padding(start = 4.dp))
+                    Spacer(Modifier.width(if (hero) 8.dp else 4.dp))
                     Text(
                         figure.unit,
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(bottom = 4.dp),
+                        style =
+                            if (hero) MaterialTheme.typography.titleLarge
+                            else MaterialTheme.typography.titleSmall,
+                        color = ink,
+                        modifier = Modifier.alignByBaseline(),
                     )
                 }
             }
             Text(
                 label,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (hero) scheme.onPrimaryContainer else scheme.onSurfaceVariant,
             )
         }
     }
@@ -417,13 +431,18 @@ private fun count(value: ULong, unit: String = "") = Figure(grouped(value), unit
 @Composable
 private fun ListeningFigures(listening: Listening) {
     val totals = listening.totals
-    val tiles =
-        listOfNotNull(
-            "Listens" to count(totals.plays),
-            "Time listening" to durationFigure(totals.listenedMs),
-            listening.detail?.let { "Different songs" to count(it.songsHeard) },
-        )
-    Figures(tiles)
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = Sizes.gutter, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FigureTile("Time listening", durationFigure(totals.listenedMs), Modifier.fillMaxWidth(), hero = true)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FigureTile("Listens", count(totals.plays), Modifier.weight(1f))
+            listening.detail?.let {
+                FigureTile("Different songs", count(it.songsHeard), Modifier.weight(1f))
+            }
+        }
+    }
     listening.detail?.firstHeard?.let {
         Footnote("Counting since ${dayLabel(it)}")
     }
