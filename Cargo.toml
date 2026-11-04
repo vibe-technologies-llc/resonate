@@ -168,7 +168,7 @@ rusqlite = {
     features = ["bundled", "cache", "functions", "hooks"]
 }
 
-toml_edit = { version = "0.25.17", default-features = false, features = ["parse", "display"] }
+toml_edit = { version = "0.25.18", default-features = false, features = ["parse", "display"] }
 
 md-5 = { version = "0.11.0", default-features = false }
 crc32fast = { version = "1.5.4", default-features = false, features = ["std"] }
@@ -200,7 +200,7 @@ hdf5-reader = { version = "0.12.1", default-features = false }
 hdf5-writer = "0.12.1"
 serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
 serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
-serde-saphyr = { version = "2.0.0", default-features = false, features = ["deserialize"] }
+serde-saphyr = { version = "2.1.0", default-features = false, features = ["deserialize"] }
 
 zbus = {
     version = "6.2.1",
