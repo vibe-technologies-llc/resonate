@@ -125,6 +125,7 @@ icons! {
     Pin => "pin",
     Pinned => "pinned",
     Share => "share",
+    Party => "party",
     WindowClose => "window-close",
     WindowMinimise => "window-minimise",
     WindowMaximise => "window-maximise",

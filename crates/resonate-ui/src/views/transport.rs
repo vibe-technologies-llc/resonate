@@ -896,6 +896,16 @@ impl RootView {
             })
     }
 
+    pub(crate) fn art_of_what_plays(&self, side: f32, cx: &mut Context<Self>) -> Option<Div> {
+        let model = self.player.read(cx);
+        let state = model.state().clone();
+        let digest = model.digest();
+        let playing = self.playing(&state, digest.as_deref(), cx);
+        let pictured = playing.cover.pictured()?;
+
+        Some(self.cover_sized(pictured, Drawn::OnThePage, side, cx))
+    }
+
     fn now_playing_cover(&self, cover: &Cover, now: Instant, cx: &mut Context<Self>) -> AnyElement {
         let frame = div()
             .relative()

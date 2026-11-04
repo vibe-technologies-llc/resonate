@@ -104,7 +104,7 @@ old seat puts its queue back before the new one remembers it.
 
 ## Surfaces
 
-The window's **Party** pane (`views/party.rs`; `party` is a tab name in `last-tab`), and `resonate party
+The window's **Listening Party** pane (`views/party.rs`; it says that in the sidebar with `Icon::Party`, headphones, though `party` stays its tab name in `last-tab`, so a kept tab still reads): with no party a welcome, what happens in three steps and *Start a listening party*; at one, a card of the song, with the cover where the zone shown is hearing it, the standing and the round trip, the host's invitation (the QR code, the link and *Copy link*), who is here and what is asked for, in two columns where the pane has room, and *End the party* or *Leave* in the heading. And `resonate party
 start FILES` and `resonate party join LINK`, which run until interrupted or the room ends. Pasting a link
 into the search field, a `resonate://party/` argument or `OpenUri` joins (`binary.md`). The phones read
 one `ListeningParty` through `party_shown`, polled while shown.

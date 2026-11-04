@@ -1,14 +1,20 @@
 use std::time::Duration;
 
-use gpui::{Context, Div, SharedString, div, prelude::*, px, rgb};
+use gpui::{
+    AnyElement, Context, Div, FontWeight, SharedString, Stateful, div, prelude::*, px, rgb,
+};
 
 use crate::{
-    Notice, ResonateApp, clipboard, theme,
+    Notice, ResonateApp, clipboard, format,
+    icons::{self, Icon},
+    theme,
     together::{PartyReached, PartySeen, PartyStanding, SharedPerson},
     views::{
         kit::{self, EndsInAnEllipsis as _, Tone},
         root::RootView,
+        scrollbar::Scrollbars,
         settings::sync::scanned,
+        spoken::Spoken as _,
     },
 };
 
@@ -28,21 +34,64 @@ const PLAY_NEXT_HINT: &str = "Play this next, for everyone";
 
 const DISMISS_HINT: &str = "Pass over this request";
 
-const NO_PARTY: &str = "Listen together with friends. Everyone hears the same song at the same \
-                        moment from their own copy or their own service, and no sound passes \
-                        between you. To join someone's party, paste their link into the search \
-                        field.";
+const WELCOME_TITLE: &str = "Listen together";
 
-const NO_SERVICE: &str = "Parties need the sync server, and this build or setting has none.";
+const WELCOME: &str = "Friends anywhere hear the same song at the same moment.";
+
+const BEGIN: &str = "Start a listening party";
+
+const JOINING: &str = "Have a link? Paste it into the search field to join.";
+
+const WHAT_HAPPENS: [(Icon, &str, &str); 3] = [
+    (
+        Icon::Play,
+        "You play",
+        "Whatever you queue is what the party hears.",
+    ),
+    (
+        Icon::Share,
+        "They join",
+        "Send the link or show the code. No account is needed.",
+    ),
+    (
+        Icon::Party,
+        "Everyone hears it",
+        "Each from their own copy or service. No sound passes between you.",
+    ),
+];
+
+const NO_SERVICE: &str = "Parties need the sync server.";
+
+const NO_SERVICE_MORE: &str = "This build has none, or Online is off in the settings.";
 
 const SUGGESTING: &str = "Add a song to your queue as you always do, and the host is asked to \
                           play it.";
+
+const INVITING: &str = "Scan this with a phone or send the link. Anyone holding it can join.";
+
+const NOTHING_YET: &str = "Nothing playing yet";
+
+const HOST_PLAYS: &str = "Play something and everyone hears it.";
+
+const HOSTING: &str = "You're hosting";
 
 const A_NAMELESS_PERSON: &str = "Someone";
 
 const YOU: &str = "You";
 
-const QR_SIDE: f32 = 180.0;
+const QR_SIDE: f32 = 168.0;
+
+const COVER_SIDE: f32 = 132.0;
+
+const MARK_SIDE: f32 = 72.0;
+
+const MARK_ICON: f32 = 34.0;
+
+const WELCOME_WIDTH: f32 = 680.0;
+
+const STEP_AT_LEAST: f32 = 170.0;
+
+const COLUMN_AT_LEAST: f32 = 320.0;
 
 fn reach_said(reach: PartyReached) -> Option<&'static str> {
     match reach {
@@ -81,22 +130,107 @@ fn person_said(person: &SharedPerson) -> SharedString {
     SharedString::from(person.name.clone())
 }
 
+fn standing_shade(standing: PartyStanding) -> u32 {
+    match standing {
+        PartyStanding::InStep => theme::done(),
+        PartyStanding::Finding => theme::accent(),
+        PartyStanding::NotHeld | PartyStanding::CannotStartMidSong => theme::dithered(),
+        PartyStanding::WaitingForTheHost | PartyStanding::SatOut | PartyStanding::HostPaused => {
+            theme::faint()
+        }
+    }
+}
+
+const fn reach_is_the_end(reach: PartyReached) -> bool {
+    match reach {
+        PartyReached::Here | PartyReached::Connecting | PartyReached::Reconnecting => false,
+        PartyReached::Ended
+        | PartyReached::NoSuchParty
+        | PartyReached::TurnedAway
+        | PartyReached::ServerTooOld => true,
+    }
+}
+
 fn said(text: impl Into<SharedString>) -> Div {
     div()
-        .text_size(px(theme::text_xs()))
+        .text_size(px(theme::text_sm()))
         .text_color(rgb(theme::muted()))
         .child(text.into())
 }
 
-fn row_text(text: impl Into<SharedString>) -> Div {
+fn card(name: impl Into<SharedString>) -> Div {
+    kit::section().child(kit::section_header().child(kit::section_name(name)))
+}
+
+fn song_lines(title: impl Into<SharedString>, artist: impl Into<SharedString>) -> Div {
     div()
+        .flex()
+        .flex_col()
         .flex_1()
         .min_w(px(0.0))
-        .text_size(px(theme::text_base()))
-        .text_color(rgb(theme::text()))
-        .truncate()
-        .ends_in_an_ellipsis()
-        .child(text.into())
+        .child(
+            div()
+                .text_size(px(theme::text_sm()))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(rgb(theme::text()))
+                .truncate()
+                .ends_in_an_ellipsis()
+                .child(title.into()),
+        )
+        .child(
+            div()
+                .text_size(px(theme::text_xs()))
+                .text_color(rgb(theme::muted()))
+                .truncate()
+                .ends_in_an_ellipsis()
+                .child(artist.into()),
+        )
+}
+
+fn no_art() -> Div {
+    div()
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .size(px(COVER_SIDE))
+        .rounded_lg()
+        .bg(rgb(theme::raised()))
+        .border_1()
+        .border_color(rgb(theme::border()))
+        .child(icons::icon(Icon::Disc, MARK_ICON, theme::faint()))
+}
+
+fn step_card((icon, name, what): (Icon, &'static str, &'static str)) -> Div {
+    div()
+        .flex()
+        .flex_col()
+        .flex_1()
+        .gap_1p5()
+        .min_w(px(STEP_AT_LEAST))
+        .p_4()
+        .rounded_lg()
+        .bg(rgb(theme::surface()))
+        .border_1()
+        .border_color(rgb(theme::border()))
+        .child(icons::icon(
+            icon,
+            theme::row_control_icon(),
+            theme::accent(),
+        ))
+        .child(
+            div()
+                .text_size(px(theme::text_sm()))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(rgb(theme::text()))
+                .child(name),
+        )
+        .child(
+            div()
+                .text_size(px(theme::text_xs()))
+                .text_color(rgb(theme::muted()))
+                .child(what),
+        )
 }
 
 impl RootView {
@@ -117,71 +251,346 @@ impl RootView {
         }
         let together = cx.global::<ResonateApp>().together.clone();
         let seen = together.as_ref().and_then(|together| together.party());
+        let heading = self.party_heading(seen.as_ref(), cx);
 
-        let body = match (together.is_some(), seen) {
-            (false, _) => kit::section_body().child(said(NO_SERVICE)),
-            (true, None) => self.nobody_here(cx),
-            (true, Some(seen)) => self.at_the_party(&seen, cx),
+        let body: AnyElement = match (together.is_some(), &seen) {
+            (false, _) => kit::empty(Icon::Party, NO_SERVICE, Some(NO_SERVICE_MORE)),
+            (true, None) => self.party_page(self.nobody_here(cx), cx),
+            (true, Some(seen)) => self.party_page(self.at_the_party(seen, cx), cx),
         };
 
-        kit::pane()
-            .child(
-                kit::heading()
-                    .child(kit::eyebrow("COLLECTION"))
-                    .child(kit::title("Listening party")),
-            )
-            .child(div().p_6().child(body))
+        kit::pane().child(heading).child(body)
     }
 
-    fn nobody_here(&self, cx: &mut Context<Self>) -> Div {
-        kit::section_body()
-            .child(said(NO_PARTY))
-            .child(div().flex().child(self.in_the_pane_ring(
+    fn party_page(&self, page: Stateful<Div>, cx: &mut Context<Self>) -> AnyElement {
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_w(px(0.0))
+            .min_h(px(0.0))
+            .child(Scrollbars::of(cx).around(
+                "party-scrollbar",
+                self.party_scroll.clone(),
+                page.overflow_y_scroll().track_scroll(&self.party_scroll),
+            ))
+            .into_any_element()
+    }
+
+    fn party_heading(&self, seen: Option<&PartySeen>, cx: &mut Context<Self>) -> Div {
+        let under = match seen {
+            None => "Hear the same song at the same moment as your friends".to_owned(),
+            Some(seen) => format::counted(seen.people.len(), "person here", "people here"),
+        };
+        let leaving = seen.map(|seen| {
+            self.in_the_pane_ring(
                 kit::button(
-                    "party-begin",
+                    "party-leave",
                     None,
-                    "Begin a party",
-                    BEGIN_HINT,
-                    Tone::Primary,
+                    if seen.hosting {
+                        "End the party"
+                    } else {
+                        "Leave"
+                    },
+                    if seen.hosting { END_HINT } else { LEAVE_HINT },
+                    Tone::Destructive,
                 ),
-                |this, _, cx| this.begin_a_party(cx),
+                |this, _, cx| this.leave_the_party(cx),
                 cx,
-            )))
+            )
+        });
+
+        kit::heading().child(
+            kit::heading_row()
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_w(px(theme::heading_name()))
+                        .gap_1()
+                        .child(kit::eyebrow("COLLECTION"))
+                        .child(kit::title("Listening Party"))
+                        .child(kit::subtitle(under)),
+                )
+                .child(kit::actions().children(leaving)),
+        )
     }
 
-    fn at_the_party(&self, seen: &PartySeen, cx: &mut Context<Self>) -> Div {
-        let mut body = kit::section_body();
-        let hosting = seen.hosting;
+    fn nobody_here(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+        let mark = div()
+            .flex()
+            .items_center()
+            .justify_center()
+            .size(px(MARK_SIDE))
+            .rounded_full()
+            .bg(theme::tinted(theme::accent(), 0x1c))
+            .child(icons::icon(Icon::Party, MARK_ICON, theme::accent()));
+        let welcome = div()
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap_2()
+            .child(mark)
+            .child(
+                div()
+                    .id("party-welcome")
+                    .headed(2, WELCOME_TITLE)
+                    .pt_2()
+                    .text_size(px(theme::text_title()))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(rgb(theme::text()))
+                    .child(WELCOME_TITLE),
+            )
+            .child(
+                said(WELCOME)
+                    .text_size(px(theme::text_base()))
+                    .text_center(),
+            );
+        let begin = self.in_the_pane_ring(
+            kit::button(
+                "party-begin",
+                Some(Icon::Party),
+                BEGIN,
+                BEGIN_HINT,
+                Tone::Primary,
+            ),
+            |this, _, cx| this.begin_a_party(cx),
+            cx,
+        );
+        let joining = div()
+            .flex()
+            .items_center()
+            .gap_1p5()
+            .child(icons::icon(
+                Icon::Search,
+                theme::row_control_icon(),
+                theme::faint(),
+            ))
+            .child(
+                div()
+                    .text_size(px(theme::text_sm()))
+                    .text_color(rgb(theme::faint()))
+                    .child(JOINING),
+            );
 
-        if let Some(reach) = reach_said(seen.reach) {
-            body = body.child(said(reach));
-        }
-        if let Some((title, artist)) = &seen.song {
-            body = body.child(row_text(format!("{title} · {artist}")));
-        }
-        if !hosting {
-            body = body
-                .child(said(standing_said(seen.standing)))
-                .child(said(SUGGESTING));
-        }
-        if hosting {
-            let link = seen.link.clone();
-            let copied = link.clone();
+        div()
+            .id("party-page")
+            .flex()
+            .flex_col()
+            .flex_1()
+            .items_center()
+            .justify_center()
+            .min_w(px(0.0))
+            .px_6()
+            .py_8()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap_6()
+                    .w_full()
+                    .max_w(px(WELCOME_WIDTH))
+                    .child(welcome)
+                    .child(begin)
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .gap_3()
+                            .w_full()
+                            .children(WHAT_HAPPENS.map(step_card)),
+                    )
+                    .child(joining),
+            )
+    }
 
-            body = body
-                .child(
+    fn at_the_party(&self, seen: &PartySeen, cx: &mut Context<Self>) -> Stateful<Div> {
+        let main = div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .gap_4()
+            .min_w(px(COLUMN_AT_LEAST))
+            .child(self.party_song(seen, cx))
+            .when(seen.hosting && !seen.asked_for.is_empty(), |column| {
+                column.child(self.party_requests(seen, cx))
+            });
+        let beside = div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .gap_4()
+            .min_w(px(COLUMN_AT_LEAST))
+            .when(seen.hosting, |column| {
+                column.child(self.party_invitation(&seen.link, cx))
+            })
+            .child(self.party_people(seen, cx));
+
+        div()
+            .id("party-page")
+            .flex()
+            .flex_col()
+            .flex_1()
+            .gap_4()
+            .min_w(px(0.0))
+            .px_6()
+            .py_5()
+            .when_some(reach_said(seen.reach), |page, reach| {
+                let shade = if reach_is_the_end(seen.reach) {
+                    theme::failure()
+                } else {
+                    theme::muted()
+                };
+
+                page.child(
                     div()
                         .flex()
                         .items_center()
                         .gap_2()
+                        .px_4()
+                        .py_2p5()
+                        .rounded_lg()
+                        .bg(theme::tinted(shade, 0x14))
+                        .border_1()
+                        .border_color(theme::tinted(shade, 0x40))
+                        .text_size(px(theme::text_sm()))
+                        .text_color(rgb(theme::text()))
+                        .child(icons::icon(Icon::Alert, theme::row_control_icon(), shade))
+                        .child(reach),
+                )
+            })
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .items_start()
+                    .gap_4()
+                    .child(main)
+                    .child(beside),
+            )
+    }
+
+    fn party_song(&self, seen: &PartySeen, cx: &mut Context<Self>) -> Div {
+        let shown_is_the_partys = self
+            .zones
+            .iter()
+            .find(|zone| zone.id == seen.zone)
+            .is_some_and(|zone| zone.player.entity_id() == self.player.entity_id());
+        let heard_here = seen.hosting || seen.standing == PartyStanding::InStep;
+        let art = (shown_is_the_partys && heard_here && seen.song.is_some())
+            .then(|| self.art_of_what_plays(COVER_SIDE, cx))
+            .flatten()
+            .unwrap_or_else(no_art);
+        let (title, artist) = seen.song.clone().unwrap_or_else(|| {
+            (
+                NOTHING_YET.to_owned(),
+                if seen.hosting {
+                    HOST_PLAYS.to_owned()
+                } else {
+                    standing_said(PartyStanding::WaitingForTheHost).to_owned()
+                },
+            )
+        });
+        let (shade, standing) = if seen.hosting {
+            (theme::done(), HOSTING)
+        } else {
+            (standing_shade(seen.standing), standing_said(seen.standing))
+        };
+
+        kit::section().child(
+            div().flex().items_center().gap_4().p_4().child(art).child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .gap_1()
+                    .min_w(px(0.0))
+                    .child(kit::eyebrow("NOW PLAYING"))
+                    .child(
+                        div()
+                            .text_size(px(theme::text_lg()))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(rgb(theme::text()))
+                            .truncate()
+                            .ends_in_an_ellipsis()
+                            .child(title),
+                    )
+                    .child(said(artist).truncate().ends_in_an_ellipsis())
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .items_center()
+                            .gap_x_3()
+                            .gap_y_1()
+                            .pt_2()
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_1p5()
+                                    .child(kit::mode_dot(shade))
+                                    .child(said(standing).text_size(px(theme::text_xs()))),
+                            )
+                            .when_some(seen.round_trip, |line, round_trip| {
+                                line.child(
+                                    kit::figure(SharedString::from(format!(
+                                        "{} ms round trip",
+                                        round_trip.as_millis().max(1)
+                                    )))
+                                    .text_color(rgb(theme::faint())),
+                                )
+                            }),
+                    )
+                    .when(!seen.hosting, |column| {
+                        column.child(
+                            said(SUGGESTING)
+                                .pt_1()
+                                .text_size(px(theme::text_xs()))
+                                .text_color(rgb(theme::faint())),
+                        )
+                    }),
+            ),
+        )
+    }
+
+    fn party_invitation(&self, link: &str, cx: &mut Context<Self>) -> Div {
+        let copied = link.to_owned();
+
+        card("Invite people").child(
+            div()
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .gap_4()
+                .p_4()
+                .child(div().flex_none().size(px(QR_SIDE)).child(scanned(link)))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .gap_3()
+                        .min_w(px(STEP_AT_LEAST))
+                        .child(said(INVITING))
                         .child(
                             div()
-                                .flex_1()
-                                .min_w(px(0.0))
-                                .child(kit::figure(link.clone()).truncate().ends_in_an_ellipsis()),
+                                .px_2p5()
+                                .py_1p5()
+                                .rounded_md()
+                                .bg(rgb(theme::raised()))
+                                .border_1()
+                                .border_color(rgb(theme::border()))
+                                .child(
+                                    kit::figure(link.to_owned())
+                                        .truncate()
+                                        .ends_in_an_ellipsis(),
+                                ),
                         )
-                        .child(self.in_the_pane_ring(
-                            kit::button("party-copy", None, "Copy", COPY_HINT, Tone::Outlined),
+                        .child(div().flex().child(self.in_the_pane_ring(
+                            kit::button("party-copy", None, "Copy link", COPY_HINT, Tone::Outlined),
                             move |this, _, cx| {
                                 clipboard::copy(copied.clone(), cx);
                                 this.report(
@@ -190,88 +599,79 @@ impl RootView {
                                 );
                             },
                             cx,
-                        )),
-                )
-                .child(div().size(px(QR_SIDE)).child(scanned(&link)));
-        }
+                        ))),
+                ),
+        )
+    }
 
-        let mut people = div().flex().flex_col().gap_1().child(kit::eyebrow("HERE"));
+    fn party_people(&self, seen: &PartySeen, cx: &mut Context<Self>) -> Div {
+        let mut people = div().flex().flex_col().gap_1().p_2();
         for (at, person) in seen.people.iter().enumerate() {
             let id = person.id;
+            let name = person_said(person);
+
             people = people.child(
                 div()
                     .flex()
                     .items_center()
-                    .gap_2()
-                    .child(row_text(person_said(person)))
-                    .when(hosting && !person.me, |row| {
+                    .gap_2p5()
+                    .h(px(theme::row_height()))
+                    .px_2()
+                    .child(kit::avatar(&name, person.me))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(0.0))
+                            .text_size(px(theme::text_sm()))
+                            .text_color(rgb(theme::text()))
+                            .truncate()
+                            .ends_in_an_ellipsis()
+                            .child(name),
+                    )
+                    .when(seen.hosting && !person.me, |row| {
                         row.child(self.in_the_pane_ring(
-                            kit::button(
-                                ("party-turn-out", at),
-                                None,
-                                "Remove",
-                                TURN_OUT_HINT,
-                                Tone::Ghost,
-                            ),
+                            kit::icon_button(("party-turn-out", at), Icon::Close, TURN_OUT_HINT),
                             move |this, _, cx| this.turn_out_of_the_party(id, cx),
                             cx,
                         ))
                     }),
             );
         }
-        body = body.child(people);
 
-        if hosting && !seen.asked_for.is_empty() {
-            let mut asked = div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .child(kit::eyebrow("ASKED FOR"));
-            for (at, (title, artist)) in seen.asked_for.iter().enumerate() {
-                asked = asked.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .child(row_text(format!("{title} · {artist}")))
-                        .child(self.in_the_pane_ring(
-                            kit::button(
-                                ("party-play-next", at),
-                                None,
-                                "Play next",
-                                PLAY_NEXT_HINT,
-                                Tone::Outlined,
-                            ),
-                            move |this, _, cx| this.play_a_request_next(at, cx),
-                            cx,
-                        ))
-                        .child(self.in_the_pane_ring(
-                            kit::button(
-                                ("party-dismiss", at),
-                                None,
-                                "Pass",
-                                DISMISS_HINT,
-                                Tone::Ghost,
-                            ),
-                            move |this, _, cx| this.dismiss_a_request(at, cx),
-                            cx,
-                        )),
-                );
-            }
-            body = body.child(asked);
+        card("Here").child(people)
+    }
+
+    fn party_requests(&self, seen: &PartySeen, cx: &mut Context<Self>) -> Div {
+        let mut asked = div().flex().flex_col().gap_1().p_2();
+        for (at, (title, artist)) in seen.asked_for.iter().enumerate() {
+            asked = asked.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .px_2()
+                    .py_1p5()
+                    .child(song_lines(title.clone(), artist.clone()))
+                    .child(self.in_the_pane_ring(
+                        kit::button(
+                            ("party-play-next", at),
+                            Some(Icon::QueueNext),
+                            "Play next",
+                            PLAY_NEXT_HINT,
+                            Tone::Outlined,
+                        ),
+                        move |this, _, cx| this.play_a_request_next(at, cx),
+                        cx,
+                    ))
+                    .child(self.in_the_pane_ring(
+                        kit::icon_button(("party-dismiss", at), Icon::Close, DISMISS_HINT),
+                        move |this, _, cx| this.dismiss_a_request(at, cx),
+                        cx,
+                    )),
+            );
         }
 
-        body.child(div().flex().child(self.in_the_pane_ring(
-            kit::button(
-                "party-leave",
-                None,
-                if hosting { "End the party" } else { "Leave" },
-                if hosting { END_HINT } else { LEAVE_HINT },
-                Tone::Destructive,
-            ),
-            |this, _, cx| this.leave_the_party(cx),
-            cx,
-        )))
+        card("Asked for").child(asked)
     }
 
     fn begin_a_party(&mut self, cx: &mut Context<Self>) {
@@ -366,5 +766,13 @@ mod tests {
         ] {
             assert!(reach_said(reach).is_some());
         }
+    }
+
+    #[test]
+    fn a_party_that_can_come_back_is_not_told_as_over() {
+        assert!(!reach_is_the_end(PartyReached::Connecting));
+        assert!(!reach_is_the_end(PartyReached::Reconnecting));
+        assert!(reach_is_the_end(PartyReached::Ended));
+        assert!(reach_is_the_end(PartyReached::TurnedAway));
     }
 }
