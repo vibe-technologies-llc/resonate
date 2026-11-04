@@ -9,7 +9,10 @@ use crate::{
     shared::{
         Access,
         moved::Personal,
-        op::{ENTRY_BYTES, EntryId, MEMBER_BYTES, MemberId, SharedList, SharedOp, decoded_ops, encoded_ops},
+        op::{
+            ENTRY_BYTES, EntryId, MEMBER_BYTES, MemberId, SharedList, SharedOp, decoded_ops,
+            encoded_ops,
+        },
     },
 };
 
@@ -75,7 +78,9 @@ pub struct Kept {
 
 impl Store {
     pub fn open(path: &Path) -> Result<Self> {
-        Self::laid_out(Connection::open(path).map_err(|source| Error::store(StoreOp::Open, source))?)
+        Self::laid_out(
+            Connection::open(path).map_err(|source| Error::store(StoreOp::Open, source))?,
+        )
     }
 
     pub fn in_memory() -> Result<Self> {
@@ -251,11 +256,7 @@ impl Store {
     }
 
     pub fn keep(&mut self, kept: &Kept) -> Result<()> {
-        let written: Vec<u8> = kept
-            .written
-            .iter()
-            .flat_map(|entry| entry.0)
-            .collect();
+        let written: Vec<u8> = kept.written.iter().flat_map(|entry| entry.0).collect();
         let state = encoded_ops(&kept.list.as_ops());
         let transaction = self
             .connection

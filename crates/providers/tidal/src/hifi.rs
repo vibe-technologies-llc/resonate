@@ -12,7 +12,7 @@ use resonate_fetch::{
 };
 use resonate_providers::{
     Choosing, Delivery, Error, Extension, Held, Identity, Listed as Weighed, Obtained, Opening,
-    Provider, ProviderOp, Reopened, Result,
+    Provider, ProviderOp, Rating, Reopened, Result,
 };
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
@@ -96,6 +96,8 @@ struct WebListing {
     duration: Option<u64>,
     #[serde(default)]
     artists: Vec<Named>,
+    #[serde(default)]
+    explicit: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -116,6 +118,7 @@ impl WebListing {
                 .map(|artist| artist.name.as_str())
                 .collect(),
             length: self.duration.map(Duration::from_secs),
+            stated: Rating::flagged(self.explicit),
         }
     }
 }

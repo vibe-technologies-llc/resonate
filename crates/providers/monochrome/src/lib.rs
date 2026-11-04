@@ -8,7 +8,7 @@ use resonate_fetch::{
 };
 use resonate_providers::{
     AlbumSongs, Artist, ArtistAlbums, Choosing, Delivery, Error, Extension, Found, Held, Id,
-    Identity, Listed, Named, Obtained, Opening, Pacing, PlaysInPlace, Provider, ProviderOp,
+    Identity, Listed, Named, Obtained, Opening, Pacing, PlaysInPlace, Provider, ProviderOp, Rating,
     Reopened, Result, Song, Streamed, is_a_page, not_offered,
 };
 use serde::{Deserialize, Deserializer};
@@ -80,9 +80,13 @@ struct Listing {
     #[serde(default)]
     title: Option<String>,
     #[serde(default)]
+    version: Option<String>,
+    #[serde(default)]
     artist_names: Vec<String>,
     #[serde(default)]
     duration: Option<u64>,
+    #[serde(default)]
+    explicit: Option<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -107,9 +111,10 @@ impl Listing {
         let listed = Listed {
             isrcs: self.isrc.as_deref().into_iter().collect(),
             title: self.title.as_deref().unwrap_or_default(),
-            version: None,
+            version: self.version.as_deref(),
             artists: self.artist_names.iter().map(String::as_str).collect(),
             length: self.duration.map(Duration::from_millis),
+            stated: Rating::flagged(self.explicit),
         };
         choosing.weigh(identity, &listed, track);
     }
@@ -354,6 +359,11 @@ impl Listing {
             artist: (!self.artist_names.is_empty()).then(|| self.artist_names.join(", ")),
             length: self.duration.map(Duration::from_millis),
             suffix: Some(DELIVERED_AS.to_owned()),
+            rating: Rating::of(
+                Rating::flagged(self.explicit),
+                self.title.as_deref().unwrap_or_default(),
+                self.version.as_deref(),
+            ),
             ..Song::only(Id::new(&track.0)?)
         })
     }
@@ -388,7 +398,8 @@ impl PlaysInPlace for Monochrome {
                 .filter_map(Listing::song)
                 .collect(),
             ..Found::default()
-        })
+        }
+        .explicit_first())
     }
 
     fn streamed(&self, song: &Id) -> Result<Streamed> {
@@ -442,6 +453,32 @@ mod tests {
 
     const SEARCHED: &str = include_str!("../tests/fixtures/search.json");
     const ECHOES_ISRC: &str = "GBN9Y1100065";
+
+    #[test]
+    fn the_flag_a_listing_carries_decides_between_two_takes_named_alike() {
+        let answer = br#"{"tracks": [
+            {"id": "1", "title": "Bad Guy", "explicit": false, "artistNames": ["Ada"], "duration": 200000},
+            {"id": "2", "title": "Bad Guy", "explicit": true, "artistNames": ["Ada"], "duration": 200000},
+            {"id": "3", "title": "Bad Guy", "version": "Clean", "artistNames": ["Ada"], "duration": 200000}
+        ]}"#;
+        let listings: Searched = serde_json::from_slice(answer).expect("an answer");
+        let want = Identity {
+            artist: Some("Ada".to_owned()),
+            length: Some(Duration::from_secs(200)),
+            ..Identity::named("Bad Guy")
+        };
+        let mut choosing = Choosing::default();
+
+        for listing in &listings.tracks {
+            listing.weigh(&want, &mut choosing);
+        }
+
+        assert_eq!(choosing.clean_passed_over(), 1);
+        assert_eq!(
+            choosing.chosen().map(|(track, _)| track.0),
+            Some("2".to_owned())
+        );
+    }
 
     #[test]
     fn the_hosted_service_is_asked_unless_a_server_is_named_and_a_trailing_slash_is_dropped() {
@@ -531,6 +568,8 @@ mod tests {
             playable: Some(false),
             title: None,
             artist_names: Vec::new(),
+            version: None,
+            explicit: None,
             duration: None,
         };
         let playable = Listing {

@@ -56,7 +56,8 @@ struct Shelf {
 impl Shelf {
     fn lacking(titles: &[&str]) -> Self {
         let shelf = Self::default();
-        shelf.held.lock().holds_nothing_named = titles.iter().map(|title| (*title).to_owned()).collect();
+        shelf.held.lock().holds_nothing_named =
+            titles.iter().map(|title| (*title).to_owned()).collect();
 
         shelf
     }
@@ -329,7 +330,10 @@ fn code_in(link: &str) -> String {
         .to_owned()
 }
 
-fn two_sharing(hosted: &Hosted, titles: &[&str]) -> (Person, LocalPlaylistId, Person, LocalPlaylistId) {
+fn two_sharing(
+    hosted: &Hosted,
+    titles: &[&str],
+) -> (Person, LocalPlaylistId, Person, LocalPlaylistId) {
     let ada = hosted.person("Ada", Shelf::default());
     let list = ada.shelf.made("Mix", titles);
     let invites = ada.shared.share(list).expect("shared");
@@ -371,7 +375,9 @@ fn two_people_editing_at_once_keep_both_edits() {
     let hosted = hosted("merged");
     let (ada, list, ben, theirs) = two_sharing(&hosted, &["One", "Two"]);
     eventually("the songs arriving", &ben, || {
-        ben.shelf.titles_of(theirs).is_some_and(|titles| titles.len() == 2)
+        ben.shelf
+            .titles_of(theirs)
+            .is_some_and(|titles| titles.len() == 2)
     });
 
     ada.shelf.edit(list, &["One", "Two", "Ada's"]);
@@ -396,7 +402,9 @@ fn a_rename_reaches_the_other_person_and_a_song_removed_goes_from_both() {
     let hosted = hosted("renamed");
     let (ada, list, ben, theirs) = two_sharing(&hosted, &["One", "Two"]);
     eventually("the songs arriving", &ben, || {
-        ben.shelf.titles_of(theirs).is_some_and(|titles| titles.len() == 2)
+        ben.shelf
+            .titles_of(theirs)
+            .is_some_and(|titles| titles.len() == 2)
     });
 
     ada.shelf.renamed(list, "Summer");
@@ -459,7 +467,10 @@ fn a_view_link_follows_the_list_and_whatever_is_done_to_the_copy_it_comes_back_a
         .join(&code_in(&invites.view), None)
         .expect("joined");
     eventually("the copy arriving", &viewer, || {
-        shown_on(&viewer).first().and_then(|shown| shown.at).is_some()
+        shown_on(&viewer)
+            .first()
+            .and_then(|shown| shown.at)
+            .is_some()
     });
     let copy = local_of(&viewer);
     eventually("its songs arriving", &viewer, || {
@@ -511,11 +522,16 @@ fn removing_someone_moves_everyone_else_and_leaves_them_only_the_copy_they_held(
     eventually("Ben finding himself out", &ben, || {
         shown_on(&ben).is_empty()
     });
-    assert!(!ben.shelf.is_flagged(theirs), "Ben's copy stays his own list");
+    assert!(
+        !ben.shelf.is_flagged(theirs),
+        "Ben's copy stays his own list"
+    );
     assert!(ben.shelf.titles_of(theirs).is_some());
 
     eventually("Cal moving to the new list", &cal, || {
-        shown_on(&cal).first().is_some_and(|shown| shown.space != space)
+        shown_on(&cal)
+            .first()
+            .is_some_and(|shown| shown.space != space)
     });
 
     ada.shelf.edit(list, &["One", "After"]);
@@ -569,10 +585,7 @@ fn a_list_shared_with_no_server_reachable_waits_and_arrives_once_one_is() {
 
     let invites = shared.share(list).expect("sharing needs no connection");
     assert!(invites.edit.is_some());
-    let person = Person {
-        shelf,
-        shared,
-    };
+    let person = Person { shelf, shared };
     eventually("being told the server is away", &person, || {
         shown_on(&person)[0].standing == SharedStanding::Unreached
     });

@@ -5,9 +5,15 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use resonate_core::{MediaLocation, SourceId};
+use resonate_core::{
+    MediaLocation, SourceId, folded_letters,
+    titles::{self, Rating},
+};
 
-use crate::error::{Error, ProviderOp, Result};
+use crate::{
+    error::{Error, ProviderOp, Result},
+    listing::A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY,
+};
 
 const SONG_KEY: &str = "track/";
 const ALBUM_KEY: &str = "album/";
@@ -85,6 +91,7 @@ pub struct Album {
     pub year: Option<u16>,
     pub songs: Option<u32>,
     pub cover: Option<Id>,
+    pub rating: Rating,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -106,6 +113,7 @@ pub struct Song {
     pub suffix: Option<String>,
     pub cover: Option<Id>,
     pub favourite: Option<bool>,
+    pub rating: Rating,
 }
 
 impl Song {
@@ -121,6 +129,7 @@ impl Song {
             suffix: None,
             cover: None,
             favourite: None,
+            rating: Rating::Unmarked,
         }
     }
 }
@@ -143,12 +152,81 @@ pub struct MixSongs {
     pub songs: Vec<Song>,
 }
 
+fn explicit_first<T>(
+    listed: Vec<T>,
+    rating: impl Fn(&T) -> Rating,
+    same_take: impl Fn(&T, &T) -> bool,
+) -> Vec<T> {
+    let listed: Vec<T> = listed
+        .into_iter()
+        .filter(|item| rating(item) != Rating::Clean)
+        .collect();
+    let places: Vec<(bool, usize)> = listed
+        .iter()
+        .enumerate()
+        .map(|(at, item)| {
+            let explicit = rating(item) == Rating::Explicit;
+            let stands_aside = !explicit
+                && listed
+                    .iter()
+                    .any(|other| rating(other) == Rating::Explicit && same_take(item, other));
+            let place = if explicit {
+                (0..at)
+                    .find(|earlier| same_take(&listed[*earlier], item))
+                    .unwrap_or(at)
+            } else {
+                at
+            };
+
+            (stands_aside, place)
+        })
+        .collect();
+
+    let mut kept: Vec<(usize, T)> = listed
+        .into_iter()
+        .zip(places)
+        .filter(|(_, (stands_aside, _))| !stands_aside)
+        .map(|(item, (_, place))| (place, item))
+        .collect();
+    kept.sort_by_key(|(place, _)| *place);
+
+    kept.into_iter().map(|(_, item)| item).collect()
+}
+
+fn folded_or_nothing(name: Option<&str>) -> String {
+    name.map(folded_letters).unwrap_or_default()
+}
+
+fn songs_alike(one: &Song, other: &Song) -> bool {
+    folded_letters(titles::bare(&one.title)) == folded_letters(titles::bare(&other.title))
+        && folded_or_nothing(one.artist.as_deref()) == folded_or_nothing(other.artist.as_deref())
+        && match (one.length, other.length) {
+            (Some(one), Some(other)) => one.abs_diff(other) <= A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY,
+            _ => true,
+        }
+}
+
+fn albums_alike(one: &Album, other: &Album) -> bool {
+    folded_letters(titles::bare(&one.name)) == folded_letters(titles::bare(&other.name))
+        && folded_or_nothing(one.artist.as_deref()) == folded_or_nothing(other.artist.as_deref())
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Found {
     pub artists: Vec<Artist>,
     pub albums: Vec<Album>,
     pub songs: Vec<Song>,
     pub mixes: Vec<Mix>,
+}
+
+impl Found {
+    pub fn explicit_first(self) -> Self {
+        Self {
+            albums: explicit_first(self.albums, |album| album.rating, albums_alike),
+            songs: explicit_first(self.songs, |song| song.rating, songs_alike),
+            ..self
+        }
+    }
 }
 
 pub trait SeekingBytes: Read + Seek + Send {}
@@ -296,6 +374,89 @@ mod tests {
     use std::io::Cursor;
 
     use super::*;
+
+    fn a_song(id: &str, title: &str, rating: Rating) -> Song {
+        Song {
+            title: title.to_owned(),
+            artist: Some("Ada".to_owned()),
+            length: Some(Duration::from_secs(200)),
+            rating,
+            ..Song::only(Id::new(id).expect("an id"))
+        }
+    }
+
+    fn ids_of(found: &Found) -> Vec<&str> {
+        found.songs.iter().map(|song| song.id.as_str()).collect()
+    }
+
+    #[test]
+    fn a_search_never_lists_a_clean_take_and_the_explicit_one_stands_where_its_sibling_did() {
+        let found = Found {
+            songs: vec![
+                a_song("other", "Another Song", Rating::Unmarked),
+                a_song("plain", "Bad Guy", Rating::Unmarked),
+                a_song("clean", "Bad Guy (Clean)", Rating::Clean),
+                a_song("third", "A Third Song", Rating::Unmarked),
+                a_song("explicit", "Bad Guy", Rating::Explicit),
+            ],
+            ..Found::default()
+        };
+
+        assert_eq!(
+            ids_of(&found.explicit_first()),
+            ["other", "explicit", "third"]
+        );
+    }
+
+    #[test]
+    fn a_song_only_ever_marked_clean_is_gone_from_a_search_and_one_unmarked_stays() {
+        let found = Found {
+            songs: vec![
+                a_song("clean", "Only Clean (Clean)", Rating::Clean),
+                a_song("plain", "Instrumental", Rating::Unmarked),
+            ],
+            ..Found::default()
+        };
+
+        assert_eq!(ids_of(&found.explicit_first()), ["plain"]);
+    }
+
+    #[test]
+    fn songs_named_alike_of_other_lengths_are_other_songs_and_both_stay() {
+        let mut long = a_song("long", "Bad Guy", Rating::Unmarked);
+        long.length = Some(Duration::from_secs(400));
+        let found = Found {
+            songs: vec![long, a_song("explicit", "Bad Guy", Rating::Explicit)],
+            ..Found::default()
+        };
+
+        assert_eq!(ids_of(&found.explicit_first()), ["long", "explicit"]);
+    }
+
+    #[test]
+    fn an_edition_of_an_album_marked_explicit_stands_in_for_the_one_beside_it() {
+        let album = |id: &str, rating| Album {
+            id: Id::new(id).expect("an id"),
+            name: "When We All Fall Asleep".to_owned(),
+            artist: Some("Ada".to_owned()),
+            year: None,
+            songs: None,
+            cover: None,
+            rating,
+        };
+        let found = Found {
+            albums: vec![
+                album("plain", Rating::Unmarked),
+                album("explicit", Rating::Explicit),
+            ],
+            ..Found::default()
+        };
+
+        let kept = found.explicit_first();
+
+        assert_eq!(kept.albums.len(), 1);
+        assert_eq!(kept.albums[0].id.as_str(), "explicit");
+    }
 
     fn subsonic() -> SourceId {
         SourceId::new("subsonic").expect("a source name")

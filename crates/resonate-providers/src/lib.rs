@@ -7,6 +7,8 @@ mod pacing;
 mod provider;
 mod sign_in;
 
+pub use resonate_core::titles::{Rating, rating_in_the_title};
+
 pub use crate::{
     delivery::{
         Delivered, Delivery, Extension, Held, Obtained, Opened, Opening, Reopened, Resumed,

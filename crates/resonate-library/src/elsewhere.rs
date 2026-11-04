@@ -428,7 +428,9 @@ fn is_worth_offering(matched: &RecordingMatch) -> bool {
     matched.releases.is_empty() || issued_officially || !matched.isrcs.is_empty()
 }
 
-fn the_take_worth_offering(matched: &RecordingMatch) -> (Coded, Standing, Meant, Reverse<usize>) {
+fn the_take_worth_offering(
+    matched: &RecordingMatch,
+) -> (titles::Rating, Coded, Standing, Meant, Reverse<usize>) {
     let coded = match matched.isrcs.is_empty() {
         true => Coded::Uncoded,
         false => Coded::ByAnIsrc,
@@ -439,7 +441,13 @@ fn the_take_worth_offering(matched: &RecordingMatch) -> (Coded, Standing, Meant,
         .map(|release| (standing_of(&release.issued), meant_as(&release.issued)))
         .min()
         .unwrap_or((Standing::Otherwise, Meant::Otherwise));
-    (coded, standing, meant, Reverse(matched.releases.len()))
+    (
+        titles::rating_in_the_title(&matched.title),
+        coded,
+        standing,
+        meant,
+        Reverse(matched.releases.len()),
+    )
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -522,7 +530,7 @@ pub(crate) fn found_among(
             continue;
         }
         let named = (
-            store::folded_letters(&matched.title),
+            store::folded_letters(titles::without_its_rating(&matched.title)),
             store::folded_letters(&matched.credited_as()),
         );
         match takes.iter_mut().find(|seen| seen.named == named) {

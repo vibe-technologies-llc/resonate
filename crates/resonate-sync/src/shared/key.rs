@@ -131,9 +131,8 @@ impl fmt::Debug for Access {
 
 #[cfg(test)]
 mod tests {
-    use crate::seal::{opened, sealed};
-
     use super::*;
+    use crate::seal::{opened, sealed};
 
     #[test]
     fn a_view_key_comes_from_an_edit_key_and_never_the_reverse_and_both_read_one_space() {

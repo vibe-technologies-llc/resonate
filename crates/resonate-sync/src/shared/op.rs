@@ -653,9 +653,6 @@ mod tests {
     fn every_op_reads_back_as_itself() {
         let history = a_busy_history();
 
-        assert_eq!(
-            decoded_ops(&encoded_ops(&history)).expect("read"),
-            history
-        );
+        assert_eq!(decoded_ops(&encoded_ops(&history)).expect("read"), history);
     }
 }

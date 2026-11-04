@@ -292,7 +292,11 @@ mod tests {
         (list, written)
     }
 
-    fn looked_at(list: &mut SharedList, written: &[EntryId], listed: &[Option<Recording>]) -> Vec<String> {
+    fn looked_at(
+        list: &mut SharedList,
+        written: &[EntryId],
+        listed: &[Option<Recording>],
+    ) -> Vec<String> {
         let mut doing = Doing::new();
         let ops = edits_seen(
             &Looking {

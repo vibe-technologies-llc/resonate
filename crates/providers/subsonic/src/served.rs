@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use resonate_providers::{Album, AlbumSongs, Artist, ArtistAlbums, Found, Id, Song};
+use resonate_providers::{
+    Album, AlbumSongs, Artist, ArtistAlbums, Found, Id, Rating, Song, rating_in_the_title,
+};
 use serde::{Deserialize, Deserializer, de::DeserializeOwned};
 use serde_json::Value;
 
@@ -128,9 +130,11 @@ pub(crate) struct AlbumDoc {
 
 impl AlbumDoc {
     pub(crate) fn album(self) -> Option<Album> {
+        let name = self.name.or(self.title).unwrap_or_default();
         Some(Album {
             id: Id::new(&self.id)?,
-            name: self.name.or(self.title).unwrap_or_default(),
+            rating: rating_in_the_title(&name),
+            name,
             artist: self.artist,
             year: small(self.year),
             songs: small(self.songs),
@@ -172,10 +176,17 @@ pub(crate) struct SongDoc {
     cover: Option<String>,
     #[serde(default)]
     starred: Option<Value>,
+    #[serde(default, rename = "explicitStatus")]
+    explicit_status: Option<String>,
 }
 
 impl SongDoc {
     pub(crate) fn song(self) -> Option<Song> {
+        let rating = Rating::of(
+            crate::rating_stated(self.explicit_status.as_deref()),
+            self.title.as_deref().unwrap_or_default(),
+            None,
+        );
         Some(Song {
             id: Id::new(&self.id)?,
             title: self.title.unwrap_or_default(),
@@ -187,6 +198,7 @@ impl SongDoc {
             suffix: self.suffix,
             cover: self.cover.as_deref().and_then(Id::new),
             favourite: Some(self.starred.is_some_and(|starred| !starred.is_null())),
+            rating,
         })
     }
 }

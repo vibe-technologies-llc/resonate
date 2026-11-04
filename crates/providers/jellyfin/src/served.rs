@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use resonate_providers::{Album, AlbumSongs, Artist, ArtistAlbums, Found, Id, Song};
+use resonate_providers::{
+    Album, AlbumSongs, Artist, ArtistAlbums, Found, Id, Song, rating_in_the_title,
+};
 use serde::{Deserialize, Deserializer, de::DeserializeOwned};
 use serde_json::Value;
 
@@ -206,6 +208,7 @@ impl ItemDoc {
         Some(Album {
             cover: self.own_cover(),
             id: Id::new(&self.id)?,
+            rating: rating_in_the_title(self.name.as_deref().unwrap_or_default()),
             name: self.name.unwrap_or_default(),
             artist: self
                 .album_artist
@@ -222,6 +225,7 @@ impl ItemDoc {
             cover: self.cover(),
             artist: self.lead_artist(),
             id: Id::new(&self.id)?,
+            rating: rating_in_the_title(self.name.as_deref().unwrap_or_default()),
             title: self.name.unwrap_or_default(),
             album: self.album,
             disc: small(self.disc),

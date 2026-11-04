@@ -1,6 +1,10 @@
 use std::time::Duration;
 
-use resonate_core::{Isrc, titles, words_of_a_name};
+use resonate_core::{
+    Isrc,
+    titles::{self, Rating},
+    words_of_a_name,
+};
 
 use crate::Identity;
 
@@ -36,9 +40,14 @@ pub struct Listed<'a> {
     pub version: Option<&'a str>,
     pub artists: Vec<&'a str>,
     pub length: Option<Duration>,
+    pub stated: Option<Rating>,
 }
 
 impl Listed<'_> {
+    fn rating(&self) -> Rating {
+        Rating::of(self.stated, self.title, self.version)
+    }
+
     fn titled(&self) -> String {
         match self
             .version
@@ -53,9 +62,10 @@ impl Listed<'_> {
 
 #[derive(Debug)]
 pub struct Choosing<T> {
-    coded: Vec<(Duration, T)>,
-    named: Vec<(bool, Duration, T)>,
+    coded: Vec<(Rating, Duration, T)>,
+    named: Vec<(Rating, bool, Duration, T)>,
     seen: usize,
+    clean_passed_over: usize,
 }
 
 impl<T> Default for Choosing<T> {
@@ -64,6 +74,7 @@ impl<T> Default for Choosing<T> {
             coded: Vec::new(),
             named: Vec::new(),
             seen: 0,
+            clean_passed_over: 0,
         }
     }
 }
@@ -71,6 +82,11 @@ impl<T> Default for Choosing<T> {
 impl<T: PartialEq> Choosing<T> {
     pub fn weigh(&mut self, identity: &Identity, listed: &Listed<'_>, item: T) {
         self.seen += 1;
+        let rating = listed.rating();
+        if rating == Rating::Clean {
+            self.clean_passed_over += 1;
+            return;
+        }
         let apart = identity.apart_in_length(listed.length);
         let coded = listed
             .isrcs
@@ -79,7 +95,7 @@ impl<T: PartialEq> Choosing<T> {
             .any(|code| identity.isrcs.contains(&code));
         if coded {
             if apart.is_none_or(|apart| apart <= LENGTHS_AGREE_WITHIN) {
-                self.coded.push((apart.unwrap_or_default(), item));
+                self.coded.push((rating, apart.unwrap_or_default(), item));
             }
             return;
         }
@@ -88,7 +104,8 @@ impl<T: PartialEq> Choosing<T> {
                 .isrcs
                 .iter()
                 .any(|code| Isrc::new(code.trim()).is_ok());
-            self.named.push((uncoded, apart.unwrap_or_default(), item));
+            self.named
+                .push((rating, uncoded, apart.unwrap_or_default(), item));
         }
     }
 
@@ -104,28 +121,33 @@ impl<T: PartialEq> Choosing<T> {
         self.seen
     }
 
+    pub const fn clean_passed_over(&self) -> usize {
+        self.clean_passed_over
+    }
+
     pub fn ranked(self) -> Vec<(T, Taken)> {
-        let mut ranked: Vec<(T, Taken)> = Vec::new();
-        let named = self
-            .named
-            .into_iter()
-            .map(|(uncoded, apart, item)| ((uncoded, apart), item))
-            .collect::<Vec<_>>();
-        let coded = self
+        let some_coded = !self.coded.is_empty();
+        let mut listed: Vec<(Rating, Taken, bool, Duration, T)> = self
             .coded
             .into_iter()
-            .map(|(apart, item)| ((false, apart), item))
-            .collect::<Vec<_>>();
-        for (listed, taken) in [(coded, Taken::ByItsCode), (named, Taken::NamedAlike)] {
-            if taken == Taken::NamedAlike && !ranked.is_empty() {
-                break;
-            }
-            let mut listed = listed;
-            listed.sort_by_key(|(key, _)| *key);
-            for (_, item) in listed {
-                if !ranked.iter().any(|(kept, _)| *kept == item) {
-                    ranked.push((item, taken));
-                }
+            .map(|(rating, apart, item)| (rating, Taken::ByItsCode, false, apart, item))
+            .chain(
+                self.named
+                    .into_iter()
+                    .filter(|(rating, ..)| !some_coded || *rating == Rating::Explicit)
+                    .map(|(rating, uncoded, apart, item)| {
+                        (rating, Taken::NamedAlike, uncoded, apart, item)
+                    }),
+            )
+            .collect();
+        listed.sort_by_key(|(rating, taken, uncoded, apart, _)| {
+            (*rating, *taken == Taken::NamedAlike, *uncoded, *apart)
+        });
+
+        let mut ranked: Vec<(T, Taken)> = Vec::new();
+        for (_, taken, _, _, item) in listed {
+            if !ranked.iter().any(|(kept, _)| *kept == item) {
+                ranked.push((item, taken));
             }
         }
         ranked
@@ -238,7 +260,101 @@ mod tests {
             version: None,
             artists: vec![artist],
             length: Some(Duration::from_secs(seconds)),
+            stated: None,
         }
+    }
+
+    fn rated(listed: Listed<'_>, rating: Rating) -> Listed<'_> {
+        Listed {
+            stated: Some(rating),
+            ..listed
+        }
+    }
+
+    const QUEEN_ISRC: &str = "GBUM71029604";
+    const OTHER_ISRC: &str = "USUM71900001";
+
+    #[test]
+    fn an_explicit_listing_is_taken_over_one_the_want_is_coded_for_and_over_one_unmarked() {
+        let mut choosing = Choosing::default();
+        let want = wanted();
+        let title = "Bohemian Rhapsody";
+
+        choosing.weigh(&want, &listed(QUEEN_ISRC, title, "Queen", 355), "coded");
+        choosing.weigh(
+            &want,
+            &rated(listed(OTHER_ISRC, title, "Queen", 355), Rating::Explicit),
+            "explicit",
+        );
+
+        assert_eq!(
+            choosing.ranked(),
+            [("explicit", Taken::NamedAlike), ("coded", Taken::ByItsCode)]
+        );
+    }
+
+    #[test]
+    fn a_clean_listing_is_never_taken_though_it_is_the_very_code_wanted() {
+        let want = wanted();
+        let title = "Bohemian Rhapsody";
+
+        let mut stated = Choosing::default();
+        stated.weigh(
+            &want,
+            &rated(listed(QUEEN_ISRC, title, "Queen", 355), Rating::Clean),
+            "clean",
+        );
+        assert_eq!(stated.clean_passed_over(), 1);
+        assert_eq!(stated.chosen(), None, "only a clean take is no take at all");
+
+        let mut worded = Choosing::default();
+        worded.weigh(
+            &want,
+            &listed(QUEEN_ISRC, "Bohemian Rhapsody (Clean)", "Queen", 355),
+            "clean",
+        );
+        worded.weigh(&want, &listed(OTHER_ISRC, title, "Queen", 355), "plain");
+        assert_eq!(worded.chosen(), Some(("plain", Taken::NamedAlike)));
+    }
+
+    #[test]
+    fn a_want_named_clean_is_still_given_the_explicit_take() {
+        let want = Identity {
+            title: "Bohemian Rhapsody (Clean)".to_owned(),
+            isrcs: Vec::new(),
+            ..wanted()
+        };
+        let mut choosing = Choosing::default();
+
+        choosing.weigh(
+            &want,
+            &rated(
+                listed(OTHER_ISRC, "Bohemian Rhapsody", "Queen", 355),
+                Rating::Explicit,
+            ),
+            "explicit",
+        );
+
+        assert_eq!(choosing.chosen(), Some(("explicit", Taken::NamedAlike)));
+    }
+
+    #[test]
+    fn a_flag_saying_nothing_leaves_the_rule_as_it_was_for_a_coded_listing_over_a_named_one() {
+        let want = wanted();
+        let mut choosing = Choosing::default();
+
+        choosing.weigh(
+            &want,
+            &listed(OTHER_ISRC, "Bohemian Rhapsody", "Queen", 355),
+            "named",
+        );
+        choosing.weigh(
+            &want,
+            &listed(QUEEN_ISRC, "Bohemian Rhapsody", "Queen", 355),
+            "coded",
+        );
+
+        assert_eq!(choosing.ranked(), [("coded", Taken::ByItsCode)]);
     }
 
     #[test]

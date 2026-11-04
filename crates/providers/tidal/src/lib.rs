@@ -563,7 +563,7 @@ impl PlaysInPlace for Tidal {
     }
 
     fn search(&self, words: &str) -> Result<Found> {
-        self.searched(words)
+        self.searched(words).map(Found::explicit_first)
     }
 
     fn mix(&self, id: &Id) -> Result<MixSongs> {

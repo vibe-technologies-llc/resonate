@@ -4,7 +4,7 @@ use resonate_core::SourceId;
 use resonate_fetch::escaped;
 use resonate_providers::{
     Album, AlbumSongs, Artist, ArtistAlbums, Error, Found, Id, Mix, MixSongs, Named, ProviderOp,
-    Result, Song,
+    Rating, Result, Song,
 };
 use serde::{Deserialize, Deserializer, de::DeserializeOwned};
 use serde_json::Value;
@@ -174,10 +174,17 @@ pub(crate) struct V1Album {
     tracks: Option<u32>,
     #[serde(default)]
     artist: Option<Credited>,
+    #[serde(default)]
+    explicit: Option<bool>,
 }
 
 impl V1Album {
     pub(crate) fn album(self) -> Option<Album> {
+        let rating = Rating::of(
+            Rating::flagged(self.explicit),
+            self.title.as_deref().unwrap_or_default(),
+            None,
+        );
         Some(Album {
             id: Id::new(&self.id.to_string())?,
             name: self.title.unwrap_or_default(),
@@ -189,6 +196,7 @@ impl V1Album {
                 .and_then(|year| year.parse().ok()),
             songs: self.tracks,
             cover: picture(ALBUM_COVER, self.cover.as_deref()),
+            rating,
         })
     }
 }
@@ -221,10 +229,17 @@ pub(crate) struct V1Track {
     artists: Option<Vec<Credited>>,
     #[serde(default)]
     album: Option<OnAlbum>,
+    #[serde(default)]
+    explicit: Option<bool>,
 }
 
 impl V1Track {
     pub(crate) fn song(self) -> Option<Song> {
+        let rating = Rating::of(
+            Rating::flagged(self.explicit),
+            self.title.as_deref().unwrap_or_default(),
+            self.version.as_deref(),
+        );
         let title = self.title.unwrap_or_default();
         let title = match self.version.filter(|version| !version.trim().is_empty()) {
             Some(version) => format!("{title} ({version})"),
@@ -249,6 +264,7 @@ impl V1Track {
             suffix: Some(DELIVERED_AS.to_owned()),
             cover,
             favourite: None,
+            rating,
         })
     }
 
@@ -469,6 +485,7 @@ pub(crate) fn album_of(id: &Id, tracks: Vec<V1Track>) -> AlbumSongs {
             year: None,
             songs: u32::try_from(songs.len()).ok(),
             cover,
+            rating: Rating::Unmarked,
         },
         songs,
     }

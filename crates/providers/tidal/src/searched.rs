@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use resonate_providers::Listed as Weighed;
+use resonate_providers::{Listed as Weighed, Rating};
 use serde::Deserialize;
 
 use crate::{
@@ -71,6 +71,8 @@ struct Attributes {
     duration: Option<String>,
     #[serde(default)]
     name: Option<String>,
+    #[serde(default)]
+    explicit: Option<bool>,
 }
 
 pub(crate) struct Track {
@@ -80,6 +82,7 @@ pub(crate) struct Track {
     isrc: Option<String>,
     length: Option<Duration>,
     artists: Vec<String>,
+    explicit: Option<bool>,
 }
 
 impl Track {
@@ -90,6 +93,7 @@ impl Track {
             version: self.version.as_deref(),
             artists: self.artists.iter().map(String::as_str).collect(),
             length: self.length,
+            stated: Rating::flagged(self.explicit),
         }
     }
 }
@@ -130,6 +134,7 @@ impl Searched {
                     isrc: track.attributes.isrc.clone(),
                     length: track.attributes.duration.as_deref().and_then(lasting),
                     artists: self.artists_of(track),
+                    explicit: track.attributes.explicit,
                 })
             })
             .collect()

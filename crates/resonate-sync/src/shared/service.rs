@@ -1167,7 +1167,11 @@ impl Running {
             }
         }
         if !seats.iter().any(|seat| seat.member == self.me.member) {
-            seats.push(seat_for(self.me.member, &self.me.personal.public(), &fresh)?);
+            seats.push(seat_for(
+                self.me.member,
+                &self.me.personal.public(),
+                &fresh,
+            )?);
         }
         let told = sealed(&old_keys.sealer, old_keys.space, &encoded_seats(&seats))?;
 

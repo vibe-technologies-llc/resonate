@@ -265,6 +265,7 @@ impl PlaysInPlace for HifiApi {
             Some(hosted) => hosted.searched(words),
             None => self.searched_on_the_server(words),
         }
+        .map(Found::explicit_first)
     }
 
     fn streamed(&self, song: &Id) -> Result<Streamed> {

@@ -680,7 +680,7 @@ impl PlaysInPlace for Jellyfin {
     }
 
     fn search(&self, words: &str) -> Result<Found> {
-        Self::search(self, words)
+        Self::search(self, words).map(Found::explicit_first)
     }
 
     fn streamed(&self, song: &Id) -> Result<Streamed> {

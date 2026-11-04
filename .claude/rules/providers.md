@@ -26,6 +26,22 @@ provider named, for a poll only it can answer.
 
 ## Which listing is the song (`listing.rs`)
 
+**An explicit take is taken, and a clean one never is.** `Listed::stated` is what a service says
+(TIDAL, hifi-api and Monochrome's `explicit` flag, `Rating::flagged`: true is `Explicit`, false says
+nothing, since a song with nothing to bleep is false too; OpenSubsonic's `explicitStatus`), and
+`Rating::of` falls back on the qualifier in the title or version (`clean`, `edited`, `censored`;
+`explicit`, `uncensored`, `dirty`; a song called *Clean* with no bracket is neither). `Choosing::weigh`
+drops a `Clean` listing whatever its code, so a song offered only clean is `Nothing` rather than the
+clean take, counted in `clean_passed_over`; `ranked` takes every `Explicit` listing ahead of the rest,
+even one only named alike over one holding the code wanted, because services file the clean and
+explicit takes under different ISRCs and a want often names the clean one's
+(`a_clean_listing_is_never_taken_though_it_is_the_very_code_wanted`,
+`an_explicit_listing_is_taken_over_one_the_want_is_coded_for_and_over_one_unmarked`). **A search does
+the same** (`Found::explicit_first`, in each provider's `PlaysInPlace::search`): a clean song or album
+is left out, and an unmarked sibling of an explicit one (same bare title, artist and length) gives way
+to it in its place. `the_take_worth_offering` ranks MusicBrainz's takes the same way and folds a song's
+takes together past their rating, so a found song offers the explicit take where one is named.
+
 **A listing is taken by any of the want's codes, else only named alike, and the seam alone
 decides.** A searching provider turns each listing into a `Listed` and hands it to a `Choosing`
 with the item it would deliver. `Choosing::ranked` answers listings holding one of

@@ -129,7 +129,9 @@ pub fn decoded_seats(bytes: &[u8]) -> Result<Vec<Seat>> {
             sealed: reader.bytes(LARGEST_SEALED_CODE)?.to_vec(),
         });
     }
-    reader.done().map_err(|_| Error::Malformed(Malformed::Number))?;
+    reader
+        .done()
+        .map_err(|_| Error::Malformed(Malformed::Number))?;
 
     Ok(seats)
 }
@@ -155,8 +157,8 @@ mod tests {
     #[test]
     fn a_seat_tampered_with_opens_for_nobody() {
         let ada = Personal::minted().expect("a secret");
-        let mut seat = seat_for(ADA, &ada.public(), &Access::minted().expect("a key"))
-            .expect("sealed");
+        let mut seat =
+            seat_for(ADA, &ada.public(), &Access::minted().expect("a key")).expect("sealed");
         let last = seat.sealed.len() - 1;
         seat.sealed[last] ^= 1;
 
@@ -174,8 +176,8 @@ mod tests {
     #[test]
     fn the_seats_read_back_as_themselves() {
         let ada = Personal::minted().expect("a secret");
-        let seats = vec![seat_for(ADA, &ada.public(), &Access::minted().expect("a key"))
-            .expect("sealed")];
+        let seats =
+            vec![seat_for(ADA, &ada.public(), &Access::minted().expect("a key")).expect("sealed")];
 
         assert_eq!(decoded_seats(&encoded_seats(&seats)).ok(), Some(seats));
     }

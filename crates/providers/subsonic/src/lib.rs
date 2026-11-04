@@ -16,7 +16,7 @@ use resonate_fetch::{
     escaped, is_a_document, retry_after_of, unreached,
 };
 pub use resonate_providers::{
-    Album, AlbumSongs, Artist, ArtistAlbums, Found, Id, Named, PlaysInPlace, Song, Streamed,
+    Album, AlbumSongs, Artist, ArtistAlbums, Found, Id, Named, PlaysInPlace, Rating, Song, Streamed,
 };
 use resonate_providers::{
     Choosing, Delivery, Error, Extension, Held, Identity, Listed, Obtained, Opening, Pacing,
@@ -158,6 +158,16 @@ struct Listing {
     artist: Option<String>,
     #[serde(default)]
     duration: Option<u64>,
+    #[serde(default, rename = "explicitStatus")]
+    explicit_status: Option<String>,
+}
+
+pub(crate) fn rating_stated(status: Option<&str>) -> Option<Rating> {
+    match status?.trim() {
+        status if status.eq_ignore_ascii_case("explicit") => Some(Rating::Explicit),
+        status if status.eq_ignore_ascii_case("clean") => Some(Rating::Clean),
+        _ => None,
+    }
 }
 
 impl Listing {
@@ -168,6 +178,7 @@ impl Listing {
             version: None,
             artists: self.artist.as_deref().into_iter().collect(),
             length: self.duration.map(Duration::from_secs),
+            stated: rating_stated(self.explicit_status.as_deref()),
         }
     }
 
@@ -648,7 +659,7 @@ impl PlaysInPlace for Subsonic {
     }
 
     fn search(&self, words: &str) -> Result<Found> {
-        Self::search(self, words)
+        Self::search(self, words).map(Found::explicit_first)
     }
 
     fn streamed(&self, song: &Id) -> Result<Streamed> {

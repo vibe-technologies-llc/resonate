@@ -4,7 +4,16 @@ const VERSION_QUALIFIERS: &[&str] = &[
     "cleanversion",
     "explicitversion",
     "explicit",
+    "uncensored",
+    "uncensoredversion",
+    "dirty",
+    "dirtyversion",
     "clean",
+    "cleanedit",
+    "censored",
+    "censoredversion",
+    "edited",
+    "editedversion",
     "radioedit",
     "remaster",
     "remastered",
@@ -14,6 +23,99 @@ const VERSION_QUALIFIERS: &[&str] = &[
     "stereoversion",
     "originalmix",
 ];
+
+const SAYS_CLEAN: &[&str] = &[
+    "cleanversion",
+    "clean",
+    "cleanedit",
+    "censored",
+    "censoredversion",
+    "edited",
+    "editedversion",
+];
+
+const SAYS_EXPLICIT: &[&str] = &[
+    "explicitversion",
+    "explicit",
+    "uncensored",
+    "uncensoredversion",
+    "dirty",
+    "dirtyversion",
+];
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum Rating {
+    Explicit,
+    #[default]
+    Unmarked,
+    Clean,
+}
+
+impl Rating {
+    pub const fn flagged(explicit: Option<bool>) -> Option<Self> {
+        match explicit {
+            Some(true) => Some(Self::Explicit),
+            Some(false) | None => None,
+        }
+    }
+
+    pub fn of(stated: Option<Self>, title: &str, version: Option<&str>) -> Self {
+        let said_in_words = version
+            .map(says)
+            .filter(|rating| *rating != Self::Unmarked)
+            .unwrap_or_else(|| rating_in_the_title(title));
+
+        match (stated, said_in_words) {
+            (Some(Self::Explicit), _) => Self::Explicit,
+            (Some(Self::Clean), _) => Self::Clean,
+            (Some(Self::Unmarked) | None, said) => said,
+        }
+    }
+}
+
+fn says(qualifier: &str) -> Rating {
+    let squeezed = squeezed(qualifier);
+    if SAYS_EXPLICIT.contains(&squeezed.as_str()) {
+        Rating::Explicit
+    } else if SAYS_CLEAN.contains(&squeezed.as_str()) {
+        Rating::Clean
+    } else {
+        Rating::Unmarked
+    }
+}
+
+pub fn without_its_rating(title: &str) -> &str {
+    without_brackets_that(title, |inside| says(inside) != Rating::Unmarked)
+}
+
+pub fn rating_in_the_title(title: &str) -> Rating {
+    let mut kept = title.trim();
+    loop {
+        let bracketed = BRACKETS.iter().find_map(|(opening, closing)| {
+            let inside = kept.strip_suffix(*closing)?;
+            let opened = inside.rfind(*opening)?;
+            let before = inside[..opened].trim_end();
+
+            (!before.is_empty()).then(|| (before, &inside[opened + opening.len_utf8()..]))
+        });
+        let dashed = || {
+            SPACED_DASHES.iter().find_map(|dash| {
+                let (before, suffix) = kept.rsplit_once(dash)?;
+                let before = before.trim_end();
+
+                (!before.is_empty()).then_some((before, suffix))
+            })
+        };
+        let Some((before, qualifier)) = bracketed.or_else(dashed) else {
+            return Rating::Unmarked;
+        };
+        let rating = says(qualifier);
+        if rating != Rating::Unmarked {
+            return rating;
+        }
+        kept = before;
+    }
+}
 
 const DATED_QUALIFIERS: &[&str] = &["remaster", "remastered"];
 
@@ -114,6 +216,39 @@ pub fn bare(title: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_title_says_whether_it_is_the_clean_or_the_explicit_take_only_in_its_qualifier() {
+        assert_eq!(rating_in_the_title("Bad Guy (Clean)"), Rating::Clean);
+        assert_eq!(
+            rating_in_the_title("Bad Guy [Edited Version]"),
+            Rating::Clean
+        );
+        assert_eq!(rating_in_the_title("Bad Guy - Clean"), Rating::Clean);
+        assert_eq!(
+            rating_in_the_title("Bad Guy (Clean) [2019 Remaster]"),
+            Rating::Clean
+        );
+        assert_eq!(rating_in_the_title("Bad Guy (Explicit)"), Rating::Explicit);
+        assert_eq!(rating_in_the_title("Bad Guy"), Rating::Unmarked);
+        assert_eq!(rating_in_the_title("Clean"), Rating::Unmarked);
+        assert_eq!(rating_in_the_title("Squeaky Clean"), Rating::Unmarked);
+        assert_eq!(rating_in_the_title("Clean (Live)"), Rating::Unmarked);
+    }
+
+    #[test]
+    fn what_a_service_states_outranks_what_the_words_say_and_a_version_outranks_the_title() {
+        assert_eq!(
+            Rating::of(Some(Rating::Explicit), "Bad Guy (Clean)", None),
+            Rating::Explicit
+        );
+        assert_eq!(Rating::of(None, "Bad Guy", Some("Clean")), Rating::Clean);
+        assert_eq!(
+            Rating::of(None, "Bad Guy (Clean)", Some("Explicit")),
+            Rating::Explicit
+        );
+        assert_eq!(Rating::of(None, "Bad Guy", None), Rating::Unmarked);
+    }
 
     #[test]
     fn a_version_bracket_is_taken_off_and_another_recording_is_left_alone() {
