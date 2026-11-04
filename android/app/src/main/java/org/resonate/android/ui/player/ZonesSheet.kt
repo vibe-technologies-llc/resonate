@@ -51,7 +51,7 @@ import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.settings.ConfirmDialog
 import org.resonate.android.ui.settings.outputNamed
 import org.resonate.android.ui.settings.outputTitle
-import org.resonate.android.ui.settings.withSystemDefault
+import org.resonate.android.ui.settings.offeredOutputs
 
 @Composable
 fun ZonesSheet(onDismiss: () -> Unit) {
@@ -113,7 +113,7 @@ fun ZonesSheet(onDismiss: () -> Unit) {
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
             )
-            withSystemDefault(outputs).forEach { output ->
+            offeredOutputs(outputs).forEach { output ->
                 val title = outputTitle(output)
                 ListItem(
                     onClick = { features.zones.add(title, output) },

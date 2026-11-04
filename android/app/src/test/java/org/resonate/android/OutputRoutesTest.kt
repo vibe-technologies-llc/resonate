@@ -2,9 +2,12 @@ package org.resonate.android
 
 import android.media.AudioDeviceInfo
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.resonate.android.ui.settings.standsFor
 
 class OutputRoutesTest {
     private fun output(id: Int, route: OutputRoute?) =
@@ -65,5 +68,80 @@ class OutputRoutesTest {
         assertEquals(speaker, routeInUse(outputs, 0, listOf(2)))
         assertEquals(speaker, routeInUse(outputs, 99, listOf(2)))
         assertNull(routeInUse(outputs, 0, emptyList()))
+    }
+
+    private val dac = OutputRoute("v1:usb:Topping", "Topping")
+
+    private val headset = OutputRoute("v1:bluetooth:AA:BB", "Headset")
+
+    private fun twin(id: Int, route: OutputRoute, type: Int, rates: List<Int> = emptyList()) =
+        AudioOutput(id, route.name, "Audio device", rates, emptyList(), emptyList(), route, type)
+
+    @Test
+    fun aDacAndroidListsAsTwoDevicesIsOfferedOnceWhereItFirstStood() {
+        val speaker = output(1, OutputRoute("v1:speaker:Phone", "Built-in speaker"))
+        val listed =
+            listOf(
+                twin(30, dac, AudioDeviceInfo.TYPE_USB_DEVICE),
+                speaker,
+                twin(31, dac, AudioDeviceInfo.TYPE_USB_HEADSET),
+            )
+
+        assertEquals(listOf(30, 1), oneForEachRoute(listed).map { it.id })
+    }
+
+    @Test
+    fun ofTwinsTheOneTakingTheMostRatesIsOffered() {
+        val listed =
+            listOf(
+                twin(30, dac, AudioDeviceInfo.TYPE_USB_HEADSET, listOf(48_000)),
+                twin(31, dac, AudioDeviceInfo.TYPE_USB_DEVICE, listOf(44_100, 48_000, 96_000)),
+            )
+
+        assertEquals(listOf(31), oneForEachRoute(listed).map { it.id })
+    }
+
+    @Test
+    fun theProfileForCallsIsNeverOfferedBesideTheOneForMusicWhicheverComesFirstOrTakesMore() {
+        val calls = twin(40, headset, AudioDeviceInfo.TYPE_BLUETOOTH_SCO, listOf(8_000, 16_000))
+        val music = twin(41, headset, AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, listOf(48_000))
+
+        assertEquals(listOf(41), oneForEachRoute(listOf(calls, music)).map { it.id })
+        assertEquals(listOf(41), oneForEachRoute(listOf(music, calls)).map { it.id })
+    }
+
+    @Test
+    fun aRouteKeptIsBoundToTheTwinOffered() {
+        val calls = twin(40, headset, AudioDeviceInfo.TYPE_BLUETOOTH_SCO)
+        val music = twin(41, headset, AudioDeviceInfo.TYPE_BLUETOOTH_A2DP)
+
+        assertEquals(41, ZonePlan.deviceFor(headset.id, listOf(calls, music)))
+    }
+
+    @Test
+    fun outputsOnOtherRoutesOrOnNoneAreAllOffered() {
+        val other = OutputRoute("v1:usb:FiiO", "FiiO")
+        val listed =
+            listOf(
+                twin(30, dac, AudioDeviceInfo.TYPE_USB_DEVICE),
+                twin(31, other, AudioDeviceInfo.TYPE_USB_DEVICE),
+                output(32, null),
+                output(33, null),
+            )
+
+        assertEquals(listOf(30, 31, 32, 33), oneForEachRoute(listed).map { it.id })
+    }
+
+    @Test
+    fun anOutputOfferedStandsForTheTwinItWasNotChosenOver() {
+        val offered = twin(30, dac, AudioDeviceInfo.TYPE_USB_DEVICE)
+        val other = twin(31, dac, AudioDeviceInfo.TYPE_USB_HEADSET)
+        val elsewhere = output(32, OutputRoute("v1:hdmi:TV", "TV"))
+        val listed = listOf(offered, other, elsewhere)
+
+        assertTrue(standsFor(offered, 31, listed))
+        assertTrue(standsFor(offered, 30, listed))
+        assertFalse(standsFor(offered, 32, listed))
+        assertFalse(standsFor(output(33, null), 34, listed))
     }
 }

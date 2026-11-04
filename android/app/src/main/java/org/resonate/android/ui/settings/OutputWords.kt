@@ -5,6 +5,7 @@ import org.resonate.android.AudioOutput
 import org.resonate.android.nativecore.OutputEncoding
 import org.resonate.android.nativecore.OutputPath
 import org.resonate.android.nativecore.OutputStream
+import org.resonate.android.oneForEachRoute
 import org.resonate.android.outputName
 
 const val SYSTEM_DEFAULT_OUTPUT = 0
@@ -98,6 +99,14 @@ fun clampedSamplesWords(count: ULong): String? = count.takeIf { it > 0uL }?.toSt
 
 fun withSystemDefault(outputs: List<AudioOutput>): List<AudioOutput> =
     listOf(systemDefaultOutput) + outputs.filter { it.id != SYSTEM_DEFAULT_OUTPUT }
+
+fun offeredOutputs(outputs: List<AudioOutput>): List<AudioOutput> =
+    withSystemDefault(oneForEachRoute(outputs))
+
+fun standsFor(offered: AudioOutput, id: Int, outputs: List<AudioOutput>): Boolean =
+    offered.id == id ||
+        offered.route != null &&
+            outputs.any { it.id == id && it.route?.id == offered.route.id }
 
 fun outputNamed(outputs: List<AudioOutput>, id: Int): String =
     withSystemDefault(outputs).firstOrNull { it.id == id }?.let(::outputTitle)

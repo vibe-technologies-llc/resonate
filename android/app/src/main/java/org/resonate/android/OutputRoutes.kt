@@ -62,8 +62,31 @@ fun audioOutputs(manager: AudioManager): List<AudioOutput> =
             device.channelCounts.toList(),
             device.encodings.toList(),
             outputRouteOf(device.type, device.address, name, outputName(kind, name)),
+            device.type,
         )
     }
+
+private val notForMusic =
+    setOf(AudioDeviceInfo.TYPE_BLUETOOTH_SCO, AudioDeviceInfo.TYPE_BUILTIN_SPEAKER_SAFE)
+
+fun oneForEachRoute(outputs: List<AudioOutput>): List<AudioOutput> {
+    val best =
+        outputs
+            .filter { it.route != null }
+            .groupBy { it.route?.id }
+            .mapValues { (_, twins) ->
+                twins.minWith(
+                    compareBy<AudioOutput> { it.type in notForMusic }
+                        .thenByDescending { it.rates.size }
+                )
+            }
+    val placed = mutableSetOf<String>()
+
+    return outputs.mapNotNull { output ->
+        val route = output.route?.id ?: return@mapNotNull output
+        if (placed.add(route)) best[route] else null
+    }
+}
 
 fun deviceInUse(outputs: List<AudioOutput>, actual: Int, expected: List<Int>): Int? =
     outputs.firstOrNull { it.id == actual }?.id

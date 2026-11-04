@@ -14,7 +14,8 @@ const val FIRST_ZONE = 1u
 
 object ZonePlan {
     fun deviceFor(route: String, outputs: List<AudioOutput>): Int? =
-        if (route.isBlank()) 0 else outputs.firstOrNull { it.route?.id == route }?.id
+        if (route.isBlank()) 0
+        else oneForEachRoute(outputs).firstOrNull { it.route?.id == route }?.id
 
     fun routeOf(device: Int, outputs: List<AudioOutput>): String =
         outputs.firstOrNull { it.id == device }?.route?.id.orEmpty()

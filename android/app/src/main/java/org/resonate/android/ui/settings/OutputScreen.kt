@@ -121,8 +121,8 @@ fun OutputScreen() {
     val stream by model.stream.collectAsStateWithLifecycle()
     val followsSongRate by model.followsSongRate.collectAsStateWithLifecycle()
     FollowDevices(model::refresh)
-    val choices = withSystemDefault(outputs)
-    val playing = choices.firstOrNull { it.id == actual }
+    val choices = offeredOutputs(outputs)
+    val playing = withSystemDefault(outputs).firstOrNull { it.id == actual }
     Page(
         "Audio output",
         actions = {
@@ -187,7 +187,7 @@ fun OutputScreen() {
                                 listOfNotNull(outputSubtitle(output), outputRates(output))
                                     .joinToString(" · "),
                             icon = iconFor(output),
-                            selected = output.id == selected,
+                            selected = standsFor(output, selected, outputs),
                             onClick = { model.select(output.id) },
                             modifier = Modifier.testTag("output-${output.id}"),
                         )

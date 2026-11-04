@@ -207,7 +207,7 @@ each time; the callback stamps each fill from Oboe's own `getTimestamp(CLOCK_MON
 timed-out open the engine parks, not a blocked engine thread, and the late stream closes itself
 (`an_open_that_never_answers_times_out_instead_of_blocking`).
 The output pane lists `AudioManager` devices and sends a chosen device id to Oboe before
-rebinding; system default is id zero. Device type distinguishes outputs that share a product name.
+rebinding; system default is id zero. **One output is offered a route** (`oneForEachRoute`, `offeredOutputs`), on this pane, in *Add a zone* and when a kept route is bound again: Android lists a USB DAC as a device and a headset, or as several PCM devices, and a Bluetooth headset once a profile, and all of them are one `OutputRoute`. Of such twins the call profile and the safe speaker come last, then the most rates wins. What is playing is still read off the whole list, since a stream can stand on a twin not offered, and a row stands for its twins (`standsFor`).
 The pane shows the actual route in a status card and names a different requested route when one
 is pending (`pendingOutput`); asking for the system default is never pending, since Android then
 reports the device it chose. Android owns the physical route, and this is no promise of a DAC's rate or
@@ -377,7 +377,7 @@ Album, artist and playlist pages wear the same theme from their first cover.
 *Zones*): each zone a row with a radio (tap shows it), its output and what it plays
 (`ZonePlan.line`), and a menu of *Hand the song over here* (another zone, while the shown one holds a
 queue), *Rename* and *Remove* (not the first, confirmed); below, *Add a zone on <output>* for the
-system default and every output `audioOutputs` lists, named after the output (`ZonePlan.nameFor`
+system default and every output offered, named after the output (`ZonePlan.nameFor`
 numbers a taken name). A zone is added with the output's `AudioDeviceInfo` id and its route id
 (`OutputRoute.id`), which is what is kept: `PlayerZones.bindRoutes` (at `initialize` and on every
 device change) finds each kept route's current device id (`ZonePlan.deviceFor`) and binds it, since

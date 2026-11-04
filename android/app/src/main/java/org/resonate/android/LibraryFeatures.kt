@@ -85,6 +85,7 @@ data class AudioOutput(
     val channels: List<Int>,
     val encodings: List<Int>,
     val route: OutputRoute? = null,
+    val type: Int = AudioDeviceInfo.TYPE_UNKNOWN,
 )
 
 internal fun outputKind(type: Int): String =
