@@ -6,8 +6,8 @@ use std::{
 
 use gpui::{
     Animation, AnimationElement, AnimationExt as _, AnyElement, App, Context, Corners, Div,
-    ElementId, FontWeight, MouseButton, ObjectFit, Pixels, Point, Role, ScrollEvent, SharedString,
-    Stateful, Svg, Window, div, img, prelude::*, px, rgb,
+    ElementId, FontWeight, MouseButton, ObjectFit, Pixels, Point, Role, ScrollDelta, ScrollEvent,
+    SharedString, Stateful, Svg, Window, div, img, prelude::*, px, rgb,
 };
 use resonate_core::{
     AlbumId, ArtistId, Frames, MediaLocation, QueueStamp, SampleRate, StreamSpec, TrackId,
@@ -109,6 +109,8 @@ const VOLUME_A_NOTCH: f32 = 0.05;
 
 const PIXELS_A_NOTCH: f32 = 24.0;
 
+const LINES_A_WHEEL_NOTCH: f32 = 3.0;
+
 const SECONDS_A_MINUTE: u64 = 60;
 
 const SLEEP_MINUTES: [u64; 5] = [15, 30, 45, 60, 90];
@@ -137,8 +139,11 @@ const MUTE: &str = "Mute";
 
 const INSPECT_HINT: &str = "See the whole signal path in the inspector";
 
-fn notches_turned(event: &ScrollEvent) -> f32 {
-    f32::from(event.delta.pixel_delta(px(PIXELS_A_NOTCH)).y) / PIXELS_A_NOTCH
+fn notches_turned(delta: ScrollDelta) -> f32 {
+    match delta {
+        ScrollDelta::Lines(lines) => lines.y / LINES_A_WHEEL_NOTCH,
+        ScrollDelta::Pixels(pixels) => f32::from(pixels.y) / PIXELS_A_NOTCH,
+    }
 }
 
 fn inspects(sink: Option<&str>) -> SharedString {
@@ -1173,7 +1178,7 @@ impl RootView {
             .when(wheeled, |bar| {
                 bar.on_scroll(cx.listener(|this, event: &ScrollEvent, _, cx| {
                     cx.stop_propagation();
-                    this.volume_by(notches_turned(event) * VOLUME_A_NOTCH, cx);
+                    this.volume_by(notches_turned(event.delta) * VOLUME_A_NOTCH, cx);
                 }))
             })
             .flex()
@@ -1634,6 +1639,17 @@ mod tests {
 
     use super::*;
     use crate::{driven::Driven, views::spoken::node_of};
+
+    #[test]
+    fn one_wheel_notch_is_one_step_of_the_volume_though_gpui_hands_it_over_as_three_lines() {
+        let a_wheel_notch = ScrollDelta::Lines(gpui::point(0.0, LINES_A_WHEEL_NOTCH));
+        let a_touchpad_notch = ScrollDelta::Pixels(gpui::point(px(0.0), px(PIXELS_A_NOTCH)));
+        let down_a_notch = ScrollDelta::Lines(gpui::point(0.0, -LINES_A_WHEEL_NOTCH));
+
+        assert_eq!(notches_turned(a_wheel_notch) * VOLUME_A_NOTCH, 0.05);
+        assert_eq!(notches_turned(a_touchpad_notch) * VOLUME_A_NOTCH, 0.05);
+        assert_eq!(notches_turned(down_a_notch) * VOLUME_A_NOTCH, -0.05);
+    }
 
     #[gpui::test]
     fn the_playback_bar_names_its_buttons_and_says_which_are_on_to_a_reader(

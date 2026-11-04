@@ -248,9 +248,13 @@ is never named.
     requested position until its `Outcome` answers (a refused seek restores the published position
     and raises the command toast); only `shown_position` reads the target, `state` stays what the
     engine published.
-  - Wheel over the volume cluster = a `VOLUME_A_NOTCH` (touchpad pixels in `PIXELS_A_NOTCH`) while
-    `ResonateApp::scroll_volume` says so; `RootView::volume_aimed` is what a run of notches or keys
-    adds to (reading the published volume back lost all but one per poll).
+  - Wheel over the volume cluster = a `VOLUME_A_NOTCH` (5 %; touchpad pixels in `PIXELS_A_NOTCH`) while
+    `ResonateApp::scroll_volume` says so; gpui hands one click of a wheel over as three lines
+    (`LINES_A_WHEEL_NOTCH`, its `SCROLL_LINES`), so a line read as a notch moved 15 % a click;
+    `RootView::volume_aimed` is what a run of notches or keys adds to (reading the published volume
+    back lost all but one per poll). **The volume rail is an even number of pixels wide**
+    (`halves_on_whole_pixels`): at a text size scaling it to an odd width, 50 % filled one side a
+    pixel further than the other.
   - **A press on the speaker, or `ctrl-m`, mutes; mute is not a volume.** `toggle_mute` sends
     `Volume::MUTE` and keeps the heard level in `muted_from`, storing nothing. `muted_at` reads the
     pair only while the engine publishes mute, so a volume set over the bus ends the mute. Where the

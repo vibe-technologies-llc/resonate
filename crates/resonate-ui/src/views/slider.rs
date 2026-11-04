@@ -37,7 +37,7 @@ impl Handle {
     fn track_width(self) -> Length {
         match self {
             Self::Seek => relative(1.0).into(),
-            Self::Volume => theme::width(theme::volume_width()).into(),
+            Self::Volume => theme::width(halves_on_whole_pixels(theme::volume_width())).into(),
         }
     }
 
@@ -51,6 +51,10 @@ impl Handle {
     const fn fills_its_row(self) -> bool {
         matches!(self, Self::Seek)
     }
+}
+
+fn halves_on_whole_pixels(wide: f32) -> f32 {
+    (wide / 2.0).round() * 2.0
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -512,6 +516,16 @@ mod tests {
         assert!(held.seeks_still(track(3)));
         assert!(!held.seeks_still(track(4)));
         assert!(!held.seeks_still(None));
+    }
+
+    #[test]
+    fn a_rail_halves_on_a_whole_pixel_at_every_text_size() {
+        for wide in [79.2, 88.0, 96.8, 99.0, 117.3, 176.0] {
+            let halved = halves_on_whole_pixels(wide);
+
+            assert_eq!(halved % 2.0, 0.0, "{wide} is drawn at {halved}");
+            assert!((halved - wide).abs() <= 1.0);
+        }
     }
 
     #[test]
