@@ -43,7 +43,8 @@ use crate::{
             tall_row,
         },
         scrollbar::{SHELF_INSET, Scrollbars},
-        sheets, sorting,
+        sheets,
+        sorting::{self, Ordered},
         spoken::{self, Spelt, Spoken},
         transport::COVER_HINT,
     },
@@ -323,26 +324,26 @@ impl RootView {
         }
 
         let heading = self.search_heading(cx).unwrap_or_else(|| {
-            kit::heading()
-                .child(
-                    kit::heading_row()
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .flex_1()
-                                .min_w(px(theme::heading_name()))
-                                .gap_1()
-                                .child(kit::eyebrow("LIBRARY"))
-                                .child(kit::title("Albums"))
-                                .child(kit::subtitle(format::counted(counted, "album", "albums"))),
-                        )
-                        .when(!reads.is_empty(), |row| row.child(listing::reads(&reads)))
-                        .child(kit::actions().child(self.orders_a_listing("order-albums", cx))),
-                )
-                .when(self.ordering, |heading| {
-                    heading.child(self.albums_in_order(cx))
-                })
+            kit::heading().child(
+                kit::heading_row()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_w(px(theme::heading_name()))
+                            .gap_1()
+                            .child(kit::eyebrow("LIBRARY"))
+                            .child(kit::title("Albums"))
+                            .child(kit::subtitle(format::counted(counted, "album", "albums"))),
+                    )
+                    .when(!reads.is_empty(), |row| row.child(listing::reads(&reads)))
+                    .child(kit::actions().child(self.orders_a_listing(
+                        "order-albums",
+                        Ordered::Albums,
+                        cx,
+                    ))),
+            )
         });
 
         kit::pane()
@@ -738,32 +739,26 @@ impl RootView {
         });
 
         let heading = self.search_heading(cx).unwrap_or_else(|| {
-            kit::heading()
-                .child(
-                    kit::heading_row()
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .flex_1()
-                                .min_w(px(theme::heading_name()))
-                                .gap_1()
-                                .child(kit::eyebrow("LIBRARY"))
-                                .child(kit::title("Artists"))
-                                .child(kit::subtitle(format::counted(
-                                    counted, "artist", "artists",
-                                ))),
-                        )
-                        .when(!reads.is_empty(), |row| row.child(listing::reads(&reads)))
-                        .child(
-                            kit::actions()
-                                .child(self.artists_drawn_as(drawn, cx))
-                                .child(self.orders_a_listing("order-artists", cx)),
-                        ),
-                )
-                .when(self.ordering, |heading| {
-                    heading.child(self.artists_in_order(cx))
-                })
+            kit::heading().child(
+                kit::heading_row()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_w(px(theme::heading_name()))
+                            .gap_1()
+                            .child(kit::eyebrow("LIBRARY"))
+                            .child(kit::title("Artists"))
+                            .child(kit::subtitle(format::counted(counted, "artist", "artists"))),
+                    )
+                    .when(!reads.is_empty(), |row| row.child(listing::reads(&reads)))
+                    .child(
+                        kit::actions()
+                            .child(self.artists_drawn_as(drawn, cx))
+                            .child(self.orders_a_listing("order-artists", Ordered::Artists, cx)),
+                    ),
+            )
         });
         let grid =
             (!nothing && drawn == ArtistsDrawn::Grid).then(|| self.artist_grid(&artists, cx));
@@ -1918,9 +1913,6 @@ impl RootView {
             .when(!reads.is_empty(), |heading| {
                 heading.child(listing::reads(&reads))
             })
-            .when(self.ordering, |heading| {
-                heading.child(self.tracks_in_order(cx))
-            })
             .when_some(naming, |heading, naming| {
                 heading.child(self.naming_row(naming, cx))
             })
@@ -1973,7 +1965,7 @@ impl RootView {
                             cx,
                         ))
                     })
-                    .child(self.orders_a_listing("order-tracks", cx))
+                    .child(self.orders_a_listing("order-tracks", Ordered::Tracks, cx))
                     .child(self.shuffle_all(cx))
                     .child(self.play_all(cx))
             });
@@ -2261,7 +2253,7 @@ impl RootView {
     fn show_of_the_artist(&mut self, shows: ArtistShows, cx: &mut Context<Self>) {
         self.artist_shows = shows;
         if shows == ArtistShows::Records {
-            self.ordering = false;
+            self.ordering = None;
         }
         cx.notify();
     }
@@ -2294,7 +2286,7 @@ impl RootView {
             .when(shuffleable, |row| row.child(self.shuffle_all(cx)))
             .child(self.favour_mark("scope-favourite", what, already, cx))
             .when(sortable, |row| {
-                row.child(self.orders_a_listing("order-tracks", cx))
+                row.child(self.orders_a_listing("order-tracks", Ordered::Tracks, cx))
             })
     }
 
@@ -3044,12 +3036,12 @@ impl RootView {
     pub(crate) fn orders_a_listing(
         &self,
         named: &'static str,
+        ordered: Ordered,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         self.in_the_pane_ring(
-            kit::icon_button(named, Icon::Sort, ORDER_HINT)
-                .when(self.ordering, |button| button.bg(rgb(theme::hover()))),
-            |this, _, cx| this.order_a_listing(cx),
+            kit::icon_button(named, Icon::Sort, ORDER_HINT),
+            move |this, window, cx| this.order_a_listing(ordered, window, cx),
             cx,
         )
     }
@@ -3057,11 +3049,7 @@ impl RootView {
     pub(crate) fn tracks_in_order(&self, cx: &mut Context<Self>) -> Div {
         let sorting = self.library.read(cx).sorting();
 
-        self.order_row(
-            sorting::Chips {
-                orders: "track-order",
-                readings: "track-reading",
-            },
+        self.order_choices(
             sorting.tracks,
             sorting.tracks_read,
             |this, order, cx| {
@@ -3079,11 +3067,7 @@ impl RootView {
     pub(crate) fn albums_in_order(&self, cx: &mut Context<Self>) -> Div {
         let sorting = self.library.read(cx).sorting();
 
-        self.order_row(
-            sorting::Chips {
-                orders: "album-order",
-                readings: "album-reading",
-            },
+        self.order_choices(
             sorting.albums,
             sorting.albums_read,
             |this, order, cx| {
@@ -3101,11 +3085,7 @@ impl RootView {
     pub(crate) fn artists_in_order(&self, cx: &mut Context<Self>) -> Div {
         let sorting = self.library.read(cx).sorting();
 
-        self.order_row(
-            sorting::Chips {
-                orders: "artist-order",
-                readings: "artist-reading",
-            },
+        self.order_choices(
             sorting.artists,
             sorting.artists_read,
             |this, order, cx| {

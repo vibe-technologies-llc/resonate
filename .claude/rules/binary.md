@@ -378,7 +378,7 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   warning), read as `Config::equaliser_measurer_for(sink)`. `eq --find`/`--suggest` take `--measurer`
   over both and the equaliser pane's search and suggestion take the device in use's over the fixed
   ranking (`EqualiserModel::prefer(Measurers)`); the Equaliser category's *Measured corrections* group
-  chooses them as chips, one field for every device and one for the device in use (*Best ranked* /
+  chooses them with a `kit::pick` each, one for every device and one for the device in use (*Best ranked* /
   *As for the rest*, `resonate_eq::MEASURERS_BEST_FIRST`, and a held name outside them), written as
   `Setting::EqualiserMeasurer` and `Setting::EqualiserMeasurerFor` and worn at once on
   `ResonateApp::measurers` and the model (`RootView::prefer_a_measurer`, `prefer_a_measurer_for`), and

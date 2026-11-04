@@ -28,7 +28,8 @@ use crate::{
         reorder::{self, Carried, Chosen, LiftedTo, Listed, MOVING_HINT, Shift, Step},
         root::{Pane, RootView, empty, listed, row, somewhere_in, tall_row},
         scrollbar::Scrollbars,
-        sheets, sorting,
+        sheets,
+        sorting::{self, Ordered, Ordering as _},
         spoken::{self, Placed, Spoken},
     },
 };
@@ -309,6 +310,8 @@ impl Naming {
     }
 }
 
+const SEARCH_ORDER_HINT: &str = "What this search puts its rows in order by";
+
 const CAPS: [Option<usize>; 4] = [None, Some(25), Some(50), Some(100)];
 
 const KEEPING: [(&str, bool, &str); 2] = [
@@ -564,7 +567,7 @@ impl RootView {
             })
             .when(any_saved, |bar| {
                 bar.child(self.playlists_drawn_as(cx))
-                    .child(self.orders_a_listing("playlists-sort", cx))
+                    .child(self.orders_a_listing("playlists-sort", Ordered::Playlists, cx))
             })
             .child(self.in_the_pane_ring(
                 kit::icon_button("import-playlists", Icon::Import, IMPORT_HINT),
@@ -608,24 +611,17 @@ impl RootView {
                     .child(actions),
             )
             .when(!reads.is_empty(), |pane| pane.child(listing::reads(&reads)))
-            .when(any_saved && self.ordering, |pane| {
-                pane.child(self.playlists_order(cx))
-            })
             .when_some(naming, |pane, naming| {
                 pane.child(self.naming_row(naming, cx))
             })
     }
 
-    fn playlists_order(&self, cx: &mut Context<Self>) -> Div {
+    pub(crate) fn playlists_order(&self, cx: &mut Context<Self>) -> Div {
         let library = self.library.read(cx);
         let held = library.playlist_order();
         let reading = library.playlist_reading();
 
-        self.order_row(
-            sorting::Chips {
-                orders: "playlist-order",
-                readings: "playlist-reading",
-            },
+        self.order_choices(
             held,
             reading,
             |this, order, cx| {
@@ -671,37 +667,45 @@ impl RootView {
     fn search_shape(&self, cx: &mut Context<Self>) -> Div {
         let cap = self.query_cap;
 
-        let mut caps = sorting::shape("Rows");
+        let mut caps = kit::segmented();
         for (index, held) in CAPS.into_iter().enumerate() {
             caps = caps.child(self.in_the_pane_ring(
-                kit::chip(("search-cap", index), capped(held), held == cap),
+                kit::segment(("search-cap", index), capped(held), held == cap),
                 move |this, _, cx| this.cap_a_search(held, cx),
                 cx,
             ));
         }
+        let ordered_as = format!(
+            "{} · {}",
+            self.query_sort.named(),
+            self.query_sort.read(self.query_reading)
+        );
 
-        self.order_row(
-            sorting::Chips {
-                orders: "search-order",
-                readings: "search-reading",
-            },
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(sorting::shape("Order").child(self.in_the_pane_ring(
+                kit::pick("search-order", ordered_as, SEARCH_ORDER_HINT),
+                |this, window, cx| this.order_a_listing(Ordered::SavedSearch, window, cx),
+                cx,
+            )))
+            .child(sorting::shape("Rows").child(caps))
+            .when_some(cap.filter(|_| !CAPS.contains(&cap)), |shape, held| {
+                shape.child(div().text_xs().text_color(rgb(theme::faint())).child(
+                    SharedString::from(format!("{held} rows is the cap, which is none of these.")),
+                ))
+            })
+    }
+
+    pub(crate) fn search_in_order(&self, cx: &mut Context<Self>) -> Div {
+        self.order_choices(
             self.query_sort,
             self.query_reading,
             |this, order, cx| this.sort_a_search(order, cx),
             |this, reading, cx| this.read_a_search(reading, cx),
             cx,
         )
-        .child(caps)
-        .when_some(cap.filter(|_| !CAPS.contains(&cap)), |shape, held| {
-            shape.child(
-                div()
-                    .text_xs()
-                    .text_color(rgb(theme::faint()))
-                    .child(SharedString::from(format!(
-                        "{held} rows is the cap, which is none of these."
-                    ))),
-            )
-        })
     }
 
     pub(crate) fn name_field(&self, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -876,7 +880,6 @@ impl RootView {
         let rows = named
             .as_ref()
             .map_or(Rows::InHand, |held| Rows::of(held, narrowed));
-        let sorting = self.sorting == Some(opened) && rows.are_edited() && !entries.is_empty();
         let shown = entries.len();
         let undoable = library.undoable();
         let redoable = library.redoable();
@@ -1011,15 +1014,8 @@ impl RootView {
                     cx,
                 ))
                 .child(self.in_the_pane_ring(
-                    kit::icon_button("sort-playlist", Icon::Sort, SORT_HINT).when(
-                        sorting,
-                        |button| {
-                            button
-                                .bg(rgb(theme::hover()))
-                                .text_color(rgb(theme::text()))
-                        },
-                    ),
-                    move |this, _, cx| this.sort_a_playlist(opened, cx),
+                    kit::icon_button("sort-playlist", Icon::Sort, SORT_HINT),
+                    move |this, window, cx| this.sort_a_playlist(opened, window, cx),
                     cx,
                 ))
             })
@@ -1180,23 +1176,23 @@ impl RootView {
             )))
             .child(kit::hero().child(art).child(about))
             .when(!reads.is_empty(), |pane| pane.child(listing::reads(&reads)))
-            .when(sorting, |pane| pane.child(self.rows_in_order(opened, cx)))
             .when_some(naming, |pane, naming| {
                 pane.child(self.naming_row(naming, cx))
             })
     }
 
-    fn rows_in_order(&self, opened: PlaylistId, cx: &mut Context<Self>) -> Div {
+    pub(crate) fn rows_in_order(&self, opened: PlaylistId, cx: &mut Context<Self>) -> Div {
         let keeping = self.keeping;
-        let mut keeps = sorting::shape("Keeps");
+        let mut keeps = kit::segmented().w_full();
         for (index, (label, wanted, saying)) in KEEPING.into_iter().enumerate() {
             keeps = keeps.child(
                 self.in_the_pane_ring(
-                    kit::chip(
+                    kit::segment(
                         ("row-keeping", index),
                         SharedString::new_static(label),
                         wanted == keeping,
                     )
+                    .flex_1()
                     .names(saying),
                     move |this, _, cx| {
                         this.keep_in_order(opened, wanted, cx);
@@ -1206,18 +1202,14 @@ impl RootView {
             );
         }
 
-        self.order_row(
-            sorting::Chips {
-                orders: "row-order",
-                readings: "row-reading",
-            },
+        self.order_choices(
             self.row_order,
             self.row_reading,
             move |this, order, cx| this.put_in_order(opened, order, this.row_reading, cx),
             move |this, reading, cx| this.put_in_order(opened, this.row_order, reading, cx),
             cx,
         )
-        .child(keeps)
+        .child(kit::field("Keep this order", keeps).flex_none())
     }
 
     pub(crate) fn playing_playlist(&self, cx: &App) -> Option<PlaylistId> {

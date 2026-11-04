@@ -1,18 +1,26 @@
-use gpui::{Context, Div, ParentElement as _, SharedString, Styled as _, div};
+use gpui::{
+    BoxShadow, Context, Div, FontWeight, SharedString, Window, div, point, prelude::*, px,
+    relative, rgb, rgba,
+};
+use resonate_core::PlaylistId;
 use resonate_library::{AlbumOrder, ArtistOrder, Direction, PlaylistOrder, RowOrder, SortOrder};
 
 use crate::{
-    theme,
+    icons::{self, Icon},
+    motion, theme,
     views::{
-        hint::Names as _,
-        kit,
+        kit::{self, Tone},
         listing::{Sortable, Sorted},
         root::RootView,
+        sheets,
+        spoken::Spoken,
     },
 };
 
-const ORDER_HINT: &str = "What the list is put in order by";
-const READING_HINT: &str = "Which way round that order runs";
+const CLOSE_HINT: &str = "Close";
+const DONE_HINT: &str = "Close, keeping this order";
+const ORDER_BY: &str = "Order by";
+const DIRECTION: &str = "Direction";
 
 pub(crate) trait Ordering: Copy + PartialEq + 'static {
     const EVERY: &'static [Self];
@@ -31,50 +39,166 @@ pub(crate) fn shape(label: &'static str) -> Div {
         .child(kit::eyebrow(label).w(theme::width(theme::field_label())))
 }
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Chips {
-    pub(crate) orders: &'static str,
-    pub(crate) readings: &'static str,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Ordered {
+    Tracks,
+    Albums,
+    Artists,
+    Playlists,
+    Rows(PlaylistId),
+    Queue,
+    SavedSearch,
+}
+
+impl Ordered {
+    const fn title(self) -> &'static str {
+        match self {
+            Self::Tracks => "Sort songs",
+            Self::Albums => "Sort albums",
+            Self::Artists => "Sort artists",
+            Self::Playlists => "Sort playlists",
+            Self::Rows(_) => "Sort this playlist",
+            Self::Queue => "Sort the queue",
+            Self::SavedSearch => "Sort this search",
+        }
+    }
 }
 
 impl RootView {
-    pub(crate) fn order_row<O: Ordering>(
+    pub(crate) fn order_a_listing(
+        &mut self,
+        ordered: Ordered,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.remember_the_opener(window, cx);
+        self.ordering = Some(ordered);
+        cx.notify();
+    }
+
+    pub(crate) fn close_the_order(&mut self, cx: &mut Context<Self>) {
+        self.ordering = None;
+        cx.notify();
+    }
+
+    pub(crate) fn order_sheet(&self, ordered: Ordered, cx: &mut Context<Self>) -> Div {
+        let choices = match ordered {
+            Ordered::Tracks => self.tracks_in_order(cx),
+            Ordered::Albums => self.albums_in_order(cx),
+            Ordered::Artists => self.artists_in_order(cx),
+            Ordered::Playlists => self.playlists_order(cx),
+            Ordered::Rows(opened) => self.rows_in_order(opened, cx),
+            Ordered::Queue => self.queue_in_order(cx),
+            Ordered::SavedSearch => self.search_in_order(cx),
+        };
+        let title = ordered.title();
+
+        let heading = div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap_2()
+            .child(icons::icon(Icon::Sort, 18.0, theme::accent()))
+            .child(
+                div()
+                    .id("order-heading")
+                    .headed(2, title)
+                    .flex_1()
+                    .text_size(px(theme::text_lg()))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(rgb(theme::text()))
+                    .child(title),
+            )
+            .child(self.in_the_pane_ring(
+                kit::icon_button("order-close", Icon::Close, CLOSE_HINT),
+                |this, _, cx| this.close_the_order(cx),
+                cx,
+            ));
+        let foot = div()
+            .flex()
+            .flex_none()
+            .justify_end()
+            .child(self.in_the_pane_ring(
+                kit::button("order-done", None, "Done", DONE_HINT, Tone::Primary),
+                |this, _, cx| this.close_the_order(cx),
+                cx,
+            ));
+        let card = div()
+            .id("order-sheet")
+            .dialog(title)
+            .track_focus(&self.sheet_panels.holding(sheets::ORDER_PANEL, cx))
+            .flex()
+            .flex_col()
+            .gap_4()
+            .w(px(theme::order_width()))
+            .max_h(relative(MOST_OF_THE_WINDOW))
+            .p_5()
+            .rounded_xl()
+            .bg(rgb(theme::surface()))
+            .border_1()
+            .border_color(rgb(theme::border()))
+            .shadow(vec![BoxShadow {
+                color: theme::shadow(0.5),
+                offset: point(px(0.0), px(16.0)),
+                blur_radius: px(48.0),
+                spread_radius: px(0.0),
+                inset: false,
+            }])
+            .on_mouse_down_out(cx.listener(|this, _, _, cx| this.close_the_order(cx)))
+            .child(heading)
+            .child(choices)
+            .child(foot);
+
+        div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(rgba(theme::scrim()))
+            .occlude()
+            .child(motion::lifted_in(card, "order-sheet-arrives"))
+    }
+
+    pub(crate) fn order_choices<O: Ordering>(
         &self,
-        named: Chips,
         held: O,
         reading: Direction,
         order_by: impl Fn(&mut RootView, O, &mut Context<RootView>) + Clone + 'static,
         read_as: impl Fn(&mut RootView, Direction, &mut Context<RootView>) + Clone + 'static,
         cx: &mut Context<RootView>,
     ) -> Div {
-        let mut orders = shape("Order");
+        let mut orders = div()
+            .id("order-choices")
+            .flex()
+            .flex_col()
+            .gap_0p5()
+            .min_h(px(0.0))
+            .overflow_y_scroll();
         for (index, order) in O::EVERY.iter().copied().enumerate() {
             let chosen = order_by.clone();
-            orders = orders.child(
-                self.in_the_pane_ring(
-                    kit::chip(
-                        (named.orders, index),
-                        SharedString::new_static(order.named()),
-                        order == held,
-                    )
-                    .names(ORDER_HINT),
-                    move |this, _, cx| chosen(this, order, cx),
-                    cx,
+            orders = orders.child(self.in_the_pane_ring(
+                kit::radio_row(
+                    ("order-choice", index),
+                    SharedString::new_static(order.named()),
+                    order == held,
                 ),
-            );
+                move |this, _, cx| chosen(this, order, cx),
+                cx,
+            ));
         }
 
-        let mut readings = shape("Reading");
+        let mut readings = kit::segmented().w_full();
         for (index, direction) in Direction::ALL.into_iter().enumerate() {
             let taken = read_as.clone();
             readings = readings.child(
                 self.in_the_pane_ring(
-                    kit::chip(
-                        (named.readings, index),
+                    kit::segment(
+                        ("order-reading", index),
                         SharedString::new_static(held.read(direction)),
                         direction == reading,
                     )
-                    .names(READING_HINT),
+                    .flex_1(),
                     move |this, _, cx| taken(this, direction, cx),
                     cx,
                 ),
@@ -84,11 +208,22 @@ impl RootView {
         div()
             .flex()
             .flex_col()
-            .gap_2()
-            .child(orders)
-            .child(readings)
+            .gap_4()
+            .min_h(px(0.0))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .min_h(px(0.0))
+                    .child(kit::field_name(ORDER_BY))
+                    .child(orders),
+            )
+            .child(kit::field(DIRECTION, readings).flex_none())
     }
 }
+
+const MOST_OF_THE_WINDOW: f32 = 0.9;
 
 impl Ordering for PlaylistOrder {
     const EVERY: &'static [Self] = &Self::ALL;

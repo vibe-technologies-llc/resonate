@@ -300,12 +300,13 @@ impl RootView {
     }
 
     fn wrapped_foot(&self, deck: &Deck, cx: &mut Context<Self>) -> Div {
-        let mut years = div().flex().flex_1().flex_wrap().items_center().gap_1p5();
+        let mut years = div().flex().flex_1().items_center();
         if deck.years.len() > 1 {
+            let mut offered = kit::segmented();
             for (index, year) in deck.years.iter().copied().enumerate() {
-                years = years.child(
+                offered = offered.child(
                     self.in_the_pane_ring(
-                        kit::chip(
+                        kit::segment(
                             ("wrapped-year", index),
                             SharedString::from(year.to_string()),
                             year == deck.review.year,
@@ -316,6 +317,7 @@ impl RootView {
                     ),
                 );
             }
+            years = years.child(offered);
         }
         let holds_anything = deck.review.holds_anything();
 

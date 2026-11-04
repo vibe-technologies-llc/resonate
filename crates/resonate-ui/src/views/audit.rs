@@ -4,7 +4,7 @@ mod tests {
 
     const CLICKED: &str = ".on_click(";
 
-    const NAMES_A_ROLE: [&str; 17] = [
+    const NAMES_A_ROLE: [&str; 19] = [
         "said_as(",
         "named_as(",
         "listed_as(",
@@ -18,7 +18,9 @@ mod tests {
         "kit::button(",
         "kit::icon_button(",
         "kit::segment(",
-        "kit::chip(",
+        "kit::pick(",
+        "kit::radio_row(",
+        "kit::checkbox(",
         "kit::star(",
         "kit::choice_row(",
         "kit::dot_swatch(",

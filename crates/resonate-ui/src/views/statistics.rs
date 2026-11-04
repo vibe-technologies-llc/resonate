@@ -458,11 +458,11 @@ impl RootView {
         counts: Statistics,
         cx: &mut Context<Self>,
     ) -> Div {
-        let mut chosen = sorting::shape("Window");
+        let mut windows = kit::segmented();
         for (index, offered) in Window::ALL.into_iter().enumerate() {
-            chosen = chosen.child(
+            windows = windows.child(
                 self.in_the_pane_ring(
-                    kit::chip(
+                    kit::segment(
                         ("statistics-window", index),
                         SharedString::new_static(spelled(offered)),
                         offered == window,
@@ -477,6 +477,7 @@ impl RootView {
                 ),
             );
         }
+        let chosen = sorting::shape("Window").child(windows);
 
         kit::heading()
             .child(

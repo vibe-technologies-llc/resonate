@@ -20,6 +20,8 @@ pub(crate) const WRAPPED_PANEL: &str = "wrapped-panel";
 
 pub(crate) const SHARING_PANEL: &str = "sharing-panel";
 
+pub(crate) const ORDER_PANEL: &str = "order-panel";
+
 pub(crate) const KEEP_THE_TRACK: &str = "keep-the-track";
 
 pub(crate) const LISTEN_CLOSE: &str = "listen-close";
@@ -33,6 +35,7 @@ pub(crate) enum Sheet {
     Recording,
     Wrapped,
     Sharing,
+    Ordering,
     Menu,
 }
 
@@ -53,6 +56,7 @@ impl Sheet {
             Self::Recording => Some(RECORD_PANEL),
             Self::Wrapped => Some(WRAPPED_PANEL),
             Self::Sharing => Some(SHARING_PANEL),
+            Self::Ordering => Some(ORDER_PANEL),
             Self::Menu => None,
         }
     }
@@ -65,6 +69,7 @@ impl Sheet {
             Self::Recording => Welcome::Panel(RECORD_PANEL),
             Self::Wrapped => Welcome::Panel(WRAPPED_PANEL),
             Self::Sharing => Welcome::Panel(SHARING_PANEL),
+            Self::Ordering => Welcome::Panel(ORDER_PANEL),
             Self::Naming | Self::Menu => Welcome::Nowhere,
         }
     }
@@ -146,6 +151,8 @@ impl RootView {
             Some(Sheet::Wrapped)
         } else if self.sharing.is_some() {
             Some(Sheet::Sharing)
+        } else if self.ordering.is_some() {
+            Some(Sheet::Ordering)
         } else if self.menu.is_some() {
             Some(Sheet::Menu)
         } else {
@@ -293,6 +300,7 @@ mod tests {
         );
         assert_eq!(Sheet::Listening.welcome(), Welcome::Control(LISTEN_CLOSE));
         assert_eq!(Sheet::Magnifying.welcome(), Welcome::Panel(MAGNIFIER_PANEL));
+        assert_eq!(Sheet::Ordering.welcome(), Welcome::Panel(ORDER_PANEL));
         assert_eq!(Sheet::Naming.welcome(), Welcome::Nowhere);
         assert_eq!(Sheet::Menu.panel(), None);
     }

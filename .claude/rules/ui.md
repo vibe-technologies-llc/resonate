@@ -233,7 +233,7 @@ is never named.
   (`close_what_stands_over_the_pane`) first and lets the control go only where nothing stands there:
   a sheet's focus lands on its safe control, and escape there still closes the sheet. Order, over-the-pane before
   beside-it: delete sheet (`keep_the_track`), Listen sheet, magnified cover, playlist picker
-  (`stop_naming`), shown record, open menu, downloads panel, standing toast (`toast::dismiss`), live
+  (`stop_naming`), shown record, Wrapped, sharing, Sort dialogue, open menu, downloads panel, standing toast (`toast::dismiss`), live
   type-ahead (`stop_typing`), then `dismiss_search`: close the naming row, clear the query, or (query
   empty) `RootView::step_back`. A scoped search takes two presses, words then scope: typing is not a
   gesture on the scope (`LibraryModel::set_query` leaves `selection` alone); callers meaning the whole
@@ -244,7 +244,7 @@ is never named.
     needs its own `dismiss_search` arm (the AutoEq search's `leave_looking`;
     `escape_in_the_autoeq_search_clears_it_and_leaves_the_pane_where_it_was`).
 - **What stands over the pane holds the pane's keys back.** A menu, playlist picker, magnified cover,
-  record card, Listen sheet or delete sheet is `something_stands_over_the_pane`; meanwhile reach,
+  record card, Listen sheet, Sort dialogue or delete sheet is `something_stands_over_the_pane`; meanwhile reach,
   page, widen, move, `enter`, `delete`, undo, redo and typed letters answer nothing. The check sits in
   each gesture, not the bindings; `reach_row` and `play_reached_rows` step and press the menu first.
   Escape is the one key still heard (`views/root.rs`'s driven tests hold each sheet).
@@ -376,9 +376,19 @@ is never named.
   accent fill, the one gesture a heading leads with (*Play*). `Tone::Outlined` = raised secondary
   (*Play next*/*Add to queue*, one pair one tone). `Tone::Destructive` = failure-edged, only for
   losing something for good. `Tone::Ghost` = everything else. `kit::icon_button` = the square
-  version; `kit::chip` = pill an order, reading, cap or setting is chosen from; `kit::badge` = small
+  version; `kit::badge` = small
   mono tag; `kit::format_badge` = codec badge beside depth and rate from `format::quality` (*24-bit /
   96 kHz*, never `24/96`), coloured by `Codec::is_lossless`.
+- **A choice is drawn by what it is, never a row of pills.** A few short values, one held:
+  `kit::segmented` over `kit::segment`s (a statistics window, a Wrapped year, a lyric reading, a row
+  cap, a speaker's place). A list with a long name or an open end: `kit::pick`, the held value and a
+  chevron, its press opening a `Menu` of `Menu::chooses` entries, a check on the held one and room kept
+  on the rest (*Fit toward*, *Preferred measurer*, *Heard through*; `pick` on a band's kind opens the
+  segments under its row). Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
+  sheet's microphones, the Sort dialogue's orders). Several held at once: `kit::checkbox`es in a
+  fixed-width grid (Filters). A value moved by a step: `kit::stepper` holding two `kit::step`s and a
+  `kit::stepper_reading` (the speaker's degrees; `stepper_reading_put_back` where a press restores it,
+  the lyric timing).
 - **Pressability is the builder's decision; a greyed control carries no press at all.** `kit::Press` =
   `Takes` | `Greyed`; `kit::button_when` and `kit::mark_when` read it. `Greyed` draws at `kit::GREYED`,
   takes `cursor_default`, no hover style, pointer cursor, listener or focus ring: it must be decided
@@ -664,7 +674,8 @@ is never named.
     em dash (`named_by`: *Play — space* is *Play*) and describes it by the whole hint where that says
     more; `named_as` takes a visible label and keeps the hint as the description. The kit names its
     own: `kit::button`/`button_when` and the marks are buttons (greyed = AccessKit's disabled, through
-    `a11y_synthetic_children`), `star` and `chip` toggle buttons, `segment` a radio button;
+    `a11y_synthetic_children`), `star` a toggle button, `segment` and `radio_row` radio buttons, `pick` a combo box, `checkbox` a
+    check box;
     `settings::switch_row` and the Listen sheet's *Keep listening* are the switch, never the
     `kit::switch` mark inside them.
   - **What is spoken**: the playback bar is a group *Playback* holding *Now playing: title, artist*,
@@ -974,11 +985,11 @@ is never named.
 - **The pane always draws and scrolls the whole sheet; a reading is only how far the light reaches.**
   `Falloff::Around` looks only forward (`Reading::InPlay`); `Falloff::Across` steps down gently both ways
   (tail 0.16) for `Reading::Whole`. Drawing every line either way is what lets lines slide, not swap.
-  The choice is a heading chip living for the run; the pointer over the column (`near_the_words`,
+  The choice is a heading `kit::segmented` living for the run; the pointer over the column (`near_the_words`,
   via the `pointer_watch` idiom; an `on_hover` opened it from the empty gutters) or a scroll of your own
   opens it out: `LyricsModel::shows_every_line` weighs `following`, which runs out `HANDS_OFF` (6 s)
   after a hand scroll, and `spread` closes the sheet again over one `TURN`. An unsynced set has no lit
-  line (`ADRIFT`, no chip). **The sung line brightens; it does not grow**: gpui floors a glyph's vertical
+  line (`ADRIFT`, no choice). **The sung line brightens; it does not grow**: gpui floors a glyph's vertical
   origin to a whole pixel and cosmic-text hints every size, so a size in motion shimmers. A second voice
   takes the trailing edge (and the accent when lit); the falloff counts written lines, not rows.
 - **Motion: three `Turn`s on one 420 ms `TURN`, and a `Glide` on a cubic.** `Reads` (`At` a line,
@@ -1035,11 +1046,11 @@ is never named.
   moves**: `PlayerModel::refresh` answers `Poll::Quiet` when not playing, no sleep timer, no seek in
   flight and nothing changed, and after `QUIET_POLLS_BEFORE_RESTING` (30) the loop waits
   `RESTING_POLL_INTERVAL` (64 ms).
-- **A sheet that runs early or late is moved by the listener, for that track.** *Earlier*/*Later*
-  (`LyricsAhead::STEP_MS` 100, within `MOST_MS` 30 s; `resonate-library`'s `sung.rs`) are `Tone::Ghost`
-  buttons in time's order (`RootView::lyric_timing`), the offset a `Tone::Outlined` button between them
-  putting it back: as chips they read as two more choices of the *Reads* pair beside them, and a chip
-  is what a setting is chosen from. `look_for_lyrics` reads `Library::lyrics_ahead` into
+- **A sheet that runs early or late is moved by the listener, for that track.** A `kit::stepper` in time's order (`RootView::lyric_timing`;
+  `LyricsAhead::STEP_MS` 100, within `MOST_MS` 30 s; `resonate-library`'s `sung.rs`): minus is sooner,
+  plus later, and the reading between them is signed the same way (*−0.3 s*, `said_ahead`, though
+  `LyricsAhead` itself counts how far the words run ahead), lit and putting the sheet's own timing back
+  when pressed, faint at *0.0 s*, its width held so the marks stay under the pointer. `look_for_lyrics` reads `Library::lyrics_ahead` into
   `LyricsModel::hold_ahead`; `nudge_the_lyrics` writes `Library::hold_lyrics_ahead`. The pane reads every
   line at `ahead.read(clock)`; a line press seeks to `ahead.back(moment)`
   (`RootView::seek_to_moment`, clamped to the duration). A wheel sets `led_by_hand` (no following for
@@ -1089,7 +1100,7 @@ is never named.
   `ResonateApp` global as `run` does (`Player` over an `Unplugged` backend; in-memory `Library`;
   `Ephemeral` settings; `Places` in a temporary folder) and opens a real `RootView` in an activated
   `VisualTestContext`. It presses, right-presses, drags, scrolls and moves the pointer at bounds gpui
-  drew, read via `debug_selector`: `kit::Found::found_as` names every button, chip, segment, switch,
+  drew, read via `debug_selector`: `kit::Found::found_as` names every button, pick, segment, switch,
   choice and mark by `ElementId`; rows, tabs, menu entries, surfaces name themselves (`tab-visualiser`,
   `track-<id>`, `queued-<id>`, `menu-entry-<n>`, `picker-<id>`, `equaliser-curve`). `Driven::settle`
   runs the executor until it parks and advances the test clock a frame; `Driven::until` waits on the
@@ -1664,8 +1675,8 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   the naming row). It emits `Submitted` on enter; `RootView::name_given` decides from whichever is open:
   create, create-and-add, rename, or save/revise a search. The `Naming` variant (`Query` under
   *tracks*, `New`/`Rename` under playlists) picks the heading drawing the row (one entity can't be in
-  the frame twice). Order and cap ride beside the name as chips (a saved query = search, order, row
-  cap). *Edit search* = `RootView::revise_search`. The Online card's fields follow one pattern:
+  the frame twice). The row cap rides beside the name as segments and the order as a `kit::pick` opening the
+  Sort dialogue on `Ordered::SavedSearch` (a saved query = search, order, row cap). *Edit search* = `RootView::revise_search`. The Online card's fields follow one pattern:
   `RootView::contact` is filled by `Field::hold` (the saved contact is in the box when the window opens,
   put back trimmed on enter); `contact_given` stores `Setting::Contact`, moves the global, reports it
   is sent from the next request (`online.md`); press outside = `leave_contact` (gives typed text if it
@@ -1799,8 +1810,8 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   `kit::section`s (header strip: title, revert mark, info mark). Body scrolls under
   `RootView::settings_scroll`; `show_settings` resets it on category change (gpui keys scroll offset by
   element id).
-- **Filters** (groups `MusicExtensions`, `MinimumLength`): one wrapping multi-select of `kit::chip`s with
-  a checkmark when included (the slot keeps its size when cleared), all selected by default; *Select
+- **Filters** (groups `MusicExtensions`, `MinimumLength`): a wrapping grid of `kit::checkbox`es,
+  all ticked by default; *Select
   all*/*Clear selection* greyed where they would change nothing. Minimum: seconds field, 0 to 600,
   applied on Enter or leaving (a positive minimum excludes tracks of unknown length); a refused number
   stays in the field and toasts; Escape restores the held value.
@@ -2031,7 +2042,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   bounded `read_albums` the next listing load discards). **The queue pane's per-row weighing is off the
   render thread**: `queue_heading`'s total is measured once per queue and library revision in the
   background (`queued_rows`, `QueueMeasure`), reading *at least* it where a row has no scanned length
-  (`QueueLength::unmeasured`); a sort chip keys every row in the background too (`ordered_rows`),
+  (`QueueLength::unmeasured`); a sort keys every row in the background too (`ordered_rows`),
   sending the order only if the queue is still the revision it keyed.
 - **A row is keyed by what it holds, not where it stands.** gpui keeps tooltip, hover and drag in
   element state under the id path: an index-keyed row handed row N's tooltip to whatever an edit moved
@@ -2207,13 +2218,13 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   Recording and asking run on the background executor. `listen` takes whether Online is on *now*
   (`RootView::listen_now`): off = `Offline`, nothing recorded; on with no recogniser = `NoService`, saying
   they come at the next start (`online_switched_on_in_this_run_is_not_said_to_be_off`). The recording
-  note names the source in the stage, not the one chosen; source segments and microphone chips take no
+  note names the source in the stage, not the one chosen; source segments and microphone rows take no
   press while `is_listening` and `listen_from` refuses one
   (`a_source_pressed_while_recording_is_refused_and_the_recording_names_its_own`). A found song is a
   card: cover at `theme::listen_cover()`, title, artist, album, year, naming service, *Listen again*,
   *Open* where the service gave a link, *Find it* (`search_instead` + `choose_pane(Pane::Tracks)`), laid
   in `sheet_actions` (`kit::actions` is a heading's row pushed right). The last `HEARD_KEPT` (8) songs
-  stay listed for the run. *Desktop*/*Microphone* = a `kit::segmented` over chips of the microphones
+  stay listed for the run. *Desktop*/*Microphone* = a `kit::segmented` over `kit::radio_row`s of the microphones
   PipeWire offers (listed each time the sheet opens), written back as `listen-from`; Online's *Listening*
   group writes the same key and `listen-for`; *Recognition* has the AudD token beside the AcoustID key
   (read at the next start); *ListenBrainz* is the `listenbrainz-token` field, not read at next start (the
@@ -2238,15 +2249,22 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   `uniform_list` row; a one-part queue draws none. Heard rows draw at `HEARD_FADED` (0.55). Gestures
   still speak in queue rows; `QueueParts::line_of`/`line` are the one mapping to the list's lines
   (`every_row_is_shown_at_the_line_that_draws_it`).
-- **Every major listing is ordered from a chip row and a header.** Tracks, albums, artists each hold an
+- **Every major listing is ordered from a dialogue and a header.** Tracks, albums, artists each hold an
   order and a reading on `LibraryModel::sorting`, kept for the run. Two writers: a sort icon opening the
-  ORDER and READS chips, and the pressable column header (a press names the order; a second on the one
+  Sort dialogue, and the pressable column header (a press names the order; a second on the one
   in force reverses it; the column in force wears the accent and a chevron). `views/sorting.rs`:
-  `Ordering` is the trait the five order enums implement, `sorting::order_row` the one chip-row builder;
+  `Ordering` is the trait the five order enums implement. **The dialogue is one sheet**
+  (`RootView::ordering`, an `Ordered` naming what it sorts: tracks, albums, artists, playlists, a
+  playlist's rows, the queue, a search being saved; `Sheet::Ordering`): `order_sheet` over
+  `order_choices`, the orders as `kit::radio_row`s (scrolling where a short window cuts them) and the
+  direction as two `kit::segment`s worded for the order held (*A to Z*, *Newest first*), a playlist's rows
+  adding *Keep this order*. A press applies at once and leaves it open to take the direction too; *Done*,
+  its mark, a press outside or escape close it, the focus going back to what opened it, the name field
+  while a search is named (`the_sort_mark_opens_a_dialogue_that_orders_the_tracks_and_leaves_by_every_way_out`).
   `listing::columns` takes a `Sorted` descriptor (columns offered, which is in force, a `fn` pointer for
   the press), so tracks pane, queue and opened playlist draw one header. A right press on a header
   offers every order.
-- **The queue is ordered as a gesture, not a standing order**: its heading's sort icon sends one
+- **The queue is ordered as a gesture, not a standing order**: each press in its Sort dialogue sends one
   `Command::Order` (a permutation over the rows the window draws); the engine rewrites the play order in
   one pass with the cursor re-seated, so a mid-track sort reopens no stream. *Clear* sends one
   `Command::Remove` over the whole span. The reach lives for the run, escape clears it.

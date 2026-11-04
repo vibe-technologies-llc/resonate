@@ -85,6 +85,7 @@ struct Entry {
     icon: Option<Icon>,
     label: SharedString,
     key: Option<SharedString>,
+    chosen: Option<bool>,
     takes: Takes,
 }
 
@@ -190,6 +191,23 @@ impl Menu {
             icon: Some(icon),
             label: label.into(),
             key: None,
+            chosen: None,
+            takes: Takes::Press(Rc::new(does)),
+        });
+        self
+    }
+
+    pub(crate) fn chooses(
+        mut self,
+        label: impl Into<SharedString>,
+        chosen: bool,
+        does: impl Fn(&mut RootView, &mut Window, &mut Context<RootView>) + 'static,
+    ) -> Self {
+        self.entries.push(Entry {
+            icon: chosen.then_some(Icon::Check),
+            label: label.into(),
+            key: None,
+            chosen: Some(chosen),
             takes: Takes::Press(Rc::new(does)),
         });
         self
@@ -207,6 +225,7 @@ impl Menu {
                 icon: Some(icon),
                 label: label.into(),
                 key: None,
+                chosen: None,
                 takes: Takes::Opens {
                     entries: Rc::from(filled.entries),
                     drawn: Rc::default(),
@@ -243,6 +262,7 @@ impl Menu {
                 icon: None,
                 label: SharedString::new_static(""),
                 key: None,
+                chosen: None,
                 takes: Takes::Nothing,
             });
         }
@@ -651,6 +671,10 @@ impl RootView {
                     MENU_GROUP,
                 ))
             })
+            .when(entry.chosen == Some(false), |row| {
+                row.child(div().flex_none().size(px(theme::menu_icon())))
+            })
+            .when_some(entry.chosen, |row, chosen| row.thrown(chosen))
             .child(
                 div()
                     .flex_1()

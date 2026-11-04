@@ -53,14 +53,14 @@ const PRESS_HINT: &str = "Press any line to jump the transport to the moment it 
                           scroll of your own holds the pane where you leave it until Follow puts \
                           it back on the track.";
 
-const EARLIER_HINT: &str = "The words come a tenth of a second sooner, for a sheet that runs \
-                            late. Kept for this track.";
+const EARLIER_HINT: &str = "Earlier — the words come a tenth of a second sooner, for a sheet \
+                            that runs late. Kept for this track.";
 
-const LATER_HINT: &str = "The words come a tenth of a second later, for a sheet that runs early. \
-                          Kept for this track.";
+const LATER_HINT: &str = "Later — the words come a tenth of a second later, for a sheet that runs \
+                          early. Kept for this track.";
 
-const PUT_BACK_HINT: &str = "How far the words run ahead of the track. Press to put them back on \
-                             the sheet's own timing.";
+const PUT_BACK_HINT: &str = "How far the words are moved, minus for sooner and plus for later. \
+                             Press to put them back on the sheet's own timing.";
 
 const WORD_SYNCED: &str = "WORD-SYNCED";
 
@@ -266,24 +266,30 @@ impl RootView {
                             ))
                         })
                         .when(synced, |actions| {
-                            actions.children(Reading::ALL.into_iter().enumerate().map(
-                                |(index, reading)| {
-                                    self.in_the_pane_ring(
-                                        kit::chip(
-                                            ("lyric-reading", index),
-                                            reading.label(),
-                                            reading == chosen,
-                                        )
-                                        .names(reading.about()),
-                                        move |this, _, cx| {
-                                            this.lyrics
-                                                .update(cx, |model, _| model.read_as(reading));
-                                            cx.notify();
-                                        },
-                                        cx,
-                                    )
-                                },
-                            ))
+                            actions.child(
+                                kit::segmented().children(
+                                    Reading::ALL
+                                        .into_iter()
+                                        .enumerate()
+                                        .map(|(index, reading)| {
+                                            self.in_the_pane_ring(
+                                                kit::segment(
+                                                    ("lyric-reading", index),
+                                                    reading.label(),
+                                                    reading == chosen,
+                                                )
+                                                .names(reading.about()),
+                                                move |this, _, cx| {
+                                                    this.lyrics.update(cx, |model, _| {
+                                                        model.read_as(reading)
+                                                    });
+                                                    cx.notify();
+                                                },
+                                                cx,
+                                            )
+                                        }),
+                                ),
+                            )
                         })
                         .when(synced, |actions| {
                             actions
@@ -307,34 +313,32 @@ impl RootView {
     }
 
     fn lyric_timing(&self, ahead: LyricsAhead, cx: &mut Context<Self>) -> Div {
-        div()
-            .flex()
-            .flex_none()
-            .items_center()
+        let reading = match ahead.is_zero() {
+            true => kit::stepper_reading(said_ahead(ahead))
+                .text_color(rgb(theme::faint()))
+                .into_any_element(),
+            false => self
+                .in_the_pane_ring(
+                    kit::stepper_reading_put_back("lyrics-ahead", said_ahead(ahead), PUT_BACK_HINT),
+                    |this, _, cx| {
+                        this.nudge_the_lyrics(LyricsAhead::ZERO, cx);
+                    },
+                    cx,
+                )
+                .into_any_element(),
+        };
+
+        kit::stepper()
             .child(self.in_the_pane_ring(
-                kit::button("lyrics-earlier", None, "Earlier", EARLIER_HINT, Tone::Ghost),
+                kit::step("lyrics-earlier", Icon::Minus, EARLIER_HINT),
                 move |this, _, cx| {
                     this.nudge_the_lyrics(ahead.earlier(), cx);
                 },
                 cx,
             ))
-            .when(!ahead.is_zero(), |timing| {
-                timing.child(self.in_the_pane_ring(
-                    kit::button(
-                        "lyrics-ahead",
-                        None,
-                        said_ahead(ahead),
-                        PUT_BACK_HINT,
-                        Tone::Outlined,
-                    ),
-                    |this, _, cx| {
-                        this.nudge_the_lyrics(LyricsAhead::ZERO, cx);
-                    },
-                    cx,
-                ))
-            })
+            .child(reading)
             .child(self.in_the_pane_ring(
-                kit::button("lyrics-later", None, "Later", LATER_HINT, Tone::Ghost),
+                kit::step("lyrics-later", Icon::Plus, LATER_HINT),
                 move |this, _, cx| {
                     this.nudge_the_lyrics(ahead.later(), cx);
                 },
@@ -1038,7 +1042,11 @@ const MILLIS_PER_SECOND: f64 = 1_000.0;
 
 fn said_ahead(ahead: LyricsAhead) -> String {
     let seconds = f64::from(ahead.millis()) / MILLIS_PER_SECOND;
-    let sign = if ahead.millis() > 0 { "+" } else { "−" };
+    let sign = match ahead.millis() {
+        0 => "",
+        sooner if sooner > 0 => "−",
+        _ => "+",
+    };
     format!("{sign}{:.1} s", seconds.abs())
 }
 
@@ -1047,12 +1055,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn how_far_the_words_run_ahead_is_said_in_tenths_of_a_second_with_its_sign() {
+    fn how_far_the_words_are_moved_is_said_in_tenths_of_a_second_minus_for_sooner() {
         let ahead = |millis| LyricsAhead::of_millis(millis).expect("within reach");
 
-        assert_eq!(said_ahead(ahead(300)), "+0.3 s");
-        assert_eq!(said_ahead(ahead(-1_200)), "−1.2 s");
-        assert_eq!(said_ahead(LyricsAhead::ZERO.earlier()), "+0.1 s");
+        assert_eq!(said_ahead(ahead(300)), "−0.3 s");
+        assert_eq!(said_ahead(ahead(-1_200)), "+1.2 s");
+        assert_eq!(said_ahead(LyricsAhead::ZERO.earlier()), "−0.1 s");
+        assert_eq!(said_ahead(LyricsAhead::ZERO.later()), "+0.1 s");
+        assert_eq!(said_ahead(LyricsAhead::ZERO), "0.0 s");
     }
 
     fn crediting(credits: Credits) -> Option<Credit> {

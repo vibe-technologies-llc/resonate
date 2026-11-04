@@ -25,6 +25,8 @@ use crate::{
 
 const LISTEN_LABEL: &str = "Listen";
 
+const MICROPHONES_DRAWN_AT_MOST: f32 = 168.0;
+
 const LISTEN_HINT: &str = "Listen again to whatever is sounding";
 const STOP_HINT: &str = "Stop listening";
 const CLOSE_HINT: &str = "Close";
@@ -234,30 +236,40 @@ impl RootView {
             .when(listening, |sources| sources.opacity(0.6))
             .child(row)
             .when(choices, |sources| {
-                sources.child(microphones.iter().enumerate().fold(
-                    div().flex().flex_wrap().gap_1p5(),
-                    |chips, (index, (name, described))| {
-                        let node = name.clone();
-                        let chip = kit::chip(
-                            ("listen-microphone-choice", index),
-                            described.clone(),
-                            chosen.as_deref() == Some(name.as_str()),
-                        );
-                        chips.child(match pressable {
-                            true => self.in_the_pane_ring(
-                                chip,
-                                move |this, _, cx| {
-                                    this.listen_from(
-                                        Listening::Microphone(Some(NodeName::new(node.clone()))),
-                                        cx,
-                                    );
-                                },
-                                cx,
-                            ),
-                            false => chip.cursor_default(),
-                        })
-                    },
-                ))
+                sources.child(
+                    microphones.iter().enumerate().fold(
+                        div()
+                            .id("listen-microphones")
+                            .flex()
+                            .flex_col()
+                            .gap_0p5()
+                            .max_h(px(MICROPHONES_DRAWN_AT_MOST))
+                            .overflow_y_scroll(),
+                        |rows, (index, (name, described))| {
+                            let node = name.clone();
+                            let row = kit::radio_row(
+                                ("listen-microphone-choice", index),
+                                described.clone(),
+                                chosen.as_deref() == Some(name.as_str()),
+                            );
+                            rows.child(match pressable {
+                                true => self.in_the_pane_ring(
+                                    row,
+                                    move |this, _, cx| {
+                                        this.listen_from(
+                                            Listening::Microphone(Some(NodeName::new(
+                                                node.clone(),
+                                            ))),
+                                            cx,
+                                        );
+                                    },
+                                    cx,
+                                ),
+                                false => row.cursor_default(),
+                            })
+                        },
+                    ),
+                )
             })
     }
 

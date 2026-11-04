@@ -977,6 +977,51 @@ mod tests {
     }
 
     #[gpui::test]
+    fn the_sort_mark_opens_a_dialogue_that_orders_the_tracks_and_leaves_by_every_way_out(
+        cx: &mut TestAppContext,
+    ) {
+        use resonate_library::{Direction, SortOrder};
+
+        use crate::views::sorting::Ordered;
+
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes", "Time"]);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        let ordering = |driven: &mut Driven| driven.read(|root, _| root.ordering);
+        let title = SortOrder::ALL
+            .iter()
+            .position(|order| *order == SortOrder::Title)
+            .expect("the tracks offer their title");
+
+        driven.click("order-tracks");
+        assert_eq!(ordering(&mut driven), Some(Ordered::Tracks));
+        assert!(driven.read(|root, _| root.something_stands_over_the_pane()));
+
+        driven.click(named("order-choice", title));
+        driven.click(named("order-reading", 1));
+        let sorting = driven.read(|root, cx| root.library.read(cx).sorting());
+        assert_eq!(sorting.tracks, SortOrder::Title);
+        assert_eq!(sorting.tracks_read, Direction::Descending);
+        assert_eq!(ordering(&mut driven), Some(Ordered::Tracks));
+
+        driven.click("order-done");
+        assert_eq!(ordering(&mut driven), None);
+
+        driven.click("order-tracks");
+        driven.click("order-close");
+        assert_eq!(ordering(&mut driven), None);
+
+        driven.click("order-tracks");
+        driven.cx.simulate_keystrokes("escape");
+        driven.settle();
+        assert_eq!(ordering(&mut driven), None);
+
+        driven.click("order-tracks");
+        driven.click_at(gpui::point(px(12.0), px(300.0)));
+        assert_eq!(ordering(&mut driven), None);
+    }
+
+    #[gpui::test]
     fn a_zone_added_is_shown_with_a_queue_of_its_own_and_switching_back_touches_neither(
         cx: &mut TestAppContext,
     ) {
@@ -4498,14 +4543,16 @@ mod tests {
         driven.click("tab-settings");
         driven.click("category-Equaliser");
 
-        driven.click("measurer-rtings");
+        driven.click("measurer");
+        pressed_in_the_menu(&mut driven, "rtings");
 
         assert_eq!(
             worn(&mut driven),
             (Some("rtings".to_owned()), Some("rtings".to_owned()))
         );
 
-        driven.click("measurer-best-ranked");
+        driven.click("measurer");
+        pressed_in_the_menu(&mut driven, "Best ranked");
 
         assert_eq!(worn(&mut driven), (None, None));
     }
@@ -4539,8 +4586,10 @@ mod tests {
         driven.click("tab-settings");
         driven.click("category-Equaliser");
 
-        driven.click("measurer-rtings");
-        driven.click("device-measurer-crinacle");
+        driven.click("measurer");
+        pressed_in_the_menu(&mut driven, "rtings");
+        driven.click("device-measurer");
+        pressed_in_the_menu(&mut driven, "crinacle");
 
         let (measurers, for_the_desk) = worn(&mut driven);
         assert_eq!(measurers.fallback.as_deref(), Some("rtings"));
@@ -4548,7 +4597,8 @@ mod tests {
         assert_eq!(measurers.by_sink.len(), 1);
         assert_eq!(for_the_desk.as_deref(), Some("crinacle"));
 
-        driven.click("device-measurer-best-ranked");
+        driven.click("device-measurer");
+        pressed_in_the_menu(&mut driven, "As for the rest");
 
         let (measurers, for_the_desk) = worn(&mut driven);
         assert_eq!(measurers.fallback.as_deref(), Some("rtings"));
@@ -4724,7 +4774,7 @@ mod tests {
     }
 
     #[gpui::test]
-    fn a_press_on_the_listen_button_opens_the_sheet_and_its_chips_choose_a_microphone(
+    fn a_press_on_the_listen_button_opens_the_sheet_and_its_rows_choose_a_microphone(
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::open(cx, catalog());

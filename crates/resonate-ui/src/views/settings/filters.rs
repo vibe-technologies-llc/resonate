@@ -4,7 +4,7 @@ use resonate_library::{MinimumLength, MusicExtensions, MusicFilters};
 
 use crate::{
     Notice, ResonateApp, Setting,
-    icons::{self, Icon},
+    icons::Icon,
     theme,
     views::{
         hint::Names as _,
@@ -14,6 +14,8 @@ use crate::{
     },
 };
 
+const EXTENSION_CELL: f32 = 84.0;
+
 impl RootView {
     pub(super) fn music_extensions_group(&mut self, cx: &mut Context<Self>) -> Div {
         let extensions = cx
@@ -22,7 +24,7 @@ impl RootView {
             .music_filters()
             .extensions;
         let selected = extensions.selected().count();
-        let mut choices = div().flex().flex_wrap().gap_2();
+        let mut choices = div().flex().flex_wrap().gap_x_1().gap_y_0p5();
         for extension in AUDIO_EXTENSIONS {
             let extension = *extension;
             let included = extensions.selected().any(|selected| selected == extension);
@@ -30,24 +32,13 @@ impl RootView {
             choices = choices.child(
                 self.in_the_ring(
                     extension,
-                    kit::chip(id, format!(".{extension}"), included)
+                    kit::checkbox(id, format!(".{extension}"), included)
+                        .w(theme::width(EXTENSION_CELL))
                         .names(format!(
                             "{} .{extension} {} the library",
                             if included { "Exclude" } else { "Include" },
                             if included { "from" } else { "in" },
-                        ))
-                        .child(
-                            div()
-                                .flex_none()
-                                .size(theme::width(theme::row_control_icon()))
-                                .when(included, |mark| {
-                                    mark.child(icons::icon(
-                                        Icon::Check,
-                                        theme::row_control_icon(),
-                                        theme::accent(),
-                                    ))
-                                }),
-                        ),
+                        )),
                     move |this, _, cx| {
                         let extensions = cx
                             .global::<ResonateApp>()

@@ -39,6 +39,7 @@ use crate::{
     views::{
         hint::Names as _,
         kit::{self, EndsInAnEllipsis as _, Tone},
+        menu::Menu,
         plot,
         root::RootView,
         settings::{
@@ -55,6 +56,17 @@ const BOUND_TO_NOTE: &str = "Each device plays through what is bound to it here 
                              device bound to nothing takes what every other device does.";
 
 const THE_CURVE: &str = "Equaliser curve";
+
+const FIT_TOWARD_HINT: &str = "What a measurement is fitted toward";
+
+const A_FILE_AS_THE_TARGET: &str = "A file…";
+
+const HEARD_THROUGH_HINT: &str = "What hears the sweep: the desktop measures the path to the \
+                                  output and no room, a microphone measures the room";
+
+const DESKTOP_HEARD: &str = "The desktop";
+
+const DEFAULT_MICROPHONE_HEARD: &str = "The default microphone";
 
 const DRAG_TOLD_EVERY: Duration = Duration::from_millis(50);
 const CURVE_HEIGHT: f32 = 168.0;
@@ -466,12 +478,11 @@ impl RootView {
     fn kind_cell(&self, row: usize, kind: BandKind, cx: &mut Context<Self>) -> Stateful<Div> {
         self.in_the_ring_at(
             format!("band-kind-{row}"),
-            kit::chip(
+            kit::pick(
                 gpui::SharedString::from(format!("band-kind-{row}")),
                 kind.label(),
-                false,
-            )
-            .names("What shape this band gives the curve"),
+                "What shape this band gives the curve",
+            ),
             move |this, _, cx| this.shape_a_band(row, cx),
             cx,
         )
@@ -692,36 +703,17 @@ impl RootView {
         let goal = model.goal().clone();
         let fitting = model.is_fitting_a_measurement();
 
-        let mut targets = div().flex().flex_wrap().gap_2();
-        for built_in in BuiltIn::ALL {
-            let id = SharedString::from(format!("target-{}", built_in.name()));
-            targets = targets.child(self.in_the_ring_at(
-                id.to_string(),
-                kit::chip(id, built_in.label(), goal == Goal::BuiltIn(built_in)).names(format!(
-                    "Fit a measurement toward the {} target",
-                    built_in.label()
-                )),
-                move |this, _, cx| this.aim_at(Goal::BuiltIn(built_in), cx),
-                cx,
-            ));
-        }
-        let own_target = matches!(goal, Goal::File(_));
-        targets = targets.child(
-            self.in_the_ring_at(
-                "target-file".to_owned(),
-                kit::chip(
-                    "target-file",
-                    if own_target {
-                        goal.spoken()
-                    } else {
-                        "A file…".to_owned()
-                    },
-                    own_target,
-                )
-                .names("Choose a file to fit a measurement toward"),
-                |this, _, cx| this.choose_a_target(cx),
-                cx,
-            ),
+        let aimed_at = match &goal {
+            Goal::BuiltIn(built_in) => built_in.label().to_owned(),
+            Goal::File(_) => goal.spoken(),
+        };
+        let target = self.in_the_pane_ring_at(
+            kit::pick("fit-target", aimed_at, FIT_TOWARD_HINT),
+            move |this, at, cx| {
+                let menu = fit_toward_menu(at, &this.equaliser.read(cx).goal().clone());
+                this.open_a_menu(menu, cx);
+            },
+            cx,
         );
 
         kit::field(
@@ -730,7 +722,7 @@ impl RootView {
                 .flex()
                 .flex_col()
                 .gap_2()
-                .child(kit::field("Fit toward", targets))
+                .child(kit::field("Fit toward", hugging(target)))
                 .child(div().flex().flex_wrap().gap_2().child(action(
                     "fit-a-measurement",
                     if fitting {
@@ -758,33 +750,23 @@ impl RootView {
         let microphones = listen.microphones().to_vec();
         let measuring = self.equaliser.read(cx).is_measuring_the_room();
 
-        let mut sources = div().flex().flex_wrap().gap_2();
-        sources = sources.child(self.heard_from(
-            "measure-from-desktop",
-            "The desktop".to_owned(),
-            Listening::Desktop,
-            &from,
-            "Hear what the output plays, which measures the path to it and no room",
+        let heard_through = match &from {
+            Listening::Desktop => DESKTOP_HEARD.to_owned(),
+            Listening::Microphone(None) => DEFAULT_MICROPHONE_HEARD.to_owned(),
+            Listening::Microphone(Some(node)) => microphones
+                .iter()
+                .find(|(name, _)| *name == node.to_string())
+                .map_or_else(|| node.to_string(), |(_, described)| described.clone()),
+        };
+        let sources = self.in_the_pane_ring_at(
+            kit::pick("measure-from", heard_through, HEARD_THROUGH_HINT),
+            move |this, at, cx| {
+                let listen = this.listen.read(cx);
+                let menu = heard_through_menu(at, listen.from(), listen.microphones());
+                this.open_a_menu(menu, cx);
+            },
             cx,
-        ));
-        sources = sources.child(self.heard_from(
-            "measure-from-microphone",
-            "The default microphone".to_owned(),
-            Listening::Microphone(None),
-            &from,
-            "Hear the sweep through the default microphone",
-            cx,
-        ));
-        for (index, (name, described)) in microphones.iter().enumerate() {
-            sources = sources.child(self.heard_from(
-                &format!("measure-from-{index}"),
-                described.clone(),
-                Listening::Microphone(Some(NodeName::new(name.clone()))),
-                &from,
-                "Hear the sweep through this microphone",
-                cx,
-            ));
-        }
+        );
 
         kit::field(
             "Measure your room",
@@ -792,7 +774,7 @@ impl RootView {
                 .flex()
                 .flex_col()
                 .gap_2()
-                .child(kit::field("Heard through", sources))
+                .child(kit::field("Heard through", hugging(sources)))
                 .child(self.calibration_field(cx))
                 .child(kit::field("Keep as", self.measured_as_field(cx)))
                 .child(
@@ -911,30 +893,6 @@ impl RootView {
         cx.notify();
     }
 
-    fn heard_from(
-        &mut self,
-        id: &str,
-        label: String,
-        source: Listening,
-        chosen: &Listening,
-        saying: &'static str,
-        cx: &mut Context<Self>,
-    ) -> Stateful<Div> {
-        let selected = *chosen == source;
-        let key = SharedString::from(id.to_owned());
-        self.in_the_ring_at(
-            id.to_owned(),
-            kit::chip(key, label, selected).names(saying),
-            move |this, _, cx| {
-                let source = source.clone();
-                this.listen
-                    .update(cx, |listen, cx| listen.choose(source, cx));
-                cx.notify();
-            },
-            cx,
-        )
-    }
-
     fn measure_the_room(&mut self, cx: &mut Context<Self>) {
         let Some(rig) = cx.global::<ResonateApp>().measures.clone() else {
             toast::tell(Notice::Trouble(NO_MEASURING.to_owned()), cx);
@@ -1041,19 +999,19 @@ impl RootView {
 
     fn measurer_choice(&mut self, cx: &mut Context<Self>) -> Div {
         let preferred = cx.global::<ResonateApp>().measurers.fallback.clone();
-        let choices = self.measurer_chips(
-            MeasurerChips {
-                prefix: "measurer",
+        let choices = self.measurer_pick(
+            MeasurerPick {
+                id: "measurer",
                 unset: "Best ranked",
-                unset_names: "Prefer no measurer: the fixed ranking decides where several \
-                              measured a device",
+                saying: "Whose correction to prefer where several measured a device. Best \
+                         ranked leaves it to the fixed ranking.",
                 preferred,
             },
             |this, measurer, cx| this.prefer_a_measurer(measurer, cx),
             cx,
         );
 
-        kit::field("Preferred measurer", choices)
+        kit::field("Preferred measurer", hugging(choices))
     }
 
     fn measurer_choice_for(
@@ -1067,79 +1025,42 @@ impl RootView {
             .measurers
             .of_the_device(&sink)
             .map(str::to_owned);
-        let choices = self.measurer_chips(
-            MeasurerChips {
-                prefix: "device-measurer",
+        let choices = self.measurer_pick(
+            MeasurerPick {
+                id: "device-measurer",
                 unset: "As for the rest",
-                unset_names: "Prefer no measurer for this device: the one chosen for every \
-                              device decides, else the fixed ranking",
+                saying: "Whose correction to prefer for this device. As for the rest takes the \
+                         one chosen for every device, else the fixed ranking.",
                 preferred,
             },
             move |this, measurer, cx| this.prefer_a_measurer_for(sink.clone(), measurer, cx),
             cx,
         );
 
-        kit::field(format!("Preferred measurer for {description}"), choices)
+        kit::field(
+            format!("Preferred measurer for {description}"),
+            hugging(choices),
+        )
     }
 
-    fn measurer_chips(
-        &mut self,
-        chips: MeasurerChips,
+    fn measurer_pick(
+        &self,
+        offered: MeasurerPick,
         pick: impl Fn(&mut Self, Option<String>, &mut Context<Self>) + Clone + 'static,
         cx: &mut Context<Self>,
-    ) -> Div {
-        let MeasurerChips {
-            prefix,
-            unset,
-            unset_names,
-            preferred,
-        } = chips;
-        let is_preferred = |name: &str| {
-            preferred
-                .as_deref()
-                .is_some_and(|held| held.eq_ignore_ascii_case(name))
-        };
-        let outside_the_ranking = preferred.clone().filter(|held| {
-            !MEASURERS_BEST_FIRST
-                .iter()
-                .any(|name| name.eq_ignore_ascii_case(held))
-        });
+    ) -> Stateful<Div> {
+        let held = offered
+            .preferred
+            .clone()
+            .unwrap_or_else(|| offered.unset.to_owned());
 
-        let unset_id = SharedString::from(format!("{prefix}-best-ranked"));
-        let picked = pick.clone();
-        let mut choices = div().flex().flex_wrap().gap_2().child(self.in_the_ring_at(
-            unset_id.to_string(),
-            kit::chip(unset_id, unset, preferred.is_none()).names(unset_names),
-            move |this, _, cx| picked(this, None, cx),
+        self.in_the_pane_ring_at(
+            kit::pick(offered.id, held, offered.saying),
+            move |this, at, cx| {
+                this.open_a_menu(measurer_menu(at, &offered, &pick), cx);
+            },
             cx,
-        ));
-        for name in MEASURERS_BEST_FIRST {
-            let id = SharedString::from(format!("{prefix}-{name}"));
-            let picked = pick.clone();
-            choices = choices.child(self.in_the_ring_at(
-                id.to_string(),
-                kit::chip(id, name, is_preferred(name)).names(format!(
-                    "Prefer the correction {name} measured where several measured a device"
-                )),
-                move |this, _, cx| picked(this, Some(name.to_owned()), cx),
-                cx,
-            ));
-        }
-        if let Some(held) = outside_the_ranking {
-            let id = SharedString::from(format!("{prefix}-{held}"));
-            let named = held.clone();
-            let picked = pick;
-            choices = choices.child(self.in_the_ring_at(
-                format!("{prefix}-outside-the-ranking"),
-                kit::chip(id, held.clone(), true).names(format!(
-                    "{held} is preferred where several measured a device; it is not one the \
-                         ranking names"
-                )),
-                move |this, _, cx| picked(this, Some(named.clone()), cx),
-                cx,
-            ));
-        }
-        choices
+        )
     }
 
     pub(crate) fn prefer_a_measurer(&mut self, measurer: Option<String>, cx: &mut Context<Self>) {
@@ -1290,11 +1211,101 @@ impl RootView {
     }
 }
 
-struct MeasurerChips {
-    prefix: &'static str,
+#[derive(Clone)]
+struct MeasurerPick {
+    id: &'static str,
     unset: &'static str,
-    unset_names: &'static str,
+    saying: &'static str,
     preferred: Option<String>,
+}
+
+fn measurer_menu(
+    at: Point<Pixels>,
+    offered: &MeasurerPick,
+    pick: &(impl Fn(&mut RootView, Option<String>, &mut Context<RootView>) + Clone + 'static),
+) -> Menu {
+    let is_preferred = |name: &str| {
+        offered
+            .preferred
+            .as_deref()
+            .is_some_and(|held| held.eq_ignore_ascii_case(name))
+    };
+    let picked = pick.clone();
+    let mut menu = Menu::at(at).chooses(
+        offered.unset,
+        offered.preferred.is_none(),
+        move |this, _, cx| picked(this, None, cx),
+    );
+    for name in MEASURERS_BEST_FIRST {
+        let picked = pick.clone();
+        menu = menu.chooses(name, is_preferred(name), move |this, _, cx| {
+            picked(this, Some(name.to_owned()), cx);
+        });
+    }
+    let outside_the_ranking = offered.preferred.clone().filter(|held| {
+        !MEASURERS_BEST_FIRST
+            .iter()
+            .any(|name| name.eq_ignore_ascii_case(held))
+    });
+    match outside_the_ranking {
+        Some(held) => {
+            let picked = pick.clone();
+            let named = held.clone();
+            menu.chooses(held, true, move |this, _, cx| {
+                picked(this, Some(named.clone()), cx);
+            })
+        }
+        None => menu,
+    }
+}
+
+fn fit_toward_menu(at: Point<Pixels>, goal: &Goal) -> Menu {
+    let mut menu = Menu::at(at);
+    for built_in in BuiltIn::ALL {
+        menu = menu.chooses(
+            built_in.label(),
+            *goal == Goal::BuiltIn(built_in),
+            move |this, _, cx| this.aim_at(Goal::BuiltIn(built_in), cx),
+        );
+    }
+
+    menu.apart().chooses(
+        A_FILE_AS_THE_TARGET,
+        matches!(goal, Goal::File(_)),
+        |this, _, cx| this.choose_a_target(cx),
+    )
+}
+
+fn heard_through_menu(
+    at: Point<Pixels>,
+    from: &Listening,
+    microphones: &[(String, String)],
+) -> Menu {
+    let hears = |source: Listening| {
+        move |this: &mut RootView, _: &mut Window, cx: &mut Context<RootView>| {
+            let source = source.clone();
+            this.listen
+                .update(cx, |listen, cx| listen.choose(source, cx));
+            cx.notify();
+        }
+    };
+    let mut menu = Menu::at(at)
+        .chooses(
+            DESKTOP_HEARD,
+            *from == Listening::Desktop,
+            hears(Listening::Desktop),
+        )
+        .chooses(
+            DEFAULT_MICROPHONE_HEARD,
+            *from == Listening::Microphone(None),
+            hears(Listening::Microphone(None)),
+        );
+    for (name, described) in microphones {
+        let source = Listening::Microphone(Some(NodeName::new(name.clone())));
+        menu = menu.chooses(described.clone(), *from == source, hears(source.clone()));
+    }
+
+    menu
 }
 
 fn curve_said(bands: &[Band], widest: f32) -> String {
@@ -2276,7 +2287,7 @@ impl RootView {
 
     fn speaker_angle_field(&mut self, cx: &mut Context<Self>) -> Div {
         let held = cx.global::<ResonateApp>().speaker_angle;
-        let mut presets = div().flex().flex_wrap().gap_2();
+        let mut presets = kit::segmented();
         for degrees in SPEAKER_ANGLES {
             let Ok(angle) = SpeakerAngle::from_degrees(degrees) else {
                 continue;
@@ -2284,7 +2295,7 @@ impl RootView {
             let id = SharedString::from(format!("speaker-angle-{degrees}"));
             presets = presets.child(self.in_the_ring_at(
                 id.to_string(),
-                kit::chip(id, format!("{degrees}°"), held == angle).names(format!(
+                kit::segment(id, format!("{degrees}°"), held == angle).names(format!(
                     "Speakers {degrees} degrees either side of the front"
                 )),
                 move |this, _, cx| this.set_the_speaker_angle(angle, cx),
@@ -2323,7 +2334,7 @@ impl RootView {
 
     fn speaker_elevation_field(&mut self, cx: &mut Context<Self>) -> Div {
         let held = cx.global::<ResonateApp>().speaker_elevation;
-        let mut presets = div().flex().flex_wrap().gap_2();
+        let mut presets = kit::segmented();
         for degrees in SPEAKER_ELEVATIONS {
             let Ok(elevation) = SpeakerElevation::from_degrees(degrees) else {
                 continue;
@@ -2332,7 +2343,7 @@ impl RootView {
             presets = presets.child(
                 self.in_the_ring_at(
                     id.to_string(),
-                    kit::chip(id, format!("{degrees}°"), held == elevation)
+                    kit::segment(id, format!("{degrees}°"), held == elevation)
                         .names(format!("Speakers {degrees} degrees above the ears")),
                     move |this, _, cx| this.set_the_speaker_elevation(elevation, cx),
                     cx,
@@ -2371,7 +2382,7 @@ impl RootView {
 
     fn head_yaw_field(&mut self, cx: &mut Context<Self>) -> Div {
         let held = cx.global::<ResonateApp>().head_yaw;
-        let mut presets = div().flex().flex_wrap().gap_2();
+        let mut presets = kit::segmented();
         for degrees in HEAD_YAWS {
             let Ok(yaw) = HeadYaw::from_degrees(degrees) else {
                 continue;
@@ -2380,7 +2391,7 @@ impl RootView {
             presets = presets.child(
                 self.in_the_ring_at(
                     id.to_string(),
-                    kit::chip(id, format!("{degrees}°"), held == yaw)
+                    kit::segment(id, format!("{degrees}°"), held == yaw)
                         .names(format!("Head turned {degrees} degrees")),
                     move |this, _, cx| this.set_the_head_yaw(yaw, cx),
                     cx,
@@ -2429,20 +2440,17 @@ impl RootView {
         let (more_hint, step_more) = more;
         let less_id = format!("{id}-less");
         let more_id = format!("{id}-more");
-        div()
-            .flex()
-            .items_center()
-            .gap_2()
+        kit::stepper()
             .child(self.in_the_ring_at(
                 less_id.clone(),
-                kit::icon_button(SharedString::from(less_id), Icon::Minus, less_hint),
+                kit::step(SharedString::from(less_id), Icon::Minus, less_hint),
                 move |this, _, cx| step_less(this, cx),
                 cx,
             ))
-            .child(kit::figure(reading).min_w(px(40.0)).flex().justify_center())
+            .child(kit::stepper_reading(reading))
             .child(self.in_the_ring_at(
                 more_id.clone(),
-                kit::icon_button(SharedString::from(more_id), Icon::Plus, more_hint),
+                kit::step(SharedString::from(more_id), Icon::Plus, more_hint),
                 move |this, _, cx| step_more(this, cx),
                 cx,
             ))

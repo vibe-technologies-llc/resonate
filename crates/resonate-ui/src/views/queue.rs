@@ -28,7 +28,7 @@ use crate::{
         reorder::{self, Carried, Chosen, LiftedTo, MOVING_HINT, Shift, Step},
         root::{RootView, empty, row},
         scrollbar::Scrollbars,
-        sorting,
+        sorting::{self, Ordered},
         spoken::{self, Placed, Spoken},
     },
 };
@@ -985,103 +985,95 @@ impl RootView {
             })
             .collect::<Vec<_>>();
 
-        kit::heading()
-            .child(
-                kit::heading_row()
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .flex_1()
-                            .min_w(px(theme::heading_name()))
-                            .gap_1()
-                            .child(kit::eyebrow("NOW PLAYING"))
-                            .child(kit::title("Queue"))
-                            .child(kit::subtitle(under.join(" · "))),
-                    )
-                    .child(
-                        kit::actions()
-                            .children(continuing)
-                            .child(hint::explains("queue-moving", MOVING_HINT))
-                            .when(queued, |bar| {
-                                bar.child(self.orders_a_listing("order-queue", cx))
-                                    .child(self.in_the_pane_ring(
-                                        kit::button(
-                                            "clear-queue",
-                                            Some(Icon::Discard),
-                                            "Clear",
-                                            CLEAR_HINT,
-                                            Tone::Ghost,
-                                        ),
-                                        |this, _, cx| {
-                                            let queued = this.player.read(cx).queue();
-                                            let Some(last) = queued.len().checked_sub(1) else {
-                                                return;
-                                            };
-                                            this.drop_rows(
-                                                Shift::Queue,
-                                                Span::between(0, last),
-                                                cx,
-                                            );
-                                        },
-                                        cx,
-                                    ))
-                                    .child(self.in_the_pane_ring(
-                                        kit::button(
-                                            "queue-to-playlist-all",
-                                            Some(Icon::Plus),
-                                            "Save as a playlist",
-                                            QUEUED_HINT,
-                                            Tone::Outlined,
-                                        ),
-                                        |this, window, cx| {
-                                            let queued: Arc<[Cut]> = this
-                                                .player
-                                                .read(cx)
-                                                .queue()
-                                                .iter()
-                                                .map(|item| queued_cut(item))
-                                                .collect();
-                                            this.hold_for_a_playlist(Held::of(queued), window, cx);
-                                        },
-                                        cx,
-                                    ))
-                            })
-                            .when(taken_out.is_some(), |bar| {
-                                bar.child(self.in_the_pane_ring(
+        kit::heading().child(
+            kit::heading_row()
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_w(px(theme::heading_name()))
+                        .gap_1()
+                        .child(kit::eyebrow("NOW PLAYING"))
+                        .child(kit::title("Queue"))
+                        .child(kit::subtitle(under.join(" · "))),
+                )
+                .child(
+                    kit::actions()
+                        .children(continuing)
+                        .child(hint::explains("queue-moving", MOVING_HINT))
+                        .when(queued, |bar| {
+                            bar.child(self.orders_a_listing("order-queue", Ordered::Queue, cx))
+                                .child(self.in_the_pane_ring(
                                     kit::button(
-                                        "put-the-queue-back",
-                                        Some(Icon::Undo),
-                                        "Put back",
-                                        puts_back(taken_out),
+                                        "clear-queue",
+                                        Some(Icon::Discard),
+                                        "Clear",
+                                        CLEAR_HINT,
                                         Tone::Ghost,
                                     ),
                                     |this, _, cx| {
-                                        this.put_the_queue_back(cx);
+                                        let queued = this.player.read(cx).queue();
+                                        let Some(last) = queued.len().checked_sub(1) else {
+                                            return;
+                                        };
+                                        this.drop_rows(Shift::Queue, Span::between(0, last), cx);
                                     },
                                     cx,
                                 ))
-                            })
-                            .when(put_back.is_some(), |bar| {
-                                bar.child(self.in_the_pane_ring(
+                                .child(self.in_the_pane_ring(
                                     kit::button(
-                                        "take-the-queue-out-again",
-                                        Some(Icon::Redo),
-                                        "Take out again",
-                                        takes_out_again(put_back),
-                                        Tone::Ghost,
+                                        "queue-to-playlist-all",
+                                        Some(Icon::Plus),
+                                        "Save as a playlist",
+                                        QUEUED_HINT,
+                                        Tone::Outlined,
                                     ),
-                                    |this, _, cx| {
-                                        this.take_the_queue_out_again(cx);
+                                    |this, window, cx| {
+                                        let queued: Arc<[Cut]> = this
+                                            .player
+                                            .read(cx)
+                                            .queue()
+                                            .iter()
+                                            .map(|item| queued_cut(item))
+                                            .collect();
+                                        this.hold_for_a_playlist(Held::of(queued), window, cx);
                                     },
                                     cx,
                                 ))
-                            }),
-                    ),
-            )
-            .when(self.ordering, |heading| {
-                heading.child(self.queue_in_order(cx))
-            })
+                        })
+                        .when(taken_out.is_some(), |bar| {
+                            bar.child(self.in_the_pane_ring(
+                                kit::button(
+                                    "put-the-queue-back",
+                                    Some(Icon::Undo),
+                                    "Put back",
+                                    puts_back(taken_out),
+                                    Tone::Ghost,
+                                ),
+                                |this, _, cx| {
+                                    this.put_the_queue_back(cx);
+                                },
+                                cx,
+                            ))
+                        })
+                        .when(put_back.is_some(), |bar| {
+                            bar.child(self.in_the_pane_ring(
+                                kit::button(
+                                    "take-the-queue-out-again",
+                                    Some(Icon::Redo),
+                                    "Take out again",
+                                    takes_out_again(put_back),
+                                    Tone::Ghost,
+                                ),
+                                |this, _, cx| {
+                                    this.take_the_queue_out_again(cx);
+                                },
+                                cx,
+                            ))
+                        }),
+                ),
+        )
     }
 
     pub(crate) fn put_the_queue_back(&mut self, cx: &mut Context<Self>) -> bool {
@@ -1147,12 +1139,8 @@ impl RootView {
         true
     }
 
-    fn queue_in_order(&self, cx: &mut Context<Self>) -> Div {
-        self.order_row(
-            sorting::Chips {
-                orders: "queue-order",
-                readings: "queue-reading",
-            },
+    pub(crate) fn queue_in_order(&self, cx: &mut Context<Self>) -> Div {
+        self.order_choices(
             self.queue_order,
             self.queue_reading,
             |this, order, cx| this.put_the_queue_in_order(order, Direction::Ascending, cx),

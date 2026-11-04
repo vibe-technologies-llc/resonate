@@ -86,6 +86,7 @@ use crate::{
         sharing,
         sheets::{self, MAGNIFIER_PANEL},
         slider::{Grab, Rail},
+        sorting::Ordered,
         spoken::{self, Spelt, Spoken},
         transport::{Handovers, Resolved, ShownCover},
         typing::{self, TypeAhead, jumped},
@@ -632,8 +633,7 @@ pub struct RootView {
     pub(crate) held_band: Option<HeldBand>,
     pub(crate) bitrate_graph: bool,
     pub(crate) naming: Option<Naming>,
-    pub(crate) sorting: Option<PlaylistId>,
-    pub(crate) ordering: bool,
+    pub(crate) ordering: Option<Ordered>,
     pub(crate) queue_order: RowOrder,
     pub(crate) queue_reading: Direction,
     pub(crate) row_order: RowOrder,
@@ -1284,8 +1284,7 @@ impl RootView {
             held_band: None,
             bitrate_graph: false,
             naming: None,
-            sorting: None,
-            ordering: false,
+            ordering: None,
             queue_order: RowOrder::default(),
             queue_reading: Direction::default(),
             row_order: RowOrder::default(),
@@ -1834,7 +1833,7 @@ impl RootView {
             return;
         }
         self.naming = None;
-        self.sorting = None;
+        self.ordering = None;
         self.adding = Some(holding);
         self.name.update(cx, |name, cx| {
             name.clear(cx);
@@ -1850,7 +1849,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         self.adding = None;
-        self.sorting = None;
+        self.ordering = None;
         self.naming = Some(naming);
 
         let found = naming
@@ -1891,18 +1890,17 @@ impl RootView {
         self.name_a_playlist(Naming::Query(Some(playlist)), window, cx);
     }
 
-    pub(crate) fn order_a_listing(&mut self, cx: &mut Context<Self>) {
-        self.ordering = !self.ordering;
-        cx.notify();
-    }
-
-    pub(crate) fn sort_a_playlist(&mut self, playlist: PlaylistId, cx: &mut Context<Self>) {
+    pub(crate) fn sort_a_playlist(
+        &mut self,
+        playlist: PlaylistId,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
         self.naming = None;
         self.adding = None;
-        self.sorting = (self.sorting != Some(playlist)).then_some(playlist);
 
         self.read_the_kept_order(Some(playlist), cx);
-        cx.notify();
+        self.order_a_listing(Ordered::Rows(playlist), window, cx);
     }
 
     fn read_the_kept_order(&mut self, playlist: Option<PlaylistId>, cx: &App) {
@@ -2379,7 +2377,7 @@ impl RootView {
             self.set_pane(pane, cx);
         }
         if self.search_shows != shows {
-            self.ordering = false;
+            self.ordering = None;
             self.reach = None;
         }
         self.search_shows = shows;
@@ -2402,7 +2400,7 @@ impl RootView {
         self.stop_typing(cx);
         let opens_the_queue = pane == Pane::Queue && self.pane != Pane::Queue;
         if self.pane != pane {
-            self.ordering = false;
+            self.ordering = None;
             if let Some(shows) = SearchShows::in_place_of(pane) {
                 self.search_shows = shows;
             }
@@ -3726,6 +3724,8 @@ impl RootView {
             && self.magnified.is_none()
             && self.record.is_none()
             && self.deleting.is_none()
+            && self.ordering.is_none()
+            && self.menu.is_none()
             && !cx.has_active_drag()
     }
 
@@ -3866,7 +3866,7 @@ impl RootView {
 
         if matches!(selection, Selection::Artist(_)) {
             self.artist_shows = ArtistShows::default();
-            self.ordering = false;
+            self.ordering = None;
         }
         self.library
             .update(cx, |library, cx| library.select(selection, cx));
@@ -4281,6 +4281,8 @@ impl RootView {
             self.close_wrapped(cx);
         } else if self.sharing.is_some() {
             self.close_sharing(cx);
+        } else if self.ordering.is_some() {
+            self.close_the_order(cx);
         } else if self.menu.is_some() {
             if !self.back_out_of_the_menu(cx) {
                 self.close_the_menu(cx);
@@ -4298,6 +4300,7 @@ impl RootView {
             || self.record.is_some()
             || self.wrapped.is_some()
             || self.sharing.is_some()
+            || self.ordering.is_some()
             || self.listening_open
             || self.deleting.is_some()
     }
@@ -4622,7 +4625,7 @@ impl RootView {
             self.set_pane(Pane::Tracks, cx);
         }
         self.search_shows = SearchShows::Top;
-        self.ordering = false;
+        self.ordering = None;
     }
 
     fn leave_the_scroll_for_the_search(&mut self) {
@@ -6200,6 +6203,13 @@ impl Render for RootView {
                 app.child(motion::faded_in(
                     self.wrapped_sheet(cx),
                     "wrapped-scrim",
+                    motion::ARRIVES_OVER,
+                ))
+            })
+            .when_some(self.ordering, |app, ordered| {
+                app.child(motion::faded_in(
+                    self.order_sheet(ordered, cx),
+                    "order-scrim",
                     motion::ARRIVES_OVER,
                 ))
             })

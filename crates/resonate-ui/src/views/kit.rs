@@ -34,6 +34,10 @@ const RADIO: f32 = 14.0;
 
 const RADIO_DOT: f32 = 6.0;
 
+const CHECK_MARK: f32 = 10.0;
+
+const STEPPER_READING: f32 = 56.0;
+
 const DETAIL_SEPARATOR: &str = "·";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -397,51 +401,180 @@ fn marked(
         .child(drawn)
 }
 
-pub(crate) fn chip(
+pub(crate) fn pick(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
-    selected: bool,
+    saying: impl Into<SharedString>,
 ) -> Stateful<Div> {
-    let label = label.into();
-    pill(id, theme::accent(), selected)
-        .named_as(Role::Button, &label, "")
-        .thrown(selected)
-        .child(label)
-}
-
-fn pill(id: impl Into<ElementId>, colour: u32, selected: bool) -> Stateful<Div> {
     let id = id.into();
+    let label = label.into();
+    let saying = saying.into();
 
     div()
         .id(id.clone())
         .found_as(&id)
+        .named_as(Role::ComboBox, &label, &saying)
         .flex()
         .flex_none()
         .items_center()
         .gap_1p5()
+        .max_w_full()
         .h(px(theme::pill_height()))
-        .px_2p5()
-        .rounded_full()
-        .text_size(px(theme::text_sm()))
-        .cursor_pointer()
-        .whitespace_nowrap()
+        .pl_2p5()
+        .pr_1p5()
+        .rounded_md()
+        .bg(rgb(theme::raised()))
         .border_1()
-        .when_else(
-            selected,
-            |chip| {
-                chip.bg(theme::tinted(colour, 0x1f))
-                    .border_color(theme::tinted(colour, 0x80))
-                    .text_color(rgb(theme::text()))
-                    .font_weight(FontWeight::MEDIUM)
-            },
-            |chip| {
-                chip.bg(rgb(theme::raised()))
-                    .border_color(rgb(theme::border()))
-                    .text_color(rgb(theme::muted()))
-                    .hover(|chip| chip.bg(rgb(theme::hover())))
-                    .lit_under_the_pointer(id, |chip| chip.text_color(rgb(theme::text())))
-            },
+        .border_color(rgb(theme::border()))
+        .text_size(px(theme::text_sm()))
+        .text_color(rgb(theme::text()))
+        .whitespace_nowrap()
+        .cursor_pointer()
+        .hover(|pick| pick.bg(rgb(theme::hover())))
+        .names(saying)
+        .child(
+            div()
+                .min_w(px(0.0))
+                .truncate()
+                .ends_in_an_ellipsis()
+                .child(label),
         )
+        .child(icons::icon(
+            Icon::ChevronDown,
+            theme::row_control_icon(),
+            theme::muted(),
+        ))
+}
+
+pub(crate) fn radio_row(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    chosen: bool,
+) -> Stateful<Div> {
+    let id = id.into();
+    let label = label.into();
+
+    div()
+        .id(id.clone())
+        .found_as(&id)
+        .chosen_among(&label, String::new, chosen)
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap_2p5()
+        .px_2p5()
+        .py_1p5()
+        .rounded_md()
+        .cursor_pointer()
+        .when_else(
+            chosen,
+            |row| row.bg(theme::tinted(theme::accent(), 0x14)),
+            |row| row.hover(|row| row.bg(rgb(theme::hover()))),
+        )
+        .child(radio(chosen))
+        .child(choice_name(label, chosen))
+}
+
+pub(crate) fn checkbox(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    ticked: bool,
+) -> Stateful<Div> {
+    let id = id.into();
+    let label = label.into();
+    let square = div()
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .size(px(RADIO))
+        .rounded_sm()
+        .border_1();
+    let square = match ticked {
+        true => square
+            .bg(rgb(theme::accent()))
+            .border_color(rgb(theme::accent()))
+            .child(icons::icon(
+                Icon::Check,
+                CHECK_MARK,
+                theme::ink_over(theme::accent()),
+            )),
+        false => square.border_color(rgb(theme::outline())),
+    };
+
+    div()
+        .id(id.clone())
+        .found_as(&id)
+        .named_as(Role::CheckBox, &label, "")
+        .thrown(ticked)
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap_2()
+        .h(px(theme::pill_height()))
+        .px_1p5()
+        .rounded_md()
+        .text_size(px(theme::text_sm()))
+        .text_color(rgb(if ticked {
+            theme::text()
+        } else {
+            theme::muted()
+        }))
+        .whitespace_nowrap()
+        .cursor_pointer()
+        .hover(|row| row.bg(rgb(theme::hover())))
+        .child(square)
+        .child(label)
+}
+
+pub(crate) fn stepper() -> Div {
+    div()
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap_0p5()
+        .p_0p5()
+        .rounded_full()
+        .bg(rgb(theme::raised()))
+        .border_1()
+        .border_color(rgb(theme::border()))
+}
+
+pub(crate) fn step(
+    id: impl Into<ElementId>,
+    icon: Icon,
+    saying: impl Into<SharedString>,
+) -> Stateful<Div> {
+    icon_button(id, icon, saying).rounded_full()
+}
+
+pub(crate) fn stepper_reading(text: impl Into<SharedString>) -> Div {
+    figure(text)
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .min_w(px(STEPPER_READING))
+        .h(px(theme::row_control()))
+}
+
+pub(crate) fn stepper_reading_put_back(
+    id: impl Into<ElementId>,
+    text: impl Into<SharedString>,
+    saying: impl Into<SharedString>,
+) -> Stateful<Div> {
+    let id = id.into();
+    let saying = saying.into();
+
+    stepper_reading(text)
+        .id(id.clone())
+        .found_as(&id)
+        .said_as(Role::Button, &saying)
+        .rounded_full()
+        .text_color(rgb(theme::accent()))
+        .cursor_pointer()
+        .hover(|reading| reading.bg(rgb(theme::hover())))
+        .names(saying)
 }
 
 pub(crate) fn tag(text: impl Into<SharedString>) -> Div {
@@ -550,14 +683,17 @@ pub(crate) fn field(label: impl Into<SharedString>, control: impl IntoElement) -
         .flex()
         .flex_col()
         .gap_2()
-        .child(
-            div()
-                .text_size(px(theme::text_xs()))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(rgb(theme::muted()))
-                .child(label.into()),
-        )
+        .child(field_name(label))
         .child(control)
+}
+
+pub(crate) fn field_name(label: impl Into<SharedString>) -> Div {
+    div()
+        .flex_none()
+        .text_size(px(theme::text_xs()))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(rgb(theme::muted()))
+        .child(label.into())
 }
 
 pub(crate) fn segmented() -> Div {
@@ -1219,7 +1355,10 @@ mod tests {
         let starred =
             node_of(&star("starred", true, "a".into(), "Unfavourite")).expect("a star is a node");
         let chosen = node_of(&segment("grid", "Grid", true)).expect("a segment is a node");
-        let chip = node_of(&chip("newest", "Newest", false)).expect("a chip is a node");
+        let picked =
+            node_of(&pick("order", "Newest", "What the list is put in order by")).expect("a pick");
+        let row = node_of(&radio_row("newest", "Newest", true)).expect("a radio row is a node");
+        let ticked = node_of(&checkbox("flac", ".flac", false)).expect("a checkbox is a node");
 
         assert_eq!(labelled.role(), Role::Button);
         assert_eq!(labelled.label(), Some("Play"));
@@ -1231,8 +1370,13 @@ mod tests {
         assert_eq!(starred.toggled(), Some(gpui::Toggled::True));
         assert_eq!(chosen.role(), Role::RadioButton);
         assert_eq!(chosen.toggled(), Some(gpui::Toggled::True));
-        assert_eq!(chip.label(), Some("Newest"));
-        assert_eq!(chip.toggled(), Some(gpui::Toggled::False));
+        assert_eq!(picked.role(), Role::ComboBox);
+        assert_eq!(picked.label(), Some("Newest"));
+        assert_eq!(row.role(), Role::RadioButton);
+        assert_eq!(row.toggled(), Some(gpui::Toggled::True));
+        assert_eq!(ticked.role(), Role::CheckBox);
+        assert_eq!(ticked.label(), Some(".flac"));
+        assert_eq!(ticked.toggled(), Some(gpui::Toggled::False));
     }
 
     #[test]

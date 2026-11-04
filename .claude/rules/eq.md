@@ -524,7 +524,7 @@ tested.
 - **The window chooses what is tested before it begins** (`Testing`: *Equaliser*, *Restoration*,
   *Resampler*, *Dither*, a `Choice` row whose note says what A and B are for that test). For a
   setting A is what the engine's `OutputSettings` say (`Player::output_settings`), shown as a
-  reading, and B is chips of the values the listener picks (`Chosen`, one `Option` per
+  reading, and B is a choice among the values the listener picks (`Chosen`, one `Option` per
   setting): restoration, the resampler's quality and phase, the dither's kind and noise shaping,
   each defaulting to the CLI's opposite (extend or off, low latency or very high, none or triangular; phase
   and shaping the settings'). `Chosen::contest` is the `Contest` and nothing else decides it. The
@@ -838,10 +838,10 @@ The stereo image, apart from the transducer: both are stereo-only, off by defaul
   outside it costing the key alone), `Setting::SpeakerAngle`, `Setting::SpeakerElevation` and
   `Setting::HeadYaw`, worn on `ResonateApp::speaker_angle`, `speaker_elevation` and `head_yaw`
   (`speakers_worn` in the pane makes the trio every read takes). The Room correction group offers each as a stepper (`degrees_stepper`: a
-  `kit::icon_button` of `Icon::Minus` and one of `Icon::Plus`, a degree a press, the reading
-  between) beside chips for common places (20, 30, 45, 60 and 90 degrees of angle; 0, 10, 20, 30
+  `kit::stepper` of `Icon::Minus` and `Icon::Plus`, a degree a press, the reading
+  between) beside segments for common places (20, 30, 45, 60 and 90 degrees of angle; 0, 10, 20, 30
   and 45 of elevation), so any angle from 5 to 90 and any elevation is reached, and a third field,
-  *Head turned* (`head_yaw_field`, the same stepper with chips at -45, -20, 0, 20 and 45 degrees);
+  *Head turned* (`head_yaw_field`, the same stepper with segments at -45, -20, 0, 20 and 45 degrees);
   changing one stores it and reads the held response file again (`set_the_speaker_angle`,
   `set_the_speaker_elevation`, `set_the_head_yaw`, then `correct_the_room`), the group's mark puts
   back 30, 0 and 0 and stops correcting, and every
@@ -1120,7 +1120,7 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   `harman-over-ear-2018`), kept like `--import`: named by `--profile` or the file's stem
   (`Store::name_for_import`, a replaced name said), bound by `--for`, or the device's own curve with
   `--own`; it conflicts with every other action. And from the *Measured corrections* group: the
-  *Fit toward* chips (`Goal::{BuiltIn, File}`, Harman over-ear 2018 by default,
+  *Fit toward* `kit::pick` (`Goal::{BuiltIn, File}`, Harman over-ear 2018 by default,
   `EqualiserModel::aim_at`) and *Fit a measurement…*, which fits and keeps on the background
   executor in `_measured` (own task, like `_imported`), shows the new profile and says how many
   bands, which target and the error before and after. The group shows whether or not online is on:
@@ -1191,7 +1191,7 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   (`Played`, `Deconvolved`, `Response`, each the source error unchanged, converted to the crate's
   `Error` for the command and to `Unmeasured` for the window), and the pane's *Measure your room*
   field (under *Your own measurement*, in *Measured corrections*) holds the microphone to hear it
-  through as the Listen sheet's own choice, chips of the desktop, the default microphone and every
+  through as the Listen sheet's own choice, a `kit::pick` of the desktop, the default microphone and every
   microphone `Listener::microphones` lists (`ListenModel::choose`, shared with the sheet, so a
   microphone chosen in one is chosen in the other; the list is looked for the first time the group
   draws), and *Measure*, which plays through the sink in use (`PlayerModel::sink_in_use`), a *Stop* beside it

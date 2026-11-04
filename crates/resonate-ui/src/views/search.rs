@@ -23,6 +23,7 @@ use crate::{
         reorder::{self, Listed, Shift, Step},
         root::{Pane, RootView},
         scrollbar::{SHELF_INSET, Scrollbars},
+        sorting::Ordered,
         spoken::Spoken as _,
     },
 };
@@ -371,11 +372,11 @@ impl SearchShows {
         }
     }
 
-    const fn ordered_by(self) -> Option<&'static str> {
+    const fn ordered_by(self) -> Option<(&'static str, Ordered)> {
         match self {
-            Self::Songs => Some("order-tracks"),
-            Self::Albums => Some("order-albums"),
-            Self::Artists => Some("order-artists"),
+            Self::Songs => Some(("order-tracks", Ordered::Tracks)),
+            Self::Albums => Some(("order-albums", Ordered::Albums)),
+            Self::Artists => Some(("order-artists", Ordered::Artists)),
             Self::Top => None,
         }
     }
@@ -809,14 +810,8 @@ impl RootView {
         });
         let orders = shows
             .ordered_by()
-            .map(|named| self.orders_a_listing(named, cx));
+            .map(|(named, ordered)| self.orders_a_listing(named, ordered, cx));
         let plays = (matched.songs > 0).then(|| (self.shuffle_all(cx), self.play_all(cx)));
-        let in_order = match (self.ordering, shows) {
-            (true, SearchShows::Songs) => Some(self.tracks_in_order(cx)),
-            (true, SearchShows::Albums) => Some(self.albums_in_order(cx)),
-            (true, SearchShows::Artists) => Some(self.artists_in_order(cx)),
-            (true | false, _) => None,
-        };
         let named = naming.map(|naming| self.naming_row(naming, cx));
         let tabs = self.search_tabs(shows, matched, cx);
 
@@ -857,7 +852,6 @@ impl RootView {
                 .when(!reads.is_empty(), |heading| {
                     heading.child(listing::reads(&reads))
                 })
-                .children(in_order)
                 .children(named)
                 .child(tabs),
         )

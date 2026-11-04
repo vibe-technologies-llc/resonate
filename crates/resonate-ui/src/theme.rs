@@ -988,6 +988,8 @@ const ROW_CONTROL: Control = Control::of(26.0, 14.0);
 const PICKER_WIDTH: f32 = 400.0;
 const LISTEN_WIDTH: f32 = 460.0;
 
+const ORDER_WIDTH: f32 = 420.0;
+
 const WRAPPED_WIDTH: f32 = 620.0;
 const LISTEN_COVER: f32 = 112.0;
 const PAIRING_TILE: f32 = 176.0;
@@ -1170,6 +1172,7 @@ measures! {
     row_control_icon => ROW_CONTROL.mark,
     picker_width => PICKER_WIDTH,
     listen_width => LISTEN_WIDTH,
+    order_width => ORDER_WIDTH,
     wrapped_width => WRAPPED_WIDTH,
     listen_cover => LISTEN_COVER,
     pairing_tile => PAIRING_TILE,
