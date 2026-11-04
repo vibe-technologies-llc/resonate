@@ -4,6 +4,7 @@ import android.app.UiModeManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.Build
+import android.util.LruCache
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.LocalActivity
@@ -34,6 +35,7 @@ import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamicColorScheme
 import com.materialkolor.ktx.themeColorOrNull
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.resonate.android.Appearance
 import org.resonate.android.ThemeMode
@@ -142,12 +144,72 @@ fun ArtworkTheme(seed: Color?, content: @Composable () -> Unit) {
 }
 
 @Composable
+fun ArtworkTheme(scheme: ColorScheme, content: @Composable () -> Unit) {
+    MaterialExpressiveTheme(
+        colorScheme = scheme,
+        motionScheme = MotionScheme.expressive(),
+        content = content,
+    )
+}
+
+const val SEED_OUTLASTS_ITS_COVER_MS = 600L
+
+private const val SEEDS_KEPT = 64
+
+private const val SCHEMES_KEPT = 16
+
+private class Seed(val color: Color?)
+
+private val seeds = LruCache<Bitmap, Seed>(SEEDS_KEPT)
+
+private suspend fun seedFor(bitmap: Bitmap): Color? =
+    (seeds[bitmap]
+            ?: withContext(Dispatchers.Default) {
+                Seed(seedOf(bitmap.asImageBitmap())).also { seeds.put(bitmap, it) }
+            })
+        .color
+
+@Composable
 fun rememberSeedOf(bitmap: Bitmap?): Color? {
+    val known = remember(bitmap) { bitmap?.let { seeds[it] } }
     val seed by
-        produceState<Color?>(null, bitmap) {
-            value = bitmap?.let { withContext(Dispatchers.Default) { seedOf(it.asImageBitmap()) } }
+        produceState(known?.color, bitmap) {
+            if (bitmap == null) {
+                delay(SEED_OUTLASTS_ITS_COVER_MS)
+                value = null
+            } else {
+                value = seedFor(bitmap)
+            }
         }
-    return seed
+    return if (known != null) known.color else seed
 }
 
 private fun seedOf(image: ImageBitmap): Color? = image.themeColorOrNull(filter = true)
+
+private data class SchemeAsked(
+    val seed: Color,
+    val dark: Boolean,
+    val pitchBlack: Boolean,
+    val contrast: Double,
+) {
+    fun made(): ColorScheme =
+        schemes[this] ?: schemeOf(seed, dark, pitchBlack, contrast).also { schemes.put(this, it) }
+}
+
+private val schemes = LruCache<SchemeAsked, ColorScheme>(SCHEMES_KEPT)
+
+@Composable
+fun rememberSchemeOf(seed: Color?): ColorScheme {
+    val asked =
+        SchemeAsked(
+            seed ?: MaterialTheme.colorScheme.primary,
+            LocalDarkTheme.current,
+            LocalPitchBlack.current,
+            LocalContrastLevel.current,
+        )
+    val known = remember(asked) { schemes[asked] }
+    val first = remember { asked.made() }
+    val scheme by
+        produceState(first, asked) { value = withContext(Dispatchers.Default) { asked.made() } }
+    return known ?: scheme
+}

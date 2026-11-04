@@ -2,11 +2,13 @@ package org.resonate.android.ui.player
 
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
@@ -73,6 +75,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -95,7 +98,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
-import org.resonate.android.ArtworkSizes
 import org.resonate.android.nativecore.Track
 import org.resonate.android.rowKey
 import org.resonate.android.marksFavouritesOf
@@ -122,6 +124,7 @@ import org.resonate.android.ui.theme.LocalContrastLevel
 import org.resonate.android.ui.theme.LocalDarkTheme
 import org.resonate.android.ui.theme.LocalPitchBlack
 import org.resonate.android.ui.theme.PlayerTone
+import org.resonate.android.ui.theme.rememberSchemeOf
 import org.resonate.android.ui.theme.rememberSeedOf
 import org.resonate.android.ui.tools.LyricsPane
 
@@ -154,25 +157,29 @@ fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
             throw cancelled
         }
     }
-    val sample = rememberCover(track, ArtworkSizes.edgeFor(96))
-    val seed = rememberSeedOf(sample)
+    val scheme = rememberSchemeOf(rememberSeedOf(rememberCover(track, SEED_SAMPLE_EDGE)))
+    val comingUp by model.queue.collectAsStateWithLifecycle()
+    val next = comingUp.upNext.firstOrNull()
+    rememberSchemeOf(rememberSeedOf(rememberCover(next, SEED_SAMPLE_EDGE)))
     val keyboard = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { keyboard.requestFocus() } }
     val dragState = rememberDraggableState { delta ->
         dragged += delta
         scope.launch { expansion.follow(1f - dragged / height) }
     }
-    ArtworkTheme(seed) {
-        val scheme = MaterialTheme.colorScheme
+    ArtworkTheme(scheme) {
+        val dark = LocalDarkTheme.current
         val base = if (LocalPitchBlack.current) Color.Black else scheme.surfaceContainerLow
         val top =
-            PlayerTone.top(
-                scheme.primaryContainer,
-                appearance.nowPlayingIntensity,
-                LocalDarkTheme.current,
-            )
+            remember(scheme.primaryContainer, appearance.nowPlayingIntensity, dark) {
+                PlayerTone.top(scheme.primaryContainer, appearance.nowPlayingIntensity, dark)
+            }
+        val ground = animateColorAsState(scheme.surface, GROUND_GLIDES, label = "player ground")
+        val wash = animateColorAsState(top, GROUND_GLIDES, label = "player wash")
+        val foot = animateColorAsState(base, GROUND_GLIDES, label = "player foot")
         Surface(
-            color = scheme.surface,
+            color = Color.Transparent,
+            contentColor = scheme.onSurface,
             modifier =
                 Modifier.fillMaxSize()
                     .onSizeChanged { height = it.height.toFloat().coerceAtLeast(1f) }
@@ -188,14 +195,16 @@ fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
                     .testTag("now-playing"),
         ) {
             Box(
-                Modifier.fillMaxSize()
-                    .background(
+                Modifier.fillMaxSize().drawBehind {
+                    drawRect(ground.value)
+                    drawRect(
                         Brush.verticalGradient(
-                            0f to top.copy(alpha = strength),
-                            0.55f to base,
-                            1f to base,
+                            0f to wash.value.copy(alpha = strength),
+                            0.55f to foot.value,
+                            1f to foot.value,
                         )
                     )
+                }
             ) {
                 BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()) {
                     val wide = maxWidth > maxHeight
@@ -219,7 +228,7 @@ fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
                             when {
                                 shown == Pane.LYRICS && track != null && !track.served ->
                                     LyricsPane(track, Modifier.fillMaxSize())
-                                else -> Cover(track, Modifier.fillMaxSize())
+                                else -> Cover(track, next, Modifier.fillMaxSize())
                             }
                         }
                     }
@@ -278,10 +287,11 @@ fun NowPlaying(model: PlayerViewModel, expansion: PlayerExpansion) {
 }
 
 @Composable
-private fun Cover(track: Track?, modifier: Modifier) {
+private fun Cover(track: Track?, next: Track?, modifier: Modifier) {
     BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
         val side = minOf(maxWidth, maxHeight).coerceAtMost(COVER_AT_MOST)
         val edge = with(LocalDensity.current) { side.roundToPx() }
+        rememberCover(next, edge)
         Surface(
             shape = MaterialTheme.shapes.extraLarge,
             shadowElevation = 12.dp,
@@ -640,5 +650,9 @@ private fun ActionToggle(
 }
 
 private val COVER_AT_MOST: Dp = 520.dp
+
+private const val SEED_SAMPLE_EDGE = 96
+
+private val GROUND_GLIDES = tween<Color>(durationMillis = 450, easing = LinearOutSlowInEasing)
 
 private const val BACK_PEEK = 0.2f
