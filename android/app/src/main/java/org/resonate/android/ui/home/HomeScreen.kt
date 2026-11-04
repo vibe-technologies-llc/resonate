@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,15 +21,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.TrendingUp
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.NewReleases
 import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.carousel.HorizontalMultiBrowseCarousel
@@ -72,12 +73,13 @@ import org.resonate.android.ui.components.Picture
 import org.resonate.android.ui.components.PlaylistCover
 import org.resonate.android.ui.components.SectionHeader
 import org.resonate.android.ui.components.SettingsAction
+import org.resonate.android.ui.components.Shortcut
+import org.resonate.android.ui.components.ShortcutPair
 import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.components.TitleSize
 import org.resonate.android.ui.components.rememberArtwork
 import org.resonate.android.ui.counted
 import org.resonate.android.ui.library.ArtistCard
-import org.resonate.android.ui.library.LARGE_TEXT
 import org.resonate.android.ui.library.Loading
 import org.resonate.android.ui.library.PlaylistCard
 import org.resonate.android.ui.library.Shelf
@@ -132,49 +134,35 @@ private fun HomeFeed(model: HomeViewModel, padding: PaddingValues) {
     val statistics by model.statistics.collectAsStateWithLifecycle()
     LazyColumn(contentPadding = padding, modifier = Modifier.fillMaxSize().testTag("home")) {
         item("shortcuts") {
-            val favouritesShortcut: @Composable (Modifier) -> Unit = { modifier ->
-                Shortcut(
-                    icon = Icons.Rounded.Favorite,
-                    title = "Favourites",
-                    detail = counted(favourites.size, "song"),
-                    container = MaterialTheme.colorScheme.primaryContainer,
-                    content = MaterialTheme.colorScheme.onPrimaryContainer,
-                    badge = MaterialTheme.colorScheme.primary,
-                    onBadge = MaterialTheme.colorScheme.onPrimary,
-                    onClick = { navigator.open(Screen.Favourites) },
-                    modifier = modifier.testTag("home-favourites"),
-                )
-            }
-            val shuffleShortcut: @Composable (Modifier) -> Unit = { modifier ->
-                Shortcut(
-                    icon = Icons.Rounded.Shuffle,
-                    title = "Shuffle all",
-                    detail = counted(songs.size, "song"),
-                    container = MaterialTheme.colorScheme.tertiaryContainer,
-                    content = MaterialTheme.colorScheme.onTertiaryContainer,
-                    badge = MaterialTheme.colorScheme.tertiary,
-                    onBadge = MaterialTheme.colorScheme.onTertiary,
-                    onClick = { resonate.playShuffled(songs) },
-                    modifier = modifier.testTag("home-shuffle"),
-                )
-            }
-            if (LocalDensity.current.fontScale > LARGE_TEXT) {
-                Column(
-                    Modifier.fillMaxWidth().padding(horizontal = Sizes.gutter, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    favouritesShortcut(Modifier.fillMaxWidth())
-                    shuffleShortcut(Modifier.fillMaxWidth())
-                }
-            } else {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = Sizes.gutter, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    favouritesShortcut(Modifier.weight(1f))
-                    shuffleShortcut(Modifier.weight(1f))
-                }
-            }
+            ShortcutPair(
+                modifier = Modifier.padding(horizontal = Sizes.gutter, vertical = 8.dp),
+                first = { modifier ->
+                    Shortcut(
+                        icon = Icons.Rounded.Favorite,
+                        title = "Favourites",
+                        detail = counted(favourites.size, "song"),
+                        container = MaterialTheme.colorScheme.primaryContainer,
+                        content = MaterialTheme.colorScheme.onPrimaryContainer,
+                        badge = MaterialTheme.colorScheme.primary,
+                        onBadge = MaterialTheme.colorScheme.onPrimary,
+                        onClick = { navigator.open(Screen.Favourites) },
+                        modifier = modifier.testTag("home-favourites"),
+                    )
+                },
+                second = { modifier ->
+                    Shortcut(
+                        icon = Icons.Rounded.Shuffle,
+                        title = "Shuffle all",
+                        detail = counted(songs.size, "song"),
+                        container = MaterialTheme.colorScheme.tertiaryContainer,
+                        content = MaterialTheme.colorScheme.onTertiaryContainer,
+                        badge = MaterialTheme.colorScheme.tertiary,
+                        onBadge = MaterialTheme.colorScheme.onTertiary,
+                        onClick = { resonate.playShuffled(songs) },
+                        modifier = modifier.testTag("home-shuffle"),
+                    )
+                },
+            )
         }
         mixes.valueOrNull()?.takeIf { it.isNotEmpty() }?.let { shown ->
             item("mixes-title") { SectionHeader("Made for you") }
@@ -228,46 +216,6 @@ private fun HomeFeed(model: HomeViewModel, padding: PaddingValues) {
         item("listening-title") { SectionHeader("Your listening") }
         item("listening") {
             ListeningCard(statistics, songs.size) { navigator.open(Screen.Statistics) }
-        }
-    }
-}
-
-@Composable
-private fun Shortcut(
-    icon: ImageVector,
-    title: String,
-    detail: String,
-    container: Color,
-    content: Color,
-    badge: Color,
-    onBadge: Color,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        onClick = onClick,
-        color = container,
-        contentColor = content,
-        shape = MaterialTheme.shapes.extraLarge,
-        modifier = modifier.heightIn(min = 80.dp),
-    ) {
-        Row(
-            Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Surface(
-                color = badge,
-                contentColor = onBadge,
-                shape = MaterialShapes.Cookie9Sided.toShape(),
-                modifier = Modifier.size(44.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) { Icon(icon, contentDescription = null) }
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(detail, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
         }
     }
 }
@@ -343,7 +291,8 @@ private fun RecentAlbums(albums: List<AlbumHit>, onOpen: (AlbumHit) -> Unit) {
     ) { index ->
         val album = albums[index]
         val info = carouselItemDrawInfo
-        val shown = if (info.maxSize > info.minSize) ((info.size - info.minSize) / (info.maxSize - info.minSize)).coerceIn(0f, 1f) else 1f
+        val opened = if (info.maxSize > info.minSize) ((info.size - info.minSize) / (info.maxSize - info.minSize)).coerceIn(0f, 1f) else 1f
+        val caption = ((opened - CAPTION_GONE_BELOW) / (CAPTION_WHOLE_FROM - CAPTION_GONE_BELOW)).coerceIn(0f, 1f)
         BoxWithConstraints(
             Modifier.fillMaxSize()
                 .maskClip(MaterialTheme.shapes.extraLarge)
@@ -364,7 +313,7 @@ private fun RecentAlbums(albums: List<AlbumHit>, onOpen: (AlbumHit) -> Unit) {
                         .offset { IntOffset(info.maskRect.left.roundToInt(), 0) }
                         .padding(10.dp)
                         .widthIn(max = with(density) { info.maskRect.width.toDp() } - 20.dp)
-                        .graphicsLayer { alpha = shown * shown },
+                        .graphicsLayer { alpha = caption },
             ) {
                 Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
                     Text(album.shownTitle, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -408,9 +357,10 @@ private fun NewPlaylistCard(onClick: () -> Unit) {
 
 @Composable
 private fun ListeningCard(statistics: LibraryStatistics?, songs: Int, onClick: () -> Unit) {
-    OutlinedCard(
+    Card(
         onClick = onClick,
         shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
         modifier = Modifier.fillMaxWidth().padding(horizontal = Sizes.gutter, vertical = 4.dp).testTag("home-statistics"),
     ) {
         Column(Modifier.padding(20.dp)) {
@@ -418,12 +368,17 @@ private fun ListeningCard(statistics: LibraryStatistics?, songs: Int, onClick: (
                 Icon(Icons.Rounded.Insights, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(12.dp))
                 Text("Statistics", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                Icon(
+                    Icons.Rounded.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             Spacer(Modifier.height(16.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Figure(statistics?.plays?.toString() ?: "–", "plays", Modifier.weight(1f))
                 Figure(statistics?.listenedMs?.let(::listenedHours) ?: "–", "listened", Modifier.weight(1f))
-                Figure((statistics?.songs?.toLong() ?: songs.toLong()).toString(), "songs", Modifier.weight(1f))
+                Figure(songs.toString(), "songs", Modifier.weight(1f))
             }
         }
     }
@@ -438,3 +393,5 @@ private fun Figure(value: String, label: String, modifier: Modifier = Modifier) 
 }
 
 private val MIX_WIDTH = 176.dp
+private const val CAPTION_GONE_BELOW = 0.3f
+private const val CAPTION_WHOLE_FROM = 0.5f
