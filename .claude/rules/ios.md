@@ -723,7 +723,16 @@ every route change (a pair of headphones at the same rate included), not from th
   button style, so `.glassProminent` drew Play's triangle blue on its blue fill: the capsule draws
   its symbol and title as separate views, each given its colour, never a `Label`. The artwork's shadow is `HeaderShadow`, a shadow-only `Canvas` drawn once at scale 1 in the cover's outline, never `.shadow`, which was blurred again on every scrolled frame; a playlist's mosaic picks are kept per playlist and revision (`PlaylistCovers`). An album lists its tracks by disc,
   a *Disc N* header only where there is more than one, each row numbered with its length at the
-  trailing edge and a second line only for a track artist other than the album's.
+  trailing edge and a second line only for a track artist other than the album's. **The songs of its
+  release the album lacks stand greyed at their places** (`mobile.md`'s *The songs an album lacks*):
+  `AlbumView` reads `album_songs_not_held` with its songs, and once per opened key asks
+  `learn_album_songs`, reading them again where songs landed. `AlbumDisc.of(tracks, notHeld:)`
+  (`ResonateLogic`, `AlbumDiscTests`) lays each in by disc and position as an `AlbumRow.notHeld`, a disc
+  holding no song yet standing in its order; `NotHeldAlbumRow` is the number, the title in `.secondary`
+  and the length, with `DownloadBadge`: a press downloads it as an online row does, its swipe and menu
+  save it for later, and VoiceOver says *Not in your library*. Play, Shuffle, the summary and the shared
+  quality read the songs held alone. Offline, or for an album no strict lookup matched, the page is as
+  it was.
 - **A failed read is never drawn as empty.** The album and artist pages, the online artist, album
   and release pages and the tag editor show the read's failure with *Try again* (`ReadFailure`)
   instead of "No songs…" or a blank editor (whose Save would overwrite the file's tags), and so does the lyrics pane (`Features.lyricsUnread`: *Lyrics could not be read* with *Try again* and *Add lyrics…*); a

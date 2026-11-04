@@ -124,6 +124,57 @@ import Testing
         #expect(AlbumDisc.of([]).isEmpty)
     }
 
+    private func numbered(_ id: UInt64, _ number: UInt32, disc: UInt32? = nil) -> Track {
+        var song = track(id, disc: disc)
+        song.trackNumber = number
+        return song
+    }
+
+    private func notHeld(_ title: String, disc: UInt32 = 1, at position: UInt32) -> SearchSong {
+        var song = searchSong(title)
+        song.disc = disc
+        song.position = position
+        return song
+    }
+
+    private func rowIds(_ disc: AlbumDisc) -> [String] {
+        disc.rows.map { row in
+            switch row {
+            case .held(let track): "\(track.id)"
+            case .notHeld(let song): song.title
+            }
+        }
+    }
+
+    @Test func aSongNotHeldStandsAtItsPlaceAmongTheSongsHeld() {
+        let discs = AlbumDisc.of(
+            [numbered(1, 2), numbered(2, 4)],
+            notHeld: [notHeld("first", at: 1), notHeld("third", at: 3), notHeld("fifth", at: 5)]
+        )
+
+        #expect(discs.count == 1)
+        #expect(rowIds(discs[0]) == ["first", "1", "third", "2", "fifth"])
+        #expect(discs[0].tracks.map(\.id) == [1, 2])
+    }
+
+    @Test func aDiscHoldingNoSongYetStandsInItsPlaceWithItsOwnNumber() {
+        let discs = AlbumDisc.of(
+            [numbered(1, 1, disc: 1), numbered(2, 1, disc: 3)],
+            notHeld: [notHeld("second", disc: 2, at: 1), notHeld("second too", disc: 2, at: 2)]
+        )
+
+        #expect(discs.map(\.number) == [1, 2, 3])
+        #expect(discs.map(\.id) == [0, 1, 2])
+        #expect(rowIds(discs[1]) == ["second", "second too"])
+    }
+
+    @Test func aSongHeldWithNoNumberStaysFirstAndRowsKeepIdsOfTheirOwn() {
+        let discs = AlbumDisc.of([track(1)], notHeld: [notHeld("one", at: 1), notHeld("two", at: 2)])
+
+        #expect(rowIds(discs[0]) == ["1", "one", "two"])
+        #expect(Set(discs[0].rows.map(\.id)).count == 3)
+    }
+
     @Test func anAlbumSharesAQualityOnlyWhereEverySongHasOneQuality() {
         #expect(sharedQuality([track(1), track(2)]) == "FLAC · 16-bit · 44.1 kHz")
         #expect(sharedQuality([track(1), track(2, rate: 48_000)]) == nil)

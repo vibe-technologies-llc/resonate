@@ -10,6 +10,7 @@ use rusqlite::{OptionalExtension, params};
 
 use crate::{
     Error, MobilePlayer, Result, StoreOp, Track,
+    album_songs::songs_of,
     catalog::read,
     equaliser::{EqualiserImport, imported},
     features::{Listing, SearchSong},
@@ -165,49 +166,7 @@ impl MobilePlayer {
         else {
             return Ok(Vec::new());
         };
-        let artist = release.credited_as();
-        let artist_id = release
-            .credit
-            .first()
-            .and_then(|credit| credit.mbid.as_ref())
-            .map_or_else(String::new, ToString::to_string);
-        let songs = release
-            .media
-            .iter()
-            .flat_map(|medium| {
-                medium
-                    .tracks
-                    .iter()
-                    .map(move |track| (medium.position, track))
-            })
-            .map(|(disc, track)| SearchSong {
-                recording: track
-                    .recording
-                    .as_ref()
-                    .map_or_else(String::new, ToString::to_string),
-                title: track.title.clone(),
-                artist: track.artist.clone().unwrap_or_else(|| artist.clone()),
-                artist_id: if track.artist.is_none() {
-                    artist_id.clone()
-                } else {
-                    String::new()
-                },
-                album: release.title.clone(),
-                release: release.id.to_string(),
-                release_group: release
-                    .group
-                    .as_ref()
-                    .map_or_else(String::new, ToString::to_string),
-                disc: Some(disc),
-                position: Some(track.position),
-                duration_ms: track
-                    .length
-                    .map(|length| length.as_millis().min(u128::from(u64::MAX)) as u64),
-                isrcs: track.isrcs.clone(),
-                held: false,
-            })
-            .collect();
-        self.offered(songs, Listing::Listed)
+        self.offered(songs_of(&release), Listing::Listed)
     }
 
     pub fn search_auto_eq(&self, text: String) -> Result<Vec<AutoEqDevice>> {
