@@ -6,12 +6,13 @@ use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, 
 use crate::{
     DeviceId, Error, Result, SpaceId, StoreOp,
     catalog::{
-        Catalog, LocalPlaylist, LocalPlaylistId, LocalQuery, Refused, RemoteListen, Resumed,
+        Catalog, HeldShare, LocalPlaylist, LocalPlaylistId, LocalQuery, Refused, RemoteListen,
+        Resumed,
     },
     change::{
         AnswerNote, Change, Clock, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, Listen,
         Platform, PlaylistBody, PlaylistFolded, PlaylistKey, PlaylistNote, QueryBody, QueryFolded,
-        QueryNote, Stamp, wall_nanos,
+        QueryNote, ShareNote, Stamp, wall_nanos,
     },
     merge::{
         DIGEST_BYTES, Folds, Synced, absorbed, named_as_a_free_alias_of, names_alike,
@@ -171,11 +172,28 @@ CREATE TABLE query_folds (
 ) STRICT;
 ";
 
+const SHARED_PLAYLISTS_STAND_APART: &str = "
+ALTER TABLE playlists ADD COLUMN released INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE shares (
+    code TEXT PRIMARY KEY,
+    server TEXT,
+    member BLOB NOT NULL,
+    personal BLOB NOT NULL,
+    released BLOB,
+    gone INTEGER NOT NULL DEFAULT 0,
+    nanos INTEGER NOT NULL,
+    stamped_by BLOB NOT NULL,
+    owed INTEGER NOT NULL DEFAULT 0,
+    here INTEGER NOT NULL DEFAULT 0
+) STRICT;
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     ANSWERS_TRAVEL,
     SONGS_REFUSED_ARE_REMEMBERED,
     NAMESAKES_MADE_APART_BECOME_ONE,
+    SHARED_PLAYLISTS_STAND_APART,
 ];
 
 const OWE_EVERYTHING: &str = "
@@ -526,6 +544,9 @@ impl Ledger {
             .execute("UPDATE query_folds SET owed = 1", [])
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         self.connection
+            .execute("UPDATE shares SET owed = 1", [])
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        self.connection
             .execute("UPDATE queries SET owed = 1", [])
             .map_err(|source| Error::store(StoreOp::Write, source))
     }
@@ -609,6 +630,7 @@ impl Ledger {
         self.look_at_me(me)?;
         self.look_at_playlists(catalog, Looking::Everything)?;
         self.look_at_queries(catalog, Looking::Everything)?;
+        self.look_at_shares(catalog)?;
         self.look_at_favourites(catalog, Looking::Everything)?;
         self.look_at_listens(catalog)?;
         self.look_at_resumption(catalog)?;
@@ -651,6 +673,191 @@ impl Ledger {
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         Ok(())
+    }
+
+    fn look_at_shares(&mut self, catalog: &dyn Catalog) -> Result<()> {
+        let Some(held) = catalog.shares_here().map_err(Error::Catalog)? else {
+            return Ok(());
+        };
+        for share in &held {
+            let known: bool = self
+                .connection
+                .query_row(
+                    "SELECT EXISTS (SELECT 1 FROM shares WHERE code = ?1 AND here = 1 AND gone = 0)",
+                    params![share.code],
+                    |row| row.get(0),
+                )
+                .map_err(|source| Error::store(StoreOp::Read, source))?;
+            if known {
+                continue;
+            }
+            let released: Option<Vec<u8>> = match share.at {
+                Some(at) => self
+                    .connection
+                    .query_row(
+                        "SELECT key FROM playlists WHERE released = 1 AND gone_id = ?1 AND gone_created = ?2",
+                        params![at.id, at.created],
+                        |row| row.get(0),
+                    )
+                    .optional()
+                    .map_err(|source| Error::store(StoreOp::Read, source))?,
+                None => None,
+            };
+            let stamp = self.clock.now(self.device);
+            self.connection
+                .execute(
+                    "INSERT INTO shares (code, server, member, personal, released, gone, nanos, stamped_by, owed, here)
+                     VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?7, 1, 1)
+                     ON CONFLICT(code) DO UPDATE SET server = excluded.server, member = excluded.member,
+                        personal = excluded.personal, released = coalesce(excluded.released, shares.released),
+                        gone = 0, nanos = excluded.nanos, stamped_by = excluded.stamped_by, owed = 1, here = 1",
+                    params![
+                        share.code,
+                        share.server,
+                        share.member.as_slice(),
+                        share.personal.as_slice(),
+                        released,
+                        stamp.nanos,
+                        self.device.0.as_slice()
+                    ],
+                )
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
+        }
+
+        let codes: Vec<String> = {
+            let mut statement = self
+                .connection
+                .prepare("SELECT code FROM shares WHERE here = 1 AND gone = 0")
+                .map_err(|source| Error::store(StoreOp::Read, source))?;
+            statement
+                .query_map([], |row| row.get(0))
+                .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+                .map_err(|source| Error::store(StoreOp::Read, source))?
+        };
+        for code in codes {
+            if held.iter().any(|share| share.code == code) {
+                continue;
+            }
+            let stamp = self.clock.now(self.device);
+            self.connection
+                .execute(
+                    "UPDATE shares SET gone = 1, here = 0, owed = 1, nanos = ?2, stamped_by = ?3 WHERE code = ?1",
+                    params![code, stamp.nanos, self.device.0.as_slice()],
+                )
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
+        }
+
+        Ok(())
+    }
+
+    fn share_notes(&self, condition: &str) -> Result<Vec<ShareNote>> {
+        let mut statement = self
+            .connection
+            .prepare(&format!(
+                "SELECT code, server, member, personal, released, gone, nanos, stamped_by
+                   FROM shares WHERE {condition}"
+            ))
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Vec<u8>>(2)?,
+                    row.get::<_, Vec<u8>>(3)?,
+                    row.get::<_, Option<Vec<u8>>>(4)?,
+                    row.get::<_, bool>(5)?,
+                    row.get::<_, i64>(6)?,
+                    row.get::<_, Vec<u8>>(7)?,
+                ))
+            })
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+
+        Ok(rows
+            .into_iter()
+            .filter_map(
+                |(code, server, member, personal, released, gone, nanos, by)| {
+                    Some(ShareNote {
+                        code,
+                        server,
+                        member: member.try_into().ok()?,
+                        personal: personal.try_into().ok()?,
+                        released: match released {
+                            Some(released) => Some(PlaylistKey(released.try_into().ok()?)),
+                            None => None,
+                        },
+                        gone,
+                        stamp: Stamp {
+                            nanos,
+                            device: DeviceId(by.try_into().ok()?),
+                        },
+                    })
+                },
+            )
+            .collect())
+    }
+
+    fn share_arrived(&mut self, catalog: &dyn Catalog, note: &ShareNote) -> Result<()> {
+        let held: Option<(i64, Vec<u8>)> = self
+            .connection
+            .query_row(
+                "SELECT nanos, stamped_by FROM shares WHERE code = ?1",
+                params![note.code],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        if let Some((nanos, by)) = held
+            && (nanos, by.as_slice()) >= (note.stamp.nanos, note.stamp.device.0.as_slice())
+        {
+            return Ok(());
+        }
+
+        self.connection
+            .execute(
+                "INSERT INTO shares (code, server, member, personal, released, gone, nanos, stamped_by, owed, here)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9)
+                 ON CONFLICT(code) DO UPDATE SET server = excluded.server, member = excluded.member,
+                    personal = excluded.personal, released = coalesce(excluded.released, shares.released),
+                    gone = excluded.gone, nanos = excluded.nanos, stamped_by = excluded.stamped_by,
+                    owed = 0, here = excluded.here",
+                params![
+                    note.code,
+                    note.server,
+                    note.member.as_slice(),
+                    note.personal.as_slice(),
+                    note.released.as_ref().map(|key| key.0.as_slice()),
+                    note.gone,
+                    note.stamp.nanos,
+                    note.stamp.device.0.as_slice(),
+                    !note.gone,
+                ],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+
+        if note.gone {
+            return catalog.drop_share(&note.code).map_err(Error::Catalog);
+        }
+
+        let taking_over = match &note.released {
+            Some(key) => self
+                .stored_playlist(*key)?
+                .and_then(|stored| stored.local.or(stored.gone_from)),
+            None => None,
+        };
+        catalog
+            .take_share(
+                &HeldShare {
+                    code: note.code.clone(),
+                    server: note.server.clone(),
+                    member: note.member,
+                    personal: note.personal,
+                    at: taking_over,
+                },
+                taking_over,
+            )
+            .map_err(Error::Catalog)
     }
 
     fn look_at_playlists(&mut self, catalog: &dyn Catalog, looking: Looking) -> Result<()> {
@@ -706,8 +913,20 @@ impl Ledger {
 
         for (at, synced) in stored.iter().enumerate() {
             if synced.local.is_some() && !synced.gone && !still_here[at] {
-                let stamp = self.clock.now(self.device);
                 let gone_from = synced.local;
+                if let Some(local) = gone_from
+                    && catalog.hides_as_shared(local).map_err(Error::Catalog)?
+                {
+                    self.connection
+                        .execute(
+                            "UPDATE playlists SET released = 1, owed = 0, local_id = NULL, local_created = NULL,
+                                 gone_id = ?2, gone_created = ?3 WHERE key = ?1",
+                            params![synced.key.0.as_slice(), local.id, local.created],
+                        )
+                        .map_err(|source| Error::store(StoreOp::Write, source))?;
+                    continue;
+                }
+                let stamp = self.clock.now(self.device);
                 self.connection
                     .execute(
                         "UPDATE playlists SET gone = 1, local_id = NULL, local_created = NULL, nanos = ?2, stamped_by = ?3, owed = 1, seen = NULL,
@@ -1531,6 +1750,7 @@ impl Ledger {
                 .into_iter()
                 .map(Change::Answer),
         );
+        changes.extend(self.share_notes("owed = 1")?.into_iter().map(Change::Share));
         Ok(bundled(changes))
     }
 
@@ -1547,6 +1767,7 @@ impl Ledger {
         changes.extend(self.handoffs_where("1")?.into_iter().map(Change::Handoff));
         changes.extend(self.listens_where("1")?.into_iter().map(Change::Listen));
         changes.extend(self.answer_notes("1")?.into_iter().map(Change::Answer));
+        changes.extend(self.share_notes("1")?.into_iter().map(Change::Share));
         Ok(bundled(changes))
     }
 
@@ -1593,6 +1814,10 @@ impl Ledger {
                 Change::QueryFolded(folded) => transaction.execute(
                     "UPDATE query_folds SET owed = 0 WHERE folded = ?1 AND kept = ?2",
                     params![folded.folded.0.as_slice(), folded.into.0.as_slice()],
+                ),
+                Change::Share(note) => transaction.execute(
+                    "UPDATE shares SET owed = 0 WHERE code = ?1 AND nanos = ?2",
+                    params![note.code, note.stamp.nanos],
                 ),
                 Change::Answer(note) => {
                     let slot = AnswerSlot::of(&note.recording, &note.answer);
@@ -1648,6 +1873,10 @@ impl Ledger {
                 }
                 Change::QueryFolded(folded) => {
                     self.query_folded(folded, false)?;
+                    false
+                }
+                Change::Share(note) => {
+                    self.share_arrived(catalog, note)?;
                     false
                 }
             };
@@ -1773,6 +2002,17 @@ impl Ledger {
     }
 
     fn playlist_arrived(&mut self, catalog: &dyn Catalog, note: &PlaylistNote) -> Result<bool> {
+        let released: bool = self
+            .connection
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM playlists WHERE key = ?1 AND released = 1)",
+                params![note.key.0.as_slice()],
+                |row| row.get(0),
+            )
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        if released {
+            return Ok(false);
+        }
         let stored = self.stored_playlist(note.key)?;
         if stored
             .as_ref()
@@ -3475,7 +3715,7 @@ impl Ledger {
             .prepare(&format!(
                 "SELECT key, local_id, local_created, name, alias, entries, here, gone, nanos, stamped_by, seen,
                         minted_here, gone_id, gone_created, keep_songs
-                 FROM playlists WHERE {condition}"
+                 FROM playlists WHERE released = 0 AND ({condition})"
             ))
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let rows = statement

@@ -57,6 +57,8 @@ mod suggest;
 mod surveyed;
 mod sync;
 mod table;
+#[cfg(feature = "sync")]
+mod together;
 mod trashing;
 mod vault;
 mod vocabulary;
@@ -117,7 +119,10 @@ use tracing_subscriber::{
 };
 
 use crate::{
-    cli::{Cli, PlaylistArgs, PlaylistOrderArg, QueueArgs, ScanArgs, Sub, SyncArgs, TransportArgs},
+    cli::{
+        Cli, PlaylistArgs, PlaylistOrderArg, QueueArgs, ScanArgs, SharedArgs, Sub, SyncArgs,
+        TransportArgs,
+    },
     config::Config,
     error::{ArtistName, ConfigKey, Error, Result, ValueKind},
     info::bytes_text,
@@ -293,6 +298,7 @@ fn run() -> Result<()> {
         ),
         Some(Sub::Wants(args)) => wanting::run(&open_library(&cli, &config)?, args),
         Some(Sub::Sync(args)) => synced(&cli, &config, args),
+        Some(Sub::Shared(args)) => shared(&cli, &config, args),
         Some(Sub::Missing {
             artist,
             read_the_rest,
@@ -2476,6 +2482,21 @@ fn synced(_cli: &Cli, _config: &Config, _args: &SyncArgs) -> Result<()> {
     Err(Error::SyncOff)
 }
 
+#[cfg(feature = "sync")]
+fn shared(cli: &Cli, config: &Config, args: &SharedArgs) -> Result<()> {
+    together::run(
+        config,
+        &settings_path(cli)?,
+        Arc::new(open_library(cli, config)?),
+        args,
+    )
+}
+
+#[cfg(not(feature = "sync"))]
+fn shared(_cli: &Cli, _config: &Config, _args: &SharedArgs) -> Result<()> {
+    Err(Error::SyncOff)
+}
+
 #[derive(Default)]
 struct Opening {
     playing: Option<PlaylistId>,
@@ -2969,12 +2990,11 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     });
     confirm_sink(&player, wanted_sink(&cli, &config).as_ref());
     let keeps = resuming(&config, Some(&library));
-    queue(
-        &player,
-        &cli.files,
-        keeps.then(|| library.as_ref()),
-        &served,
-    )?;
+    #[cfg(feature = "sync")]
+    let files = together::invitations_taken_out(&cli.files);
+    #[cfg(not(feature = "sync"))]
+    let files = cli.files.clone();
+    queue(&player, &files, keeps.then(|| library.as_ref()), &served)?;
 
     let (asked_to_quit, quitting) = bounded(1);
     let (attending, attention) = crossbeam_channel::unbounded();
@@ -3032,6 +3052,11 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
         })
     };
     let submitting = submitting::start(&config, &library, &player);
+    #[cfg(feature = "sync")]
+    let together = together::start(&config, &library).unwrap_or_else(|error| {
+        tracing::warn!(%error, "shared playlists could not start");
+        None
+    });
     let syncing = sync::start(&config, Some(&places.config), &library);
     #[cfg(feature = "sync")]
     syncing.drive(driven::Driven::Zones(Arc::downgrade(&zones)));
@@ -3162,6 +3187,8 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     );
     drop(presenter);
     syncing.leave();
+    #[cfg(feature = "sync")]
+    drop(together);
     submitting.leave();
     zones.leave();
     outcome?;
@@ -3255,10 +3282,19 @@ fn handed_to(
         tracing::warn!(%error, "the window already open did not take the settings given");
         told!("the window already open did not take the settings given for this run");
     }
-    let rows: Vec<_> = queue_items_served(arguments, served)
+    let (invitations, arguments): (Vec<&OsString>, Vec<&OsString>) = arguments
+        .iter()
+        .partition(|argument| names_an_invitation(argument));
+    let arguments: Vec<OsString> = arguments.into_iter().cloned().collect();
+    let mut rows: Vec<_> = queue_items_served(&arguments, served)
         .into_iter()
         .map(|item| (item.location, item.span))
         .collect();
+    rows.extend(
+        invitations
+            .into_iter()
+            .filter_map(|invitation| MediaLocation::from_uri_within(&invitation.to_string_lossy())),
+    );
     if !rows.is_empty() {
         window.queue(
             &rows,
@@ -3271,6 +3307,16 @@ fn handed_to(
     window.raise()?;
     said!("handed to the window already open as {}", window.name());
     Ok(())
+}
+
+#[cfg(all(feature = "ui", feature = "sync"))]
+fn names_an_invitation(argument: &OsString) -> bool {
+    resonate_sync::shared::invitation_in(&argument.to_string_lossy()).is_some()
+}
+
+#[cfg(all(feature = "ui", not(feature = "sync")))]
+fn names_an_invitation(_argument: &OsString) -> bool {
+    false
 }
 
 #[cfg(not(feature = "ui"))]

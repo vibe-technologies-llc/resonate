@@ -129,6 +129,17 @@ pub struct AnswerNote {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ShareNote {
+    pub code: String,
+    pub server: Option<String>,
+    pub member: [u8; 16],
+    pub personal: [u8; 32],
+    pub released: Option<PlaylistKey>,
+    pub gone: bool,
+    pub stamp: Stamp,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Change {
     Device(DeviceNote),
     Forgotten(DeviceForgotten),
@@ -140,6 +151,7 @@ pub enum Change {
     Answer(AnswerNote),
     PlaylistFolded(PlaylistFolded),
     QueryFolded(QueryFolded),
+    Share(ShareNote),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -215,6 +227,7 @@ impl Change {
             Self::Favourite(note) => Some(note.stamp),
             Self::Handoff(handoff) => Some(handoff.stamp),
             Self::Answer(note) => Some(note.stamp),
+            Self::Share(note) => Some(note.stamp),
             Self::Listen(_) | Self::PlaylistFolded(_) | Self::QueryFolded(_) => None,
         }
     }

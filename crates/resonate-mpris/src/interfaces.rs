@@ -257,6 +257,9 @@ impl PlayerInterface {
     }
 
     fn open_uri(&self, uri: &str) -> fdo::Result<()> {
+        if self.shared.host.invited(uri) {
+            return Ok(());
+        }
         let (location, span) = self.shared.located(uri)?;
         match self.shared.host.open(&location, span) {
             Opened::Accepted => Ok(()),
@@ -448,6 +451,7 @@ impl OwnInterface {
         let at = TrackList::landing(&queue, &after_track)?;
         let items = uris
             .iter()
+            .filter(|uri| !self.shared.host.invited(uri))
             .map(|uri| {
                 let (location, span) = self.shared.located(uri)?;
                 let id = self

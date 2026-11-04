@@ -254,6 +254,7 @@ pub struct Config {
     pub sync_stun: Option<String>,
     pub sync_key: Option<String>,
     pub sync_device: Option<String>,
+    pub shared_name: Option<String>,
     pub sync_songs: Option<SyncedSongs>,
     pub sync_control: Option<RemoteTrust>,
 }
@@ -389,6 +390,7 @@ impl fmt::Debug for Config {
             sync_stun,
             sync_key,
             sync_device,
+            shared_name,
             sync_songs,
             sync_control,
         } = self;
@@ -516,6 +518,7 @@ impl fmt::Debug for Config {
             .field("sync_stun", sync_stun)
             .field("sync_key", &withheld(sync_key.as_ref()))
             .field("sync_device", sync_device)
+            .field("shared_name", shared_name)
             .field("sync_songs", sync_songs)
             .field("sync_control", sync_control)
             .finish()
@@ -1233,6 +1236,7 @@ impl Config {
             ConfigKey::SyncStun => config.sync_stun = given(at.string(value)?),
             ConfigKey::SyncKey => config.sync_key = given(at.string(value)?),
             ConfigKey::SyncDevice => config.sync_device = given(at.string(value)?),
+            ConfigKey::SharedName => config.shared_name = given(at.string(value)?),
             ConfigKey::SyncSongs => {
                 let array = value
                     .as_array()

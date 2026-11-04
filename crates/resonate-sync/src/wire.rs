@@ -16,7 +16,7 @@ use crate::{
     change::{
         AnswerNote, Change, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, Listen, Platform,
         PlaylistBody, PlaylistFolded, PlaylistKey, PlaylistNote, QueryBody, QueryFolded, QueryNote,
-        Stamp,
+        ShareNote, Stamp,
     },
     key::{DEVICE_BYTES, SPACE_BYTES, TOKEN_BYTES},
     remote::{Controlling, RemoteCommand, RemoteZone, read_zones, write_zones},
@@ -1943,6 +1943,22 @@ pub fn encoded_change(change: &Change) -> Vec<u8> {
             writer.fixed(&folded.folded.0);
             writer.fixed(&folded.into.0);
         }
+        Change::Share(note) => {
+            writer.byte(10);
+            writer.text(&note.code);
+            writer.flag(note.server.is_some());
+            if let Some(server) = &note.server {
+                writer.text(server);
+            }
+            writer.fixed(&note.member);
+            writer.fixed(&note.personal);
+            writer.flag(note.released.is_some());
+            if let Some(released) = &note.released {
+                writer.fixed(&released.0);
+            }
+            writer.flag(note.gone);
+            writer.stamp(note.stamp);
+        }
     }
     writer.finish()
 }
@@ -2087,6 +2103,23 @@ fn decoded_change(bytes: &[u8], answers: &[u8]) -> Result<Option<Change>> {
         9 => Change::QueryFolded(QueryFolded {
             folded: PlaylistKey(reader.fixed()?),
             into: PlaylistKey(reader.fixed()?),
+        }),
+        10 => Change::Share(ShareNote {
+            code: reader.text()?,
+            server: if reader.flag()? {
+                Some(reader.text()?)
+            } else {
+                None
+            },
+            member: reader.fixed()?,
+            personal: reader.fixed()?,
+            released: if reader.flag()? {
+                Some(PlaylistKey(reader.fixed()?))
+            } else {
+                None
+            },
+            gone: reader.flag()?,
+            stamp: reader.stamp()?,
         }),
         _ => return Ok(None),
     };

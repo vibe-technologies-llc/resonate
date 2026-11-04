@@ -29,10 +29,10 @@ use resonate_library::{
 use resonate_mpris::ZoneAsked;
 #[cfg(feature = "sync")]
 use resonate_sync::{
-    Catalog, Controlled, Controlling, DeviceId, Follow, Handoff, Held, LocalListen, LocalPlaylist,
-    LocalPlaylistId, LocalQuery, Me, Mirror, Nearby, Opened, Platform, QueryBody, Refused,
-    RemoteCommand, RemoteListen, RemotePlayback, RemoteRow, RemoteZone, Resumed, Server, Settings,
-    SongTags, Standing, Sync, SyncDevice, SyncKey, TransferState, Watched,
+    Catalog, Controlled, Controlling, DeviceId, Follow, Handoff, Held, HeldShare, LocalListen,
+    LocalPlaylist, LocalPlaylistId, LocalQuery, Me, Mirror, Nearby, Opened, Platform, QueryBody,
+    Refused, RemoteCommand, RemoteListen, RemotePlayback, RemoteRow, RemoteZone, Resumed, Server,
+    Settings, SongTags, Standing, Sync, SyncDevice, SyncKey, TransferState, Watched,
 };
 
 use crate::config::Config;
@@ -388,7 +388,7 @@ fn started(
 }
 
 #[cfg(feature = "sync")]
-fn server_of(config: &Config) -> Server {
+pub(crate) fn server_of(config: &Config) -> Server {
     if config.syncs_nearby_only() {
         return Server::Nowhere;
     }
@@ -837,6 +837,28 @@ impl Catalog for Catalogued {
         self.library
             .take_shared_print(file, print)
             .map_err(|error| refused(&error))
+    }
+
+    fn hides_as_shared(&self, at: LocalPlaylistId) -> Answered<bool> {
+        crate::together::hides_as_shared(&self.library, at)
+    }
+
+    fn shares_here(&self) -> Answered<Option<Vec<HeldShare>>> {
+        Ok(crate::together::shares_here())
+    }
+
+    fn take_share(&self, share: &HeldShare, _taking_over: Option<LocalPlaylistId>) -> Answered<()> {
+        if let Some(shared) = crate::together::running() {
+            shared.adopt(share.clone());
+        }
+        Ok(())
+    }
+
+    fn drop_share(&self, code: &str) -> Answered<()> {
+        if let Some(shared) = crate::together::running() {
+            shared.drop_code(code.to_owned());
+        }
+        Ok(())
     }
 
     fn revision(&self) -> u64 {

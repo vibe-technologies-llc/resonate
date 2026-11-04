@@ -4,6 +4,7 @@ use rusqlite::{OptionalExtension as _, Transaction, params};
 
 use crate::{
     Error, Kept, PlaylistName, Result, SavedQuery, StoreOp, db::Inner, offered, playlist, store,
+    synced,
 };
 
 pub(crate) const STEPS_HELD: usize = 32;
@@ -236,6 +237,9 @@ pub(crate) fn edited<T>(
     change: impl FnOnce(&Transaction<'_>) -> Result<Change<T>>,
 ) -> Result<T> {
     let (value, step) = inner.write(|transaction| {
+        if edit != Edit::Discarded && synced::is_read_only(transaction, id)? {
+            return Err(Error::PlaylistReadOnly(id));
+        }
         let reached = reach.settled(transaction, id)?;
         let before = held_in(transaction, id, reached)?;
 

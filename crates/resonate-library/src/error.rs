@@ -217,6 +217,9 @@ pub enum Error {
     #[error("no playlist with id {0}")]
     UnknownPlaylist(PlaylistId),
 
+    #[error("playlist {0:?} is followed from someone else and cannot be edited here")]
+    PlaylistReadOnly(PlaylistId),
+
     #[error("the playlist {0} changed since the edit this would put back")]
     PlaylistChanged(PlaylistId),
 

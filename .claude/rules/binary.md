@@ -62,6 +62,14 @@ paths:
 
 - **`wrapped [--year Y] [--summary]` prints Resonate Wrapped** (`wrapped.rs`): each `Slide` as text, its rankings as tables, or with `--summary` the few lines `YearReview::summary` writes. With nothing ever played it is `Error::NothingHeardYet`, exit 1; a year named with nothing in it says so and exits 0.
 
+- **`shared` is the terminal's way into shared playlists** (`together.rs`, `shared-playlists.md`): bare, a
+  table of them; `--share PLAYLIST` prints the two links; `--join LINK`, `--leave PLAYLIST`,
+  `--remove-person PERSON --from PLAYLIST`, `--reset PLAYLIST`; `--name NAME` writes `shared-name`. It
+  waits up to 20 s for what it did to reach the server. A window holding `shared.lock` makes it
+  `Error::SharedBusy`. **A `resonate://shared/` or `resonate://party/` argument or `OpenUri` is an
+  invitation, not a song** (`together::accepted`, `Host::invited`), though `resonate` is a played-in-place
+  scheme; the desktop entry declares `x-scheme-handler/resonate`, the one claim not on the bus's list.
+
 - **A zone is addressed where a running player is.** `queue` and `sleep` take `--zone <N|NAME>`
   (conflicting with `--player`): a number is the zone's (1 the first), anything else the name the
   window shows, case folded (`ZoneAsked`, `Running::zoned`, `Error::NoSuchZone`); with neither flag

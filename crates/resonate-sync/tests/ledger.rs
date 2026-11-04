@@ -1553,3 +1553,152 @@ fn a_playlist_deleted_and_put_back_after_its_look_keeps_its_key_and_its_songs_ke
     assert_eq!(titles(&desk, "Mix"), ["A", "B"]);
     assert!(desk.ledger.kept_songs_of(at).expect("read"));
 }
+
+fn a_share(at: Option<LocalPlaylistId>) -> resonate_sync::HeldShare {
+    resonate_sync::HeldShare {
+        code: "E-CODE".to_owned(),
+        server: None,
+        member: [1; 16],
+        personal: [2; 32],
+        at,
+    }
+}
+
+fn hidden_as_shared(device: &Device, name: &str) -> LocalPlaylistId {
+    let mut inside = device.shelf.inside.lock();
+    let (id, (created, ..)) = inside
+        .playlists
+        .iter()
+        .find(|(_, (_, held, _))| held == name)
+        .expect("the playlist stands");
+    let at = LocalPlaylistId {
+        id: *id,
+        created: *created,
+    };
+    inside.hidden_as_shared.push(at);
+
+    at
+}
+
+#[test]
+fn sharing_a_playlist_tells_no_other_device_to_delete_it_and_a_later_note_writes_nothing_here() {
+    let mut desk = Device::new("Desk", &["One"]);
+    let mut phone = Device::new("Phone", &["One"]);
+    desk.shelf.make_playlist("Mix", &["One"]);
+    sync(&mut desk, &mut phone);
+    sync(&mut phone, &mut desk);
+    assert!(phone.shelf.playlist_named("Mix").is_some());
+
+    hidden_as_shared(&desk, "Mix");
+    let told = desk.send();
+
+    assert!(
+        !told
+            .iter()
+            .any(|change| matches!(change, Change::Playlist(_))),
+        "sharing a playlist told the other devices something of it: {told:?}"
+    );
+    phone.receive(&told);
+    assert!(phone.shelf.playlist_named("Mix").is_some());
+
+    let renamed = {
+        let inside = phone.shelf.inside.lock();
+        *inside.playlists.keys().next().expect("a playlist")
+    };
+    phone
+        .shelf
+        .inside
+        .lock()
+        .playlists
+        .get_mut(&renamed)
+        .expect("a playlist")
+        .1 = "Mix edited on the phone".to_owned();
+    let lists_before = desk.shelf.inside.lock().playlists.len();
+    sync(&mut phone, &mut desk);
+
+    assert_eq!(
+        desk.shelf.inside.lock().playlists.len(),
+        lists_before,
+        "a note of the list given up here wrote a second copy"
+    );
+}
+
+#[test]
+fn a_share_reaches_this_listeners_other_device_which_takes_its_own_copy_over() {
+    let mut desk = Device::new("Desk", &["One"]);
+    let mut phone = Device::new("Phone", &["One"]);
+    desk.shelf.make_playlist("Mix", &["One"]);
+    sync(&mut desk, &mut phone);
+    sync(&mut phone, &mut desk);
+
+    let at = hidden_as_shared(&desk, "Mix");
+    desk.shelf.inside.lock().shares = Some(vec![a_share(Some(at))]);
+    sync(&mut desk, &mut phone);
+
+    let taken = phone.shelf.inside.lock().shares_taken.clone();
+    assert_eq!(taken.len(), 1);
+    assert_eq!(taken[0].code, "E-CODE");
+    assert_eq!(
+        taken[0].personal, [2; 32],
+        "this listener's other device is the same person"
+    );
+    let own = phone
+        .shelf
+        .playlist_named("Mix")
+        .expect("the phone's copy stands");
+    assert_eq!(taken[0].at.map(|at| at.id), Some(own.0));
+}
+
+#[test]
+fn a_share_left_on_one_device_is_left_on_the_others_and_nothing_known_says_nothing() {
+    let mut desk = Device::new("Desk", &[]);
+    let mut phone = Device::new("Phone", &[]);
+
+    desk.shelf.inside.lock().shares = Some(vec![a_share(None)]);
+    sync(&mut desk, &mut phone);
+    assert_eq!(phone.shelf.inside.lock().shares_taken.len(), 1);
+
+    desk.shelf.inside.lock().shares = None;
+    sync(&mut desk, &mut phone);
+    assert!(
+        phone.shelf.inside.lock().shares_dropped.is_empty(),
+        "a device whose shared playlists are not running took them all as left"
+    );
+
+    desk.shelf.inside.lock().shares = Some(Vec::new());
+    sync(&mut desk, &mut phone);
+    assert_eq!(
+        phone.shelf.inside.lock().shares_dropped.as_slice(),
+        ["E-CODE".to_owned()]
+    );
+}
+
+#[test]
+fn a_share_is_told_once_and_a_compaction_elsewhere_owes_it_again() {
+    let mut desk = Device::new("Desk", &[]);
+    desk.shelf.inside.lock().shares = Some(vec![a_share(None)]);
+
+    assert_eq!(
+        desk.send()
+            .iter()
+            .filter(|change| matches!(change, Change::Share(_)))
+            .count(),
+        1
+    );
+    assert!(
+        desk.send().is_empty()
+            || !desk
+                .send()
+                .iter()
+                .any(|change| matches!(change, Change::Share(_)))
+    );
+
+    desk.ledger.owe_queries().expect("owed");
+
+    assert!(
+        desk.send()
+            .iter()
+            .any(|change| matches!(change, Change::Share(_))),
+        "a build without shares compacted them away and they were not told again"
+    );
+}

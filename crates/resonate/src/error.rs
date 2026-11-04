@@ -126,6 +126,7 @@ pub enum ConfigKey {
     SyncStun,
     SyncKey,
     SyncDevice,
+    SharedName,
     SyncSongs,
     SyncControl,
 }
@@ -182,7 +183,7 @@ impl fmt::Display for Named {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 118] = [
+    pub const ALL: [Self; 119] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -299,6 +300,7 @@ impl ConfigKey {
         Self::SyncStun,
         Self::SyncKey,
         Self::SyncDevice,
+        Self::SharedName,
         Self::SyncSongs,
         Self::SyncControl,
     ];
@@ -421,6 +423,7 @@ impl ConfigKey {
             Self::SyncStun => "sync-stun",
             Self::SyncKey => "sync-key",
             Self::SyncDevice => "sync-device",
+            Self::SharedName => "shared-name",
             Self::SyncSongs => "sync-songs",
             Self::SyncControl => "sync-control",
         }
@@ -581,6 +584,22 @@ pub enum Error {
 
     #[error("nothing has been played yet, so there is no year to review")]
     NothingHeardYet,
+
+    #[cfg(feature = "sync")]
+    #[error("another Resonate holds the shared playlists; do this from there")]
+    SharedBusy,
+
+    #[cfg(feature = "sync")]
+    #[error("{0} is not shared with anyone")]
+    PlaylistNotShared(Box<str>),
+
+    #[cfg(feature = "sync")]
+    #[error("nobody called {0} is on that playlist")]
+    NoSuchPersonOnTheList(Box<str>),
+
+    #[cfg(feature = "sync")]
+    #[error("say which playlist to remove them from with --from")]
+    SharedNeedsAList,
 
     #[error("no player is on the session bus; start one with resonate play or open the window")]
     NothingRunning,

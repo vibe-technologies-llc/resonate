@@ -17,7 +17,7 @@ use tokio::{
 };
 
 use crate::{
-    Clock, DeviceId, Error, LocalPlaylistId, Refused, Result, Server, SpaceId, Stamp,
+    Clock, DeviceId, Error, HeldShare, LocalPlaylistId, Refused, Result, Server, SpaceId, Stamp,
     key::random_bytes,
     merge::projection_digest,
     quic::{to_the_server, trusted_roots},
@@ -28,7 +28,7 @@ use crate::{
         catalog::{LocalShared, SharedCatalog},
         diff::{Looking, Resolving, edits_seen, written_order},
         invitation::{Invited, link_to, web_link_to},
-        moved::{Seat, access_from, decoded_seats, encoded_seats, seat_for},
+        moved::{Personal, Seat, access_from, decoded_seats, encoded_seats, seat_for},
         op::{EntryId, MemberId, SharedList, SharedOp, decoded_ops, encoded_ops},
         place::Place,
         store::{Kept, Me, Store},
@@ -122,6 +122,8 @@ enum Work {
         removing: Option<MemberId>,
         answer: blocking::Sender<Result<Invites>>,
     },
+    Adopt(HeldShare),
+    DropCode(String),
     Watch(Option<SpaceId>),
     Named(String),
     Force,
@@ -131,6 +133,7 @@ enum Work {
 pub struct Shared {
     work: mpsc::UnboundedSender<Work>,
     shown: Arc<RwLock<Vec<SharedShown>>>,
+    held: Arc<RwLock<Vec<HeldShare>>>,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -143,6 +146,7 @@ impl Shared {
         let me = store.me()?;
         let lists = store.lists()?;
         let shown = Arc::new(RwLock::new(Vec::new()));
+        let held = Arc::new(RwLock::new(held_of(&lists)));
         let (work, asked) = mpsc::unbounded_channel();
 
         let running = Running {
@@ -160,6 +164,7 @@ impl Shared {
             revision: None,
             standings: BTreeMap::new(),
             shown: Arc::clone(&shown),
+            held: Arc::clone(&held),
             poll_due: Instant::now(),
             retry_after: FIRST_RETRY,
         };
@@ -177,6 +182,7 @@ impl Shared {
         Ok(Self {
             work,
             shown,
+            held,
             thread: Some(thread),
         })
     }
@@ -205,6 +211,18 @@ impl Shared {
             removing,
             answer,
         })
+    }
+
+    pub fn held(&self) -> Vec<HeldShare> {
+        self.held.read().clone()
+    }
+
+    pub fn adopt(&self, share: HeldShare) {
+        let _ = self.work.send(Work::Adopt(share));
+    }
+
+    pub fn drop_code(&self, code: String) {
+        let _ = self.work.send(Work::DropCode(code));
     }
 
     pub fn watch(&self, space: Option<SpaceId>) {
@@ -257,6 +275,7 @@ struct Running {
     revision: Option<u64>,
     standings: BTreeMap<SpaceId, SharedStanding>,
     shown: Arc<RwLock<Vec<SharedShown>>>,
+    held: Arc<RwLock<Vec<HeldShare>>>,
     poll_due: Instant,
     retry_after: Duration,
 }
@@ -371,6 +390,24 @@ impl Running {
                 let _ = answer.send(reset);
                 self.poll_due = Instant::now();
             }
+            Work::Adopt(share) => {
+                if let Err(error) = self.adopted(&share) {
+                    tracing::warn!(%error, "a shared playlist from another device could not be taken up");
+                }
+                self.poll_due = Instant::now();
+            }
+            Work::DropCode(code) => {
+                let held = self
+                    .lists
+                    .iter()
+                    .find(|kept| kept.access.code() == code)
+                    .map(|kept| kept.space);
+                if let Some(space) = held
+                    && let Err(error) = self.leave(space)
+                {
+                    tracing::warn!(%error, "a shared playlist left on another device stayed here");
+                }
+            }
             Work::Watch(space) => {
                 self.watched = space;
                 self.poll_due = Instant::now();
@@ -406,6 +443,7 @@ impl Running {
         let access = Access::minted()?;
         let keys = access.keys()?;
         let device = DeviceId::minted()?;
+        let me = self.me.clone();
         let mut stamped = || self.clock.now(device);
 
         let mut ops = vec![SharedOp::Renamed {
@@ -413,9 +451,9 @@ impl Running {
             stamp: stamped(),
         }];
         ops.push(SharedOp::Member {
-            member: self.me.member,
+            member: me.member,
             name: self.name.clone(),
-            public: self.me.personal.public(),
+            public: me.personal.public(),
             stamp: stamped(),
         });
         let mut written = Vec::with_capacity(local.entries.len());
@@ -427,7 +465,7 @@ impl Running {
                 entry,
                 recording: recording.clone(),
                 place: here.clone(),
-                by: Some(self.me.member),
+                by: Some(me.member),
                 stamp: stamped(),
             });
             written.push(entry);
@@ -443,6 +481,7 @@ impl Running {
             access: access.clone(),
             server: None,
             device,
+            me,
             at: Some(local.at),
             alias: Some(local.name.clone()),
             seen: Some(digest_of(&local)),
@@ -461,7 +500,39 @@ impl Running {
         invites_of(&access, None)
     }
 
+    fn adopted(&mut self, share: &HeldShare) -> Result<()> {
+        let me = Me {
+            member: MemberId(share.member),
+            personal: Personal::from_bytes(share.personal),
+        };
+        let space = self.joined_as(&share.code, share.server.clone(), me)?;
+        if let Some(at) = share.at
+            && let Some(position) = self.lists.iter().position(|kept| kept.space == space)
+            && self.lists[position].at.is_none()
+        {
+            let editable = self.lists[position].access.may_edit();
+            if self
+                .catalog
+                .shared_flag(at, editable)
+                .map_err(Error::Catalog)?
+                .is_some()
+            {
+                self.lists[position].at = Some(at);
+                let kept = self.lists[position].clone();
+                self.store.keep(&kept)?;
+            }
+        }
+
+        Ok(())
+    }
+
     fn join(&mut self, code: &str, server: Option<String>) -> Result<SpaceId> {
+        let me = self.me.clone();
+
+        self.joined_as(code, server, me)
+    }
+
+    fn joined_as(&mut self, code: &str, server: Option<String>, me: Me) -> Result<SpaceId> {
         if self.server.is_none() && server.is_none() {
             return Err(Error::SharedNeedsAServer);
         }
@@ -473,7 +544,8 @@ impl Running {
             if access.may_edit() && !self.lists[at].access.may_edit() {
                 self.lists[at].access = access;
                 let device = self.lists[at].device;
-                let ops = vec![self.who_i_am_on(device)];
+                let me = self.lists[at].me.clone();
+                let ops = vec![self.who_i_am_on(device, &me)];
                 let kept = &mut self.lists[at];
                 for op in &ops {
                     kept.list.apply(op);
@@ -487,7 +559,7 @@ impl Running {
 
         let device = DeviceId::minted()?;
         let ops = if access.may_edit() {
-            vec![self.who_i_am_on(device)]
+            vec![self.who_i_am_on(device, &me)]
         } else {
             Vec::new()
         };
@@ -500,6 +572,7 @@ impl Running {
             access,
             server,
             device,
+            me,
             at: None,
             alias: None,
             seen: None,
@@ -521,11 +594,11 @@ impl Running {
         Ok(keys.space)
     }
 
-    fn who_i_am_on(&mut self, device: DeviceId) -> SharedOp {
+    fn who_i_am_on(&mut self, device: DeviceId, me: &Me) -> SharedOp {
         SharedOp::Member {
-            member: self.me.member,
+            member: me.member,
             name: self.name.clone(),
-            public: self.me.personal.public(),
+            public: me.personal.public(),
             stamp: self.clock.now(device),
         }
     }
@@ -535,7 +608,9 @@ impl Running {
             if !self.lists[at].access.may_edit() || self.lists[at].leaving {
                 continue;
             }
-            let op = self.who_i_am_on(self.lists[at].device);
+            let device = self.lists[at].device;
+            let me = self.lists[at].me.clone();
+            let op = self.who_i_am_on(device, &me);
             let kept = &mut self.lists[at];
             kept.list.apply(&op);
             owed_more(kept, vec![op]);
@@ -568,7 +643,7 @@ impl Running {
         }
 
         let stamp = self.clock.now(self.lists[at].device);
-        let member = self.me.member;
+        let member = self.lists[at].me.member;
         let kept = &mut self.lists[at];
         let op = SharedOp::Left { member, stamp };
         kept.list.apply(&op);
@@ -619,7 +694,7 @@ impl Running {
 
     fn edited(&mut self, at: usize, listed: &LocalShared, digest: Vec<u8>) -> Result<()> {
         let device = self.lists[at].device;
-        let member = self.me.member;
+        let member = self.lists[at].me.member;
         let catalog = Arc::clone(&self.catalog);
         let kept = &mut self.lists[at];
         let mut doing = Doing {
@@ -1105,10 +1180,11 @@ impl Running {
             .ok()
             .and_then(|plain| decoded_seats(&plain).ok())
             .unwrap_or_default();
-        let mine = seats.iter().find(|seat| seat.member == self.me.member);
+        let me = self.lists[at].me.clone();
+        let mine = seats.iter().find(|seat| seat.member == me.member);
 
         if let Some(seat) = mine
-            && let Ok(access) = access_from(seat, &self.me.personal)
+            && let Ok(access) = access_from(seat, &me.personal)
         {
             return self.moved_to(at, access).map(Some);
         }
@@ -1253,7 +1329,7 @@ impl Running {
                     .map(|(member, person)| PersonShown {
                         member,
                         name: person.name.clone(),
-                        me: member == self.me.member,
+                        me: member == kept.me.member,
                     })
                     .collect(),
                 unheld: rows
@@ -1271,7 +1347,22 @@ impl Running {
         }
 
         *self.shown.write() = shown;
+        *self.held.write() = held_of(&self.lists);
     }
+}
+
+fn held_of(lists: &[Kept]) -> Vec<HeldShare> {
+    lists
+        .iter()
+        .filter(|kept| !kept.leaving)
+        .map(|kept| HeldShare {
+            code: kept.access.code(),
+            server: kept.server.clone(),
+            member: kept.me.member.0,
+            personal: kept.me.personal.to_bytes(),
+            at: kept.at,
+        })
+        .collect()
 }
 
 fn owed_more(kept: &mut Kept, ops: Vec<SharedOp>) {

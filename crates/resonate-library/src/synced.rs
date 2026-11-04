@@ -227,6 +227,8 @@ pub(crate) fn playlists(inner: &Inner) -> Result<Vec<SyncedPlaylist>> {
             .prepare(
                 "SELECT p.id, p.created, p.name FROM playlists p
                   WHERE NOT EXISTS (SELECT 1 FROM playlist_queries q WHERE q.playlist_id = p.id)
+                    AND NOT EXISTS (SELECT 1 FROM playlist_shares s
+                                     WHERE s.playlist_id = p.id AND s.created = p.created)
                   ORDER BY p.id",
             )
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
@@ -438,6 +440,163 @@ pub(crate) fn write_playlist(
     name: &str,
     entries: &[Recording],
 ) -> Result<SyncedPlaylist> {
+    written_with(inner, at, name, entries, None)
+}
+
+pub(crate) fn write_shared_playlist(
+    inner: &Inner,
+    at: Option<(PlaylistId, i64)>,
+    name: &str,
+    entries: &[Recording],
+    editable: bool,
+) -> Result<SyncedPlaylist> {
+    written_with(inner, at, name, entries, Some(editable))
+}
+
+pub(crate) fn is_read_only(transaction: &Transaction<'_>, id: PlaylistId) -> Result<bool> {
+    transaction
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM playlist_shares s JOIN playlists p
+                               ON p.id = s.playlist_id AND p.created = s.created
+                             WHERE s.playlist_id = ?1 AND s.editable = 0)",
+            params![id.get().cast_signed()],
+            |row| row.get(0),
+        )
+        .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
+pub(crate) fn shared_playlist(
+    inner: &Inner,
+    id: PlaylistId,
+    created: i64,
+) -> Result<Option<SyncedPlaylist>> {
+    inner.read(|connection| {
+        let name: Option<String> = connection
+            .query_row(
+                "SELECT name FROM playlists WHERE id = ?1 AND created = ?2",
+                params![id.get().cast_signed(), created],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+        let Some(name) = name else {
+            return Ok(None);
+        };
+
+        Ok(Some(SyncedPlaylist {
+            id,
+            created,
+            name,
+            entries: entries_of(connection, id)?,
+        }))
+    })
+}
+
+pub(crate) fn flag_playlist_shared(
+    inner: &Inner,
+    id: PlaylistId,
+    created: i64,
+    editable: bool,
+) -> Result<Option<SyncedPlaylist>> {
+    let flagged = inner.write(|transaction| {
+        let held: bool = transaction
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM playlists WHERE id = ?1 AND created = ?2)",
+                params![id.get().cast_signed(), created],
+                |row| row.get(0),
+            )
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+        if !held {
+            return Ok(false);
+        }
+        flagged_in(transaction, id, created, editable)?;
+
+        Ok(true)
+    })?;
+    inner.playlists_changed();
+    inner.arrived();
+
+    if flagged {
+        shared_playlist(inner, id, created)
+    } else {
+        Ok(None)
+    }
+}
+
+pub(crate) fn unflag_playlist_shared(inner: &Inner, id: PlaylistId, created: i64) -> Result<()> {
+    inner.write(|transaction| {
+        transaction
+            .execute(
+                "DELETE FROM playlist_shares WHERE playlist_id = ?1 AND created = ?2",
+                params![id.get().cast_signed(), created],
+            )
+            .map_err(|source| Error::store(StoreOp::Delete, source))?;
+
+        Ok(())
+    })?;
+    inner.playlists_changed();
+    inner.arrived();
+
+    Ok(())
+}
+
+pub(crate) fn created_of(inner: &Inner, id: PlaylistId) -> Result<i64> {
+    inner.read(|connection| {
+        connection
+            .query_row(
+                "SELECT created FROM playlists WHERE id = ?1",
+                params![id.get().cast_signed()],
+                |row| row.get(0),
+            )
+            .map_err(|source| Error::store(StoreOp::Query, source))
+    })
+}
+
+pub(crate) fn shared_as(inner: &Inner) -> Result<Vec<(PlaylistId, bool)>> {
+    inner.read(|connection| {
+        let mut statement = connection
+            .prepare(
+                "SELECT s.playlist_id, s.editable FROM playlist_shares s
+                   JOIN playlists p ON p.id = s.playlist_id AND p.created = s.created",
+            )
+            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, bool>(1)?))
+            })
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+        rows.into_iter()
+            .map(|(id, editable)| Ok((PlaylistId::new(id.cast_unsigned())?, editable)))
+            .collect()
+    })
+}
+
+fn flagged_in(
+    transaction: &Transaction<'_>,
+    id: PlaylistId,
+    created: i64,
+    editable: bool,
+) -> Result<()> {
+    transaction
+        .execute(
+            "INSERT INTO playlist_shares (playlist_id, created, editable) VALUES (?1, ?2, ?3)
+             ON CONFLICT(playlist_id, created) DO UPDATE SET editable = excluded.editable",
+            params![id.get().cast_signed(), created, editable],
+        )
+        .map_err(|source| Error::store(StoreOp::Insert, source))?;
+
+    Ok(())
+}
+
+fn written_with(
+    inner: &Inner,
+    at: Option<(PlaylistId, i64)>,
+    name: &str,
+    entries: &[Recording],
+    shared: Option<bool>,
+) -> Result<SyncedPlaylist> {
     let written = inner.write(|transaction| {
         let mut rows = Vec::with_capacity(entries.len());
         for entry in entries {
@@ -487,6 +646,9 @@ pub(crate) fn write_playlist(
                 |row| row.get(0),
             )
             .map_err(|source| Error::store(StoreOp::Query, source))?;
+        if let Some(editable) = shared {
+            flagged_in(transaction, id, created, editable)?;
+        }
         Ok(SyncedPlaylist {
             id,
             created,

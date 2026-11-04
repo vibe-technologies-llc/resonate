@@ -27,6 +27,8 @@ CREATE TABLE lists (
     code          TEXT NOT NULL,
     server        TEXT,
     device        BLOB NOT NULL,
+    member        BLOB NOT NULL,
+    personal      BLOB NOT NULL,
     local_id      INTEGER,
     local_created INTEGER,
     alias         TEXT,
@@ -64,6 +66,7 @@ pub struct Kept {
     pub access: Access,
     pub server: Option<String>,
     pub device: DeviceId,
+    pub me: Me,
     pub at: Option<LocalPlaylistId>,
     pub alias: Option<String>,
     pub seen: Option<Vec<u8>>,
@@ -169,7 +172,7 @@ impl Store {
             .connection
             .prepare(
                 "SELECT space, code, server, device, local_id, local_created, alias, seen, cursor,
-                        state, written, records_since, bytes_since, leaving
+                        state, written, records_since, bytes_since, leaving, member, personal
                    FROM lists",
             )
             .map_err(|source| Error::store(StoreOp::Read, source))?;
@@ -190,6 +193,8 @@ impl Store {
                     records_since: row.get(11)?,
                     bytes_since: row.get(12)?,
                     leaving: row.get(13)?,
+                    member: row.get(14)?,
+                    personal: row.get(15)?,
                 })
             })
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
@@ -210,6 +215,8 @@ impl Store {
     fn read(&self, raw: Raw) -> Result<Kept> {
         let space: [u8; 16] = raw.space.try_into().map_err(|_| malformed())?;
         let device: [u8; DEVICE_BYTES] = raw.device.try_into().map_err(|_| malformed())?;
+        let member: [u8; MEMBER_BYTES] = raw.member.try_into().map_err(|_| malformed())?;
+        let personal: [u8; 32] = raw.personal.try_into().map_err(|_| malformed())?;
         let mut list = SharedList::default();
         for op in decoded_ops(&raw.state)? {
             list.apply(&op);
@@ -239,6 +246,10 @@ impl Store {
             access: Access::from_code(&raw.code)?,
             server: raw.server,
             device: DeviceId(device),
+            me: Me {
+                member: MemberId(member),
+                personal: Personal::from_bytes(personal),
+            },
             at: raw
                 .local_id
                 .zip(raw.local_created)
@@ -265,15 +276,16 @@ impl Store {
         transaction
             .execute(
                 "INSERT INTO lists (space, code, server, device, local_id, local_created, alias,
-                                    seen, cursor, state, written, records_since, bytes_since, leaving)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+                                    seen, cursor, state, written, records_since, bytes_since, leaving,
+                                    member, personal)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
                  ON CONFLICT(space) DO UPDATE SET
                     code = excluded.code, server = excluded.server, device = excluded.device,
                     local_id = excluded.local_id, local_created = excluded.local_created,
                     alias = excluded.alias, seen = excluded.seen, cursor = excluded.cursor,
                     state = excluded.state, written = excluded.written,
                     records_since = excluded.records_since, bytes_since = excluded.bytes_since,
-                    leaving = excluded.leaving",
+                    leaving = excluded.leaving, member = excluded.member, personal = excluded.personal",
                 params![
                     kept.space.0.as_slice(),
                     kept.access.code(),
@@ -289,6 +301,8 @@ impl Store {
                     kept.records_since.cast_signed(),
                     kept.bytes_since.cast_signed(),
                     i64::from(kept.leaving),
+                    kept.me.member.0.as_slice(),
+                    kept.me.personal.to_bytes().as_slice(),
                 ],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
@@ -338,6 +352,8 @@ struct Raw {
     records_since: i64,
     bytes_since: i64,
     leaving: i64,
+    member: Vec<u8>,
+    personal: Vec<u8>,
 }
 
 const fn malformed() -> Error {
@@ -387,6 +403,10 @@ mod tests {
             access,
             server: Some("wss://elsewhere.example/".to_owned()),
             device: DeviceId([3; DEVICE_BYTES]),
+            me: Me {
+                member: MemberId([6; MEMBER_BYTES]),
+                personal: Personal::minted().expect("a secret"),
+            },
             at: Some(LocalPlaylistId { id: 4, created: 5 }),
             alias: Some("Mix (2)".to_owned()),
             seen: Some(vec![7; 32]),

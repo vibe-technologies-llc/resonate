@@ -242,6 +242,63 @@ pub struct TransportArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct SharedArgs {
+    #[arg(
+        long,
+        value_name = "PLAYLIST",
+        conflicts_with_all = ["join", "leave", "remove_person", "reset"],
+        help = "Share this playlist and print a link to edit it with and one to follow it by"
+    )]
+    pub share: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "LINK",
+        conflicts_with_all = ["leave", "remove_person", "reset"],
+        help = "Join the playlist someone shared by its link"
+    )]
+    pub join: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "PLAYLIST",
+        conflicts_with_all = ["remove_person", "reset"],
+        help = "Leave this playlist; its songs stay here as a playlist of your own"
+    )]
+    pub leave: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "PERSON",
+        requires = "from",
+        conflicts_with = "reset",
+        help = "Take this person off the playlist --from names; everyone else moves to new links"
+    )]
+    pub remove_person: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "PLAYLIST",
+        help = "The playlist --remove-person takes someone off"
+    )]
+    pub from: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "PLAYLIST",
+        help = "Make new links for this playlist, so the old ones reach nothing"
+    )]
+    pub reset: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "NAME",
+        help = "The name other people see beside you"
+    )]
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Args)]
 pub struct SyncArgs {
     #[arg(
         long,
@@ -1247,6 +1304,12 @@ pub enum Sub {
                  one was playing"
     )]
     Sync(SyncArgs),
+
+    #[command(
+        about = "List the playlists shared with other people; share one, join one by its link, \
+                 leave one, or take someone off one"
+    )]
+    Shared(SharedArgs),
 
     #[command(
         about = "List the release tracks the catalog holds no file for, and the releases of held \

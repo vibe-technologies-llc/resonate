@@ -10,8 +10,8 @@ use std::{
 use parking_lot::{Condvar, Mutex};
 use resonate_core::{Answer, Answered, Mbid, Recording, SharedLyricsfile, SharedPrint, WholeFile};
 use resonate_sync::{
-    Catalog, Held, LocalListen, LocalPlaylist, LocalPlaylistId, LocalQuery, Opened, QueryBody,
-    Refused, RemoteListen, Resumed, SongTags,
+    Catalog, Held, HeldShare, LocalListen, LocalPlaylist, LocalPlaylistId, LocalQuery, Opened,
+    QueryBody, Refused, RemoteListen, Resumed, SongTags,
 };
 
 #[derive(Default)]
@@ -77,6 +77,10 @@ pub struct Inside {
     pub refuses_opening: bool,
     pub refuses_resolving: bool,
     pub unwritable_sorts_from: Option<u8>,
+    pub hidden_as_shared: Vec<LocalPlaylistId>,
+    pub shares: Option<Vec<HeldShare>>,
+    pub shares_taken: Vec<HeldShare>,
+    pub shares_dropped: Vec<String>,
     next_id: i64,
     next_answered: i64,
 }
@@ -301,11 +305,39 @@ impl Shelf {
 }
 
 impl Catalog for Shelf {
+    fn hides_as_shared(&self, at: LocalPlaylistId) -> Result<bool, Refused> {
+        Ok(self.inside.lock().hidden_as_shared.contains(&at))
+    }
+
+    fn shares_here(&self) -> Result<Option<Vec<HeldShare>>, Refused> {
+        Ok(self.inside.lock().shares.clone())
+    }
+
+    fn take_share(
+        &self,
+        share: &HeldShare,
+        _taking_over: Option<LocalPlaylistId>,
+    ) -> Result<(), Refused> {
+        self.inside.lock().shares_taken.push(share.clone());
+        Ok(())
+    }
+
+    fn drop_share(&self, code: &str) -> Result<(), Refused> {
+        self.inside.lock().shares_dropped.push(code.to_owned());
+        Ok(())
+    }
+
     fn playlists(&self) -> Result<Vec<LocalPlaylist>, Refused> {
         let inside = self.inside.lock();
         Ok(inside
             .playlists
             .iter()
+            .filter(|(id, (created, ..))| {
+                !inside.hidden_as_shared.contains(&LocalPlaylistId {
+                    id: **id,
+                    created: *created,
+                })
+            })
             .map(|(id, (created, name, entries))| LocalPlaylist {
                 at: LocalPlaylistId {
                     id: *id,

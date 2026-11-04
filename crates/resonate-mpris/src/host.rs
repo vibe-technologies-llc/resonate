@@ -145,6 +145,10 @@ pub trait Host: Send + Sync + 'static {
         Opened::Refused
     }
 
+    fn invited(&self, _uri: &str) -> bool {
+        false
+    }
+
     fn heard(&self, _location: &MediaLocation, _span: Option<FrameSpan>) -> Option<Heard> {
         None
     }

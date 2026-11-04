@@ -1783,3 +1783,79 @@ fn a_cover_one_catalog_holds_for_a_release_lands_on_another_holding_it_without_o
     assert!(!there.take_shared_cover(&release.id, &offered.bytes)?);
     Ok(())
 }
+
+mod shared_lists {
+    use std::time::Duration;
+
+    use resonate_core::Recording;
+    use resonate_library::{Error, Library};
+
+    fn nothing_held() -> Vec<Recording> {
+        vec![Recording {
+            mbid: None,
+            title: "Not held here".to_owned(),
+            artist: "Ada".to_owned(),
+            album: String::new(),
+            length: Some(Duration::from_secs(1)),
+        }]
+    }
+
+    #[test]
+    fn a_shared_list_leaves_the_personal_view_and_a_followed_one_refuses_an_edit() {
+        let library = Library::open_in_memory().expect("a catalog");
+        let own = library.create_playlist("Own").expect("made");
+
+        let shared = library
+            .write_shared_playlist(None, "Followed", &nothing_held(), false)
+            .expect("written");
+        let edited = library
+            .write_shared_playlist(None, "Edited", &nothing_held(), true)
+            .expect("written");
+        let names: Vec<String> = library
+            .synced_playlists()
+            .expect("read")
+            .into_iter()
+            .map(|playlist| playlist.name)
+            .collect();
+
+        assert_eq!(names, ["Own"], "a shared list reached the personal ledger");
+        assert_eq!(library.playlists_shared().expect("read").len(), 2);
+        assert!(library.rename_playlist(own, "Still mine").is_ok());
+        assert!(library.rename_playlist(edited.id, "Fine").is_ok());
+        assert!(matches!(
+            library.rename_playlist(shared.id, "Not mine"),
+            Err(Error::PlaylistReadOnly(_))
+        ));
+        assert!(
+            library.remove_playlist(shared.id).is_ok(),
+            "a followed list can always be let go of"
+        );
+    }
+
+    #[test]
+    fn a_list_flagged_and_unflagged_comes_back_to_the_personal_view_with_its_row_kept() {
+        let library = Library::open_in_memory().expect("a catalog");
+        let id = library.create_playlist("Mix").expect("made");
+        let created = library.playlist_stamp(id).expect("read");
+
+        let flagged = library
+            .flag_playlist_shared(id, created, true)
+            .expect("flagged")
+            .expect("the row stands");
+        assert_eq!(flagged.name, "Mix");
+        assert!(library.synced_playlists().expect("read").is_empty());
+
+        library
+            .unflag_playlist_shared(id, created)
+            .expect("unflagged");
+        assert_eq!(library.synced_playlists().expect("read").len(), 1);
+
+        assert!(
+            library
+                .flag_playlist_shared(id, created + 1, true)
+                .expect("asked")
+                .is_none(),
+            "a row whose id was reused is another list"
+        );
+    }
+}

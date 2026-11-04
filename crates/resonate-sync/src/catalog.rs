@@ -82,6 +82,15 @@ pub struct SongTags {
     pub compilation: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HeldShare {
+    pub code: String,
+    pub server: Option<String>,
+    pub member: [u8; 16],
+    pub personal: [u8; 32],
+    pub at: Option<LocalPlaylistId>,
+}
+
 pub trait ReadSeek: Read + Seek + Send {}
 
 impl<T: Read + Seek + Send> ReadSeek for T {}
@@ -237,6 +246,29 @@ pub trait Catalog: Send + Sync + 'static {
     fn take_print(&self, file: WholeFile, print: &SharedPrint) -> Result<bool, Refused> {
         let _ = (file, print);
         Ok(false)
+    }
+
+    fn hides_as_shared(&self, at: LocalPlaylistId) -> Result<bool, Refused> {
+        let _ = at;
+        Ok(false)
+    }
+
+    fn shares_here(&self) -> Result<Option<Vec<HeldShare>>, Refused> {
+        Ok(None)
+    }
+
+    fn take_share(
+        &self,
+        share: &HeldShare,
+        taking_over: Option<LocalPlaylistId>,
+    ) -> Result<(), Refused> {
+        let _ = (share, taking_over);
+        Ok(())
+    }
+
+    fn drop_share(&self, code: &str) -> Result<(), Refused> {
+        let _ = code;
+        Ok(())
     }
 
     fn revision(&self) -> u64;

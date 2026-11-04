@@ -213,6 +213,11 @@ impl Host for Desktop {
         MIME_TYPES.iter().map(|kind| (*kind).to_owned()).collect()
     }
 
+    #[cfg(feature = "sync")]
+    fn invited(&self, uri: &str) -> bool {
+        crate::together::accepted(uri)
+    }
+
     fn open(&self, location: &MediaLocation, span: Option<FrameSpan>) -> Opened {
         let queue = self.player.queue();
         let mut minting = Unclaimed::beside(queue.iter().map(Arc::as_ref));
@@ -657,7 +662,10 @@ mod tests {
 
     #[test]
     fn the_desktop_entry_and_the_bus_advertise_the_same_media_types() {
-        let declared = entry_mime_types();
+        let declared: Vec<_> = entry_mime_types()
+            .into_iter()
+            .filter(|kind| !kind.starts_with("x-scheme-handler/"))
+            .collect();
 
         for kind in MIME_TYPES {
             assert!(declared.contains(&kind), "{kind} is missing from the entry");

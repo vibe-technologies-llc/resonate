@@ -2561,6 +2561,41 @@ impl Library {
         synced::write_query(&self.inner, at, body)
     }
 
+    pub fn shared_playlist(&self, id: PlaylistId, created: i64) -> Result<Option<SyncedPlaylist>> {
+        synced::shared_playlist(&self.inner, id, created)
+    }
+
+    pub fn write_shared_playlist(
+        &self,
+        at: Option<(PlaylistId, i64)>,
+        name: &str,
+        entries: &[resonate_core::Recording],
+        editable: bool,
+    ) -> Result<SyncedPlaylist> {
+        synced::write_shared_playlist(&self.inner, at, name, entries, editable)
+    }
+
+    pub fn flag_playlist_shared(
+        &self,
+        id: PlaylistId,
+        created: i64,
+        editable: bool,
+    ) -> Result<Option<SyncedPlaylist>> {
+        synced::flag_playlist_shared(&self.inner, id, created, editable)
+    }
+
+    pub fn unflag_playlist_shared(&self, id: PlaylistId, created: i64) -> Result<()> {
+        synced::unflag_playlist_shared(&self.inner, id, created)
+    }
+
+    pub fn playlist_stamp(&self, id: PlaylistId) -> Result<i64> {
+        synced::created_of(&self.inner, id)
+    }
+
+    pub fn playlists_shared(&self) -> Result<Vec<(PlaylistId, bool)>> {
+        synced::shared_as(&self.inner)
+    }
+
     pub fn remove_synced_playlist(&self, id: PlaylistId, created: i64) -> Result<bool> {
         synced::remove_playlist(&self.inner, id, created)
     }

@@ -4,6 +4,15 @@ use crate::{Error, Result, SchemaFingerprint, StoreOp, store};
 
 const UNSTAMPED: u32 = 0;
 
+const A_PLAYLIST_MAY_BE_SHARED_WITH_OTHER_PEOPLE: &str = "
+CREATE TABLE playlist_shares (
+    playlist_id INTEGER NOT NULL,
+    created     INTEGER NOT NULL,
+    editable    INTEGER NOT NULL,
+    PRIMARY KEY (playlist_id, created)
+) STRICT;
+";
+
 const MIGRATIONS: &[&str] = &[
     LISTENS_NAME_THEIR_ORIGIN,
     SONGS_RECEIVED_NAME_THEIR_RECORDING,
@@ -21,6 +30,7 @@ const MIGRATIONS: &[&str] = &[
     A_SONG_DELETED_HERE_IS_REMEMBERED,
     A_PLAYLIST_REMEMBERS_THE_LINK_IT_CAME_FROM,
     A_PROFILE_IS_FOLLOWED_WHOLE,
+    A_PLAYLIST_MAY_BE_SHARED_WITH_OTHER_PEOPLE,
 ];
 
 const STAMPS: [SchemaFingerprint; MIGRATIONS.len() + 1] = stamps();
