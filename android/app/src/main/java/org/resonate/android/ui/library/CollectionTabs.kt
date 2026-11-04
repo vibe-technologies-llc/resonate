@@ -47,10 +47,11 @@ import org.resonate.android.nativecore.CollectionOrder
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.components.ArtistPortrait
 import org.resonate.android.ui.components.CollectionRow
-import org.resonate.android.ui.components.IconTile
-import org.resonate.android.ui.components.PlaylistCover
 import org.resonate.android.ui.components.SectionHeader
+import org.resonate.android.ui.components.Shortcut
+import org.resonate.android.ui.components.ShortcutPair
 import org.resonate.android.ui.components.Sizes
+import org.resonate.android.ui.components.bleeding
 import org.resonate.android.ui.counted
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
@@ -177,67 +178,76 @@ fun PlaylistsTab(model: LibraryViewModel, padding: PaddingValues) {
     val sharedLists by model.sharedLists.collectAsStateWithLifecycle()
     val party by resonate.features.together.party.collectAsStateWithLifecycle()
     val paste = rememberPasteALink()
+    val direction = LocalLayoutDirection.current
+    val grid = rememberLazyGridState()
+    val scheme = MaterialTheme.colorScheme
     LaunchedEffect(Unit) { model.refreshPlaylists() }
-    LazyColumn(contentPadding = padding, modifier = Modifier.fillMaxSize().testTag("playlists")) {
-        item("favourites") {
-            CollectionRow(
-                title = "Favourites",
-                supporting = counted(favourites, "song"),
-                onClick = { navigator.open(Screen.Favourites) },
-                leading = {
-                    IconTile(
-                        Icons.Rounded.Favorite,
-                        container = MaterialTheme.colorScheme.primaryContainer,
-                        content = MaterialTheme.colorScheme.onPrimaryContainer,
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(150.dp),
+        state = grid,
+        contentPadding =
+            PaddingValues(
+                start = padding.calculateStartPadding(direction) + Sizes.gutter,
+                end = padding.calculateEndPadding(direction) + Sizes.gutter,
+                top = 12.dp,
+                bottom = padding.calculateBottomPadding(),
+            ),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxSize().testTag("playlists"),
+    ) {
+        item("shortcuts", span = { GridItemSpan(maxLineSpan) }) {
+            ShortcutPair(
+                first = { modifier ->
+                    Shortcut(
+                        icon = Icons.Rounded.Favorite,
+                        title = "Favourites",
+                        detail = counted(favourites, "song"),
+                        container = scheme.primaryContainer,
+                        content = scheme.onPrimaryContainer,
+                        badge = scheme.primary,
+                        onBadge = scheme.onPrimary,
+                        onClick = { navigator.open(Screen.Favourites) },
+                        modifier = modifier.testTag("favourites"),
                     )
                 },
-                modifier = Modifier.padding(top = 8.dp).testTag("favourites"),
-            )
-        }
-        item("party") {
-            CollectionRow(
-                title = "Listening party",
-                supporting = party?.let(TogetherWords::partyLine) ?: "Listen together with friends",
-                onClick = { navigator.open(Screen.Party) },
-                leading = {
-                    IconTile(
-                        Icons.Rounded.Groups,
-                        container = MaterialTheme.colorScheme.secondaryContainer,
-                        content = MaterialTheme.colorScheme.onSecondaryContainer,
+                second = { modifier ->
+                    Shortcut(
+                        icon = Icons.Rounded.Groups,
+                        title = "Party",
+                        detail = party?.let(TogetherWords::partyLine) ?: "Listen together",
+                        container = scheme.tertiaryContainer,
+                        content = scheme.onTertiaryContainer,
+                        badge = scheme.tertiary,
+                        onBadge = scheme.onTertiary,
+                        onClick = { navigator.open(Screen.Party) },
+                        modifier = modifier.testTag("listening-party"),
                     )
                 },
-                modifier = Modifier.testTag("listening-party"),
             )
         }
-        item("heading") {
+        item("heading", span = { GridItemSpan(maxLineSpan) }) {
             SectionHeader(
                 "Your playlists",
                 action = "Paste a link",
                 onAction = paste,
-                modifier = Modifier.testTag("playlists-heading"),
+                modifier = Modifier.bleeding(Sizes.gutter).testTag("playlists-heading"),
             )
         }
         if (playlists.isEmpty()) {
-            item("none") {
-                Text(
-                    "A mood, a moment, a journey. Make it a playlist.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = Sizes.gutter, vertical = 8.dp),
+            item("none", span = { GridItemSpan(maxLineSpan) }) {
+                EmptyCollection(
+                    title = "No playlists yet",
+                    detail = "A mood, a moment, a journey. Make it a playlist.",
+                    modifier = Modifier.testTag("no-playlists"),
                 )
             }
         }
         items(playlists, key = { "playlist:${it.id}" }) { playlist ->
-            CollectionRow(
-                title = playlist.name,
-                supporting =
-                    listOfNotNull(
-                            TogetherWords.badge(sharedLists.firstOrNull { it.playlist == playlist.id }),
-                            counted(playlist.songs, "song"),
-                        )
-                        .joinToString(" · "),
+            PlaylistCard(
+                playlist,
                 onClick = { navigator.open(playlist.screen) },
-                leading = { PlaylistCover(playlist.covers, Sizes.rowArt, shape = MaterialTheme.shapes.medium) },
+                badge = TogetherWords.badge(sharedLists.firstOrNull { it.playlist == playlist.id }),
             )
         }
     }

@@ -32,16 +32,19 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
@@ -55,6 +58,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.byline
@@ -78,6 +82,7 @@ fun TrackRow(
     supporting: String = track.byline,
     title: AnnotatedString? = null,
     subtitle: AnnotatedString? = null,
+    note: String? = null,
     onMore: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
     selection: RowSelection? = null,
@@ -88,6 +93,26 @@ fun TrackRow(
     val selected = selection?.selected == true
     val label = title?.text ?: track.shownTitle
     val lines = rememberTitleMaxLines()
+    val oneLine = subtitle == null && supporting.isEmpty()
+    val heart: @Composable () -> Unit = {
+        Icon(
+            Icons.Rounded.Favorite,
+            contentDescription = "Favourite",
+            tint = scheme.primary,
+            modifier = Modifier.size(14.dp),
+        )
+    }
+    val action: (@Composable () -> Unit)? =
+        if (selecting) null
+        else
+            trailing
+                ?: onMore?.let { more ->
+                    {
+                        IconButton(onClick = more) {
+                            Icon(Icons.Rounded.MoreVert, contentDescription = "More options")
+                        }
+                    }
+                }
     ListItem(
         onClick = if (selection != null && selecting) selection.toggle else onClick,
         onLongClick =
@@ -174,35 +199,39 @@ fun TrackRow(
                     }
                 }
             },
-        supportingContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (track.favourite) {
-                    Icon(
-                        Icons.Rounded.Favorite,
-                        contentDescription = "Favourite",
-                        tint = scheme.primary,
-                        modifier = Modifier.size(14.dp),
-                    )
-                    Spacer(Modifier.width(4.dp))
-                }
-                Text(
-                    subtitle ?: AnnotatedString(supporting),
-                    maxLines = lines,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        },
-        trailingContent =
-            if (selecting) null
-            else
-                trailing
-                    ?: onMore?.let { more ->
-                        {
-                            IconButton(onClick = more) {
-                                Icon(Icons.Rounded.MoreVert, contentDescription = "More options")
-                            }
+        supportingContent =
+            if (oneLine) null
+            else {
+                {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (track.favourite) {
+                            heart()
+                            Spacer(Modifier.width(4.dp))
                         }
-                    },
+                        Text(
+                            subtitle ?: AnnotatedString(supporting),
+                            maxLines = lines,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            },
+        trailingContent =
+            if (note == null && !(oneLine && track.favourite)) action
+            else {
+                {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (oneLine && track.favourite) heart()
+                        if (note != null) {
+                            Text(note, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                        }
+                        action?.invoke()
+                    }
+                }
+            },
     ) {
         Text(
             title ?: AnnotatedString(track.shownTitle),
@@ -250,6 +279,77 @@ fun IconTile(
 }
 
 @Composable
+fun Shortcut(
+    icon: ImageVector,
+    title: String,
+    detail: String,
+    container: Color,
+    content: Color,
+    badge: Color,
+    onBadge: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        onClick = onClick,
+        color = container,
+        contentColor = content,
+        shape = MaterialTheme.shapes.extraLarge,
+        modifier = modifier.heightIn(min = 80.dp),
+    ) {
+        Row(
+            Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                color = badge,
+                contentColor = onBadge,
+                shape = MaterialShapes.Cookie9Sided.toShape(),
+                modifier = Modifier.size(44.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) { Icon(icon, contentDescription = null) }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(detail, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+@Composable
+fun ShortcutPair(
+    modifier: Modifier = Modifier,
+    first: @Composable (Modifier) -> Unit,
+    second: @Composable (Modifier) -> Unit,
+) {
+    if (rememberLargeText()) {
+        Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            first(Modifier.fillMaxWidth())
+            second(Modifier.fillMaxWidth())
+        }
+    } else {
+        Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            first(Modifier.weight(1f))
+            second(Modifier.weight(1f))
+        }
+    }
+}
+
+fun Modifier.bleeding(by: Dp): Modifier = layout { measurable, constraints ->
+    val edge = by.roundToPx()
+    val placeable =
+        measurable.measure(
+            constraints.copy(
+                minWidth = constraints.maxWidth + edge * 2,
+                maxWidth = constraints.maxWidth + edge * 2,
+            )
+        )
+    layout(constraints.maxWidth, placeable.height) { placeable.placeRelative(-edge, 0) }
+}
+
+@Composable
 fun ArtistPortrait(song: ULong?, size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
     SongArtwork(song, size, modifier, shape = CircleShape, placeholder = Icons.Rounded.Person)
 }
@@ -287,6 +387,7 @@ fun EmptyState(
     detail: String? = null,
     action: String? = null,
     onAction: (() -> Unit)? = null,
+    second: (@Composable () -> Unit)? = null,
 ) {
     Column(
         modifier.fillMaxSize().padding(32.dp),
@@ -327,6 +428,10 @@ fun EmptyState(
         if (action != null && onAction != null) {
             Spacer(Modifier.height(24.dp))
             Button(onClick = onAction) { Text(action) }
+        }
+        if (second != null) {
+            Spacer(Modifier.height(4.dp))
+            second()
         }
     }
 }

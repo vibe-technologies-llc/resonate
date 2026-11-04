@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.ViewModel
@@ -167,12 +166,12 @@ private fun SongCollection(
                 summary = collectionSummary(tracks = shown),
                 extra =
                     detail?.let { text ->
-                        {
+                        { align ->
                             Text(
                                 text,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center,
+                                textAlign = align,
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         }

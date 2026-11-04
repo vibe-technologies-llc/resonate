@@ -151,6 +151,7 @@ fun AlbumScreen(screen: Screen.Album) {
                             playing = track.id == playing,
                             number = trackNumber(track, index),
                             supporting = albumRowLine(track, owner, various),
+                            note = clock(track.durationMs),
                             onMore = { sheets.song(track) },
                             selection = selection.row(track.id),
                         )
@@ -162,7 +163,6 @@ fun AlbumScreen(screen: Screen.Album) {
 }
 
 private fun albumRowLine(track: Track, owner: String, various: Boolean): String =
-    if (various || !track.artist.equals(owner, ignoreCase = true)) "${track.shownArtist} · ${clock(track.durationMs)}"
-    else clock(track.durationMs)
+    if (various || !track.artist.equals(owner, ignoreCase = true)) track.shownArtist else ""
 
 private const val SEED_EDGE = 96

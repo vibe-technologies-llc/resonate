@@ -7,8 +7,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
@@ -28,7 +30,6 @@ import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -55,6 +56,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
@@ -62,7 +64,9 @@ import kotlinx.coroutines.launch
 import org.resonate.android.LinkedPlaylistWords
 import org.resonate.android.nativecore.PlaylistLinkInfo
 import org.resonate.android.ui.LocalResonate
+import org.resonate.android.ui.components.CollectionRow
 import org.resonate.android.ui.components.DragHandle
+import org.resonate.android.ui.components.IconTile
 import org.resonate.android.ui.components.LocalSheets
 import org.resonate.android.ui.components.PlaylistCover
 import org.resonate.android.ui.components.RowSelection
@@ -180,61 +184,46 @@ fun PlaylistScreen(screen: Screen.Playlist) {
             },
         ) { rows ->
             item("header") {
-                CollectionHeader(
-                    title = name,
-                    overline =
-                        when {
-                            search != null -> "Saved search"
-                            shared == null -> "Playlist"
-                            mayEdit -> "Shared playlist"
-                            else -> "Followed playlist"
-                        },
-                    summary = collectionSummary(tracks = rows.map { it.track }),
-                    onPlay = { resonate.playInOrder(rows.map { it.track }) },
-                    onShuffle = { resonate.playShuffled(rows.map { it.track }) },
-                    playable = rows.isNotEmpty(),
-                    extra = {
-                        if (search != null) {
-                            Column {
-                                Text(
-                                    search.text.ifBlank { "Every song" },
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.testTag("saved-search-text"),
-                                )
-                                Text(
-                                    search.reading(),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.testTag("saved-search-reading"),
-                                )
-                            }
-                        } else {
-                            Column {
-                                if (link != null) {
+                Column {
+                    CollectionHeader(
+                        title = name,
+                        overline =
+                            when {
+                                search != null -> "Saved search"
+                                shared == null -> "Playlist"
+                                mayEdit -> "Shared playlist"
+                                else -> "Followed playlist"
+                            },
+                        summary = collectionSummary(tracks = rows.map { it.track }),
+                        onPlay = { resonate.playInOrder(rows.map { it.track }) },
+                        onShuffle = { resonate.playShuffled(rows.map { it.track }) },
+                        playable = rows.isNotEmpty(),
+                        extra =
+                            when {
+                                search != null -> { align -> SavedSearchLines(search.text, search.reading(), align) }
+                                link != null -> { align ->
                                     LinkedPlaylistLine(
                                         link = link,
                                         refreshing = refreshing,
                                         online = online,
+                                        align = align,
                                         onRefresh = model::refreshLink,
                                     )
                                 }
-                                if (!mayEdit) {
-                                    Unit
-                                } else if (rows.isEmpty()) {
-                                    FilledTonalButton(onClick = { adding = true }, modifier = Modifier.testTag("add-songs-button")) {
-                                        AddSongsLabel()
-                                    }
-                                } else {
-                                    TextButton(onClick = { adding = true }, modifier = Modifier.testTag("add-songs-button")) {
-                                        AddSongsLabel()
-                                    }
-                                }
-                            }
-                        }
-                    },
-                ) { side ->
-                    PlaylistCover(playlist?.covers.orEmpty(), side, shape = MaterialTheme.shapes.extraLarge)
+                                else -> null
+                            },
+                    ) { side ->
+                        PlaylistCover(playlist?.covers.orEmpty(), side, shape = MaterialTheme.shapes.extraLarge)
+                    }
+                    if (search == null && mayEdit && rows.isNotEmpty()) {
+                        CollectionRow(
+                            title = "Add songs",
+                            supporting = null,
+                            onClick = { adding = true },
+                            leading = { IconTile(Icons.AutoMirrored.Rounded.PlaylistAdd) },
+                            modifier = Modifier.testTag("add-songs-button"),
+                        )
+                    }
                 }
             }
             if (search != null || !mayEdit) {
@@ -261,7 +250,18 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                 }
                 return@CollectionPage
             }
-            if (rows.isEmpty()) item("empty") { EmptyCollection(detail = "Add songs to shape this playlist.") }
+            if (rows.isEmpty()) {
+                item("empty") {
+                    EmptyCollection(
+                        detail = "Add songs to shape this playlist.",
+                        action = {
+                            Button(onClick = { adding = true }, modifier = Modifier.testTag("add-songs-button")) {
+                                AddSongsLabel()
+                            }
+                        },
+                    )
+                }
+            }
             items(reorder.shown.size, key = { reorder.shown[it].key }) { at ->
                 val entry = reorder.shown[at]
                 key(rows) {
@@ -323,10 +323,31 @@ fun PlaylistScreen(screen: Screen.Playlist) {
 }
 
 @Composable
+private fun SavedSearchLines(text: String, reading: String, align: TextAlign) {
+    Column(Modifier.fillMaxWidth()) {
+        Text(
+            text.ifBlank { "Every song" },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = align,
+            modifier = Modifier.fillMaxWidth().testTag("saved-search-text"),
+        )
+        Text(
+            reading,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = align,
+            modifier = Modifier.fillMaxWidth().testTag("saved-search-reading"),
+        )
+    }
+}
+
+@Composable
 private fun LinkedPlaylistLine(
     link: PlaylistLinkInfo,
     refreshing: Boolean,
     online: Boolean,
+    align: TextAlign,
     onRefresh: () -> Unit,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -334,6 +355,7 @@ private fun LinkedPlaylistLine(
             LinkedPlaylistWords.line(link),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = align,
             modifier = Modifier.weight(1f, fill = false).testTag("playlist-link-line"),
         )
         Spacer(Modifier.width(8.dp))

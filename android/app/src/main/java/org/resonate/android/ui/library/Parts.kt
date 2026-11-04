@@ -65,6 +65,7 @@ import org.resonate.android.ui.components.PlayShuffleButtons
 import org.resonate.android.ui.components.PlaylistCover
 import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.components.SongArtwork
+import org.resonate.android.ui.components.rememberTitleMaxLines
 import org.resonate.android.ui.counted
 import org.resonate.android.ui.navigation.Screen
 
@@ -112,10 +113,15 @@ fun SquareCover(song: ULong?, modifier: Modifier = Modifier, shape: Shape = Mate
 }
 
 @Composable
-fun AlbumCard(album: AlbumHit, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun AlbumCard(
+    album: AlbumHit,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    detail: String? = album.byline,
+) {
     CoverCard(
         title = album.shownTitle,
-        detail = album.byline,
+        detail = detail,
         onClick = onClick,
         modifier = modifier,
     ) {
@@ -124,10 +130,20 @@ fun AlbumCard(album: AlbumHit, onClick: () -> Unit, modifier: Modifier = Modifie
 }
 
 @Composable
-fun PlaylistCard(playlist: MusicPlaylist, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun PlaylistCard(
+    playlist: MusicPlaylist,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    badge: String? = null,
+) {
     CoverCard(
         title = playlist.name,
-        detail = counted(playlist.songs, "song"),
+        detail =
+            listOfNotNull(
+                    badge ?: "Saved search".takeIf { playlist.search != null },
+                    counted(playlist.songs, "song"),
+                )
+                .joinToString(" · "),
         onClick = onClick,
         modifier = modifier,
     ) {
@@ -145,6 +161,7 @@ fun CoverCard(
     modifier: Modifier = Modifier,
     cover: @Composable () -> Unit,
 ) {
+    val lines = rememberTitleMaxLines()
     Column(
         modifier
             .clip(MaterialTheme.shapes.large)
@@ -156,7 +173,7 @@ fun CoverCard(
         Text(
             title,
             style = MaterialTheme.typography.titleSmall,
-            maxLines = 1,
+            maxLines = lines,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 4.dp),
         )
@@ -165,7 +182,7 @@ fun CoverCard(
                 detail,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
+                maxLines = lines,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = 4.dp).padding(bottom = 4.dp),
             )
@@ -244,7 +261,7 @@ fun CollectionHeader(
     playable: Boolean = true,
     overline: String? = null,
     link: (@Composable () -> Unit)? = null,
-    extra: (@Composable () -> Unit)? = null,
+    extra: (@Composable (TextAlign) -> Unit)? = null,
     coverShape: Shape = MaterialTheme.shapes.extraLarge,
     cover: @Composable (Dp) -> Unit,
 ) {
@@ -283,7 +300,7 @@ fun CollectionHeader(
                 )
                 if (extra != null) {
                     Spacer(Modifier.height(12.dp))
-                    extra()
+                    extra(align)
                 }
             }
         }
@@ -426,13 +443,19 @@ fun Welcome(modifier: Modifier = Modifier) {
                 modifier = Modifier.widthIn(max = 420.dp),
             )
             Spacer(Modifier.height(24.dp))
-            Button(onClick = host::chooseFolder, modifier = Modifier.testTag("add-folder")) {
+            Button(
+                onClick = host::chooseFolder,
+                modifier = Modifier.widthIn(min = WELCOME_BUTTON_WIDTH).testTag("add-folder"),
+            ) {
                 Icon(Icons.Rounded.CreateNewFolder, null, Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.width(ButtonDefaults.IconSpacing))
                 Text("Add music folder")
             }
             Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = host::useDownloads, modifier = Modifier.testTag("use-downloads")) {
+            OutlinedButton(
+                onClick = host::useDownloads,
+                modifier = Modifier.widthIn(min = WELCOME_BUTTON_WIDTH).testTag("use-downloads"),
+            ) {
                 Icon(Icons.Rounded.Download, null, Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.width(ButtonDefaults.IconSpacing))
                 Text("Use Downloads")
@@ -442,12 +465,17 @@ fun Welcome(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun EmptyCollection(modifier: Modifier = Modifier, detail: String = "Add some songs to make this collection yours.") {
+fun EmptyCollection(
+    modifier: Modifier = Modifier,
+    title: String = "A little quiet here",
+    detail: String = "Add some songs to make this collection yours.",
+    action: (@Composable () -> Unit)? = null,
+) {
     Column(
         modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("A little quiet here", style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+        Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
         Spacer(Modifier.height(4.dp))
         Text(
             detail,
@@ -456,9 +484,15 @@ fun EmptyCollection(modifier: Modifier = Modifier, detail: String = "Add some so
             textAlign = TextAlign.Center,
             modifier = Modifier.widthIn(max = 420.dp),
         )
+        if (action != null) {
+            Spacer(Modifier.height(16.dp))
+            action()
+        }
     }
 }
 
 fun LazyListScope.sectionTitle(key: String, title: String, action: String? = null, onAction: (() -> Unit)? = null) {
     item(key) { org.resonate.android.ui.components.SectionHeader(title, action = action, onAction = onAction) }
 }
+
+private val WELCOME_BUTTON_WIDTH = 216.dp

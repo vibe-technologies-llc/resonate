@@ -29,6 +29,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
@@ -176,9 +177,11 @@ fun Picture(
     modifier: Modifier = Modifier,
     shape: Shape = MaterialTheme.shapes.small,
     placeholder: ImageVector = Icons.Rounded.MusicNote,
+    ground: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
+    ink: Color = MaterialTheme.colorScheme.onSurfaceVariant,
 ) {
     Box(
-        modifier.clip(shape).background(MaterialTheme.colorScheme.surfaceContainerHighest),
+        modifier.clip(shape).background(ground),
         contentAlignment = Alignment.Center,
     ) {
         Crossfade(bitmap, label = "artwork") { shown ->
@@ -195,7 +198,7 @@ fun Picture(
                     Icon(
                         placeholder,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = ink,
                         modifier = Modifier.fillMaxSize(PLACEHOLDER_SHARE),
                     )
                 }
@@ -218,6 +221,8 @@ fun PlaylistCover(
                 modifier.size(size),
                 shape,
                 Icons.AutoMirrored.Rounded.QueueMusic,
+                ground = MaterialTheme.colorScheme.secondaryContainer,
+                ink = MaterialTheme.colorScheme.onSecondaryContainer,
             )
         covers.size < 4 -> SongArtwork(covers.first(), size, modifier, shape)
         else -> {

@@ -416,7 +416,7 @@ shows the engine's order), sent as `queueLanding(from, to)` since the engine's
 the queue's length. *Save queue as playlist* and *Clear* sit in its header; *Clear* asks first (history and up next go, the playing song stays), and a swipe the engine refuses puts its row back after `UNREMOVED_AFTER_MS`, as a playlist row does.
 
 **Library** is a pager of Songs, Albums, Artists and Playlists under a tab row (scrollable past a
-font scale of 1.3), *New playlist* a floating button on Playlists (the heading carries no second one), Songs opening on full-width *Play* and *Shuffle* with the count at the start and sort and filters at the end of one row, as Albums and Artists put their sort, the active filters on a row beneath, *More* the folder, rescan and
+font scale of 1.3), *New playlist* a floating button on Playlists (the heading carries no second one), **Playlists** opening on two `Shortcut` tiles, *Favourites* and *Party* (stacked above a font scale of 1.3, the same `ShortcutPair` as Home's), then *Your playlists* with *Paste a link* and a grid of `PlaylistCard`s as wide as Albums' (a shared, followed or saved-search list says so before its count; none is *No playlists yet* over the button), Songs opening on full-width *Play* and *Shuffle* with the count at the start and sort and filters at the end of one row, as Albums and Artists put their sort, the active filters on a row beneath, *More* the folder, rescan and
 Library tools entries. **A sort menu lists only the orders**, in compact 40 dp rows (`MenuEntry.Choice`): choosing the order already held flips its direction, which the sort chip's arrow shows (a *Descending* switch under seven rows made the popup overrun the list and the notice). A catalog read (`catalogRead`) never emits a spinner over a result it held, so a page subscribed again
 keeps its rows, and the Albums and Artists tabs keep their scroll across a reload. Favourites and the counts read the repository's whole catalog, never the
 song browser's filtered page. A completed favourite write updates the catalog, the browser, the
@@ -453,9 +453,10 @@ refresh). Missing art is a quiet `surfaceContainerHighest` square with a note.
 count and length and Play and Shuffle. Albums keep disc and track order (`album_tracks`); an artist
 page lists their albums and songs, its profile read by its own `ArtistViewModel` (never the shared
 `LibraryFeatures.artist` that Details reads, so another artist's page cannot lend it theirs) and each link
-listed once. A playlist cover is `MusicPlaylist.covers`: none shows an icon,
+listed once, its album cards saying the year alone, since the page names the artist. An album's rows are a tracklist:
+the number, the title and the length at the trailing edge (`TrackRow`'s `note`), a second line only for a song billed to someone other than the album (a favourite's heart then sits beside the length). A playlist cover is `MusicPlaylist.covers`: none shows an icon on `secondaryContainer`, a designed tile rather than missing art,
 one to three the first song's picture, four a 2 by 2 (`PlaylistCover`). A playlist adds songs through
-a searchable multi-song picker over the batched add seam; rename, revision-checked moves and removal,
+a searchable multi-song picker over the batched add seam, opened from an *Add songs* row aligned with the songs under Play and Shuffle, or from the button in the empty playlist's words; rename, revision-checked moves and removal,
 delete and undo are the native calls. A row plays its list from the position tapped
 (`Playback.play(tracks, index)`), so a repeated song selects the row pressed.
 

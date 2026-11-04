@@ -171,7 +171,7 @@ fun ArtistScreen(screen: Screen.Artist) {
                     playable = tracks.isNotEmpty(),
                     extra =
                         about?.genres?.takeIf { it.isNotEmpty() }?.let { genres ->
-                            {
+                            { _ ->
                                 FlowRow(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp, androidx.compose.ui.Alignment.CenterHorizontally),
                                     verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -190,7 +190,12 @@ fun ArtistScreen(screen: Screen.Artist) {
                 item("albums-title") { SectionHeader("Albums") }
                 item("albums") {
                     Shelf(shown.albums, key = { it.key }) { album ->
-                        AlbumCard(album, onClick = { navigator.open(album.screen) }, modifier = Modifier.width(Shelves.albumWidth))
+                        AlbumCard(
+                            album,
+                            onClick = { navigator.open(album.screen) },
+                            modifier = Modifier.width(Shelves.albumWidth),
+                            detail = album.year?.toString(),
+                        )
                     }
                 }
             }
