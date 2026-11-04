@@ -1808,6 +1808,18 @@ are handled by the same rules as an iPad turned.
 - **Not seen on a device**: the rules are held in tests and the app builds without a warning, but no
   iPhone on its side, iPad or iPhone Duo has shown the layouts (`TESTING.md`).
 
+## Together
+
+`Together.swift` and `TogetherViews.swift` hold shared playlists and parties and `WrappedViews.swift` the
+deck; what can be tested without a device (link routing, the sentences, the gates) is in `ResonateLogic`.
+`OpenedLink` sends `resonate://shared/`, `resonate://party/` and their page forms to `accept_invitation`
+before anything could queue them as a song. Free signing rules out associated domains, so an https link
+reaches the app through its web page's button. The QR is CoreImage's generator, since pairing draws none,
+and the typed name is `shared-name` beside the device name. A link opened at launch waits for the first
+`sync_start`, since a shared list needs sync running. While sync is off `shared_playlists` answers nothing,
+so a followed list shows edit controls and an edit answers `PlaylistFollowed` (`shared-playlists.md`,
+`party.md`).
+
 ## Accessibility
 
 - **Accents reach their bar.** `AccentMath.worn(_:dark:increased:)` deepens (light) or lifts (dark) an accent

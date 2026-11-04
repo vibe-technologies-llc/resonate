@@ -35,6 +35,8 @@ mod mpris;
 mod online;
 #[cfg(feature = "sync")]
 mod party;
+#[cfg(all(feature = "sync", feature = "ui"))]
+mod party_room;
 mod playlists;
 mod providers;
 mod readout;
@@ -3071,7 +3073,7 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
         None
     });
     #[cfg(feature = "sync")]
-    party::in_the_window(party::Seats {
+    party_room::in_the_window(party_room::Seats {
         zones: Arc::clone(&zones),
         library: Arc::clone(&library),
         served: served.clone(),
@@ -3217,7 +3219,8 @@ fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     drop(presenter);
     syncing.leave();
     #[cfg(feature = "sync")]
-    party::out_of_the_window();
+    party_room::out_of_the_window();
+    #[cfg(feature = "sync")]
     drop(together);
     submitting.leave();
     zones.leave();

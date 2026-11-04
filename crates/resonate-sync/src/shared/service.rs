@@ -168,6 +168,7 @@ impl Shared {
             poll_due: Instant::now(),
             retry_after: FIRST_RETRY,
         };
+        running.publish();
         let thread = thread::Builder::new()
             .name("resonate-shared".to_owned())
             .spawn(move || {
@@ -328,7 +329,6 @@ fn digest_of(local: &LocalShared) -> Vec<u8> {
 
 impl Running {
     async fn run(mut self, mut asked: mpsc::UnboundedReceiver<Work>) {
-        self.publish();
         loop {
             let wait = self.poll_due.saturating_duration_since(Instant::now());
             tokio::select! {

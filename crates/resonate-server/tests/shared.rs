@@ -603,3 +603,20 @@ fn a_list_shared_with_no_server_reachable_waits_and_arrives_once_one_is() {
     });
     assert!(shown_on(&person)[0].owed > 0);
 }
+
+#[test]
+fn what_is_held_is_shown_the_moment_the_service_starts() {
+    let hosted = hosted("started");
+    let ada = hosted.person("Ada", Shelf::default());
+    let list = ada.shelf.made("Mix", &["One"]);
+    ada.shared.share(list).expect("shared");
+
+    drop(ada);
+    let again = hosted.person("Ada", Shelf::default());
+
+    assert_eq!(
+        again.shared.shown().len(),
+        1,
+        "the terminal reads this straight after starting, with no wait to lean on"
+    );
+}

@@ -46,6 +46,8 @@ mod shared;
 
 use answers::the_same_file;
 
+pub(crate) type Resolving = Arc<dyn Fn(&Recording) -> Option<String> + Send + std::marker::Sync>;
+
 const LEDGER: &str = "sync.sqlite";
 
 const SHARED_STORE: &str = "shared.sqlite";
@@ -94,9 +96,7 @@ impl Syncing {
         self.server.lock().clone()
     }
 
-    pub(crate) fn resolver(
-        &self,
-    ) -> Arc<dyn Fn(&Recording) -> Option<String> + Send + std::marker::Sync> {
+    pub(crate) fn resolver(&self) -> Resolving {
         let catalog = self.resolving.lock().clone();
 
         Arc::new(move |recording| {

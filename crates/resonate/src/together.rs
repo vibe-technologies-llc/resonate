@@ -1,5 +1,6 @@
+#[cfg(feature = "ui")]
+use std::ffi::OsString;
 use std::{
-    ffi::OsString,
     fs::{self, File},
     sync::Arc,
     thread,
@@ -7,11 +8,14 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use resonate_core::{PlaylistId, Recording, ZoneId};
+#[cfg(feature = "ui")]
+use resonate_core::ZoneId;
+use resonate_core::{PlaylistId, Recording};
 use resonate_library::{Library, PlaylistName, SyncedPlaylist};
+#[cfg(feature = "ui")]
+use resonate_sync::party::{PartyReach, SittingOut, Standing};
 use resonate_sync::{
     HeldShare, LocalPlaylistId, Refused,
-    party::{PartyReach, SittingOut, Standing},
     shared::{
         Invited, LocalShared, MemberId, Shared, SharedCatalog, SharedSettings, SharedShown,
         SharedStanding, invitation_in,
@@ -322,11 +326,11 @@ impl resonate_ui::Together for Seen {
         if let Some(shared) = running() {
             shared.named(name.to_owned());
         }
-        crate::party::named(name);
+        crate::party_room::named(name);
     }
 
     fn party(&self) -> Option<resonate_ui::PartySeen> {
-        let (shown, followed, zone) = crate::party::shown()?;
+        let (shown, followed, zone) = crate::party_room::shown()?;
 
         Some(resonate_ui::PartySeen {
             zone,
@@ -375,32 +379,33 @@ impl resonate_ui::Together for Seen {
     }
 
     fn begin_party(&self, zone: ZoneId) -> bool {
-        crate::party::begin(zone)
+        crate::party_room::begin(zone)
             .inspect_err(|error| tracing::warn!(%error, "a party could not begin"))
             .is_ok()
     }
 
     fn leave_party(&self) {
-        crate::party::leave();
+        crate::party_room::leave();
     }
 
     fn turn_out(&self, person: [u8; 16]) {
-        crate::party::turn_out(person);
+        crate::party_room::turn_out(person);
     }
 
     fn play_request_next(&self, at: usize) -> bool {
-        crate::party::play_a_request_next(at)
+        crate::party_room::play_a_request_next(at)
     }
 
     fn dismiss_request(&self, at: usize) {
-        crate::party::dismiss_a_request(at);
+        crate::party_room::dismiss_a_request(at);
     }
 
     fn following(&self, zone: ZoneId) -> bool {
-        crate::party::following(zone)
+        crate::party_room::following(zone)
     }
 }
 
+#[cfg(feature = "ui")]
 pub(crate) fn invitations_taken_out(arguments: &[OsString]) -> Vec<OsString> {
     arguments
         .iter()
@@ -421,7 +426,10 @@ pub(crate) fn accepted(text: &str) -> bool {
         return false;
     };
     if invitation.to == Invited::Party {
-        return crate::party::accept(text);
+        #[cfg(feature = "ui")]
+        return crate::party_room::accept(text);
+        #[cfg(not(feature = "ui"))]
+        return false;
     }
 
     thread::spawn(move || {
@@ -626,10 +634,12 @@ fn print_every_list(lists: &[SharedShown]) {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "ui")]
     use std::ffi::OsString;
 
     use super::*;
 
+    #[cfg(feature = "ui")]
     #[test]
     fn an_argument_that_invites_is_not_queued_and_a_file_is() {
         let arguments = [

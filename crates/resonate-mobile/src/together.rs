@@ -20,7 +20,7 @@ use crate::{
     documents::location,
     error::SyncOp,
     served,
-    sync::{RECORDING_COLUMNS, recording_at},
+    sync::{RECORDING_COLUMNS, Resolving, recording_at},
 };
 
 const SONGS_TOLD_AHEAD: usize = 8;
@@ -120,7 +120,7 @@ struct PhoneSeat {
 }
 
 struct Finder {
-    resolve: Arc<dyn Fn(&Recording) -> Option<String> + Send + Sync>,
+    resolve: Resolving,
     services: Vec<Arc<dyn PlaysInPlace>>,
 }
 
@@ -573,6 +573,8 @@ impl MobilePlayer {
     }
 
     fn party_settings(&self, server: Option<String>) -> Result<PartySettings> {
+        self.require_online()?;
+
         let server = server
             .or_else(|| self.syncing.server())
             .unwrap_or_else(|| HOSTED_SERVER.to_owned());
@@ -642,6 +644,16 @@ mod tests {
             Some(InvitationKind::Party)
         );
         assert_eq!(invitation_kind("love song".to_owned()), None);
+    }
+
+    #[test]
+    fn a_party_is_refused_while_online_is_off() {
+        let phone = crate::playlists::tests::player();
+
+        phone.configure_online(false);
+
+        assert!(matches!(phone.party_begin(), Err(Error::OnlineOff)));
+        assert!(phone.party_shown().is_none());
     }
 
     #[test]

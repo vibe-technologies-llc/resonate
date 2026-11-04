@@ -49,12 +49,12 @@ pub struct Served {
 }
 
 impl Served {
-    #[cfg(feature = "online")]
+    #[cfg(all(feature = "online", feature = "sync"))]
     pub fn services(&self) -> InPlace {
         self.slot.read().clone()
     }
 
-    #[cfg(not(feature = "online"))]
+    #[cfg(all(not(feature = "online"), feature = "sync"))]
     pub fn services(&self) -> Vec<std::sync::Arc<dyn resonate_providers::PlaysInPlace>> {
         Vec::new()
     }

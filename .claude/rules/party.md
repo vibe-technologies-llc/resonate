@@ -2,6 +2,7 @@
 paths:
   - "crates/resonate-sync/src/party/**"
   - "crates/resonate/src/party.rs"
+  - "crates/resonate/src/party_room.rs"
   - "crates/resonate-engine/src/seat.rs"
   - "crates/resonate-ui/src/views/party.rs"
   - "crates/resonate-mobile/src/together.rs"
@@ -21,8 +22,10 @@ have**. No sound passes between people; a guest with neither sits that song out.
   that joins them over the `PartySeat` and `PartyFinder` traits, tested with a fake seat on a real
   server in `crates/resonate-server/tests/together.rs`).
 - **`resonate_engine::Seat`** is the ordered commands on a `Player`. It sees no party.
-- **`crates/resonate/src/party.rs`** and **`crates/resonate-mobile/src/together.rs`** each implement
-  `PartySeat` and `PartyFinder` over their own catalog, since those crates may not see each other.
+- **`crates/resonate/src/party.rs`** (with `party_room.rs`, the window's one party, behind `ui`) and
+  **`crates/resonate-mobile/src/together.rs`** each implement `PartySeat` and `PartyFinder` over their
+  own catalog, since those crates may not see each other. On the phones a party, like the desktop's,
+  refuses where online is off (`Error::OnlineOff`, `party_settings`).
   `resonate_providers::found_exactly` is the strict search both use.
 
 ## The clock
