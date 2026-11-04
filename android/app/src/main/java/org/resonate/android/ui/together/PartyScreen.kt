@@ -107,10 +107,12 @@ private fun NoParty(model: PartyViewModel) {
         detail = NO_PARTY_YET,
         action = "Begin a party",
         onAction = model.together::beginParty,
+        second = {
+            TextButton(onClick = paste, modifier = Modifier.testTag("party-paste")) {
+                Text("Paste a link")
+            }
+        },
     )
-    TextButton(onClick = paste, modifier = Modifier.testTag("party-paste")) {
-        Text("Paste a link")
-    }
 }
 
 @Composable
@@ -159,7 +161,7 @@ private fun AtTheParty(party: ListeningParty, model: PartyViewModel) {
                 Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("party-following"),
             )
         }
-        SectionHeader("Here")
+        if (party.people.isNotEmpty()) SectionHeader("Here")
         party.people.forEach { person ->
             SettingRow(
                 title = TogetherWords.person(person),
